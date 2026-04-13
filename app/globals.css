@@ -21,6 +21,25 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  text-rendering: geometricPrecision;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  .animate-sx-float,
+  .sx-cta-glow,
+  .sx-dash-animate {
+    animation: none !important;
+  }
+
+  .animate-sx-float {
+    transform: none;
+  }
 }
 
 ::selection {
@@ -56,4 +75,14 @@ body {
 
 .sx-cta-glow {
   animation: sx-cta-glow 5s ease-in-out infinite;
+}
+
+@keyframes sx-dash-shift {
+  to {
+    stroke-dashoffset: -80;
+  }
+}
+
+.sx-dash-animate {
+  animation: sx-dash-shift 14s linear infinite;
 }

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { COLORS, whatsappHref } from "@/lib/constants";
+import { PrimaryButton, CTAMicrocopy } from "@/app/components/marketing-ui";
 
 const PROMPTS = [
   {
@@ -22,7 +23,7 @@ const PROMPTS = [
 ];
 
 const DEFAULT_REPLY =
-  "We’d baseline your current cost-per-ticket or cost-per-lead, then target automation where payback is clearest—often 6–12 months on labor savings alone, before counting revenue lift. Chat with us on WhatsApp for a tailored estimate.";
+  "We’d baseline your current cost-per-ticket or cost-per-lead, then target automation where payback is clearest—often 6–12 months on labor savings alone, before counting revenue lift. Get started and we’ll sanity-check numbers before you commit.";
 
 function replyForTypedMessage(text) {
   const lower = text.toLowerCase();
@@ -42,16 +43,18 @@ export function ChatDemo() {
   const [messages, setMessages] = useState([]);
   const [pending, setPending] = useState(false);
   const [input, setInput] = useState("");
-  const bottomRef = useRef(null);
   const scrollRef = useRef(null);
 
-  const scrollToBottom = useCallback(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  const scrollPanelToBottom = useCallback(() => {
+    const panel = scrollRef.current;
+    if (!panel) return;
+    panel.scrollTo({ top: panel.scrollHeight, behavior: "smooth" });
   }, []);
 
   useEffect(() => {
-    scrollToBottom();
-  }, [messages, pending, scrollToBottom]);
+    if (messages.length === 0 && !pending) return;
+    scrollPanelToBottom();
+  }, [messages, pending, scrollPanelToBottom]);
 
   const pushAssistant = useCallback((replyText) => {
     setMessages((prev) => [
@@ -102,20 +105,20 @@ export function ChatDemo() {
   const { brand, accent } = COLORS;
 
   return (
-    <div className="mx-auto max-w-2xl px-3 sm:px-6 lg:px-8">
-      <div className="mb-4 text-center sm:mb-6">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400 sm:text-[11px]">
+    <div className="mx-auto max-w-2xl px-4 sm:px-6 lg:px-8">
+      <div className="mb-5 text-center sm:mb-6">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400 sm:text-[11px] sm:tracking-[0.2em]">
           Interactive preview
         </p>
-        <h2 className="mt-1.5 text-lg font-semibold tracking-[-0.03em] text-[#0B1220] sm:mt-2 sm:text-2xl">
+        <h2 className="mt-2 text-pretty text-lg font-semibold leading-tight tracking-[-0.032em] text-[#0B1220] sm:mt-2.5 sm:text-2xl sm:tracking-[-0.035em]">
           See how Stratxcel AI responds
         </h2>
-        <p className="mt-1.5 text-[13px] leading-snug text-slate-500 sm:mt-2 sm:text-[14px]">
+        <p className="mt-2 text-[13px] leading-[1.45] text-slate-500 sm:mt-2.5 sm:text-[14px] sm:leading-snug">
           Tap a suggestion or type below — demo replies only, not live data.
         </p>
       </div>
 
-      <div className="overflow-hidden rounded-2xl border border-slate-200/70 bg-white/90 shadow-[0_20px_60px_-36px_rgba(11,18,32,0.2)] backdrop-blur-xl">
+      <div className="overflow-hidden rounded-2xl border border-slate-200/70 bg-white/90 shadow-[0_20px_60px_-36px_rgba(11,18,32,0.2)] backdrop-blur-xl transition-shadow duration-200 ease-out motion-safe:hover:shadow-[0_24px_64px_-32px_rgba(11,18,32,0.22)]">
         <div className="flex items-center justify-between gap-2 border-b border-slate-100/90 bg-gradient-to-r from-slate-50/95 to-white px-3 py-3 sm:px-5 sm:py-3.5">
           <div className="flex min-w-0 items-center gap-2 sm:gap-2.5">
             <span className="relative flex h-2 w-2 shrink-0">
@@ -172,7 +175,6 @@ export function ChatDemo() {
               </div>
             </div>
           )}
-          <div ref={bottomRef} />
         </div>
 
         <div className="border-t border-slate-100 bg-slate-50/50 px-3 py-3 sm:px-5 sm:py-4">
@@ -186,28 +188,28 @@ export function ChatDemo() {
                 type="button"
                 disabled={pending}
                 onClick={() => handlePrompt(p)}
-                className="rounded-xl border border-slate-200/90 bg-white px-3 py-2 text-left text-[11px] font-medium leading-snug text-slate-700 shadow-sm transition-all duration-300 ease-out hover:border-slate-300 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50 sm:flex-1 sm:min-w-0 sm:px-3.5 sm:py-2.5 sm:text-[13px]"
+                className="rounded-xl border border-slate-200/90 bg-white px-3 py-2 text-left text-[11px] font-medium leading-snug text-slate-700 shadow-sm transition-[transform,box-shadow,border-color,background-color] duration-200 ease-out hover:border-slate-300/95 hover:bg-slate-50/80 hover:shadow-md active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100 sm:flex-1 sm:min-w-0 sm:px-3.5 sm:py-2.5 sm:text-[13px]"
               >
                 {p.label}
               </button>
             ))}
           </div>
           <form onSubmit={handleSend} className="mt-2.5 sm:mt-3">
-            <div className="flex items-stretch gap-2 rounded-xl border border-slate-200/70 bg-white/90 px-2 py-1.5 sm:px-3 sm:py-2">
+            <div className="flex items-stretch gap-2 rounded-xl border border-slate-200/70 bg-white/90 px-2 py-1.5 transition-[box-shadow,border-color] duration-200 ease-out focus-within:border-slate-300/90 focus-within:shadow-[0_0_0_3px_rgba(59,130,246,0.12)] sm:px-3 sm:py-2">
               <input
                 type="text"
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 placeholder="Ask anything…"
                 disabled={pending}
-                className="min-h-[40px] flex-1 bg-transparent text-[13px] text-[#0B1220] placeholder:text-slate-400 focus:outline-none disabled:opacity-50 sm:text-[14px]"
+                className="min-h-[40px] flex-1 bg-transparent text-[13px] text-[#0B1220] placeholder:text-slate-400 transition-colors duration-150 ease-out focus:outline-none disabled:opacity-50 sm:text-[14px]"
                 autoComplete="off"
                 aria-label="Message"
               />
               <button
                 type="submit"
                 disabled={pending || !input.trim()}
-                className="shrink-0 rounded-lg px-3 py-2 text-[11px] font-semibold text-white shadow-sm transition-all duration-300 ease-out hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-40 sm:px-3.5 sm:text-[12px]"
+                className="shrink-0 rounded-lg px-3 py-2 text-[11px] font-semibold text-white shadow-sm transition-[filter,transform] duration-200 ease-out hover:brightness-105 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 disabled:active:scale-100 sm:px-3.5 sm:text-[12px]"
                 style={{ backgroundColor: brand }}
               >
                 Send
@@ -217,21 +219,18 @@ export function ChatDemo() {
         </div>
       </div>
 
-      <div className="mt-5 text-center sm:mt-8">
-        <p className="text-[13px] font-medium text-slate-600 sm:text-[15px]">
+      <div className="mt-5 flex flex-col items-center text-center sm:mt-8">
+        <p className="max-w-sm text-[13px] font-medium leading-snug text-slate-600 sm:text-[15px]">
           Want this for your business?
         </p>
-        <a
-          href={whatsappHref}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="mt-3 inline-flex h-11 min-h-[44px] w-full max-w-xs items-center justify-center rounded-full px-7 text-[14px] font-semibold tracking-tight text-white shadow-[0_8px_28px_-10px_rgba(30,58,138,0.42)] transition-all duration-300 ease-out hover:-translate-y-0.5 hover:brightness-[1.03] hover:shadow-[0_14px_38px_-12px_rgba(59,130,246,0.38)] sm:w-auto"
-          style={{
-            background: `linear-gradient(135deg, ${accent} 0%, ${brand} 58%, ${brand} 100%)`,
-          }}
-        >
-          Chat on WhatsApp
-        </a>
+        <div className="mt-3 w-full max-w-xs sm:max-w-none">
+          <PrimaryButton href={whatsappHref} external className="!w-full">
+            Get started
+          </PrimaryButton>
+        </div>
+        <CTAMicrocopy className="max-w-xs sm:max-w-sm">
+          Opens WhatsApp · same team that scopes production systems
+        </CTAMicrocopy>
       </div>
     </div>
   );
