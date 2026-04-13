@@ -284,8 +284,8 @@ export default function Home() {
                 queue.
               </p>
               <p className="mt-4 max-w-[32rem] text-[14px] leading-[1.62] text-slate-500 sm:mt-5 sm:text-[16px] sm:leading-[1.65]">
-                We design production pipelines, wire intelligence at the edges, and keep humans in
-                the loop where judgment matters.
+                We help businesses capture leads, automate workflows, save time, and grow using AI
+                systems.
               </p>
               <CTARow className="mt-8 sm:mt-9">
                 <PrimaryButton href={whatsappHref} external>
@@ -315,9 +315,10 @@ export default function Home() {
                   <div className="mt-6 sm:mt-7">
                     <TrustChips
                       items={[
-                        "Production-minded — we optimize for uptime and audit trails",
-                        "Clear ownership — every pipeline has a named system owner",
-                        "Measured rollouts — expand autonomy only after KPIs hold",
+                        "Custom-built systems",
+                        "Fast rollout",
+                        "Founder-led execution",
+                        "Built for modern businesses",
                       ]}
                     />
                   </div>
@@ -396,6 +397,100 @@ export default function Home() {
           </div>
         </section>
 
+        <section className="border-t border-slate-200/35 py-12 sm:py-16 lg:py-20" style={{ backgroundColor: white }}>
+          <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
+            <Reveal>
+              <div className="mx-auto max-w-2xl text-center">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400 sm:text-[11px] sm:tracking-[0.22em]">
+                  Business impact
+                </p>
+                <h2 className="mt-2.5 text-pretty text-[1.5rem] font-semibold leading-[1.12] tracking-[-0.035em] text-[#0B1220] sm:mt-3 sm:text-3xl lg:text-[2.05rem]">
+                  Before vs after Stratxcel
+                </h2>
+              </div>
+            </Reveal>
+            <div className="mt-8 grid gap-3 sm:mt-10 sm:grid-cols-2 sm:gap-4">
+              <Reveal delay={60}>
+                <div className="rounded-2xl border border-slate-200/70 bg-slate-50/70 p-6 shadow-[0_14px_44px_-30px_rgba(11,18,32,0.12)] sm:p-7">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Before</p>
+                  <ul className="mt-4 space-y-3 text-[14px] leading-relaxed text-slate-600 sm:text-[15px]">
+                    {[
+                      "Missed leads",
+                      "Manual repetitive work",
+                      "Slow responses",
+                      "Operational chaos",
+                    ].map((item) => (
+                      <li key={item} className="flex items-start gap-2.5">
+                        <span className="mt-[0.35rem] h-1.5 w-1.5 shrink-0 rounded-full bg-slate-400" />
+                        <span>{item}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </Reveal>
+              <Reveal delay={120}>
+                <div className="rounded-2xl border border-slate-200/70 bg-white p-6 shadow-[0_18px_50px_-28px_rgba(30,58,138,0.16)] sm:p-7">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-blue-700">After</p>
+                  <ul className="mt-4 space-y-3 text-[14px] leading-relaxed text-slate-700 sm:text-[15px]">
+                    {[
+                      "Automated lead capture",
+                      "Faster workflows",
+                      "Instant responses",
+                      "Structured growth systems",
+                    ].map((item) => (
+                      <li key={item} className="flex items-start gap-2.5">
+                        <span
+                          className="mt-[0.35rem] h-1.5 w-1.5 shrink-0 rounded-full"
+                          style={{ backgroundColor: accent }}
+                        />
+                        <span>{item}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </Reveal>
+            </div>
+          </div>
+        </section>
+
+        <section className="border-t border-slate-200/35 py-12 sm:py-16 lg:py-20" style={{ backgroundColor: surface }}>
+          <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
+            <Reveal>
+              <div className="mx-auto max-w-2xl text-center">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400 sm:text-[11px] sm:tracking-[0.22em]">
+                  Mini use cases
+                </p>
+                <h2 className="mt-2.5 text-pretty text-[1.5rem] font-semibold leading-[1.12] tracking-[-0.035em] text-[#0B1220] sm:mt-3 sm:text-3xl lg:text-[2.05rem]">
+                  Where teams see fast wins
+                </h2>
+              </div>
+            </Reveal>
+            <ul className="mt-8 grid gap-3 sm:mt-10 sm:grid-cols-3 sm:gap-4">
+              {[
+                {
+                  title: "Agency",
+                  body: "Automated lead qualification + follow-ups",
+                },
+                {
+                  title: "Local business",
+                  body: "WhatsApp bookings + customer response automation",
+                },
+                {
+                  title: "Founder",
+                  body: "Lead capture + CRM + workflow systems",
+                },
+              ].map((item, i) => (
+                <Reveal key={item.title} delay={60 + i * 70}>
+                  <li className="rounded-2xl border border-slate-200/65 bg-white p-5 shadow-[0_14px_42px_-30px_rgba(11,18,32,0.12)] sm:p-6">
+                    <p className="text-[14px] font-semibold tracking-[-0.02em] text-[#0B1220]">{item.title}</p>
+                    <p className="mt-2 text-[13px] leading-relaxed text-slate-600 sm:text-[14px]">{item.body}</p>
+                  </li>
+                </Reveal>
+              ))}
+            </ul>
+          </div>
+        </section>
+
         <section id="chat-demo" className="border-t border-slate-200/35 py-12 sm:py-16 lg:py-20" style={{ backgroundColor: surface }}>
           <Reveal>
             <ChatDemo />
@@ -431,7 +526,7 @@ export default function Home() {
                 </div>
                 <div className="relative mt-6 w-full shrink-0 sm:mt-7 lg:mt-0 lg:w-auto">
                   <PrimaryButton href={STRATXCEL_APP_URL} external className="w-full sm:w-auto">
-                    Open Stratxcel AI
+                    Get started
                   </PrimaryButton>
                 </div>
               </div>
