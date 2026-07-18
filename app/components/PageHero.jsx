@@ -2,7 +2,7 @@ import { COLORS } from "@/lib/constants";
 
 const { ink } = COLORS;
 
-export function PageHero({ eyebrow, title, description, children }) {
+export function PageHero({ eyebrow, title, description, children = null }) {
   return (
     <header className="border-b border-slate-200/50 bg-gradient-to-b from-white/80 to-[#F8FAFC]/90">
       <div className="mx-auto max-w-6xl px-4 pb-11 pt-9 sm:px-6 sm:pb-14 sm:pt-12 lg:px-8 lg:pb-[4.5rem] lg:pt-14">

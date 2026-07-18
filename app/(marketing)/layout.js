@@ -5,7 +5,7 @@ import { COLORS } from "@/lib/constants";
 export default function MarketingLayout({ children }) {
   return (
     <div
-      className="relative flex min-h-screen flex-col"
+      className="relative flex min-h-screen flex-col text-[#0B1220]"
       style={{ backgroundColor: COLORS.surface }}
     >
       <Navbar />

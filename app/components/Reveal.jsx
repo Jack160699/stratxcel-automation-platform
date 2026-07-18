@@ -14,11 +14,7 @@ export function Reveal({ children, className = "", delay = 0 }) {
     const el = ref.current;
     if (!el || typeof window === "undefined") return;
 
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      setVisible(true);
-      return;
-    }
-
+    // Reduced motion is handled purely in CSS (motion-reduce: classes below).
     const obs = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting) {
