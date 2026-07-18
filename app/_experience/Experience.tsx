@@ -7,10 +7,10 @@ import {
   useRef,
   useState,
 } from "react";
+import dynamic from "next/dynamic";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import Lenis from "lenis";
-import CanvasStage from "./CanvasStage";
 import Cursor from "./Cursor";
 import StaticExperience from "./StaticExperience";
 import { createJourneyState } from "./journey";
@@ -27,6 +27,10 @@ import {
 } from "./scenes";
 
 gsap.registerPlugin(ScrollTrigger);
+
+// Three.js is the heaviest chunk on the page — stream it in behind the gate
+// so first paint and interactivity never wait for WebGL.
+const CanvasStage = dynamic(() => import("./CanvasStage"), { ssr: false });
 
 const seg = (id: SceneId) => SCENES.find((s) => s.id === id)!;
 
@@ -70,6 +74,11 @@ export default function Experience() {
   const lenisRef = useRef<Lenis | null>(null);
   const startedRef = useRef(false);
   const chapterRef = useRef(chapter);
+
+  // The server-rendered gate shell has done its job once we're here.
+  useEffect(() => {
+    document.getElementById("sx-static-gate")?.remove();
+  }, []);
 
   // Journey world: smooth scroll + one master scrubbed timeline.
   useEffect(() => {
@@ -122,6 +131,8 @@ export default function Experience() {
               barRef.current.style.transform = `scaleX(${p})`;
             }
             if (hintRef.current) {
+              // the press-start delayed fade-in must not resurrect the hint
+              if (p >= 0.03) gsap.killTweensOf(hintRef.current);
               hintRef.current.style.opacity =
                 startedRef.current && p < 0.03 ? "1" : "0";
             }
@@ -286,11 +297,18 @@ export default function Experience() {
       const eco = byScene("ecosystem");
       const e = seg("ecosystem");
       fadeIn(eco, e.start);
+      // headline first — it's the scene's thesis; chips orbit in after
+      tl.fromTo(
+        eco.querySelectorAll("[data-eco-copy]"),
+        { autoAlpha: 0, y: 18 },
+        { autoAlpha: 1, y: 0, duration: 0.016, stagger: 0.004 },
+        e.start + 0.005
+      );
       tl.fromTo(
         eco.querySelectorAll("[data-reveal]"),
         { autoAlpha: 0, scale: 0.9 },
-        { autoAlpha: 1, scale: 1, duration: 0.012, stagger: 0.0025 },
-        e.start + 0.008
+        { autoAlpha: 1, scale: 1, duration: 0.01, stagger: 0.002 },
+        e.start + 0.01
       );
       fadeOut(eco, e.end - 0.012);
 

@@ -409,13 +409,13 @@ export function SceneEcosystem() {
           </span>
         </div>
         <h2
-          data-reveal
+          data-eco-copy
           className="sx-display mt-10 text-center text-[clamp(1.8rem,4.5vw,3.4rem)] text-white [text-shadow:0_2px_30px_rgba(5,7,14,0.95),0_0_60px_rgba(5,7,14,0.8)]"
         >
           One intelligent business ecosystem.
         </h2>
         <p
-          data-reveal
+          data-eco-copy
           className="mt-4 max-w-lg text-center text-[clamp(0.95rem,1.6vw,1.15rem)] font-light text-slate-300 [text-shadow:0_1px_16px_rgba(5,7,14,0.95)]"
         >
           Every module speaks to every other. Nothing is an island anymore.

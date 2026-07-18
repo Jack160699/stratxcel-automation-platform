@@ -132,6 +132,8 @@ function ParticleField({
   const lines = useRef<THREE.LineSegments>(null!);
   const group = useRef<THREE.Group>(null!);
   const bracketIdx = useRef(-1);
+  // Local ramp so a late-loading canvas fades in instead of popping.
+  const localReveal = useRef(0);
   const { camera, size } = useThree();
 
   const formations = useMemo(() => buildFormations(count), [count]);
@@ -186,10 +188,11 @@ function ParticleField({
   const tmpB = useMemo(() => new THREE.Color(), []);
   const pointerWorld = useMemo(() => new THREE.Vector3(), []);
 
-  useFrame((state) => {
+  useFrame((state, delta) => {
     const p = journey.progress;
     const t = state.clock.elapsedTime;
     const u = material.uniforms;
+    localReveal.current = Math.min(1, localReveal.current + delta * 0.7);
 
     // ——— formation morph ———
     const fb = bracket(FORMATION_KEYS, p);
@@ -218,7 +221,8 @@ function ParticleField({
           1 - THREE.MathUtils.smoothstep(p, 0.72, 0.76)
         );
     const lateDim = 1 - 0.45 * THREE.MathUtils.smoothstep(p, 0.77, 0.82);
-    u.uOpacity.value = journey.reveal * contentDim * lateDim;
+    u.uOpacity.value =
+      journey.reveal * localReveal.current * contentDim * lateDim;
 
     // ——— colour grade ———
     const [a0, b0] = FORMATION_COLORS[fb.a.name];

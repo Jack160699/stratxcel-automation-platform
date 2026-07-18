@@ -1,4 +1,5 @@
 import ExperienceLoader from "@/app/_experience/ExperienceLoader";
+import { Mark } from "@/app/components/Mark";
 import {
   AGENT_STEPS,
   CAPABILITIES,
@@ -55,6 +56,36 @@ export default function HomePage() {
             </li>
           ))}
         </ul>
+      </div>
+      {/* Server-rendered gate shell: instant first paint. The client
+          experience removes it the moment it mounts and takes over. */}
+      <div
+        id="sx-static-gate"
+        className="fixed inset-0 z-30 flex flex-col items-center justify-center bg-[#05070e] px-6"
+      >
+        <p className="sx-kicker">an interactive experience</p>
+        <div className="mt-8">
+          <Mark className="h-16 w-16 sm:h-20 sm:w-20" />
+        </div>
+        <p
+          aria-hidden="true"
+          className="sx-display sx-glow-text mt-8 text-center text-[clamp(2.6rem,7vw,5.5rem)] text-white"
+        >
+          Stratxcel
+        </p>
+        <p className="mt-4 max-w-md text-center text-[clamp(0.95rem,1.8vw,1.15rem)] font-light text-slate-400">
+          We don&rsquo;t build websites. We engineer businesses.
+        </p>
+        <button
+          type="button"
+          disabled
+          className="sx-start-pulse mt-12 rounded-full border border-[#45c4ff]/50 bg-[#45c4ff]/[0.06] px-10 py-4 font-mono text-sm tracking-[0.45em] text-white"
+        >
+          PRESS&nbsp;START
+        </button>
+        <p className="mt-6 font-mono text-[10px] tracking-[0.3em] text-slate-600">
+          LOADING…
+        </p>
       </div>
       <ExperienceLoader />
     </>
