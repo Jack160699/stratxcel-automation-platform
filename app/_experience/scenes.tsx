@@ -386,7 +386,7 @@ export function SceneEcosystem() {
     <section data-scene="ecosystem" className={layer} aria-label="One ecosystem">
       <div className="relative flex flex-col items-center">
         <div
-          className="relative h-[min(64vw,420px)] w-[min(64vw,420px)]"
+          className="relative h-[min(80vw,560px)] w-[min(80vw,560px)]"
           style={{ animation: "sx-orbit 60s linear infinite" }}
         >
           {ECOSYSTEM_NODES.map((node, i) => {
@@ -395,9 +395,9 @@ export function SceneEcosystem() {
               <span
                 key={node}
                 data-reveal
-                className="sx-glass absolute left-1/2 top-1/2 -ml-12 -mt-4 w-24 rounded-full py-1.5 text-center font-mono text-[10px] tracking-[0.18em] text-sky-100"
+                className="absolute left-1/2 top-1/2 -ml-12 -mt-4 w-24 rounded-full border border-white/20 bg-[#0b1220]/80 py-1.5 text-center font-mono text-[10px] tracking-[0.18em] text-sky-100 shadow-[0_0_18px_rgba(5,7,14,0.9)] backdrop-blur-sm"
                 style={{
-                  transform: `rotate(${a}deg) translateY(calc(min(32vw, 210px) * -1)) rotate(${-a}deg)`,
+                  transform: `rotate(${a}deg) translateY(calc(min(40vw, 280px) * -1)) rotate(${-a}deg)`,
                 }}
               >
                 {node.toUpperCase()}
@@ -408,10 +408,16 @@ export function SceneEcosystem() {
             <Mark className="h-14 w-14" />
           </span>
         </div>
-        <h2 data-reveal className="sx-display mt-10 text-center text-[clamp(1.8rem,4.5vw,3.4rem)] text-white">
+        <h2
+          data-reveal
+          className="sx-display mt-10 text-center text-[clamp(1.8rem,4.5vw,3.4rem)] text-white [text-shadow:0_2px_30px_rgba(5,7,14,0.95),0_0_60px_rgba(5,7,14,0.8)]"
+        >
           One intelligent business ecosystem.
         </h2>
-        <p data-reveal className="mt-4 max-w-lg text-center text-[clamp(0.95rem,1.6vw,1.15rem)] font-light text-slate-400">
+        <p
+          data-reveal
+          className="mt-4 max-w-lg text-center text-[clamp(0.95rem,1.6vw,1.15rem)] font-light text-slate-300 [text-shadow:0_1px_16px_rgba(5,7,14,0.95)]"
+        >
           Every module speaks to every other. Nothing is an island anymore.
         </p>
       </div>

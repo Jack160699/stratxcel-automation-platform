@@ -43,7 +43,7 @@ const CAMERA_KEYS: { at: number; z: number; y: number }[] = [
   { at: 0.37, z: 11.0, y: 0.9 },
   { at: 0.52, z: 12.0, y: 2.4 },
   { at: 0.68, z: 10.5, y: 0.4 },
-  { at: 0.8, z: 11.0, y: 0.2 },
+  { at: 0.8, z: 13.5, y: 0.2 },
   { at: 1.0, z: 15.5, y: 2.6 },
 ];
 
@@ -217,8 +217,8 @@ function ParticleField({
           THREE.MathUtils.smoothstep(p, 0.27, 0.31),
           1 - THREE.MathUtils.smoothstep(p, 0.72, 0.76)
         );
-    const menuDim = 1 - 0.4 * THREE.MathUtils.smoothstep(p, 0.88, 0.93);
-    u.uOpacity.value = journey.reveal * contentDim * menuDim;
+    const lateDim = 1 - 0.45 * THREE.MathUtils.smoothstep(p, 0.77, 0.82);
+    u.uOpacity.value = journey.reveal * contentDim * lateDim;
 
     // ——— colour grade ———
     const [a0, b0] = FORMATION_COLORS[fb.a.name];
