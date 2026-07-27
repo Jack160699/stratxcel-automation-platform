@@ -5,6 +5,7 @@ import type {
   InsightsResult,
   SocialProvider,
 } from "./types";
+import { toMetaApiError } from "../errors";
 
 /**
  * Facebook Page publishing via standard Facebook Login.
@@ -108,8 +109,7 @@ export const facebookProvider: SocialProvider = {
       body: params,
     });
     if (!res.ok) {
-      const body = await res.text();
-      throw new Error(`Facebook publish failed: ${res.status} ${body}`);
+      throw await toMetaApiError(res, "Facebook publish");
     }
     const data = (await res.json()) as { id?: string; post_id?: string };
     const externalPostId = data.post_id ?? data.id ?? "unknown";

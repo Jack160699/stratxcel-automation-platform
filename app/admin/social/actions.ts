@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/social/admin-guard";
 import { createSupabaseServiceClient } from "@/lib/supabase/service";
+import { runWorkerBatch } from "@/lib/social/worker";
 
 async function assertAdmin() {
   const admin = await requireAdmin();
@@ -148,19 +149,14 @@ export async function schedulePostAction(formData: FormData) {
 }
 
 export async function runWorkerNowAction() {
+  // Admin-gated server action that runs the SAME batch-claim logic as the
+  // cron-triggered route, in-process. No HTTP round trip, no CRON_SECRET,
+  // no NEXT_PUBLIC_SITE_URL involved — nothing here can leak a secret to
+  // the browser because the browser only ever receives a reference to this
+  // server action, never its closure or the values it reads.
   await assertAdmin();
-  const secret = process.env.SOCIAL_CRON_SECRET;
-  const base = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
-  if (!secret) {
-    console.error("runWorkerNowAction: SOCIAL_CRON_SECRET not set");
-    return;
-  }
   try {
-    await fetch(`${base}/api/social/worker`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${secret}` },
-      cache: "no-store",
-    });
+    await runWorkerBatch();
   } catch (err) {
     console.error("manual worker trigger failed:", err);
   }

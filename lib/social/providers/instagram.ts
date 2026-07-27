@@ -5,6 +5,7 @@ import type {
   InsightsResult,
   SocialProvider,
 } from "./types";
+import { toMetaApiError } from "../errors";
 
 /**
  * Instagram Business API via Instagram Login (not the legacy Facebook Login
@@ -140,8 +141,7 @@ export const instagramProvider: SocialProvider = {
       { method: "POST", body: createParams }
     );
     if (!createRes.ok) {
-      const body = await createRes.text();
-      throw new Error(`Instagram container creation failed: ${createRes.status} ${body}`);
+      throw await toMetaApiError(createRes, "Instagram container creation");
     }
     const { id: containerId } = (await createRes.json()) as { id: string };
 
@@ -168,8 +168,7 @@ export const instagramProvider: SocialProvider = {
       { method: "POST", body: publishParams }
     );
     if (!publishRes.ok) {
-      const body = await publishRes.text();
-      throw new Error(`Instagram publish failed: ${publishRes.status} ${body}`);
+      throw await toMetaApiError(publishRes, "Instagram publish");
     }
     const publishData = (await publishRes.json()) as { id: string };
 

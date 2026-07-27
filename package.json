@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test:social": "node --experimental-strip-types lib/social/__tests__/crypto.test.ts && node --experimental-strip-types lib/social/__tests__/oauth-state.test.ts && node --experimental-strip-types lib/social/__tests__/errors.test.ts"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.7",

@@ -5,6 +5,7 @@ import type {
   InsightsResult,
   SocialProvider,
 } from "./types";
+import { toMetaApiError } from "../errors";
 
 /**
  * Threads API — a distinct identity/token/publish path from Instagram and
@@ -117,8 +118,7 @@ export const threadsProvider: SocialProvider = {
       body: createParams,
     });
     if (!createRes.ok) {
-      const body = await createRes.text();
-      throw new Error(`Threads container creation failed: ${createRes.status} ${body}`);
+      throw await toMetaApiError(createRes, "Threads container creation");
     }
     const { id: containerId } = (await createRes.json()) as { id: string };
 
@@ -133,8 +133,7 @@ export const threadsProvider: SocialProvider = {
       }
     );
     if (!publishRes.ok) {
-      const body = await publishRes.text();
-      throw new Error(`Threads publish failed: ${publishRes.status} ${body}`);
+      throw await toMetaApiError(publishRes, "Threads publish");
     }
     const data = (await publishRes.json()) as { id: string };
     return { externalPostId: data.id, raw: data };
