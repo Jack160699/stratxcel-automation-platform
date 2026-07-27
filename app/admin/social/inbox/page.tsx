@@ -20,14 +20,12 @@ export default async function InboxPage() {
 
       {!hasAny && (
         <div className="saut-card p-6 text-center">
-          <p className="text-sm font-medium">No inbound webhook receiver is connected yet</p>
+          <p className="text-sm font-medium">No events received yet</p>
           <p className="mx-auto mt-2 max-w-md text-xs" style={{ color: "var(--saut-text-subtle)" }}>
-            Comments, DMs, and mentions from Instagram, Facebook, and Threads aren&apos;t being ingested in real time.
-            The <code className="saut-mono">social_conversations</code> table is ready — it needs a webhook endpoint
-            (e.g. <code className="saut-mono">/api/social/webhooks/[provider]</code>) subscribed to each Meta app&apos;s
-            webhook events, verified with a challenge token, and a mapping from Meta&apos;s payload shape into a row
-            here plus <code className="saut-mono">social_webhook_events</code>. That endpoint doesn&apos;t exist in
-            this codebase yet.
+            The webhook receiver exists (<code className="saut-mono">/api/social/webhooks/[provider]</code>, signature-verified) and
+            comment events normalize into conversations automatically — but the Meta App Dashboard subscription hasn&apos;t
+            been configured yet, so nothing has arrived. See Integrations → Webhooks for the exact callback URL and
+            setup step.
           </p>
         </div>
       )}

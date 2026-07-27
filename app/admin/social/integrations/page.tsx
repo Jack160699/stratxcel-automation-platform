@@ -158,11 +158,26 @@ export default async function IntegrationsPage() {
 
       <section className="space-y-3">
         <h2 className="saut-section-title">Webhooks</h2>
-        <div className="saut-card p-4">
+        <div className="saut-card space-y-3 p-4">
           <p className="text-sm" style={{ color: "var(--saut-text-muted)" }}>
-            No inbound webhook receiver is configured yet — comments, messages, and mentions are not being ingested in
-            real time. <code className="saut-mono">social_webhook_events</code> is ready to receive them once a
-            receiver route exists.
+            The receiver endpoint exists and verifies signatures — it needs one manual step in the Meta App Dashboard
+            to actually start receiving events.
+          </p>
+          <div className="space-y-2">
+            {(["instagram", "facebook", "threads"] as const).map((p) => (
+              <div key={p} className="flex items-center justify-between rounded-lg px-3 py-2 text-xs" style={{ background: "var(--saut-surface-2)" }}>
+                <span className="capitalize">{p}</span>
+                <code className="saut-mono" style={{ color: "var(--saut-text-subtle)" }}>
+                  /api/social/webhooks/{p}
+                </code>
+              </div>
+            ))}
+          </div>
+          <p className="text-xs" style={{ color: "var(--saut-text-subtle)" }}>
+            Set <code className="saut-mono">META_WEBHOOK_VERIFY_TOKEN</code> in your environment, then in the Meta App
+            Dashboard → Webhooks, subscribe each product to the callback URL above with the same verify token and the{" "}
+            <code className="saut-mono">comments</code> field (message/DM events aren&apos;t normalized into the Inbox
+            yet — they still land in <code className="saut-mono">social_webhook_events</code> untouched).
           </p>
         </div>
       </section>

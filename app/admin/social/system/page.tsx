@@ -43,7 +43,7 @@ export default async function SystemPage() {
         </form>
       </div>
 
-      {(["core", "workers", "social", "ai", "media"] as const).map((group) => (
+      {(["core", "workers", "social", "webhooks", "ai", "media"] as const).map((group) => (
         <section key={group} className="space-y-3">
           <h2 className="saut-section-title capitalize">{group}</h2>
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">

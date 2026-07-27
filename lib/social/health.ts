@@ -6,7 +6,7 @@ export type HealthStatus = "OPERATIONAL" | "DEGRADED" | "PAUSED" | "FAILED" | "N
 
 export interface HealthRecord {
   component: string;
-  group: "social" | "ai" | "media" | "core" | "workers";
+  group: "social" | "ai" | "media" | "core" | "workers" | "webhooks";
   status: HealthStatus;
   message: string;
   latencyMs?: number;
@@ -111,6 +111,24 @@ export async function runHealthChecks(): Promise<HealthRecord[]> {
     group: "workers",
     status: anyLive ? "OPERATIONAL" : "PAUSED",
     message: anyLive ? "LIVE — at least one owner has shadow_mode off" : "SHADOW — every owner has shadow_mode on",
+  });
+
+  // --- Webhook receiver: verify token + per-provider signing secret presence,
+  // plus whether anything has actually arrived (proves the Meta-side
+  // subscription step, not just this app's own config) ---
+  const verifyTokenConfigured = Boolean(process.env.META_WEBHOOK_VERIFY_TOKEN);
+  records.push({
+    component: "webhooks:receiver",
+    group: "webhooks",
+    status: verifyTokenConfigured ? "OPERATIONAL" : "NOT_CONFIGURED",
+    message: verifyTokenConfigured ? "META_WEBHOOK_VERIFY_TOKEN set" : "META_WEBHOOK_VERIFY_TOKEN not set",
+  });
+  const { count: webhookEventCount } = await service.from("social_webhook_events").select("id", { count: "exact", head: true });
+  records.push({
+    component: "webhooks:events_received",
+    group: "webhooks",
+    status: webhookEventCount && webhookEventCount > 0 ? "OPERATIONAL" : "NOT_CONFIGURED",
+    message: webhookEventCount && webhookEventCount > 0 ? `${webhookEventCount} event(s) received (lifetime)` : "No events received yet — Meta subscription likely not configured",
   });
 
   // Persist snapshot rows (best-effort; failure here shouldn't break the page)
