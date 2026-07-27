@@ -87,11 +87,19 @@ export default async function AdminPage() {
               Signed in as {user.email} · {list.length} messages · {newCount} new
             </p>
           </div>
-          <form action={signOutAction}>
-            <button className="rounded-lg border border-white/15 px-3 py-2 text-xs font-semibold text-slate-300 hover:bg-white/[0.05]">
-              Sign out
-            </button>
-          </form>
+          <div className="flex items-center gap-2">
+            <a
+              href="/admin/social"
+              className="rounded-lg border border-white/15 px-3 py-2 text-xs font-semibold text-slate-300 hover:bg-white/[0.05]"
+            >
+              Social Autopilot
+            </a>
+            <form action={signOutAction}>
+              <button className="rounded-lg border border-white/15 px-3 py-2 text-xs font-semibold text-slate-300 hover:bg-white/[0.05]">
+                Sign out
+              </button>
+            </form>
+          </div>
         </div>
 
         {error && (
