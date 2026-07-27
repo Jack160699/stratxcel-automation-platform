@@ -59,3 +59,29 @@ export function decryptToken(field: EncryptedField): string {
   ]);
   return plaintext.toString("utf8");
 }
+
+/**
+ * social_tokens (stratxcel schema) stores one text column per token, not
+ * three — pack/unpack bridge EncryptedField to that single-column shape.
+ * All three segments are base64 (no literal "." in their alphabet), so a
+ * plain delimiter is unambiguous and reversible.
+ */
+export function packEncryptedField(field: EncryptedField): string {
+  return `${field.iv}.${field.tag}.${field.ciphertext}`;
+}
+
+export function unpackEncryptedField(packed: string): EncryptedField {
+  const [iv, tag, ...rest] = packed.split(".");
+  if (!iv || !tag || rest.length === 0) {
+    throw new Error("malformed packed encrypted field");
+  }
+  return { iv, tag, ciphertext: rest.join(".") };
+}
+
+export function encryptTokenPacked(plaintext: string): string {
+  return packEncryptedField(encryptToken(plaintext));
+}
+
+export function decryptTokenPacked(packed: string): string {
+  return decryptToken(unpackEncryptedField(packed));
+}

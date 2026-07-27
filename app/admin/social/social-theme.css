@@ -1,0 +1,210 @@
+/*
+ * Social Autopilot design tokens — namespaced --saut-* (Social AUTopilot) to
+ * avoid colliding with the marketing site's existing --sx-* tokens (which
+ * mean something different: --sx-surface is a *light* marketing color,
+ * --sx-accent is a slightly different blue). Scoped under .saut-root so it
+ * never leaks outside /admin/social.
+ *
+ * Values extracted from the attached "Stratxcel Social Autopilot Design
+ * System" reference: blue-black canvas, electric-blue accent, cyan reserved
+ * for AI/agent activity, Instrument-Sans-shaped hierarchy (using the site's
+ * existing font stack since Instrument Sans isn't loaded here), JetBrains
+ * Mono for technical/status text (falls back to ui-monospace).
+ */
+
+.saut-root {
+  --saut-bg: #06080c;
+  --saut-surface-1: #0b0e14;
+  --saut-surface-2: #11151d;
+  --saut-surface-3: #171c26;
+  --saut-elevated: #1f2632;
+  --saut-border: #1d2431;
+  --saut-border-strong: #2c3543;
+
+  --saut-text: #e9edf3;
+  --saut-text-muted: #98a4b7;
+  --saut-text-subtle: #667384;
+
+  --saut-accent: #3aa0ff;
+  --saut-accent-hover: #6bbbff;
+  --saut-accent-muted: rgb(58 160 255 / 0.14);
+  --saut-accent-on: #08111c;
+  --saut-royal: #3b5bf5;
+  --saut-ai: #4fdce5;
+
+  --saut-success: #35c98c;
+  --saut-warning: #f0b429;
+  --saut-danger: #f2565f;
+  --saut-learning: #a78bfa;
+  --saut-offline: #6b7684;
+
+  --saut-radius-xs: 6px;
+  --saut-radius-sm: 8px;
+  --saut-radius-md: 10px;
+  --saut-radius-lg: 14px;
+  --saut-radius-pill: 999px;
+
+  --saut-control-h: 32px;
+  --saut-input-h: 36px;
+  --saut-row-h: 40px;
+
+  --saut-mono: ui-monospace, "JetBrains Mono", "SFMono-Regular", Menlo, monospace;
+
+  background: var(--saut-bg);
+  color: var(--saut-text);
+  min-height: 100vh;
+}
+
+.saut-root ::selection {
+  background: rgb(58 160 255 / 0.28);
+}
+
+.saut-mono {
+  font-family: var(--saut-mono);
+}
+
+/* Surfaces */
+.saut-card {
+  background: var(--saut-surface-1);
+  border: 1px solid var(--saut-border);
+  border-radius: var(--saut-radius-md);
+}
+.saut-card-2 {
+  background: var(--saut-surface-2);
+  border: 1px solid var(--saut-border);
+  border-radius: var(--saut-radius-md);
+}
+.saut-card-ai {
+  background: linear-gradient(160deg, rgb(79 220 229 / 0.08), rgb(58 160 255 / 0.02) 55%, transparent), var(--saut-surface-1);
+  border: 1px solid rgb(79 220 229 / 0.24);
+  border-radius: var(--saut-radius-md);
+  position: relative;
+}
+.saut-card-ai::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--saut-ai), transparent);
+  opacity: 0.7;
+}
+
+/* Status chips: dot shape differs per state so color is never the only signal */
+.saut-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: var(--saut-radius-pill);
+  font-family: var(--saut-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.saut-chip-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  flex: none;
+}
+.saut-pulse {
+  animation: saut-pulse 1.6s ease-in-out infinite;
+}
+@keyframes saut-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.35; transform: scale(0.82); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .saut-pulse { animation: none; }
+}
+
+.saut-chip-success { background: rgb(53 201 140 / 0.10); border: 1px solid rgb(53 201 140 / 0.28); color: #5bdca7; }
+.saut-chip-success .saut-chip-dot { background: var(--saut-success); }
+.saut-chip-warning { background: rgb(240 180 41 / 0.10); border: 1px solid rgb(240 180 41 / 0.30); color: #f3c55c; }
+.saut-chip-warning .saut-chip-dot { border-radius: 1px; transform: rotate(45deg); background: var(--saut-warning); }
+.saut-chip-danger { background: rgb(242 86 95 / 0.10); border: 1px solid rgb(242 86 95 / 0.32); color: #ff8a90; }
+.saut-chip-danger .saut-chip-dot { border-radius: 1px; transform: rotate(45deg); background: var(--saut-danger); }
+.saut-chip-info { background: rgb(58 160 255 / 0.10); border: 1px solid rgb(58 160 255 / 0.28); color: #7cc2ff; }
+.saut-chip-info .saut-chip-dot { border: 1px solid #7cc2ff; background: transparent; }
+.saut-chip-ai { background: rgb(79 220 229 / 0.10); border: 1px solid rgb(79 220 229 / 0.26); color: #7fe7ee; }
+.saut-chip-ai .saut-chip-dot { background: var(--saut-ai); }
+.saut-chip-learning { background: rgb(167 139 250 / 0.10); border: 1px solid rgb(167 139 250 / 0.28); color: #bca6fb; }
+.saut-chip-learning .saut-chip-dot { background: var(--saut-learning); }
+.saut-chip-offline { background: rgb(107 118 132 / 0.12); border: 1px solid rgb(107 118 132 / 0.30); color: var(--saut-text-muted); }
+.saut-chip-offline .saut-chip-dot { background: var(--saut-offline); }
+.saut-chip-neutral { background: var(--saut-surface-2); border: 1px dashed var(--saut-border-strong); color: var(--saut-text-muted); }
+.saut-chip-neutral .saut-chip-dot { border: 1px solid var(--saut-text-subtle); background: transparent; }
+
+/* Buttons */
+.saut-btn {
+  height: var(--saut-control-h);
+  padding: 0 14px;
+  border-radius: var(--saut-radius-sm);
+  font-size: 13px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  transition: background 140ms ease, border-color 140ms ease, color 140ms ease;
+  border: 1px solid transparent;
+}
+.saut-btn:disabled { cursor: not-allowed; opacity: 0.5; }
+.saut-btn-primary { background: var(--saut-accent); border-color: var(--saut-accent); color: var(--saut-accent-on); }
+.saut-btn-primary:hover:not(:disabled) { background: var(--saut-accent-hover); border-color: var(--saut-accent-hover); }
+.saut-btn-secondary { background: var(--saut-surface-3); border-color: var(--saut-border-strong); color: var(--saut-text); }
+.saut-btn-secondary:hover:not(:disabled) { background: var(--saut-elevated); }
+.saut-btn-ghost { background: transparent; color: var(--saut-text-muted); }
+.saut-btn-ghost:hover:not(:disabled) { background: var(--saut-surface-2); color: var(--saut-text); }
+.saut-btn-danger { background: rgb(242 86 95 / 0.10); border-color: rgb(242 86 95 / 0.40); color: #ff8a90; }
+.saut-btn-danger:hover:not(:disabled) { background: rgb(242 86 95 / 0.18); }
+
+.saut-input {
+  height: var(--saut-input-h);
+  border-radius: var(--saut-radius-sm);
+  border: 1px solid var(--saut-border-strong);
+  background: var(--saut-surface-2);
+  color: var(--saut-text);
+  padding: 0 12px;
+  font-size: 13.5px;
+  outline: none;
+  transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+.saut-input:focus-visible {
+  border-color: var(--saut-accent);
+  box-shadow: 0 0 0 3px rgb(58 160 255 / 0.16);
+}
+.saut-input::placeholder { color: var(--saut-text-subtle); }
+
+/* Metric type */
+.saut-metric {
+  font-family: var(--saut-mono);
+  font-weight: 500;
+  letter-spacing: -0.025em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.saut-label {
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  color: var(--saut-text-muted);
+}
+
+.saut-section-title {
+  font-family: var(--saut-mono);
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--saut-text-subtle);
+}
+
+/* Accessible focus ring everywhere inside the shell, including non-form elements */
+.saut-root :focus-visible {
+  outline: 2px solid var(--saut-accent);
+  outline-offset: 2px;
+}

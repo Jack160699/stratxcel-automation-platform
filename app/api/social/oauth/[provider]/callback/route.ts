@@ -2,14 +2,19 @@ import { NextResponse, type NextRequest } from "next/server";
 import { requireAdmin } from "@/lib/social/admin-guard";
 import { isValidProvider, getProvider } from "@/lib/social/providers";
 import { verifySignedState } from "@/lib/social/oauth-state";
-import { encryptToken } from "@/lib/social/crypto";
 import { createSupabaseServiceClient } from "@/lib/supabase/service";
+import { upsertConnectedAccount, type Platform } from "@/lib/social/repositories/accounts";
+import { recordAudit } from "@/lib/social/repositories/system";
 
 /**
  * GET /api/social/oauth/:provider/callback
  * Validates the signed state (single-use, expiring, admin-issued), exchanges
  * the authorization code for tokens, encrypts them, and upserts the
- * connected account. Never returns tokens to the browser.
+ * connected account + its token row. Never returns tokens to the browser.
+ * Runs via service-role: social_accounts/social_tokens writes here happen
+ * before/independent of any owner-scoped RLS path decision, and this route
+ * has no cookie-bound Supabase session of its own beyond requireAdmin()'s
+ * check.
  */
 export async function GET(
   req: NextRequest,
@@ -64,45 +69,26 @@ export async function GET(
   try {
     const result = await getProvider(provider).exchangeCodeForToken(code, redirectUri);
 
-    const accessTokenEnc = encryptToken(result.accessToken);
-    const refreshTokenEnc = result.refreshToken ? encryptToken(result.refreshToken) : null;
-    const expiresAt = result.expiresInSeconds
-      ? new Date(Date.now() + result.expiresInSeconds * 1000).toISOString()
-      : null;
+    await upsertConnectedAccount(service, {
+      ownerId: admin.userId,
+      platform: provider as Platform,
+      providerAccountId: result.externalAccountId,
+      username: result.username ?? result.displayName ?? result.externalAccountId,
+      displayName: result.displayName ?? null,
+      avatarUrl: result.profilePictureUrl ?? null,
+      permissions: result.scopes,
+      accessToken: result.accessToken,
+      refreshToken: result.refreshToken ?? null,
+      expiresInSeconds: result.expiresInSeconds ?? null,
+    });
 
-    const { error } = await service.from("social_accounts").upsert(
-      {
-        provider,
-        external_account_id: result.externalAccountId,
-        display_name: result.displayName ?? null,
-        username: result.username ?? null,
-        profile_picture_url: result.profilePictureUrl ?? null,
-        status: "connected",
-        scopes: result.scopes,
-        access_token_ciphertext: accessTokenEnc.ciphertext,
-        access_token_iv: accessTokenEnc.iv,
-        access_token_tag: accessTokenEnc.tag,
-        refresh_token_ciphertext: refreshTokenEnc?.ciphertext ?? null,
-        refresh_token_iv: refreshTokenEnc?.iv ?? null,
-        refresh_token_tag: refreshTokenEnc?.tag ?? null,
-        token_expires_at: expiresAt,
-        last_health_check_at: new Date().toISOString(),
-        last_error: null,
-        connected_by: admin.userId,
-      },
-      { onConflict: "provider,external_account_id" }
-    );
-
-    if (error) {
-      console.error("social_accounts upsert failed:", error.message);
-      return failRedirect("persist_failed");
-    }
-
-    await service.from("social_system_events").insert({
-      category: "oauth",
-      level: "info",
-      message: `${provider} account connected`,
-      meta: { external_account_id: result.externalAccountId },
+    await recordAudit({
+      actorType: "USER",
+      actorId: admin.userId,
+      action: "account.connect",
+      targetType: "social_account",
+      summary: `Connected ${provider} account`,
+      meta: { provider_account_id: result.externalAccountId },
     });
 
     const redirectTo = verified.payload.redirectTo || "/admin/social";
@@ -110,11 +96,10 @@ export async function GET(
   } catch (err) {
     const message = err instanceof Error ? err.message : "unknown_error";
     console.error(`${provider} OAuth callback failed:`, message);
-    await service.from("social_system_events").insert({
-      category: "oauth",
-      level: "error",
-      message: `${provider} connect failed`,
-      meta: { error: message },
+    await recordAudit({
+      actorType: "SYSTEM",
+      action: "account.connect_failed",
+      summary: `${provider} connect failed: ${message}`,
     });
     return failRedirect("token_exchange_failed");
   }

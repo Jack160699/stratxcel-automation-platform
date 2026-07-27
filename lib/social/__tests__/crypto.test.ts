@@ -4,7 +4,7 @@
 
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
-import { encryptToken, decryptToken } from "../crypto.ts";
+import { encryptToken, decryptToken, encryptTokenPacked, decryptTokenPacked, packEncryptedField, unpackEncryptedField } from "../crypto.ts";
 
 function run() {
   const plaintext = "IGAAtest-access-token-1234567890";
@@ -55,7 +55,16 @@ function run() {
   assert.throws(() => encryptToken(plaintext), /SOCIAL_TOKEN_ENCRYPTION_KEY/);
   process.env.SOCIAL_TOKEN_ENCRYPTION_KEY = originalKey;
 
-  console.log("crypto.test.ts: ALL PASS (roundtrip, IV uniqueness, tamper rejection x2, wrong-key rejection, missing-key guard)");
+  // 7. Packed single-column round trip (social_tokens schema: one text
+  // column per token, not three) — pack/unpack must be lossless.
+  const packed = encryptTokenPacked(plaintext);
+  assert.equal(packed.split(".").length, 3, "packed field must have exactly 3 dot-delimited segments");
+  assert.equal(decryptTokenPacked(packed), plaintext, "packed round-trip must recover original plaintext");
+  const unpacked = unpackEncryptedField(packed);
+  assert.equal(packEncryptedField(unpacked), packed, "pack(unpack(x)) must equal x");
+  assert.throws(() => unpackEncryptedField("not-enough-segments"), "malformed packed field must throw");
+
+  console.log("crypto.test.ts: ALL PASS (roundtrip, IV uniqueness, tamper rejection x2, wrong-key rejection, missing-key guard, pack/unpack roundtrip)");
 }
 
 run();
