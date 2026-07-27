@@ -19,11 +19,13 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-const PROVIDERS = ["instagram", "facebook", "threads"] as const;
+const PROVIDERS = ["instagram", "facebook", "threads", "linkedin", "youtube"] as const;
 const PROVIDER_LABEL: Record<(typeof PROVIDERS)[number], string> = {
   instagram: "Instagram",
   facebook: "Facebook Page",
   threads: "Threads",
+  linkedin: "LinkedIn",
+  youtube: "YouTube",
 };
 
 function fmt(ts: string | null) {
@@ -202,7 +204,7 @@ export default async function SocialAutopilotPage() {
         {/* CONNECTED ACCOUNTS */}
         <section className="mt-8 space-y-3">
           <h2 className="text-lg font-semibold tracking-[-0.02em] text-white">Connected accounts</h2>
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-5">
             {PROVIDERS.map((provider) => {
               const acct = connectedAccounts.find(
                 (a) => a.provider === provider && a.status === "connected"

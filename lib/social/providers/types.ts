@@ -1,4 +1,4 @@
-export type SocialProviderName = "instagram" | "facebook" | "threads";
+export type SocialProviderName = "instagram" | "facebook" | "threads" | "linkedin" | "youtube";
 
 export interface OAuthExchangeResult {
   accessToken: string;

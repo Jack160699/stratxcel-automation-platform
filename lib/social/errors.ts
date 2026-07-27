@@ -1,10 +1,11 @@
 /**
- * Shared Meta Graph/Instagram/Threads API error classification.
- * Graph-family APIs return errors as JSON (even sometimes with HTTP 200),
- * shaped roughly as: { error: { message, type, code, error_subcode } }.
- * This gives providers and the worker a consistent way to tell a permanent
- * failure (bad/expired token, missing permission, OAuth denial) apart from a
- * transient one (rate limit, provider-side error) worth retrying.
+ * Shared cross-provider API error classification (Meta Graph/Instagram/
+ * Threads, LinkedIn, YouTube/Google). Each provider's fetch failures get
+ * parsed into the same MetaApiError shape so worker.ts has exactly one place
+ * that decides retryable vs. permanent vs. "mark account reauth_required" —
+ * it never needs to know which platform produced the error. The name
+ * "MetaApiError" predates the multi-platform provider set; kept as-is to
+ * avoid a churn-only rename across call sites.
  */
 
 export type MetaErrorCategory =
@@ -71,6 +72,94 @@ export async function toMetaApiError(res: Response, context: string): Promise<Me
   }
   if (code === 4 || code === 17 || code === 32 || code === 613) {
     return new MetaApiError(`${context}: ${message}`, "rate_limit", true, status);
+  }
+  if (!body) {
+    return new MetaApiError(`${context}: malformed response (HTTP ${status})`, "malformed_response", true, status);
+  }
+
+  return new MetaApiError(`${context}: ${message}`, "unknown", true, status);
+}
+
+interface LinkedInErrorBody {
+  message?: string;
+  serviceErrorCode?: number;
+  status?: number;
+  code?: string;
+}
+
+/**
+ * LinkedIn's REST API returns errors as { message, serviceErrorCode, status }
+ * (or occasionally { code, message } for OAuth-specific failures). There is
+ * no single numeric code space shared across all LinkedIn products, so
+ * classification leans on the HTTP status plus the "code" string field.
+ */
+export async function toLinkedInApiError(res: Response, context: string): Promise<MetaApiError> {
+  const status = res.status;
+  let body: LinkedInErrorBody | null = null;
+  let rawText = "";
+  try {
+    rawText = await res.text();
+    body = rawText ? JSON.parse(rawText) : null;
+  } catch {
+    // not JSON
+  }
+
+  const message = body?.message ?? rawText.slice(0, 300) ?? `HTTP ${status}`;
+
+  if (status === 429) {
+    return new MetaApiError(`${context}: rate limited (429)`, "rate_limit", true, status);
+  }
+  if (status === 401 || body?.code === "REVOKED_ACCESS_TOKEN" || body?.code === "EXPIRED_ACCESS_TOKEN") {
+    return new MetaApiError(`${context}: ${message}`, "invalid_token", false, status);
+  }
+  if (status === 403) {
+    return new MetaApiError(`${context}: ${message}`, "permission", false, status);
+  }
+  if (!body) {
+    return new MetaApiError(`${context}: malformed response (HTTP ${status})`, "malformed_response", true, status);
+  }
+
+  return new MetaApiError(`${context}: ${message}`, "unknown", true, status);
+}
+
+interface GoogleErrorBody {
+  error?: {
+    code?: number;
+    message?: string;
+    errors?: { reason?: string; message?: string }[];
+    status?: string;
+  };
+}
+
+/**
+ * Google API (YouTube Data API v3) errors are shaped as
+ * { error: { code, message, errors: [{ reason }], status } }. "status" is
+ * the gRPC-style string (UNAUTHENTICATED, PERMISSION_DENIED, ...); "reason"
+ * on the nested errors array distinguishes quota/rate-limit from other 403s.
+ */
+export async function toYouTubeApiError(res: Response, context: string): Promise<MetaApiError> {
+  const status = res.status;
+  let body: GoogleErrorBody | null = null;
+  let rawText = "";
+  try {
+    rawText = await res.text();
+    body = rawText ? JSON.parse(rawText) : null;
+  } catch {
+    // not JSON
+  }
+
+  const message = body?.error?.message ?? rawText.slice(0, 300) ?? `HTTP ${status}`;
+  const reason = body?.error?.errors?.[0]?.reason;
+  const googleStatus = body?.error?.status;
+
+  if (status === 429 || reason === "quotaExceeded" || reason === "rateLimitExceeded" || reason === "userRateLimitExceeded") {
+    return new MetaApiError(`${context}: rate/quota limited`, "rate_limit", true, status);
+  }
+  if (status === 401 || googleStatus === "UNAUTHENTICATED") {
+    return new MetaApiError(`${context}: ${message}`, "invalid_token", false, status);
+  }
+  if (status === 403 || googleStatus === "PERMISSION_DENIED") {
+    return new MetaApiError(`${context}: ${message}`, "permission", false, status);
   }
   if (!body) {
     return new MetaApiError(`${context}: malformed response (HTTP ${status})`, "malformed_response", true, status);
