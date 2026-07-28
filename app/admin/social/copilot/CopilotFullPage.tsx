@@ -6,7 +6,7 @@ import { EmptyState } from "../components/EmptyState";
 import { StatusBadge } from "../components/StatusBadge";
 import type { AgentSessionRow } from "@/lib/social/repositories/agent";
 import type { EffectiveProviderIdentity } from "@/lib/social/agent/provider";
-import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import { uploadToSignedUrlWithProgress } from "@/lib/social/media-upload-client";
 import { useCopilot } from "./CopilotContext";
 import { useAgentSession } from "./useAgentSession";
 import { ExecutionTrace } from "./ExecutionTrace";
@@ -78,6 +78,7 @@ export function CopilotFullPage({
   const [attachments, setAttachments] = useState<AgentAttachmentData[]>([]);
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -115,13 +116,11 @@ export function CopilotFullPage({
         if (!prepareResponse.ok) throw new Error(prepared.error ?? "Attachment upload failed");
         activeSessionId = prepared.sessionId as string;
         if (activeSessionId !== sessionId) setSessionId(activeSessionId);
-        const supabase = createSupabaseBrowserClient();
-        const { error: uploadError } = await supabase.storage
-          .from("social-agent-attachments")
-          .uploadToSignedUrl(prepared.path as string, prepared.token as string, file, { contentType: file.type });
-        if (uploadError) {
+        try {
+          await uploadToSignedUrlWithProgress(prepared.signedUrl as string, file, setUploadProgress);
+        } catch (uploadError) {
           await fetch(`/api/social/copilot/attachments?id=${encodeURIComponent(prepared.attachment.id as string)}`, { method: "DELETE" });
-          throw new Error(uploadError.message);
+          throw uploadError;
         }
         const finalizeResponse = await fetch("/api/social/copilot/attachments", {
           method: "POST",
@@ -139,6 +138,7 @@ export function CopilotFullPage({
           mime_type: string;
           size_bytes: number;
           processing_status: AgentAttachmentData["processingStatus"];
+          media_asset_id: string | null;
         };
         setAttachments((current) => [...current, {
           id: row.id,
@@ -146,12 +146,14 @@ export function CopilotFullPage({
           mimeType: row.mime_type,
           sizeBytes: row.size_bytes,
           processingStatus: row.processing_status,
+          mediaAssetId: row.media_asset_id,
         }]);
       }
     } catch (error) {
       setAttachmentError(error instanceof Error ? error.message : "Attachment upload failed");
     } finally {
       setUploading(false);
+      setUploadProgress(null);
     }
   };
   const removeAttachment = async (attachment: AgentAttachmentData) => {
@@ -230,7 +232,9 @@ export function CopilotFullPage({
             <div className="mb-2 flex flex-wrap gap-2">
               {attachments.map((attachment) => (
                 <span key={attachment.id} className="saut-attachment-chip">
-                  <span className="max-w-44 truncate">{attachment.name}</span>
+                  <span className="max-w-44 truncate">
+                    {attachment.name} · {attachment.mimeType} · {(attachment.sizeBytes / 1024 / 1024).toFixed(1)} MB
+                  </span>
                   <button type="button" onClick={() => void removeAttachment(attachment)} aria-label={`Remove ${attachment.name}`} className="text-xs" style={{ color: "var(--saut-danger)" }}>
                     {"\u00d7"}
                   </button>
@@ -245,7 +249,7 @@ export function CopilotFullPage({
               type="file"
               className="sr-only"
               multiple
-              accept=".txt,.md,.csv,.json,.pdf,.png,.jpg,.jpeg,.webp,.gif"
+              accept=".txt,.md,.csv,.json,.pdf,.png,.jpg,.jpeg,.webp,.gif,.mp4"
               onChange={(event) => {
                 if (event.target.files) void uploadFiles(event.target.files);
                 event.target.value = "";
@@ -257,9 +261,9 @@ export function CopilotFullPage({
               disabled={pending || uploading || attachments.length >= 8}
               className="saut-btn saut-btn-secondary !px-2.5"
               aria-label="Attach files"
-              title="Attach TXT, Markdown, CSV, JSON, PDF, or image (10 MB max)"
+              title="Attach documents/images up to 10 MB or MP4 video up to 100 MB"
             >
-              {uploading ? "Uploading..." : "Attach"}
+              {uploading ? `Uploading${uploadProgress === null ? "…" : ` ${uploadProgress}%`}` : "Attach"}
             </button>
             <textarea
               value={input}

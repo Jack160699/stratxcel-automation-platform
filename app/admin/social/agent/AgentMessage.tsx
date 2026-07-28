@@ -18,6 +18,7 @@ export interface AgentAttachmentData {
   mimeType: string;
   sizeBytes: number;
   processingStatus: "UPLOADED" | "EXTRACTED" | "STORED_UNREADABLE" | "FAILED";
+  mediaAssetId?: string | null;
 }
 
 const ACTION_TITLES: Record<string, string> = {
@@ -27,6 +28,9 @@ const ACTION_TITLES: Record<string, string> = {
   schedule_post: "Schedule post",
   cancel_scheduled_post: "Cancel scheduled post",
   set_operating_mode: "Change operating mode",
+  attach_media_to_content: "Attach media",
+  update_content_variant: "Update content variant",
+  execute_private_youtube_verification: "Upload private YouTube verification video",
 };
 
 function text(input: Record<string, unknown>, key: string) {

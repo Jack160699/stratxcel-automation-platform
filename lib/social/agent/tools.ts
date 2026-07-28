@@ -12,6 +12,14 @@ import { createSupabaseServiceClient } from "../../supabase/service";
 import type { OwnerContext } from "../db-context";
 import type { ToolSchema } from "./provider";
 import { CONTENT_OBJECTIVE_VALUES } from "../content-options";
+import {
+  attachMediaToMaster,
+  attachMediaToVariant,
+  ingestAttachmentMedia,
+  inspectContentMedia,
+  updateContentVariant,
+} from "../repositories/media-assets";
+import { executePrivateYoutubeVerification } from "../verification-publish";
 
 export interface AgentTool {
   schema: ToolSchema;
@@ -203,9 +211,17 @@ const schedulePost: AgentTool = {
     },
   },
   mutating: true,
-  execute: async (_ctx, args) => {
+  execute: async (ctx, args) => {
+    const accountId = str(args, "accountId");
+    const variantId = str(args, "variantId");
+    const [{ data: account }, { data: variant }] = await Promise.all([
+      ctx.supabase.from("social_accounts").select("id, platform").eq("id", accountId).maybeSingle(),
+      ctx.supabase.from("content_variants").select("id, platform").eq("id", variantId).maybeSingle(),
+    ]);
+    if (!account || !variant) throw new Error("Account or content variant is not available to this owner.");
+    if (account.platform !== variant.platform) throw new Error("The account platform must match the content variant platform.");
     const service = createSupabaseServiceClient();
-    return scheduleJob(service, { accountId: str(args, "accountId"), variantId: str(args, "variantId"), scheduledAt: str(args, "scheduledAt") });
+    return scheduleJob(service, { accountId, variantId, scheduledAt: str(args, "scheduledAt") });
   },
 };
 
@@ -216,9 +232,12 @@ const cancelScheduledPost: AgentTool = {
     parameters: { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
   },
   mutating: true,
-  execute: async (_ctx, args) => {
+  execute: async (ctx, args) => {
+    const id = str(args, "id");
+    const { data: ownedJob } = await ctx.supabase.from("social_publishing_jobs").select("id").eq("id", id).maybeSingle();
+    if (!ownedJob) throw new Error("Publishing job not found or owned by another account.");
     const service = createSupabaseServiceClient();
-    return cancelJob(service, str(args, "id"));
+    return cancelJob(service, id);
   },
 };
 
@@ -247,6 +266,133 @@ const listContentTool: AgentTool = {
   execute: async (ctx) => listContentMaster(ctx),
 };
 
+const ingestMedia: AgentTool = {
+  schema: {
+    name: "ingest_media",
+    description:
+      "Resolve an uploaded Copilot media attachment into its canonical owner-scoped media asset. " +
+      "Use the exact attachmentId shown in the attachment context. This operation is idempotent.",
+    parameters: {
+      type: "object",
+      properties: { attachmentId: { type: "string" } },
+      required: ["attachmentId"],
+    },
+  },
+  // Finalization normally creates the asset before the Agent runs; this is an
+  // idempotent identity/access operation, not an external or content mutation.
+  mutating: false,
+  execute: async (ctx, args) => ingestAttachmentMedia(ctx, str(args, "attachmentId")),
+};
+
+const inspectContentMediaTool: AgentTool = {
+  schema: {
+    name: "inspect_content_media",
+    description:
+      "Inspect a content master and its variants plus their exact attached media assets. " +
+      "Provide masterId, variantId, or the exact content title.",
+    parameters: {
+      type: "object",
+      properties: {
+        masterId: { type: "string" },
+        variantId: { type: "string" },
+        title: { type: "string" },
+      },
+    },
+  },
+  mutating: false,
+  execute: async (ctx, args) => inspectContentMedia(ctx, {
+    masterId: str(args, "masterId") || undefined,
+    variantId: str(args, "variantId") || undefined,
+    title: str(args, "title") || undefined,
+  }),
+};
+
+const attachMediaToContentTool: AgentTool = {
+  schema: {
+    name: "attach_media_to_content",
+    description:
+      "Attach owned canonical media assets to an existing content master or variant. " +
+      "Set replace=true to make these assets the exact media selection.",
+    parameters: {
+      type: "object",
+      properties: {
+        masterId: { type: "string" },
+        variantId: { type: "string" },
+        assetIds: { type: "array", items: { type: "string" } },
+        replace: { type: "boolean" },
+      },
+      required: ["assetIds"],
+    },
+  },
+  mutating: true,
+  execute: async (ctx, args) => {
+    const masterId = str(args, "masterId");
+    const variantId = str(args, "variantId");
+    if (Boolean(masterId) === Boolean(variantId)) throw new Error("Provide exactly one of masterId or variantId.");
+    const assetIds = arr(args, "assetIds");
+    const replace = args.replace === true;
+    return masterId
+      ? attachMediaToMaster(ctx, masterId, assetIds, replace)
+      : attachMediaToVariant(ctx, variantId, assetIds, replace);
+  },
+};
+
+const updateContentVariantTool: AgentTool = {
+  schema: {
+    name: "update_content_variant",
+    description:
+      "Safely update an existing owned platform variant, including replacing attached media and preserving exact YouTube visibility.",
+    parameters: {
+      type: "object",
+      properties: {
+        variantId: { type: "string" },
+        caption: { type: "string" },
+        hashtags: { type: "array", items: { type: "string" } },
+        format: { type: "string" },
+        mediaAssetIds: { type: "array", items: { type: "string" } },
+        youtubePrivacyStatus: { type: "string", enum: ["private", "unlisted", "public"] },
+      },
+      required: ["variantId"],
+    },
+  },
+  mutating: true,
+  execute: async (ctx, args) => updateContentVariant(ctx, {
+    variantId: str(args, "variantId"),
+    ...(typeof args.caption === "string" ? { caption: args.caption } : {}),
+    ...(Array.isArray(args.hashtags) ? { hashtags: arr(args, "hashtags") } : {}),
+    ...(typeof args.format === "string" ? { format: args.format } : {}),
+    ...(Array.isArray(args.mediaAssetIds) ? { mediaAssetIds: arr(args, "mediaAssetIds") } : {}),
+    ...(args.youtubePrivacyStatus === "private" || args.youtubePrivacyStatus === "unlisted" || args.youtubePrivacyStatus === "public"
+      ? { youtubePrivacyStatus: args.youtubePrivacyStatus }
+      : {}),
+  }),
+};
+
+const executePrivateYoutubeVerificationTool: AgentTool = {
+  schema: {
+    name: "execute_private_youtube_verification",
+    description:
+      "One-time, explicitly approved Google verification path: attach one owned MP4 to one existing owned YouTube variant, " +
+      "force PRIVATE visibility, create one exact publishing job for one connected YouTube account, and run only that job. " +
+      "Global SHADOW remains enabled and no unrelated job can be released.",
+    parameters: {
+      type: "object",
+      properties: {
+        accountId: { type: "string" },
+        variantId: { type: "string" },
+        assetId: { type: "string" },
+      },
+      required: ["accountId", "variantId", "assetId"],
+    },
+  },
+  mutating: true,
+  execute: async (ctx, args) => executePrivateYoutubeVerification(ctx, {
+    accountId: str(args, "accountId"),
+    variantId: str(args, "variantId"),
+    assetId: str(args, "assetId"),
+  }),
+};
+
 export const AGENT_TOOLS: AgentTool[] = [
   inspectHealth,
   inspectJobs,
@@ -256,10 +402,15 @@ export const AGENT_TOOLS: AgentTool[] = [
   listCampaignsTool,
   inspectBrand,
   listContentTool,
+  ingestMedia,
+  inspectContentMediaTool,
   createCampaignTool,
   createContentItem,
   createVariant,
+  attachMediaToContentTool,
+  updateContentVariantTool,
   schedulePost,
+  executePrivateYoutubeVerificationTool,
   cancelScheduledPost,
   setOperatingMode,
 ];

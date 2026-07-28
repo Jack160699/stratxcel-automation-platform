@@ -29,9 +29,9 @@ export interface PublishingJobRow {
  */
 export async function scheduleJob(
   service: ServiceClient,
-  input: { accountId: string; variantId: string; scheduledAt: string }
+  input: { accountId: string; variantId: string; scheduledAt: string; idempotencyKey?: string }
 ): Promise<string> {
-  const idempotencyKey = crypto.randomUUID();
+  const idempotencyKey = input.idempotencyKey ?? crypto.randomUUID();
   const { data, error } = await service
     .from("social_publishing_jobs")
     .insert({
@@ -43,6 +43,14 @@ export async function scheduleJob(
     })
     .select("id")
     .single();
+  if (error?.code === "23505" && input.idempotencyKey) {
+    const { data: existing } = await service
+      .from("social_publishing_jobs")
+      .select("id")
+      .eq("idempotency_key", idempotencyKey)
+      .maybeSingle();
+    if (existing) return existing.id as string;
+  }
   if (error || !data) throw new Error(error?.message ?? "publishing job insert failed");
 
   await service.from("content_variants").update({ scheduled_at: input.scheduledAt, status: "SCHEDULED" }).eq("id", input.variantId);
@@ -85,6 +93,12 @@ export async function claimDueJobs(service: ServiceClient, batchSize: number, ow
   const { data: candidates, error } = await query.limit(batchSize);
   if (error) throw new Error(error.message);
   return candidates ?? [];
+}
+
+export async function getJobService(service: ServiceClient, jobId: string) {
+  const { data, error } = await service.from("social_publishing_jobs").select("*").eq("id", jobId).maybeSingle();
+  if (error) throw new Error(error.message);
+  return data as PublishingJobRow | null;
 }
 
 export async function tryClaimJob(service: ServiceClient, jobId: string, workerId: string) {

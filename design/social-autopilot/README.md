@@ -64,13 +64,21 @@ Context as separate tabs rather than compressing three columns.
 
 Copilot attachments are real private objects in owner-scoped Supabase Storage
 with owner-scoped metadata and RLS. Supported text types may be extracted into
-Agent context. Images and PDFs remain visible stored artifacts unless a real
-parser or multimodal provider is configured; the UI and telemetry never imply
-that unread content was analyzed. Attachment telemetry is emitted only when
-extracted content is actually supplied to a run.
+Agent context. Images and video become canonical media assets with stable IDs;
+the Agent receives those IDs rather than a public URL. Content masters can own
+reusable media and variants can inherit or override it. Publishing workers
+resolve private assets to short-lived signed URLs only while an exact job is
+running. PDFs remain visible stored artifacts unless a real parser is
+configured; the UI and telemetry never imply that unread content was analyzed.
+Attachment telemetry is emitted only when extracted content or a canonical
+media asset is actually supplied to a run.
 
 Autonomy and publishing safety are separate controls. Autonomy determines
 whether safe internal work needs approval. SHADOW mode is the authoritative
 provider-boundary gate: it blocks every external mutation even when autonomy
-is AUTOPILOT. A blank budget means not configured, zero means explicitly
+is AUTOPILOT. A verification upload may cross that boundary only through an
+explicit, auditable, one-time authorization bound to one owner, YouTube
+account, private variant, MP4 asset, and publishing job; it never changes
+global SHADOW mode or releases the normal worker queue. A blank budget means
+not configured, zero means explicitly
 disabled, and a positive value is a configured limit.

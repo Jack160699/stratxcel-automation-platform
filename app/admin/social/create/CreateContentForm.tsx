@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import {
   CONTENT_FORMATS,
   CONTENT_OBJECTIVES,
@@ -8,6 +8,7 @@ import {
   YOUTUBE_PRIVACY_OPTIONS,
 } from "@/lib/social/content-options";
 import { createContentItemAction, type CreateContentFormState } from "../actions";
+import { MediaUploader } from "./MediaUploader";
 
 interface CreateContentFormProps {
   campaigns: Array<{ id: string; name: string }>;
@@ -20,6 +21,7 @@ const INITIAL_CREATE_CONTENT_FORM_STATE: CreateContentFormState = {
 };
 
 export function CreateContentForm({ campaigns, contentPillars }: CreateContentFormProps) {
+  const [mediaUploading, setMediaUploading] = useState(false);
   const [state, formAction, pending] = useActionState(
     createContentItemAction,
     INITIAL_CREATE_CONTENT_FORM_STATE
@@ -139,6 +141,8 @@ export function CreateContentForm({ campaigns, contentPillars }: CreateContentFo
         <input name="media_urls" className="saut-input mt-1 w-full" placeholder="Optional, space separated" />
       </label>
 
+      <MediaUploader onUploadingChange={setMediaUploading} />
+
       {state.message ? (
         <p
           role={state.status === "error" ? "alert" : "status"}
@@ -152,10 +156,10 @@ export function CreateContentForm({ campaigns, contentPillars }: CreateContentFo
 
       <button
         type="submit"
-        disabled={pending}
+        disabled={pending || mediaUploading}
         className="saut-btn saut-btn-primary w-fit disabled:cursor-not-allowed disabled:opacity-60 sm:col-span-2"
       >
-        {pending ? "Saving…" : "Save draft"}
+        {mediaUploading ? "Uploading media…" : pending ? "Saving…" : "Save draft"}
       </button>
     </form>
   );

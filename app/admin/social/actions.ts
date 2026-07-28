@@ -13,6 +13,7 @@ import { recordAudit } from "@/lib/social/repositories/system";
 import { createSupabaseServiceClient } from "@/lib/supabase/service";
 import { runWorkerBatch } from "@/lib/social/worker";
 import { normalizeYouTubePrivacyStatus } from "@/lib/social/providers/youtube-visibility";
+import { attachMediaToMaster, attachMediaToVariant } from "@/lib/social/repositories/media-assets";
 import {
   ContentDraftValidationError,
   parseCreateContentDraft,
@@ -87,6 +88,10 @@ export async function createContentItemAction(
       formData,
       profile.content_pillars.map((pillar) => pillar.name)
     );
+    const mediaAssetIds = String(formData.get("media_asset_ids") ?? "")
+      .split(",")
+      .map((id) => id.trim())
+      .filter(Boolean);
 
     if (input.campaignId) {
       const { data: campaign, error } = await owner.supabase
@@ -107,7 +112,7 @@ export async function createContentItemAction(
     });
 
     try {
-      await createContentVariant(owner, {
+      const variantId = await createContentVariant(owner, {
         masterId,
         platform: input.platform,
         format: input.format,
@@ -120,6 +125,10 @@ export async function createContentItemAction(
             ? { youtube_privacy_status: normalizeYouTubePrivacyStatus(input.youtubePrivacyStatus) }
             : {},
       });
+      if (mediaAssetIds.length) {
+        await attachMediaToMaster(owner, masterId, mediaAssetIds, true);
+        await attachMediaToVariant(owner, variantId, mediaAssetIds, true);
+      }
     } catch (error) {
       await owner.supabase.from("content_master").delete().eq("id", masterId);
       throw error;

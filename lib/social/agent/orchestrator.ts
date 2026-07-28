@@ -50,7 +50,11 @@ Brain read for questions unrelated to brand content, e.g. "are connected account
 inspect_accounts or inspect_health.
 
 Ask a short clarifying question instead of guessing when the goal is ambiguous. Never claim an action
-succeeded unless a tool call actually returned success. Keep responses concise and operational, not hype-y.`;
+succeeded unless a tool call actually returned success. Media attachments include both an attachment ID
+and a canonical media asset ID. Use those exact IDs with ingest_media / attach_media_to_content /
+update_content_variant; never invent a storage URL or media ID. For private YouTube verification while
+SHADOW is active, only use execute_private_youtube_verification when the user explicitly requested that
+exact private upload. Keep responses concise and operational, not hype-y.`;
 
 const MAX_TOOL_ROUNDS = 4;
 
@@ -117,7 +121,9 @@ export async function runAgentTurn(ctx: OwnerContext, sessionId: string, runId: 
       const attachmentContext = messageAttachments.map((attachment) =>
         attachment.processing_status === "EXTRACTED" && attachment.extracted_text
           ? `\n\n[Attached file accessed: ${attachment.original_name}]\n${attachment.extracted_text}`
-          : `\n\n[Attached file stored but not readable by this Agent: ${attachment.original_name} (${attachment.mime_type})]`
+          : attachment.media_asset_id
+            ? `\n\n[Attached media available to tools: ${attachment.original_name} (${attachment.mime_type}, ${attachment.size_bytes} bytes); attachmentId=${attachment.id}; mediaAssetId=${attachment.media_asset_id}]`
+            : `\n\n[Attached file stored but not readable by this Agent: ${attachment.original_name} (${attachment.mime_type})]`
       ).join("");
       return { role: roleMap[message.role] ?? "user", content: `${message.content}${attachmentContext}` };
     }),
@@ -129,12 +135,20 @@ export async function runAgentTurn(ctx: OwnerContext, sessionId: string, runId: 
   // did (provider round-trips, tool calls, approval gates) — never the
   // model's internal reasoning. See lib/social/repositories/agent-runs.ts.
   await recordRunEvent(ctx, runId, { type: "UNDERSTANDING_REQUEST", label: PHASE_LABELS.UNDERSTANDING_REQUEST });
-  for (const attachment of attachments.filter((item) => item.processing_status === "EXTRACTED" && item.extracted_text)) {
+  for (const attachment of attachments.filter((item) =>
+    (item.processing_status === "EXTRACTED" && item.extracted_text) || item.media_asset_id
+  )) {
     await recordRunEvent(ctx, runId, {
       type: "ATTACHMENT_ACCESSED",
-      label: `Reading attachment · ${attachment.original_name}`,
+      label: attachment.media_asset_id
+        ? `Accessing media · ${attachment.original_name}`
+        : `Reading attachment · ${attachment.original_name}`,
       status: "SUCCESS",
-      meta: { mimeType: attachment.mime_type, sizeBytes: attachment.size_bytes },
+      meta: {
+        mimeType: attachment.mime_type,
+        sizeBytes: attachment.size_bytes,
+        ...(attachment.media_asset_id ? { mediaAssetId: attachment.media_asset_id } : {}),
+      },
     });
   }
 

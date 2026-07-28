@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import type { OwnerContext } from "../db-context";
+import { validateMediaMetadata } from "../media-validation.ts";
 
 export const ATTACHMENT_BUCKET = "social-agent-attachments";
 export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
@@ -13,6 +14,7 @@ export const ALLOWED_ATTACHMENT_MIME_TYPES = new Set([
   "image/jpeg",
   "image/webp",
   "image/gif",
+  "video/mp4",
 ]);
 
 export interface AgentAttachmentRow {
@@ -27,6 +29,7 @@ export interface AgentAttachmentRow {
   size_bytes: number;
   processing_status: "UPLOADED" | "EXTRACTED" | "STORED_UNREADABLE" | "FAILED";
   extracted_text: string | null;
+  media_asset_id: string | null;
   created_at: string;
 }
 
@@ -35,23 +38,25 @@ function safeFileName(name: string) {
   return normalized.slice(0, 120) || "attachment";
 }
 
-export function validateAttachmentMetadata(input: { sizeBytes: number; mimeType: string }): string | null {
+export function validateAttachmentMetadata(input: { name: string; sizeBytes: number; mimeType: string }): string | null {
+  if (input.mimeType === "video/mp4") return validateMediaMetadata(input);
   if (!input.sizeBytes || input.sizeBytes > MAX_ATTACHMENT_BYTES) return "Attachments must be between 1 byte and 10 MB.";
   if (!ALLOWED_ATTACHMENT_MIME_TYPES.has(input.mimeType)) {
-    return "Unsupported file type. Use TXT, Markdown, CSV, JSON, PDF, PNG, JPEG, WebP, or GIF.";
+    return "Unsupported file type. Use TXT, Markdown, CSV, JSON, PDF, PNG, JPEG, WebP, GIF, or MP4.";
   }
+  if (["image/png", "image/jpeg", "image/webp"].includes(input.mimeType)) return validateMediaMetadata(input);
   return null;
 }
 
 export function validateAttachment(file: File): string | null {
-  return validateAttachmentMetadata({ sizeBytes: file.size, mimeType: file.type });
+  return validateAttachmentMetadata({ name: file.name, sizeBytes: file.size, mimeType: file.type });
 }
 
 export async function prepareAgentAttachment(
   ctx: OwnerContext,
   sessionId: string,
   input: { name: string; mimeType: string; sizeBytes: number }
-): Promise<{ attachment: AgentAttachmentRow; path: string; token: string }> {
+): Promise<{ attachment: AgentAttachmentRow; path: string; token: string; signedUrl: string }> {
   const validationError = validateAttachmentMetadata(input);
   if (validationError) throw new Error(validationError);
   const id = crypto.randomUUID();
@@ -80,7 +85,7 @@ export async function prepareAgentAttachment(
     await ctx.supabase.from("social_agent_attachments").delete().eq("id", id);
     throw new Error(signedError?.message ?? "Could not prepare private upload");
   }
-  return { attachment: data as AgentAttachmentRow, path, token: signed.token };
+  return { attachment: data as AgentAttachmentRow, path, token: signed.token, signedUrl: signed.signedUrl };
 }
 
 export async function finalizeAgentAttachment(ctx: OwnerContext, attachmentId: string): Promise<AgentAttachmentRow> {
@@ -120,7 +125,13 @@ export async function finalizeAgentAttachment(ctx: OwnerContext, attachmentId: s
     .select("*")
     .single();
   if (error || !updated) throw new Error(error?.message ?? "Could not finalize attachment");
-  return updated as AgentAttachmentRow;
+  let finalized = updated as AgentAttachmentRow;
+  if (["video/mp4", "image/png", "image/jpeg", "image/webp"].includes(finalized.mime_type)) {
+    const { ensureMediaAssetForAttachment } = await import("./media-assets.ts");
+    const mediaAsset = await ensureMediaAssetForAttachment(ctx, finalized);
+    finalized = { ...finalized, media_asset_id: mediaAsset.id };
+  }
+  return finalized;
 }
 
 export async function listSessionAttachments(ctx: OwnerContext, sessionId: string): Promise<AgentAttachmentRow[]> {
@@ -187,6 +198,14 @@ export async function removeUnsentAttachment(ctx: OwnerContext, attachmentId: st
   if (storageError) throw new Error(storageError.message);
   const { error } = await ctx.supabase.from("social_agent_attachments").delete().eq("id", attachment.id);
   if (error) throw new Error(error.message);
+  if (attachment.media_asset_id) {
+    const { error: assetError } = await ctx.supabase
+      .from("social_media_assets")
+      .delete()
+      .eq("id", attachment.media_asset_id)
+      .eq("owner_id", ctx.ownerId);
+    if (assetError) throw new Error(assetError.message);
+  }
 }
 
 export function attachmentPart(attachments: AgentAttachmentRow[]) {
@@ -198,6 +217,7 @@ export function attachmentPart(attachments: AgentAttachmentRow[]) {
       mimeType: attachment.mime_type,
       sizeBytes: attachment.size_bytes,
       processingStatus: attachment.processing_status,
+      mediaAssetId: attachment.media_asset_id,
     })),
   };
 }
