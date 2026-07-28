@@ -127,8 +127,56 @@ export async function markReauthRequired(service: ServiceClient, accountId: stri
   await service.from("social_accounts").update({ status: "REAUTH_REQUIRED", token_health: "INVALID", updated_at: new Date().toISOString() }).eq("id", accountId);
 }
 
+export interface DecryptedTokenState {
+  accessToken: string;
+  refreshToken: string | null;
+  expiresAt: string | null;
+}
+
+export async function getDecryptedTokenState(service: ServiceClient, accountId: string): Promise<DecryptedTokenState> {
+  const { data, error } = await service
+    .from("social_tokens")
+    .select("access_token_encrypted, refresh_token_encrypted, expires_at")
+    .eq("account_id", accountId)
+    .single();
+  if (error || !data?.access_token_encrypted) throw new Error("no stored access token");
+  return {
+    accessToken: decryptTokenPacked(data.access_token_encrypted),
+    refreshToken: data.refresh_token_encrypted ? decryptTokenPacked(data.refresh_token_encrypted) : null,
+    expiresAt: data.expires_at,
+  };
+}
+
+export async function saveRefreshedAccessToken(
+  service: ServiceClient,
+  accountId: string,
+  accessToken: string,
+  expiresInSeconds?: number
+) {
+  const now = new Date();
+  const expiresAt = expiresInSeconds ? new Date(now.getTime() + expiresInSeconds * 1000).toISOString() : null;
+  const { error: tokenError } = await service
+    .from("social_tokens")
+    .update({
+      access_token_encrypted: encryptTokenPacked(accessToken),
+      expires_at: expiresAt,
+      updated_at: now.toISOString(),
+    })
+    .eq("account_id", accountId);
+  if (tokenError) throw new Error(tokenError.message);
+
+  const { error: accountError } = await service
+    .from("social_accounts")
+    .update({
+      status: "CONNECTED",
+      token_health: "HEALTHY",
+      last_sync_at: now.toISOString(),
+      updated_at: now.toISOString(),
+    })
+    .eq("id", accountId);
+  if (accountError) throw new Error(accountError.message);
+}
+
 export async function getDecryptedAccessToken(service: ServiceClient, accountId: string): Promise<string> {
-  const { data } = await service.from("social_tokens").select("access_token_encrypted").eq("account_id", accountId).single();
-  if (!data?.access_token_encrypted) throw new Error("no stored access token");
-  return decryptTokenPacked(data.access_token_encrypted);
+  return (await getDecryptedTokenState(service, accountId)).accessToken;
 }

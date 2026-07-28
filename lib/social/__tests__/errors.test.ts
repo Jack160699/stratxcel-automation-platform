@@ -4,7 +4,7 @@
 // Run with: node --experimental-strip-types lib/social/__tests__/errors.test.ts
 
 import assert from "node:assert/strict";
-import { toMetaApiError, MetaApiError } from "../errors.ts";
+import { toMetaApiError, toYouTubeApiError, MetaApiError } from "../errors.ts";
 
 function fakeResponse(status: number, body: unknown): Response {
   return new Response(typeof body === "string" ? body : JSON.stringify(body), { status });
@@ -55,10 +55,17 @@ async function run() {
   assert.equal(unknown.category, "unknown");
   assert.equal(unknown.retryable, true);
 
+  const invalidGoogleRefreshGrant = await toYouTubeApiError(
+    fakeResponse(400, { error: "invalid_grant", error_description: "Token has been expired or revoked." }),
+    "YouTube token refresh"
+  );
+  assert.equal(invalidGoogleRefreshGrant.category, "invalid_token");
+  assert.equal(invalidGoogleRefreshGrant.retryable, false);
+
   assert.ok(rl instanceof MetaApiError);
 
   console.log(
-    "errors.test.ts: ALL PASS (rate limit, invalid token, permission, throughput, malformed, unknown)"
+    "errors.test.ts: ALL PASS (rate limit, invalid token, permission, throughput, malformed, unknown, Google refresh grant)"
   );
 }
 

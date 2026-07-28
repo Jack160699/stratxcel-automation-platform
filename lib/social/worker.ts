@@ -1,9 +1,16 @@
 import crypto from "node:crypto";
 import { createSupabaseServiceClient } from "../supabase/service";
 import { getProvider } from "./providers";
+import type { SocialProvider } from "./providers";
 import { MetaApiError } from "./errors";
 import { evaluateAutomations } from "./automations";
-import { getAccountService, getDecryptedAccessToken, markReauthRequired } from "./repositories/accounts";
+import {
+  getAccountService,
+  getDecryptedTokenState,
+  markReauthRequired,
+  saveRefreshedAccessToken,
+} from "./repositories/accounts";
+import { accessTokenNeedsRefresh } from "./token-lifecycle";
 import { getVariantForPublish, markVariantStatus } from "./repositories/content";
 import {
   claimDueJobs,
@@ -46,6 +53,37 @@ export interface WorkerBatchResult {
 interface VerificationExecution {
   authorizationId: string;
   ownerId: string;
+}
+
+async function getValidProviderAccessToken(
+  service: ServiceClient,
+  account: { id: string; platform: string }
+): Promise<{ accessToken: string; provider: SocialProvider }> {
+  const provider = getProvider(account.platform);
+  const stored = await getDecryptedTokenState(service, account.id);
+  if (!accessTokenNeedsRefresh(stored.expiresAt)) {
+    return { accessToken: stored.accessToken, provider };
+  }
+  if (!stored.refreshToken || !provider.refreshAccessToken) {
+    await markReauthRequired(service, account.id);
+    throw new MetaApiError(
+      `${account.platform} access expired and cannot be refreshed. Reconnect the account before publishing.`,
+      "invalid_token",
+      false,
+      401
+    );
+  }
+
+  try {
+    const refreshed = await provider.refreshAccessToken(stored.refreshToken);
+    await saveRefreshedAccessToken(service, account.id, refreshed.accessToken, refreshed.expiresInSeconds);
+    return { accessToken: refreshed.accessToken, provider };
+  } catch (error) {
+    if (error instanceof MetaApiError && (error.category === "invalid_token" || error.category === "oauth_denied")) {
+      await markReauthRequired(service, account.id);
+    }
+    throw error;
+  }
 }
 
 export async function runWorkerBatch(options: { ownerId?: string } = {}): Promise<WorkerBatchResult> {
@@ -122,6 +160,8 @@ async function processJob(
     const publishingDecision = externalMutationDecision(settings?.shadow_mode !== false, "publish_post");
     let isLive = publishingDecision.allowed;
     let verificationUpload = false;
+    let preparedProvider: SocialProvider | undefined;
+    let preparedAccessToken: string | undefined;
 
     const caption = [variant.caption, variant.hashtags?.map((h: string) => `#${h}`).join(" ")].filter(Boolean).join("\n\n");
     const resolvedMedia = await resolveMediaForPublish(service, variant);
@@ -176,6 +216,12 @@ async function processJob(
       )) {
         throw new Error("The one-time verification authorization does not match this exact upload.");
       }
+      // Refresh credentials before consuming the exact one-time permission.
+      // A failed refresh therefore cannot burn the authorization without ever
+      // reaching the authorized provider mutation.
+      const prepared = await getValidProviderAccessToken(service, account);
+      preparedProvider = prepared.provider;
+      preparedAccessToken = prepared.accessToken;
       const { data: consumed, error: consumeError } = await service
         .from("social_verification_publish_authorizations")
         .update({ status: "CONSUMED", consumed_at: new Date().toISOString() })
@@ -210,8 +256,11 @@ async function processJob(
     let raw: unknown = { shadow: true, note: publishingDecision.reason };
 
     if (isLive) {
-      const accessToken = await getDecryptedAccessToken(service, account.id);
-      const provider = getProvider(account.platform);
+      const prepared =
+        preparedProvider && preparedAccessToken
+          ? { provider: preparedProvider, accessToken: preparedAccessToken }
+          : await getValidProviderAccessToken(service, account);
+      const { provider, accessToken } = prepared;
       const result = await provider.publish({
         accessToken,
         externalAccountId: account.provider_account_id,

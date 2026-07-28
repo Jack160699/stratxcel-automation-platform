@@ -4,6 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { validateMediaMetadata } from "../media-validation.ts";
 import { verificationAuthorizationAllows } from "../verification-policy.ts";
+import { accessTokenNeedsRefresh } from "../token-lifecycle.ts";
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const read = (...parts: string[]) => fs.readFileSync(path.join(root, ...parts), "utf8");
@@ -38,6 +39,10 @@ function run() {
   assert.equal(verificationAuthorizationAllows({ ...authorization, status: "CONSUMED" }, scope, providerInput), false);
   assert.equal(verificationAuthorizationAllows({ ...authorization, expiresAt: "2026-07-29T09:59:00.000Z" }, scope, providerInput), false);
   assert.equal(verificationAuthorizationAllows(authorization, scope, { ...providerInput, privacyStatus: "public" }), false);
+  assert.equal(accessTokenNeedsRefresh(null, now), false);
+  assert.equal(accessTokenNeedsRefresh("2026-07-29T10:00:30.000Z", now), true);
+  assert.equal(accessTokenNeedsRefresh("2026-07-29T10:02:00.000Z", now), false);
+  assert.equal(accessTokenNeedsRefresh("not-a-date", now), true);
 
   const migration = read("supabase", "migrations", "20260729094500_media_ingestion.sql");
   const mediaRepo = read("lib", "social", "repositories", "media-assets.ts");
@@ -68,6 +73,11 @@ function run() {
   assert.ok(worker.includes("resolveMediaForPublish") && worker.includes("createSignedUrl") === false);
   assert.ok(mediaRepo.includes("createSignedUrl(asset.storage_path, 60 * 60)"));
   assert.ok(worker.includes('.eq("publishing_job_id", job.id)') && worker.includes('.eq("status", "ACTIVE")'));
+  assert.ok(
+    worker.indexOf("getValidProviderAccessToken(service, account)") <
+      worker.indexOf('.update({ status: "CONSUMED"'),
+    "credentials must refresh before the one-time authorization is consumed"
+  );
   assert.ok(
     worker.includes("Boolean(verification)") &&
       worker.includes('accountPlatform === "youtube"') &&

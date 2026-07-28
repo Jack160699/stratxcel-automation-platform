@@ -123,12 +123,15 @@ export async function toLinkedInApiError(res: Response, context: string): Promis
 }
 
 interface GoogleErrorBody {
-  error?: {
-    code?: number;
-    message?: string;
-    errors?: { reason?: string; message?: string }[];
-    status?: string;
-  };
+  error?:
+    | string
+    | {
+        code?: number;
+        message?: string;
+        errors?: { reason?: string; message?: string }[];
+        status?: string;
+      };
+  error_description?: string;
 }
 
 /**
@@ -148,14 +151,21 @@ export async function toYouTubeApiError(res: Response, context: string): Promise
     // not JSON
   }
 
-  const message = body?.error?.message ?? rawText.slice(0, 300) ?? `HTTP ${status}`;
-  const reason = body?.error?.errors?.[0]?.reason;
-  const googleStatus = body?.error?.status;
+  const apiError = typeof body?.error === "object" ? body.error : undefined;
+  const oauthError = typeof body?.error === "string" ? body.error : undefined;
+  const message = apiError?.message ?? body?.error_description ?? oauthError ?? rawText.slice(0, 300) ?? `HTTP ${status}`;
+  const reason = apiError?.errors?.[0]?.reason;
+  const googleStatus = apiError?.status;
 
   if (status === 429 || reason === "quotaExceeded" || reason === "rateLimitExceeded" || reason === "userRateLimitExceeded") {
     return new MetaApiError(`${context}: rate/quota limited`, "rate_limit", true, status);
   }
-  if (status === 401 || googleStatus === "UNAUTHENTICATED") {
+  if (
+    status === 401 ||
+    googleStatus === "UNAUTHENTICATED" ||
+    oauthError === "invalid_grant" ||
+    oauthError === "invalid_token"
+  ) {
     return new MetaApiError(`${context}: ${message}`, "invalid_token", false, status);
   }
   if (status === 403 || googleStatus === "PERMISSION_DENIED") {
