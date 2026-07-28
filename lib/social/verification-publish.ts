@@ -13,6 +13,17 @@ export async function executePrivateYoutubeVerification(
   ctx: OwnerContext,
   input: { accountId: string; variantId: string; assetId: string }
 ) {
+  // Backwards-compatible wrapper that forces private visibility.
+  return executeYoutubeVerification(ctx, { ...input, privacyStatus: "private" });
+}
+
+export async function executeYoutubeVerification(
+  ctx: OwnerContext,
+  input: { accountId: string; variantId: string; assetId: string; privacyStatus: "private" | "unlisted" }
+) {
+  const allowed = ["private", "unlisted"] as const;
+  if (!allowed.includes(input.privacyStatus)) throw new Error("Invalid privacyStatus — must be 'private' or 'unlisted'.");
+
   const [settings, assets, accountResult, variantResult] = await Promise.all([
     getAutomationSettings(ctx),
     getMediaAssetsByIds(ctx, [input.assetId]),
@@ -43,7 +54,7 @@ export async function executePrivateYoutubeVerification(
   await updateContentVariant(ctx, {
     variantId: input.variantId,
     mediaAssetIds: [asset.id],
-    youtubePrivacyStatus: "private",
+    youtubePrivacyStatus: input.privacyStatus,
   });
 
   const service = createSupabaseServiceClient();
@@ -57,6 +68,8 @@ export async function executePrivateYoutubeVerification(
     .eq("status", "ACTIVE")
     .lte("expires_at", new Date().toISOString());
 
+  const purpose = input.privacyStatus === "private" ? "YOUTUBE_PRIVATE_VERIFICATION" : "YOUTUBE_PRIVATE_VERIFICATION"; // preserve legacy purpose to avoid schema changes; privacy stored separately
+
   const { data: authorization, error: authorizationError } = await ctx.supabase
     .from("social_verification_publish_authorizations")
     .insert({
@@ -65,7 +78,8 @@ export async function executePrivateYoutubeVerification(
       variant_id: input.variantId,
       asset_id: asset.id,
       platform: "youtube",
-      purpose: "YOUTUBE_PRIVATE_VERIFICATION",
+      purpose,
+      privacy_status: input.privacyStatus,
       status: "ACTIVE",
     })
     .select("id")
@@ -76,11 +90,12 @@ export async function executePrivateYoutubeVerification(
 
   let jobId: string;
   try {
+    const keyPrefix = input.privacyStatus === "private" ? "youtube-private-verification" : "youtube-verification";
     jobId = await scheduleJob(service, {
       accountId: input.accountId,
       variantId: input.variantId,
       scheduledAt: new Date(Date.now() - 1000).toISOString(),
-      idempotencyKey: `youtube-private-verification:${authorization.id}`,
+      idempotencyKey: `${keyPrefix}:${authorization.id}`,
     });
     const { error: bindError } = await service
       .from("social_verification_publish_authorizations")
@@ -109,7 +124,7 @@ export async function executePrivateYoutubeVerification(
     account: account.display_name || account.username,
     variantId: input.variantId,
     assetId: asset.id,
-    privacyStatus: "private",
+    privacyStatus: input.privacyStatus,
     status: job.status,
     externalPostId: job.result?.external_post_id,
     permalink: job.result?.permalink,
