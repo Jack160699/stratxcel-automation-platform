@@ -41,11 +41,11 @@ export function RemoveButton({
   }
 
   return (
-    <form action={formAction} className="flex flex-wrap items-center justify-end gap-1.5">
+    <form action={formAction} className="flex min-w-0 flex-wrap items-center justify-end gap-1.5">
       {Object.entries(hiddenFields).map(([key, value]) => (
         <input key={key} type="hidden" name={key} value={value} />
       ))}
-      <span className="text-xs" style={{ color: "var(--saut-text-subtle)" }}>
+      <span className="max-w-[160px] truncate text-xs" style={{ color: "var(--saut-text-subtle)" }} title={itemLabel}>
         Remove &ldquo;{itemLabel}&rdquo;?
       </span>
       <button type="button" onClick={() => setConfirming(false)} className="saut-btn saut-btn-ghost !h-7 !px-2 text-xs">

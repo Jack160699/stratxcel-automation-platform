@@ -4,6 +4,7 @@ import { listJobs, listDeadLetters } from "../repositories/publishing";
 import { listRecentMetrics, listCostEvents } from "../repositories/analytics";
 import { listCampaigns, createCampaign } from "../repositories/campaigns";
 import { getBrandProfile } from "../repositories/brand";
+import { BRAND_SECTIONS, selectBrandSection, type BrandSection } from "./brand-sections";
 import { createContentMaster, createContentVariant, listContentMaster } from "../repositories/content";
 import { scheduleJob, cancelJob } from "../repositories/publishing";
 import { upsertAutomationSettings } from "../repositories/automation";
@@ -15,6 +16,8 @@ export interface AgentTool {
   schema: ToolSchema;
   /** True for anything that mutates data or would touch an external account — gates approval. */
   mutating: boolean;
+  /** Overrides the orchestrator's default tool-output character budget for this tool specifically. */
+  outputBudget?: number;
   execute(ctx: OwnerContext, args: Record<string, unknown>): Promise<unknown>;
 }
 
@@ -90,11 +93,30 @@ const listCampaignsTool: AgentTool = {
 const inspectBrand: AgentTool = {
   schema: {
     name: "inspect_brand",
-    description: "Read Brand Brain: company identity, products, audiences, voice, pillars, and rules — use this to ground any generated content.",
-    parameters: { type: "object", properties: {} },
+    description:
+      'Read Brand Brain: company identity, products, audiences, voice, content pillars, knowledge sources, and rules — ' +
+      "use this to ground any generated content. Pass `section` for just the part you need " +
+      '("identity" | "products" | "audiences" | "pillars" | "sources" | "rules"), omit it (or pass "summary") ' +
+      'for an overview with counts of everything, or pass "all" for the complete profile in one call.',
+    parameters: {
+      type: "object",
+      properties: {
+        section: { type: "string", enum: [...BRAND_SECTIONS], description: 'Defaults to "summary" if omitted.' },
+      },
+    },
   },
   mutating: false,
-  execute: async (ctx) => getBrandProfile(ctx),
+  // Brand Brain is the Agent's grounding source of truth — give it more room
+  // than the default budget so a section (or "all") isn't cut mid-list. Sized
+  // against the real current profile (~18 products/9 audiences/9 pillars/
+  // 7 sources/20 rules is ~25KB) with headroom to grow before the generic
+  // truncation safety net in serializeToolOutput would ever need to engage.
+  outputBudget: 40000,
+  execute: async (ctx, args) => {
+    const profile = await getBrandProfile(ctx);
+    const section = (str(args, "section", "summary") || "summary") as BrandSection;
+    return selectBrandSection(profile, section);
+  },
 };
 
 const createCampaignTool: AgentTool = {

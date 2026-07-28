@@ -2,8 +2,10 @@
 
 import { useState } from "react";
 import { EmptyState } from "../../components/EmptyState";
+import { SavedItemRow } from "../../components/SavedItemRow";
 import { BrandForm } from "./BrandForm";
 import { RemoveButton } from "./RemoveButton";
+import { SectionEditingLabel } from "./SectionEditingLabel";
 import { useEditGuard } from "./useEditGuard";
 import type { BrandFormAction } from "../types";
 
@@ -33,11 +35,7 @@ export function SourcesSection({
     <section className="saut-card space-y-3 p-5">
       <div className="flex items-baseline justify-between">
         <h2 className="saut-section-title">Knowledge sources</h2>
-        {editing && (
-          <span className="text-xs" style={{ color: "var(--saut-text-subtle)" }}>
-            Editing <span style={{ color: "var(--saut-text)" }}>{editing.title}</span>
-          </span>
-        )}
+        {editing && <SectionEditingLabel label={editing.title} />}
       </div>
 
       {editing ? (
@@ -85,20 +83,24 @@ export function SourcesSection({
 
       <div className="space-y-2">
         {items.map((k, i) => (
-          <div key={i} className="flex items-center justify-between gap-3 rounded-lg px-3 py-2 text-sm" style={{ background: "var(--saut-surface-2)" }}>
-            <span className="min-w-0 truncate">
+          <SavedItemRow
+            key={i}
+            actions={
+              <>
+                <button onClick={() => setEditingIndex(i)} className="saut-btn saut-btn-ghost !h-7 !px-2 text-xs">
+                  Edit
+                </button>
+                <RemoveButton action={removeAction} hiddenFields={{ index: i }} itemLabel={k.title} />
+              </>
+            }
+          >
+            <span className="saut-item-row-label text-sm">
               <span className="saut-mono mr-2 text-[10px] uppercase" style={{ color: "var(--saut-text-subtle)" }}>
                 {k.kind}
               </span>
               {k.title}
             </span>
-            <div className="flex shrink-0 items-center gap-1.5">
-              <button onClick={() => setEditingIndex(i)} className="saut-btn saut-btn-ghost !h-7 !px-2 text-xs">
-                Edit
-              </button>
-              <RemoveButton action={removeAction} hiddenFields={{ index: i }} itemLabel={k.title} />
-            </div>
-          </div>
+          </SavedItemRow>
         ))}
         {items.length === 0 && <EmptyState>No knowledge sources yet.</EmptyState>}
       </div>

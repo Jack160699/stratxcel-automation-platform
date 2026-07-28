@@ -34,7 +34,8 @@ export default async function BrandBrainPage() {
   const profile = await getBrandProfile(ctx);
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-8 pb-24">
+      {/* pb-24 keeps the last card clear of the fixed Autopilot Agent button (bottom-5 right-5, 56px) when scrolled to rest. */}
       <Toaster />
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Brand Brain</h1>

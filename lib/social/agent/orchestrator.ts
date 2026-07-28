@@ -12,15 +12,29 @@ import {
 } from "../repositories/agent";
 import { resolveConfiguredProvider } from "./provider";
 import { getTool, toolSchemas, type AgentTool } from "./tools";
+import { serializeToolOutput } from "./tool-output";
 import type { AgentTurnMessage } from "./provider";
 import type { OwnerContext } from "../db-context";
 
 const SYSTEM_PROMPT = `You are the Stratxcel Social Autopilot Agent — an operational copilot for Stratxcel's own
 Instagram, Facebook, Threads, LinkedIn, and YouTube presence. You plan, draft, schedule, and analyze
-social content using the tools available to you. Ground every content decision in Brand Brain
-(call inspect_brand first if you haven't already this session). Ask a short clarifying question
-instead of guessing when the goal is ambiguous. Never claim an action succeeded unless a tool call
-actually returned success. Keep responses concise and operational, not hype-y.`;
+social content using the tools available to you.
+
+Ground every content, campaign, or strategy decision in Brand Brain via inspect_brand. It takes a
+\`section\` argument: "summary" (identity, voice, and counts of everything — the default), "identity",
+"products", "audiences", "pillars", "sources", "rules", or "all" (the complete profile in one call).
+Call it with the section(s) the task actually needs — product-specific content needs section="products",
+audience-specific content needs section="audiences", a claims/compliance question needs section="rules".
+For a request to summarize or fully understand Stratxcel's brand, inspect enough sections to cover
+identity, products, audiences, pillars, sources, and rules — section="all" returns everything in one
+call for the current profile size, but if its response ever includes a "_truncated": true field on a
+section, call inspect_brand again with that specific section to get the rest before answering. Never
+state that a section is empty or absent without having actually retrieved it. Don't force a full Brand
+Brain read for questions unrelated to brand content, e.g. "are connected accounts healthy?" only needs
+inspect_accounts or inspect_health.
+
+Ask a short clarifying question instead of guessing when the goal is ambiguous. Never claim an action
+succeeded unless a tool call actually returned success. Keep responses concise and operational, not hype-y.`;
 
 const MAX_TOOL_ROUNDS = 4;
 
@@ -102,7 +116,7 @@ export async function runAgentTurn(ctx: OwnerContext, sessionId: string, userTex
             meta: { input: call.arguments },
           });
         }
-        messages.push({ role: "tool", content: JSON.stringify(output).slice(0, 4000), toolCallId: call.id, toolName: call.name });
+        messages.push({ role: "tool", content: serializeToolOutput(output, tool.outputBudget), toolCallId: call.id, toolName: call.name });
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : "tool execution failed";
         await recordExecutedAction(ctx, sessionId, tool.schema.name, call.arguments, null, "FAILED", errorMessage);
