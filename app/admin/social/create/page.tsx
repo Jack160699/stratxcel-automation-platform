@@ -59,6 +59,17 @@ export default async function CreatePage() {
             <option value="reel">Reel/Video</option>
             <option value="story">Story</option>
           </select>
+          <label className="space-y-1 text-xs sm:col-span-2" style={{ color: "var(--saut-text-muted)" }}>
+            YouTube visibility
+            <select name="youtube_privacy_status" className="saut-input mt-1 w-full" defaultValue="private">
+              <option value="private">Private (safest)</option>
+              <option value="unlisted">Unlisted</option>
+              <option value="public">Public</option>
+            </select>
+            <span className="block text-[11px]" style={{ color: "var(--saut-text-subtle)" }}>
+              Applied only to YouTube variants. If omitted or invalid, uploads remain private.
+            </span>
+          </label>
           <textarea name="caption" placeholder="Caption" required rows={3} className="saut-input h-auto py-2 sm:col-span-2" />
           <input name="hashtags" placeholder="hashtags, comma or space separated" className="saut-input" />
           <input name="media_urls" placeholder="Media URL(s), space separated" className="saut-input" />

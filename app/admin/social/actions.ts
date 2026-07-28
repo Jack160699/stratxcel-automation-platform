@@ -11,6 +11,7 @@ import { upsertAutomationSettings } from "@/lib/social/repositories/automation";
 import { recordAudit } from "@/lib/social/repositories/system";
 import { createSupabaseServiceClient } from "@/lib/supabase/service";
 import { runWorkerBatch } from "@/lib/social/worker";
+import { normalizeYouTubePrivacyStatus } from "@/lib/social/providers/youtube-visibility";
 
 async function assertOwner() {
   const ctx = await requireOwnerContext();
@@ -82,14 +83,25 @@ export async function createContentItemAction(formData: FormData) {
     contentPillar: String(formData.get("content_pillar") ?? "") || "educational",
   });
 
+  const platform = String(formData.get("platform") ?? "instagram");
+  const creativeSpec =
+    platform === "youtube"
+      ? {
+          youtube_privacy_status: normalizeYouTubePrivacyStatus(
+            String(formData.get("youtube_privacy_status") ?? "private")
+          ),
+        }
+      : {};
+
   await createContentVariant(ctx, {
     masterId,
-    platform: String(formData.get("platform") ?? "instagram"),
+    platform,
     format: String(formData.get("format") ?? "post"),
     objective: String(formData.get("objective") ?? "") || "awareness",
     caption,
     hashtags,
     mediaUrls,
+    creativeSpec,
   });
 
   await recordAudit({ actorType: "USER", actorId: ctx.ownerId, action: "content.create", summary: `Created content "${title}"` });
@@ -105,6 +117,14 @@ export async function schedulePostAction(formData: FormData) {
 
   const service = createSupabaseServiceClient();
   try {
+    const [{ data: account }, { data: variant }] = await Promise.all([
+      ctx.supabase.from("social_accounts").select("id, platform").eq("id", accountId).maybeSingle(),
+      ctx.supabase.from("content_variants").select("id, platform").eq("id", variantId).maybeSingle(),
+    ]);
+    if (!account || !variant) throw new Error("Account or content variant is not available to this owner");
+    if (account.platform !== variant.platform) {
+      throw new Error(`The ${variant.platform} variant must use a ${variant.platform} account`);
+    }
     await scheduleJob(service, { accountId, variantId, scheduledAt: new Date(scheduledFor).toISOString() });
     await recordAudit({ actorType: "USER", actorId: ctx.ownerId, action: "post.schedule", summary: `Scheduled a post for ${scheduledFor}` });
   } catch (err) {
@@ -117,6 +137,12 @@ export async function cancelScheduledPostAction(formData: FormData) {
   const ctx = await assertOwner();
   const id = String(formData.get("id") ?? "");
   if (!id) return;
+  const { data: ownedJob } = await ctx.supabase
+    .from("social_publishing_jobs")
+    .select("id")
+    .eq("id", id)
+    .maybeSingle();
+  if (!ownedJob) return;
   const service = createSupabaseServiceClient();
   await cancelJob(service, id);
   await recordAudit({ actorType: "USER", actorId: ctx.ownerId, action: "post.cancel", targetId: id, summary: "Cancelled a scheduled post" });
@@ -128,7 +154,7 @@ export async function runWorkerNowAction() {
   // cron-triggered route, in-process. No HTTP round trip, no CRON_SECRET.
   const ctx = await assertOwner();
   try {
-    const result = await runWorkerBatch();
+    const result = await runWorkerBatch({ ownerId: ctx.ownerId });
     await recordAudit({ actorType: "USER", actorId: ctx.ownerId, action: "worker.run", summary: `Worker batch processed ${result.processed} job(s)`, meta: { ...result } });
   } catch (err) {
     console.error("manual worker trigger failed:", err);

@@ -6,6 +6,7 @@ import type {
   SocialProvider,
 } from "./types";
 import { toYouTubeApiError } from "../errors";
+import { normalizeYouTubePrivacyStatus } from "./youtube-visibility";
 
 /**
  * YouTube — Google OAuth2 + YouTube Data API v3. Unlike the other providers,
@@ -122,6 +123,7 @@ export const youtubeProvider: SocialProvider = {
 
   async publish(input: PublishInput): Promise<PublishResult> {
     const { accessToken, caption, mediaUrls } = input;
+    const privacyStatus = normalizeYouTubePrivacyStatus(input.privacyStatus);
     if (mediaUrls.length === 0) {
       throw new Error("YouTube publish requires a video media URL");
     }
@@ -137,43 +139,41 @@ export const youtubeProvider: SocialProvider = {
     const videoBytes = await videoRes.arrayBuffer();
     const contentType = videoRes.headers.get("content-type") ?? "video/*";
 
-    // Simple (non-resumable) upload: one multipart-free request with the
-    // metadata in the query and the raw bytes as the body. Adequate for the
-    // batch sizes this worker processes; large files would want the
-    // resumable protocol instead.
-    const uploadRes = await fetch(`${YT_UPLOAD}?uploadType=media&part=snippet,status`, {
+    // Keep the video bytes and their metadata/privacy in one multipart
+    // request. If YouTube accepts it, the returned video already has the
+    // requested visibility; if it rejects it, no metadata-less upload is
+    // left behind for a retry to duplicate.
+    const boundary = `stratxcel-${Date.now().toString(16)}-${Math.random().toString(16).slice(2)}`;
+    const metadata = JSON.stringify({
+      snippet: { title, description, categoryId: "22" },
+      status: { privacyStatus },
+    });
+    const multipartBody = Buffer.concat([
+      Buffer.from(
+        `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n` +
+          `--${boundary}\r\nContent-Type: ${contentType}\r\n\r\n`
+      ),
+      Buffer.from(videoBytes),
+      Buffer.from(`\r\n--${boundary}--\r\n`),
+    ]);
+
+    const uploadRes = await fetch(`${YT_UPLOAD}?uploadType=multipart&part=snippet,status`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${accessToken}`,
-        "Content-Type": contentType,
+        "Content-Type": `multipart/related; boundary=${boundary}`,
       },
-      body: videoBytes,
+      body: multipartBody,
     });
     if (!uploadRes.ok) {
       throw await toYouTubeApiError(uploadRes, "YouTube video upload");
     }
     const uploaded = (await uploadRes.json()) as { id: string };
 
-    // A second call sets the metadata (title/description/privacy) that the
-    // simple upload above doesn't accept — YouTube's simple-upload endpoint
-    // only takes the video bytes; snippet/status are set via videos.update.
-    await fetch(`${YT}/videos?part=snippet,status`, {
-      method: "PUT",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        id: uploaded.id,
-        snippet: { title, description, categoryId: "22" },
-        status: { privacyStatus: "public" },
-      }),
-    });
-
     return {
       externalPostId: uploaded.id,
       permalink: `https://youtu.be/${uploaded.id}`,
-      raw: uploaded,
+      raw: { ...uploaded, privacyStatus },
     };
   },
 

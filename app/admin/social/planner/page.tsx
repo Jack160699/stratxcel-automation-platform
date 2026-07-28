@@ -20,6 +20,16 @@ function fmt(ts: string | null) {
   return new Date(ts).toISOString().slice(0, 16).replace("T", " ");
 }
 
+function publishedResultUrl(result: Record<string, unknown>): string | null {
+  if (result.mode !== "live" || typeof result.permalink !== "string") return null;
+  try {
+    const url = new URL(result.permalink);
+    return url.protocol === "https:" ? url.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
 export default async function PlannerPage() {
   // See layout.tsx: nested pages guard independently of the parent layout.
   const ctx = await requireOwnerContext();
@@ -122,23 +132,38 @@ export default async function PlannerPage() {
       <section className="space-y-3">
         <h2 className="saut-section-title">Calendar / queue</h2>
         <div className="space-y-2">
-          {jobs.map((j) => (
-            <div key={j.id} className="saut-card flex flex-wrap items-center justify-between gap-2 p-3 text-xs">
-              <span className="saut-mono" style={{ color: "var(--saut-text-subtle)" }}>{fmt(j.scheduled_at)}</span>
-              <span className="saut-chip saut-chip-neutral">
-                <span className="saut-chip-dot" /> {j.status.toLowerCase()}
-              </span>
-              <span className="saut-mono text-[10px]" style={{ color: "var(--saut-text-subtle)" }}>
-                {j.attempts}/{j.max_attempts} attempts
-              </span>
-              {j.status === "SCHEDULED" && (
-                <form action={cancelScheduledPostAction}>
-                  <input type="hidden" name="id" value={j.id} />
-                  <button className="saut-btn saut-btn-ghost !h-6 !px-2 text-[10px]">Cancel</button>
-                </form>
-              )}
-            </div>
-          ))}
+          {jobs.map((j) => {
+            const resultUrl = publishedResultUrl(j.result);
+            return (
+              <div key={j.id} className="saut-card flex flex-wrap items-center justify-between gap-2 p-3 text-xs">
+                <span className="saut-mono" style={{ color: "var(--saut-text-subtle)" }}>
+                  {fmt(j.scheduled_at)}
+                </span>
+                <span className="saut-chip saut-chip-neutral">
+                  <span className="saut-chip-dot" /> {j.status.toLowerCase()}
+                </span>
+                <span className="saut-mono text-[10px]" style={{ color: "var(--saut-text-subtle)" }}>
+                  {j.attempts}/{j.max_attempts} attempts
+                </span>
+                {j.status === "SCHEDULED" && (
+                  <form action={cancelScheduledPostAction}>
+                    <input type="hidden" name="id" value={j.id} />
+                    <button className="saut-btn saut-btn-ghost !h-6 !px-2 text-[10px]">Cancel</button>
+                  </form>
+                )}
+                {resultUrl && (
+                  <a
+                    href={resultUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="saut-btn saut-btn-ghost !h-6 !px-2 text-[10px]"
+                  >
+                    View result
+                  </a>
+                )}
+              </div>
+            );
+          })}
           {jobs.length === 0 && (
             <div className="saut-card p-6 text-center text-sm" style={{ color: "var(--saut-text-subtle)" }}>
               Nothing scheduled yet.

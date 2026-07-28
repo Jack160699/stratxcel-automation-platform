@@ -1,4 +1,5 @@
 export type SocialProviderName = "instagram" | "facebook" | "threads" | "linkedin" | "youtube";
+export type PublishPrivacyStatus = "private" | "unlisted" | "public";
 
 export interface OAuthExchangeResult {
   accessToken: string;
@@ -16,6 +17,12 @@ export interface PublishInput {
   externalAccountId: string;
   caption: string;
   mediaUrls: string[];
+  /**
+   * Provider-supported visibility for media publishing. YouTube defaults to
+   * private when this is omitted so a newly added workflow cannot
+   * accidentally publish a public video.
+   */
+  privacyStatus?: PublishPrivacyStatus;
 }
 
 export interface PublishResult {

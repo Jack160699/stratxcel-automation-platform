@@ -15,6 +15,7 @@ import {
 } from "./repositories/publishing";
 import { recordMetrics } from "./repositories/analytics";
 import { externalMutationDecision } from "./shadow-gate";
+import { normalizeYouTubePrivacyStatus } from "./providers/youtube-visibility";
 
 /**
  * Publishing worker for the stratxcel schema. Called from two places:
@@ -40,11 +41,11 @@ export interface WorkerBatchResult {
   results: Array<{ jobId: string; outcome: string }>;
 }
 
-export async function runWorkerBatch(): Promise<WorkerBatchResult> {
+export async function runWorkerBatch(options: { ownerId?: string } = {}): Promise<WorkerBatchResult> {
   const service = createSupabaseServiceClient();
   const workerId = WORKER_ID();
 
-  const candidates = await claimDueJobs(service, BATCH_SIZE);
+  const candidates = await claimDueJobs(service, BATCH_SIZE, options.ownerId);
   const results: WorkerBatchResult["results"] = [];
 
   for (const candidate of candidates) {
@@ -92,6 +93,7 @@ async function processJob(
     const caption = [variant.caption, variant.hashtags?.map((h: string) => `#${h}`).join(" ")].filter(Boolean).join("\n\n");
 
     let externalPostId = `SHADOW-${job.idempotency_key}`;
+    let permalink: string | undefined;
     let raw: unknown = { shadow: true, note: publishingDecision.reason };
 
     if (isLive) {
@@ -102,8 +104,13 @@ async function processJob(
         externalAccountId: account.provider_account_id,
         caption,
         mediaUrls: variant.media_urls ?? [],
+        privacyStatus:
+          account.platform === "youtube"
+            ? normalizeYouTubePrivacyStatus(variant.creative_spec?.youtube_privacy_status)
+            : undefined,
       });
       externalPostId = result.externalPostId;
+      permalink = result.permalink;
       raw = result.raw;
     }
 
@@ -112,7 +119,12 @@ async function processJob(
     // status='PUBLISHED' and takes the already_published short-circuit
     // above instead of publishing twice.
     await markVariantStatus(service, job.variant_id, "PUBLISHED", { published_at: new Date().toISOString() });
-    await markJobPublished(service, job.id, { mode: isLive ? "live" : "shadow", external_post_id: externalPostId, raw });
+    await markJobPublished(service, job.id, {
+      mode: isLive ? "live" : "shadow",
+      external_post_id: externalPostId,
+      ...(permalink ? { permalink } : {}),
+      raw,
+    });
     await recordMetrics(service, job.variant_id, externalPostId, {});
 
     await evaluateAutomations("post_published", { provider: account.platform, jobId: job.id }).catch(() => {

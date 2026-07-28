@@ -63,14 +63,27 @@ export async function listJobsService(service: ServiceClient, limit = 50): Promi
   return (data ?? []) as PublishingJobRow[];
 }
 
-export async function claimDueJobs(service: ServiceClient, batchSize: number) {
-  const { data: candidates } = await service
+export async function claimDueJobs(service: ServiceClient, batchSize: number, ownerId?: string) {
+  let ownerAccountIds: string[] | undefined;
+  if (ownerId) {
+    const { data: ownerAccounts, error } = await service
+      .from("social_accounts")
+      .select("id")
+      .eq("owner_id", ownerId);
+    if (error) throw new Error(error.message);
+    ownerAccountIds = (ownerAccounts ?? []).map((account) => account.id as string);
+    if (ownerAccountIds.length === 0) return [];
+  }
+
+  let query = service
     .from("social_publishing_jobs")
     .select("id")
     .eq("status", "SCHEDULED")
     .lte("scheduled_at", new Date().toISOString())
-    .order("scheduled_at", { ascending: true })
-    .limit(batchSize);
+    .order("scheduled_at", { ascending: true });
+  if (ownerAccountIds) query = query.in("account_id", ownerAccountIds);
+  const { data: candidates, error } = await query.limit(batchSize);
+  if (error) throw new Error(error.message);
   return candidates ?? [];
 }
 

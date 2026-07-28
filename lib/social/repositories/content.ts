@@ -101,6 +101,7 @@ export async function createContentVariant(
     caption: string;
     hashtags: string[];
     mediaUrls: string[];
+    creativeSpec?: Record<string, unknown>;
   }
 ): Promise<string> {
   const { data, error } = await ctx.supabase
@@ -113,6 +114,7 @@ export async function createContentVariant(
       caption: input.caption,
       hashtags: input.hashtags,
       media_urls: input.mediaUrls,
+      creative_spec: input.creativeSpec ?? {},
       status: "READY",
     })
     .select("id")
