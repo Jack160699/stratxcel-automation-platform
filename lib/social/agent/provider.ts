@@ -37,6 +37,21 @@ export interface AIProvider {
   complete(messages: AgentTurnMessage[], tools: ToolSchema[]): Promise<CompletionResult>;
 }
 
+const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
+
+/**
+ * Builds the Chat Completions URL from OPENAI_BASE_URL, defaulting to
+ * OpenAI itself so existing behavior is unchanged when the var is unset.
+ * Exported so the endpoint construction (including trailing-slash
+ * normalization) can be unit tested without mocking fetch. This is
+ * intentionally generic — it never special-cases OpenRouter or any other
+ * specific OpenAI-compatible vendor.
+ */
+export function resolveOpenAIChatCompletionsUrl(): string {
+  const base = (process.env.OPENAI_BASE_URL || DEFAULT_OPENAI_BASE_URL).replace(/\/+$/, "");
+  return `${base}/chat/completions`;
+}
+
 class OpenAIProvider implements AIProvider {
   readonly name = "openai" as const;
   readonly envKey = "OPENAI_API_KEY";
@@ -47,7 +62,7 @@ class OpenAIProvider implements AIProvider {
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) throw new Error("OPENAI_API_KEY not configured");
 
-    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+    const res = await fetch(resolveOpenAIChatCompletionsUrl(), {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
