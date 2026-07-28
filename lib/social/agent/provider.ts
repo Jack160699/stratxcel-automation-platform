@@ -52,6 +52,35 @@ export function resolveOpenAIChatCompletionsUrl(): string {
   return `${base}/chat/completions`;
 }
 
+export interface EffectiveProviderIdentity {
+  provider: string;
+  protocol: string;
+  model: string;
+  configured: boolean;
+}
+
+export function resolveEffectiveProviderIdentity(): EffectiveProviderIdentity {
+  const base = (process.env.OPENAI_BASE_URL || DEFAULT_OPENAI_BASE_URL).toLocaleLowerCase();
+  if (process.env.OPENAI_API_KEY) {
+    const provider = base.includes("openrouter.ai") ? "OpenRouter" : base.includes("api.openai.com") ? "OpenAI" : "OpenAI-compatible provider";
+    return {
+      provider,
+      protocol: "OpenAI-compatible",
+      model: process.env.OPENAI_AGENT_MODEL || "gpt-4o-mini",
+      configured: true,
+    };
+  }
+  if (process.env.ANTHROPIC_API_KEY) {
+    return {
+      provider: "Anthropic",
+      protocol: "Anthropic Messages",
+      model: process.env.ANTHROPIC_AGENT_MODEL || "claude-haiku-4-5-20251001",
+      configured: true,
+    };
+  }
+  return { provider: "Not configured", protocol: "—", model: "—", configured: false };
+}
+
 class OpenAIProvider implements AIProvider {
   readonly name = "openai" as const;
   readonly envKey = "OPENAI_API_KEY";

@@ -20,6 +20,11 @@ const AI_ENV_KEYS: Record<string, string> = {
   google: "GOOGLE_GENERATIVE_AI_API_KEY",
 };
 
+function effectiveOpenAIName() {
+  const base = (process.env.OPENAI_BASE_URL || "https://api.openai.com/v1").toLocaleLowerCase();
+  return base.includes("openrouter.ai") ? "openrouter" : "openai";
+}
+
 /**
  * Runs every health probe this product can honestly evaluate right now and
  * persists a snapshot row per component to social_health_checks. Nothing in
@@ -64,8 +69,9 @@ export async function runHealthChecks(): Promise<HealthRecord[]> {
   }
 
   // --- AI providers: env-key presence only (never fabricate a live test) ---
-  for (const [provider, envKey] of Object.entries(AI_ENV_KEYS)) {
+  for (const [configuredProvider, envKey] of Object.entries(AI_ENV_KEYS)) {
     const configured = Boolean(process.env[envKey]);
+    const provider = configuredProvider === "openai" && configured ? effectiveOpenAIName() : configuredProvider;
     records.push({
       component: `ai:${provider}`,
       group: "ai",

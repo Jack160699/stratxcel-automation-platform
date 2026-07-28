@@ -10,7 +10,7 @@ import {
   getAction,
   updateActionStatus,
 } from "../repositories/agent";
-import { startRun, completeRun, recordRunEvent } from "../repositories/agent-runs";
+import { startRun, completeRun, recordRunEvent, getLatestRun } from "../repositories/agent-runs";
 import { resolveConfiguredProvider } from "./provider";
 import { getTool, toolSchemas, type AgentTool } from "./tools";
 import { serializeToolOutput } from "./tool-output";
@@ -18,6 +18,13 @@ import { labelForTool, labelForApproval, PHASE_LABELS } from "./activity-labels"
 import { summarizeForEvent } from "./tool-output-summary";
 import type { AgentTurnMessage } from "./provider";
 import type { OwnerContext } from "../db-context";
+import {
+  INTERNAL_DEPENDENTS_KEY,
+  readDeferredActions,
+  splitDependentCalls,
+  stripInternalInput,
+} from "./dependencies";
+import { validateBrandEntities } from "./brand-validation";
 
 const SYSTEM_PROMPT = `You are the Stratxcel Social Autopilot Agent — an operational copilot for Stratxcel's own
 Instagram, Facebook, Threads, LinkedIn, and YouTube presence. You plan, draft, schedule, and analyze
@@ -45,6 +52,15 @@ export async function createAgentSession(ctx: OwnerContext, title: string | null
   return createSessionRepo(ctx, title);
 }
 
+export async function acceptAgentMission(ctx: OwnerContext, sessionId: string | null, userText: string) {
+  const id = sessionId ?? (await createAgentSession(ctx, userText.slice(0, 60)));
+  await insertMessage(ctx, id, "USER", userText);
+  await setSessionStatus(ctx, id, "GENERATING");
+  const runId = await startRun(ctx, id);
+  await recordRunEvent(ctx, runId, { type: "RUN_STARTED", label: PHASE_LABELS.RUN_STARTED });
+  return { sessionId: id, runId };
+}
+
 /**
  * Executes one full agent turn: persist the user's message, ask the
  * configured provider what to do, execute any tool calls that don't need
@@ -54,9 +70,7 @@ export async function createAgentSession(ctx: OwnerContext, title: string | null
  * If no AI provider is configured, this is honest about it instead of
  * fabricating a response — the whole point of "no fake functionality".
  */
-export async function runAgentTurn(ctx: OwnerContext, sessionId: string, userText: string) {
-  await insertMessage(ctx, sessionId, "USER", userText);
-
+export async function runAgentTurn(ctx: OwnerContext, sessionId: string, runId: string) {
   const provider = resolveConfiguredProvider();
   if (!provider) {
     const message =
@@ -65,7 +79,9 @@ export async function runAgentTurn(ctx: OwnerContext, sessionId: string, userTex
       "I can still run direct tools for you if you ask a specific yes/no operational question through the UI.";
     await insertMessage(ctx, sessionId, "AGENT", message);
     await setSessionStatus(ctx, sessionId, "BLOCKED");
-    return { blocked: true as const, reason: "ai_not_configured", message };
+    await recordRunEvent(ctx, runId, { type: "RUN_FAILED", label: PHASE_LABELS.RUN_FAILED, status: "FAILED", meta: { reason: "AI provider not configured" } });
+    await completeRun(ctx, runId, "FAILED", "AI provider not configured");
+    return { blocked: true as const, reason: "ai_not_configured", message, runId };
   }
 
   const settings = await getAutomationSettings(ctx);
@@ -81,8 +97,6 @@ export async function runAgentTurn(ctx: OwnerContext, sessionId: string, userTex
   // Execution telemetry: a real, append-only trace of what this turn actually
   // did (provider round-trips, tool calls, approval gates) — never the
   // model's internal reasoning. See lib/social/repositories/agent-runs.ts.
-  const runId = await startRun(ctx, sessionId);
-  await recordRunEvent(ctx, runId, { type: "RUN_STARTED", label: PHASE_LABELS.RUN_STARTED });
   await recordRunEvent(ctx, runId, { type: "UNDERSTANDING_REQUEST", label: PHASE_LABELS.UNDERSTANDING_REQUEST });
 
   const proposedActions: Array<{ id: string; tool: string; input: Record<string, unknown> }> = [];
@@ -103,18 +117,35 @@ export async function runAgentTurn(ctx: OwnerContext, sessionId: string, userTex
 
       if (result.toolCalls.length === 0) break;
 
-      for (const call of result.toolCalls) {
+      const { ready: toolCalls, deferredByUpstream } = splitDependentCalls(result.toolCalls);
+      for (const call of toolCalls) {
         const tool: AgentTool | undefined = getTool(call.name);
         if (!tool) {
           messages.push({ role: "tool", content: `Unknown tool: ${call.name}`, toolCallId: call.id, toolName: call.name });
           continue;
         }
 
+        const blockedDependency = call.arguments.__blockedDependency;
+        if (typeof blockedDependency === "string") {
+          messages.push({
+            role: "tool",
+            content: `Blocked: required upstream output "${blockedDependency}" does not exist yet. No action was proposed or executed.`,
+            toolCallId: call.id,
+            toolName: call.name,
+          });
+          continue;
+        }
+
         const needsApproval = tool.mutating && requiresApproval(tool.schema.name, settings, 0.75);
 
         if (needsApproval) {
-          const actionId = await proposeAction(ctx, sessionId, tool.schema.name, call.arguments);
-          if (actionId) proposedActions.push({ id: actionId, tool: tool.schema.name, input: call.arguments });
+          const dependents = deferredByUpstream.get(call.id) ?? [];
+          const publicInput = await validateBrandEntities(ctx, tool.schema.name, stripInternalInput(call.arguments));
+          const storedInput = dependents.length
+            ? { ...publicInput, [INTERNAL_DEPENDENTS_KEY]: dependents }
+            : publicInput;
+          const actionId = await proposeAction(ctx, sessionId, tool.schema.name, storedInput);
+          if (actionId) proposedActions.push({ id: actionId, tool: tool.schema.name, input: publicInput });
           await recordRunEvent(ctx, runId, {
             type: "APPROVAL_REQUIRED",
             label: labelForApproval(tool.schema.name),
@@ -134,8 +165,9 @@ export async function runAgentTurn(ctx: OwnerContext, sessionId: string, userTex
         await recordRunEvent(ctx, runId, { type: "TOOL_STARTED", label: toolLabel, toolName: tool.schema.name });
         const toolStarted = Date.now();
         try {
-          const output = await tool.execute(ctx, call.arguments);
-          await recordExecutedAction(ctx, sessionId, tool.schema.name, call.arguments, output, "SUCCEEDED");
+          const validInput = await validateBrandEntities(ctx, tool.schema.name, stripInternalInput(call.arguments));
+          const output = await tool.execute(ctx, validInput);
+          await recordExecutedAction(ctx, sessionId, tool.schema.name, validInput, output, "SUCCEEDED");
           if (tool.mutating) {
             await recordAudit({
               actorType: "AGENT",
@@ -191,10 +223,51 @@ export async function approveAgentAction(ctx: OwnerContext, actionId: string) {
   const tool = getTool(action.tool_name);
   if (!tool) throw new Error(`unknown tool: ${action.tool_name}`);
 
+  const run = action.session_id ? await getLatestRun(ctx, action.session_id) : null;
   await updateActionStatus(ctx, actionId, "EXECUTING");
+  if (run) {
+    await recordRunEvent(ctx, run.id, {
+      type: "APPROVAL_APPROVED",
+      label: `Approved — ${labelForTool(action.tool_name)}`,
+      toolName: action.tool_name,
+      status: "SUCCESS",
+    });
+    await recordRunEvent(ctx, run.id, {
+      type: "TOOL_STARTED",
+      label: labelForTool(action.tool_name),
+      toolName: action.tool_name,
+    });
+  }
   try {
-    const output = await tool.execute(ctx, action.input ?? {});
+    const publicInput = stripInternalInput(action.input ?? {});
+    const validInput = await validateBrandEntities(ctx, action.tool_name, publicInput);
+    const output = await tool.execute(ctx, validInput);
     await updateActionStatus(ctx, actionId, "SUCCEEDED", { output });
+    if (run) {
+      await recordRunEvent(ctx, run.id, {
+        type: "TOOL_COMPLETED",
+        label: labelForTool(action.tool_name),
+        toolName: action.tool_name,
+        status: "SUCCESS",
+        meta: summarizeForEvent(output),
+      });
+    }
+    for (const deferred of readDeferredActions(action.input ?? {})) {
+      if (!action.session_id) continue;
+      const boundInput = await validateBrandEntities(ctx, deferred.tool, {
+        ...deferred.input,
+        [deferred.bind.inputKey]: output,
+      });
+      const dependentId = await proposeAction(ctx, action.session_id, deferred.tool, boundInput);
+      if (dependentId && run) {
+        await recordRunEvent(ctx, run.id, {
+          type: "APPROVAL_REQUIRED",
+          label: labelForApproval(deferred.tool),
+          toolName: deferred.tool,
+          status: "PENDING",
+        });
+      }
+    }
     await recordAudit({
       actorType: "AGENT",
       action: `agent.${action.tool_name}`,
@@ -205,10 +278,31 @@ export async function approveAgentAction(ctx: OwnerContext, actionId: string) {
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : "execution failed";
     await updateActionStatus(ctx, actionId, "FAILED", { reason: errorMessage });
+    if (run) {
+      await recordRunEvent(ctx, run.id, {
+        type: "TOOL_FAILED",
+        label: labelForTool(action.tool_name),
+        toolName: action.tool_name,
+        status: "FAILED",
+        meta: { reason: errorMessage },
+      });
+    }
     throw err;
   }
 }
 
 export async function rejectAgentAction(ctx: OwnerContext, actionId: string) {
+  const action = await getAction(ctx, actionId);
   await updateActionStatus(ctx, actionId, "REJECTED");
+  if (action?.session_id) {
+    const run = await getLatestRun(ctx, action.session_id);
+    if (run) {
+      await recordRunEvent(ctx, run.id, {
+        type: "APPROVAL_REJECTED",
+        label: `Rejected — ${labelForTool(action.tool_name)}`,
+        toolName: action.tool_name,
+        status: "FAILED",
+      });
+    }
+  }
 }

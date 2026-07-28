@@ -28,3 +28,20 @@ provided — do not edit its markup/content when using it for reference.
 Before making Social Autopilot UI/UX changes, look here first for layout and
 composition ideas, then implement using the actual `--saut-*` tokens and
 existing shared components.
+
+## Copilot agent workspace principles
+
+The full-page Copilot uses three intentionally unequal areas:
+
+- **Session Rail** — compact navigation for real persisted conversations.
+- **Work Canvas** — the dominant conversation, work-card, artifact, and approval surface.
+- **Progress / Context Rail** — real execution events, accessed context, artifacts, and connected-system identity.
+
+Progress is operational telemetry only. It shows events persisted when real
+operations occur; it never invents future steps, percentages, or tool output,
+and it never exposes private model reasoning, hidden prompts, or chain-of-thought.
+Known future steps are shown only when a persisted workflow actually defines them.
+
+The external reference is inspiration for information hierarchy and density
+only. Stratxcel's `--saut-*` tokens, accessibility behavior, shared components,
+real data, and security rules are authoritative.

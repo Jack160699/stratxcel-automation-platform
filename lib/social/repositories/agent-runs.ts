@@ -25,6 +25,8 @@ export interface AgentRunRow {
   completed_at: string | null;
 }
 
+export type TerminalRunStatus = "COMPLETED" | "FAILED";
+
 export interface AgentRunEventRow {
   id: string;
   run_id: string;
@@ -44,6 +46,11 @@ export async function startRun(ctx: OwnerContext, sessionId: string): Promise<st
     .single();
   if (error || !data) throw new Error(error?.message ?? "agent run insert failed");
   return data.id as string;
+}
+
+export async function getRun(ctx: OwnerContext, runId: string): Promise<AgentRunRow | null> {
+  const { data } = await ctx.supabase.from("social_agent_runs").select("*").eq("id", runId).maybeSingle();
+  return data as AgentRunRow | null;
 }
 
 export async function completeRun(ctx: OwnerContext, runId: string, status: "COMPLETED" | "FAILED", errorReason?: string) {
@@ -86,6 +93,23 @@ export async function getRunEvents(ctx: OwnerContext, runId: string): Promise<Ag
     .eq("run_id", runId)
     .order("created_at", { ascending: true });
   return (data ?? []) as AgentRunEventRow[];
+}
+
+export async function getRunWithEvents(
+  ctx: OwnerContext,
+  runId: string,
+  after?: string | null
+): Promise<{ run: AgentRunRow | null; events: AgentRunEventRow[] }> {
+  const run = await getRun(ctx, runId);
+  if (!run) return { run: null, events: [] };
+  let query = ctx.supabase
+    .from("social_agent_run_events")
+    .select("*")
+    .eq("run_id", runId)
+    .order("created_at", { ascending: true });
+  if (after) query = query.gt("created_at", after);
+  const { data } = await query;
+  return { run, events: (data ?? []) as AgentRunEventRow[] };
 }
 
 export async function getLatestRunWithEvents(ctx: OwnerContext, sessionId: string): Promise<{ run: AgentRunRow | null; events: AgentRunEventRow[] }> {

@@ -3,6 +3,7 @@ import { requireOwnerContext } from "@/lib/social/db-context";
 import { listSessions } from "@/lib/social/repositories/agent";
 import { listRecentVariants } from "@/lib/social/repositories/content";
 import { CopilotFullPage } from "./CopilotFullPage";
+import { resolveEffectiveProviderIdentity } from "@/lib/social/agent/provider";
 
 export const metadata: Metadata = {
   title: "Copilot — Social Autopilot — Stratxcel Admin",
@@ -16,5 +17,5 @@ export default async function CopilotPage() {
 
   const [sessions, variants] = await Promise.all([listSessions(ctx, 30), listRecentVariants(ctx, 8)]);
 
-  return <CopilotFullPage initialSessions={sessions} initialVariants={variants} />;
+  return <CopilotFullPage initialSessions={sessions} initialVariants={variants} provider={resolveEffectiveProviderIdentity()} />;
 }

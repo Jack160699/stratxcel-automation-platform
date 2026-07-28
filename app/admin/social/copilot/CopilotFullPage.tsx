@@ -2,11 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import { AgentMessage } from "../agent/AgentMessage";
-import { MissionCard } from "../components/MissionCard";
 import { EmptyState } from "../components/EmptyState";
-import { PlatformIcon, type Platform } from "../components/PlatformIcon";
 import { StatusBadge } from "../components/StatusBadge";
 import type { AgentSessionRow } from "@/lib/social/repositories/agent";
+import type { EffectiveProviderIdentity } from "@/lib/social/agent/provider";
 import { useCopilot } from "./CopilotContext";
 import { useAgentSession } from "./useAgentSession";
 import { ExecutionTrace } from "./ExecutionTrace";
@@ -15,43 +14,13 @@ import { quickActionsForPath } from "./quick-actions";
 
 interface VariantRow {
   id: string;
-  master_id: string;
   platform: string;
   status: string;
-  created_at: string;
   updated_at: string;
   content_master: { title: string; content_pillar: string } | null;
 }
 
-function fmt(iso: string) {
-  return new Date(iso).toISOString().slice(0, 16).replace("T", " ");
-}
-
-function OutputCard({ variant }: { variant: VariantRow }) {
-  const isScheduled = variant.status === "SCHEDULED" || variant.status === "PUBLISHED";
-  const href = isScheduled ? "/admin/social/planner" : "/admin/social/create";
-  return (
-    <a
-      href={href}
-      className="saut-card-2 flex items-start gap-2.5 p-3 text-xs transition hover:border-[var(--saut-border-strong)]"
-    >
-      <PlatformIcon platform={variant.platform as Platform} size={18} />
-      <div className="min-w-0 flex-1">
-        <div className="truncate font-medium" style={{ color: "var(--saut-text)" }}>
-          {variant.content_master?.title ?? "Untitled content"}
-        </div>
-        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
-          <StatusBadge label={variant.status} />
-          <span className="saut-mono text-[10px]" style={{ color: "var(--saut-text-subtle)" }}>
-            Updated {fmt(variant.updated_at)}
-          </span>
-        </div>
-      </div>
-    </a>
-  );
-}
-
-function SessionHistory({
+function SessionRail({
   sessions,
   activeId,
   onSelect,
@@ -62,201 +31,160 @@ function SessionHistory({
   onSelect: (id: string) => void;
   onNew: () => void;
 }) {
-  const groups = groupSessionsByDay(sessions);
   return (
-    <div className="saut-card p-3">
-      <div className="mb-2 flex items-center justify-between">
-        <span className="saut-section-title">Sessions</span>
-        <button onClick={onNew} className="saut-btn saut-btn-ghost !h-6 !px-2 text-[11px]">
-          New
-        </button>
-      </div>
-      {sessions.length === 0 ? (
-        <p className="text-xs" style={{ color: "var(--saut-text-subtle)" }}>
-          No sessions yet.
-        </p>
-      ) : (
-        <div className="max-h-64 space-y-3 overflow-y-auto">
-          {groups.map((group) => (
-            <div key={group.label}>
-              <div className="saut-mono mb-1 text-[10px] uppercase tracking-wide" style={{ color: "var(--saut-text-subtle)" }}>
-                {group.label}
-              </div>
-              <div className="space-y-1">
-                {group.sessions.map((s) => (
-                  <button
-                    key={s.id}
-                    onClick={() => onSelect(s.id)}
-                    className="block w-full truncate rounded-lg px-2 py-1.5 text-left text-xs transition"
-                    style={
-                      s.id === activeId
-                        ? { background: "var(--saut-accent-muted)", color: "var(--saut-text)" }
-                        : { color: "var(--saut-text-muted)" }
-                    }
-                  >
-                    {s.title || "Untitled session"}
-                  </button>
-                ))}
-              </div>
-            </div>
+    <aside className="saut-agent-rail saut-agent-left p-3" aria-label="Copilot sessions">
+      <button onClick={onNew} className="saut-btn saut-btn-secondary mb-4 w-full justify-center">+ New conversation</button>
+      {groupSessionsByDay(sessions).map((group) => (
+        <section key={group.label} className="mb-4">
+          <div className="saut-section-title mb-1.5">{group.label}</div>
+          {group.sessions.map((session) => (
+            <button
+              key={session.id}
+              onClick={() => onSelect(session.id)}
+              className="mb-1 block w-full rounded-lg px-2.5 py-2 text-left"
+              style={session.id === activeId
+                ? { background: "var(--saut-accent-muted)", color: "var(--saut-text)" }
+                : { color: "var(--saut-text-muted)" }}
+            >
+              <span className="block truncate text-xs font-medium">{session.title || "Untitled session"}</span>
+              <span className="saut-mono mt-1 block text-[9px] uppercase" style={{ color: "var(--saut-text-subtle)" }}>{session.status}</span>
+            </button>
           ))}
-        </div>
-      )}
-    </div>
+        </section>
+      ))}
+      <section className="mt-5 border-t pt-4" style={{ borderColor: "var(--saut-border)" }}>
+        <div className="saut-section-title mb-2">Shortcuts</div>
+        <p className="text-[11px] leading-relaxed" style={{ color: "var(--saut-text-subtle)" }}>Quick prompts are available in the empty canvas.</p>
+      </section>
+    </aside>
   );
 }
 
 export function CopilotFullPage({
   initialSessions,
   initialVariants,
+  provider,
 }: {
   initialSessions: AgentSessionRow[];
   initialVariants: VariantRow[];
+  provider: EffectiveProviderIdentity;
 }) {
   const { sessionId, setSessionId, dockAndReturn } = useCopilot();
-  const { messages, pending, loadingHistory, blockedReason, failedReason, run, runEvents, session, send, approve, reject } =
+  const { messages, pending, loadingHistory, failedReason, run, runEvents, session, send, approve, reject } =
     useAgentSession(sessionId, setSessionId);
   const [input, setInput] = useState("");
-  const [historyOpen, setHistoryOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-  }, [messages]);
+  }, [messages, runEvents]);
 
-  const pendingApprovals = messages.reduce((n, m) => n + m.parts.reduce((c, p) => c + (p.type === "proposed_actions" ? p.actions?.length ?? 0 : 0), 0), 0);
+  const submit = () => {
+    const value = input.trim();
+    if (!value) return;
+    send(value);
+    setInput("");
+  };
+  const brandUsed = runEvents.some((event) => event.tool_name === "inspect_brand");
+  const accountsUsed = runEvents.some((event) => event.tool_name === "inspect_accounts");
+  const missionTitle = session?.title || messages.find((message) => message.role === "user")?.content || "New conversation";
 
   return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-lg font-semibold" style={{ color: "var(--saut-text)" }}>
-            Stratxcel Copilot
-          </h1>
-          <p className="text-xs" style={{ color: "var(--saut-text-subtle)" }}>
-            Your personal operations agent — plans, drafts, schedules, and analyzes with you.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <button onClick={() => setHistoryOpen((v) => !v)} className="saut-btn saut-btn-secondary !h-8 text-xs">
-            History
-          </button>
-          <button onClick={dockAndReturn} className="saut-btn saut-btn-secondary !h-8 text-xs">
-            Dock Copilot
-          </button>
-        </div>
-      </div>
+    <div className="saut-agent-workspace">
+      <SessionRail sessions={initialSessions} activeId={sessionId} onSelect={setSessionId} onNew={() => setSessionId(null)} />
 
-      {historyOpen && (
-        <SessionHistory
-          sessions={initialSessions}
-          activeId={sessionId}
-          onSelect={(id) => {
-            setSessionId(id);
-            setHistoryOpen(false);
-          }}
-          onNew={() => {
-            setSessionId(null);
-            setHistoryOpen(false);
-          }}
-        />
-      )}
-
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.6fr_1fr]">
-        {/* Conversation — the dominant workspace */}
-        <div className="saut-card flex min-h-[520px] flex-col">
-          <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto p-4">
-            {loadingHistory ? (
-              <p className="text-xs" style={{ color: "var(--saut-text-subtle)" }}>
-                Loading session…
-              </p>
-            ) : messages.length === 0 ? (
-              <div className="space-y-3">
-                <EmptyState hint="Ask about your social operation, or try a quick action.">No conversation yet.</EmptyState>
-                <div className="flex flex-wrap gap-2">
-                  {quickActionsForPath("/admin/social").map((qa) => (
-                    <button key={qa} onClick={() => send(qa)} className="saut-btn saut-btn-secondary !h-7 !px-2.5 text-[11px]">
-                      {qa}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              messages.map((m) => <AgentMessage key={m.id} message={m} onApprove={approve} onReject={reject} />)
-            )}
-            {blockedReason && (
-              <div className="saut-chip saut-chip-warning">
-                <span className="saut-chip-dot" /> Agent blocked
-              </div>
-            )}
-            {failedReason && (
-              <div className="saut-chip saut-chip-danger">
-                <span className="saut-chip-dot" /> Failed — {failedReason}
-              </div>
-            )}
+      <section className="saut-agent-canvas flex min-h-0 flex-col" aria-label="Agent work canvas">
+        <header className="flex items-center gap-3 border-b px-4 py-3" style={{ borderColor: "var(--saut-border)" }}>
+          <div className="min-w-0">
+            <div className="saut-section-title">Stratxcel Copilot</div>
+            <h1 className="truncate text-sm font-semibold">{missionTitle}</h1>
           </div>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              send(input);
-              setInput("");
-            }}
-            className="flex gap-2 border-t p-3"
-            style={{ borderColor: "var(--saut-border)" }}
-          >
-            <input
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="Ask Copilot…"
-              aria-label="Message Copilot"
-              className="saut-input flex-1"
-              disabled={pending}
-            />
-            <button type="submit" disabled={pending || !input.trim()} className="saut-btn saut-btn-primary !px-4">
-              Send
-            </button>
-          </form>
-        </div>
+          <span className={`saut-chip ml-auto ${pending ? "saut-chip-ai" : "saut-chip-neutral"}`}>
+            <span className={`saut-chip-dot ${pending ? "saut-pulse" : ""}`} />{pending ? "Working" : "Ready"}
+          </span>
+          <button onClick={dockAndReturn} className="saut-btn saut-btn-ghost !h-7 !px-2 text-xs">Dock</button>
+        </header>
 
-        {/* Operations context */}
-        <div className="flex flex-col gap-4">
-          <div className="saut-card p-4">
-            <div className="saut-section-title mb-3">Current mission</div>
-            {session ? (
-              <MissionCard status={session.status} title={session.title || "Untitled session"} createdAt={session.created_at} updatedAt={session.updated_at} />
-            ) : (
-              <EmptyState hint="Start a conversation to give Copilot something to work on.">No active mission.</EmptyState>
-            )}
-          </div>
-
-          <div className="saut-card-ai p-4">
-            <div className="saut-section-title mb-3">Live execution</div>
-            <ExecutionTrace run={run} events={runEvents} />
-          </div>
-
-          {pendingApprovals > 0 && (
-            <div className="saut-card p-4">
-              <div className="saut-section-title mb-2">Waiting for your approval</div>
-              <p className="text-xs" style={{ color: "var(--saut-text-muted)" }}>
-                {pendingApprovals} action{pendingApprovals === 1 ? "" : "s"} queued in the conversation — review and approve or reject above.
-              </p>
-            </div>
-          )}
-
-          <div className="saut-card p-4">
-            <div className="saut-section-title mb-3">Recent outputs</div>
-            {initialVariants.length === 0 ? (
-              <EmptyState>No content generated yet.</EmptyState>
-            ) : (
-              <div className="space-y-2">
-                {initialVariants.map((v) => (
-                  <OutputCard key={v.id} variant={v} />
+        <div ref={scrollRef} className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
+          {loadingHistory ? <p className="text-xs" style={{ color: "var(--saut-text-subtle)" }}>Loading session…</p> : null}
+          {!loadingHistory && messages.length === 0 ? (
+            <div className="mx-auto mt-16 max-w-lg space-y-4">
+              <EmptyState hint="Give Copilot a mission and watch real operations appear in Progress.">What should we work on?</EmptyState>
+              <div className="flex flex-wrap justify-center gap-2">
+                {quickActionsForPath("/admin/social").map((action) => (
+                  <button key={action} onClick={() => send(action)} className="saut-btn saut-btn-secondary text-xs">{action}</button>
                 ))}
               </div>
-            )}
+            </div>
+          ) : messages.map((message) => <AgentMessage key={message.id} message={message} onApprove={approve} onReject={reject} />)}
+          {failedReason && <div className="saut-chip saut-chip-danger"><span className="saut-chip-dot" />Failed · {failedReason}</div>}
+        </div>
+
+        <div className="border-t p-3" style={{ borderColor: "var(--saut-border)" }}>
+          <div className="mb-2 text-[10px]" style={{ color: "var(--saut-text-subtle)" }}>Context · Social Autopilot</div>
+          <div className="flex items-end gap-2">
+            <textarea
+              value={input}
+              onChange={(event) => setInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.shiftKey) {
+                  event.preventDefault();
+                  submit();
+                }
+              }}
+              placeholder="Give Copilot a mission…"
+              aria-label="Message Copilot"
+              className="saut-input saut-agent-composer flex-1"
+              disabled={pending}
+            />
+            <button onClick={submit} disabled={pending || !input.trim()} className="saut-btn saut-btn-primary">Send</button>
           </div>
         </div>
-      </div>
+      </section>
+
+      <aside className="saut-agent-rail saut-agent-right p-4" aria-label="Progress and context">
+        <section>
+          <div className="saut-section-title mb-2">Current mission</div>
+          <p className="mb-4 text-sm font-medium leading-snug">{missionTitle}</p>
+          <div className="saut-section-title mb-3">Progress</div>
+          <ExecutionTrace run={run} events={runEvents} />
+        </section>
+
+        <section className="mt-6 border-t pt-4" style={{ borderColor: "var(--saut-border)" }}>
+          <div className="saut-section-title mb-3">Context</div>
+          {!brandUsed && !accountsUsed ? (
+            <p className="text-xs" style={{ color: "var(--saut-text-subtle)" }}>Accessed context appears here during the run.</p>
+          ) : (
+            <div className="space-y-2 text-xs">
+              {brandUsed && <div className="saut-card-2 p-2.5">Brand Brain · Used in this run</div>}
+              {accountsUsed && <div className="saut-card-2 p-2.5">Connected accounts · Checked</div>}
+            </div>
+          )}
+        </section>
+
+        <section className="mt-6 border-t pt-4" style={{ borderColor: "var(--saut-border)" }}>
+          <div className="saut-section-title mb-3">Working with</div>
+          <div className="space-y-2">
+            {initialVariants.length === 0 ? <p className="text-xs" style={{ color: "var(--saut-text-subtle)" }}>No artifacts yet.</p> :
+              initialVariants.slice(0, 4).map((variant) => (
+                <a key={variant.id} href="/admin/social/create" className="saut-card-2 block p-2.5 text-xs">
+                  <span className="block truncate">{variant.content_master?.title || `${variant.platform} draft`}</span>
+                  <span className="mt-1 flex items-center gap-2"><StatusBadge label={variant.status} /></span>
+                </a>
+              ))}
+          </div>
+        </section>
+
+        <section className="mt-6 border-t pt-4 text-xs" style={{ borderColor: "var(--saut-border)" }}>
+          <div className="saut-section-title mb-3">Connected systems</div>
+          <div className="space-y-2">
+            <div className="flex justify-between gap-3"><span>Supabase</span><span style={{ color: "var(--saut-success)" }}>Available</span></div>
+            <div className="flex justify-between gap-3"><span>AI Provider</span><span>{provider.provider}</span></div>
+            <div className="flex justify-between gap-3"><span>Protocol</span><span>{provider.protocol}</span></div>
+            <div className="truncate text-right" title={provider.model} style={{ color: "var(--saut-text-subtle)" }}>{provider.model}</div>
+          </div>
+        </section>
+      </aside>
     </div>
   );
 }

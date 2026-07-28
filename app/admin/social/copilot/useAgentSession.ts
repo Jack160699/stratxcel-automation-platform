@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  sendAgentMessageAction,
   approveAgentActionAction,
   rejectAgentActionAction,
   getAgentSessionAction,
@@ -13,7 +12,7 @@ import type { AgentMessageData } from "../agent/AgentMessage";
 import type { AgentRunEventRow, AgentRunRow } from "@/lib/social/repositories/agent-runs";
 import type { AgentSessionRow } from "@/lib/social/repositories/agent";
 
-const RUN_EVENT_POLL_MS = 1500;
+const RUN_EVENT_POLL_MS = 1000;
 
 interface UseAgentSessionResult {
   messages: AgentMessageData[];
@@ -48,17 +47,23 @@ export function useAgentSession(sessionId: string | null, onSessionCreated: (id:
     }
   }, []);
 
-  const pollRunEvents = useCallback((sid: string) => {
+  const pollRunEvents = useCallback((runId: string) => {
     stopPolling();
-    pollRef.current = setInterval(() => {
-      getRunEventsAction(sid)
+    const poll = () => {
+      fetch(`/api/social/copilot/runs/${encodeURIComponent(runId)}`, { cache: "no-store" })
+        .then((response) => {
+          if (!response.ok) throw new Error("Could not load run");
+          return response.json() as Promise<{ run: AgentRunRow; events: AgentRunEventRow[] }>;
+        })
         .then(({ run: latestRun, events }) => {
           setRun(latestRun);
           setRunEvents(events);
           if (latestRun && latestRun.status !== "RUNNING") stopPolling();
         })
         .catch(() => {});
-    }, RUN_EVENT_POLL_MS);
+    };
+    poll();
+    pollRef.current = setInterval(poll, RUN_EVENT_POLL_MS);
   }, [stopPolling]);
 
   useEffect(() => stopPolling, [stopPolling]);
@@ -88,11 +93,21 @@ export function useAgentSession(sessionId: string | null, onSessionCreated: (id:
           p.type === "proposed_actions" ? { ...p, actions: p.actions?.filter((a) => stillProposed.has(a.id)) } : p
         ),
       }));
+      const referenced = new Set(mapped.flatMap((message) => message.parts.flatMap((part) => part.actions?.map((action) => action.id) ?? [])));
+      const unreferenced = actions.filter((action) => action.status === "PROPOSED" && !referenced.has(action.id));
+      if (unreferenced.length) {
+        mapped.push({
+          id: `pending-actions-${sid}`,
+          role: "system",
+          content: "Dependent work is ready for review.",
+          parts: [{ type: "proposed_actions", actions: unreferenced.map((action) => ({ id: action.id, tool: action.tool_name, input: action.input })) }],
+        });
+      }
       setMessages(mapped);
       setRun(latestRun);
       setRunEvents(events);
       setSession(sessionRow);
-      if (latestRun?.status === "RUNNING") pollRunEvents(sid);
+      if (latestRun?.status === "RUNNING") pollRunEvents(latestRun.id);
       setLoadingHistory(false);
     }
 
@@ -107,13 +122,34 @@ export function useAgentSession(sessionId: string | null, onSessionCreated: (id:
       setFailedReason(null);
       setMessages((prev) => [...prev, { id: `local-${Date.now()}`, role: "user", content: trimmed, parts: [] }]);
       setPending(true);
-      if (sessionId) pollRunEvents(sessionId);
-      sendAgentMessageAction(sessionId, trimmed)
-        .then((result) => {
-          if (result.sessionId && result.sessionId !== sessionId) {
-            hydratedSessionRef.current = result.sessionId;
-            onSessionCreated(result.sessionId);
-          }
+      fetch("/api/social/copilot/runs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId, message: trimmed }),
+      })
+        .then(async (response) => {
+          const accepted = await response.json();
+          if (!response.ok) throw new Error(accepted.error ?? "Could not start the mission");
+          return accepted as { sessionId: string; runId: string };
+        })
+        .then(async (accepted) => {
+          if (accepted.sessionId !== sessionId) onSessionCreated(accepted.sessionId);
+          hydratedSessionRef.current = accepted.sessionId;
+          setSession({
+            id: accepted.sessionId,
+            owner_id: "",
+            title: trimmed.slice(0, 60),
+            status: "GENERATING",
+            context: {},
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          });
+          pollRunEvents(accepted.runId);
+          const response = await fetch(`/api/social/copilot/runs/${encodeURIComponent(accepted.runId)}/execute`, {
+            method: "POST",
+          });
+          const result = await response.json();
+          if (!response.ok) throw new Error(result.error ?? "The run could not execute");
           if ("blocked" in result && result.blocked) {
             setBlockedReason(result.message ?? "Agent is blocked.");
             setMessages((prev) => [...prev, { id: `agent-${Date.now()}`, role: "agent", content: result.message ?? "Blocked.", parts: [] }]);
@@ -136,28 +172,53 @@ export function useAgentSession(sessionId: string | null, onSessionCreated: (id:
               parts: result.proposedActions?.length ? [{ type: "proposed_actions", actions: result.proposedActions }] : [],
             },
           ]);
-          if (result.sessionId) {
-            getRunEventsAction(result.sessionId)
-              .then(({ run: latestRun, events }) => {
-                setRun(latestRun);
-                setRunEvents(events);
-              })
-              .catch(() => {});
-            getSessionAction(result.sessionId).then(setSession).catch(() => {});
-          }
+          getSessionAction(accepted.sessionId).then(setSession).catch(() => {});
+        })
+        .catch((error) => {
+          setFailedReason(error instanceof Error ? error.message : "The run failed unexpectedly.");
         })
         .finally(() => {
           setPending(false);
-          stopPolling();
         });
     },
-    [pending, sessionId, onSessionCreated, pollRunEvents, stopPolling]
+    [pending, sessionId, onSessionCreated, pollRunEvents]
   );
 
   const approve = useCallback((actionId: string) => {
     setMessages((prev) => prev.map((m) => ({ ...m, parts: m.parts.map((p) => (p.type === "proposed_actions" ? { ...p, actions: p.actions?.filter((a) => a.id !== actionId) } : p)) })));
-    approveAgentActionAction(actionId).catch(() => {});
-  }, []);
+    approveAgentActionAction(actionId)
+      .then(() => {
+        if (sessionId) {
+          hydratedSessionRef.current = null;
+          return getAgentSessionAction(sessionId).then(({ messages: rows, actions }) => {
+            const proposed = actions.filter((a) => a.status === "PROPOSED");
+            const proposedIds = new Set(proposed.map((action) => action.id));
+            const mapped: AgentMessageData[] = rows.map((m) => ({
+              id: m.id,
+              role: m.role === "USER" ? "user" : m.role === "AGENT" ? "agent" : "system",
+              content: m.content,
+              parts: (m.parts as AgentMessageData["parts"]).map((part) =>
+                part.type === "proposed_actions"
+                  ? { ...part, actions: part.actions?.filter((action) => proposedIds.has(action.id)) }
+                  : part
+              ),
+            }));
+            const referenced = new Set(mapped.flatMap((message) => message.parts.flatMap((part) => part.actions?.map((action) => action.id) ?? [])));
+            const unreferenced = proposed.filter((action) => !referenced.has(action.id));
+            if (unreferenced.length) {
+              mapped.push({
+                id: `approvals-${Date.now()}`,
+                role: "system",
+                content: "The upstream work completed. Review the dependent action below.",
+                parts: [{ type: "proposed_actions", actions: unreferenced.map((a) => ({ id: a.id, tool: a.tool_name, input: a.input })) }],
+              });
+            }
+            setMessages(mapped);
+          });
+        }
+      })
+      .catch((error) => setFailedReason(error instanceof Error ? error.message : "Approval failed"));
+  }, [sessionId]);
 
   const reject = useCallback((actionId: string) => {
     setMessages((prev) => prev.map((m) => ({ ...m, parts: m.parts.map((p) => (p.type === "proposed_actions" ? { ...p, actions: p.actions?.filter((a) => a.id !== actionId) } : p)) })));

@@ -114,3 +114,7 @@ export async function getAction(ctx: OwnerContext, actionId: string): Promise<Ag
 export async function updateActionStatus(ctx: OwnerContext, actionId: string, status: string, extra: Record<string, unknown> = {}) {
   await ctx.supabase.from("social_agent_actions").update({ status, updated_at: new Date().toISOString(), ...extra }).eq("id", actionId);
 }
+
+export async function updateActionInput(ctx: OwnerContext, actionId: string, input: Record<string, unknown>) {
+  await ctx.supabase.from("social_agent_actions").update({ input, updated_at: new Date().toISOString() }).eq("id", actionId);
+}
