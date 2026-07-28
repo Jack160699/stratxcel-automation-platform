@@ -11,6 +11,7 @@ import { upsertAutomationSettings } from "../repositories/automation";
 import { createSupabaseServiceClient } from "../../supabase/service";
 import type { OwnerContext } from "../db-context";
 import type { ToolSchema } from "./provider";
+import { CONTENT_OBJECTIVE_VALUES } from "../content-options";
 
 export interface AgentTool {
   schema: ToolSchema;
@@ -142,7 +143,7 @@ const createContentItem: AgentTool = {
       properties: {
         title: { type: "string" },
         masterIdea: { type: "string" },
-        objective: { type: "string" },
+        objective: { type: "string", enum: [...CONTENT_OBJECTIVE_VALUES] },
         contentPillar: { type: "string" },
         campaignId: { type: "string" },
       },
@@ -170,7 +171,7 @@ const createVariant: AgentTool = {
         masterId: { type: "string" },
         platform: { type: "string" },
         format: { type: "string" },
-        objective: { type: "string" },
+        objective: { type: "string", enum: [...CONTENT_OBJECTIVE_VALUES] },
         caption: { type: "string" },
         hashtags: { type: "array", items: { type: "string" } },
         mediaUrls: { type: "array", items: { type: "string" } },

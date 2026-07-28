@@ -1,4 +1,5 @@
 import { createSupabaseServiceClient } from "../../supabase/service";
+import { requireContentObjective } from "../content-options";
 import type { OwnerContext } from "../db-context";
 
 type ServiceClient = ReturnType<typeof createSupabaseServiceClient>;
@@ -66,7 +67,7 @@ export async function createContentMaster(
       campaign_id: input.campaignId ?? null,
       title: input.title,
       master_idea: input.masterIdea,
-      objective: input.objective,
+      objective: requireContentObjective(input.objective),
       content_pillar: input.contentPillar,
       evergreen: input.evergreen ?? false,
       status: "IDEA",
@@ -110,7 +111,7 @@ export async function createContentVariant(
       master_id: input.masterId,
       platform: input.platform,
       format: input.format,
-      objective: input.objective,
+      objective: requireContentObjective(input.objective),
       caption: input.caption,
       hashtags: input.hashtags,
       media_urls: input.mediaUrls,

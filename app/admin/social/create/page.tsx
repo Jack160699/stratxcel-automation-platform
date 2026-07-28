@@ -1,7 +1,8 @@
 import { requireOwnerContext } from "@/lib/social/db-context";
+import { getBrandProfile } from "@/lib/social/repositories/brand";
 import { listCampaigns } from "@/lib/social/repositories/campaigns";
 import { listRecentVariants } from "@/lib/social/repositories/content";
-import { createContentItemAction } from "../actions";
+import { CreateContentForm } from "./CreateContentForm";
 
 const STATUS_CHIP: Record<string, string> = {
   IDEA: "saut-chip-neutral",
@@ -17,7 +18,11 @@ export default async function CreatePage() {
   const ctx = await requireOwnerContext();
   if (!ctx.ok) return null;
 
-  const [campaigns, variants] = await Promise.all([listCampaigns(ctx), listRecentVariants(ctx, 50)]);
+  const [campaigns, variants, brandProfile] = await Promise.all([
+    listCampaigns(ctx),
+    listRecentVariants(ctx, 50),
+    getBrandProfile(ctx),
+  ]);
 
   return (
     <div className="space-y-8">
@@ -31,50 +36,10 @@ export default async function CreatePage() {
 
       <section className="saut-card space-y-3 p-5">
         <h2 className="saut-section-title">New content</h2>
-        <form action={createContentItemAction} className="grid gap-2 sm:grid-cols-2">
-          <select name="campaign_id" className="saut-input">
-            <option value="">No campaign</option>
-            {campaigns.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-          <input name="title" placeholder="Title (internal)" required className="saut-input" />
-          <textarea name="master_idea" placeholder="Master idea — the cross-platform concept" required rows={2} className="saut-input h-auto py-2 sm:col-span-2" />
-          <input name="objective" placeholder="Objective (e.g. awareness, leads)" className="saut-input" />
-          <input name="content_pillar" placeholder="Content pillar (e.g. educational, proof)" className="saut-input" />
-
-          <div className="saut-section-title sm:col-span-2 mt-2">First platform variant</div>
-          <select name="platform" className="saut-input" defaultValue="instagram">
-            <option value="instagram">Instagram</option>
-            <option value="facebook">Facebook</option>
-            <option value="threads">Threads</option>
-            <option value="linkedin">LinkedIn</option>
-            <option value="youtube">YouTube</option>
-          </select>
-          <select name="format" className="saut-input" defaultValue="post">
-            <option value="post">Post</option>
-            <option value="carousel">Carousel</option>
-            <option value="reel">Reel/Video</option>
-            <option value="story">Story</option>
-          </select>
-          <label className="space-y-1 text-xs sm:col-span-2" style={{ color: "var(--saut-text-muted)" }}>
-            YouTube visibility
-            <select name="youtube_privacy_status" className="saut-input mt-1 w-full" defaultValue="private">
-              <option value="private">Private (safest)</option>
-              <option value="unlisted">Unlisted</option>
-              <option value="public">Public</option>
-            </select>
-            <span className="block text-[11px]" style={{ color: "var(--saut-text-subtle)" }}>
-              Applied only to YouTube variants. If omitted or invalid, uploads remain private.
-            </span>
-          </label>
-          <textarea name="caption" placeholder="Caption" required rows={3} className="saut-input h-auto py-2 sm:col-span-2" />
-          <input name="hashtags" placeholder="hashtags, comma or space separated" className="saut-input" />
-          <input name="media_urls" placeholder="Media URL(s), space separated" className="saut-input" />
-          <button className="saut-btn saut-btn-primary w-fit sm:col-span-2">Save</button>
-        </form>
+        <CreateContentForm
+          campaigns={campaigns.map(({ id, name }) => ({ id, name }))}
+          contentPillars={brandProfile.content_pillars.map(({ name }) => name)}
+        />
       </section>
 
       <section className="space-y-3">

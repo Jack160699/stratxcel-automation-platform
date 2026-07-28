@@ -6,12 +6,17 @@ import { requireOwnerContext } from "@/lib/social/db-context";
 import { disconnectAccount } from "@/lib/social/repositories/accounts";
 import { createCampaign } from "@/lib/social/repositories/campaigns";
 import { createContentMaster, createContentVariant } from "@/lib/social/repositories/content";
+import { getBrandProfile } from "@/lib/social/repositories/brand";
 import { scheduleJob, cancelJob } from "@/lib/social/repositories/publishing";
 import { upsertAutomationSettings } from "@/lib/social/repositories/automation";
 import { recordAudit } from "@/lib/social/repositories/system";
 import { createSupabaseServiceClient } from "@/lib/supabase/service";
 import { runWorkerBatch } from "@/lib/social/worker";
 import { normalizeYouTubePrivacyStatus } from "@/lib/social/providers/youtube-visibility";
+import {
+  ContentDraftValidationError,
+  parseCreateContentDraft,
+} from "@/lib/social/content-options";
 
 async function assertOwner() {
   const ctx = await requireOwnerContext();
@@ -58,54 +63,83 @@ export async function createCampaignAction(formData: FormData) {
   revalidatePath("/admin/social", "layout");
 }
 
+export interface CreateContentFormState {
+  status: "idle" | "success" | "error";
+  message: string;
+}
+
 /** Creates a content master idea plus its first platform variant in one step. */
-export async function createContentItemAction(formData: FormData) {
-  const ctx = await assertOwner();
-  const title = String(formData.get("title") ?? "").trim();
-  const masterIdea = String(formData.get("master_idea") ?? "").trim();
-  const caption = String(formData.get("caption") ?? "").trim();
-  if (!title || !masterIdea || !caption) return;
+export async function createContentItemAction(
+  _previousState: CreateContentFormState,
+  formData: FormData
+): Promise<CreateContentFormState> {
+  const owner = await requireOwnerContext();
+  if (!owner.ok) {
+    return {
+      status: "error",
+      message: owner.status === 401 ? "Please sign in again." : "You are not authorized to create content.",
+    };
+  }
 
-  const hashtags = String(formData.get("hashtags") ?? "")
-    .split(/[,\s]+/)
-    .map((h) => h.replace(/^#/, "").trim())
-    .filter(Boolean);
-  const mediaUrls = String(formData.get("media_urls") ?? "")
-    .split(/\s+/)
-    .map((u) => u.trim())
-    .filter(Boolean);
+  try {
+    const profile = await getBrandProfile(owner);
+    const input = parseCreateContentDraft(
+      formData,
+      profile.content_pillars.map((pillar) => pillar.name)
+    );
 
-  const masterId = await createContentMaster(ctx, {
-    campaignId: String(formData.get("campaign_id") ?? "") || null,
-    title,
-    masterIdea,
-    objective: String(formData.get("objective") ?? "") || "awareness",
-    contentPillar: String(formData.get("content_pillar") ?? "") || "educational",
-  });
+    if (input.campaignId) {
+      const { data: campaign, error } = await owner.supabase
+        .from("social_campaigns")
+        .select("id")
+        .eq("id", input.campaignId)
+        .maybeSingle();
+      if (error) throw new Error("Could not validate the selected campaign.");
+      if (!campaign) throw new ContentDraftValidationError("Choose a campaign available to this account.");
+    }
 
-  const platform = String(formData.get("platform") ?? "instagram");
-  const creativeSpec =
-    platform === "youtube"
-      ? {
-          youtube_privacy_status: normalizeYouTubePrivacyStatus(
-            String(formData.get("youtube_privacy_status") ?? "private")
-          ),
-        }
-      : {};
+    const masterId = await createContentMaster(owner, {
+      campaignId: input.campaignId,
+      title: input.title,
+      masterIdea: input.masterIdea,
+      objective: input.objective,
+      contentPillar: input.contentPillar,
+    });
 
-  await createContentVariant(ctx, {
-    masterId,
-    platform,
-    format: String(formData.get("format") ?? "post"),
-    objective: String(formData.get("objective") ?? "") || "awareness",
-    caption,
-    hashtags,
-    mediaUrls,
-    creativeSpec,
-  });
+    try {
+      await createContentVariant(owner, {
+        masterId,
+        platform: input.platform,
+        format: input.format,
+        objective: input.objective,
+        caption: input.caption,
+        hashtags: input.hashtags,
+        mediaUrls: input.mediaUrls,
+        creativeSpec:
+          input.platform === "youtube"
+            ? { youtube_privacy_status: normalizeYouTubePrivacyStatus(input.youtubePrivacyStatus) }
+            : {},
+      });
+    } catch (error) {
+      await owner.supabase.from("content_master").delete().eq("id", masterId);
+      throw error;
+    }
 
-  await recordAudit({ actorType: "USER", actorId: ctx.ownerId, action: "content.create", summary: `Created content "${title}"` });
-  revalidatePath("/admin/social", "layout");
+    await recordAudit({
+      actorType: "USER",
+      actorId: owner.ownerId,
+      action: "content.create",
+      summary: `Created content "${input.title}"`,
+    });
+    revalidatePath("/admin/social", "layout");
+    return { status: "success", message: `Saved "${input.title}" as a ${input.platform} draft.` };
+  } catch (error) {
+    if (error instanceof ContentDraftValidationError) {
+      return { status: "error", message: error.message };
+    }
+    console.error("content create failed:", error instanceof Error ? error.message : "Unknown error");
+    return { status: "error", message: "Could not save this draft. Please review the fields and try again." };
+  }
 }
 
 export async function schedulePostAction(formData: FormData) {
