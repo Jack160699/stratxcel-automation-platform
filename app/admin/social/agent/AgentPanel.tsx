@@ -2,20 +2,14 @@
 
 import { useState, useTransition, useRef, useEffect } from "react";
 import { sendAgentMessageAction, approveAgentActionAction, rejectAgentActionAction } from "./actions";
-
-interface Message {
-  id: string;
-  role: "user" | "agent" | "system";
-  content: string;
-  parts: Array<{ type: string; actions?: Array<{ id: string; tool: string; input: Record<string, unknown> }> }>;
-}
+import { AgentMessage, type AgentMessageData } from "./AgentMessage";
 
 const QUICK_ACTIONS = ["Plan this week", "Check system health", "Analyze recent performance", "Create a campaign"];
 
 export default function AgentPanel() {
   const [open, setOpen] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<AgentMessageData[]>([]);
   const [input, setInput] = useState("");
   const [pending, startTransition] = useTransition();
   const [blockedReason, setBlockedReason] = useState<string | null>(null);
@@ -106,21 +100,24 @@ export default function AgentPanel() {
 
   return (
     <aside
-      className="fixed inset-y-0 right-0 z-40 flex w-full flex-col border-l sm:w-[380px]"
+      className="saut-agent-panel fixed inset-y-0 right-0 z-40 flex w-full flex-col border-l"
       style={{ background: "var(--saut-surface-1)", borderColor: "var(--saut-border)" }}
       role="complementary"
       aria-label="Autopilot Agent"
     >
-      <div className="flex items-center justify-between border-b px-4 py-3" style={{ borderColor: "var(--saut-border)" }}>
-        <div className="flex items-center gap-2">
-          <span
-            className="h-[6px] w-[6px] rounded-full saut-pulse"
-            style={{ background: pending ? "var(--saut-ai)" : "var(--saut-success)" }}
-            aria-hidden
-          />
-          <span className="saut-mono text-[11px] uppercase tracking-[0.1em]" style={{ color: "var(--saut-text-muted)" }}>
-            {pending ? "Working…" : "Autopilot Agent"}
-          </span>
+      <div className="flex items-center gap-2.5 border-b px-4 py-3.5" style={{ borderColor: "var(--saut-border)" }}>
+        <span
+          className="h-[7px] w-[7px] shrink-0 rounded-full saut-pulse"
+          style={{ background: pending ? "var(--saut-ai)" : "var(--saut-success)" }}
+          aria-hidden
+        />
+        <div className="min-w-0 flex-1">
+          <div className="saut-mono text-[11.5px] uppercase tracking-[0.12em]" style={{ color: "var(--saut-text)" }}>
+            Autopilot Agent
+          </div>
+          <div className="text-[11px]" style={{ color: "var(--saut-text-subtle)" }}>
+            {pending ? "Working…" : "Operations copilot"}
+          </div>
         </div>
         <button
           onClick={() => setOpen(false)}
@@ -131,10 +128,10 @@ export default function AgentPanel() {
         </button>
       </div>
 
-      <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
+      <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto px-4 py-4">
         {messages.length === 0 && (
           <div className="space-y-3">
-            <p className="text-sm" style={{ color: "var(--saut-text-muted)" }}>
+            <p className="text-sm leading-relaxed" style={{ color: "var(--saut-text-muted)" }}>
               Ask me anything about your social operation — I understand the page you&apos;re on.
             </p>
             <div className="flex flex-wrap gap-2">
@@ -147,42 +144,12 @@ export default function AgentPanel() {
           </div>
         )}
         {messages.map((m) => (
-          <div key={m.id} className="space-y-2">
-            <div
-              className="rounded-lg px-3 py-2 text-sm"
-              style={
-                m.role === "user"
-                  ? { background: "var(--saut-accent-muted)", marginLeft: "20%" }
-                  : { background: "var(--saut-surface-2)", border: "1px solid var(--saut-border)" }
-              }
-            >
-              {m.content}
-            </div>
-            {m.parts.map((part, i) =>
-              part.type === "proposed_actions" && part.actions?.length ? (
-                <div key={i} className="space-y-2">
-                  {part.actions.map((a) => (
-                    <div key={a.id} className="saut-card-2 p-3 text-xs">
-                      <div className="saut-mono mb-1 uppercase tracking-wide" style={{ color: "var(--saut-warning)" }}>
-                        Needs approval · {a.tool}
-                      </div>
-                      <pre className="mb-2 overflow-x-auto whitespace-pre-wrap break-all" style={{ color: "var(--saut-text-muted)" }}>
-                        {JSON.stringify(a.input, null, 2)}
-                      </pre>
-                      <div className="flex gap-2">
-                        <button onClick={() => handleActionDecision(a.id, true)} className="saut-btn saut-btn-primary !h-7 !px-2.5 text-[11px]">
-                          Approve
-                        </button>
-                        <button onClick={() => handleActionDecision(a.id, false)} className="saut-btn saut-btn-ghost !h-7 !px-2.5 text-[11px]">
-                          Reject
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : null
-            )}
-          </div>
+          <AgentMessage
+            key={m.id}
+            message={m}
+            onApprove={(id) => handleActionDecision(id, true)}
+            onReject={(id) => handleActionDecision(id, false)}
+          />
         ))}
         {blockedReason && (
           <div className="saut-chip saut-chip-warning">
@@ -203,6 +170,7 @@ export default function AgentPanel() {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           placeholder="Ask Autopilot…"
+          aria-label="Message Autopilot Agent"
           className="saut-input flex-1"
           disabled={pending}
         />

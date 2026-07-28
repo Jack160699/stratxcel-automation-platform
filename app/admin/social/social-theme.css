@@ -422,3 +422,59 @@
   border-color: var(--saut-accent);
   box-shadow: 0 0 0 3px rgb(58 160 255 / 0.16);
 }
+
+/* ————— Command Center / Agent panel polish ————— */
+
+/* Agent messages render through react-markdown; reset the first child's
+   top margin so the bubble padding is the only space above the content. */
+.saut-markdown > :first-child {
+  margin-top: 0;
+}
+
+.saut-platform-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  padding: 9px 2px;
+}
+
+.saut-attention-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-radius: var(--saut-radius-md);
+  padding: 10px 12px;
+  background: var(--saut-surface-2);
+  border: 1px solid transparent;
+  transition: border-color 140ms ease, background 140ms ease;
+}
+.saut-attention-row:hover {
+  border-color: var(--saut-border-strong);
+  background: var(--saut-surface-3);
+}
+
+/* The primary "Ask Autopilot" command bar deserves slightly more visual
+   weight than a normal 36px form control, applied consistently to both
+   the input and its button so they stay aligned. */
+.saut-ask-input,
+.saut-ask-btn {
+  height: 44px;
+}
+.saut-ask-btn {
+  padding: 0 20px;
+  font-size: 13.5px;
+}
+
+/* Docked on desktop with a slight lift; full-bleed drawer below the sm breakpoint */
+.saut-agent-panel {
+  width: 100%;
+  box-shadow: none;
+}
+@media (min-width: 640px) {
+  .saut-agent-panel {
+    width: 400px;
+    box-shadow: -8px 0 32px rgb(0 0 0 / 0.28);
+  }
+}

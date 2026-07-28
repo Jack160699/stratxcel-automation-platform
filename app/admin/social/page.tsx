@@ -5,11 +5,19 @@ import { listDeadLetters, listJobs } from "@/lib/social/repositories/publishing"
 import { listAuditEvents } from "@/lib/social/repositories/system";
 import { getLatestSession } from "@/lib/social/repositories/agent";
 import AskAutopilot from "./AskAutopilot";
+import { MissionCard } from "./components/MissionCard";
+import { EmptyState } from "./components/EmptyState";
+import { StatusBadge } from "./components/StatusBadge";
+import { ActivityItem, type ActivityActor } from "./components/ActivityItem";
+import { PlatformAccountRow, type PlatformAccountRowData } from "./components/PlatformAccountRow";
+import type { Platform } from "./components/PlatformIcon";
 
 function fmt(ts: string | null) {
   if (!ts) return "—";
   return new Date(ts).toISOString().slice(0, 16).replace("T", " ");
 }
+
+const PLATFORMS: Platform[] = ["instagram", "facebook", "threads", "linkedin", "youtube"];
 
 export default async function CommandCenterPage() {
   // See layout.tsx: nested pages guard independently of the parent layout.
@@ -35,17 +43,33 @@ export default async function CommandCenterPage() {
       label: `${a.platform} needs reauthorization`,
       detail: "Token invalid or expired",
       href: "/admin/social/integrations",
+      severity: "amber" as const,
     })),
     ...deadLetters.map((d) => ({
       key: `dl-${d.id}`,
       label: "A publish job failed permanently",
       detail: d.error ?? "Dead-lettered after exhausting retries",
       href: "/admin/social/system",
+      severity: "red" as const,
     })),
   ];
 
+  const platformRows: PlatformAccountRowData[] = PLATFORMS.map((platform) => {
+    const account = accounts.find((a) => a.platform === platform);
+    if (!account) {
+      return { platform, handle: null, status: "NOT_CONNECTED", lastSyncAt: null };
+    }
+    return {
+      platform,
+      handle: account.username ?? null,
+      status: account.status === "REAUTH_REQUIRED" ? "REAUTH_REQUIRED" : account.status === "CONNECTED" ? "CONNECTED" : "DISCONNECTED",
+      tokenHealth: account.status === "CONNECTED" ? (account.token_health as "HEALTHY" | "DEGRADED" | "INVALID" | null) : null,
+      lastSyncAt: account.last_sync_at,
+    };
+  });
+
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Command Center</h1>
         <p className="mt-1 text-sm" style={{ color: "var(--saut-text-muted)" }}>
@@ -58,45 +82,45 @@ export default async function CommandCenterPage() {
       <section className="saut-card p-5">
         <h2 className="saut-section-title mb-3">Current mission</h2>
         {latestSession ? (
-          <div className="flex flex-wrap items-center gap-3">
-            <span className="saut-chip saut-chip-ai">
-              <span className="saut-chip-dot saut-pulse" />
-              {latestSession.status.replace(/_/g, " ").toLowerCase()}
-            </span>
-            <span className="text-sm">{latestSession.title ?? "Untitled session"}</span>
-            <span className="ml-auto text-xs" style={{ color: "var(--saut-text-subtle)" }}>
-              updated {fmt(latestSession.updated_at)}
-            </span>
-          </div>
+          <MissionCard
+            status={latestSession.status}
+            title={latestSession.title ?? "Untitled session"}
+            createdAt={latestSession.created_at}
+            updatedAt={latestSession.updated_at}
+          />
         ) : (
-          <p className="text-sm" style={{ color: "var(--saut-text-subtle)" }}>
-            No active mission — ask Autopilot something above to start one.
-          </p>
+          <EmptyState hint="Ask Autopilot something above to start one.">No active mission yet.</EmptyState>
         )}
+      </section>
+
+      <section className="saut-card p-5">
+        <h2 className="saut-section-title mb-3">Connected accounts</h2>
+        <div className="divide-y" style={{ borderColor: "var(--saut-border)" }}>
+          {platformRows.map((row) => (
+            <div key={row.platform} className="py-1 first:pt-0 last:pb-0">
+              <PlatformAccountRow data={row} />
+            </div>
+          ))}
+        </div>
       </section>
 
       <section className="saut-card p-5">
         <h2 className="saut-section-title mb-3">Needs your attention</h2>
         {needsAttention.length === 0 ? (
-          <p className="text-sm" style={{ color: "var(--saut-text-subtle)" }}>
-            No action required.
-          </p>
+          <EmptyState>No action required.</EmptyState>
         ) : (
           <div className="space-y-2">
             {needsAttention.map((n) => (
-              <Link
-                key={n.key}
-                href={n.href}
-                className="flex items-center justify-between gap-3 rounded-lg px-3 py-2 text-sm"
-                style={{ background: "var(--saut-surface-2)" }}
-              >
-                <span>
-                  <span className="font-medium">{n.label}</span>{" "}
-                  <span style={{ color: "var(--saut-text-subtle)" }}>· {n.detail}</span>
-                </span>
-                <span className="saut-chip saut-chip-warning">
-                  <span className="saut-chip-dot" /> review
-                </span>
+              <Link key={n.key} href={n.href} className="saut-attention-row">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium" style={{ color: "var(--saut-text)" }}>
+                    {n.label}
+                  </p>
+                  <p className="mt-0.5 text-xs" style={{ color: "var(--saut-text-subtle)" }}>
+                    {n.detail}
+                  </p>
+                </div>
+                <StatusBadge label="Review" tone={n.severity} />
               </Link>
             ))}
           </div>
@@ -107,9 +131,15 @@ export default async function CommandCenterPage() {
         <section className="saut-card p-5">
           <h2 className="saut-section-title mb-3">Upcoming actions</h2>
           {upcoming.length === 0 ? (
-            <p className="text-sm" style={{ color: "var(--saut-text-subtle)" }}>
-              Nothing scheduled. <Link href="/admin/social/planner" className="underline">Plan something</Link>.
-            </p>
+            <EmptyState
+              hint={
+                <>
+                  Ask Autopilot to <Link href="/admin/social/planner" className="underline">plan content or create a campaign</Link>.
+                </>
+              }
+            >
+              Nothing scheduled.
+            </EmptyState>
           ) : (
             <div className="space-y-2">
               {upcoming.map((u) => (
@@ -125,22 +155,16 @@ export default async function CommandCenterPage() {
 
         <section className="saut-card p-5">
           <h2 className="saut-section-title mb-3">Live activity</h2>
-          <div className="max-h-56 space-y-1.5 overflow-y-auto">
-            {auditEvents.map((row) => (
-              <div key={row.id} className="flex items-center gap-2 text-xs">
-                <span className="saut-mono" style={{ color: "var(--saut-text-subtle)" }}>
-                  {fmt(row.created_at)}
-                </span>
-                <span style={{ color: "var(--saut-text-muted)" }}>
-                  {row.actor_type.toLowerCase()} · {row.summary}
-                </span>
-              </div>
+          <div className="max-h-56 space-y-3 overflow-y-auto">
+            {auditEvents.map((row: Record<string, unknown>) => (
+              <ActivityItem
+                key={row.id as string}
+                createdAt={row.created_at as string}
+                actor={row.actor_type as ActivityActor}
+                title={row.summary as string}
+              />
             ))}
-            {auditEvents.length === 0 && (
-              <p className="text-xs" style={{ color: "var(--saut-text-subtle)" }}>
-                No activity yet.
-              </p>
-            )}
+            {auditEvents.length === 0 && <EmptyState>No activity yet.</EmptyState>}
           </div>
         </section>
       </div>
