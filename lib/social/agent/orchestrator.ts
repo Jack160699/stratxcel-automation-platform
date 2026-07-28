@@ -25,6 +25,12 @@ import {
   stripInternalInput,
 } from "./dependencies";
 import { validateBrandEntities } from "./brand-validation";
+import {
+  attachmentPart,
+  bindAttachmentsToMessage,
+  getAttachmentsByIds,
+  listAttachmentsForMessages,
+} from "../repositories/agent-attachments";
 
 const SYSTEM_PROMPT = `You are the Stratxcel Social Autopilot Agent — an operational copilot for Stratxcel's own
 Instagram, Facebook, Threads, LinkedIn, and YouTube presence. You plan, draft, schedule, and analyze
@@ -52,11 +58,21 @@ export async function createAgentSession(ctx: OwnerContext, title: string | null
   return createSessionRepo(ctx, title);
 }
 
-export async function acceptAgentMission(ctx: OwnerContext, sessionId: string | null, userText: string) {
+export async function acceptAgentMission(
+  ctx: OwnerContext,
+  sessionId: string | null,
+  userText: string,
+  attachmentIds: string[] = []
+) {
   const id = sessionId ?? (await createAgentSession(ctx, userText.slice(0, 60)));
-  await insertMessage(ctx, id, "USER", userText);
+  const attachments = await getAttachmentsByIds(ctx, id, attachmentIds);
+  if (attachments.length !== attachmentIds.length) throw new Error("One or more attachments do not belong to this session.");
+  const messageId = await insertMessage(ctx, id, "USER", userText, attachments.length ? [attachmentPart(attachments)] : []);
   await setSessionStatus(ctx, id, "GENERATING");
   const runId = await startRun(ctx, id);
+  if (attachments.length && messageId) {
+    await bindAttachmentsToMessage(ctx, id, attachments.map((attachment) => attachment.id), messageId, runId);
+  }
   await recordRunEvent(ctx, runId, { type: "RUN_STARTED", label: PHASE_LABELS.RUN_STARTED });
   return { sessionId: id, runId };
 }
@@ -86,10 +102,25 @@ export async function runAgentTurn(ctx: OwnerContext, sessionId: string, runId: 
 
   const settings = await getAutomationSettings(ctx);
   const history = await loadHistory(ctx, sessionId);
+  const attachments = await listAttachmentsForMessages(ctx, history.map((message) => message.id));
+  const attachmentsByMessage = new Map<string, typeof attachments>();
+  for (const attachment of attachments) {
+    const group = attachmentsByMessage.get(attachment.message_id ?? "") ?? [];
+    group.push(attachment);
+    attachmentsByMessage.set(attachment.message_id ?? "", group);
+  }
   const roleMap: Record<string, AgentTurnMessage["role"]> = { USER: "user", AGENT: "assistant", SYSTEM: "system" };
   const messages: AgentTurnMessage[] = [
     { role: "system", content: SYSTEM_PROMPT },
-    ...history.map((m) => ({ role: roleMap[m.role] ?? "user", content: m.content })),
+    ...history.map((message) => {
+      const messageAttachments = attachmentsByMessage.get(message.id) ?? [];
+      const attachmentContext = messageAttachments.map((attachment) =>
+        attachment.processing_status === "EXTRACTED" && attachment.extracted_text
+          ? `\n\n[Attached file accessed: ${attachment.original_name}]\n${attachment.extracted_text}`
+          : `\n\n[Attached file stored but not readable by this Agent: ${attachment.original_name} (${attachment.mime_type})]`
+      ).join("");
+      return { role: roleMap[message.role] ?? "user", content: `${message.content}${attachmentContext}` };
+    }),
   ];
 
   await setSessionStatus(ctx, sessionId, "GENERATING");
@@ -98,6 +129,14 @@ export async function runAgentTurn(ctx: OwnerContext, sessionId: string, runId: 
   // did (provider round-trips, tool calls, approval gates) — never the
   // model's internal reasoning. See lib/social/repositories/agent-runs.ts.
   await recordRunEvent(ctx, runId, { type: "UNDERSTANDING_REQUEST", label: PHASE_LABELS.UNDERSTANDING_REQUEST });
+  for (const attachment of attachments.filter((item) => item.processing_status === "EXTRACTED" && item.extracted_text)) {
+    await recordRunEvent(ctx, runId, {
+      type: "ATTACHMENT_ACCESSED",
+      label: `Reading attachment · ${attachment.original_name}`,
+      status: "SUCCESS",
+      meta: { mimeType: attachment.mime_type, sizeBytes: attachment.size_bytes },
+    });
+  }
 
   const proposedActions: Array<{ id: string; tool: string; input: Record<string, unknown> }> = [];
   let finalText = "";

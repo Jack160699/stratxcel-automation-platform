@@ -37,7 +37,7 @@ export function SiteFooter() {
               into how you already run.
             </p>
           </div>
-          <div className="grid grid-cols-2 gap-10 sm:grid-cols-3 lg:grid-cols-5 lg:gap-8">
+          <div className="grid grid-cols-2 gap-10 sm:grid-cols-3 lg:grid-cols-6 lg:gap-8">
             {footerColumns.map((col) => (
               <div key={col.title}>
                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">

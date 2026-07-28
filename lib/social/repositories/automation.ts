@@ -2,15 +2,15 @@ import type { OwnerContext } from "../db-context";
 
 export interface AutomationSettingsRow {
   owner_id: string;
-  autonomy_level: string; // 'MANUAL' | 'SUPERVISED' | 'AUTOPILOT'
+  autonomy_level: "MANUAL" | "SUPERVISED" | "AUTOPILOT";
   shadow_mode: boolean;
   dry_run: boolean;
   autopilot_enabled: boolean;
   qa_threshold: number;
   rolling_plan_days: number;
-  monthly_budget_cents: number;
-  monthly_ceiling_cents: number;
-  per_content_max_cents: number;
+  monthly_budget_cents: number | null;
+  monthly_ceiling_cents: number | null;
+  per_content_max_cents: number | null;
   strategy_mix: Record<string, number>;
   require_approval_for: string[];
   min_confidence_to_autoact: number;
@@ -24,9 +24,9 @@ const DEFAULTS: Omit<AutomationSettingsRow, "owner_id" | "updated_at"> = {
   autopilot_enabled: false,
   qa_threshold: 85,
   rolling_plan_days: 14,
-  monthly_budget_cents: 0,
-  monthly_ceiling_cents: 0,
-  per_content_max_cents: 0,
+  monthly_budget_cents: null,
+  monthly_ceiling_cents: null,
+  per_content_max_cents: null,
   strategy_mix: {},
   require_approval_for: ["publish_post"],
   min_confidence_to_autoact: 0.7,
@@ -66,11 +66,11 @@ export async function upsertAutomationSettings(ctx: OwnerContext, patch: Partial
 /**
  * Whether a given tool/action may run automatically under the current
  * autonomy level + guardrails, or must be queued for human approval.
- * shadow_mode=true always forces approval (nothing external happens
- * without a human even proposing it) regardless of autonomy_level.
+ * Autonomy and confidence govern approval. SHADOW is deliberately not part
+ * of this decision: it is the separate hard gate at the provider boundary,
+ * so AUTOPILOT can still perform internal drafting and persistence safely.
  */
 export function requiresApproval(toolName: string, settings: AutomationSettingsRow, confidence: number): boolean {
-  if (settings.shadow_mode) return true;
   if (settings.require_approval_for.includes(toolName)) return true;
   if (settings.autonomy_level !== "AUTOPILOT") return true; // MANUAL/SUPERVISED always require approval
   if (confidence < settings.min_confidence_to_autoact) return true;

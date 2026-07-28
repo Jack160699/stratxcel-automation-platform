@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { requireOwnerContext } from "@/lib/social/db-context";
 import { createAutomation, setAutomationEnabled, deleteAutomation } from "@/lib/social/automations";
 import { upsertAutomationSettings } from "@/lib/social/repositories/automation";
@@ -49,16 +50,30 @@ export async function deleteAutomationAction(formData: FormData) {
 
 export async function saveGuardrailsAction(formData: FormData) {
   const ctx = await assertOwner();
-  await upsertAutomationSettings(ctx, {
-    qa_threshold: Number(formData.get("qa_threshold") ?? 85) || 85,
-    monthly_budget_cents: Math.round(Number(formData.get("monthly_budget_dollars") ?? 0) * 100) || 0,
-    per_content_max_cents: Math.round(Number(formData.get("per_content_max_dollars") ?? 0) * 100) || 0,
-    require_approval_for: String(formData.get("requireApprovalFor") ?? "publish_post")
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean),
-    min_confidence_to_autoact: Number(formData.get("minConfidenceToAutoAct") ?? 0.7) || 0.7,
-  });
-  await recordAudit({ actorType: "USER", actorId: ctx.ownerId, action: "guardrails.save", summary: "Updated automation guardrails" });
-  revalidatePath("/admin/social/automations");
+  const parseOptionalDollars = (key: string) => {
+    const raw = String(formData.get(key) ?? "").trim();
+    if (raw === "") return null;
+    const dollars = Number(raw);
+    if (!Number.isFinite(dollars) || dollars < 0 || dollars > 1_000_000) throw new Error("Budgets must be between $0 and $1,000,000.");
+    return Math.round(dollars * 100);
+  };
+  try {
+    const qaThreshold = Number(formData.get("qa_threshold"));
+    const confidencePercent = Number(formData.get("minConfidenceToAutoAct"));
+    if (!Number.isFinite(qaThreshold) || qaThreshold < 0 || qaThreshold > 100) throw new Error("QA threshold must be from 0 to 100.");
+    if (!Number.isFinite(confidencePercent) || confidencePercent < 0 || confidencePercent > 100) throw new Error("Confidence must be from 0% to 100%.");
+    await upsertAutomationSettings(ctx, {
+      qa_threshold: qaThreshold,
+      monthly_budget_cents: parseOptionalDollars("monthly_budget_dollars"),
+      per_content_max_cents: parseOptionalDollars("per_content_max_dollars"),
+      require_approval_for: formData.getAll("requireApprovalFor").map(String),
+      min_confidence_to_autoact: confidencePercent / 100,
+    });
+    await recordAudit({ actorType: "USER", actorId: ctx.ownerId, action: "guardrails.save", summary: "Updated automation guardrails" });
+    revalidatePath("/admin/social/automations");
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Could not save guardrails";
+    redirect(`/admin/social/automations?status=error&message=${encodeURIComponent(message)}`);
+  }
+  redirect("/admin/social/automations?status=saved&message=Guardrails+saved");
 }

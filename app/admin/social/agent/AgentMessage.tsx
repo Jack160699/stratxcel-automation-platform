@@ -5,7 +5,19 @@ export interface AgentMessageData {
   id: string;
   role: "user" | "agent" | "system";
   content: string;
-  parts: Array<{ type: string; actions?: Array<{ id: string; tool: string; input: Record<string, unknown> }> }>;
+  parts: Array<{
+    type: string;
+    actions?: Array<{ id: string; tool: string; input: Record<string, unknown> }>;
+    attachments?: AgentAttachmentData[];
+  }>;
+}
+
+export interface AgentAttachmentData {
+  id: string;
+  name: string;
+  mimeType: string;
+  sizeBytes: number;
+  processingStatus: "UPLOADED" | "EXTRACTED" | "STORED_UNREADABLE" | "FAILED";
 }
 
 const ACTION_TITLES: Record<string, string> = {
@@ -86,6 +98,18 @@ export function AgentMessage({
           <div key={index} className="mt-2 space-y-2">
             {part.actions.map((action) => (
               <ApprovalCard key={action.id} action={action} onApprove={onApprove} onReject={onReject} />
+            ))}
+          </div>
+        ) : part.type === "attachments" && part.attachments?.length ? (
+          <div key={index} className="mt-2 flex flex-wrap gap-2">
+            {part.attachments.map((attachment) => (
+              <span key={attachment.id} className="saut-attachment-chip" title={`${attachment.mimeType} · ${attachment.sizeBytes.toLocaleString()} bytes`}>
+                <span aria-hidden>{"\u{1F4CE}"}</span>
+                <span className="max-w-48 truncate">{attachment.name}</span>
+                <span className="saut-mono text-[9px]" style={{ color: "var(--saut-text-subtle)" }}>
+                  {attachment.processingStatus === "EXTRACTED" ? "text available" : "stored only"}
+                </span>
+              </span>
             ))}
           </div>
         ) : null

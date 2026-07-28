@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { requireOwnerContext } from "@/lib/social/db-context";
-import { createAgentSession, runAgentTurn, approveAgentAction, rejectAgentAction } from "@/lib/social/agent/orchestrator";
+import { acceptAgentMission, runAgentTurn, approveAgentAction, rejectAgentAction } from "@/lib/social/agent/orchestrator";
 import { getSessionDetail, getLatestSession, listSessions, getSession } from "@/lib/social/repositories/agent";
 import { getLatestRunWithEvents } from "@/lib/social/repositories/agent-runs";
 
@@ -25,10 +25,10 @@ export async function sendAgentMessageAction(sessionId: string | null, text: str
     };
   }
 
-  const id = sessionId ?? (await createAgentSession(ctx, trimmed.slice(0, 60)));
-  const result = await runAgentTurn(ctx, id, trimmed);
+  const accepted = await acceptAgentMission(ctx, sessionId, trimmed);
+  const result = await runAgentTurn(ctx, accepted.sessionId, accepted.runId);
   revalidatePath("/admin/social", "layout");
-  return { sessionId: id, ...result };
+  return { sessionId: accepted.sessionId, ...result };
 }
 
 export async function approveAgentActionAction(actionId: string) {

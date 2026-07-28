@@ -21,6 +21,7 @@ export default async function AnalyticsPage() {
   const totalReach = metrics.reduce((sum, m) => sum + (m.reach ?? 0), 0);
   const totalEngagement = metrics.reduce((sum, m) => sum + (m.likes ?? 0) + (m.comments ?? 0) + (m.shares ?? 0) + (m.saves ?? 0), 0);
   const totalCostCents = costs.reduce((sum, c: Record<string, unknown>) => sum + ((c.amount_cents as number) ?? 0), 0);
+  const hasMetrics = metrics.length > 0;
 
   return (
     <div className="space-y-8">
@@ -32,14 +33,23 @@ export default async function AnalyticsPage() {
         </p>
       </div>
 
+      {!hasMetrics && (
+        <div className="saut-card p-5">
+          <p className="text-sm font-medium">No performance data yet</p>
+          <p className="mt-1 text-xs" style={{ color: "var(--saut-text-subtle)" }}>
+            Metrics appear after a real publication has been measured. No reach or engagement estimate is being inferred.
+          </p>
+        </div>
+      )}
+
       <section className="grid gap-3 sm:grid-cols-3">
         <div className="saut-card p-5">
           <div className="saut-label">Total reach</div>
-          <div className="saut-metric mt-2 text-3xl">{totalReach.toLocaleString()}</div>
+          <div className="saut-metric mt-2 text-3xl">{hasMetrics ? totalReach.toLocaleString() : "—"}</div>
         </div>
         <div className="saut-card p-5">
           <div className="saut-label">Total engagement</div>
-          <div className="saut-metric mt-2 text-3xl">{totalEngagement.toLocaleString()}</div>
+          <div className="saut-metric mt-2 text-3xl">{hasMetrics ? totalEngagement.toLocaleString() : "—"}</div>
         </div>
         <div className="saut-card p-5">
           <div className="saut-label">AI/media spend</div>

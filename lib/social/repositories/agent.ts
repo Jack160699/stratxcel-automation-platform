@@ -71,7 +71,8 @@ export async function listSessions(ctx: OwnerContext, limit = 30): Promise<Agent
 }
 
 export async function insertMessage(ctx: OwnerContext, sessionId: string, role: "USER" | "AGENT" | "SYSTEM", content: string, parts: unknown[] = []): Promise<string | undefined> {
-  const { data } = await ctx.supabase.from("social_agent_messages").insert({ session_id: sessionId, role, content, parts }).select("id").single();
+  const { data, error } = await ctx.supabase.from("social_agent_messages").insert({ session_id: sessionId, role, content, parts }).select("id").single();
+  if (error || !data) throw new Error(error?.message ?? "agent message insert failed");
   return data?.id as string | undefined;
 }
 

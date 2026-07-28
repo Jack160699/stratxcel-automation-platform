@@ -8,12 +8,27 @@ function fmt(ts: string | null) {
   return new Date(ts).toISOString().slice(0, 16).replace("T", " ");
 }
 
-export default async function AutomationsPage() {
+function budgetValue(cents: number | null) {
+  return cents === null ? "" : (cents / 100).toFixed(2);
+}
+
+function budgetMeaning(cents: number | null) {
+  if (cents === null) return "Not configured";
+  if (cents === 0) return "Spending disabled";
+  return `Configured limit · $${(cents / 100).toFixed(2)}`;
+}
+
+export default async function AutomationsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ status?: string; message?: string }>;
+}) {
   // See layout.tsx: nested pages guard independently of the parent layout.
   const ctx = await requireOwnerContext();
   if (!ctx.ok) return null;
 
   const [settings, automations, runs] = await Promise.all([getAutomationSettings(ctx), listAutomations(ctx), listAutomationRuns(ctx, 20)]);
+  const notice = await searchParams;
 
   return (
     <div className="space-y-8">
@@ -25,6 +40,16 @@ export default async function AutomationsPage() {
         </p>
       </div>
 
+      {notice.message && (
+        <div
+          role={notice.status === "error" ? "alert" : "status"}
+          className="saut-card p-3 text-sm"
+          style={{ color: notice.status === "error" ? "var(--saut-danger)" : "var(--saut-success)" }}
+        >
+          {notice.message}
+        </div>
+      )}
+
       <section className="saut-card space-y-3 p-5">
         <h2 className="saut-section-title">Guardrails</h2>
         <form action={saveGuardrailsAction} className="grid gap-3 sm:grid-cols-2">
@@ -33,21 +58,29 @@ export default async function AutomationsPage() {
             <input name="qa_threshold" type="number" min={0} max={100} defaultValue={settings.qa_threshold} className="saut-input w-full" />
           </label>
           <label className="space-y-1 text-xs" style={{ color: "var(--saut-text-muted)" }}>
-            Minimum confidence to auto-act
-            <input name="minConfidenceToAutoAct" type="number" step={0.05} min={0} max={1} defaultValue={settings.min_confidence_to_autoact} className="saut-input w-full" />
+            Minimum confidence to auto-act (%)
+            <input name="minConfidenceToAutoAct" type="number" step={1} min={0} max={100} defaultValue={Math.round(settings.min_confidence_to_autoact * 100)} className="saut-input w-full" />
           </label>
           <label className="space-y-1 text-xs" style={{ color: "var(--saut-text-muted)" }}>
             Monthly budget ($)
-            <input name="monthly_budget_dollars" type="number" min={0} defaultValue={(settings.monthly_budget_cents / 100).toFixed(2)} className="saut-input w-full" />
+            <input name="monthly_budget_dollars" type="number" min={0} step="0.01" placeholder="Not configured" defaultValue={budgetValue(settings.monthly_budget_cents)} className="saut-input w-full" />
+            <span className="block text-[10px]" style={{ color: "var(--saut-text-subtle)" }}>{budgetMeaning(settings.monthly_budget_cents)}</span>
           </label>
           <label className="space-y-1 text-xs" style={{ color: "var(--saut-text-muted)" }}>
             Max spend per content item ($)
-            <input name="per_content_max_dollars" type="number" min={0} defaultValue={(settings.per_content_max_cents / 100).toFixed(2)} className="saut-input w-full" />
+            <input name="per_content_max_dollars" type="number" min={0} step="0.01" placeholder="Not configured" defaultValue={budgetValue(settings.per_content_max_cents)} className="saut-input w-full" />
+            <span className="block text-[10px]" style={{ color: "var(--saut-text-subtle)" }}>{budgetMeaning(settings.per_content_max_cents)}</span>
           </label>
-          <label className="space-y-1 text-xs sm:col-span-2" style={{ color: "var(--saut-text-muted)" }}>
-            Tools that always require approval (comma separated)
-            <input name="requireApprovalFor" defaultValue={settings.require_approval_for.join(", ")} className="saut-input w-full" />
-          </label>
+          <fieldset className="space-y-2 text-xs sm:col-span-2" style={{ color: "var(--saut-text-muted)" }}>
+            <legend>Actions that always require approval</legend>
+            <label className="flex items-center gap-2 rounded-lg p-2" style={{ background: "var(--saut-surface-2)" }}>
+              <input name="requireApprovalFor" type="checkbox" value="publish_post" defaultChecked={settings.require_approval_for.includes("publish_post")} />
+              <span><span className="block font-medium">Publish posts</span><span className="text-[10px]" style={{ color: "var(--saut-text-subtle)" }}>External account mutation</span></span>
+            </label>
+            {settings.require_approval_for.filter((tool) => tool !== "publish_post").map((tool) => (
+              <input key={tool} type="hidden" name="requireApprovalFor" value={tool} />
+            ))}
+          </fieldset>
           <button className="saut-btn saut-btn-primary w-fit sm:col-span-2">Save guardrails</button>
         </form>
       </section>

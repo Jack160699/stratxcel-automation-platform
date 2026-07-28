@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { requireOwnerContext } from "@/lib/social/db-context";
 import { disconnectAccount } from "@/lib/social/repositories/accounts";
 import { createCampaign } from "@/lib/social/repositories/campaigns";
@@ -29,15 +30,21 @@ export async function disconnectAccountAction(formData: FormData) {
 export async function setShadowModeAction(formData: FormData) {
   const ctx = await assertOwner();
   const shadowMode = String(formData.get("shadow_mode") ?? "true") === "true";
-  await upsertAutomationSettings(ctx, { shadow_mode: shadowMode, dry_run: shadowMode });
-  await recordAudit({
-    actorType: "USER",
-    actorId: ctx.ownerId,
-    action: "settings.shadow_mode",
-    summary: `Set shadow mode to ${shadowMode ? "ON" : "OFF (live publishing)"}`,
-    meta: { shadow_mode: shadowMode },
-  });
-  revalidatePath("/admin/social", "layout");
+  try {
+    await upsertAutomationSettings(ctx, { shadow_mode: shadowMode, dry_run: shadowMode });
+    await recordAudit({
+      actorType: "USER",
+      actorId: ctx.ownerId,
+      action: "settings.shadow_mode",
+      summary: `Set shadow mode to ${shadowMode ? "ON" : "OFF (live publishing)"}`,
+      meta: { shadow_mode: shadowMode },
+    });
+    revalidatePath("/admin/social", "layout");
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Could not save publishing mode";
+    redirect(`/admin/social/settings?status=error&message=${encodeURIComponent(message)}`);
+  }
+  redirect(`/admin/social/settings?status=saved&message=${shadowMode ? "Shadow+mode+enabled" : "Live+publishing+enabled"}`);
 }
 
 export async function createCampaignAction(formData: FormData) {

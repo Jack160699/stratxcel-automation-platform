@@ -5,6 +5,7 @@
 
 import assert from "node:assert/strict";
 import { requiresApproval, type AutomationSettingsRow } from "../repositories/automation.ts";
+import { externalMutationDecision } from "../shadow-gate.ts";
 
 const BASE: AutomationSettingsRow = {
   owner_id: "test-owner",
@@ -24,8 +25,10 @@ const BASE: AutomationSettingsRow = {
 };
 
 function run() {
-  // shadow_mode always forces approval, even under AUTOPILOT.
-  assert.equal(requiresApproval("create_content_item", { ...BASE, shadow_mode: true }, 0.99), true);
+  // SHADOW is independent: AUTOPILOT may do safe internal work.
+  assert.equal(requiresApproval("create_content_item", { ...BASE, shadow_mode: true }, 0.99), false);
+  assert.equal(externalMutationDecision(true, "publish_post").allowed, false);
+  assert.equal(externalMutationDecision(false, "publish_post").allowed, true);
 
   // MANUAL/SUPERVISED always require approval.
   assert.equal(requiresApproval("create_content_item", { ...BASE, autonomy_level: "MANUAL" }, 0.99), true);
@@ -41,7 +44,7 @@ function run() {
   // regardless of confidence.
   assert.equal(requiresApproval("publish_post", BASE, 0.99), true);
 
-  console.log("automation.test.ts: ALL PASS (shadow gate, manual/supervised gate, auto-act, confidence floor, flagged tool)");
+  console.log("automation.test.ts: ALL PASS (independent shadow gate, manual/supervised gate, auto-act, confidence floor, flagged tool)");
 }
 
 run();

@@ -12,6 +12,23 @@ const STATUS_CHIP: Record<HealthStatus, string> = {
   NOT_CONFIGURED: "saut-chip-neutral",
 };
 
+const COMPONENT_LABELS: Record<string, string> = {
+  "webhooks:receiver": "Webhook receiver",
+  "webhooks:meta_subscription": "Meta subscription",
+  "webhooks:events_received": "Events received",
+  "media:image_generation": "Media generation",
+  "workers:publishing": "Publishing worker",
+  "scheduler:cron": "Scheduler",
+  publishing_mode: "Publishing mode",
+};
+
+function healthLabel(component: string, status: HealthStatus, message: string) {
+  if (component === "webhooks:receiver" && status === "OPERATIONAL") return "ready";
+  if (component === "webhooks:meta_subscription" && status === "NOT_CONFIGURED") return "pending setup";
+  if (component === "webhooks:events_received" && message.startsWith("0 ")) return "0 events";
+  return status.replace(/_/g, " ").toLowerCase();
+}
+
 function fmt(ts: string | null) {
   if (!ts) return "—";
   return new Date(ts).toISOString().slice(0, 16).replace("T", " ");
@@ -48,10 +65,13 @@ export default async function SystemPage() {
           <h2 className="saut-section-title capitalize">{group}</h2>
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {(grouped[group] ?? []).map((h) => (
-              <div key={h.component} className="saut-card flex items-center justify-between p-3 text-sm">
-                <span className="saut-mono text-xs">{h.component}</span>
-                <span className={`saut-chip ${STATUS_CHIP[h.status]}`}>
-                  <span className="saut-chip-dot" /> {h.status.replace(/_/g, " ").toLowerCase()}
+              <div key={h.component} className="saut-card flex items-start justify-between gap-3 p-3 text-sm">
+                <span className="min-w-0">
+                  <span className="block text-xs font-medium">{COMPONENT_LABELS[h.component] ?? h.component}</span>
+                  <span className="mt-1 block text-[10px] leading-relaxed" style={{ color: "var(--saut-text-subtle)" }}>{h.message}</span>
+                </span>
+                <span className={`saut-chip shrink-0 ${STATUS_CHIP[h.status]}`}>
+                  <span className="saut-chip-dot" /> {healthLabel(h.component, h.status, h.message)}
                 </span>
               </div>
             ))}

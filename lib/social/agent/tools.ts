@@ -230,7 +230,8 @@ const setOperatingMode: AgentTool = {
   mutating: true,
   execute: async (ctx, args) => {
     const mode = str(args, "mode");
-    await upsertAutomationSettings(ctx, { autonomy_level: mode });
+    if (!["MANUAL", "SUPERVISED", "AUTOPILOT"].includes(mode)) throw new Error("Invalid autonomy level");
+    await upsertAutomationSettings(ctx, { autonomy_level: mode as "MANUAL" | "SUPERVISED" | "AUTOPILOT" });
     return { autonomy_level: mode };
   },
 };

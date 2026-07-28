@@ -45,3 +45,32 @@ Known future steps are shown only when a persisted workflow actually defines the
 The external reference is inspiration for information hierarchy and density
 only. Stratxcel's `--saut-*` tokens, accessibility behavior, shared components,
 real data, and security rules are authoritative.
+
+## Application-shell and workspace behavior
+
+`/admin/social/*` is a fixed-height application shell, not a long document:
+the top bar and navigation remain in place while each route owns its internal
+scroll area. On desktop the navigation defaults to a compact icon rail,
+expands as a non-jittering overlay on hover or keyboard focus, and can be
+pinned as an explicit persisted preference. Mobile uses a drawer.
+
+Copilot's Session Rail and Progress / Context Rail can be collapsed and resized
+with pointer or keyboard controls. Widths are presentation preferences stored
+locally; conversation content and files remain server-side. The Work Canvas
+always keeps the minimum useful width. Mobile renders Chat, Progress, and
+Context as separate tabs rather than compressing three columns.
+
+## Attachments and safety boundaries
+
+Copilot attachments are real private objects in owner-scoped Supabase Storage
+with owner-scoped metadata and RLS. Supported text types may be extracted into
+Agent context. Images and PDFs remain visible stored artifacts unless a real
+parser or multimodal provider is configured; the UI and telemetry never imply
+that unread content was analyzed. Attachment telemetry is emitted only when
+extracted content is actually supplied to a run.
+
+Autonomy and publishing safety are separate controls. Autonomy determines
+whether safe internal work needs approval. SHADOW mode is the authoritative
+provider-boundary gate: it blocks every external mutation even when autonomy
+is AUTOPILOT. A blank budget means not configured, zero means explicitly
+disabled, and a positive value is a configured limit.

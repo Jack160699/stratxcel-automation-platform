@@ -3,6 +3,7 @@ import type { OwnerContext } from "../db-context";
 export type RunEventType =
   | "RUN_STARTED"
   | "UNDERSTANDING_REQUEST"
+  | "ATTACHMENT_ACCESSED"
   | "PROVIDER_REQUEST_STARTED"
   | "PROVIDER_RESPONSE_RECEIVED"
   | "TOOL_STARTED"

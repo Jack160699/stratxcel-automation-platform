@@ -8,7 +8,7 @@ import {
   getRunEventsAction,
   getSessionAction,
 } from "../agent/actions";
-import type { AgentMessageData } from "../agent/AgentMessage";
+import type { AgentAttachmentData, AgentMessageData } from "../agent/AgentMessage";
 import type { AgentRunEventRow, AgentRunRow } from "@/lib/social/repositories/agent-runs";
 import type { AgentSessionRow } from "@/lib/social/repositories/agent";
 
@@ -23,7 +23,7 @@ interface UseAgentSessionResult {
   run: AgentRunRow | null;
   runEvents: AgentRunEventRow[];
   session: AgentSessionRow | null;
-  send: (text: string) => void;
+  send: (text: string, attachments?: AgentAttachmentData[]) => void;
   approve: (actionId: string) => void;
   reject: (actionId: string) => void;
 }
@@ -115,14 +115,19 @@ export function useAgentSession(sessionId: string | null, onSessionCreated: (id:
   }, [sessionId, pollRunEvents]);
 
   const send = useCallback(
-    (text: string) => {
+    (text: string, attachments: AgentAttachmentData[] = []) => {
       const trimmed = text.trim();
       if (!trimmed || pending) return;
       setBlockedReason(null);
       setFailedReason(null);
       setMessages((prev) => [
         ...(sessionId ? prev : []),
-        { id: `local-${Date.now()}`, role: "user", content: trimmed, parts: [] },
+        {
+          id: `local-${Date.now()}`,
+          role: "user",
+          content: trimmed,
+          parts: attachments.length ? [{ type: "attachments", attachments }] : [],
+        },
       ]);
       if (!sessionId) {
         stopPolling();
@@ -134,7 +139,7 @@ export function useAgentSession(sessionId: string | null, onSessionCreated: (id:
       fetch("/api/social/copilot/runs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId, message: trimmed }),
+        body: JSON.stringify({ sessionId, message: trimmed, attachmentIds: attachments.map((attachment) => attachment.id) }),
       })
         .then(async (response) => {
           const accepted = await response.json();

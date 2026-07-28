@@ -14,6 +14,7 @@ import {
   moveJobToDeadLetter,
 } from "./repositories/publishing";
 import { recordMetrics } from "./repositories/analytics";
+import { externalMutationDecision } from "./shadow-gate";
 
 /**
  * Publishing worker for the stratxcel schema. Called from two places:
@@ -85,12 +86,13 @@ async function processJob(
       .select("shadow_mode")
       .eq("owner_id", account.owner_id)
       .maybeSingle();
-    const isLive = settings?.shadow_mode === false;
+    const publishingDecision = externalMutationDecision(settings?.shadow_mode !== false, "publish_post");
+    const isLive = publishingDecision.allowed;
 
     const caption = [variant.caption, variant.hashtags?.map((h: string) => `#${h}`).join(" ")].filter(Boolean).join("\n\n");
 
     let externalPostId = `SHADOW-${job.idempotency_key}`;
-    let raw: unknown = { shadow: true, note: "No provider call made — shadow_mode is on for this owner." };
+    let raw: unknown = { shadow: true, note: publishingDecision.reason };
 
     if (isLive) {
       const accessToken = await getDecryptedAccessToken(service, account.id);
