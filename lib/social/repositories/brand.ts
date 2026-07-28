@@ -16,6 +16,19 @@ export interface BrandProfileRow {
   updated_at: string;
 }
 
+/**
+ * Products/audiences/pillars/rules/source_material have no per-item database
+ * id — they're positions within a JSON array on one owner-scoped row. This
+ * is the one place that replaces an item in place by index, so every "edit"
+ * action shares the exact same, tested merge semantics: an out-of-range
+ * index is a safe no-op (never appends or throws), and untouched fields on
+ * the item are preserved rather than dropped.
+ */
+export function replaceAtIndex<T>(arr: T[], index: number, patch: Partial<T>): T[] {
+  if (index < 0 || index >= arr.length) return arr;
+  return arr.map((item, i) => (i === index ? { ...item, ...patch } : item));
+}
+
 const DEFAULT_PROFILE: Omit<BrandProfileRow, "id" | "owner_id" | "updated_at"> = {
   identity: {},
   audiences: [],

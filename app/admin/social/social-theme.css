@@ -478,3 +478,56 @@
     box-shadow: -8px 0 32px rgb(0 0 0 / 0.28);
   }
 }
+
+/* ————— Toasts ————— */
+
+.saut-toast-stack {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 60;
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 8px;
+  max-width: min(360px, calc(100vw - 32px));
+}
+.saut-toast {
+  border-radius: var(--saut-radius-md);
+  padding: 10px 14px;
+  font-size: 13px;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.32);
+  border: 1px solid var(--saut-border-strong);
+  animation: saut-toast-in 180ms ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .saut-toast {
+    animation: none;
+  }
+}
+@keyframes saut-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.saut-toast-success {
+  background: var(--saut-surface-2);
+  color: var(--saut-text);
+}
+.saut-toast-success::before {
+  content: "✓ ";
+  color: var(--saut-success);
+}
+.saut-toast-error {
+  background: var(--saut-surface-2);
+  color: var(--saut-text);
+  border-color: rgb(242 86 95 / 0.4);
+}
+.saut-toast-error::before {
+  content: "⚠ ";
+  color: var(--saut-danger);
+}
