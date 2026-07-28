@@ -5,6 +5,7 @@ export interface SocialNavItem {
 
 export const SOCIAL_NAV: SocialNavItem[] = [
   { href: "/admin/social", label: "Command Center" },
+  { href: "/admin/social/copilot", label: "Copilot" },
   { href: "/admin/social/create", label: "Create" },
   { href: "/admin/social/planner", label: "Planner" },
   { href: "/admin/social/inbox", label: "Inbox" },

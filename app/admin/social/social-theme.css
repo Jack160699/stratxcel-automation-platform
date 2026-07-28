@@ -471,16 +471,35 @@
   font-size: 13.5px;
 }
 
-/* Docked on desktop with a slight lift; full-bleed drawer below the sm breakpoint */
-.saut-agent-panel {
-  width: 100%;
-  box-shadow: none;
+/* ————— Copilot docked panel ————— */
+
+/*
+ * Below sm, Copilot's docked panel is a full-screen fixed sheet (there's no
+ * spare width to reflow on a phone, and the sidebar is already collapsed).
+ * At sm and above it becomes a real flex sibling with a fixed width, so the
+ * main workspace actually reflows/shrinks instead of being covered by an
+ * overlay — this is the fix for docked mode "covering too much content".
+ */
+.saut-copilot-dock-wrap {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
 }
 @media (min-width: 640px) {
-  .saut-agent-panel {
+  .saut-copilot-dock-wrap {
+    position: relative;
+    inset: auto;
     width: 400px;
+    flex-shrink: 0;
     box-shadow: -8px 0 32px rgb(0 0 0 / 0.28);
   }
+}
+
+.saut-copilot-fab {
+  bottom: 20px;
+  right: 20px;
+  height: 44px;
+  padding-right: 0;
 }
 
 /* ————— Toasts ————— */

@@ -5,10 +5,30 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Mark } from "@/app/components/Mark";
 import { SOCIAL_NAV, SOCIAL_UTILITY_NAV, type SocialNavItem } from "./nav";
+import { useCopilot, sessionStatusLabel } from "./copilot/CopilotContext";
+import { CopilotDockPanel } from "./copilot/CopilotDockPanel";
+import { MinimizedButton } from "./copilot/MinimizedButton";
+
+function NavStatusDot() {
+  const { sessionStatus } = useCopilot();
+  const { label, tone } = sessionStatusLabel(sessionStatus);
+  if (tone === "idle") return null;
+  const color =
+    tone === "working" ? "var(--saut-ai)" : tone === "waiting" ? "var(--saut-warning)" : "var(--saut-danger)";
+  return (
+    <span className="ml-auto flex items-center gap-1.5" title={label}>
+      <span className={`h-[6px] w-[6px] rounded-full ${tone === "working" ? "saut-pulse" : ""}`} style={{ background: color }} aria-hidden />
+      <span className="saut-mono text-[9.5px] uppercase tracking-wide" style={{ color }}>
+        {label}
+      </span>
+    </span>
+  );
+}
 
 function NavLink({ item, onNavigate }: { item: SocialNavItem; onNavigate?: () => void }) {
   const pathname = usePathname();
   const active = item.href === "/admin/social" ? pathname === item.href : pathname.startsWith(item.href);
+  const isCopilot = item.href === "/admin/social/copilot";
   return (
     <Link
       href={item.href}
@@ -21,6 +41,7 @@ function NavLink({ item, onNavigate }: { item: SocialNavItem; onNavigate?: () =>
       }
     >
       {item.label}
+      {isCopilot && <NavStatusDot />}
     </Link>
   );
 }
@@ -35,6 +56,9 @@ export default function SocialShell({
   children: React.ReactNode;
 }) {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const { panelMode, isFullPage } = useCopilot();
+  const showDock = panelMode === "docked" && !isFullPage;
+  const showMinimized = panelMode === "minimized" && !isFullPage;
 
   return (
     <div className="flex min-h-screen">
@@ -119,6 +143,13 @@ export default function SocialShell({
 
         <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8">{children}</main>
       </div>
+
+      {showDock && (
+        <div className="saut-copilot-dock-wrap">
+          <CopilotDockPanel />
+        </div>
+      )}
+      {showMinimized && <MinimizedButton />}
     </div>
   );
 }

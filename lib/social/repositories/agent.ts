@@ -56,6 +56,20 @@ export async function getLatestSession(ctx: OwnerContext): Promise<AgentSessionR
   return data as AgentSessionRow | null;
 }
 
+export async function getSession(ctx: OwnerContext, sessionId: string): Promise<AgentSessionRow | null> {
+  const { data } = await ctx.supabase.from("social_agent_sessions").select("*").eq("id", sessionId).maybeSingle();
+  return data as AgentSessionRow | null;
+}
+
+export async function listSessions(ctx: OwnerContext, limit = 30): Promise<AgentSessionRow[]> {
+  const { data } = await ctx.supabase
+    .from("social_agent_sessions")
+    .select("*")
+    .order("updated_at", { ascending: false })
+    .limit(limit);
+  return (data ?? []) as AgentSessionRow[];
+}
+
 export async function insertMessage(ctx: OwnerContext, sessionId: string, role: "USER" | "AGENT" | "SYSTEM", content: string, parts: unknown[] = []): Promise<string | undefined> {
   const { data } = await ctx.supabase.from("social_agent_messages").insert({ session_id: sessionId, role, content, parts }).select("id").single();
   return data?.id as string | undefined;

@@ -10,9 +10,12 @@ import {
   getAction,
   updateActionStatus,
 } from "../repositories/agent";
+import { startRun, completeRun, recordRunEvent } from "../repositories/agent-runs";
 import { resolveConfiguredProvider } from "./provider";
 import { getTool, toolSchemas, type AgentTool } from "./tools";
 import { serializeToolOutput } from "./tool-output";
+import { labelForTool, labelForApproval, PHASE_LABELS } from "./activity-labels";
+import { summarizeForEvent } from "./tool-output-summary";
 import type { AgentTurnMessage } from "./provider";
 import type { OwnerContext } from "../db-context";
 
@@ -75,61 +78,110 @@ export async function runAgentTurn(ctx: OwnerContext, sessionId: string, userTex
 
   await setSessionStatus(ctx, sessionId, "GENERATING");
 
+  // Execution telemetry: a real, append-only trace of what this turn actually
+  // did (provider round-trips, tool calls, approval gates) — never the
+  // model's internal reasoning. See lib/social/repositories/agent-runs.ts.
+  const runId = await startRun(ctx, sessionId);
+  await recordRunEvent(ctx, runId, { type: "RUN_STARTED", label: PHASE_LABELS.RUN_STARTED });
+  await recordRunEvent(ctx, runId, { type: "UNDERSTANDING_REQUEST", label: PHASE_LABELS.UNDERSTANDING_REQUEST });
+
   const proposedActions: Array<{ id: string; tool: string; input: Record<string, unknown> }> = [];
   let finalText = "";
 
-  for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-    const result = await provider.complete(messages, toolSchemas());
-    if (result.text) finalText = result.text;
+  try {
+    for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+      await recordRunEvent(ctx, runId, { type: "PROVIDER_REQUEST_STARTED", label: PHASE_LABELS.PROVIDER_REQUEST_STARTED });
+      const providerStarted = Date.now();
+      const result = await provider.complete(messages, toolSchemas());
+      await recordRunEvent(ctx, runId, {
+        type: "PROVIDER_RESPONSE_RECEIVED",
+        label: PHASE_LABELS.PROVIDER_RESPONSE_RECEIVED,
+        status: "SUCCESS",
+        meta: { durationMs: Date.now() - providerStarted },
+      });
+      if (result.text) finalText = result.text;
 
-    if (result.toolCalls.length === 0) break;
+      if (result.toolCalls.length === 0) break;
 
-    for (const call of result.toolCalls) {
-      const tool: AgentTool | undefined = getTool(call.name);
-      if (!tool) {
-        messages.push({ role: "tool", content: `Unknown tool: ${call.name}`, toolCallId: call.id, toolName: call.name });
-        continue;
-      }
-
-      const needsApproval = tool.mutating && requiresApproval(tool.schema.name, settings, 0.75);
-
-      if (needsApproval) {
-        const actionId = await proposeAction(ctx, sessionId, tool.schema.name, call.arguments);
-        if (actionId) proposedActions.push({ id: actionId, tool: tool.schema.name, input: call.arguments });
-        messages.push({
-          role: "tool",
-          content: `Action "${tool.schema.name}" requires approval and has been queued (not executed).`,
-          toolCallId: call.id,
-          toolName: call.name,
-        });
-        continue;
-      }
-
-      try {
-        const output = await tool.execute(ctx, call.arguments);
-        await recordExecutedAction(ctx, sessionId, tool.schema.name, call.arguments, output, "SUCCEEDED");
-        if (tool.mutating) {
-          await recordAudit({
-            actorType: "AGENT",
-            action: `agent.${tool.schema.name}`,
-            summary: `Agent executed ${tool.schema.name} automatically (autonomy: ${settings.autonomy_level})`,
-            meta: { input: call.arguments },
-          });
+      for (const call of result.toolCalls) {
+        const tool: AgentTool | undefined = getTool(call.name);
+        if (!tool) {
+          messages.push({ role: "tool", content: `Unknown tool: ${call.name}`, toolCallId: call.id, toolName: call.name });
+          continue;
         }
-        messages.push({ role: "tool", content: serializeToolOutput(output, tool.outputBudget), toolCallId: call.id, toolName: call.name });
-      } catch (err) {
-        const errorMessage = err instanceof Error ? err.message : "tool execution failed";
-        await recordExecutedAction(ctx, sessionId, tool.schema.name, call.arguments, null, "FAILED", errorMessage);
-        messages.push({ role: "tool", content: `Error: ${errorMessage}`, toolCallId: call.id, toolName: call.name });
+
+        const needsApproval = tool.mutating && requiresApproval(tool.schema.name, settings, 0.75);
+
+        if (needsApproval) {
+          const actionId = await proposeAction(ctx, sessionId, tool.schema.name, call.arguments);
+          if (actionId) proposedActions.push({ id: actionId, tool: tool.schema.name, input: call.arguments });
+          await recordRunEvent(ctx, runId, {
+            type: "APPROVAL_REQUIRED",
+            label: labelForApproval(tool.schema.name),
+            toolName: tool.schema.name,
+            status: "PENDING",
+          });
+          messages.push({
+            role: "tool",
+            content: `Action "${tool.schema.name}" requires approval and has been queued (not executed).`,
+            toolCallId: call.id,
+            toolName: call.name,
+          });
+          continue;
+        }
+
+        const toolLabel = labelForTool(tool.schema.name);
+        await recordRunEvent(ctx, runId, { type: "TOOL_STARTED", label: toolLabel, toolName: tool.schema.name });
+        const toolStarted = Date.now();
+        try {
+          const output = await tool.execute(ctx, call.arguments);
+          await recordExecutedAction(ctx, sessionId, tool.schema.name, call.arguments, output, "SUCCEEDED");
+          if (tool.mutating) {
+            await recordAudit({
+              actorType: "AGENT",
+              action: `agent.${tool.schema.name}`,
+              summary: `Agent executed ${tool.schema.name} automatically (autonomy: ${settings.autonomy_level})`,
+              meta: { input: call.arguments },
+            });
+          }
+          await recordRunEvent(ctx, runId, {
+            type: "TOOL_COMPLETED",
+            label: toolLabel,
+            toolName: tool.schema.name,
+            status: "SUCCESS",
+            meta: { durationMs: Date.now() - toolStarted, ...summarizeForEvent(output) },
+          });
+          messages.push({ role: "tool", content: serializeToolOutput(output, tool.outputBudget), toolCallId: call.id, toolName: call.name });
+        } catch (err) {
+          const errorMessage = err instanceof Error ? err.message : "tool execution failed";
+          await recordExecutedAction(ctx, sessionId, tool.schema.name, call.arguments, null, "FAILED", errorMessage);
+          await recordRunEvent(ctx, runId, {
+            type: "TOOL_FAILED",
+            label: toolLabel,
+            toolName: tool.schema.name,
+            status: "FAILED",
+            meta: { durationMs: Date.now() - toolStarted, reason: errorMessage },
+          });
+          messages.push({ role: "tool", content: `Error: ${errorMessage}`, toolCallId: call.id, toolName: call.name });
+        }
       }
     }
+
+    const parts = proposedActions.length ? [{ type: "proposed_actions", actions: proposedActions }] : [];
+    await insertMessage(ctx, sessionId, "AGENT", finalText || "Done.", parts);
+    await setSessionStatus(ctx, sessionId, proposedActions.length ? "WAITING_FOR_CHOICE" : "READY");
+    await recordRunEvent(ctx, runId, { type: "RUN_COMPLETED", label: PHASE_LABELS.RUN_COMPLETED, status: "SUCCESS" });
+    await completeRun(ctx, runId, "COMPLETED");
+
+    return { blocked: false as const, failed: false as const, text: finalText, proposedActions, runId };
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : "Agent run failed unexpectedly.";
+    await recordRunEvent(ctx, runId, { type: "RUN_FAILED", label: PHASE_LABELS.RUN_FAILED, status: "FAILED", meta: { reason: errorMessage } });
+    await completeRun(ctx, runId, "FAILED", errorMessage);
+    await insertMessage(ctx, sessionId, "AGENT", `I hit an error and couldn't finish: ${errorMessage}`);
+    await setSessionStatus(ctx, sessionId, "FAILED");
+    return { blocked: false as const, failed: true as const, text: "", proposedActions: [], runId, reason: errorMessage };
   }
-
-  const parts = proposedActions.length ? [{ type: "proposed_actions", actions: proposedActions }] : [];
-  await insertMessage(ctx, sessionId, "AGENT", finalText || "Done.", parts);
-  await setSessionStatus(ctx, sessionId, proposedActions.length ? "WAITING_FOR_CHOICE" : "READY");
-
-  return { blocked: false as const, text: finalText, proposedActions };
 }
 
 export async function approveAgentAction(ctx: OwnerContext, actionId: string) {

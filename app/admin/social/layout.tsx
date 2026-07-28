@@ -3,7 +3,7 @@ import { requireOwnerContext } from "@/lib/social/db-context";
 import { getAutomationSettings } from "@/lib/social/repositories/automation";
 import AdminLogin from "../AdminLogin";
 import SocialShell from "./SocialShell";
-import AgentPanel from "./agent/AgentPanel";
+import { CopilotProvider } from "./copilot/CopilotContext";
 import "./social-theme.css";
 
 export const metadata: Metadata = {
@@ -43,10 +43,11 @@ export default async function SocialLayout({ children }: { children: React.React
 
   return (
     <div className="saut-root">
-      <SocialShell email={ctx.email ?? ""} shadowMode={settings.shadow_mode}>
-        {children}
-      </SocialShell>
-      <AgentPanel />
+      <CopilotProvider>
+        <SocialShell email={ctx.email ?? ""} shadowMode={settings.shadow_mode}>
+          {children}
+        </SocialShell>
+      </CopilotProvider>
     </div>
   );
 }
