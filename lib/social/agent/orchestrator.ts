@@ -56,7 +56,10 @@ update_content_variant; never invent a storage URL or media ID. For private YouT
 SHADOW is active, only use execute_private_youtube_verification when the user explicitly requested that
 exact private upload. Keep responses concise and operational, not hype-y.`;
 
-const MAX_TOOL_ROUNDS = 4;
+// Media publishing may require: attachment identity, content lookup, variant
+// inspection, account selection, policy validation, then the final proposal.
+// Keep the loop bounded, but leave enough room for those real prerequisites.
+const MAX_TOOL_ROUNDS = 8;
 
 export async function createAgentSession(ctx: OwnerContext, title: string | null) {
   return createSessionRepo(ctx, title);

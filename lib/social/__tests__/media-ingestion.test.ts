@@ -54,6 +54,10 @@ function run() {
   assert.ok(migration.includes("mime_type = 'video/mp4'") && migration.includes("status = 'READY'"));
   assert.ok(mediaRepo.includes("stored.mimeType !== asset.mime_type") && mediaRepo.includes("stored.sizeBytes !== Number(asset.size_bytes)"));
   assert.ok(attachmentRepo.includes("media_asset_id") && orchestrator.includes("mediaAssetId=${attachment.media_asset_id}"));
+  assert.ok(
+    orchestrator.includes("const MAX_TOOL_ROUNDS = 8"),
+    "media workflows need enough bounded rounds for inspection before the final proposal"
+  );
   for (const tool of ["ingest_media", "attach_media_to_content", "inspect_content_media", "update_content_variant"]) {
     assert.ok(tools.includes(`name: "${tool}"`), `Agent tool ${tool} must exist`);
   }
