@@ -120,7 +120,16 @@ export function useAgentSession(sessionId: string | null, onSessionCreated: (id:
       if (!trimmed || pending) return;
       setBlockedReason(null);
       setFailedReason(null);
-      setMessages((prev) => [...prev, { id: `local-${Date.now()}`, role: "user", content: trimmed, parts: [] }]);
+      setMessages((prev) => [
+        ...(sessionId ? prev : []),
+        { id: `local-${Date.now()}`, role: "user", content: trimmed, parts: [] },
+      ]);
+      if (!sessionId) {
+        stopPolling();
+        setRun(null);
+        setRunEvents([]);
+        setSession(null);
+      }
       setPending(true);
       fetch("/api/social/copilot/runs", {
         method: "POST",
@@ -181,7 +190,7 @@ export function useAgentSession(sessionId: string | null, onSessionCreated: (id:
           setPending(false);
         });
     },
-    [pending, sessionId, onSessionCreated, pollRunEvents]
+    [pending, sessionId, onSessionCreated, pollRunEvents, stopPolling]
   );
 
   const approve = useCallback((actionId: string) => {
@@ -225,5 +234,17 @@ export function useAgentSession(sessionId: string | null, onSessionCreated: (id:
     rejectAgentActionAction(actionId).catch(() => {});
   }, []);
 
-  return { messages, pending, loadingHistory, blockedReason, failedReason, run, runEvents, session, send, approve, reject };
+  return {
+    messages: sessionId ? messages : [],
+    pending: sessionId ? pending : false,
+    loadingHistory: sessionId ? loadingHistory : false,
+    blockedReason: sessionId ? blockedReason : null,
+    failedReason: sessionId ? failedReason : null,
+    run: sessionId ? run : null,
+    runEvents: sessionId ? runEvents : [],
+    session: sessionId ? session : null,
+    send,
+    approve,
+    reject,
+  };
 }
