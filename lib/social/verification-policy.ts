@@ -11,6 +11,8 @@ export interface VerificationAuthorizationRecord extends VerificationAuthorizati
   purpose: string;
   status: string;
   expiresAt: string;
+  // privacy_status column from migration; legacy rows may lack this, treat as 'private' for compatibility
+  privacyStatus?: string | null;
 }
 
 export function verificationAuthorizationAllows(
@@ -24,14 +26,30 @@ export function verificationAuthorizationAllows(
     authorization.variantId === requested.variantId &&
     authorization.assetId === requested.assetId &&
     authorization.jobId === requested.jobId;
+
+  // Normalize the authorization privacy (back-compat: null => 'private')
+  const authPrivacy = (authorization.privacyStatus ?? "private").toLowerCase();
+  const reqPrivacy = (input.privacyStatus ?? "").toLowerCase();
+
+  // Explicit allowlist for privacy values
+  const allowedPrivacy = reqPrivacy === "private" || reqPrivacy === "unlisted";
+  const authPrivacyAllowed = authPrivacy === "private" || authPrivacy === "unlisted";
+
+  // Accept both legacy private-only purpose and a future generalized purpose.
+  const allowedPurposes = new Set(["YOUTUBE_PRIVATE_VERIFICATION", "YOUTUBE_VERIFICATION"]);
+
   return (
     exactScope &&
     authorization.platform === "youtube" &&
-    authorization.purpose === "YOUTUBE_PRIVATE_VERIFICATION" &&
+    allowedPurposes.has(authorization.purpose) &&
     authorization.status === "ACTIVE" &&
     Date.parse(authorization.expiresAt) > (input.now ?? Date.now()) &&
     input.accountPlatform === "youtube" &&
-    input.privacyStatus === "private" &&
+    // requested privacy must be a supported value AND the authorization must explicitly allow it
+    allowedPrivacy &&
+    authPrivacyAllowed &&
+    reqPrivacy === authPrivacy &&
+    // asset must be MP4
     input.assetMimeType === "video/mp4"
   );
 }
