@@ -48,6 +48,7 @@ function run() {
   const verification = read("lib", "social", "verification-publish.ts");
   const createAction = read("app", "admin", "social", "actions.ts");
   const createUploader = read("app", "admin", "social", "create", "MediaUploader.tsx");
+  const approvalRoute = read("app", "api", "social", "copilot", "actions", "[actionId]", "route.ts");
 
   assert.ok(migration.includes("social_media_assets_owner") && migration.includes("owner_id = (select auth.uid())"));
   assert.ok(migration.includes("social_content_master_media") && migration.includes("social_content_variant_media"));
@@ -75,6 +76,13 @@ function run() {
   );
   assert.ok(verification.includes("youtube-private-verification:${authorization.id}"));
   assert.ok(verification.includes("attachMediaToVariant") && verification.includes('youtubePrivacyStatus: "private"'));
+  assert.ok(
+    approvalRoute.includes("requireOwnerContext") &&
+      approvalRoute.includes("approveAgentAction(ctx, actionId)") &&
+      approvalRoute.includes("rejectAgentAction(ctx, actionId)") &&
+      approvalRoute.includes("maxDuration = 300"),
+    "the authenticated approval endpoint must reuse the owner-scoped approval path"
+  );
 
   console.log("media-ingestion.test.ts: ALL PASS (validation, owner RLS, stable assets, Agent handoff, exact one-time verification scope)");
 }
