@@ -123,8 +123,12 @@ export function CopilotProvider({ children }: { children: React.ReactNode }) {
   }, [router]);
 
   const dockAndReturn = useCallback(() => {
+    const destination =
+      state.lastWorkspacePath.startsWith("/admin/social") && state.lastWorkspacePath !== COPILOT_FULL_PAGE_PATH
+        ? state.lastWorkspacePath
+        : "/admin/social";
     setState((s) => ({ ...s, panelMode: "docked", lastPresentation: "docked" }));
-    router.push(state.lastWorkspacePath);
+    router.push(destination);
   }, [router, state.lastWorkspacePath]);
 
   const minimize = useCallback(() => {
