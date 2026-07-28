@@ -4,6 +4,7 @@ import AdminLogin from "./AdminLogin";
 import LeadAnalytics from "./LeadAnalytics";
 import { setMessageStatusAction, signOutAction } from "./actions";
 import { Mark } from "@/app/components/Mark";
+import { AdminAuthShell } from "./auth/AdminAuthShell";
 
 export const metadata: Metadata = {
   title: "Admin console — Stratxcel",
@@ -44,19 +45,15 @@ export default async function AdminPage() {
 
   if (!adminRow) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[#05070e] px-4">
-        <div className="w-full max-w-md rounded-2xl border border-white/10 bg-white/[0.04] p-7 text-center">
-          <h1 className="text-xl font-semibold text-white">No access</h1>
-          <p className="mt-2 text-sm text-slate-400">
-            {user.email} is not authorised for this console.
-          </p>
-          <form action={signOutAction} className="mt-5">
-            <button className="rounded-lg border border-white/15 px-4 py-2 text-xs font-semibold text-slate-300 hover:bg-white/[0.05]">
-              Sign out
-            </button>
-          </form>
-        </div>
-      </main>
+      <AdminAuthShell title="No access" subtitle="This account is not authorized for the Command Center.">
+        <p className="text-sm" style={{ color: "var(--saut-text-muted)" }}>
+          Signed in as <span style={{ color: "var(--saut-text)" }}>{user.email}</span>. This account authenticated
+          successfully but has no matching entry in the admin authorization list.
+        </p>
+        <form action={signOutAction} className="mt-5">
+          <button className="saut-auth-primary-btn">Sign out</button>
+        </form>
+      </AdminAuthShell>
     );
   }
 
