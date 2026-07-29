@@ -10,9 +10,22 @@ UPDATE social_verification_publish_authorizations
   WHERE privacy_status IS NULL;
 
 -- Add a check constraint to allow only private|unlisted
-ALTER TABLE social_verification_publish_authorizations
-  ADD CONSTRAINT social_verification_publish_authorizations_privacy_check
-  CHECK (privacy_status IN ('private', 'unlisted'));
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname =
+      'social_verification_publish_authorizations_privacy_check'
+      AND conrelid =
+        'public.social_verification_publish_authorizations'::regclass
+  ) THEN
+    ALTER TABLE public.social_verification_publish_authorizations
+      ADD CONSTRAINT social_verification_publish_authorizations_privacy_check
+      CHECK (privacy_status IN ('private', 'unlisted'));
+  END IF;
+END
+$$;
 
 -- Make privacy_status NOT NULL (safe after backfill)
 ALTER TABLE social_verification_publish_authorizations

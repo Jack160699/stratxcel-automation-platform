@@ -25,6 +25,7 @@ export const TOOL_LABELS: Record<string, string> = {
   attach_media_to_content: "Attaching media",
   update_content_variant: "Updating platform variant",
   schedule_post: "Scheduling post",
+  execute_youtube_verification: "Uploading YouTube verification video",
   execute_private_youtube_verification: "Uploading private YouTube verification video",
   cancel_scheduled_post: "Cancelling scheduled post",
   set_operating_mode: "Changing autonomy mode",

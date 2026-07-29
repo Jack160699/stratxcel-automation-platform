@@ -19,7 +19,7 @@ import {
   inspectContentMedia,
   updateContentVariant,
 } from "../repositories/media-assets";
-import { executePrivateYoutubeVerification } from "../verification-publish";
+import { executePrivateYoutubeVerification, executeYoutubeVerification } from "../verification-publish";
 
 export interface AgentTool {
   schema: ToolSchema;
@@ -368,6 +368,33 @@ const updateContentVariantTool: AgentTool = {
   }),
 };
 
+const executeYoutubeVerificationTool: AgentTool = {
+  schema: {
+    name: "execute_youtube_verification",
+    description:
+      "One-time, explicitly approved Google verification path: attach one owned MP4 to one existing owned YouTube variant, " +
+      "set PRIVATE or UNLISTED visibility, create one exact publishing job for one connected YouTube account, and run only that job. " +
+      "Global SHADOW remains enabled and no unrelated job can be released.",
+    parameters: {
+      type: "object",
+      properties: {
+        accountId: { type: "string" },
+        variantId: { type: "string" },
+        assetId: { type: "string" },
+        privacyStatus: { type: "string", enum: ["private", "unlisted"] },
+      },
+      required: ["accountId", "variantId", "assetId", "privacyStatus"],
+    },
+  },
+  mutating: true,
+  execute: async (ctx, args) => executeYoutubeVerification(ctx, {
+    accountId: str(args, "accountId"),
+    variantId: str(args, "variantId"),
+    assetId: str(args, "assetId"),
+    privacyStatus: str(args, "privacyStatus") as "private" | "unlisted",
+  }),
+};
+
 const executePrivateYoutubeVerificationTool: AgentTool = {
   schema: {
     name: "execute_private_youtube_verification",
@@ -410,6 +437,7 @@ export const AGENT_TOOLS: AgentTool[] = [
   attachMediaToContentTool,
   updateContentVariantTool,
   schedulePost,
+  executeYoutubeVerificationTool,
   executePrivateYoutubeVerificationTool,
   cancelScheduledPost,
   setOperatingMode,
