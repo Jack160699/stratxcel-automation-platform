@@ -35,13 +35,10 @@ export function verificationAuthorizationAllows(
   const allowedPrivacy = reqPrivacy === "private" || reqPrivacy === "unlisted";
   const authPrivacyAllowed = authPrivacy === "private" || authPrivacy === "unlisted";
 
-  // Accept both legacy private-only purpose and a future generalized purpose.
-  const allowedPurposes = new Set(["YOUTUBE_PRIVATE_VERIFICATION", "YOUTUBE_VERIFICATION"]);
-
   return (
     exactScope &&
     authorization.platform === "youtube" &&
-    allowedPurposes.has(authorization.purpose) &&
+    authorization.purpose === "YOUTUBE_PRIVATE_VERIFICATION" &&
     authorization.status === "ACTIVE" &&
     Date.parse(authorization.expiresAt) > (input.now ?? Date.now()) &&
     input.accountPlatform === "youtube" &&

@@ -19,9 +19,12 @@ function session(id: string, updatedAt: string): AgentSessionRow {
 
 function run() {
   const now = new Date();
-  const today = now.toISOString();
-  const yesterday = new Date(now.getTime() - 26 * 3600 * 1000).toISOString(); // safely into "yesterday" regardless of time-of-day
-  const older = new Date(now.getTime() - 5 * 86400000).toISOString();
+  const todayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 12));
+  const yesterdayStart = new Date(todayStart.getTime() - 86400000);
+  const olderStart = new Date(todayStart.getTime() - 5 * 86400000);
+  const today = todayStart.toISOString();
+  const yesterday = yesterdayStart.toISOString();
+  const older = olderStart.toISOString();
 
   // 1. Sessions group into real, honest day buckets — no fabricated history.
   const groups = groupSessionsByDay([session("a", today), session("b", yesterday), session("c", older)]);

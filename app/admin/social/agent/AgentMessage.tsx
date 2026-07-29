@@ -30,11 +30,21 @@ const ACTION_TITLES: Record<string, string> = {
   set_operating_mode: "Change operating mode",
   attach_media_to_content: "Attach media",
   update_content_variant: "Update content variant",
+  execute_youtube_verification: "Upload YouTube verification video",
   execute_private_youtube_verification: "Upload private YouTube verification video",
 };
 
 function text(input: Record<string, unknown>, key: string) {
   return typeof input[key] === "string" ? String(input[key]) : "";
+}
+
+function verificationVisibility(tool: string, input: Record<string, unknown>) {
+  if (tool === "execute_private_youtube_verification") return "PRIVATE";
+  if (tool !== "execute_youtube_verification") return "";
+  const privacy = text(input, "privacyStatus");
+  if (privacy === "private") return "PRIVATE";
+  if (privacy === "unlisted") return "UNLISTED";
+  return "";
 }
 
 function ApprovalCard({
@@ -51,11 +61,18 @@ function ApprovalCard({
   const headline = text(input, "title") || text(input, "platform") || text(input, "name");
   const preview = text(input, "caption") || text(input, "masterIdea") || text(input, "goal");
   const hashtags = Array.isArray(input.hashtags) ? input.hashtags.map(String).join(" ") : "";
+  const visibility = verificationVisibility(action.tool, input);
   return (
     <section className="saut-approval-card" aria-label={`Review required: ${title}`}>
       <div className="saut-mono text-[10px] uppercase tracking-[0.14em]" style={{ color: "var(--saut-warning)" }}>Review required</div>
       <div className="mt-1 text-sm font-semibold" style={{ color: "var(--saut-text)" }}>{title}</div>
       {headline && <div className="mt-2 text-[13px]" style={{ color: "var(--saut-text-muted)" }}>{headline}</div>}
+      {visibility && (
+        <div className="mt-2 text-xs" style={{ color: "var(--saut-text-subtle)" }}>
+          YouTube{" "}
+          <span style={{ color: "var(--saut-text)" }}>Visibility: {visibility}</span>
+        </div>
+      )}
       {text(input, "contentPillar") && (
         <div className="mt-2 text-xs" style={{ color: "var(--saut-text-subtle)" }}>Pillar · {text(input, "contentPillar")}</div>
       )}

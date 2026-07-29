@@ -34,7 +34,7 @@ import { verificationAuthorizationAllows } from "./verification-policy";
  *
  * SAFETY: a job only actually calls the provider if the owner's
  * social_automation_settings row has shadow_mode=false, except for the exact
- * private YouTube verification path whose one-time owner/account/variant/
+ * YouTube verification path whose one-time owner/account/variant/
  * asset/job authorization is atomically consumed below. Ordinary SHADOW jobs
  * still record a dry-run result without calling the provider.
  */
@@ -179,14 +179,15 @@ async function processJob(
     if (!isLive && verification) {
       if (verification.ownerId !== account.owner_id) throw new Error("Verification authorization owner mismatch.");
       if (account.platform !== "youtube") throw new Error("Verification authorization is limited to YouTube.");
-      if (normalizeYouTubePrivacyStatus(variant.creative_spec?.youtube_privacy_status) !== "private") {
-        throw new Error("Verification authorization is limited to private YouTube uploads.");
+      const verificationPrivacy = normalizeYouTubePrivacyStatus(variant.creative_spec?.youtube_privacy_status);
+      if (verificationPrivacy !== "private" && verificationPrivacy !== "unlisted") {
+        throw new Error("Verification authorization is limited to private or unlisted YouTube uploads.");
       }
       const exactAsset = resolvedMedia.assets.find((asset) => asset.mime_type === "video/mp4");
       if (!exactAsset) throw new Error("The authorized MP4 is not attached to this variant.");
       const { data: authorization } = await service
         .from("social_verification_publish_authorizations")
-        .select("owner_id, account_id, variant_id, asset_id, publishing_job_id, platform, purpose, status, expires_at")
+        .select("owner_id, account_id, variant_id, asset_id, publishing_job_id, platform, purpose, privacy_status, status, expires_at")
         .eq("id", verification.authorizationId)
         .maybeSingle();
       if (!authorization || !verificationAuthorizationAllows(
@@ -198,6 +199,7 @@ async function processJob(
           jobId: authorization.publishing_job_id,
           platform: authorization.platform,
           purpose: authorization.purpose,
+          privacyStatus: authorization.privacy_status,
           status: authorization.status,
           expiresAt: authorization.expires_at,
         },
@@ -210,7 +212,7 @@ async function processJob(
         },
         {
           accountPlatform: account.platform,
-          privacyStatus: normalizeYouTubePrivacyStatus(variant.creative_spec?.youtube_privacy_status),
+          privacyStatus: verificationPrivacy,
           assetMimeType: exactAsset.mime_type,
         }
       )) {
@@ -233,6 +235,7 @@ async function processJob(
         .eq("publishing_job_id", job.id)
         .eq("platform", "youtube")
         .eq("purpose", "YOUTUBE_PRIVATE_VERIFICATION")
+        .eq("privacy_status", verificationPrivacy)
         .eq("status", "ACTIVE")
         .gt("expires_at", new Date().toISOString())
         .select("id")
@@ -243,11 +246,16 @@ async function processJob(
       await recordAudit({
         actorType: "SYSTEM",
         actorId: account.owner_id,
-        action: "youtube.private_verification_authorization.consume",
+        action: "youtube.verification_authorization.consume",
         targetType: "social_publishing_job",
         targetId: job.id,
-        summary: "Consumed one-time private YouTube verification authorization",
-        meta: { authorizationId: verification.authorizationId, variantId: variant.id, accountId: account.id },
+        summary: `Consumed one-time YouTube ${verificationPrivacy} verification authorization`,
+        meta: {
+          authorizationId: verification.authorizationId,
+          variantId: variant.id,
+          accountId: account.id,
+          privacyStatus: verificationPrivacy,
+        },
       });
     }
 
