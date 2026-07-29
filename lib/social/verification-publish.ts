@@ -40,7 +40,7 @@ export async function executeYoutubeVerification(
   ]);
   if (!settings.shadow_mode) throw new Error("The verification-only path is available only while global SHADOW mode is active.");
   const asset = assets[0];
-  if (!asset || asset.mime_type !== "video/mp4") throw new Error("Private YouTube verification requires an owned READY MP4 asset.");
+  if (!asset || asset.mime_type !== "video/mp4") throw new Error("YouTube verification requires an owned READY MP4 asset.");
   const account = accountResult.data;
   if (!account || account.platform !== "youtube") throw new Error("Select an owned YouTube account.");
   if (account.status !== "CONNECTED" || account.token_health === "INVALID") {
@@ -68,7 +68,8 @@ export async function executeYoutubeVerification(
     .eq("status", "ACTIVE")
     .lte("expires_at", new Date().toISOString());
 
-  const purpose = input.privacyStatus === "private" ? "YOUTUBE_PRIVATE_VERIFICATION" : "YOUTUBE_PRIVATE_VERIFICATION"; // preserve legacy purpose to avoid schema changes; privacy stored separately
+  // Keep legacy purpose for compatibility; privacy_status is authoritative
+  const purpose = "YOUTUBE_PRIVATE_VERIFICATION";
 
   const { data: authorization, error: authorizationError } = await ctx.supabase
     .from("social_verification_publish_authorizations")
@@ -116,7 +117,7 @@ export async function executeYoutubeVerification(
   const job = await getJobService(service, jobId);
   if (!job) throw new Error("Verification publishing job disappeared.");
   if (execution.outcome !== "published_live" || job.status !== "PUBLISHED") {
-    throw new Error(job.last_error || `Private YouTube verification failed (${execution.outcome}).`);
+    throw new Error(job.last_error || `YouTube verification failed (${execution.outcome}).`);
   }
   return {
     jobId,
