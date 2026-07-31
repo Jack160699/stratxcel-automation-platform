@@ -10,7 +10,7 @@ import { toMetaApiError } from "../errors";
 /**
  * Facebook Page publishing via standard Facebook Login.
  * Permissions already prepared on the Meta app: pages_show_list,
- * pages_read_engagement, pages_manage_posts.
+ * pages_read_engagement, pages_manage_posts, read_insights.
  *
  * A user access token alone cannot post to a Page — after login we fetch
  * /me/accounts to get the Page-scoped access token, and that Page token is
@@ -28,7 +28,7 @@ function requireEnv(name: string): string {
 
 export const facebookProvider: SocialProvider = {
   name: "facebook",
-  requiredScopes: ["pages_show_list", "pages_read_engagement", "pages_manage_posts"],
+  requiredScopes: ["pages_show_list", "pages_read_engagement", "pages_manage_posts", "read_insights"],
 
   getAuthorizationUrl(state, redirectUri) {
     const clientId = requireEnv("META_APP_ID");

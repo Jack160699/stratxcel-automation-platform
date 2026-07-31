@@ -10,7 +10,7 @@ import { toMetaApiError } from "../errors";
 /**
  * Threads API — a distinct identity/token/publish path from Instagram and
  * Facebook, even though it's a Meta product. Permissions prepared:
- * threads_basic, threads_content_publish.
+ * threads_basic, threads_content_publish, threads_manage_insights.
  *
  * Docs: https://developers.facebook.com/docs/threads
  */
@@ -25,7 +25,7 @@ function requireEnv(name: string): string {
 
 export const threadsProvider: SocialProvider = {
   name: "threads",
-  requiredScopes: ["threads_basic", "threads_content_publish"],
+  requiredScopes: ["threads_basic", "threads_content_publish", "threads_manage_insights"],
 
   getAuthorizationUrl(state, redirectUri) {
     const clientId = requireEnv("META_THREADS_APP_ID");
