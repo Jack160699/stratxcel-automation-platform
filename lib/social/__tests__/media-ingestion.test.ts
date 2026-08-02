@@ -75,7 +75,8 @@ function run() {
   assert.ok(verificationMigration.includes("IF NOT EXISTS (") && verificationMigration.includes("social_verification_publish_authorizations_privacy_check"));
   assert.ok(verificationMigration.includes("ALTER COLUMN privacy_status SET NOT NULL"));
   assert.ok(mediaRepo.includes("stored.mimeType !== asset.mime_type") && mediaRepo.includes("stored.sizeBytes !== Number(asset.size_bytes)"));
-  assert.ok(attachmentRepo.includes("media_asset_id") && orchestrator.includes("mediaAssetId=${attachment.media_asset_id}"));
+  assert.ok(attachmentRepo.includes("media_asset_id"), "canonical media identity remains available to local publishing code");
+  assert.equal(orchestrator.includes("mediaAssetId=${attachment.media_asset_id}"), false, "media identifiers never enter external AI prompts");
   assert.ok(
     orchestrator.includes("const MAX_TOOL_ROUNDS = 8"),
     "media workflows need enough bounded rounds for inspection before the final proposal"

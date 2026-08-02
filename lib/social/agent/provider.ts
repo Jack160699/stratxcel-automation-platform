@@ -1,15 +1,14 @@
-/**
- * AI provider adapter. Each provider implements the same shape so the Agent
- * orchestrator never branches on "which vendor" — it only ever calls
- * `complete()`. Nothing here fabricates a response: if the required env var
- * is absent, `resolveConfiguredProvider()` returns null and the orchestrator
- * is responsible for saying so honestly instead of pretending to think.
- */
+import {
+  buildGeminiRequest,
+  GEMINI_GENERATE_CONTENT_URL,
+  GEMINI_MODEL,
+  type GeminiBoundaryInput,
+} from "./gemini-boundary.ts";
 
 export interface ToolSchema {
   name: string;
   description: string;
-  parameters: Record<string, unknown>; // JSON Schema
+  parameters: Record<string, unknown>;
 }
 
 export interface AgentTurnMessage {
@@ -30,26 +29,18 @@ export interface CompletionResult {
   toolCalls: ToolCallRequest[];
 }
 
+export interface ProviderSafeContext {
+  brandInstructions: string[];
+  contentIdeas?: string[];
+  draftCaptions?: string[];
+  businessInformation?: string[];
+}
+
 export interface AIProvider {
-  readonly name: "openai";
-  readonly envKey: string;
+  readonly name: "gemini";
+  readonly envKey: "GEMINI_API_KEY";
   isConfigured(): boolean;
-  complete(messages: AgentTurnMessage[], tools: ToolSchema[]): Promise<CompletionResult>;
-}
-
-const OPENAI_CHAT_COMPLETIONS_URL = "https://api.openai.com/v1/chat/completions";
-const OPENAI_MODEL = "gpt-4o-mini";
-
-/**
- * Returns the fixed official endpoint. Environment configuration cannot
- * redirect Copilot traffic to an OpenAI-compatible intermediary.
- */
-export function resolveOpenAIChatCompletionsUrl(): string {
-  return OPENAI_CHAT_COMPLETIONS_URL;
-}
-
-export function resolveOpenAIModel(): string {
-  return OPENAI_MODEL;
+  complete(messages: AgentTurnMessage[], tools: ToolSchema[], context: ProviderSafeContext): Promise<CompletionResult>;
 }
 
 export interface EffectiveProviderIdentity {
@@ -60,63 +51,55 @@ export interface EffectiveProviderIdentity {
 }
 
 export function resolveEffectiveProviderIdentity(): EffectiveProviderIdentity {
-  if (process.env.OPENAI_API_KEY) {
-    return {
-      provider: "OpenAI",
-      protocol: "OpenAI API",
-      model: OPENAI_MODEL,
-      configured: true,
-    };
-  }
-  return { provider: "Not configured", protocol: "—", model: "—", configured: false };
+  return process.env.GEMINI_API_KEY
+    ? { provider: "Google Gemini", protocol: "Gemini Developer API", model: GEMINI_MODEL, configured: true }
+    : { provider: "Not configured", protocol: "—", model: "—", configured: false };
 }
 
-class OpenAIProvider implements AIProvider {
-  readonly name = "openai" as const;
-  readonly envKey = "OPENAI_API_KEY";
+class GeminiProvider implements AIProvider {
+  readonly name = "gemini" as const;
+  readonly envKey = "GEMINI_API_KEY" as const;
+
   isConfigured() {
-    return Boolean(process.env.OPENAI_API_KEY);
+    return Boolean(process.env.GEMINI_API_KEY);
   }
-  async complete(messages: AgentTurnMessage[], tools: ToolSchema[]): Promise<CompletionResult> {
-    const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) throw new Error("OPENAI_API_KEY not configured");
 
-    const res = await fetch(resolveOpenAIChatCompletionsUrl(), {
+  async complete(messages: AgentTurnMessage[], _tools: ToolSchema[], context: ProviderSafeContext): Promise<CompletionResult> {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) throw new Error("GEMINI_API_KEY not configured");
+
+    const boundaryInput: GeminiBoundaryInput = {
+      userPrompts: messages.filter((message) => message.role === "user").map((message) => message.content),
+      brandInstructions: context.brandInstructions,
+      contentIdeas: context.contentIdeas ?? [],
+      draftCaptions: context.draftCaptions ?? [],
+      businessInformation: context.businessInformation ?? [],
+    };
+    const request = buildGeminiRequest(boundaryInput);
+    const requestFields = Object.keys(request);
+
+    const response = await fetch(GEMINI_GENERATE_CONTENT_URL, {
       method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: resolveOpenAIModel(),
-        messages: messages.map((m) => ({ role: m.role === "tool" ? "tool" : m.role, content: m.content, tool_call_id: m.toolCallId })),
-        tools: tools.map((t) => ({ type: "function", function: { name: t.name, description: t.description, parameters: t.parameters } })),
-      }),
+      headers: { "x-goog-api-key": apiKey, "Content-Type": "application/json" },
+      body: JSON.stringify(request),
     });
-    if (!res.ok) throw new Error(`OpenAI request failed: HTTP ${res.status}`);
-    const json = await res.json();
-    const choice = json.choices?.[0]?.message;
-    const toolCalls: ToolCallRequest[] = (choice?.tool_calls ?? []).map((tc: { id: string; function: { name: string; arguments: string } }) => ({
-      id: tc.id,
-      name: tc.function.name,
-      arguments: safeParseJson(tc.function.arguments),
-    }));
-    return { text: choice?.content ?? "", toolCalls };
+    console.info("Gemini request", { requestFields, status: response.status });
+    if (!response.ok) throw new Error(`Gemini request failed: HTTP ${response.status}`);
+
+    const json = await response.json() as {
+      candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+    };
+    const text = json.candidates?.[0]?.content?.parts?.map((part) => part.text ?? "").join("") ?? "";
+    return { text, toolCalls: [] };
   }
 }
 
-function safeParseJson(raw: string): Record<string, unknown> {
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return {};
-  }
-}
-
-const PROVIDERS: AIProvider[] = [new OpenAIProvider()];
+const PROVIDERS: AIProvider[] = [new GeminiProvider()];
 
 export function listProviders(): AIProvider[] {
   return PROVIDERS;
 }
 
-/** First configured provider in preference order, or null if none. */
 export function resolveConfiguredProvider(): AIProvider | null {
-  return PROVIDERS.find((p) => p.isConfigured()) ?? null;
+  return PROVIDERS.find((provider) => provider.isConfigured()) ?? null;
 }

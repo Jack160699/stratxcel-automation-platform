@@ -12,7 +12,12 @@ import {
 } from "../repositories/agent";
 import { startRun, completeRun, recordRunEvent, getLatestRun } from "../repositories/agent-runs";
 import { resolveConfiguredProvider } from "./provider";
-import { getTool, toolSchemas, type AgentTool } from "./tools";
+import { requiresLocalMetaHandling, selectGeminiBrandInstructions } from "./gemini-boundary";
+import { calculateLocalMetricsSummary } from "../local-meta-summary";
+import { listRecentMetrics } from "../repositories/analytics";
+import { listAccounts } from "../repositories/accounts";
+import { getBrandProfile } from "../repositories/brand";
+import { getTool, type AgentTool } from "./tools";
 import { serializeToolOutput } from "./tool-output";
 import { labelForTool, labelForApproval, PHASE_LABELS } from "./activity-labels";
 import { summarizeForEvent } from "./tool-output-summary";
@@ -29,7 +34,6 @@ import {
   attachmentPart,
   bindAttachmentsToMessage,
   getAttachmentsByIds,
-  listAttachmentsForMessages,
 } from "../repositories/agent-attachments";
 
 const SYSTEM_PROMPT = `You are the Stratxcel Social Autopilot Agent — an operational copilot for Stratxcel's own
@@ -94,11 +98,25 @@ export async function acceptAgentMission(
  * fabricating a response — the whole point of "no fake functionality".
  */
 export async function runAgentTurn(ctx: OwnerContext, sessionId: string, runId: string) {
+  const history = await loadHistory(ctx, sessionId);
+  const latestUserPrompt = [...history].reverse().find((message) => message.role === "USER")?.content ?? "";
+  if (requiresLocalMetaHandling(latestUserPrompt)) {
+    const [metrics, accounts] = await Promise.all([listRecentMetrics(ctx, 50), listAccounts(ctx)]);
+    const summary = calculateLocalMetricsSummary(metrics);
+    const connectedCount = accounts.filter((account) => account.status === "CONNECTED").length;
+    const message = `${summary.text} Connected-account state is handled locally: ${connectedCount} of ${accounts.length} configured accounts are currently connected. No external generative AI received this request or its data.`;
+    await insertMessage(ctx, sessionId, "AGENT", message);
+    await setSessionStatus(ctx, sessionId, "READY");
+    await recordRunEvent(ctx, runId, { type: "RUN_COMPLETED", label: "Local Platform-data summary", status: "SUCCESS" });
+    await completeRun(ctx, runId, "COMPLETED");
+    return { blocked: false as const, failed: false as const, text: message, proposedActions: [], runId };
+  }
+
   const provider = resolveConfiguredProvider();
   if (!provider) {
     const message =
       "No AI provider is configured yet, so I can't plan or generate content. " +
-      "Add OPENAI_API_KEY or ANTHROPIC_API_KEY in Integrations → AI Providers and I'll pick it up automatically. " +
+      "Add GEMINI_API_KEY in Integrations → AI Providers and I'll pick it up automatically. " +
       "I can still run direct tools for you if you ask a specific yes/no operational question through the UI.";
     await insertMessage(ctx, sessionId, "AGENT", message);
     await setSessionStatus(ctx, sessionId, "BLOCKED");
@@ -108,28 +126,11 @@ export async function runAgentTurn(ctx: OwnerContext, sessionId: string, runId: 
   }
 
   const settings = await getAutomationSettings(ctx);
-  const history = await loadHistory(ctx, sessionId);
-  const attachments = await listAttachmentsForMessages(ctx, history.map((message) => message.id));
-  const attachmentsByMessage = new Map<string, typeof attachments>();
-  for (const attachment of attachments) {
-    const group = attachmentsByMessage.get(attachment.message_id ?? "") ?? [];
-    group.push(attachment);
-    attachmentsByMessage.set(attachment.message_id ?? "", group);
-  }
+  const brandProfile = await getBrandProfile(ctx);
   const roleMap: Record<string, AgentTurnMessage["role"]> = { USER: "user", AGENT: "assistant", SYSTEM: "system" };
   const messages: AgentTurnMessage[] = [
     { role: "system", content: SYSTEM_PROMPT },
-    ...history.map((message) => {
-      const messageAttachments = attachmentsByMessage.get(message.id) ?? [];
-      const attachmentContext = messageAttachments.map((attachment) =>
-        attachment.processing_status === "EXTRACTED" && attachment.extracted_text
-          ? `\n\n[Attached file accessed: ${attachment.original_name}]\n${attachment.extracted_text}`
-          : attachment.media_asset_id
-            ? `\n\n[Attached media available to tools: ${attachment.original_name} (${attachment.mime_type}, ${attachment.size_bytes} bytes); attachmentId=${attachment.id}; mediaAssetId=${attachment.media_asset_id}]`
-            : `\n\n[Attached file stored but not readable by this Agent: ${attachment.original_name} (${attachment.mime_type})]`
-      ).join("");
-      return { role: roleMap[message.role] ?? "user", content: `${message.content}${attachmentContext}` };
-    }),
+    ...history.map((message) => ({ role: roleMap[message.role] ?? "user", content: message.content })),
   ];
 
   await setSessionStatus(ctx, sessionId, "GENERATING");
@@ -138,22 +139,6 @@ export async function runAgentTurn(ctx: OwnerContext, sessionId: string, runId: 
   // did (provider round-trips, tool calls, approval gates) — never the
   // model's internal reasoning. See lib/social/repositories/agent-runs.ts.
   await recordRunEvent(ctx, runId, { type: "UNDERSTANDING_REQUEST", label: PHASE_LABELS.UNDERSTANDING_REQUEST });
-  for (const attachment of attachments.filter((item) =>
-    (item.processing_status === "EXTRACTED" && item.extracted_text) || item.media_asset_id
-  )) {
-    await recordRunEvent(ctx, runId, {
-      type: "ATTACHMENT_ACCESSED",
-      label: attachment.media_asset_id
-        ? `Accessing media · ${attachment.original_name}`
-        : `Reading attachment · ${attachment.original_name}`,
-      status: "SUCCESS",
-      meta: {
-        mimeType: attachment.mime_type,
-        sizeBytes: attachment.size_bytes,
-        ...(attachment.media_asset_id ? { mediaAssetId: attachment.media_asset_id } : {}),
-      },
-    });
-  }
 
   const proposedActions: Array<{ id: string; tool: string; input: Record<string, unknown> }> = [];
   let finalText = "";
@@ -162,7 +147,9 @@ export async function runAgentTurn(ctx: OwnerContext, sessionId: string, runId: 
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
       await recordRunEvent(ctx, runId, { type: "PROVIDER_REQUEST_STARTED", label: PHASE_LABELS.PROVIDER_REQUEST_STARTED });
       const providerStarted = Date.now();
-      const result = await provider.complete(messages, toolSchemas());
+      const result = await provider.complete(messages, [], {
+        brandInstructions: selectGeminiBrandInstructions(brandProfile),
+      });
       await recordRunEvent(ctx, runId, {
         type: "PROVIDER_RESPONSE_RECEIVED",
         label: PHASE_LABELS.PROVIDER_RESPONSE_RECEIVED,

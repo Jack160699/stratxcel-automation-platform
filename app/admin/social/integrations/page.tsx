@@ -109,8 +109,9 @@ export default async function IntegrationsPage() {
       <section className="space-y-3">
         <h2 className="saut-section-title">AI providers</h2>
         <p className="text-xs" style={{ color: "var(--saut-text-subtle)" }}>
-          The Agent uses OpenAI directly with a server-side key that is never entered or stored here. Set{" "}
-          <code className="saut-mono">OPENAI_API_KEY</code> in the deployment environment to enable Copilot.
+          Copilot uses a fixed Gemini model with a server-side key that is never entered or stored here. Its request
+          boundary permits only user-authored, non-Platform brand and drafting content. Set{" "}
+          <code className="saut-mono">GEMINI_API_KEY</code> in the deployment environment to enable Copilot.
         </p>
         <div className="grid gap-3 sm:grid-cols-2">
           {providers.map((p) => {

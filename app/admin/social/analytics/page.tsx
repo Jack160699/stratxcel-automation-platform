@@ -1,5 +1,6 @@
 import { requireOwnerContext } from "@/lib/social/db-context";
 import { listRecentMetrics, listCostEvents, listExperiments, listResearchItems } from "@/lib/social/repositories/analytics";
+import { calculateLocalMetricsSummary } from "@/lib/social/local-meta-summary";
 
 function fmt(ts: string | null) {
   if (!ts) return "—";
@@ -18,8 +19,7 @@ export default async function AnalyticsPage() {
     listResearchItems(ctx),
   ]);
 
-  const totalReach = metrics.reduce((sum, m) => sum + (m.reach ?? 0), 0);
-  const totalEngagement = metrics.reduce((sum, m) => sum + (m.likes ?? 0) + (m.comments ?? 0) + (m.shares ?? 0) + (m.saves ?? 0), 0);
+  const localSummary = calculateLocalMetricsSummary(metrics);
   const totalCostCents = costs.reduce((sum, c: Record<string, unknown>) => sum + ((c.amount_cents as number) ?? 0), 0);
   const hasMetrics = metrics.length > 0;
 
@@ -45,17 +45,24 @@ export default async function AnalyticsPage() {
       <section className="grid gap-3 sm:grid-cols-3">
         <div className="saut-card p-5">
           <div className="saut-label">Total reach</div>
-          <div className="saut-metric mt-2 text-3xl">{hasMetrics ? totalReach.toLocaleString() : "—"}</div>
+          <div className="saut-metric mt-2 text-3xl">{hasMetrics ? localSummary.totalReach.toLocaleString() : "—"}</div>
         </div>
         <div className="saut-card p-5">
           <div className="saut-label">Total engagement</div>
-          <div className="saut-metric mt-2 text-3xl">{hasMetrics ? totalEngagement.toLocaleString() : "—"}</div>
+          <div className="saut-metric mt-2 text-3xl">{hasMetrics ? localSummary.totalEngagements.toLocaleString() : "—"}</div>
+          <p className="mt-1 text-xs" style={{ color: "var(--saut-text-subtle)" }}>
+            {hasMetrics ? `${localSummary.engagementRatePercent.toFixed(2)}% of reach` : "Calculated locally"}
+          </p>
         </div>
         <div className="saut-card p-5">
           <div className="saut-label">AI/media spend</div>
           <div className="saut-metric mt-2 text-3xl">${(totalCostCents / 100).toFixed(2)}</div>
         </div>
       </section>
+
+      <p className="saut-card p-4 text-xs" style={{ color: "var(--saut-text-muted)" }}>
+        {localSummary.text}
+      </p>
 
       <section className="space-y-3">
         <h2 className="saut-section-title">Recent metrics</h2>

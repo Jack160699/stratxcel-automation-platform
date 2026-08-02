@@ -15,7 +15,7 @@ export interface HealthRecord {
 const SOCIAL_PLATFORMS = ["instagram", "facebook", "threads", "linkedin", "youtube"] as const;
 
 const AI_ENV_KEYS: Record<string, string> = {
-  openai: "OPENAI_API_KEY",
+  gemini: "GEMINI_API_KEY",
 };
 
 /**

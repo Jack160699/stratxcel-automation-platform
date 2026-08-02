@@ -38,9 +38,9 @@ function run() {
   assert.ok(migration.includes("'ATTACHMENT_ACCESSED'"));
 
   const orchestrator = read("lib", "social", "agent", "orchestrator.ts");
-  assert.ok(orchestrator.includes("processing_status === \"EXTRACTED\""));
-  assert.ok(orchestrator.includes('"ATTACHMENT_ACCESSED"'));
-  assert.ok(orchestrator.includes("STORED_UNREADABLE") || orchestrator.includes("not readable by this Agent"));
+  assert.equal(orchestrator.includes("extracted_text"), false, "attachments never enter external AI prompts");
+  assert.ok(orchestrator.includes("selectGeminiBrandInstructions"), "Gemini receives only allowlisted brand fields");
+  assert.ok(orchestrator.includes("requiresLocalMetaHandling"), "Platform-data questions stay local");
   const attachments = read("lib", "social", "repositories", "agent-attachments.ts");
   const copilot = read("app", "admin", "social", "copilot", "CopilotFullPage.tsx");
   assert.ok(attachments.includes("createSignedUploadUrl"), "uploads must bypass the Vercel function body-size limit");
