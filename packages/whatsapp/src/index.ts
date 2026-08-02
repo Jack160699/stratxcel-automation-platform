@@ -8,3 +8,4 @@ export * from "./phone-bindings/repository.ts";
 export * from "./conversation/opt-out.ts";
 export * from "./conversation/templates.ts";
 export * from "./conversation/process-inbound.ts";
+export * from "./shadow-messages.ts";
