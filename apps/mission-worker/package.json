@@ -9,6 +9,7 @@
   "dependencies": {
     "@stratxcel/approvals": "*",
     "@stratxcel/audit": "*",
-    "@stratxcel/missions": "*"
+    "@stratxcel/missions": "*",
+    "@stratxcel/queue": "*"
   }
 }

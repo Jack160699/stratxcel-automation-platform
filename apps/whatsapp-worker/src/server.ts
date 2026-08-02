@@ -1,16 +1,17 @@
 import http from "node:http";
+import crypto from "node:crypto";
 import { parseInboundWhatsAppWebhook, verifyWhatsAppWebhookSignature } from "@stratxcel/whatsapp";
-import { createServiceClient as createCrmClient, createLead, findLeadByPhone } from "@stratxcel/leads-and-crm";
-import { createServiceClient as createAuditClient, recordAuditEvent } from "@stratxcel/audit";
-import { createLoggingMissionQueue } from "./queue.ts";
+import { createServiceClient as createWhatsAppClient, findActiveBindingByPhoneNumberId, recordUnmatchedEvent } from "@stratxcel/whatsapp";
+import { createServiceClient as createQueueClient, createPostgresQueueAdapter } from "@stratxcel/queue";
 
 /**
  * Standalone Meta webhook receiver for WhatsApp — separated from the
  * Next.js dashboard app precisely so a slow/failing mission never blocks
  * Meta's webhook delivery (Meta expects a fast 200 and will disable the
- * webhook after repeated timeouts). This process does exactly three
- * things: verify, normalize, and hand off to the queue — it never calls
- * into @stratxcel/missions directly. apps/mission-worker owns execution.
+ * webhook after repeated timeouts). This process does exactly four
+ * things: verify, normalize, resolve tenant, and enqueue — it never
+ * processes conversation logic in-process (see processor.ts) and never
+ * calls into @stratxcel/missions directly.
  *
  * Not deployed anywhere yet. The Python/Flask bot in ai-automation-system
  * remains the production WhatsApp system and rollback target until this
@@ -19,22 +20,20 @@ import { createLoggingMissionQueue } from "./queue.ts";
 
 const PORT = Number(process.env.PORT ?? 8081);
 
-// No phone-number -> tenant mapping table exists yet (a real multi-tenant
-// WhatsApp routing feature, not built in this phase) — every inbound
-// message is attributed to this single tenant until that's added. Refusing
-// to guess a tenant silently would make local/shadow testing impossible,
-// so this is an explicit, loud requirement instead of a hidden default.
-function requireDefaultTenantId(): string {
-  const tenantId = process.env.WHATSAPP_WORKER_DEFAULT_TENANT_ID;
-  if (!tenantId) {
-    throw new Error(
-      "WHATSAPP_WORKER_DEFAULT_TENANT_ID is not set — required until phone-number-to-tenant routing exists"
-    );
-  }
-  return tenantId;
+// Lazy + memoized: constructing these at module load (rather than on
+// first actual use) would make importing this file for tests/tooling
+// require live Supabase env vars just to load the module — exactly the
+// failure mode NODE_ENV==="test" below is trying to avoid.
+let _queue: ReturnType<typeof createPostgresQueueAdapter> | undefined;
+function getQueue() {
+  if (!_queue) _queue = createPostgresQueueAdapter(createQueueClient());
+  return _queue;
 }
-
-const missionQueue = createLoggingMissionQueue();
+let _whatsappClient: ReturnType<typeof createWhatsAppClient> | undefined;
+function getWhatsAppClient() {
+  if (!_whatsappClient) _whatsappClient = createWhatsAppClient();
+  return _whatsappClient;
+}
 
 function readRawBody(req: http.IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -62,42 +61,54 @@ async function handleVerification(url: URL, res: http.ServerResponse) {
 async function handleInbound(req: http.IncomingMessage, res: http.ServerResponse) {
   const rawBody = await readRawBody(req);
 
-  if (!verifyWhatsAppWebhookSignature(rawBody, req.headers["x-hub-signature-256"] as string | undefined ?? null)) {
+  if (!verifyWhatsAppWebhookSignature(rawBody, (req.headers["x-hub-signature-256"] as string | undefined) ?? null)) {
     res.writeHead(401);
     res.end("invalid signature");
     return;
   }
 
   // Acknowledge immediately — Meta only cares that we received it.
-  // Processing continues after the response is sent.
+  // Tenant resolution and enqueueing continue after the response is sent.
   res.writeHead(200, { "Content-Type": "application/json" });
   res.end(JSON.stringify({ received: true }));
 
-  const tenantId = requireDefaultTenantId();
-  const crmClient = createCrmClient();
-  const auditClient = createAuditClient();
   const messages = parseInboundWhatsAppWebhook(JSON.parse(rawBody));
 
   for (const message of messages) {
-    let lead = await findLeadByPhone(crmClient, tenantId, message.from);
-    if (!lead) {
-      lead = await createLead(crmClient, { tenantId, source: "whatsapp", contactPhone: message.from });
+    // Routing is by phone_number_id — the receiving business number —
+    // never by the sender's phone number. No active binding means we
+    // acknowledge safely, record a redacted unmatched event, and stop.
+    // We never guess which tenant this belongs to, and we never send an
+    // outbound response to an unrouted number.
+    const binding = await findActiveBindingByPhoneNumberId(getWhatsAppClient(), message.phoneNumberId);
+
+    if (!binding) {
+      console.warn(`[whatsapp-worker] OPERATIONS WARNING: inbound message for unbound phone_number_id=${message.phoneNumberId}`);
+      await recordUnmatchedEvent(getWhatsAppClient(), {
+        phoneNumberId: message.phoneNumberId,
+        wabaId: message.wabaId,
+        providerMessageId: message.providerMessageId,
+        body: message.body,
+      });
+      continue;
     }
 
-    await recordAuditEvent(auditClient, {
-      tenantId,
-      actorKind: "integration",
-      action: "whatsapp.message_received",
-      targetType: "crm_lead",
-      targetId: lead.id,
-      metadata: { providerMessageId: message.providerMessageId },
-    });
+    if (!binding.inbound_enabled) {
+      console.warn(`[whatsapp-worker] inbound disabled for tenant=${binding.tenant_id} phone_number_id=${message.phoneNumberId}, dropping`);
+      continue;
+    }
 
-    await missionQueue.submit({
-      tenantId,
-      goalText: message.body,
-      leadId: lead.id,
-      createdBy: null,
+    // Idempotency key = provider message ID: Meta can and does redeliver
+    // webhooks (at-least-once delivery). Enqueueing the same message ID
+    // twice while the first is still in flight resolves to the same job
+    // (see packages/queue's dedup on tenant_id + idempotency_key), so
+    // reprocessing never double-creates a lead/response for one message.
+    await getQueue().enqueue({
+      tenantId: binding.tenant_id,
+      jobType: "whatsapp.process_inbound",
+      payload: { message },
+      idempotencyKey: `whatsapp_message:${message.providerMessageId}`,
+      traceId: crypto.randomUUID(),
     });
   }
 }
@@ -123,8 +134,8 @@ const server = http.createServer((req, res) => {
   if (req.method === "POST") {
     handleInbound(req, res).catch((err) => {
       console.error("[whatsapp-worker] inbound processing error:", err);
-      // Response was already sent (200) before processing — this only
-      // logs, matching the "ack fast, process after" contract above.
+      // Response was already sent (200) before this ran — this only logs,
+      // matching the "ack fast, process after" contract above.
     });
     return;
   }

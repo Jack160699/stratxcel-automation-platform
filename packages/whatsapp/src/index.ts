@@ -3,3 +3,8 @@ export { getIntegrationMode, type IntegrationMode } from "./flags.ts";
 export * from "./types.ts";
 export * from "./webhook.ts";
 export * from "./adapter.ts";
+export * from "./phone-bindings/types.ts";
+export * from "./phone-bindings/repository.ts";
+export * from "./conversation/opt-out.ts";
+export * from "./conversation/templates.ts";
+export * from "./conversation/process-inbound.ts";

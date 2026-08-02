@@ -4,11 +4,13 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node --experimental-strip-types src/server.ts"
+    "start": "node --experimental-strip-types src/server.ts",
+    "start:processor": "node --experimental-strip-types src/processor.ts"
   },
   "dependencies": {
     "@stratxcel/audit": "*",
     "@stratxcel/leads-and-crm": "*",
+    "@stratxcel/queue": "*",
     "@stratxcel/whatsapp": "*"
   }
 }

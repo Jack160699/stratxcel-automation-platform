@@ -8,6 +8,7 @@
   "dependencies": {
     "@stratxcel/audit": "*",
     "@stratxcel/payments-and-wallet": "*",
+    "@stratxcel/queue": "*",
     "@supabase/supabase-js": "^2.110.7"
   }
 }

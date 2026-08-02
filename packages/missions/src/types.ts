@@ -26,6 +26,9 @@ export interface MissionRow {
   hermes_profile: string | null;
   hermes_run_id: string | null;
   brand_brain_version: number | null;
+  version: number;
+  idempotency_key: string | null;
+  actual_cost_cents: number | null;
   created_at: string;
   updated_at: string;
 }

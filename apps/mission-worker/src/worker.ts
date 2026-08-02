@@ -1,25 +1,28 @@
+import os from "node:os";
 import {
   createServiceClient,
-  listMissionsByState,
+  getMission,
   transitionMission,
   appendMissionEvent,
   type MissionRow,
 } from "@stratxcel/missions";
 import { recordAuditEvent } from "@stratxcel/audit";
+import { createPostgresQueueAdapter, type QueueAdapter } from "@stratxcel/queue";
 import { createNotIntegratedHermesAdapter, type HermesRuntimeAdapter } from "./hermes-adapter.ts";
 
 /**
  * Standalone async mission executor — separated from the Next.js dashboard
  * so a long Hermes run never runs inside a Vercel request lifecycle
- * (master brief rule: "Long missions must be asynchronous"). Polls for
- * QUEUED missions, moves them to RUNNING, hands them to the Hermes
- * adapter, and applies whatever outcome comes back. Not deployed anywhere
- * yet — Hermes itself isn't integrated (see hermes-adapter.ts), so this
- * currently only proves the polling/transition shape end to end.
+ * (master brief rule: "Long missions must be asynchronous"). Claims
+ * 'mission.execute' jobs from the shared Postgres queue (the same
+ * transactional FOR UPDATE SKIP LOCKED mechanism apps/whatsapp-worker's
+ * processor uses), moves the mission to RUNNING, hands it to the Hermes
+ * adapter, and applies whatever outcome comes back.
  */
 
 const POLL_INTERVAL_MS = Number(process.env.MISSION_WORKER_POLL_INTERVAL_MS ?? 5000);
-const BATCH_SIZE = Number(process.env.MISSION_WORKER_BATCH_SIZE ?? 10);
+const LEASE_OWNER = `mission-worker-${os.hostname()}-${process.pid}`;
+const JOB_TYPE = "mission.execute";
 
 const OUTCOME_TO_STATE = {
   COMPLETED: "COMPLETED",
@@ -31,7 +34,7 @@ const OUTCOME_TO_STATE = {
   BLOCKED: "BLOCKED",
 } as const;
 
-async function processMission(
+async function executeMission(
   supabase: ReturnType<typeof createServiceClient>,
   hermes: HermesRuntimeAdapter,
   mission: MissionRow
@@ -65,23 +68,39 @@ async function processMission(
 
 export async function processOnce(
   supabase: ReturnType<typeof createServiceClient>,
+  queue: QueueAdapter,
   hermes: HermesRuntimeAdapter
-): Promise<number> {
-  const queued = await listMissionsByState(supabase, "QUEUED", BATCH_SIZE);
-  for (const mission of queued) {
-    await processMission(supabase, hermes, mission);
+): Promise<boolean> {
+  const job = await queue.claimNext({ leaseOwner: LEASE_OWNER, jobTypes: [JOB_TYPE] });
+  if (!job) return false;
+
+  try {
+    const { missionId } = job.payload as { missionId: string };
+    const mission = await getMission(supabase, missionId);
+    await executeMission(supabase, hermes, mission);
+    await queue.complete({ jobId: job.id, leaseOwner: LEASE_OWNER });
+  } catch (err) {
+    await queue.fail({
+      jobId: job.id,
+      leaseOwner: LEASE_OWNER,
+      error: { message: err instanceof Error ? err.message : String(err), retryable: true },
+    });
   }
-  return queued.length;
+  return true;
 }
 
 if (process.env.NODE_ENV !== "test") {
   const supabase = createServiceClient();
+  const queue = createPostgresQueueAdapter(supabase);
   const hermes = createNotIntegratedHermesAdapter();
 
-  console.log(`[mission-worker] polling every ${POLL_INTERVAL_MS}ms, batch size ${BATCH_SIZE}`);
+  console.log(`[mission-worker] polling every ${POLL_INTERVAL_MS}ms as ${LEASE_OWNER}`);
   setInterval(() => {
-    processOnce(supabase, hermes).catch((err) => {
+    processOnce(supabase, queue, hermes).catch((err) => {
       console.error("[mission-worker] poll cycle failed:", err);
+    });
+    queue.recoverExpiredLeases().catch((err) => {
+      console.error("[mission-worker] lease recovery failed:", err);
     });
   }, POLL_INTERVAL_MS);
 }

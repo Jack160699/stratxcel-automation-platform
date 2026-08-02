@@ -1,9 +1,24 @@
 import { recordAuditEvent } from "@stratxcel/audit";
 import { getWalletAccount, reserveFunds, InsufficientFundsError } from "@stratxcel/payments-and-wallet";
+import { createPostgresQueueAdapter } from "@stratxcel/queue";
 import type { ServiceClient } from "./db.ts";
 import { compileGoalToMission } from "./compiler.ts";
-import { assertTransition } from "./state-machine.ts";
+import { assertTransition, isTerminalState } from "./state-machine.ts";
 import type { MissionEventRow, MissionRow, MissionState } from "./types.ts";
+
+export class ConcurrentModificationError extends Error {
+  constructor(missionId: string) {
+    super(`Mission ${missionId} was modified concurrently by another request — reload and retry`);
+    this.name = "ConcurrentModificationError";
+  }
+}
+
+export class TerminalMissionError extends Error {
+  constructor(missionId: string, state: MissionState) {
+    super(`Mission ${missionId} is in terminal state ${state} and cannot be modified`);
+    this.name = "TerminalMissionError";
+  }
+}
 
 export async function appendMissionEvent(
   supabase: ServiceClient,
@@ -18,6 +33,14 @@ export async function appendMissionEvent(
   return data as MissionEventRow;
 }
 
+/**
+ * Every state write is optimistic-concurrency-checked (`.eq("version", ...)`)
+ * — two concurrent callers reading the same mission and both trying to
+ * transition it (e.g. a human clicking "cancel" the instant the worker
+ * moves it to RUNNING) can't both silently succeed and leave the mission in
+ * whichever state wrote last. The loser gets ConcurrentModificationError
+ * and must reload.
+ */
 async function setMissionState(
   supabase: ServiceClient,
   mission: MissionRow,
@@ -28,11 +51,14 @@ async function setMissionState(
 
   const { data, error } = await supabase
     .from("missions")
-    .update({ state: nextState, updated_at: new Date().toISOString() })
+    .update({ state: nextState, version: mission.version + 1, updated_at: new Date().toISOString() })
     .eq("id", mission.id)
-    .select("*")
-    .single();
+    .eq("version", mission.version)
+    .select("*");
   if (error) throw new Error(`setMissionState: ${error.message}`);
+  if (!data || data.length === 0) throw new ConcurrentModificationError(mission.id);
+
+  const updated = data[0] as MissionRow;
 
   await appendMissionEvent(supabase, {
     missionId: mission.id,
@@ -40,21 +66,51 @@ async function setMissionState(
     payload: { from: mission.state, to: nextState, ...eventPayload },
   });
 
+  return updated;
+}
+
+async function fetchMission(supabase: ServiceClient, missionId: string): Promise<MissionRow> {
+  const { data, error } = await supabase.from("missions").select("*").eq("id", missionId).single();
+  if (error) throw new Error(`fetchMission: ${error.message}`);
   return data as MissionRow;
 }
 
 /**
  * Creates a mission in DRAFT, immediately compiles the goal text against
- * the service catalogue (ESTIMATING), and checks the tenant's wallet
- * balance to decide READY (funds reserved) vs AWAITING_FUNDS. This is the
- * "plain message to structured/estimated mission" flow the brief's test
- * requirements call for, expressed as one server-side function so API
- * routes and the WhatsApp/dashboard entry points share identical behavior.
+ * the service catalogue (ESTIMATING), reserves wallet funds (READY) or
+ * parks it (AWAITING_FUNDS), and — once READY — enqueues it for execution
+ * via @stratxcel/queue rather than leaving mission-worker to poll the
+ * missions table directly. This is the "plain message to
+ * structured/estimated mission" flow the brief's test requirements call
+ * for, expressed as one server-side function so API routes and the
+ * WhatsApp/dashboard entry points share identical behavior.
+ *
+ * idempotencyKey (e.g. a WhatsApp provider message ID) prevents a retried
+ * or redelivered request from creating a second mission for the same
+ * logical event — see the partial unique index in
+ * supabase/migrations/20260803150000_mission_approval_automation.sql.
  */
 export async function createAndEstimateMission(
   supabase: ServiceClient,
-  input: { tenantId: string; createdBy: string | null; goalText: string; brandBrainVersion?: number | null }
+  input: {
+    tenantId: string;
+    createdBy: string | null;
+    goalText: string;
+    brandBrainVersion?: number | null;
+    idempotencyKey?: string;
+  }
 ): Promise<MissionRow> {
+  if (input.idempotencyKey) {
+    const { data: existing } = await supabase
+      .from("missions")
+      .select("*")
+      .eq("tenant_id", input.tenantId)
+      .eq("idempotency_key", input.idempotencyKey)
+      .not("state", "in", "(COMPLETED,PARTIALLY_COMPLETED,FAILED,CANCELLED)")
+      .maybeSingle();
+    if (existing) return existing as MissionRow;
+  }
+
   const { data: draft, error } = await supabase
     .from("missions")
     .insert({
@@ -63,6 +119,7 @@ export async function createAndEstimateMission(
       goal_text: input.goalText,
       state: "DRAFT",
       brand_brain_version: input.brandBrainVersion ?? null,
+      idempotency_key: input.idempotencyKey ?? null,
     })
     .select("*")
     .single();
@@ -118,6 +175,10 @@ export async function createAndEstimateMission(
     }
   }
 
+  if (mission.state === "READY") {
+    mission = await queueMissionForExecution(supabase, mission);
+  }
+
   await recordAuditEvent(supabase, {
     tenantId: input.tenantId,
     actorUserId: input.createdBy,
@@ -131,21 +192,111 @@ export async function createAndEstimateMission(
   return mission;
 }
 
+/**
+ * READY -> QUEUED, plus the actual queue enqueue — the two must happen
+ * together (a mission marked QUEUED with no corresponding queue job would
+ * simply never execute; a queue job with no state change would let a
+ * second caller queue the same mission again).
+ */
+export async function queueMissionForExecution(supabase: ServiceClient, mission: MissionRow): Promise<MissionRow> {
+  const queue = createPostgresQueueAdapter(supabase);
+  await queue.enqueue({
+    tenantId: mission.tenant_id,
+    jobType: "mission.execute",
+    payload: { missionId: mission.id },
+    idempotencyKey: `mission:${mission.id}`,
+  });
+  return setMissionState(supabase, mission, "QUEUED");
+}
+
 export async function transitionMission(
   supabase: ServiceClient,
   input: { missionId: string; nextState: MissionState; payload?: Record<string, unknown> }
 ): Promise<MissionRow> {
-  const { data: mission, error } = await supabase.from("missions").select("*").eq("id", input.missionId).single();
-  if (error) throw new Error(`transitionMission: ${error.message}`);
+  const mission = await fetchMission(supabase, input.missionId);
+  return setMissionState(supabase, mission, input.nextState, input.payload);
+}
 
-  return setMissionState(supabase, mission as MissionRow, input.nextState, input.payload);
+export async function cancelMission(
+  supabase: ServiceClient,
+  input: { missionId: string; cancelledBy: string; reason?: string }
+): Promise<MissionRow> {
+  const mission = await fetchMission(supabase, input.missionId);
+  if (isTerminalState(mission.state)) throw new TerminalMissionError(mission.id, mission.state);
+
+  const updated = await setMissionState(supabase, mission, "CANCELLED", { reason: input.reason ?? "cancelled_by_user" });
+
+  await recordAuditEvent(supabase, {
+    tenantId: mission.tenant_id,
+    actorUserId: input.cancelledBy,
+    actorKind: "user",
+    action: "mission.cancelled",
+    targetType: "mission",
+    targetId: mission.id,
+    metadata: { reason: input.reason ?? null },
+  });
+
+  return updated;
 }
 
 /**
- * Cross-tenant lookup for the mission-worker's polling loop — service-role
- * bypasses RLS, which is exactly what a background worker needs (it has no
- * single authenticated tenant user acting on its behalf) and exactly why
- * this must never be exposed through a user-facing API route.
+ * Admin/owner override: re-queues a FAILED mission for another attempt.
+ * This deliberately bypasses the normal state machine (FAILED has no
+ * outgoing edges in state-machine.ts — it's terminal by design for
+ * automated flows) rather than adding FAILED->QUEUED as a regular
+ * transition, so every use of this path is a distinct, loudly-audited
+ * exception rather than something automation could trigger by accident.
+ */
+export async function adminRetryMission(
+  supabase: ServiceClient,
+  input: { missionId: string; retriedBy: string; reason: string }
+): Promise<MissionRow> {
+  const mission = await fetchMission(supabase, input.missionId);
+  if (mission.state !== "FAILED") {
+    throw new Error(`adminRetryMission: mission ${mission.id} is in state ${mission.state}, not FAILED`);
+  }
+
+  const { data, error } = await supabase
+    .from("missions")
+    .update({ state: "QUEUED", version: mission.version + 1, updated_at: new Date().toISOString() })
+    .eq("id", mission.id)
+    .eq("version", mission.version)
+    .select("*");
+  if (error) throw new Error(`adminRetryMission: ${error.message}`);
+  if (!data || data.length === 0) throw new ConcurrentModificationError(mission.id);
+  const updated = data[0] as MissionRow;
+
+  const queue = createPostgresQueueAdapter(supabase);
+  await queue.enqueue({
+    tenantId: mission.tenant_id,
+    jobType: "mission.execute",
+    payload: { missionId: mission.id },
+    idempotencyKey: `mission:${mission.id}:retry:${Date.now()}`,
+  });
+
+  await appendMissionEvent(supabase, {
+    missionId: mission.id,
+    eventType: "admin_override",
+    payload: { from: "FAILED", to: "QUEUED", retriedBy: input.retriedBy, reason: input.reason },
+  });
+
+  await recordAuditEvent(supabase, {
+    tenantId: mission.tenant_id,
+    actorUserId: input.retriedBy,
+    actorKind: "user",
+    action: "mission.admin_override_retry",
+    targetType: "mission",
+    targetId: mission.id,
+    metadata: { reason: input.reason },
+  });
+
+  return updated;
+}
+
+/**
+ * Cross-tenant lookup for admin tooling / diagnostics — service-role
+ * bypasses RLS, which is why this must never be exposed through a
+ * user-facing API route without its own tenant/role check.
  */
 export async function listMissionsByState(supabase: ServiceClient, state: MissionState, limit = 20): Promise<MissionRow[]> {
   const { data, error } = await supabase
@@ -167,6 +318,10 @@ export async function listMissionsForTenant(supabase: ServiceClient, tenantId: s
     .limit(limit);
   if (error) throw new Error(`listMissionsForTenant: ${error.message}`);
   return (data ?? []) as MissionRow[];
+}
+
+export async function getMission(supabase: ServiceClient, missionId: string): Promise<MissionRow> {
+  return fetchMission(supabase, missionId);
 }
 
 export async function listMissionEvents(supabase: ServiceClient, missionId: string): Promise<MissionEventRow[]> {
