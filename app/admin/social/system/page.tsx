@@ -39,7 +39,7 @@ export default async function SystemPage() {
   const ctx = await requireOwnerContext();
   if (!ctx.ok) return null;
 
-  const [health, jobs, auditEvents] = await Promise.all([runHealthChecks(), listJobs(ctx, 30), listAuditEvents(ctx, 30)]);
+  const [health, jobs, auditEvents] = await Promise.all([runHealthChecks(ctx), listJobs(ctx, 30), listAuditEvents(ctx, 30)]);
 
   const grouped = health.reduce<Record<string, typeof health>>((acc, h) => {
     (acc[h.group] ??= []).push(h);

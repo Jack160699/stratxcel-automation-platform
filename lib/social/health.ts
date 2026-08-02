@@ -1,6 +1,7 @@
 import { createSupabaseServiceClient } from "../supabase/service";
-import { listAccountsService } from "./repositories/accounts";
+import { listAccounts } from "./repositories/accounts";
 import { recordHealthChecks } from "./repositories/system";
+import type { OwnerContext } from "./db-context";
 
 export type HealthStatus = "OPERATIONAL" | "DEGRADED" | "PAUSED" | "FAILED" | "NOT_CONFIGURED";
 
@@ -24,13 +25,13 @@ const AI_ENV_KEYS: Record<string, string> = {
  * here fabricates a status — a provider with no credentials is reported
  * NOT_CONFIGURED, never OPERATIONAL.
  */
-export async function runHealthChecks(): Promise<HealthRecord[]> {
+export async function runHealthChecks(ctx: OwnerContext): Promise<HealthRecord[]> {
   const service = createSupabaseServiceClient();
   const records: HealthRecord[] = [];
 
   // --- Core: database reachability ---
   const dbStart = Date.now();
-  const { error: dbError } = await service.from("stratxcel_admins").select("user_id").limit(1);
+  const { error: dbError } = await ctx.supabase.from("stratxcel_admins").select("user_id").eq("user_id", ctx.ownerId).limit(1);
   records.push({
     component: "database",
     group: "core",
@@ -40,7 +41,8 @@ export async function runHealthChecks(): Promise<HealthRecord[]> {
   });
 
   // --- Social accounts ---
-  const accounts = await listAccountsService(service);
+  const accounts = await listAccounts(ctx);
+  const accountIds = accounts.map((account) => account.id);
   for (const platform of SOCIAL_PLATFORMS) {
     const acct = accounts.find((a) => a.platform === platform);
     if (!acct) {
@@ -81,7 +83,9 @@ export async function runHealthChecks(): Promise<HealthRecord[]> {
   });
 
   // --- Workers / queue ---
-  const { data: jobCounts } = await service.from("social_publishing_jobs").select("status");
+  const { data: jobCounts } = accountIds.length
+    ? await ctx.supabase.from("social_publishing_jobs").select("status").in("account_id", accountIds)
+    : { data: [] };
   const counts = (jobCounts ?? []).reduce<Record<string, number>>((acc, j) => {
     acc[j.status] = (acc[j.status] ?? 0) + 1;
     return acc;
@@ -102,13 +106,17 @@ export async function runHealthChecks(): Promise<HealthRecord[]> {
     message: cronConfigured ? "CRON_SECRET set — Vercel cron authorized" : "CRON_SECRET not set",
   });
 
-  const { data: settingsRows } = await service.from("social_automation_settings").select("shadow_mode, autonomy_level");
-  const anyLive = (settingsRows ?? []).some((s) => s.shadow_mode === false);
+  const { data: settingsRow } = await ctx.supabase
+    .from("social_automation_settings")
+    .select("shadow_mode, autonomy_level")
+    .eq("owner_id", ctx.ownerId)
+    .maybeSingle();
+  const anyLive = settingsRow?.shadow_mode === false;
   records.push({
     component: "publishing_mode",
     group: "workers",
     status: anyLive ? "OPERATIONAL" : "PAUSED",
-    message: anyLive ? "LIVE — at least one owner has shadow_mode off" : "SHADOW — every owner has shadow_mode on",
+    message: anyLive ? "LIVE — publishing enabled for this workspace" : "SHADOW — publishing paused for this workspace",
   });
 
   // --- Webhook receiver: verify token + per-provider signing secret presence,
@@ -120,7 +128,12 @@ export async function runHealthChecks(): Promise<HealthRecord[]> {
     status: "OPERATIONAL",
     message: "Receiver routes implemented with signature verification",
   });
-  const { count: webhookEventCount } = await service.from("social_webhook_events").select("id", { count: "exact", head: true });
+  const { count: webhookEventCount } = accountIds.length
+    ? await ctx.supabase
+        .from("social_webhook_events")
+        .select("id", { count: "exact", head: true })
+        .in("account_id", accountIds)
+    : { count: 0 };
   const hasWebhookEvents = Boolean(webhookEventCount && webhookEventCount > 0);
   records.push({
     component: "webhooks:meta_subscription",

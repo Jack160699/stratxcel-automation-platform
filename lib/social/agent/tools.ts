@@ -46,7 +46,7 @@ const inspectHealth: AgentTool = {
     parameters: { type: "object", properties: {} },
   },
   mutating: false,
-  execute: async () => runHealthChecks(),
+  execute: async (ctx) => runHealthChecks(ctx),
 };
 
 const inspectJobs: AgentTool = {
