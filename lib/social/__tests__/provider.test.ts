@@ -2,7 +2,7 @@
 // Run with: node --experimental-strip-types lib/social/__tests__/provider.test.ts
 
 import assert from "node:assert/strict";
-import { resolveOpenAIChatCompletionsUrl, listProviders } from "../agent/provider.ts";
+import { resolveOpenAIChatCompletionsUrl, resolveOpenAIModel, listProviders } from "../agent/provider.ts";
 
 function run() {
   const originalBaseUrl = process.env.OPENAI_BASE_URL;
@@ -13,16 +13,18 @@ function run() {
     delete process.env.OPENAI_BASE_URL;
     assert.equal(resolveOpenAIChatCompletionsUrl(), "https://api.openai.com/v1/chat/completions");
 
-    // Custom OPENAI_BASE_URL -> used verbatim, no vendor hardcoding.
+    // Environment overrides cannot redirect requests.
     process.env.OPENAI_BASE_URL = "https://example-compatible.test/v1";
-    assert.equal(resolveOpenAIChatCompletionsUrl(), "https://example-compatible.test/v1/chat/completions");
+    process.env.OPENAI_AGENT_MODEL = "untrusted-model";
+    assert.equal(resolveOpenAIChatCompletionsUrl(), "https://api.openai.com/v1/chat/completions");
+    assert.equal(resolveOpenAIModel(), "gpt-4o-mini");
 
-    // Trailing slash normalization: one or many trailing slashes collapse cleanly.
+    // Alternate override spellings remain ignored.
     process.env.OPENAI_BASE_URL = "https://example-compatible.test/v1/";
-    assert.equal(resolveOpenAIChatCompletionsUrl(), "https://example-compatible.test/v1/chat/completions");
+    assert.equal(resolveOpenAIChatCompletionsUrl(), "https://api.openai.com/v1/chat/completions");
 
     process.env.OPENAI_BASE_URL = "https://example-compatible.test/v1///";
-    assert.equal(resolveOpenAIChatCompletionsUrl(), "https://example-compatible.test/v1/chat/completions");
+    assert.equal(resolveOpenAIChatCompletionsUrl(), "https://api.openai.com/v1/chat/completions");
 
     // isConfigured() reports false honestly when OPENAI_API_KEY is missing,
     // regardless of OPENAI_BASE_URL — a custom endpoint never implies a key.
@@ -33,11 +35,12 @@ function run() {
     assert.equal(openai!.isConfigured(), false);
 
     console.log(
-      "provider.test.ts: ALL PASS (default endpoint, custom OPENAI_BASE_URL, trailing slash normalization x2, missing OPENAI_API_KEY)"
+      "provider.test.ts: ALL PASS (fixed official endpoint, ignored overrides, missing OPENAI_API_KEY)"
     );
   } finally {
     if (originalBaseUrl === undefined) delete process.env.OPENAI_BASE_URL;
     else process.env.OPENAI_BASE_URL = originalBaseUrl;
+    delete process.env.OPENAI_AGENT_MODEL;
     if (originalApiKey === undefined) delete process.env.OPENAI_API_KEY;
     else process.env.OPENAI_API_KEY = originalApiKey;
   }

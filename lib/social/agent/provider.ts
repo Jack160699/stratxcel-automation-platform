@@ -31,25 +31,25 @@ export interface CompletionResult {
 }
 
 export interface AIProvider {
-  readonly name: "openai" | "anthropic" | "google";
+  readonly name: "openai";
   readonly envKey: string;
   isConfigured(): boolean;
   complete(messages: AgentTurnMessage[], tools: ToolSchema[]): Promise<CompletionResult>;
 }
 
-const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
+const OPENAI_CHAT_COMPLETIONS_URL = "https://api.openai.com/v1/chat/completions";
+const OPENAI_MODEL = "gpt-4o-mini";
 
 /**
- * Builds the Chat Completions URL from OPENAI_BASE_URL, defaulting to
- * OpenAI itself so existing behavior is unchanged when the var is unset.
- * Exported so the endpoint construction (including trailing-slash
- * normalization) can be unit tested without mocking fetch. This is
- * intentionally generic — it never special-cases OpenRouter or any other
- * specific OpenAI-compatible vendor.
+ * Returns the fixed official endpoint. Environment configuration cannot
+ * redirect Copilot traffic to an OpenAI-compatible intermediary.
  */
 export function resolveOpenAIChatCompletionsUrl(): string {
-  const base = (process.env.OPENAI_BASE_URL || DEFAULT_OPENAI_BASE_URL).replace(/\/+$/, "");
-  return `${base}/chat/completions`;
+  return OPENAI_CHAT_COMPLETIONS_URL;
+}
+
+export function resolveOpenAIModel(): string {
+  return OPENAI_MODEL;
 }
 
 export interface EffectiveProviderIdentity {
@@ -60,21 +60,11 @@ export interface EffectiveProviderIdentity {
 }
 
 export function resolveEffectiveProviderIdentity(): EffectiveProviderIdentity {
-  const base = (process.env.OPENAI_BASE_URL || DEFAULT_OPENAI_BASE_URL).toLocaleLowerCase();
   if (process.env.OPENAI_API_KEY) {
-    const provider = base.includes("openrouter.ai") ? "OpenRouter" : base.includes("api.openai.com") ? "OpenAI" : "OpenAI-compatible provider";
     return {
-      provider,
-      protocol: "OpenAI-compatible",
-      model: process.env.OPENAI_AGENT_MODEL || "gpt-4o-mini",
-      configured: true,
-    };
-  }
-  if (process.env.ANTHROPIC_API_KEY) {
-    return {
-      provider: "Anthropic",
-      protocol: "Anthropic Messages",
-      model: process.env.ANTHROPIC_AGENT_MODEL || "claude-haiku-4-5-20251001",
+      provider: "OpenAI",
+      protocol: "OpenAI API",
+      model: OPENAI_MODEL,
       configured: true,
     };
   }
@@ -95,7 +85,7 @@ class OpenAIProvider implements AIProvider {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: process.env.OPENAI_AGENT_MODEL || "gpt-4o-mini",
+        model: resolveOpenAIModel(),
         messages: messages.map((m) => ({ role: m.role === "tool" ? "tool" : m.role, content: m.content, tool_call_id: m.toolCallId })),
         tools: tools.map((t) => ({ type: "function", function: { name: t.name, description: t.description, parameters: t.parameters } })),
       }),
@@ -112,45 +102,6 @@ class OpenAIProvider implements AIProvider {
   }
 }
 
-class AnthropicProvider implements AIProvider {
-  readonly name = "anthropic" as const;
-  readonly envKey = "ANTHROPIC_API_KEY";
-  isConfigured() {
-    return Boolean(process.env.ANTHROPIC_API_KEY);
-  }
-  async complete(messages: AgentTurnMessage[], tools: ToolSchema[]): Promise<CompletionResult> {
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) throw new Error("ANTHROPIC_API_KEY not configured");
-
-    const system = messages.find((m) => m.role === "system")?.content;
-    const rest = messages.filter((m) => m.role !== "system");
-
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: process.env.ANTHROPIC_AGENT_MODEL || "claude-haiku-4-5-20251001",
-        max_tokens: 1024,
-        system,
-        messages: rest.map((m) => ({ role: m.role === "assistant" ? "assistant" : "user", content: m.content })),
-        tools: tools.map((t) => ({ name: t.name, description: t.description, input_schema: t.parameters })),
-      }),
-    });
-    if (!res.ok) throw new Error(`Anthropic request failed: HTTP ${res.status}`);
-    const json = await res.json();
-    const blocks: Array<{ type: string; text?: string; id?: string; name?: string; input?: Record<string, unknown> }> = json.content ?? [];
-    const text = blocks.filter((b) => b.type === "text").map((b) => b.text).join("\n");
-    const toolCalls: ToolCallRequest[] = blocks
-      .filter((b) => b.type === "tool_use")
-      .map((b) => ({ id: b.id!, name: b.name!, arguments: b.input ?? {} }));
-    return { text, toolCalls };
-  }
-}
-
 function safeParseJson(raw: string): Record<string, unknown> {
   try {
     return JSON.parse(raw);
@@ -159,7 +110,7 @@ function safeParseJson(raw: string): Record<string, unknown> {
   }
 }
 
-const PROVIDERS: AIProvider[] = [new OpenAIProvider(), new AnthropicProvider()];
+const PROVIDERS: AIProvider[] = [new OpenAIProvider()];
 
 export function listProviders(): AIProvider[] {
   return PROVIDERS;
