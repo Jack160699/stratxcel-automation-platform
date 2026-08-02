@@ -1,9 +1,7 @@
-import { createSupabaseServiceClient } from "../supabase/service";
 import { recordAuditEvent } from "@stratxcel/audit";
 import { transitionMission } from "@stratxcel/missions";
-import type { HumanHandoffRow } from "./types";
-
-type ServiceClient = ReturnType<typeof createSupabaseServiceClient>;
+import type { ServiceClient } from "./db.ts";
+import type { HumanHandoffRow } from "./types.ts";
 
 /**
  * Opens a handoff and, if it's tied to a mission, moves that mission into

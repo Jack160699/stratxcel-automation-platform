@@ -1,0 +1,29 @@
+# Local, free Hermes development environment. No paid hosting — this is
+# meant for a developer's machine. Docker was not available in the
+# environment this file was authored in (verified via `docker --version`),
+# so this compose file is statically written and validated by reading, not
+# by an actual `docker compose up` run tonight — see
+# ../../MANUAL_SETUP_REQUIRED.md for the exact manual verification step.
+#
+# This assumes a local Hermes runtime image exists at HERMES_IMAGE (the
+# actual Hermes engine is a separate project this repo does not own the
+# source of) that exposes an HTTP API compatible with
+# packages/hermes/src/http-adapter.ts's expectations (POST /missions/execute,
+# POST /missions/:id/cancel, GET /health) and verifies the
+# X-Hermes-Signature header using the same HMAC-SHA256(body, HERMES_SHARED_SECRET)
+# scheme packages/hermes/src/signing.ts implements.
+services:
+  hermes:
+    image: ${HERMES_IMAGE:-hermes-local:latest}
+    ports:
+      # Bound to localhost only by default — never expose this publicly.
+      - "127.0.0.1:${HERMES_PORT:-4100}:4100"
+    environment:
+      HERMES_SHARED_SECRET: ${HERMES_SHARED_SECRET}
+      HERMES_GATEWAY_URL: ${HERMES_GATEWAY_URL:-http://host.docker.internal:8082}
+    volumes:
+      - hermes_data:/data
+    restart: unless-stopped
+
+volumes:
+  hermes_data:

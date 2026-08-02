@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# Starts the local Hermes dev container. Requires Docker + a filled-in
+# infrastructure/hermes/.env (see infrastructure/hermes/README.md).
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+if ! command -v docker >/dev/null 2>&1; then
+  echo "docker is not installed/available in this environment." >&2
+  echo "See MANUAL_SETUP_REQUIRED.md for the manual setup step this blocks." >&2
+  exit 1
+fi
+
+if [ ! -f infrastructure/hermes/.env ]; then
+  echo "infrastructure/hermes/.env not found — copy infrastructure/hermes/.env.example and fill it in first." >&2
+  exit 1
+fi
+
+docker compose --project-directory infrastructure/hermes --env-file infrastructure/hermes/.env -f infrastructure/hermes/docker-compose.yml up -d
+echo "Hermes container starting. Run scripts/hermes-health to check readiness."

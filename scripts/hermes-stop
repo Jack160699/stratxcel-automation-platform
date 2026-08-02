@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Stops the local Hermes dev container. Data in the hermes_data volume
+# survives (use `docker compose down -v` manually if you want to wipe it).
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+if ! command -v docker >/dev/null 2>&1; then
+  echo "docker is not installed/available in this environment." >&2
+  exit 1
+fi
+
+docker compose --project-directory infrastructure/hermes --env-file infrastructure/hermes/.env -f infrastructure/hermes/docker-compose.yml down
+echo "Hermes container stopped."

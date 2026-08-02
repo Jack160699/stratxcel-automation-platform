@@ -1,14 +1,14 @@
-import { createSupabaseServiceClient } from "../supabase/service";
-import type { BrandBrainContent, BrandBrainRow, BrandBrainVersionRow } from "./types";
-
-type ServiceClient = ReturnType<typeof createSupabaseServiceClient>;
+import type { ServiceClient } from "./db.ts";
+import type { BrandBrainContent, BrandBrainRow, BrandBrainVersionRow } from "./types.ts";
 
 /**
  * Brand Brain is versioned, never overwritten in place: getCurrentBrandBrain
  * always reads brand_brains.current_version and joins to the matching
  * version row, so a mission that captured `brand_brain_version: 3` at
  * DRAFT time keeps reading version 3's content even if the customer edits
- * the Brand Brain again while the mission is RUNNING.
+ * the Brand Brain again while the mission is RUNNING — critical for
+ * @stratxcel/hermes's context compiler, which must hand Hermes the exact
+ * version a mission was estimated against, not whatever is newest.
  */
 export async function getCurrentBrandBrain(
   supabase: ServiceClient,

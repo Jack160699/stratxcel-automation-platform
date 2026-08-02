@@ -1,17 +1,18 @@
 {
-  "name": "@stratxcel/mission-worker",
+  "name": "@stratxcel/hermes-gateway",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node --experimental-strip-types src/worker.ts"
+    "start": "node --experimental-strip-types src/server.ts"
   },
   "dependencies": {
     "@stratxcel/approvals": "*",
     "@stratxcel/audit": "*",
     "@stratxcel/brand-brain": "*",
     "@stratxcel/hermes": "*",
-    "@stratxcel/missions": "*",
-    "@stratxcel/queue": "*"
+    "@stratxcel/human-handoff": "*",
+    "@stratxcel/leads-and-crm": "*",
+    "@stratxcel/missions": "*"
   }
 }

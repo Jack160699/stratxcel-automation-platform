@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Runs one safe mock mission through @stratxcel/hermes's MockHermesAdapter.
+#
+# This does NOT exercise the full create-mission -> queue -> mission-worker
+# -> Hermes pipeline end to end, because that requires a live Supabase
+# project this session has no reachable connection to (see
+# docs/discovery/SUPABASE_DATA_AND_RLS_MAP.md and MANUAL_SETUP_REQUIRED.md).
+# What it verifies: MockHermesAdapter itself runs correctly and produces a
+# COMPLETED outcome for a recognized service and PARTIALLY_COMPLETED for an
+# unrecognized one — the same logic packages/hermes/src/__tests__/mock-adapter.test.ts
+# unit-tests, run here as a standalone script for a quick manual check.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+node --experimental-strip-types packages/hermes/src/__tests__/mock-adapter.test.ts
