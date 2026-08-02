@@ -1,6 +1,6 @@
 import type { BrandProfileRow } from "../repositories/brand";
 
-export const GEMINI_MODEL = "gemini-2.5-flash-lite";
+export const GEMINI_MODEL = "gemini-3.1-flash-lite";
 export const GEMINI_GENERATE_CONTENT_URL =
   `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
 
