@@ -1,6 +1,6 @@
 import { createSupabaseServiceClient } from "../supabase/service";
-import { recordAuditEvent } from "../audit/log";
-import { transitionMission } from "../missions/repository";
+import { recordAuditEvent } from "@stratxcel/audit";
+import { transitionMission } from "@stratxcel/missions";
 import type { HumanHandoffRow } from "./types";
 
 type ServiceClient = ReturnType<typeof createSupabaseServiceClient>;

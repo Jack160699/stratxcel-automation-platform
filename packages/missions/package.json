@@ -1,0 +1,13 @@
+{
+  "name": "@stratxcel/missions",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "dependencies": {
+    "@stratxcel/audit": "*",
+    "@stratxcel/payments-and-wallet": "*",
+    "@supabase/supabase-js": "^2.110.7"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "name": "@stratxcel/approvals",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "dependencies": {
+    "@stratxcel/audit": "*",
+    "@supabase/supabase-js": "^2.110.7"
+  }
+}

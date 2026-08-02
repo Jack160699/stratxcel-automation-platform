@@ -2,17 +2,27 @@
   "name": "stratxcel-site",
   "version": "0.1.0",
   "private": true,
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
     "test:social": "node --experimental-strip-types lib/social/__tests__/crypto.test.ts && node --experimental-strip-types lib/social/__tests__/oauth-state.test.ts && node --experimental-strip-types lib/social/__tests__/errors.test.ts && node --experimental-strip-types lib/social/__tests__/automation.test.ts && node --experimental-strip-types lib/social/__tests__/webhook-signature.test.ts && node --experimental-strip-types lib/social/__tests__/provider.test.ts && node --experimental-strip-types lib/social/__tests__/brand-edit.test.ts && node --experimental-strip-types lib/social/__tests__/brand-grounding.test.ts && node --experimental-strip-types lib/social/__tests__/copilot-telemetry.test.ts && node --experimental-strip-types lib/social/__tests__/copilot-presentation.test.ts && node --experimental-strip-types lib/social/__tests__/copilot-workflows.test.ts && node --experimental-strip-types lib/social/__tests__/workspace-safety.test.ts && node --experimental-strip-types lib/social/__tests__/youtube-publishing.test.ts && node --experimental-strip-types lib/social/__tests__/content-create.test.ts && node --experimental-strip-types lib/social/__tests__/media-ingestion.test.ts",
-    "test:foundation": "node --experimental-strip-types lib/missions/__tests__/state-machine.test.ts && node --experimental-strip-types lib/missions/__tests__/compiler.test.ts && node --experimental-strip-types lib/rbac/__tests__/policy.test.ts && node --experimental-strip-types lib/wallet/__tests__/ledger.test.ts && node --experimental-strip-types lib/audit/__tests__/log.test.ts && node --experimental-strip-types lib/integrations/__tests__/flags.test.ts && node --experimental-strip-types lib/integrations/whatsapp/__tests__/webhook.test.ts && node --experimental-strip-types lib/integrations/whatsapp/__tests__/adapter.test.ts && node --experimental-strip-types lib/integrations/razorpay/__tests__/webhook.test.ts && node --experimental-strip-types lib/integrations/razorpay/__tests__/adapter.test.ts"
+    "test:foundation": "node --experimental-strip-types packages/missions/src/__tests__/state-machine.test.ts && node --experimental-strip-types packages/missions/src/__tests__/compiler.test.ts && node --experimental-strip-types lib/rbac/__tests__/policy.test.ts && node --experimental-strip-types packages/payments-and-wallet/src/__tests__/ledger.test.ts && node --experimental-strip-types packages/audit/src/__tests__/log.test.ts && node --experimental-strip-types packages/whatsapp/src/__tests__/webhook.test.ts && node --experimental-strip-types packages/whatsapp/src/__tests__/adapter.test.ts && node --experimental-strip-types packages/payments-and-wallet/src/__tests__/razorpay-webhook.test.ts && node --experimental-strip-types packages/payments-and-wallet/src/__tests__/razorpay-adapter.test.ts"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.6.1",
+    "@stratxcel/approvals": "*",
+    "@stratxcel/audit": "*",
+    "@stratxcel/leads-and-crm": "*",
+    "@stratxcel/missions": "*",
+    "@stratxcel/payments-and-wallet": "*",
+    "@stratxcel/whatsapp": "*",
     "@supabase/ssr": "^0.12.3",
     "@supabase/supabase-js": "^2.110.7",
     "@vercel/analytics": "^2.0.1",
