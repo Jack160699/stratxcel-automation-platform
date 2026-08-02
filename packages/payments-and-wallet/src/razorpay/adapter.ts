@@ -1,6 +1,6 @@
 import type { ServiceClient } from "../db.ts";
 import { getIntegrationMode } from "../flags.ts";
-import type { CreateOrderResult, PaymentsAdapter } from "./types.ts";
+import type { CreateOrderResult, CreatePaymentLinkResult, PaymentsAdapter } from "./types.ts";
 
 export class IntegrationDisabledError extends Error {
   constructor(integration: string) {
@@ -11,11 +11,14 @@ export class IntegrationDisabledError extends Error {
 
 /**
  * Shadow mode never calls Razorpay's API, even the test endpoint — it only
- * records what order *would* be created into payment_shadow_orders. Making
- * a real call, even against RAZORPAY_TEST_KEY_ID, is a deliberate later
- * step that needs the account owner to confirm test credentials are
- * actually configured first; this phase only proves the interface and
- * bookkeeping are correct.
+ * records what order/payment-link *would* be created into payment_orders
+ * (state CREATED, mode 'test'). Making a real call, even against
+ * RAZORPAY_TEST_KEY_ID, is a deliberate later step that needs the account
+ * owner to confirm test credentials are actually configured first; this
+ * phase only proves the interface, state machine, and bookkeeping are
+ * correct. Order creation and payment-link creation share the same
+ * disabled/shadow/live gating and the same underlying payment_orders row
+ * shape — a payment link is just an order with a shareable URL attached.
  */
 export function createRazorpayAdapter(supabase: ServiceClient): PaymentsAdapter {
   const mode = getIntegrationMode("RAZORPAY_INTEGRATION_MODE");
@@ -27,13 +30,14 @@ export function createRazorpayAdapter(supabase: ServiceClient): PaymentsAdapter 
 
       if (mode === "shadow") {
         const { data, error } = await supabase
-          .from("payment_shadow_orders")
+          .from("payment_orders")
           .insert({
             tenant_id: input.tenantId,
-            provider: "razorpay_test",
+            provider: "razorpay",
             amount_cents: input.amountCents,
             currency: input.currency ?? "INR",
-            metadata: { receipt: input.receipt ?? null },
+            mode: "test",
+            metadata: { receipt: input.receipt ?? null, kind: "order" },
           })
           .select("id")
           .single();
@@ -42,7 +46,8 @@ export function createRazorpayAdapter(supabase: ServiceClient): PaymentsAdapter 
       }
 
       // mode === "live" — gated entirely behind the env var; not reachable
-      // from any default configuration and not called anywhere yet.
+      // from any default configuration and not called anywhere in this
+      // codebase yet.
       const keyId = process.env.RAZORPAY_KEY_ID;
       const keySecret = process.env.RAZORPAY_KEY_SECRET;
       if (!keyId || !keySecret) {
@@ -66,6 +71,52 @@ export function createRazorpayAdapter(supabase: ServiceClient): PaymentsAdapter 
       }
       const result = (await response.json()) as { id: string; amount: number; currency: string };
       return { orderId: result.id, amountCents: result.amount, currency: result.currency, mode: "live" };
+    },
+
+    async createPaymentLink(input): Promise<CreatePaymentLinkResult> {
+      if (mode === "disabled") throw new IntegrationDisabledError("Razorpay");
+
+      if (mode === "shadow") {
+        const { data, error } = await supabase
+          .from("payment_orders")
+          .insert({
+            tenant_id: input.tenantId,
+            provider: "razorpay",
+            amount_cents: input.amountCents,
+            currency: input.currency ?? "INR",
+            mode: "test",
+            metadata: { description: input.description ?? null, customerContact: input.customerContact ?? null, kind: "payment_link" },
+          })
+          .select("id")
+          .single();
+        if (error) throw new Error(`Razorpay shadow payment link failed: ${error.message}`);
+        return { linkId: data.id as string, shortUrl: null, amountCents: input.amountCents, currency: input.currency ?? "INR", mode: "shadow" };
+      }
+
+      const keyId = process.env.RAZORPAY_KEY_ID;
+      const keySecret = process.env.RAZORPAY_KEY_SECRET;
+      if (!keyId || !keySecret) {
+        throw new Error("RAZORPAY_INTEGRATION_MODE is 'live' but RAZORPAY_KEY_ID/RAZORPAY_KEY_SECRET are not set");
+      }
+
+      const response = await fetch("https://api.razorpay.com/v1/payment_links", {
+        method: "POST",
+        headers: {
+          Authorization: `Basic ${Buffer.from(`${keyId}:${keySecret}`).toString("base64")}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          amount: input.amountCents,
+          currency: input.currency ?? "INR",
+          description: input.description,
+          customer: input.customerContact ? { contact: input.customerContact } : undefined,
+        }),
+      });
+      if (!response.ok) {
+        throw new Error(`Razorpay live payment link creation failed: HTTP ${response.status}`);
+      }
+      const result = (await response.json()) as { id: string; short_url?: string; amount: number; currency: string };
+      return { linkId: result.id, shortUrl: result.short_url ?? null, amountCents: result.amount, currency: result.currency, mode: "live" };
     },
   };
 }
