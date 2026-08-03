@@ -8,11 +8,11 @@ export function Mark({ className = "h-8 w-8" }: { className?: string }) {
         strokeWidth="4.5"
         strokeLinecap="round"
       />
-      <circle cx="24" cy="24" r="21" stroke="rgba(69,196,255,0.35)" strokeWidth="1.5" />
+      <circle cx="24" cy="24" r="21" stroke="rgba(58,160,255,0.35)" strokeWidth="1.5" />
       <defs>
         <linearGradient id="sxg" x1="10" y1="10" x2="38" y2="38">
-          <stop stopColor="#45C4FF" />
-          <stop offset="1" stopColor="#3B82F6" />
+          <stop stopColor="#4FDCE5" />
+          <stop offset="1" stopColor="#3AA0FF" />
         </linearGradient>
       </defs>
     </svg>
