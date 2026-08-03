@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useCurrentTenant } from "../CurrentTenantContext";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -8,7 +9,7 @@ import { StatusChip, type ChipState } from "@/components/ui/StatusChip";
 import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
 import { ErrorState, EmptyState } from "@/components/ui/Feedback";
 
-interface Mission {
+export interface Mission {
   id: string;
   goal_text: string;
   service_key: string | null;
@@ -17,7 +18,7 @@ interface Mission {
   created_at: string;
 }
 
-const MISSION_STATE_CHIP: Record<string, { label: string; state: ChipState }> = {
+export const MISSION_STATE_CHIP: Record<string, { label: string; state: ChipState }> = {
   DRAFT: { label: "Draft", state: "neutral" },
   ESTIMATING: { label: "Estimating", state: "neutral" },
   AWAITING_FUNDS: { label: "Awaiting funds", state: "warning" },
@@ -85,7 +86,15 @@ export default function ClientMissionsPage() {
   }
 
   const columns: DataTableColumn<Mission>[] = [
-    { key: "goal", header: "Goal", render: (m) => <span title={m.goal_text}>{m.goal_text}</span> },
+    {
+      key: "goal",
+      header: "Goal",
+      render: (m) => (
+        <Link href={`/app/missions/${m.id}`} className="text-sx-text underline-offset-2 hover:text-sx-accent hover:underline" title={m.goal_text}>
+          {m.goal_text}
+        </Link>
+      ),
+    },
     { key: "service", header: "Service", render: (m) => m.service_key ?? "—" },
     {
       key: "state",
