@@ -1,0 +1,38 @@
+# Example systemd unit for supervising a non-container Hermes gateway
+# process (docs/hermes/DEPLOYMENT.md). Not installed by this branch. If
+# using docker-compose.example.yml instead, this file is unnecessary —
+# Docker's own restart policy supervises the container.
+#
+# Install: copy to /etc/systemd/system/hermes-gateway.service, fill in
+# placeholders, `systemctl daemon-reload && systemctl enable --now hermes-gateway`
+
+[Unit]
+Description=Hermes Agent gateway (Stratxcel-managed)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Non-root, per docs/hermes/SECRETS_AND_SECURITY.md production guidance.
+User=hermes
+Group=hermes
+WorkingDirectory=/home/hermes
+EnvironmentFile=/home/hermes/.hermes/.env
+ExecStart=/home/hermes/.local/bin/hermes gateway --profile default --port 8642
+ExecStartPost=/bin/sh -c 'sleep 5 && /opt/stratxcel/infra-hermes/healthcheck.sh'
+Restart=on-failure
+RestartSec=5
+# Resource limits — tune per docs/hermes/DEPLOYMENT.md and the container
+# backend's own docker_memory/docker_cpu settings (this limits the gateway
+# process itself, not the nested per-mission containers it spawns).
+MemoryMax=2G
+CPUQuota=200%
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/home/hermes/.hermes
+ProtectHome=false
+
+[Install]
+WantedBy=multi-user.target
