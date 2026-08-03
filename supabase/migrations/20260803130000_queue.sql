@@ -362,4 +362,3 @@ revoke all on function public.recover_expired_leases() from public, anon, authen
 grant execute on function public.recover_expired_leases() to service_role;
 
 alter default privileges in schema public grant select, insert, update, delete on tables to service_role;
-alter default privileges in schema public grant select, insert, update, delete on tables to authenticated;

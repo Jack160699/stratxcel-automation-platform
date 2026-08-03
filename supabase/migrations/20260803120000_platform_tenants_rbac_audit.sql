@@ -55,6 +55,5 @@ create policy audit_events_tenant_read on audit_events for select
   using (exists (select 1 from tenant_members m where m.tenant_id = audit_events.tenant_id and m.user_id = (select auth.uid())));
 
 alter default privileges in schema public grant select, insert, update, delete on tables to service_role;
-alter default privileges in schema public grant select, insert, update, delete on tables to authenticated;
 grant select, insert, update, delete on tenants, tenant_members, audit_events to service_role;
 grant select on tenants, tenant_members, audit_events to authenticated;
