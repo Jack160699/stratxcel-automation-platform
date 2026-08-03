@@ -44,7 +44,7 @@ create table if not exists social_agent_sessions (
 );
 alter table social_agent_sessions enable row level security;
 create index if not exists social_agent_sessions_owner_idx on social_agent_sessions (owner_id, updated_at desc);
-create policy social_agent_sessions_admin_owner on social_agent_sessions for all
+create policy social_agent_sessions_admin_owner on social_agent_sessions for all to authenticated
   using (owner_id = (select auth.uid()) and exists (select 1 from stratxcel_admins a where a.user_id = (select auth.uid())))
   with check (owner_id = (select auth.uid()) and exists (select 1 from stratxcel_admins a where a.user_id = (select auth.uid())));
 
@@ -58,8 +58,12 @@ create table if not exists social_agent_messages (
 );
 alter table social_agent_messages enable row level security;
 create index if not exists social_agent_messages_session_idx on social_agent_messages (session_id, created_at);
-create policy social_agent_messages_admin on social_agent_messages for all
+create policy social_agent_messages_admin on social_agent_messages for all to authenticated
   using (exists (
+    select 1 from social_agent_sessions s
+    where s.id = social_agent_messages.session_id and s.owner_id = (select auth.uid())
+  ))
+  with check (exists (
     select 1 from social_agent_sessions s
     where s.id = social_agent_messages.session_id and s.owner_id = (select auth.uid())
   ));
@@ -80,10 +84,14 @@ create table if not exists social_agent_actions (
 );
 alter table social_agent_actions enable row level security;
 create index if not exists social_agent_actions_session_idx on social_agent_actions (session_id, created_at);
-create policy social_agent_actions_admin on social_agent_actions for all
+create policy social_agent_actions_admin on social_agent_actions for all to authenticated
   using (
-    session_id is null
-    or exists (select 1 from social_agent_sessions s where s.id = social_agent_actions.session_id and s.owner_id = (select auth.uid()))
+    session_id is not null
+    and exists (select 1 from social_agent_sessions s where s.id = social_agent_actions.session_id and s.owner_id = (select auth.uid()))
+  )
+  with check (
+    session_id is not null
+    and exists (select 1 from social_agent_sessions s where s.id = social_agent_actions.session_id and s.owner_id = (select auth.uid()))
   );
 
 -- ============================================================
@@ -109,10 +117,14 @@ create table if not exists social_conversations (
 );
 alter table social_conversations enable row level security;
 create index if not exists social_conversations_status_idx on social_conversations (status, updated_at desc);
-create policy social_conversations_admin on social_conversations for all
+create policy social_conversations_admin on social_conversations for all to authenticated
   using (
-    account_id is null
-    or exists (select 1 from social_accounts a where a.id = social_conversations.account_id and a.owner_id = (select auth.uid()))
+    account_id is not null
+    and exists (select 1 from social_accounts a where a.id = social_conversations.account_id and a.owner_id = (select auth.uid()))
+  )
+  with check (
+    account_id is not null
+    and exists (select 1 from social_accounts a where a.id = social_conversations.account_id and a.owner_id = (select auth.uid()))
   );
 
 create table if not exists social_messages (
@@ -127,8 +139,21 @@ create table if not exists social_messages (
 );
 alter table social_messages enable row level security;
 create index if not exists social_messages_conversation_idx on social_messages (conversation_id, created_at);
-create policy social_messages_admin on social_messages for all
-  using (exists (select 1 from social_conversations c where c.id = social_messages.conversation_id));
+create policy social_messages_admin on social_messages for all to authenticated
+  using (exists (
+    select 1 from social_conversations c
+    join social_accounts a on a.id = c.account_id
+    where c.id = social_messages.conversation_id
+      and c.account_id is not null
+      and a.owner_id = (select auth.uid())
+  ))
+  with check (exists (
+    select 1 from social_conversations c
+    join social_accounts a on a.id = c.account_id
+    where c.id = social_messages.conversation_id
+      and c.account_id is not null
+      and a.owner_id = (select auth.uid())
+  ));
 
 create table if not exists social_leads (
   id uuid primary key default gen_random_uuid(),
@@ -144,10 +169,14 @@ create table if not exists social_leads (
   updated_at timestamptz not null default now()
 );
 alter table social_leads enable row level security;
-create policy social_leads_admin on social_leads for all
+create policy social_leads_admin on social_leads for all to authenticated
   using (
-    account_id is null
-    or exists (select 1 from social_accounts a where a.id = social_leads.account_id and a.owner_id = (select auth.uid()))
+    account_id is not null
+    and exists (select 1 from social_accounts a where a.id = social_leads.account_id and a.owner_id = (select auth.uid()))
+  )
+  with check (
+    account_id is not null
+    and exists (select 1 from social_accounts a where a.id = social_leads.account_id and a.owner_id = (select auth.uid()))
   );
 
 -- ============================================================
@@ -170,7 +199,7 @@ create table if not exists social_provider_configs (
   unique (owner_id, kind, provider)
 );
 alter table social_provider_configs enable row level security;
-create policy social_provider_configs_admin_owner on social_provider_configs for all
+create policy social_provider_configs_admin_owner on social_provider_configs for all to authenticated
   using (owner_id = (select auth.uid()) and exists (select 1 from stratxcel_admins a where a.user_id = (select auth.uid())))
   with check (owner_id = (select auth.uid()) and exists (select 1 from stratxcel_admins a where a.user_id = (select auth.uid())));
 
@@ -191,7 +220,7 @@ create table if not exists social_health_checks (
 );
 alter table social_health_checks enable row level security;
 create index if not exists social_health_checks_component_idx on social_health_checks (component, checked_at desc);
-create policy social_health_checks_admin_read on social_health_checks for select
+create policy social_health_checks_admin_read on social_health_checks for select to authenticated
   using (exists (select 1 from stratxcel_admins a where a.user_id = (select auth.uid())));
 
 create table if not exists social_audit_events (
@@ -207,7 +236,7 @@ create table if not exists social_audit_events (
 );
 alter table social_audit_events enable row level security;
 create index if not exists social_audit_events_created_idx on social_audit_events (created_at desc);
-create policy social_audit_events_admin_read on social_audit_events for select
+create policy social_audit_events_admin_read on social_audit_events for select to authenticated
   using (exists (select 1 from stratxcel_admins a where a.user_id = (select auth.uid())));
 
 create table if not exists social_webhook_events (
@@ -223,5 +252,5 @@ create table if not exists social_webhook_events (
 );
 alter table social_webhook_events enable row level security;
 create index if not exists social_webhook_events_received_idx on social_webhook_events (received_at desc);
-create policy social_webhook_events_admin_read on social_webhook_events for select
+create policy social_webhook_events_admin_read on social_webhook_events for select to authenticated
   using (exists (select 1 from stratxcel_admins a where a.user_id = (select auth.uid())));

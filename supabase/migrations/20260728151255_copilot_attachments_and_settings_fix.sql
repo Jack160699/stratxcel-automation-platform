@@ -52,7 +52,7 @@ create index if not exists social_agent_attachments_message_idx
   on social_agent_attachments (message_id);
 
 create policy social_agent_attachments_admin_owner
-  on social_agent_attachments for all
+  on social_agent_attachments for all to authenticated
   using (
     owner_id = (select auth.uid())
     and exists (

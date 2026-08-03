@@ -18,7 +18,7 @@ create table if not exists social_agent_runs (
 );
 alter table social_agent_runs enable row level security;
 create index if not exists social_agent_runs_session_idx on social_agent_runs (session_id, started_at desc);
-create policy social_agent_runs_admin on social_agent_runs for all
+create policy social_agent_runs_admin on social_agent_runs for all to authenticated
   using (exists (
     select 1 from social_agent_sessions s
     where s.id = social_agent_runs.session_id and s.owner_id = (select auth.uid())
@@ -48,7 +48,7 @@ create table if not exists social_agent_run_events (
 );
 alter table social_agent_run_events enable row level security;
 create index if not exists social_agent_run_events_run_idx on social_agent_run_events (run_id, created_at);
-create policy social_agent_run_events_admin on social_agent_run_events for all
+create policy social_agent_run_events_admin on social_agent_run_events for all to authenticated
   using (exists (
     select 1 from social_agent_runs r
     join social_agent_sessions s on s.id = r.session_id
