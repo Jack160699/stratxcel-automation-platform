@@ -20,8 +20,12 @@ grant usage, select on all sequences in schema public to service_role;
 grant usage, select on all sequences in schema public to authenticated;
 
 -- Make this automatic for every future table so this class of bug can't
--- recur on the next migration.
+-- recur on the next migration. service_role only: granting broad
+-- CRUD-by-default to authenticated here would silently hand every future
+-- table full read/write to any signed-in user, bypassing whatever RLS
+-- policy (or lack of one) that table ships with. Table-specific
+-- authenticated grants are defined per-migration instead (see
+-- 20260803110000_revoke_unsafe_default_privileges.sql for the corrective
+-- revoke on the default-privilege ACL entries this used to create).
 alter default privileges in schema public grant select, insert, update, delete on tables to service_role;
-alter default privileges in schema public grant select, insert, update, delete on tables to authenticated;
 alter default privileges in schema public grant usage, select on sequences to service_role;
-alter default privileges in schema public grant usage, select on sequences to authenticated;
