@@ -17,7 +17,7 @@ export async function setActiveTenantAction(tenantId: string): Promise<{ ok: boo
   const ctx = await requireOwnerContext();
   if (!ctx.ok) return { ok: false, error: ctx.error };
 
-  const isMember = await isMemberOfTenant(ctx.ownerId, tenantId);
+  const isMember = await isMemberOfTenant(ctx.supabase, ctx.ownerId, tenantId);
   if (!isMember) return { ok: false, error: "Not a member of this client" };
 
   const cookieStore = await cookies();

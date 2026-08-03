@@ -12,13 +12,13 @@ export const dynamic = "force-dynamic";
  * tenant-switcher UI yet (dashboard work is a later phase) — this is an
  * interim contract, not the final API shape.
  *
- * requireTenantContext's session client only has RLS-granted SELECT on
- * these tables (see supabase/migrations/20260803121000_missions.sql) — it
- * exists purely to prove "is this user actually a member of this tenant,
- * and with what role," never to perform the mutation itself. The actual
- * read/write goes through the service-role client once that check passes,
- * matching the OwnerContext/ServiceContext split lib/social/db-context.ts
- * already uses for the same reason.
+ * GET is a plain user-initiated read, fully covered by missions_tenant_read
+ * RLS (see supabase/migrations/20260803121000_missions.sql) — it runs on
+ * requireTenantContext's own session client (ctx.supabase), never a
+ * service-role client. POST (mission creation) stays on the service client:
+ * there is no INSERT policy granting authenticated users write access to
+ * missions, matching the OwnerContext/ServiceContext split
+ * lib/social/db-context.ts uses for the same reason.
  */
 export async function GET(request: Request) {
   const tenantId = new URL(request.url).searchParams.get("tenantId");
@@ -34,8 +34,7 @@ export async function GET(request: Request) {
     throw err;
   }
 
-  const { supabase } = getTenantServiceContext();
-  const missions = await listMissionsForTenant(supabase, tenantId);
+  const missions = await listMissionsForTenant(ctx.supabase, tenantId);
   return Response.json({ missions }, { headers: { "Cache-Control": "no-store" } });
 }
 

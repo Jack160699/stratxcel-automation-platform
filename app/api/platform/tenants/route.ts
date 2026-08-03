@@ -20,8 +20,11 @@ export async function GET() {
   } = await supabase.auth.getUser();
   if (!user) return Response.json({ error: "Not authenticated" }, { status: 401 });
 
-  const { supabase: serviceClient } = getTenantServiceContext();
-  const memberships = await listMembershipsForUser(serviceClient, user.id);
+  // Listing the caller's own memberships is a plain user-initiated read
+  // covered by tenant_members_self_read RLS — use the authenticated
+  // session client, not the service-role client (no
+  // SUPABASE_SERVICE_ROLE_KEY dependency here).
+  const memberships = await listMembershipsForUser(supabase, user.id);
   return Response.json({ memberships }, { headers: { "Cache-Control": "no-store" } });
 }
 

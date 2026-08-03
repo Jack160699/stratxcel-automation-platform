@@ -1,5 +1,5 @@
 import { cookies } from "next/headers";
-import { getTenantServiceContext } from "./tenant-context";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { listMembershipsForUser } from "./repository";
 import type { TenantRole } from "./types";
 
@@ -12,8 +12,16 @@ export interface TenantMembership {
   role: TenantRole;
 }
 
-export async function listMyTenants(userId: string): Promise<TenantMembership[]> {
-  const { supabase } = getTenantServiceContext();
+/**
+ * Ordinary tenant-membership resolution is a user-initiated read of the
+ * caller's own data, fully covered by tenant_members_self_read /
+ * tenants_member_read RLS (see supabase/migrations/20260803120000_platform_tenants_rbac_audit.sql)
+ * — it must run through the authenticated, request-bound client the
+ * caller already has (requireOwnerContext()'s ctx.supabase), never a
+ * service-role client created here. This file intentionally has no
+ * dependency on SUPABASE_SERVICE_ROLE_KEY at all.
+ */
+export async function listMyTenants(supabase: SupabaseClient, userId: string): Promise<TenantMembership[]> {
   const memberships = await listMembershipsForUser(supabase, userId);
   return memberships.map((m) => ({
     tenantId: m.tenant_id,
@@ -38,8 +46,8 @@ export interface CurrentTenantResult {
  * memberships (first-run state, surfaced by the Command Center as
  * onboarding rather than an empty dashboard).
  */
-export async function resolveCurrentTenant(userId: string): Promise<CurrentTenantResult> {
-  const tenants = await listMyTenants(userId);
+export async function resolveCurrentTenant(supabase: SupabaseClient, userId: string): Promise<CurrentTenantResult> {
+  const tenants = await listMyTenants(supabase, userId);
   if (tenants.length === 0) return { tenants, active: null };
 
   const cookieStore = await cookies();
@@ -56,7 +64,7 @@ export async function resolveCurrentTenant(userId: string): Promise<CurrentTenan
  * rest of the tenant-resolution logic rather than being re-implemented at
  * the call site.
  */
-export async function isMemberOfTenant(userId: string, tenantId: string): Promise<boolean> {
-  const memberships = await listMyTenants(userId);
+export async function isMemberOfTenant(supabase: SupabaseClient, userId: string, tenantId: string): Promise<boolean> {
+  const memberships = await listMyTenants(supabase, userId);
   return memberships.some((m) => m.tenantId === tenantId);
 }

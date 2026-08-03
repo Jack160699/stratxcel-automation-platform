@@ -41,7 +41,7 @@ export default async function ShellLayout({ children }: { children: ReactNode })
     );
   }
 
-  const { tenants, active } = await resolveCurrentTenant(ctx.ownerId);
+  const { tenants, active } = await resolveCurrentTenant(ctx.supabase, ctx.ownerId);
 
   return (
     <CurrentTenantProvider initialTenants={tenants} initialActive={active}>

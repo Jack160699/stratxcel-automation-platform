@@ -1,7 +1,22 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { createSupabaseServiceClient } from "../supabase/service";
 import type { TenantMemberRow, TenantRole, TenantRow } from "./types";
 
 type ServiceClient = ReturnType<typeof createSupabaseServiceClient>;
+
+/**
+ * Any Supabase client capable of running a query — the service-role
+ * client and the request-bound session client are both plain
+ * SupabaseClient instances, differing only in which key (and therefore
+ * which RLS behavior) they carry at runtime, not in their query-builder
+ * shape. Used only for read operations verified against this project's
+ * RLS policies (see supabase/migrations/20260803120000_platform_tenants_rbac_audit.sql:
+ * tenant_members_self_read allows any authenticated user to select their
+ * own membership rows, and tenants_member_read allows reading a tenant
+ * they belong to) — genuinely privileged operations below stay typed as
+ * ServiceClient.
+ */
+type ReadClient = SupabaseClient;
 
 export async function createTenant(
   supabase: ServiceClient,
@@ -43,7 +58,7 @@ export async function inviteMember(
 }
 
 export async function listMembershipsForUser(
-  supabase: ServiceClient,
+  supabase: ReadClient,
   userId: string
 ): Promise<(TenantMemberRow & { tenant: TenantRow })[]> {
   const { data, error } = await supabase

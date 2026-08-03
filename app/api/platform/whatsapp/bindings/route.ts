@@ -5,6 +5,11 @@ import { createPhoneBinding, listPhoneBindingsForTenant } from "@stratxcel/whats
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+/**
+ * Plain user-initiated read, covered by whatsapp_phone_bindings_tenant_read
+ * RLS (see supabase/migrations/20260803140000_whatsapp_phone_bindings.sql)
+ * — runs on the authenticated session client, not the service-role client.
+ */
 export async function GET(request: Request) {
   const tenantId = new URL(request.url).searchParams.get("tenantId");
   if (!tenantId) return Response.json({ error: "tenantId query param is required" }, { status: 400 });
@@ -19,8 +24,7 @@ export async function GET(request: Request) {
     throw err;
   }
 
-  const { supabase } = getTenantServiceContext();
-  const bindings = await listPhoneBindingsForTenant(supabase, tenantId);
+  const bindings = await listPhoneBindingsForTenant(ctx.supabase, tenantId);
   return Response.json({ bindings }, { headers: { "Cache-Control": "no-store" } });
 }
 

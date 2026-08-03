@@ -1,7 +1,5 @@
 import Link from "next/link";
 import { requireOwnerContext } from "@/lib/social/db-context";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { getTenantServiceContext } from "@/lib/tenants/tenant-context";
 import { resolveCurrentTenant } from "@/lib/tenants/current-tenant";
 import { requirePermission, PermissionDeniedError } from "@/lib/rbac/policy";
 import { listMissionsForTenant } from "@stratxcel/missions";
@@ -56,16 +54,19 @@ export default async function CommandCenterPage() {
   const ctx = await requireOwnerContext();
   if (!ctx.ok) return null;
 
-  const { tenants, active } = await resolveCurrentTenant(ctx.ownerId);
+  const { tenants, active } = await resolveCurrentTenant(ctx.supabase, ctx.ownerId);
 
   if (!active) {
     return <OnboardingPanel />;
   }
 
-  const { supabase } = getTenantServiceContext();
-
+  // All three reads below are user-initiated and go through ctx.supabase —
+  // the authenticated, request-bound session client — relying on RLS
+  // (missions_tenant_read / approvals_tenant_read / the existing
+  // stratxcel_contact_messages admin policy) rather than a service-role
+  // client. No SUPABASE_SERVICE_ROLE_KEY dependency anywhere on this page.
   const [missions, approvals, newMessageCount] = await Promise.all([
-    listMissionsForTenant(supabase, active.tenantId, 5),
+    listMissionsForTenant(ctx.supabase, active.tenantId, 5),
     (async () => {
       try {
         requirePermission(active.role, "approval:decide");
@@ -73,11 +74,10 @@ export default async function CommandCenterPage() {
         if (err instanceof PermissionDeniedError) return null;
         throw err;
       }
-      return listPendingApprovals(supabase, active.tenantId);
+      return listPendingApprovals(ctx.supabase, active.tenantId);
     })(),
     (async () => {
-      const session = await createSupabaseServerClient();
-      const { count } = await session
+      const { count } = await ctx.supabase
         .from("stratxcel_contact_messages")
         .select("id", { count: "exact", head: true })
         .eq("status", "new");

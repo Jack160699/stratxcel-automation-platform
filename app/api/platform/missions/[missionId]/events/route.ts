@@ -1,10 +1,16 @@
-import { requireTenantContext, getTenantServiceContext } from "@/lib/tenants/tenant-context";
+import { requireTenantContext } from "@/lib/tenants/tenant-context";
 import { requirePermission, PermissionDeniedError } from "@/lib/rbac/policy";
 import { listMissionEvents } from "@stratxcel/missions";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+/**
+ * Plain user-initiated read, covered by missions_tenant_read /
+ * mission_events_tenant_read RLS (see
+ * supabase/migrations/20260803121000_missions.sql) — runs on the
+ * authenticated session client, not the service-role client.
+ */
 export async function GET(request: Request, { params }: { params: Promise<{ missionId: string }> }) {
   const { missionId } = await params;
   const tenantId = new URL(request.url).searchParams.get("tenantId");
@@ -20,16 +26,14 @@ export async function GET(request: Request, { params }: { params: Promise<{ miss
     throw err;
   }
 
-  const { supabase } = getTenantServiceContext();
-
   // Defense in depth: confirm this mission actually belongs to the tenant
   // the caller was just verified as a member of, rather than trusting that
   // missionId and tenantId in the request agree with each other.
-  const { data: mission } = await supabase.from("missions").select("tenant_id").eq("id", missionId).maybeSingle();
+  const { data: mission } = await ctx.supabase.from("missions").select("tenant_id").eq("id", missionId).maybeSingle();
   if (!mission || mission.tenant_id !== tenantId) {
     return Response.json({ error: "Mission not found" }, { status: 404 });
   }
 
-  const events = await listMissionEvents(supabase, missionId);
+  const events = await listMissionEvents(ctx.supabase, missionId);
   return Response.json({ events }, { headers: { "Cache-Control": "no-store" } });
 }
