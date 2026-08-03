@@ -57,7 +57,52 @@ function run() {
   // robots noindex must cover this subtree, same as /admin/social.
   assert.ok(/robots:\s*\{\s*index:\s*false,\s*follow:\s*false\s*\}/.test(layout), "platform admin subtree must not be indexable");
 
-  console.log("platform-admin-layout-gate.test.ts: ALL PASS (shared auth reused, both failure branches present, shell gated after auth, noindex present)");
+  // --- Overview-page RSC protection ---------------------------------
+  // The App Router still renders and serializes a nested page's Server
+  // Component output into the RSC flight payload even when the parent
+  // layout discards {children} for an unauthorized visitor — the layout
+  // gate alone does not stop this page's env-var-derived integration rows
+  // from reaching the response. This mirrors app/admin/social/page.tsx's
+  // own independent guard, and directly guards against the regression this
+  // test was added for: the previous implementation had no
+  // requireOwnerContext() reference anywhere in this file, so every
+  // assertion below would fail against it.
+  const page = read("app", "admin", "platform", "page.tsx");
+
+  assert.ok(
+    /import\s*\{\s*requireOwnerContext\s*\}\s*from\s*["']@\/lib\/social\/db-context["']/.test(page),
+    "overview page must import the shared requireOwnerContext(), not a duplicate auth mechanism"
+  );
+
+  assert.ok(
+    /export default async function PlatformOverviewPage/.test(page),
+    "PlatformOverviewPage must be an async Server Component"
+  );
+
+  const pageGateIndex = page.indexOf("await requireOwnerContext()");
+  assert.ok(pageGateIndex !== -1, "overview page must invoke await requireOwnerContext()");
+
+  assert.ok(
+    /if\s*\(\s*!ctx\.ok\s*\)\s*return null;/.test(page),
+    "overview page must return null (not AdminLogin — the layout already owns that UI) when unauthorized"
+  );
+  assert.equal(
+    /return <AdminLogin/.test(page),
+    false,
+    "overview page must not render a second login UI; the parent layout owns the visible unauthenticated experience"
+  );
+
+  const rowsIndex = page.indexOf("const rows");
+  assert.ok(rowsIndex !== -1, "overview page must still build its integration rows for authorized owners");
+  assert.ok(pageGateIndex < rowsIndex, "auth guard must run before integration rows are constructed");
+
+  for (const envVar of ["WHATSAPP_INTEGRATION_MODE", "RAZORPAY_INTEGRATION_MODE", "HERMES_MODE"]) {
+    const envIndex = page.indexOf(`process.env.${envVar}`);
+    assert.ok(envIndex !== -1, `overview page must still read process.env.${envVar} for authorized owners`);
+    assert.ok(pageGateIndex < envIndex, `auth guard must run before process.env.${envVar} is read`);
+  }
+
+  console.log("platform-admin-layout-gate.test.ts: ALL PASS (shared auth reused, both failure branches present, shell gated after auth, noindex present, overview-page RSC guard precedes rows/env reads)");
 }
 
 run();

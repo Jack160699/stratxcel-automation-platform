@@ -1,3 +1,5 @@
+import { requireOwnerContext } from "@/lib/social/db-context";
+
 type IntegrationStatus = "live" | "test" | "shadow" | "disconnected" | "blocked" | "manual_action_required";
 
 const STATUS_STYLES: Record<IntegrationStatus, string> = {
@@ -41,8 +43,18 @@ interface IntegrationRow {
  * Every row here reflects genuinely current configuration, not an
  * aspirational or cached state. Per explicit instruction: never display a
  * fake connected/healthy state.
+ *
+ * See layout.tsx: nested pages guard independently of the parent layout —
+ * the App Router still renders and serializes this page's RSC output even
+ * when the layout discards {children}, so without this guard an
+ * unauthenticated request's response would still embed the integration
+ * rows below (env-var-derived operational status) even though the visible
+ * page shows AdminLogin.
  */
-export default function PlatformOverviewPage() {
+export default async function PlatformOverviewPage() {
+  const ctx = await requireOwnerContext();
+  if (!ctx.ok) return null;
+
   const rows: IntegrationRow[] = [
     {
       name: "WhatsApp",
