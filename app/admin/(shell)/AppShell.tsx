@@ -17,51 +17,57 @@ const SIDEBAR_GROUPS: SidebarNavGroup[] = [
   { items: [{ key: "overview", label: "Agency Overview", href: "/admin", icon: <GridIcon /> }] },
   {
     label: "Clients",
-    items: [{ key: "clients", label: "Clients", href: "/admin/platform/tenants", icon: <PeopleIcon /> }],
+    items: [
+      { key: "clients", label: "Clients", href: "/admin/clients", icon: <PeopleIcon /> },
+      { key: "leads", label: "Leads", href: "/admin/leads", icon: <InboxIcon /> },
+    ],
   },
   {
     label: "Operations",
     items: [
-      { key: "missions", label: "All Missions", href: "/admin/platform/missions", icon: <DocIcon /> },
-      { key: "approvals", label: "Approvals", href: "/admin/platform/approvals", icon: <CheckIcon /> },
-      { key: "queue", label: "Operations Queue", href: "/admin/platform/queue", icon: <QueueIcon /> },
+      { key: "missions", label: "All Missions", href: "/admin/missions", icon: <DocIcon /> },
+      { key: "approvals", label: "Approvals", href: "/admin/approvals", icon: <CheckIcon /> },
+      { key: "handoffs", label: "Human Handoffs", href: "/admin/handoffs", icon: <HandoffIcon /> },
+      { key: "operations", label: "Operations Queue", href: "/admin/operations", icon: <QueueIcon /> },
     ],
   },
   {
     label: "Content",
-    items: [
-      { key: "social", label: "Social Autopilot", href: "/admin/social", icon: <MegaphoneIcon /> },
-      { key: "inbox", label: "CRM / Contact Inbox", href: "/admin/inbox", icon: <InboxIcon /> },
-    ],
+    items: [{ key: "social", label: "Social Autopilot", href: "/admin/social", icon: <MegaphoneIcon /> }],
   },
   {
     label: "Platform",
     items: [
-      { key: "wallet", label: "Finance / Wallet", href: "/admin/platform/wallet", icon: <WalletIcon /> },
-      { key: "integrations", label: "Integrations", href: "/admin/social/integrations", icon: <PlugIcon /> },
-      { key: "system", label: "System Health", href: "/admin/social/system", icon: <PulseIcon /> },
+      { key: "finance", label: "Finance", href: "/admin/finance", icon: <WalletIcon /> },
+      { key: "team", label: "Team", href: "/admin/team", icon: <PeopleIcon /> },
+      { key: "integrations", label: "Integrations", href: "/admin/integrations", icon: <PlugIcon /> },
+      { key: "system", label: "System Health", href: "/admin/system", icon: <PulseIcon /> },
+      { key: "audit", label: "Audit Log", href: "/admin/audit", icon: <DocIcon /> },
     ],
   },
 ];
 
 const MOBILE_NAV = [
   { key: "overview", label: "Home", href: "/admin", icon: <GridIcon /> },
-  { key: "missions", label: "Missions", href: "/admin/platform/missions", icon: <DocIcon /> },
-  { key: "approvals", label: "Approvals", href: "/admin/platform/approvals", icon: <CheckIcon /> },
-  { key: "clients", label: "Clients", href: "/admin/platform/tenants", icon: <PeopleIcon /> },
+  { key: "missions", label: "Missions", href: "/admin/missions", icon: <DocIcon /> },
+  { key: "approvals", label: "Approvals", href: "/admin/approvals", icon: <CheckIcon /> },
+  { key: "clients", label: "Clients", href: "/admin/clients", icon: <PeopleIcon /> },
 ];
 
 function activeKeyFromPath(pathname: string): string {
   if (pathname === "/admin") return "overview";
-  if (pathname.startsWith("/admin/platform/tenants")) return "clients";
-  if (pathname.startsWith("/admin/platform/missions")) return "missions";
-  if (pathname.startsWith("/admin/platform/approvals")) return "approvals";
-  if (pathname.startsWith("/admin/platform/queue")) return "queue";
-  if (pathname.startsWith("/admin/platform/wallet")) return "wallet";
-  if (pathname.startsWith("/admin/social/integrations")) return "integrations";
-  if (pathname.startsWith("/admin/social/system")) return "system";
+  if (pathname.startsWith("/admin/clients")) return "clients";
+  if (pathname.startsWith("/admin/leads")) return "leads";
+  if (pathname.startsWith("/admin/missions")) return "missions";
+  if (pathname.startsWith("/admin/approvals")) return "approvals";
+  if (pathname.startsWith("/admin/handoffs")) return "handoffs";
+  if (pathname.startsWith("/admin/operations")) return "operations";
+  if (pathname.startsWith("/admin/finance")) return "finance";
+  if (pathname.startsWith("/admin/team")) return "team";
+  if (pathname.startsWith("/admin/integrations")) return "integrations";
+  if (pathname.startsWith("/admin/system")) return "system";
+  if (pathname.startsWith("/admin/audit")) return "audit";
   if (pathname.startsWith("/admin/social")) return "social";
-  if (pathname.startsWith("/admin/inbox")) return "inbox";
   return "overview";
 }
 
@@ -130,6 +136,13 @@ function CheckIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.4">
       <path d="M3 9l4 4 8-8" />
+    </svg>
+  );
+}
+function HandoffIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.4">
+      <path d="M3 6.5L8 3l5 3.5M3 6.5v6L8 15l5-3.5v-6M3 6.5L8 10l5-3.5" />
     </svg>
   );
 }

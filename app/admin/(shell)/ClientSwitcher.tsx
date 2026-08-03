@@ -68,7 +68,7 @@ export function ClientSwitcher() {
           ))}
           <div className="mt-1 border-t border-sx-border pt-1">
             <Link
-              href="/admin/platform/tenants"
+              href="/admin/clients"
               onClick={() => setOpen(false)}
               className="flex min-h-11 items-center px-3 py-2 text-sm text-sx-accent hover:bg-sx-surface-2"
             >

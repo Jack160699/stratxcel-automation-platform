@@ -74,21 +74,22 @@ function run() {
   // --- 4. Platform pages no longer require manually entered tenant IDs ---
   assert.equal(exists("app", "admin", "platform", "TenantIdBar.tsx"), false, "TenantIdBar.tsx must be deleted");
   assert.equal(exists("app", "admin", "platform", "useTenantId.ts"), false, "useTenantId.ts must be deleted");
-  for (const page of ["missions", "approvals", "wallet", "queue", "whatsapp", "tenants"]) {
-    const src = read("app", "admin", "(shell)", "platform", page, "page.tsx");
+  for (const page of ["missions", "approvals", "finance", "operations", "integrations", "clients"]) {
+    const src = read("app", "admin", "(shell)", page, "page.tsx");
     assert.equal(src.includes("useTenantId"), false, `${page}/page.tsx must not import useTenantId`);
     assert.equal(src.includes("TenantIdBar"), false, `${page}/page.tsx must not render TenantIdBar`);
     assert.ok(src.includes("useCurrentTenant"), `${page}/page.tsx must read the tenant from the shared context instead`);
   }
 
-  // --- 5. Existing /admin/platform RSC information-disclosure guard remains
-  const platformOverview = read("app", "admin", "(shell)", "platform", "page.tsx");
+  // --- 5. Existing RSC information-disclosure guard remains (moved from
+  // /admin/platform's integration-status page into /admin/system) --------
+  const systemHealth = read("app", "admin", "(shell)", "system", "page.tsx");
   assert.ok(
-    /const ctx = await requireOwnerContext\(\);\s*\n\s*if \(!ctx\.ok\) return null;/.test(platformOverview),
-    "the platform overview page must still guard itself before constructing integration rows (RSC-payload leak fix must survive the move into (shell)/platform)"
+    /const ctx = await requireOwnerContext\(\);\s*\n\s*if \(!ctx\.ok\) return null;/.test(systemHealth),
+    "the system-health page must still guard itself before constructing integration rows (RSC-payload leak fix must survive the move to (shell)/system)"
   );
   const platformLayout = read("app", "admin", "(shell)", "platform", "layout.tsx");
-  assert.ok(/requireOwnerContext\(\)/.test(platformLayout), "the platform subtree must keep its own defense-in-depth layout guard");
+  assert.ok(/requireOwnerContext\(\)/.test(platformLayout), "the legacy platform subtree must keep its own defense-in-depth layout guard around the redirect wrappers");
 
   const commandCenter = read("app", "admin", "(shell)", "page.tsx");
   assert.ok(
@@ -96,10 +97,10 @@ function run() {
     "the new Command Center (now the default /admin landing page) must independently re-guard itself, same as every other nested page in this build"
   );
 
-  const inboxPage = read("app", "admin", "(shell)", "inbox", "page.tsx");
+  const leadsPage = read("app", "admin", "(shell)", "leads", "page.tsx");
   assert.ok(
-    /const ctx = await requireOwnerContext\(\);\s*\n\s*if \(!ctx\.ok\) return null;/.test(inboxPage),
-    "the migrated contact-inbox page must independently re-guard itself"
+    /const ctx = await requireOwnerContext\(\);\s*\n\s*if \(!ctx\.ok\) return null;/.test(leadsPage),
+    "the migrated contact-inbox page (now /admin/leads) must independently re-guard itself"
   );
 
   // --- 6. Existing API authorization remains unchanged --------------------
@@ -172,19 +173,36 @@ function run() {
   assert.ok(/min-h-11|h-11/.test(clientSwitcher), "the client switcher's touch targets must meet the same minimum");
   assert.ok(!/<input[^>]*tenant.?[iI]d/i.test(clientSwitcher), "the switcher must never expose a raw tenant-ID text input");
 
-  // --- Legacy route compatibility ------------------------------------------
+  // --- Final admin IA + legacy route compatibility --------------------------
+  // ADMIN_INFORMATION_ARCHITECTURE.md §1 renamed the /admin/platform/* tree.
   // Route groups (the "(shell)" directory) are elided from the URL, so each
-  // of these file locations must still serve the exact same public path it
-  // always did: /admin, /admin/platform, /admin/platform/tenants, etc.
+  // canonical location below must resolve at its new public path, and every
+  // old path must still resolve too — as a thin redirect() wrapper, not a
+  // duplicated page, per "moved, not duplicated".
   assert.ok(exists("app", "admin", "(shell)", "page.tsx"), "/admin must still resolve");
-  assert.ok(exists("app", "admin", "(shell)", "platform", "page.tsx"), "/admin/platform must still resolve");
-  for (const page of ["tenants", "missions", "approvals", "wallet", "queue", "whatsapp"]) {
+  const NEW_ADMIN_ROUTES = ["clients", "missions", "approvals", "finance", "operations", "integrations", "leads", "system", "team", "handoffs", "audit"];
+  for (const page of NEW_ADMIN_ROUTES) {
+    assert.ok(exists("app", "admin", "(shell)", page, "page.tsx"), `/admin/${page} must resolve (final IA)`);
+  }
+  assert.ok(exists("app", "admin", "(shell)", "clients", "[tenantId]", "page.tsx"), "/admin/clients/{id} must resolve (final IA)");
+
+  const LEGACY_REDIRECTS: [string[], string][] = [
+    [["platform", "tenants"], "/admin/clients"],
+    [["platform", "missions"], "/admin/missions"],
+    [["platform", "queue"], "/admin/operations"],
+    [["platform", "approvals"], "/admin/approvals"],
+    [["platform", "wallet"], "/admin/finance"],
+    [["platform", "whatsapp"], "/admin/integrations"],
+    [["platform"], "/admin/system"],
+    [["inbox"], "/admin/leads"],
+  ];
+  for (const [segments, destination] of LEGACY_REDIRECTS) {
+    const source = read("app", "admin", "(shell)", ...segments, "page.tsx");
     assert.ok(
-      exists("app", "admin", "(shell)", "platform", page, "page.tsx"),
-      `/admin/platform/${page} must still resolve`
+      source.includes(`redirect("${destination}")`),
+      `legacy /admin/${segments.join("/")} must redirect to ${destination}, not duplicate the page`
     );
   }
-  assert.ok(exists("app", "admin", "(shell)", "inbox", "page.tsx"), "/admin/inbox must resolve (new route, preserves inbox functionality)");
   // /admin/social is untouched — must remain a sibling, not nested inside the new (shell) group.
   assert.equal(exists("app", "admin", "(shell)", "social"), false, "/admin/social must not have been moved into the shell group");
   assert.ok(exists("app", "admin", "social", "layout.tsx"), "/admin/social must keep its own independent layout/guard");

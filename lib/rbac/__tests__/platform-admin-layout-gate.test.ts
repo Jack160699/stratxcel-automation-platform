@@ -72,8 +72,11 @@ function run() {
   // own independent guard, and directly guards against the regression this
   // test was added for: the previous implementation had no
   // requireOwnerContext() reference anywhere in this file, so every
-  // assertion below would fail against it.
-  const page = read("app", "admin", "(shell)", "platform", "page.tsx");
+  // assertion below would fail against it. This content moved from
+  // /admin/platform to /admin/system (ADMIN_INFORMATION_ARCHITECTURE.md §1,
+  // "System Health") — the legacy /admin/platform path is now a thin
+  // redirect() wrapper, covered separately by unified-shell-tenant-ux.test.ts.
+  const page = read("app", "admin", "(shell)", "system", "page.tsx");
 
   assert.ok(
     /import\s*\{\s*requireOwnerContext\s*\}\s*from\s*["']@\/lib\/social\/db-context["']/.test(page),
@@ -81,8 +84,8 @@ function run() {
   );
 
   assert.ok(
-    /export default async function PlatformOverviewPage/.test(page),
-    "PlatformOverviewPage must be an async Server Component"
+    /export default async function SystemHealthPage/.test(page),
+    "SystemHealthPage must be an async Server Component"
   );
 
   const pageGateIndex = page.indexOf("await requireOwnerContext()");

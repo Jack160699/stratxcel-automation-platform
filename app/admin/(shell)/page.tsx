@@ -113,18 +113,18 @@ export default async function CommandCenterPage() {
           <p className="text-[13px] font-medium text-sx-text">Content / Social Autopilot</p>
           <p className="mt-1 text-xs text-sx-text-subtle">Production-working — campaigns, posts, Copilot.</p>
         </Link>
-        <Link href="/admin/platform/missions" className="rounded-sx-md border border-sx-border bg-sx-surface-1 p-4 transition-colors hover:border-sx-border-strong">
+        <Link href="/admin/missions" className="rounded-sx-md border border-sx-border bg-sx-surface-1 p-4 transition-colors hover:border-sx-border-strong">
           <p className="text-[13px] font-medium text-sx-text">Missions</p>
           <p className="mt-1 text-xs text-sx-text-subtle">{missions.length} recent for {active.name}.</p>
         </Link>
-        <Link href="/admin/platform/approvals" className="rounded-sx-md border border-sx-border bg-sx-surface-1 p-4 transition-colors hover:border-sx-border-strong">
+        <Link href="/admin/approvals" className="rounded-sx-md border border-sx-border bg-sx-surface-1 p-4 transition-colors hover:border-sx-border-strong">
           <p className="text-[13px] font-medium text-sx-text">Approvals</p>
           <p className="mt-1 text-xs text-sx-text-subtle">
             {approvals === null ? "No access for your role" : `${approvals.length} pending`}
           </p>
         </Link>
-        <Link href="/admin/inbox" className="rounded-sx-md border border-sx-border bg-sx-surface-1 p-4 transition-colors hover:border-sx-border-strong">
-          <p className="text-[13px] font-medium text-sx-text">Contact Inbox</p>
+        <Link href="/admin/leads" className="rounded-sx-md border border-sx-border bg-sx-surface-1 p-4 transition-colors hover:border-sx-border-strong">
+          <p className="text-[13px] font-medium text-sx-text">Leads</p>
           <p className="mt-1 text-xs text-sx-text-subtle">{newMessageCount} new message{newMessageCount === 1 ? "" : "s"}.</p>
         </Link>
       </section>
@@ -174,7 +174,7 @@ export default async function CommandCenterPage() {
       <Card>
         <div className="flex items-center justify-between">
           <CardHeading>Integration status</CardHeading>
-          <Link href="/admin/platform" className="font-sx-mono text-xs text-sx-accent hover:underline">
+          <Link href="/admin/system" className="font-sx-mono text-xs text-sx-accent hover:underline">
             Full detail →
           </Link>
         </div>

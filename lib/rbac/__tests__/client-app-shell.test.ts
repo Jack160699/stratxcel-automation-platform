@@ -68,8 +68,11 @@ function run() {
   assert.ok(/CoreAppShell/.test(clientShell), "/app's shell must compose the same shared components/shell/CoreAppShell.tsx — not a second bespoke shell");
 
   // --- 5. Missions/Approvals reuse the exact same tenant-scoped API routes --
+  // /admin's missions page lives at (shell)/missions now, renamed from
+  // (shell)/platform/missions by ADMIN_INFORMATION_ARCHITECTURE.md §1 — the
+  // old path is a redirect() wrapper, covered by unified-shell-tenant-ux.test.ts.
   const clientMissions = read("app", "app", "missions", "page.tsx");
-  const adminMissions = read("app", "admin", "(shell)", "platform", "missions", "page.tsx");
+  const adminMissions = read("app", "admin", "(shell)", "missions", "page.tsx");
   assert.ok(clientMissions.includes('fetch(`/api/platform/missions'), "/app/missions must call the same /api/platform/missions route");
   assert.ok(adminMissions.includes('fetch(`/api/platform/missions'), "/admin's missions page must still call the same route (unchanged)");
 
