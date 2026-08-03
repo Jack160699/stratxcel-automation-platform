@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useTenantId } from "../useTenantId";
-import { TenantIdBar } from "../TenantIdBar";
+import { useCurrentTenant } from "../../CurrentTenantContext";
+import { NoClientSelected } from "../NoClientSelected";
 
 interface PhoneBinding {
   id: string;
@@ -33,7 +33,8 @@ const BINDING_STATUS_STYLES: Record<string, string> = {
 };
 
 export default function WhatsAppAdminPage() {
-  const [tenantId, setTenantId] = useTenantId();
+  const { active } = useCurrentTenant();
+  const tenantId = active?.tenantId;
   const [bindings, setBindings] = useState<PhoneBinding[] | null>(null);
   const [messages, setMessages] = useState<ShadowMessage[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -89,7 +90,9 @@ export default function WhatsAppAdminPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <TenantIdBar tenantId={tenantId} onChange={setTenantId} />
+      <header>
+        <h1 className="text-xl font-semibold text-slate-100">WhatsApp{active ? ` — ${active.name}` : ""}</h1>
+      </header>
       {error && <p className="text-sm text-rose-300">{error}</p>}
 
       {tenantId && (
@@ -127,7 +130,7 @@ export default function WhatsAppAdminPage() {
 
       <section className="flex flex-col gap-3">
         <h2 className="text-base font-medium text-slate-200">Phone bindings</h2>
-        {!tenantId && <p className="text-sm text-slate-500">Set a tenant ID above.</p>}
+        {!tenantId && <NoClientSelected what="phone bindings" />}
         {tenantId && bindings?.length === 0 && <p className="text-sm text-slate-500">No phone bindings yet.</p>}
         {bindings && bindings.length > 0 && (
           <ul className="flex flex-col gap-2">

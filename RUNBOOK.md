@@ -1,5 +1,7 @@
 # Runbook
 
+**Status update (2026-08-03, later the same day):** the rollback note below ("never merged to main and never deployed to production") is now stale — this branch's work has since been merged to `main` and deployed to production, with all 22 migrations applied and a follow-up RSC information-disclosure hotfix and Phase 1 (unified Command Center / client switcher) shipped on top of it. See `LIVE_SYSTEM_MAP.md` for current state. The standalone worker apps (`apps/whatsapp-worker`, `apps/mission-worker`, `apps/hermes-gateway`) remain undeployed exactly as described below.
+
 ## Everyday commands (repo root)
 
 ```bash

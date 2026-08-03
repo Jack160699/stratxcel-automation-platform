@@ -23,7 +23,14 @@ function run() {
   assert.ok(/export async function requireOwnerContext\(/.test(dbContext), "requireOwnerContext() must still exist and be exported");
   assert.ok(/status: 401/.test(dbContext) && /status: 403/.test(dbContext), "requireOwnerContext() must still distinguish 401 (unauthenticated) from 403 (unauthorized)");
 
-  const layout = read("app", "admin", "platform", "layout.tsx");
+  // Phase 1 moved app/admin/platform/* into the app/admin/(shell)/platform/*
+  // route group so it could share the unified AppShell/nav (route groups
+  // are elided from the URL, so /admin/platform/* still resolves the same
+  // — see the Phase 1 unified-shell-tenant-ux test for that coverage). The
+  // shared nav/heading this test originally checked for now lives once in
+  // app/admin/(shell)/AppShell.tsx rather than duplicated in this layout,
+  // so this layout is deliberately just a defense-in-depth re-guard now.
+  const layout = read("app", "admin", "(shell)", "platform", "layout.tsx");
 
   assert.ok(
     /import\s*\{\s*requireOwnerContext\s*\}\s*from\s*["']@\/lib\/social\/db-context["']/.test(layout),
@@ -40,19 +47,18 @@ function run() {
     "the 401 (unauthenticated) branch must render the existing AdminLogin component"
   );
   assert.ok(
-    /import AdminLogin from ["']\.\.\/AdminLogin["']/.test(layout),
+    /import AdminLogin from ["']@\/app\/admin\/AdminLogin["']/.test(layout),
     "layout must import the existing app/admin/AdminLogin.tsx, not a second login UI"
   );
 
   assert.ok(/No access/.test(layout), "the 403 (unauthorized) branch must render a clear 'No access' message");
 
   // Structural ordering: the auth gate and both its failure branches must
-  // appear before the authenticated shell (nav + heading) in source order,
-  // proving the shell renders only after — never ahead of — authorization.
-  const navIndex = layout.indexOf("NAV_ITEMS.map");
-  const headingIndex = layout.indexOf("Platform Admin</h1>");
-  assert.ok(navIndex !== -1 && headingIndex !== -1, "authenticated shell (nav + heading) must still exist for authorized owners");
-  assert.ok(gateCallIndex < navIndex && gateCallIndex < headingIndex, "auth gate must run before the authenticated shell is rendered");
+  // appear before children are ever rendered, proving the platform subtree
+  // renders only after — never ahead of — authorization.
+  const childrenIndex = layout.indexOf("<>{children}</>");
+  assert.ok(childrenIndex !== -1, "authorized owners must still reach {children} (missions/approvals/wallet/queue/whatsapp/tenants)");
+  assert.ok(gateCallIndex < childrenIndex, "auth gate must run before {children} is ever rendered");
 
   // robots noindex must cover this subtree, same as /admin/social.
   assert.ok(/robots:\s*\{\s*index:\s*false,\s*follow:\s*false\s*\}/.test(layout), "platform admin subtree must not be indexable");
@@ -67,7 +73,7 @@ function run() {
   // test was added for: the previous implementation had no
   // requireOwnerContext() reference anywhere in this file, so every
   // assertion below would fail against it.
-  const page = read("app", "admin", "platform", "page.tsx");
+  const page = read("app", "admin", "(shell)", "platform", "page.tsx");
 
   assert.ok(
     /import\s*\{\s*requireOwnerContext\s*\}\s*from\s*["']@\/lib\/social\/db-context["']/.test(page),

@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useTenantId } from "../useTenantId";
-import { TenantIdBar } from "../TenantIdBar";
+import { useCurrentTenant } from "../../CurrentTenantContext";
+import { NoClientSelected } from "../NoClientSelected";
 
 interface WalletAccount {
   tenant_id: string;
@@ -12,7 +12,8 @@ interface WalletAccount {
 }
 
 export default function WalletPage() {
-  const [tenantId, setTenantId] = useTenantId();
+  const { active } = useCurrentTenant();
+  const tenantId = active?.tenantId;
   const [account, setAccount] = useState<WalletAccount | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -23,7 +24,7 @@ export default function WalletPage() {
       setLoading(true);
       setError(null);
       try {
-        const res = await fetch(`/api/platform/wallet?tenantId=${encodeURIComponent(tenantId)}`);
+        const res = await fetch(`/api/platform/wallet?tenantId=${encodeURIComponent(tenantId!)}`);
         const body = await res.json();
         if (!res.ok) {
           setError(body.error ?? `Failed to load wallet (HTTP ${res.status})`);
@@ -39,9 +40,11 @@ export default function WalletPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <TenantIdBar tenantId={tenantId} onChange={setTenantId} />
+      <header>
+        <h1 className="text-xl font-semibold text-slate-100">Wallet{active ? ` — ${active.name}` : ""}</h1>
+      </header>
 
-      {!tenantId && <p className="text-sm text-slate-500">Set a tenant ID above to view the wallet.</p>}
+      {!tenantId && <NoClientSelected what="the wallet" />}
       {error && <p className="text-sm text-rose-300">{error}</p>}
       {tenantId && loading && <p className="text-sm text-slate-500">Loading…</p>}
 

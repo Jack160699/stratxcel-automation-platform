@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useTenantId } from "../useTenantId";
-import { TenantIdBar } from "../TenantIdBar";
+import { useCurrentTenant } from "../../CurrentTenantContext";
+import { NoClientSelected } from "../NoClientSelected";
 
 interface Approval {
   id: string;
@@ -13,7 +13,8 @@ interface Approval {
 }
 
 export default function ApprovalsPage() {
-  const [tenantId, setTenantId] = useTenantId();
+  const { active } = useCurrentTenant();
+  const tenantId = active?.tenantId;
   const [approvals, setApprovals] = useState<Approval[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [decidingId, setDecidingId] = useState<string | null>(null);
@@ -58,13 +59,15 @@ export default function ApprovalsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <TenantIdBar tenantId={tenantId} onChange={setTenantId} />
+      <header>
+        <h1 className="text-xl font-semibold text-slate-100">Approvals{active ? ` — ${active.name}` : ""}</h1>
+      </header>
 
       {error && <p className="text-sm text-rose-300">{error}</p>}
 
       <section className="flex flex-col gap-3">
         <h2 className="text-base font-medium text-slate-200">Pending approvals</h2>
-        {!tenantId && <p className="text-sm text-slate-500">Set a tenant ID above to view approvals.</p>}
+        {!tenantId && <NoClientSelected what="approvals" />}
         {tenantId && approvals === null && <p className="text-sm text-slate-500">Loading…</p>}
         {tenantId && approvals?.length === 0 && <p className="text-sm text-slate-500">No pending approvals.</p>}
         {approvals && approvals.length > 0 && (

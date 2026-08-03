@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useTenantId } from "../useTenantId";
-import { TenantIdBar } from "../TenantIdBar";
+import { useCurrentTenant } from "../../CurrentTenantContext";
+import { NoClientSelected } from "../NoClientSelected";
 
 interface Mission {
   id: string;
@@ -32,7 +32,8 @@ const STATE_STYLES: Record<string, string> = {
 };
 
 export default function MissionsPage() {
-  const [tenantId, setTenantId] = useTenantId();
+  const { active } = useCurrentTenant();
+  const tenantId = active?.tenantId;
   const [missions, setMissions] = useState<Mission[] | null>(null);
   const [goalText, setGoalText] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -80,7 +81,9 @@ export default function MissionsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <TenantIdBar tenantId={tenantId} onChange={setTenantId} />
+      <header>
+        <h1 className="text-xl font-semibold text-slate-100">Missions{active ? ` — ${active.name}` : ""}</h1>
+      </header>
 
       {tenantId && (
         <section className="flex flex-col gap-3 rounded-lg border border-slate-800 bg-slate-900/40 p-4">
@@ -107,7 +110,7 @@ export default function MissionsPage() {
 
       <section className="flex flex-col gap-3">
         <h2 className="text-base font-medium text-slate-200">Missions</h2>
-        {!tenantId && <p className="text-sm text-slate-500">Set a tenant ID above to view missions.</p>}
+        {!tenantId && <NoClientSelected what="missions" />}
         {tenantId && missions === null && <p className="text-sm text-slate-500">Loading…</p>}
         {tenantId && missions?.length === 0 && <p className="text-sm text-slate-500">No missions yet.</p>}
         {missions && missions.length > 0 && (

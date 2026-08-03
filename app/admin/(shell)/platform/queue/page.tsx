@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useTenantId } from "../useTenantId";
-import { TenantIdBar } from "../TenantIdBar";
+import { useCurrentTenant } from "../../CurrentTenantContext";
+import { NoClientSelected } from "../NoClientSelected";
 
 interface QueueJob {
   id: string;
@@ -25,7 +25,8 @@ const STATUS_STYLES: Record<string, string> = {
 };
 
 export default function QueuePage() {
-  const [tenantId, setTenantId] = useTenantId();
+  const { active } = useCurrentTenant();
+  const tenantId = active?.tenantId;
   const [jobs, setJobs] = useState<QueueJob[] | null>(null);
   const [deadLetter, setDeadLetter] = useState<QueueJob[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -34,7 +35,7 @@ export default function QueuePage() {
     if (!tenantId) return;
     async function load() {
       setError(null);
-      const res = await fetch(`/api/platform/queue?tenantId=${encodeURIComponent(tenantId)}`);
+      const res = await fetch(`/api/platform/queue?tenantId=${encodeURIComponent(tenantId!)}`);
       const body = await res.json();
       if (!res.ok) {
         setError(body.error ?? `Failed to load queue (HTTP ${res.status})`);
@@ -48,9 +49,11 @@ export default function QueuePage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <TenantIdBar tenantId={tenantId} onChange={setTenantId} />
+      <header>
+        <h1 className="text-xl font-semibold text-slate-100">Queue{active ? ` — ${active.name}` : ""}</h1>
+      </header>
       {error && <p className="text-sm text-rose-300">{error}</p>}
-      {!tenantId && <p className="text-sm text-slate-500">Set a tenant ID above to view queue status.</p>}
+      {!tenantId && <NoClientSelected what="queue status" />}
 
       {deadLetter && deadLetter.length > 0 && (
         <section className="flex flex-col gap-3">

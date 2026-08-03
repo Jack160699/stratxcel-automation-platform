@@ -1,0 +1,134 @@
+"use client";
+
+import { useState } from "react";
+
+function slugify(input: string): string {
+  return input
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9\s-]/g, "")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+interface CreatedTenant {
+  id: string;
+  slug: string;
+  name: string;
+}
+
+export function CreateClientForm({
+  onCreated,
+  compact = false,
+}: {
+  onCreated: (tenant: CreatedTenant) => void | Promise<void>;
+  compact?: boolean;
+}) {
+  const [name, setName] = useState("");
+  const [slug, setSlug] = useState("");
+  const [slugTouched, setSlugTouched] = useState(false);
+  const [description, setDescription] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  function handleNameChange(value: string) {
+    setName(value);
+    if (!slugTouched) setSlug(slugify(value));
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (submitting) return; // guards against double-click / repeated submission
+    const trimmedName = name.trim();
+    const trimmedSlug = slug.trim();
+    if (!trimmedName) {
+      setError("Client name is required.");
+      return;
+    }
+    if (!/^[a-z0-9-]+$/.test(trimmedSlug)) {
+      setError("Slug must be lowercase letters, numbers, and hyphens only.");
+      return;
+    }
+
+    setSubmitting(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/platform/tenants", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: trimmedName, slug: trimmedSlug }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        if (res.status === 409) setError(`"${trimmedSlug}" is already in use — try a different slug.`);
+        else if (res.status === 401) setError("Your session has expired. Sign in again and retry.");
+        else if (res.status === 400) setError(body.error ?? "That client name or slug isn't valid.");
+        else setError(body.error ?? "Something went wrong creating the client. Please try again.");
+        return;
+      }
+      setName("");
+      setSlug("");
+      setSlugTouched(false);
+      setDescription("");
+      await onCreated(body.tenant as CreatedTenant);
+    } catch {
+      setError("Could not reach the server. Check your connection and try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className={`flex flex-col gap-3 ${compact ? "" : "max-w-md"}`}>
+      <label className="flex flex-col gap-1 text-sm text-slate-400">
+        Client / business name
+        <input
+          value={name}
+          onChange={(e) => handleNameChange(e.target.value)}
+          required
+          placeholder="Acme Retail"
+          className="min-h-11 rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100"
+        />
+      </label>
+      <label className="flex flex-col gap-1 text-sm text-slate-400">
+        Slug
+        <input
+          value={slug}
+          onChange={(e) => {
+            setSlugTouched(true);
+            setSlug(e.target.value.toLowerCase());
+          }}
+          required
+          pattern="[a-z0-9-]+"
+          placeholder="acme-retail"
+          className="min-h-11 rounded-md border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-slate-100"
+        />
+        <span className="text-xs text-slate-500">Generated from the name — edit if you&apos;d like a different one.</span>
+      </label>
+      <label className="flex flex-col gap-1 text-sm text-slate-400">
+        Description <span className="text-slate-600">(optional)</span>
+        <textarea
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          rows={2}
+          placeholder="What this client does, key context…"
+          className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100"
+        />
+        <span className="text-xs text-slate-600">
+          Not saved yet — full client profiles land in a later phase. This stays local to the form for now.
+        </span>
+      </label>
+
+      {error && <p className="text-sm text-rose-300">{error}</p>}
+
+      <button
+        type="submit"
+        disabled={submitting}
+        className="min-h-11 rounded-md bg-sky-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-sky-400 disabled:opacity-50"
+      >
+        {submitting ? "Creating…" : "Create client"}
+      </button>
+    </form>
+  );
+}
