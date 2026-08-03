@@ -56,7 +56,7 @@ function run() {
   assert.equal(accessTokenNeedsRefresh("not-a-date", now), true);
 
   const mediaMigration = read("supabase", "migrations", "20260729094500_media_ingestion.sql");
-  const verificationMigration = read("supabase", "migrations", "20260729120000_add_verification_privacy.sql");
+  const verificationMigration = read("supabase", "migrations", "20260728235714_add_verification_privacy.sql");
   const mediaRepo = read("lib", "social", "repositories", "media-assets.ts");
   const attachmentRepo = read("lib", "social", "repositories", "agent-attachments.ts");
   const tools = read("lib", "social", "agent", "tools.ts");
