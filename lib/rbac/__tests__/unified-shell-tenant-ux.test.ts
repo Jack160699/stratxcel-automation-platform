@@ -135,7 +135,10 @@ function run() {
   // --- Tenant creation onboarding -----------------------------------------
   const onboarding = read("app", "admin", "(shell)", "OnboardingPanel.tsx");
   assert.ok(onboarding.includes("CreateClientForm"), "onboarding must reuse the shared CreateClientForm, not a duplicate form");
-  const createForm = read("app", "admin", "(shell)", "CreateClientForm.tsx");
+  // CreateClientForm now lives under components/forms/ so both /admin and
+  // /app's onboarding can import the identical component — see
+  // app/app/OnboardingPanel.tsx, which reuses it the same way.
+  const createForm = read("components", "forms", "CreateClientForm.tsx");
   assert.ok(createForm.includes('fetch("/api/platform/tenants"'), "client creation must go through the existing authorized tenants API");
   assert.ok(/res\.status === 409/.test(createForm), "must handle duplicate slug (409) distinctly");
   assert.ok(/if \(submitting\) return;/.test(createForm), "must guard against double-submit / repeated submission");
@@ -152,9 +155,19 @@ function run() {
   );
 
   // --- Mobile shell structural behavior ------------------------------------
+  // AppShell.tsx now composes the shared Stratxcel Core shell
+  // (components/shell/CoreAppShell.tsx) rather than implementing its own
+  // mobile/desktop split inline — the same requirement (distinct mobile vs.
+  // desktop nav presentations) now lives there, plus a real hover/pin
+  // sidebar and a dedicated 5-slot bottom tab bar instead of a plain
+  // hidden/shown toggle. See docs/product-design/SHARED_SHELL_SPECIFICATION.md.
   const appShell = read("app", "admin", "(shell)", "AppShell.tsx");
-  assert.ok(/lg:hidden/.test(appShell) && /hidden .*lg:flex|lg:block/.test(appShell), "the shell must have distinct mobile and desktop nav presentations");
-  assert.ok(/min-h-11|min-h-\[44px\]/.test(appShell), "interactive shell controls must meet a ~44px touch-target minimum");
+  assert.ok(/CoreAppShell/.test(appShell), "the admin shell must compose the shared Stratxcel Core shell, not a bespoke one");
+  const coreAppShell = read("components", "shell", "CoreAppShell.tsx");
+  assert.ok(/hidden md:block/.test(coreAppShell), "the desktop sidebar slot must be hidden below the md breakpoint");
+  const mobileBottomNav = read("components", "shell", "MobileBottomNav.tsx");
+  assert.ok(/md:hidden/.test(mobileBottomNav), "the mobile bottom nav must be hidden at and above the md breakpoint");
+  assert.ok(/min-h-11/.test(mobileBottomNav), "mobile bottom-nav touch targets must meet a ~44px minimum");
   const clientSwitcher = read("app", "admin", "(shell)", "ClientSwitcher.tsx");
   assert.ok(/min-h-11|h-11/.test(clientSwitcher), "the client switcher's touch targets must meet the same minimum");
   assert.ok(!/<input[^>]*tenant.?[iI]d/i.test(clientSwitcher), "the switcher must never expose a raw tenant-ID text input");
