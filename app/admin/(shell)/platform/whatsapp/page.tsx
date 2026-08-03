@@ -3,6 +3,11 @@
 import { useEffect, useState } from "react";
 import { useCurrentTenant } from "../../CurrentTenantContext";
 import { NoClientSelected } from "../NoClientSelected";
+import { Button } from "@/components/ui/Button";
+import { Input } from "@/components/ui/Input";
+import { Card, CardHeading } from "@/components/ui/Card";
+import { StatusChip, type ChipState } from "@/components/ui/StatusChip";
+import { ErrorState } from "@/components/ui/Feedback";
 
 interface PhoneBinding {
   id: string;
@@ -25,11 +30,11 @@ interface ShadowMessage {
   created_at: string;
 }
 
-const BINDING_STATUS_STYLES: Record<string, string> = {
-  pending: "bg-amber-400/15 text-amber-300",
-  active: "bg-emerald-400/15 text-emerald-300",
-  disabled: "bg-slate-600/20 text-slate-400",
-  revoked: "bg-rose-400/15 text-rose-300",
+const BINDING_CHIP: Record<string, { label: string; state: ChipState }> = {
+  pending: { label: "Pending", state: "warning" },
+  active: { label: "Active", state: "success" },
+  disabled: { label: "Disabled", state: "neutral" },
+  revoked: { label: "Revoked", state: "danger" },
 };
 
 export default function WhatsAppAdminPage() {
@@ -91,82 +96,73 @@ export default function WhatsAppAdminPage() {
   return (
     <div className="flex flex-col gap-6">
       <header>
-        <h1 className="text-xl font-semibold text-slate-100">WhatsApp{active ? ` — ${active.name}` : ""}</h1>
+        <h1 className="font-sx-sans text-xl font-semibold text-sx-text">WhatsApp{active ? ` — ${active.name}` : ""}</h1>
       </header>
-      {error && <p className="text-sm text-rose-300">{error}</p>}
+      {error && <ErrorState message={error} />}
 
       {tenantId && (
-        <section className="flex flex-col gap-3 rounded-lg border border-slate-800 bg-slate-900/40 p-4">
-          <h2 className="text-base font-medium text-slate-200">Add a phone binding (pending, shadow mode)</h2>
-          <p className="text-xs text-slate-500">
+        <Card>
+          <CardHeading>Add a phone binding (pending, shadow mode)</CardHeading>
+          <p className="text-xs text-sx-text-subtle">
             Created as pending/shadow with inbound and outbound disabled — activating it with the real, verified
-            phone_number_id is tomorrow&apos;s manual action, not something this form does.
+            phone_number_id is a separate manual action, not something this form does.
           </p>
           <form onSubmit={handleCreateBinding} className="flex flex-col gap-3 sm:flex-row">
-            <input
-              value={wabaId}
-              onChange={(e) => setWabaId(e.target.value)}
-              required
-              placeholder="WABA ID"
-              className="flex-1 rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100"
-            />
-            <input
+            <Input value={wabaId} onChange={(e) => setWabaId(e.target.value)} required placeholder="WABA ID" className="flex-1" />
+            <Input
               value={phoneNumberId}
               onChange={(e) => setPhoneNumberId(e.target.value)}
               required
               placeholder="Phone number ID"
-              className="flex-1 rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100"
+              className="flex-1"
             />
-            <button
-              type="submit"
-              disabled={creating}
-              className="rounded-md bg-sky-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-sky-400 disabled:opacity-50"
-            >
+            <Button type="submit" variant="primary" disabled={creating}>
               {creating ? "Adding…" : "Add binding"}
-            </button>
+            </Button>
           </form>
-        </section>
+        </Card>
       )}
 
       <section className="flex flex-col gap-3">
-        <h2 className="text-base font-medium text-slate-200">Phone bindings</h2>
+        <h2 className="font-sx-sans text-base font-medium text-sx-text">Phone bindings</h2>
         {!tenantId && <NoClientSelected what="phone bindings" />}
-        {tenantId && bindings?.length === 0 && <p className="text-sm text-slate-500">No phone bindings yet.</p>}
+        {tenantId && bindings?.length === 0 && <p className="text-sm text-sx-text-subtle">No phone bindings yet.</p>}
         {bindings && bindings.length > 0 && (
-          <ul className="flex flex-col gap-2">
-            {bindings.map((b) => (
-              <li key={b.id} className="rounded-lg border border-slate-800 bg-slate-900/40 p-3 text-sm">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="font-medium text-slate-200">{b.display_phone_number ?? b.phone_number_id}</p>
-                  <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${BINDING_STATUS_STYLES[b.status] ?? "bg-slate-600/20 text-slate-400"}`}>
-                    {b.status}
-                  </span>
-                </div>
-                <p className="mt-1 text-xs text-slate-500">
-                  {b.environment} · shadow: {b.shadow_mode ? "on" : "off"} · inbound: {b.inbound_enabled ? "on" : "off"} · outbound:{" "}
-                  {b.outbound_enabled ? "on" : "off"}
-                </p>
-              </li>
-            ))}
-          </ul>
+          <div className="flex flex-col gap-2">
+            {bindings.map((b) => {
+              const chip = BINDING_CHIP[b.status] ?? { label: b.status, state: "neutral" as ChipState };
+              return (
+                <Card key={b.id} variant="nested">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="font-medium text-sx-text">{b.display_phone_number ?? b.phone_number_id}</p>
+                    <StatusChip state={chip.state}>{chip.label}</StatusChip>
+                  </div>
+                  <p className="mt-1 text-xs text-sx-text-subtle">
+                    {b.environment} · shadow: {b.shadow_mode ? "on" : "off"} · inbound: {b.inbound_enabled ? "on" : "off"} · outbound:{" "}
+                    {b.outbound_enabled ? "on" : "off"}
+                  </p>
+                </Card>
+              );
+            })}
+          </div>
         )}
       </section>
 
       <section className="flex flex-col gap-3">
-        <h2 className="text-base font-medium text-slate-200">Shadow messages (proposed responses — never sent)</h2>
-        {tenantId && messages?.length === 0 && <p className="text-sm text-slate-500">No shadow messages yet.</p>}
+        <h2 className="font-sx-sans text-base font-medium text-sx-text">Shadow messages (proposed responses — never sent)</h2>
+        {tenantId && messages?.length === 0 && <p className="text-sm text-sx-text-subtle">No shadow messages yet.</p>}
         {messages && messages.length > 0 && (
-          <ul className="flex flex-col gap-2">
+          <div className="flex flex-col gap-2">
             {messages.map((m) => (
-              <li key={m.id} className="rounded-lg border border-slate-800 bg-slate-900/40 p-3 text-sm">
-                <p className="text-slate-200">{m.body || <span className="italic text-slate-500">(no proposed reply)</span>}</p>
-                <p className="mt-1 text-xs text-slate-500">
+              <Card key={m.id} variant="nested">
+                <p className="text-sx-text">{m.body || <span className="italic text-sx-text-subtle">(no proposed reply)</span>}</p>
+                <p className="mt-1 text-xs text-sx-text-subtle">
                   confidence: {m.metadata.confidence ?? "—"} · rule: {m.metadata.rulePath ?? "—"} · would send:{" "}
                   {m.would_send ? "yes (shadow only)" : "no"}
                 </p>
-              </li>
+              </Card>
             ))}
-          </ul>
+          </div>
         )}
       </section>
     </div>

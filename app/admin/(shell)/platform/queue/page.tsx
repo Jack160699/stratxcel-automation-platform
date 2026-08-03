@@ -3,6 +3,10 @@
 import { useEffect, useState } from "react";
 import { useCurrentTenant } from "../../CurrentTenantContext";
 import { NoClientSelected } from "../NoClientSelected";
+import { StatusChip, type ChipState } from "@/components/ui/StatusChip";
+import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
+import { Card, CardHeading } from "@/components/ui/Card";
+import { ErrorState } from "@/components/ui/Feedback";
 
 interface QueueJob {
   id: string;
@@ -14,14 +18,14 @@ interface QueueJob {
   last_error: Record<string, unknown> | null;
 }
 
-const STATUS_STYLES: Record<string, string> = {
-  PENDING: "bg-slate-600/20 text-slate-400",
-  LEASED: "bg-sky-400/15 text-sky-300",
-  RETRY_SCHEDULED: "bg-amber-400/15 text-amber-300",
-  SUCCEEDED: "bg-emerald-400/15 text-emerald-300",
-  FAILED: "bg-rose-400/15 text-rose-300",
-  DEAD_LETTER: "bg-rose-500/20 text-rose-200",
-  CANCELLED: "bg-slate-600/20 text-slate-500",
+const STATUS_CHIP: Record<string, { label: string; state: ChipState }> = {
+  PENDING: { label: "Pending", state: "neutral" },
+  LEASED: { label: "Leased", state: "accent" },
+  RETRY_SCHEDULED: { label: "Retry scheduled", state: "warning" },
+  SUCCEEDED: { label: "Succeeded", state: "success" },
+  FAILED: { label: "Failed", state: "danger" },
+  DEAD_LETTER: { label: "Dead letter", state: "danger" },
+  CANCELLED: { label: "Cancelled", state: "neutral" },
 };
 
 export default function QueuePage() {
@@ -47,64 +51,52 @@ export default function QueuePage() {
     load();
   }, [tenantId]);
 
+  const columns: DataTableColumn<QueueJob>[] = [
+    { key: "type", header: "Type", render: (j) => j.job_type },
+    {
+      key: "status",
+      header: "Status",
+      mobilePrimary: true,
+      render: (j) => {
+        const chip = STATUS_CHIP[j.status] ?? { label: j.status, state: "neutral" as ChipState };
+        return <StatusChip state={chip.state}>{chip.label}</StatusChip>;
+      },
+    },
+    { key: "attempts", header: "Attempts", render: (j) => `${j.attempt_count}/${j.max_attempts}` },
+    { key: "scheduled", header: "Scheduled", render: (j) => new Date(j.scheduled_at).toLocaleString() },
+  ];
+
   return (
     <div className="flex flex-col gap-6">
       <header>
-        <h1 className="text-xl font-semibold text-slate-100">Queue{active ? ` — ${active.name}` : ""}</h1>
+        <h1 className="font-sx-sans text-xl font-semibold text-sx-text">Operations Queue{active ? ` — ${active.name}` : ""}</h1>
       </header>
-      {error && <p className="text-sm text-rose-300">{error}</p>}
+      {error && <ErrorState message={error} />}
       {!tenantId && <NoClientSelected what="queue status" />}
 
       {deadLetter && deadLetter.length > 0 && (
-        <section className="flex flex-col gap-3">
-          <h2 className="text-base font-medium text-rose-300">Dead letter ({deadLetter.length})</h2>
-          <ul className="flex flex-col gap-2">
+        <Card variant="alert">
+          <CardHeading>
+            <span className="text-[#FF8A90]">Dead letter ({deadLetter.length})</span>
+          </CardHeading>
+          <div className="flex flex-col gap-2">
             {deadLetter.map((j) => (
-              <li key={j.id} className="rounded-lg border border-rose-900/50 bg-rose-950/20 p-3 text-sm">
-                <p className="font-medium text-rose-200">{j.job_type}</p>
-                <p className="text-xs text-rose-400">
+              <div key={j.id} className="rounded-sx-sm border border-[rgb(242_86_95_/_0.3)] bg-[rgb(242_86_95_/_0.06)] p-3 text-sm">
+                <p className="font-medium text-[#FF8A90]">{j.job_type}</p>
+                <p className="text-xs text-[#FF8A90]/80">
                   {j.attempt_count}/{j.max_attempts} attempts · {JSON.stringify(j.last_error)}
                 </p>
-              </li>
+              </div>
             ))}
-          </ul>
-        </section>
+          </div>
+        </Card>
       )}
 
       {jobs && (
         <section className="flex flex-col gap-3">
-          <h2 className="text-base font-medium text-slate-200">Recent jobs ({jobs.length})</h2>
-          {jobs.length === 0 && <p className="text-sm text-slate-500">No jobs yet.</p>}
-          {jobs.length > 0 && (
-            <div className="overflow-x-auto rounded-lg border border-slate-800">
-              <table className="w-full min-w-[480px] text-left text-sm">
-                <thead className="bg-slate-900/60 text-slate-400">
-                  <tr>
-                    <th className="px-4 py-2 font-medium">Type</th>
-                    <th className="px-4 py-2 font-medium">Status</th>
-                    <th className="px-4 py-2 font-medium">Attempts</th>
-                    <th className="px-4 py-2 font-medium">Scheduled</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {jobs.map((j) => (
-                    <tr key={j.id} className="border-t border-slate-800">
-                      <td className="px-4 py-3 text-slate-200">{j.job_type}</td>
-                      <td className="px-4 py-3">
-                        <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_STYLES[j.status] ?? "bg-slate-600/20 text-slate-400"}`}>
-                          {j.status}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-slate-400">
-                        {j.attempt_count}/{j.max_attempts}
-                      </td>
-                      <td className="px-4 py-3 text-slate-400">{new Date(j.scheduled_at).toLocaleString()}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+          <h2 className="font-sx-sans text-base font-medium text-sx-text">Recent jobs ({jobs.length})</h2>
+          {jobs.length === 0 && <p className="text-sm text-sx-text-subtle">No jobs yet.</p>}
+          {jobs.length > 0 && <DataTable columns={columns} rows={jobs} />}
         </section>
       )}
     </div>

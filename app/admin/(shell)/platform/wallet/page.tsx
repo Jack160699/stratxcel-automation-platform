@@ -3,6 +3,9 @@
 import { useEffect, useState } from "react";
 import { useCurrentTenant } from "../../CurrentTenantContext";
 import { NoClientSelected } from "../NoClientSelected";
+import { Card } from "@/components/ui/Card";
+import { Metric } from "@/components/ui/Metric";
+import { ErrorState } from "@/components/ui/Feedback";
 
 interface WalletAccount {
   tenant_id: string;
@@ -41,21 +44,21 @@ export default function WalletPage() {
   return (
     <div className="flex flex-col gap-6">
       <header>
-        <h1 className="text-xl font-semibold text-slate-100">Wallet{active ? ` — ${active.name}` : ""}</h1>
+        <h1 className="font-sx-sans text-xl font-semibold text-sx-text">Finance / Wallet{active ? ` — ${active.name}` : ""}</h1>
       </header>
 
       {!tenantId && <NoClientSelected what="the wallet" />}
-      {error && <p className="text-sm text-rose-300">{error}</p>}
-      {tenantId && loading && <p className="text-sm text-slate-500">Loading…</p>}
+      {error && <ErrorState message={error} />}
+      {tenantId && loading && <p className="text-sm text-sx-text-subtle">Loading…</p>}
 
       {account && (
-        <section className="rounded-lg border border-slate-800 bg-slate-900/40 p-6">
-          <p className="text-sm text-slate-400">Balance</p>
-          <p className="text-3xl font-semibold text-slate-100">
-            {account.currency} {(account.balance_cents / 100).toFixed(2)}
-          </p>
-          <p className="mt-2 text-xs text-slate-500">Last updated {new Date(account.updated_at).toLocaleString()}</p>
-        </section>
+        <Card className="p-6">
+          <Metric
+            label="Balance"
+            value={`${account.currency} ${(account.balance_cents / 100).toFixed(2)}`}
+            deltaLabel={`last updated ${new Date(account.updated_at).toLocaleString()}`}
+          />
+        </Card>
       )}
     </div>
   );

@@ -3,6 +3,11 @@
 import { useEffect, useState } from "react";
 import { useCurrentTenant } from "../../CurrentTenantContext";
 import { NoClientSelected } from "../NoClientSelected";
+import { Button } from "@/components/ui/Button";
+import { Input } from "@/components/ui/Input";
+import { StatusChip, type ChipState } from "@/components/ui/StatusChip";
+import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
+import { ErrorState } from "@/components/ui/Feedback";
 
 interface Mission {
   id: string;
@@ -13,22 +18,22 @@ interface Mission {
   created_at: string;
 }
 
-const STATE_STYLES: Record<string, string> = {
-  DRAFT: "bg-slate-600/20 text-slate-400",
-  ESTIMATING: "bg-slate-600/20 text-slate-400",
-  AWAITING_FUNDS: "bg-amber-400/15 text-amber-300",
-  READY: "bg-sky-400/15 text-sky-300",
-  QUEUED: "bg-sky-400/15 text-sky-300",
-  RUNNING: "bg-sky-400/25 text-sky-200",
-  AWAITING_INPUT: "bg-amber-400/15 text-amber-300",
-  AWAITING_APPROVAL: "bg-amber-400/15 text-amber-300",
-  HUMAN_HANDOFF: "bg-orange-400/15 text-orange-300",
-  RESUMED: "bg-sky-400/15 text-sky-300",
-  COMPLETED: "bg-emerald-400/15 text-emerald-300",
-  PARTIALLY_COMPLETED: "bg-emerald-400/10 text-emerald-400",
-  FAILED: "bg-rose-400/15 text-rose-300",
-  CANCELLED: "bg-slate-600/20 text-slate-500",
-  BLOCKED: "bg-rose-400/15 text-rose-300",
+const MISSION_STATE_CHIP: Record<string, { label: string; state: ChipState }> = {
+  DRAFT: { label: "Draft", state: "neutral" },
+  ESTIMATING: { label: "Estimating", state: "neutral" },
+  AWAITING_FUNDS: { label: "Awaiting funds", state: "warning" },
+  READY: { label: "Ready", state: "accent" },
+  QUEUED: { label: "Queued", state: "accent" },
+  RUNNING: { label: "Running", state: "ai" },
+  AWAITING_INPUT: { label: "Awaiting input", state: "warning" },
+  AWAITING_APPROVAL: { label: "Awaiting approval", state: "warning" },
+  HUMAN_HANDOFF: { label: "Human handoff", state: "warning" },
+  RESUMED: { label: "Resumed", state: "accent" },
+  COMPLETED: { label: "Completed", state: "success" },
+  PARTIALLY_COMPLETED: { label: "Partially completed", state: "success" },
+  FAILED: { label: "Failed", state: "danger" },
+  CANCELLED: { label: "Cancelled", state: "neutral" },
+  BLOCKED: { label: "Blocked", state: "danger" },
 };
 
 export default function MissionsPage() {
@@ -79,72 +84,60 @@ export default function MissionsPage() {
     }
   }
 
+  const columns: DataTableColumn<Mission>[] = [
+    { key: "goal", header: "Goal", render: (m) => <span title={m.goal_text}>{m.goal_text}</span> },
+    { key: "service", header: "Service", render: (m) => m.service_key ?? "—" },
+    {
+      key: "state",
+      header: "State",
+      mobilePrimary: true,
+      render: (m) => {
+        const chip = MISSION_STATE_CHIP[m.state] ?? { label: m.state, state: "neutral" as ChipState };
+        return (
+          <StatusChip state={chip.state} pulse={chip.state === "ai"}>
+            {chip.label}
+          </StatusChip>
+        );
+      },
+    },
+    {
+      key: "cost",
+      header: "Est. cost",
+      render: (m) => (m.estimated_cost_cents != null ? `₹${(m.estimated_cost_cents / 100).toFixed(2)}` : "—"),
+    },
+  ];
+
   return (
     <div className="flex flex-col gap-6">
       <header>
-        <h1 className="text-xl font-semibold text-slate-100">Missions{active ? ` — ${active.name}` : ""}</h1>
+        <h1 className="font-sx-sans text-xl font-semibold text-sx-text">Missions{active ? ` — ${active.name}` : ""}</h1>
       </header>
 
       {tenantId && (
-        <section className="flex flex-col gap-3 rounded-lg border border-slate-800 bg-slate-900/40 p-4">
-          <h2 className="text-base font-medium text-slate-200">Create a mission</h2>
+        <section className="flex flex-col gap-3 rounded-sx-md border border-sx-border bg-sx-surface-1 p-4">
+          <h2 className="font-sx-sans text-base font-medium text-sx-text">Create a mission</h2>
           <form onSubmit={handleCreate} className="flex flex-col gap-3 sm:flex-row">
-            <input
+            <Input
               value={goalText}
               onChange={(e) => setGoalText(e.target.value)}
               required
               placeholder="e.g. Run an Instagram campaign for our spring sale"
-              className="flex-1 rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100"
+              className="flex-1"
             />
-            <button
-              type="submit"
-              disabled={loading}
-              className="rounded-md bg-sky-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-sky-400 disabled:opacity-50"
-            >
+            <Button type="submit" variant="primary" disabled={loading}>
               {loading ? "Creating…" : "Create + estimate"}
-            </button>
+            </Button>
           </form>
-          {error && <p className="text-sm text-rose-300">{error}</p>}
+          {error && <ErrorState message={error} />}
         </section>
       )}
 
       <section className="flex flex-col gap-3">
-        <h2 className="text-base font-medium text-slate-200">Missions</h2>
+        <h2 className="font-sx-sans text-base font-medium text-sx-text">Missions</h2>
         {!tenantId && <NoClientSelected what="missions" />}
-        {tenantId && missions === null && <p className="text-sm text-slate-500">Loading…</p>}
-        {tenantId && missions?.length === 0 && <p className="text-sm text-slate-500">No missions yet.</p>}
-        {missions && missions.length > 0 && (
-          <div className="overflow-x-auto rounded-lg border border-slate-800">
-            <table className="w-full min-w-[560px] text-left text-sm">
-              <thead className="bg-slate-900/60 text-slate-400">
-                <tr>
-                  <th className="px-4 py-2 font-medium">Goal</th>
-                  <th className="px-4 py-2 font-medium">Service</th>
-                  <th className="px-4 py-2 font-medium">State</th>
-                  <th className="px-4 py-2 font-medium">Est. cost</th>
-                </tr>
-              </thead>
-              <tbody>
-                {missions.map((m) => (
-                  <tr key={m.id} className="border-t border-slate-800">
-                    <td className="max-w-xs truncate px-4 py-3 text-slate-200" title={m.goal_text}>
-                      {m.goal_text}
-                    </td>
-                    <td className="px-4 py-3 text-slate-400">{m.service_key ?? "—"}</td>
-                    <td className="px-4 py-3">
-                      <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${STATE_STYLES[m.state] ?? "bg-slate-600/20 text-slate-400"}`}>
-                        {m.state}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-slate-400">
-                      {m.estimated_cost_cents != null ? `₹${(m.estimated_cost_cents / 100).toFixed(2)}` : "—"}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+        {tenantId && missions === null && <p className="text-sm text-sx-text-subtle">Loading…</p>}
+        {tenantId && missions?.length === 0 && <p className="text-sm text-sx-text-subtle">No missions yet.</p>}
+        {missions && missions.length > 0 && <DataTable columns={columns} rows={missions} />}
       </section>
     </div>
   );

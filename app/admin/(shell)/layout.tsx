@@ -32,10 +32,10 @@ export default async function ShellLayout({ children }: { children: ReactNode })
   if (!ctx.ok) {
     if (ctx.status === 401) return <AdminLogin />;
     return (
-      <main className="flex min-h-screen items-center justify-center bg-slate-950 px-4">
-        <div className="w-full max-w-md rounded-2xl border border-slate-800 bg-slate-900/40 p-7 text-center">
-          <h1 className="text-xl font-semibold text-slate-100">No access</h1>
-          <p className="mt-2 text-sm text-slate-400">This account is not authorized for the Command Center.</p>
+      <main className="flex min-h-screen items-center justify-center bg-sx-bg px-4">
+        <div className="w-full max-w-md rounded-sx-lg border border-sx-border bg-sx-surface-1 p-7 text-center">
+          <h1 className="font-sx-sans text-xl font-semibold text-sx-text">No access</h1>
+          <p className="mt-2 text-sm text-sx-text-muted">This account is not authorized for the Command Center.</p>
         </div>
       </main>
     );

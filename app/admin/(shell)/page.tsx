@@ -4,39 +4,38 @@ import { resolveCurrentTenant } from "@/lib/tenants/current-tenant";
 import { requirePermission, PermissionDeniedError } from "@/lib/rbac/policy";
 import { listMissionsForTenant } from "@stratxcel/missions";
 import { listPendingApprovals } from "@stratxcel/approvals";
+import { Card, CardHeading, CardRow } from "@/components/ui/Card";
+import { Metric } from "@/components/ui/Metric";
+import { StatusChip, type ChipState } from "@/components/ui/StatusChip";
 import { OnboardingPanel } from "./OnboardingPanel";
 
-const STATE_STYLES: Record<string, string> = {
-  DRAFT: "bg-slate-600/20 text-slate-400",
-  ESTIMATING: "bg-slate-600/20 text-slate-400",
-  AWAITING_FUNDS: "bg-amber-400/15 text-amber-300",
-  READY: "bg-sky-400/15 text-sky-300",
-  QUEUED: "bg-sky-400/15 text-sky-300",
-  RUNNING: "bg-sky-400/25 text-sky-200",
-  AWAITING_INPUT: "bg-amber-400/15 text-amber-300",
-  AWAITING_APPROVAL: "bg-amber-400/15 text-amber-300",
-  HUMAN_HANDOFF: "bg-orange-400/15 text-orange-300",
-  RESUMED: "bg-sky-400/15 text-sky-300",
-  COMPLETED: "bg-emerald-400/15 text-emerald-300",
-  PARTIALLY_COMPLETED: "bg-emerald-400/10 text-emerald-400",
-  FAILED: "bg-rose-400/15 text-rose-300",
-  CANCELLED: "bg-slate-600/20 text-slate-500",
-  BLOCKED: "bg-rose-400/15 text-rose-300",
+const MISSION_STATE_CHIP: Record<string, { label: string; state: ChipState }> = {
+  DRAFT: { label: "Draft", state: "neutral" },
+  ESTIMATING: { label: "Estimating", state: "neutral" },
+  AWAITING_FUNDS: { label: "Awaiting funds", state: "warning" },
+  READY: { label: "Ready", state: "accent" },
+  QUEUED: { label: "Queued", state: "accent" },
+  RUNNING: { label: "Running", state: "ai" },
+  AWAITING_INPUT: { label: "Awaiting input", state: "warning" },
+  AWAITING_APPROVAL: { label: "Awaiting approval", state: "warning" },
+  HUMAN_HANDOFF: { label: "Human handoff", state: "warning" },
+  RESUMED: { label: "Resumed", state: "accent" },
+  COMPLETED: { label: "Completed", state: "success" },
+  PARTIALLY_COMPLETED: { label: "Partially completed", state: "success" },
+  FAILED: { label: "Failed", state: "danger" },
+  CANCELLED: { label: "Cancelled", state: "neutral" },
+  BLOCKED: { label: "Blocked", state: "danger" },
 };
 
 function IntegrationRow({ label, mode }: { label: string; mode: string | undefined }) {
   const live = mode === "live" || mode === "http";
   const shadow = mode === "shadow" || mode === "mock";
-  const status = live ? "Live" : shadow ? "Shadow" : "Disabled";
-  const style = live
-    ? "bg-emerald-400/15 text-emerald-300"
-    : shadow
-      ? "bg-amber-400/15 text-amber-300"
-      : "bg-slate-600/20 text-slate-400";
   return (
-    <div className="flex items-center justify-between gap-3 text-sm">
-      <span className="text-slate-300">{label}</span>
-      <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${style}`}>{status}</span>
+    <div className="flex items-center justify-between gap-3 text-[12.5px]">
+      <span className="text-sx-text-muted">{label}</span>
+      <StatusChip state={live ? "success" : shadow ? "warning" : "neutral"} dot={false}>
+        {live ? "Live" : shadow ? "Shadow" : "Disabled"}
+      </StatusChip>
     </div>
   );
 }
@@ -85,80 +84,99 @@ export default async function CommandCenterPage() {
     })(),
   ]);
 
+  const pendingCount = approvals?.length ?? 0;
+
   return (
     <div className="flex flex-col gap-6">
       <header className="flex flex-col gap-1">
-        <h1 className="text-xl font-semibold text-slate-100">Command Center</h1>
-        <p className="text-sm text-slate-400">
-          {active.name} <span className="text-slate-600">·</span> {active.role}
-          {tenants.length > 1 && (
-            <span className="text-slate-600"> · {tenants.length} clients accessible</span>
-          )}
+        <h1 className="font-sx-sans text-xl font-semibold text-sx-text">Agency Overview</h1>
+        <p className="text-sm text-sx-text-muted">
+          {active.name} <span className="text-sx-text-subtle">·</span> {active.role}
+          {tenants.length > 1 && <span className="text-sx-text-subtle"> · {tenants.length} clients accessible</span>}
         </p>
       </header>
 
+      <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <Metric label="Missions" value={missions.length} deltaLabel={`recent for ${active.name}`} />
+        <Metric
+          label="Approvals"
+          value={approvals === null ? "—" : pendingCount}
+          deltaLabel={approvals === null ? "no access for your role" : "pending"}
+          delta={pendingCount > 0 ? "neutral" : undefined}
+        />
+        <Metric label="Contact inbox" value={newMessageCount} deltaLabel={`new message${newMessageCount === 1 ? "" : "s"}`} />
+        <Metric label="Clients" value={tenants.length} deltaLabel="accessible to you" />
+      </section>
+
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Link href="/admin/social" className="rounded-lg border border-slate-800 bg-slate-900/40 p-4 hover:border-slate-600">
-          <p className="text-sm font-medium text-slate-200">Content / Social Autopilot</p>
-          <p className="mt-1 text-xs text-slate-500">Production-working — campaigns, posts, Copilot.</p>
+        <Link href="/admin/social" className="rounded-sx-md border border-sx-border bg-sx-surface-1 p-4 transition-colors hover:border-sx-border-strong">
+          <p className="text-[13px] font-medium text-sx-text">Content / Social Autopilot</p>
+          <p className="mt-1 text-xs text-sx-text-subtle">Production-working — campaigns, posts, Copilot.</p>
         </Link>
-        <Link href="/admin/platform/missions" className="rounded-lg border border-slate-800 bg-slate-900/40 p-4 hover:border-slate-600">
-          <p className="text-sm font-medium text-slate-200">Missions</p>
-          <p className="mt-1 text-xs text-slate-500">{missions.length} recent for {active.name}.</p>
+        <Link href="/admin/platform/missions" className="rounded-sx-md border border-sx-border bg-sx-surface-1 p-4 transition-colors hover:border-sx-border-strong">
+          <p className="text-[13px] font-medium text-sx-text">Missions</p>
+          <p className="mt-1 text-xs text-sx-text-subtle">{missions.length} recent for {active.name}.</p>
         </Link>
-        <Link href="/admin/platform/approvals" className="rounded-lg border border-slate-800 bg-slate-900/40 p-4 hover:border-slate-600">
-          <p className="text-sm font-medium text-slate-200">Approvals</p>
-          <p className="mt-1 text-xs text-slate-500">
+        <Link href="/admin/platform/approvals" className="rounded-sx-md border border-sx-border bg-sx-surface-1 p-4 transition-colors hover:border-sx-border-strong">
+          <p className="text-[13px] font-medium text-sx-text">Approvals</p>
+          <p className="mt-1 text-xs text-sx-text-subtle">
             {approvals === null ? "No access for your role" : `${approvals.length} pending`}
           </p>
         </Link>
-        <Link href="/admin/inbox" className="rounded-lg border border-slate-800 bg-slate-900/40 p-4 hover:border-slate-600">
-          <p className="text-sm font-medium text-slate-200">Contact Inbox</p>
-          <p className="mt-1 text-xs text-slate-500">{newMessageCount} new message{newMessageCount === 1 ? "" : "s"}.</p>
+        <Link href="/admin/inbox" className="rounded-sx-md border border-sx-border bg-sx-surface-1 p-4 transition-colors hover:border-sx-border-strong">
+          <p className="text-[13px] font-medium text-sx-text">Contact Inbox</p>
+          <p className="mt-1 text-xs text-sx-text-subtle">{newMessageCount} new message{newMessageCount === 1 ? "" : "s"}.</p>
         </Link>
       </section>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <section className="flex flex-col gap-3 rounded-lg border border-slate-800 bg-slate-900/40 p-4">
-          <h2 className="text-base font-medium text-slate-200">Recent missions</h2>
+        <Card>
+          <CardHeading>Recent missions</CardHeading>
           {missions.length === 0 ? (
-            <p className="text-sm text-slate-500">No missions yet for {active.name}.</p>
+            <p className="text-sm text-sx-text-subtle">No missions yet for {active.name}.</p>
           ) : (
-            <ul className="flex flex-col gap-2">
-              {missions.map((m) => (
-                <li key={m.id} className="flex items-center justify-between gap-2 border-t border-slate-800 pt-2 first:border-t-0 first:pt-0">
-                  <span className="min-w-0 truncate text-sm text-slate-300" title={m.goal_text}>{m.goal_text}</span>
-                  <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium ${STATE_STYLES[m.state] ?? "bg-slate-600/20 text-slate-400"}`}>
-                    {m.state}
-                  </span>
-                </li>
-              ))}
-            </ul>
+            <div>
+              {missions.map((m) => {
+                const chip = MISSION_STATE_CHIP[m.state] ?? { label: m.state, state: "neutral" as ChipState };
+                return (
+                  <CardRow key={m.id}>
+                    <span className="min-w-0 flex-1 truncate text-sx-text-muted" title={m.goal_text}>
+                      {m.goal_text}
+                    </span>
+                    <StatusChip state={chip.state} pulse={chip.state === "ai"}>
+                      {chip.label}
+                    </StatusChip>
+                  </CardRow>
+                );
+              })}
+            </div>
           )}
-        </section>
+        </Card>
 
-        <section className="flex flex-col gap-3 rounded-lg border border-slate-800 bg-slate-900/40 p-4">
-          <h2 className="text-base font-medium text-slate-200">Approvals requiring attention</h2>
+        <Card>
+          <CardHeading>Approvals requiring attention</CardHeading>
           {approvals === null ? (
-            <p className="text-sm text-slate-500">Your role ({active.role}) cannot decide approvals for this client.</p>
+            <p className="text-sm text-sx-text-subtle">Your role ({active.role}) cannot decide approvals for this client.</p>
           ) : approvals.length === 0 ? (
-            <p className="text-sm text-slate-500">Nothing pending.</p>
+            <p className="text-sm text-sx-text-subtle">Nothing pending.</p>
           ) : (
-            <ul className="flex flex-col gap-2">
+            <div>
               {approvals.slice(0, 5).map((a) => (
-                <li key={a.id} className="border-t border-slate-800 pt-2 text-sm text-slate-300 first:border-t-0 first:pt-0">
-                  {a.kind}
-                </li>
+                <CardRow key={a.id}>
+                  <span className="text-sx-text-muted">{a.kind}</span>
+                </CardRow>
               ))}
-            </ul>
+            </div>
           )}
-        </section>
+        </Card>
       </div>
 
-      <section className="flex flex-col gap-3 rounded-lg border border-slate-800 bg-slate-900/40 p-4">
+      <Card>
         <div className="flex items-center justify-between">
-          <h2 className="text-base font-medium text-slate-200">Integration status</h2>
-          <Link href="/admin/platform" className="text-xs text-sky-400 hover:underline">Full detail →</Link>
+          <CardHeading>Integration status</CardHeading>
+          <Link href="/admin/platform" className="font-sx-mono text-xs text-sx-accent hover:underline">
+            Full detail →
+          </Link>
         </div>
         <div className="grid gap-2 sm:grid-cols-2">
           <IntegrationRow label="WhatsApp" mode={process.env.WHATSAPP_INTEGRATION_MODE} />
@@ -166,7 +184,7 @@ export default async function CommandCenterPage() {
           <IntegrationRow label="Hermes" mode={process.env.HERMES_MODE} />
           <IntegrationRow label="Google Drive" mode={undefined} />
         </div>
-      </section>
+      </Card>
     </div>
   );
 }

@@ -1,23 +1,16 @@
 import { requireOwnerContext } from "@/lib/social/db-context";
+import { Card, CardHeading } from "@/components/ui/Card";
+import { StatusChip, type ChipState } from "@/components/ui/StatusChip";
 
 type IntegrationStatus = "live" | "test" | "shadow" | "disconnected" | "blocked" | "manual_action_required";
 
-const STATUS_STYLES: Record<IntegrationStatus, string> = {
-  live: "bg-emerald-400/15 text-emerald-300",
-  test: "bg-sky-400/15 text-sky-300",
-  shadow: "bg-amber-400/15 text-amber-300",
-  disconnected: "bg-slate-600/20 text-slate-400",
-  blocked: "bg-rose-400/15 text-rose-300",
-  manual_action_required: "bg-orange-400/15 text-orange-300",
-};
-
-const STATUS_LABELS: Record<IntegrationStatus, string> = {
-  live: "Live",
-  test: "Test",
-  shadow: "Shadow",
-  disconnected: "Disconnected",
-  blocked: "Blocked",
-  manual_action_required: "Manual action required",
+const STATUS_CHIP: Record<IntegrationStatus, { label: string; state: ChipState }> = {
+  live: { label: "Live", state: "success" },
+  test: { label: "Test", state: "accent" },
+  shadow: { label: "Shadow", state: "warning" },
+  disconnected: { label: "Disconnected", state: "neutral" },
+  blocked: { label: "Blocked", state: "danger" },
+  manual_action_required: { label: "Manual action required", state: "warning" },
 };
 
 function modeToStatus(mode: string | undefined, disabledIsBlocked = false): IntegrationStatus {
@@ -26,10 +19,6 @@ function modeToStatus(mode: string | undefined, disabledIsBlocked = false): Inte
   if (mode === "mock") return "test";
   if (mode === "http") return "live";
   return disabledIsBlocked ? "blocked" : "disconnected";
-}
-
-function Badge({ status }: { status: IntegrationStatus }) {
-  return <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_STYLES[status]}`}>{STATUS_LABELS[status]}</span>;
 }
 
 interface IntegrationRow {
@@ -86,38 +75,41 @@ export default async function PlatformOverviewPage() {
   return (
     <div className="flex flex-col gap-6">
       <section className="flex flex-col gap-3">
-        <h2 className="text-base font-medium text-slate-200">Integration status</h2>
-        <div className="overflow-x-auto rounded-lg border border-slate-800">
+        <h2 className="font-sx-sans text-base font-medium text-sx-text">Integration status</h2>
+        <div className="overflow-x-auto rounded-sx-md border border-sx-border">
           <table className="w-full min-w-[480px] text-left text-sm">
-            <thead className="bg-slate-900/60 text-slate-400">
+            <thead className="bg-sx-surface-2 text-sx-text-subtle">
               <tr>
-                <th className="px-4 py-2 font-medium">Integration</th>
-                <th className="px-4 py-2 font-medium">Status</th>
-                <th className="px-4 py-2 font-medium">Detail</th>
+                <th className="px-4 py-2 font-sx-mono text-[10px] font-medium uppercase tracking-[0.08em]">Integration</th>
+                <th className="px-4 py-2 font-sx-mono text-[10px] font-medium uppercase tracking-[0.08em]">Status</th>
+                <th className="px-4 py-2 font-sx-mono text-[10px] font-medium uppercase tracking-[0.08em]">Detail</th>
               </tr>
             </thead>
             <tbody>
-              {rows.map((row) => (
-                <tr key={row.name} className="border-t border-slate-800">
-                  <td className="px-4 py-3 font-medium text-slate-200">{row.name}</td>
-                  <td className="px-4 py-3">
-                    <Badge status={row.status} />
-                  </td>
-                  <td className="px-4 py-3 text-slate-400">{row.detail}</td>
-                </tr>
-              ))}
+              {rows.map((row) => {
+                const chip = STATUS_CHIP[row.status];
+                return (
+                  <tr key={row.name} className="border-t border-sx-border">
+                    <td className="px-4 py-3 font-medium text-sx-text">{row.name}</td>
+                    <td className="px-4 py-3">
+                      <StatusChip state={chip.state}>{chip.label}</StatusChip>
+                    </td>
+                    <td className="px-4 py-3 text-sx-text-muted">{row.detail}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
       </section>
 
-      <section className="rounded-lg border border-slate-800 bg-slate-900/40 p-4 text-sm text-slate-400">
-        <p>
-          Start at <span className="text-slate-200">Tenants</span> to create a tenant and become its owner, then use
-          the tenant ID on the other pages (there is no tenant switcher yet — each page asks for it once and
-          remembers it locally).
+      <Card>
+        <CardHeading>Getting started</CardHeading>
+        <p className="text-sm text-sx-text-muted">
+          Start at <span className="text-sx-text">Clients</span> to create a tenant and become its owner — the
+          switcher in the top bar remembers your active client across every page below.
         </p>
-      </section>
+      </Card>
     </div>
   );
 }

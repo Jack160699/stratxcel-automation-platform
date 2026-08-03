@@ -3,6 +3,9 @@
 import { useEffect, useState } from "react";
 import { useCurrentTenant } from "../../CurrentTenantContext";
 import { NoClientSelected } from "../NoClientSelected";
+import { Button } from "@/components/ui/Button";
+import { Card } from "@/components/ui/Card";
+import { ErrorState } from "@/components/ui/Feedback";
 
 interface Approval {
   id: string;
@@ -60,43 +63,35 @@ export default function ApprovalsPage() {
   return (
     <div className="flex flex-col gap-6">
       <header>
-        <h1 className="text-xl font-semibold text-slate-100">Approvals{active ? ` — ${active.name}` : ""}</h1>
+        <h1 className="font-sx-sans text-xl font-semibold text-sx-text">Approvals{active ? ` — ${active.name}` : ""}</h1>
       </header>
 
-      {error && <p className="text-sm text-rose-300">{error}</p>}
+      {error && <ErrorState message={error} />}
 
       <section className="flex flex-col gap-3">
-        <h2 className="text-base font-medium text-slate-200">Pending approvals</h2>
+        <h2 className="font-sx-sans text-base font-medium text-sx-text">Pending approvals</h2>
         {!tenantId && <NoClientSelected what="approvals" />}
-        {tenantId && approvals === null && <p className="text-sm text-slate-500">Loading…</p>}
-        {tenantId && approvals?.length === 0 && <p className="text-sm text-slate-500">No pending approvals.</p>}
+        {tenantId && approvals === null && <p className="text-sm text-sx-text-subtle">Loading…</p>}
+        {tenantId && approvals?.length === 0 && <p className="text-sm text-sx-text-subtle">No pending approvals.</p>}
         {approvals && approvals.length > 0 && (
-          <ul className="flex flex-col gap-2">
+          <div className="flex flex-col gap-2">
             {approvals.map((a) => (
-              <li key={a.id} className="flex flex-col gap-2 rounded-lg border border-slate-800 bg-slate-900/40 p-4 sm:flex-row sm:items-center sm:justify-between">
+              <Card key={a.id} className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <p className="font-medium text-slate-200">{a.kind}</p>
-                  <p className="max-w-md truncate text-xs text-slate-500">{JSON.stringify(a.subject)}</p>
+                  <p className="font-medium text-sx-text">{a.kind}</p>
+                  <p className="max-w-md truncate text-xs text-sx-text-subtle">{JSON.stringify(a.subject)}</p>
                 </div>
                 <div className="flex gap-2">
-                  <button
-                    onClick={() => decide(a.id, "APPROVED")}
-                    disabled={decidingId === a.id}
-                    className="rounded-md bg-emerald-500/20 px-3 py-1.5 text-xs font-medium text-emerald-300 hover:bg-emerald-500/30 disabled:opacity-50"
-                  >
-                    Approve
-                  </button>
-                  <button
-                    onClick={() => decide(a.id, "REJECTED")}
-                    disabled={decidingId === a.id}
-                    className="rounded-md bg-rose-500/20 px-3 py-1.5 text-xs font-medium text-rose-300 hover:bg-rose-500/30 disabled:opacity-50"
-                  >
+                  <Button variant="secondary" size="sm" onClick={() => decide(a.id, "REJECTED")} disabled={decidingId === a.id}>
                     Reject
-                  </button>
+                  </Button>
+                  <Button variant="primary" size="sm" onClick={() => decide(a.id, "APPROVED")} disabled={decidingId === a.id}>
+                    Approve
+                  </Button>
                 </div>
-              </li>
+              </Card>
             ))}
-          </ul>
+          </div>
         )}
       </section>
     </div>

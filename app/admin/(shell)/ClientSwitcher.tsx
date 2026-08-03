@@ -19,7 +19,7 @@ export function ClientSwitcher() {
   }, [open]);
 
   if (tenants.length === 0) {
-    return <span className="text-xs text-slate-500">No clients yet</span>;
+    return <span className="text-xs text-sx-text-subtle">No clients yet</span>;
   }
 
   return (
@@ -30,21 +30,21 @@ export function ClientSwitcher() {
         aria-haspopup="listbox"
         aria-expanded={open}
         disabled={switching}
-        className="flex h-11 min-w-0 items-center gap-2 rounded-lg border border-slate-700 bg-slate-900 px-3 text-sm text-slate-100 hover:border-slate-500 disabled:opacity-60"
+        className="flex min-h-11 min-w-0 items-center gap-2 rounded-sx-sm border border-sx-border-strong bg-sx-surface-2 px-2.5 text-[13px] text-sx-text hover:border-sx-border-strong disabled:opacity-60"
       >
-        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-sky-500/20 text-[11px] font-semibold text-sky-300">
+        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-[6px] bg-sx-accent-muted text-[10px] font-semibold text-sx-accent-hover">
           {active ? active.name.slice(0, 1).toUpperCase() : "?"}
         </span>
         <span className="min-w-0 max-w-[10rem] truncate font-medium">
           {switching ? "Switching…" : active ? active.name : "Select a client"}
         </span>
-        <span aria-hidden className="text-slate-500">▾</span>
+        <span aria-hidden className="text-sx-text-subtle">▾</span>
       </button>
 
       {open && (
         <div
           role="listbox"
-          className="absolute left-0 z-40 mt-1 max-h-80 w-64 overflow-y-auto rounded-lg border border-slate-700 bg-slate-900 py-1 shadow-2xl"
+          className="absolute left-0 z-40 mt-1 max-h-80 w-64 overflow-y-auto rounded-sx-md border border-sx-border-strong bg-sx-elevated py-1 shadow-[var(--sx-shadow-lg)]"
         >
           {tenants.map((t) => (
             <button
@@ -55,22 +55,22 @@ export function ClientSwitcher() {
                 setOpen(false);
                 if (t.tenantId !== active?.tenantId) void switchTenant(t.tenantId);
               }}
-              className={`flex w-full min-h-11 items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-slate-800 ${
-                active?.tenantId === t.tenantId ? "bg-slate-800/70 text-slate-100" : "text-slate-300"
+              className={`flex w-full min-h-11 items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-sx-surface-2 ${
+                active?.tenantId === t.tenantId ? "bg-sx-surface-2 text-sx-text" : "text-sx-text-muted"
               }`}
             >
               <span className="min-w-0 truncate">
                 <span className="block truncate font-medium">{t.name}</span>
-                <span className="block truncate text-xs text-slate-500">{t.slug} · {t.role}</span>
+                <span className="block truncate text-xs text-sx-text-subtle">{t.slug} · {t.role}</span>
               </span>
-              {active?.tenantId === t.tenantId && <span aria-hidden className="shrink-0 text-sky-400">✓</span>}
+              {active?.tenantId === t.tenantId && <span aria-hidden className="shrink-0 text-sx-accent">✓</span>}
             </button>
           ))}
-          <div className="mt-1 border-t border-slate-800 pt-1">
+          <div className="mt-1 border-t border-sx-border pt-1">
             <Link
               href="/admin/platform/tenants"
               onClick={() => setOpen(false)}
-              className="flex min-h-11 items-center px-3 py-2 text-sm text-sky-300 hover:bg-slate-800"
+              className="flex min-h-11 items-center px-3 py-2 text-sm text-sx-accent hover:bg-sx-surface-2"
             >
               + Create new client
             </Link>

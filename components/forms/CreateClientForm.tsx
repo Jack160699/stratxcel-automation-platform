@@ -1,6 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import { Button } from "@/components/ui/Button";
+import { Field, Input, Textarea } from "@/components/ui/Input";
+import { ErrorState } from "@/components/ui/Feedback";
 
 function slugify(input: string): string {
   return input
@@ -81,19 +84,11 @@ export function CreateClientForm({
 
   return (
     <form onSubmit={handleSubmit} className={`flex flex-col gap-3 ${compact ? "" : "max-w-md"}`}>
-      <label className="flex flex-col gap-1 text-sm text-slate-400">
-        Client / business name
-        <input
-          value={name}
-          onChange={(e) => handleNameChange(e.target.value)}
-          required
-          placeholder="Acme Retail"
-          className="min-h-11 rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100"
-        />
-      </label>
-      <label className="flex flex-col gap-1 text-sm text-slate-400">
-        Slug
-        <input
+      <Field label="Client / business name">
+        <Input value={name} onChange={(e) => handleNameChange(e.target.value)} required placeholder="Acme Retail" />
+      </Field>
+      <Field label="Slug">
+        <Input
           value={slug}
           onChange={(e) => {
             setSlugTouched(true);
@@ -102,33 +97,22 @@ export function CreateClientForm({
           required
           pattern="[a-z0-9-]+"
           placeholder="acme-retail"
-          className="min-h-11 rounded-md border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-slate-100"
+          className="font-sx-mono"
         />
-        <span className="text-xs text-slate-500">Generated from the name — edit if you&apos;d like a different one.</span>
-      </label>
-      <label className="flex flex-col gap-1 text-sm text-slate-400">
-        Description <span className="text-slate-600">(optional)</span>
-        <textarea
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          rows={2}
-          placeholder="What this client does, key context…"
-          className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100"
-        />
-        <span className="text-xs text-slate-600">
+        <span className="text-xs text-sx-text-subtle">Generated from the name — edit if you&apos;d like a different one.</span>
+      </Field>
+      <Field label="Description (optional)">
+        <Textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} placeholder="What this client does, key context…" />
+        <span className="text-xs text-sx-text-subtle">
           Not saved yet — full client profiles land in a later phase. This stays local to the form for now.
         </span>
-      </label>
+      </Field>
 
-      {error && <p className="text-sm text-rose-300">{error}</p>}
+      {error && <ErrorState message={error} />}
 
-      <button
-        type="submit"
-        disabled={submitting}
-        className="min-h-11 rounded-md bg-sky-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-sky-400 disabled:opacity-50"
-      >
+      <Button type="submit" variant="primary" disabled={submitting} className="w-full">
         {submitting ? "Creating…" : "Create client"}
-      </button>
+      </Button>
     </form>
   );
 }

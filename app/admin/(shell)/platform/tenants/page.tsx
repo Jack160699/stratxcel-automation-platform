@@ -3,7 +3,10 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useCurrentTenant } from "../../CurrentTenantContext";
-import { CreateClientForm } from "../../CreateClientForm";
+import { CreateClientForm } from "@/components/forms/CreateClientForm";
+import { Card, CardHeading } from "@/components/ui/Card";
+import { Button } from "@/components/ui/Button";
+import { ErrorState } from "@/components/ui/Feedback";
 
 interface Membership {
   tenant_id: string;
@@ -43,48 +46,44 @@ export default function TenantsPage() {
   return (
     <div className="flex flex-col gap-6">
       <header>
-        <h1 className="text-xl font-semibold text-slate-100">Clients</h1>
-        <p className="mt-1 text-sm text-slate-400">Every client (tenant) you belong to, and where to add another.</p>
+        <h1 className="font-sx-sans text-xl font-semibold text-sx-text">Clients</h1>
+        <p className="mt-1 text-sm text-sx-text-muted">Every client (tenant) you belong to, and where to add another.</p>
       </header>
 
-      <section className="flex flex-col gap-3 rounded-lg border border-slate-800 bg-slate-900/40 p-4">
-        <h2 className="text-base font-medium text-slate-200">Create a client</h2>
+      <Card>
+        <CardHeading>Create a client</CardHeading>
         <CreateClientForm onCreated={handleCreated} compact />
-        {error && <p className="text-sm text-rose-300">{error}</p>}
-      </section>
+        {error && <ErrorState message={error} />}
+      </Card>
 
       <section className="flex flex-col gap-3">
-        <h2 className="text-base font-medium text-slate-200">Your clients</h2>
-        {memberships === null && <p className="text-sm text-slate-500">Loading…</p>}
-        {memberships?.length === 0 && <p className="text-sm text-slate-500">No clients yet — create one above.</p>}
+        <h2 className="font-sx-sans text-base font-medium text-sx-text">Your clients</h2>
+        {memberships === null && <p className="text-sm text-sx-text-subtle">Loading…</p>}
+        {memberships?.length === 0 && <p className="text-sm text-sx-text-subtle">No clients yet — create one above.</p>}
         {memberships && memberships.length > 0 && (
-          <ul className="flex flex-col gap-2">
+          <div className="flex flex-col gap-2">
             {memberships.map((m) => {
               const isActive = active?.tenantId === m.tenant_id;
               return (
-                <li
-                  key={m.tenant_id}
-                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-800 bg-slate-900/40 p-3"
-                >
+                <Card key={m.tenant_id} variant="nested" className="flex flex-wrap items-center justify-between gap-2">
                   <div>
-                    <p className="font-medium text-slate-200">{m.tenant.name}</p>
-                    <p className="text-xs text-slate-500">
+                    <p className="font-medium text-sx-text">{m.tenant.name}</p>
+                    <p className="text-xs text-sx-text-subtle">
                       {m.tenant.slug} · role: {m.role}
                     </p>
                   </div>
-                  <button
+                  <Button
+                    variant={isActive ? "secondary" : "primary"}
+                    size="sm"
                     onClick={() => switchTenant(m.tenant_id)}
                     disabled={isActive}
-                    className={`min-h-11 rounded-md px-3 py-1.5 text-xs font-medium ${
-                      isActive ? "bg-emerald-400/20 text-emerald-300" : "bg-slate-800 text-slate-300 hover:bg-slate-700"
-                    }`}
                   >
                     {isActive ? "Active" : "Use this client"}
-                  </button>
-                </li>
+                  </Button>
+                </Card>
               );
             })}
-          </ul>
+          </div>
         )}
       </section>
     </div>
