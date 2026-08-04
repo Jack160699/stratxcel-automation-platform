@@ -41,6 +41,7 @@ const SIDEBAR_GROUPS: SidebarNavGroup[] = [
       { key: "website", label: "Website & SEO", href: "/app/website", icon: <GlobeIcon /> },
       { key: "ads", label: "Ads", href: "/app/ads", icon: <TargetIcon /> },
       { key: "crm", label: "CRM & Leads", href: "/app/crm", icon: <PeopleIcon /> },
+      { key: "conversations", label: "Conversations", href: "/app/conversations", icon: <ChatIcon /> },
     ],
   },
   {
@@ -169,6 +170,13 @@ function TargetIcon() {
       <circle cx="9" cy="9" r="6.5" />
       <circle cx="9" cy="9" r="3" />
       <circle cx="9" cy="9" r="0.6" fill="currentColor" />
+    </svg>
+  );
+}
+function ChatIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.4">
+      <path d="M2.5 4.5a1 1 0 011-1h9a1 1 0 011 1v6a1 1 0 01-1 1H7l-3 3v-3H3.5a1 1 0 01-1-1v-6Z" />
     </svg>
   );
 }
