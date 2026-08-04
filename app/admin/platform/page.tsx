@@ -64,7 +64,7 @@ export default async function PlatformOverviewPage() {
     {
       name: "Razorpay",
       status: modeToStatus(process.env.RAZORPAY_INTEGRATION_MODE, true),
-      detail: "Payment state machine + idempotent webhooks built. Live webhook route not yet confirmed with the dashboard.",
+      detail: "Live Payment Links, state machine, webhook route (/api/webhook/razorpay), & refunds built.",
     },
     {
       name: "Hermes",

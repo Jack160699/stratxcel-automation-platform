@@ -1,3 +1,41 @@
+export type PaymentLinkStatus = "created" | "paid" | "partially_paid" | "expired" | "cancelled";
+
+export interface PaymentLinkRow {
+  id: string;
+  tenant_id: string;
+  provider: string;
+  provider_link_id: string | null;
+  reference_id: string;
+  amount_cents: number;
+  currency: string;
+  status: PaymentLinkStatus;
+  mode: "test" | "live";
+  short_url: string | null;
+  description: string | null;
+  customer_name: string | null;
+  customer_email: string | null;
+  customer_phone: string | null;
+  expire_by: string | null;
+  created_by: string | null;
+  provider_payment_id: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreatePaymentLinkInput {
+  tenantId: string;
+  amountCents: number;
+  currency?: string;
+  description?: string;
+  customerName?: string;
+  customerEmail?: string;
+  customerPhone?: string;
+  expireBy?: string | Date | null;
+  createdBy?: string | null;
+  referenceId?: string;
+}
+
 export interface CreateOrderResult {
   orderId: string;
   amountCents: number;
@@ -67,3 +105,4 @@ export interface PaymentRefundRow {
   created_at: string;
   processed_at: string | null;
 }
+

@@ -14,6 +14,7 @@ const NAV_ITEMS = [
   { href: "/admin/platform/tenants", label: "Tenants" },
   { href: "/admin/platform/missions", label: "Missions" },
   { href: "/admin/platform/approvals", label: "Approvals" },
+  { href: "/admin/platform/payments", label: "Payments" },
   { href: "/admin/platform/wallet", label: "Wallet" },
   { href: "/admin/platform/queue", label: "Queue" },
   { href: "/admin/platform/whatsapp", label: "WhatsApp" },
