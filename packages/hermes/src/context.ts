@@ -1,6 +1,7 @@
 import { getCurrentBrandBrain, getBrandBrainVersion, type ServiceClient as BrandBrainClient } from "@stratxcel/brand-brain";
 import { getServiceCatalogueEntry, type MissionRow } from "@stratxcel/missions";
 import { missionToContextInput, type MissionScopedContext, type ToolName } from "./types.ts";
+import { assertNoForbiddenCredentials } from "./credential-boundary.ts";
 
 const DEFAULT_TOOL_ALLOWLIST: ToolName[] = [
   "get_brand_context",
@@ -39,11 +40,19 @@ export async function compileMissionContext(
     brandBrain = current?.content ?? null;
   }
 
-  return {
+  const compiled: MissionScopedContext = {
     ...base,
     brandBrain,
     allowedTools: DEFAULT_TOOL_ALLOWLIST,
   };
+
+  // Defense-in-depth: this context is about to be handed to Hermes. Brand
+  // Brain content is tenant-authored free text, not a system-generated
+  // object, so it's the one part of this bundle worth scanning before it
+  // leaves Stratxcel's boundary.
+  assertNoForbiddenCredentials(compiled.brandBrain, "$.brandBrain");
+
+  return compiled;
 }
 
 export function getServiceDefinitionForContext(serviceKey: string | null) {

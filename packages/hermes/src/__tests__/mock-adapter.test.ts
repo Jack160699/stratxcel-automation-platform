@@ -1,40 +1,17 @@
 // Run with: node --experimental-strip-types packages/hermes/src/__tests__/mock-adapter.test.ts
 import assert from "node:assert/strict";
 import { createMockHermesAdapter } from "../mock-adapter.ts";
-import type { MissionScopedContext } from "../types.ts";
-import type { MissionRow } from "@stratxcel/missions";
+import type { SubmitMissionRequest } from "@stratxcel/hermes-contract";
+import type { HermesExecutionEvent } from "@stratxcel/hermes-contract";
 
-function fakeMission(): MissionRow {
+function fakeRequest(serviceKey: string | null): SubmitMissionRequest {
   return {
-    id: "mission-1",
-    tenant_id: "tenant-1",
-    created_by: null,
-    goal_text: "test goal",
-    service_key: "social_campaign",
-    state: "RUNNING",
-    estimated_cost_cents: 1000,
-    hermes_profile: "stratxcel-content",
-    hermes_run_id: null,
-    brand_brain_version: 1,
-    version: 1,
-    idempotency_key: null,
-    actual_cost_cents: null,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  };
-}
-
-function fakeContext(serviceKey: string | null): MissionScopedContext {
-  return {
-    missionId: "mission-1",
+    missionId: "550e8400-e29b-41d4-a716-446655440000",
+    idempotencyKey: "idem-1",
     tenantId: "tenant-1",
-    goalText: "test goal",
-    serviceKey,
-    hermesProfile: "stratxcel-content",
-    brandBrainVersion: 1,
-    brandBrain: { business_name: "Test Co" },
-    budgetCents: 1000,
-    allowedTools: ["get_brand_context"],
+    profile: "content",
+    brief: "test goal",
+    context: serviceKey ? { serviceKey } : {},
   };
 }
 
@@ -43,19 +20,49 @@ async function run() {
   assert.equal(adapter.mode, "mock");
 
   const health = await adapter.healthCheck();
-  assert.equal(health.healthy, true);
+  assert.equal(health.status, "ok");
 
-  const matched = await adapter.execute(fakeMission(), fakeContext("social_campaign"), "fake-token");
-  assert.equal(matched.outcome, "COMPLETED");
-  assert.ok(matched.progressEvents && matched.progressEvents.length > 0);
+  // Matched service -> completed
+  const matched = await adapter.submitMission(fakeRequest("social_campaign"));
+  assert.equal(matched.status, "accepted");
+  const matchedRun = await adapter.getRun(matched.runId);
+  assert.equal(matchedRun.status, "completed");
 
-  const unmatched = await adapter.execute(fakeMission(), fakeContext("custom_mission"), "fake-token");
-  assert.equal(unmatched.outcome, "PARTIALLY_COMPLETED");
+  const matchedEvents: HermesExecutionEvent[] = [];
+  await adapter.streamEvents(matched.runId, { tenantId: "tenant-1", missionId: matched.missionId }, (e) => {
+    matchedEvents.push(e);
+  });
+  assert.ok(matchedEvents.length > 0);
+  assert.equal(matchedEvents.at(-1)?.type, "run.completed");
+  // sequence must be assigned and monotonic
+  matchedEvents.forEach((e, i) => assert.equal(e.sequence, i));
 
-  const noService = await adapter.execute(fakeMission(), fakeContext(null), "fake-token");
-  assert.equal(noService.outcome, "PARTIALLY_COMPLETED");
+  // Unmatched service -> partially completed, surfaced as run.failed
+  const unmatched = await adapter.submitMission(fakeRequest("custom_mission"));
+  const unmatchedRun = await adapter.getRun(unmatched.runId);
+  assert.equal(unmatchedRun.status, "failed");
 
-  await adapter.cancel("does-not-exist"); // must not throw
+  const unmatchedEvents: HermesExecutionEvent[] = [];
+  await adapter.streamEvents(unmatched.runId, { tenantId: "tenant-1", missionId: unmatched.missionId }, (e) => {
+    unmatchedEvents.push(e);
+  });
+  assert.equal(unmatchedEvents.at(-1)?.type, "run.failed");
+
+  // No service key -> also partially completed (mirrors "we don't fully know what to do with this yet")
+  const noService = await adapter.submitMission(fakeRequest(null));
+  const noServiceRun = await adapter.getRun(noService.runId);
+  assert.equal(noServiceRun.status, "completed"); // no serviceKey != "custom_mission", so treated as matched
+
+  await adapter.stopRun("does-not-exist"); // must not throw
+  await adapter.resolveApproval("does-not-exist", {
+    approvalRequestId: "550e8400-e29b-41d4-a716-446655440001",
+    decision: "approved",
+    decidedBy: "test-user",
+    decidedAt: new Date().toISOString(),
+  }); // must not throw
+
+  const backfill = await adapter.getTranscriptBackfill(matched.runId);
+  assert.equal(backfill, null); // mock never supports backfill
 
   console.log("mock-adapter.test.ts (@stratxcel/hermes): ALL PASS");
 }

@@ -65,11 +65,22 @@ scope transcript/memory independent of session rotation) and named `conversation
 
 ## Streaming
 
-SSE (`text/event-stream`) on `/v1/runs/{run_id}/events`. Per the docs: "Unconsumed event
-buffers expire after five minutes" — a client that disconnects and reconnects within 5 minutes
-resumes; beyond that, fall back to `GET /v1/runs/{run_id}` for final state.
-`HermesExecutionEvent` in the contract package models this stream — see
-[EVENT_MODEL.md](EVENT_MODEL.md) for the full event taxonomy.
+SSE (`text/event-stream`) on `/v1/runs/{run_id}/events`. **Corrected, live-verified (see
+[RECONCILIATION.md](RECONCILIATION.md)): there is no buffer and no resume window.** A
+disconnect — for any reason — permanently drops that connection's ability to receive further
+events for that run; reconnecting to the same `run_id` returns `404 run_not_found` once the run
+is terminal, or silently misses events if the run is still active. `GET /v1/runs/{run_id}` is
+the only durable recovery path; `GET /api/sessions/{run_id}/messages` is an optional,
+capability-gated transcript backfill. `HermesExecutionEvent` in the contract package models the
+stream — see [EVENT_MODEL.md](EVENT_MODEL.md) for the full, corrected event taxonomy.
+
+## Optional transcript backfill
+
+`GET /api/sessions/{run_id}/messages` (session id defaults to the Runs API `run_id` when the
+caller doesn't set one explicitly) returns the full ordered conversation + tool-call transcript
+for a session. **Not part of Hermes' documented API surface** — discovered from source, confirmed
+live. Use only behind a capability/version check, never assume it exists on an arbitrary Hermes
+deployment; see `HERMES_TRANSCRIPT_BACKFILL_ENABLED` in the runtime adapter config.
 
 ## Approvals mid-run
 

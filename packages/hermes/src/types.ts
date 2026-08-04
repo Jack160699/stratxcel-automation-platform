@@ -1,6 +1,15 @@
 import type { BrandBrainContent } from "@stratxcel/brand-brain";
 import type { MissionRow } from "@stratxcel/missions";
 
+/**
+ * @deprecated Shaped around the old single-call execute() adapter, which the
+ * real Hermes Runs API doesn't support (submit-then-stream, not
+ * submit-and-block-until-done). Superseded by
+ * `@stratxcel/hermes-contract`'s `MissionOutcome`/`HermesExecutionEvent` —
+ * see docs/hermes/RECONCILIATION.md. Kept for one release as a deprecated
+ * alias so a stray importer doesn't get a silent break; remove once
+ * confirmed unused.
+ */
 export type HermesOutcome =
   | "COMPLETED"
   | "PARTIALLY_COMPLETED"
@@ -10,12 +19,14 @@ export type HermesOutcome =
   | "HUMAN_HANDOFF"
   | "BLOCKED";
 
+/** @deprecated See HermesOutcome. */
 export interface HermesProgressEvent {
   atIso: string;
   message: string;
   data?: Record<string, unknown>;
 }
 
+/** @deprecated See HermesOutcome. */
 export interface HermesExecutionResult {
   outcome: HermesOutcome;
   summary: string;

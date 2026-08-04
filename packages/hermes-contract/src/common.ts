@@ -29,11 +29,12 @@ export type RunId = z.infer<typeof RunId>;
 export const IdempotencyKey = z.string().min(1).max(255);
 export type IdempotencyKey = z.infer<typeof IdempotencyKey>;
 
-/** One of the nine Hermes profiles defined in docs/hermes/PROFILE_AND_TOOL_POLICY.md. */
+/** One of the ten Hermes profiles defined in docs/hermes/PROFILE_AND_TOOL_POLICY.md. */
 export const ProfileName = z.enum([
   "orchestrator",
   "research",
   "content",
+  "social",
   "seo",
   "website-development",
   "crm",

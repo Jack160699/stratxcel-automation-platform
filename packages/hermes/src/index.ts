@@ -1,5 +1,6 @@
 export * from "./types.ts";
 export * from "./adapter.ts";
+export * from "./config.ts";
 export * from "./disabled-adapter.ts";
 export * from "./mock-adapter.ts";
 export * from "./http-adapter.ts";
@@ -9,3 +10,6 @@ export * from "./token.ts";
 export * from "./context.ts";
 export * from "./budget.ts";
 export * from "./tools/contracts.ts";
+export * from "./event-normalization.ts";
+export * from "./profiles.ts";
+export * from "./credential-boundary.ts";

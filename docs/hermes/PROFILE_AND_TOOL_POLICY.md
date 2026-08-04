@@ -78,6 +78,31 @@ finalized against the version deployed (see MANUAL_REQUIREMENTS.md).
 - **Model requirement**: strong writing quality model; reasoning effort low/medium is
   sufficient, favor a model tuned for tone-following.
 
+### social
+- **Purpose**: drafts platform-specific social posts (captions, hooks, hashtag sets) for the
+  existing, live Social Autopilot pipeline — distinct from `content`'s longer-form
+  marketing/blog copy, though both are non-publishing draft profiles with the same approval
+  boundary. Added on `feat/hermes-runtime-adapter`; the foundation branch's original nine-profile
+  set folded this into `content`, which remains a valid reading — `social` exists as its own
+  profile because Stratxcel already has a dedicated, live social-content data model
+  (`lib/social/repositories/content.ts`) this profile writes into directly, with its own
+  platform-specific constraints (character limits, hashtag conventions) that don't apply to
+  `content`'s longer-form output.
+- **Allowed tools**: `web_search` (fact-checking/trend awareness), `memory` (read-only Brand
+  Brain voice/tone excerpts via Stratxcel context), `mcp_stratxcel_content_draft_save` (writes a
+  *draft* into the existing Social Autopilot content pipeline, status `pending_review`).
+- **Forbidden tools**: any `mcp_stratxcel_*_publish` tool, `terminal`, WhatsApp/Meta send tools,
+  direct access to any social platform API or token.
+- **Required context**: Brand Brain voice/tone rules, target platform + its constraints
+  (character/media limits), prior approved examples for that platform.
+- **Outputs**: draft post artifacts in `lib/social/repositories/content.ts`'s existing schema,
+  status `pending_review` — a human publishes via the existing Social Autopilot admin UI, exactly
+  as `content` already specifies; `social` does not introduce a second publish path.
+- **Approval boundary**: publishing is a separate, later, human-triggered action in the existing
+  Social Autopilot UI — this profile never calls a publish tool itself, structurally.
+- **Model requirement**: strong writing quality, tuned for short-form/platform-native tone;
+  reasoning effort low is typically sufficient.
+
 ### seo
 - **Purpose**: technical SEO audits, on-page recommendations, structured reports.
 - **Allowed tools**: `web_search`, `web_extract`, `browser_navigate`, `browser_snapshot`,
@@ -167,7 +192,8 @@ finalized against the version deployed (see MANUAL_REQUIREMENTS.md).
 `origin/main` already stores a `hermes_profile` string on each mission (assigned by
 `packages/missions/src/service-catalogue/catalogue.ts`), using the master brief's six-value set:
 `stratxcel-orchestrator`, `stratxcel-research`, `stratxcel-content`, `stratxcel-developer`,
-`stratxcel-seo`, `stratxcel-admin-growth`. This document's nine profiles are the **Hermes-native**
+`stratxcel-seo`, `stratxcel-admin-growth`. This document's ten profiles (nine from the foundation
+branch plus `social`, added on `feat/hermes-runtime-adapter`) are the **Hermes-native**
 profile set (what `hermes --profile <name>` actually runs); the mapping from the existing,
 coarser StratExcel-side label to a Hermes-native profile is a lookup a future integration layer
 owns, not a redesign of the existing field:
@@ -176,7 +202,7 @@ owns, not a redesign of the existing field:
 |---|---|
 | `stratxcel-orchestrator` | `orchestrator` |
 | `stratxcel-research` | `research` |
-| `stratxcel-content` | `content`, `media` |
+| `stratxcel-content` | `content`, `social`, `media` |
 | `stratxcel-developer` | `website-development` |
 | `stratxcel-seo` | `seo` |
 | `stratxcel-admin-growth` | `crm`, `proposal`, `operations` |

@@ -38,9 +38,28 @@ Only what Hermes itself needs to function:
 - The Stratxcel MCP server's own connection secret (a distinct, narrowly-scoped credential —
   not a Stratxcel admin credential)
 
-Never: Supabase service-role key, Vercel deploy tokens, Meta/WhatsApp tokens, Razorpay keys.
+Never: Supabase service-role key, Vercel deploy tokens, GitHub owner-scoped tokens, Meta/WhatsApp
+tokens, Razorpay secrets, production SSH keys, the local Docker socket.
 `infra/hermes/.env.example` lists names only, values never committed, per the task's explicit
 constraint.
+
+## Runtime enforcement (`feat/hermes-runtime-adapter`)
+
+The seven forbidden credential kinds above are now a typed, checkable list —
+`packages/hermes/src/credential-boundary.ts`'s `FORBIDDEN_CREDENTIAL_KINDS` — backed by a real
+scanner (`assertNoForbiddenCredentials`) rather than only documented convention. It's wired at
+both boundary crossings that exist in code today:
+
+- **Outbound** (`packages/hermes/src/context.ts`'s `compileMissionContext`): scans the tenant's
+  Brand Brain content — the one part of the mission context bundle that is free-form,
+  tenant-authored text rather than a system-generated shape — before it's handed to Hermes.
+- **Inbound** (`apps/hermes-gateway/src/tool-handlers.ts`'s `invokeTool`): scans a tool call's
+  input before dispatch and its result before it's returned to Hermes.
+
+This is defense-in-depth on top of, not instead of, the real control: none of these values are
+ever constructed as part of a mission context or tool result in the first place. A thrown
+`ForbiddenCredentialError` means something upstream put a credential-shaped value somewhere it
+should never have reached — a bug to fix at the source, not a check to route around.
 
 ## Layered controls Hermes already provides (adopted, not reinvented)
 

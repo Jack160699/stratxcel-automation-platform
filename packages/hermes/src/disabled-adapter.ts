@@ -1,5 +1,5 @@
-import type { HermesRuntimeAdapter } from "./adapter.ts";
-import type { HermesExecutionResult } from "./types.ts";
+import { RunStatusResponse, RuntimeHealth, type SubmitMissionResponse } from "@stratxcel/hermes-contract";
+import type { AgentRuntimeAdapter } from "./adapter.ts";
 
 export class HermesNotIntegratedError extends Error {
   constructor() {
@@ -9,23 +9,48 @@ export class HermesNotIntegratedError extends Error {
 }
 
 /**
- * The safe default: every mission it "executes" moves to BLOCKED with a
- * clear reason rather than hanging or silently completing. This is what
- * mission-worker uses whenever HERMES_MODE is unset, missing, or anything
- * other than 'mock'/'http' — a typo in the env var fails toward "nothing
- * runs" rather than toward an unintended live call.
+ * The safe default: every call fails loudly and immediately rather than
+ * hanging or silently pretending to work. This is what mission-worker uses
+ * whenever HERMES_MODE is unset, missing, or anything other than
+ * 'mock'/'http' — a typo in the env var fails toward "nothing runs" rather
+ * than toward an unintended live call.
  */
-export function createDisabledHermesAdapter(): HermesRuntimeAdapter {
+export function createDisabledHermesAdapter(): AgentRuntimeAdapter {
+  const fail = (): never => {
+    throw new HermesNotIntegratedError();
+  };
   return {
     mode: "disabled",
-    async execute(): Promise<HermesExecutionResult> {
-      return { outcome: "BLOCKED", summary: new HermesNotIntegratedError().message };
+    async submitMission(): Promise<SubmitMissionResponse> {
+      return fail();
     },
-    async cancel(): Promise<void> {
-      // Nothing is ever running under the disabled adapter.
+    async getRun(): Promise<RunStatusResponse> {
+      return fail();
+    },
+    async streamEvents(): Promise<void> {
+      return fail();
+    },
+    async stopRun(): Promise<void> {
+      return fail();
+    },
+    async resolveApproval(): Promise<void> {
+      return fail();
+    },
+    async getCapabilities() {
+      return fail();
+    },
+    async getModels() {
+      return fail();
+    },
+    async getTranscriptBackfill() {
+      return null;
     },
     async healthCheck() {
-      return { healthy: false, mode: "disabled", details: "Hermes integration is disabled" };
+      return RuntimeHealth.parse({
+        status: "down",
+        checkedAt: new Date().toISOString(),
+        details: "Hermes integration is disabled",
+      });
     },
   };
 }

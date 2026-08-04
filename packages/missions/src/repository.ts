@@ -34,6 +34,83 @@ export async function appendMissionEvent(
 }
 
 /**
+ * Same as appendMissionEvent but for Hermes-sourced events: carries
+ * run_id/sequence and is safe to call twice for the same
+ * (missionId, runId, sequence, eventType) — a duplicate insert is silently
+ * dropped rather than erroring, per
+ * mission_events_hermes_dedup_idx in 20260804090000_hermes_run_tracking.sql.
+ * This is what makes SSE-disconnect-then-poll-then-maybe-reconnect
+ * reconciliation safe to retry: the worker can re-process the same
+ * HermesExecutionEvent without producing a duplicate mission_events row.
+ */
+export async function appendMissionEventIdempotent(
+  supabase: ServiceClient,
+  input: { missionId: string; runId: string; sequence: number; eventType: string; payload: Record<string, unknown> }
+): Promise<MissionEventRow | null> {
+  const { data, error } = await supabase
+    .from("mission_events")
+    .upsert(
+      {
+        mission_id: input.missionId,
+        run_id: input.runId,
+        sequence: input.sequence,
+        event_type: input.eventType,
+        payload: input.payload,
+      },
+      { onConflict: "mission_id,run_id,sequence,event_type", ignoreDuplicates: true }
+    )
+    .select("*");
+  if (error) throw new Error(`appendMissionEventIdempotent: ${error.message}`);
+  return (data?.[0] as MissionEventRow | undefined) ?? null;
+}
+
+/** Persists the Hermes run ID the instant submitMission() accepts it — before any event has been consumed — so a worker crash after submit still knows which run to reconcile against on retry instead of submitting a second run. */
+export async function recordHermesRunSubmitted(
+  supabase: ServiceClient,
+  input: { missionId: string; runId: string }
+): Promise<MissionRow> {
+  const { data, error } = await supabase
+    .from("missions")
+    .update({ hermes_run_id: input.runId, last_hermes_status: "queued", updated_at: new Date().toISOString() })
+    .eq("id", input.missionId)
+    .select("*")
+    .single();
+  if (error) throw new Error(`recordHermesRunSubmitted: ${error.message}`);
+  return data as MissionRow;
+}
+
+/** Records the latest known run status/last-event timestamp without touching the mission's state machine — call this on every observed event/poll so a reload shows fresh status even mid-run. */
+export async function recordMissionHeartbeat(
+  supabase: ServiceClient,
+  input: { missionId: string; hermesStatus: string; lastEventAt?: string }
+): Promise<void> {
+  const { error } = await supabase
+    .from("missions")
+    .update({
+      last_hermes_status: input.hermesStatus,
+      last_event_at: input.lastEventAt ?? new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", input.missionId);
+  if (error) throw new Error(`recordMissionHeartbeat: ${error.message}`);
+}
+
+/** Captures final token usage/cost once a run reaches a terminal status — separate from setMissionState's version-checked update since usage is informational, not state. */
+export async function recordMissionUsage(
+  supabase: ServiceClient,
+  input: { missionId: string; inputTokens?: number; outputTokens?: number; totalTokens?: number; actualCostCents?: number }
+): Promise<void> {
+  const update: Record<string, unknown> = { updated_at: new Date().toISOString() };
+  if (input.inputTokens !== undefined) update.input_tokens = input.inputTokens;
+  if (input.outputTokens !== undefined) update.output_tokens = input.outputTokens;
+  if (input.totalTokens !== undefined) update.total_tokens = input.totalTokens;
+  if (input.actualCostCents !== undefined) update.actual_cost_cents = input.actualCostCents;
+
+  const { error } = await supabase.from("missions").update(update).eq("id", input.missionId);
+  if (error) throw new Error(`recordMissionUsage: ${error.message}`);
+}
+
+/**
  * Every state write is optimistic-concurrency-checked (`.eq("version", ...)`)
  * — two concurrent callers reading the same mission and both trying to
  * transition it (e.g. a human clicking "cancel" the instant the worker

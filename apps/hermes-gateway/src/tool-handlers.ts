@@ -5,7 +5,7 @@ import { createServiceClient as createHandoffClient, createHumanHandoff } from "
 import { createServiceClient as createCrmClient, createLead } from "@stratxcel/leads-and-crm";
 import { recordAuditEvent, createServiceClient as createAuditClient } from "@stratxcel/audit";
 import type { ToolName } from "@stratxcel/hermes";
-import { STRATXCEL_CONTROLLED_TOOLS } from "@stratxcel/hermes";
+import { STRATXCEL_CONTROLLED_TOOLS, assertNoForbiddenCredentials } from "@stratxcel/hermes";
 
 export interface ToolCallContext {
   missionId: string;
@@ -139,7 +139,12 @@ export async function invokeTool(tool: ToolName, ctx: ToolCallContext, input: Re
   const handler = TOOL_HANDLERS[tool];
   if (!handler) throw new ToolNotAvailableError(tool);
 
+  // Defense-in-depth in both directions: Hermes' tool call input shouldn't
+  // carry a credential-shaped value either (it has no legitimate reason
+  // to), and a handler's own result must never leak one back out.
+  assertNoForbiddenCredentials(input, `$.tools.${tool}.input`);
   const result = await handler(ctx, input);
+  assertNoForbiddenCredentials(result, `$.tools.${tool}.output`);
 
   const auditClient = createAuditClient();
   await recordAuditEvent(auditClient, {

@@ -32,8 +32,9 @@ checked against source (`github.com/NousResearch/hermes-agent`, whatever commit 
 implementation time) or a live `/v1/capabilities` response before the integration layer is
 built:
 
-1. **Exact SSE event name for "run paused, awaiting approval"** on the Runs API — referenced as
-   an open item in [API_CONTRACT.md](API_CONTRACT.md) and [EVENT_MODEL.md](EVENT_MODEL.md).
+1. ~~**Exact SSE event name for "run paused, awaiting approval"**~~ — **RESOLVED** on
+   `feat/hermes-runtime-adapter`, live-verified: `approval.request`, run status
+   `waiting_for_approval`. See [RECONCILIATION.md](RECONCILIATION.md).
 2. **Exact outbound-webhook signature header names** — the fetched page described the *inbound*
    webhook signature scheme in detail (`X-Webhook-Signature-V2` + `X-Webhook-Timestamp`,
    HMAC-SHA256) and stated outbound uses "the same HMAC family" without confirming outbound
@@ -41,9 +42,9 @@ built:
 3. **Exact config keys for per-profile MCP tool include/exclude glob lists** and
    `agent.disabled_toolsets` — described in prose in the fetched pages; confirm exact YAML
    shape against a running Hermes instance's `config check`/`config migrate` output.
-4. **`UsageAndCost` shape returned by the Runs API specifically** (as opposed to the confirmed
-   `/v1/chat/completions` and `/v1/responses` `usage` objects) — not directly shown in the
-   pages fetched.
+4. ~~**`UsageAndCost` shape returned by the Runs API specifically**~~ — **RESOLVED** on
+   `feat/hermes-runtime-adapter`, live-verified: `{ input_tokens, output_tokens, total_tokens }`
+   on the terminal `GET /v1/runs/{run_id}` response. See [RECONCILIATION.md](RECONCILIATION.md).
 5. **Whether `session_search` can be scoped strictly by `X-Hermes-Session-Key`** at the
    implementation level, or only by session/profile more loosely — required to be confirmed
    before enabling `session_search` for any profile, per the hard invariant in

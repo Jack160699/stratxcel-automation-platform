@@ -18,9 +18,10 @@ request retried after a network blip" safe without relying on Hermes.
   value TBD per plan tier — see [MANUAL_REQUIREMENTS.md](MANUAL_REQUIREMENTS.md)), independent
   of Hermes' `agent.max_turns` (documented default 500) iteration budget, because a mission
   could be within its turn budget while still running unacceptably long in wall-clock terms.
-- **SSE reconnect window**: 5 minutes (Hermes' documented unconsumed-event-buffer expiry) — a
-  disconnect longer than that requires falling back to `GET /v1/runs/{run_id}` for
-  reconciliation rather than assuming the stream can be resumed from where it left off.
+- **SSE reconnect window**: none. **Corrected, live-verified** (see
+  [RECONCILIATION.md](RECONCILIATION.md)) — any disconnect, immediately, requires falling back
+  to `GET /v1/runs/{run_id}` for reconciliation; there is no grace period during which the
+  stream can be resumed from where it left off.
 
 ## Retries
 
@@ -49,8 +50,10 @@ Hermes confirms via the next poll/event, rather than blocking the UI on Hermes' 
 
 1. **Reconnect only** — the mission is still running on Hermes; Stratxcel just lost its
    event stream and needs to re-subscribe / poll. No Hermes-side action needed beyond
-   `GET /v1/runs/{run_id}` and, if within the 5-minute window, re-opening
-   `GET /v1/runs/{run_id}/events`.
+   `GET /v1/runs/{run_id}` for current state; re-opening `GET /v1/runs/{run_id}/events` only
+   delivers *future* events from that point forward (there is no replay of what was missed —
+   see [EVENT_MODEL.md](EVENT_MODEL.md)), so treat it as resubscribing to a live tail, not
+   resuming a paused stream.
 2. **Resume after approval** — the mission is paused pending an `ApprovalDecision`; resume means
    `POST /v1/runs/{run_id}/approval` with the decision, per
    [APPROVAL_AND_HANDOFF.md](APPROVAL_AND_HANDOFF.md).
