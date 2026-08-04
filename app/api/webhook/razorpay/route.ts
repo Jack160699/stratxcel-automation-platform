@@ -1,10 +1,11 @@
 import { getTenantServiceContext } from "@/lib/tenants/tenant-context";
 import {
   verifyRazorpayWebhookSignature,
-  recordWebhookEventOnce,
+  claimRazorpayWebhookEvent,
   markWebhookEventProcessed,
   processRazorpayWebhookEvent,
   DuplicateWebhookEventError,
+  WebhookEventInProgressError,
 } from "@stratxcel/payments-and-wallet";
 
 export const runtime = "nodejs";
@@ -57,9 +58,9 @@ export async function POST(request: Request) {
 
     const { supabase } = getTenantServiceContext();
 
-    let eventRow;
+    let claim;
     try {
-      eventRow = await recordWebhookEventOnce(supabase, {
+      claim = await claimRazorpayWebhookEvent(supabase, {
         providerEventId,
         eventType,
         payload,
@@ -68,11 +69,14 @@ export async function POST(request: Request) {
       if (err instanceof DuplicateWebhookEventError) {
         return Response.json({ status: "already_processed", providerEventId }, { status: 200 });
       }
+      if (err instanceof WebhookEventInProgressError) {
+        return Response.json({ status: "in_progress", error: "Event currently being processed" }, { status: 429 });
+      }
       throw err;
     }
 
     const processResult = await processRazorpayWebhookEvent(supabase, { eventType, payload });
-    await markWebhookEventProcessed(supabase, eventRow.id);
+    await markWebhookEventProcessed(supabase, claim.eventRow.id, claim.token);
 
     return Response.json({
       success: true,
@@ -82,6 +86,9 @@ export async function POST(request: Request) {
   } catch (err) {
     if (err instanceof DuplicateWebhookEventError) {
       return Response.json({ status: "already_processed" }, { status: 200 });
+    }
+    if (err instanceof WebhookEventInProgressError) {
+      return Response.json({ status: "in_progress" }, { status: 429 });
     }
     return Response.json({ error: "Internal webhook processing error" }, { status: 500 });
   }

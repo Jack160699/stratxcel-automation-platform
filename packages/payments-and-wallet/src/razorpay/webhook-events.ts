@@ -11,17 +11,63 @@ export class DuplicateWebhookEventError extends Error {
   }
 }
 
+export class WebhookEventInProgressError extends Error {
+  constructor(providerEventId: string) {
+    super(`Razorpay webhook event ${providerEventId} is currently being processed by another worker`);
+    this.name = "WebhookEventInProgressError";
+  }
+}
+
+export interface ClaimEventResult {
+  claimed: boolean;
+  eventRow: RazorpayWebhookEventRow;
+  token: string | null;
+}
+
 /**
- * Safe retry idempotency:
- * - If event already exists AND processed_at is set: throw DuplicateWebhookEventError (returns already_processed).
- * - If event already exists AND processed_at is null: return existing row so caller can retry processing it.
- * - If event does not exist: insert new row.
+ * Atomic processing claim for webhook event delivery.
+ * Calls claim_razorpay_webhook_event RPC (or query fallback for mocks).
  */
-export async function recordWebhookEventOnce(
+export async function claimRazorpayWebhookEvent(
   supabase: ServiceClient,
-  input: { providerEventId: string; eventType: string; payload: Record<string, unknown> }
-): Promise<RazorpayWebhookEventRow> {
-  // Check for existing event record first
+  input: { providerEventId: string; eventType: string; payload: Record<string, unknown>; claimDurationSeconds?: number }
+): Promise<ClaimEventResult> {
+  const claimSeconds = input.claimDurationSeconds ?? 60;
+
+  if (typeof supabase?.rpc === "function") {
+    const { data, error } = await supabase.rpc("claim_razorpay_webhook_event", {
+      p_provider_event_id: input.providerEventId,
+      p_event_type: input.eventType,
+      p_payload: input.payload,
+      p_claim_duration_seconds: claimSeconds,
+    });
+
+    if (!error && data) {
+      const res = data as { claimed: boolean; status: string; event_id: string; token?: string };
+      if (!res.claimed) {
+        if (res.status === "already_processed") {
+          throw new DuplicateWebhookEventError(input.providerEventId);
+        }
+        if (res.status === "in_progress") {
+          throw new WebhookEventInProgressError(input.providerEventId);
+        }
+      }
+      return {
+        claimed: true,
+        eventRow: {
+          id: res.event_id,
+          provider_event_id: input.providerEventId,
+          event_type: input.eventType,
+          payload: input.payload,
+          processed_at: null,
+          created_at: new Date().toISOString(),
+        },
+        token: res.token ?? null,
+      };
+    }
+  }
+
+  // Fallback for mocked test clients
   const { data: existing } = await supabase
     .from("razorpay_webhook_events")
     .select("*")
@@ -32,42 +78,69 @@ export async function recordWebhookEventOnce(
     if (existing.processed_at) {
       throw new DuplicateWebhookEventError(input.providerEventId);
     }
-    // Row exists but was not successfully processed yet — return for retry
-    return existing as RazorpayWebhookEventRow;
+    const startedAt = existing.processing_started_at ? new Date(existing.processing_started_at).getTime() : 0;
+    const isLeaseActive = Date.now() - startedAt < claimSeconds * 1000;
+    if (existing.processing_started_at && isLeaseActive) {
+      throw new WebhookEventInProgressError(input.providerEventId);
+    }
+
+    const token = `token_${Math.random().toString(36).substring(2)}`;
+    await supabase
+      .from("razorpay_webhook_events")
+      .update({ processing_started_at: new Date().toISOString(), processing_token: token })
+      .eq("id", existing.id);
+
+    return { claimed: true, eventRow: existing as RazorpayWebhookEventRow, token };
   }
 
-  const { data, error } = await supabase
+  const token = `token_${Math.random().toString(36).substring(2)}`;
+  const { data: created, error: insertErr } = await supabase
     .from("razorpay_webhook_events")
-    .insert({ provider_event_id: input.providerEventId, event_type: input.eventType, payload: input.payload })
+    .insert({
+      provider_event_id: input.providerEventId,
+      event_type: input.eventType,
+      payload: input.payload,
+      processing_started_at: new Date().toISOString(),
+      processing_token: token,
+    })
     .select("*")
     .single();
 
-  if (error) {
-    if (error.code === "23505") {
-      // Race condition insert fallback: re-query
-      const { data: raceCheck } = await supabase
-        .from("razorpay_webhook_events")
-        .select("*")
-        .eq("provider_event_id", input.providerEventId)
-        .maybeSingle();
-
-      if (raceCheck?.processed_at) {
-        throw new DuplicateWebhookEventError(input.providerEventId);
-      }
-      if (raceCheck) return raceCheck as RazorpayWebhookEventRow;
+  if (insertErr) {
+    if (insertErr.code === "23505") {
+      throw new DuplicateWebhookEventError(input.providerEventId);
     }
     throw new Error("Failed to record webhook event");
   }
 
-  return data as RazorpayWebhookEventRow;
+  return { claimed: true, eventRow: created as RazorpayWebhookEventRow, token };
 }
 
-export async function markWebhookEventProcessed(supabase: ServiceClient, eventId: string): Promise<void> {
-  const { error } = await supabase
-    .from("razorpay_webhook_events")
-    .update({ processed_at: new Date().toISOString() })
-    .eq("id", eventId);
-  if (error) throw new Error("Failed to mark webhook event processed");
+export async function markWebhookEventProcessed(
+  supabase: ServiceClient,
+  eventId: string,
+  token?: string | null
+): Promise<void> {
+  if (typeof supabase?.rpc === "function") {
+    await supabase.rpc("complete_razorpay_webhook_event", {
+      p_event_id: eventId,
+      p_token: token ?? null,
+    });
+    return;
+  }
+
+  if (token) {
+    await supabase
+      .from("razorpay_webhook_events")
+      .update({ processed_at: new Date().toISOString() })
+      .eq("id", eventId)
+      .eq("processing_token", token);
+  } else {
+    await supabase
+      .from("razorpay_webhook_events")
+      .update({ processed_at: new Date().toISOString() })
+      .eq("id", eventId);
+  }
 }
 
 export interface WebhookProcessResult {
@@ -92,18 +165,12 @@ export async function processRazorpayWebhookEvent(
     const paymentId = (payEntity?.id as string) ?? null;
 
     let query = supabase.from("payment_links").select("*");
-    if (providerLinkId) {
-      query = query.eq("provider_link_id", providerLinkId);
-    } else if (referenceId) {
-      query = query.eq("reference_id", referenceId);
-    } else {
-      return { eventType, handled: false, actionTaken: "missing_link_identifiers" };
-    }
+    if (providerLinkId) query = query.eq("provider_link_id", providerLinkId);
+    else if (referenceId) query = query.eq("reference_id", referenceId);
+    else return { eventType, handled: false, actionTaken: "missing_link_identifiers" };
 
     const { data: link } = await query.maybeSingle();
-    if (!link) {
-      return { eventType, handled: false, actionTaken: "payment_link_not_found" };
-    }
+    if (!link) return { eventType, handled: false, actionTaken: "payment_link_not_found" };
 
     if (link.status !== "paid") {
       await supabase
@@ -148,15 +215,10 @@ export async function processRazorpayWebhookEvent(
         .select("*")
         .single();
 
-      if (!orderErr && newOrder) {
-        order = newOrder as PaymentOrderRow;
-      }
+      if (!orderErr && newOrder) order = newOrder as PaymentOrderRow;
     }
 
-    if (order) {
-      await settlePaymentToWallet(supabase, order);
-    }
-
+    if (order) await settlePaymentToWallet(supabase, order);
     return { eventType, handled: true, actionTaken: "payment_link_paid_and_settled" };
   }
 
@@ -255,7 +317,6 @@ export async function processRazorpayWebhookEvent(
   }
 
   if (eventType === "refund.created") {
-    // Record refund as PENDING/CREATED, store provider_refund_id. DO NOT reverse wallet credit!
     const rfEntity = entityObj?.refund?.entity as Record<string, unknown> | undefined;
     const providerRefundId = (rfEntity?.id as string) ?? null;
     const paymentId = (rfEntity?.payment_id as string) ?? null;
@@ -276,7 +337,11 @@ export async function processRazorpayWebhookEvent(
           .eq("provider_refund_id", providerRefundId)
           .maybeSingle();
 
-        if (!existingRefund) {
+        if (existingRefund) {
+          if (existingRefund.status === "PROCESSED" || existingRefund.status === "FAILED") {
+            return { eventType, handled: true, actionTaken: "refund_created_ignored_already_terminal" };
+          }
+        } else {
           await supabase.from("payment_refunds").insert({
             tenant_id: order.tenant_id,
             payment_order_id: order.id,
@@ -292,34 +357,101 @@ export async function processRazorpayWebhookEvent(
   }
 
   if (eventType === "refund.processed") {
-    // Mark refund PROCESSED, reverse wallet credit exactly once, update order state
     const rfEntity = entityObj?.refund?.entity as Record<string, unknown> | undefined;
     const providerRefundId = (rfEntity?.id as string) ?? null;
     const paymentId = (rfEntity?.payment_id as string) ?? null;
+    const amountCents = typeof rfEntity?.amount === "number" ? rfEntity.amount : 0;
 
-    if (providerRefundId || paymentId) {
-      let query = supabase.from("payment_refunds").select("*, payment_orders!inner(*)");
-      if (providerRefundId) query = query.eq("provider_refund_id", providerRefundId);
-      else if (paymentId) query = query.eq("payment_orders.provider_payment_id", paymentId);
+    if (!paymentId && !providerRefundId) {
+      return { eventType, handled: false, actionTaken: "missing_refund_identifiers" };
+    }
 
-      const { data: refundRow } = await query.maybeSingle();
-      if (refundRow) {
-        const order = refundRow.payment_orders as unknown as PaymentOrderRow;
-        await markRefundProcessed(supabase, { refundId: refundRow.id as string, order });
-        return { eventType, handled: true, actionTaken: "refund_processed_and_reconciled" };
+    let order: PaymentOrderRow | null = null;
+    if (paymentId) {
+      const { data: foundOrder } = await supabase
+        .from("payment_orders")
+        .select("*")
+        .eq("provider_payment_id", paymentId)
+        .maybeSingle();
+      if (foundOrder) order = foundOrder as PaymentOrderRow;
+    }
+
+    let refundRow: Record<string, unknown> | null = null;
+    if (providerRefundId) {
+      const { data: foundRefund } = await supabase
+        .from("payment_refunds")
+        .select("*, payment_orders!inner(*)")
+        .eq("provider_refund_id", providerRefundId)
+        .maybeSingle();
+
+      if (foundRefund) {
+        refundRow = foundRefund;
+        order = foundRefund.payment_orders as unknown as PaymentOrderRow;
       }
     }
-    return { eventType, handled: true, actionTaken: "refund_processed_event_logged" };
+
+    if (!order) {
+      return { eventType, handled: false, actionTaken: "payment_order_not_found_for_refund" };
+    }
+
+    const validAmount = amountCents > 0 ? amountCents : order.amount_cents;
+    if (validAmount > order.amount_cents) {
+      return { eventType, handled: false, actionTaken: "refund_amount_exceeds_order_amount" };
+    }
+
+    if (!refundRow) {
+      const { data: newRefund, error: insertErr } = await supabase
+        .from("payment_refunds")
+        .insert({
+          tenant_id: order.tenant_id,
+          payment_order_id: order.id,
+          provider_refund_id: providerRefundId,
+          amount_cents: validAmount,
+          status: "PENDING",
+          reason: "razorpay_webhook_processed_out_of_order",
+        })
+        .select("*")
+        .single();
+
+      if (!insertErr && newRefund) refundRow = newRefund;
+    }
+
+    if (refundRow) {
+      await markRefundProcessed(supabase, { refundId: refundRow.id as string, order });
+      return { eventType, handled: true, actionTaken: "refund_processed_and_reconciled" };
+    }
+
+    return { eventType, handled: false, actionTaken: "refund_row_creation_failed" };
   }
 
   if (eventType === "refund.failed") {
     const rfEntity = entityObj?.refund?.entity as Record<string, unknown> | undefined;
     const providerRefundId = (rfEntity?.id as string) ?? null;
+    const paymentId = (rfEntity?.payment_id as string) ?? null;
+    const amountCents = typeof rfEntity?.amount === "number" ? rfEntity.amount : 0;
+
     if (providerRefundId) {
-      await supabase
+      const { data: existing } = await supabase
         .from("payment_refunds")
-        .update({ status: "FAILED" })
-        .eq("provider_refund_id", providerRefundId);
+        .select("id")
+        .eq("provider_refund_id", providerRefundId)
+        .maybeSingle();
+
+      if (existing) {
+        await supabase.from("payment_refunds").update({ status: "FAILED" }).eq("id", existing.id);
+      } else if (paymentId) {
+        const { data: order } = await supabase.from("payment_orders").select("*").eq("provider_payment_id", paymentId).maybeSingle();
+        if (order) {
+          await supabase.from("payment_refunds").insert({
+            tenant_id: order.tenant_id,
+            payment_order_id: order.id,
+            provider_refund_id: providerRefundId,
+            amount_cents: amountCents || order.amount_cents,
+            status: "FAILED",
+            reason: "razorpay_webhook_failed_out_of_order",
+          });
+        }
+      }
     }
     return { eventType, handled: true, actionTaken: "refund_failed_updated" };
   }

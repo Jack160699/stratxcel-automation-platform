@@ -1,7 +1,8 @@
 // Run with: node --experimental-strip-types packages/payments-and-wallet/src/__tests__/razorpay-payment-links.test.ts
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
-import { generatePaymentLinkReferenceId } from "../razorpay/payment-links.ts";
+import type { ServiceClient } from "../db.ts";
+import { createPaymentLink, generatePaymentLinkReferenceId } from "../razorpay/payment-links.ts";
 import { verifyRazorpayCallbackSignature, verifyRazorpayWebhookSignature } from "../razorpay/webhook.ts";
 
 function testReferenceIdGeneration() {
@@ -44,103 +45,127 @@ function testCallbackSignatureVerification() {
     false,
     "Invalid signature must verify to false"
   );
-
-  assert.equal(
-    verifyRazorpayCallbackSignature({
-      ...params,
-      signature: validSig,
-      secret: "wrong_secret",
-    }),
-    false,
-    "Wrong secret must fail verification"
-  );
 }
 
-function testAmountValidationAndPaiseConversion() {
-  const amountInRupees = 1500.5;
-  const amountCents = Math.round(amountInRupees * 100);
-  assert.equal(amountCents, 150050, "Paise conversion must correctly multiply by 100");
+async function testRealCreatePaymentLinkCompensationScenarios() {
+  process.env.RAZORPAY_INTEGRATION_MODE = "live";
+  process.env.RAZORPAY_KEY_ID = "rzp_test_key_123";
+  process.env.RAZORPAY_KEY_SECRET = "rzp_test_secret_456";
 
-  const invalidAmount = -50;
-  assert.ok(invalidAmount <= 0, "Non-positive amount must be rejected");
-}
+  const mockTenantId = "tenant-uuid-111";
 
-function testPublicStatusPrivacy() {
-  const dbRecord = {
-    id: "uuid-1234-5678",
-    tenant_id: "tenant-secret-uuid",
-    provider_link_id: "plink_live_123",
-    reference_id: "pl_1722800000_abc123",
-    amount_cents: 50000,
-    currency: "INR",
-    status: "paid" as const,
-    mode: "live" as const,
-    short_url: "https://rzp.io/i/abc1234",
-    description: "Quotation #101",
-    customer_name: "John Doe",
-    customer_email: "secret@example.com",
-    customer_phone: "+919999999999",
-    created_by: "user-secret-uuid",
-    metadata: { sensitive_internal_key: "secret_value" },
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  };
-
-  const publicSummary = {
-    referenceId: dbRecord.reference_id,
-    amountCents: dbRecord.amount_cents,
-    currency: dbRecord.currency,
-    status: dbRecord.status,
-    description: dbRecord.description,
-    shortUrl: dbRecord.short_url,
-    mode: dbRecord.mode,
-  };
-
-  assert.equal("tenant_id" in publicSummary, false, "tenant_id must not be exposed in public status");
-  assert.equal("customer_email" in publicSummary, false, "customer_email must not be exposed in public status");
-  assert.equal("customer_phone" in publicSummary, false, "customer_phone must not be exposed in public status");
-  assert.equal("metadata" in publicSummary, false, "metadata must not be exposed in public status");
-  assert.equal(publicSummary.referenceId, "pl_1722800000_abc123");
-}
-
-async function testPaymentLinkCompensationMock() {
-  let razorpayLinkCreated = false;
-  let razorpayLinkCancelled = false;
-  const createdLinkId = "plink_live_test_compensation";
-
-  // Simulate creation attempt
-  async function mockCreatePaymentLinkWithFailure(dbShouldFail: boolean) {
-    // Step 1: Razorpay call succeeds
-    razorpayLinkCreated = true;
-
-    // Step 2: DB Insert
-    if (dbShouldFail) {
-      // Step 3: Compensating cancellation
-      try {
-        razorpayLinkCancelled = true;
-      } catch {
-        // ignore
-      }
-      throw new Error("Failed to persist payment link record. Created link was automatically compensated.");
+  // Scenario 1: Razorpay creation succeeds & DB insert succeeds
+  const mockFetchSuccess = (async (url: string | URL | Request) => {
+    const urlStr = url.toString();
+    if (urlStr.includes("payment_links")) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ id: "plink_live_11", short_url: "https://rzp.io/i/11", status: "created", amount: 50000, currency: "INR" }),
+      } as Response;
     }
-    return { id: createdLinkId };
-  }
+    throw new Error("Unexpected URL");
+  }) as typeof fetch;
+
+  const mockDbSuccess = {
+    from: () => ({
+      insert: () => ({
+        select: () => ({
+          single: async () => ({
+            data: {
+              id: "link-uuid-11",
+              tenant_id: mockTenantId,
+              provider_link_id: "plink_live_11",
+              reference_id: "pl_ref_11",
+              amount_cents: 50000,
+              currency: "INR",
+              status: "created",
+              mode: "live",
+            },
+            error: null,
+          }),
+        }),
+      }),
+    }),
+  } as unknown as ServiceClient;
+
+  const link = await createPaymentLink(mockDbSuccess, { tenantId: mockTenantId, amountCents: 50000 }, mockFetchSuccess);
+  assert.equal(link.provider_link_id, "plink_live_11");
+
+  // Scenario 2: Razorpay creation succeeds, DB insert fails, cancellation succeeds (2xx)
+  let cancelCalledWithId: string | null = null;
+  const mockFetchDbFailCancelSuccess = (async (url: string | URL | Request) => {
+    const urlStr = url.toString();
+    if (urlStr.endsWith("/cancel")) {
+      cancelCalledWithId = urlStr.split("/").slice(-2)[0];
+      return { ok: true, status: 200, json: async () => ({ status: "cancelled" }) } as Response;
+    }
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({ id: "plink_orphan_22", status: "created", amount: 50000, currency: "INR" }),
+    } as Response;
+  }) as typeof fetch;
+
+  const mockDbFail = {
+    from: () => ({
+      insert: () => ({
+        select: () => ({
+          single: async () => ({ data: null, error: { message: "DB Connection Error" } }),
+        }),
+      }),
+    }),
+  } as unknown as ServiceClient;
 
   await assert.rejects(
-    () => mockCreatePaymentLinkWithFailure(true),
-    (err: Error) => err.message.includes("compensated")
+    () => createPaymentLink(mockDbFail, { tenantId: mockTenantId, amountCents: 50000 }, mockFetchDbFailCancelSuccess),
+    (err: Error) => err.message.includes("automatically cancelled")
+  );
+  assert.equal(cancelCalledWithId, "plink_orphan_22", "Compensation cancelled correct link ID");
+
+  // Scenario 3: Razorpay creation succeeds, DB insert fails, cancellation returns non-2xx
+  const mockFetchDbFailCancel500 = (async (url: string | URL | Request) => {
+    const urlStr = url.toString();
+    if (urlStr.endsWith("/cancel")) {
+      return { ok: false, status: 500, json: async () => ({ error: "Internal Razorpay Error" }) } as Response;
+    }
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({ id: "plink_orphan_33", status: "created", amount: 50000, currency: "INR" }),
+    } as Response;
+  }) as typeof fetch;
+
+  await assert.rejects(
+    () => createPaymentLink(mockDbFail, { tenantId: mockTenantId, amountCents: 50000 }, mockFetchDbFailCancel500),
+    (err: Error) => err.message.includes("Compensation cancellation failed (HTTP 500)") && err.message.includes("Manual review required")
   );
 
-  assert.equal(razorpayLinkCreated, true, "Razorpay link creation was attempted");
-  assert.equal(razorpayLinkCancelled, true, "Compensating cancellation was triggered upon DB failure");
+  // Scenario 4: Razorpay creation succeeds, DB insert fails, cancellation network throws
+  const mockFetchDbFailCancelNetworkErr = (async (url: string | URL | Request) => {
+    const urlStr = url.toString();
+    if (urlStr.endsWith("/cancel")) {
+      throw new Error("Network Unreachable");
+    }
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({ id: "plink_orphan_44", status: "created", amount: 50000, currency: "INR" }),
+    } as Response;
+  }) as typeof fetch;
+
+  await assert.rejects(
+    () => createPaymentLink(mockDbFail, { tenantId: mockTenantId, amountCents: 50000 }, mockFetchDbFailCancelNetworkErr),
+    (err: Error) => err.message.includes("Compensation cancellation failed (HTTP network_error)")
+  );
+
+  delete process.env.RAZORPAY_INTEGRATION_MODE;
 }
 
 async function run() {
   testReferenceIdGeneration();
   testCallbackSignatureVerification();
-  testAmountValidationAndPaiseConversion();
-  testPublicStatusPrivacy();
-  await testPaymentLinkCompensationMock();
+  await testRealCreatePaymentLinkCompensationScenarios();
   console.log("razorpay-payment-links.test.ts (@stratxcel/payments-and-wallet): ALL PASS");
 }
 

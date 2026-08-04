@@ -12,7 +12,8 @@ export function generatePaymentLinkReferenceId(): string {
 
 export async function createPaymentLink(
   supabase: ServiceClient,
-  input: CreatePaymentLinkInput
+  input: CreatePaymentLinkInput,
+  fetchFn: typeof fetch = fetch
 ): Promise<PaymentLinkRow> {
   const mode = getIntegrationMode("RAZORPAY_INTEGRATION_MODE");
   if (mode === "disabled") {
@@ -95,7 +96,7 @@ export async function createPaymentLink(
     payload.expire_by = Math.floor(new Date(expireByIso).getTime() / 1000);
   }
 
-  const response = await fetch("https://api.razorpay.com/v1/payment_links", {
+  const response = await fetchFn("https://api.razorpay.com/v1/payment_links", {
     method: "POST",
     headers: {
       Authorization: `Basic ${Buffer.from(`${keyId}:${keySecret}`).toString("base64")}`,
@@ -105,7 +106,7 @@ export async function createPaymentLink(
   });
 
   if (!response.ok) {
-    throw new Error("Razorpay live payment link creation request failed");
+    throw new Error(`Razorpay live payment link creation failed with HTTP ${response.status}`);
   }
 
   const result = (await response.json()) as {
@@ -141,20 +142,35 @@ export async function createPaymentLink(
     .single();
 
   if (error) {
-    // Compensation attempt: cancel newly created live link
+    let cancelSucceeded = false;
+    let cancelStatusCode: number | null = null;
+
     try {
-      await fetch(`https://api.razorpay.com/v1/payment_links/${result.id}/cancel`, {
+      const cancelRes = await fetchFn(`https://api.razorpay.com/v1/payment_links/${result.id}/cancel`, {
         method: "POST",
         headers: {
           Authorization: `Basic ${Buffer.from(`${keyId}:${keySecret}`).toString("base64")}`,
           "Content-Type": "application/json",
         },
       });
-      console.warn(`[Razorpay Compensation] Cancelled orphan payment link ${result.id} due to persistence failure.`);
-    } catch (cancelErr) {
-      console.error(`[Razorpay Compensation] Failed to cancel orphan payment link ${result.id}:`, cancelErr);
+
+      cancelStatusCode = cancelRes.status;
+      cancelSucceeded = cancelRes.ok;
+
+      if (!cancelRes.ok) {
+        console.warn(`[Razorpay Compensation] Cancellation for link ${result.id} failed with HTTP ${cancelRes.status}`);
+      } else {
+        console.warn(`[Razorpay Compensation] Successfully cancelled link ${result.id} after database insert failure.`);
+      }
+    } catch {
+      console.error(`[Razorpay Compensation] Network error attempting to cancel link ${result.id}`);
     }
-    throw new Error("Failed to persist payment link record. Created link was automatically compensated.");
+
+    if (cancelSucceeded) {
+      throw new Error("Failed to persist payment link record. Created link was automatically cancelled.");
+    } else {
+      throw new Error(`Failed to persist payment link record. Compensation cancellation failed (HTTP ${cancelStatusCode ?? "network_error"}). Manual review required for link ${result.id}.`);
+    }
   }
 
   return data as PaymentLinkRow;
@@ -204,7 +220,8 @@ export async function getPaymentLinkByReferenceId(
 
 export async function cancelPaymentLink(
   supabase: ServiceClient,
-  input: { linkId: string; tenantId: string }
+  input: { linkId: string; tenantId: string },
+  fetchFn: typeof fetch = fetch
 ): Promise<PaymentLinkRow> {
   const mode = getIntegrationMode("RAZORPAY_INTEGRATION_MODE");
   if (mode === "disabled") {
@@ -233,7 +250,7 @@ export async function cancelPaymentLink(
       throw new Error("RAZORPAY_INTEGRATION_MODE is 'live' but credentials are missing");
     }
 
-    const response = await fetch(`https://api.razorpay.com/v1/payment_links/${link.provider_link_id}/cancel`, {
+    const response = await fetchFn(`https://api.razorpay.com/v1/payment_links/${link.provider_link_id}/cancel`, {
       method: "POST",
       headers: {
         Authorization: `Basic ${Buffer.from(`${keyId}:${keySecret}`).toString("base64")}`,
@@ -242,7 +259,7 @@ export async function cancelPaymentLink(
     });
 
     if (!response.ok) {
-      throw new Error("Razorpay live payment link cancellation failed");
+      throw new Error(`Razorpay live payment link cancellation failed with HTTP ${response.status}`);
     }
   }
 

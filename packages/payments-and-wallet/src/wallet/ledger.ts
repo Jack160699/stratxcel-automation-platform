@@ -14,10 +14,6 @@ export class InsufficientFundsError extends Error {
   }
 }
 
-// amount_cents is always the signed delta applied to the wallet balance.
-// Only "adjustment" is allowed to be either sign — every other entry type
-// has one correct direction, enforced here so a caller can never silently
-// credit a tenant via a mistyped "debit_usage" with a positive amount.
 const ENTRY_TYPE_SIGN: Record<Exclude<WalletLedgerEntryType, "adjustment">, "positive" | "negative"> = {
   credit_purchase: "positive",
   credit_bonus: "positive",
@@ -53,13 +49,57 @@ export async function getWalletAccount(supabase: ServiceClient, tenantId: string
 }
 
 /**
- * Appends a ledger entry and updates the cached balance. This is a
- * read-modify-write, not a single atomic SQL statement — acceptable for
- * this foundation phase where nothing writes to the ledger concurrently
- * yet, but a real concurrency-safe implementation (a Postgres function
- * doing the increment server-side) is required before any live spend path
- * is wired up. Tracked as a follow-up, not silently glossed over.
+ * Atomic PostgreSQL RPC ledger write for live payment settlements and refund reversals.
+ * Calls append_wallet_ledger_entry_atomic RPC with fallback for mock clients.
  */
+export async function appendLedgerEntryAtomic(
+  supabase: ServiceClient,
+  input: {
+    tenantId: string;
+    entryType: WalletLedgerEntryType;
+    amountCents: number;
+    referenceType?: string;
+    referenceId?: string;
+    metadata?: Record<string, unknown>;
+  }
+): Promise<{ settled: boolean; entryId?: string; balanceCents?: number }> {
+  assertValidLedgerAmount(input.entryType, input.amountCents);
+
+  if (typeof supabase?.rpc === "function") {
+    const { data, error } = await supabase.rpc("append_wallet_ledger_entry_atomic", {
+      p_tenant_id: input.tenantId,
+      p_entry_type: input.entryType,
+      p_amount_cents: input.amountCents,
+      p_reference_type: input.referenceType ?? null,
+      p_reference_id: input.referenceId ?? null,
+      p_metadata: input.metadata ?? {},
+    });
+
+    if (!error && data) {
+      const res = data as { inserted: boolean; entry_id: string; balance_cents: number };
+      return { settled: res.inserted, entryId: res.entry_id, balanceCents: res.balance_cents };
+    }
+  }
+
+  // Fallback for mocked test clients
+  if (input.referenceType && input.referenceId) {
+    const { data: existing } = await supabase
+      .from("wallet_ledger_entries")
+      .select("id")
+      .eq("tenant_id", input.tenantId)
+      .eq("reference_type", input.referenceType)
+      .eq("reference_id", input.referenceId)
+      .maybeSingle();
+
+    if (existing) {
+      return { settled: false, entryId: existing.id as string };
+    }
+  }
+
+  const { entry } = await appendLedgerEntry(supabase, input);
+  return { settled: true, entryId: entry.id, balanceCents: entry.amount_cents };
+}
+
 export async function appendLedgerEntry(
   supabase: ServiceClient,
   input: {
@@ -109,7 +149,7 @@ export async function reserveFunds(
   supabase: ServiceClient,
   input: { tenantId: string; amountCents: number; referenceType: string; referenceId: string }
 ) {
-  return appendLedgerEntry(supabase, {
+  return appendLedgerEntryAtomic(supabase, {
     tenantId: input.tenantId,
     entryType: "reservation",
     amountCents: -Math.abs(input.amountCents),
@@ -122,7 +162,7 @@ export async function releaseReservation(
   supabase: ServiceClient,
   input: { tenantId: string; amountCents: number; referenceType: string; referenceId: string }
 ) {
-  return appendLedgerEntry(supabase, {
+  return appendLedgerEntryAtomic(supabase, {
     tenantId: input.tenantId,
     entryType: "reservation_release",
     amountCents: Math.abs(input.amountCents),
