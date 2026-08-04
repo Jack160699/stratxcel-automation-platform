@@ -37,6 +37,7 @@ function run() {
   const appFiles: string[] = [];
   (function walk(dir: string) {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (entry.isDirectory() && entry.name === "__tests__") continue; // test source strings reference these names in assertions, not as real imports
       const full = path.join(dir, entry.name);
       if (entry.isDirectory()) walk(full);
       else if (entry.name.endsWith(".tsx") || entry.name.endsWith(".ts")) appFiles.push(full);
@@ -76,13 +77,21 @@ function run() {
   assert.ok(clientMissions.includes('fetch(`/api/platform/missions'), "/app/missions must call the same /api/platform/missions route");
   assert.ok(adminMissions.includes('fetch(`/api/platform/missions'), "/admin's missions page must still call the same route (unchanged)");
 
-  // --- 6. CreateClientForm is shared, not duplicated ------------------------
+  // --- 6. CreateClientForm is shared, not duplicated (still true for /admin;
+  // /app now has the full structured onboarding wizard, superseding the
+  // placeholder that used to just reuse CreateClientForm directly) --------
   assert.ok(exists("components", "forms", "CreateClientForm.tsx"), "CreateClientForm must live in the shared components/forms/ location");
   assert.equal(exists("app", "admin", "(shell)", "CreateClientForm.tsx"), false, "the old app/admin/(shell)/CreateClientForm.tsx location must no longer exist (moved, not duplicated)");
   const appOnboarding = read("app", "app", "OnboardingPanel.tsx");
   const adminOnboarding = read("app", "admin", "(shell)", "OnboardingPanel.tsx");
-  assert.ok(appOnboarding.includes('from "@/components/forms/CreateClientForm"'), "/app onboarding must import the shared CreateClientForm");
-  assert.ok(adminOnboarding.includes('from "@/components/forms/CreateClientForm"'), "/admin onboarding must import the shared CreateClientForm");
+  assert.ok(appOnboarding.includes('from "./onboarding/OnboardingWizard"'), "/app onboarding must render the structured OnboardingWizard, not the CreateClientForm placeholder");
+  assert.ok(adminOnboarding.includes('from "@/components/forms/CreateClientForm"'), "/admin onboarding must still import the shared CreateClientForm (internal admin flow, out of scope for the client wizard)");
+  // The wizard's own workspace-creation write still goes through the same
+  // tenant-creation guarantees CreateClientForm always used: a
+  // service-role-only server route, never a client-side service key.
+  const onboardingRoute = read("app", "api", "platform", "onboarding", "route.ts");
+  assert.ok(onboardingRoute.includes("createTenant("), "the onboarding API route must reuse the real createTenant() repository function, not a second implementation");
+  assert.ok(onboardingRoute.includes("getTenantServiceContext"), "the onboarding API route must use the service-role client for the tenant/brand-brain writes (RLS has no client insert policy for these tables)");
 
   // --- 7. Design tokens: no raw slate-* in the new shared shell/primitives --
   const primitivesDir = path.join(root, "components");
