@@ -30,7 +30,10 @@ const SIDEBAR_GROUPS: SidebarNavGroup[] = [
   },
   {
     label: "Content",
-    items: [{ key: "content", label: "Content", href: "/app/content", icon: <MegaphoneIcon /> }],
+    items: [
+      { key: "content", label: "Content", href: "/app/content", icon: <MegaphoneIcon /> },
+      { key: "brand", label: "Brand Brain", href: "/app/brand", icon: <SparkIcon /> },
+    ],
   },
   {
     label: "Growth",
@@ -142,6 +145,13 @@ function MegaphoneIcon() {
     <svg width="16" height="16" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.4">
       <path d="M3 8v2a1 1 0 001 1h1l2.5 3V4L5 7H4a1 1 0 00-1 1Z" />
       <path d="M10 6.5c1 .6 1 4.4 0 5" />
+    </svg>
+  );
+}
+function SparkIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.4">
+      <path d="M9 2.5l1.4 4.1L14.5 8l-4.1 1.4L9 13.5l-1.4-4.1L3.5 8l4.1-1.4L9 2.5Z" />
     </svg>
   );
 }
