@@ -70,7 +70,7 @@ export default function HomePage() {
             </p>
             <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
               <Link
-                href="/contact?intent=demo"
+                href="/signup"
                 className="rounded-sx-sm bg-sx-accent px-5 py-3 text-center font-sx-sans text-sm font-semibold text-sx-accent-on transition-colors duration-150 hover:bg-[color:var(--sx-accent-hover)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sx-accent"
               >
                 Start with Stratxcel
@@ -157,7 +157,7 @@ export default function HomePage() {
           </h2>
           <div className="mt-7 flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
             <Link
-              href="/contact?intent=demo"
+              href="/signup"
               className="rounded-sx-sm bg-sx-accent px-6 py-3 text-center font-sx-sans text-sm font-semibold text-sx-accent-on transition-colors duration-150 hover:bg-[color:var(--sx-accent-hover)]"
             >
               Start with Stratxcel

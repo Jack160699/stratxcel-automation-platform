@@ -18,9 +18,10 @@ const NAV_ITEMS = [
  * nav, on the Stratxcel Core token system (sx-*) rather than the immersive
  * "journey" header. "Work" is intentionally omitted until a real, sourced
  * case-study page exists — the sitemap itself says not to link an unpublished
- * Work page. "Sign in" and "Start with Stratxcel" point at /app today (real
- * Supabase sign-in there) and /contact?intent=demo respectively, since
- * dedicated public /login and /signup routes aren't built yet.
+ * Work page. "Sign in" and "Start with Stratxcel" go to the real public
+ * /login and /signup routes; "Book demo"-style CTAs stay on
+ * /contact?intent=demo since that's a sales conversation, not account
+ * creation.
  */
 export function PublicHeader() {
   const [open, setOpen] = useState(false);
@@ -51,13 +52,13 @@ export function PublicHeader() {
 
         <div className="hidden items-center gap-2.5 md:flex">
           <Link
-            href="/app"
+            href="/login"
             className="rounded-sx-sm px-3 py-1.5 font-sx-sans text-[13px] font-medium text-sx-text-muted transition-colors duration-150 hover:text-sx-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sx-accent"
           >
             Sign in
           </Link>
           <Link
-            href="/contact?intent=demo"
+            href="/signup"
             className="rounded-sx-sm bg-sx-accent px-4 py-2 font-sx-sans text-[13px] font-semibold text-sx-accent-on transition-colors duration-150 hover:bg-[color:var(--sx-accent-hover)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sx-accent"
           >
             Start with Stratxcel
@@ -110,14 +111,14 @@ export function PublicHeader() {
           </nav>
           <div className="flex flex-col gap-2.5 border-t border-sx-border p-4 sm:p-6">
             <Link
-              href="/app"
+              href="/login"
               onClick={() => setOpen(false)}
               className="rounded-sx-sm border border-sx-border-strong px-4 py-2.5 text-center font-sx-sans text-sm font-medium text-sx-text"
             >
               Sign in
             </Link>
             <Link
-              href="/contact?intent=demo"
+              href="/signup"
               onClick={() => setOpen(false)}
               className="rounded-sx-sm bg-sx-accent px-4 py-2.5 text-center font-sx-sans text-sm font-semibold text-sx-accent-on"
             >
