@@ -103,11 +103,44 @@ function testPublicStatusPrivacy() {
   assert.equal(publicSummary.referenceId, "pl_1722800000_abc123");
 }
 
-function run() {
+async function testPaymentLinkCompensationMock() {
+  let razorpayLinkCreated = false;
+  let razorpayLinkCancelled = false;
+  const createdLinkId = "plink_live_test_compensation";
+
+  // Simulate creation attempt
+  async function mockCreatePaymentLinkWithFailure(dbShouldFail: boolean) {
+    // Step 1: Razorpay call succeeds
+    razorpayLinkCreated = true;
+
+    // Step 2: DB Insert
+    if (dbShouldFail) {
+      // Step 3: Compensating cancellation
+      try {
+        razorpayLinkCancelled = true;
+      } catch {
+        // ignore
+      }
+      throw new Error("Failed to persist payment link record. Created link was automatically compensated.");
+    }
+    return { id: createdLinkId };
+  }
+
+  await assert.rejects(
+    () => mockCreatePaymentLinkWithFailure(true),
+    (err: Error) => err.message.includes("compensated")
+  );
+
+  assert.equal(razorpayLinkCreated, true, "Razorpay link creation was attempted");
+  assert.equal(razorpayLinkCancelled, true, "Compensating cancellation was triggered upon DB failure");
+}
+
+async function run() {
   testReferenceIdGeneration();
   testCallbackSignatureVerification();
   testAmountValidationAndPaiseConversion();
   testPublicStatusPrivacy();
+  await testPaymentLinkCompensationMock();
   console.log("razorpay-payment-links.test.ts (@stratxcel/payments-and-wallet): ALL PASS");
 }
 

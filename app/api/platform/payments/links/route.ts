@@ -23,9 +23,8 @@ export async function GET(request: Request) {
   try {
     const links = await listPaymentLinks(supabase, tenantId);
     return Response.json({ links }, { headers: { "Cache-Control": "no-store" } });
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : "Failed to list payment links";
-    return Response.json({ error: msg }, { status: 500 });
+  } catch {
+    return Response.json({ error: "Failed to list payment links" }, { status: 500 });
   }
 }
 
@@ -65,7 +64,9 @@ export async function POST(request: Request) {
 
     return Response.json({ link }, { status: 201 });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : "Failed to create payment link";
+    const msg = err instanceof Error && !err.message.includes("database") && !err.message.includes("Postgres")
+      ? err.message
+      : "Failed to create payment link. Please verify inputs and integration mode.";
     return Response.json({ error: msg }, { status: 400 });
   }
 }

@@ -1,5 +1,6 @@
 import type { ServiceClient } from "../db.ts";
 import { appendLedgerEntry } from "../wallet/ledger.ts";
+import { transitionPaymentOrder } from "./payment-orders.ts";
 import type { PaymentOrderRow, PaymentRefundRow } from "./types.ts";
 
 export async function requestRefund(
@@ -25,6 +26,7 @@ export async function requestRefund(
  * Marks a refund processed and reverses the wallet credit — mirrors
  * settlePaymentToWallet's idempotency approach (check for an existing
  * ledger entry referencing this specific refund before writing another).
+ * Also transitions payment_orders to PARTIALLY_REFUNDED or REFUNDED based on total refund sum.
  */
 export async function markRefundProcessed(
   supabase: ServiceClient,
@@ -42,14 +44,6 @@ export async function markRefundProcessed(
   if (fetchError) throw new Error(`markRefundProcessed: ${fetchError.message}`);
 
   if (!existingEntry) {
-    // Deliberately "adjustment", not "refund": the wallet ledger's "refund"
-    // entry type means crediting value *back into* the wallet (e.g. a
-    // wallet-internal service refund) and is validated as strictly
-    // positive (see assertValidLedgerAmount). A Razorpay refund is the
-    // opposite direction — it *reverses* a prior credit_purchase because
-    // the money is leaving the platform back to the customer's bank, not
-    // staying in-platform as wallet value — which is exactly what
-    // "adjustment" (the one entry type allowed either sign) is for.
     await appendLedgerEntry(supabase, {
       tenantId: input.order.tenant_id,
       entryType: "adjustment",
@@ -65,6 +59,27 @@ export async function markRefundProcessed(
     .update({ status: "PROCESSED", processed_at: new Date().toISOString() })
     .eq("id", input.refundId);
   if (error) throw new Error(`markRefundProcessed: ${error.message}`);
+
+  // Calculate cumulative processed refunds for this payment order
+  const { data: processedRefunds } = await supabase
+    .from("payment_refunds")
+    .select("amount_cents")
+    .eq("payment_order_id", input.order.id)
+    .eq("status", "PROCESSED");
+
+  const totalRefunded = (processedRefunds ?? []).reduce((sum, r) => sum + (r.amount_cents || 0), 0);
+  const nextOrderState = totalRefunded >= input.order.amount_cents ? "REFUNDED" : "PARTIALLY_REFUNDED";
+
+  if (input.order.state !== nextOrderState) {
+    try {
+      await transitionPaymentOrder(supabase, {
+        orderId: input.order.id,
+        nextState: nextOrderState,
+      });
+    } catch {
+      // Ignore transition error if state already updated
+    }
+  }
 
   return { settled: !existingEntry };
 }

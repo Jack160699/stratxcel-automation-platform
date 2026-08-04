@@ -29,7 +29,9 @@ export async function POST(request: Request) {
 
     return Response.json({ link: updated });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : "Failed to cancel payment link";
+    const msg = err instanceof Error && !err.message.includes("database")
+      ? err.message
+      : "Failed to cancel payment link";
     return Response.json({ error: msg }, { status: 400 });
   }
 }

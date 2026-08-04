@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import type { ServiceClient } from "../db.ts";
 import { getIntegrationMode } from "../flags.ts";
 import { IntegrationDisabledError } from "./adapter.ts";
-import type { CreatePaymentLinkInput, PaymentLinkRow, PaymentLinkStatus } from "./types.ts";
+import type { CreatePaymentLinkInput, PaymentLinkRow } from "./types.ts";
 
 export function generatePaymentLinkReferenceId(): string {
   const timestamp = Date.now();
@@ -51,7 +51,7 @@ export async function createPaymentLink(
       .select("*")
       .single();
 
-    if (error) throw new Error(`createPaymentLink (shadow): ${error.message}`);
+    if (error) throw new Error("Failed to create shadow payment link record");
     return data as PaymentLinkRow;
   }
 
@@ -59,7 +59,7 @@ export async function createPaymentLink(
   const keyId = process.env.RAZORPAY_KEY_ID;
   const keySecret = process.env.RAZORPAY_KEY_SECRET;
   if (!keyId || !keySecret) {
-    throw new Error("RAZORPAY_INTEGRATION_MODE is 'live' but RAZORPAY_KEY_ID/RAZORPAY_KEY_SECRET are not set");
+    throw new Error("RAZORPAY_INTEGRATION_MODE is 'live' but credentials are missing");
   }
 
   const appBaseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://www.stratxcel.in";
@@ -105,8 +105,7 @@ export async function createPaymentLink(
   });
 
   if (!response.ok) {
-    const errText = await response.text();
-    throw new Error(`Razorpay live payment link creation failed (HTTP ${response.status}): ${errText}`);
+    throw new Error("Razorpay live payment link creation request failed");
   }
 
   const result = (await response.json()) as {
@@ -117,6 +116,7 @@ export async function createPaymentLink(
     currency: string;
   };
 
+  // Insert into Supabase. If DB insert fails, compensate by cancelling the newly created Razorpay payment link!
   const { data, error } = await supabase
     .from("payment_links")
     .insert({
@@ -140,7 +140,23 @@ export async function createPaymentLink(
     .select("*")
     .single();
 
-  if (error) throw new Error(`createPaymentLink db insert: ${error.message}`);
+  if (error) {
+    // Compensation attempt: cancel newly created live link
+    try {
+      await fetch(`https://api.razorpay.com/v1/payment_links/${result.id}/cancel`, {
+        method: "POST",
+        headers: {
+          Authorization: `Basic ${Buffer.from(`${keyId}:${keySecret}`).toString("base64")}`,
+          "Content-Type": "application/json",
+        },
+      });
+      console.warn(`[Razorpay Compensation] Cancelled orphan payment link ${result.id} due to persistence failure.`);
+    } catch (cancelErr) {
+      console.error(`[Razorpay Compensation] Failed to cancel orphan payment link ${result.id}:`, cancelErr);
+    }
+    throw new Error("Failed to persist payment link record. Created link was automatically compensated.");
+  }
+
   return data as PaymentLinkRow;
 }
 
@@ -154,7 +170,7 @@ export async function listPaymentLinks(
     .eq("tenant_id", tenantId)
     .order("created_at", { ascending: false });
 
-  if (error) throw new Error(`listPaymentLinks: ${error.message}`);
+  if (error) throw new Error("Failed to list payment links");
   return (data as PaymentLinkRow[]) ?? [];
 }
 
@@ -168,7 +184,7 @@ export async function getPaymentLinkById(
     .eq("id", id)
     .maybeSingle();
 
-  if (error) throw new Error(`getPaymentLinkById: ${error.message}`);
+  if (error) throw new Error("Failed to fetch payment link");
   return (data as PaymentLinkRow) ?? null;
 }
 
@@ -182,7 +198,7 @@ export async function getPaymentLinkByReferenceId(
     .eq("reference_id", referenceId)
     .maybeSingle();
 
-  if (error) throw new Error(`getPaymentLinkByReferenceId: ${error.message}`);
+  if (error) throw new Error("Failed to fetch payment link");
   return (data as PaymentLinkRow) ?? null;
 }
 
@@ -203,7 +219,7 @@ export async function cancelPaymentLink(
     .single();
 
   if (fetchErr || !link) {
-    throw new Error(`cancelPaymentLink: Payment link not found or not owned by tenant`);
+    throw new Error("Payment link not found or not owned by tenant");
   }
 
   if (link.status === "paid" || link.status === "cancelled" || link.status === "expired") {
@@ -214,7 +230,7 @@ export async function cancelPaymentLink(
     const keyId = process.env.RAZORPAY_KEY_ID;
     const keySecret = process.env.RAZORPAY_KEY_SECRET;
     if (!keyId || !keySecret) {
-      throw new Error("RAZORPAY_INTEGRATION_MODE is 'live' but RAZORPAY_KEY_ID/RAZORPAY_KEY_SECRET are not set");
+      throw new Error("RAZORPAY_INTEGRATION_MODE is 'live' but credentials are missing");
     }
 
     const response = await fetch(`https://api.razorpay.com/v1/payment_links/${link.provider_link_id}/cancel`, {
@@ -226,8 +242,7 @@ export async function cancelPaymentLink(
     });
 
     if (!response.ok) {
-      const errText = await response.text();
-      throw new Error(`Razorpay live payment link cancellation failed (HTTP ${response.status}): ${errText}`);
+      throw new Error("Razorpay live payment link cancellation failed");
     }
   }
 
@@ -238,6 +253,6 @@ export async function cancelPaymentLink(
     .select("*")
     .single();
 
-  if (updateErr) throw new Error(`cancelPaymentLink db update: ${updateErr.message}`);
+  if (updateErr) throw new Error("Failed to update payment link status");
   return updated as PaymentLinkRow;
 }

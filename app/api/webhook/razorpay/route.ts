@@ -11,9 +11,10 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
+  const mode = process.env.RAZORPAY_INTEGRATION_MODE || "disabled";
   return Response.json(
     {
-      status: "active",
+      status: mode === "live" ? "ready" : "reachable",
       endpoint: "/api/webhook/razorpay",
       provider: "razorpay",
     },
@@ -29,9 +30,13 @@ export async function POST(request: Request) {
     const signatureHeader = request.headers.get("x-razorpay-signature");
     const eventHeaderId = request.headers.get("x-razorpay-event-id");
 
+    if (!eventHeaderId || eventHeaderId.trim() === "") {
+      return Response.json({ error: "Missing or blank X-Razorpay-Event-Id header" }, { status: 400 });
+    }
+
     const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
     if (!webhookSecret) {
-      return Response.json({ error: "RAZORPAY_WEBHOOK_SECRET is not configured on server" }, { status: 500 });
+      return Response.json({ error: "Webhook service unavailable" }, { status: 503 });
     }
 
     const rawBody = await request.text();
@@ -48,10 +53,7 @@ export async function POST(request: Request) {
     }
 
     const eventType = (payload.event as string) ?? "unknown";
-    const providerEventId =
-      eventHeaderId ||
-      (payload.event_id as string) ||
-      (payload.account_id ? `${payload.account_id}_${eventType}_${Date.now()}` : `evt_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`);
+    const providerEventId = eventHeaderId.trim();
 
     const { supabase } = getTenantServiceContext();
 
@@ -78,7 +80,9 @@ export async function POST(request: Request) {
       action: processResult.actionTaken,
     });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : "Webhook processing error";
-    return Response.json({ error: msg }, { status: 500 });
+    if (err instanceof DuplicateWebhookEventError) {
+      return Response.json({ status: "already_processed" }, { status: 200 });
+    }
+    return Response.json({ error: "Internal webhook processing error" }, { status: 500 });
   }
 }

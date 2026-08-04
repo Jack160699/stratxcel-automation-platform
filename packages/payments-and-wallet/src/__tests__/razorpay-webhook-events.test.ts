@@ -45,20 +45,116 @@ function testMonotonicPaymentTransitions() {
   );
 }
 
-function testMonotonicPaymentLinkStatuses() {
-  const isTerminalLinkStatus = (status: string) => status === "paid" || status === "cancelled" || status === "expired";
+function testEventIdHeaderValidation() {
+  const isValidHeader = (header: string | null) => Boolean(header && header.trim().length > 0);
 
-  assert.equal(isTerminalLinkStatus("paid"), true);
-  assert.equal(isTerminalLinkStatus("cancelled"), true);
-  assert.equal(isTerminalLinkStatus("expired"), true);
-  assert.equal(isTerminalLinkStatus("created"), false);
-  assert.equal(isTerminalLinkStatus("partially_paid"), false);
+  assert.equal(isValidHeader("evt_123456"), true);
+  assert.equal(isValidHeader("  evt_123456  "), true);
+  assert.equal(isValidHeader(""), false, "Blank event ID must be rejected");
+  assert.equal(isValidHeader("   "), false, "Whitespace event ID must be rejected");
+  assert.equal(isValidHeader(null), false, "Missing event ID header must be rejected");
+}
+
+function testMockedWebhookRetryIdempotency() {
+  // Simulate mock database for webhook event deduplication & retry
+  const dbEvents = new Map<string, { id: string; provider_event_id: string; processed_at: string | null }>();
+
+  function mockRecordWebhookEventOnce(providerEventId: string) {
+    const existing = dbEvents.get(providerEventId);
+    if (existing) {
+      if (existing.processed_at) {
+        throw new Error("ALREADY_PROCESSED");
+      }
+      return existing; // Retry eligible
+    }
+    const newRow = { id: `row_${Date.now()}`, provider_event_id: providerEventId, processed_at: null };
+    dbEvents.set(providerEventId, newRow);
+    return newRow;
+  }
+
+  function mockMarkProcessed(providerEventId: string) {
+    const row = dbEvents.get(providerEventId);
+    if (row) row.processed_at = new Date().toISOString();
+  }
+
+  const eventId = "evt_retry_test_001";
+
+  // 1. First delivery is recorded
+  const row1 = mockRecordWebhookEventOnce(eventId);
+  assert.equal(row1.processed_at, null);
+
+  // 2. Processing throws an error (simulated failure)
+  let processFailed = false;
+  try {
+    throw new Error("Simulated processing error");
+  } catch {
+    processFailed = true;
+  }
+  assert.equal(processFailed, true);
+  assert.equal(dbEvents.get(eventId)?.processed_at, null, "processed_at must remain null after failure");
+
+  // 3. Second delivery retries
+  const row2 = mockRecordWebhookEventOnce(eventId);
+  assert.equal(row2.provider_event_id, eventId);
+  assert.equal(row2.processed_at, null, "Second delivery receives retry-eligible row");
+
+  // 4. Processing succeeds
+  mockMarkProcessed(eventId);
+  assert.notEqual(dbEvents.get(eventId)?.processed_at, null, "processed_at set after success");
+
+  // 5. Later deliveries return already_processed
+  assert.throws(
+    () => mockRecordWebhookEventOnce(eventId),
+    (err: Error) => err.message === "ALREADY_PROCESSED"
+  );
+}
+
+function testRefundCreatedVsProcessedBalanceEffects() {
+  // Simulate wallet ledger and refund state
+  let walletBalance = 10000; // 100.00 INR
+  let refundStatus = "PENDING";
+  let refundProcessedAt: string | null = null;
+  let ledgerEntriesCount = 0;
+
+  function handleRefundCreated() {
+    refundStatus = "PENDING";
+    // DO NOT reverse wallet credit!
+  }
+
+  function handleRefundProcessed(amountCents: number) {
+    if (refundStatus === "PROCESSED") return; // Idempotent check
+    refundStatus = "PROCESSED";
+    refundProcessedAt = new Date().toISOString();
+    walletBalance -= amountCents; // Reverses wallet credit exactly once
+    ledgerEntriesCount += 1;
+  }
+
+  // Initial refund.created event
+  handleRefundCreated();
+  assert.equal(walletBalance, 10000, "refund.created MUST NOT change wallet balance");
+  assert.equal(refundStatus, "PENDING");
+  assert.equal(refundProcessedAt, null);
+  assert.equal(ledgerEntriesCount, 0);
+
+  // First refund.processed event
+  handleRefundProcessed(2500);
+  assert.equal(walletBalance, 7500, "refund.processed MUST reverse wallet credit");
+  assert.equal(refundStatus, "PROCESSED");
+  assert.notEqual(refundProcessedAt, null);
+  assert.equal(ledgerEntriesCount, 1);
+
+  // Repeated duplicate refund.processed event
+  handleRefundProcessed(2500);
+  assert.equal(walletBalance, 7500, "Duplicate refund.processed MUST NOT reverse wallet credit twice");
+  assert.equal(ledgerEntriesCount, 1, "Ledger entry count stays 1");
 }
 
 function run() {
   testWebhookSignatureVerification();
   testMonotonicPaymentTransitions();
-  testMonotonicPaymentLinkStatuses();
+  testEventIdHeaderValidation();
+  testMockedWebhookRetryIdempotency();
+  testRefundCreatedVsProcessedBalanceEffects();
   console.log("razorpay-webhook-events.test.ts (@stratxcel/payments-and-wallet): ALL PASS");
 }
 

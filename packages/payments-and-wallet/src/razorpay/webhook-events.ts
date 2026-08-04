@@ -2,23 +2,40 @@ import type { ServiceClient } from "../db.ts";
 import { getPaymentOrderByProviderOrderId, transitionPaymentOrder } from "./payment-orders.ts";
 import { markRefundProcessed } from "./refunds.ts";
 import { settlePaymentToWallet } from "./settlement.ts";
-import type { PaymentOrderRow, PaymentRefundRow, RazorpayWebhookEventRow } from "./types.ts";
+import type { PaymentOrderRow, RazorpayWebhookEventRow } from "./types.ts";
 
 export class DuplicateWebhookEventError extends Error {
   constructor(providerEventId: string) {
-    super(`Razorpay webhook event ${providerEventId} was already recorded — refusing to reprocess`);
+    super(`Razorpay webhook event ${providerEventId} was already processed`);
     this.name = "DuplicateWebhookEventError";
   }
 }
 
 /**
- * Replay protection: Razorpay delivers at-least-once. The unique
- * constraint on provider_event_id is the actual enforcement.
+ * Safe retry idempotency:
+ * - If event already exists AND processed_at is set: throw DuplicateWebhookEventError (returns already_processed).
+ * - If event already exists AND processed_at is null: return existing row so caller can retry processing it.
+ * - If event does not exist: insert new row.
  */
 export async function recordWebhookEventOnce(
   supabase: ServiceClient,
   input: { providerEventId: string; eventType: string; payload: Record<string, unknown> }
 ): Promise<RazorpayWebhookEventRow> {
+  // Check for existing event record first
+  const { data: existing } = await supabase
+    .from("razorpay_webhook_events")
+    .select("*")
+    .eq("provider_event_id", input.providerEventId)
+    .maybeSingle();
+
+  if (existing) {
+    if (existing.processed_at) {
+      throw new DuplicateWebhookEventError(input.providerEventId);
+    }
+    // Row exists but was not successfully processed yet — return for retry
+    return existing as RazorpayWebhookEventRow;
+  }
+
   const { data, error } = await supabase
     .from("razorpay_webhook_events")
     .insert({ provider_event_id: input.providerEventId, event_type: input.eventType, payload: input.payload })
@@ -26,9 +43,22 @@ export async function recordWebhookEventOnce(
     .single();
 
   if (error) {
-    if (error.code === "23505") throw new DuplicateWebhookEventError(input.providerEventId);
-    throw new Error(`recordWebhookEventOnce: ${error.message}`);
+    if (error.code === "23505") {
+      // Race condition insert fallback: re-query
+      const { data: raceCheck } = await supabase
+        .from("razorpay_webhook_events")
+        .select("*")
+        .eq("provider_event_id", input.providerEventId)
+        .maybeSingle();
+
+      if (raceCheck?.processed_at) {
+        throw new DuplicateWebhookEventError(input.providerEventId);
+      }
+      if (raceCheck) return raceCheck as RazorpayWebhookEventRow;
+    }
+    throw new Error("Failed to record webhook event");
   }
+
   return data as RazorpayWebhookEventRow;
 }
 
@@ -37,7 +67,7 @@ export async function markWebhookEventProcessed(supabase: ServiceClient, eventId
     .from("razorpay_webhook_events")
     .update({ processed_at: new Date().toISOString() })
     .eq("id", eventId);
-  if (error) throw new Error(`markWebhookEventProcessed: ${error.message}`);
+  if (error) throw new Error("Failed to mark webhook event processed");
 }
 
 export interface WebhookProcessResult {
@@ -51,7 +81,7 @@ export async function processRazorpayWebhookEvent(
   event: { eventType: string; payload: Record<string, unknown> }
 ): Promise<WebhookProcessResult> {
   const { eventType, payload } = event;
-  const entityObj = (payload.payload as Record<string, Record<string, unknown>> | undefined);
+  const entityObj = payload.payload as Record<string, Record<string, unknown>> | undefined;
 
   if (eventType === "payment_link.paid") {
     const plEntity = entityObj?.payment_link?.entity as Record<string, unknown> | undefined;
@@ -75,7 +105,6 @@ export async function processRazorpayWebhookEvent(
       return { eventType, handled: false, actionTaken: "payment_link_not_found" };
     }
 
-    // Monotonic state protection: don't overwrite if already paid
     if (link.status !== "paid") {
       await supabase
         .from("payment_links")
@@ -83,7 +112,6 @@ export async function processRazorpayWebhookEvent(
         .eq("id", link.id);
     }
 
-    // Check or create payment_orders row for wallet settlement
     let order: PaymentOrderRow | null = null;
     const { data: existingOrder } = await supabase
       .from("payment_orders")
@@ -226,7 +254,45 @@ export async function processRazorpayWebhookEvent(
     return { eventType, handled: true, actionTaken: "payment_failed_logged" };
   }
 
-  if (eventType === "refund.created" || eventType === "refund.processed") {
+  if (eventType === "refund.created") {
+    // Record refund as PENDING/CREATED, store provider_refund_id. DO NOT reverse wallet credit!
+    const rfEntity = entityObj?.refund?.entity as Record<string, unknown> | undefined;
+    const providerRefundId = (rfEntity?.id as string) ?? null;
+    const paymentId = (rfEntity?.payment_id as string) ?? null;
+    const amountCents = typeof rfEntity?.amount === "number" ? rfEntity.amount : 0;
+
+    if (paymentId) {
+      const { data: order } = await supabase
+        .from("payment_orders")
+        .select("*")
+        .eq("provider_payment_id", paymentId)
+        .maybeSingle();
+
+      if (order) {
+        const { data: existingRefund } = await supabase
+          .from("payment_refunds")
+          .select("*")
+          .eq("payment_order_id", order.id)
+          .eq("provider_refund_id", providerRefundId)
+          .maybeSingle();
+
+        if (!existingRefund) {
+          await supabase.from("payment_refunds").insert({
+            tenant_id: order.tenant_id,
+            payment_order_id: order.id,
+            provider_refund_id: providerRefundId,
+            amount_cents: amountCents || order.amount_cents,
+            status: "PENDING",
+            reason: "razorpay_webhook_created",
+          });
+        }
+      }
+    }
+    return { eventType, handled: true, actionTaken: "refund_created_logged" };
+  }
+
+  if (eventType === "refund.processed") {
+    // Mark refund PROCESSED, reverse wallet credit exactly once, update order state
     const rfEntity = entityObj?.refund?.entity as Record<string, unknown> | undefined;
     const providerRefundId = (rfEntity?.id as string) ?? null;
     const paymentId = (rfEntity?.payment_id as string) ?? null;
@@ -240,10 +306,10 @@ export async function processRazorpayWebhookEvent(
       if (refundRow) {
         const order = refundRow.payment_orders as unknown as PaymentOrderRow;
         await markRefundProcessed(supabase, { refundId: refundRow.id as string, order });
-        return { eventType, handled: true, actionTaken: "refund_processed" };
+        return { eventType, handled: true, actionTaken: "refund_processed_and_reconciled" };
       }
     }
-    return { eventType, handled: true, actionTaken: "refund_event_logged" };
+    return { eventType, handled: true, actionTaken: "refund_processed_event_logged" };
   }
 
   if (eventType === "refund.failed") {
