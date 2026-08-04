@@ -9,7 +9,12 @@ export const metadata: Metadata = {
     "Tell us what you want to build. Websites, automation, AI agents, brands, apps — engineered as one system.",
 };
 
-export default function ContactPage() {
+export default async function ContactPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ intent?: string }>;
+}) {
+  const { intent } = await searchParams;
   return (
     <>
       <PageHero
@@ -20,7 +25,7 @@ export default function ContactPage() {
       <section className="mx-auto w-full max-w-6xl px-4 py-12 sm:px-6 lg:px-8">
         <div className="grid gap-10 lg:grid-cols-[1.2fr_1fr]">
           <div className="max-w-xl rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
-            <ContactForm source="contact-page" tone="light" />
+            <ContactForm source="contact-page" tone="light" intent={intent} />
           </div>
           <aside className="space-y-5 text-sm text-slate-600">
             <div>
