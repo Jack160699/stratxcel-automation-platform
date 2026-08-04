@@ -21,12 +21,12 @@ export class WebhookEventInProgressError extends Error {
 export interface ClaimEventResult {
   claimed: boolean;
   eventRow: RazorpayWebhookEventRow;
-  token: string | null;
+  token: string;
 }
 
 /**
  * Atomic processing claim for webhook event delivery.
- * Calls claim_razorpay_webhook_event RPC (or query fallback for mocks).
+ * Fail closed: if rpc method exists, RPC errors throw immediately and NEVER fall back to query logic.
  */
 export async function claimRazorpayWebhookEvent(
   supabase: ServiceClient,
@@ -42,32 +42,49 @@ export async function claimRazorpayWebhookEvent(
       p_claim_duration_seconds: claimSeconds,
     });
 
-    if (!error && data) {
-      const res = data as { claimed: boolean; status: string; event_id: string; token?: string };
-      if (!res.claimed) {
-        if (res.status === "already_processed") {
-          throw new DuplicateWebhookEventError(input.providerEventId);
-        }
-        if (res.status === "in_progress") {
-          throw new WebhookEventInProgressError(input.providerEventId);
-        }
-      }
-      return {
-        claimed: true,
-        eventRow: {
-          id: res.event_id,
-          provider_event_id: input.providerEventId,
-          event_type: input.eventType,
-          payload: input.payload,
-          processed_at: null,
-          created_at: new Date().toISOString(),
-        },
-        token: res.token ?? null,
-      };
+    if (error) {
+      throw new Error("Webhook claim RPC failed execution");
     }
+
+    if (!data || typeof data !== "object") {
+      throw new Error("Webhook claim RPC returned invalid or malformed response");
+    }
+
+    const res = data as { claimed?: boolean; status?: string; event_id?: string; token?: string };
+
+    if (typeof res.claimed !== "boolean" || typeof res.status !== "string" || typeof res.event_id !== "string") {
+      throw new Error("Webhook claim RPC response shape is invalid");
+    }
+
+    if (!res.claimed) {
+      if (res.status === "already_processed") {
+        throw new DuplicateWebhookEventError(input.providerEventId);
+      }
+      if (res.status === "in_progress") {
+        throw new WebhookEventInProgressError(input.providerEventId);
+      }
+      throw new Error(`Webhook claim denied with status: ${res.status}`);
+    }
+
+    if (!res.token || res.token.trim() === "") {
+      throw new Error("Webhook claim RPC returned claimed=true without a valid processing token");
+    }
+
+    return {
+      claimed: true,
+      eventRow: {
+        id: res.event_id,
+        provider_event_id: input.providerEventId,
+        event_type: input.eventType,
+        payload: input.payload,
+        processed_at: null,
+        created_at: new Date().toISOString(),
+      },
+      token: res.token,
+    };
   }
 
-  // Fallback for mocked test clients
+  // Non-atomic fallback for explicit test/mock clients ONLY (where rpc method does not exist)
   const { data: existing } = await supabase
     .from("razorpay_webhook_events")
     .select("*")
@@ -119,28 +136,35 @@ export async function claimRazorpayWebhookEvent(
 export async function markWebhookEventProcessed(
   supabase: ServiceClient,
   eventId: string,
-  token?: string | null
+  token: string
 ): Promise<void> {
+  if (!token || token.trim() === "") {
+    throw new Error("Processing token is required to mark webhook event processed");
+  }
+
   if (typeof supabase?.rpc === "function") {
-    await supabase.rpc("complete_razorpay_webhook_event", {
+    const { data, error } = await supabase.rpc("complete_razorpay_webhook_event", {
       p_event_id: eventId,
-      p_token: token ?? null,
+      p_token: token,
     });
+
+    if (error) {
+      throw new Error(`Webhook completion RPC error: ${error.message}`);
+    }
+
+    if (data !== true) {
+      throw new Error("Webhook completion RPC returned false: token mismatch or already completed");
+    }
+
     return;
   }
 
-  if (token) {
-    await supabase
-      .from("razorpay_webhook_events")
-      .update({ processed_at: new Date().toISOString() })
-      .eq("id", eventId)
-      .eq("processing_token", token);
-  } else {
-    await supabase
-      .from("razorpay_webhook_events")
-      .update({ processed_at: new Date().toISOString() })
-      .eq("id", eventId);
-  }
+  // Fallback for non-RPC test mocks
+  await supabase
+    .from("razorpay_webhook_events")
+    .update({ processed_at: new Date().toISOString() })
+    .eq("id", eventId)
+    .eq("processing_token", token);
 }
 
 export interface WebhookProcessResult {
@@ -169,24 +193,28 @@ export async function processRazorpayWebhookEvent(
     else if (referenceId) query = query.eq("reference_id", referenceId);
     else return { eventType, handled: false, actionTaken: "missing_link_identifiers" };
 
-    const { data: link } = await query.maybeSingle();
+    const { data: link, error: linkErr } = await query.maybeSingle();
+    if (linkErr) throw new Error(`payment_link.paid: lookup failed: ${linkErr.message}`);
     if (!link) return { eventType, handled: false, actionTaken: "payment_link_not_found" };
 
     if (link.status !== "paid") {
-      await supabase
+      const { error: updateErr } = await supabase
         .from("payment_links")
         .update({ status: "paid", provider_payment_id: paymentId, updated_at: new Date().toISOString() })
         .eq("id", link.id);
+      if (updateErr) throw new Error(`payment_link.paid: update link status failed: ${updateErr.message}`);
     }
 
     let order: PaymentOrderRow | null = null;
-    const { data: existingOrder } = await supabase
+    const { data: existingOrder, error: orderFetchErr } = await supabase
       .from("payment_orders")
       .select("*")
       .eq("tenant_id", link.tenant_id)
       .eq("reference_type", "payment_link")
       .eq("reference_id", link.reference_id)
       .maybeSingle();
+
+    if (orderFetchErr) throw new Error(`payment_link.paid: fetch payment order failed: ${orderFetchErr.message}`);
 
     if (existingOrder) {
       order = existingOrder as PaymentOrderRow;
@@ -215,10 +243,37 @@ export async function processRazorpayWebhookEvent(
         .select("*")
         .single();
 
-      if (!orderErr && newOrder) order = newOrder as PaymentOrderRow;
+      if (orderErr) {
+        if (orderErr.code === "23505") {
+          // Uniqueness race: re-fetch existing order created by concurrent delivery
+          const { data: refetched, error: refetchErr } = await supabase
+            .from("payment_orders")
+            .select("*")
+            .eq("tenant_id", link.tenant_id)
+            .eq("reference_type", "payment_link")
+            .eq("reference_id", link.reference_id)
+            .single();
+
+          if (refetchErr || !refetched) {
+            throw new Error(`payment_link.paid: payment order race re-fetch failed: ${refetchErr?.message}`);
+          }
+          order = refetched as PaymentOrderRow;
+        } else {
+          throw new Error(`payment_link.paid: insert payment order failed: ${orderErr.message}`);
+        }
+      } else {
+        order = newOrder as PaymentOrderRow;
+      }
     }
 
-    if (order) await settlePaymentToWallet(supabase, order);
+    if (!order) throw new Error("payment_link.paid: failed to resolve payment order");
+
+    // Settle payment to wallet (must succeed)
+    const settleRes = await settlePaymentToWallet(supabase, order);
+    if (typeof settleRes?.settled !== "boolean") {
+      throw new Error("payment_link.paid: settlement returned invalid result");
+    }
+
     return { eventType, handled: true, actionTaken: "payment_link_paid_and_settled" };
   }
 
@@ -232,12 +287,14 @@ export async function processRazorpayWebhookEvent(
     else if (referenceId) query = query.eq("reference_id", referenceId);
     else return { eventType, handled: false, actionTaken: "missing_link_identifiers" };
 
-    const { data: link } = await query.maybeSingle();
+    const { data: link, error: fetchErr } = await query.maybeSingle();
+    if (fetchErr) throw new Error(`payment_link.partially_paid lookup failed: ${fetchErr.message}`);
     if (link && link.status !== "paid") {
-      await supabase
+      const { error: updateErr } = await supabase
         .from("payment_links")
         .update({ status: "partially_paid", updated_at: new Date().toISOString() })
         .eq("id", link.id);
+      if (updateErr) throw new Error(`payment_link.partially_paid status update failed: ${updateErr.message}`);
     }
     return { eventType, handled: true, actionTaken: "payment_link_partially_paid" };
   }
@@ -252,12 +309,14 @@ export async function processRazorpayWebhookEvent(
     else if (referenceId) query = query.eq("reference_id", referenceId);
     else return { eventType, handled: false, actionTaken: "missing_link_identifiers" };
 
-    const { data: link } = await query.maybeSingle();
+    const { data: link, error: fetchErr } = await query.maybeSingle();
+    if (fetchErr) throw new Error(`payment_link.expired lookup failed: ${fetchErr.message}`);
     if (link && link.status === "created") {
-      await supabase
+      const { error: updateErr } = await supabase
         .from("payment_links")
         .update({ status: "expired", updated_at: new Date().toISOString() })
         .eq("id", link.id);
+      if (updateErr) throw new Error(`payment_link.expired status update failed: ${updateErr.message}`);
     }
     return { eventType, handled: true, actionTaken: "payment_link_expired" };
   }
@@ -272,12 +331,14 @@ export async function processRazorpayWebhookEvent(
     else if (referenceId) query = query.eq("reference_id", referenceId);
     else return { eventType, handled: false, actionTaken: "missing_link_identifiers" };
 
-    const { data: link } = await query.maybeSingle();
+    const { data: link, error: fetchErr } = await query.maybeSingle();
+    if (fetchErr) throw new Error(`payment_link.cancelled lookup failed: ${fetchErr.message}`);
     if (link && link.status === "created") {
-      await supabase
+      const { error: updateErr } = await supabase
         .from("payment_links")
         .update({ status: "cancelled", updated_at: new Date().toISOString() })
         .eq("id", link.id);
+      if (updateErr) throw new Error(`payment_link.cancelled status update failed: ${updateErr.message}`);
     }
     return { eventType, handled: true, actionTaken: "payment_link_cancelled" };
   }
@@ -322,27 +383,26 @@ export async function processRazorpayWebhookEvent(
     const paymentId = (rfEntity?.payment_id as string) ?? null;
     const amountCents = typeof rfEntity?.amount === "number" ? rfEntity.amount : 0;
 
-    if (paymentId) {
-      const { data: order } = await supabase
-        .from("payment_orders")
+    if (providerRefundId) {
+      const { data: existingRefund } = await supabase
+        .from("payment_refunds")
         .select("*")
-        .eq("provider_payment_id", paymentId)
+        .eq("provider_refund_id", providerRefundId)
         .maybeSingle();
 
-      if (order) {
-        const { data: existingRefund } = await supabase
-          .from("payment_refunds")
+      if (existingRefund) {
+        if (existingRefund.status === "PROCESSED" || existingRefund.status === "FAILED") {
+          return { eventType, handled: true, actionTaken: "refund_created_ignored_already_terminal" };
+        }
+      } else if (paymentId) {
+        const { data: order } = await supabase
+          .from("payment_orders")
           .select("*")
-          .eq("payment_order_id", order.id)
-          .eq("provider_refund_id", providerRefundId)
+          .eq("provider_payment_id", paymentId)
           .maybeSingle();
 
-        if (existingRefund) {
-          if (existingRefund.status === "PROCESSED" || existingRefund.status === "FAILED") {
-            return { eventType, handled: true, actionTaken: "refund_created_ignored_already_terminal" };
-          }
-        } else {
-          await supabase.from("payment_refunds").insert({
+        if (order) {
+          const { error: insertErr } = await supabase.from("payment_refunds").insert({
             tenant_id: order.tenant_id,
             payment_order_id: order.id,
             provider_refund_id: providerRefundId,
@@ -350,6 +410,9 @@ export async function processRazorpayWebhookEvent(
             status: "PENDING",
             reason: "razorpay_webhook_created",
           });
+          if (insertErr && insertErr.code !== "23505") {
+            throw new Error(`refund.created insert failed: ${insertErr.message}`);
+          }
         }
       }
     }
@@ -367,27 +430,31 @@ export async function processRazorpayWebhookEvent(
     }
 
     let order: PaymentOrderRow | null = null;
-    if (paymentId) {
-      const { data: foundOrder } = await supabase
-        .from("payment_orders")
-        .select("*")
-        .eq("provider_payment_id", paymentId)
-        .maybeSingle();
-      if (foundOrder) order = foundOrder as PaymentOrderRow;
-    }
-
     let refundRow: Record<string, unknown> | null = null;
+
     if (providerRefundId) {
-      const { data: foundRefund } = await supabase
+      const { data: foundRefund, error: findErr } = await supabase
         .from("payment_refunds")
         .select("*, payment_orders!inner(*)")
         .eq("provider_refund_id", providerRefundId)
         .maybeSingle();
 
+      if (findErr) throw new Error(`refund.processed lookup failed: ${findErr.message}`);
+
       if (foundRefund) {
         refundRow = foundRefund;
         order = foundRefund.payment_orders as unknown as PaymentOrderRow;
       }
+    }
+
+    if (!order && paymentId) {
+      const { data: foundOrder, error: orderErr } = await supabase
+        .from("payment_orders")
+        .select("*")
+        .eq("provider_payment_id", paymentId)
+        .maybeSingle();
+      if (orderErr) throw new Error(`refund.processed payment order lookup failed: ${orderErr.message}`);
+      if (foundOrder) order = foundOrder as PaymentOrderRow;
     }
 
     if (!order) {
@@ -413,7 +480,21 @@ export async function processRazorpayWebhookEvent(
         .select("*")
         .single();
 
-      if (!insertErr && newRefund) refundRow = newRefund;
+      if (insertErr) {
+        if (insertErr.code === "23505" && providerRefundId) {
+          // Uniqueness race: re-fetch existing refund row
+          const { data: refetched } = await supabase
+            .from("payment_refunds")
+            .select("*")
+            .eq("provider_refund_id", providerRefundId)
+            .single();
+          refundRow = refetched;
+        } else {
+          throw new Error(`refund.processed insert failed: ${insertErr.message}`);
+        }
+      } else {
+        refundRow = newRefund;
+      }
     }
 
     if (refundRow) {
@@ -438,11 +519,12 @@ export async function processRazorpayWebhookEvent(
         .maybeSingle();
 
       if (existing) {
-        await supabase.from("payment_refunds").update({ status: "FAILED" }).eq("id", existing.id);
+        const { error: updateErr } = await supabase.from("payment_refunds").update({ status: "FAILED" }).eq("id", existing.id);
+        if (updateErr) throw new Error(`refund.failed update status failed: ${updateErr.message}`);
       } else if (paymentId) {
         const { data: order } = await supabase.from("payment_orders").select("*").eq("provider_payment_id", paymentId).maybeSingle();
         if (order) {
-          await supabase.from("payment_refunds").insert({
+          const { error: insertErr } = await supabase.from("payment_refunds").insert({
             tenant_id: order.tenant_id,
             payment_order_id: order.id,
             provider_refund_id: providerRefundId,
@@ -450,6 +532,9 @@ export async function processRazorpayWebhookEvent(
             status: "FAILED",
             reason: "razorpay_webhook_failed_out_of_order",
           });
+          if (insertErr && insertErr.code !== "23505") {
+            throw new Error(`refund.failed insert failed: ${insertErr.message}`);
+          }
         }
       }
     }

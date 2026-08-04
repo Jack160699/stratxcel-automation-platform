@@ -50,7 +50,7 @@ export async function getWalletAccount(supabase: ServiceClient, tenantId: string
 
 /**
  * Atomic PostgreSQL RPC ledger write for live payment settlements and refund reversals.
- * Calls append_wallet_ledger_entry_atomic RPC with fallback for mock clients.
+ * Fail closed: if rpc method exists, errors/malformed responses throw immediately and NEVER fall back to non-atomic query logic.
  */
 export async function appendLedgerEntryAtomic(
   supabase: ServiceClient,
@@ -75,13 +75,19 @@ export async function appendLedgerEntryAtomic(
       p_metadata: input.metadata ?? {},
     });
 
-    if (!error && data) {
-      const res = data as { inserted: boolean; entry_id: string; balance_cents: number };
-      return { settled: res.inserted, entryId: res.entry_id, balanceCents: res.balance_cents };
+    if (error) {
+      throw new Error("Atomic wallet ledger RPC execution failed");
     }
+
+    if (!data || typeof data !== "object" || typeof (data as Record<string, unknown>).inserted !== "boolean") {
+      throw new Error("Atomic wallet ledger RPC returned invalid or malformed response");
+    }
+
+    const res = data as { inserted: boolean; entry_id: string; balance_cents: number };
+    return { settled: res.inserted, entryId: res.entry_id, balanceCents: res.balance_cents };
   }
 
-  // Fallback for mocked test clients
+  // Non-atomic fallback for explicit test/mock clients ONLY (where rpc method does not exist)
   if (input.referenceType && input.referenceId) {
     const { data: existing } = await supabase
       .from("wallet_ledger_entries")
