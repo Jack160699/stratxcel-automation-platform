@@ -10,9 +10,7 @@ import {
   WebhookEventInProgressError,
 } from "../razorpay/webhook-events.ts";
 import { settlePaymentToWallet } from "../razorpay/settlement.ts";
-import { markRefundProcessed } from "../razorpay/refunds.ts";
 import { verifyRazorpayWebhookSignature } from "../razorpay/webhook.ts";
-import { canTransitionPayment, assertPaymentTransition, InvalidPaymentTransitionError } from "../razorpay/payment-state-machine.ts";
 import type { PaymentOrderRow } from "../razorpay/types.ts";
 
 function testWebhookSignatureVerification() {
@@ -25,80 +23,69 @@ function testWebhookSignatureVerification() {
   assert.equal(verifyRazorpayWebhookSignature(rawBody, null, secret), false);
 }
 
-async function testProductionClaimAndRetryBehavior() {
-  const dbEvents = new Map<string, Record<string, unknown>>();
+async function testMultipleEventsForSamePaymentLinkSingleCredit() {
+  const ordersDb = new Map<string, Record<string, unknown>>();
+  const ledgerEntries: Record<string, unknown>[] = [];
+  let walletBalance = 0;
 
-  const createQueryChain = (targetId: string, payloadToApply?: Record<string, unknown>) => {
-    const chain = {
-      eq: (_field: string, val: string) => createQueryChain(targetId || val, payloadToApply),
-      maybeSingle: async () => ({ data: dbEvents.get(targetId) ?? null, error: null }),
-      single: async () => ({ data: dbEvents.get(targetId) ?? null, error: null }),
-      then: (resolve: (val: unknown) => void) => {
-        if (payloadToApply && targetId) {
-          const existing = dbEvents.get(targetId);
-          if (existing) Object.assign(existing, payloadToApply);
-        }
-        return Promise.resolve({ data: dbEvents.get(targetId) ?? null, error: null }).then(resolve);
-      },
-    };
-    return chain;
+  const mockLink = {
+    id: "link_business_123",
+    tenant_id: "tenant_biz_1",
+    amount_cents: 15000,
+    currency: "INR",
+    status: "created",
+    mode: "live",
+    reference_id: "pl_ref_biz_100",
   };
+
+  const createQueryChain = (key: string) => ({
+    eq: (_f2: string, v2: string) => createQueryChain(`${key}:${v2}`),
+    maybeSingle: async () => {
+      if (key.includes("payment_links")) return { data: mockLink, error: null };
+      if (key.includes("payment_orders")) {
+        const orderKey = `tenant_biz_1:razorpay:payment_link:pl_ref_biz_100`;
+        return { data: ordersDb.get(orderKey) ?? null, error: null };
+      }
+      return { data: null, error: null };
+    },
+    single: async () => {
+      const orderKey = `tenant_biz_1:razorpay:payment_link:pl_ref_biz_100`;
+      return { data: ordersDb.get(orderKey) ?? null, error: null };
+    },
+  });
 
   const mockDb = {
     from: (table: string) => {
-      if (table === "razorpay_webhook_events") {
+      if (table === "payment_links") {
         return {
-          select: () => ({
-            eq: (_field: string, val: string) => createQueryChain(val),
+          select: () => createQueryChain("payment_links"),
+          update: () => ({
+            eq: () => Promise.resolve({ data: mockLink, error: null }),
           }),
-          update: (fields: Record<string, unknown>) => ({
-            eq: (_field: string, val: string) => createQueryChain(val, fields),
-          }),
+        };
+      }
+      if (table === "payment_orders") {
+        return {
+          select: () => createQueryChain("payment_orders"),
           insert: (fields: Record<string, unknown>) => {
-            const id = `id_${Math.random()}`;
-            const row = { id, ...fields };
-            dbEvents.set(fields.provider_event_id as string, row);
-            dbEvents.set(id, row);
+            const orderKey = `${fields.tenant_id}:${fields.provider}:${fields.reference_type}:${fields.reference_id}`;
+            if (ordersDb.has(orderKey)) {
+              return {
+                select: () => ({
+                  single: async () => ({ data: null, error: { code: "23505", message: "Business ref unique collision" } }),
+                }),
+              };
+            }
+            const newOrder = { id: "order_biz_1", ...fields };
+            ordersDb.set(orderKey, newOrder);
             return {
               select: () => ({
-                single: async () => ({ data: row, error: null }),
+                single: async () => ({ data: newOrder, error: null }),
               }),
             };
           },
         };
       }
-      return {};
-    },
-  } as unknown as ServiceClient;
-
-  const eventId = "evt_prod_claim_test_100";
-
-  // 1. First claim succeeds
-  const claim1 = await claimRazorpayWebhookEvent(mockDb, { providerEventId: eventId, eventType: "payment_link.paid", payload: {} });
-  assert.equal(claim1.claimed, true);
-  assert.notEqual(claim1.token, null);
-
-  // 2. Concurrent second claim during active lease throws WebhookEventInProgressError
-  await assert.rejects(
-    () => claimRazorpayWebhookEvent(mockDb, { providerEventId: eventId, eventType: "payment_link.paid", payload: {} }),
-    WebhookEventInProgressError
-  );
-
-  // 3. Mark processed
-  await markWebhookEventProcessed(mockDb, claim1.eventRow.id, claim1.token);
-
-  // 4. Subsequent claim throws DuplicateWebhookEventError
-  await assert.rejects(
-    () => claimRazorpayWebhookEvent(mockDb, { providerEventId: eventId, eventType: "payment_link.paid", payload: {} }),
-    DuplicateWebhookEventError
-  );
-}
-
-async function testProductionSettlementIdempotency() {
-  const ledgerEntries: Record<string, unknown>[] = [];
-
-  const mockDb = {
-    from: (table: string) => {
       if (table === "wallet_ledger_entries") {
         return {
           select: () => ({
@@ -106,9 +93,7 @@ async function testProductionSettlementIdempotency() {
               eq: (f2: string, v2: string) => ({
                 eq: (f3: string, v3: string) => ({
                   maybeSingle: async () => {
-                    const match = ledgerEntries.find(
-                      (e) => e.tenant_id === v1 && e.reference_type === v2 && e.reference_id === v3
-                    );
+                    const match = ledgerEntries.find((e) => e.tenant_id === v1 && e.reference_type === v2 && e.reference_id === v3);
                     return { data: match ?? null, error: null };
                   },
                 }),
@@ -118,6 +103,7 @@ async function testProductionSettlementIdempotency() {
           insert: (entry: Record<string, unknown>) => {
             const row = { id: `entry_${Date.now()}`, ...entry };
             ledgerEntries.push(row);
+            walletBalance += entry.amount_cents as number;
             return {
               select: () => ({
                 single: async () => ({ data: row, error: null }),
@@ -130,13 +116,13 @@ async function testProductionSettlementIdempotency() {
         return {
           select: () => ({
             eq: () => ({
-              maybeSingle: async () => ({ data: { tenant_id: "t1", balance_cents: 0 }, error: null }),
+              maybeSingle: async () => ({ data: { tenant_id: "tenant_biz_1", balance_cents: walletBalance }, error: null }),
             }),
           }),
           update: () => ({
             eq: () => ({
               select: () => ({
-                single: async () => ({ data: { balance_cents: 5000 }, error: null }),
+                single: async () => ({ data: { balance_cents: walletBalance }, error: null }),
               }),
             }),
           }),
@@ -146,51 +132,45 @@ async function testProductionSettlementIdempotency() {
     },
   } as unknown as ServiceClient;
 
-  const mockOrder: PaymentOrderRow = {
-    id: "order-uuid-999",
-    tenant_id: "tenant-uuid-111",
-    provider: "razorpay",
-    provider_order_id: "order_123",
-    provider_payment_id: "pay_123",
-    amount_cents: 5000,
-    currency: "INR",
-    state: "CAPTURED",
-    mode: "live",
-    reference_type: "payment_link",
-    reference_id: "pl_ref_123",
-    metadata: {},
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
+  const eventPayload = {
+    payload: {
+      payment_link: { entity: { id: "plink_live_biz_1", reference_id: "pl_ref_biz_100" } },
+      payment: { entity: { id: "pay_live_biz_1" } },
+    },
   };
 
-  // First settlement credits wallet exactly once
-  const res1 = await settlePaymentToWallet(mockDb, mockOrder);
-  assert.equal(res1.settled, true);
-  assert.equal(ledgerEntries.length, 1);
+  // Webhook Event 1 (evt_1)
+  const res1 = await processRazorpayWebhookEvent(mockDb, { eventType: "payment_link.paid", payload: eventPayload });
+  assert.equal(res1.handled, true);
+  assert.equal(ordersDb.size, 1, "Exactly 1 payment_order created");
+  assert.equal(ledgerEntries.length, 1, "Exactly 1 credit_purchase ledger entry");
+  assert.equal(walletBalance, 15000, "Wallet balance increased by 15000 cents");
 
-  // Duplicate settlement attempt does NOT double-credit
-  const res2 = await settlePaymentToWallet(mockDb, mockOrder);
-  assert.equal(res2.settled, false);
-  assert.equal(ledgerEntries.length, 1, "Ledger entry count remains 1");
+  // Webhook Event 2 (evt_2 - separate event ID for same payment link)
+  const res2 = await processRazorpayWebhookEvent(mockDb, { eventType: "payment_link.paid", payload: eventPayload });
+  assert.equal(res2.handled, true);
+  assert.equal(ordersDb.size, 1, "Payment order count stays 1");
+  assert.equal(ledgerEntries.length, 1, "Ledger entry count stays 1 (no double credit)");
+  assert.equal(walletBalance, 15000, "Wallet balance remains 15000 cents");
 }
 
-async function testOutOfOrderRefundReconciliation() {
+async function testMonotonicRefundStatusTransitions() {
   const refundsDb = new Map<string, Record<string, unknown>>();
   const ledgerEntries: Record<string, unknown>[] = [];
-  let orderState = "CAPTURED";
+  let walletBalance = 10000;
 
   const mockOrder: PaymentOrderRow = {
-    id: "order-out-of-order-1",
-    tenant_id: "tenant-out-of-order",
+    id: "order_mono_1",
+    tenant_id: "tenant_mono_1",
     provider: "razorpay",
     provider_order_id: null,
-    provider_payment_id: "pay_ooo_100",
+    provider_payment_id: "pay_mono_1",
     amount_cents: 10000,
     currency: "INR",
     state: "CAPTURED",
     mode: "live",
     reference_type: "payment_link",
-    reference_id: "pl_ref_ooo",
+    reference_id: "pl_ref_mono",
     metadata: {},
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
@@ -199,8 +179,7 @@ async function testOutOfOrderRefundReconciliation() {
   const createRefundChain = (targetId: string) => ({
     eq: (f2?: string, v2?: string) => ({
       maybeSingle: async () => {
-        const items = Array.from(refundsDb.values());
-        const match = items.find((i) => i[targetId] === targetId || i.provider_refund_id === targetId || (f2 && i[f2] === v2));
+        const match = refundsDb.get(targetId) || Array.from(refundsDb.values()).find((i) => i[f2 ?? ""] === v2);
         return { data: match ? { ...match, payment_orders: mockOrder } : null, error: null };
       },
     }),
@@ -212,9 +191,6 @@ async function testOutOfOrderRefundReconciliation() {
       const match = refundsDb.get(targetId);
       return { data: match ? { ...match, payment_orders: mockOrder } : null, error: null };
     },
-    then: (resolve: (val: unknown) => void) => {
-      return Promise.resolve({ data: refundsDb.get(targetId) ?? null, error: null }).then(resolve);
-    },
   });
 
   const mockDb = {
@@ -222,26 +198,23 @@ async function testOutOfOrderRefundReconciliation() {
       if (table === "payment_orders") {
         return {
           select: () => ({
-            eq: (_f: string, v: string) => ({
-              maybeSingle: async () => ({ data: v === "pay_ooo_100" || v === mockOrder.id ? mockOrder : null, error: null }),
-              single: async () => ({ data: v === "pay_ooo_100" || v === mockOrder.id ? mockOrder : null, error: null }),
+            eq: () => ({
+              maybeSingle: async () => ({ data: mockOrder, error: null }),
+              single: async () => ({ data: mockOrder, error: null }),
             }),
           }),
-          update: (fields: Record<string, unknown>) => {
-            if (fields.state) orderState = fields.state as string;
-            return {
-              eq: () => ({
-                select: () => ({
-                  single: async () => ({ data: { ...mockOrder, state: orderState }, error: null }),
-                }),
+          update: () => ({
+            eq: () => ({
+              select: () => ({
+                single: async () => ({ data: mockOrder, error: null }),
               }),
-            };
-          },
+            }),
+          }),
         };
       }
       if (table === "payment_refunds") {
         return {
-          select: (_cols?: string) => ({
+          select: () => ({
             eq: (_f1: string, v1: string) => createRefundChain(v1),
           }),
           insert: (fields: Record<string, unknown>) => {
@@ -284,6 +257,7 @@ async function testOutOfOrderRefundReconciliation() {
           insert: (entry: Record<string, unknown>) => {
             const row = { id: `entry_${Date.now()}`, ...entry };
             ledgerEntries.push(row);
+            walletBalance += entry.amount_cents as number;
             return {
               select: () => ({
                 single: async () => ({ data: row, error: null }),
@@ -296,13 +270,13 @@ async function testOutOfOrderRefundReconciliation() {
         return {
           select: () => ({
             eq: () => ({
-              maybeSingle: async () => ({ data: { tenant_id: mockOrder.tenant_id, balance_cents: 10000 }, error: null }),
+              maybeSingle: async () => ({ data: { tenant_id: mockOrder.tenant_id, balance_cents: walletBalance }, error: null }),
             }),
           }),
           update: () => ({
             eq: () => ({
               select: () => ({
-                single: async () => ({ data: { balance_cents: 0 }, error: null }),
+                single: async () => ({ data: { balance_cents: walletBalance }, error: null }),
               }),
             }),
           }),
@@ -312,42 +286,64 @@ async function testOutOfOrderRefundReconciliation() {
     },
   } as unknown as ServiceClient;
 
-  // 1. Out-of-order: refund.processed arrives FIRST
-  const procRes = await processRazorpayWebhookEvent(mockDb, {
-    eventType: "refund.processed",
+  const rfId = "rfnd_mono_999";
+  const refundPayload = (statusEvent: string) => ({
+    eventType: statusEvent,
     payload: {
       payload: {
-        refund: { entity: { id: "rfnd_ooo_999", payment_id: "pay_ooo_100", amount: 10000 } },
+        refund: { entity: { id: rfId, payment_id: "pay_mono_1", amount: 10000 } },
       },
     },
   });
 
-  assert.equal(procRes.handled, true);
-  assert.equal(procRes.actionTaken, "refund_processed_and_reconciled");
-  assert.equal(ledgerEntries.length, 1, "Wallet ledger reversed exactly once on out-of-order refund.processed");
-  assert.equal(refundsDb.get("rfnd_ooo_999")?.status, "PROCESSED");
+  // 1. Processed -> PROCESSED
+  const pRes = await processRazorpayWebhookEvent(mockDb, refundPayload("refund.processed"));
+  assert.equal(pRes.handled, true);
+  assert.equal(refundsDb.get(rfId)?.status, "PROCESSED");
+  assert.equal(walletBalance, 0, "Wallet reversed by 10000");
+  assert.equal(ledgerEntries.length, 1);
 
-  // 2. Out-of-order: refund.created arrives LATER
-  const createRes = await processRazorpayWebhookEvent(mockDb, {
-    eventType: "refund.created",
+  // 2. Processed then Failed -> Remains PROCESSED
+  const fRes = await processRazorpayWebhookEvent(mockDb, refundPayload("refund.failed"));
+  assert.equal(fRes.handled, true);
+  assert.equal(fRes.actionTaken, "refund_failed_ignored_already_processed");
+  assert.equal(refundsDb.get(rfId)?.status, "PROCESSED", "Status must stay PROCESSED");
+  assert.equal(walletBalance, 0, "Wallet balance untouched by refund.failed");
+
+  // 3. Processed then Created -> Remains PROCESSED
+  const cRes = await processRazorpayWebhookEvent(mockDb, refundPayload("refund.created"));
+  assert.equal(cRes.handled, true);
+  assert.equal(cRes.actionTaken, "refund_created_ignored_already_terminal");
+  assert.equal(refundsDb.get(rfId)?.status, "PROCESSED", "Status must stay PROCESSED");
+
+  // 4. Duplicate refund.processed events reverse wallet once
+  const dupRes = await processRazorpayWebhookEvent(mockDb, refundPayload("refund.processed"));
+  assert.equal(dupRes.handled, true);
+  assert.equal(ledgerEntries.length, 1, "Duplicate refund.processed MUST NOT reverse wallet twice");
+  assert.equal(walletBalance, 0);
+
+  // 5. Failed then Created -> Remains FAILED
+  const rfIdFailed = "rfnd_mono_failed_888";
+  const failedPayload = (statusEvent: string) => ({
+    eventType: statusEvent,
     payload: {
       payload: {
-        refund: { entity: { id: "rfnd_ooo_999", payment_id: "pay_ooo_100", amount: 10000 } },
+        refund: { entity: { id: rfIdFailed, payment_id: "pay_mono_1", amount: 5000 } },
       },
     },
   });
 
-  assert.equal(createRes.handled, true);
-  assert.equal(createRes.actionTaken, "refund_created_ignored_already_terminal", "refund.created must NOT move PROCESSED refund back to PENDING");
-  assert.equal(refundsDb.get("rfnd_ooo_999")?.status, "PROCESSED");
-  assert.equal(ledgerEntries.length, 1, "Wallet ledger count remains 1 (no double reversal)");
+  await processRazorpayWebhookEvent(mockDb, failedPayload("refund.failed"));
+  assert.equal(refundsDb.get(rfIdFailed)?.status, "FAILED");
+
+  await processRazorpayWebhookEvent(mockDb, failedPayload("refund.created"));
+  assert.equal(refundsDb.get(rfIdFailed)?.status, "FAILED", "refund.created must NOT downgrade FAILED to PENDING");
 }
 
 async function run() {
   testWebhookSignatureVerification();
-  await testProductionClaimAndRetryBehavior();
-  await testProductionSettlementIdempotency();
-  await testOutOfOrderRefundReconciliation();
+  await testMultipleEventsForSamePaymentLinkSingleCredit();
+  await testMonotonicRefundStatusTransitions();
   console.log("razorpay-webhook-events.test.ts (@stratxcel/payments-and-wallet): ALL PASS");
 }
 

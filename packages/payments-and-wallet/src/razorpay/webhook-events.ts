@@ -210,6 +210,7 @@ export async function processRazorpayWebhookEvent(
       .from("payment_orders")
       .select("*")
       .eq("tenant_id", link.tenant_id)
+      .eq("provider", "razorpay")
       .eq("reference_type", "payment_link")
       .eq("reference_id", link.reference_id)
       .maybeSingle();
@@ -250,6 +251,7 @@ export async function processRazorpayWebhookEvent(
             .from("payment_orders")
             .select("*")
             .eq("tenant_id", link.tenant_id)
+            .eq("provider", "razorpay")
             .eq("reference_type", "payment_link")
             .eq("reference_id", link.reference_id)
             .single();
@@ -268,7 +270,6 @@ export async function processRazorpayWebhookEvent(
 
     if (!order) throw new Error("payment_link.paid: failed to resolve payment order");
 
-    // Settle payment to wallet (must succeed)
     const settleRes = await settlePaymentToWallet(supabase, order);
     if (typeof settleRes?.settled !== "boolean") {
       throw new Error("payment_link.paid: settlement returned invalid result");
@@ -289,7 +290,9 @@ export async function processRazorpayWebhookEvent(
 
     const { data: link, error: fetchErr } = await query.maybeSingle();
     if (fetchErr) throw new Error(`payment_link.partially_paid lookup failed: ${fetchErr.message}`);
-    if (link && link.status !== "paid") {
+    if (!link) return { eventType, handled: false, actionTaken: "payment_link_not_found" };
+
+    if (link.status !== "paid") {
       const { error: updateErr } = await supabase
         .from("payment_links")
         .update({ status: "partially_paid", updated_at: new Date().toISOString() })
@@ -311,7 +314,9 @@ export async function processRazorpayWebhookEvent(
 
     const { data: link, error: fetchErr } = await query.maybeSingle();
     if (fetchErr) throw new Error(`payment_link.expired lookup failed: ${fetchErr.message}`);
-    if (link && link.status === "created") {
+    if (!link) return { eventType, handled: false, actionTaken: "payment_link_not_found" };
+
+    if (link.status === "created") {
       const { error: updateErr } = await supabase
         .from("payment_links")
         .update({ status: "expired", updated_at: new Date().toISOString() })
@@ -333,7 +338,9 @@ export async function processRazorpayWebhookEvent(
 
     const { data: link, error: fetchErr } = await query.maybeSingle();
     if (fetchErr) throw new Error(`payment_link.cancelled lookup failed: ${fetchErr.message}`);
-    if (link && link.status === "created") {
+    if (!link) return { eventType, handled: false, actionTaken: "payment_link_not_found" };
+
+    if (link.status === "created") {
       const { error: updateErr } = await supabase
         .from("payment_links")
         .update({ status: "cancelled", updated_at: new Date().toISOString() })
@@ -391,6 +398,7 @@ export async function processRazorpayWebhookEvent(
         .maybeSingle();
 
       if (existingRefund) {
+        // Monotonic status guarantee: refund.created MUST NOT downgrade PROCESSED or FAILED
         if (existingRefund.status === "PROCESSED" || existingRefund.status === "FAILED") {
           return { eventType, handled: true, actionTaken: "refund_created_ignored_already_terminal" };
         }
@@ -401,19 +409,23 @@ export async function processRazorpayWebhookEvent(
           .eq("provider_payment_id", paymentId)
           .maybeSingle();
 
-        if (order) {
-          const { error: insertErr } = await supabase.from("payment_refunds").insert({
-            tenant_id: order.tenant_id,
-            payment_order_id: order.id,
-            provider_refund_id: providerRefundId,
-            amount_cents: amountCents || order.amount_cents,
-            status: "PENDING",
-            reason: "razorpay_webhook_created",
-          });
-          if (insertErr && insertErr.code !== "23505") {
-            throw new Error(`refund.created insert failed: ${insertErr.message}`);
-          }
+        if (!order) {
+          return { eventType, handled: false, actionTaken: "payment_order_not_found_for_refund" };
         }
+
+        const { error: insertErr } = await supabase.from("payment_refunds").insert({
+          tenant_id: order.tenant_id,
+          payment_order_id: order.id,
+          provider_refund_id: providerRefundId,
+          amount_cents: amountCents || order.amount_cents,
+          status: "PENDING",
+          reason: "razorpay_webhook_created",
+        });
+        if (insertErr && insertErr.code !== "23505") {
+          throw new Error(`refund.created insert failed: ${insertErr.message}`);
+        }
+      } else {
+        return { eventType, handled: false, actionTaken: "missing_refund_identifiers" };
       }
     }
     return { eventType, handled: true, actionTaken: "refund_created_logged" };
@@ -482,7 +494,6 @@ export async function processRazorpayWebhookEvent(
 
       if (insertErr) {
         if (insertErr.code === "23505" && providerRefundId) {
-          // Uniqueness race: re-fetch existing refund row
           const { data: refetched } = await supabase
             .from("payment_refunds")
             .select("*")
@@ -514,11 +525,20 @@ export async function processRazorpayWebhookEvent(
     if (providerRefundId) {
       const { data: existing } = await supabase
         .from("payment_refunds")
-        .select("id")
+        .select("id, status")
         .eq("provider_refund_id", providerRefundId)
         .maybeSingle();
 
       if (existing) {
+        // Monotonic status hierarchy: PROCESSED > FAILED > PENDING
+        if (existing.status === "PROCESSED") {
+          return { eventType, handled: true, actionTaken: "refund_failed_ignored_already_processed" };
+        }
+        if (existing.status === "FAILED") {
+          return { eventType, handled: true, actionTaken: "refund_failed_already_failed" };
+        }
+
+        // Only PENDING transitions to FAILED (never alter wallet!)
         const { error: updateErr } = await supabase.from("payment_refunds").update({ status: "FAILED" }).eq("id", existing.id);
         if (updateErr) throw new Error(`refund.failed update status failed: ${updateErr.message}`);
       } else if (paymentId) {
@@ -535,11 +555,16 @@ export async function processRazorpayWebhookEvent(
           if (insertErr && insertErr.code !== "23505") {
             throw new Error(`refund.failed insert failed: ${insertErr.message}`);
           }
+        } else {
+          return { eventType, handled: false, actionTaken: "payment_order_not_found_for_refund" };
         }
       }
+    } else {
+      return { eventType, handled: false, actionTaken: "missing_refund_identifiers" };
     }
     return { eventType, handled: true, actionTaken: "refund_failed_updated" };
   }
 
+  // Unknown/unsubscribed event types recorded as handled=true to prevent permanent retry loops
   return { eventType, handled: true, actionTaken: "event_unhandled_recorded" };
 }

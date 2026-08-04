@@ -292,7 +292,9 @@ async function testPaymentLinkPaidDbFailures() {
             eq: () => ({
               eq: () => ({
                 eq: () => ({
-                  maybeSingle: async () => ({ data: null, error: null }),
+                  eq: () => ({
+                    maybeSingle: async () => ({ data: null, error: null }),
+                  }),
                 }),
               }),
             }),
@@ -336,14 +338,16 @@ async function testPaymentLinkPaidDbFailures() {
             eq: () => ({
               eq: () => ({
                 eq: () => ({
-                  maybeSingle: async () => ({ data: null, error: null }),
-                  single: async () => {
-                    refetchedOrder = true;
-                    return {
-                      data: { id: "order_race_1", tenant_id: "t1", amount_cents: 5000, currency: "INR", state: "CAPTURED", mode: "live", provider: "razorpay" },
-                      error: null,
-                    };
-                  },
+                  eq: () => ({
+                    maybeSingle: async () => ({ data: null, error: null }),
+                    single: async () => {
+                      refetchedOrder = true;
+                      return {
+                        data: { id: "order_race_1", tenant_id: "t1", amount_cents: 5000, currency: "INR", state: "CAPTURED", mode: "live", provider: "razorpay" },
+                        error: null,
+                      };
+                    },
+                  }),
                 }),
               }),
             }),
@@ -365,11 +369,65 @@ async function testPaymentLinkPaidDbFailures() {
   assert.equal(refetchedOrder, true, "Uniqueness race must re-fetch existing order and settle idempotently");
 }
 
+// 5. Tests for Unreconciled Handled=False Webhook Behaviors
+async function testUnhandledEventsRetryBehavior() {
+  // Test missing local payment link returns handled=false
+  const mockDbNoLink = {
+    from: () => ({
+      select: () => ({
+        eq: () => ({
+          maybeSingle: async () => ({ data: null, error: null }),
+        }),
+      }),
+    }),
+  } as unknown as ServiceClient;
+
+  const res1 = await processRazorpayWebhookEvent(mockDbNoLink, {
+    eventType: "payment_link.paid",
+    payload: { payload: { payment_link: { entity: { id: "plink_missing_999" } } } },
+  });
+  assert.equal(res1.handled, false, "Missing local payment link must return handled=false");
+  assert.equal(res1.actionTaken, "payment_link_not_found");
+
+  // Test refund missing payment order returns handled=false
+  const mockDbNoOrderRefund = {
+    from: (table: string) => {
+      if (table === "payment_refunds") {
+        return {
+          select: () => ({
+            eq: () => ({
+              maybeSingle: async () => ({ data: null, error: null }),
+            }),
+          }),
+        };
+      }
+      if (table === "payment_orders") {
+        return {
+          select: () => ({
+            eq: () => ({
+              maybeSingle: async () => ({ data: null, error: null }),
+            }),
+          }),
+        };
+      }
+      return {};
+    },
+  } as unknown as ServiceClient;
+
+  const res2 = await processRazorpayWebhookEvent(mockDbNoOrderRefund, {
+    eventType: "refund.processed",
+    payload: { payload: { refund: { entity: { id: "rfnd_missing_999", payment_id: "pay_missing_999", amount: 5000 } } } },
+  });
+  assert.equal(res2.handled, false, "Missing payment order for refund must return handled=false");
+  assert.equal(res2.actionTaken, "payment_order_not_found_for_refund");
+}
+
 async function run() {
   await testAppendLedgerEntryAtomicRpcPaths();
   await testClaimRazorpayWebhookEventRpcPaths();
   await testMarkWebhookEventProcessedRpcPaths();
   await testPaymentLinkPaidDbFailures();
+  await testUnhandledEventsRetryBehavior();
   console.log("razorpay-rpc-paths.test.ts (@stratxcel/payments-and-wallet): ALL PASS");
 }
 

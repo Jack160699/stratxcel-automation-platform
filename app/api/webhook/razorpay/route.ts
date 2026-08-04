@@ -76,11 +76,21 @@ export async function POST(request: Request) {
     }
 
     const processResult = await processRazorpayWebhookEvent(supabase, { eventType, payload });
+
+    if (!processResult.handled) {
+      // DO NOT call markWebhookEventProcessed! Leave claim lease to expire so Razorpay can retry.
+      return Response.json(
+        { error: "Webhook event reconciliation incomplete", action: processResult.actionTaken },
+        { status: 500 }
+      );
+    }
+
+    // Only mark processed after reconciliation returned handled=true
     await markWebhookEventProcessed(supabase, claim.eventRow.id, claim.token);
 
     return Response.json({
       success: true,
-      handled: processResult.handled,
+      handled: true,
       action: processResult.actionTaken,
     });
   } catch (err) {
