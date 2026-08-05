@@ -1,75 +1,118 @@
 import { PageHero } from "@/app/components/PageHero";
-import {
-  PrimaryButton,
-  GhostButton,
-  CTARow,
-  CTAMicrocopy,
-  TrustChips,
-} from "@/app/components/marketing-ui";
-import { COLORS, whatsappHref } from "@/lib/constants";
+import { PrimaryButton, GhostButton, CTARow, CTAMicrocopy, TrustChips } from "@/app/components/marketing-ui";
+import { whatsappHref } from "@/lib/constants";
 import { Reveal } from "@/app/components/Reveal";
+import Link from "next/link";
 
 export const metadata = {
-  title: "Pricing — Stratxcel AI OS",
+  title: "Pricing & Plans — Stratxcel Business AI Operating System",
   description:
-    "System-based tiered pricing for the Stratxcel AI operating system — scoped by pipelines and complexity, not per-user seats.",
+    "Transparent monthly pricing and Business Growth Audit for Stratxcel. Growth systems, WhatsApp CRM, Meta campaign workflows, and controlled websites built for growth-focused businesses.",
 };
-
-const { surface, brand, accent } = COLORS;
 
 const tiers = [
   {
-    name: "Signal",
-    pitch: "One production system, end-to-end.",
+    id: "audit",
+    name: "Business Growth Audit",
+    badge: "Initial Step",
+    price: "₹999",
+    period: "one-time",
+    pitch: "Comprehensive brand, market, and growth pipeline audit.",
     scope: [
-      "Single bounded pipeline (ingest → decision → execution)",
-      "Up to 3 integrated surfaces (e.g. CRM, inbox, sheet/DB)",
-      "Core modules only — no custom graph extensions",
-      "Monthly system review & drift checks",
+      "Business & brand audit report",
+      "Competitor snapshot & market positioning",
+      "Social media, website & lead channel review",
+      "Actionable growth recommendations",
+      "Initial Brand Brain starter record",
     ],
-    note: "Ideal when you need proof on one critical path before expanding the OS.",
+    note: "The full ₹999 is adjusted against your first month subscription if purchased within 7 days.",
     popular: false,
+    cta: "Book Audit for ₹999",
+    href: "/audit",
   },
   {
-    name: "Mesh",
-    pitch: "Multiple pipelines sharing context.",
+    id: "launch",
+    name: "Launch",
+    badge: "Essential Growth",
+    price: "₹9,499",
+    period: "per month (GST included)",
+    pitch: "Done-for-them monthly growth basics for growing businesses.",
     scope: [
-      "3–5 connected pipelines with shared policy + schema",
-      "Cross-module routing (lead, workflow, automation)",
-      "Agent-assisted steps within defined envelopes",
-      "Bi-weekly operating reviews + incident playbooks",
+      "Social media content creation & posting (12 posts/mo)",
+      "1 Meta ad campaign workflow & ad creative",
+      "1 high-conversion ad landing page",
+      "WhatsApp connection & inbox dashboard",
+      "Basic CRM lead capture & follow-up",
+      "Monthly performance reporting",
     ],
-    note: "Where most growing teams land after the first system proves ROI.",
+    note: "Prices include GST. Ad spend & third-party licenses separate.",
+    popular: false,
+    cta: "Start Launch Plan",
+    href: "/audit",
+  },
+  {
+    id: "growth",
+    name: "Growth",
+    badge: "Most Popular",
+    price: "₹18,999",
+    period: "per month (GST included)",
+    pitch: "Complete marketing, website, WhatsApp & CRM operating system.",
+    scope: [
+      "Everything in Launch + higher volume content (30 posts/mo)",
+      "2 Meta ad campaign workflows & ongoing optimization",
+      "Complete WhatsApp + CRM automated follow-up flows",
+      "1st Website included (controlled 5-page template scope)",
+      "Website hosting & maintenance included",
+      "SEO work & monthly growth reporting",
+    ],
+    note: "Prices include GST. Domain registration & ad spend separate.",
     popular: true,
+    cta: "Get Started with Growth",
+    href: "/audit",
   },
   {
-    name: "Fleet",
-    pitch: "Program-wide operating model.",
+    id: "custom",
+    name: "Custom Growth",
+    badge: "Scale & Enterprise",
+    price: "Starting ₹23,999",
+    period: "per month (GST included)",
+    pitch: "Tailored combination of content, video, website, ads, and human assistance.",
     scope: [
-      "Many pipelines / environments with governance tiers",
-      "Custom modules & integrations on your graph",
-      "Priority design reviews & escalation lane",
-      "Optional residency / compliance packaging (scoped per engagement)",
+      "Tailored social post & premium video volume",
+      "Custom multi-page website & location management",
+      "Multi-campaign Meta & Search ad management",
+      "Advanced WhatsApp & custom CRM workflows",
+      "Dedicated account owner & human assistance",
     ],
-    note: "For orgs treating AI like infrastructure — not an experiment.",
+    note: "Custom quoted to protect margin and fit complex business needs.",
     popular: false,
+    cta: "Request Custom Quote",
+    href: "/contact",
   },
 ];
 
 const trustAboveTiers = [
-  "Scoping calls are free — we respond with a tier fit, not a hard sell",
-  "Milestones tied to live pipelines, not slide milestones",
-  "Engagements sized on system surface — never per-seat math",
+  "Prices shown are GST inclusive — no hidden surprises",
+  "Full ₹999 Audit fee credited if you subscribe within 7 days",
+  "Clear service boundaries: ad spend & domains are billed transparently",
 ];
 
 const faq = [
   {
-    q: "How fast do we move after WhatsApp?",
-    a: "You’ll get a short checklist (systems, volumes, owners). From there we propose a pilot slice with clear go / no-go metrics — usually within a few days of first contact.",
+    q: "How does the ₹999 Business Growth Audit credit work?",
+    a: "When you purchase the Business Growth Audit for ₹999, our team conducts a thorough review of your channels, competitor landscape, and growth pipeline. If you move ahead with a Launch or Growth subscription within 7 days of audit completion, the full ₹999 is credited directly against your first month's invoice.",
   },
   {
-    q: "What if we outgrow a tier?",
-    a: "Tiers describe topology, not contracts for vanity seats. When pipelines multiply or coupling tightens, we remap scope — you’re not penalized for adding humans.",
+    q: "Are ad spend and domain names included in the monthly price?",
+    a: "Subscription prices cover our full AI operating system, content creation, ad workflows, CRM, and website maintenance. Direct ad spend paid to Meta/Google, domain registration/renewal fees, and third-party software licenses remain separate and owned by your business.",
+  },
+  {
+    q: "Who owns our website domain?",
+    a: "You are always the legal beneficial owner of your domain name. Stratxcel registers and configures DNS under your legal registrant details. The free included website is hosted on Stratxcel initially, and full website code export is unlocked after 3 successful subscription months.",
+  },
+  {
+    q: "Can we upgrade or adjust our plan as we scale?",
+    a: "Yes! You can start with the ₹999 Audit or Launch plan and upgrade to Growth or Custom Growth at any time as your content volume and ad workflow needs expand.",
   },
 ];
 
@@ -77,77 +120,95 @@ export default function PricingPage() {
   return (
     <>
       <PageHero
-        eyebrow="Pricing"
-        title="Tiered by system complexity — never by seat"
-        description="We price the surface area of your operating system: how many pipelines run in production, how tightly modules couple, and how much autonomy you want under audit."
+        eyebrow="Transparent Pricing"
+        title="Business growth systems — collapse complexity into one OS"
+        description="Choose the right growth tier for your business. Full GST-inclusive pricing, zero seats math, and ₹999 audit fee credited towards your subscription."
       />
 
-      <div className="border-t border-slate-200/40 bg-white py-10 sm:py-14 lg:py-16">
-        <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
+      <div className="border-t border-slate-800/60 bg-[#05070e] py-10 sm:py-14 lg:py-16 text-white">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          {/* Audit Callout Banner */}
           <Reveal>
-            <div className="mx-auto max-w-2xl text-center">
-              <p className="text-[14px] leading-relaxed text-slate-600 sm:text-[15px]">
-                No per-user fees. You scale by adding pipelines and modules — we scale with you on
-                scope, not headcount tricks.
+            <div className="mx-auto max-w-3xl rounded-2xl border border-indigo-500/30 bg-gradient-to-r from-indigo-950/60 via-slate-900/80 to-purple-950/60 p-6 sm:p-8 text-center shadow-[0_0_40px_rgba(99,102,241,0.15)] backdrop-blur-md mb-12">
+              <span className="inline-block rounded-full bg-indigo-500/20 px-3.5 py-1 text-xs font-semibold uppercase tracking-widest text-indigo-300 border border-indigo-400/30">
+                Special Offer
+              </span>
+              <h2 className="mt-3 text-xl font-bold tracking-tight text-white sm:text-2xl">
+                Get Started with a ₹999 Business Growth Audit
+              </h2>
+              <p className="mt-2 text-sm text-slate-300 sm:text-base">
+                Receive a complete audit of your brand, social presence, website, and competitor landscape.{" "}
+                <strong className="text-indigo-200">The full ₹999 is adjusted against your first month subscription</strong> if purchased within 7 days.
               </p>
-              <div className="mt-8 border-y border-slate-100 py-6 sm:mt-9 sm:py-7">
-                <TrustChips items={trustAboveTiers} />
+              <div className="mt-5 flex justify-center gap-4">
+                <Link
+                  href="/audit"
+                  className="rounded-full bg-gradient-to-r from-indigo-500 to-purple-600 px-6 py-2.5 text-sm font-semibold text-white shadow-lg transition-transform hover:scale-105"
+                >
+                  Book Audit for ₹999
+                </Link>
               </div>
-              <CTARow className="mt-6 sm:mt-7">
-                <PrimaryButton href={whatsappHref} external>
-                  Get started
-                </PrimaryButton>
-                <GhostButton href="/system">How the system works</GhostButton>
-              </CTARow>
-              <CTAMicrocopy>
-                Opens WhatsApp · typical first reply within one business day
-              </CTAMicrocopy>
             </div>
           </Reveal>
 
-          <ul className="mt-10 grid gap-4 sm:mt-12 sm:gap-5 lg:mt-14 lg:grid-cols-3">
+          <Reveal>
+            <div className="mx-auto max-w-2xl text-center">
+              <TrustChips items={trustAboveTiers} />
+            </div>
+          </Reveal>
+
+          {/* Pricing Tiers Grid */}
+          <ul className="mt-12 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
             {tiers.map((t, i) => (
-              <Reveal key={t.name} delay={80 + i * 70}>
+              <Reveal key={t.id} delay={80 + i * 70}>
                 <li
-                  className={`relative flex h-full flex-col rounded-2xl border bg-gradient-to-b from-white to-slate-50/90 p-6 shadow-[0_16px_48px_-32px_rgba(11,18,32,0.14)] sm:p-7 ${
+                  className={`relative flex h-full flex-col rounded-2xl border p-6 sm:p-7 backdrop-blur-xl transition-all hover:border-indigo-400/50 ${
                     t.popular
-                      ? "border-blue-400/35 ring-2 ring-blue-500/[0.14] ring-offset-2 ring-offset-white"
-                      : "border-slate-200/70"
+                      ? "border-indigo-500 bg-gradient-to-b from-indigo-950/40 via-slate-900/90 to-slate-950 shadow-[0_0_50px_rgba(99,102,241,0.2)] ring-1 ring-indigo-400/30"
+                      : "border-slate-800/80 bg-slate-900/50 shadow-xl"
                   }`}
                 >
-                  {t.popular ? (
-                    <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 rounded-full border border-blue-200/80 bg-white px-3 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-blue-800 shadow-sm">
-                      Most teams start here
+                  {t.popular && (
+                    <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full border border-indigo-400/50 bg-gradient-to-r from-indigo-600 to-purple-600 px-3 py-0.5 text-[11px] font-bold uppercase tracking-widest text-white shadow-md">
+                      {t.badge}
                     </span>
-                  ) : null}
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400 sm:text-[11px] sm:tracking-[0.2em]">
-                    Tier
-                  </p>
-                  <h2 className="mt-2 text-lg font-semibold tracking-[-0.03em] text-[#0B1220] sm:text-xl lg:text-2xl">
-                    {t.name}
-                  </h2>
-                  <p className="mt-2.5 text-[14px] font-medium leading-snug text-slate-800 sm:text-[15px]">
-                    {t.pitch}
-                  </p>
-                  <ul className="mt-5 flex-1 space-y-2.5 text-[13px] leading-relaxed text-slate-600 sm:space-y-3 sm:text-[14px]">
+                  )}
+                  {!t.popular && (
+                    <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">
+                      {t.badge}
+                    </span>
+                  )}
+                  <h2 className="mt-2 text-xl font-bold tracking-tight text-white">{t.name}</h2>
+                  <div className="mt-3 flex items-baseline gap-1">
+                    <span className="text-3xl font-extrabold tracking-tight text-white sm:text-4xl">{t.price}</span>
+                  </div>
+                  <p className="mt-1 text-xs text-slate-400">{t.period}</p>
+                  <p className="mt-3 text-xs leading-relaxed text-slate-300">{t.pitch}</p>
+
+                  <ul className="mt-6 flex-1 space-y-2.5 text-xs text-slate-300">
                     {t.scope.map((line) => (
-                      <li key={line} className="flex gap-2">
-                        <span
-                          className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full"
-                          style={{ background: `linear-gradient(135deg, ${accent}, ${brand})` }}
-                          aria-hidden
-                        />
+                      <li key={line} className="flex items-start gap-2">
+                        <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-indigo-400" aria-hidden />
                         <span>{line}</span>
                       </li>
                     ))}
                   </ul>
-                  <p className="mt-5 border-t border-slate-200/60 pt-4 text-[12px] leading-relaxed text-slate-500 sm:text-[13px]">
+
+                  <p className="mt-6 border-t border-slate-800 pt-4 text-[11px] leading-relaxed text-slate-400 italic">
                     {t.note}
                   </p>
-                  <div className="mt-5">
-                    <PrimaryButton href={whatsappHref} external className="!w-full sm:!w-full">
-                      Get started
-                    </PrimaryButton>
+
+                  <div className="mt-6">
+                    <Link
+                      href={t.href}
+                      className={`block w-full rounded-xl py-3 text-center text-xs font-bold transition-all shadow-md ${
+                        t.popular
+                          ? "bg-gradient-to-r from-indigo-500 to-purple-600 text-white hover:brightness-110"
+                          : "bg-slate-800 text-slate-200 hover:bg-slate-700"
+                      }`}
+                    >
+                      {t.cta}
+                    </Link>
                   </div>
                 </li>
               </Reveal>
@@ -156,41 +217,38 @@ export default function PricingPage() {
         </div>
       </div>
 
-      <div className="border-t border-slate-200/35 bg-white py-10 sm:py-12">
-        <div className="mx-auto max-w-2xl px-4 sm:px-6 lg:px-8">
-          <h3 className="text-center text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 sm:tracking-[0.2em]">
-            Straight answers
+      {/* FAQ Section */}
+      <div className="border-t border-slate-800/60 bg-[#070a14] py-14 text-white">
+        <div className="mx-auto max-w-3xl px-4 sm:px-6 lg:px-8">
+          <h3 className="text-center text-xs font-bold uppercase tracking-widest text-indigo-400">
+            Frequently Asked Questions
           </h3>
-          <dl className="mt-6 space-y-6 text-left">
+          <h2 className="mt-2 text-center text-2xl font-bold tracking-tight text-white">
+            Clear boundaries & service guarantees
+          </h2>
+          <dl className="mt-8 space-y-6">
             {faq.map((item) => (
-              <div key={item.q}>
-                <dt className="text-[15px] font-semibold tracking-[-0.02em] text-[#0B1220]">{item.q}</dt>
-                <dd className="mt-2 text-[14px] leading-relaxed text-slate-600 sm:text-[15px]">
-                  {item.a}
-                </dd>
+              <div key={item.q} className="rounded-xl border border-slate-800/80 bg-slate-900/40 p-5">
+                <dt className="text-base font-semibold text-white">{item.q}</dt>
+                <dd className="mt-2 text-sm leading-relaxed text-slate-300">{item.a}</dd>
               </div>
             ))}
           </dl>
         </div>
       </div>
 
-      <div className="py-12 sm:py-16" style={{ backgroundColor: surface }}>
-        <div className="mx-auto max-w-2xl px-4 text-center sm:px-6 lg:px-8">
-          <h3 className="text-base font-semibold tracking-[-0.02em] text-[#0B1220] sm:text-lg">
-            Every quote is scoped to your graph
-          </h3>
-          <p className="mt-3 text-[14px] leading-relaxed text-slate-600 sm:mt-4 sm:text-[15px]">
-            Share your pipelines and systems of record — we respond with a tier recommendation and
-            milestone plan. No SKU gymnastics.
+      <div className="bg-[#05070e] py-12 text-center border-t border-slate-800/40">
+        <div className="mx-auto max-w-2xl px-4">
+          <h3 className="text-lg font-bold text-white">Need a custom enterprise growth setup?</h3>
+          <p className="mt-2 text-sm text-slate-400">
+            Talk directly to our operations engineering team on WhatsApp to scope your custom content, ads, and website requirements.
           </p>
-          <CTARow className="mt-7 sm:mt-8">
+          <CTARow className="mt-6">
             <PrimaryButton href={whatsappHref} external>
-              Get started
+              Chat on WhatsApp
             </PrimaryButton>
+            <GhostButton href="/contact">Submit Inquiry</GhostButton>
           </CTARow>
-          <CTAMicrocopy>
-            You’ll always talk to someone who can reason about systems — not a script.
-          </CTAMicrocopy>
         </div>
       </div>
     </>

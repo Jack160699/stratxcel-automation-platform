@@ -26,6 +26,9 @@
     "paths": {
       "@/*": [
         "./*"
+      ],
+      "@stratxcel/websites-and-domains": [
+        "./packages/websites-and-domains/src/index.ts"
       ]
     }
   },

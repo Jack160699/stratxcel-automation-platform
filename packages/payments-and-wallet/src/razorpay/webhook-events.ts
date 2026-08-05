@@ -270,9 +270,27 @@ export async function processRazorpayWebhookEvent(
 
     if (!order) throw new Error("payment_link.paid: failed to resolve payment order");
 
-    const settleRes = await settlePaymentToWallet(supabase, order);
-    if (typeof settleRes?.settled !== "boolean") {
-      throw new Error("payment_link.paid: settlement returned invalid result");
+    const purpose = link.payment_purpose ?? "wallet_topup";
+    if (purpose === "wallet_topup") {
+      const settleRes = await settlePaymentToWallet(supabase, order);
+      if (typeof settleRes?.settled !== "boolean") {
+        throw new Error("payment_link.paid: settlement returned invalid result");
+      }
+    } else if (purpose === "audit_fee") {
+      await supabase
+        .from("audit_orders")
+        .update({ status: "paid", updated_at: new Date().toISOString() })
+        .eq("payment_link_id", link.id);
+    } else if (purpose === "domain_purchase" || purpose === "domain_renewal") {
+      await supabase
+        .from("domains")
+        .update({ status: "active", updated_at: new Date().toISOString() })
+        .eq("payment_link_id", link.id);
+    } else if (purpose === "continuation_pack") {
+      await supabase
+        .from("continuation_packs")
+        .update({ status: "paid" })
+        .eq("payment_link_id", link.id);
     }
 
     return { eventType, handled: true, actionTaken: "payment_link_paid_and_settled" };

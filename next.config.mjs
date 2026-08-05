@@ -11,6 +11,7 @@ const nextConfig = {
     "@stratxcel/missions",
     "@stratxcel/approvals",
     "@stratxcel/whatsapp",
+    "@stratxcel/websites-and-domains",
   ],
 };
 

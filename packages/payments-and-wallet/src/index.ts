@@ -14,3 +14,5 @@ export * from "./razorpay/payment-links.ts";
 export * from "./razorpay/settlement.ts";
 export * from "./razorpay/refunds.ts";
 export * from "./razorpay/fixtures.ts";
+export * from "./audit-credits.ts";
+export * from "./entitlements.ts";

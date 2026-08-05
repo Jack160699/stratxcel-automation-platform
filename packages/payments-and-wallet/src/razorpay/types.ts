@@ -1,5 +1,15 @@
 export type PaymentLinkStatus = "created" | "paid" | "partially_paid" | "expired" | "cancelled";
 
+export type PaymentPurpose =
+  | "audit_fee"
+  | "subscription_payment"
+  | "wallet_topup"
+  | "project_fee"
+  | "invoice_payment"
+  | "domain_purchase"
+  | "domain_renewal"
+  | "continuation_pack";
+
 export interface PaymentLinkRow {
   id: string;
   tenant_id: string;
@@ -9,6 +19,7 @@ export interface PaymentLinkRow {
   amount_cents: number;
   currency: string;
   status: PaymentLinkStatus;
+  payment_purpose?: PaymentPurpose;
   mode: "test" | "live";
   short_url: string | null;
   description: string | null;
@@ -34,6 +45,7 @@ export interface CreatePaymentLinkInput {
   expireBy?: string | Date | null;
   createdBy?: string | null;
   referenceId?: string;
+  paymentPurpose?: PaymentPurpose;
 }
 
 export interface CreateOrderResult {
@@ -74,6 +86,7 @@ export interface PaymentOrderRow {
   amount_cents: number;
   currency: string;
   state: "CREATED" | "AUTHORIZED" | "CAPTURED" | "FAILED" | "REFUNDED" | "PARTIALLY_REFUNDED";
+  payment_purpose?: PaymentPurpose;
   mode: PaymentMode;
   reference_type: string | null;
   reference_id: string | null;
@@ -105,4 +118,3 @@ export interface PaymentRefundRow {
   created_at: string;
   processed_at: string | null;
 }
-

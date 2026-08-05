@@ -1,0 +1,11 @@
+{
+  "name": "@stratxcel/websites-and-domains",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "node --experimental-strip-types src/__tests__/websites-and-domains.test.ts"
+  }
+}
