@@ -4,8 +4,8 @@ import { createHash } from "crypto";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// In-memory rate limiting map for basic abuse prevention per IP hash
-const rateLimitMap = new Map<string, number[]>();
+// In-memory fallback map if DB RPC is unreachable
+const memoryFallbackMap = new Map<string, number[]>();
 
 function getIPHash(request: Request): string {
   const forwarded = request.headers.get("x-forwarded-for") ?? "";
@@ -40,10 +40,17 @@ export async function POST(request: Request) {
       industry,
       websiteUrl,
       goals,
-      hpField, // Honeypot field
+      hpField, // Honeypot trap
+      // Multi-step questionnaire answers payload
+      auditAnswers,
+      questionnaireVersion,
+      completionPercentage,
+      preferredContactMethod,
+      preferredContactTime,
+      consentToContact,
     } = body;
 
-    // 1. Honeypot Bot Protection: If honeypot is filled, return silent success without saving
+    // 1. Honeypot Bot Trap: Return silent success without saving if filled
     if (hpField && typeof hpField === "string" && hpField.trim().length > 0) {
       return Response.json({
         ok: true,
@@ -51,20 +58,50 @@ export async function POST(request: Request) {
       });
     }
 
-    // 2. Rate Limiting: Max 5 submissions per IP per 15 minutes
+    // 2. Durable Rate Limiting via Supabase RPC with memory fallback
     const ipHash = getIPHash(request);
-    const now = Date.now();
-    const windowMs = 15 * 60 * 1000;
-    const timestamps = (rateLimitMap.get(ipHash) ?? []).filter((t) => now - t < windowMs);
+    const { supabase: serviceDb } = getTenantServiceContext();
 
-    if (timestamps.length >= 5) {
+    let isAllowed = true;
+    try {
+      const { data: rpcAllowed, error: rpcErr } = await serviceDb.rpc(
+        "check_and_increment_audit_rate_limit",
+        {
+          p_ip_hash: ipHash,
+          p_max_requests: 5,
+          p_window_seconds: 900,
+        }
+      );
+      if (!rpcErr && typeof rpcAllowed === "boolean") {
+        isAllowed = rpcAllowed;
+      } else {
+        // Fallback to in-memory check if RPC not available
+        const now = Date.now();
+        const timestamps = (memoryFallbackMap.get(ipHash) ?? []).filter((t) => now - t < 15 * 60 * 1000);
+        if (timestamps.length >= 5) {
+          isAllowed = false;
+        } else {
+          timestamps.push(now);
+          memoryFallbackMap.set(ipHash, timestamps);
+        }
+      }
+    } catch {
+      // Memory fallback
+      const now = Date.now();
+      const timestamps = (memoryFallbackMap.get(ipHash) ?? []).filter((t) => now - t < 15 * 60 * 1000);
+      if (timestamps.length >= 5) isAllowed = false;
+      else {
+        timestamps.push(now);
+        memoryFallbackMap.set(ipHash, timestamps);
+      }
+    }
+
+    if (!isAllowed) {
       return Response.json(
-        { error: "Too many audit requests submitted. Please try again later." },
+        { error: "Too many audit requests submitted from this network. Please try again later." },
         { status: 429 }
       );
     }
-    timestamps.push(now);
-    rateLimitMap.set(ipHash, timestamps);
 
     // 3. Validation
     if (!businessName || typeof businessName !== "string" || businessName.trim().length < 2 || businessName.trim().length > 150) {
@@ -93,7 +130,6 @@ export async function POST(request: Request) {
 
     // 4. Server-assigned trusted metadata
     const userAgent = request.headers.get("user-agent")?.slice(0, 300) ?? null;
-    const { supabase: serviceDb } = getTenantServiceContext();
 
     const { data, error: insertErr } = await serviceDb
       .from("public_audit_requests")
@@ -109,6 +145,14 @@ export async function POST(request: Request) {
         requested_product: "audit_fee",
         request_ip_hash: ipHash,
         user_agent: userAgent,
+        // Expanded questionnaire payload
+        audit_answers: typeof auditAnswers === "object" && auditAnswers !== null ? auditAnswers : {},
+        questionnaire_version: typeof questionnaireVersion === "string" ? questionnaireVersion : "v2_multistep",
+        completion_percentage: typeof completionPercentage === "number" ? Math.min(100, Math.max(0, completionPercentage)) : 100,
+        preferred_contact_method: typeof preferredContactMethod === "string" ? preferredContactMethod.slice(0, 50) : null,
+        preferred_contact_time: typeof preferredContactTime === "string" ? preferredContactTime.slice(0, 50) : null,
+        consent_to_contact: consentToContact !== false,
+        consent_recorded_at: new Date().toISOString(),
       })
       .select("id, submitted_at")
       .single();

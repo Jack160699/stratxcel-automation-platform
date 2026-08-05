@@ -6,36 +6,73 @@ import { Card } from "@/components/ui/Card";
 import { SignupForm } from "./SignupForm";
 
 export const metadata: Metadata = {
-  title: "Create an account — Stratxcel",
-  description: "Start your Stratxcel workspace.",
+  title: "Create Account — Stratxcel Workspace",
+  description: "Start your Stratxcel business growth workspace.",
   robots: { index: false, follow: true },
 };
 
 export default function SignupPage() {
   return (
-    <div className="flex min-h-screen flex-col bg-sx-bg">
+    <div className="flex min-h-screen flex-col bg-sx-bg text-sx-text">
       <PublicHeader />
-      <main className="flex-1">
-        <section className="mx-auto flex max-w-md flex-col justify-center px-4 py-16 sm:px-6 sm:py-24">
-          <p className="font-sx-mono text-[11px] uppercase tracking-[0.3em] text-sx-text-subtle">Sign up</p>
-          <h1 className="mt-3 font-sx-sans text-2xl font-semibold tracking-[-0.02em] text-sx-text sm:text-3xl">
-            Start with Stratxcel
-          </h1>
-          <p className="mt-2 font-sx-sans text-[13.5px] leading-relaxed text-sx-text-muted">
-            Create your workspace in a minute.
-          </p>
+      <main className="flex-1 flex items-center py-12 px-4 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-5xl w-full grid gap-10 lg:grid-cols-2 items-center">
+          {/* Left Panel: Desktop Onboarding Value Pitch */}
+          <div className="hidden lg:flex flex-col justify-center space-y-6 pr-6 border-r border-sx-border">
+            <span className="inline-block w-max rounded-sx-pill border border-sx-accent/40 bg-sx-accent/10 px-3.5 py-1 font-sx-mono text-[11px] font-semibold uppercase tracking-widest text-sx-accent">
+              Get Started with Stratxcel
+            </span>
+            <h2 className="font-sx-sans text-3xl font-extrabold tracking-tight text-sx-text">
+              Your AI-powered business growth operating system.
+            </h2>
+            <p className="font-sx-sans text-sm text-sx-text-muted leading-relaxed">
+              Create your organization&rsquo;s isolated workspace in under a minute. Configure your Brand Brain and launch your first AI Copilot content & lead mission.
+            </p>
 
-          <Card variant="panel" className="mt-8 p-6 sm:p-7">
-            <SignupForm />
-          </Card>
+            <ul className="space-y-3 text-xs text-sx-text-muted">
+              <li className="flex items-center gap-2">
+                <span className="text-sx-accent font-bold">✓</span>
+                <span>Database-level tenant isolation (Supabase RLS)</span>
+              </li>
+              <li className="flex items-center gap-2">
+                <span className="text-sx-accent font-bold">✓</span>
+                <span>Human Approval Model for all posts, spend & outreach</span>
+              </li>
+              <li className="flex items-center gap-2">
+                <span className="text-sx-accent font-bold">✓</span>
+                <span>Audit fee adjustment guarantee on qualifying plans</span>
+              </li>
+            </ul>
 
-          <p className="mt-6 text-center font-sx-sans text-[13px] text-sx-text-muted">
-            Already have an account?{" "}
-            <Link href="/login" className="font-medium text-sx-accent hover:underline">
-              Sign in
-            </Link>
-          </p>
-        </section>
+            <div className="text-xs text-sx-text-subtle flex gap-4 border-t border-sx-border pt-4">
+              <Link href="/audit" className="text-sx-accent font-semibold underline hover:text-sx-accent/80">
+                Prefer a Growth Audit first? ₹999 Audit Form →
+              </Link>
+            </div>
+          </div>
+
+          {/* Right Panel: Account Form */}
+          <div className="w-full max-w-md mx-auto">
+            <span className="font-sx-mono text-[11px] uppercase tracking-[0.3em] text-sx-accent">Account Creation</span>
+            <h1 className="mt-2 font-sx-sans text-2xl font-extrabold tracking-tight text-sx-text sm:text-3xl">
+              Start with Stratxcel
+            </h1>
+            <p className="mt-1 font-sx-sans text-xs text-sx-text-muted">
+              Create your account to launch your organization&rsquo;s workspace.
+            </p>
+
+            <Card variant="panel" className="mt-6 p-6 sm:p-8 border-sx-border shadow-2xl">
+              <SignupForm />
+            </Card>
+
+            <p className="mt-6 text-center font-sx-sans text-xs text-sx-text-muted">
+              Already have an account?{" "}
+              <Link href="/login" className="font-bold text-sx-accent hover:underline">
+                Sign in
+              </Link>
+            </p>
+          </div>
+        </div>
       </main>
       <PublicFooter />
     </div>
