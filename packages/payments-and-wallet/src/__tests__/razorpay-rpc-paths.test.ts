@@ -115,6 +115,20 @@ async function testPaymentLinkPaidV4RpcPaths() {
   assert.equal(res7.handled, false);
   assert.equal(res7.actionTaken, "reconciliation_failed_unknown_plan_tier");
 
+  // 8. Pre-mutation rejection: Subscription expected amount mismatch (audit credit price revalidation)
+  const mockDbV4SubAmountMismatch = {
+    rpc: async (fn: string) => {
+      if (fn === "reconcile_and_fulfill_razorpay_payment_v4") {
+        return { data: { fulfilled: false, reason: "subscription_expected_amount_mismatch" }, error: null };
+      }
+      return { data: null, error: null };
+    },
+  } as any;
+
+  const res8 = await processRazorpayWebhookEvent(mockDbV4SubAmountMismatch, basePayload);
+  assert.equal(res8.handled, false);
+  assert.equal(res8.actionTaken, "reconciliation_failed_subscription_expected_amount_mismatch");
+
   console.log("razorpay-rpc-paths.test.ts: ALL PASS (v4 atomic RPC path invariants & pre-mutation rejections verified)");
 }
 
