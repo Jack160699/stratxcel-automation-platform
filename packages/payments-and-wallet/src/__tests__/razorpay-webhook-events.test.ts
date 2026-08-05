@@ -305,7 +305,7 @@ async function testMonotonicRefundStatusTransitions() {
       return {};
     },
     rpc: async (fn: string, args?: Record<string, unknown>) => {
-      if (fn === "process_refund_atomic_v4") {
+      if (fn === "process_refund_atomic_v5" || fn === "process_refund_atomic_v4") {
         const refId = (args?.p_refund_id as string) || "rfnd_mono_999";
         const item = refundsDb.get(refId) || refundsDb.get("rfnd_mono_999") || { id: "rfnd_mono_999", status: "PENDING" };
         item.status = "PROCESSED";
