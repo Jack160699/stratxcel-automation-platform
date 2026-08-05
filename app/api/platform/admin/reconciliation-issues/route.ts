@@ -13,6 +13,11 @@ export async function GET(request: Request) {
   const ctx = await requireTenantContext(tenantId);
   if (!ctx.ok) return Response.json({ error: ctx.error }, { status: ctx.status });
 
+  // Only owner role can view global platform-wide reconciliation issues
+  if (ctx.role !== "owner") {
+    return Response.json({ error: "Platform owner permission required to access global reconciliation logs" }, { status: 403 });
+  }
+
   try {
     requirePermission(ctx.role, "wallet:view");
   } catch (err) {
@@ -24,20 +29,18 @@ export async function GET(request: Request) {
 
   const { supabase } = getTenantServiceContext();
   try {
-    // Strictly tenant-scoped: ordinary tenant users MUST NOT see tenant_id is null global issues
     const { data: issues, error } = await supabase
       .from("payment_reconciliation_issues")
-      .select("id, tenant_id, purpose, failure_reason, resolution_status, created_at")
-      .eq("tenant_id", tenantId)
+      .select("*")
       .order("created_at", { ascending: false });
 
     if (error) {
-      return Response.json({ error: `Failed to fetch reconciliation issues: ${error.message}` }, { status: 500 });
+      return Response.json({ error: `Failed to fetch global reconciliation issues: ${error.message}` }, { status: 500 });
     }
 
     return Response.json({ issues: issues ?? [] }, { headers: { "Cache-Control": "no-store" } });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : "Failed to load reconciliation issues";
+    const msg = err instanceof Error ? err.message : "Failed to load global reconciliation issues";
     return Response.json({ error: msg }, { status: 500 });
   }
 }

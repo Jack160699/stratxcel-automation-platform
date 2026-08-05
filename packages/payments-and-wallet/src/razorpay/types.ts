@@ -114,7 +114,7 @@ export interface RazorpayWebhookEventRow {
   created_at: string;
 }
 
-export type PaymentRefundStatus = "PENDING" | "PROCESSED" | "FAILED";
+export type PaymentRefundStatus = "PENDING" | "PROCESSED" | "FAILED" | "MANUAL_REVIEW";
 
 export interface PaymentRefundRow {
   id: string;

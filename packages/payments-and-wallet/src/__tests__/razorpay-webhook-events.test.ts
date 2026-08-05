@@ -129,14 +129,17 @@ async function testMultipleEventsForSamePaymentLinkSingleCredit() {
           }),
         };
       }
+      if (table === "payment_reconciliation_issues") {
+        return { insert: async () => ({ error: null }) };
+      }
       return {};
     },
   } as unknown as ServiceClient;
 
   const eventPayload = {
     payload: {
-      payment_link: { entity: { id: "plink_live_biz_1", reference_id: "pl_ref_biz_100" } },
-      payment: { entity: { id: "pay_live_biz_1" } },
+      payment_link: { entity: { id: "plink_live_biz_1", reference_id: "pl_ref_biz_100", amount: 15000, currency: "INR", status: "paid" } },
+      payment: { entity: { id: "pay_live_biz_1", amount: 15000, currency: "INR", status: "captured" } },
     },
   };
 
@@ -283,6 +286,9 @@ async function testMonotonicRefundStatusTransitions() {
             }),
           }),
         };
+      }
+      if (table === "payment_reconciliation_issues") {
+        return { insert: async () => ({ error: null }) };
       }
       return {};
     },

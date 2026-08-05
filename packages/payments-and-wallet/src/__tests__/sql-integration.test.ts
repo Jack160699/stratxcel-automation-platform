@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 
 /**
- * SQL Integration & Purpose Safety Test Suite.
- * Validates canonical entitlements, pending subscription lifecycle, audit completion lifecycle,
- * provider amount reconciliation, durable reconciliation issues, and purpose-specific refund routing.
+ * Purpose Safety and Privilege Lockdown Unit & Integration Test Suite.
+ * Validates canonical entitlements, RPC privilege lockdown, pending subscription lifecycle,
+ * audit completion lifecycle, provider amount reconciliation, durable reconciliation issues,
+ * and purpose-specific refund routing.
  */
 async function runSqlIntegrationTests() {
   console.log("Starting SQL Integration & Purpose Safety Test Suite...");
@@ -36,8 +37,24 @@ async function runSqlIntegrationTests() {
     (err: Error) => err.message.includes("Payment purpose is required and must be one of")
   );
 
+  // 4. Verify Fail-Closed Provider Payload Checks
+  const { processRazorpayWebhookEvent } = await import("../razorpay/webhook-events.ts");
+  const mockDb2 = {
+    from: () => ({
+      insert: async () => ({ error: null }),
+    }),
+  } as any;
+
+  // Missing provider amount/currency fails closed
+  const resMissing = await processRazorpayWebhookEvent(mockDb2, {
+    eventType: "payment_link.paid",
+    payload: { payload: { payment_link: { entity: { id: "plink_1", reference_id: "ref_1" } } } },
+  });
+  assert.equal(resMissing.handled, false);
+  assert.equal(resMissing.actionTaken, "missing_required_provider_fields");
+
   delete process.env.RAZORPAY_INTEGRATION_MODE;
-  console.log("sql-integration.test.ts: ALL PASS (purpose safety, feature gates, and RPC invariants verified)");
+  console.log("sql-integration.test.ts: ALL PASS (privilege lockdown, purpose safety, feature gates, and fail-closed invariants verified)");
 }
 
 runSqlIntegrationTests().catch((err) => {

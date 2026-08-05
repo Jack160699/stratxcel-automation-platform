@@ -222,8 +222,8 @@ async function testPaymentLinkPaidDbFailures() {
     eventType: "payment_link.paid",
     payload: {
       payload: {
-        payment_link: { entity: { id: "plink_test_100", reference_id: "pl_ref_100" } },
-        payment: { entity: { id: "pay_test_100" } },
+        payment_link: { entity: { id: "plink_test_100", reference_id: "pl_ref_100", amount: 5000, currency: "INR", status: "paid" } },
+        payment: { entity: { id: "pay_test_100", amount: 5000, currency: "INR", status: "captured" } },
       },
     },
   };
@@ -261,6 +261,9 @@ async function testPaymentLinkPaidDbFailures() {
             eq: () => Promise.resolve({ data: null, error: { message: "Update link status failed" } }),
           }),
         };
+      }
+      if (table === "payment_reconciliation_issues") {
+        return { insert: async () => ({ error: null }) };
       }
       return {};
     },
@@ -373,18 +376,23 @@ async function testPaymentLinkPaidDbFailures() {
 async function testUnhandledEventsRetryBehavior() {
   // Test missing local payment link returns handled=false
   const mockDbNoLink = {
-    from: () => ({
-      select: () => ({
-        eq: () => ({
-          maybeSingle: async () => ({ data: null, error: null }),
+    from: (table: string) => {
+      if (table === "payment_reconciliation_issues") {
+        return { insert: async () => ({ error: null }) };
+      }
+      return {
+        select: () => ({
+          eq: () => ({
+            maybeSingle: async () => ({ data: null, error: null }),
+          }),
         }),
-      }),
-    }),
+      };
+    },
   } as unknown as ServiceClient;
 
   const res1 = await processRazorpayWebhookEvent(mockDbNoLink, {
     eventType: "payment_link.paid",
-    payload: { payload: { payment_link: { entity: { id: "plink_missing_999" } } } },
+    payload: { payload: { payment_link: { entity: { id: "plink_missing_999", amount: 1000, currency: "INR", status: "paid" } }, payment: { entity: { id: "pay_999", amount: 1000, currency: "INR", status: "captured" } } } },
   });
   assert.equal(res1.handled, false, "Missing local payment link must return handled=false");
   assert.equal(res1.actionTaken, "payment_link_not_found");
