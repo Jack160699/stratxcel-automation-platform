@@ -17,11 +17,11 @@ export async function POST(
     const { supabase: serviceDb } = getTenantServiceContext();
 
     if (!tenantId) {
-      const { data: foundLink } = await serviceDb
-        .from("payment_links")
-        .select("tenant_id")
-        .or(`id.eq.${id},reference_id.eq.${id}`)
-        .maybeSingle();
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+      const query = isUuid
+        ? serviceDb.from("payment_links").select("tenant_id").or(`id.eq.${id},reference_id.eq.${id}`)
+        : serviceDb.from("payment_links").select("tenant_id").eq("reference_id", id);
+      const { data: foundLink } = await query.maybeSingle();
 
       if (foundLink?.tenant_id) {
         tenantId = foundLink.tenant_id;
