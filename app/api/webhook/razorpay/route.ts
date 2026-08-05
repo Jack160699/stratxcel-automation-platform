@@ -86,7 +86,7 @@ export async function POST(request: Request) {
     }
 
     // Only mark processed after reconciliation returned handled=true
-    await markWebhookEventProcessed(supabase, claim.claimId, claim.token);
+    await markWebhookEventProcessed(supabase, claim.eventId, claim.token);
 
     return Response.json({
       success: true,

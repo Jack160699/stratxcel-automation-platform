@@ -379,10 +379,171 @@ async function testMonotonicRefundStatusTransitions() {
   assert.equal(refundsDb.get(rfIdFailed)?.status, "FAILED", "refund.created must NOT downgrade FAILED to PENDING");
 }
 
+async function testWebhookClaimAndCompletionContract() {
+  let capturedRpcArgs: { fn: string; args?: Record<string, unknown> }[] = [];
+
+  const mockDb = (rpcHandler: (fn: string, args?: Record<string, unknown>) => Promise<{ data: unknown; error: unknown }>) =>
+    ({
+      rpc: async (fn: string, args?: Record<string, unknown>) => {
+        capturedRpcArgs.push({ fn, args });
+        return rpcHandler(fn, args);
+      },
+    } as unknown as ServiceClient);
+
+  // 1. New claim
+  capturedRpcArgs = [];
+  const db1 = mockDb(async (fn) => {
+    if (fn === "claim_razorpay_webhook_event") {
+      return { data: { claimed: true, status: "claimed_new", event_id: "db_uuid_101", token: "tok_db_101" }, error: null };
+    }
+    return { data: null, error: null };
+  });
+
+  const claim1 = await claimRazorpayWebhookEvent(db1, { eventId: "pay_evt_1", eventType: "payment_link.paid", payload: {} });
+  assert.equal(claim1.eventId, "db_uuid_101");
+  assert.equal(claim1.claimId, "db_uuid_101");
+  assert.equal(claim1.token, "tok_db_101");
+  assert.equal(capturedRpcArgs[0].args?.p_provider_event_id, "pay_evt_1");
+  assert.equal(capturedRpcArgs[0].args?.p_event_type, "payment_link.paid");
+  assert.equal(capturedRpcArgs[0].args?.p_claim_duration_seconds, 60);
+  assert.equal("p_ttl_seconds" in (capturedRpcArgs[0].args || {}), false, "Do not send p_ttl_seconds");
+
+  // 2. Retry claim
+  capturedRpcArgs = [];
+  const db2 = mockDb(async (fn) => {
+    if (fn === "claim_razorpay_webhook_event") {
+      return { data: { claimed: true, status: "claimed_retry", event_id: "db_uuid_102", token: "tok_db_102" }, error: null };
+    }
+    return { data: null, error: null };
+  });
+  const claim2 = await claimRazorpayWebhookEvent(db2, { eventId: "pay_evt_2", eventType: "payment_link.paid", payload: {} });
+  assert.equal(claim2.eventId, "db_uuid_102");
+  assert.equal(claim2.token, "tok_db_102");
+
+  // 3. Already processed
+  const db3 = mockDb(async (fn) => {
+    if (fn === "claim_razorpay_webhook_event") {
+      return { data: { claimed: false, status: "already_processed", event_id: "db_uuid_103" }, error: null };
+    }
+    return { data: null, error: null };
+  });
+  await assert.rejects(
+    async () => {
+      await claimRazorpayWebhookEvent(db3, { eventId: "pay_evt_3", eventType: "payment_link.paid", payload: {} });
+    },
+    (err: unknown) => err instanceof DuplicateWebhookEventError
+  );
+
+  // 4. Currently in progress
+  const db4 = mockDb(async (fn) => {
+    if (fn === "claim_razorpay_webhook_event") {
+      return { data: { claimed: false, status: "in_progress", event_id: "db_uuid_104" }, error: null };
+    }
+    return { data: null, error: null };
+  });
+  await assert.rejects(
+    async () => {
+      await claimRazorpayWebhookEvent(db4, { eventId: "pay_evt_4", eventType: "payment_link.paid", payload: {} });
+    },
+    (err: unknown) => err instanceof WebhookEventInProgressError
+  );
+
+  // 5. Malformed claim response
+  const db5 = mockDb(async (fn) => {
+    if (fn === "claim_razorpay_webhook_event") {
+      return { data: { status: "unknown_status" }, error: null };
+    }
+    return { data: null, error: null };
+  });
+  await assert.rejects(
+    async () => {
+      await claimRazorpayWebhookEvent(db5, { eventId: "pay_evt_5", eventType: "payment_link.paid", payload: {} });
+    },
+    /Unexpected or malformed claim response status/
+  );
+
+  // 6. Claim RPC database error
+  const db6 = mockDb(async (fn) => {
+    if (fn === "claim_razorpay_webhook_event") {
+      return { data: null, error: { message: "DB timeout" } };
+    }
+    return { data: null, error: null };
+  });
+  await assert.rejects(
+    async () => {
+      await claimRazorpayWebhookEvent(db6, { eventId: "pay_evt_6", eventType: "payment_link.paid", payload: {} });
+    },
+    /claimRazorpayWebhookEvent RPC: DB timeout/
+  );
+
+  // 7. Successful completion & verifying parameters
+  capturedRpcArgs = [];
+  const db7 = mockDb(async (fn) => {
+    if (fn === "complete_razorpay_webhook_event") {
+      return { data: true, error: null };
+    }
+    return { data: null, error: null };
+  });
+  await markWebhookEventProcessed(db7, "db_uuid_707", "tok_db_707");
+  assert.equal(capturedRpcArgs[0].fn, "complete_razorpay_webhook_event");
+  assert.equal(capturedRpcArgs[0].args?.p_event_id, "db_uuid_707");
+  assert.equal(capturedRpcArgs[0].args?.p_token, "tok_db_707");
+  assert.equal("p_claim_id" in (capturedRpcArgs[0].args || {}), false, "Do not send p_claim_id");
+
+  // 8. Completion RPC error
+  const db8 = mockDb(async (fn) => {
+    if (fn === "complete_razorpay_webhook_event") {
+      return { data: null, error: { message: "Permission denied" } };
+    }
+    return { data: null, error: null };
+  });
+  await assert.rejects(
+    async () => {
+      await markWebhookEventProcessed(db8, "db_uuid_808", "tok_db_808");
+    },
+    /complete_razorpay_webhook_event RPC: Permission denied/
+  );
+
+  // 9. Completion returns false
+  const db9 = mockDb(async (fn) => {
+    if (fn === "complete_razorpay_webhook_event") {
+      return { data: false, error: null };
+    }
+    return { data: null, error: null };
+  });
+  await assert.rejects(
+    async () => {
+      await markWebhookEventProcessed(db9, "db_uuid_909", "tok_db_909");
+    },
+    /complete_razorpay_webhook_event returned non-true value: false/
+  );
+
+  // 10 & 11. Database token & event ID returned by SQL are passed unchanged
+  capturedRpcArgs = [];
+  const db10 = mockDb(async (fn) => {
+    if (fn === "claim_razorpay_webhook_event") {
+      return { data: { claimed: true, status: "claimed_new", event_id: "db_uuid_exact_spec", token: "tok_exact_spec_555" }, error: null };
+    }
+    if (fn === "complete_razorpay_webhook_event") {
+      return { data: true, error: null };
+    }
+    return { data: null, error: null };
+  });
+
+  const claim10 = await claimRazorpayWebhookEvent(db10, { eventId: "pay_evt_10", eventType: "payment_link.paid", payload: {} });
+  assert.equal(claim10.eventId, "db_uuid_exact_spec");
+  assert.equal(claim10.token, "tok_exact_spec_555");
+
+  await markWebhookEventProcessed(db10, claim10.eventId, claim10.token);
+  assert.equal(capturedRpcArgs[1].args?.p_event_id, "db_uuid_exact_spec", "Event ID returned by SQL is used unchanged");
+  assert.equal(capturedRpcArgs[1].args?.p_token, "tok_exact_spec_555", "Database token is used unchanged");
+}
+
 async function run() {
   testWebhookSignatureVerification();
   await testMultipleEventsForSamePaymentLinkSingleCredit();
   await testMonotonicRefundStatusTransitions();
+  await testWebhookClaimAndCompletionContract();
   console.log("razorpay-webhook-events.test.ts (@stratxcel/payments-and-wallet): ALL PASS");
 }
 

@@ -18,37 +18,78 @@ export class WebhookEventInProgressError extends Error {
 export async function claimRazorpayWebhookEvent(
   supabase: ServiceClient,
   event: { eventId: string; eventType: string; payload: Record<string, unknown> },
-  ttlSeconds = 300
-): Promise<{ claimId: string; token: string }> {
-  const token = `tok_${Date.now()}_${Math.random()}`;
+  claimDurationSeconds = 60
+): Promise<{ eventId: string; claimId: string; token: string }> {
   if (typeof supabase?.rpc === "function") {
     const { data, error } = await supabase.rpc("claim_razorpay_webhook_event", {
       p_provider_event_id: event.eventId,
       p_event_type: event.eventType,
       p_payload: event.payload,
-      p_ttl_seconds: ttlSeconds,
+      p_claim_duration_seconds: claimDurationSeconds,
     });
+
     if (error) {
-      if (error.message?.includes("duplicate") || error.code === "23505") {
-        throw new DuplicateWebhookEventError(event.eventId);
-      }
       throw new Error(`claimRazorpayWebhookEvent RPC: ${error.message}`);
     }
-    return { claimId: (data as any)?.id ?? "claim_1", token };
+
+    if (!data || typeof data !== "object") {
+      throw new Error("Invalid or malformed response from claim_razorpay_webhook_event RPC");
+    }
+
+    const response = data as {
+      claimed?: boolean;
+      status?: string;
+      event_id?: string;
+      token?: string;
+    };
+
+    if (response.status === "already_processed") {
+      throw new DuplicateWebhookEventError(event.eventId);
+    }
+
+    if (response.status === "in_progress") {
+      throw new WebhookEventInProgressError(event.eventId);
+    }
+
+    if (
+      (response.status === "claimed_new" || response.status === "claimed_retry") &&
+      response.claimed === true &&
+      typeof response.event_id === "string" &&
+      response.event_id.length > 0 &&
+      typeof response.token === "string" &&
+      response.token.length > 0
+    ) {
+      return {
+        eventId: response.event_id,
+        claimId: response.event_id,
+        token: response.token,
+      };
+    }
+
+    throw new Error(`Unexpected or malformed claim response status: ${String(response.status)}`);
   }
-  return { claimId: "claim_mock_1", token };
+
+  return { eventId: "evt_mock_1", claimId: "evt_mock_1", token: "tok_mock_1" };
 }
 
 export async function markWebhookEventProcessed(
   supabase: ServiceClient,
-  claimId: string,
+  eventId: string,
   token: string
 ): Promise<void> {
   if (typeof supabase?.rpc === "function") {
-    await supabase.rpc("complete_razorpay_webhook_event", {
-      p_claim_id: claimId,
+    const { data, error } = await supabase.rpc("complete_razorpay_webhook_event", {
+      p_event_id: eventId,
       p_token: token,
     });
+
+    if (error) {
+      throw new Error(`complete_razorpay_webhook_event RPC: ${error.message}`);
+    }
+
+    if (data !== true) {
+      throw new Error(`complete_razorpay_webhook_event returned non-true value: ${String(data)}`);
+    }
   }
 }
 
