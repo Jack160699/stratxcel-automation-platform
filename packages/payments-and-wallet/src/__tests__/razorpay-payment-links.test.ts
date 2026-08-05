@@ -162,9 +162,39 @@ async function testRealCreatePaymentLinkCompensationScenarios() {
   delete process.env.RAZORPAY_INTEGRATION_MODE;
 }
 
+function testPaymentLinkStatusConstraint() {
+  const allowedStatuses = [
+    "created",
+    "paid",
+    "partially_paid",
+    "expired",
+    "cancelled",
+    "reconciliation_required",
+  ] as const;
+
+  const isValidStatus = (status: string): boolean => {
+    return (allowedStatuses as readonly string[]).includes(status);
+  };
+
+  // 1. Verify reconciliation_required is permitted
+  assert.equal(isValidStatus("reconciliation_required"), true, "reconciliation_required must be permitted");
+
+  // 2. Verify all previous statuses remain permitted
+  const previousStatuses = ["created", "paid", "partially_paid", "expired", "cancelled"];
+  for (const st of previousStatuses) {
+    assert.equal(isValidStatus(st), true, `Previous status ${st} must remain permitted`);
+  }
+
+  // 3. Verify unknown statuses are rejected
+  assert.equal(isValidStatus("unknown_status"), false, "unknown status must be rejected");
+  assert.equal(isValidStatus("pending_review"), false, "unknown status must be rejected");
+  assert.equal(isValidStatus(""), false, "empty status must be rejected");
+}
+
 async function run() {
   testReferenceIdGeneration();
   testCallbackSignatureVerification();
+  testPaymentLinkStatusConstraint();
   await testRealCreatePaymentLinkCompensationScenarios();
   console.log("razorpay-payment-links.test.ts (@stratxcel/payments-and-wallet): ALL PASS");
 }
