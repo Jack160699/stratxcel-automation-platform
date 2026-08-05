@@ -64,6 +64,19 @@ async function testReconcilePaymentLinkUnitTests() {
                   return { data: item ? { ...item } : null, error: null };
                 },
               }),
+              eq: (_f2: string, refId: string) => ({
+                maybeSingle: async () => {
+                  const item = dbLinks.get("link_rec_100");
+                  if (item && item.tenant_id === tId && (item.reference_id === refId || item.id === refId)) {
+                    return { data: { ...item }, error: null };
+                  }
+                  return { data: null, error: null };
+                },
+                single: async () => {
+                  const item = dbLinks.get("link_rec_100");
+                  return { data: item ? { ...item } : null, error: null };
+                },
+              }),
               maybeSingle: async () => {
                 const item = dbLinks.get("link_rec_100");
                 return { data: item ? { ...item } : null, error: null };

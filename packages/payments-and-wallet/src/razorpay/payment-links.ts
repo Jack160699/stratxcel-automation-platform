@@ -297,12 +297,11 @@ export async function reconcilePaymentLink(
   input: ReconcilePaymentLinkInput,
   fetchFn: typeof fetch = fetch
 ): Promise<ReconcilePaymentLinkResult> {
-  const { data: link, error: fetchErr } = await supabase
-    .from("payment_links")
-    .select("*")
-    .eq("tenant_id", input.tenantId)
-    .or(`id.eq.${input.linkId},reference_id.eq.${input.linkId}`)
-    .maybeSingle();
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(input.linkId);
+  const baseQuery = supabase.from("payment_links").select("*").eq("tenant_id", input.tenantId);
+  const { data: link, error: fetchErr } = isUuid
+    ? await baseQuery.or(`id.eq.${input.linkId},reference_id.eq.${input.linkId}`).maybeSingle()
+    : await baseQuery.eq("reference_id", input.linkId).maybeSingle();
 
   if (fetchErr) throw new Error("Failed to load payment link");
   if (!link) throw new Error("Payment link not found or not owned by tenant");
