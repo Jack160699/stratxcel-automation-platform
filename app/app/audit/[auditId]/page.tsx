@@ -10,7 +10,8 @@ interface AuditRecord {
   website_url: string | null;
   goals: string | null;
   job_status: string;
-  progress_percentage: number;
+  progress_percentage: number | null;
+  brand_brain_version?: number | null;
   report_data: any;
   evidence_data: any[];
   submitted_at: string;
@@ -52,7 +53,7 @@ export default function AuditReportProgressPage({ params }: { params: Promise<{ 
     return (
       <div className="mx-auto max-w-4xl px-4 py-16 text-center">
         <div className="mx-auto h-10 w-10 animate-spin rounded-full border-4 border-sx-accent border-t-transparent" />
-        <p className="mt-4 font-sx-sans text-sm font-semibold text-sx-text-muted">Loading audit request...</p>
+        <p className="mt-4 font-sx-sans text-sm font-semibold text-sx-text-muted">Loading audit details...</p>
       </div>
     );
   }
@@ -71,7 +72,7 @@ export default function AuditReportProgressPage({ params }: { params: Promise<{ 
   }
 
   const report = audit.report_data ?? {};
-  const isLegacySimulated = report.executiveSummary && !report.notice;
+  const isLegacySimulated = report.executiveSummary && report.generation_method === "simulated_legacy";
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
@@ -96,32 +97,52 @@ export default function AuditReportProgressPage({ params }: { params: Promise<{ 
         </div>
       </div>
 
-      {/* TRUTHFUL HONEST RESTRICTED STATE (FOUNDATION_ONLY) */}
+      {/* TRUTHFUL SAVED STATE VIEW (No progress bar or fake report) */}
       <div className="mt-8 rounded-sx-lg border border-sx-accent/40 bg-sx-surface-1 p-8 shadow-md">
         <div className="text-center">
           <span className="inline-block rounded-full bg-sx-accent/20 px-3.5 py-1 font-sx-mono text-xs font-bold uppercase text-sx-accent">
-            Request Saved · Early Access
+            Information Saved · FOUNDATION_ONLY
           </span>
           <h2 className="mt-4 font-sx-sans text-xl font-bold text-sx-text">
             Automated audit analysis is being prepared.
           </h2>
           <p className="mt-2 text-sm text-sx-text-muted max-w-xl mx-auto leading-relaxed">
-            Your business information has been saved, and the Stratxcel team can review it with you during onboarding.
+            Your business information and growth objectives have been saved. Our team can review them with you during your onboarding call.
           </p>
+
+          {/* Actions: Update Brand Brain & Request Human Review */}
+          <div className="mt-8 flex flex-wrap justify-center gap-4">
+            <Link
+              href="/app/brand"
+              className="rounded-sx-sm bg-sx-accent px-6 py-2.5 font-sx-sans text-xs font-bold text-sx-accent-on shadow-md hover:bg-[color:var(--sx-accent-hover)]"
+            >
+              Update Brand Brain →
+            </Link>
+            <Link
+              href="/contact?intent=consultation"
+              className="rounded-sx-sm border border-sx-border-strong bg-sx-surface-2 px-6 py-2.5 font-sx-sans text-xs font-semibold text-sx-text hover:bg-sx-border"
+            >
+              Request Human Review
+            </Link>
+          </div>
         </div>
 
-        {/* Informational Cards */}
+        {/* Saved Information Summary */}
         <div className="mt-8 grid gap-4 sm:grid-cols-2 text-xs">
           <div className="rounded-sx-md border border-sx-border bg-sx-surface-2 p-4">
-            <span className="font-bold text-sx-text">💡 Brand Brain Profile</span>
-            <p className="mt-1 text-sx-text-muted leading-relaxed">
-              Your core offers, audience profile, and positioning parameters are saved in your workspace Brand Brain.
-            </p>
+            <span className="font-bold text-sx-text">📋 Business & Goal Details</span>
+            <ul className="mt-2 space-y-1.5 text-sx-text-muted">
+              <li><strong>Business:</strong> {audit.business_name}</li>
+              <li><strong>Industry:</strong> {audit.industry || "Not specified"}</li>
+              <li><strong>Primary Goal:</strong> {audit.goals || "Not specified"}</li>
+              <li><strong>Status:</strong> Saved (Engine mode: disabled)</li>
+            </ul>
           </div>
+
           <div className="rounded-sx-md border border-sx-border bg-sx-surface-2 p-4">
-            <span className="font-bold text-sx-text">🤝 Human Specialist Review</span>
-            <p className="mt-1 text-sx-text-muted leading-relaxed">
-              Our operations team reviews your requested growth goals to recommend the optimal Stratxcel package.
+            <span className="font-bold text-sx-text">💡 Brand Brain Context</span>
+            <p className="mt-2 text-sx-text-muted leading-relaxed">
+              Brand Brain Version #{audit.brand_brain_version ?? 1} linked to this request. Updating your Brand Brain profile ensures your workspace setup stays accurate.
             </p>
           </div>
         </div>
@@ -131,7 +152,7 @@ export default function AuditReportProgressPage({ params }: { params: Promise<{ 
           <div className="mt-8 rounded-sx-md border border-amber-300 bg-amber-50 p-4 text-xs text-amber-900">
             <span className="font-bold">⚠️ Notice on Historical Reports:</span>
             <p className="mt-1 text-amber-800">
-              This record contains a historical simulated report draft (generation_method: simulated_legacy). Real evidence-based AI research workers are under active implementation.
+              This record contains a historical draft (generation_method: simulated_legacy, report_trust_status: unverified). Real evidence-based AI research workers are under active implementation.
             </p>
           </div>
         )}

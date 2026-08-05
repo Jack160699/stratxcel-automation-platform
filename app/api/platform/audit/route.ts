@@ -19,24 +19,27 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const auditId = searchParams.get("auditId");
 
-  // Fetch user's tenant memberships to ensure strict cross-tenant isolation
-  const { data: userTenants } = await supabase
+  // Fetch user's tenant memberships to enforce RBAC visibility (Owner / Admin or Creator)
+  const { data: userMemberships } = await supabase
     .from("tenant_members")
-    .select("tenant_id")
+    .select("tenant_id, role")
     .eq("user_id", user.id);
 
-  const allowedTenantIds = (userTenants ?? []).map((t) => t.tenant_id).filter(Boolean);
+  // Owners and admins can view tenant audits; ordinary members view creator-only audits unless permitted
+  const adminTenantIds = (userMemberships ?? [])
+    .filter((m) => m.role === "owner" || m.role === "admin")
+    .map((m) => m.tenant_id)
+    .filter(Boolean);
 
   if (auditId) {
     // SECURE LOOKUP: Use authenticated Supabase client (RLS enforced)
-    // and explicitly verify user_id or tenant_id ownership.
     let query = supabase
       .from("public_audit_requests")
       .select("*")
       .eq("id", auditId);
 
-    if (allowedTenantIds.length > 0) {
-      query = query.or(`user_id.eq.${user.id},tenant_id.in.(${allowedTenantIds.join(",")})`);
+    if (adminTenantIds.length > 0) {
+      query = query.or(`user_id.eq.${user.id},tenant_id.in.(${adminTenantIds.join(",")})`);
     } else {
       query = query.eq("user_id", user.id);
     }
@@ -50,15 +53,15 @@ export async function GET(request: Request) {
     return Response.json({ audit }, { headers: { "Cache-Control": "no-store" } });
   }
 
-  // SECURE LIST: Only return audits belonging to user or user's authorized tenants
+  // SECURE LIST: Creator audits + Tenant audits where user is owner/admin
   let listQuery = supabase
     .from("public_audit_requests")
     .select("*")
     .order("submitted_at", { ascending: false })
     .limit(20);
 
-  if (allowedTenantIds.length > 0) {
-    listQuery = listQuery.or(`user_id.eq.${user.id},tenant_id.in.(${allowedTenantIds.join(",")})`);
+  if (adminTenantIds.length > 0) {
+    listQuery = listQuery.or(`user_id.eq.${user.id},tenant_id.in.(${adminTenantIds.join(",")})`);
   } else {
     listQuery = listQuery.eq("user_id", user.id);
   }
@@ -73,6 +76,14 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  // Reject AUDIT_ENGINE_MODE=live until durable worker infrastructure is deployed
+  if (AUDIT_ENGINE_MODE === "live") {
+    return Response.json(
+      { error: "AUDIT_ENGINE_MODE=live is not supported until durable worker infrastructure is deployed. Only disabled mode is currently supported." },
+      { status: 400 }
+    );
+  }
+
   const supabase = await createSupabaseServerClient();
   const {
     data: { user },
@@ -121,10 +132,8 @@ export async function POST(request: Request) {
       if (brandBrain?.version) brandBrainVersion = brandBrain.version;
     }
 
-    // SECURE INSERT: Save user's audit request cleanly using RLS client
-    // When AUDIT_ENGINE_MODE is "disabled", status is "saved" (FOUNDATION_ONLY)
-    const initialJobStatus = AUDIT_ENGINE_MODE === "live" ? "queued" : "saved";
-
+    // SECURE INSERT: Save user's audit request cleanly in disabled/saved mode
+    // job_status: "saved", progress_percentage: 0, started_at: null
     const { data: audit, error: insertErr } = await supabase
       .from("public_audit_requests")
       .insert({
@@ -140,15 +149,15 @@ export async function POST(request: Request) {
         tenant_id: tenantId,
         user_id: user.id,
         brand_brain_version: brandBrainVersion,
-        job_status: initialJobStatus,
-        progress_percentage: initialJobStatus === "saved" ? 100 : 10,
-        started_at: new Date().toISOString(),
+        job_status: "saved",
+        progress_percentage: 0,
+        started_at: null,
         audit_answers: typeof auditAnswers === "object" && auditAnswers !== null ? auditAnswers : {},
-        report_data: initialJobStatus === "saved" ? {
+        report_data: {
           notice: "Automated audit analysis is being prepared. Your business information has been saved, and the Stratxcel team can review it with you.",
-          engineMode: AUDIT_ENGINE_MODE,
+          engineMode: "disabled",
           featureStatus: "FOUNDATION_ONLY",
-        } : {},
+        },
         evidence_data: [],
       })
       .select("id")
@@ -162,8 +171,8 @@ export async function POST(request: Request) {
     return Response.json({
       ok: true,
       auditId: audit.id,
-      jobStatus: initialJobStatus,
-      engineMode: AUDIT_ENGINE_MODE,
+      jobStatus: "saved",
+      engineMode: "disabled",
       message: "Automated audit analysis is being prepared. Your business information has been saved, and the Stratxcel team can review it with you.",
     });
   } catch (err) {
