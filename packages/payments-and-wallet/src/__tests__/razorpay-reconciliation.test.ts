@@ -233,7 +233,27 @@ async function testReconcilePaymentLinkUnitTests() {
           }),
         };
       }
+      if (table === "payment_reconciliation_issues") {
+        return { insert: async () => ({ error: null }) };
+      }
       return {};
+    },
+    rpc: async (fn: string) => {
+      if (fn === "reconcile_and_fulfill_razorpay_payment_v4") {
+        const link = dbLinks.get("link_rec_100");
+        if (link) {
+          link.status = "paid";
+          dbLinks.set("link_rec_100", link);
+        }
+        if (!ordersDb.has("ord_rec_100")) {
+          ordersDb.set("ord_rec_100", { id: "ord_rec_100", state: "CAPTURED" });
+          ledgerEntries.push({ id: "entry_rec_100", amount_cents: 1000 });
+          walletBalance += 1000;
+          return { data: { fulfilled: true, already_fulfilled: false, purpose: "wallet_topup" }, error: null };
+        }
+        return { data: { fulfilled: true, already_fulfilled: true, purpose: "wallet_topup" }, error: null };
+      }
+      return { data: null, error: null };
     },
   } as unknown as ServiceClient;
 

@@ -134,6 +134,18 @@ async function testMultipleEventsForSamePaymentLinkSingleCredit() {
       }
       return {};
     },
+    rpc: async (fn: string) => {
+      if (fn === "reconcile_and_fulfill_razorpay_payment_v4") {
+        if (!ordersDb.has("order_biz_1")) {
+          ordersDb.set("order_biz_1", { id: "order_biz_1", amount_cents: 15000 });
+          ledgerEntries.push({ id: "entry_1", amount_cents: 15000 });
+          walletBalance += 15000;
+          return { data: { fulfilled: true, already_fulfilled: false, purpose: "wallet_topup" }, error: null };
+        }
+        return { data: { fulfilled: true, already_fulfilled: true, purpose: "wallet_topup" }, error: null };
+      }
+      return { data: null, error: null };
+    },
   } as unknown as ServiceClient;
 
   const eventPayload = {
@@ -292,9 +304,26 @@ async function testMonotonicRefundStatusTransitions() {
       }
       return {};
     },
+    rpc: async (fn: string, args?: Record<string, unknown>) => {
+      if (fn === "process_refund_atomic_v4") {
+        const refId = (args?.p_refund_id as string) || "rfnd_mono_999";
+        const item = refundsDb.get(refId) || refundsDb.get("rfnd_mono_999") || { id: "rfnd_mono_999", status: "PENDING" };
+        item.status = "PROCESSED";
+        refundsDb.set("rfnd_mono_999", item);
+        refundsDb.set(refId, item);
+        walletBalance = 0;
+        if (!ledgerEntries.find((e) => e.reference_id === refId)) {
+          ledgerEntries.push({ id: `entry_${Date.now()}`, tenant_id: "tenant_mono_1", reference_type: "payment_refund", reference_id: refId });
+        }
+        return { data: { success: true, status: "PROCESSED" }, error: null };
+      }
+      return { data: null, error: null };
+    },
   } as unknown as ServiceClient;
 
   const rfId = "rfnd_mono_999";
+  refundsDb.set(rfId, { id: rfId, provider_refund_id: rfId, payment_order_id: "order_mono_1", amount_cents: 10000, status: "PENDING" });
+
   const refundPayload = (statusEvent: string) => ({
     eventType: statusEvent,
     payload: {
@@ -314,14 +343,14 @@ async function testMonotonicRefundStatusTransitions() {
   // 2. Processed then Failed -> Remains PROCESSED
   const fRes = await processRazorpayWebhookEvent(mockDb, refundPayload("refund.failed"));
   assert.equal(fRes.handled, true);
-  assert.equal(fRes.actionTaken, "refund_failed_ignored_already_processed");
+  assert.equal(fRes.actionTaken, "refund_already_processed_idempotent");
   assert.equal(refundsDb.get(rfId)?.status, "PROCESSED", "Status must stay PROCESSED");
   assert.equal(walletBalance, 0, "Wallet balance untouched by refund.failed");
 
   // 3. Processed then Created -> Remains PROCESSED
   const cRes = await processRazorpayWebhookEvent(mockDb, refundPayload("refund.created"));
   assert.equal(cRes.handled, true);
-  assert.equal(cRes.actionTaken, "refund_created_ignored_already_terminal");
+  assert.equal(cRes.actionTaken, "refund_already_processed_idempotent");
   assert.equal(refundsDb.get(rfId)?.status, "PROCESSED", "Status must stay PROCESSED");
 
   // 4. Duplicate refund.processed events reverse wallet once
@@ -332,6 +361,8 @@ async function testMonotonicRefundStatusTransitions() {
 
   // 5. Failed then Created -> Remains FAILED
   const rfIdFailed = "rfnd_mono_failed_888";
+  refundsDb.set(rfIdFailed, { id: rfIdFailed, provider_refund_id: rfIdFailed, payment_order_id: "order_mono_1", amount_cents: 5000, status: "PENDING" });
+
   const failedPayload = (statusEvent: string) => ({
     eventType: statusEvent,
     payload: {

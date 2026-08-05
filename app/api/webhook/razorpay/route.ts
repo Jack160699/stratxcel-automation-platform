@@ -61,7 +61,7 @@ export async function POST(request: Request) {
     let claim;
     try {
       claim = await claimRazorpayWebhookEvent(supabase, {
-        providerEventId,
+        eventId: providerEventId,
         eventType,
         payload,
       });
@@ -86,7 +86,7 @@ export async function POST(request: Request) {
     }
 
     // Only mark processed after reconciliation returned handled=true
-    await markWebhookEventProcessed(supabase, claim.eventRow.id, claim.token);
+    await markWebhookEventProcessed(supabase, claim.claimId, claim.token);
 
     return Response.json({
       success: true,

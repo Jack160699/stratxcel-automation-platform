@@ -1,5 +1,5 @@
 import { requireTenantContext, getTenantServiceContext } from "@/lib/tenants/tenant-context";
-import { requirePermission, PermissionDeniedError } from "@/lib/rbac/policy";
+import { requirePlatformStaff } from "@/lib/platform-staff/auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -16,33 +16,19 @@ export async function POST(request: Request) {
     const ctx = await requireTenantContext(tenantId);
     if (!ctx.ok) return Response.json({ error: ctx.error }, { status: ctx.status });
 
-    try {
-      requirePermission(ctx.role, "human_handoff:resolve");
-    } catch (err) {
-      if (err instanceof PermissionDeniedError) {
-        return Response.json({ error: err.message }, { status: 403 });
-      }
-      throw err;
+    // Enforce True Platform Staff Authorization (Customer tenant owners/admins are 403 Forbidden!)
+    const staffAuth = await requirePlatformStaff(ctx.userId, ["platform_owner", "platform_admin", "audit_reviewer"]);
+    if (!staffAuth.ok) {
+      return Response.json({ error: staffAuth.error }, { status: staffAuth.status });
     }
 
     const { supabase: serviceDb } = getTenantServiceContext();
 
-    // Verify audit order belongs to tenant
-    const { data: auditOrder, error: auditErr } = await serviceDb
-      .from("audit_orders")
-      .select("*")
-      .eq("id", auditOrderId)
-      .eq("tenant_id", tenantId)
-      .single();
-
-    if (auditErr || !auditOrder) {
-      return Response.json({ error: "Audit order not found or does not belong to tenant" }, { status: 404 });
-    }
-
-    // Call complete_audit_and_issue_subscription_credit via service_role
-    const { data: rpcRes, error: rpcErr } = await serviceDb.rpc("complete_audit_and_issue_subscription_credit", {
+    // Call complete_audit_and_issue_subscription_credit_v4 via service_role
+    const { data: rpcRes, error: rpcErr } = await serviceDb.rpc("complete_audit_and_issue_subscription_credit_v4", {
       p_audit_order_id: auditOrderId,
-      p_admin_user_id: ctx.userId,
+      p_expected_tenant_id: tenantId,
+      p_actor_user_id: ctx.userId,
     });
 
     if (rpcErr) {

@@ -380,6 +380,9 @@ export async function reconcilePaymentLink(
         payment: {
           entity: {
             id: rzpPaymentId ?? undefined,
+            amount: rzpAmount,
+            currency: rzpCurrency,
+            status: rzpStatus === "paid" ? "captured" : rzpStatus,
           },
         },
       },
