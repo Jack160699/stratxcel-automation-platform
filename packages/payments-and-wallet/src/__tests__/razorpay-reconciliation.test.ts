@@ -77,6 +77,7 @@ async function testReconcilePaymentLinkUnitTests() {
     amount_cents: 1000,
     currency: "INR",
     status: "created",
+    payment_purpose: "wallet_topup",
     mode: "live",
     short_url: "https://rzp.io/i/test",
     created_at: new Date().toISOString(),

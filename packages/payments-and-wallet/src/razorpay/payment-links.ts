@@ -25,6 +25,10 @@ export async function createPaymentLink(
     throw new Error("Payment link amount must be a positive integer in paise (cents)");
   }
 
+  if (!input.paymentPurpose || input.paymentPurpose.trim() === "") {
+    throw new Error("Payment purpose is required when creating a payment link");
+  }
+
   const referenceId = input.referenceId ?? generatePaymentLinkReferenceId();
   const currency = input.currency ?? "INR";
   const expireByIso = input.expireBy ? new Date(input.expireBy).toISOString() : null;
@@ -40,6 +44,7 @@ export async function createPaymentLink(
         amount_cents: input.amountCents,
         currency,
         status: "created",
+        payment_purpose: input.paymentPurpose,
         mode: "test",
         short_url: null,
         description: input.description ?? null,
@@ -140,6 +145,7 @@ export async function createPaymentLink(
       amount_cents: input.amountCents,
       currency,
       status: "created",
+      payment_purpose: input.paymentPurpose,
       mode: "live",
       short_url: shortUrl,
       description: input.description ?? null,

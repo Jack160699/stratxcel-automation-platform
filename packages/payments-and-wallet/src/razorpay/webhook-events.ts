@@ -1,5 +1,5 @@
 import type { ServiceClient } from "../db.ts";
-import { getPaymentOrderByProviderOrderId, transitionPaymentOrder } from "./payment-orders.ts";
+import { transitionPaymentOrder } from "./payment-orders.ts";
 import { markRefundProcessed } from "./refunds.ts";
 import { settlePaymentToWallet } from "./settlement.ts";
 import type { PaymentOrderRow, RazorpayWebhookEventRow } from "./types.ts";
@@ -173,6 +173,15 @@ export interface WebhookProcessResult {
   actionTaken: string;
 }
 
+const SUPPORTED_PURPOSES = new Set([
+  "wallet_topup",
+  "audit_fee",
+  "subscription_payment",
+  "continuation_pack",
+  "domain_purchase",
+  "domain_renewal",
+]);
+
 export async function processRazorpayWebhookEvent(
   supabase: ServiceClient,
   event: { eventType: string; payload: Record<string, unknown> }
@@ -197,6 +206,13 @@ export async function processRazorpayWebhookEvent(
     if (linkErr) throw new Error(`payment_link.paid: lookup failed: ${linkErr.message}`);
     if (!link) return { eventType, handled: false, actionTaken: "payment_link_not_found" };
 
+    // FAIL CLOSED ON MISSING OR UNKNOWN PURPOSE (Never default to wallet_topup)
+    const purpose = link.payment_purpose;
+    if (!purpose || !SUPPORTED_PURPOSES.has(purpose)) {
+      console.error(`[Webhook Reconciliation Failure] Missing or unsupported purpose: ${purpose}`);
+      return { eventType, handled: false, actionTaken: "reconciliation_failed_unknown_purpose" };
+    }
+
     if (link.status !== "paid") {
       const { error: updateErr } = await supabase
         .from("payment_links")
@@ -205,6 +221,7 @@ export async function processRazorpayWebhookEvent(
       if (updateErr) throw new Error(`payment_link.paid: update link status failed: ${updateErr.message}`);
     }
 
+    // Resolve or transition payment order
     let order: PaymentOrderRow | null = null;
     const { data: existingOrder, error: orderFetchErr } = await supabase
       .from("payment_orders")
@@ -239,14 +256,13 @@ export async function processRazorpayWebhookEvent(
           mode: link.mode,
           reference_type: "payment_link",
           reference_id: link.reference_id,
-          metadata: { link_id: link.id },
+          metadata: { link_id: link.id, purpose },
         })
         .select("*")
         .single();
 
       if (orderErr) {
         if (orderErr.code === "23505") {
-          // Uniqueness race: re-fetch existing order created by concurrent delivery
           const { data: refetched, error: refetchErr } = await supabase
             .from("payment_orders")
             .select("*")
@@ -270,30 +286,84 @@ export async function processRazorpayWebhookEvent(
 
     if (!order) throw new Error("payment_link.paid: failed to resolve payment order");
 
-    const purpose = link.payment_purpose ?? "wallet_topup";
+    // STRICT RECONCILIATION CHECK (Amount, Currency, Tenant)
+    if (order.tenant_id !== link.tenant_id || order.amount_cents !== link.amount_cents || order.currency.toUpperCase() !== link.currency.toUpperCase()) {
+      throw new Error(`payment_link.paid: reconciliation mismatch (Tenant: ${order.tenant_id} vs ${link.tenant_id}, Amount: ${order.amount_cents} vs ${link.amount_cents})`);
+    }
+
+    // PURPOSE-SPECIFIC PRODUCT FULFILMENT
     if (purpose === "wallet_topup") {
+      // ONLY wallet_topup increases wallet balance
       const settleRes = await settlePaymentToWallet(supabase, order);
       if (typeof settleRes?.settled !== "boolean") {
         throw new Error("payment_link.paid: settlement returned invalid result");
       }
+    } else if (purpose === "subscription_payment") {
+      // Activate subscription & consume audit credit atomically via RPC
+      if (typeof supabase?.rpc === "function") {
+        const { data: rpcData, error: rpcErr } = await supabase.rpc("fulfill_subscription_payment_atomic", {
+          p_payment_link_id: link.id,
+          p_provider_payment_id: paymentId,
+          p_tenant_id: link.tenant_id,
+          p_amount_cents: link.amount_cents,
+          p_currency: link.currency,
+        });
+
+        if (rpcErr) {
+          throw new Error(`subscription_payment RPC failed: ${rpcErr.message}`);
+        }
+        if (rpcData && (rpcData as any).fulfilled !== true) {
+          throw new Error(`subscription_payment RPC returned non-fulfilled state: ${(rpcData as any).reason}`);
+        }
+      } else {
+        // Fallback for non-RPC test mocks
+        await supabase
+          .from("subscriptions")
+          .update({ status: "active", updated_at: new Date().toISOString() })
+          .eq("payment_link_id", link.id);
+      }
     } else if (purpose === "audit_fee") {
-      await supabase
+      const { error: auditErr } = await supabase
         .from("audit_orders")
         .update({ status: "paid", updated_at: new Date().toISOString() })
         .eq("payment_link_id", link.id);
+      if (auditErr) throw new Error(`audit_fee update failed: ${auditErr.message}`);
     } else if (purpose === "domain_purchase" || purpose === "domain_renewal") {
-      await supabase
-        .from("domains")
-        .update({ status: "active", updated_at: new Date().toISOString() })
-        .eq("payment_link_id", link.id);
+      // Moves domain to paid_pending_registration (NOT active)
+      if (typeof supabase?.rpc === "function") {
+        const { error: rpcErr } = await supabase.rpc("record_domain_payment_atomic", {
+          p_payment_link_id: link.id,
+          p_tenant_id: link.tenant_id,
+          p_amount_cents: link.amount_cents,
+          p_currency: link.currency,
+        });
+        if (rpcErr) throw new Error(`record_domain_payment RPC failed: ${rpcErr.message}`);
+      } else {
+        await supabase
+          .from("domains")
+          .update({ status: "paid_pending_registration", updated_at: new Date().toISOString() })
+          .eq("payment_link_id", link.id);
+      }
     } else if (purpose === "continuation_pack") {
-      await supabase
-        .from("continuation_packs")
-        .update({ status: "paid" })
-        .eq("payment_link_id", link.id);
+      // Grant entitlement units atomically
+      if (typeof supabase?.rpc === "function") {
+        const { error: rpcErr } = await supabase.rpc("fulfill_continuation_pack_payment_atomic", {
+          p_payment_link_id: link.id,
+          p_tenant_id: link.tenant_id,
+          p_amount_cents: link.amount_cents,
+          p_currency: link.currency,
+        });
+        if (rpcErr) throw new Error(`continuation_pack RPC failed: ${rpcErr.message}`);
+      } else {
+        await supabase
+          .from("continuation_packs")
+          .update({ status: "paid", updated_at: new Date().toISOString() })
+          .eq("payment_link_id", link.id);
+      }
     }
 
-    return { eventType, handled: true, actionTaken: "payment_link_paid_and_settled" };
+    const actionTaken = purpose === "wallet_topup" ? "payment_link_paid_and_settled" : "payment_link_paid_and_fulfilled";
+    return { eventType, handled: true, actionTaken };
   }
 
   if (eventType === "payment_link.partially_paid") {
@@ -368,40 +438,6 @@ export async function processRazorpayWebhookEvent(
     return { eventType, handled: true, actionTaken: "payment_link_cancelled" };
   }
 
-  if (eventType === "payment.captured") {
-    const payEntity = entityObj?.payment?.entity as Record<string, unknown> | undefined;
-    const providerOrderId = (payEntity?.order_id as string) ?? null;
-    const paymentId = (payEntity?.id as string) ?? null;
-
-    if (providerOrderId) {
-      const order = await getPaymentOrderByProviderOrderId(supabase, providerOrderId);
-      if (order && order.state !== "CAPTURED") {
-        const updated = await transitionPaymentOrder(supabase, {
-          orderId: order.id,
-          nextState: "CAPTURED",
-          providerPaymentId: paymentId ?? undefined,
-        });
-        await settlePaymentToWallet(supabase, updated);
-        return { eventType, handled: true, actionTaken: "order_captured_and_settled" };
-      }
-    }
-    return { eventType, handled: true, actionTaken: "payment_captured_logged" };
-  }
-
-  if (eventType === "payment.failed") {
-    const payEntity = entityObj?.payment?.entity as Record<string, unknown> | undefined;
-    const providerOrderId = (payEntity?.order_id as string) ?? null;
-
-    if (providerOrderId) {
-      const order = await getPaymentOrderByProviderOrderId(supabase, providerOrderId);
-      if (order && order.state === "CREATED") {
-        await transitionPaymentOrder(supabase, { orderId: order.id, nextState: "FAILED" });
-        return { eventType, handled: true, actionTaken: "order_marked_failed" };
-      }
-    }
-    return { eventType, handled: true, actionTaken: "payment_failed_logged" };
-  }
-
   if (eventType === "refund.created") {
     const rfEntity = entityObj?.refund?.entity as Record<string, unknown> | undefined;
     const providerRefundId = (rfEntity?.id as string) ?? null;
@@ -416,7 +452,6 @@ export async function processRazorpayWebhookEvent(
         .maybeSingle();
 
       if (existingRefund) {
-        // Monotonic status guarantee: refund.created MUST NOT downgrade PROCESSED or FAILED
         if (existingRefund.status === "PROCESSED" || existingRefund.status === "FAILED") {
           return { eventType, handled: true, actionTaken: "refund_created_ignored_already_terminal" };
         }
@@ -548,7 +583,6 @@ export async function processRazorpayWebhookEvent(
         .maybeSingle();
 
       if (existing) {
-        // Monotonic status hierarchy: PROCESSED > FAILED > PENDING
         if (existing.status === "PROCESSED") {
           return { eventType, handled: true, actionTaken: "refund_failed_ignored_already_processed" };
         }
@@ -556,7 +590,6 @@ export async function processRazorpayWebhookEvent(
           return { eventType, handled: true, actionTaken: "refund_failed_already_failed" };
         }
 
-        // Only PENDING transitions to FAILED (never alter wallet!)
         const { error: updateErr } = await supabase.from("payment_refunds").update({ status: "FAILED" }).eq("id", existing.id);
         if (updateErr) throw new Error(`refund.failed update status failed: ${updateErr.message}`);
       } else if (paymentId) {
@@ -583,6 +616,5 @@ export async function processRazorpayWebhookEvent(
     return { eventType, handled: true, actionTaken: "refund_failed_updated" };
   }
 
-  // Unknown/unsubscribed event types recorded as handled=true to prevent permanent retry loops
-  return { eventType, handled: true, actionTaken: "event_unhandled_recorded" };
+  return { eventType, handled: false, actionTaken: "unsupported_event_type" };
 }

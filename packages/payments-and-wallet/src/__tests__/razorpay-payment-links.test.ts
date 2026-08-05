@@ -89,7 +89,7 @@ async function testRealCreatePaymentLinkCompensationScenarios() {
     }),
   } as unknown as ServiceClient;
 
-  const link = await createPaymentLink(mockDbSuccess, { tenantId: mockTenantId, amountCents: 50000 }, mockFetchSuccess);
+  const link = await createPaymentLink(mockDbSuccess, { tenantId: mockTenantId, amountCents: 50000, paymentPurpose: "wallet_topup" }, mockFetchSuccess);
   assert.equal(link.provider_link_id, "plink_live_11");
 
   // Scenario 2: Razorpay creation succeeds, DB insert fails, cancellation succeeds (2xx)
@@ -118,7 +118,7 @@ async function testRealCreatePaymentLinkCompensationScenarios() {
   } as unknown as ServiceClient;
 
   await assert.rejects(
-    () => createPaymentLink(mockDbFail, { tenantId: mockTenantId, amountCents: 50000 }, mockFetchDbFailCancelSuccess),
+    () => createPaymentLink(mockDbFail, { tenantId: mockTenantId, amountCents: 50000, paymentPurpose: "wallet_topup" }, mockFetchDbFailCancelSuccess),
     (err: Error) => err.message.includes("automatically cancelled")
   );
   assert.equal(cancelCalledWithId, "plink_orphan_22", "Compensation cancelled correct link ID");
@@ -137,7 +137,7 @@ async function testRealCreatePaymentLinkCompensationScenarios() {
   }) as typeof fetch;
 
   await assert.rejects(
-    () => createPaymentLink(mockDbFail, { tenantId: mockTenantId, amountCents: 50000 }, mockFetchDbFailCancel500),
+    () => createPaymentLink(mockDbFail, { tenantId: mockTenantId, amountCents: 50000, paymentPurpose: "wallet_topup" }, mockFetchDbFailCancel500),
     (err: Error) => err.message.includes("Compensation cancellation failed (HTTP 500)") && err.message.includes("Manual review required")
   );
 
@@ -155,7 +155,7 @@ async function testRealCreatePaymentLinkCompensationScenarios() {
   }) as typeof fetch;
 
   await assert.rejects(
-    () => createPaymentLink(mockDbFail, { tenantId: mockTenantId, amountCents: 50000 }, mockFetchDbFailCancelNetworkErr),
+    () => createPaymentLink(mockDbFail, { tenantId: mockTenantId, amountCents: 50000, paymentPurpose: "wallet_topup" }, mockFetchDbFailCancelNetworkErr),
     (err: Error) => err.message.includes("Compensation cancellation failed (HTTP network_error)")
   );
 

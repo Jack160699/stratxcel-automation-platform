@@ -31,7 +31,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { tenantId, amountInRupees, amountCents, description, customerName, customerEmail, customerPhone, expireBy } = body;
+    const { tenantId, amountInRupees, amountCents, description, customerName, customerEmail, customerPhone, expireBy, paymentPurpose } = body;
 
     if (!tenantId) return Response.json({ error: "tenantId is required" }, { status: 400 });
 
@@ -59,14 +59,12 @@ export async function POST(request: Request) {
       customerEmail: customerEmail || undefined,
       customerPhone: customerPhone || undefined,
       expireBy: expireBy || undefined,
-      createdBy: ctx.userId,
+      paymentPurpose: paymentPurpose || "wallet_topup", // Default to wallet_topup for manual wallet link endpoint
     });
 
-    return Response.json({ link }, { status: 201 });
+    return Response.json({ link, paymentUrl: link.short_url });
   } catch (err) {
-    const msg = err instanceof Error && !err.message.includes("database") && !err.message.includes("Postgres")
-      ? err.message
-      : "Failed to create payment link. Please verify inputs and integration mode.";
+    const msg = err instanceof Error ? err.message : "Failed to create payment link";
     return Response.json({ error: msg }, { status: 400 });
   }
 }

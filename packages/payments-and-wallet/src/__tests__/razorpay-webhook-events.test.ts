@@ -34,6 +34,7 @@ async function testMultipleEventsForSamePaymentLinkSingleCredit() {
     amount_cents: 15000,
     currency: "INR",
     status: "created",
+    payment_purpose: "wallet_topup",
     mode: "live",
     reference_id: "pl_ref_biz_100",
   };

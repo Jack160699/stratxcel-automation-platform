@@ -252,7 +252,7 @@ async function testPaymentLinkPaidDbFailures() {
           select: () => ({
             eq: () => ({
               maybeSingle: async () => ({
-                data: { id: "link_1", tenant_id: "t1", amount_cents: 5000, currency: "INR", status: "created", mode: "live", reference_id: "pl_ref_100" },
+                data: { id: "link_1", tenant_id: "t1", amount_cents: 5000, currency: "INR", status: "created", payment_purpose: "wallet_topup", mode: "live", reference_id: "pl_ref_100" },
                 error: null,
               }),
             }),
@@ -279,7 +279,7 @@ async function testPaymentLinkPaidDbFailures() {
           select: () => ({
             eq: () => ({
               maybeSingle: async () => ({
-                data: { id: "link_1", tenant_id: "t1", amount_cents: 5000, currency: "INR", status: "paid", mode: "live", reference_id: "pl_ref_100" },
+                data: { id: "link_1", tenant_id: "t1", amount_cents: 5000, currency: "INR", status: "paid", payment_purpose: "wallet_topup", mode: "live", reference_id: "pl_ref_100" },
                 error: null,
               }),
             }),
@@ -325,7 +325,7 @@ async function testPaymentLinkPaidDbFailures() {
           select: () => ({
             eq: () => ({
               maybeSingle: async () => ({
-                data: { id: "link_1", tenant_id: "t1", amount_cents: 5000, currency: "INR", status: "paid", mode: "live", reference_id: "pl_ref_100" },
+                data: { id: "link_1", tenant_id: "t1", amount_cents: 5000, currency: "INR", status: "paid", payment_purpose: "wallet_topup", mode: "live", reference_id: "pl_ref_100" },
                 error: null,
               }),
             }),
