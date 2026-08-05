@@ -1,15 +1,28 @@
-<<<<<<< HEAD
 import { requireTenantContext, getTenantServiceContext } from "@/lib/tenants/tenant-context";
 import { createPaymentLink } from "@stratxcel/payments-and-wallet";
-=======
-import { requireTenantContext } from "@/lib/tenants/tenant-context";
 import { listAuditEvents } from "@stratxcel/audit";
->>>>>>> origin/feat/stratxcel-core-product-experience
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-<<<<<<< HEAD
+/**
+ * Plain user-initiated read, covered by audit_events_tenant_read RLS —
+ * runs on the authenticated session client, not the service-role client.
+ */
+export async function GET(request: Request) {
+  const tenantId = new URL(request.url).searchParams.get("tenantId");
+  if (!tenantId) return Response.json({ error: "tenantId query param is required" }, { status: 400 });
+
+  const ctx = await requireTenantContext(tenantId);
+  if (!ctx.ok) return Response.json({ error: ctx.error }, { status: ctx.status });
+
+  const events = await listAuditEvents(ctx.supabase, tenantId, 100);
+  return Response.json({ events }, { headers: { "Cache-Control": "no-store" } });
+}
+
+/**
+ * Business Growth Audit onboarding & payment link creation endpoint.
+ */
 export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => ({}));
@@ -65,20 +78,4 @@ export async function POST(request: Request) {
     const msg = err instanceof Error ? err.message : "Failed to process audit onboarding";
     return Response.json({ error: msg }, { status: 400 });
   }
-=======
-/**
- * Plain user-initiated read, covered by audit_events_tenant_read RLS (see
- * supabase/migrations/20260803120000_platform_tenants_rbac_audit.sql) —
- * runs on the authenticated session client, not the service-role client.
- */
-export async function GET(request: Request) {
-  const tenantId = new URL(request.url).searchParams.get("tenantId");
-  if (!tenantId) return Response.json({ error: "tenantId query param is required" }, { status: 400 });
-
-  const ctx = await requireTenantContext(tenantId);
-  if (!ctx.ok) return Response.json({ error: ctx.error }, { status: ctx.status });
-
-  const events = await listAuditEvents(ctx.supabase, tenantId, 100);
-  return Response.json({ events }, { headers: { "Cache-Control": "no-store" } });
->>>>>>> origin/feat/stratxcel-core-product-experience
 }

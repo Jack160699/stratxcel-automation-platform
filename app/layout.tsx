@@ -40,7 +40,7 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://stratxcel.vercel.app"),
+  metadataBase: new URL("https://www.stratxcel.in"),
   title: "Stratxcel — the operating system for modern business",
   description:
     "Stratxcel engineers businesses: websites that build themselves, automation that connects everything, AI agents that think before they act. Press start.",
