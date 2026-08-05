@@ -26,7 +26,7 @@ const COLUMNS: { title: string; links: { label: string; href: string }[] }[] = [
   {
     title: "Resources",
     links: [
-      { label: "Business Growth Audit (₹999)", href: "/audit" },
+      { label: "AI Business Audit", href: "/audit" },
       { label: "How it works", href: "/how-it-works" },
       { label: "Pricing & Plans", href: "/pricing" },
       { label: "Security Architecture", href: "/security" },
@@ -55,7 +55,7 @@ export function PublicFooter() {
             <p className="mt-3 font-sx-sans text-xs leading-relaxed text-sx-text-muted">
               One AI-powered operating system for growth, content, WhatsApp lead follow-up, and website operations.
             </p>
-            <p className="mt-3 font-sx-mono text-[11px] text-sx-accent font-semibold">
+            <p className="mt-3 font-sx-mono text-[11px] font-semibold text-sx-accent">
               https://www.stratxcel.in
             </p>
           </div>
@@ -65,7 +65,7 @@ export function PublicFooter() {
               <ul className="mt-3.5 space-y-2 text-xs">
                 {col.links.map((item) => (
                   <li key={item.href + item.label}>
-                    <Link href={item.href} className="font-sx-sans text-sx-text-muted transition-colors hover:text-sx-text">
+                    <Link href={item.href} className="font-sx-sans text-sx-text-muted transition-colors hover:text-sx-text font-medium">
                       {item.label}
                     </Link>
                   </li>
@@ -78,7 +78,7 @@ export function PublicFooter() {
       <div className="border-t border-sx-border px-4 py-6 sm:px-6 lg:px-8">
         <div className="mx-auto flex max-w-7xl flex-col gap-2 font-sx-sans text-xs text-sx-text-subtle sm:flex-row sm:items-center sm:justify-between">
           <p>© {new Date().getFullYear()} Stratxcel Technologies. All rights reserved.</p>
-          <a href={`mailto:${CONTACT_EMAIL}`} className="hover:text-sx-text">
+          <a href={`mailto:${CONTACT_EMAIL}`} className="hover:text-sx-text font-medium">
             Contact: {CONTACT_EMAIL}
           </a>
         </div>
