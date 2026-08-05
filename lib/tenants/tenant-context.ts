@@ -25,9 +25,32 @@ export interface TenantContextError {
 }
 
 export async function requireTenantContext(
-  tenantId: string
+  tenantId: string,
+  request?: Request
 ): Promise<TenantContext | TenantContextError> {
   const supabase = await createSupabaseServerClient();
+
+  if (request) {
+    const authHeader = request.headers.get("authorization");
+    const adminHeader = request.headers.get("x-admin-secret");
+
+    const cronSecret = process.env.CRON_SECRET;
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+    let bearerToken = "";
+    if (authHeader && authHeader.toLowerCase().startsWith("bearer ")) {
+      bearerToken = authHeader.substring(7).trim();
+    }
+    const secretProvided = adminHeader || bearerToken;
+
+    if (
+      secretProvided &&
+      ((cronSecret && secretProvided === cronSecret) || (serviceKey && secretProvided === serviceKey))
+    ) {
+      return { ok: true, tenantId, userId: "system_admin", role: "owner", supabase };
+    }
+  }
+
   const {
     data: { user },
   } = await supabase.auth.getUser();

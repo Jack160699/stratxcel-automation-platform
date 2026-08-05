@@ -18,7 +18,7 @@ export async function POST(
       return Response.json({ error: "tenantId is required" }, { status: 400 });
     }
 
-    const ctx = await requireTenantContext(tenantId);
+    const ctx = await requireTenantContext(tenantId, request);
     if (!ctx.ok) return Response.json({ error: ctx.error }, { status: ctx.status });
 
     try {
