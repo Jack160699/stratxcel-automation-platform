@@ -8,7 +8,7 @@ function loadEnvFile(file: string) {
   if (fs.existsSync(envPath)) {
     const content = fs.readFileSync(envPath, "utf8");
     for (const rawLine of content.split("\n")) {
-      const line = rawLine.trim();
+      const line = rawLine.replace(/\r/g, "").trim();
       if (!line || line.startsWith("#")) continue;
       const eqIdx = line.indexOf("=");
       if (eqIdx !== -1) {
@@ -27,6 +27,9 @@ function loadEnvFile(file: string) {
 
 loadEnvFile(".env.production.local");
 loadEnvFile(".env.local");
+
+console.log("SUPABASE KEYS IN ENV:", Object.keys(process.env).filter(k => k.includes("SUPABASE")));
+console.log("URL val len:", process.env.NEXT_PUBLIC_SUPABASE_URL?.length, "KEY val len:", process.env.SUPABASE_SERVICE_ROLE_KEY?.length);
 
 async function runLiveReconciliation() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
