@@ -49,41 +49,14 @@ export async function POST(request: Request) {
     }
 
     const normalizedUrl = parsed.origin;
-    let title = parsed.hostname;
-    let metaDescription = "";
-
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 3500);
-
-      const res = await fetch(normalizedUrl, {
-        signal: controller.signal,
-        headers: { "User-Agent": "Stratxcel-Audit-Bot/1.0" },
-      });
-      clearTimeout(timeout);
-
-      if (res.ok) {
-        const html = await res.text();
-        const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
-        if (titleMatch && titleMatch[1]) {
-          title = titleMatch[1].trim().slice(0, 150);
-        }
-
-        const metaMatch = html.match(/<meta[^>]*name=["']description["'][^>]*content=["']([^"']+)["']/i);
-        if (metaMatch && metaMatch[1]) {
-          metaDescription = metaMatch[1].trim().slice(0, 300);
-        }
-      }
-    } catch {
-      // Fallback cleanly if network fetch fails
-    }
 
     return Response.json({
       ok: true,
       rawInput,
       normalizedUrl,
-      title,
-      metaDescription,
+      hostname: parsed.hostname,
+      verification_status: "not_checked",
+      verification_note: "URL normalized cleanly. Remote site fetch disabled for security (not_checked).",
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to resolve website";

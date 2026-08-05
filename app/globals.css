@@ -60,6 +60,27 @@
   --foreground: var(--sx-text);
 }
 
+.sx-public-theme {
+  --sx-bg: #f7f8fc;
+  --sx-surface-1: #ffffff;
+  --sx-surface-2: #eef3fa;
+  --sx-surface-3: #e5ebf4;
+  --sx-elevated: #ffffff;
+  --sx-border: #dce3ee;
+  --sx-border-strong: #c7d2e0;
+
+  --sx-text: #0a1020;
+  --sx-text-muted: #475569;
+  --sx-text-subtle: #64748b;
+
+  --sx-accent: #2563eb;
+  --sx-accent-hover: #1d4ed8;
+  --sx-accent-on: #ffffff;
+
+  --background: var(--sx-bg);
+  --foreground: var(--sx-text);
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
