@@ -199,6 +199,20 @@ async function testPaymentLinkPaidV4RpcPaths() {
   assert.equal(res13.handled, false);
   assert.equal(res13.actionTaken, "reconciliation_failed_domain_purchase_state_not_payable");
 
+  // 14. Pre-mutation rejection: Domain renewal state not payable
+  const mockDbV4DomRenewStateNotPayable = {
+    rpc: async (fn: string) => {
+      if (fn === "reconcile_and_fulfill_razorpay_payment_v4") {
+        return { data: { fulfilled: false, reason: "domain_renewal_state_not_payable", domain_status: "pending_payment" }, error: null };
+      }
+      return { data: null, error: null };
+    },
+  } as any;
+
+  const res14 = await processRazorpayWebhookEvent(mockDbV4DomRenewStateNotPayable, basePayload);
+  assert.equal(res14.handled, false);
+  assert.equal(res14.actionTaken, "reconciliation_failed_domain_renewal_state_not_payable");
+
   console.log("razorpay-rpc-paths.test.ts: ALL PASS (v4 atomic RPC path invariants & pre-mutation rejections verified)");
 }
 
