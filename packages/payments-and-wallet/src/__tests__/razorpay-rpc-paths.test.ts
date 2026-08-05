@@ -129,6 +129,20 @@ async function testPaymentLinkPaidV4RpcPaths() {
   assert.equal(res8.handled, false);
   assert.equal(res8.actionTaken, "reconciliation_failed_subscription_expected_amount_mismatch");
 
+  // 9. Pre-mutation rejection: Cross-tenant audit credit mismatch
+  const mockDbV4TenantMismatch = {
+    rpc: async (fn: string) => {
+      if (fn === "reconcile_and_fulfill_razorpay_payment_v4") {
+        return { data: { fulfilled: false, reason: "audit_credit_tenant_mismatch" }, error: null };
+      }
+      return { data: null, error: null };
+    },
+  } as any;
+
+  const res9 = await processRazorpayWebhookEvent(mockDbV4TenantMismatch, basePayload);
+  assert.equal(res9.handled, false);
+  assert.equal(res9.actionTaken, "reconciliation_failed_audit_credit_tenant_mismatch");
+
   console.log("razorpay-rpc-paths.test.ts: ALL PASS (v4 atomic RPC path invariants & pre-mutation rejections verified)");
 }
 
