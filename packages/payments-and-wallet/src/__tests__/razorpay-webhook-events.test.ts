@@ -169,10 +169,11 @@ async function testMonotonicRefundStatusTransitions() {
     amount_cents: 10000,
     currency: "INR",
     state: "CAPTURED",
+    payment_purpose: "wallet_topup",
     mode: "live",
     reference_type: "payment_link",
     reference_id: "pl_ref_mono",
-    metadata: {},
+    metadata: { link_id: "link_mono_1" },
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   };

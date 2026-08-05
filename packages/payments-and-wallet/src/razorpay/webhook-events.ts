@@ -3,6 +3,7 @@ import { transitionPaymentOrder } from "./payment-orders.ts";
 import { markRefundProcessed } from "./refunds.ts";
 import { settlePaymentToWallet } from "./settlement.ts";
 import type { PaymentOrderRow, RazorpayWebhookEventRow } from "./types.ts";
+import { SUPPORTED_PAYMENT_PURPOSES } from "./types.ts";
 
 export class DuplicateWebhookEventError extends Error {
   constructor(providerEventId: string) {
@@ -173,14 +174,7 @@ export interface WebhookProcessResult {
   actionTaken: string;
 }
 
-const SUPPORTED_PURPOSES = new Set([
-  "wallet_topup",
-  "audit_fee",
-  "subscription_payment",
-  "continuation_pack",
-  "domain_purchase",
-  "domain_renewal",
-]);
+// Uses SUPPORTED_PAYMENT_PURPOSES from types.ts (single source of truth)
 
 export async function processRazorpayWebhookEvent(
   supabase: ServiceClient,
@@ -208,7 +202,7 @@ export async function processRazorpayWebhookEvent(
 
     // FAIL CLOSED ON MISSING OR UNKNOWN PURPOSE (Never default to wallet_topup)
     const purpose = link.payment_purpose;
-    if (!purpose || !SUPPORTED_PURPOSES.has(purpose)) {
+    if (!purpose || !SUPPORTED_PAYMENT_PURPOSES.has(purpose as any)) {
       console.error(`[Webhook Reconciliation Failure] Missing or unsupported purpose: ${purpose}`);
       return { eventType, handled: false, actionTaken: "reconciliation_failed_unknown_purpose" };
     }
@@ -253,6 +247,7 @@ export async function processRazorpayWebhookEvent(
           amount_cents: link.amount_cents,
           currency: link.currency,
           state: "CAPTURED",
+          payment_purpose: purpose,
           mode: link.mode,
           reference_type: "payment_link",
           reference_id: link.reference_id,
@@ -323,11 +318,23 @@ export async function processRazorpayWebhookEvent(
           .eq("payment_link_id", link.id);
       }
     } else if (purpose === "audit_fee") {
-      const { error: auditErr } = await supabase
-        .from("audit_orders")
-        .update({ status: "paid", updated_at: new Date().toISOString() })
-        .eq("payment_link_id", link.id);
-      if (auditErr) throw new Error(`audit_fee update failed: ${auditErr.message}`);
+      if (typeof supabase?.rpc === "function") {
+        const { data: rpcData, error: rpcErr } = await supabase.rpc("fulfill_audit_payment_atomic", {
+          p_payment_link_id: link.id,
+          p_tenant_id: link.tenant_id,
+          p_amount_cents: link.amount_cents,
+          p_currency: link.currency,
+        });
+        if (rpcErr) throw new Error(`audit_fee RPC failed: ${rpcErr.message}`);
+        if (rpcData && (rpcData as any).fulfilled !== true) {
+          throw new Error(`audit_fee RPC returned non-fulfilled state: ${(rpcData as any).reason}`);
+        }
+      } else {
+        await supabase
+          .from("audit_orders")
+          .update({ status: "paid", updated_at: new Date().toISOString() })
+          .eq("payment_link_id", link.id);
+      }
     } else if (purpose === "domain_purchase" || purpose === "domain_renewal") {
       // Moves domain to paid_pending_registration (NOT active)
       if (typeof supabase?.rpc === "function") {
@@ -436,6 +443,50 @@ export async function processRazorpayWebhookEvent(
       if (updateErr) throw new Error(`payment_link.cancelled status update failed: ${updateErr.message}`);
     }
     return { eventType, handled: true, actionTaken: "payment_link_cancelled" };
+  }
+
+  // payment.captured — resolves to same fulfilment identity as payment_link.paid
+  // Uses payment_orders dedup to ensure exactly-once fulfilment
+  if (eventType === "payment.captured") {
+    const payEntity = entityObj?.payment?.entity as Record<string, unknown> | undefined;
+    const paymentId = (payEntity?.id as string) ?? null;
+    const rzpNotes = payEntity?.notes as Record<string, string> | undefined;
+    const referenceId = rzpNotes?.reference_id ?? null;
+
+    if (!paymentId) return { eventType, handled: false, actionTaken: "missing_payment_id" };
+
+    // Try to find the payment link by reference_id from notes or by provider_payment_id
+    let link: Record<string, unknown> | null = null;
+    if (referenceId) {
+      const { data } = await supabase.from("payment_links").select("*").eq("reference_id", referenceId).maybeSingle();
+      link = data;
+    }
+    if (!link) {
+      const { data } = await supabase.from("payment_links").select("*").eq("provider_payment_id", paymentId).maybeSingle();
+      link = data;
+    }
+
+    if (!link) {
+      // No matching payment link — record but don't fail (may be a direct payment)
+      return { eventType, handled: true, actionTaken: "payment_captured_no_matching_link" };
+    }
+
+    // Delegate to payment_link.paid handler via internal call to reuse all fulfilment logic
+    const syntheticPayload = {
+      payload: {
+        payment_link: { entity: { id: link.provider_link_id, reference_id: link.reference_id, status: "paid", amount: link.amount_cents, currency: link.currency } },
+        payment: { entity: { id: paymentId } },
+      },
+    };
+
+    return processRazorpayWebhookEvent(supabase, { eventType: "payment_link.paid", payload: syntheticPayload });
+  }
+
+  // payment.failed — record but don't fail the webhook
+  if (eventType === "payment.failed") {
+    const payEntity = entityObj?.payment?.entity as Record<string, unknown> | undefined;
+    const paymentId = (payEntity?.id as string) ?? null;
+    return { eventType, handled: true, actionTaken: `payment_failed_recorded${paymentId ? `_${paymentId}` : ""}` };
   }
 
   if (eventType === "refund.created") {

@@ -3,6 +3,7 @@ import type { ServiceClient } from "../db.ts";
 import { getIntegrationMode } from "../flags.ts";
 import { IntegrationDisabledError } from "./adapter.ts";
 import type { CreatePaymentLinkInput, PaymentLinkRow } from "./types.ts";
+import { SUPPORTED_PAYMENT_PURPOSES } from "./types.ts";
 import { processRazorpayWebhookEvent } from "./webhook-events.ts";
 
 export function generatePaymentLinkReferenceId(): string {
@@ -25,8 +26,8 @@ export async function createPaymentLink(
     throw new Error("Payment link amount must be a positive integer in paise (cents)");
   }
 
-  if (!input.paymentPurpose || input.paymentPurpose.trim() === "") {
-    throw new Error("Payment purpose is required when creating a payment link");
+  if (!input.paymentPurpose || !SUPPORTED_PAYMENT_PURPOSES.has(input.paymentPurpose)) {
+    throw new Error(`Payment purpose is required and must be one of: ${[...SUPPORTED_PAYMENT_PURPOSES].join(", ")}. Received: ${input.paymentPurpose}`);
   }
 
   const referenceId = input.referenceId ?? generatePaymentLinkReferenceId();

@@ -10,6 +10,16 @@ export type PaymentPurpose =
   | "domain_renewal"
   | "continuation_pack";
 
+/** Authoritative set of supported payment purposes — single source of truth */
+export const SUPPORTED_PAYMENT_PURPOSES = new Set<PaymentPurpose>([
+  "wallet_topup",
+  "audit_fee",
+  "subscription_payment",
+  "continuation_pack",
+  "domain_purchase",
+  "domain_renewal",
+]);
+
 export interface PaymentLinkRow {
   id: string;
   tenant_id: string;
@@ -19,7 +29,7 @@ export interface PaymentLinkRow {
   amount_cents: number;
   currency: string;
   status: PaymentLinkStatus;
-  payment_purpose?: PaymentPurpose;
+  payment_purpose: PaymentPurpose;
   mode: "test" | "live";
   short_url: string | null;
   description: string | null;
@@ -45,7 +55,7 @@ export interface CreatePaymentLinkInput {
   expireBy?: string | Date | null;
   createdBy?: string | null;
   referenceId?: string;
-  paymentPurpose?: PaymentPurpose;
+  paymentPurpose: PaymentPurpose;
 }
 
 export interface CreateOrderResult {
@@ -86,7 +96,7 @@ export interface PaymentOrderRow {
   amount_cents: number;
   currency: string;
   state: "CREATED" | "AUTHORIZED" | "CAPTURED" | "FAILED" | "REFUNDED" | "PARTIALLY_REFUNDED";
-  payment_purpose?: PaymentPurpose;
+  payment_purpose: PaymentPurpose;
   mode: PaymentMode;
   reference_type: string | null;
   reference_id: string | null;

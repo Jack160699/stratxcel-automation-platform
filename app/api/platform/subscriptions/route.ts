@@ -1,5 +1,5 @@
 import { requireTenantContext, getTenantServiceContext } from "@/lib/tenants/tenant-context";
-import { createPaymentLink, checkAuditCreditEligibility } from "@stratxcel/payments-and-wallet";
+import { createPaymentLink, cancelPaymentLink, checkAuditCreditEligibility } from "@stratxcel/payments-and-wallet";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -39,7 +39,8 @@ export async function POST(request: Request) {
         price_cents: finalPriceCents,
         audit_credit_applied_cents: discountCents,
         audit_order_id: creditCheck.eligible ? creditCheck.auditOrderId : null,
-        status: "pending_payment", // Corrected lifecycle state
+        status: "pending_payment",
+        fulfilment_status: "awaiting_payment",
       })
       .select("*")
       .single();
@@ -49,24 +50,49 @@ export async function POST(request: Request) {
     }
 
     // 2. Create Razorpay payment link with mandatory payment_purpose = "subscription_payment"
-    const link = await createPaymentLink(serviceDb, {
-      tenantId,
-      amountCents: finalPriceCents,
-      currency: "INR",
-      description: `Stratxcel ${planTier.toUpperCase()} Subscription (GST Included)`,
-      paymentPurpose: "subscription_payment",
-      referenceId: subscription.id, // Durable reference link to subscription
-    });
+    let link;
+    try {
+      link = await createPaymentLink(serviceDb, {
+        tenantId,
+        amountCents: finalPriceCents,
+        currency: "INR",
+        description: `Stratxcel ${planTier.toUpperCase()} Subscription (GST Included)`,
+        paymentPurpose: "subscription_payment",
+        referenceId: subscription.id,
+      });
+    } catch (linkErr) {
+      // Payment link creation failed — mark subscription as payment_failed
+      await serviceDb
+        .from("subscriptions")
+        .update({ status: "payment_failed", fulfilment_status: "payment_link_creation_failed", updated_at: new Date().toISOString() })
+        .eq("id", subscription.id);
+      const linkMsg = linkErr instanceof Error ? linkErr.message : "Failed to create payment link";
+      return Response.json({ error: `Subscription created but payment link failed: ${linkMsg}` }, { status: 502 });
+    }
 
     // 3. Persist payment link reference on subscription record
-    await serviceDb
+    const { error: linkUpdateErr } = await serviceDb
       .from("subscriptions")
       .update({ payment_link_id: link.id })
       .eq("id", subscription.id);
 
+    if (linkUpdateErr) {
+      // Linking failed — compensate: cancel Razorpay link, mark subscription reconciliation_required
+      try {
+        await cancelPaymentLink(serviceDb, { linkId: link.id, tenantId });
+      } catch {
+        // Best-effort compensation — manual review required
+      }
+      await serviceDb
+        .from("subscriptions")
+        .update({ status: "payment_failed", fulfilment_status: "reconciliation_required", updated_at: new Date().toISOString() })
+        .eq("id", subscription.id);
+      return Response.json({ error: "Failed to link payment to subscription. Razorpay link cancelled." }, { status: 500 });
+    }
+
     return Response.json({
       subscription: { ...subscription, payment_link_id: link.id },
-      auditCreditProvisional: creditCheck.eligible ? 999 : 0,
+      auditCreditProvisional: creditCheck.eligible ? creditCheck.creditAmountCents / 100 : 0,
       paymentLink: link,
       paymentUrl: link.short_url,
     });

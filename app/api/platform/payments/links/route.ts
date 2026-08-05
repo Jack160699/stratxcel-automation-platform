@@ -59,7 +59,7 @@ export async function POST(request: Request) {
       customerEmail: customerEmail || undefined,
       customerPhone: customerPhone || undefined,
       expireBy: expireBy || undefined,
-      paymentPurpose: paymentPurpose || "wallet_topup", // Default to wallet_topup for manual wallet link endpoint
+      paymentPurpose: "wallet_topup", // Server-enforced: this endpoint is exclusively for wallet top-ups
     });
 
     return Response.json({ link, paymentUrl: link.short_url });
