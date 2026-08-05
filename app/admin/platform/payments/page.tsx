@@ -36,6 +36,8 @@ export default function PaymentsPage() {
   const [links, setLinks] = useState<PaymentLinkItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [cancellingId, setCancellingId] = useState<string | null>(null);
+  const [reconcilingId, setReconcilingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -104,11 +106,11 @@ export default function PaymentsPage() {
 
       const body = await res.json();
       if (!res.ok) {
-        setError(body.error ?? "Failed to create payment link");
+        setError(body.error ?? `Failed to create payment link (HTTP ${res.status})`);
         return;
       }
 
-      setSuccessMsg(`Payment link created successfully (${body.link.reference_id})`);
+      setSuccessMsg(`Payment Link created successfully! Reference: ${body.link.reference_id}`);
       setAmount("");
       setDescription("");
       setCustomerName("");
@@ -125,8 +127,7 @@ export default function PaymentsPage() {
 
   const handleCancel = async (linkId: string) => {
     if (!tenantId) return;
-    if (!confirm("Are you sure you want to cancel this payment link?")) return;
-
+    setCancellingId(linkId);
     setError(null);
     setSuccessMsg(null);
     try {
@@ -140,87 +141,107 @@ export default function PaymentsPage() {
         setError(body.error ?? "Failed to cancel payment link");
         return;
       }
-      setSuccessMsg("Payment link cancelled");
+      setSuccessMsg(`Payment link ${linkId} cancelled successfully.`);
       await loadLinks();
     } catch {
       setError("Network error cancelling payment link");
+    } finally {
+      setCancellingId(null);
+    }
+  };
+
+  const handleReconcile = async (linkId: string) => {
+    if (!tenantId) {
+      setError("Please specify a Tenant ID above");
+      return;
+    }
+    setReconcilingId(linkId);
+    setError(null);
+    setSuccessMsg(null);
+
+    try {
+      const res = await fetch(`/api/platform/payments/links/${encodeURIComponent(linkId)}/reconcile`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tenantId }),
+      });
+
+      const body = await res.json();
+      if (!res.ok) {
+        setError(body.error ?? "Failed to reconcile payment link");
+        return;
+      }
+
+      if (body.reconciled) {
+        setSuccessMsg(`Payment Link successfully reconciled! Razorpay status: ${body.razorpayStatus}. Local status updated to PAID.`);
+      } else {
+        setSuccessMsg(`Reconciliation complete. Razorpay status: ${body.razorpayStatus}. No status changes required.`);
+      }
+      await loadLinks();
+    } catch {
+      setError("Network error attempting payment link reconciliation");
+    } finally {
+      setReconcilingId(null);
     }
   };
 
   const copyToClipboard = (text: string, id: string) => {
     navigator.clipboard.writeText(text);
     setCopiedId(id);
-    setTimeout(() => setCopiedId(null), 2500);
+    setTimeout(() => setCopiedId(null), 2000);
   };
 
   return (
     <div className="flex flex-col gap-6">
       <TenantIdBar tenantId={tenantId} onChange={setTenantId} />
 
-      {/* Integration posture header */}
-      <section className="rounded-xl border border-slate-800 bg-slate-900/40 p-5">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
-            <h2 className="text-base font-semibold text-slate-100">Razorpay Payment Integration</h2>
-            <p className="mt-1 text-xs text-slate-400">
-              Standard Payment Links flow. Generates server-validated INR links stored in Supabase with webhook reconciliation.
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-slate-400">Posture:</span>
-            <span className="rounded-full bg-slate-800 border border-slate-700 px-3 py-1 text-xs font-mono text-slate-200">
-              Server API Ready
-            </span>
-          </div>
-        </div>
-      </section>
-
-      {error && (
-        <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 p-4 text-sm text-rose-300">
-          {error}
-        </div>
-      )}
-
-      {successMsg && (
-        <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm text-emerald-300">
-          {successMsg}
-        </div>
-      )}
-
       {!tenantId ? (
-        <p className="text-sm text-slate-500">Set a tenant ID above to manage payment links.</p>
+        <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-6 text-center text-sm text-slate-400">
+          Enter a Tenant ID to manage payment links.
+        </div>
       ) : (
         <>
+          {error && (
+            <div className="rounded-xl border border-rose-500/20 bg-rose-500/10 p-4 text-sm text-rose-300">
+              {error}
+            </div>
+          )}
+
+          {successMsg && (
+            <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-4 text-sm text-emerald-300">
+              {successMsg}
+            </div>
+          )}
+
           {/* Create Payment Link Form */}
           <section className="rounded-xl border border-slate-800 bg-slate-900/40 p-6">
-            <h3 className="text-sm font-semibold text-slate-200 uppercase tracking-wider mb-4">
-              Create New Payment Link
+            <h3 className="text-base font-semibold text-slate-200 mb-4">
+              Generate New Payment Link
             </h3>
-
-            <form onSubmit={handleCreate} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <form onSubmit={handleCreate} className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-medium text-slate-400 mb-1">
-                  Amount (INR ₹) *
+                  Amount in ₹ (INR) *
                 </label>
                 <input
                   type="number"
                   step="0.01"
                   min="1"
-                  placeholder="e.g. 1500.00"
+                  placeholder="e.g. 10.00"
                   value={amount}
                   onChange={(e) => setAmount(e.target.value)}
-                  required
                   className="w-full rounded-md border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-slate-100 placeholder-slate-600 focus:border-blue-500 focus:outline-none"
+                  required
                 />
               </div>
 
               <div>
                 <label className="block text-xs font-medium text-slate-400 mb-1">
-                  Description / Quotation Ref
+                  Description / Purpose (Optional)
                 </label>
                 <input
                   type="text"
-                  placeholder="e.g. Invoice #INV-2026-001"
+                  placeholder="e.g. Wallet Topup - 100 Credits"
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   className="w-full rounded-md border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-slate-100 placeholder-slate-600 focus:border-blue-500 focus:outline-none"
@@ -233,7 +254,7 @@ export default function PaymentsPage() {
                 </label>
                 <input
                   type="text"
-                  placeholder="e.g. Rahul Sharma"
+                  placeholder="e.g. Acme Corp"
                   value={customerName}
                   onChange={(e) => setCustomerName(e.target.value)}
                   className="w-full rounded-md border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-slate-100 placeholder-slate-600 focus:border-blue-500 focus:outline-none"
@@ -246,7 +267,7 @@ export default function PaymentsPage() {
                 </label>
                 <input
                   type="email"
-                  placeholder="e.g. client@example.com"
+                  placeholder="e.g. billing@acme.com"
                   value={customerEmail}
                   onChange={(e) => setCustomerEmail(e.target.value)}
                   className="w-full rounded-md border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-slate-100 placeholder-slate-600 focus:border-blue-500 focus:outline-none"
@@ -317,8 +338,8 @@ export default function PaymentsPage() {
                   </thead>
                   <tbody className="divide-y divide-slate-800 text-slate-300">
                     {links.map((link) => {
-                      const shareUrl = link.short_url || `/payment/status?link_id=${link.reference_id}`;
                       const isCancelable = link.status === "created";
+                      const isReconcilable = link.mode === "live" && Boolean(link.provider_link_id);
 
                       return (
                         <tr key={link.id} className="hover:bg-slate-900/60 transition-colors">
@@ -363,12 +384,22 @@ export default function PaymentsPage() {
                               >
                                 Open
                               </a>
+                              {isReconcilable && (
+                                <button
+                                  onClick={() => handleReconcile(link.id)}
+                                  disabled={reconcilingId === link.id}
+                                  className="rounded px-2 py-1 text-xs bg-emerald-900/30 text-emerald-300 border border-emerald-800/30 hover:bg-emerald-800/40 transition-colors disabled:opacity-50"
+                                >
+                                  {reconcilingId === link.id ? "Reconciling…" : "Reconcile"}
+                                </button>
+                              )}
                               {isCancelable && (
                                 <button
                                   onClick={() => handleCancel(link.id)}
-                                  className="rounded px-2 py-1 text-xs bg-rose-900/30 text-rose-300 border border-rose-800/30 hover:bg-rose-800/40 transition-colors"
+                                  disabled={cancellingId === link.id}
+                                  className="rounded px-2 py-1 text-xs bg-rose-900/30 text-rose-300 border border-rose-800/30 hover:bg-rose-800/40 transition-colors disabled:opacity-50"
                                 >
-                                  Cancel
+                                  {cancellingId === link.id ? "Cancelling…" : "Cancel"}
                                 </button>
                               )}
                             </div>

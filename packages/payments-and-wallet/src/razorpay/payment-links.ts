@@ -3,6 +3,7 @@ import type { ServiceClient } from "../db.ts";
 import { getIntegrationMode } from "../flags.ts";
 import { IntegrationDisabledError } from "./adapter.ts";
 import type { CreatePaymentLinkInput, PaymentLinkRow } from "./types.ts";
+import { processRazorpayWebhookEvent } from "./webhook-events.ts";
 
 export function generatePaymentLinkReferenceId(): string {
   const timestamp = Date.now();
@@ -106,77 +107,81 @@ export async function createPaymentLink(
   });
 
   if (!response.ok) {
-    throw new Error(`Razorpay live payment link creation failed with HTTP ${response.status}`);
+    let errBody = "";
+    try {
+      errBody = await response.text();
+    } catch {
+      // ignore
+    }
+    throw new Error(`Razorpay live payment link creation failed with HTTP ${response.status}: ${errBody}`);
   }
 
-  const result = (await response.json()) as {
-    id: string;
-    short_url?: string;
-    status?: string;
-    amount: number;
-    currency: string;
-  };
+  let result: Record<string, unknown>;
+  try {
+    result = (await response.json()) as Record<string, unknown>;
+  } catch {
+    throw new Error("Razorpay returned invalid JSON response");
+  }
 
-  // Insert into Supabase. If DB insert fails, compensate by cancelling the newly created Razorpay payment link!
+  const providerLinkId = (result.id as string) ?? null;
+  const shortUrl = (result.short_url as string) ?? null;
+
+  if (!providerLinkId) {
+    throw new Error("Razorpay response missing payment link ID");
+  }
+
   const { data, error } = await supabase
     .from("payment_links")
     .insert({
       tenant_id: input.tenantId,
       provider: "razorpay",
-      provider_link_id: result.id,
+      provider_link_id: providerLinkId,
       reference_id: referenceId,
-      amount_cents: result.amount,
-      currency: result.currency,
+      amount_cents: input.amountCents,
+      currency,
       status: "created",
       mode: "live",
-      short_url: result.short_url ?? null,
+      short_url: shortUrl,
       description: input.description ?? null,
       customer_name: input.customerName ?? null,
       customer_email: input.customerEmail ?? null,
       customer_phone: input.customerPhone ?? null,
       expire_by: expireByIso,
       created_by: input.createdBy ?? null,
-      metadata: { kind: "payment_link", razorpay_status: result.status ?? "created" },
+      metadata: { kind: "payment_link", shadow: false, razorpay_id: providerLinkId },
     })
     .select("*")
     .single();
 
   if (error) {
-    let cancelSucceeded = false;
-    let cancelStatusCode: number | null = null;
-
+    // Compensating action: cancel created link on Razorpay if local DB insert fails
+    let cancelStatusMessage = `link ${providerLinkId} was automatically cancelled on Razorpay`;
     try {
-      const cancelRes = await fetchFn(`https://api.razorpay.com/v1/payment_links/${result.id}/cancel`, {
+      const cancelRes = await fetchFn(`https://api.razorpay.com/v1/payment_links/${providerLinkId}/cancel`, {
         method: "POST",
         headers: {
           Authorization: `Basic ${Buffer.from(`${keyId}:${keySecret}`).toString("base64")}`,
           "Content-Type": "application/json",
         },
       });
-
-      cancelStatusCode = cancelRes.status;
-      cancelSucceeded = cancelRes.ok;
-
-      if (!cancelRes.ok) {
-        console.warn(`[Razorpay Compensation] Cancellation for link ${result.id} failed with HTTP ${cancelRes.status}`);
+      if (cancelRes.ok) {
+        console.log(`[Razorpay Compensation] Successfully cancelled link ${providerLinkId} after database insert failure.`);
       } else {
-        console.warn(`[Razorpay Compensation] Successfully cancelled link ${result.id} after database insert failure.`);
+        cancelStatusMessage = `Compensation cancellation failed (HTTP ${cancelRes.status}). Manual review required for link ${providerLinkId}`;
+        console.error(`[Razorpay Compensation] Cancellation for link ${providerLinkId} failed with HTTP ${cancelRes.status}`);
       }
-    } catch {
-      console.error(`[Razorpay Compensation] Network error attempting to cancel link ${result.id}`);
+    } catch (cancelErr) {
+      cancelStatusMessage = `Compensation cancellation failed (HTTP network_error). Manual review required for link ${providerLinkId}`;
+      console.error(`[Razorpay Compensation] Network error attempting to cancel link ${providerLinkId}:`, cancelErr);
     }
 
-    if (cancelSucceeded) {
-      throw new Error("Failed to persist payment link record. Created link was automatically cancelled.");
-    } else {
-      throw new Error(`Failed to persist payment link record. Compensation cancellation failed (HTTP ${cancelStatusCode ?? "network_error"}). Manual review required for link ${result.id}.`);
-    }
+    throw new Error(`Failed to record live payment link record (${cancelStatusMessage})`);
   }
 
   return data as PaymentLinkRow;
 }
 
-export async function listPaymentLinks(
+export async function getPaymentLinksForTenant(
   supabase: ServiceClient,
   tenantId: string
 ): Promise<PaymentLinkRow[]> {
@@ -186,9 +191,11 @@ export async function listPaymentLinks(
     .eq("tenant_id", tenantId)
     .order("created_at", { ascending: false });
 
-  if (error) throw new Error("Failed to list payment links");
+  if (error) throw new Error("Failed to fetch payment links for tenant");
   return (data as PaymentLinkRow[]) ?? [];
 }
+
+export const listPaymentLinks = getPaymentLinksForTenant;
 
 export async function getPaymentLinkById(
   supabase: ServiceClient,
@@ -272,4 +279,146 @@ export async function cancelPaymentLink(
 
   if (updateErr) throw new Error("Failed to update payment link status");
   return updated as PaymentLinkRow;
+}
+
+export interface ReconcilePaymentLinkInput {
+  linkId: string;
+  tenantId: string;
+}
+
+export interface ReconcilePaymentLinkResult {
+  reconciled: boolean;
+  link: PaymentLinkRow;
+  razorpayStatus: string;
+}
+
+export async function reconcilePaymentLink(
+  supabase: ServiceClient,
+  input: ReconcilePaymentLinkInput,
+  fetchFn: typeof fetch = fetch
+): Promise<ReconcilePaymentLinkResult> {
+  const { data: link, error: fetchErr } = await supabase
+    .from("payment_links")
+    .select("*")
+    .eq("tenant_id", input.tenantId)
+    .or(`id.eq.${input.linkId},reference_id.eq.${input.linkId}`)
+    .maybeSingle();
+
+  if (fetchErr) throw new Error("Failed to load payment link");
+  if (!link) throw new Error("Payment link not found or not owned by tenant");
+
+  if (link.provider !== "razorpay") {
+    throw new Error("Only Razorpay payment links can be reconciled");
+  }
+  if (!link.provider_link_id || link.provider_link_id.trim() === "") {
+    throw new Error("Payment link does not have a provider link ID");
+  }
+  if (link.mode !== "live") {
+    throw new Error("Only live payment links can be reconciled with Razorpay API");
+  }
+
+  const keyId = process.env.RAZORPAY_KEY_ID;
+  const keySecret = process.env.RAZORPAY_KEY_SECRET;
+  if (!keyId || !keySecret) {
+    throw new Error("Razorpay API credentials missing from environment");
+  }
+
+  const authHeader = `Basic ${Buffer.from(`${keyId}:${keySecret}`).toString("base64")}`;
+  const response = await fetchFn(`https://api.razorpay.com/v1/payment_links/${encodeURIComponent(link.provider_link_id)}`, {
+    method: "GET",
+    headers: {
+      Authorization: authHeader,
+      "Content-Type": "application/json",
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Razorpay API returned error status ${response.status}`);
+  }
+
+  const rzpData = (await response.json()) as Record<string, unknown>;
+
+  const rzpId = (rzpData.id as string) ?? null;
+  const rzpRefId = (rzpData.reference_id as string) ?? null;
+  const rzpAmount = typeof rzpData.amount === "number" ? rzpData.amount : null;
+  const rzpCurrency = (rzpData.currency as string) ?? null;
+  const rzpStatus = (rzpData.status as string) ?? "unknown";
+
+  if (
+    rzpId !== link.provider_link_id ||
+    rzpRefId !== link.reference_id ||
+    rzpAmount !== link.amount_cents ||
+    rzpCurrency !== link.currency
+  ) {
+    throw new Error("Razorpay Payment Link attributes do not match stored record");
+  }
+
+  if (rzpStatus === "paid" || rzpStatus === "partially_paid") {
+    let rzpPaymentId: string | null = null;
+    if (Array.isArray(rzpData.payments) && rzpData.payments.length > 0) {
+      const firstPay = rzpData.payments[0] as Record<string, unknown>;
+      rzpPaymentId = (firstPay.payment_id as string) || (firstPay.id as string) || null;
+    }
+
+    const payload = {
+      payload: {
+        payment_link: {
+          entity: {
+            id: link.provider_link_id,
+            reference_id: link.reference_id,
+            status: rzpStatus,
+            amount: rzpAmount,
+            currency: rzpCurrency,
+          },
+        },
+        payment: {
+          entity: {
+            id: rzpPaymentId ?? undefined,
+          },
+        },
+      },
+    };
+
+    const processRes = await processRazorpayWebhookEvent(supabase, {
+      eventType: "payment_link.paid",
+      payload,
+    });
+
+    if (!processRes.handled) {
+      throw new Error(`Reconciliation failed: ${processRes.actionTaken}`);
+    }
+
+    const { data: updatedLink } = await supabase
+      .from("payment_links")
+      .select("*")
+      .eq("id", link.id)
+      .single();
+
+    return {
+      reconciled: true,
+      link: (updatedLink as PaymentLinkRow) || link,
+      razorpayStatus: rzpStatus,
+    };
+  }
+
+  if (rzpStatus === "cancelled" || rzpStatus === "expired") {
+    if (link.status === "created") {
+      await supabase
+        .from("payment_links")
+        .update({ status: rzpStatus, updated_at: new Date().toISOString() })
+        .eq("id", link.id);
+    }
+  }
+
+  const { data: currentLink } = await supabase
+    .from("payment_links")
+    .select("*")
+    .eq("id", link.id)
+    .single();
+
+  return {
+    reconciled: false,
+    link: (currentLink as PaymentLinkRow) || link,
+    razorpayStatus: rzpStatus,
+  };
 }
