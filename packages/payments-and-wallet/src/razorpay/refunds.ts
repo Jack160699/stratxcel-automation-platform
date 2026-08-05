@@ -24,9 +24,9 @@ export async function requestRefund(
 
 /**
  * Marks a refund processed and routes reversal by payment purpose.
+ * Calls atomic process_refund_atomic_v3 PostgreSQL function when rpc method is available.
  * Only wallet_topup refunds reverse the wallet.
  * Other purposes perform product-specific reversals.
- * Updates order state to REFUNDED or PARTIALLY_REFUNDED.
  */
 export async function markRefundProcessed(
   supabase: ServiceClient,
@@ -35,6 +35,34 @@ export async function markRefundProcessed(
   const { data: refund, error: fetchError } = await supabase.from("payment_refunds").select("*").eq("id", input.refundId).single();
   if (fetchError) throw new Error(`markRefundProcessed: ${fetchError.message}`);
 
+  if (typeof supabase?.rpc === "function") {
+    const { data: rpcData, error: rpcErr } = await supabase.rpc("process_refund_atomic_v3", {
+      p_refund_id: input.refundId,
+      p_payment_order_id: input.order.id,
+      p_provider_refund_id: refund.provider_refund_id ?? null,
+      p_amount_cents: refund.amount_cents,
+    });
+
+    if (rpcErr) {
+      throw new Error(`markRefundProcessed RPC error: ${rpcErr.message}`);
+    }
+
+    if (!rpcData || typeof rpcData !== "object") {
+      throw new Error("markRefundProcessed RPC returned invalid response");
+    }
+
+    const res = rpcData as { success?: boolean; status?: string; reason?: string };
+    if (!res.success) {
+      if (res.status === "MANUAL_REVIEW") {
+        return { settled: false };
+      }
+      throw new Error(`markRefundProcessed RPC failed: ${res.reason}`);
+    }
+
+    return { settled: true };
+  }
+
+  // Fallback for non-RPC test mocks
   const purpose = input.order.payment_purpose;
   let settled = false;
 
@@ -50,7 +78,6 @@ export async function markRefundProcessed(
     });
     settled = atomicResult.settled;
   } else if (purpose === "subscription_payment") {
-    // Mark subscription refunded/cancelled, revoke future entitlements — NO wallet debit
     const { data: sub } = await supabase
       .from("subscriptions")
       .select("id, status")
@@ -64,14 +91,12 @@ export async function markRefundProcessed(
     }
     settled = true;
   } else if (purpose === "audit_fee") {
-    // Record refund, revoke unused audit credit — NO wallet debit
     const { data: auditOrder } = await supabase
       .from("audit_orders")
       .select("id, credited_towards_subscription_id")
       .eq("payment_link_id", (input.order.metadata as Record<string, unknown>)?.link_id)
       .maybeSingle();
     if (auditOrder && !auditOrder.credited_towards_subscription_id) {
-      // Credit was not yet used — revert to pending
       await supabase
         .from("audit_orders")
         .update({ status: "pending_payment", updated_at: new Date().toISOString() })
@@ -79,14 +104,12 @@ export async function markRefundProcessed(
     }
     settled = true;
   } else if (purpose === "continuation_pack") {
-    // Reverse unused extra units — NO wallet debit
     const { data: pack } = await supabase
       .from("continuation_packs")
       .select("id, metric, extra_units, subscription_id, tenant_id, status")
       .eq("payment_link_id", (input.order.metadata as Record<string, unknown>)?.link_id)
       .maybeSingle();
     if (pack && pack.status === "applied") {
-      // Try to reduce limit_amount by extra_units, but don't go below current_usage
       const { data: entitlement } = await supabase
         .from("usage_entitlements")
         .select("id, limit_amount, current_usage")
@@ -107,7 +130,6 @@ export async function markRefundProcessed(
     }
     settled = true;
   } else if (purpose === "domain_purchase" || purpose === "domain_renewal") {
-    // If domain is not yet registered, cancel; otherwise manual_review_required — NO wallet debit
     const { data: domain } = await supabase
       .from("domains")
       .select("id, status")
@@ -120,11 +142,9 @@ export async function markRefundProcessed(
           .update({ status: "cancelled", updated_at: new Date().toISOString() })
           .eq("id", domain.id);
       }
-      // If domain is already active/registering, manual review needed — don't change status
     }
     settled = true;
   } else {
-    // Unknown purpose — do not reverse wallet, log for manual review
     console.error(`[Refund] Unknown payment_purpose for order ${input.order.id}: ${purpose}`);
     settled = false;
   }
@@ -135,7 +155,6 @@ export async function markRefundProcessed(
     .eq("id", input.refundId);
   if (updateError) throw new Error(`markRefundProcessed db update: ${updateError.message}`);
 
-  // Calculate total cumulative processed refunds for this payment order
   const { data: processedRefunds, error: sumError } = await supabase
     .from("payment_refunds")
     .select("amount_cents")
@@ -147,10 +166,8 @@ export async function markRefundProcessed(
   const totalRefunded = (processedRefunds ?? []).reduce((sum, r) => sum + (r.amount_cents || 0), 0);
   const nextOrderState = totalRefunded >= input.order.amount_cents ? "REFUNDED" : "PARTIALLY_REFUNDED";
 
-  // State transition: surface error if state transition fails unexpectedly (treat already-correct state as idempotent)
   if (input.order.state !== nextOrderState) {
     if (input.order.state === "REFUNDED" && nextOrderState === "PARTIALLY_REFUNDED") {
-      // Order is already in terminal REFUNDED state; do not attempt invalid backwards transition
     } else {
       await transitionPaymentOrder(supabase, {
         orderId: input.order.id,

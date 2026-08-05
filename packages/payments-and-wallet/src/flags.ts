@@ -13,3 +13,17 @@ export function getIntegrationMode(envVarName: string): IntegrationMode {
   if (raw && VALID_MODES.includes(raw as IntegrationMode)) return raw as IntegrationMode;
   return "disabled";
 }
+
+export type PaymentFeatureFlag =
+  | "PAYMENTS_SUBSCRIPTIONS_ENABLED"
+  | "PAYMENTS_AUDIT_ENABLED"
+  | "PAYMENTS_CONTINUATION_PACKS_ENABLED"
+  | "PAYMENTS_DOMAINS_ENABLED";
+
+/**
+ * Evaluates payment feature flags for immediate safety state.
+ * Returns false unless explicitly set to "true".
+ */
+export function isPaymentFeatureEnabled(flag: PaymentFeatureFlag): boolean {
+  return process.env[flag] === "true";
+}

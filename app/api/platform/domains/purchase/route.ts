@@ -1,11 +1,18 @@
 import { requireTenantContext, getTenantServiceContext } from "@/lib/tenants/tenant-context";
-import { createPaymentLink } from "@stratxcel/payments-and-wallet";
-import { SandboxDomainRegistrar, attachDomainToVercel } from "@stratxcel/websites-and-domains";
+import { createPaymentLink, isPaymentFeatureEnabled } from "@stratxcel/payments-and-wallet";
+import { SandboxDomainRegistrar } from "@stratxcel/websites-and-domains";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
+  if (!isPaymentFeatureEnabled("PAYMENTS_DOMAINS_ENABLED")) {
+    return Response.json(
+      { error: "Domain purchase checkout is currently restricted for safety certification." },
+      { status: 503 }
+    );
+  }
+
   try {
     const body = await request.json().catch(() => ({}));
     const { tenantId, domainName, registrant, siteProjectId } = body;
@@ -37,24 +44,14 @@ export async function POST(request: Request) {
       paymentPurpose: "domain_purchase",
     });
 
-    // 2. Perform registrar registration (with legal client registrant ownership)
-    const regResult = await registrar.registerDomain({
-      domainName,
-      tenantId,
-      registrant,
-    });
-
-    // 3. Attach domain to Vercel production project
-    const vercelStatus = await attachDomainToVercel(domainName);
-
-    // 4. Store domain in database
+    // 2. Store domain in database in pending_payment state (DO NOT register or activate domain before verified payment)
     const { data: dbDomain, error: insertErr } = await serviceDb
       .from("domains")
       .insert({
         tenant_id: tenantId,
         domain_name: domainName,
-        provider: regResult.provider,
-        provider_domain_id: regResult.providerDomainId,
+        provider: "sandbox",
+        provider_domain_id: null,
         registrant_name: registrant.name,
         registrant_email: registrant.email,
         registrant_phone: registrant.phone ?? "",
@@ -64,31 +61,30 @@ export async function POST(request: Request) {
         registrant_state: registrant.state ?? null,
         registrant_country: registrant.country ?? "IN",
         registrant_postal_code: registrant.postalCode ?? null,
-        status: regResult.status === "active" ? "active" : "pending_payment",
+        status: "pending_payment",
         purchase_price_cents: searchRes.priceCents,
         renewal_price_cents: searchRes.renewalPriceCents,
         payment_link_id: link.id,
-        dns_configured: regResult.dnsRecords.length > 0,
-        vercel_attached: vercelStatus.verified,
-        vercel_ssl_active: vercelStatus.sslActive,
+        dns_configured: false,
+        vercel_attached: false,
+        vercel_ssl_active: false,
         site_project_id: siteProjectId ?? null,
-        expires_at: regResult.expiresAt,
+        expires_at: null,
       })
       .select("*")
       .single();
 
     if (insertErr) {
-      return Response.json({ error: `Failed to record domain: ${insertErr.message}` }, { status: 500 });
+      return Response.json({ error: `Failed to record domain request: ${insertErr.message}` }, { status: 500 });
     }
 
     return Response.json({
       domain: dbDomain,
       paymentLink: link,
       paymentUrl: link.short_url,
-      vercelStatus,
     });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : "Failed to process domain purchase";
+    const msg = err instanceof Error ? err.message : "Failed to process domain purchase request";
     return Response.json({ error: msg }, { status: 400 });
   }
 }

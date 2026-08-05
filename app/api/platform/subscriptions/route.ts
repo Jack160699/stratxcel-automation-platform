@@ -1,5 +1,5 @@
 import { requireTenantContext, getTenantServiceContext } from "@/lib/tenants/tenant-context";
-import { createPaymentLink, cancelPaymentLink, checkAuditCreditEligibility } from "@stratxcel/payments-and-wallet";
+import { createPaymentLink, cancelPaymentLink, checkAuditCreditEligibility, isPaymentFeatureEnabled } from "@stratxcel/payments-and-wallet";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,6 +11,13 @@ const PLAN_PRICES_CENTS: Record<string, number> = {
 };
 
 export async function POST(request: Request) {
+  if (!isPaymentFeatureEnabled("PAYMENTS_SUBSCRIPTIONS_ENABLED")) {
+    return Response.json(
+      { error: "Subscription payment checkout is currently restricted for safety certification." },
+      { status: 503 }
+    );
+  }
+
   try {
     const body = await request.json().catch(() => ({}));
     const { tenantId, planTier } = body;
@@ -30,7 +37,7 @@ export async function POST(request: Request) {
     const discountCents = creditCheck.eligible ? creditCheck.creditAmountCents : 0;
     const finalPriceCents = Math.max(0, basePriceCents - discountCents);
 
-    // 1. Create subscription in pending_payment state (DO NOT activate before payment)
+    // 1. Create subscription in pending_payment state with explicit NULL dates and 0 paid_months_count
     const { data: subscription, error: subErr } = await serviceDb
       .from("subscriptions")
       .insert({
@@ -40,6 +47,11 @@ export async function POST(request: Request) {
         audit_credit_applied_cents: discountCents,
         audit_order_id: creditCheck.eligible ? creditCheck.auditOrderId : null,
         status: "pending_payment",
+        current_period_start: null,
+        current_period_end: null,
+        paid_months_count: 0,
+        activated_at: null,
+        entitlements_granted_at: null,
         fulfilment_status: "awaiting_payment",
       })
       .select("*")
