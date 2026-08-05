@@ -73,7 +73,49 @@ async function testPaymentLinkPaidV4RpcPaths() {
     (err: Error) => err.message.includes("reconcile_and_fulfill_razorpay_payment_v4 RPC failed")
   );
 
-  console.log("razorpay-rpc-paths.test.ts: ALL PASS (v4 atomic RPC path invariants verified)");
+  // 5. Pre-mutation rejection: Unsupported purpose
+  const mockDbV4Unsupported = {
+    rpc: async (fn: string) => {
+      if (fn === "reconcile_and_fulfill_razorpay_payment_v4") {
+        return { data: { fulfilled: false, reason: "unsupported_payment_purpose" }, error: null };
+      }
+      return { data: null, error: null };
+    },
+  } as any;
+
+  const res5 = await processRazorpayWebhookEvent(mockDbV4Unsupported, basePayload);
+  assert.equal(res5.handled, false);
+  assert.equal(res5.actionTaken, "reconciliation_failed_unsupported_payment_purpose");
+
+  // 6. Pre-mutation rejection: Product not found (subscription)
+  const mockDbV4NoSub = {
+    rpc: async (fn: string) => {
+      if (fn === "reconcile_and_fulfill_razorpay_payment_v4") {
+        return { data: { fulfilled: false, reason: "subscription_not_found" }, error: null };
+      }
+      return { data: null, error: null };
+    },
+  } as any;
+
+  const res6 = await processRazorpayWebhookEvent(mockDbV4NoSub, basePayload);
+  assert.equal(res6.handled, false);
+  assert.equal(res6.actionTaken, "reconciliation_failed_subscription_not_found");
+
+  // 7. Pre-mutation rejection: Unknown plan tier
+  const mockDbV4BadPlan = {
+    rpc: async (fn: string) => {
+      if (fn === "reconcile_and_fulfill_razorpay_payment_v4") {
+        return { data: { fulfilled: false, reason: "unknown_plan_tier" }, error: null };
+      }
+      return { data: null, error: null };
+    },
+  } as any;
+
+  const res7 = await processRazorpayWebhookEvent(mockDbV4BadPlan, basePayload);
+  assert.equal(res7.handled, false);
+  assert.equal(res7.actionTaken, "reconciliation_failed_unknown_plan_tier");
+
+  console.log("razorpay-rpc-paths.test.ts: ALL PASS (v4 atomic RPC path invariants & pre-mutation rejections verified)");
 }
 
 testPaymentLinkPaidV4RpcPaths().catch((err) => {
