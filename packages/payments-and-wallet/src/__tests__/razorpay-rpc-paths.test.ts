@@ -143,6 +143,20 @@ async function testPaymentLinkPaidV4RpcPaths() {
   assert.equal(res9.handled, false);
   assert.equal(res9.actionTaken, "reconciliation_failed_audit_credit_tenant_mismatch");
 
+  // 10. Pre-mutation rejection: Subscription state not payable
+  const mockDbV4StateNotPayable = {
+    rpc: async (fn: string) => {
+      if (fn === "reconcile_and_fulfill_razorpay_payment_v4") {
+        return { data: { fulfilled: false, reason: "subscription_state_not_payable", subscription_status: "active" }, error: null };
+      }
+      return { data: null, error: null };
+    },
+  } as any;
+
+  const res10 = await processRazorpayWebhookEvent(mockDbV4StateNotPayable, basePayload);
+  assert.equal(res10.handled, false);
+  assert.equal(res10.actionTaken, "reconciliation_failed_subscription_state_not_payable");
+
   console.log("razorpay-rpc-paths.test.ts: ALL PASS (v4 atomic RPC path invariants & pre-mutation rejections verified)");
 }
 
