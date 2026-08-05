@@ -1,17 +1,63 @@
 @import "tailwindcss";
 
+/*
+ * Stratxcel Core design tokens — the one --sx-* namespace for the public
+ * site, /app, and /admin (docs/product-design/DESIGN_TOKEN_IMPLEMENTATION_MAP.md).
+ * This replaces the previous --sx-* block, which held unrelated marketing
+ * values (--sx-ink, --sx-brand, --sx-surface, --sx-white were defined but
+ * never referenced anywhere in the codebase — confirmed by repo-wide grep
+ * before removal; --sx-void/--sx-glow/--sx-ember were the immersive
+ * "journey" experience's palette). The journey experience's own utility
+ * classes below (.sx-kicker, .sx-glass, .sx-display, etc.) don't reference
+ * those old custom properties directly — they're self-contained — so
+ * nothing in app/_experience/* needed to change for this swap. --background
+ * and ::selection now point at the Core canvas/accent, which are close
+ * enough to the old --sx-void/--sx-glow values (#05070e→#06080C,
+ * #45c4ff→#3AA0FF) that the journey experience's look is unaffected while
+ * the whole product now shares one literal canvas colour.
+ */
 :root {
-  --sx-ink: #0b1220;
-  --sx-brand: #1e3a8a;
-  --sx-accent: #3b82f6;
-  --sx-surface: #f8fafc;
-  --sx-white: #ffffff;
-  /* Experience palette */
-  --sx-void: #05070e;
-  --sx-glow: #45c4ff;
-  --sx-ember: #ff6a3d;
-  --background: var(--sx-void);
-  --foreground: #e8edf6;
+  --sx-bg: #06080c;
+  --sx-surface-1: #0b0e14;
+  --sx-surface-2: #11151d;
+  --sx-surface-3: #171c26;
+  --sx-elevated: #1f2632;
+  --sx-border: #1d2431;
+  --sx-border-strong: #2c3543;
+
+  --sx-text: #e9edf3;
+  --sx-text-muted: #98a4b7;
+  --sx-text-subtle: #667384;
+
+  --sx-accent: #3aa0ff;
+  --sx-accent-hover: #6bbbff;
+  --sx-accent-muted: rgb(58 160 255 / 0.14);
+  --sx-accent-on: #0a0d12;
+  --sx-royal: #3b5bf5;
+  --sx-ai: #4fdce5;
+
+  --sx-success: #35c98c;
+  --sx-warning: #f0b429;
+  --sx-danger: #f2565f;
+  --sx-learning: #a78bfa;
+  --sx-offline: #6b7684;
+
+  --sx-radius-xs: 6px;
+  --sx-radius-sm: 8px;
+  --sx-radius-md: 10px;
+  --sx-radius-lg: 14px;
+  --sx-radius-pill: 999px;
+
+  --sx-control-h: 32px;
+  --sx-input-h: 36px;
+  --sx-row-h: 40px;
+
+  --sx-shadow-lg: 0 12px 32px -12px rgb(0 0 0 / 0.85);
+  --sx-shadow-xl: 0 32px 64px -24px rgb(0 0 0 / 0.9);
+  --sx-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  --background: var(--sx-bg);
+  --foreground: var(--sx-text);
 }
 
 @theme inline {
@@ -19,6 +65,39 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+
+  /* Core tokens, additive — existing font-sans/font-mono (Geist) and every
+     already-styled page keep working unchanged; new Core shell/shared
+     components opt into font-sx-sans/font-sx-mono deliberately. */
+  --color-sx-bg: var(--sx-bg);
+  --color-sx-surface-1: var(--sx-surface-1);
+  --color-sx-surface-2: var(--sx-surface-2);
+  --color-sx-surface-3: var(--sx-surface-3);
+  --color-sx-elevated: var(--sx-elevated);
+  --color-sx-border: var(--sx-border);
+  --color-sx-border-strong: var(--sx-border-strong);
+  --color-sx-text: var(--sx-text);
+  --color-sx-text-muted: var(--sx-text-muted);
+  --color-sx-text-subtle: var(--sx-text-subtle);
+  --color-sx-accent: var(--sx-accent);
+  --color-sx-accent-hover: var(--sx-accent-hover);
+  --color-sx-accent-on: var(--sx-accent-on);
+  --color-sx-royal: var(--sx-royal);
+  --color-sx-ai: var(--sx-ai);
+  --color-sx-success: var(--sx-success);
+  --color-sx-warning: var(--sx-warning);
+  --color-sx-danger: var(--sx-danger);
+  --color-sx-learning: var(--sx-learning);
+  --color-sx-offline: var(--sx-offline);
+
+  --font-sx-sans: var(--font-instrument-sans);
+  --font-sx-mono: var(--font-jetbrains-mono);
+
+  --radius-sx-xs: var(--sx-radius-xs);
+  --radius-sx-sm: var(--sx-radius-sm);
+  --radius-sx-md: var(--sx-radius-md);
+  --radius-sx-lg: var(--sx-radius-lg);
+  --radius-sx-pill: var(--sx-radius-pill);
 }
 
 body {
@@ -31,7 +110,7 @@ body {
 }
 
 ::selection {
-  background: color-mix(in srgb, var(--sx-glow) 30%, transparent);
+  background: color-mix(in srgb, var(--sx-accent) 30%, transparent);
   color: #fff;
 }
 
@@ -151,6 +230,15 @@ body {
   animation: sx-float 7s ease-in-out infinite;
 }
 
+/* Stratxcel Core AI pulse — docs/product-design/DESIGN_SOURCE_AUDIT.md §2.7. */
+@keyframes sx-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.35; transform: scale(0.82); }
+}
+.animate-sx-pulse {
+  animation: sx-pulse 1.6s ease-in-out infinite;
+}
+
 /* Marketing pages (light theme, post-EXPLORE) keep their original feel */
 @keyframes sx-cta-glow {
   0%, 100% { opacity: 0.45; }
@@ -185,6 +273,7 @@ body::-webkit-scrollbar-thumb {
     scroll-behavior: auto;
   }
   .animate-sx-float,
+  .animate-sx-pulse,
   .sx-cta-glow,
   .sx-dash-animate,
   .sx-start-pulse,

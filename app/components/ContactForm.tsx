@@ -27,15 +27,25 @@ const tones = {
   },
 };
 
+const INTENT_LABELS: Record<string, string> = {
+  demo: "Booking a demo",
+  sales: "Talking to sales",
+  security: "A security question",
+  support: "Support",
+};
+
 export function ContactForm({
   source,
   tone = "dark",
+  intent,
 }: {
   source: string;
   tone?: keyof typeof tones;
+  intent?: string;
 }) {
   const [state, action, pending] = useActionState(submitContact, initialState);
   const t = tones[tone];
+  const fullSource = intent ? `${source}:${intent}` : source;
 
   if (state.status === "success") {
     return (
@@ -47,7 +57,12 @@ export function ContactForm({
 
   return (
     <form action={action} className="space-y-3">
-      <input type="hidden" name="source" value={source} />
+      <input type="hidden" name="source" value={fullSource} />
+      {intent && INTENT_LABELS[intent] ? (
+        <p className={`text-xs ${tone === "dark" ? "text-sx-text-subtle" : "text-slate-500"}`}>
+          Reason: {INTENT_LABELS[intent]}
+        </p>
+      ) : null}
       {/* Honeypot */}
       <input
         type="text"

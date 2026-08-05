@@ -12,6 +12,8 @@ const nextConfig = {
     "@stratxcel/approvals",
     "@stratxcel/whatsapp",
     "@stratxcel/websites-and-domains",
+    "@stratxcel/human-handoff",
+    "@stratxcel/brand-brain",
   ],
 };
 

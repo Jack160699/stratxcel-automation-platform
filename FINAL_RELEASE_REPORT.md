@@ -1,6 +1,8 @@
 # Final Release Report
 
-**Status: PARTIALLY READY** — substantial, tested, working foundation code across 6 build areas; genuinely blocked on manual/external actions (a reachable Supabase project, external OAuth/API credentials, and an infrastructure host for the standalone services) before any of it can run against real data or real traffic.
+**Status update (2026-08-03, later the same day):** superseded in part — the Supabase blocker below is resolved (all 22 migrations applied to production and verified), the foundation dashboard has been merged to `main` and deployed to `www.stratxcel.in`/`stratxcel.vercel.app`, a follow-up RSC information-disclosure hotfix is live, and Phase 1 (unified Command Center replacing the raw tenant-ID workflow) has since shipped. WhatsApp/Razorpay/Hermes/Drive/BYOK credentials and the standalone-worker hosting decision remain exactly as described below — genuinely still open. See `LIVE_SYSTEM_MAP.md` for the current picture; the original snapshot below is kept for history.
+
+**Original status: PARTIALLY READY** — substantial, tested, working foundation code across 6 build areas; genuinely blocked on manual/external actions (a reachable Supabase project, external OAuth/API credentials, and an infrastructure host for the standalone services) before any of it can run against real data or real traffic.
 
 ## Repository / branch
 

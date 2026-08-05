@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist, Geist_Mono, Instrument_Sans, JetBrains_Mono } from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
 import { ScrollRestoration } from "@/app/components/ScrollRestoration";
 import "./globals.css";
@@ -16,6 +16,27 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
   display: "swap",
   adjustFontFallback: true,
+});
+
+/**
+ * Stratxcel Core design system typefaces (docs/product-design/DESIGN_TOKEN_IMPLEMENTATION_MAP.md
+ * §7) — loaded alongside Geist rather than replacing it, so existing pages
+ * (marketing "journey" experience, Social Autopilot) keep rendering exactly
+ * as before. New Core shell/shared components opt in via the font-sx-sans /
+ * font-sx-mono Tailwind utilities (app/globals.css's @theme inline block).
+ */
+const instrumentSans = Instrument_Sans({
+  variable: "--font-instrument-sans",
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  display: "swap",
+});
+
+const jetbrainsMono = JetBrains_Mono({
+  variable: "--font-jetbrains-mono",
+  subsets: ["latin"],
+  weight: ["400", "500", "600"],
+  display: "swap",
 });
 
 export const metadata: Metadata = {
@@ -53,7 +74,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${geistSans.variable} ${geistMono.variable} ${instrumentSans.variable} ${jetbrainsMono.variable} h-full antialiased`}
     >
       <body className="min-h-full bg-[#05070e] text-slate-100">
         <ScrollRestoration />

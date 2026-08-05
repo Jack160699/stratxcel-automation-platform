@@ -4,8 +4,10 @@ import { OFFICIAL_LOGO } from "@/lib/brand";
 
 /**
  * Official Stratxcel mark — `/public/logo-v2.png` only.
- * @param {"light" | "dark"} variant — on dark backgrounds, a slight lift in brightness (no invert).
- * @param {boolean} showWordmark
+ * @param {Object} props
+ * @param {"light" | "dark"} [props.variant] — on dark backgrounds, a slight lift in brightness (no invert).
+ * @param {boolean} [props.priority]
+ * @param {boolean} [props.showWordmark]
  */
 export function Logo({ variant = "light", priority = false, showWordmark = true }) {
   const isDark = variant === "dark";

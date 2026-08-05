@@ -4,6 +4,8 @@ Every item below genuinely needs owner access, a dashboard login, OTP/consent, K
 
 No secret values are included anywhere in this document — only variable names, dashboard locations, and formats.
 
+**Status update (2026-08-03, later the same day):** M10 (migrations) is now done — see that item below. The foundation dashboard has been merged to `main` and deployed to production, and a Phase 1 unified-shell/client-switcher change has since shipped on top of it (see `LIVE_SYSTEM_MAP.md`). WhatsApp, Razorpay, Hermes, Google Drive, and BYOK remain exactly as described below — none of that changed. M11 (worker hosting) is still open.
+
 ---
 
 ## Carried over from Phase 1 (still open)
@@ -110,7 +112,9 @@ No secret values are included anywhere in this document — only variable names,
 - **Impact if skipped:** The relevant feature throws a clear "not set" error rather than silently proceeding insecurely.
 - **Code readiness:** Done.
 
-### M10 — Apply the new database migrations to the real StratExcel Supabase project
+### M10 — Apply the new database migrations to the real StratExcel Supabase project — ✅ DONE (2026-08-03)
+- **Status:** Resolved in a later session the same day. All 22 migrations (the 9 referenced below plus corrective RLS/default-privilege hardening migrations added afterward) were applied to `uccqlgeghkwzujeeymua` via `supabase db push --linked` and independently verified via `supabase migration list --linked` (Local↔Remote aligned, all 22 present on both sides) and `supabase db push --linked --dry-run` ("Remote database is up to date").
+- **Original text below, kept for history:**
 - **Priority:** High
 - **System:** Supabase (project `uccqlgeghkwzujeeymua`, per Phase 1 discovery)
 - **Why manual:** No Supabase project reachable from this session's MCP connector can safely receive these migrations (see Phase 1's `docs/discovery/SUPABASE_DATA_AND_RLS_MAP.md`) — applying them requires either connecting the correct Supabase account to this session or running the Supabase CLI yourself.
@@ -120,7 +124,7 @@ No secret values are included anywhere in this document — only variable names,
   3. `supabase db push` (or your team's equivalent apply process) against that project only.
 - **Verify success:** `supabase migration list` shows all 9 new migrations applied; `select * from queue_jobs limit 1;` etc. succeed.
 - **Impact if skipped:** None of tonight's code can actually read/write real data — every route/worker will error with a clear message rather than silently using the wrong database.
-- **Code readiness:** Migrations written, reviewed, and covered by a static security test (`npm run test:security`). Never applied to any database this session.
+- **Code readiness:** Migrations written, reviewed, and covered by a static security test (`npm run test:security`). Applied and verified in production as of 2026-08-03 (see status above).
 
 ### M11 — Decide where apps/whatsapp-worker, apps/mission-worker, and apps/hermes-gateway actually run
 - **Priority:** Medium (a real infrastructure/cost decision, not a code gap)
