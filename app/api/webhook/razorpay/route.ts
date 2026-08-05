@@ -75,7 +75,11 @@ export async function POST(request: Request) {
       throw err;
     }
 
-    const processResult = await processRazorpayWebhookEvent(supabase, { eventType, payload });
+    const processResult = await processRazorpayWebhookEvent(supabase, {
+      eventType,
+      payload,
+      providerEventId,
+    });
 
     if (!processResult.handled) {
       // DO NOT call markWebhookEventProcessed! Leave claim lease to expire so Razorpay can retry.

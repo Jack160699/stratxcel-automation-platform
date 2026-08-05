@@ -186,7 +186,7 @@ export function normalizeRazorpayWebhookEvent(
 
 export async function processRazorpayWebhookEvent(
   supabase: ServiceClient,
-  event: { eventType: string; payload: Record<string, unknown> }
+  event: { eventType: string; payload: Record<string, unknown>; providerEventId?: string | null }
 ): Promise<WebhookProcessResult> {
   const { eventType, payload } = event;
 
@@ -236,16 +236,24 @@ export async function processRazorpayWebhookEvent(
     const entityObj = payload.payload as Record<string, Record<string, unknown>> | undefined;
     const rfEntity = entityObj?.refund?.entity as Record<string, unknown> | undefined;
 
-    const providerRefundId = (rfEntity?.id as string) ?? null;
-    const paymentId = (rfEntity?.payment_id as string) ?? null;
-    const amountCents = typeof rfEntity?.amount === "number" ? rfEntity.amount : null;
-    const providerRefundStatus = (rfEntity?.status as string) ?? "processed";
+    const providerRefundId = typeof rfEntity?.id === "string" && rfEntity.id.trim() !== "" ? rfEntity.id.trim() : null;
+    const paymentId = typeof rfEntity?.payment_id === "string" && rfEntity.payment_id.trim() !== "" ? rfEntity.payment_id.trim() : null;
+    const amountCents = typeof rfEntity?.amount === "number" && rfEntity.amount > 0 ? rfEntity.amount : null;
+    const providerRefundStatus = typeof rfEntity?.status === "string" && rfEntity.status.trim() !== "" ? rfEntity.status.trim() : null;
+    const headerProviderEventId = typeof event.providerEventId === "string" && event.providerEventId.trim() !== "" ? event.providerEventId.trim() : null;
 
-    if (!providerRefundId || !paymentId) {
-      return { eventType, handled: false, actionTaken: "missing_refund_identifiers" };
+    if (eventType === "refund.processed") {
+      // Require ALL exact provider evidence without any fallbacks
+      if (!providerRefundId || !paymentId || !amountCents || !providerRefundStatus || !headerProviderEventId) {
+        return { eventType, handled: false, actionTaken: "missing_refund_provider_evidence" };
+      }
+    } else {
+      if (!providerRefundId || !paymentId) {
+        return { eventType, handled: false, actionTaken: "missing_refund_identifiers" };
+      }
     }
 
-    // Lookup refund record by provider_refund_id or payment order
+    // Lookup refund record by provider_refund_id
     const { data: existingRefund, error: refErr } = await supabase
       .from("payment_refunds")
       .select("*")
@@ -265,9 +273,9 @@ export async function processRazorpayWebhookEvent(
           p_payment_order_id: existingRefund.payment_order_id,
           p_provider_refund_id: providerRefundId,
           p_provider_payment_id: paymentId,
-          p_actual_refund_amount_cents: amountCents ?? existingRefund.amount_cents,
+          p_actual_refund_amount_cents: amountCents,
           p_provider_refund_status: providerRefundStatus,
-          p_provider_event_id: (payload.event_id as string) ?? null,
+          p_provider_event_id: headerProviderEventId,
         });
 
         if (rpcErr) throw new Error(`process_refund_atomic_v5 RPC failed: ${rpcErr.message}`);

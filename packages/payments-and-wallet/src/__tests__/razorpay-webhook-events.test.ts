@@ -328,33 +328,33 @@ async function testMonotonicRefundStatusTransitions() {
     eventType: statusEvent,
     payload: {
       payload: {
-        refund: { entity: { id: rfId, payment_id: "pay_mono_1", amount: 10000 } },
+        refund: { entity: { id: rfId, payment_id: "pay_mono_1", amount: 10000, status: "processed" } },
       },
     },
   });
 
   // 1. Processed -> PROCESSED
-  const pRes = await processRazorpayWebhookEvent(mockDb, refundPayload("refund.processed"));
+  const pRes = await processRazorpayWebhookEvent(mockDb, { ...refundPayload("refund.processed"), providerEventId: "evt_hdr_mono_1" });
   assert.equal(pRes.handled, true);
   assert.equal(refundsDb.get(rfId)?.status, "PROCESSED");
   assert.equal(walletBalance, 0, "Wallet reversed by 10000");
   assert.equal(ledgerEntries.length, 1);
 
   // 2. Processed then Failed -> Remains PROCESSED
-  const fRes = await processRazorpayWebhookEvent(mockDb, refundPayload("refund.failed"));
+  const fRes = await processRazorpayWebhookEvent(mockDb, { ...refundPayload("refund.failed"), providerEventId: "evt_hdr_mono_2" });
   assert.equal(fRes.handled, true);
   assert.equal(fRes.actionTaken, "refund_already_processed_idempotent");
   assert.equal(refundsDb.get(rfId)?.status, "PROCESSED", "Status must stay PROCESSED");
   assert.equal(walletBalance, 0, "Wallet balance untouched by refund.failed");
 
   // 3. Processed then Created -> Remains PROCESSED
-  const cRes = await processRazorpayWebhookEvent(mockDb, refundPayload("refund.created"));
+  const cRes = await processRazorpayWebhookEvent(mockDb, { ...refundPayload("refund.created"), providerEventId: "evt_hdr_mono_3" });
   assert.equal(cRes.handled, true);
   assert.equal(cRes.actionTaken, "refund_already_processed_idempotent");
   assert.equal(refundsDb.get(rfId)?.status, "PROCESSED", "Status must stay PROCESSED");
 
   // 4. Duplicate refund.processed events reverse wallet once
-  const dupRes = await processRazorpayWebhookEvent(mockDb, refundPayload("refund.processed"));
+  const dupRes = await processRazorpayWebhookEvent(mockDb, { ...refundPayload("refund.processed"), providerEventId: "evt_hdr_mono_4" });
   assert.equal(dupRes.handled, true);
   assert.equal(ledgerEntries.length, 1, "Duplicate refund.processed MUST NOT reverse wallet twice");
   assert.equal(walletBalance, 0);
@@ -367,9 +367,10 @@ async function testMonotonicRefundStatusTransitions() {
     eventType: statusEvent,
     payload: {
       payload: {
-        refund: { entity: { id: rfIdFailed, payment_id: "pay_mono_1", amount: 5000 } },
+        refund: { entity: { id: rfIdFailed, payment_id: "pay_mono_1", amount: 5000, status: "processed" } },
       },
     },
+    providerEventId: "evt_hdr_mono_5",
   });
 
   await processRazorpayWebhookEvent(mockDb, failedPayload("refund.failed"));
@@ -377,6 +378,130 @@ async function testMonotonicRefundStatusTransitions() {
 
   await processRazorpayWebhookEvent(mockDb, failedPayload("refund.created"));
   assert.equal(refundsDb.get(rfIdFailed)?.status, "FAILED", "refund.created must NOT downgrade FAILED to PENDING");
+}
+
+async function testRefundWebhookProviderEvidenceValidation() {
+  const refundsDb = new Map<string, Record<string, unknown>>();
+  let rpcCalls: { fn: string; args: Record<string, unknown> }[] = [];
+
+  const mockRefundRecord = {
+    id: "ref_db_uuid_100",
+    payment_order_id: "order_db_uuid_100",
+    provider_refund_id: "rfnd_prov_100",
+    amount_cents: 10000, // existing record amount is 10000
+    status: "PENDING",
+  };
+  refundsDb.set("rfnd_prov_100", mockRefundRecord);
+
+  const mockDb = {
+    from: (table: string) => {
+      if (table === "payment_refunds") {
+        return {
+          select: () => ({
+            eq: (_field: string, val: string) => ({
+              maybeSingle: async () => ({ data: refundsDb.get(val) ?? null, error: null }),
+            }),
+          }),
+        };
+      }
+      return {};
+    },
+    rpc: async (fn: string, args: Record<string, unknown>) => {
+      rpcCalls.push({ fn, args });
+      if (fn === "process_refund_atomic_v5") {
+        const pStatus = args?.p_provider_refund_status;
+        if (pStatus !== "processed") {
+          return { data: { success: false, reason: "provider_refund_not_processed" }, error: null };
+        }
+        return { data: { success: true, status: "PROCESSED" }, error: null };
+      }
+      return { data: null, error: null };
+    },
+  } as unknown as ServiceClient;
+
+  // A. Missing refund status -> invokes no RPC, actionTaken = missing_refund_provider_evidence
+  rpcCalls = [];
+  const resNoStatus = await processRazorpayWebhookEvent(mockDb, {
+    eventType: "refund.processed",
+    providerEventId: "evt_hdr_101",
+    payload: {
+      payload: {
+        refund: { entity: { id: "rfnd_prov_100", payment_id: "pay_100", amount: 10000 /* status missing */ } },
+      },
+    },
+  });
+  assert.equal(resNoStatus.handled, false);
+  assert.equal(resNoStatus.actionTaken, "missing_refund_provider_evidence");
+  assert.equal(rpcCalls.length, 0, "Missing status MUST invoke no RPC");
+
+  // B. Missing refund amount -> invokes no RPC, actionTaken = missing_refund_provider_evidence
+  rpcCalls = [];
+  const resNoAmount = await processRazorpayWebhookEvent(mockDb, {
+    eventType: "refund.processed",
+    providerEventId: "evt_hdr_102",
+    payload: {
+      payload: {
+        refund: { entity: { id: "rfnd_prov_100", payment_id: "pay_100", status: "processed" /* amount missing */ } },
+      },
+    },
+  });
+  assert.equal(resNoAmount.handled, false);
+  assert.equal(resNoAmount.actionTaken, "missing_refund_provider_evidence");
+  assert.equal(rpcCalls.length, 0, "Missing amount MUST invoke no RPC and MUST NOT fallback to existingRefund.amount_cents");
+
+  // C. Missing header provider event ID -> invokes no RPC, actionTaken = missing_refund_provider_evidence
+  rpcCalls = [];
+  const resNoEvtId = await processRazorpayWebhookEvent(mockDb, {
+    eventType: "refund.processed",
+    /* providerEventId missing */
+    payload: {
+      payload: {
+        refund: { entity: { id: "rfnd_prov_100", payment_id: "pay_100", amount: 10000, status: "processed" } },
+      },
+    },
+  });
+  assert.equal(resNoEvtId.handled, false);
+  assert.equal(resNoEvtId.actionTaken, "missing_refund_provider_evidence");
+  assert.equal(rpcCalls.length, 0, "Missing providerEventId MUST invoke no RPC");
+
+  // D. Pending status passed unchanged -> RPC receives "pending" and fails with provider_refund_not_processed
+  rpcCalls = [];
+  const resPending = await processRazorpayWebhookEvent(mockDb, {
+    eventType: "refund.processed",
+    providerEventId: "evt_hdr_104",
+    payload: {
+      payload: {
+        refund: { entity: { id: "rfnd_prov_100", payment_id: "pay_100", amount: 10000, status: "pending" } },
+      },
+    },
+  });
+  assert.equal(resPending.handled, false);
+  assert.equal(resPending.actionTaken, "refund_v5_failed_provider_refund_not_processed");
+  assert.equal(rpcCalls.length, 1);
+  assert.equal(rpcCalls[0].args.p_provider_refund_status, "pending", "Pending status passed unchanged to RPC");
+
+  // E. Valid refund.processed invokes v5 with exact provider values
+  rpcCalls = [];
+  const resValid = await processRazorpayWebhookEvent(mockDb, {
+    eventType: "refund.processed",
+    providerEventId: "evt_hdr_105_exact",
+    payload: {
+      payload: {
+        refund: { entity: { id: "rfnd_prov_100", payment_id: "pay_100_exact", amount: 7500, status: "processed" } },
+      },
+    },
+  });
+  assert.equal(resValid.handled, true);
+  assert.equal(resValid.actionTaken, "refund_processed_v5_atomic");
+  assert.equal(rpcCalls.length, 1);
+  assert.equal(rpcCalls[0].fn, "process_refund_atomic_v5");
+  assert.equal(rpcCalls[0].args.p_refund_id, "ref_db_uuid_100");
+  assert.equal(rpcCalls[0].args.p_payment_order_id, "order_db_uuid_100");
+  assert.equal(rpcCalls[0].args.p_provider_refund_id, "rfnd_prov_100");
+  assert.equal(rpcCalls[0].args.p_provider_payment_id, "pay_100_exact");
+  assert.equal(rpcCalls[0].args.p_actual_refund_amount_cents, 7500, "Exact provider amount 7500 passed (not fallback 10000)");
+  assert.equal(rpcCalls[0].args.p_provider_refund_status, "processed");
+  assert.equal(rpcCalls[0].args.p_provider_event_id, "evt_hdr_105_exact");
 }
 
 async function testWebhookClaimAndCompletionContract() {
@@ -543,6 +668,7 @@ async function run() {
   testWebhookSignatureVerification();
   await testMultipleEventsForSamePaymentLinkSingleCredit();
   await testMonotonicRefundStatusTransitions();
+  await testRefundWebhookProviderEvidenceValidation();
   await testWebhookClaimAndCompletionContract();
   console.log("razorpay-webhook-events.test.ts (@stratxcel/payments-and-wallet): ALL PASS");
 }
