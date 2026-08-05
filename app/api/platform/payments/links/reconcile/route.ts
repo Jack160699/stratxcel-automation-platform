@@ -7,14 +7,14 @@ export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
+    const body = await request.json().catch(() => ({}));
     const { tenantId, linkId } = body;
 
-    if (!tenantId || !linkId) {
+    if (!tenantId || typeof tenantId !== "string" || !tenantId.trim() || !linkId) {
       return Response.json({ error: "tenantId and linkId are required" }, { status: 400 });
     }
 
-    const ctx = await requireTenantContext(tenantId, request);
+    const ctx = await requireTenantContext(tenantId);
     if (!ctx.ok) return Response.json({ error: ctx.error }, { status: ctx.status });
 
     try {
@@ -24,12 +24,12 @@ export async function POST(request: Request) {
       throw err;
     }
 
-    const { supabase } = getTenantServiceContext();
-    const result = await reconcilePaymentLink(supabase, { linkId, tenantId });
+    const { supabase: serviceDb } = getTenantServiceContext();
+    const result = await reconcilePaymentLink(serviceDb, { linkId, tenantId });
 
     return Response.json(result);
   } catch (err) {
-    const msg = err instanceof Error && !err.message.includes("database")
+    const msg = err instanceof Error && !err.message.includes("database") && !err.message.includes("Postgres")
       ? err.message
       : "Failed to reconcile payment link";
     return Response.json({ error: msg }, { status: 400 });

@@ -1,12 +1,70 @@
 // Run with: node --experimental-strip-types packages/payments-and-wallet/src/__tests__/razorpay-reconciliation.test.ts
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import type { ServiceClient } from "../db.ts";
 import { reconcilePaymentLink } from "../razorpay/payment-links.ts";
+
+const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..");
+const read = (...parts: string[]) => fs.readFileSync(path.join(root, ...parts), "utf8");
 
 async function testReconcilePaymentLinkUnitTests() {
   process.env.RAZORPAY_KEY_ID = "rzp_live_test_key_123";
   process.env.RAZORPAY_KEY_SECRET = "rzp_live_test_secret_456";
 
+  // --- SOURCE CODE SECURITY GUARDS ---
+  const tenantContextCode = read("lib", "tenants", "tenant-context.ts");
+  assert.ok(
+    !tenantContextCode.includes("x-admin-bypass"),
+    "lib/tenants/tenant-context.ts MUST NOT contain x-admin-bypass"
+  );
+  assert.ok(
+    !tenantContextCode.includes("x-admin-secret"),
+    "lib/tenants/tenant-context.ts MUST NOT contain x-admin-secret"
+  );
+  assert.ok(
+    !tenantContextCode.includes("CRON_SECRET"),
+    "lib/tenants/tenant-context.ts MUST NOT accept CRON_SECRET as user auth"
+  );
+  assert.ok(
+    !tenantContextCode.includes("system_admin"),
+    "lib/tenants/tenant-context.ts MUST NOT fabricate system_admin role"
+  );
+
+  const dynamicRouteCode = read("app", "api", "platform", "payments", "links", "[id]", "reconcile", "route.ts");
+  assert.ok(
+    !dynamicRouteCode.includes("x-admin-bypass"),
+    "reconcile route MUST NOT contain x-admin-bypass"
+  );
+  assert.ok(
+    !dynamicRouteCode.includes("x-admin-secret"),
+    "reconcile route MUST NOT contain x-admin-secret"
+  );
+  assert.ok(
+    /requireTenantContext\(tenantId\)/.test(dynamicRouteCode),
+    "reconcile route MUST call requireTenantContext(tenantId) before processing"
+  );
+  assert.ok(
+    /requirePermission\(ctx\.role,\s*["']wallet:topup["']\)/.test(dynamicRouteCode),
+    "reconcile route MUST enforce wallet:topup permission check"
+  );
+  assert.ok(
+    !dynamicRouteCode.includes("serviceDb.from"),
+    "reconcile route MUST NOT auto-discover tenantId with service role before auth"
+  );
+
+  const staticRouteCode = read("app", "api", "platform", "payments", "links", "reconcile", "route.ts");
+  assert.ok(
+    !staticRouteCode.includes("x-admin-bypass"),
+    "static reconcile route MUST NOT contain x-admin-bypass"
+  );
+  assert.ok(
+    /requireTenantContext\(tenantId\)/.test(staticRouteCode),
+    "static reconcile route MUST call requireTenantContext(tenantId)"
+  );
+
+  // --- FUNCTIONAL RECONCILIATION & IDEMPOTENCY UNIT TESTS ---
   const tenantA = "tenant_reconcile_A";
   const tenantB = "tenant_reconcile_B";
 
@@ -260,7 +318,7 @@ async function testReconcilePaymentLinkUnitTests() {
     "Auth header correctly formed server-side"
   );
 
-  // 6. Repeated reconciliation creates no duplicate payment order or credit
+  // 6. Repeated reconciliation creates no duplicate payment order or credit (Idempotent)
   const resPaid2 = await reconcilePaymentLink(
     mockDb,
     { linkId: "link_rec_100", tenantId: tenantA },

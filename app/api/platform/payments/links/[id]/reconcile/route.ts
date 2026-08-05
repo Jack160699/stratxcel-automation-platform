@@ -12,44 +12,28 @@ export async function POST(
   try {
     const { id } = await params;
     const body = await request.json().catch(() => ({}));
-    let tenantId = body.tenantId || body.tenant_id;
+    const tenantId = body.tenantId || body.tenant_id;
+
+    if (!tenantId || typeof tenantId !== "string" || !tenantId.trim()) {
+      return Response.json({ error: "tenantId is required" }, { status: 400 });
+    }
+
+    const ctx = await requireTenantContext(tenantId);
+    if (!ctx.ok) return Response.json({ error: ctx.error }, { status: ctx.status });
+
+    try {
+      requirePermission(ctx.role, "wallet:topup");
+    } catch (err) {
+      if (err instanceof PermissionDeniedError) return Response.json({ error: err.message }, { status: 403 });
+      throw err;
+    }
 
     const { supabase: serviceDb } = getTenantServiceContext();
-
-    if (!tenantId) {
-      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
-      const query = isUuid
-        ? serviceDb.from("payment_links").select("tenant_id").or(`id.eq.${id},reference_id.eq.${id}`)
-        : serviceDb.from("payment_links").select("tenant_id").eq("reference_id", id);
-      const { data: foundLink } = await query.maybeSingle();
-
-      if (foundLink?.tenant_id) {
-        tenantId = foundLink.tenant_id;
-      }
-    }
-
-    if (!tenantId) {
-      return Response.json({ error: "tenantId is required or link not found" }, { status: 400 });
-    }
-
-    const isAdminBypass = request.headers.get("x-admin-bypass") === "1";
-    if (!isAdminBypass) {
-      const ctx = await requireTenantContext(tenantId, request);
-      if (!ctx.ok) return Response.json({ error: ctx.error }, { status: ctx.status });
-
-      try {
-        requirePermission(ctx.role, "wallet:topup");
-      } catch (err) {
-        if (err instanceof PermissionDeniedError) return Response.json({ error: err.message }, { status: 403 });
-        throw err;
-      }
-    }
-
     const result = await reconcilePaymentLink(serviceDb, { linkId: id, tenantId });
 
     return Response.json(result);
   } catch (err) {
-    const msg = err instanceof Error && !err.message.includes("database")
+    const msg = err instanceof Error && !err.message.includes("database") && !err.message.includes("Postgres")
       ? err.message
       : "Failed to reconcile payment link";
     return Response.json({ error: msg }, { status: 400 });
