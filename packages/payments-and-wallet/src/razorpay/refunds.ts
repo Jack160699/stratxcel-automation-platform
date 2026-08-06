@@ -21,8 +21,8 @@ export async function requestRefund(
 }
 
 /**
- * Marks a refund processed and routes product reversal atomically via process_refund_atomic_v10 RPC.
- * Production code MUST use the atomic v10 RPC and pass authentic provider evidence.
+ * Marks a refund processed and routes product reversal atomically via process_refund_atomic_v11 RPC.
+ * Production code MUST use the atomic v11 RPC and pass authentic provider evidence.
  */
 export async function markRefundProcessed(
   supabase: ServiceClient,
@@ -40,7 +40,7 @@ export async function markRefundProcessed(
     throw new Error("markRefundProcessed: Missing required provider refund evidence");
   }
 
-  const { data: rpcData, error: rpcErr } = await supabase.rpc("process_refund_atomic_v10", {
+  const { data: rpcData, error: rpcErr } = await supabase.rpc("process_refund_atomic_v11", {
     p_refund_id: input.refundId,
     p_payment_order_id: input.order.id,
     p_provider_refund_id: input.providerRefundId,
@@ -51,11 +51,11 @@ export async function markRefundProcessed(
   });
 
   if (rpcErr) {
-    throw new Error(`process_refund_atomic_v10 RPC error: ${rpcErr.message}`);
+    throw new Error(`process_refund_atomic_v11 RPC error: ${rpcErr.message}`);
   }
 
   if (!rpcData || typeof rpcData !== "object") {
-    throw new Error("process_refund_atomic_v10 RPC returned invalid response");
+    throw new Error("process_refund_atomic_v11 RPC returned invalid response");
   }
 
   const res = rpcData as { success?: boolean; status?: string; reason?: string };
@@ -63,7 +63,7 @@ export async function markRefundProcessed(
     if (res.status === "MANUAL_REVIEW") {
       return { settled: false };
     }
-    throw new Error(`process_refund_atomic_v10 RPC failed: ${res.reason}`);
+    throw new Error(`process_refund_atomic_v11 RPC failed: ${res.reason}`);
   }
 
   return { settled: true };

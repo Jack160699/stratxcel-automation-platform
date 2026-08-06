@@ -268,7 +268,7 @@ export async function processRazorpayWebhookEvent(
       }
 
       if (eventType === "refund.processed") {
-        const { data: rpcRes, error: rpcErr } = await supabase.rpc("process_refund_atomic_v10", {
+        const { data: rpcRes, error: rpcErr } = await supabase.rpc("process_refund_atomic_v11", {
           p_refund_id: existingRefund.id,
           p_payment_order_id: existingRefund.payment_order_id,
           p_provider_refund_id: providerRefundId,
@@ -278,11 +278,11 @@ export async function processRazorpayWebhookEvent(
           p_provider_event_id: headerProviderEventId,
         });
 
-        if (rpcErr) throw new Error(`process_refund_atomic_v10 RPC failed: ${rpcErr.message}`);
+        if (rpcErr) throw new Error(`process_refund_atomic_v11 RPC failed: ${rpcErr.message}`);
         if (!rpcRes || (rpcRes as any).success !== true) {
-          return { eventType, handled: false, actionTaken: `refund_v10_failed_${(rpcRes as any)?.reason}` };
+          return { eventType, handled: false, actionTaken: `refund_v11_failed_${(rpcRes as any)?.reason}` };
         }
-        return { eventType, handled: true, actionTaken: "refund_processed_v10_atomic" };
+        return { eventType, handled: true, actionTaken: "refund_processed_v11_atomic" };
       }
 
       if (eventType === "refund.failed") {
