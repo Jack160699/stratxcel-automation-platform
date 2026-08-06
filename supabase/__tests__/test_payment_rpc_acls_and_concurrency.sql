@@ -9,7 +9,7 @@ DECLARE
   v_auth_has_dep boolean;
   v_anon_has_dep boolean;
 
-  -- Variables for Concurrency / Race Condition Tests
+  -- Variables for sequential idempotency assertions (real concurrency is in scripts/test-payment-concurrency.ts)
   v_tenant uuid;
 
   v_link_wallet uuid;
@@ -80,7 +80,7 @@ BEGIN
   RAISE NOTICE 'ALL RPC ACL PRIVILEGE ASSERTIONS PASSED CLEANLY!';
 
   -- ============================================================
-  -- PART 2: CONCURRENCY / ATOMICITY RACE CONDITION TESTS
+  -- PART 2: SEQUENTIAL IDEMPOTENCY / ATOMICITY ASSERTIONS
   -- ============================================================
 
   -- Setup isolated test tenant
@@ -88,7 +88,7 @@ BEGIN
   INSERT INTO wallet_accounts (tenant_id, balance_cents) VALUES (v_tenant, 0);
 
   -- ------------------------------------------------------------
-  -- Concurrency Test 1: Two simultaneous fulfilment calls for the same payment link
+  -- Sequential replay 1: two fulfilment calls for the same payment link
   -- ------------------------------------------------------------
   INSERT INTO payment_links (tenant_id, reference_id, amount_cents, payment_purpose, status)
   VALUES (v_tenant, 'plink_conc_w1_' || gen_random_uuid()::text, 50000, 'wallet_topup', 'created')
@@ -133,7 +133,7 @@ BEGIN
   END IF;
 
   -- ------------------------------------------------------------
-  -- Concurrency Test 2: Two simultaneous refund calls for the same refund
+  -- Sequential replay 2: two refund calls for the same refund
   -- ------------------------------------------------------------
   SELECT id INTO v_order_rfnd FROM payment_orders WHERE tenant_id = v_tenant LIMIT 1;
 
@@ -172,7 +172,7 @@ BEGIN
   END IF;
 
   -- ------------------------------------------------------------
-  -- Concurrency Test 3: Two different refunds using the same provider_refund_id
+  -- Sequential replay 3: two different refunds using the same provider_refund_id
   -- ------------------------------------------------------------
   -- Create a second captured order for test
   INSERT INTO payment_orders (tenant_id, provider, provider_payment_id, provider_order_id, amount_cents, currency, state, payment_purpose, mode, reference_type, reference_id)
@@ -209,6 +209,6 @@ BEGIN
   DELETE FROM payment_links WHERE tenant_id = v_tenant;
   DELETE FROM tenants WHERE id = v_tenant;
 
-  RAISE NOTICE 'ALL CONCURRENCY AND ATOMICITY ASSERTIONS PASSED CLEANLY!';
+  RAISE NOTICE 'ALL SEQUENTIAL IDEMPOTENCY AND ATOMICITY ASSERTIONS PASSED CLEANLY!';
 END;
 $$;
