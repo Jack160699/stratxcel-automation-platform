@@ -70,54 +70,57 @@ create policy social_agent_attachments_admin_owner
     )
   );
 
-insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
-values (
-  'social-agent-attachments',
-  'social-agent-attachments',
-  false,
-  10485760,
-  array[
-    'text/plain',
-    'text/markdown',
-    'text/csv',
-    'application/json',
-    'application/pdf',
-    'image/png',
-    'image/jpeg',
-    'image/webp',
-    'image/gif'
-  ]
-)
-on conflict (id) do update set
-  public = excluded.public,
-  file_size_limit = excluded.file_size_limit,
-  allowed_mime_types = excluded.allowed_mime_types;
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'storage' AND table_name = 'buckets') THEN
+    insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+    values (
+      'social-agent-attachments',
+      'social-agent-attachments',
+      false,
+      10485760,
+      array[
+        'text/plain',
+        'text/markdown',
+        'text/csv',
+        'application/json',
+        'application/pdf',
+        'image/png',
+        'image/jpeg',
+        'image/webp',
+        'image/gif'
+      ]
+    )
+    on conflict (id) do update set
+      public = excluded.public,
+      file_size_limit = excluded.file_size_limit,
+      allowed_mime_types = excluded.allowed_mime_types;
 
--- Paths are always owner/session/object. Folder ownership and the metadata
--- table both enforce the same user boundary.
-drop policy if exists social_agent_attachment_objects_insert on storage.objects;
-create policy social_agent_attachment_objects_insert
-  on storage.objects for insert to authenticated
-  with check (
-    bucket_id = 'social-agent-attachments'
-    and (storage.foldername(name))[1] = (select auth.uid()::text)
-  );
+    drop policy if exists social_agent_attachment_objects_insert on storage.objects;
+    create policy social_agent_attachment_objects_insert
+      on storage.objects for insert to authenticated
+      with check (
+        bucket_id = 'social-agent-attachments'
+        and (storage.foldername(name))[1] = (select auth.uid()::text)
+      );
 
-drop policy if exists social_agent_attachment_objects_select on storage.objects;
-create policy social_agent_attachment_objects_select
-  on storage.objects for select to authenticated
-  using (
-    bucket_id = 'social-agent-attachments'
-    and owner_id = (select auth.uid()::text)
-  );
+    drop policy if exists social_agent_attachment_objects_select on storage.objects;
+    create policy social_agent_attachment_objects_select
+      on storage.objects for select to authenticated
+      using (
+        bucket_id = 'social-agent-attachments'
+        and owner_id = (select auth.uid()::text)
+      );
 
-drop policy if exists social_agent_attachment_objects_delete on storage.objects;
-create policy social_agent_attachment_objects_delete
-  on storage.objects for delete to authenticated
-  using (
-    bucket_id = 'social-agent-attachments'
-    and owner_id = (select auth.uid()::text)
-  );
+    drop policy if exists social_agent_attachment_objects_delete on storage.objects;
+    create policy social_agent_attachment_objects_delete
+      on storage.objects for delete to authenticated
+      using (
+        bucket_id = 'social-agent-attachments'
+        and owner_id = (select auth.uid()::text)
+      );
+  END IF;
+END $$;
 
 -- Attachment access is operational telemetry. It says which user-visible
 -- file was read; it never records extracted content or private reasoning.

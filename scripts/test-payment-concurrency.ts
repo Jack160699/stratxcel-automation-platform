@@ -149,12 +149,12 @@ try {
   assert.equal(bootstraps.filter((x) => successful(x) && x.result.result.success).length, 1);
   assert.equal(bootstraps.filter((x) => !successful(x) || !x.result.result.success).length, 1);
   assert.equal((await db.query("select count(*)::int n from platform_staff_users where is_active and role='platform_owner'")).rows[0].n, 1);
-  assert.equal((await db.query("select count(*)::int n from platform_admin_events where action='assign_platform_staff'")).rows[0].n, 1);
+  assert.equal((await db.query("select count(*)::int n from platform_admin_events where action='assign_platform_staff' and target_user_id = any($1::uuid[])", [bootstrapUsers])).rows[0].n, 1);
 
   console.log(JSON.stringify({ finalRowCounts: { webhook: 1, paymentOrders: 1, fulfilmentLedger: 1, refundLedger: 1, sharedProviderRefundProcessed: 1, activePlatformStaff: 1 } }));
 } finally {
   if (bootstrapUsers.length) {
-    await db.query("delete from platform_admin_events where target_user_id=any($1::uuid[])", [bootstrapUsers]);
+    await db.query("delete from platform_admin_events where target_user_id=any($1::uuid[])", [bootstrapUsers]).catch(() => {});
     await db.query("delete from platform_staff_users where user_id=any($1::uuid[])", [bootstrapUsers]);
     await db.query("delete from auth.users where id=any($1::uuid[])", [bootstrapUsers]);
   }

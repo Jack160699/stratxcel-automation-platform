@@ -188,13 +188,18 @@ create policy social_verification_publish_authorizations_owner_insert
     )
   );
 
-update storage.buckets
-set file_size_limit = 104857600,
-    allowed_mime_types = array[
-      'text/plain', 'text/markdown', 'text/csv', 'application/json', 'application/pdf',
-      'image/png', 'image/jpeg', 'image/webp', 'image/gif', 'video/mp4'
-    ]
-where id = 'social-agent-attachments';
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'storage' AND table_name = 'buckets') THEN
+    update storage.buckets
+    set file_size_limit = 104857600,
+        allowed_mime_types = array[
+          'text/plain', 'text/markdown', 'text/csv', 'application/json', 'application/pdf',
+          'image/png', 'image/jpeg', 'image/webp', 'image/gif', 'video/mp4'
+        ]
+    where id = 'social-agent-attachments';
+  END IF;
+END $$;
 
 grant select, insert, update, delete on social_media_assets to authenticated, service_role;
 grant select, insert, update, delete on social_content_master_media to authenticated, service_role;
