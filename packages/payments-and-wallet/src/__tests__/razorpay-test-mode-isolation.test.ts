@@ -47,17 +47,22 @@ try {
     assert.equal(fetches, 0);
   }
 
-  for (const mode of ["test", "live"] as const) {
+  const missingCredentialCases = [
+    { mode: "test", name: "RAZORPAY_TEST_KEY_ID", restore: "test-id" },
+    { mode: "test", name: "RAZORPAY_TEST_KEY_SECRET", restore: "test-secret" },
+    { mode: "live", name: "RAZORPAY_KEY_ID", restore: "live-id" },
+    { mode: "live", name: "RAZORPAY_KEY_SECRET", restore: "live-secret" },
+  ] as const;
+  for (const { mode, name, restore } of missingCredentialCases) {
     process.env.RAZORPAY_INTEGRATION_MODE = mode;
-    const secretName = mode === "test" ? "RAZORPAY_TEST_KEY_SECRET" : "RAZORPAY_KEY_SECRET";
-    delete process.env[secretName];
+    delete process.env[name];
     let fetches = 0;
     globalThis.fetch = (async () => { fetches++; throw new Error("must not fetch"); }) as typeof fetch;
     const adapter = createRazorpayAdapter(fakeDb);
-    await assert.rejects(() => adapter.createOrder({ tenantId: "t", amountCents: 1000 }), /credentials are missing/);
-    await assert.rejects(() => adapter.createPaymentLink({ tenantId: "t", amountCents: 1000 }), /credentials are missing/);
+    await assert.rejects(() => adapter.createOrder({ tenantId: "t", amountCents: 1000 }), new RegExp(`Razorpay ${mode} credentials are missing`));
+    await assert.rejects(() => adapter.createPaymentLink({ tenantId: "t", amountCents: 1000 }), new RegExp(`Razorpay ${mode} credentials are missing`));
     assert.equal(fetches, 0);
-    process.env[secretName] = mode === "test" ? "test-secret" : "live-secret";
+    process.env[name] = restore;
   }
   console.log("razorpay-test-mode-isolation.test.ts: ALL PASS");
 } finally {

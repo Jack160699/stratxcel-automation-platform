@@ -63,7 +63,7 @@ export function createRazorpayAdapter(supabase: ServiceClient): PaymentsAdapter 
         }),
       });
       if (!response.ok) {
-        throw new Error(`Razorpay live order creation failed: HTTP ${response.status}`);
+        throw new Error(`Razorpay ${mode} order creation failed: HTTP ${response.status}`);
       }
       const result = (await response.json()) as { id: string; amount: number; currency: string };
       return { orderId: result.id, amountCents: result.amount, currency: result.currency, mode };
@@ -105,7 +105,7 @@ export function createRazorpayAdapter(supabase: ServiceClient): PaymentsAdapter 
         }),
       });
       if (!response.ok) {
-        throw new Error(`Razorpay live payment link creation failed: HTTP ${response.status}`);
+        throw new Error(`Razorpay ${mode} payment link creation failed: HTTP ${response.status}`);
       }
       const result = (await response.json()) as { id: string; short_url?: string; amount: number; currency: string };
       return { linkId: result.id, shortUrl: result.short_url ?? null, amountCents: result.amount, currency: result.currency, mode };
