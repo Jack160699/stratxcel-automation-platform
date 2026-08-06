@@ -119,22 +119,43 @@ try {
   );
   assert.equal((await db.query("select count(*)::int n from wallet_ledger_entries where tenant_id=$1 and entry_type='refund'", [tenant])).rows[0].n, 1);
 
-  await db.query("update wallet_accounts set balance_cents=1000 where tenant_id=$1", [tenant]);
-  const orders = (await db.query("insert into payment_orders(tenant_id,provider,provider_payment_id,amount_cents,currency,state,payment_purpose,mode,reference_type,reference_id) values($1,'razorpay',$2,1000,'INR','CAPTURED','wallet_topup','test','payment_link',$3),($1,'razorpay',$4,1000,'INR','CAPTURED','wallet_topup','test','payment_link',$5) returning id,provider_payment_id", [tenant, `pay-x-${nonce}`, `x-${nonce}`, `pay-y-${nonce}`, `y-${nonce}`])).rows;
-  const refunds = (await db.query("insert into payment_refunds(tenant_id,payment_order_id,amount_cents,status) values($1,$2,1000,'PENDING'),($1,$3,1000,'PENDING') returning id,payment_order_id", [tenant, orders[0].id, orders[1].id])).rows;
-  const sharedRace = await race<{ result: { status: string } }>(
-    "different refunds sharing provider_refund_id",
-    "select process_refund_atomic_v11($1,$2,$3,$4,1000,'processed',$5) result",
-    [refunds[0].id, orders[0].id, `shared-${nonce}`, orders[0].provider_payment_id, `shared-a-${nonce}`],
-    [refunds[1].id, orders[1].id, `shared-${nonce}`, orders[1].provider_payment_id, `shared-b-${nonce}`],
-  );
-  const shared = (await db.query("select count(*) filter(where status='PROCESSED')::int processed,count(*) filter(where status='MANUAL_REVIEW')::int manual,count(*) filter(where provider_refund_id=$1)::int provider_rows from payment_refunds where id=any($2::uuid[])", [`shared-${nonce}`, refunds.map((r) => r.id)])).rows[0];
-  const uniqueErrors = sharedRace.filter((x) => x.error?.code === "23505").length;
-  assert.equal(shared.processed, 1);
-  assert.ok((shared.manual === 1 && uniqueErrors === 0) || (shared.manual === 0 && uniqueErrors === 1));
-  assert.equal(shared.provider_rows <= 1, true);
-  assert.equal((await db.query("select count(*)::int n from wallet_ledger_entries where tenant_id=$1 and entry_type='refund' and amount_cents=-1000", [tenant])).rows[0].n, 1);
-  assert.equal((await db.query("select balance_cents::int balance from wallet_accounts where tenant_id=$1", [tenant])).rows[0].balance, 0);
+  let tenantA: string | undefined;
+  let tenantB: string | undefined;
+  try {
+    tenantA = (await db.query("insert into tenants(name,slug) values('Tenant Shared Refund A', $1) returning id", [`tenant-shared-a-${nonce}`])).rows[0].id;
+    tenantB = (await db.query("insert into tenants(name,slug) values('Tenant Shared Refund B', $1) returning id", [`tenant-shared-b-${nonce}`])).rows[0].id;
+    await db.query("insert into wallet_accounts(tenant_id, balance_cents) values($1, 10000), ($2, 10000)", [tenantA, tenantB]);
+
+    const orderA = (await db.query("insert into payment_orders(tenant_id,provider,provider_payment_id,amount_cents,currency,state,payment_purpose,mode,reference_type,reference_id) values($1,'razorpay',$2,5000,'INR','CAPTURED','wallet_topup','test','payment_link',$3) returning id,provider_payment_id", [tenantA, `pay-shared-a-${nonce}`, `ref-shared-a-${nonce}`])).rows[0];
+    const orderB = (await db.query("insert into payment_orders(tenant_id,provider,provider_payment_id,amount_cents,currency,state,payment_purpose,mode,reference_type,reference_id) values($1,'razorpay',$2,5000,'INR','CAPTURED','wallet_topup','test','payment_link',$3) returning id,provider_payment_id", [tenantB, `pay-shared-b-${nonce}`, `ref-shared-b-${nonce}`])).rows[0];
+
+    const refundA = (await db.query("insert into payment_refunds(tenant_id,payment_order_id,amount_cents,status) values($1,$2,5000,'PENDING') returning id", [tenantA, orderA.id])).rows[0].id;
+    const refundB = (await db.query("insert into payment_refunds(tenant_id,payment_order_id,amount_cents,status) values($1,$2,5000,'PENDING') returning id", [tenantB, orderB.id])).rows[0].id;
+
+    const sharedRace = await race<{ result: { status?: string; reason?: string } }>(
+      "different refunds sharing provider_refund_id",
+      "select process_refund_atomic_v11($1,$2,$3,$4,5000,'processed',$5) result",
+      [refundA, orderA.id, `shared-${nonce}`, orderA.provider_payment_id, `shared-a-${nonce}`],
+      [refundB, orderB.id, `shared-${nonce}`, orderB.provider_payment_id, `shared-b-${nonce}`],
+    );
+
+    const sharedStats = (await db.query("select count(*) filter(where status='PROCESSED')::int processed, count(*) filter(where status='MANUAL_REVIEW')::int manual, count(*) filter(where provider_refund_id=$1)::int provider_rows from payment_refunds where id=any($2::uuid[])", [`shared-${nonce}`, [refundA, refundB]])).rows[0];
+    const uniqueErrors = sharedRace.filter((x) => x.error?.code === "23505").length;
+    assert.equal(sharedStats.processed, 1);
+    assert.ok((sharedStats.manual === 1 && uniqueErrors === 0) || (sharedStats.manual === 0 && uniqueErrors === 1), `Shared refund race must yield MANUAL_REVIEW duplicate or 23505 unique error. Stats: ${JSON.stringify(sharedStats)}, errors: ${uniqueErrors}`);
+    assert.equal(sharedStats.provider_rows <= 1, true);
+
+    const totalLedger = (await db.query("select count(*)::int n from wallet_ledger_entries where tenant_id=any($1::uuid[]) and entry_type='refund' and amount_cents=-5000", [[tenantA, tenantB]])).rows[0].n;
+    assert.equal(totalLedger, 1);
+
+    const balanceA = (await db.query("select balance_cents::int b from wallet_accounts where tenant_id=$1", [tenantA])).rows[0].b;
+    const balanceB = (await db.query("select balance_cents::int b from wallet_accounts where tenant_id=$1", [tenantB])).rows[0].b;
+    assert.equal(balanceA + balanceB, 15000);
+    assert.ok((balanceA === 10000 && balanceB === 5000) || (balanceA === 5000 && balanceB === 10000));
+  } finally {
+    if (tenantA) await db.query("delete from tenants where id=$1", [tenantA]);
+    if (tenantB) await db.query("delete from tenants where id=$1", [tenantB]);
+  }
 
   const staff = (await db.query("select count(*)::int n from platform_staff_users where is_active")).rows[0].n;
   if (staff !== 0) throw new Error("bootstrap race requires an isolated database with zero active platform staff");
