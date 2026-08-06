@@ -22,9 +22,9 @@ BEGIN
   IF v_def !~ 'p_actual_amount_cents <> v_link.amount_cents' OR v_def !~ 'upper\(p_actual_currency\) <> upper\(v_link.currency\)' THEN
     RAISE EXCEPTION 'payment-v4 exact amount/currency equality is missing';
   END IF;
-  IF v_def !~ 'v_limits_launch int\[\] := ARRAY\[12, 1, 500, 0\]' OR
-     v_def !~ 'v_limits_growth int\[\] := ARRAY\[30, 2, 2500, 1\]' OR
-     v_def !~ 'v_limits_custom int\[\] := ARRAY\[60, 4, 10000, 1\]' THEN
+  IF v_def !~* 'v_limits_launch int\[\] := ARRAY\[12, 1, 500, 0\]' OR
+     v_def !~* 'v_limits_growth int\[\] := ARRAY\[30, 2, 2500, 1\]' OR
+     v_def !~* 'v_limits_custom int\[\] := ARRAY\[60, 4, 10000, 1\]' THEN
     RAISE EXCEPTION 'payment-v4 exact entitlement limits are missing';
   END IF;
   IF v_def !~ 'credit_eligible_from <= now\(\)' OR v_def !~ 'credit_expires_at > now\(\)' OR v_def !~ 'credit_consumed_at is null' THEN

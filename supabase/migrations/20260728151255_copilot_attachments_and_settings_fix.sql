@@ -95,6 +95,7 @@ on conflict (id) do update set
 
 -- Paths are always owner/session/object. Folder ownership and the metadata
 -- table both enforce the same user boundary.
+drop policy if exists social_agent_attachment_objects_insert on storage.objects;
 create policy social_agent_attachment_objects_insert
   on storage.objects for insert to authenticated
   with check (
@@ -102,6 +103,7 @@ create policy social_agent_attachment_objects_insert
     and (storage.foldername(name))[1] = (select auth.uid()::text)
   );
 
+drop policy if exists social_agent_attachment_objects_select on storage.objects;
 create policy social_agent_attachment_objects_select
   on storage.objects for select to authenticated
   using (
@@ -109,6 +111,7 @@ create policy social_agent_attachment_objects_select
     and owner_id = (select auth.uid()::text)
   );
 
+drop policy if exists social_agent_attachment_objects_delete on storage.objects;
 create policy social_agent_attachment_objects_delete
   on storage.objects for delete to authenticated
   using (
