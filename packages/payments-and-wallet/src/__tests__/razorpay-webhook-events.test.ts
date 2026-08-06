@@ -14,13 +14,21 @@ import { verifyRazorpayWebhookSignature } from "../razorpay/webhook.ts";
 import type { PaymentOrderRow } from "../razorpay/types.ts";
 
 function testWebhookSignatureVerification() {
-  const secret = "live_webhook_secret_998877";
+  const secret = "rotated_test_webhook_secret_123456";
+  const oldSecret = "old_compromised_secret_998877";
   const rawBody = JSON.stringify({ entity: "event", account_id: "acc_112233", event: "payment_link.paid" });
   const validSig = crypto.createHmac("sha256", secret).update(rawBody, "utf8").digest("hex");
+  const oldSig = crypto.createHmac("sha256", oldSecret).update(rawBody, "utf8").digest("hex");
 
   assert.equal(verifyRazorpayWebhookSignature(rawBody, validSig, secret), true);
+  assert.equal(verifyRazorpayWebhookSignature(rawBody, oldSig, secret), false, "Signature generated with old/fallback secret must be rejected");
   assert.equal(verifyRazorpayWebhookSignature(rawBody, "wrong_sig_123", secret), false);
+  assert.equal(verifyRazorpayWebhookSignature(rawBody, validSig, ""), false, "Missing secret must fail verification");
   assert.equal(verifyRazorpayWebhookSignature(rawBody, null, secret), false);
+
+  // Whitespace trimming policy check: secret.trim() matches trimmed secret
+  const untrimmedSecret = "   rotated_test_webhook_secret_123456  \n";
+  assert.equal(verifyRazorpayWebhookSignature(rawBody, validSig, untrimmedSecret.trim()), true);
 }
 
 async function testMultipleEventsForSamePaymentLinkSingleCredit() {
@@ -664,12 +672,296 @@ async function testWebhookClaimAndCompletionContract() {
   assert.equal(capturedRpcArgs[1].args?.p_token, "tok_exact_spec_555", "Database token is used unchanged");
 }
 
+async function testProviderCreatedRefundReconciliation() {
+  // Shared state trackers
+  const refundsDb = new Map<string, Record<string, unknown>>();
+  const ordersDb = new Map<string, Record<string, unknown>>();
+  const ledgerEntries: Record<string, unknown>[] = [];
+  let walletBalance = 50000;
+  let rpcCalls: { fn: string; args: Record<string, unknown> }[] = [];
+  let orderLookupError: { message: string } | null = null;
+  let insertError: { message: string } | null = null;
+  let rpcError: { message: string } | null = null;
+
+  // Seed a known payment order
+  ordersDb.set("pay_provider_100", { id: "order_uuid_100", tenant_id: "tenant_uuid_100" });
+
+  const buildMockDb = () => ({
+    from: (table: string) => {
+      if (table === "payment_refunds") {
+        return {
+          select: () => ({
+            eq: (_field: string, val: string) => ({
+              maybeSingle: async () => ({ data: refundsDb.get(val) ?? null, error: null }),
+            }),
+          }),
+          upsert: (row: Record<string, unknown>, _opts?: Record<string, unknown>) => {
+            if (insertError) {
+              return {
+                select: () => ({
+                  single: async () => ({ data: null, error: insertError }),
+                }),
+              };
+            }
+            const key = row.provider_refund_id as string;
+            const existing = refundsDb.get(key);
+            if (!existing) {
+              const newRow = { id: `refund_db_${key}`, ...row };
+              refundsDb.set(key, newRow);
+              return {
+                select: () => ({
+                  single: async () => ({ data: newRow, error: null }),
+                }),
+              };
+            }
+            // Conflict: return existing row (upsert behavior)
+            return {
+              select: () => ({
+                single: async () => ({ data: existing, error: null }),
+              }),
+            };
+          },
+          update: (fields: Record<string, unknown>) => ({
+            eq: (_f: string, id: string) => {
+              const item = [...refundsDb.values()].find((r) => r.id === id);
+              if (item) Object.assign(item, fields);
+              return Promise.resolve({ data: item, error: null });
+            },
+          }),
+        };
+      }
+      if (table === "payment_orders") {
+        return {
+          select: () => ({
+            eq: (_field: string, val: string) => ({
+              maybeSingle: async () => {
+                if (orderLookupError) return { data: null, error: orderLookupError };
+                return { data: ordersDb.get(val) ?? null, error: null };
+              },
+            }),
+          }),
+        };
+      }
+      return {};
+    },
+    rpc: async (fn: string, args: Record<string, unknown>) => {
+      rpcCalls.push({ fn, args });
+      if (fn === "process_refund_atomic_v11") {
+        if (rpcError) return { data: null, error: rpcError };
+        const refId = args.p_refund_id as string;
+        const item = [...refundsDb.values()].find((r) => r.id === refId);
+        if (item) {
+          item.status = "PROCESSED";
+        }
+        walletBalance -= (args.p_actual_refund_amount_cents as number) || 0;
+        ledgerEntries.push({
+          id: `ledger_${Date.now()}_${Math.random()}`,
+          tenant_id: "tenant_uuid_100",
+          entry_type: "refund",
+          amount_cents: -((args.p_actual_refund_amount_cents as number) || 0),
+          reference_type: "payment_refund",
+          reference_id: refId,
+        });
+        return { data: { success: true, status: "PROCESSED" }, error: null };
+      }
+      return { data: null, error: null };
+    },
+  } as unknown as ServiceClient);
+
+  const makeRefundPayload = (rfndId: string, payId: string, amount: number, status: string) => ({
+    payload: {
+      refund: { entity: { id: rfndId, payment_id: payId, amount, status } },
+    },
+  });
+
+  // --- Test 1: Existing local refund row → refund_processed_v11_atomic ---
+  rpcCalls = [];
+  refundsDb.set("rfnd_existing_001", {
+    id: "refund_db_existing_001",
+    provider_refund_id: "rfnd_existing_001",
+    payment_order_id: "order_uuid_100",
+    amount_cents: 5000,
+    status: "PENDING",
+  });
+
+  const res1 = await processRazorpayWebhookEvent(buildMockDb(), {
+    eventType: "refund.processed",
+    providerEventId: "evt_test_001",
+    payload: makeRefundPayload("rfnd_existing_001", "pay_provider_100", 5000, "processed"),
+  });
+  assert.equal(res1.handled, true, "Test 1: existing refund row must be handled");
+  assert.equal(res1.actionTaken, "refund_processed_v11_atomic", "Test 1: must call v11 atomic");
+  assert.equal(rpcCalls.length, 1, "Test 1: exactly one RPC call");
+  assert.equal(rpcCalls[0].fn, "process_refund_atomic_v11");
+
+  // --- Test 2: No existing local refund row (auto-resolve via payment order) ---
+  rpcCalls = [];
+  ledgerEntries.length = 0;
+  walletBalance = 50000;
+
+  const res2 = await processRazorpayWebhookEvent(buildMockDb(), {
+    eventType: "refund.processed",
+    providerEventId: "evt_test_002",
+    payload: makeRefundPayload("rfnd_autoresolve_002", "pay_provider_100", 3000, "processed"),
+  });
+  assert.equal(res2.handled, true, "Test 2: auto-resolved refund must be handled");
+  assert.equal(res2.actionTaken, "refund_processed_v11_atomic", "Test 2: must call v11 atomic");
+  assert.ok(refundsDb.has("rfnd_autoresolve_002"), "Test 2: refund row must be created");
+  assert.equal(rpcCalls.length, 1, "Test 2: exactly one RPC call");
+  assert.equal(rpcCalls[0].args.p_provider_refund_id, "rfnd_autoresolve_002");
+  assert.equal(rpcCalls[0].args.p_actual_refund_amount_cents, 3000);
+
+  // --- Test 3: Unknown provider payment ID → handled: false ---
+  rpcCalls = [];
+
+  const res3 = await processRazorpayWebhookEvent(buildMockDb(), {
+    eventType: "refund.processed",
+    providerEventId: "evt_test_003",
+    payload: makeRefundPayload("rfnd_unknown_003", "pay_NONEXISTENT", 1000, "processed"),
+  });
+  assert.equal(res3.handled, false, "Test 3: unknown payment must not be handled");
+  assert.equal(res3.actionTaken, "payment_order_not_found_for_refund", "Test 3: correct action");
+  assert.equal(rpcCalls.length, 0, "Test 3: no RPC called");
+
+  // --- Test 4: Payment order lookup database error → throws ---
+  rpcCalls = [];
+  orderLookupError = { message: "connection timeout" };
+
+  await assert.rejects(
+    async () => {
+      await processRazorpayWebhookEvent(buildMockDb(), {
+        eventType: "refund.processed",
+        providerEventId: "evt_test_004",
+        payload: makeRefundPayload("rfnd_dberr_004", "pay_provider_100", 1000, "processed"),
+      });
+    },
+    /payment_order lookup failed for refund: connection timeout/,
+    "Test 4: payment order lookup error must throw"
+  );
+  assert.equal(rpcCalls.length, 0, "Test 4: no RPC called on DB error");
+  orderLookupError = null;
+
+  // --- Test 5: Refund row insertion database error → throws ---
+  rpcCalls = [];
+  insertError = { message: "disk full" };
+
+  await assert.rejects(
+    async () => {
+      await processRazorpayWebhookEvent(buildMockDb(), {
+        eventType: "refund.processed",
+        providerEventId: "evt_test_005",
+        payload: makeRefundPayload("rfnd_inserterr_005", "pay_provider_100", 1000, "processed"),
+      });
+    },
+    /refund row creation failed: disk full/,
+    "Test 5: refund insert error must throw"
+  );
+  assert.equal(rpcCalls.length, 0, "Test 5: no RPC called on insert error");
+  insertError = null;
+
+  // --- Test 6: Duplicate sequential refund webhook → already_processed ---
+  rpcCalls = [];
+  ledgerEntries.length = 0;
+  walletBalance = 50000;
+
+  // First call processes
+  const res6a = await processRazorpayWebhookEvent(buildMockDb(), {
+    eventType: "refund.processed",
+    providerEventId: "evt_test_006a",
+    payload: makeRefundPayload("rfnd_dup_006", "pay_provider_100", 2000, "processed"),
+  });
+  assert.equal(res6a.handled, true, "Test 6a: first call must succeed");
+  assert.equal(res6a.actionTaken, "refund_processed_v11_atomic");
+
+  // Second call is idempotent
+  rpcCalls = [];
+  const res6b = await processRazorpayWebhookEvent(buildMockDb(), {
+    eventType: "refund.processed",
+    providerEventId: "evt_test_006b",
+    payload: makeRefundPayload("rfnd_dup_006", "pay_provider_100", 2000, "processed"),
+  });
+  assert.equal(res6b.handled, true, "Test 6b: duplicate must be handled");
+  assert.equal(res6b.actionTaken, "refund_already_processed_idempotent", "Test 6b: idempotent");
+  assert.equal(rpcCalls.length, 0, "Test 6b: no RPC called for already processed");
+
+  // --- Test 7: Two concurrent identical refund webhooks → upsert handles conflict ---
+  // (Simulated: upsert returns existing row on conflict, so second call sees PROCESSED)
+  rpcCalls = [];
+  ledgerEntries.length = 0;
+  walletBalance = 50000;
+  refundsDb.delete("rfnd_concurrent_007");
+
+  // First processes
+  const res7a = await processRazorpayWebhookEvent(buildMockDb(), {
+    eventType: "refund.processed",
+    providerEventId: "evt_test_007a",
+    payload: makeRefundPayload("rfnd_concurrent_007", "pay_provider_100", 4000, "processed"),
+  });
+  assert.equal(res7a.handled, true, "Test 7a: first concurrent call succeeds");
+
+  // Second sees PROCESSED status via upsert conflict resolution
+  rpcCalls = [];
+  const res7b = await processRazorpayWebhookEvent(buildMockDb(), {
+    eventType: "refund.processed",
+    providerEventId: "evt_test_007b",
+    payload: makeRefundPayload("rfnd_concurrent_007", "pay_provider_100", 4000, "processed"),
+  });
+  assert.equal(res7b.handled, true, "Test 7b: second concurrent call handled");
+  assert.equal(res7b.actionTaken, "refund_already_processed_idempotent", "Test 7b: idempotent");
+
+  // --- Test 8: Exactly one payment_refunds row ---
+  const refund007Rows = [...refundsDb.values()].filter(
+    (r) => r.provider_refund_id === "rfnd_concurrent_007"
+  );
+  assert.equal(refund007Rows.length, 1, "Test 8: exactly one refund row");
+
+  // --- Test 9: Exactly one negative wallet ledger entry ---
+  const negativeLedger = ledgerEntries.filter(
+    (e) => (e as any).entry_type === "refund" && (e as any).reference_id === "refund_db_rfnd_concurrent_007"
+  );
+  assert.equal(negativeLedger.length, 1, "Test 9: exactly one negative ledger entry");
+  assert.equal((negativeLedger[0] as any).amount_cents, -4000, "Test 9: correct refund amount");
+
+  // --- Test 10: Exactly one wallet balance reduction ---
+  assert.equal(walletBalance, 46000, "Test 10: wallet reduced by exactly 4000");
+
+  // --- Test 11: Missing provider refund evidence fails closed ---
+  rpcCalls = [];
+  const res11 = await processRazorpayWebhookEvent(buildMockDb(), {
+    eventType: "refund.processed",
+    providerEventId: "evt_test_011",
+    payload: { payload: { refund: { entity: { id: "rfnd_noevidence_011", payment_id: "pay_provider_100" } } } },
+  });
+  assert.equal(res11.handled, false, "Test 11: missing evidence must not be handled");
+  assert.equal(res11.actionTaken, "missing_refund_provider_evidence", "Test 11: correct action");
+  assert.equal(rpcCalls.length, 0, "Test 11: no RPC called");
+
+  // --- Test 12: RPC failure leaves webhook retryable (throws) ---
+  rpcCalls = [];
+  rpcError = { message: "RPC timeout" };
+  refundsDb.delete("rfnd_rpcfail_012");
+
+  await assert.rejects(
+    async () => {
+      await processRazorpayWebhookEvent(buildMockDb(), {
+        eventType: "refund.processed",
+        providerEventId: "evt_test_012",
+        payload: makeRefundPayload("rfnd_rpcfail_012", "pay_provider_100", 1000, "processed"),
+      });
+    },
+    /process_refund_atomic_v11 RPC failed: RPC timeout/,
+    "Test 12: RPC failure must throw for retry"
+  );
+  rpcError = null;
+}
+
 async function run() {
   testWebhookSignatureVerification();
   await testMultipleEventsForSamePaymentLinkSingleCredit();
   await testMonotonicRefundStatusTransitions();
   await testRefundWebhookProviderEvidenceValidation();
   await testWebhookClaimAndCompletionContract();
+  await testProviderCreatedRefundReconciliation();
   console.log("razorpay-webhook-events.test.ts (@stratxcel/payments-and-wallet): ALL PASS");
 }
 

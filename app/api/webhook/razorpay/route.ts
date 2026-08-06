@@ -35,7 +35,7 @@ export async function POST(request: Request) {
       return Response.json({ error: "Missing or blank X-Razorpay-Event-Id header" }, { status: 400 });
     }
 
-    const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
+    const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET?.trim();
     if (!webhookSecret) {
       return Response.json({ error: "Webhook service unavailable" }, { status: 503 });
     }

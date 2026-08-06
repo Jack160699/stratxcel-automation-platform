@@ -59,6 +59,49 @@ function createMockSupabase(initialData: Record<string, any> = {}) {
       return builder;
     },
     rpc: async (fnName: string, params: any) => {
+      if (fnName === "reconcile_and_fulfill_razorpay_payment_v4") {
+        const link = store.payment_links.find((l: any) => l.provider_link_id === params.p_provider_link_id || l.reference_id === params.p_reference_id);
+        if (!link) return { data: { fulfilled: false, reason: "payment_link_not_found" }, error: null };
+        if (!link.payment_purpose) return { data: { fulfilled: false, reason: "unknown_purpose" }, error: null };
+        if (link.status === "paid") return { data: { fulfilled: true, already_fulfilled: true, purpose: link.payment_purpose }, error: null };
+
+        const purpose = link.payment_purpose;
+        if (purpose === "subscription_payment") {
+          const sub = store.subscriptions.find((s: any) => s.payment_link_id === link.id || s.id === link.reference_id);
+          if (!sub) return { data: { fulfilled: false, reason: "subscription_not_found" }, error: null };
+          sub.status = "active";
+          link.status = "paid";
+          if (sub.audit_order_id) {
+            const audit = store.audit_orders.find((a: any) => a.id === sub.audit_order_id);
+            if (audit && !audit.credit_consumed_at) {
+              audit.credit_consumed_at = new Date().toISOString();
+            }
+          }
+          return { data: { fulfilled: true, already_fulfilled: false, subscription_id: sub.id, purpose }, error: null };
+        }
+
+        if (purpose === "domain_purchase") {
+          const dom = store.domains.find((d: any) => d.payment_link_id === link.id || d.id === link.reference_id);
+          if (!dom) return { data: { fulfilled: false, reason: "domain_not_found" }, error: null };
+          dom.status = "paid_pending_registration";
+          link.status = "paid";
+          return { data: { fulfilled: true, already_fulfilled: false, status: "paid_pending_registration", purpose }, error: null };
+        }
+
+        if (purpose === "wallet_topup") {
+          link.status = "paid";
+          store.wallet_ledger_entries.push({
+            tenant_id: link.tenant_id,
+            amount_cents: params.p_actual_amount_cents,
+            entry_type: "credit_purchase",
+            reference_id: params.p_reference_id,
+          });
+          return { data: { fulfilled: true, already_fulfilled: false, purpose }, error: null };
+        }
+
+        return { data: { fulfilled: false, reason: "unsupported_payment_purpose" }, error: null };
+      }
+
       if (fnName === "fulfill_subscription_payment_atomic") {
         const link = store.payment_links.find((l) => l.id === params.p_payment_link_id);
         if (!link) return { data: { fulfilled: false, reason: "payment_link_not_found" }, error: null };
@@ -137,8 +180,8 @@ async function runTests() {
       eventType: "payment_link.paid",
       payload: {
         payload: {
-          payment_link: { entity: { id: "link_no_purpose", reference_id: "ref_1" } },
-          payment: { entity: { id: "pay_1" } },
+          payment_link: { entity: { id: "link_no_purpose", reference_id: "ref_1", amount: 50000, currency: "INR", status: "captured" } },
+          payment: { entity: { id: "pay_1", amount: 50000, currency: "INR", status: "captured" } },
         },
       },
     });
@@ -187,8 +230,8 @@ async function runTests() {
       eventType: "payment_link.paid",
       payload: {
         payload: {
-          payment_link: { entity: { id: "link_sub_1", reference_id: "sub_1" } },
-          payment: { entity: { id: "pay_sub_1" } },
+          payment_link: { entity: { id: "link_sub_1", reference_id: "sub_1", amount: 1899900, currency: "INR", status: "captured" } },
+          payment: { entity: { id: "pay_sub_1", amount: 1899900, currency: "INR", status: "captured" } },
         },
       },
     });
@@ -203,8 +246,8 @@ async function runTests() {
       eventType: "payment_link.paid",
       payload: {
         payload: {
-          payment_link: { entity: { id: "link_sub_1", reference_id: "sub_1" } },
-          payment: { entity: { id: "pay_sub_1" } },
+          payment_link: { entity: { id: "link_sub_1", reference_id: "sub_1", amount: 1899900, currency: "INR", status: "captured" } },
+          payment: { entity: { id: "pay_sub_1", amount: 1899900, currency: "INR", status: "captured" } },
         },
       },
     });
@@ -242,8 +285,8 @@ async function runTests() {
       eventType: "payment_link.paid",
       payload: {
         payload: {
-          payment_link: { entity: { id: "link_dom_1", reference_id: "dom_1" } },
-          payment: { entity: { id: "pay_dom_1" } },
+          payment_link: { entity: { id: "link_dom_1", reference_id: "dom_1", amount: 120000, currency: "INR", status: "captured" } },
+          payment: { entity: { id: "pay_dom_1", amount: 120000, currency: "INR", status: "captured" } },
         },
       },
     });
@@ -279,8 +322,8 @@ async function runTests() {
       eventType: "payment_link.paid",
       payload: {
         payload: {
-          payment_link: { entity: { id: "link_wallet_1", reference_id: "pl_topup_1" } },
-          payment: { entity: { id: "pay_wallet_1" } },
+          payment_link: { entity: { id: "link_wallet_1", reference_id: "pl_topup_1", amount: 1000, currency: "INR", status: "captured" } },
+          payment: { entity: { id: "pay_wallet_1", amount: 1000, currency: "INR", status: "captured" } },
         },
       },
     });

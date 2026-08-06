@@ -254,13 +254,55 @@ export async function processRazorpayWebhookEvent(
     }
 
     // Lookup refund record by provider_refund_id
-    const { data: existingRefund, error: refErr } = await supabase
+    let { data: existingRefund, error: refErr } = await supabase
       .from("payment_refunds")
       .select("*")
       .eq("provider_refund_id", providerRefundId)
       .maybeSingle();
 
     if (refErr) throw new Error(`refund lookup failed: ${refErr.message}`);
+
+    if (!existingRefund && paymentId) {
+      // Resolve the original payment order — propagate errors so Razorpay can retry
+      const { data: order, error: orderErr } = await supabase
+        .from("payment_orders")
+        .select("id, tenant_id")
+        .eq("provider_payment_id", paymentId)
+        .maybeSingle();
+
+      if (orderErr) {
+        throw new Error(`payment_order lookup failed for refund: ${orderErr.message}`);
+      }
+
+      if (!order) {
+        return { eventType, handled: false, actionTaken: "payment_order_not_found_for_refund" };
+      }
+
+      // Conflict-safe upsert using unique index on provider_refund_id
+      const { data: newRefund, error: insertErr } = await supabase
+        .from("payment_refunds")
+        .upsert(
+          {
+            tenant_id: order.tenant_id,
+            payment_order_id: order.id,
+            provider_refund_id: providerRefundId,
+            amount_cents: amountCents,
+            status: "PENDING",
+            reason: "Razorpay Provider Webhook Refund",
+          },
+          { onConflict: "provider_refund_id", ignoreDuplicates: false }
+        )
+        .select("*")
+        .single();
+
+      if (insertErr) {
+        throw new Error(`refund row creation failed: ${insertErr.message}`);
+      }
+
+      if (newRefund) {
+        existingRefund = newRefund;
+      }
+    }
 
     if (existingRefund) {
       if (existingRefund.status === "PROCESSED") {
@@ -291,7 +333,8 @@ export async function processRazorpayWebhookEvent(
       }
     }
 
-    return { eventType, handled: true, actionTaken: "refund_event_recorded" };
+    // No existing refund and no payment order resolved — fail open for retry
+    return { eventType, handled: false, actionTaken: "refund_not_reconciled" };
   }
 
   return { eventType, handled: false, actionTaken: "unsupported_event_type" };
