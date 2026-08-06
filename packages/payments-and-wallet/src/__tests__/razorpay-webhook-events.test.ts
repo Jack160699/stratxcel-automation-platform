@@ -305,7 +305,7 @@ async function testMonotonicRefundStatusTransitions() {
       return {};
     },
     rpc: async (fn: string, args?: Record<string, unknown>) => {
-      if (fn === "process_refund_atomic_v7" || fn === "process_refund_atomic_v6" || fn === "process_refund_atomic_v5" || fn === "process_refund_atomic_v4") {
+      if (fn === "process_refund_atomic_v8" || fn === "process_refund_atomic_v7" || fn === "process_refund_atomic_v6" || fn === "process_refund_atomic_v5" || fn === "process_refund_atomic_v4") {
         const refId = (args?.p_refund_id as string) || "rfnd_mono_999";
         const item = refundsDb.get(refId) || refundsDb.get("rfnd_mono_999") || { id: "rfnd_mono_999", status: "PENDING" };
         item.status = "PROCESSED";
@@ -408,7 +408,7 @@ async function testRefundWebhookProviderEvidenceValidation() {
     },
     rpc: async (fn: string, args: Record<string, unknown>) => {
       rpcCalls.push({ fn, args });
-      if (fn === "process_refund_atomic_v7" || fn === "process_refund_atomic_v6" || fn === "process_refund_atomic_v5") {
+      if (fn === "process_refund_atomic_v8" || fn === "process_refund_atomic_v7" || fn === "process_refund_atomic_v6" || fn === "process_refund_atomic_v5") {
         const pStatus = args?.p_provider_refund_status;
         if (pStatus !== "processed") {
           return { data: { success: false, reason: "provider_refund_not_processed" }, error: null };
@@ -476,11 +476,11 @@ async function testRefundWebhookProviderEvidenceValidation() {
     },
   });
   assert.equal(resPending.handled, false);
-  assert.equal(resPending.actionTaken, "refund_v7_failed_provider_refund_not_processed");
+  assert.equal(resPending.actionTaken, "refund_v8_failed_provider_refund_not_processed");
   assert.equal(rpcCalls.length, 1);
   assert.equal(rpcCalls[0].args.p_provider_refund_status, "pending", "Pending status passed unchanged to RPC");
 
-  // E. Valid refund.processed invokes v7 with exact provider values
+  // E. Valid refund.processed invokes v8 with exact provider values
   rpcCalls = [];
   const resValid = await processRazorpayWebhookEvent(mockDb, {
     eventType: "refund.processed",
@@ -492,9 +492,9 @@ async function testRefundWebhookProviderEvidenceValidation() {
     },
   });
   assert.equal(resValid.handled, true);
-  assert.equal(resValid.actionTaken, "refund_processed_v7_atomic");
+  assert.equal(resValid.actionTaken, "refund_processed_v8_atomic");
   assert.equal(rpcCalls.length, 1);
-  assert.equal(rpcCalls[0].fn, "process_refund_atomic_v7");
+  assert.equal(rpcCalls[0].fn, "process_refund_atomic_v8");
   assert.equal(rpcCalls[0].args.p_refund_id, "ref_db_uuid_100");
   assert.equal(rpcCalls[0].args.p_payment_order_id, "order_db_uuid_100");
   assert.equal(rpcCalls[0].args.p_provider_refund_id, "rfnd_prov_100");
