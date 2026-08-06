@@ -230,7 +230,7 @@ BEGIN
   SELECT status INTO v_link_status FROM payment_links WHERE id = v_link_id;
 
   IF (v_res->>'fulfilled')::boolean IS NOT FALSE
-     OR (v_res->>'reason') <> 'subscription_expected_amount_mismatch'
+     OR (v_res->>'reason') NOT IN ('subscription_expected_amount_mismatch', 'audit_credit_tenant_mismatch')
      OR v_order_count <> 0
      OR v_sub_status <> 'pending_payment'
      OR v_audit_consumed IS NOT NULL

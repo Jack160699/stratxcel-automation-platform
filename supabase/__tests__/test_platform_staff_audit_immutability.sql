@@ -91,7 +91,7 @@ BEGIN
         'update audit_orders set %I = case %L
            when ''completed_by'' then gen_random_uuid()::text
            when ''audit_fee_cents'' then ''100000''
-           else now()::text
+           else (now() + interval ''1 day'')::text
          end::%s where id = $1',
         v_field,
         v_field,
