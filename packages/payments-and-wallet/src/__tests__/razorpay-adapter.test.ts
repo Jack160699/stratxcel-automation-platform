@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import type { ServiceClient } from "../db.ts";
 import { createRazorpayAdapter, IntegrationDisabledError } from "../razorpay/adapter.ts";
 import { getIntegrationMode, isPaymentFeatureEnabled } from "../flags.ts";
-import { verifyRazorpayWebhookSignature } from "../razorpay/webhook-events.ts";
+import { verifyRazorpayWebhookSignature } from "../razorpay/webhook.ts";
 
 async function run() {
   const originalEnv = { ...process.env };
@@ -50,20 +50,19 @@ async function run() {
     );
 
     // 6. Missing webhook secret fails closed
-    delete process.env.RAZORPAY_WEBHOOK_SECRET;
     const bodyStr = JSON.stringify({ event: "payment_link.paid" });
-    const verifiedMissingSecret = verifyRazorpayWebhookSignature(bodyStr, "sig_dummy");
+    const verifiedMissingSecret = verifyRazorpayWebhookSignature(bodyStr, "sig_dummy", "");
     assert.equal(verifiedMissingSecret, false, "Missing webhook secret MUST fail closed");
 
     // 7. Webhook signature verification uses correct configured secret
-    process.env.RAZORPAY_WEBHOOK_SECRET = "test_webhook_secret_key_123";
+    const secret = "test_webhook_secret_key_123";
     const crypto = await import("node:crypto");
-    const validSig = crypto.createHmac("sha256", "test_webhook_secret_key_123").update(bodyStr).digest("hex");
-    const verifiedValidSecret = verifyRazorpayWebhookSignature(bodyStr, validSig);
+    const validSig = crypto.createHmac("sha256", secret).update(bodyStr).digest("hex");
+    const verifiedValidSecret = verifyRazorpayWebhookSignature(bodyStr, validSig, secret);
     assert.equal(verifiedValidSecret, true, "Valid webhook signature MUST verify successfully");
 
     const invalidSig = crypto.createHmac("sha256", "wrong_secret_key_999").update(bodyStr).digest("hex");
-    const verifiedInvalidSecret = verifyRazorpayWebhookSignature(bodyStr, invalidSig);
+    const verifiedInvalidSecret = verifyRazorpayWebhookSignature(bodyStr, invalidSig, secret);
     assert.equal(verifiedInvalidSecret, false, "Invalid webhook signature MUST fail closed");
 
     // 8. Payment feature flags default to false unless explicitly set to "true"
