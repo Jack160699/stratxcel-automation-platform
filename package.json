@@ -8,6 +8,7 @@
   ],
   "scripts": {
     "test:payment-concurrency": "node --experimental-strip-types scripts/test-payment-concurrency.ts",
+    "test:razorpay-mode": "node --experimental-strip-types packages/payments-and-wallet/src/__tests__/razorpay-test-mode-isolation.test.ts",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",

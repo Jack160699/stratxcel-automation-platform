@@ -62,7 +62,7 @@ export interface CreateOrderResult {
   orderId: string;
   amountCents: number;
   currency: string;
-  mode: "shadow" | "live";
+  mode: "shadow" | "test" | "live";
 }
 
 export interface CreatePaymentLinkResult {
@@ -70,11 +70,11 @@ export interface CreatePaymentLinkResult {
   shortUrl: string | null;
   amountCents: number;
   currency: string;
-  mode: "shadow" | "live";
+  mode: "shadow" | "test" | "live";
 }
 
 export interface PaymentsAdapter {
-  readonly mode: "disabled" | "shadow" | "live";
+  readonly mode: "disabled" | "shadow" | "test" | "live";
   createOrder(input: { tenantId: string; amountCents: number; currency?: string; receipt?: string }): Promise<CreateOrderResult>;
   createPaymentLink(input: {
     tenantId: string;

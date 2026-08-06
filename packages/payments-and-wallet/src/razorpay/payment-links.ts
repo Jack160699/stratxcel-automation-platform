@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import type { ServiceClient } from "../db.ts";
-import { getIntegrationMode } from "../flags.ts";
+import { getIntegrationMode, getRazorpayCredentials } from "../flags.ts";
 import { IntegrationDisabledError } from "./adapter.ts";
 import type { CreatePaymentLinkInput, PaymentLinkRow } from "./types.ts";
 import { SUPPORTED_PAYMENT_PURPOSES } from "./types.ts";
@@ -64,11 +64,7 @@ export async function createPaymentLink(
   }
 
   // mode === "live"
-  const keyId = process.env.RAZORPAY_KEY_ID;
-  const keySecret = process.env.RAZORPAY_KEY_SECRET;
-  if (!keyId || !keySecret) {
-    throw new Error("RAZORPAY_INTEGRATION_MODE is 'live' but credentials are missing");
-  }
+  const { keyId, keySecret } = getRazorpayCredentials(mode)!;
 
   const appBaseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://www.stratxcel.in";
   const callbackUrl = `${appBaseUrl}/payment/status?link_id=${referenceId}`;
@@ -147,7 +143,7 @@ export async function createPaymentLink(
       currency,
       status: "created",
       payment_purpose: input.paymentPurpose,
-      mode: "live",
+      mode,
       short_url: shortUrl,
       description: input.description ?? null,
       customer_name: input.customerName ?? null,
@@ -257,12 +253,8 @@ export async function cancelPaymentLink(
     throw new Error(`Cannot cancel payment link in state '${link.status}'`);
   }
 
-  if (mode === "live" && link.provider_link_id) {
-    const keyId = process.env.RAZORPAY_KEY_ID;
-    const keySecret = process.env.RAZORPAY_KEY_SECRET;
-    if (!keyId || !keySecret) {
-      throw new Error("RAZORPAY_INTEGRATION_MODE is 'live' but credentials are missing");
-    }
+  if ((mode === "test" || mode === "live") && link.provider_link_id) {
+    const { keyId, keySecret } = getRazorpayCredentials(mode)!;
 
     const response = await fetchFn(`https://api.razorpay.com/v1/payment_links/${link.provider_link_id}/cancel`, {
       method: "POST",
@@ -304,6 +296,7 @@ export async function reconcilePaymentLink(
   input: ReconcilePaymentLinkInput,
   fetchFn: typeof fetch = fetch
 ): Promise<ReconcilePaymentLinkResult> {
+  const mode = getIntegrationMode("RAZORPAY_INTEGRATION_MODE");
   const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(input.linkId);
   const baseQuery = supabase.from("payment_links").select("*").eq("tenant_id", input.tenantId);
   const { data: link, error: fetchErr } = isUuid
@@ -319,15 +312,11 @@ export async function reconcilePaymentLink(
   if (!link.provider_link_id || link.provider_link_id.trim() === "") {
     throw new Error("Payment link does not have a provider link ID");
   }
-  if (link.mode !== "live") {
-    throw new Error("Only live payment links can be reconciled with Razorpay API");
+  if ((mode !== "test" && mode !== "live") || link.mode !== mode) {
+    throw new Error("Configured Razorpay mode must match the stored payment-link mode");
   }
 
-  const keyId = process.env.RAZORPAY_KEY_ID;
-  const keySecret = process.env.RAZORPAY_KEY_SECRET;
-  if (!keyId || !keySecret) {
-    throw new Error("Razorpay API credentials missing from environment");
-  }
+  const { keyId, keySecret } = getRazorpayCredentials(mode)!;
 
   const authHeader = `Basic ${Buffer.from(`${keyId}:${keySecret}`).toString("base64")}`;
   const response = await fetchFn(`https://api.razorpay.com/v1/payment_links/${encodeURIComponent(link.provider_link_id)}`, {

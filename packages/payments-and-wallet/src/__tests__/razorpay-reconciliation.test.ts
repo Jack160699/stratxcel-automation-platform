@@ -10,6 +10,7 @@ const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..",
 const read = (...parts: string[]) => fs.readFileSync(path.join(root, ...parts), "utf8");
 
 async function testReconcilePaymentLinkUnitTests() {
+  process.env.RAZORPAY_INTEGRATION_MODE = "live";
   process.env.RAZORPAY_KEY_ID = "rzp_live_test_key_123";
   process.env.RAZORPAY_KEY_SECRET = "rzp_live_test_secret_456";
 

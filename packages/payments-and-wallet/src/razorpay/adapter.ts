@@ -1,5 +1,5 @@
 import type { ServiceClient } from "../db.ts";
-import { getIntegrationMode } from "../flags.ts";
+import { getIntegrationMode, getRazorpayCredentials } from "../flags.ts";
 import type { CreateOrderResult, CreatePaymentLinkResult, PaymentsAdapter } from "./types.ts";
 
 export class IntegrationDisabledError extends Error {
@@ -48,11 +48,7 @@ export function createRazorpayAdapter(supabase: ServiceClient): PaymentsAdapter 
       // mode === "live" — gated entirely behind the env var; not reachable
       // from any default configuration and not called anywhere in this
       // codebase yet.
-      const keyId = process.env.RAZORPAY_KEY_ID;
-      const keySecret = process.env.RAZORPAY_KEY_SECRET;
-      if (!keyId || !keySecret) {
-        throw new Error("RAZORPAY_INTEGRATION_MODE is 'live' but RAZORPAY_KEY_ID/RAZORPAY_KEY_SECRET are not set");
-      }
+      const { keyId, keySecret } = getRazorpayCredentials(mode)!;
 
       const response = await fetch("https://api.razorpay.com/v1/orders", {
         method: "POST",
@@ -70,7 +66,7 @@ export function createRazorpayAdapter(supabase: ServiceClient): PaymentsAdapter 
         throw new Error(`Razorpay live order creation failed: HTTP ${response.status}`);
       }
       const result = (await response.json()) as { id: string; amount: number; currency: string };
-      return { orderId: result.id, amountCents: result.amount, currency: result.currency, mode: "live" };
+      return { orderId: result.id, amountCents: result.amount, currency: result.currency, mode };
     },
 
     async createPaymentLink(input): Promise<CreatePaymentLinkResult> {
@@ -93,11 +89,7 @@ export function createRazorpayAdapter(supabase: ServiceClient): PaymentsAdapter 
         return { linkId: data.id as string, shortUrl: null, amountCents: input.amountCents, currency: input.currency ?? "INR", mode: "shadow" };
       }
 
-      const keyId = process.env.RAZORPAY_KEY_ID;
-      const keySecret = process.env.RAZORPAY_KEY_SECRET;
-      if (!keyId || !keySecret) {
-        throw new Error("RAZORPAY_INTEGRATION_MODE is 'live' but RAZORPAY_KEY_ID/RAZORPAY_KEY_SECRET are not set");
-      }
+      const { keyId, keySecret } = getRazorpayCredentials(mode)!;
 
       const response = await fetch("https://api.razorpay.com/v1/payment_links", {
         method: "POST",
@@ -116,7 +108,7 @@ export function createRazorpayAdapter(supabase: ServiceClient): PaymentsAdapter 
         throw new Error(`Razorpay live payment link creation failed: HTTP ${response.status}`);
       }
       const result = (await response.json()) as { id: string; short_url?: string; amount: number; currency: string };
-      return { linkId: result.id, shortUrl: result.short_url ?? null, amountCents: result.amount, currency: result.currency, mode: "live" };
+      return { linkId: result.id, shortUrl: result.short_url ?? null, amountCents: result.amount, currency: result.currency, mode };
     },
   };
 }

@@ -1,6 +1,6 @@
-export type IntegrationMode = "disabled" | "shadow" | "live";
+export type IntegrationMode = "disabled" | "shadow" | "test" | "live";
 
-const VALID_MODES: readonly IntegrationMode[] = ["disabled", "shadow", "live"];
+const VALID_MODES: readonly IntegrationMode[] = ["disabled", "shadow", "test", "live"];
 
 /**
  * Own copy of the same flag-resolution logic used by @stratxcel/whatsapp —
@@ -12,6 +12,14 @@ export function getIntegrationMode(envVarName: string): IntegrationMode {
   const raw = process.env[envVarName];
   if (raw && VALID_MODES.includes(raw as IntegrationMode)) return raw as IntegrationMode;
   return "disabled";
+}
+
+export function getRazorpayCredentials(mode = getIntegrationMode("RAZORPAY_INTEGRATION_MODE")) {
+  if (mode !== "test" && mode !== "live") return null;
+  const keyId = mode === "test" ? process.env.RAZORPAY_TEST_KEY_ID : process.env.RAZORPAY_KEY_ID;
+  const keySecret = mode === "test" ? process.env.RAZORPAY_TEST_KEY_SECRET : process.env.RAZORPAY_KEY_SECRET;
+  if (!keyId || !keySecret) throw new Error(`Razorpay ${mode} credentials are missing`);
+  return { keyId, keySecret, mode } as const;
 }
 
 export type PaymentFeatureFlag =
