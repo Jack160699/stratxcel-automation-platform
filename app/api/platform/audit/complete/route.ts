@@ -24,8 +24,8 @@ export async function POST(request: Request) {
 
     const { supabase: serviceDb } = getTenantServiceContext();
 
-    // Call complete_audit_and_issue_subscription_credit_v4 via service_role
-    const { data: rpcRes, error: rpcErr } = await serviceDb.rpc("complete_audit_and_issue_subscription_credit_v4", {
+    // Call complete_audit_and_issue_subscription_credit_v5 via service_role
+    const { data: rpcRes, error: rpcErr } = await serviceDb.rpc("complete_audit_and_issue_subscription_credit_v5", {
       p_audit_order_id: auditOrderId,
       p_expected_tenant_id: tenantId,
       p_actor_user_id: ctx.userId,
