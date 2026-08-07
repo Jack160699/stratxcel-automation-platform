@@ -8,6 +8,9 @@ import { describeAuthError } from "@/app/admin/auth/authErrors";
 import { resolvePostLoginRedirect } from "@/app/actions/auth";
 import { EyeIcon, EyeOffIcon } from "@/app/components/auth/PasswordVisibilityIcons";
 
+import { GoogleOAuthButton } from "@/app/components/auth/GoogleOAuthButton";
+import { GoogleOneTap } from "@/app/components/auth/GoogleOneTap";
+
 type Stage = "form" | "verify";
 
 /**
@@ -95,115 +98,127 @@ export function SignupForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit} noValidate className="space-y-4">
-      <label className="block">
-        <span className="mb-1.5 block font-sx-sans text-[11px] font-medium uppercase tracking-[0.08em] text-sx-text-muted">
-          Name
-        </span>
-        <input
-          name="name"
-          type="text"
-          required
-          minLength={2}
-          autoComplete="name"
-          placeholder="Your name"
-          className="h-10 w-full rounded-sx-sm border border-sx-border-strong bg-sx-surface-2 px-3 font-sx-sans text-sm text-sx-text placeholder:text-sx-text-subtle outline-none transition-colors focus-visible:border-sx-accent"
-        />
-      </label>
+    <div className="space-y-4">
+      <GoogleOneTap onError={setError} />
+      <GoogleOAuthButton onError={setError} />
 
-      <label className="block">
-        <span className="mb-1.5 block font-sx-sans text-[11px] font-medium uppercase tracking-[0.08em] text-sx-text-muted">
-          Email
+      <div className="relative flex items-center justify-center py-1">
+        <div className="w-full border-t border-sx-border" />
+        <span className="absolute bg-sx-surface px-3 font-sx-sans text-[11px] font-medium uppercase tracking-[0.08em] text-sx-text-subtle">
+          or continue with email
         </span>
-        <input
-          name="email"
-          type="email"
-          required
-          autoComplete="email"
-          placeholder="you@company.com"
-          className="h-10 w-full rounded-sx-sm border border-sx-border-strong bg-sx-surface-2 px-3 font-sx-sans text-sm text-sx-text placeholder:text-sx-text-subtle outline-none transition-colors focus-visible:border-sx-accent"
-        />
-      </label>
+      </div>
 
-      <label className="block" htmlFor={passwordId}>
-        <span className="mb-1.5 block font-sx-sans text-[11px] font-medium uppercase tracking-[0.08em] text-sx-text-muted">
-          Password
-        </span>
-        <div className="relative">
+      <form onSubmit={handleSubmit} noValidate className="space-y-4">
+        <label className="block">
+          <span className="mb-1.5 block font-sx-sans text-[11px] font-medium uppercase tracking-[0.08em] text-sx-text-muted">
+            Name
+          </span>
           <input
-            id={passwordId}
-            name="password"
+            name="name"
+            type="text"
+            required
+            minLength={2}
+            autoComplete="name"
+            placeholder="Your name"
+            className="h-10 w-full rounded-sx-sm border border-sx-border-strong bg-sx-surface-2 px-3 font-sx-sans text-sm text-sx-text placeholder:text-sx-text-subtle outline-none transition-colors focus-visible:border-sx-accent"
+          />
+        </label>
+
+        <label className="block">
+          <span className="mb-1.5 block font-sx-sans text-[11px] font-medium uppercase tracking-[0.08em] text-sx-text-muted">
+            Email
+          </span>
+          <input
+            name="email"
+            type="email"
+            required
+            autoComplete="email"
+            placeholder="you@company.com"
+            className="h-10 w-full rounded-sx-sm border border-sx-border-strong bg-sx-surface-2 px-3 font-sx-sans text-sm text-sx-text placeholder:text-sx-text-subtle outline-none transition-colors focus-visible:border-sx-accent"
+          />
+        </label>
+
+        <label className="block" htmlFor={passwordId}>
+          <span className="mb-1.5 block font-sx-sans text-[11px] font-medium uppercase tracking-[0.08em] text-sx-text-muted">
+            Password
+          </span>
+          <div className="relative">
+            <input
+              id={passwordId}
+              name="password"
+              type={showPassword ? "text" : "password"}
+              required
+              minLength={8}
+              autoComplete="new-password"
+              placeholder="At least 8 characters"
+              className="h-10 w-full rounded-sx-sm border border-sx-border-strong bg-sx-surface-2 px-3 pr-10 font-sx-sans text-sm text-sx-text placeholder:text-sx-text-subtle outline-none transition-colors focus-visible:border-sx-accent"
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword((v) => !v)}
+              aria-label={showPassword ? "Hide password" : "Show password"}
+              aria-pressed={showPassword}
+              className="absolute inset-y-0 right-0 flex w-10 items-center justify-center text-sx-text-subtle transition-colors hover:text-sx-text-muted"
+            >
+              {showPassword ? <EyeOffIcon /> : <EyeIcon />}
+            </button>
+          </div>
+        </label>
+
+        <label className="block" htmlFor={confirmId}>
+          <span className="mb-1.5 block font-sx-sans text-[11px] font-medium uppercase tracking-[0.08em] text-sx-text-muted">
+            Confirm password
+          </span>
+          <input
+            id={confirmId}
+            name="confirm"
             type={showPassword ? "text" : "password"}
             required
             minLength={8}
             autoComplete="new-password"
-            placeholder="At least 8 characters"
-            className="h-10 w-full rounded-sx-sm border border-sx-border-strong bg-sx-surface-2 px-3 pr-10 font-sx-sans text-sm text-sx-text placeholder:text-sx-text-subtle outline-none transition-colors focus-visible:border-sx-accent"
+            placeholder="Re-enter your password"
+            className="h-10 w-full rounded-sx-sm border border-sx-border-strong bg-sx-surface-2 px-3 font-sx-sans text-sm text-sx-text placeholder:text-sx-text-subtle outline-none transition-colors focus-visible:border-sx-accent"
           />
-          <button
-            type="button"
-            onClick={() => setShowPassword((v) => !v)}
-            aria-label={showPassword ? "Hide password" : "Show password"}
-            aria-pressed={showPassword}
-            className="absolute inset-y-0 right-0 flex w-10 items-center justify-center text-sx-text-subtle transition-colors hover:text-sx-text-muted"
-          >
-            {showPassword ? <EyeOffIcon /> : <EyeIcon />}
-          </button>
+        </label>
+
+        <label htmlFor={termsId} className="flex items-start gap-2.5">
+          <input
+            id={termsId}
+            name="terms"
+            type="checkbox"
+            required
+            className="mt-0.5 h-4 w-4 shrink-0 rounded border-sx-border-strong bg-sx-surface-2 accent-[color:var(--sx-accent)]"
+          />
+          <span className="font-sx-sans text-[12.5px] leading-relaxed text-sx-text-muted">
+            I agree to the{" "}
+            <Link href="/terms" className="text-sx-accent hover:underline">
+              Terms of Service
+            </Link>{" "}
+            and{" "}
+            <Link href="/privacy" className="text-sx-accent hover:underline">
+              Privacy Policy
+            </Link>
+            .
+          </span>
+        </label>
+
+        <div aria-live="polite">
+          {error && (
+            <p role="alert" className="font-sx-sans text-[12.5px] text-sx-danger">
+              {error}
+            </p>
+          )}
         </div>
-      </label>
 
-      <label className="block" htmlFor={confirmId}>
-        <span className="mb-1.5 block font-sx-sans text-[11px] font-medium uppercase tracking-[0.08em] text-sx-text-muted">
-          Confirm password
-        </span>
-        <input
-          id={confirmId}
-          name="confirm"
-          type={showPassword ? "text" : "password"}
-          required
-          minLength={8}
-          autoComplete="new-password"
-          placeholder="Re-enter your password"
-          className="h-10 w-full rounded-sx-sm border border-sx-border-strong bg-sx-surface-2 px-3 font-sx-sans text-sm text-sx-text placeholder:text-sx-text-subtle outline-none transition-colors focus-visible:border-sx-accent"
-        />
-      </label>
-
-      <label htmlFor={termsId} className="flex items-start gap-2.5">
-        <input
-          id={termsId}
-          name="terms"
-          type="checkbox"
-          required
-          className="mt-0.5 h-4 w-4 shrink-0 rounded border-sx-border-strong bg-sx-surface-2 accent-[color:var(--sx-accent)]"
-        />
-        <span className="font-sx-sans text-[12.5px] leading-relaxed text-sx-text-muted">
-          I agree to the{" "}
-          <Link href="/terms" className="text-sx-accent hover:underline">
-            Terms of Service
-          </Link>{" "}
-          and{" "}
-          <Link href="/privacy" className="text-sx-accent hover:underline">
-            Privacy Policy
-          </Link>
-          .
-        </span>
-      </label>
-
-      <div aria-live="polite">
-        {error && (
-          <p role="alert" className="font-sx-sans text-[12.5px] text-sx-danger">
-            {error}
-          </p>
-        )}
-      </div>
-
-      <button
-        type="submit"
-        disabled={pending}
-        className="h-10 w-full rounded-sx-sm bg-sx-accent font-sx-sans text-sm font-semibold text-sx-accent-on transition-colors hover:bg-[color:var(--sx-accent-hover)] disabled:cursor-not-allowed disabled:opacity-60"
-      >
-        {pending ? "Creating account…" : "Create account"}
-      </button>
-    </form>
+        <button
+          type="submit"
+          disabled={pending}
+          className="h-10 w-full rounded-sx-sm bg-sx-accent font-sx-sans text-sm font-semibold text-sx-accent-on transition-colors hover:bg-[color:var(--sx-accent-hover)] disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {pending ? "Creating account…" : "Create account"}
+        </button>
+      </form>
+    </div>
   );
 }

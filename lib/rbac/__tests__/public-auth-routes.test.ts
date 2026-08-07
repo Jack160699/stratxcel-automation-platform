@@ -26,6 +26,9 @@ const NO_SERVICE_ROLE_FILES: string[][] = [
   ["app", "reset-password", "page.tsx"],
   ["app", "reset-password", "ResetPasswordForm.tsx"],
   ["app", "actions", "auth.ts"],
+  ["app", "auth", "callback", "route.ts"],
+  ["app", "components", "auth", "GoogleOAuthButton.tsx"],
+  ["app", "components", "auth", "GoogleOneTap.tsx"],
 ];
 
 function run() {
