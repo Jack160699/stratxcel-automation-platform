@@ -6,6 +6,9 @@ import assert from "node:assert/strict";
 import { createSignedState, verifySignedState } from "../oauth-state.ts";
 
 function run() {
+  if (!process.env.SOCIAL_OAUTH_STATE_SECRET) {
+    process.env.SOCIAL_OAUTH_STATE_SECRET = "test-social-oauth-state-secret-32bytes-min";
+  }
   // 1. Valid, freshly-issued state verifies and round-trips the provider + redirect
   const { token, hash } = createSignedState("instagram", "/admin/social");
   const verified = verifySignedState(token);

@@ -7,6 +7,9 @@ import crypto from "node:crypto";
 import { encryptToken, decryptToken, encryptTokenPacked, decryptTokenPacked, packEncryptedField, unpackEncryptedField } from "../crypto.ts";
 
 function run() {
+  if (!process.env.SOCIAL_TOKEN_ENCRYPTION_KEY) {
+    process.env.SOCIAL_TOKEN_ENCRYPTION_KEY = crypto.randomBytes(32).toString("base64");
+  }
   const plaintext = "IGAAtest-access-token-1234567890";
 
   // 1. Round-trip: encrypt -> decrypt -> exact original plaintext
