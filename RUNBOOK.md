@@ -1,66 +1,104 @@
-# Runbook
+# Stratxcel Platform Operational Runbook
 
-**Status update (2026-08-03, later the same day):** the rollback note below ("never merged to main and never deployed to production") is now stale — this branch's work has since been merged to `main` and deployed to production, with all 22 migrations applied and a follow-up RSC information-disclosure hotfix and Phase 1 (unified Command Center / client switcher) shipped on top of it. See `LIVE_SYSTEM_MAP.md` for current state. The standalone worker apps (`apps/whatsapp-worker`, `apps/mission-worker`, `apps/hermes-gateway`) remain undeployed exactly as described below.
+**Last Infrastructure Audit:** 7 August 2026
+**Production Project:** Vercel project `stratxcel` (`stratxcel.in` / `www.stratxcel.in` / `stratxcel.vercel.app`)
+**Supabase Production Project:** `stratxcel` (`uccqlgeghkwzujeeymua`, Region: South Asia - Mumbai)
 
-## Everyday commands (repo root)
+---
 
-```bash
-npm install                 # sets up npm workspaces (packages/*, apps/*)
-npx tsc --noEmit             # typecheck the whole monorepo
-npx eslint packages apps app/api app/admin/platform   # lint this session's new code
-npm run test:foundation      # 21 pure-logic tests across all new packages
-npm run test:security        # queue privilege hardening + RLS coverage (static)
-npm run test:social          # pre-existing Social Autopilot suite (needs SOCIAL_TOKEN_ENCRYPTION_KEY locally)
-npm run build                 # production Next.js build
-npm run dev                   # local dev server for the dashboard app
-```
-
-## Bootstrapping a tenant (once a Supabase project is reachable — see MANUAL_SETUP_REQUIRED.md M10)
-
-1. Log into the dashboard app as any authenticated Supabase Auth user.
-2. Visit `/admin/platform/tenants`, fill in name + slug, submit.
-3. You're now that tenant's `owner`. Copy the tenant ID shown (or select "Use this tenant") — every other `/admin/platform/*` page needs it.
-
-## Running the standalone apps locally
-
-Each needs `NEXT_PUBLIC_SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` (same project as the dashboard) plus its own additional vars:
+## 1. Everyday Development & Verification Commands
 
 ```bash
-# WhatsApp webhook receiver (fast path — verify, normalize, enqueue)
-cd apps/whatsapp-worker
-WHATSAPP_APP_SECRET=... WHATSAPP_VERIFY_TOKEN=... npm start
-
-# WhatsApp async conversation processor (separate process)
-cd apps/whatsapp-worker
-npm run start:processor
-
-# Mission executor (claims 'mission.execute' jobs, runs Hermes adapter)
-cd apps/mission-worker
-HERMES_MODE=mock npm start   # or HERMES_MODE=http with HERMES_GATEWAY_URL/HERMES_SHARED_SECRET set
-
-# Hermes tool gateway (what a real Hermes instance calls back into)
-cd apps/hermes-gateway
-HERMES_GATEWAY_SECRET=... npm start
+npm install                     # Workspace setup across packages/* and apps/*
+npx tsc --noEmit                 # Full monorepo static typecheck
+npm run lint                     # ESLint verification across app and packages
+npm run test:foundation          # 21 core foundation logic & payment state tests
+npm run test:security            # RLS coverage & SQL privilege guard suite (58 migrations)
+npm run test:social              # Social Autopilot crypto & provider integration tests
+npm run test:razorpay-mode       # Payment test-mode isolation verification
+npm run build                    # Next.js 16 (Turbopack) production build
 ```
 
-None of these are deployed anywhere (see `MANUAL_SETUP_REQUIRED.md` M11) — this is how to run them locally for development/testing.
+---
 
-## Queue operations
+## 2. Health Monitoring & Runtime Verification
 
-- **Stuck/dead jobs:** visit `/admin/platform/queue?tenantId=...` — dead-letter jobs show their last error. There is no admin "retry" button yet; retrying a dead-lettered job requires a direct `queue_internal`-privileged call (service-role only) or a future admin action.
-- **Abandoned leases (worker crashed mid-job):** both `apps/mission-worker` and `apps/whatsapp-worker`'s processor call `queue.recoverExpiredLeases()` on every poll tick automatically — no manual action needed under normal operation.
-- **Backoff timing:** 30s base, doubling per attempt, capped at 1 hour (`packages/queue/src/backoff.ts`, mirrored exactly in SQL).
+- **Production Health Endpoint:** `GET /api/health`
+  - Returns HTTP 200 JSON with status `healthy`, UTC ISO timestamp, and integration modes summary (`supabaseConfigured: true`, `razorpayMode: "disabled"`, `whatsappMode: "disabled"`, `hermesMode: "disabled"`).
+- **Runtime Logs Inspection:**
+  - Run `npx vercel logs stratxcel-5j6rnxdyc-jack160699s-projects.vercel.app` (or active deployment URL) via Vercel CLI.
+  - Or inspect Vercel Dashboard → Project `stratxcel` → Logs.
 
-## Rollback
+---
 
-This entire session's work lives on `worktree-stratxcel-ai-build`, never merged to `main` and never deployed to production. "Rollback" is simply: don't merge this branch, or `git revert` specific commits if only part of it needs undoing — nothing external (DNS, webhooks, production database) was ever changed, so there is nothing to roll back outside this repository.
+## 3. Production Incident Response
 
-If migrations are applied (M10) and need reverting: they're all additive (new tables/columns/functions, no `DROP`/destructive `ALTER`) — reverting means dropping the specific new objects, not restoring from a backup. Write the exact `DROP` statements at the time you decide to revert, scoped to what was actually applied.
+1. **Classify Severity:**
+   - **P0 (Outage / Security / Data Risk):** Unhandled 5xx flood, RLS policy bypass, or payment mode mutation.
+   - **P1 (Degraded Feature):** Social posting/worker failure or API rate limit throttling.
+2. **First Action:** Query production runtime logs via Vercel CLI (`npx vercel logs`).
+3. **Fail-Closed Guarantees:**
+   - Cron endpoints reject calls lacking `Authorization: Bearer <CRON_SECRET>` (401).
+   - Payment webhooks reject invalid HMAC signatures.
+   - Razorpay production mode is strictly locked to `disabled`.
 
-## Health checks
+---
 
-- Dashboard app: standard Vercel deployment health (already working).
-- `apps/whatsapp-worker`: no dedicated `/health` route yet — `GET /webhook` with correct verify-token params returns 200.
-- `apps/mission-worker`: no HTTP surface — check process liveness and `[mission-worker] polling every...` log line.
-- `apps/hermes-gateway`: `GET /health` returns `{"healthy": true}`.
-- Local Hermes: `scripts/hermes-health`.
+## 4. Deployment & Rollback
+
+- **Vercel Instant Rollback:**
+  - Navigate to Vercel Dashboard → Deployments → Select previous successful READY deployment → Click **Promote to Production**.
+  - Or run: `npx vercel rollback <deployment-id>`.
+- **Git Main Branch Rollback:**
+  - `git revert <commit-sha>` on `main` and push. Never force-push `main`.
+
+---
+
+## 5. Supabase Migration Rules & Verification
+
+- **Additive Only:** NEVER modify an already-applied migration file in `supabase/migrations/`.
+- **Verification Command:** Run `npx supabase migration list` after linking project (`uccqlgeghkwzujeeymua`) to ensure 100% 1:1 match between local and remote migrations.
+- **Applying New Migrations:**
+  - Place additive SQL files in `supabase/migrations/YYYYMMDDHHMMSS_name.sql`.
+  - Validate with `npm run test:security` before applying.
+
+---
+
+## 6. Database Backups & PITR Recovery
+
+- **Physical Backups (WALG):** Active (`true`) in region `South Asia (Mumbai)`. Supabase takes physical backups automatically.
+- **Point-in-Time Recovery (PITR):** Currently `false` (Standard tier).
+  - *Owner Action Required for PITR:* Go to Supabase Dashboard → Database → Backups → Enable Point-in-Time Recovery.
+
+---
+
+## 7. Auth Configuration & Redirect Checklist
+
+- **Site URL:** `https://stratxcel.in`
+- **Redirect Allow List:**
+  - `https://stratxcel.in/*`
+  - `https://www.stratxcel.in/*`
+  - `https://stratxcel.vercel.app/*`
+  - `http://localhost:3000/*`
+- **Route Protections:**
+  - `/admin/*` protected server-side via Supabase auth token revalidation (`proxy.ts`).
+  - Password reset flows validate recovery state tokens and reject unauthenticated mutations.
+
+---
+
+## 8. Secret Rotation Protocol
+
+1. **Vercel Environment Secrets:**
+   - Update variable name in Vercel Dashboard → Environment Variables (or `npx vercel env add <NAME>`).
+   - Trigger a fresh production deployment to pick up rotated secrets.
+2. **Supabase Service Role / Anon Keys:**
+   - Rotate in Supabase Dashboard → Project Settings → API.
+   - Update `SUPABASE_SERVICE_ROLE_KEY` in Vercel production environment variables.
+
+---
+
+## 9. Payment Safety Constraints
+
+- `RAZORPAY_INTEGRATION_MODE` MUST remain `disabled` in production environment.
+- Production transactions, refunds, and live webhook processing must fail closed unless explicitly enabled via owner authorization.
+- Verify isolation: `npm run test:razorpay-mode`.
