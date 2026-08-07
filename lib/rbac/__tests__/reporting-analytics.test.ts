@@ -264,6 +264,10 @@ async function run() {
   const routeSource = read(...routePath);
   assert.ok(/requireOwnerContext\(\)/.test(routeSource), "route must be owner-gated — connection health is not public");
   assert.ok(/if \(!ctx\.ok\) return/.test(routeSource), "route must return early when the caller is unauthorised");
+  // Missing Supabase env (the case on Preview) makes createSupabaseServerClient
+  // throw. That must surface as a named 503, not an unhandled 500.
+  assert.ok(/status: 503/.test(readCode(...routePath)), "route must answer 503 when the auth backend is unconfigured");
+  assert.ok(/catch/.test(readCode(...routePath)), "route must not let client construction crash the request");
   assert.equal(
     /createSupabaseServiceClient|SUPABASE_SERVICE_ROLE_KEY/.test(routeSource),
     false,

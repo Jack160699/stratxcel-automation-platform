@@ -14,7 +14,22 @@ export const dynamic = "force-dynamic";
  * The response carries enum states and scope names only — no tokens.
  */
 export async function GET() {
-  const ctx = await requireOwnerContext();
+  let ctx: Awaited<ReturnType<typeof requireOwnerContext>>;
+  try {
+    ctx = await requireOwnerContext();
+  } catch {
+    // createSupabaseServerClient() throws outright when NEXT_PUBLIC_SUPABASE_URL
+    // or the anon key is absent from the environment — the case on Preview
+    // deployments, where those variables are not configured. Answer with a
+    // named, unauthenticated 503 rather than an unhandled crash: the reason is
+    // the deployment's configuration, not the caller's request. Nothing about
+    // the environment is echoed back.
+    return Response.json(
+      { error: "Reporting status unavailable: authentication backend is not configured for this deployment." },
+      { status: 503, headers: { "Cache-Control": "no-store" } }
+    );
+  }
+
   if (!ctx.ok) return Response.json({ error: ctx.error }, { status: ctx.status });
 
   const providers = await getReportingConnectionsStatus(ctx.supabase);
