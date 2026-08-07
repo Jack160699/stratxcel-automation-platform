@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono, Instrument_Sans, JetBrains_Mono } from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
+import { GoogleAnalytics } from "@/app/components/GoogleAnalytics";
 import { ScrollRestoration } from "@/app/components/ScrollRestoration";
 import "./globals.css";
 
@@ -58,6 +59,12 @@ export const metadata: Metadata = {
     type: "website",
     images: [{ url: "/logo-v2.png", width: 641, height: 641 }],
   },
+  // Google Search Console HTML-tag ownership verification. Emits the
+  // <meta name="google-site-verification"> tag only when the token is set, so
+  // the head stays clean until the property is actually being verified.
+  verification: process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION
+    ? { google: process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION }
+    : undefined,
 };
 
 export const viewport: Viewport = {
@@ -80,6 +87,7 @@ export default function RootLayout({
         <ScrollRestoration />
         {children}
         <Analytics />
+        <GoogleAnalytics />
       </body>
     </html>
   );
