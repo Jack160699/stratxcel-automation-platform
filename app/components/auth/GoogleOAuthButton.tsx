@@ -50,10 +50,6 @@ export function GoogleOAuthButton({ next, onError }: GoogleOAuthButtonProps) {
         provider: "google",
         options: {
           redirectTo: callbackUrl.toString(),
-          queryParams: {
-            access_type: "offline",
-            prompt: "consent",
-          },
         },
       });
 
