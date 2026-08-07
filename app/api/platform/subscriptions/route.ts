@@ -1,14 +1,28 @@
 import { requireTenantContext, getTenantServiceContext } from "@/lib/tenants/tenant-context";
-import { createPaymentLink, cancelPaymentLink, checkAuditCreditEligibility, isPaymentFeatureEnabled } from "@stratxcel/payments-and-wallet";
+import {
+  createPaymentLink,
+  cancelPaymentLink,
+  checkAuditCreditEligibility,
+  isPaymentFeatureEnabled,
+  getSelfServicePlan,
+  isPlanTier,
+  upsertBillingProfile,
+  getBillingProfile,
+  listInvoicesForTenant,
+} from "@stratxcel/payments-and-wallet";
+import { splitGstInclusive } from "@/lib/payments/gst";
+import { requirePermission, PermissionDeniedError } from "@/lib/rbac/policy";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const PLAN_PRICES_CENTS: Record<string, number> = {
-  launch: 949900, // ₹9,499.00 / mo (GST Included)
-  growth: 1899900, // ₹18,999.00 / mo (GST Included)
-  custom_growth: 2399900, // Starting ₹23,999.00 / mo (GST Included)
-};
+interface GstInvoiceDetails {
+  legalBusinessName?: string;
+  gstin?: string;
+  billingAddress?: string;
+  billingState?: string;
+  pinCode?: string;
+}
 
 export async function POST(request: Request) {
   if (!isPaymentFeatureEnabled("PAYMENTS_SUBSCRIPTIONS_ENABLED")) {
@@ -20,10 +34,23 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json().catch(() => ({}));
-    const { tenantId, planTier } = body;
+    const { tenantId, planTier, gstInvoice } = body as { tenantId?: string; planTier?: string; gstInvoice?: GstInvoiceDetails };
 
-    if (!tenantId || !planTier || !PLAN_PRICES_CENTS[planTier]) {
+    if (!tenantId || !isPlanTier(planTier)) {
       return Response.json({ error: "Invalid tenantId or planTier (launch, growth, custom_growth)" }, { status: 400 });
+    }
+
+    // Price and plan availability are resolved server-side only — never from client input.
+    const plan = getSelfServicePlan(planTier);
+    if (!plan) {
+      return Response.json(
+        {
+          error:
+            "Custom Growth is a tailored plan and is not available through self-service checkout. Please request a quote and our team will confirm pricing with you directly.",
+          contactRequired: true,
+        },
+        { status: 400 }
+      );
     }
 
     const ctx = await requireTenantContext(tenantId);
@@ -31,9 +58,29 @@ export async function POST(request: Request) {
 
     const { supabase: serviceDb } = getTenantServiceContext();
 
+    if (gstInvoice) {
+      try {
+        await upsertBillingProfile(
+          serviceDb,
+          tenantId,
+          {
+            legalBusinessName: gstInvoice.legalBusinessName,
+            gstin: gstInvoice.gstin,
+            billingAddress: gstInvoice.billingAddress,
+            billingState: gstInvoice.billingState,
+            pinCode: gstInvoice.pinCode,
+          },
+          ctx.userId
+        );
+      } catch (profileErr) {
+        const msg = profileErr instanceof Error ? profileErr.message : "Invalid GST invoice details";
+        return Response.json({ error: msg }, { status: 400 });
+      }
+    }
+
     // Check provisional 7-day audit credit eligibility (DO NOT consume credit before payment)
     const creditCheck = await checkAuditCreditEligibility(serviceDb, tenantId);
-    const basePriceCents = PLAN_PRICES_CENTS[planTier];
+    const basePriceCents = plan.priceCents!;
     const discountCents = creditCheck.eligible ? creditCheck.creditAmountCents : 0;
     const finalPriceCents = Math.max(0, basePriceCents - discountCents);
 
@@ -68,7 +115,7 @@ export async function POST(request: Request) {
         tenantId,
         amountCents: finalPriceCents,
         currency: "INR",
-        description: `Stratxcel ${planTier.toUpperCase()} Subscription (GST Included)`,
+        description: `Stratxcel ${plan.publicName} Subscription (GST Included)`,
         paymentPurpose: "subscription_payment",
         referenceId: subscription.id,
       });
@@ -105,6 +152,7 @@ export async function POST(request: Request) {
     return Response.json({
       subscription: { ...subscription, payment_link_id: link.id },
       auditCreditProvisional: creditCheck.eligible ? creditCheck.creditAmountCents / 100 : 0,
+      priceBreakdown: splitGstInclusive(finalPriceCents),
       paymentLink: link,
       paymentUrl: link.short_url,
     });
@@ -112,4 +160,60 @@ export async function POST(request: Request) {
     const msg = err instanceof Error ? err.message : "Failed to create subscription";
     return Response.json({ error: msg }, { status: 400 });
   }
+}
+
+/**
+ * Current subscription + billing state for the billing page. Reads only — never a
+ * source of entitlement truth (that stays server-side/RPC-derived elsewhere).
+ */
+export async function GET(request: Request) {
+  const url = new URL(request.url);
+  const tenantId = url.searchParams.get("tenantId");
+  if (!tenantId) return Response.json({ error: "tenantId is required" }, { status: 400 });
+
+  const ctx = await requireTenantContext(tenantId);
+  if (!ctx.ok) return Response.json({ error: ctx.error }, { status: ctx.status });
+
+  try {
+    requirePermission(ctx.role, "wallet:view");
+  } catch (err) {
+    if (err instanceof PermissionDeniedError) return Response.json({ error: err.message }, { status: 403 });
+    throw err;
+  }
+
+  const { supabase: serviceDb } = getTenantServiceContext();
+
+  const { data: subscription } = await serviceDb
+    .from("subscriptions")
+    .select("*")
+    .eq("tenant_id", tenantId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  let paymentUrl: string | null = null;
+  if (subscription?.status === "pending_payment" && subscription.payment_link_id) {
+    const { data: link } = await serviceDb.from("payment_links").select("short_url, status").eq("id", subscription.payment_link_id).maybeSingle();
+    if (link?.status === "created") paymentUrl = link.short_url;
+  }
+  if (subscription?.status === "past_due" && subscription.next_renewal_link_id) {
+    const { data: link } = await serviceDb.from("payment_links").select("short_url, status").eq("id", subscription.next_renewal_link_id).maybeSingle();
+    if (link?.status === "created") paymentUrl = link.short_url;
+  }
+
+  const [billingProfile, invoices] = await Promise.all([
+    getBillingProfile(serviceDb, tenantId),
+    listInvoicesForTenant(serviceDb, tenantId),
+  ]);
+
+  return Response.json(
+    {
+      subscription: subscription ?? null,
+      priceBreakdown: subscription ? splitGstInclusive(subscription.price_cents) : null,
+      paymentUrl,
+      billingProfile,
+      invoices: invoices.slice(0, 12),
+    },
+    { headers: { "Cache-Control": "no-store" } }
+  );
 }

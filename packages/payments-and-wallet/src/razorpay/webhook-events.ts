@@ -97,6 +97,12 @@ export interface WebhookProcessResult {
   eventType: string;
   handled: boolean;
   actionTaken: string;
+  /** Present on a fulfilled payment_link.paid/payment.captured event — used by the
+   *  caller (webhook route, reconcilePaymentLink) to best-effort issue a GST invoice. */
+  orderId?: string | null;
+  /** Present on a processed refund.processed event — used by the webhook route to
+   *  best-effort issue a credit note against the original invoice. */
+  refundId?: string;
 }
 
 export async function writeReconciliationIssue(
@@ -229,7 +235,13 @@ export async function processRazorpayWebhookEvent(
     }
 
     const actionTaken = (rpcData as any)?.already_fulfilled === true ? "payment_already_fulfilled" : "payment_fulfilled_v4_atomic";
-    return { eventType, handled: true, actionTaken };
+
+    // Note: GST invoice issuance deliberately happens one layer up, in the webhook
+    // route (app/api/webhook/razorpay/route.ts) and in reconcilePaymentLink, not
+    // here — this function's exact RPC call shape/count is covered by
+    // razorpay-webhook-events.test.ts, and invoice issuance is a separate,
+    // best-effort concern that must never risk changing what this function does.
+    return { eventType, handled: true, actionTaken, orderId: (rpcData as any)?.order_id ?? null };
   }
 
   if (eventType === "refund.processed" || eventType === "refund.failed" || eventType === "refund.created") {
@@ -324,7 +336,11 @@ export async function processRazorpayWebhookEvent(
         if (!rpcRes || (rpcRes as any).success !== true) {
           return { eventType, handled: false, actionTaken: `refund_v11_failed_${(rpcRes as any)?.reason}` };
         }
-        return { eventType, handled: true, actionTaken: "refund_processed_v11_atomic" };
+
+        // Note: credit-note issuance (best-effort, non-blocking) happens one layer
+        // up in the webhook route — see the comment on the payment_link.paid branch
+        // above for why this function's own RPC call shape/count stays untouched.
+        return { eventType, handled: true, actionTaken: "refund_processed_v11_atomic", refundId: existingRefund.id };
       }
 
       if (eventType === "refund.failed") {

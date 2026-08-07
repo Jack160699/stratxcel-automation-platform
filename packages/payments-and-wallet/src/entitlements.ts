@@ -37,6 +37,62 @@ export interface CheckUsageResult {
   notificationTriggered: "80" | "90" | "100" | null;
 }
 
+export type EntitlementMetric = "social_posts" | "meta_ad_campaigns" | "whatsapp_contacts" | "website_maintenance";
+
+export interface EntitlementStatus {
+  metric: EntitlementMetric;
+  limit: number;
+  currentUsage: number;
+  remaining: number;
+  isPaused: boolean;
+  hasCapacity: boolean;
+}
+
+/**
+ * Central tenant-safe entitlement check. Application code across Hermes, Social,
+ * WhatsApp, CRM and the website module should call this — "does this tenant have
+ * entitlement X?" — rather than checking UI plan-tier strings scattered through the
+ * app. Derives strictly from `usage_entitlements`, which is only ever written by the
+ * payment-fulfilment RPCs (active subscription + plan), never from client input.
+ * A tenant with no row for a metric has no entitlement (fails closed).
+ */
+export async function hasEntitlement(
+  supabase: ServiceClient,
+  tenantId: string,
+  metric: EntitlementMetric,
+  units = 1
+): Promise<boolean> {
+  const { data: entitlement } = await supabase
+    .from("usage_entitlements")
+    .select("limit_amount, current_usage, is_paused")
+    .eq("tenant_id", tenantId)
+    .eq("metric", metric)
+    .maybeSingle();
+
+  if (!entitlement || entitlement.is_paused) return false;
+  return entitlement.current_usage + units <= entitlement.limit_amount;
+}
+
+/** Full entitlement snapshot for a tenant — what the billing page and admin visibility render. */
+export async function getEntitlementSummary(
+  supabase: ServiceClient,
+  tenantId: string
+): Promise<EntitlementStatus[]> {
+  const { data } = await supabase
+    .from("usage_entitlements")
+    .select("metric, limit_amount, current_usage, is_paused")
+    .eq("tenant_id", tenantId);
+
+  return (data ?? []).map((row) => ({
+    metric: row.metric as EntitlementMetric,
+    limit: row.limit_amount,
+    currentUsage: row.current_usage,
+    remaining: Math.max(0, row.limit_amount - row.current_usage),
+    isPaused: row.is_paused,
+    hasCapacity: !row.is_paused && row.current_usage < row.limit_amount,
+  }));
+}
+
 export async function recordMetricUsage(
   supabase: ServiceClient,
   tenantId: string,

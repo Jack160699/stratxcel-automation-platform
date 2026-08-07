@@ -4,9 +4,33 @@ import {
   claimRazorpayWebhookEvent,
   markWebhookEventProcessed,
   processRazorpayWebhookEvent,
+  issueInvoiceForPaymentOrder,
   DuplicateWebhookEventError,
   WebhookEventInProgressError,
 } from "@stratxcel/payments-and-wallet";
+
+/**
+ * Best-effort GST invoice/credit-note issuance, called only after the webhook's own
+ * payment/refund RPC has already committed successfully. Never allowed to change
+ * `processResult.handled` — a bookkeeping-record failure must not make Razorpay
+ * re-deliver an event that was already correctly fulfilled. Failures are logged for
+ * manual follow-up.
+ */
+async function issueBillingRecordsBestEffort(
+  supabase: ReturnType<typeof getTenantServiceContext>["supabase"],
+  processResult: Awaited<ReturnType<typeof processRazorpayWebhookEvent>>
+) {
+  try {
+    if (processResult.orderId) {
+      await issueInvoiceForPaymentOrder(supabase, processResult.orderId);
+    }
+    if (processResult.refundId) {
+      await supabase.rpc("issue_credit_note_for_refund", { p_payment_refund_id: processResult.refundId });
+    }
+  } catch (err) {
+    console.error("[Billing Records] Best-effort invoice/credit-note issuance failed", err);
+  }
+}
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -91,6 +115,9 @@ export async function POST(request: Request) {
 
     // Only mark processed after reconciliation returned handled=true
     await markWebhookEventProcessed(supabase, claim.eventId, claim.token);
+
+    // Best-effort — never affects the response below, see the function doc.
+    await issueBillingRecordsBestEffort(supabase, processResult);
 
     return Response.json({
       success: true,

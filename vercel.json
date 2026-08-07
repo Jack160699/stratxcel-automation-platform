@@ -3,6 +3,10 @@
     {
       "path": "/api/social/worker",
       "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/internal/subscriptions/renew",
+      "schedule": "0 3 * * *"
     }
   ]
 }
