@@ -6,12 +6,19 @@ import { Card, CardHeading } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Field, Input, Textarea } from "@/components/ui/Input";
 import { ErrorState, EmptyState } from "@/components/ui/Feedback";
+import { trackFunnel } from "@/lib/analytics/events";
 
 interface BrandBrainContent {
   business_name?: string;
   industry?: string;
+  website_url?: string;
+  location?: string;
+  positioning?: string;
   tone_of_voice?: string;
   target_audience?: string;
+  differentiators?: string[];
+  goals?: string[];
+  channels?: string[];
   pillars?: string[];
   rules?: string[];
   products?: { name: string; description: string }[];
@@ -78,6 +85,7 @@ export default function BrandPage() {
       }
       setVersion(body.version.version);
       setSaved(true);
+      trackFunnel("brand_brain_completed", { surface: "app_brand" });
     } finally {
       setSaving(false);
     }
@@ -111,7 +119,28 @@ export default function BrandPage() {
               <Field label="Industry">
                 <Input value={content.industry ?? ""} onChange={(e) => field("industry", e.target.value)} />
               </Field>
+              <Field label="Website">
+                <Input
+                  value={content.website_url ?? ""}
+                  placeholder="yourbusiness.in"
+                  onChange={(e) => field("website_url", e.target.value)}
+                />
+              </Field>
+              <Field label="Location / market">
+                <Input
+                  value={content.location ?? ""}
+                  placeholder="Raipur, Chhattisgarh"
+                  onChange={(e) => field("location", e.target.value)}
+                />
+              </Field>
             </div>
+          </Card>
+
+          <Card>
+            <CardHeading>Positioning</CardHeading>
+            <Field label="In one or two sentences, what do you do and for whom?">
+              <Textarea value={content.positioning ?? ""} onChange={(e) => field("positioning", e.target.value)} />
+            </Field>
           </Card>
 
           <Card>
@@ -124,6 +153,36 @@ export default function BrandPage() {
                 <Textarea value={content.target_audience ?? ""} onChange={(e) => field("target_audience", e.target.value)} />
               </Field>
             </div>
+          </Card>
+
+          <Card>
+            <CardHeading>Differentiators</CardHeading>
+            <Field label="One per line — why customers choose you over the alternative">
+              <Textarea
+                value={(content.differentiators ?? []).join("\n")}
+                onChange={(e) => field("differentiators", e.target.value.split("\n").filter(Boolean))}
+              />
+            </Field>
+          </Card>
+
+          <Card>
+            <CardHeading>Goals</CardHeading>
+            <Field label="One per line — what you want the next 90 days to achieve">
+              <Textarea
+                value={(content.goals ?? []).join("\n")}
+                onChange={(e) => field("goals", e.target.value.split("\n").filter(Boolean))}
+              />
+            </Field>
+          </Card>
+
+          <Card>
+            <CardHeading>Channels</CardHeading>
+            <Field label="One per line — where you reach customers today (Instagram, WhatsApp, Google, referrals…)">
+              <Textarea
+                value={(content.channels ?? []).join("\n")}
+                onChange={(e) => field("channels", e.target.value.split("\n").filter(Boolean))}
+              />
+            </Field>
           </Card>
 
           <Card>

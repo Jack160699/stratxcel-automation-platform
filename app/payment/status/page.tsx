@@ -2,6 +2,8 @@
 
 import { useEffect, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
+import Link from "next/link";
+import { trackFunnel } from "@/lib/analytics/events";
 
 interface PublicPaymentStatus {
   referenceId: string;
@@ -11,6 +13,7 @@ interface PublicPaymentStatus {
   description: string | null;
   shortUrl: string | null;
   mode: "test" | "live";
+  paymentPurpose?: string;
   signatureVerified: boolean;
   verificationPending: boolean;
   createdAt: string;
@@ -42,6 +45,9 @@ function StatusContent() {
           return;
         }
         setPayment(body);
+        if (body.status === "paid" && body.paymentPurpose === "audit_fee") {
+          trackFunnel("audit_payment_confirmed", { surface: "payment_status" });
+        }
       } catch {
         setError("Network error fetching payment status");
       } finally {
@@ -152,6 +158,15 @@ function StatusContent() {
             <p className="mt-3 font-mono text-xs text-slate-500">
               Razorpay Payment ID: {rzpPaymentId}
             </p>
+          )}
+
+          {isPaid && payment.paymentPurpose === "audit_fee" && (
+            <Link
+              href="/app/audit"
+              className="mt-6 inline-flex min-h-11 items-center justify-center rounded-lg bg-emerald-500 px-6 font-semibold text-slate-950 hover:bg-emerald-400"
+            >
+              Continue to your Audit →
+            </Link>
           )}
         </div>
       </div>

@@ -1,249 +1,263 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { Card, CardHeading } from "@/components/ui/Card";
+import { Button } from "@/components/ui/Button";
+import { ErrorState } from "@/components/ui/Feedback";
+import { IntakeWizard, type IntakeOrder } from "./IntakeWizard";
+import { trackFunnel } from "@/lib/analytics/events";
 
-export default function AuthenticatedAuditPage() {
-  const router = useRouter();
+interface AuditOrder extends IntakeOrder {
+  id: string;
+  status: "pending_payment" | "paid" | "in_review" | "completed" | "refunded" | "cancelled";
+  report_data: Record<string, unknown> | null;
+}
 
-  const [businessName, setBusinessName] = useState("");
-  const [industry, setIndustry] = useState("");
-  const [websiteUrl, setWebsiteUrl] = useState("");
-  const [goals, setGoals] = useState("Automate WhatsApp lead follow-up & social content");
-  const [contactPhone, setContactPhone] = useState("");
+const PROCESSING_STAGES = [
+  "Information received",
+  "Business research",
+  "Digital presence analysis",
+  "Competitive analysis",
+  "Growth opportunities",
+  "Recommendations",
+  "Report preparation",
+] as const;
 
-  const [resolvingSite, setResolvingSite] = useState(false);
-  const [siteResolvedMessage, setSiteResolvedMessage] = useState<string | null>(null);
-
-  const [brandBrainReady, setBrandBrainReady] = useState(true);
-  const [loading, setLoading] = useState(false);
+/**
+ * The whole payment-first Audit hub — one page, state driven entirely by the
+ * customer's real audit_orders row (fetched from GET /api/platform/audit/checkout,
+ * which already resolves it from the caller's own tenant). No step here is
+ * ever assumed; every branch below reflects exactly what's persisted.
+ */
+export default function AuditHubPage() {
+  const [order, setOrder] = useState<AuditOrder | null | undefined>(undefined);
+  const [paymentUrl, setPaymentUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [starting, setStarting] = useState(false);
 
-  useEffect(() => {
-    // Fetch user's Brand Brain profile to pre-fill information
-    async function loadBrandBrain() {
-      try {
-        const res = await fetch("/api/platform/brand");
-        if (res.ok) {
-          const data = await res.json();
-          if (data.brandBrain) {
-            setBusinessName(data.brandBrain.business_name ?? "");
-            setIndustry(data.brandBrain.industry ?? "");
-            if (data.brandBrain.website_url) setWebsiteUrl(data.brandBrain.website_url);
-          }
-        }
-      } catch {
-        // Silently proceed
-      }
-    }
-    loadBrandBrain();
-  }, []);
-
-  const handleResolveWebsite = async () => {
-    if (!websiteUrl.trim()) return;
-    setResolvingSite(true);
-    setSiteResolvedMessage(null);
-
-    try {
-      const res = await fetch("/api/platform/site-discovery/resolve", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: websiteUrl.trim() }),
-      });
-      const data = await res.json();
-      if (res.ok && data.normalizedUrl) {
-        setWebsiteUrl(data.normalizedUrl);
-        setSiteResolvedMessage(`Verified: ${data.title || data.normalizedUrl}`);
-      }
-    } catch {
-      // Keep user input
-    } finally {
-      setResolvingSite(false);
-    }
-  };
-
-  const handleStartAudit = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    if (!businessName.trim()) {
-      setError("Please enter your business or brand name.");
-      return;
-    }
-
-    setLoading(true);
+  async function load() {
     setError(null);
-
     try {
-      const res = await fetch("/api/platform/audit", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          businessName: businessName.trim(),
-          industry: industry.trim() || undefined,
-          websiteUrl: websiteUrl.trim() || undefined,
-          goals: goals.trim() || undefined,
-          contactPhone: contactPhone.trim() || undefined,
-          auditAnswers: {
-            businessProfile: { businessName, industry, websiteUrl },
-            goals: { primaryGoal: goals },
-          },
-        }),
-      });
-
-      const data = await res.json();
+      const res = await fetch("/api/platform/audit/checkout");
+      const body = await res.json();
       if (!res.ok) {
-        setError(data.error ?? "Failed to trigger AI audit. Please try again.");
+        setError(body.error ?? "Could not load your audit.");
         return;
       }
-
-      if (data.auditId) {
-        router.push(`/app/audit/${data.auditId}`);
-      }
+      setOrder(body.order ?? null);
+      setPaymentUrl(body.paymentUrl ?? null);
     } catch {
-      setError("Network error starting audit. Please try again.");
-    } finally {
-      setLoading(false);
+      setError("Network error loading your audit.");
     }
-  };
+  }
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  // Fire funnel events exactly once per real state transition, not on every
+  // render — a ref-backed guard, since these are side effects of state the
+  // server told us about, not of a user action we can hang the event on.
+  const trackedRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!order) return;
+    const dd = order.deep_dive_answers ?? {};
+    const goalsAns = order.goals_answers ?? {};
+    const complete =
+      Boolean(order.business_name && order.business_name !== "Pending — completed in intake" && order.industry && order.website_url) &&
+      Boolean(dd.idealCustomers && dd.majorProducts && dd.competitors && dd.leadSources && dd.differentiation) &&
+      Boolean(goalsAns.successDefinition && goalsAns.biggestObstacle && goalsAns.topPriorities);
+
+    const tracked = trackedRef.current;
+    if (order.status === "paid" && !complete && !tracked.has("intake_started")) {
+      tracked.add("intake_started");
+      trackFunnel("audit_intake_started", { surface: "app_audit" });
+    }
+    if (order.status === "completed" && Object.keys(order.report_data ?? {}).length > 0 && !tracked.has("report_ready")) {
+      tracked.add("report_ready");
+      trackFunnel("audit_report_ready", { surface: "app_audit" });
+    }
+  }, [order]);
+
+  async function startAudit() {
+    setStarting(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/platform/audit/intake", { method: "POST" });
+      const body = await res.json();
+      if (!res.ok) {
+        setError(body.error ?? "Could not start your audit.");
+        return;
+      }
+      trackFunnel("audit_started", { surface: "app_audit" });
+      await load();
+    } finally {
+      setStarting(false);
+    }
+  }
+
+  if (order === undefined) {
+    return (
+      <div className="mx-auto max-w-3xl px-4 py-16 text-center">
+        <div className="mx-auto h-10 w-10 animate-spin rounded-full border-4 border-sx-accent border-t-transparent" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="mx-auto max-w-3xl px-4 py-8">
+        <ErrorState message={error} onRetry={load} />
+      </div>
+    );
+  }
+
+  // No audit purchased yet — send back to the paid entry point rather than
+  // duplicating the payment explainer here.
+  if (!order) {
+    return (
+      <div className="mx-auto max-w-2xl px-4 py-16 text-center">
+        <h1 className="font-sx-sans text-xl font-semibold text-sx-text">You haven&rsquo;t started an Audit yet</h1>
+        <p className="mt-2 text-sm text-sx-text-muted">Start with the ₹999 AI Business Growth Audit.</p>
+        <Link
+          href="/audit"
+          className="mt-6 inline-flex min-h-11 items-center rounded-sx-sm bg-sx-accent px-6 font-sx-sans text-xs font-bold text-sx-accent-on hover:bg-[color:var(--sx-accent-hover)]"
+        >
+          Start My Audit →
+        </Link>
+      </div>
+    );
+  }
+
+  if (order.status === "pending_payment") {
+    return (
+      <div className="mx-auto max-w-2xl px-4 py-16 text-center">
+        <h1 className="font-sx-sans text-xl font-semibold text-sx-text">Your payment isn&rsquo;t confirmed yet</h1>
+        <p className="mt-2 text-sm text-sx-text-muted">Finish paying to unlock your Audit.</p>
+        {paymentUrl ? (
+          <a
+            href={paymentUrl}
+            className="mt-6 inline-flex min-h-11 items-center rounded-sx-sm bg-sx-accent px-6 font-sx-sans text-xs font-bold text-sx-accent-on hover:bg-[color:var(--sx-accent-hover)]"
+          >
+            Resume payment →
+          </a>
+        ) : (
+          <Link href="/audit/checkout" className="mt-6 inline-flex min-h-11 items-center rounded-sx-sm bg-sx-accent px-6 font-sx-sans text-xs font-bold text-sx-accent-on hover:bg-[color:var(--sx-accent-hover)]">
+            Resume payment →
+          </Link>
+        )}
+      </div>
+    );
+  }
+
+  if (order.status === "refunded" || order.status === "cancelled") {
+    return (
+      <div className="mx-auto max-w-2xl px-4 py-16 text-center">
+        <h1 className="font-sx-sans text-xl font-semibold text-sx-text">Your audit order was {order.status}</h1>
+        <Link href="/contact?intent=consultation" className="mt-6 inline-flex min-h-11 items-center rounded-sx-sm border border-sx-border-strong px-6 font-sx-sans text-xs font-semibold text-sx-text hover:bg-sx-surface-2">
+          Talk to the team →
+        </Link>
+      </div>
+    );
+  }
+
+  const dd = order.deep_dive_answers ?? {};
+  const goalsAns = order.goals_answers ?? {};
+  const intakeComplete =
+    Boolean(order.business_name && order.business_name !== "Pending — completed in intake" && order.industry && order.website_url) &&
+    Boolean(dd.idealCustomers && dd.majorProducts && dd.competitors && dd.leadSources && dd.differentiation) &&
+    Boolean(goalsAns.successDefinition && goalsAns.biggestObstacle && goalsAns.topPriorities);
+
+  if (order.status === "paid" && !intakeComplete) {
+    return (
+      <div className="mx-auto max-w-3xl px-4 py-8 sm:px-6 lg:px-8">
+        <div className="mb-6 text-center">
+          <span className="font-sx-mono text-xs font-bold uppercase tracking-wider text-emerald-600">Purchase ✓</span>
+          <h1 className="mt-2 font-sx-sans text-2xl font-bold text-sx-text">Your Stratxcel Audit has started.</h1>
+          <p className="mt-2 text-sm text-sx-text-muted max-w-lg mx-auto">
+            To make the report specific to your business, complete these three short sections.
+          </p>
+        </div>
+        <IntakeWizard order={order} onIntakeComplete={load} />
+      </div>
+    );
+  }
+
+  if (order.status === "paid" && intakeComplete) {
+    return (
+      <div className="mx-auto max-w-2xl px-4 py-16 text-center">
+        <h1 className="font-sx-sans text-xl font-semibold text-sx-text">Everything&rsquo;s in.</h1>
+        <p className="mt-2 text-sm text-sx-text-muted">You can start your audit whenever you&rsquo;re ready.</p>
+        {error && <div className="mt-4"><ErrorState message={error} /></div>}
+        <Button variant="primary" size="touch" className="mt-6" onClick={startAudit} disabled={starting}>
+          {starting ? "Starting…" : "Start My Audit →"}
+        </Button>
+      </div>
+    );
+  }
+
+  if (order.status === "in_review") {
+    return (
+      <div className="mx-auto max-w-2xl px-4 py-16">
+        <div className="text-center">
+          <h1 className="font-sx-sans text-xl font-semibold text-sx-text">Your audit is being reviewed</h1>
+          <p className="mt-2 text-sm text-sx-text-muted">
+            The Stratxcel team is working through your answers. This isn&rsquo;t an automated countdown — we&rsquo;ll let you know
+            when it&rsquo;s ready.
+          </p>
+        </div>
+        <Card className="mt-8">
+          <ol className="flex flex-col gap-2 text-sm text-sx-text-muted">
+            {PROCESSING_STAGES.map((stage, i) => (
+              <li key={stage} className="flex items-center gap-2">
+                <span className={`h-1.5 w-1.5 rounded-full ${i === 0 ? "bg-emerald-500" : "bg-sx-border-strong"}`} />
+                {stage}
+              </li>
+            ))}
+          </ol>
+        </Card>
+        <p className="mt-4 text-center text-xs text-sx-text-subtle">
+          Only the stage above is confirmed — the rest happen with the team, not an automated engine yet.
+        </p>
+      </div>
+    );
+  }
+
+  // completed
+  const report = order.report_data ?? {};
+  const hasReport = Object.keys(report).length > 0;
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
-      {/* Header */}
-      <div className="border-b border-slate-200 pb-6">
-        <span className="font-sx-mono text-xs font-bold uppercase tracking-wider text-sx-accent">
-          Stratxcel AI Business Audit
-        </span>
-        <h1 className="mt-2 font-sx-sans text-2xl sm:text-3xl font-extrabold text-slate-900">
-          Start Your Personalised AI Growth Audit
-        </h1>
-        <p className="mt-1 text-sm text-slate-600">
-          Our AI engine reviews your Brand Brain, website, competitor positioning, and lead channels to produce an evidence-based 30/60/90-day growth plan.
-        </p>
+      <div className="border-b border-sx-border pb-6">
+        <span className="font-sx-mono text-xs font-bold uppercase tracking-wider text-sx-accent">Audit Report</span>
+        <h1 className="mt-1 font-sx-sans text-2xl font-bold text-sx-text">{order.business_name}</h1>
       </div>
 
-      {/* Brand Brain Prerequisite Banner */}
-      {!brandBrainReady && (
-        <div className="mt-6 rounded-sx-md border border-amber-300 bg-amber-50 p-4 text-amber-900 text-xs flex items-center justify-between">
-          <div>
-            <strong>💡 Brand Brain Requirement:</strong> Please complete your Brand Brain core details to ensure accurate audit recommendations.
-          </div>
-          <Link
-            href="/app/brand"
-            className="rounded-sx-sm bg-amber-900 px-3 py-1.5 font-bold text-white text-[11px] hover:bg-amber-800 shrink-0 ml-4"
-          >
-            Setup Brand Brain →
-          </Link>
-        </div>
+      {hasReport ? (
+        <Card className="mt-6">
+          <pre className="whitespace-pre-wrap text-xs text-sx-text-muted">{JSON.stringify(report, null, 2)}</pre>
+        </Card>
+      ) : (
+        <Card className="mt-6 text-center">
+          <CardHeading>Your audit is complete</CardHeading>
+          <p className="mt-2 text-sm text-sx-text-muted">
+            The Stratxcel team has finished reviewing your answers. Your written report is being finalised and will be shared
+            with you directly.
+          </p>
+        </Card>
       )}
 
-      {/* Audit Trigger Form */}
-      <form onSubmit={handleStartAudit} className="mt-8 rounded-sx-lg border border-slate-200 bg-white p-6 sm:p-8 shadow-sm space-y-6">
-        {error && (
-          <div className="rounded-sx-sm border border-red-300 bg-red-50 p-3.5 text-xs font-semibold text-red-800">
-            {error}
-          </div>
-        )}
-
-        <div>
-          <label className="block font-sx-sans text-xs font-bold uppercase tracking-wider text-slate-700 mb-1">
-            Business or Brand Name *
-          </label>
-          <input
-            type="text"
-            required
-            placeholder="e.g. Apex Fitness Studio"
-            value={businessName}
-            onChange={(e) => setBusinessName(e.target.value)}
-            className="w-full rounded-sx-sm border border-slate-300 bg-slate-50 px-4 py-2.5 text-sm text-slate-900 focus:border-sx-accent focus:bg-white focus:outline-none"
-          />
-        </div>
-
-        <div className="grid gap-6 sm:grid-cols-2">
-          <div>
-            <label className="block font-sx-sans text-xs font-bold uppercase tracking-wider text-slate-700 mb-1">
-              Industry / Sector
-            </label>
-            <input
-              type="text"
-              placeholder="e.g. Healthcare, Fitness, E-commerce"
-              value={industry}
-              onChange={(e) => setIndustry(e.target.value)}
-              className="w-full rounded-sx-sm border border-slate-300 bg-slate-50 px-4 py-2.5 text-sm text-slate-900 focus:border-sx-accent focus:bg-white focus:outline-none"
-            />
-          </div>
-
-          <div>
-            <label className="block font-sx-sans text-xs font-bold uppercase tracking-wider text-slate-700 mb-1">
-              WhatsApp / Phone Number
-            </label>
-            <input
-              type="tel"
-              placeholder="+91 98765 43210"
-              value={contactPhone}
-              onChange={(e) => setContactPhone(e.target.value)}
-              className="w-full rounded-sx-sm border border-slate-300 bg-slate-50 px-4 py-2.5 text-sm text-slate-900 focus:border-sx-accent focus:bg-white focus:outline-none"
-            />
-          </div>
-        </div>
-
-        {/* Website Field with Site Discovery Resolver */}
-        <div>
-          <label className="block font-sx-sans text-xs font-bold uppercase tracking-wider text-slate-700 mb-1">
-            Website URL (Intelligent Resolver)
-          </label>
-          <div className="flex gap-2">
-            <input
-              type="text"
-              placeholder="e.g. jandarpan.news or https://example.com"
-              value={websiteUrl}
-              onChange={(e) => setWebsiteUrl(e.target.value)}
-              onBlur={handleResolveWebsite}
-              className="flex-1 rounded-sx-sm border border-slate-300 bg-slate-50 px-4 py-2.5 text-sm text-slate-900 focus:border-sx-accent focus:bg-white focus:outline-none"
-            />
-            <button
-              type="button"
-              onClick={handleResolveWebsite}
-              disabled={resolvingSite}
-              className="rounded-sx-sm border border-slate-300 bg-slate-100 px-4 py-2.5 font-sx-sans text-xs font-semibold text-slate-700 hover:bg-slate-200 disabled:opacity-50"
-            >
-              {resolvingSite ? "Resolving..." : "Verify Domain"}
-            </button>
-          </div>
-          {siteResolvedMessage && (
-            <p className="mt-1.5 text-xs text-emerald-700 font-medium">✓ {siteResolvedMessage}</p>
-          )}
-        </div>
-
-        <div>
-          <label className="block font-sx-sans text-xs font-bold uppercase tracking-wider text-slate-700 mb-1">
-            Primary Growth Objective
-          </label>
-          <select
-            value={goals}
-            onChange={(e) => setGoals(e.target.value)}
-            className="w-full rounded-sx-sm border border-slate-300 bg-slate-50 px-4 py-2.5 text-sm text-slate-900 focus:border-sx-accent focus:bg-white focus:outline-none"
-          >
-            <option value="Automate WhatsApp lead follow-up & social content">Automate WhatsApp lead follow-up & social content</option>
-            <option value="Launch a new high-converting 5-page website">Launch a new high-converting 5-page website</option>
-            <option value="Scale Meta ad campaign workflows & lead pipeline">Scale Meta ad campaign workflows & lead pipeline</option>
-            <option value="Full AI operating system (Content + Website + CRM + Ads)">Full AI operating system (Content + Website + CRM + Ads)</option>
-          </select>
-        </div>
-
-        <div className="pt-4 border-t border-slate-200 flex items-center justify-between">
-          <p className="text-xs text-slate-500">
-            ⚡ Asynchronous Research: Audits run in background & generate structured report.
-          </p>
-          <button
-            type="submit"
-            disabled={loading}
-            className="rounded-sx-sm bg-sx-accent px-8 py-3 font-sx-sans text-xs font-bold text-white shadow-md hover:bg-blue-700 disabled:opacity-50"
-          >
-            {loading ? "Queuing Audit Job..." : "Start AI Business Audit →"}
-          </button>
-        </div>
-      </form>
+      <div className="mt-8 flex justify-center">
+        <Link
+          href="/contact?intent=consultation"
+          onClick={() => trackFunnel("consultation_requested", { surface: "app_audit_report" })}
+          className="rounded-sx-sm bg-sx-accent px-8 py-3 font-sx-sans text-xs font-bold text-sx-accent-on shadow-md hover:bg-[color:var(--sx-accent-hover)]"
+        >
+          Book your complimentary Audit Review →
+        </Link>
+      </div>
     </div>
   );
 }

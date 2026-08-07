@@ -32,10 +32,20 @@ export interface PlanTier {
   pitch: string;
 }
 
-/** Mirrors app/pricing/page.tsx's tier names/pitches — same public terminology, not a second taxonomy. */
+/**
+ * Mirrors app/pricing/page.tsx's customer-facing plans — one public
+ * taxonomy, not two. The earlier Signal/Mesh/Fleet names were internal-era
+ * terminology that had drifted out of the pricing page; they appeared
+ * nowhere a customer could reconcile them against a price.
+ *
+ * `key` is only ever written to an audit_events metadata blob
+ * (onboarding.plan_requested), never to a schema column, so changing these
+ * strings cannot break existing data.
+ */
 export const PLAN_TIERS: PlanTier[] = [
-  { key: "signal", name: "Signal", pitch: "One production system, end-to-end." },
-  { key: "mesh", name: "Mesh", pitch: "Multiple pipelines sharing context." },
-  { key: "fleet", name: "Fleet", pitch: "Program-wide operating model." },
-  { key: "unsure", name: "Not sure yet", pitch: "Talk to the team before choosing a tier." },
+  { key: "audit", name: "Audit", pitch: "Start with a ₹999 AI Business Growth Audit." },
+  { key: "launch", name: "Launch", pitch: "Growth basics for establishing businesses." },
+  { key: "growth", name: "Growth", pitch: "Complete marketing, website, WhatsApp & CRM system." },
+  { key: "custom", name: "Custom Growth", pitch: "Tailored scope with a dedicated account owner." },
+  { key: "unsure", name: "Not sure yet", pitch: "Talk to the team before choosing a plan." },
 ];

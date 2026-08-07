@@ -51,6 +51,7 @@ export async function GET(request: Request) {
       description: link.description,
       shortUrl: link.short_url,
       mode: link.mode,
+      paymentPurpose: link.payment_purpose,
       signatureVerified,
       verificationPending: link.status === "created" && Boolean(rzpPaymentId),
       createdAt: link.created_at,

@@ -11,6 +11,7 @@
     "test:razorpay-mode": "node --experimental-strip-types packages/payments-and-wallet/src/__tests__/razorpay-test-mode-isolation.test.ts",
     "test:google-auth": "node --experimental-strip-types lib/rbac/__tests__/google-auth.test.ts",
     "test:reporting-analytics": "node --experimental-strip-types lib/rbac/__tests__/reporting-analytics.test.ts",
+    "test:audit-payment-safety": "node --experimental-strip-types app/api/platform/audit/__tests__/audit-payment-safety.test.ts",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",

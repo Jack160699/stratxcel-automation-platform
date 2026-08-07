@@ -21,10 +21,12 @@ declare global {
 }
 
 interface GoogleOneTapProps {
+  /** Sanitized destination to resume after sign-in, e.g. the Audit checkout. */
+  next?: string;
   onError?: (error: string) => void;
 }
 
-export function GoogleOneTap({ onError }: GoogleOneTapProps) {
+export function GoogleOneTap({ next, onError }: GoogleOneTapProps) {
   const router = useRouter();
   const initializedRef = useRef(false);
   const [loaded, setLoaded] = useState(() => typeof window !== "undefined" && !!window.google);
@@ -88,7 +90,9 @@ export function GoogleOneTap({ onError }: GoogleOneTapProps) {
               return;
             }
 
-            const destination = await resolvePostLoginRedirect();
+            // Honour the caller's ?next= (e.g. the Audit checkout the customer
+            // was on before being sent to sign in) over the default landing.
+            const destination = next ?? (await resolvePostLoginRedirect());
             router.push(destination);
             router.refresh();
           },
@@ -108,7 +112,7 @@ export function GoogleOneTap({ onError }: GoogleOneTapProps) {
         onError?.(msg);
       }
     })();
-  }, [loaded, router, onError]);
+  }, [loaded, router, onError, next]);
 
   return null;
 }

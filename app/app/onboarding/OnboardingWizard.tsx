@@ -14,6 +14,7 @@ import { StepBrand } from "./steps/StepBrand";
 import { StepPlan } from "./steps/StepPlan";
 import { StepReview } from "./steps/StepReview";
 import { EMPTY_DRAFT, ONBOARDING_DRAFT_KEY, ONBOARDING_STEP_LABELS, type OnboardingDraft } from "./types";
+import { trackFunnel } from "@/lib/analytics/events";
 
 const TOTAL_STEPS = ONBOARDING_STEP_LABELS.length;
 
@@ -62,6 +63,7 @@ export function OnboardingWizard() {
         emailVerified: Boolean(user.email_confirmed_at),
       });
       setAccountLoading(false);
+      trackFunnel("onboarding_started", { surface: "app" });
     }
     loadAccount();
     return () => {
@@ -163,6 +165,10 @@ export function OnboardingWizard() {
       }
 
       const tenant = body.tenant as { id: string };
+      trackFunnel("business_profile_completed", {
+        surface: "onboarding",
+        plan: draft.plan.tier ?? undefined,
+      });
       await setActiveTenantAction(tenant.id);
       if (typeof window !== "undefined") window.sessionStorage.removeItem(ONBOARDING_DRAFT_KEY);
       router.push("/app");

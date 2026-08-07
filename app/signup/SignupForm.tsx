@@ -6,6 +6,8 @@ import { useRouter } from "next/navigation";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { describeAuthError } from "@/app/admin/auth/authErrors";
 import { resolvePostLoginRedirect } from "@/app/actions/auth";
+import { useNextParam } from "@/lib/auth/use-next-param";
+import { trackFunnel } from "@/lib/analytics/events";
 import { EyeIcon, EyeOffIcon } from "@/app/components/auth/PasswordVisibilityIcons";
 
 import { GoogleOAuthButton } from "@/app/components/auth/GoogleOAuthButton";
@@ -24,6 +26,7 @@ type Stage = "form" | "verify";
  */
 export function SignupForm() {
   const router = useRouter();
+  const next = useNextParam();
   const [stage, setStage] = useState<Stage>("form");
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
@@ -79,7 +82,8 @@ export function SignupForm() {
     }
 
     if (data.session) {
-      const destination = await resolvePostLoginRedirect();
+      trackFunnel("signup_completed", { method: "password" });
+      const destination = next ?? (await resolvePostLoginRedirect());
       router.push(destination);
       router.refresh();
       return;
@@ -99,8 +103,8 @@ export function SignupForm() {
 
   return (
     <div className="space-y-4">
-      <GoogleOneTap onError={setError} />
-      <GoogleOAuthButton onError={setError} />
+      <GoogleOneTap next={next ?? undefined} onError={setError} />
+      <GoogleOAuthButton next={next ?? undefined} onError={setError} />
 
       <div className="relative flex items-center justify-center py-1">
         <div className="w-full border-t border-sx-border" />

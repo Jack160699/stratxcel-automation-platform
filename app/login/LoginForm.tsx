@@ -6,6 +6,8 @@ import { useRouter } from "next/navigation";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { describeAuthError } from "@/app/admin/auth/authErrors";
 import { resolvePostLoginRedirect } from "@/app/actions/auth";
+import { useNextParam } from "@/lib/auth/use-next-param";
+import { trackFunnel } from "@/lib/analytics/events";
 import { EyeIcon, EyeOffIcon } from "@/app/components/auth/PasswordVisibilityIcons";
 
 import { GoogleOAuthButton } from "@/app/components/auth/GoogleOAuthButton";
@@ -13,6 +15,7 @@ import { GoogleOneTap } from "@/app/components/auth/GoogleOneTap";
 
 export function LoginForm() {
   const router = useRouter();
+  const next = useNextParam();
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -42,15 +45,16 @@ export function LoginForm() {
       return;
     }
 
-    const destination = await resolvePostLoginRedirect();
+    // Honour the Audit CTA's ?next= so the customer resumes where they left off.
+    const destination = next ?? (await resolvePostLoginRedirect());
     router.push(destination);
     router.refresh();
   }
 
   return (
     <div className="space-y-4">
-      <GoogleOneTap onError={setError} />
-      <GoogleOAuthButton onError={setError} />
+      <GoogleOneTap next={next ?? undefined} onError={setError} />
+      <GoogleOAuthButton next={next ?? undefined} onError={setError} />
 
       <div className="relative flex items-center justify-center py-1">
         <div className="w-full border-t border-sx-border" />

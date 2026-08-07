@@ -11,7 +11,31 @@ export const metadata: Metadata = {
     "Transparent monthly pricing and AI Business Growth Audit for Stratxcel. Growth systems, WhatsApp CRM, Meta campaign workflows, and controlled websites.",
 };
 
+/**
+ * The four customer-facing plans. app/app/onboarding/types.ts mirrors these
+ * keys and names so the wizard's plan step and this page can never present
+ * two different vocabularies.
+ */
 const tiers = [
+  {
+    id: "audit",
+    name: "Audit",
+    badge: "Start Here",
+    price: "₹999",
+    period: "one-time (GST included)",
+    pitch: "An evidence-based read on where your growth is actually leaking.",
+    scope: [
+      "AI review of your brand positioning and Brand Brain",
+      "Website health and discoverability check",
+      "Competitor and category landscape",
+      "Lead-channel and response-speed review",
+      "30/60/90-day growth roadmap",
+    ],
+    note: "A one-time audit. No subscription starts from this.",
+    popular: false,
+    cta: "Start Your Audit",
+    href: "/audit",
+  },
   {
     id: "launch",
     name: "Launch",
@@ -116,10 +140,14 @@ export default function PricingPage() {
               Initial Step
             </span>
             <h2 className="mt-3 font-sx-sans text-2xl font-bold tracking-tight text-sx-text sm:text-3xl">
-              Start with an AI Business Growth Audit
+              Start with a ₹999 AI Business Growth Audit
             </h2>
             <p className="mt-2 text-sm text-sx-text-muted max-w-xl mx-auto">
               Receive a complete AI audit of your brand positioning, website health, competitor landscape, and lead channels.
+            </p>
+            <p className="mt-3 text-xs text-sx-text-subtle max-w-xl mx-auto">
+              Online checkout is being activated. Submit your audit and the Stratxcel team will confirm payment and next
+              steps with you directly.
             </p>
             <div className="mt-6 flex justify-center">
               <Link
@@ -132,7 +160,7 @@ export default function PricingPage() {
           </div>
 
           {/* Pricing Tiers Grid */}
-          <div className="mt-16 grid gap-8 md:grid-cols-3 max-w-6xl mx-auto">
+          <div className="mt-16 grid gap-8 sm:grid-cols-2 lg:grid-cols-4 max-w-7xl mx-auto">
             {tiers.map((t) => (
               <div key={t.id} className="relative flex">
                 <Card

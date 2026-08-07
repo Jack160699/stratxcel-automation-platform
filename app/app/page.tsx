@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { requireClientContext } from "@/lib/tenants/client-context";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { resolveCurrentTenant } from "@/lib/tenants/current-tenant";
 import { requirePermission, PermissionDeniedError } from "@/lib/rbac/policy";
 import { listMissionsForTenant } from "@stratxcel/missions";
@@ -8,6 +9,8 @@ import { Card, CardHeading, CardRow } from "@/components/ui/Card";
 import { Metric } from "@/components/ui/Metric";
 import { StatusChip, type ChipState } from "@/components/ui/StatusChip";
 import { OnboardingPanel } from "./OnboardingPanel";
+import { JourneyPanel } from "./JourneyPanel";
+import { deriveJourney, nextAction } from "@/lib/journey/progress";
 
 const MISSION_STATE_CHIP: Record<string, { label: string; state: ChipState }> = {
   DRAFT: { label: "Draft", state: "neutral" },
@@ -27,6 +30,57 @@ const MISSION_STATE_CHIP: Record<string, { label: string; state: ChipState }> = 
   BLOCKED: { label: "Blocked", state: "danger" },
 };
 
+type SessionClient = Awaited<ReturnType<typeof createSupabaseServerClient>>;
+
+/**
+ * Gathers the persisted state the journey is derived from. Every read runs on
+ * the authenticated session client, so RLS scopes it to this customer's own
+ * tenant — the journey can never describe someone else's progress. A read
+ * that RLS or a missing table refuses degrades that stage to "not done"
+ * rather than inventing completion.
+ */
+async function loadJourneyInput(supabase: SessionClient, tenantId: string) {
+  const [user, order, consultation] = await Promise.all([
+    (async () => {
+      try {
+        const { data } = await supabase.auth.getUser();
+        return data.user ? { emailVerified: Boolean(data.user.email_confirmed_at) } : null;
+      } catch {
+        return null;
+      }
+    })(),
+    (async () => {
+      try {
+        const { data } = await supabase
+          .from("audit_orders")
+          .select("status, business_name, industry, website_url, deep_dive_answers, goals_answers, report_data")
+          .eq("tenant_id", tenantId)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        return data;
+      } catch {
+        return null;
+      }
+    })(),
+    (async () => {
+      try {
+        const { data } = await supabase
+          .from("audit_events")
+          .select("id")
+          .eq("tenant_id", tenantId)
+          .eq("action", "journey.consultation_requested")
+          .limit(1);
+        return (data?.length ?? 0) > 0;
+      } catch {
+        return false;
+      }
+    })(),
+  ]);
+
+  return { account: user, order, consultationRequested: consultation };
+}
+
 /**
  * /app's Command Center — the client-scoped counterpart of
  * app/admin/(shell)/page.tsx's Agency Overview. Same reused data functions
@@ -44,7 +98,7 @@ export default async function ClientCommandCenterPage() {
   const { active } = await resolveCurrentTenant(ctx.supabase, ctx.userId);
   if (!active) return <OnboardingPanel />;
 
-  const [missions, approvals] = await Promise.all([
+  const [missions, approvals, journeyInput] = await Promise.all([
     listMissionsForTenant(ctx.supabase, active.tenantId, 5),
     (async () => {
       try {
@@ -55,7 +109,11 @@ export default async function ClientCommandCenterPage() {
       }
       return listPendingApprovals(ctx.supabase, active.tenantId);
     })(),
+    loadJourneyInput(ctx.supabase, active.tenantId),
   ]);
+
+  const stages = deriveJourney(journeyInput);
+  const next = nextAction(stages);
 
   return (
     <div className="flex flex-col gap-6">
@@ -65,6 +123,8 @@ export default async function ClientCommandCenterPage() {
           {active.name} <span className="text-sx-text-subtle">·</span> {active.role}
         </p>
       </header>
+
+      <JourneyPanel stages={stages} next={next} tenantId={active.tenantId} />
 
       <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Metric label="Missions" value={missions.length} deltaLabel="running now" />
