@@ -29,22 +29,28 @@ export default function LoginPage() {
               Access your active missions, content approval queue, WhatsApp lead conversations, and real-time CRM performance.
             </p>
 
-            {/* Live Interface Preview Widget */}
+            {/* Security/product messaging — no per-account numbers here; those
+                are real customer data and this page renders before any
+                session exists, so nothing on it should look like a metric. */}
             <div className="rounded-sx-md border border-sx-border bg-sx-surface-1 p-5 shadow-xl space-y-3">
               <div className="flex items-center justify-between text-xs border-b border-sx-border pb-2">
-                <span className="font-sx-mono font-bold text-sx-accent">Workspace #819</span>
+                <span className="font-sx-mono font-bold text-sx-accent">Your workspace</span>
                 <span className="text-emerald-400 font-semibold">● Multi-Tenant Isolated</span>
               </div>
-              <div className="grid grid-cols-2 gap-2 text-xs">
-                <div className="rounded bg-sx-surface-2 p-2.5">
-                  <span className="text-[10px] text-sx-text-subtle">Pending Approvals</span>
-                  <p className="font-bold text-sx-text text-sm mt-0.5">2 Missions</p>
-                </div>
-                <div className="rounded bg-sx-surface-2 p-2.5">
-                  <span className="text-[10px] text-sx-text-subtle">Active Leads</span>
-                  <p className="font-bold text-sx-accent text-sm mt-0.5">42 Inquiries</p>
-                </div>
-              </div>
+              <ul className="space-y-2 text-xs text-sx-text-muted">
+                <li className="flex items-start gap-2">
+                  <span className="text-sx-accent font-bold">✓</span>
+                  <span>Database-level tenant isolation (Supabase RLS)</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-sx-accent font-bold">✓</span>
+                  <span>Human approval on every post, spend, and outreach action</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-sx-accent font-bold">✓</span>
+                  <span>Your missions, leads, and inbox — visible the moment you sign in</span>
+                </li>
+              </ul>
             </div>
 
             <div className="text-xs text-sx-text-subtle flex gap-4">

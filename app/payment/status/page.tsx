@@ -162,7 +162,7 @@ function StatusContent() {
 
           {isPaid && payment.paymentPurpose === "audit_fee" && (
             <Link
-              href="/app/audit"
+              href={`/audit/access?order=${encodeURIComponent(payment.referenceId)}`}
               className="mt-6 inline-flex min-h-11 items-center justify-center rounded-lg bg-emerald-500 px-6 font-semibold text-slate-950 hover:bg-emerald-400"
             >
               Continue to your Audit →

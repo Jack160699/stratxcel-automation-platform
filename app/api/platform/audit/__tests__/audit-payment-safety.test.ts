@@ -37,10 +37,12 @@ function run() {
   // --- 2. Checkout route: the ₹999 amount is hardcoded, never client-supplied
   const checkoutSource = readCode("app", "api", "platform", "audit", "checkout", "route.ts");
   assert.ok(/AUDIT_FEE_CENTS\s*=\s*99900/.test(checkoutSource), "audit fee must be the literal 99900 paise (₹999)");
+  // The guest path legitimately reads a body (email, optional GST-invoice
+  // fields) — what must never happen is an amount coming from it.
   assert.equal(
-    /await request\.json\(\)/.test(checkoutSource),
+    /amount(Cents|InRupees)?\s*[:=]\s*body\./.test(checkoutSource),
     false,
-    "POST /audit/checkout must not read a request body at all — nothing about the charge is attacker-controlled"
+    "no amount field may ever be read from the request body"
   );
   assert.ok(/amountCents:\s*AUDIT_FEE_CENTS/.test(checkoutSource), "createPaymentLink must be called with the fixed fee constant");
   assert.ok(/paymentPurpose:\s*"audit_fee"/.test(checkoutSource), "purpose must be hardcoded to audit_fee, never derived from input");
@@ -52,10 +54,34 @@ function run() {
     assert.equal(checkoutSource.includes(otherFlag), false, `checkout route must not reference ${otherFlag} — enabling audit must never imply enabling it`);
   }
 
-  // --- 4. Authenticated only, and reads no other payment surface -------------
-  assert.ok(/getUser\(\)/.test(checkoutSource), "checkout must require a real session");
-  assert.ok(/if \(!user\)/.test(checkoutSource), "checkout must reject unauthenticated calls");
+  // --- 4. No login wall pre-payment, but still no other payment surface ------
+  // The whole point of this correction: POST /checkout must work for a
+  // signed-out visitor. (GET, used only by the authenticated /app/audit hub,
+  // legitimately still requires a session — scope the check to POST alone.)
+  const postHandlerSource = checkoutSource.slice(checkoutSource.indexOf("export async function POST"), checkoutSource.indexOf("export async function GET"));
+  assert.equal(/if \(!user\) return Response\.json/.test(postHandlerSource), false, "POST /audit/checkout must not reject unauthenticated callers — that reintroduces the login wall this task removes");
+  assert.ok(/if \(user\)/.test(postHandlerSource), "POST must branch on whether a session exists rather than requiring one");
   assert.equal(/wallet_topup|continuation_pack|domain_purchase|domain_renewal|subscription_payment/.test(checkoutSource), false, "checkout route must not touch any other payment purpose");
+
+  // Guest path: email is required and validated; nothing else about the
+  // request is trusted for the charge itself.
+  assert.ok(/EMAIL_PATTERN\.test\(email\)/.test(checkoutSource), "guest checkout must validate the email format server-side");
+  assert.ok(/status: 400.*valid email|valid email.*status: 400|A valid email address is required/s.test(checkoutSource), "guest checkout must reject a missing/invalid email");
+  assert.ok(/guestEmail = email/.test(checkoutSource), "guest email must be persisted onto the order for the later claim check");
+
+  // The audit page itself must no longer gate on auth before payment.
+  const auditCheckoutPageSource = readCode("app", "audit", "checkout", "page.tsx");
+  assert.equal(/redirect\(["']\/login/.test(auditCheckoutPageSource), false, "/audit/checkout must not redirect a signed-out visitor to /login");
+
+  // --- 4b. Claim: only a genuinely paid, email-matched, single-use purchase
+  //         can ever be attached to an account -------------------------------
+  const claimSource = readCode("app", "api", "platform", "audit", "claim", "route.ts");
+  assert.ok(/CLAIMABLE_STATUSES\s*=\s*\[["']paid["'],\s*["']in_review["'],\s*["']completed["']\]/.test(claimSource), "only paid/in_review/completed orders may be claimed");
+  assert.equal(claimSource.includes("pending_payment") && /CLAIMABLE_STATUSES.*pending_payment/.test(claimSource), false, "pending_payment must never be claimable");
+  assert.ok(/guest_email.*verifiedEmail|verifiedEmail.*guest_email/.test(claimSource), "claim must compare the order's guest_email against the caller's own verified email");
+  assert.ok(/status: 403/.test(claimSource), "an email mismatch must be rejected, not silently allowed");
+  assert.ok(/claimed_at/.test(claimSource), "claim must be recorded so it cannot be reused");
+  assert.equal(/tenantId\s*:\s*body\.|body\.tenantId/.test(claimSource), false, "claim must never take a tenantId from the request body — only the order's own tenant_id is used");
 
   // --- 5. The generic payment-links endpoint stays wallet-only, unreachable by
   //        public Audit customers for arbitrary-purpose/arbitrary-amount links
@@ -75,6 +101,9 @@ function run() {
     ["app", "audit", "page.tsx"],
     ["app", "audit", "AuditCheckoutCta.tsx"],
     ["app", "audit", "checkout", "CheckoutRedirect.tsx"],
+    ["app", "audit", "checkout", "GuestCheckoutForm.tsx"],
+    ["app", "audit", "access", "ClaimEmailOtpForm.tsx"],
+    ["app", "audit", "access", "ClaimAndContinue.tsx"],
     ["app", "app", "audit", "page.tsx"],
     ["app", "app", "audit", "IntakeWizard.tsx"],
   ]) {
@@ -82,7 +111,13 @@ function run() {
     assert.equal(/SUPABASE_SERVICE_ROLE_KEY|RAZORPAY_KEY_SECRET|RAZORPAY_WEBHOOK_SECRET/.test(source), false, `${file.join("/")} must not reference a server secret`);
   }
 
-  console.log("audit-payment-safety.test.ts: ALL PASS (GST math reconstructs the exact charge, ₹999 hardcoded server-side, PAYMENTS_AUDIT_ENABLED isolated from other payment flags, generic payment-links stays wallet-only, intake blocked before payment, no secrets in client code)");
+  // --- 8. No fabricated activity numbers on the public sign-in page ----------
+  const loginPageSource = read("app", "login", "page.tsx");
+  for (const fake of ["Workspace #819", "2 Missions", "42 Inquiries"]) {
+    assert.equal(loginPageSource.includes(fake), false, `login page must not show the fabricated "${fake}"`);
+  }
+
+  console.log("audit-payment-safety.test.ts: ALL PASS (GST math reconstructs the exact charge, ₹999 hardcoded server-side, PAYMENTS_AUDIT_ENABLED isolated from other payment flags, generic payment-links stays wallet-only, intake blocked before payment, guest checkout has no login wall + validated email, claim requires paid status + verified email match, no secrets in client code, no fabricated login metrics)");
 }
 
 run();

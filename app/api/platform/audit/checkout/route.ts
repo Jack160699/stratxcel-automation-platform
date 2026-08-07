@@ -7,23 +7,45 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const AUDIT_FEE_CENTS = 99900; // ₹999.00, GST-inclusive — never derived from client input.
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+interface GstInvoiceDetails {
+  legalBusinessName?: string;
+  gstin?: string;
+  billingAddress?: string;
+  state?: string;
+  pin?: string;
+}
+
+interface GuestCheckoutBody {
+  email?: string;
+  gstInvoice?: GstInvoiceDetails;
+}
 
 /**
- * Starts the payment-first ₹999 Audit: get-or-create the customer's tenant,
- * get-or-create a `pending_payment` audit_orders row for it, and create a
- * Razorpay Payment Link scoped to purpose "audit_fee" for exactly that row.
+ * Starts the payment-first ₹999 Audit. Two entry paths, same fee, same
+ * purpose, same PAYMENTS_AUDIT_ENABLED gate:
  *
- * The only thing this route ever charges is AUDIT_FEE_CENTS — no amount is
- * ever read from the request body. PAYMENTS_AUDIT_ENABLED is the single gate;
- * every other payment surface (subscriptions, wallet top-ups, domains,
- * continuation packs) is untouched and stays off regardless of this flag.
+ *  - Authenticated: get-or-create the caller's own tenant (unchanged from
+ *    before — no request body is read on this path).
+ *  - Guest (no session): create a bare, memberless tenant plus the
+ *    audit_orders row against it, keyed to the email the visitor supplied.
+ *    Nothing about the customer's business is asked here. The tenant has no
+ *    owner until the purchase is claimed post-payment (see
+ *    /api/platform/audit/claim) — that is the only account-creation-like
+ *    side effect, and it grants no access to anyone until a verified email
+ *    match proves who the purchase belongs to.
+ *
+ * The only thing either path ever charges is AUDIT_FEE_CENTS — no amount is
+ * ever read from the request body. Every other payment surface (subscriptions,
+ * wallet top-ups, domains, continuation packs) is untouched and stays off
+ * regardless of this flag.
  *
  * Idempotent by design: a customer who reloads or comes back later gets the
  * same pending order and the same (or a freshly regenerated, if expired)
- * payment link — never a second ₹999 order for the same tenant while one is
- * still payable.
+ * payment link — never a second ₹999 order while one is still payable.
  */
-export async function POST() {
+export async function POST(request: Request) {
   if (!isPaymentFeatureEnabled("PAYMENTS_AUDIT_ENABLED")) {
     return Response.json(
       { error: "Audit checkout is being activated. Please check back shortly, or request a consultation." },
@@ -35,20 +57,50 @@ export async function POST() {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) return Response.json({ error: "Not authenticated" }, { status: 401 });
 
   const { supabase: service } = getTenantServiceContext();
 
-  // Reuse the customer's existing tenant, or create the smallest possible one
-  // silently — a name and a random slug, nothing else. This is identity, not
-  // onboarding: no business details, no Brand Brain, no goals are asked here.
-  const memberships = await listMembershipsForUser(supabase, user.id);
   let tenantId: string;
-  if (memberships.length > 0) {
-    tenantId = memberships[0].tenant.id;
+  let customerEmail: string | undefined;
+  let guestEmail: string | null = null;
+  let gstInvoice: GstInvoiceDetails | undefined;
+
+  if (user) {
+    // Reuse the customer's existing tenant, or create the smallest possible
+    // one silently — a name and a random slug, nothing else. Identity, not
+    // onboarding: no business details, no Brand Brain, no goals asked here.
+    const memberships = await listMembershipsForUser(supabase, user.id);
+    if (memberships.length > 0) {
+      tenantId = memberships[0].tenant.id;
+    } else {
+      const slug = `audit-${user.id.slice(0, 8)}-${Date.now().toString(36)}`;
+      const tenant = await createTenant(service, { slug, name: "My Business", ownerUserId: user.id });
+      tenantId = tenant.id;
+    }
+    customerEmail = user.email ?? undefined;
   } else {
-    const slug = `audit-${user.id.slice(0, 8)}-${Date.now().toString(36)}`;
-    const tenant = await createTenant(service, { slug, name: "My Business", ownerUserId: user.id });
+    // Guest checkout — no Stratxcel account exists yet. Only an email
+    // (required to deliver/claim the purchase) and optional GST-invoice
+    // details are ever read from the body; nothing else about the request
+    // is trusted for anything beyond that.
+    const body = (await request.json().catch(() => ({}))) as GuestCheckoutBody;
+    const email = body.email?.trim().toLowerCase();
+    if (!email || !EMAIL_PATTERN.test(email)) {
+      return Response.json({ error: "A valid email address is required." }, { status: 400 });
+    }
+    guestEmail = email;
+    customerEmail = email;
+    gstInvoice = body.gstInvoice;
+
+    const { data: tenant, error: tenantError } = await service
+      .from("tenants")
+      .insert({ slug: `audit-guest-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`, name: "My Business" })
+      .select("id")
+      .single();
+    if (tenantError || !tenant) {
+      console.error("audit checkout: failed to create guest tenant", tenantError?.message);
+      return Response.json({ error: "Could not start checkout. Please try again." }, { status: 500 });
+    }
     tenantId = tenant.id;
   }
 
@@ -65,6 +117,15 @@ export async function POST() {
   let auditOrderId: string;
   if (existing) {
     auditOrderId = existing.id;
+    if (guestEmail || gstInvoice) {
+      const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+      if (guestEmail) patch.guest_email = guestEmail;
+      if (gstInvoice) {
+        const { data: current } = await service.from("audit_orders").select("deep_dive_answers").eq("id", auditOrderId).single();
+        patch.deep_dive_answers = { ...(current?.deep_dive_answers ?? {}), gstInvoice };
+      }
+      await service.from("audit_orders").update(patch).eq("id", auditOrderId);
+    }
   } else {
     const { data: created, error } = await service
       .from("audit_orders")
@@ -73,6 +134,8 @@ export async function POST() {
         business_name: "Pending — completed in intake",
         audit_fee_cents: AUDIT_FEE_CENTS,
         status: "pending_payment",
+        guest_email: guestEmail,
+        deep_dive_answers: gstInvoice ? { gstInvoice } : {},
       })
       .select("id")
       .single();
@@ -103,9 +166,9 @@ export async function POST() {
       currency: "INR",
       description: "Stratxcel AI Business Growth Audit",
       referenceId: auditOrderId,
-      customerEmail: user.email ?? undefined,
+      customerEmail,
       paymentPurpose: "audit_fee",
-      createdBy: user.id,
+      createdBy: user?.id,
     });
 
     await service.from("audit_orders").update({ payment_link_id: link.id, updated_at: new Date().toISOString() }).eq("id", auditOrderId);
