@@ -7,6 +7,7 @@
     "apps/*"
   ],
   "scripts": {
+    "test:agent-core": "node --experimental-strip-types packages/agent-core/src/__tests__/command-parser.test.ts && node --experimental-strip-types packages/agent-core/src/__tests__/capability-matrix.test.ts && node --experimental-strip-types packages/agent-core/src/__tests__/hmac.test.ts && node --experimental-strip-types packages/agent-core/src/__tests__/pairing.test.ts && node --experimental-strip-types packages/agent-core/src/__tests__/confirmations.test.ts && node --experimental-strip-types packages/agent-core/src/__tests__/tool-isolation.test.ts && node --experimental-strip-types packages/agent-core/src/__tests__/formatter.test.ts && node --experimental-strip-types apps/whatsapp-worker/src/__tests__/agent-channel-router.test.ts",
     "test:payment-concurrency": "node --experimental-strip-types scripts/test-payment-concurrency.ts",
     "test:razorpay-mode": "node --experimental-strip-types packages/payments-and-wallet/src/__tests__/razorpay-test-mode-isolation.test.ts",
     "test:google-auth": "node --experimental-strip-types lib/rbac/__tests__/google-auth.test.ts",
@@ -31,6 +32,7 @@
   "dependencies": {
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.6.1",
+    "@stratxcel/agent-core": "*",
     "@stratxcel/approvals": "*",
     "@stratxcel/audit": "*",
     "@stratxcel/brand-brain": "*",
