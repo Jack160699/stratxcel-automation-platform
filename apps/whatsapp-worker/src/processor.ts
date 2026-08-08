@@ -9,6 +9,8 @@ import {
   type ParsedInboundWhatsAppMessage,
   type ProcessInboundResult,
 } from "@stratxcel/whatsapp";
+import { isWhatsAppAgentChannelEnabled } from "@stratxcel/agent-core";
+import { routeToAgentChannel, type AgentChannelOutcome } from "./agent-channel-router.ts";
 
 /**
  * The async half of the WhatsApp pipeline: claims 'whatsapp.process_inbound'
@@ -102,6 +104,31 @@ export async function maybeSendAutomaticReply(
   }
 }
 
+/**
+ * PHASE 17 follow-up, deliberately not solved by this branch: delivering
+ * `agentOutcome.text` back to the sender over WhatsApp. The single existing
+ * send choke point, sendOutboundWhatsAppMessage() (@stratxcel/whatsapp), is
+ * intentionally lead-scoped (SendOutboundInput.leadId is mandatory) — its
+ * own doc comment states there is deliberately no second, weaker send path
+ * in this codebase. A linked staff/client principal is not a CRM lead, so
+ * routing their reply through that function is not a like-for-like fit, and
+ * building a second send path here would violate that stated design
+ * principle and skip its kill-switch/consent/window checks. Extending
+ * sendOutboundWhatsAppMessage to support a non-lead recipient (or adding a
+ * parallel, equally-gated send path) is real, scoped follow-up work for
+ * whoever reviews and enables WHATSAPP_AGENT_CHANNEL_ENABLED — it is
+ * intentionally NOT hacked around here. For now this only logs the outcome,
+ * which is enough to prove the ROUTING decision (never falling back to the
+ * prospect flow for a linked principal, never creating a duplicate lead) is
+ * correct and testable ahead of that follow-up.
+ */
+export function handleAgentChannelOutcome(message: ParsedInboundWhatsAppMessage, outcome: AgentChannelOutcome): void {
+  console.log("[whatsapp-processor] agent channel outcome (delivery not yet wired — see doc comment)", {
+    providerMessageId: message.providerMessageId,
+    outcome: outcome.outcome,
+  });
+}
+
 export async function processOnce(
   supabase: ReturnType<typeof createWhatsAppClient>,
   queue: ReturnType<typeof createPostgresQueueAdapter>,
@@ -125,6 +152,27 @@ export async function processOnce(
 
   try {
     const { message, phoneBindingId } = job.payload as { message: ParsedInboundWhatsAppMessage; phoneBindingId?: string | null };
+
+    // PHASE 17 (feature-flagged, default OFF): when WHATSAPP_AGENT_CHANNEL_ENABLED
+    // is not exactly "true", this block never runs and behavior below is
+    // byte-for-byte identical to before this flag existed. When enabled, a
+    // LINKED principal's message must be routed BEFORE processInboundMessage
+    // ever runs, because processInboundMessage always creates a CRM lead on
+    // first contact — a linked staff/client command must never create a
+    // sales lead or fall through to the prospect flow (see agent-channel-router.ts).
+    if (isWhatsAppAgentChannelEnabled()) {
+      const endpointUrl = process.env.STRATXCEL_AGENT_CHANNEL_ENDPOINT_URL;
+      if (endpointUrl) {
+        const agentOutcome = await routeToAgentChannel({ endpointUrl, message, phoneBindingId });
+        if (agentOutcome.outcome !== "unlinked") {
+          handleAgentChannelOutcome(message, agentOutcome);
+          await queue.complete({ jobId: job.id, leaseOwner: LEASE_OWNER });
+          return true;
+        }
+        // outcome === "unlinked" falls through to the exact current behavior below.
+      }
+    }
+
     const result = await processInboundMessage(whatsappClient, { tenantId: job.tenant_id, message, phoneBindingId });
     await maybeSendAutomaticReply(whatsappClient, job.tenant_id, message, result);
     await queue.complete({ jobId: job.id, leaseOwner: LEASE_OWNER });

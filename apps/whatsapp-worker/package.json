@@ -8,6 +8,7 @@
     "start:processor": "node --experimental-strip-types src/processor.ts"
   },
   "dependencies": {
+    "@stratxcel/agent-core": "*",
     "@stratxcel/audit": "*",
     "@stratxcel/leads-and-crm": "*",
     "@stratxcel/queue": "*",
