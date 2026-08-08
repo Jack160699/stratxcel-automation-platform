@@ -12,6 +12,7 @@
     "@stratxcel/brand-brain": "*",
     "@stratxcel/hermes": "*",
     "@stratxcel/missions": "*",
+    "@stratxcel/payments-and-wallet": "*",
     "@stratxcel/queue": "*"
   }
 }

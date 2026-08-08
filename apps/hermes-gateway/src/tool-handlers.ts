@@ -10,6 +10,7 @@ import { STRATXCEL_CONTROLLED_TOOLS } from "@stratxcel/hermes";
 export interface ToolCallContext {
   missionId: string;
   tenantId: string;
+  correlationId: string;
 }
 
 export class ToolNotAvailableError extends Error {
@@ -148,6 +149,7 @@ export async function invokeTool(tool: ToolName, ctx: ToolCallContext, input: Re
     action: `hermes.tool_call.${tool}`,
     targetType: "mission",
     targetId: ctx.missionId,
+    metadata: { correlationId: ctx.correlationId },
   });
 
   return result;

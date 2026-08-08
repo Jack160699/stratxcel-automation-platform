@@ -128,5 +128,15 @@ export function createPostgresQueueAdapter(supabase: ServiceClient): QueueAdapte
       if (error) throw new Error(`listForTenant: ${error.message}`);
       return (data ?? []) as QueueJobRow[];
     },
+
+    async requeueDeadLetter(input) {
+      const { data, error } = await supabase.rpc("requeue_dead_letter_job", {
+        p_job_id: input.jobId,
+        p_tenant_id: input.tenantId,
+      });
+      if (error) throw new Error(`requeueDeadLetter: ${error.message}`);
+      const rows = (data ?? []) as QueueJobRow[];
+      return rows[0] ?? null;
+    },
   };
 }

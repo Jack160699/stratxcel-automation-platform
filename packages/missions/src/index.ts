@@ -5,3 +5,4 @@ export * from "./compiler.ts";
 export * from "./repository.ts";
 export * from "./service-catalogue/types.ts";
 export * from "./service-catalogue/catalogue.ts";
+export * from "./entitlement-map.ts";

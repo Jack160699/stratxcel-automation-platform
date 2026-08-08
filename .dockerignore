@@ -1,0 +1,12 @@
+# Build context root for infrastructure/workers/Dockerfile.* (built from repo root).
+node_modules
+**/node_modules
+.git
+.next
+.vercel
+scratch
+**/*.log
+.env
+.env.*
+!.env.example
+.claude

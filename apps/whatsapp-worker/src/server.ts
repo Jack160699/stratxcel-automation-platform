@@ -1,8 +1,14 @@
 import http from "node:http";
+import os from "node:os";
 import crypto from "node:crypto";
 import { parseInboundWhatsAppWebhook, verifyWhatsAppWebhookSignature } from "@stratxcel/whatsapp";
 import { createServiceClient as createWhatsAppClient, findActiveBindingByPhoneNumberId, recordUnmatchedEvent } from "@stratxcel/whatsapp";
-import { createServiceClient as createQueueClient, createPostgresQueueAdapter } from "@stratxcel/queue";
+import { createServiceClient as createQueueClient, createPostgresQueueAdapter, recordWorkerHeartbeat, getWorkerHealth } from "@stratxcel/queue";
+
+const WORKER_TYPE = "whatsapp-worker" as const;
+const INSTANCE_ID = `${os.hostname()}-${process.pid}-webhook`;
+const VERSION = process.env.GIT_COMMIT_SHA ?? process.env.VERCEL_GIT_COMMIT_SHA ?? "unknown";
+const HEARTBEAT_INTERVAL_MS = 30_000;
 
 /**
  * Standalone Meta webhook receiver for WhatsApp — separated from the
@@ -116,6 +122,20 @@ async function handleInbound(req: http.IncomingMessage, res: http.ServerResponse
 const server = http.createServer((req, res) => {
   const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
 
+  if (url.pathname === "/health" && req.method === "GET") {
+    getWorkerHealth(getWhatsAppClient(), WORKER_TYPE)
+      .then((report) => {
+        const httpStatus = report.status === "unavailable" ? 503 : 200;
+        res.writeHead(httpStatus, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ...report, version: VERSION, role: "webhook" }));
+      })
+      .catch((err) => {
+        res.writeHead(503, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ status: "unavailable", reason: err instanceof Error ? err.message : String(err) }));
+      });
+    return;
+  }
+
   if (url.pathname !== "/webhook") {
     res.writeHead(404);
     res.end();
@@ -148,6 +168,14 @@ if (process.env.NODE_ENV !== "test") {
   server.listen(PORT, () => {
     console.log(`[whatsapp-worker] listening on :${PORT}`);
   });
+  recordWorkerHeartbeat(getWhatsAppClient(), { workerType: WORKER_TYPE, instanceId: INSTANCE_ID, status: "idle", version: VERSION }).catch((err) =>
+    console.error("[whatsapp-worker] initial heartbeat failed:", err)
+  );
+  setInterval(() => {
+    recordWorkerHeartbeat(getWhatsAppClient(), { workerType: WORKER_TYPE, instanceId: INSTANCE_ID, status: "idle", version: VERSION }).catch((err) =>
+      console.error("[whatsapp-worker] heartbeat failed:", err)
+    );
+  }, HEARTBEAT_INTERVAL_MS);
 }
 
 export { server };

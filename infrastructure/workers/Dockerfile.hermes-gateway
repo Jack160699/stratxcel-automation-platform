@@ -1,0 +1,25 @@
+# apps/hermes-gateway — the restricted tool HTTP endpoint Hermes calls back
+# into. Long-running HTTP server, not a Vercel-compatible workload. Never
+# expose this publicly without HERMES_GATEWAY_SECRET configured — every
+# request must carry a valid, mission-scoped signed token (see
+# packages/hermes/src/token.ts). Statically written and reviewed, not
+# verified by an actual `docker build` in this session (Docker is not
+# installed in this environment).
+#
+# Build from the REPO ROOT:
+#   docker build -f infrastructure/workers/Dockerfile.hermes-gateway -t stratxcel-hermes-gateway .
+FROM node:24-alpine AS base
+WORKDIR /repo
+
+COPY package.json package-lock.json ./
+COPY packages packages
+COPY apps apps
+
+RUN npm ci --omit=dev
+
+WORKDIR /repo/apps/hermes-gateway
+ENV NODE_ENV=production
+EXPOSE 8082
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+  CMD node -e "fetch('http://localhost:8082/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+CMD ["npm", "start"]

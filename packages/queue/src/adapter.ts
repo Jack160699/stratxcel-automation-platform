@@ -17,4 +17,6 @@ export interface QueueAdapter {
   recoverExpiredLeases(): Promise<QueueJobRow[]>;
   listDeadLetter(tenantId: string, limit?: number): Promise<QueueJobRow[]>;
   listForTenant(tenantId: string, limit?: number): Promise<QueueJobRow[]>;
+  /** Idempotent, tenant-scoped recovery — see queue_internal.requeue_dead_letter_job. */
+  requeueDeadLetter(input: { jobId: string; tenantId: string }): Promise<QueueJobRow | null>;
 }

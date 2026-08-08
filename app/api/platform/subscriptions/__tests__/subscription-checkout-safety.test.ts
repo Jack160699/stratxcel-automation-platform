@@ -44,7 +44,7 @@ function run() {
   assert.ok(/isPlanTier\(targetPlanTier\)/.test(changePlanSource), "target plan tier must be validated against the canonical plan set before it ever reaches the RPC");
 
   // --- 6. The migration's plan-change RPC itself refuses Custom Growth as a target
-  const migrationSource = read("supabase", "migrations", "20260808190000_subscriptions_lifecycle_billing_gst.sql");
+  const migrationSource = read("supabase", "migrations", "20260807223455_subscriptions_lifecycle_billing_gst.sql");
   assert.ok(
     /p_target_plan_tier not in \('launch', 'growth'\)/.test(migrationSource),
     "schedule_subscription_plan_change must reject any target outside launch/growth server-side"

@@ -17,7 +17,7 @@ import { splitGstInclusive } from "../../../../lib/payments/gst.ts";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const webhookRouteSource = fs.readFileSync(path.join(__dirname, "..", "..", "..", "..", "app", "api", "webhook", "razorpay", "route.ts"), "utf8");
 const migrationSource = fs.readFileSync(
-  path.join(__dirname, "..", "..", "..", "..", "supabase", "migrations", "20260808190000_subscriptions_lifecycle_billing_gst.sql"),
+  path.join(__dirname, "..", "..", "..", "..", "supabase", "migrations", "20260807223455_subscriptions_lifecycle_billing_gst.sql"),
   "utf8"
 );
 

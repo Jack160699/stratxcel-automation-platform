@@ -1,0 +1,28 @@
+# apps/mission-worker — long-running poll loop + /health server. Not a
+# Vercel-compatible workload (persistent process, not a request/response
+# function) — see infrastructure/workers/README.md for what runs where and
+# why. Statically written and reviewed, not verified by an actual `docker
+# build` in this session (Docker is not installed in this environment — the
+# same limitation infrastructure/hermes/README.md already documents).
+#
+# Build from the REPO ROOT (workspace deps require the full monorepo context):
+#   docker build -f infrastructure/workers/Dockerfile.mission-worker -t stratxcel-mission-worker .
+FROM node:24-alpine AS base
+WORKDIR /repo
+
+COPY package.json package-lock.json ./
+COPY packages packages
+COPY apps apps
+
+# `npm ci` at the workspace root is the only reliable way to install a
+# workspace member here — the lockfile is generated against every package.json
+# in packages/*, apps/* together, so a partial copy would desync it.
+RUN npm ci --omit=dev
+
+WORKDIR /repo/apps/mission-worker
+ENV NODE_ENV=production
+EXPOSE 8083
+# Node's built-in fetch is enough for a same-container healthcheck; alpine has no curl by default.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+  CMD node -e "fetch('http://localhost:8083/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+CMD ["npm", "start"]
