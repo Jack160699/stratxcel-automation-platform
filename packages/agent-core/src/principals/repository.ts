@@ -1,5 +1,5 @@
 import type { ServiceClient } from "../db.ts";
-import type { AgentPrincipalResolution, AgentChannel, ClientAgentPrincipal } from "../principal.ts";
+import type { AgentPrincipalResolution, AgentChannel, StaffAgentPrincipal, ClientAgentPrincipal } from "../principal.ts";
 import type { TenantRole } from "../types-external.ts";
 
 /**
@@ -43,6 +43,42 @@ const CLIENT_ROLE_PERMISSIONS: Record<string, readonly string[]> = {
   ],
   viewer: ["agent:read:workspace", "agent:read:missions", "agent:read:leads"],
 };
+
+/**
+ * Single source of truth for "what can this role do" — shared by every
+ * channel (WhatsApp phone-link resolution below, and the admin/client web
+ * Copilot resolvers in the Next.js app's lib/agent-core/web-principal.ts),
+ * so a role's tool authorization can never silently drift between channels.
+ */
+export function resolveStaffPermissions(role: string): readonly string[] {
+  return STAFF_ROLE_PERMISSIONS[role] ?? [];
+}
+
+export function resolveClientPermissions(role: string): readonly string[] {
+  return CLIENT_ROLE_PERMISSIONS[role] ?? [];
+}
+
+export function buildStaffPrincipal(input: { authUserId: string; tenantId: string | null; role: string; channel: AgentChannel }): StaffAgentPrincipal {
+  return {
+    kind: "staff",
+    channel: input.channel,
+    authUserId: input.authUserId,
+    tenantId: input.tenantId,
+    role: input.role,
+    permissions: resolveStaffPermissions(input.role),
+  };
+}
+
+export function buildClientPrincipal(input: { authUserId: string; tenantId: string; role: TenantRole; channel: AgentChannel }): ClientAgentPrincipal {
+  return {
+    kind: "client",
+    channel: input.channel,
+    authUserId: input.authUserId,
+    tenantId: input.tenantId,
+    role: input.role,
+    permissions: resolveClientPermissions(input.role),
+  };
+}
 
 interface PrincipalRow {
   id: string;
@@ -88,14 +124,7 @@ export async function resolveWhatsAppPrincipal(
 
     return {
       status: "resolved",
-      principal: {
-        kind: "staff",
-        channel,
-        authUserId: row.auth_user_id,
-        tenantId: row.tenant_id,
-        role: staff.role,
-        permissions: STAFF_ROLE_PERMISSIONS[staff.role] ?? [],
-      },
+      principal: buildStaffPrincipal({ authUserId: row.auth_user_id, tenantId: row.tenant_id, role: staff.role, channel }),
     };
   }
 
@@ -110,14 +139,7 @@ export async function resolveWhatsAppPrincipal(
   if (memberErr) throw memberErr;
   if (!membership) return { status: "revoked" };
 
-  const clientPrincipal: ClientAgentPrincipal = {
-    kind: "client",
-    channel,
-    authUserId: row.auth_user_id,
-    tenantId: row.tenant_id,
-    role: membership.role as TenantRole,
-    permissions: CLIENT_ROLE_PERMISSIONS[membership.role] ?? [],
-  };
+  const clientPrincipal = buildClientPrincipal({ authUserId: row.auth_user_id, tenantId: row.tenant_id, role: membership.role as TenantRole, channel });
   return { status: "resolved", principal: clientPrincipal };
 }
 

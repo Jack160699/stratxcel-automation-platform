@@ -13,6 +13,8 @@ import { Card, CardHeading } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Textarea } from "@/components/ui/Input";
 import { ErrorState } from "@/components/ui/Feedback";
+import { CopilotChat } from "@/components/agent-core/CopilotChat";
+import { loadClientCopilotThreadAction, sendClientCopilotMessageAction } from "./actions";
 
 interface BrandBrainSummary {
   business_name?: string;
@@ -155,6 +157,16 @@ export default function CopilotPage() {
 
       <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
         <div className="flex flex-col gap-6">
+          {tenantId && (
+            <CopilotChat
+              title="Ask Copilot"
+              description="Real answers from your workspace — the same agent and tools available over WhatsApp once linked. Mutating actions require confirmation."
+              placeholder="e.g. What's the status of my latest mission? Show pending approvals."
+              loadThread={() => loadClientCopilotThreadAction(tenantId)}
+              sendMessage={(text) => sendClientCopilotMessageAction(tenantId, text)}
+            />
+          )}
+
           <Card className="flex flex-col gap-3">
             <CardHeading>New mission</CardHeading>
 

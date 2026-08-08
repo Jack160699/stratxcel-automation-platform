@@ -82,6 +82,31 @@ export async function getOrCreateActiveSession(
   return createAgentSession(supabase, principal);
 }
 
+export interface AgentMessageRow {
+  id: string;
+  session_id: string;
+  role: "user" | "assistant" | "tool";
+  content: string;
+  tool_name: string | null;
+  created_at: string;
+}
+
+/** Chat-thread history for a session, oldest first — used by the admin/
+ *  client web Copilot UIs to render the full conversation, not just the
+ *  latest turn's reply. Tool-role messages are included (role="tool") so a
+ *  UI can choose to render them as activity/status if it wants; nothing here
+ *  redacts or summarizes — that's the UI's job if it wants a condensed view. */
+export async function loadSessionMessages(supabase: ServiceClient, sessionId: string, limit = 100): Promise<AgentMessageRow[]> {
+  const { data, error } = await supabase
+    .from("agent_messages")
+    .select("id, session_id, role, content, tool_name, created_at")
+    .eq("session_id", sessionId)
+    .order("created_at", { ascending: true })
+    .limit(limit);
+  if (error) throw error;
+  return (data ?? []) as AgentMessageRow[];
+}
+
 export async function recordAgentMessage(
   supabase: ServiceClient,
   input: { sessionId: string; role: "user" | "assistant" | "tool"; content: string; toolName?: string }

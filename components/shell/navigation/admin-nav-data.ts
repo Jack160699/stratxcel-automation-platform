@@ -16,7 +16,10 @@ import type { NavGroupData } from "./nav-types";
 export const ADMIN_NAV_GROUPS_DATA: NavGroupData[] = [
   {
     label: "Overview",
-    items: [{ key: "overview", label: "Agency Overview", href: "/admin" }],
+    items: [
+      { key: "overview", label: "Agency Overview", href: "/admin" },
+      { key: "copilot", label: "Admin Copilot", href: "/admin/copilot" },
+    ],
   },
   {
     label: "Clients",
