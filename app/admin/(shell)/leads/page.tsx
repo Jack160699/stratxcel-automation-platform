@@ -1,13 +1,14 @@
 import type { Metadata } from "next";
 import { requireOwnerContext } from "@/lib/social/db-context";
 import { setMessageStatusAction } from "@/app/admin/actions";
-import LeadAnalytics from "@/app/admin/LeadAnalytics";
 import { StatusChip, type ChipState } from "@/components/ui/StatusChip";
 import { ErrorState, EmptyState } from "@/components/ui/Feedback";
 import { Card } from "@/components/ui/Card";
+import LeadAnalytics from "@/app/admin/LeadAnalytics";
+import { AdminLeadsTabs } from "./AdminLeadsTabs";
 
 export const metadata: Metadata = {
-  title: "Leads — Stratxcel Admin",
+  title: "CRM — Stratxcel Admin",
   robots: { index: false, follow: false },
 };
 
@@ -30,15 +31,16 @@ const STATUS_CHIP: Record<ContactMessage["status"], { label: string; state: Chip
 };
 
 /**
- * The full contact inbox this used to be at /admin before the unified
- * shell — same data, same actions (mark read/replied/archived), moved
- * under the shell's nav rather than living at the root. Re-guards
- * independently for the same reason every nested page in this build does:
- * the parent layout gating render is not sufficient by itself (see the
- * RSC-payload disclosure fixed for the platform overview page) and this
- * page performs a real database read.
+ * Was: a page that queried `stratxcel_contact_messages` and called itself
+ * "Leads" — real WhatsApp customers (crm_leads, whatsapp_conversations,
+ * whatsapp_messages) never appeared here at all. Now: the primary view is
+ * the real, tenant-scoped CRM/inbox (AdminLeadsTabs -> CrmWorkspace, scoped
+ * to whichever client the ClientSwitcher has selected). The website contact
+ * inbox this page used to show is preserved verbatim as a secondary tab —
+ * it's a real, still-useful lead source (people asking about Stratxcel
+ * itself), just no longer the thing labeled "Leads" by default.
  */
-export default async function InboxPage() {
+export default async function AdminLeadsPage() {
   const ctx = await requireOwnerContext();
   if (!ctx.ok) return null;
 
@@ -51,12 +53,11 @@ export default async function InboxPage() {
   const list = (messages ?? []) as ContactMessage[];
   const newCount = list.filter((m) => m.status === "new").length;
 
-  return (
-    <div className="flex flex-col gap-6">
+  const websiteInquiries = (
+    <div className="flex flex-col gap-4 p-1">
       <header>
-        <h1 className="font-sx-sans text-xl font-semibold text-sx-text">Leads</h1>
-        <p className="mt-1 text-sm text-sx-text-muted">
-          {list.length} message{list.length === 1 ? "" : "s"} · {newCount} new
+        <p className="text-sm text-sx-text-muted">
+          {list.length} message{list.length === 1 ? "" : "s"} · {newCount} new · people asking about Stratxcel itself, not a client&rsquo;s own customers
         </p>
       </header>
 
@@ -109,6 +110,12 @@ export default async function InboxPage() {
       </section>
 
       <LeadAnalytics />
+    </div>
+  );
+
+  return (
+    <div className="h-[calc(100vh-152px)] md:h-[calc(100vh-96px)]">
+      <AdminLeadsTabs websiteInquiries={websiteInquiries} websiteInquiryCount={newCount} />
     </div>
   );
 }
