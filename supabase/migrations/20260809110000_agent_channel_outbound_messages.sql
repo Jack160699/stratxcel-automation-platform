@@ -22,7 +22,7 @@ create table if not exists public.agent_channel_messages (
   -- (packages/agent-core/src/principal.ts) only ever carries authUserId, not
   -- a whatsapp_channel_principals row id (a phone's link row is replaced,
   -- not reused, on every re-pairing — see activateWhatsAppPrincipal), so
-  -- authUserId is the stable identity anchor. Matches agent_sessions'own
+  -- authUserId is the stable identity anchor. Matches agent_sessions' own
   -- auth_user_id column for the same reason. Nullable: a pre-link
   -- deterministic reply (e.g. a LINK-ack, or a malformed-command nudge to a
   -- still-unlinked sender) has no resolved identity yet.
