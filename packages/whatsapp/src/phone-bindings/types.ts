@@ -1,5 +1,7 @@
 export type PhoneBindingEnvironment = "test" | "staging" | "production";
 export type PhoneBindingStatus = "pending" | "active" | "disabled" | "revoked";
+export type PhoneBindingSource = "native" | "legacy_verified_bot";
+export type PhoneBindingMigrationStatus = "not_applicable" | "shadowing" | "ready_for_review" | "cutover_pending" | "cutover_live";
 
 export interface WhatsAppPhoneBindingRow {
   id: string;
@@ -20,6 +22,9 @@ export interface WhatsAppPhoneBindingRow {
   verified_at: string | null;
   created_at: string;
   updated_at: string;
+  source: PhoneBindingSource;
+  migration_status: PhoneBindingMigrationStatus;
+  legacy_host: string | null;
 }
 
 export interface UnmatchedWhatsAppEventRow {

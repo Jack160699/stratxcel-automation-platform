@@ -39,6 +39,30 @@ interface WhatsAppTemplate {
   synced_at: string | null;
 }
 
+interface MigrationStatus {
+  legacyBot:
+    | { configured: false }
+    | {
+        configured: true;
+        wabaId: string;
+        phoneNumberId: string;
+        displayPhoneNumber: string | null;
+        legacyHost: string | null;
+        status: string;
+        migrationStatus: string;
+        health: "healthy" | "unhealthy" | "unknown";
+      };
+  migrationMode: "off" | "shadow" | "cutover";
+  mirroredEventsCount: number;
+  lastMirroredEventAt: string | null;
+  comparableTurns: number;
+  matchCount: number;
+  mismatchCount: number;
+  shadowErrors: number;
+  recentMismatches: Array<{ legacyEventId: string; mismatchReason: string | null; comparedAt: string | null }>;
+  cutoverReadiness: "NOT_READY" | "SHADOWING" | "READY_FOR_REVIEW";
+}
+
 const BINDING_CHIP: Record<string, { label: string; state: ChipState }> = {
   pending: { label: "Pending", state: "warning" },
   active: { label: "Active", state: "success" },
@@ -59,14 +83,16 @@ export default function WhatsAppAdminPage() {
   const [syncing, setSyncing] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [signupNotice, setSignupNotice] = useState<string | null>(null);
+  const [migration, setMigration] = useState<MigrationStatus | null>(null);
 
   async function load() {
     if (!tenantId) return;
     setError(null);
-    const [bindingsRes, messagesRes, templatesRes] = await Promise.all([
+    const [bindingsRes, messagesRes, templatesRes, migrationRes] = await Promise.all([
       fetch(`/api/platform/whatsapp/bindings?tenantId=${encodeURIComponent(tenantId)}`),
       fetch(`/api/platform/whatsapp/shadow-messages?tenantId=${encodeURIComponent(tenantId)}`),
       fetch(`/api/platform/whatsapp/templates?tenantId=${encodeURIComponent(tenantId)}`),
+      fetch(`/api/platform/whatsapp/migration/status?tenantId=${encodeURIComponent(tenantId)}`),
     ]);
     const bindingsBody = await bindingsRes.json();
     const messagesBody = await messagesRes.json();
@@ -77,6 +103,7 @@ export default function WhatsAppAdminPage() {
     setBindings(bindingsBody.bindings);
     setMessages(messagesRes.ok ? messagesBody.messages : []);
     if (templatesRes.ok) setTemplates((await templatesRes.json()).templates ?? []);
+    if (migrationRes.ok) setMigration(await migrationRes.json());
   }
 
   async function handleEmbeddedSignup() {
@@ -248,6 +275,70 @@ export default function WhatsAppAdminPage() {
           </div>
         )}
       </section>
+
+      {migration && (
+        <section className="flex flex-col gap-3">
+          <h2 className="font-sx-sans text-base font-medium text-sx-text">Verified-bot shadow / parity migration</h2>
+          <Card variant="nested">
+            {!migration.legacyBot.configured ? (
+              <p className="text-sm text-sx-text-subtle">
+                No legacy binding configured yet — set WHATSAPP_LEGACY_TENANT_ID / _WABA_ID / _PHONE_NUMBER_ID to activate.
+              </p>
+            ) : (
+              <>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="font-medium text-sx-text">
+                    {migration.legacyBot.displayPhoneNumber ?? migration.legacyBot.phoneNumberId}{" "}
+                    <span className="text-xs text-sx-text-subtle">(existing verified bot)</span>
+                  </p>
+                  <StatusChip
+                    state={migration.legacyBot.health === "healthy" ? "success" : migration.legacyBot.health === "unhealthy" ? "danger" : "warning"}
+                  >
+                    {migration.legacyBot.health}
+                  </StatusChip>
+                </div>
+                <p className="mt-1 text-xs text-sx-text-subtle">
+                  host: {migration.legacyBot.legacyHost ?? "—"} · migration mode: {migration.migrationMode} · binding status:{" "}
+                  {migration.legacyBot.status}
+                </p>
+              </>
+            )}
+            <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-sx-text-subtle sm:grid-cols-4">
+              <p>Mirrored events: {migration.mirroredEventsCount}</p>
+              <p>Comparable turns: {migration.comparableTurns}</p>
+              <p>
+                Match / mismatch: {migration.matchCount} / {migration.mismatchCount}
+              </p>
+              <p>Shadow errors: {migration.shadowErrors}</p>
+            </div>
+            <p className="mt-2 text-xs text-sx-text-subtle">
+              Last mirrored event: {migration.lastMirroredEventAt ? new Date(migration.lastMirroredEventAt).toLocaleString() : "never"}
+            </p>
+            <div className="mt-2 flex items-center gap-2">
+              <span className="text-xs text-sx-text-subtle">Cutover readiness:</span>
+              <StatusChip state={migration.cutoverReadiness === "READY_FOR_REVIEW" ? "warning" : migration.cutoverReadiness === "SHADOWING" ? "neutral" : "danger"}>
+                {migration.cutoverReadiness.replace(/_/g, " ")}
+              </StatusChip>
+            </div>
+            <p className="mt-1 text-xs text-sx-text-subtle">
+              The old bot stays the live sender at every readiness level — this is evidence for a human decision, not an automatic
+              cutover trigger.
+            </p>
+            {migration.recentMismatches.length > 0 && (
+              <div className="mt-3">
+                <p className="text-xs font-medium text-sx-text">Recent mismatches</p>
+                <div className="mt-1 flex flex-col gap-1">
+                  {migration.recentMismatches.map((m) => (
+                    <p key={m.legacyEventId} className="text-xs text-[#FF8A90]">
+                      {m.legacyEventId}: {m.mismatchReason ?? "—"}
+                    </p>
+                  ))}
+                </div>
+              </div>
+            )}
+          </Card>
+        </section>
+      )}
 
       <section className="flex flex-col gap-3">
         <h2 className="font-sx-sans text-base font-medium text-sx-text">Shadow messages (proposed responses — never sent)</h2>

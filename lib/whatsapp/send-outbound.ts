@@ -47,6 +47,18 @@ export async function sendOutboundWhatsAppMessage(supabase: ServiceClient, input
     .maybeSingle();
   if (!binding) return { ok: false, reason: "no_active_outbound_binding" };
 
+  // ZERO-SEND GUARANTEE (defense in depth): the verified legacy bot's
+  // binding is marked source='legacy_verified_bot'. This codebase must
+  // NEVER send through it — the old bot remains the sole external sender
+  // during shadow/parity. This check is unconditional: it does not read
+  // WHATSAPP_MIGRATION_MODE and has no override parameter, so setting the
+  // migration mode to "cutover" has no effect on it. A real cutover would
+  // require a deliberate future change to this exact line, not a runtime
+  // flag flip. (outbound_enabled is also hardcoded false for this binding
+  // in ensureLegacyBotBinding, so in practice this line is unreachable
+  // today — it exists anyway as defense in depth, per the task brief.)
+  if (binding.source === "legacy_verified_bot") return { ok: false, reason: "legacy_bot_shadow_no_send" };
+
   const kill = await isKillSwitchActive(supabase, [
     { scope: "global_hermes" },
     { scope: "worker_type", scopeId: "whatsapp-worker" },
