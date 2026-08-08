@@ -41,8 +41,8 @@ export async function processOnce(
   }
 
   try {
-    const message = (job.payload as { message: ParsedInboundWhatsAppMessage }).message;
-    await processInboundMessage(whatsappClient, { tenantId: job.tenant_id, message });
+    const { message, phoneBindingId } = job.payload as { message: ParsedInboundWhatsAppMessage; phoneBindingId?: string | null };
+    await processInboundMessage(whatsappClient, { tenantId: job.tenant_id, message, phoneBindingId });
     await queue.complete({ jobId: job.id, leaseOwner: LEASE_OWNER });
   } catch (err) {
     await queue.fail({

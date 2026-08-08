@@ -30,6 +30,15 @@ interface ShadowMessage {
   created_at: string;
 }
 
+interface WhatsAppTemplate {
+  id: string;
+  name: string;
+  language: string;
+  category: string | null;
+  status: string;
+  synced_at: string | null;
+}
+
 const BINDING_CHIP: Record<string, { label: string; state: ChipState }> = {
   pending: { label: "Pending", state: "warning" },
   active: { label: "Active", state: "success" },
@@ -46,13 +55,18 @@ export default function WhatsAppAdminPage() {
   const [wabaId, setWabaId] = useState("");
   const [phoneNumberId, setPhoneNumberId] = useState("");
   const [creating, setCreating] = useState(false);
+  const [templates, setTemplates] = useState<WhatsAppTemplate[]>([]);
+  const [syncing, setSyncing] = useState(false);
+  const [connecting, setConnecting] = useState(false);
+  const [signupNotice, setSignupNotice] = useState<string | null>(null);
 
   async function load() {
     if (!tenantId) return;
     setError(null);
-    const [bindingsRes, messagesRes] = await Promise.all([
+    const [bindingsRes, messagesRes, templatesRes] = await Promise.all([
       fetch(`/api/platform/whatsapp/bindings?tenantId=${encodeURIComponent(tenantId)}`),
       fetch(`/api/platform/whatsapp/shadow-messages?tenantId=${encodeURIComponent(tenantId)}`),
+      fetch(`/api/platform/whatsapp/templates?tenantId=${encodeURIComponent(tenantId)}`),
     ]);
     const bindingsBody = await bindingsRes.json();
     const messagesBody = await messagesRes.json();
@@ -62,6 +76,49 @@ export default function WhatsAppAdminPage() {
     }
     setBindings(bindingsBody.bindings);
     setMessages(messagesRes.ok ? messagesBody.messages : []);
+    if (templatesRes.ok) setTemplates((await templatesRes.json()).templates ?? []);
+  }
+
+  async function handleEmbeddedSignup() {
+    if (!tenantId) return;
+    setConnecting(true);
+    setSignupNotice(null);
+    try {
+      const res = await fetch("/api/platform/whatsapp/embedded-signup/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tenantId }),
+      });
+      const body = await res.json();
+      if (!res.ok || !body.available) {
+        setSignupNotice(body.error ?? "Embedded Signup is not yet available — use the manual form below.");
+        return;
+      }
+      window.location.href = body.signupUrl;
+    } finally {
+      setConnecting(false);
+    }
+  }
+
+  async function handleSyncTemplates() {
+    if (!tenantId) return;
+    setSyncing(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/platform/whatsapp/templates", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tenantId }),
+      });
+      const body = await res.json();
+      if (!res.ok) {
+        setError(body.error ?? "Template sync failed");
+        return;
+      }
+      await load();
+    } finally {
+      setSyncing(false);
+    }
   }
 
   useEffect(() => {
@@ -103,6 +160,21 @@ export default function WhatsAppAdminPage() {
         </p>
       </header>
       {error && <ErrorState message={error} />}
+
+      {tenantId && (
+        <Card>
+          <CardHeading>Connect via WhatsApp Embedded Signup</CardHeading>
+          <p className="text-xs text-sx-text-subtle">
+            Meta&apos;s guided connect flow — requires a separate WhatsApp Embedded Signup app configuration this environment
+            does not have yet, so this may report &quot;not available&quot; rather than connect. Use the manual form below in the
+            meantime.
+          </p>
+          {signupNotice && <p className="mt-2 text-xs text-[#FF8A90]">{signupNotice}</p>}
+          <Button className="mt-2" variant="primary" size="sm" onClick={handleEmbeddedSignup} disabled={connecting}>
+            {connecting ? "Starting…" : "Connect WhatsApp"}
+          </Button>
+        </Card>
+      )}
 
       {tenantId && (
         <Card>
@@ -148,6 +220,31 @@ export default function WhatsAppAdminPage() {
                 </Card>
               );
             })}
+          </div>
+        )}
+      </section>
+
+      <section className="flex flex-col gap-3">
+        <div className="flex items-center justify-between">
+          <h2 className="font-sx-sans text-base font-medium text-sx-text">Message templates</h2>
+          <Button variant="secondary" size="sm" onClick={handleSyncTemplates} disabled={syncing || !tenantId}>
+            {syncing ? "Syncing…" : "Sync from Meta"}
+          </Button>
+        </div>
+        <p className="text-xs text-sx-text-subtle">Real Meta approval status only — never shown as approved unless Meta itself reports it.</p>
+        {templates.length === 0 && <p className="text-sm text-sx-text-subtle">No templates synced yet.</p>}
+        {templates.length > 0 && (
+          <div className="flex flex-col gap-2">
+            {templates.map((t) => (
+              <Card key={t.id} variant="nested">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="font-medium text-sx-text">
+                    {t.name} <span className="text-xs text-sx-text-subtle">({t.language})</span>
+                  </p>
+                  <StatusChip state={t.status === "APPROVED" ? "success" : t.status === "REJECTED" ? "danger" : "warning"}>{t.status}</StatusChip>
+                </div>
+              </Card>
+            ))}
           </div>
         )}
       </section>

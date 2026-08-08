@@ -39,6 +39,12 @@ interface RawWhatsAppMessage {
   voice?: { id?: string; mime_type?: string };
 }
 
+interface RawWhatsAppStatus {
+  id: string; // provider message ID (the outbound message this status is about)
+  status?: string; // sent | delivered | read | failed
+  timestamp?: string;
+}
+
 interface WhatsAppWebhookPayload {
   entry?: {
     id?: string; // WABA ID
@@ -46,9 +52,43 @@ interface WhatsAppWebhookPayload {
       value?: {
         metadata?: { phone_number_id?: string; display_phone_number?: string };
         messages?: RawWhatsAppMessage[];
+        statuses?: RawWhatsAppStatus[];
       };
     }[];
   }[];
+}
+
+export interface ParsedWhatsAppStatusUpdate {
+  providerMessageId: string;
+  status: "sent" | "delivered" | "read" | "failed";
+  phoneNumberId: string;
+}
+
+/**
+ * Meta's delivery-receipt webhooks (`statuses`, not `messages`) — separate
+ * from parseInboundWhatsAppWebhook because they describe an *outbound*
+ * message's lifecycle, not new inbound content. Statuses Meta can send
+ * that this product doesn't track (e.g. `deleted`) are skipped, not guessed
+ * at.
+ */
+export function parseWhatsAppStatusUpdates(payload: unknown): ParsedWhatsAppStatusUpdate[] {
+  const body = payload as WhatsAppWebhookPayload;
+  const updates: ParsedWhatsAppStatusUpdate[] = [];
+
+  for (const entry of body.entry ?? []) {
+    for (const change of entry.changes ?? []) {
+      const phoneNumberId = change.value?.metadata?.phone_number_id;
+      if (!phoneNumberId) continue;
+
+      for (const status of change.value?.statuses ?? []) {
+        if (status.status === "sent" || status.status === "delivered" || status.status === "read" || status.status === "failed") {
+          updates.push({ providerMessageId: status.id, status: status.status, phoneNumberId });
+        }
+      }
+    }
+  }
+
+  return updates;
 }
 
 /**

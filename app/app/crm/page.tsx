@@ -21,6 +21,11 @@ export interface LeadSummary {
   contact_email: string | null;
   status: string;
   metadata: Record<string, unknown>;
+  tags: string[];
+  assigned_to: string | null;
+  last_interaction_at: string | null;
+  next_follow_up_at: string | null;
+  notes: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -146,7 +151,8 @@ export default function CrmPage() {
               <p>Phone: {selected.contact_phone ?? "—"}</p>
               <p>Email: {selected.contact_email ?? "—"}</p>
               <p>Source: {selected.source}</p>
-              <p>Assigned owner: Not available</p>
+              <p>Assigned owner: {selected.assigned_to ? "Assigned to a staff member" : "Unassigned"}</p>
+              <p>Next follow-up: {selected.next_follow_up_at ? new Date(selected.next_follow_up_at).toLocaleString() : "None scheduled"}</p>
               <p>Received: {new Date(selected.created_at).toLocaleString()}</p>
             </div>
             <div>

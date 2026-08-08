@@ -14,6 +14,8 @@ export type Permission =
   | "wallet:spend"
   | "human_handoff:assign"
   | "human_handoff:resolve"
-  | "integration:configure";
+  | "integration:configure"
+  | "whatsapp:send"
+  | "crm:manage";
 
 export type { TenantRole };

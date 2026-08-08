@@ -9,6 +9,7 @@ export async function createLead(
     contactName?: string | null;
     contactPhone?: string | null;
     contactEmail?: string | null;
+    normalizedPhone?: string | null;
     metadata?: Record<string, unknown>;
   }
 ): Promise<LeadRow> {
@@ -20,6 +21,7 @@ export async function createLead(
       contact_name: input.contactName ?? null,
       contact_phone: input.contactPhone ?? null,
       contact_email: input.contactEmail ?? null,
+      normalized_phone: input.normalizedPhone ?? null,
       metadata: input.metadata ?? {},
     })
     .select("*")
@@ -42,6 +44,32 @@ export async function updateLeadStatus(
   return data as LeadRow;
 }
 
+export async function updateLead(
+  supabase: ServiceClient,
+  input: {
+    leadId: string;
+    tenantId: string;
+    tags?: string[];
+    assignedTo?: string | null;
+    notes?: string | null;
+    nextFollowUpAt?: string | null;
+    contactName?: string | null;
+    contactEmail?: string | null;
+  }
+): Promise<LeadRow> {
+  const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+  if (input.tags !== undefined) patch.tags = input.tags;
+  if (input.assignedTo !== undefined) patch.assigned_to = input.assignedTo;
+  if (input.notes !== undefined) patch.notes = input.notes;
+  if (input.nextFollowUpAt !== undefined) patch.next_follow_up_at = input.nextFollowUpAt;
+  if (input.contactName !== undefined) patch.contact_name = input.contactName;
+  if (input.contactEmail !== undefined) patch.contact_email = input.contactEmail;
+
+  const { data, error } = await supabase.from("crm_leads").update(patch).eq("id", input.leadId).eq("tenant_id", input.tenantId).select("*").single();
+  if (error) throw new Error(`updateLead: ${error.message}`);
+  return data as LeadRow;
+}
+
 export async function findLeadByPhone(
   supabase: ServiceClient,
   tenantId: string,
@@ -56,6 +84,24 @@ export async function findLeadByPhone(
     .limit(1)
     .maybeSingle();
   if (error) throw new Error(`findLeadByPhone: ${error.message}`);
+  return (data as LeadRow) ?? null;
+}
+
+/** Preferred over findLeadByPhone for dedupe — matches on the normalized form so "9876543210" and "+91 98765 43210" resolve to the same contact. */
+export async function findLeadByNormalizedPhone(
+  supabase: ServiceClient,
+  tenantId: string,
+  normalizedPhone: string
+): Promise<LeadRow | null> {
+  const { data, error } = await supabase
+    .from("crm_leads")
+    .select("*")
+    .eq("tenant_id", tenantId)
+    .eq("normalized_phone", normalizedPhone)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error(`findLeadByNormalizedPhone: ${error.message}`);
   return (data as LeadRow) ?? null;
 }
 

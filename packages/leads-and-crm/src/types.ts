@@ -10,6 +10,12 @@ export interface LeadRow {
   contact_email: string | null;
   status: LeadStatus;
   metadata: Record<string, unknown>;
+  tags: string[];
+  assigned_to: string | null;
+  last_interaction_at: string | null;
+  next_follow_up_at: string | null;
+  notes: string | null;
+  normalized_phone: string | null;
   created_at: string;
   updated_at: string;
 }

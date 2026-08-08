@@ -20,9 +20,20 @@ export interface SendWhatsAppMessageResult {
   mode: "shadow" | "live";
 }
 
+export interface SendTemplateMessageInput {
+  tenantId: string;
+  to: string;
+  templateName: string;
+  languageCode: string;
+  /** Positional body parameters only — matches this product's v1 template component scope. */
+  bodyParams?: string[];
+}
+
 export interface WhatsAppAdapter {
   readonly mode: "disabled" | "shadow" | "live";
   sendMessage(input: { tenantId: string; to: string; body: string }): Promise<SendWhatsAppMessageResult>;
+  /** Meta requires an approved template for any business-initiated message outside the 24h customer-service window. */
+  sendTemplateMessage(input: SendTemplateMessageInput): Promise<SendWhatsAppMessageResult>;
 }
 
 export class IntegrationDisabledError extends Error {

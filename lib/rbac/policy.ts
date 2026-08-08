@@ -22,6 +22,8 @@ const ROLE_PERMISSIONS: Record<TenantRole, ReadonlySet<Permission>> = {
     "human_handoff:assign",
     "human_handoff:resolve",
     "integration:configure",
+    "whatsapp:send",
+    "crm:manage",
   ]),
   admin: new Set<Permission>([
     "tenant:invite_member",
@@ -37,6 +39,8 @@ const ROLE_PERMISSIONS: Record<TenantRole, ReadonlySet<Permission>> = {
     "human_handoff:assign",
     "human_handoff:resolve",
     "integration:configure",
+    "whatsapp:send",
+    "crm:manage",
   ]),
   operator: new Set<Permission>([
     "brand_brain:view",
@@ -45,6 +49,8 @@ const ROLE_PERMISSIONS: Record<TenantRole, ReadonlySet<Permission>> = {
     "mission:view",
     "wallet:view",
     "human_handoff:assign",
+    "whatsapp:send",
+    "crm:manage",
   ]),
   viewer: new Set<Permission>(["brand_brain:view", "mission:view", "wallet:view"]),
 };

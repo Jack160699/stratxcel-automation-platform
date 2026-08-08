@@ -7,6 +7,7 @@
   "types": "src/index.ts",
   "dependencies": {
     "@stratxcel/audit": "*",
+    "@stratxcel/human-handoff": "*",
     "@stratxcel/leads-and-crm": "*",
     "@stratxcel/missions": "*",
     "@supabase/supabase-js": "^2.110.7"

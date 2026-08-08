@@ -1,8 +1,8 @@
 import http from "node:http";
 import os from "node:os";
 import crypto from "node:crypto";
-import { parseInboundWhatsAppWebhook, verifyWhatsAppWebhookSignature } from "@stratxcel/whatsapp";
-import { createServiceClient as createWhatsAppClient, findActiveBindingByPhoneNumberId, recordUnmatchedEvent } from "@stratxcel/whatsapp";
+import { parseInboundWhatsAppWebhook, parseWhatsAppStatusUpdates, verifyWhatsAppWebhookSignature } from "@stratxcel/whatsapp";
+import { createServiceClient as createWhatsAppClient, findActiveBindingByPhoneNumberId, recordUnmatchedEvent, updateWhatsAppMessageStatus } from "@stratxcel/whatsapp";
 import { createServiceClient as createQueueClient, createPostgresQueueAdapter, recordWorkerHeartbeat, getWorkerHealth } from "@stratxcel/queue";
 
 const WORKER_TYPE = "whatsapp-worker" as const;
@@ -112,10 +112,26 @@ async function handleInbound(req: http.IncomingMessage, res: http.ServerResponse
     await getQueue().enqueue({
       tenantId: binding.tenant_id,
       jobType: "whatsapp.process_inbound",
-      payload: { message },
+      payload: { message, phoneBindingId: binding.id },
       idempotencyKey: `whatsapp_message:${message.providerMessageId}`,
       traceId: crypto.randomUUID(),
     });
+  }
+
+  // Delivery-receipt updates (sent/delivered/read/failed) are cheap,
+  // idempotent, tenant-scoped single-row updates — handled inline rather
+  // than queued, unlike the expensive conversation-processing path above.
+  // Tolerates out-of-order arrival (see update_whatsapp_message_status's
+  // own no-regression guard).
+  const statusUpdates = parseWhatsAppStatusUpdates(JSON.parse(rawBody));
+  for (const update of statusUpdates) {
+    const binding = await findActiveBindingByPhoneNumberId(getWhatsAppClient(), update.phoneNumberId);
+    if (!binding) continue; // same "never guess the tenant" rule as inbound messages
+    try {
+      await updateWhatsAppMessageStatus(getWhatsAppClient(), { tenantId: binding.tenant_id, providerMessageId: update.providerMessageId, status: update.status });
+    } catch (err) {
+      console.error(`[whatsapp-worker] status update failed for ${update.providerMessageId}:`, err);
+    }
   }
 }
 
