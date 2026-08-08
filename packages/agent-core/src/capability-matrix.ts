@@ -20,10 +20,10 @@ export interface CapabilityEntry {
 export const ADMIN_CAPABILITY_MATRIX: CapabilityEntry[] = [
   {
     area: "Agency Overview",
-    level: "UNAVAILABLE",
-    readTools: [],
+    level: "READ",
+    readTools: ["agency_overview"],
     mutationTools: [],
-    notes: "No dedicated cross-area overview tool exists yet; compose list_clients + inspect_system_health manually in v1.",
+    notes: "Cross-tenant counts (clients, open handoffs, pending approvals) plus worker health — composed from the same real tables list_clients/list_handoffs/list_approvals/inspect_system_health already read per-tenant.",
   },
   {
     area: "Clients",

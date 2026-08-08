@@ -27,6 +27,36 @@ function requireTenantId(args: Record<string, unknown>): string {
 export const ADMIN_READ_TOOLS: AgentTool[] = [
   {
     schema: {
+      name: "agency_overview",
+      description: "Cross-tenant agency snapshot: total clients, open handoffs, pending approvals, and worker health — composed from existing real counts, not a fabricated summary.",
+      parameters: { type: "object", properties: {} },
+    },
+    mutating: false,
+    risk: "read",
+    requiredPermission: "agent:read:clients",
+    async execute(ctx) {
+      // Every count below is a direct, service-role-scoped aggregate over
+      // the same tables list_clients/list_handoffs/list_approvals already
+      // read per-tenant — this just removes the tenantId filter, it does
+      // not touch Social's cookie-scoped OwnerContext or invent new data.
+      const [{ count: tenantCount }, { count: openHandoffCount }, { count: pendingApprovalCount }] = await Promise.all([
+        ctx.supabase.from("tenants").select("id", { count: "exact", head: true }),
+        // Status vocabulary matches listOpenHandoffs/listPendingApprovals exactly (see packages/human-handoff, packages/approvals).
+        ctx.supabase.from("human_handoffs").select("id", { count: "exact", head: true }).in("status", ["OPEN", "IN_PROGRESS"]),
+        ctx.supabase.from("approvals").select("id", { count: "exact", head: true }).eq("status", "PENDING"),
+      ]);
+      const workerTypes: WorkerType[] = ["mission-worker", "whatsapp-worker", "hermes-gateway"];
+      const workerHealth = await Promise.all(workerTypes.map(async (type) => ({ workerType: type, health: await getWorkerHealth(ctx.supabase, type) })));
+      return {
+        tenantCount: tenantCount ?? 0,
+        openHandoffCount: openHandoffCount ?? 0,
+        pendingApprovalCount: pendingApprovalCount ?? 0,
+        workerHealth,
+      };
+    },
+  },
+  {
+    schema: {
       name: "list_clients",
       description: "List Stratxcel client tenants (id, slug, name, created_at).",
       parameters: { type: "object", properties: { limit: { type: "number" } } },
