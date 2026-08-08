@@ -83,9 +83,24 @@ function recordWhatsAppMessageRpc(tables: Tables, params: Record<string, unknown
   return { data: { success: true, already_recorded: false, message_id: row.id, conversation_id: convo.id }, error: null };
 }
 
-export function createFakeSupabase(seed: Tables = {}): FakeSupabaseHandle {
+function updateWhatsAppMessageStatusRpc(tables: Tables, params: Record<string, unknown>) {
+  const p = params as { p_tenant_id: string; p_provider_message_id: string; p_status: string };
+  const row = (tables.whatsapp_messages ?? []).find((m) => m.tenant_id === p.p_tenant_id && m.provider_message_id === p.p_provider_message_id);
+  if (!row) return { data: { success: false, reason: "not_found" }, error: null };
+  row.status = p.p_status;
+  row.status_updated_at = new Date().toISOString();
+  return { data: { success: true, updated: true }, error: null };
+}
+
+export interface FakeSupabaseOptions {
+  /** RPC names to make throw (a stand-in for a genuine transient DB/network failure), for tests that need to prove a caller's error handling rather than its happy path. */
+  failRpc?: string[];
+}
+
+export function createFakeSupabase(seed: Tables = {}, options: FakeSupabaseOptions = {}): FakeSupabaseHandle {
   const tables: Tables = { ...seed };
   const fromCalls: string[] = [];
+  const failRpc = new Set(options.failRpc ?? []);
 
   const chain: any = {
     _table: "",
@@ -157,7 +172,9 @@ export function createFakeSupabase(seed: Tables = {}): FakeSupabaseHandle {
       }
     },
     async rpc(name: string, params: Record<string, unknown>) {
+      if (failRpc.has(name)) throw new Error(`fake-supabase: simulated transient failure for rpc ${name}`);
       if (name === "record_whatsapp_message") return recordWhatsAppMessageRpc(tables, params);
+      if (name === "update_whatsapp_message_status") return updateWhatsAppMessageStatusRpc(tables, params);
       return { data: null, error: { message: `fake-supabase: no handler for rpc ${name}` } };
     },
   };

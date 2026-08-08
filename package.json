@@ -18,6 +18,7 @@
     "test:whatsapp-crm": "node --experimental-strip-types packages/whatsapp/src/__tests__/phone-normalize.test.ts && node --experimental-strip-types packages/whatsapp/src/__tests__/escalation.test.ts && node --experimental-strip-types packages/whatsapp/src/__tests__/consent.test.ts && node --experimental-strip-types lib/whatsapp/__tests__/whatsapp-crm-safety.test.ts",
     "test:whatsapp-shadow": "node --experimental-strip-types packages/whatsapp/src/__tests__/legacy-bridge.test.ts && node --experimental-strip-types lib/whatsapp/__tests__/whatsapp-shadow-safety.test.ts && node --experimental-strip-types lib/whatsapp/__tests__/whatsapp-cutover-safety.test.ts",
     "test:whatsapp-auto-reply": "node --experimental-strip-types packages/whatsapp/src/__tests__/outbound.test.ts && node --experimental-strip-types apps/whatsapp-worker/src/__tests__/auto-reply.test.ts",
+    "test:whatsapp-durable-ack": "node --experimental-strip-types apps/whatsapp-worker/src/__tests__/durable-ack.test.ts",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
