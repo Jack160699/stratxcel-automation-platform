@@ -5,13 +5,25 @@ import type { EnqueueJobInput, QueueJobRow } from "./types.ts";
 /**
  * All claim/lease/completion mutations go through the queue_internal.*
  * SQL functions (supabase.rpc), never direct table UPDATEs from this
- * client code — the transactional FOR UPDATE SKIP LOCKED claim in
+ * client code -- the transactional FOR UPDATE SKIP LOCKED claim in
  * particular cannot be expressed safely as a sequence of separate
  * select-then-update calls from the client; it must happen inside one
  * Postgres statement. Those functions are only executable by service_role
  * (see supabase/migrations/20260803130000_queue.sql), which is exactly the
  * client this adapter is constructed with.
  */
+
+/**
+ * Job types whose idempotency key represents a permanent, one-time logical
+ * event rather than a recurring one. For these, a unique-violation on
+ * (tenant_id, job_type, idempotency_key) can legitimately point at a
+ * TERMINAL row (see 20260808270000_whatsapp_queue_terminal_idempotency.sql
+ * for whatsapp.process_inbound), not just an in-flight one, so the lookup
+ * below must not filter by status. Every other job type keeps the original
+ * active-only lookup, matching queue_jobs_tenant_idempotency_active_idx.
+ */
+const TERMINAL_SAFE_IDEMPOTENT_JOB_TYPES = new Set(["whatsapp.process_inbound"]);
+
 export function createPostgresQueueAdapter(supabase: ServiceClient): QueueAdapter {
   return {
     async enqueue(input: EnqueueJobInput): Promise<QueueJobRow> {
@@ -31,18 +43,41 @@ export function createPostgresQueueAdapter(supabase: ServiceClient): QueueAdapte
         .select("*")
         .single();
       if (error) {
-        // A duplicate active idempotency key is not an error condition for
-        // the caller — it means the in-flight job is already doing the
-        // work, so return that existing job instead of throwing.
         if (error.code === "23505" && input.idempotencyKey) {
-          const existing = await supabase
-            .from("queue_jobs")
-            .select("*")
-            .eq("tenant_id", input.tenantId)
-            .eq("idempotency_key", input.idempotencyKey)
-            .not("status", "in", "(SUCCEEDED,FAILED,DEAD_LETTER,CANCELLED)")
-            .maybeSingle();
-          if (existing.data) return existing.data as QueueJobRow;
+          if (TERMINAL_SAFE_IDEMPOTENT_JOB_TYPES.has(input.jobType)) {
+            // whatsapp.process_inbound (and any future job type added to
+            // TERMINAL_SAFE_IDEMPOTENT_JOB_TYPES) is permanently deduped at
+            // the DB level regardless of status -- a redelivery of the same
+            // provider message ID must resolve back to the SAME logical job
+            // even if it already reached SUCCEEDED/FAILED/DEAD_LETTER/
+            // CANCELLED, never create a second row. Scoped to this exact
+            // tenant + job_type + idempotency_key so it can never return
+            // another tenant's or another job type's row.
+            const existing = await supabase
+              .from("queue_jobs")
+              .select("*")
+              .eq("tenant_id", input.tenantId)
+              .eq("job_type", input.jobType)
+              .eq("idempotency_key", input.idempotencyKey)
+              .maybeSingle();
+            if (existing.data) return existing.data as QueueJobRow;
+          } else {
+            // A duplicate active idempotency key is not an error condition
+            // for the caller -- it means the in-flight job is already doing
+            // the work, so return that existing job instead of throwing.
+            // Terminal jobs are deliberately excluded here: for these job
+            // types the same key can be legitimately reused for a later,
+            // genuinely new occurrence of the same logical event once the
+            // prior one has finished.
+            const existing = await supabase
+              .from("queue_jobs")
+              .select("*")
+              .eq("tenant_id", input.tenantId)
+              .eq("idempotency_key", input.idempotencyKey)
+              .not("status", "in", "(SUCCEEDED,FAILED,DEAD_LETTER,CANCELLED)")
+              .maybeSingle();
+            if (existing.data) return existing.data as QueueJobRow;
+          }
         }
         throw new Error(`enqueue: ${error.message}`);
       }
