@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/Input";
 import { Card, CardHeading } from "@/components/ui/Card";
 import { StatusChip, type ChipState } from "@/components/ui/StatusChip";
 import { ErrorState } from "@/components/ui/Feedback";
+import { WhatsAppAgentPairingCard } from "@/components/agent-core/WhatsAppAgentPairingCard";
 
 interface PhoneBinding {
   id: string;
@@ -187,6 +188,17 @@ export default function WhatsAppAdminPage() {
         </p>
       </header>
       {error && <ErrorState message={error} />}
+
+      {tenantId && (
+        <WhatsAppAgentPairingCard
+          tenantId={tenantId}
+          pairingUrl="/api/admin/whatsapp-agent/pairing"
+          statusUrl="/api/admin/whatsapp-agent/status"
+          linkUrl="/api/admin/whatsapp-agent/link"
+          linkCommandPrefix="LINK ADMIN"
+          numberDisplay="+91 77778 12777"
+        />
+      )}
 
       {tenantId && (
         <Card>

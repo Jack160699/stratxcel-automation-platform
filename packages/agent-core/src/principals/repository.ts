@@ -199,21 +199,31 @@ export interface OwnPrincipalStatus {
   tenantId?: string | null;
   lastUsedAt?: string | null;
   verifiedAt?: string;
+  /** Last 2 digits only, e.g. "•••••••77" — enough for the caller to
+   *  recognize their own number, never enough to identify someone else's. */
+  maskedPhone?: string;
+}
+
+function maskPhone(normalizedPhone: string): string {
+  const visible = normalizedPhone.slice(-2);
+  return "•".repeat(Math.max(normalizedPhone.length - 2, 0)) + visible;
 }
 
 /** Status lookup for an authenticated caller's OWN link — used by the
  *  status routes (PHASE 18). Never returns another user's phone number or
- *  principal row; scoped strictly to authUserId. */
+ *  principal row; scoped strictly to authUserId. The phone itself is always
+ *  masked before it leaves this function — no call site ever sees or can
+ *  forward the full number. */
 export async function getOwnWhatsAppPrincipalStatus(
   supabase: ServiceClient,
   authUserId: string
 ): Promise<OwnPrincipalStatus> {
   const { data, error } = await supabase
     .from("whatsapp_channel_principals")
-    .select("principal_type, tenant_id, last_used_at, verified_at")
+    .select("principal_type, tenant_id, last_used_at, verified_at, normalized_phone")
     .eq("auth_user_id", authUserId)
     .eq("status", "active")
-    .maybeSingle<{ principal_type: "staff" | "client"; tenant_id: string | null; last_used_at: string | null; verified_at: string }>();
+    .maybeSingle<{ principal_type: "staff" | "client"; tenant_id: string | null; last_used_at: string | null; verified_at: string; normalized_phone: string }>();
   if (error) throw error;
   if (!data) return { linked: false };
   return {
@@ -222,6 +232,7 @@ export async function getOwnWhatsAppPrincipalStatus(
     tenantId: data.tenant_id,
     lastUsedAt: data.last_used_at,
     verifiedAt: data.verified_at,
+    maskedPhone: maskPhone(data.normalized_phone),
   };
 }
 
