@@ -1,0 +1,20 @@
+{
+  "name": "@stratxcel/agent-core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "dependencies": {
+    "@stratxcel/approvals": "*",
+    "@stratxcel/audit": "*",
+    "@stratxcel/brand-brain": "*",
+    "@stratxcel/human-handoff": "*",
+    "@stratxcel/leads-and-crm": "*",
+    "@stratxcel/missions": "*",
+    "@stratxcel/payments-and-wallet": "*",
+    "@stratxcel/queue": "*",
+    "@stratxcel/whatsapp": "*",
+    "@supabase/supabase-js": "^2.110.7"
+  }
+}
