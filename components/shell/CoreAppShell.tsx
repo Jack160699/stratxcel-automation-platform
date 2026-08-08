@@ -54,11 +54,11 @@ export function CoreAppShell({
   return (
     <div className="flex min-h-screen bg-sx-bg text-sx-text">
       <div className="hidden md:block">
-        <Sidebar groups={sidebarGroups} activeKey={activeKey} brand={<BrandMark expanded product={product} />} />
+        <Sidebar groups={sidebarGroups} activeKey={activeKey} brand={(collapsed) => <BrandMark expanded={!collapsed} product={product} />} />
       </div>
-      <div className="flex min-w-0 flex-1 flex-col pb-14 md:pb-0">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col pb-14 md:pb-0">
         <TopCommandBar context={topBarContext} agentStatus={agentStatus} staffBadge={staffBadge} userMenu={userMenu} />
-        <main className="flex-1 overflow-y-auto p-5">{children}</main>
+        <main className="min-h-0 min-w-0 flex-1 overflow-y-auto p-5">{children}</main>
       </div>
       <MobileBottomNav items={mobileNavItems} activeKey={activeKey} moreGroups={mobileMoreGroups} />
     </div>

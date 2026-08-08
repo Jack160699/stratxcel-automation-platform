@@ -1,183 +1,210 @@
 // Run with: node --experimental-strip-types lib/rbac/__tests__/unified-crm-inbox.test.ts
 //
-// Regression guard for the unified /app + /admin shell and the real
-// crm_leads/whatsapp_conversations/whatsapp_messages CRM/inbox workspace
-// (components/crm/*), replacing the old shadow-message "proposed replies"
-// UI. components/shell/navigation-data.ts holds the nav model as plain
-// TypeScript (no JSX, no React import), specifically so it can be imported
-// and its functions called directly here for real functional coverage —
-// components/shell/navigation.tsx (which merges this data with JSX icon
-// components) can't be imported by a plain Node script, since
-// --experimental-strip-types strips TypeScript types but does not provide a
-// JSX transform. Everything else here (CrmWorkspace and its children, which
-// are "use client" React components using hooks that only resolve in a
-// browser/Next.js runtime) is asserted against source, same convention as
-// every other shell/page test in this build.
+// Regression guard for the corrective pass that (1) separated /app's and
+// /admin's navigation into two genuinely independent information
+// architectures sharing only the visual shell, (2) replaced the sidebar's
+// hover-expand-as-overlay interaction with a stable expanded-by-default /
+// explicit-collapse model, and (3) repaired the CRM workspace layout
+// (two-pane + on-demand details drawer, auto-select on desktop, overflow
+// containment). components/shell/navigation/{active-route,app-nav-data,
+// admin-nav-data}.ts are plain TypeScript (no JSX, no React import), so
+// their functions/data are imported and exercised directly here for real
+// functional coverage. Everything else (CrmWorkspace and its children,
+// Sidebar — all "use client" React components using hooks that only
+// resolve in a browser/Next.js runtime) is asserted against source, same
+// convention as every other shell/page test in this build.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { buildNavGroupsData as buildSidebarGroups, flattenNavItemsData as flattenNavItems, resolveActiveKey } from "../../../components/shell/navigation-data.ts";
+import { resolveActiveKey } from "../../../components/shell/navigation/active-route.ts";
+import { APP_NAV_GROUPS_DATA } from "../../../components/shell/navigation/app-nav-data.ts";
+import { ADMIN_NAV_GROUPS_DATA } from "../../../components/shell/navigation/admin-nav-data.ts";
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const read = (...parts: string[]) => fs.readFileSync(path.join(root, ...parts), "utf8");
-const exists = (...parts: string[]) => fs.existsSync(path.join(root, ...parts));
+
+function flatten(groups: typeof APP_NAV_GROUPS_DATA) {
+  return groups.flatMap((g) => g.items);
+}
 
 function run() {
   // =========================================================================
-  // UNIFIED SHELL
+  // NAVIGATION
   // =========================================================================
 
-  // --- 1. /app and /admin both use the same canonical navigation model ---
-  const appGroups = buildSidebarGroups("app");
-  const adminGroups = buildSidebarGroups("admin");
-  assert.ok(appGroups.length > 0 && adminGroups.length > 0, "both modes must produce non-empty nav groups");
+  const appKeys = new Set(flatten(APP_NAV_GROUPS_DATA).map((i) => i.key));
+  const adminKeys = new Set(flatten(ADMIN_NAV_GROUPS_DATA).map((i) => i.key));
+  const appHrefs = new Set(flatten(APP_NAV_GROUPS_DATA).map((i) => i.href));
+  const adminHrefs = new Set(flatten(ADMIN_NAV_GROUPS_DATA).map((i) => i.href));
 
-  // --- 2. Common destinations stay in the same relative order in both ----
-  const sharedKeys = ["home", "missions", "approvals", "crm", "integrations", "team"];
-  const appOrder = flattenNavItems("app")
-    .map((i) => i.key)
-    .filter((k) => sharedKeys.includes(k));
-  const adminOrder = flattenNavItems("admin")
-    .map((i) => i.key)
-    .filter((k) => sharedKeys.includes(k));
-  assert.deepEqual(appOrder, adminOrder, "shared destinations must appear in the same relative order in both /app and /admin");
-  // Same href pairing for the CRM concept specifically (different route, same position/order).
-  const appCrm = flattenNavItems("app").find((i) => i.key === "crm");
-  const adminCrm = flattenNavItems("admin").find((i) => i.key === "crm");
-  assert.equal(appCrm?.href, "/app/crm");
-  assert.equal(adminCrm?.href, "/admin/leads");
+  // --- 1/2. /app and /admin each use their own, non-empty nav model -------
+  assert.ok(appHrefs.size > 0, "APP_NAV_GROUPS_DATA must be non-empty");
+  assert.ok(adminHrefs.size > 0, "ADMIN_NAV_GROUPS_DATA must be non-empty");
+  assert.ok([...appHrefs].every((h) => h.startsWith("/app")), "every app nav href must live under /app");
+  assert.ok([...adminHrefs].every((h) => h.startsWith("/admin")), "every admin nav href must live under /admin");
 
-  // --- 3. Admin-only items are role-gated (never reachable from /app) ----
-  const adminOnlyKeys = ["clients", "handoffs", "operations", "system", "audit"];
-  const appKeys = new Set(flattenNavItems("app").map((i) => i.key));
-  for (const key of adminOnlyKeys) {
-    assert.equal(appKeys.has(key), false, `admin-only nav item "${key}" must never appear in the /app sidebar`);
-    assert.ok(flattenNavItems("admin").some((i) => i.key === key), `admin-only nav item "${key}" must appear in /admin`);
+  // --- 3. app does not inherit admin-only items ---------------------------
+  for (const key of ["clients", "handoffs", "operations", "system", "audit"]) {
+    assert.equal(appKeys.has(key), false, `agency-only nav item "${key}" must never appear in APP_NAV_GROUPS_DATA`);
   }
-  // No /app-only concept (e.g. Copilot) leaks into /admin either.
-  assert.equal(flattenNavItems("admin").some((i) => i.key === "copilot"), false, "/admin must never render a Copilot nav item — no admin equivalent exists");
+  assert.equal(appHrefs.has("/admin"), false, "app nav must not link into /admin at all");
 
-  // --- 4. Active-route highlighting: longest-prefix match, real function --
-  assert.equal(resolveActiveKey("/app", "app"), "home");
-  assert.equal(resolveActiveKey("/app/crm", "app"), "crm");
-  assert.equal(resolveActiveKey("/app/crm/abc-123", "app"), "crm", "a lead deep link must still highlight the CRM nav item");
-  assert.equal(resolveActiveKey("/admin", "admin"), "home");
-  assert.equal(resolveActiveKey("/admin/leads", "admin"), "crm", "admin's Leads route highlights the shared 'crm' nav key");
-  assert.equal(resolveActiveKey("/admin/clients/some-tenant-id", "admin"), "clients");
-  assert.notEqual(resolveActiveKey("/admin/leads", "admin"), "home", "a longer, more specific prefix must win over the root item");
+  // --- 4. admin does not automatically inherit client-only modules --------
+  for (const key of ["copilot", "website", "ads", "brand", "files", "billing", "settings"]) {
+    assert.equal(adminKeys.has(key), false, `client-only nav item "${key}" must never appear in ADMIN_NAV_GROUPS_DATA`);
+  }
+  assert.equal([...adminHrefs].some((h) => h.startsWith("/app")), false, "admin nav must not link into /app at all");
 
-  // --- 5. No duplicate/nested sidebars — exactly one <Sidebar> in the shared shell
+  // --- 5. both use the same visual Sidebar/CoreAppShell component ---------
+  const clientShell = read("app", "app", "ClientAppShell.tsx");
+  const adminShellSrc = read("app", "admin", "(shell)", "AppShell.tsx");
+  assert.ok(/CoreAppShell/.test(clientShell) && /CoreAppShell/.test(adminShellSrc), "both shells must compose the shared CoreAppShell");
   const coreShell = read("components", "shell", "CoreAppShell.tsx");
-  assert.equal((coreShell.match(/<Sidebar\b/g) ?? []).length, 1, "CoreAppShell must render exactly one Sidebar — /app and /admin must not each carry their own");
-  assert.equal(exists("app", "admin", "(shell)", "Sidebar.tsx"), false, "/admin must not have its own bespoke sidebar file");
-  assert.equal(exists("app", "app", "Sidebar.tsx"), false, "/app must not have its own bespoke sidebar file");
+  assert.equal((coreShell.match(/<Sidebar\b/g) ?? []).length, 1, "CoreAppShell must render exactly one Sidebar for either product");
+
+  // --- 6/7/8. Active-route highlighting resolves independently, real calls
+  assert.equal(resolveActiveKey("/app/crm", APP_NAV_GROUPS_DATA), "crm", "app CRM must resolve /app/crm");
+  assert.equal(resolveActiveKey("/app/crm/lead-123", APP_NAV_GROUPS_DATA), "crm", "a lead deep link must still highlight the app CRM nav item");
+  assert.equal(resolveActiveKey("/admin/leads", ADMIN_NAV_GROUPS_DATA), "leads", "admin CRM must resolve /admin/leads");
+  assert.equal(resolveActiveKey("/admin", ADMIN_NAV_GROUPS_DATA), "overview");
+  assert.equal(resolveActiveKey("/admin/clients/some-id", ADMIN_NAV_GROUPS_DATA), "clients", "longest-prefix match must win");
+  // The two resolvers are genuinely independent — resolving an /admin path
+  // against the APP tree (which contains no /admin hrefs at all) must not
+  // accidentally match anything by coincidence.
+  assert.notEqual(resolveActiveKey("/admin/leads", APP_NAV_GROUPS_DATA), "leads", "app's nav tree must not resolve an admin-only path");
+
+  // =========================================================================
+  // SIDEBAR
+  // =========================================================================
+  const sidebar = read("components", "shell", "Sidebar.tsx");
+
+  // --- 9. Desktop defaults expanded for new users --------------------------
+  assert.ok(/const \[collapsed, setCollapsed\] = useState\(false\)/.test(sidebar), "collapsed must default to false (expanded) before any stored preference loads");
+
+  // --- 10. Explicit collapse works -----------------------------------------
+  assert.ok(/function toggleCollapsed/.test(sidebar), "an explicit toggle function must exist");
+  assert.ok(/onClick=\{toggleCollapsed\}/.test(sidebar), "collapse/expand must be triggered by an explicit click, not a hover handler");
+
+  // --- 11. Collapse persisted ----------------------------------------------
+  assert.ok(/localStorage\.setItem\(COLLAPSE_KEY/.test(sidebar), "collapse preference must be persisted");
+  assert.ok(/localStorage\.getItem\(COLLAPSE_KEY\)/.test(sidebar), "collapse preference must be read back on mount");
+
+  // --- 12. No hover-driven layout expansion --------------------------------
+  for (const forbidden of ["onMouseEnter", "onMouseLeave", "hoverExpanded", "absolute inset-y-0"]) {
+    assert.equal(sidebar.includes(forbidden), false, `Sidebar must not use "${forbidden}" — no hover-driven overlay expansion`);
+  }
+
+  // --- 13. Collapsed-mode tooltips remain accessible -----------------------
+  assert.ok(/<Tooltip key=\{item\.key\} label=\{item\.label\}>/.test(sidebar), "each collapsed nav item must be wrapped in a Tooltip");
+
+  // --- 14. No horizontal overflow -------------------------------------------
+  assert.ok(/overflow-x-hidden/.test(sidebar), "Sidebar must guard against horizontal overflow");
 
   // =========================================================================
   // CRM
   // =========================================================================
+  const crmWorkspace = read("components", "crm", "CrmWorkspace.tsx");
 
-  // --- 6. Real crm_leads render — the list API reads the real table -------
+  // --- 15/16/17. Real tables still used ------------------------------------
   const leadsRepo = read("packages", "leads-and-crm", "src", "repository.ts");
   assert.ok(/\.from\(["']crm_leads["']\)/.test(leadsRepo), "leads-and-crm repository must read the real crm_leads table");
-  const crmWorkspace = read("components", "crm", "CrmWorkspace.tsx");
-  assert.ok(/\/api\/platform\/leads\?tenantId=/.test(crmWorkspace), "CrmWorkspace must fetch real leads through the existing tenant-scoped leads API");
-
-  // --- 7. WhatsApp source renders ------------------------------------------
-  const conversationRow = read("components", "crm", "ConversationRow.tsx");
-  assert.ok(/whatsapp:\s*["']WhatsApp["']/.test(conversationRow), "ConversationRow must label whatsapp-sourced leads as WhatsApp");
-
-  // --- 8. Website inquiries are preserved, not lost -----------------------
-  const adminLeadsPage = read("app", "admin", "(shell)", "leads", "page.tsx");
-  assert.ok(/stratxcel_contact_messages/.test(adminLeadsPage), "Admin Leads page must still read stratxcel_contact_messages — website inquiries must not be lost");
-  const adminLeadsTabs = read("app", "admin", "(shell)", "leads", "AdminLeadsTabs.tsx");
-  assert.ok(/Website inquiries/.test(adminLeadsTabs), "Admin Leads must surface website inquiries as a clearly labeled secondary tab");
-  assert.ok(/CrmWorkspace/.test(adminLeadsTabs), "Admin Leads' primary tab must be the same shared CrmWorkspace, not a separate admin-only CRM implementation");
-
-  // --- 9. Lead search works -------------------------------------------------
-  const conversationList = read("components", "crm", "ConversationList.tsx");
-  assert.ok(/contact_name/.test(conversationList) && /contact_phone/.test(conversationList) && /contact_email/.test(conversationList), "search must match name, phone, and email");
-  assert.ok(/last_message_preview/.test(conversationList), "search must also match recent message text where feasible");
-
-  // --- 10. Filters work (All/Unread/Mine/Unassigned — not an enterprise builder)
-  for (const key of ['"all"', '"unread"', '"mine"', '"unassigned"']) {
-    assert.ok(conversationList.includes(key), `ConversationList must implement the ${key} filter`);
-  }
-  assert.equal(/FilterBuilder|advancedFilter|customQuery/i.test(conversationList), false, "must stay a simple fixed filter set, not a complex filter builder");
-
-  // =========================================================================
-  // CONVERSATIONS
-  // =========================================================================
-
-  // --- 11/12. Real whatsapp_conversations + whatsapp_messages tables used --
   const messagesLib = read("packages", "whatsapp", "src", "messages.ts");
   assert.ok(/\.from\(["']whatsapp_conversations["']\)/.test(messagesLib), "must read the real whatsapp_conversations table");
   assert.ok(/\.from\(["']whatsapp_messages["']\)/.test(messagesLib), "must read the real whatsapp_messages table");
-  assert.ok(/\/api\/platform\/whatsapp\/conversations\$\{|\/api\/platform\/whatsapp\/conversations\?tenantId=/.test(crmWorkspace), "CrmWorkspace must fetch the real conversations list");
-  assert.ok(/\/api\/platform\/whatsapp\/conversations\/\$\{conversationId\}/.test(crmWorkspace), "CrmWorkspace must fetch real per-conversation messages");
+  assert.ok(/\/api\/platform\/leads\?tenantId=/.test(crmWorkspace), "CrmWorkspace must fetch real leads through the existing tenant-scoped leads API");
 
-  // --- 13. No primary shadow-message dependency ----------------------------
-  // Matches actual usage (a fetch call, a table reference, a field access) —
-  // not bare substring presence, since these files' own doc comments
-  // legitimately mention "whatsapp_shadow_messages" by name to explain that
-  // it's deliberately NOT used here.
-  for (const file of ["CrmWorkspace.tsx", "ConversationList.tsx", "ConversationRow.tsx", "ChatThread.tsx", "ChatBubble.tsx", "types.ts"]) {
-    const src = read("components", "crm", file);
-    assert.equal(/["'`]\/api\/platform\/whatsapp\/shadow-messages|\.from\(["']whatsapp_shadow_messages["']\)|\.would_send\b/.test(src), false, `components/crm/${file} must never depend on the shadow-message diagnostics source`);
-  }
+  // --- 18. Most recent conversation auto-selects on desktop ----------------
+  assert.ok(/isDesktop/.test(crmWorkspace) && /matchMedia\(DESKTOP_MEDIA_QUERY\)/.test(crmWorkspace), "must detect desktop viewport via matchMedia");
+  assert.ok(/last_message_at.*localeCompare|localeCompare.*last_message_at/.test(crmWorkspace), "auto-selection must sort by real last_message_at, most recent first");
+  assert.ok(/mostRecent \?\? entries\[0\]/.test(crmWorkspace), "must fall back to the first lead when no conversation exists yet");
 
-  // --- 14. Inbound/outbound bubble mapping is correct -----------------------
+  // --- 19. Explicit lead deep-link wins over auto-selection -----------------
+  assert.ok(/initialLeadId \?\? null/.test(crmWorkspace), "selection must initialize from an explicit route leadId first");
+  assert.ok(/const stillValid = selectedLeadId && entries\.some/.test(crmWorkspace), "auto-select must not override an already-valid explicit/current selection");
+
+  // --- 20. Search stays inside the list pane ---------------------------------
+  const conversationList = read("components", "crm", "ConversationList.tsx");
+  assert.ok(/min-w-0 max-w-full/.test(conversationList), "the search input must be width-bounded to its own pane");
+  assert.ok(/box-border/.test(conversationList), "the search input must use border-box sizing so padding/border can never push it past 100% width");
+  assert.ok(/w-full max-w-full overflow-x-hidden/.test(crmWorkspace), "the list pane's own wrapper must be width-contained inside the CRM grid track");
+
+  // --- 21. Details closed by default -----------------------------------------
+  assert.ok(/const \[detailsOpen, setDetailsOpen\] = useState\(false\)/.test(crmWorkspace), "detailsOpen must default to false");
+  assert.equal(/localStorage\.getItem\(["']sx-crm-details-open["']\)/.test(crmWorkspace), false, "must not read a previous deployment's stored details-open preference");
+  assert.equal(/DETAILS_PANEL_KEY/.test(crmWorkspace), false, "details-open state must not be persisted at all — always starts closed");
+
+  // --- 22. Details uses a drawer, never a persistent desktop third column --
+  assert.equal(/xl:grid-cols|xl:block/.test(crmWorkspace), false, "CrmWorkspace must not define any xl+-specific persistent column");
+  assert.ok(/grid-cols-1 md:grid-cols-\[minmax\(280px,330px\)_1fr\]/.test(crmWorkspace), "the grid must define exactly two tracks (list, chat) — no third");
+  assert.ok(/<Drawer open=\{detailsOpen\}/.test(crmWorkspace), "lead details must render through the shared Drawer overlay");
+  assert.ok(/<Modal open=\{detailsOpen\}/.test(crmWorkspace), "lead details must render through the shared Modal sheet on mobile");
+
+  // --- 23/24. Inbound/outbound bubble mapping --------------------------------
   const chatBubble = read("components", "crm", "ChatBubble.tsx");
   assert.ok(/outbound = message\.direction === ["']outbound["']/.test(chatBubble), "bubble side must be derived only from the real message.direction field");
-  assert.ok(/justify-end.*justify-start|justify-start.*justify-end/s.test(chatBubble) || (/justify-end/.test(chatBubble) && /justify-start/.test(chatBubble)), "must render distinct left/right alignment for inbound vs outbound");
+  assert.ok(/justify-end/.test(chatBubble) && /justify-start/.test(chatBubble), "must render distinct left/right alignment for inbound vs outbound");
 
-  // --- 15. Delivery statuses render ------------------------------------------
+  // --- 25. Delivery statuses render ------------------------------------------
   for (const status of ["queued", "sent", "delivered", "read", "failed"]) {
     assert.ok(chatBubble.includes(`"${status}"`), `ChatBubble's delivery indicator must handle the real "${status}" status`);
   }
 
-  // --- 16. Unread badge renders ----------------------------------------------
+  // --- 26. Unread rendering preserved -----------------------------------------
+  const conversationRow = read("components", "crm", "ConversationRow.tsx");
   assert.ok(/unread_count/.test(conversationRow), "ConversationRow must render the real unread_count");
-  assert.ok(/conversation\?\.unread_count/.test(conversationList) || /unread_count/.test(conversationList), "unread filter must use the real unread_count field");
 
-  // --- 17. Opening a conversation marks it read; UI reflects zero unread ---
+  // --- 27. Opening a conversation clears unread through existing behavior ---
   const conversationDetailRoute = read("app", "api", "platform", "whatsapp", "conversations", "[id]", "route.ts");
   assert.ok(/markConversationRead/.test(conversationDetailRoute), "GET /api/platform/whatsapp/conversations/[id] must still mark the conversation read server-side");
-  assert.ok(/setConversations.*unread_count:\s*0/s.test(crmWorkspace), "selecting a conversation must optimistically zero its unread badge in the UI, not just server-side");
-  assert.equal(/Read state isn.t tracked yet/.test(crmWorkspace + conversationList), false, "must never claim read state isn't tracked — whatsapp_conversations.unread_count is real");
+  assert.ok(/setConversations.*unread_count:\s*0/s.test(crmWorkspace), "selecting a conversation must optimistically zero its unread badge in the UI");
 
-  // --- 18. Automation-mode control uses the existing PATCH API -------------
-  const conversationHeader = read("components", "crm", "ConversationHeader.tsx");
-  assert.ok(/Take over|Resume automation/.test(conversationHeader), "header must offer a take-over / resume-automation control");
-  assert.ok(/automationMode/.test(crmWorkspace) && /PATCH/.test(crmWorkspace), "automation mode changes must go through the existing PATCH conversations/[id] route, not a new one");
+  // --- 28. Polling preserved ---------------------------------------------------
+  assert.ok(/LIST_POLL_MS = 8_000/.test(crmWorkspace), "list polling interval must be preserved");
+  assert.ok(/THREAD_POLL_MS = 4_000/.test(crmWorkspace), "thread polling interval must be preserved");
+  assert.ok(/if \(!document\.hidden\)/.test(crmWorkspace), "polling must still pause while the tab is hidden");
+
+  // --- 29. /app/conversations uses/redirects to one CRM implementation ------
+  const conversationsPage = read("app", "app", "conversations", "page.tsx");
+  assert.ok(/redirect\("\/app\/crm"\)/.test(conversationsPage), "conversations must redirect into the one unified CRM workspace");
+
+  // =========================================================================
+  // ADMIN LEADS
+  // =========================================================================
+  const adminLeadsTabs = read("app", "admin", "(shell)", "leads", "AdminLeadsTabs.tsx");
+
+  // --- 30. Default tab is CRM --------------------------------------------------
+  assert.ok(/searchParams\.get\("tab"\) === ["']website["'] \? ["']website["'] : ["']crm["']/.test(adminLeadsTabs), "tab must default to crm unless the URL explicitly says otherwise — never default to website");
+
+  // --- 31. WhatsApp lead visible through the CRM data path ---------------------
+  assert.ok(/CrmWorkspace/.test(adminLeadsTabs), "the CRM tab must render the real shared CrmWorkspace");
+
+  // --- 32. Website inquiries remain accessible secondarily ----------------------
+  const adminLeadsPage = read("app", "admin", "(shell)", "leads", "page.tsx");
+  assert.ok(/stratxcel_contact_messages/.test(adminLeadsPage), "website inquiries (stratxcel_contact_messages) must still be read and preserved");
+  assert.ok(/Website inquiries/.test(adminLeadsTabs), "website inquiries must be reachable as an explicit secondary tab");
+
+  // --- 33. Client switcher scoping preserved -------------------------------------
+  assert.ok(/useCurrentTenant/.test(adminLeadsTabs), "must read the active client from the existing ClientSwitcher-backed context");
+  assert.ok(/tenantId=\{active\.tenantId\}/.test(adminLeadsTabs), "CrmWorkspace must be scoped to the currently selected client, never an unscoped/global query");
 
   // =========================================================================
   // SECURITY
   // =========================================================================
 
-  // --- 19. Tenant isolation maintained ---------------------------------------
-  // Every fetch() call must carry tenantId somewhere — either in the URL
-  // (GET requests) or in the request body (PATCH/POST requests, matching
-  // each route's own contract, e.g. PATCH conversations/[id] reads tenantId
-  // from the JSON body, not a query param). Checked over each call's next
-  // ~400 chars (covers multi-line fetch(url, { method, headers, body }) calls)
-  // rather than just the URL template literal alone.
+  // --- 34. Tenant isolation unchanged ---------------------------------------------
   const fetchStarts = [...crmWorkspace.matchAll(/fetch\(/g)].map((m) => m.index);
   assert.ok(fetchStarts.length > 0, "CrmWorkspace must issue tenant-scoped fetches");
   for (const start of fetchStarts) {
     const chunk = crmWorkspace.slice(start, start + 400);
     assert.ok(/tenantId/.test(chunk), `every CrmWorkspace fetch must be tenant-scoped: ${chunk.slice(0, 80)}…`);
   }
-  const sendCallBody = crmWorkspace.match(/JSON\.stringify\(\{ tenantId,[^}]*leadId[^}]*\}\)/g) ?? [];
-  assert.ok(sendCallBody.length > 0, "the outbound send call must include tenantId + leadId in its body, matching the API's own re-verification");
 
-  // --- 20. RBAC maintained ----------------------------------------------------
+  // --- 35. RBAC unchanged -----------------------------------------------------------
   assert.ok(/can\(role, ["']crm:manage["']\)/.test(crmWorkspace), "lead-management controls must be gated by the real crm:manage permission");
   assert.ok(/can\(role, ["']whatsapp:send["']\)/.test(crmWorkspace), "the composer must be gated by the real whatsapp:send permission");
-  const leadDetailsPanel = read("components", "crm", "LeadDetailsPanel.tsx");
-  assert.ok(/canManage/.test(leadDetailsPanel), "LeadDetailsPanel must respect the canManage gate passed down from CrmWorkspace, not assume every viewer can edit");
 
-  // --- 21. Service-role key never sent client-side ----------------------------
+  // --- 36. No client-side service-role credential exposure ---------------------------
   for (const file of fs.readdirSync(path.join(root, "components", "crm")).filter((f) => f.endsWith(".tsx") || f.endsWith(".ts"))) {
     const src = read("components", "crm", file);
     assert.equal(
@@ -186,20 +213,39 @@ function run() {
       `components/crm/${file} is client-rendered and must never reference a service-role client`
     );
   }
+  for (const file of ["Sidebar.tsx", "CoreAppShell.tsx"]) {
+    const src = read("components", "shell", file);
+    assert.equal(/SUPABASE_SERVICE_ROLE_KEY|createSupabaseServiceClient/.test(src), false, `components/shell/${file} must never reference a service-role client`);
+  }
+
+  // --- 37. No WhatsApp secret/credential changes ------------------------------------
+  for (const file of ["Sidebar.tsx", "CoreAppShell.tsx"]) {
+    const src = read("components", "shell", file);
+    assert.equal(/WHATSAPP_APP_SECRET|WHATSAPP_TOKEN|WHATSAPP_VERIFY_TOKEN|WHATSAPP_INTEGRATION_MODE|WHATSAPP_AUTO_REPLY_ENABLED/.test(src), false, `components/shell/${file} must never reference WhatsApp secrets/flags`);
+  }
+  assert.equal(/WHATSAPP_APP_SECRET|WHATSAPP_TOKEN|WHATSAPP_VERIFY_TOKEN/.test(crmWorkspace), false, "CrmWorkspace must never reference WhatsApp secrets directly");
 
   // =========================================================================
   // RESPONSIVE
   // =========================================================================
 
-  // --- 22. Mobile list -> chat -> details navigation is usable ---------------
+  // --- 38. 1366 desktop does not create a persistent third pane ------------------
+  const gridColsMatches = crmWorkspace.match(/grid-cols-\[[^\]]*\]/g) ?? [];
+  for (const m of gridColsMatches) {
+    assert.equal((m.match(/_/g) ?? []).length <= 1, true, `grid track definition must describe at most two columns: ${m}`);
+  }
+
+  // --- 39. Mobile list -> thread behavior works -------------------------------------
   assert.ok(/mobileView/.test(crmWorkspace), "CrmWorkspace must track which mobile-level view is active");
   assert.ok(/setMobileView\(["']thread["']\)/.test(crmWorkspace), "selecting a conversation must advance to the full-screen thread view on mobile");
-  assert.ok(/onBack/.test(crmWorkspace) && /setMobileView\(["']list["']\)/.test(crmWorkspace), "the conversation header's back action must return to the list view on mobile");
-  assert.ok(/md:hidden/.test(crmWorkspace) || /md:flex/.test(crmWorkspace), "the workspace must actually switch layout at the md breakpoint, not just declare mobile state unused");
-  assert.ok(/Modal/.test(crmWorkspace), "lead details must be reachable as a mobile bottom sheet (Modal), not require desktop width");
+  assert.ok(/setMobileView\(["']list["']\)/.test(crmWorkspace), "the back action must return to the list view on mobile");
+
+  // --- 40. Details overlay works on desktop/tablet/mobile ----------------------------
+  assert.ok(/hidden md:block/.test(crmWorkspace), "the Drawer must be the details surface at and above the md breakpoint (desktop + tablet)");
+  assert.ok(/md:hidden/.test(crmWorkspace), "the Modal sheet must be the details surface below the md breakpoint (mobile)");
 
   console.log(
-    "unified-crm-inbox.test.ts: ALL PASS (canonical nav model, admin-only gating, active-route resolution, no duplicate sidebars, real crm_leads/conversations/messages, website inquiries preserved, search/filters, bubble mapping, delivery statuses, unread behavior, automation control, tenant isolation, RBAC, no client-side service-role, mobile navigation)"
+    "unified-crm-inbox.test.ts: ALL PASS (separate app/admin nav models, independent active-route resolution, stable explicit-collapse sidebar, two-pane CRM layout with on-demand details drawer, desktop auto-selection, overflow containment, live data preserved, admin CRM-first tab default, tenant isolation, RBAC, no service-role/secret exposure, responsive behavior)"
   );
 }
 

@@ -35,7 +35,7 @@ export function ConversationHeader({
   const isHumanOwned = mode === "human_only" || mode === "handoff";
 
   return (
-    <div className="flex shrink-0 items-center gap-3 border-b border-sx-border bg-sx-surface-1 px-4 py-3">
+    <div className="flex w-full min-w-0 shrink-0 items-center gap-3 border-b border-sx-border bg-sx-surface-1 px-4 py-2.5">
       {onBack && (
         <IconButton label="Back to conversations" onClick={onBack} className="md:hidden">
           <BackIcon />

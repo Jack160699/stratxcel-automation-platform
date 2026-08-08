@@ -32,15 +32,24 @@ export function ChatComposer({
   }
 
   if (!enabled) {
+    // Compact, composer-shaped disabled state — same row height and layout
+    // as the real composer below, so the footer reads as "sending is
+    // intentionally off" rather than an empty/unfinished area.
     return (
-      <div className="flex shrink-0 items-center gap-2 border-t border-sx-border bg-sx-surface-1 px-4 py-3">
-        <p className="text-xs text-sx-text-subtle">{disabledReason ?? "Manual sending is not configured for this deployment."}</p>
+      <div className="flex shrink-0 items-center gap-2 border-t border-sx-border bg-sx-surface-1 px-4 py-2.5">
+        <div className="flex h-[38px] min-w-0 flex-1 items-center gap-2 rounded-sx-md border border-sx-border bg-sx-surface-2 px-3 text-[13px] text-sx-text-subtle">
+          <LockIcon />
+          <span className="truncate">{disabledReason ?? "Manual sending is not configured for this deployment."}</span>
+        </div>
+        <IconButton label="Send message" disabled className="h-[38px] w-[38px] shrink-0">
+          <SendIcon />
+        </IconButton>
       </div>
     );
   }
 
   return (
-    <div className="flex shrink-0 items-end gap-2 border-t border-sx-border bg-sx-surface-1 px-4 py-3">
+    <div className="flex shrink-0 items-end gap-2 border-t border-sx-border bg-sx-surface-1 px-4 py-2.5">
       <textarea
         value={text}
         onChange={(e) => setText(e.target.value)}
@@ -66,6 +75,15 @@ function SendIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
       <path d="M2.5 9L15.5 3l-4 12-3-5-5.5-1Z" />
+    </svg>
+  );
+}
+
+function LockIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.4" className="shrink-0">
+      <rect x="4" y="8" width="10" height="7" rx="1.5" />
+      <path d="M6 8V5.5a3 3 0 016 0V8" />
     </svg>
   );
 }

@@ -3,40 +3,29 @@
 import { usePathname } from "next/navigation";
 import { signOutAction } from "./actions";
 import { CoreAppShell } from "@/components/shell/CoreAppShell";
-import { buildSidebarGroups, flattenNavItems, resolveActiveKey } from "@/components/shell/navigation";
+import { APP_SIDEBAR_GROUPS, APP_MOBILE_NAV, resolveAppActiveKey } from "@/components/shell/navigation/app-navigation";
 import { ClientTenantSwitcher } from "./ClientTenantSwitcher";
 
 /**
- * /app's shell — the exact same components/shell/CoreAppShell.tsx used by
- * /admin (app/admin/(shell)/AppShell.tsx), now built from the same canonical
- * nav model (components/shell/navigation.tsx) instead of its own independent
- * item array. This is the literal fix for "an owner moving /app/crm ->
- * /admin/missions -> /app/conversations must not feel like the left side of
- * the product was replaced": both shells render the same shared groups in
- * the same order; only /admin appends its own agency-only "Admin" group.
- *
- * "CRM & Leads" and "Conversations" are no longer two separate nav items —
- * /app/conversations now redirects into the unified CRM/inbox workspace at
- * /app/crm (see app/app/conversations/page.tsx), so there is exactly one
- * "CRM" destination, matching /admin's "Leads" (now also the same workspace,
- * scoped to whichever client is selected — app/admin/(shell)/leads/page.tsx).
+ * /app's own shell — the client/workspace product's information
+ * architecture (components/shell/navigation/app-navigation.tsx), visually
+ * built from the same shared CoreAppShell/Sidebar components /admin uses,
+ * but a deliberately separate destination list — see app-navigation.tsx's
+ * header comment. /app never renders agency-only destinations (Clients,
+ * Operations Queue, System Health, Audit Log, internal Human Handoffs);
+ * those exist only in /admin.
  */
-const SIDEBAR_GROUPS = buildSidebarGroups("app");
-const FLAT_ITEMS = flattenNavItems("app");
-
-const MOBILE_NAV = FLAT_ITEMS.filter((i) => ["home", "copilot", "missions", "approvals"].includes(i.key));
-
 export function ClientAppShell({ email, children }: { email: string; children: React.ReactNode }) {
   const pathname = usePathname();
-  const activeKey = resolveActiveKey(pathname, "app");
+  const activeKey = resolveAppActiveKey(pathname);
 
   return (
     <CoreAppShell
       product="App"
-      sidebarGroups={SIDEBAR_GROUPS}
+      sidebarGroups={APP_SIDEBAR_GROUPS}
       activeKey={activeKey}
-      mobileNavItems={MOBILE_NAV}
-      mobileMoreGroups={SIDEBAR_GROUPS.map((g) => ({
+      mobileNavItems={APP_MOBILE_NAV}
+      mobileMoreGroups={APP_SIDEBAR_GROUPS.map((g) => ({
         label: g.label ?? "Overview",
         items: g.items.map((i) => ({ key: i.key, label: i.label, href: i.href })),
       }))}

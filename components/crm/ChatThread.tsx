@@ -59,23 +59,25 @@ export function ChatThread({ messages, loading }: { messages: CrmMessage[]; load
   const sections = groupByDay(messages);
 
   return (
-    <div className="relative min-h-0 flex-1">
-      <div ref={containerRef} onScroll={handleScroll} className="h-full overflow-y-auto px-4 py-4">
-        {loading && messages.length === 0 && <p className="text-center text-xs text-sx-text-subtle">Loading conversation…</p>}
-        {!loading && messages.length === 0 && <p className="text-center text-xs text-sx-text-subtle">No messages yet.</p>}
-        <div className="flex flex-col gap-1">
-          {sections.map((section) => (
-            <div key={section.label} className="flex flex-col gap-1">
-              <div className="sticky top-0 z-10 my-2 flex justify-center">
-                <span className="rounded-sx-pill bg-sx-surface-2 px-2.5 py-1 font-sx-mono text-[10px] uppercase tracking-[0.08em] text-sx-text-subtle">{section.label}</span>
-              </div>
-              {section.messages.map((m) => (
-                <div key={m.id} className="py-0.5">
-                  <ChatBubble message={m} />
+    <div className="relative min-h-0 min-w-0 flex-1">
+      <div ref={containerRef} onScroll={handleScroll} className="sx-thin-scroll h-full min-w-0 overflow-y-auto px-4 py-4">
+        <div className="mx-auto flex w-full max-w-3xl min-w-0 flex-col">
+          {loading && messages.length === 0 && <p className="text-center text-xs text-sx-text-subtle">Loading conversation…</p>}
+          {!loading && messages.length === 0 && <p className="text-center text-xs text-sx-text-subtle">No messages yet.</p>}
+          <div className="flex flex-col gap-1">
+            {sections.map((section) => (
+              <div key={section.label} className="flex flex-col gap-1">
+                <div className="sticky top-0 z-10 my-2 flex justify-center">
+                  <span className="rounded-sx-pill bg-sx-surface-2 px-2.5 py-1 font-sx-mono text-[10px] uppercase tracking-[0.08em] text-sx-text-subtle">{section.label}</span>
                 </div>
-              ))}
-            </div>
-          ))}
+                {section.messages.map((m) => (
+                  <div key={m.id} className="py-0.5">
+                    <ChatBubble message={m} />
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
         </div>
       </div>
       {hasNewBelow && (

@@ -8,7 +8,7 @@ export function ChatBubble({ message }: { message: CrmMessage }) {
   return (
     <div className={`flex ${outbound ? "justify-end" : "justify-start"}`}>
       <div
-        className={`max-w-[min(560px,80%)] rounded-sx-md px-3 py-2 text-[14.5px] leading-relaxed ${
+        className={`max-w-[min(560px,72%)] rounded-sx-md px-3 py-2 text-[14.5px] leading-relaxed ${
           outbound
             ? "rounded-br-sx-xs bg-[rgb(53_201_140_/_0.14)] text-sx-text"
             : "rounded-bl-sx-xs bg-sx-surface-3 text-sx-text"

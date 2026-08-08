@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Tooltip } from "@/components/ui/Overlay";
 
 export interface SidebarNavItem {
@@ -19,13 +19,18 @@ export interface SidebarNavGroup {
   items: SidebarNavItem[];
 }
 
+const COLLAPSE_KEY = "sx-sidebar-collapsed";
+
 /**
- * The one sidebar shared by /app and /admin — docs/product-design/SIDEBAR_INTERACTION_SPECIFICATION.md.
- * 64px collapsed (default) / 248px expanded, expands on pointer hover or
- * keyboard focus-within, collapses when both leave (unless pinned), 140ms
- * ease-out, overlays the workspace rather than shifting it. Pin state
- * persists in localStorage per SIDEBAR_INTERACTION_SPECIFICATION.md §2
- * ("may persist locally").
+ * The one sidebar shared by /app and /admin (different item arrays — see
+ * components/shell/navigation/{app,admin}-navigation.tsx — same visual
+ * component). Desktop behavior is deliberately simple and stable: expanded
+ * by default, occupying real flex-row layout space (never an absolutely
+ * positioned overlay), collapsed only via an explicit button click, never
+ * on hover. The previous hover-expand-as-overlay interaction (64px default,
+ * expands over the workspace on pointer hover, collapses when the pointer
+ * leaves) read as broken rather than intentional — a user shouldn't have to
+ * discover navigation by accidentally hovering a debug rail.
  */
 export function Sidebar({
   groups,
@@ -34,68 +39,63 @@ export function Sidebar({
 }: {
   groups: SidebarNavGroup[];
   activeKey: string;
-  brand: ReactNode;
+  /** Render-prop so the brand lockup can react to collapse state (e.g. hide the wordmark when collapsed) — collapse state lives inside Sidebar, not lifted to the caller. */
+  brand: (collapsed: boolean) => ReactNode;
 }) {
-  const [pinned, setPinned] = useState(false);
-  const [hoverExpanded, setHoverExpanded] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
   const [hydrated, setHydrated] = useState(false);
-  const ref = useRef<HTMLElement>(null);
 
   useEffect(() => {
-    // Reading a client-only localStorage preference on mount; SSR has no access to it,
-    // so it can't be a lazy useState initializer (same accepted pattern as
+    // Client-only localStorage preference; SSR has no access to it, so it
+    // can't be a lazy useState initializer (same accepted pattern as
     // app/admin/(shell)/platform/tenants/page.tsx).
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setPinned(window.localStorage.getItem("sx-sidebar-pinned") === "1");
+    setCollapsed(window.localStorage.getItem(COLLAPSE_KEY) === "1");
     setHydrated(true);
   }, []);
 
-  function togglePin() {
-    const next = !pinned;
-    setPinned(next);
-    window.localStorage.setItem("sx-sidebar-pinned", next ? "1" : "0");
+  function toggleCollapsed() {
+    const next = !collapsed;
+    setCollapsed(next);
+    window.localStorage.setItem(COLLAPSE_KEY, next ? "1" : "0");
   }
 
-  const expanded = pinned || hoverExpanded;
-
   return (
-    // Flow spacer: always 64px unless pinned. The nav itself is absolutely
-    // positioned inside it, so a transient hover-expand overlays the
-    // workspace (per SIDEBAR_INTERACTION_SPECIFICATION.md §1) instead of
-    // shifting it — only a deliberate pin widens the reserved flow space.
-    <div className={`sticky top-0 h-screen shrink-0 ${pinned ? "w-[248px]" : "w-16"}`}>
-      <nav
-        ref={ref}
-        aria-label="Primary"
-        onMouseEnter={() => setHoverExpanded(true)}
-        onMouseLeave={() => setHoverExpanded(false)}
-        onFocus={() => setHoverExpanded(true)}
-        onBlur={(e) => {
-          if (!ref.current?.contains(e.relatedTarget as Node)) setHoverExpanded(false);
-        }}
-        style={{ transitionDuration: hydrated ? "140ms" : "0ms" }}
-        className={`absolute inset-y-0 left-0 z-20 flex flex-col overflow-hidden border-r border-sx-border bg-sx-surface-1 py-3.5 transition-[width] ease-out ${
-          expanded ? "w-[248px] items-stretch px-2.5 shadow-[var(--sx-shadow-lg)]" : "w-16 items-center"
-        }`}
-      >
-      <div className={`mb-1 flex items-center gap-2.5 ${expanded ? "px-1.5" : "justify-center"}`}>
-        {brand}
-        {expanded && (
+    <nav
+      aria-label="Primary"
+      style={{ transitionDuration: hydrated ? "140ms" : "0ms" }}
+      className={`sticky top-0 flex h-screen shrink-0 flex-col overflow-x-hidden border-r border-sx-border bg-sx-surface-1 py-3.5 transition-[width] ease-out ${
+        collapsed ? "w-16 items-center" : "w-[232px] items-stretch px-2.5"
+      }`}
+    >
+      <div className={`mb-1 flex items-center gap-2.5 ${collapsed ? "justify-center" : "px-1.5"}`}>
+        {brand(collapsed)}
+        {!collapsed && (
           <button
-            onClick={togglePin}
-            aria-pressed={pinned}
-            aria-label={pinned ? "Unpin sidebar" : "Pin sidebar expanded"}
-            className={`ml-auto rounded-sx-xs p-1 text-sx-text-subtle hover:text-sx-text ${pinned ? "text-sx-accent" : ""}`}
+            onClick={toggleCollapsed}
+            aria-label="Collapse sidebar"
+            className="ml-auto rounded-sx-xs p-1 text-sx-text-subtle hover:bg-sx-surface-2 hover:text-sx-text"
           >
-            <PinIcon />
+            <CollapseIcon />
           </button>
         )}
       </div>
+      {collapsed && (
+        <Tooltip label="Expand sidebar">
+          <button
+            onClick={toggleCollapsed}
+            aria-label="Expand sidebar"
+            className="mb-1 flex h-8 w-10 items-center justify-center rounded-sx-xs text-sx-text-subtle hover:bg-sx-surface-2 hover:text-sx-text"
+          >
+            <ExpandIcon />
+          </button>
+        </Tooltip>
+      )}
 
-      <div className="flex flex-1 flex-col gap-3 overflow-y-auto">
+      <div className="sx-thin-scroll flex flex-1 flex-col gap-3 overflow-x-hidden overflow-y-auto">
         {groups.map((group, gi) => (
           <div key={group.label ?? gi} className="flex flex-col gap-0.5">
-            {group.label && expanded && (
+            {group.label && !collapsed && (
               <div className="px-2.5 pb-1 pt-2 font-sx-mono text-[9px] uppercase tracking-[0.14em] text-[#4B5666]">{group.label}</div>
             )}
             {group.items.map((item) => {
@@ -105,8 +105,8 @@ export function Sidebar({
                   key={item.key}
                   href={item.href}
                   aria-current={active ? "page" : undefined}
-                  className={`flex h-8 items-center gap-2.5 rounded-sx-sm text-[13px] transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sx-accent ${
-                    expanded ? "px-2.5" : "w-10 justify-center"
+                  className={`flex h-8 min-w-0 items-center gap-2.5 rounded-sx-sm text-[13px] transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sx-accent ${
+                    collapsed ? "w-10 justify-center" : "px-2.5"
                   } ${
                     active
                       ? "bg-sx-accent-muted text-sx-text shadow-[inset_2px_0_0_var(--sx-accent)]"
@@ -114,28 +114,43 @@ export function Sidebar({
                   }`}
                 >
                   <span className={`shrink-0 ${active ? "text-sx-accent" : ""}`}>{item.icon}</span>
-                  {expanded && <span className="truncate">{item.label}</span>}
-                  {expanded && item.badge != null && (
+                  {!collapsed && <span className="min-w-0 truncate">{item.label}</span>}
+                  {!collapsed && item.badge != null && (
                     <span className="ml-auto shrink-0 font-sx-mono text-[10px] text-sx-text-subtle">{item.badge}</span>
                   )}
-                  {expanded && item.live && <span className="h-1.5 w-1.5 shrink-0 animate-sx-pulse rounded-full bg-sx-success" />}
+                  {!collapsed && item.live && <span className="h-1.5 w-1.5 shrink-0 animate-sx-pulse rounded-full bg-sx-success" />}
                 </Link>
               );
-              return expanded ? link : <Tooltip key={item.key} label={item.label}>{link}</Tooltip>;
+              return collapsed ? (
+                <Tooltip key={item.key} label={item.label}>
+                  {link}
+                </Tooltip>
+              ) : (
+                link
+              );
             })}
           </div>
         ))}
       </div>
-      </nav>
-    </div>
+    </nav>
   );
 }
 
-function PinIcon() {
+function CollapseIcon() {
   return (
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4">
-      <path d="M8 2v5.5M5 7.5h6l1 4H4l1-4Z" />
-      <path d="M8 11.5V14" />
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="2.5" width="12" height="11" rx="1.5" />
+      <path d="M6.5 2.5v11" />
+      <path d="M4.3 6l-1.3 2 1.3 2" />
+    </svg>
+  );
+}
+function ExpandIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="2.5" width="12" height="11" rx="1.5" />
+      <path d="M6.5 2.5v11" />
+      <path d="M11.7 6l1.3 2-1.3 2" />
     </svg>
   );
 }

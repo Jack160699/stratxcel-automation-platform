@@ -9,20 +9,29 @@ import { ConversationHeader } from "./ConversationHeader";
 import { ChatThread } from "./ChatThread";
 import { ChatComposer } from "./ChatComposer";
 import { LeadDetailsPanel } from "./LeadDetailsPanel";
-import { ErrorState } from "@/components/ui/Feedback";
+import { ErrorState, EmptyState } from "@/components/ui/Feedback";
 import { Drawer, Modal } from "@/components/ui/Overlay";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { contactLabel, type Appointment, type ConversationAutomationMode, type CrmConversation, type CrmLead, type CrmMessage, type FollowUp, type InboxEntry, type LeadStatus } from "./types";
 
 const LIST_POLL_MS = 8_000;
 const THREAD_POLL_MS = 4_000;
-const DETAILS_PANEL_KEY = "sx-crm-details-open";
+/** min-width: 768px — matches Tailwind's `md:` breakpoint used throughout this workspace for the single list/chat split. Desktop-only behaviors (auto-select, no mobile-style deselected state) key off the same breakpoint so JS behavior and CSS layout never disagree about what counts as "desktop". */
+const DESKTOP_MEDIA_QUERY = "(min-width: 768px)";
 
 /**
  * The one CRM/inbox workspace — used identically by /app/crm and
  * /admin/leads (scoped to whichever client the admin's ClientSwitcher has
  * selected). Real crm_leads + whatsapp_conversations + whatsapp_messages
  * only; whatsapp_shadow_messages never enters this component tree.
+ *
+ * Layout: two panes (conversation list + chat) at >=768px, single pane
+ * (list OR chat, tap to switch) below it. Lead details are ALWAYS an
+ * overlay — a right-side Drawer at >=768px, a bottom Modal sheet below it —
+ * never a permanent third column. A previous pass added a persistent
+ * xl+ third column; that made the center chat too narrow and details too
+ * wide for how rarely it's the primary focus, so it was removed in favor of
+ * an on-demand drawer (closer to WhatsApp Web's own "info" panel behavior).
  */
 export function CrmWorkspace({
   tenantId,
@@ -57,30 +66,35 @@ export function CrmWorkspace({
     loadUserId();
   }, []);
 
+  const [isDesktop, setIsDesktop] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia(DESKTOP_MEDIA_QUERY);
+    setIsDesktop(mq.matches);
+    const onChange = (e: MediaQueryListEvent) => setIsDesktop(e.matches);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
+
   const [leads, setLeads] = useState<CrmLead[] | null>(null);
   const [conversations, setConversations] = useState<CrmConversation[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selectedLeadId, setSelectedLeadId] = useState<string | null>(initialLeadId ?? null);
+  const [autoSelected, setAutoSelected] = useState(false);
   const [messages, setMessages] = useState<CrmMessage[]>([]);
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [followUps, setFollowUps] = useState<FollowUp[]>([]);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [sending, setSending] = useState(false);
   const [automationBusy, setAutomationBusy] = useState(false);
-  const [detailsOpen, setDetailsOpen] = useState(true);
+  // Details is always an overlay now (Drawer/Modal, never a permanent
+  // column) and always starts closed — no localStorage persistence, so a
+  // previous deployment's "open by default" preference can never carry
+  // over and no session accidentally opens straight into a drawer.
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const [mobileView, setMobileView] = useState<"list" | "thread">(initialLeadId ? "thread" : "list");
 
-  useEffect(() => {
-    const stored = typeof window !== "undefined" ? window.localStorage.getItem(DETAILS_PANEL_KEY) : null;
-    if (stored !== null) setDetailsOpen(stored === "1");
-  }, []);
-
   function toggleDetails() {
-    setDetailsOpen((prev) => {
-      const next = !prev;
-      window.localStorage.setItem(DETAILS_PANEL_KEY, next ? "1" : "0");
-      return next;
-    });
+    setDetailsOpen((prev) => !prev);
   }
 
   const loadLists = useCallback(async () => {
@@ -119,6 +133,31 @@ export function CrmWorkspace({
     return leads.map((lead) => ({ lead, conversation: convoByLead.get(lead.id) ?? null }));
   }, [leads, conversations]);
 
+  // Desktop default selection: explicit route leadId always wins (handled by
+  // the initial state above); otherwise, once entries have actually loaded,
+  // pick the most recently active conversation, or the first lead if none
+  // has a conversation yet. Never runs on mobile (the list is the intended
+  // landing view there) and never overrides a selection the user already
+  // made or navigated to. `autoSelected` guards against re-running after the
+  // user deliberately clears a selection (no such action exists today, but
+  // keeps this effect from fighting a future one).
+  useEffect(() => {
+    if (!isDesktop || autoSelected || leads === null) return;
+    setAutoSelected(true);
+    const stillValid = selectedLeadId && entries.some((e) => e.lead.id === selectedLeadId);
+    if (stillValid) return;
+    if (entries.length === 0) return;
+    const withConvo = entries.filter((e) => e.conversation);
+    const mostRecent = [...withConvo].sort((a, b) => (b.conversation!.last_message_at ?? "").localeCompare(a.conversation!.last_message_at ?? ""))[0];
+    const target = mostRecent ?? entries[0];
+    setSelectedLeadId(target.lead.id);
+    onLeadSelected?.(target.lead.id);
+    // Intentionally no router.replace here — auto-selecting the default
+    // conversation is not a navigation the URL needs to reflect; only an
+    // explicit user click (selectLead below) updates the route.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDesktop, leads, entries, autoSelected]);
+
   const selectedEntry = entries.find((e) => e.lead.id === selectedLeadId) ?? null;
   const conversationId = selectedEntry?.conversation?.id ?? null;
 
@@ -156,6 +195,7 @@ export function CrmWorkspace({
 
   function selectLead(leadId: string) {
     setSelectedLeadId(leadId);
+    setAutoSelected(true);
     setMobileView("thread");
     onLeadSelected?.(leadId);
     if (leadHrefBase) router.replace(`${leadHrefBase}/${leadId}`, { scroll: false });
@@ -240,18 +280,18 @@ export function CrmWorkspace({
   ) : null;
 
   return (
-    <div className="flex h-full flex-col overflow-hidden rounded-sx-lg border border-sx-border bg-sx-bg">
+    <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-sx-lg border border-sx-border bg-sx-bg">
       {error && (
         <div className="shrink-0 p-2">
           <ErrorState message={error} onRetry={loadLists} />
         </div>
       )}
-      <div className="grid min-h-0 flex-1 grid-cols-1 md:grid-cols-[minmax(280px,320px)_1fr] xl:grid-cols-[minmax(280px,320px)_1fr_minmax(280px,320px)]">
-        <div className={`min-h-0 ${mobileView === "list" ? "flex" : "hidden"} md:flex`}>
+      <div className="grid min-h-0 min-w-0 flex-1 grid-cols-1 md:grid-cols-[minmax(280px,330px)_1fr]">
+        <div className={`min-h-0 min-w-0 w-full max-w-full overflow-x-hidden ${mobileView === "list" ? "flex" : "hidden"} md:flex`}>
           <ConversationList entries={entries} loading={leads === null} selectedLeadId={selectedLeadId} onSelect={selectLead} currentUserId={currentUserId} title={title} />
         </div>
 
-        <div className={`min-h-0 flex-col ${mobileView === "thread" ? "flex" : "hidden"} md:flex`}>
+        <div className={`min-h-0 min-w-0 w-full max-w-full flex-col overflow-hidden ${mobileView === "thread" ? "flex" : "hidden"} md:flex`}>
           {selectedEntry ? (
             <>
               <ConversationHeader
@@ -278,27 +318,29 @@ export function CrmWorkspace({
                 </div>
               )}
             </>
+          ) : leads === null ? (
+            <div className="flex h-full items-center justify-center px-6 text-center">
+              <p className="text-sm text-sx-text-subtle">Loading…</p>
+            </div>
+          ) : entries.length === 0 ? (
+            <div className="flex h-full items-center justify-center px-6">
+              <EmptyState title="No leads yet." subtitle="New WhatsApp inquiries and leads will show up here." />
+            </div>
           ) : (
             <div className="flex h-full items-center justify-center px-6 text-center">
               <p className="text-sm text-sx-text-subtle">Select a conversation to view messages.</p>
             </div>
           )}
         </div>
-
-        {selectedEntry && detailsOpen && (
-          <div className="hidden min-h-0 xl:block">{detailsContent}</div>
-        )}
       </div>
 
-      {/* Below the xl breakpoint the persistent third column has no room — the
-          same panel content renders as an overlay instead (Drawer on tablet/
-          small-desktop, bottom sheet on mobile), matching
-          docs/product-design/SHARED_SHELL_SPECIFICATION.md §4's breakpoint
-          behavior for the shell's right context panel in general. */}
+      {/* Lead details is always an overlay — a right-side Drawer at >=768px, a
+          bottom Modal sheet below it — never a permanent third column, and
+          never open by default. */}
       {selectedEntry && (
         <>
-          <div className="hidden md:block xl:hidden">
-            <Drawer open={detailsOpen} onClose={toggleDetails} widthClassName="w-[340px]">
+          <div className="hidden md:block">
+            <Drawer open={detailsOpen} onClose={toggleDetails} widthClassName="w-[360px]">
               <div className="h-full">{detailsOpen && detailsContent}</div>
             </Drawer>
           </div>

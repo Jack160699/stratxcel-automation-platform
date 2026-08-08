@@ -64,7 +64,7 @@ export function LeadDetailsPanel({
         </button>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
+      <div className="sx-thin-scroll min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-4 py-4">
         <Section title="Contact">
           <Row label="Name" value={lead.contact_name ?? "—"} />
           <Row label="Phone" value={lead.contact_phone ?? "—"} />

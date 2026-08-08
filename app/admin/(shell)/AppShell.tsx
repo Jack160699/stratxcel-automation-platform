@@ -3,35 +3,31 @@
 import { usePathname } from "next/navigation";
 import { signOutAction } from "@/app/admin/actions";
 import { CoreAppShell } from "@/components/shell/CoreAppShell";
-import { buildSidebarGroups, flattenNavItems, resolveActiveKey } from "@/components/shell/navigation";
+import { ADMIN_SIDEBAR_GROUPS, ADMIN_MOBILE_NAV, resolveAdminActiveKey } from "@/components/shell/navigation/admin-navigation";
 import { ClientSwitcher } from "./ClientSwitcher";
 
 /**
- * Re-skinned onto the shared Stratxcel Core shell (components/shell/CoreAppShell.tsx),
- * now consuming the one canonical nav model in components/shell/navigation.tsx
- * instead of a hand-written item array that had drifted from app/app/ClientAppShell.tsx's
- * own copy — see that file's header comment and
- * docs/product-design/ADMIN_INFORMATION_ARCHITECTURE.md §1. Route paths are
- * unchanged from before this pass (no renames/redirects) so nothing here can
- * break a bookmark; only the grouping/labeling that made /admin feel like a
- * different product from /app has changed.
+ * /admin's own shell — Stratxcel staff/agency information architecture
+ * (components/shell/navigation/admin-navigation.tsx), visually built from
+ * the same shared CoreAppShell/Sidebar components /app uses, but a
+ * deliberately separate destination list. A previous pass merged /app's and
+ * /admin's navigation into one canonical item array (shared appHref/adminHref
+ * per concept) — that conceptually merged two different products with
+ * different jobs and was reverted; see admin-navigation.tsx's header
+ * comment. Route paths are unchanged (no renames) so nothing here can break
+ * a bookmark.
  */
-const SIDEBAR_GROUPS = buildSidebarGroups("admin");
-const FLAT_ITEMS = flattenNavItems("admin");
-
-const MOBILE_NAV = FLAT_ITEMS.filter((i) => ["home", "missions", "approvals", "clients"].includes(i.key));
-
 export function AppShell({ email, children }: { email: string; children: React.ReactNode }) {
   const pathname = usePathname();
-  const activeKey = resolveActiveKey(pathname, "admin");
+  const activeKey = resolveAdminActiveKey(pathname);
 
   return (
     <CoreAppShell
       product="Admin"
-      sidebarGroups={SIDEBAR_GROUPS}
+      sidebarGroups={ADMIN_SIDEBAR_GROUPS}
       activeKey={activeKey}
-      mobileNavItems={MOBILE_NAV}
-      mobileMoreGroups={SIDEBAR_GROUPS.map((g) => ({
+      mobileNavItems={ADMIN_MOBILE_NAV}
+      mobileMoreGroups={ADMIN_SIDEBAR_GROUPS.map((g) => ({
         label: g.label ?? "Overview",
         items: g.items.map((i) => ({ key: i.key, label: i.label, href: i.href })),
       }))}

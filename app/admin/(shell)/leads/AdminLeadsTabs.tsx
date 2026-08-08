@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useSearchParams, useRouter, usePathname } from "next/navigation";
+import type { ReactNode } from "react";
 import { useCurrentTenant } from "../CurrentTenantContext";
 import { CrmWorkspace } from "@/components/crm/CrmWorkspace";
 import { SEND_READY, SEND_DISABLED_REASON } from "@/components/crm/send-readiness";
@@ -12,18 +13,33 @@ type Tab = "crm" | "website";
  * ClientSwitcher currently has selected — the same CrmWorkspace /app/crm
  * uses, not a separate "admin CRM." Secondary tab: Stratxcel's own website
  * contact-form inbox (stratxcel_contact_messages), preserved exactly as it
- * was (server-rendered by the page, passed in as `websiteInquiries`) rather
- * than lost or silently hidden — it's a different, legitimate lead source
- * (prospective Stratxcel clients, not a tenant's own customers) that simply
- * shouldn't be the *default* view now that real WhatsApp customer traffic
- * exists.
+ * was (server-rendered by the page, passed in as `websiteInquiries`).
+ *
+ * Tab state is driven by the URL (`?tab=crm|website`), not local component
+ * state — the default (query param absent, or any value other than
+ * "website") is always "crm", so this is unambiguous, shareable, and
+ * survives a reload the same way every time. This exists specifically
+ * because "Admin Leads must default to CRM leads, not website inquiries"
+ * is a mandatory acceptance requirement.
  */
 export function AdminLeadsTabs({ websiteInquiries, websiteInquiryCount }: { websiteInquiries: ReactNode; websiteInquiryCount: number }) {
-  const [tab, setTab] = useState<Tab>("crm");
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
   const { active } = useCurrentTenant();
 
+  const tab: Tab = searchParams.get("tab") === "website" ? "website" : "crm";
+
+  function setTab(next: Tab) {
+    const params = new URLSearchParams(searchParams.toString());
+    if (next === "crm") params.delete("tab");
+    else params.set("tab", next);
+    const qs = params.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  }
+
   return (
-    <div className="flex h-full flex-col gap-3">
+    <div className="flex h-full min-h-0 flex-col gap-3">
       <div className="flex shrink-0 items-center gap-1 border-b border-sx-border px-1">
         <TabButton active={tab === "crm"} onClick={() => setTab("crm")}>
           CRM
@@ -45,10 +61,10 @@ export function AdminLeadsTabs({ websiteInquiries, websiteInquiryCount }: { webs
             />
           </div>
         ) : (
-          <p className="p-4 text-sm text-sx-text-subtle">Select a client to view their CRM.</p>
+          <p className="p-4 text-sm text-sx-text-subtle">Select a client above to view their CRM.</p>
         )
       ) : (
-        <div className="min-h-0 flex-1 overflow-y-auto">{websiteInquiries}</div>
+        <div className="sx-thin-scroll min-h-0 flex-1 overflow-y-auto">{websiteInquiries}</div>
       )}
     </div>
   );

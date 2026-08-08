@@ -143,13 +143,16 @@ function run() {
   assert.ok(/not saved/.test(settings), "Settings must explicitly label unsupported fields as not saved");
   assert.equal(/method:\s*["'](PATCH|POST)["']/.test(settings), false, "Settings must not issue any write request for fields with no backing schema");
 
-  // --- 11. Navigation: shared canonical nav has every module, mobile bar stays lean
-  // ClientAppShell.tsx and AppShell.tsx (/admin) now both build their
-  // sidebar from the one canonical nav model (components/shell/navigation.tsx)
-  // instead of independently hand-written item arrays — that drift (not the
-  // Sidebar component itself) is what made /app and /admin feel like two
-  // different products. See navigation.tsx's own header comment.
-  const nav = read("components", "shell", "navigation-data.ts");
+  // --- 11. Navigation: /app and /admin have deliberately SEPARATE information
+  // architectures (components/shell/navigation/app-nav-data.ts and
+  // admin-nav-data.ts) sharing only the visual Sidebar/CoreAppShell/icons —
+  // a previous pass mapped one canonical nav item to both an appHref and an
+  // adminHref, which conceptually merged two different products; that was
+  // reverted. See app-nav-data.ts's and admin-nav-data.ts's header comments.
+  const appNavData = read("components", "shell", "navigation", "app-nav-data.ts");
+  const adminNavData = read("components", "shell", "navigation", "admin-nav-data.ts");
+  assert.equal(/\bappHref\s*:|\badminHref\s*:/.test(appNavData + adminNavData), false, "neither nav-data file may reuse the old appHref/adminHref shared-item field shape");
+
   for (const href of [
     "/app/copilot",
     "/app/missions",
@@ -166,35 +169,37 @@ function run() {
     "/app/team",
     "/app/settings",
   ]) {
-    assert.ok(nav.includes(`appHref: "${href}"`), `components/shell/navigation.tsx must include ${href}`);
+    assert.ok(appNavData.includes(`href: "${href}"`), `app-nav-data.ts must include ${href}`);
   }
   // Conversations is no longer a separate nav destination — merged into the
   // one CRM item (see app/app/conversations/page.tsx's redirect above).
-  assert.equal(/appHref:\s*["']\/app\/conversations["']/.test(nav), false, "navigation.tsx must not list /app/conversations as its own destination anymore");
-  // /admin has no Copilot/Website/Ads/Brand Brain equivalent — those items
-  // intentionally have no adminHref, which buildSidebarGroups("admin") uses
-  // to omit them (see itemFor()'s null-return path), not a second list.
-  assert.equal(/adminHref:\s*["']\/admin\/copilot["']/.test(nav), false, "navigation.tsx must not invent an /admin/copilot route that doesn't exist");
+  assert.equal(/href:\s*["']\/app\/conversations["']/.test(appNavData), false, "app-nav-data.ts must not list /app/conversations as its own destination");
+  // /app must never carry agency-only staff destinations.
+  for (const forbidden of ["/admin/clients", "/admin/handoffs", "/admin/operations", "/admin/system", "/admin/audit"]) {
+    assert.equal(appNavData.includes(`href: "${forbidden}"`), false, `app-nav-data.ts must never include the agency-only route ${forbidden}`);
+  }
+
+  for (const href of ["/admin", "/admin/clients", "/admin/leads", "/admin/missions", "/admin/approvals", "/admin/handoffs", "/admin/operations", "/admin/social", "/admin/finance", "/admin/team", "/admin/integrations", "/admin/system", "/admin/audit"]) {
+    assert.ok(adminNavData.includes(`href: "${href}"`), `admin-nav-data.ts must include ${href}`);
+  }
+  // /admin must never carry client-only modules merely because they exist in /app.
+  for (const forbidden of ["/app/copilot", "/app/website", "/app/ads", "/app/brand", "/app/files", "/app/billing", "/app/settings"]) {
+    assert.equal(adminNavData.includes(`href: "${forbidden}"`), false, `admin-nav-data.ts must never include the client-only route ${forbidden}`);
+  }
 
   const shell = read("app", "app", "ClientAppShell.tsx");
-  assert.ok(/buildSidebarGroups\("app"\)/.test(shell), "ClientAppShell must build its sidebar from the shared canonical nav model, not its own hand-written array");
-  assert.equal(/const SIDEBAR_GROUPS: SidebarNavGroup\[\] = \[/.test(shell), false, "ClientAppShell must no longer hand-write its own SidebarNavGroup array");
-  const mobileNavMatch = shell.match(/const MOBILE_NAV = FLAT_ITEMS\.filter\(\(i\) => \[([\s\S]*?)\]/);
-  assert.ok(mobileNavMatch, "MOBILE_NAV must be derived from the shared flattened nav items, not its own array");
+  assert.ok(/APP_SIDEBAR_GROUPS/.test(shell), "ClientAppShell must build its sidebar from the app-specific nav model");
+  assert.equal(/ADMIN_SIDEBAR_GROUPS|ADMIN_NAV_GROUPS/.test(shell), false, "ClientAppShell must never import the admin nav model");
+  const adminShell = read("app", "admin", "(shell)", "AppShell.tsx");
+  assert.ok(/ADMIN_SIDEBAR_GROUPS/.test(adminShell), "AppShell (admin) must build its sidebar from the admin-specific nav model");
+  assert.equal(/APP_SIDEBAR_GROUPS|APP_NAV_GROUPS/.test(adminShell), false, "AppShell (admin) must never import the client nav model");
+
+  const mobileNavMatch = appNavData.match(/APP_MOBILE_NAV_KEYS = \[([\s\S]*?)\]/);
+  assert.ok(mobileNavMatch, "APP_MOBILE_NAV_KEYS must be defined in app-nav-data.ts");
   const mobileNavItemCount = (mobileNavMatch![1].match(/"/g) ?? []).length / 2;
   assert.equal(mobileNavItemCount, 4, "Mobile bottom nav must stay at exactly 4 items (Home, Copilot, Missions, Approvals) — everything else lives in the More sheet");
-  assert.ok(/mobileMoreGroups=\{SIDEBAR_GROUPS\.map/.test(shell), "The mobile More sheet must be derived from SIDEBAR_GROUPS, not a separately hand-maintained list");
-
-  // /admin gets the same shared groups PLUS its own agency-only "Admin"
-  // group appended — additive, never a wholesale nav replacement, which is
-  // the actual fix for "moving between /app and /admin feels like the left
-  // side of the product was replaced."
-  const adminShell = read("app", "admin", "(shell)", "AppShell.tsx");
-  assert.ok(/buildSidebarGroups\("admin"\)/.test(adminShell), "AppShell (admin) must build its sidebar from the same shared canonical nav model");
-  for (const href of ["/admin/clients", "/admin/handoffs", "/admin/operations", "/admin/system", "/admin/audit"]) {
-    assert.ok(nav.includes(`adminHref: "${href}"`), `components/shell/navigation.tsx's admin-only group must include ${href}`);
-  }
-  assert.ok(/label: "Admin"/.test(nav), "the agency-only nav group must be clearly labeled, distinct from the shared groups above it");
+  assert.ok(/mobileMoreGroups=\{APP_SIDEBAR_GROUPS\.map/.test(shell), "The mobile More sheet must be derived from APP_SIDEBAR_GROUPS, not a separately hand-maintained list");
+  assert.ok(/mobileMoreGroups=\{ADMIN_SIDEBAR_GROUPS\.map/.test(adminShell), "Admin's mobile More sheet must be derived from ADMIN_SIDEBAR_GROUPS, not a separately hand-maintained list");
 
   // --- 12. No service-role dependency in any new client-rendered module --
   for (const parts of [
