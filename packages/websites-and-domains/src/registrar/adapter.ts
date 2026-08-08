@@ -51,11 +51,28 @@ export interface DomainStatusResult {
   dnsConfigured: boolean;
 }
 
+export interface DomainRenewalResult {
+  success: boolean;
+  domainName: string;
+  provider: string;
+  expiresAt: string;
+  error?: string;
+}
+
 export interface DomainRegistrarAdapter {
   readonly providerName: string;
+  readonly mode: "disabled" | "sandbox" | "live";
   searchDomain(domainName: string): Promise<DomainSearchResult>;
   getDomainPrice(domainName: string): Promise<DomainSearchResult>;
   registerDomain(input: DomainRegistrationInput): Promise<DomainRegistrationResult>;
+  renewDomain(domainName: string, years?: number): Promise<DomainRenewalResult>;
   getDomainStatus(domainName: string): Promise<DomainStatusResult>;
   setupDnsRecords(domainName: string, records: DnsRecord[]): Promise<boolean>;
+}
+
+export class RegistrarDisabledError extends Error {
+  constructor() {
+    super("Domain registrar integration is disabled — set DOMAIN_REGISTRAR_MODE to 'sandbox' for safe testing");
+    this.name = "RegistrarDisabledError";
+  }
 }

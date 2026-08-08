@@ -8,13 +8,15 @@ import {
   DuplicateWebhookEventError,
   WebhookEventInProgressError,
 } from "@stratxcel/payments-and-wallet";
+import { fulfillDomainRegistrationBestEffort } from "@/lib/domains/fulfillment";
 
 /**
- * Best-effort GST invoice/credit-note issuance, called only after the webhook's own
- * payment/refund RPC has already committed successfully. Never allowed to change
- * `processResult.handled` — a bookkeeping-record failure must not make Razorpay
- * re-deliver an event that was already correctly fulfilled. Failures are logged for
- * manual follow-up.
+ * Best-effort GST invoice/credit-note issuance and domain-registration
+ * fulfilment, called only after the webhook's own payment/refund RPC has
+ * already committed successfully. Never allowed to change
+ * `processResult.handled` — a follow-up-step failure must not make Razorpay
+ * re-deliver an event that was already correctly fulfilled. Failures are
+ * logged for manual follow-up.
  */
 async function issueBillingRecordsBestEffort(
   supabase: ReturnType<typeof getTenantServiceContext>["supabase"],
@@ -27,8 +29,11 @@ async function issueBillingRecordsBestEffort(
     if (processResult.refundId) {
       await supabase.rpc("issue_credit_note_for_refund", { p_payment_refund_id: processResult.refundId });
     }
+    if (processResult.orderId && (processResult.purpose === "domain_purchase" || processResult.purpose === "domain_renewal")) {
+      await fulfillDomainRegistrationBestEffort(supabase, processResult.orderId);
+    }
   } catch (err) {
-    console.error("[Billing Records] Best-effort invoice/credit-note issuance failed", err);
+    console.error("[Billing Records] Best-effort invoice/credit-note/domain issuance failed", err);
   }
 }
 

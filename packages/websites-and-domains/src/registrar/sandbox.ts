@@ -3,12 +3,21 @@ import type {
   DomainSearchResult,
   DomainRegistrationInput,
   DomainRegistrationResult,
+  DomainRenewalResult,
   DomainStatusResult,
   DnsRecord,
 } from "./adapter.ts";
 
+/**
+ * Deterministic fake registrar — no real network call, no real domain is
+ * ever registered. Exists to exercise the full purchase/registration/DNS/
+ * renewal pipeline end to end in tests and safe internal smoke checks. Every
+ * result it returns is clearly attributable to `providerName === "sandbox"`
+ * so it can never be mistaken for a real registrar response downstream.
+ */
 export class SandboxDomainRegistrar implements DomainRegistrarAdapter {
   readonly providerName = "sandbox";
+  readonly mode = "sandbox" as const;
 
   async searchDomain(domainName: string): Promise<DomainSearchResult> {
     const cleanDomain = domainName.toLowerCase().trim();
@@ -47,6 +56,15 @@ export class SandboxDomainRegistrar implements DomainRegistrarAdapter {
       status: "active",
       expiresAt,
       dnsRecords: defaultDnsRecords,
+    };
+  }
+
+  async renewDomain(domainName: string, years = 1): Promise<DomainRenewalResult> {
+    return {
+      success: true,
+      domainName,
+      provider: this.providerName,
+      expiresAt: new Date(Date.now() + years * 365 * 24 * 60 * 60 * 1000).toISOString(),
     };
   }
 

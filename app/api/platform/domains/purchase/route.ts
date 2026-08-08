@@ -1,10 +1,16 @@
 import { requireTenantContext, getTenantServiceContext } from "@/lib/tenants/tenant-context";
 import { createPaymentLink, isPaymentFeatureEnabled } from "@stratxcel/payments-and-wallet";
-import { SandboxDomainRegistrar } from "@stratxcel/websites-and-domains";
+import { selectDomainRegistrar, RegistrarDisabledError } from "@stratxcel/websites-and-domains";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+/**
+ * Server always resolves price via a fresh registrar quote — the client
+ * never supplies (or can influence) amountCents. A quote row is persisted
+ * so registration time can re-validate against it rather than trusting
+ * whatever was true at search time minutes/hours earlier.
+ */
 export async function POST(request: Request) {
   if (!isPaymentFeatureEnabled("PAYMENTS_DOMAINS_ENABLED")) {
     return Response.json(
@@ -27,7 +33,14 @@ export async function POST(request: Request) {
     const ctx = await requireTenantContext(tenantId);
     if (!ctx.ok) return Response.json({ error: ctx.error }, { status: ctx.status });
 
-    const registrar = new SandboxDomainRegistrar();
+    const registrar = selectDomainRegistrar();
+    if (registrar.mode === "disabled") {
+      return Response.json(
+        { error: "Domain registration is not yet available — the registrar integration is being activated." },
+        { status: 503 }
+      );
+    }
+
     const searchRes = await registrar.searchDomain(domainName);
     if (!searchRes.available) {
       return Response.json({ error: `Domain ${domainName} is not available` }, { status: 400 });
@@ -50,7 +63,7 @@ export async function POST(request: Request) {
       .insert({
         tenant_id: tenantId,
         domain_name: domainName,
-        provider: "sandbox",
+        provider: registrar.providerName,
         provider_domain_id: null,
         registrant_name: registrant.name,
         registrant_email: registrant.email,
@@ -68,7 +81,9 @@ export async function POST(request: Request) {
         dns_configured: false,
         vercel_attached: false,
         vercel_ssl_active: false,
+        vercel_attachment_status: "not_started",
         site_project_id: siteProjectId ?? null,
+        quote_expires_at: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
         expires_at: null,
       })
       .select("*")
@@ -80,10 +95,14 @@ export async function POST(request: Request) {
 
     return Response.json({
       domain: dbDomain,
+      mode: registrar.mode,
       paymentLink: link,
       paymentUrl: link.short_url,
     });
   } catch (err) {
+    if (err instanceof RegistrarDisabledError) {
+      return Response.json({ error: err.message }, { status: 503 });
+    }
     const msg = err instanceof Error ? err.message : "Failed to process domain purchase request";
     return Response.json({ error: msg }, { status: 400 });
   }

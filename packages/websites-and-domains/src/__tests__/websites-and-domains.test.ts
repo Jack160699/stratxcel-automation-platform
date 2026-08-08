@@ -20,9 +20,19 @@ async function runWebsitesAndDomainsTests() {
   assert.equal(site.pages[0].title, "Home");
   assert.equal(site.pages[1].title, "Services");
   assert.equal(site.pages[2].title, "About Us");
-  assert.equal(site.pages[3].title, "Client Reviews");
+  // No industry supplied -> the safe universal default (FAQ), never a fabricated testimonials page
+  assert.equal(site.pages[3].title, "FAQ");
   assert.equal(site.pages[4].title, "Contact Us");
   assert.equal(site.previewSubdomain, "acme-dental-care.stratxcel.site");
+
+  // Never fabricate a phone number, a testimonial, or any other unsupplied fact
+  const pagesJson = JSON.stringify(site.pages);
+  assert.equal(/\+91 98765 43210/.test(pagesJson), false, "must never fabricate a default phone number");
+  assert.equal(/Outstanding Results|Seamless Automation/.test(pagesJson), false, "must never fabricate testimonial quotes");
+
+  // An industry that matches a rule gets a non-generic, still-non-fabricating 5th page
+  const dentalSite = generate5PageSite({ tenantId: "tenant_test_1", businessName: "Acme Dental Care", industry: "dental clinic" });
+  assert.equal(dentalSite.pages[3].title, "Our Team");
 
   // 2. Controlled 1-revision cycle enforcement
   const rev1 = requestSiteRevision(site, "Change primary header color to navy blue");
@@ -71,10 +81,15 @@ async function runWebsitesAndDomainsTests() {
     (err: Error) => err.message.includes("Client legal registrant details")
   );
 
-  // 6. Vercel domain attachment check
+  // 6. Vercel domain attachment check — with no VERCEL_AUTH_TOKEN configured
+  //    (this test's environment), the result must be an honest "not
+  //    configured", never a fabricated "it worked".
   const vercelRes = await attachDomainToVercel("acmedental.com");
   assert.equal(vercelRes.domain, "acmedental.com");
-  assert.equal(vercelRes.verified, true);
+  assert.equal(vercelRes.verified, false, "must never claim verified without a real Vercel API response");
+  assert.equal(vercelRes.sslActive, false, "must never claim SSL is active without a real Vercel API response");
+  assert.equal(vercelRes.configured, false);
+  assert.ok(vercelRes.error, "must explain why attachment was not attempted");
 
   console.log("@stratxcel/websites-and-domains tests: ALL PASS");
 }

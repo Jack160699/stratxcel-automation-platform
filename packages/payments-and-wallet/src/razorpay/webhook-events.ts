@@ -100,6 +100,9 @@ export interface WebhookProcessResult {
   /** Present on a fulfilled payment_link.paid/payment.captured event — used by the
    *  caller (webhook route, reconcilePaymentLink) to best-effort issue a GST invoice. */
   orderId?: string | null;
+  /** Present alongside orderId — lets the caller decide whether purpose-specific
+   *  best-effort follow-up (e.g. domain registration fulfilment) applies. */
+  purpose?: string | null;
   /** Present on a processed refund.processed event — used by the webhook route to
    *  best-effort issue a credit note against the original invoice. */
   refundId?: string;
@@ -241,7 +244,13 @@ export async function processRazorpayWebhookEvent(
     // here — this function's exact RPC call shape/count is covered by
     // razorpay-webhook-events.test.ts, and invoice issuance is a separate,
     // best-effort concern that must never risk changing what this function does.
-    return { eventType, handled: true, actionTaken, orderId: (rpcData as any)?.order_id ?? null };
+    return {
+      eventType,
+      handled: true,
+      actionTaken,
+      orderId: (rpcData as any)?.order_id ?? null,
+      purpose: (rpcData as any)?.purpose ?? null,
+    };
   }
 
   if (eventType === "refund.processed" || eventType === "refund.failed" || eventType === "refund.created") {
