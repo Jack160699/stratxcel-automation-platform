@@ -4,18 +4,83 @@ export const GEMINI_MODEL = "gemini-3.1-flash-lite";
 export const GEMINI_GENERATE_CONTENT_URL =
   `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
 
+/** One turn of real conversation history — used (instead of the flattened
+ *  `userPrompts` list) whenever the caller needs genuine multi-round
+ *  tool-calling: assistant/tool turns must reach Gemini for it to reason
+ *  about prior tool results, which `userPrompts` alone cannot represent. */
+export interface GeminiConversationTurn {
+  role: "user" | "assistant" | "tool";
+  content: string;
+  toolName?: string;
+}
+
+/** Mirrors ToolSchema from provider.ts (name/description/JSON-Schema
+ *  parameters) without importing it, keeping this module's own allowlist
+ *  boundary — see buildGeminiRequest's doc comment — independent of the
+ *  provider module's types. */
+export interface GeminiToolDeclaration {
+  name: string;
+  description: string;
+  parameters: Record<string, unknown>;
+}
+
 export interface GeminiBoundaryInput {
   userPrompts: string[];
   brandInstructions: string[];
   contentIdeas: string[];
   draftCaptions: string[];
   businessInformation: string[];
+  /** Optional: full ordered conversation (user/assistant/tool turns) for a
+   *  real multi-round tool-calling caller. When present, this replaces
+   *  `userPrompts` for building `contents` (userPrompts is otherwise still
+   *  honored for simple single-shot callers). */
+  conversation?: GeminiConversationTurn[];
+  /** Optional: caller-supplied system instruction (e.g. a channel-specific
+   *  Agent Core system prompt). Falls back to the fixed Social Copilot
+   *  instruction below when omitted, preserving existing callers exactly. */
+  systemInstruction?: string;
+  /** Optional: function-calling declarations. Omitted entirely from the
+   *  request (not even an empty array) when there are none, to keep the
+   *  request shape byte-identical to before for every existing caller —
+   *  see gemini-boundary.test.ts's exact Object.keys() assertion. */
+  tools?: GeminiToolDeclaration[];
+}
+
+export interface GeminiContentPart {
+  text?: string;
+  functionCall?: { name: string; args?: Record<string, unknown> };
+  functionResponse?: { name: string; response: { content: string } };
 }
 
 export interface GeminiGenerateContentRequest {
   system_instruction: { parts: Array<{ text: string }> };
-  contents: Array<{ role: "user"; parts: Array<{ text: string }> }>;
+  contents: Array<{ role: "user" | "model"; parts: GeminiContentPart[] }>;
   generationConfig: { maxOutputTokens: number };
+  tools?: Array<{ functionDeclarations: GeminiToolDeclaration[] }>;
+}
+
+const DEFAULT_SYSTEM_INSTRUCTION =
+  "You are Stratxcel Copilot. Help with non-Platform brand and content drafting only. Never request or infer social-account data, comments, messages, insights, analytics, identifiers, tokens, permissions, connection state, or provider-fetched media.";
+
+function mapConversationTurn(turn: GeminiConversationTurn): { role: "user" | "model"; parts: GeminiContentPart[] } | null {
+  // NOTE: intentionally NOT sanitizeGeminiText() here — that function's
+  // PLATFORM_DATA_TERM/META_DATA_LABEL/LONG_IDENTIFIER redactions target
+  // Social/Meta-specific vocabulary ("messages", "comments", "performance",
+  // 8-20 digit IDs — which include ordinary phone numbers) and would
+  // corrupt legitimate Agent Core admin/client conversation about leads,
+  // missions, or phone numbers. `conversation` turns come from our own
+  // orchestrators (persisted Social messages, or Agent Core's tool-summary
+  // formatter), not raw external API payloads, so only the narrow
+  // secret-token pattern is redacted here as defense-in-depth.
+  const text = redactSecretValues(turn.content ?? "");
+  if (turn.role === "tool") {
+    // Gemini's generateContent API has no "function"/"tool" role — a
+    // function result is represented as a functionResponse part inside a
+    // "user" turn (there is no separate role for it in v1beta).
+    return { role: "user", parts: [{ functionResponse: { name: turn.toolName || "unknown_tool", response: { content: text } } }] };
+  }
+  if (!text) return null; // Gemini rejects turns with empty parts.
+  return { role: turn.role === "assistant" ? "model" : "user", parts: [{ text }] };
 }
 
 const META_DATA_LABEL = /\b(?:meta|facebook|instagram|threads)\s+(?:account|page|profile|user|username|display\s*name|id|identifier|token|permission|scope|comment|message|insight|metric|analytics|media|metadata|connection\s*status)\b/gi;
@@ -32,6 +97,14 @@ export function sanitizeGeminiText(value: string): string {
     .replace(SOCIAL_HANDLE, "$1[REDACTED HANDLE]")
     .replace(LONG_IDENTIFIER, "[REDACTED IDENTIFIER]")
     .slice(0, 12_000);
+}
+
+/** Narrow defense-in-depth redaction (bearer/access/refresh tokens only) —
+ *  see mapConversationTurn's comment for why the full Social-specific
+ *  sanitizeGeminiText() above must not be applied to general Agent Core
+ *  conversation text. */
+function redactSecretValues(value: string): string {
+  return value.replace(SECRET_VALUE, "[REDACTED SECRET]").slice(0, 12_000);
 }
 
 function cleanList(values: unknown): string[] {
@@ -64,16 +137,25 @@ export function buildGeminiRequest(input: GeminiBoundaryInput): GeminiGenerateCo
     ...allowed.draftCaptions.map((text) => `Draft caption: ${text}`),
     ...allowed.businessInformation.map((text) => `Business information: ${text}`),
   ];
+  const contextTurns = context.map((text) => ({ role: "user" as const, parts: [{ text }] }));
+
+  const conversationTurns = input.conversation
+    ? input.conversation.map(mapConversationTurn).filter((turn): turn is { role: "user" | "model"; parts: GeminiContentPart[] } => turn !== null)
+    : allowed.userPrompts.map((text) => ({ role: "user" as const, parts: [{ text }] }));
+
+  const toolDeclarations = Array.isArray(input.tools)
+    ? input.tools
+        .filter((tool): tool is GeminiToolDeclaration => Boolean(tool && typeof tool.name === "string"))
+        .map((tool) => ({ name: tool.name, description: tool.description, parameters: tool.parameters }))
+    : [];
 
   return {
     system_instruction: {
-      parts: [{ text: "You are Stratxcel Copilot. Help with non-Platform brand and content drafting only. Never request or infer social-account data, comments, messages, insights, analytics, identifiers, tokens, permissions, connection state, or provider-fetched media." }],
+      parts: [{ text: input.systemInstruction ? sanitizeGeminiText(input.systemInstruction) : DEFAULT_SYSTEM_INSTRUCTION }],
     },
-    contents: [
-      ...context.map((text) => ({ role: "user" as const, parts: [{ text }] })),
-      ...allowed.userPrompts.map((text) => ({ role: "user" as const, parts: [{ text }] })),
-    ],
+    contents: [...contextTurns, ...conversationTurns],
     generationConfig: { maxOutputTokens: 1024 },
+    ...(toolDeclarations.length ? { tools: [{ functionDeclarations: toolDeclarations }] } : {}),
   };
 }
 

@@ -17,7 +17,7 @@ import { calculateLocalMetricsSummary } from "../local-meta-summary";
 import { listRecentMetrics } from "../repositories/analytics";
 import { listAccounts } from "../repositories/accounts";
 import { getBrandProfile } from "../repositories/brand";
-import { getTool, type AgentTool } from "./tools";
+import { getTool, toolSchemas, type AgentTool } from "./tools";
 import { serializeToolOutput } from "./tool-output";
 import { labelForTool, labelForApproval, PHASE_LABELS } from "./activity-labels";
 import { summarizeForEvent } from "./tool-output-summary";
@@ -147,7 +147,7 @@ export async function runAgentTurn(ctx: OwnerContext, sessionId: string, runId: 
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
       await recordRunEvent(ctx, runId, { type: "PROVIDER_REQUEST_STARTED", label: PHASE_LABELS.PROVIDER_REQUEST_STARTED });
       const providerStarted = Date.now();
-      const result = await provider.complete(messages, [], {
+      const result = await provider.complete(messages, toolSchemas(), {
         brandInstructions: selectGeminiBrandInstructions(brandProfile),
       });
       await recordRunEvent(ctx, runId, {
@@ -159,6 +159,11 @@ export async function runAgentTurn(ctx: OwnerContext, sessionId: string, runId: 
       if (result.text) finalText = result.text;
 
       if (result.toolCalls.length === 0) break;
+
+      // Record the model's own turn before appending tool results — without
+      // this, a later round replays tool-result messages with no preceding
+      // assistant turn to anchor them to.
+      messages.push({ role: "assistant", content: result.text || "" });
 
       const { ready: toolCalls, deferredByUpstream } = splitDependentCalls(result.toolCalls);
       for (const call of toolCalls) {

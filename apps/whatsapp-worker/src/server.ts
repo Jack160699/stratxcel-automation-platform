@@ -2,7 +2,13 @@ import http from "node:http";
 import os from "node:os";
 import crypto from "node:crypto";
 import { parseInboundWhatsAppWebhook, parseWhatsAppStatusUpdates, verifyWhatsAppWebhookSignature } from "@stratxcel/whatsapp";
-import { createServiceClient as createWhatsAppClient, findActiveBindingByPhoneNumberId, recordUnmatchedEvent, updateWhatsAppMessageStatus } from "@stratxcel/whatsapp";
+import {
+  createServiceClient as createWhatsAppClient,
+  findActiveBindingByPhoneNumberId,
+  recordUnmatchedEvent,
+  updateWhatsAppMessageStatus,
+  updateAgentChannelMessageStatus,
+} from "@stratxcel/whatsapp";
 import { createServiceClient as createQueueClient, createPostgresQueueAdapter, recordWorkerHeartbeat, getWorkerHealth } from "@stratxcel/queue";
 
 const WORKER_TYPE = "whatsapp-worker" as const;
@@ -162,7 +168,16 @@ export async function handleInbound(
     for (const update of statusUpdates) {
       const binding = await findActiveBindingByPhoneNumberId(whatsapp, update.phoneNumberId);
       if (!binding) continue; // same "never guess the tenant" rule as inbound messages
-      await updateWhatsAppMessageStatus(whatsapp, { tenantId: binding.tenant_id, providerMessageId: update.providerMessageId, status: update.status });
+      const result = await updateWhatsAppMessageStatus(whatsapp, { tenantId: binding.tenant_id, providerMessageId: update.providerMessageId, status: update.status });
+      // A WhatsApp Agent reply (see agent_channel_messages) has no
+      // whatsapp_messages row to update — try that correlation path only
+      // when the lead-side update found nothing, so this never masks a
+      // genuine lead-message status update.
+      if (!result.updated) {
+        await updateAgentChannelMessageStatus(whatsapp, { providerMessageId: update.providerMessageId, status: update.status }).catch((err) =>
+          console.error("[whatsapp-worker] agent-channel status correlation failed:", err instanceof Error ? err.message : String(err))
+        );
+      }
     }
   } catch (err) {
     // A genuine failure reaching a durable outcome for this delivery —

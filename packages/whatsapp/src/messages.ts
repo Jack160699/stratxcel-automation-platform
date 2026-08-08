@@ -82,6 +82,44 @@ export async function updateWhatsAppMessageStatus(
   return data as { success: boolean; updated?: boolean; reason?: string };
 }
 
+const STATUS_RANK: Record<WhatsAppMessageStatus, number> = { queued: 0, submitted: 1, sent: 2, delivered: 3, read: 4, failed: 5 };
+
+/**
+ * Delivery/read status correlation for WhatsApp Agent replies (see
+ * agent_channel_messages, the channel-principal counterpart to
+ * whatsapp_messages). Same rank-based no-regression intent as
+ * update_whatsapp_message_status's RPC, but implemented here in TS rather
+ * than a second Postgres function — this table has no RPC layer yet, and
+ * this correlation path is intentionally best-effort: the read-then-update
+ * here is NOT atomic the way the RPC's single UPDATE...WHERE is, so a rare
+ * concurrent pair of status webhooks could race. That's an accepted,
+ * documented limitation for this additive correlation path, not something
+ * silently assumed to be as strong as the RPC.
+ */
+export async function updateAgentChannelMessageStatus(
+  supabase: ServiceClient,
+  input: { providerMessageId: string; status: WhatsAppMessageStatus }
+): Promise<{ success: boolean; updated?: boolean; reason?: string }> {
+  const { data: existing, error: readError } = await supabase
+    .from("agent_channel_messages")
+    .select("id, status")
+    .eq("provider_message_id", input.providerMessageId)
+    .maybeSingle();
+  if (readError) throw new Error(`updateAgentChannelMessageStatus: ${readError.message}`);
+  if (!existing) return { success: true, updated: false, reason: "not_found" };
+
+  const currentRank = STATUS_RANK[existing.status as WhatsAppMessageStatus] ?? -1;
+  const nextRank = STATUS_RANK[input.status];
+  if (nextRank < currentRank) return { success: true, updated: false, reason: "stale_status" };
+
+  const { error: updateError } = await supabase
+    .from("agent_channel_messages")
+    .update({ status: input.status, status_updated_at: new Date().toISOString() })
+    .eq("id", existing.id as string);
+  if (updateError) throw new Error(`updateAgentChannelMessageStatus: ${updateError.message}`);
+  return { success: true, updated: true };
+}
+
 export async function listConversationsForTenant(supabase: ServiceClient, tenantId: string, limit = 100): Promise<WhatsAppConversationRow[]> {
   const { data, error } = await supabase
     .from("whatsapp_conversations")

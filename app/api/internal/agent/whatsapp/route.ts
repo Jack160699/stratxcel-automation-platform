@@ -1,5 +1,5 @@
 import { getTenantServiceContext } from "@/lib/tenants/tenant-context";
-import { normalizePhoneNumber } from "@stratxcel/whatsapp";
+import { normalizePhoneNumber, sendOutboundWhatsAppToRecipient, type AgentChannelRecipientContext, type ServiceClient } from "@stratxcel/whatsapp";
 import {
   isInternalAgentEndpointEnabled,
   verifyAgentChannelRequest,
@@ -22,18 +22,23 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * PHASE 16: private, HMAC-authenticated endpoint for the WhatsApp agent
- * channel. NOT a browser/client endpoint — intended to eventually be called
- * by the AWS WhatsApp worker (apps/whatsapp-worker), behind
- * WHATSAPP_AGENT_CHANNEL_ENABLED, once that integration is explicitly
- * reviewed and shipped (see PHASE 17 — the worker-side call site is NOT
- * wired up by this branch; see docs/architecture/WHATSAPP_AGENT_CHANNEL.md).
- * Nothing calls this endpoint in production today.
+ * Private, HMAC-authenticated endpoint for the WhatsApp agent channel. NOT a
+ * browser/client endpoint — called by the AWS WhatsApp worker
+ * (apps/whatsapp-worker/src/agent-channel-router.ts), behind
+ * WHATSAPP_AGENT_CHANNEL_ENABLED.
  *
  * Trust boundary: the caller supplies only channel FACTS (senderPhone,
  * providerMessageId, text, phoneBindingId, timestamp, messageType) — never
  * tenantId, role, or principal type. All of that is resolved server-side
  * from the sender's verified phone link (resolveWhatsAppPrincipal).
+ *
+ * OUTBOUND DELIVERY (Blocker A): every reply below — deterministic command
+ * acks and real Agent turns alike — is actually sent over WhatsApp from
+ * here, via the same hardened choke point (@stratxcel/whatsapp's
+ * sendOutboundWhatsAppToRecipient, sharing its preflight/adapter/idempotency
+ * machinery with sendOutboundWhatsAppMessage). The HTTP response back to the
+ * worker is only ever a post-hoc report of what already happened — the
+ * worker itself performs no Meta calls and needs no Meta credentials.
  */
 
 interface AgentChannelRequestBody {
@@ -57,6 +62,24 @@ function validateBody(body: AgentChannelRequestBody): string | null {
     return "messageType must be a string";
   }
   return null;
+}
+
+const UNAVAILABLE_TEXT = "Stratxcel Agent is temporarily unavailable. Please try again shortly or use the dashboard.";
+
+/** WhatsApp text messages are capped around 4096 chars — chunk with a
+ *  little headroom and prefer breaking on whitespace over mid-word. */
+function chunkForWhatsApp(text: string, maxLen = 4000): string[] {
+  if (text.length <= maxLen) return [text];
+  const chunks: string[] = [];
+  let rest = text;
+  while (rest.length > maxLen) {
+    let cut = rest.lastIndexOf(" ", maxLen);
+    if (cut <= 0) cut = maxLen;
+    chunks.push(rest.slice(0, cut));
+    rest = rest.slice(cut).trimStart();
+  }
+  if (rest) chunks.push(rest);
+  return chunks;
 }
 
 export async function POST(request: Request) {
@@ -97,11 +120,63 @@ export async function POST(request: Request) {
   const providerMessageId = body.providerMessageId as string;
   const text = body.text as string;
   const messageType = typeof body.messageType === "string" ? body.messageType : "text";
+  const phoneBindingId = typeof body.phoneBindingId === "string" ? body.phoneBindingId : null;
 
-  const normalizedPhone = normalizePhoneNumber(senderPhone);
-  if (!normalizedPhone) return Response.json({ error: "invalid_sender_phone" }, { status: 400 });
+  const normalizedPhoneRaw = normalizePhoneNumber(senderPhone);
+  if (!normalizedPhoneRaw) return Response.json({ error: "invalid_sender_phone" }, { status: 400 });
+  const normalizedPhone: string = normalizedPhoneRaw;
 
   const { supabase } = getTenantServiceContext();
+
+  // Every reply below needs to know which WABA number to reply FROM — the
+  // exact binding that received this inbound message (agent-channel-router.ts
+  // always includes it). Without it there is nowhere safe to send a reply
+  // from, so this degrades to "unavailable" (no send attempted at all)
+  // rather than guessing a binding.
+  if (!phoneBindingId) {
+    return Response.json({ outcome: "unavailable", text: UNAVAILABLE_TEXT }, { headers: { "Cache-Control": "no-store" } });
+  }
+  // Re-bound to a definitely-non-null const: TS does not narrow a captured
+  // outer variable's type across a nested closure, even one defined right
+  // after the guard above.
+  const verifiedPhoneBindingId: string = phoneBindingId;
+
+  /**
+   * Sends `text` over WhatsApp via the one hardened outbound choke point
+   * (sendOutboundWhatsAppToRecipient) and returns the HTTP response the
+   * worker gets back — a post-hoc report, since the send has already
+   * happened by the time this returns. Splits into multiple messages (each
+   * with its own idempotency-key suffix :0/:1/:2/...) only if `text`
+   * exceeds WhatsApp's single-message limit. Empty `text` (e.g. a
+   * duplicate-run no-op) sends nothing and reports an empty reply.
+   */
+  async function sendAgentReply(
+    replyText: string,
+    recipientContext: AgentChannelRecipientContext,
+    options?: { principalTenantId?: string | null; agentRunId?: string | null; to?: string }
+  ): Promise<Response> {
+    if (!replyText) {
+      return Response.json({ outcome: "reply", text: "" }, { headers: { "Cache-Control": "no-store" } });
+    }
+    const chunks = chunkForWhatsApp(replyText);
+    for (let i = 0; i < chunks.length; i += 1) {
+      const outcome = await sendOutboundWhatsAppToRecipient(supabase as ServiceClient, {
+        phoneBindingId: verifiedPhoneBindingId,
+        to: options?.to ?? normalizedPhone,
+        body: chunks[i],
+        idempotencyKey: `whatsapp_agent_reply:${providerMessageId}:${i}`,
+        recipientContext,
+        principalTenantId: options?.principalTenantId ?? null,
+        agentRunId: options?.agentRunId ?? null,
+      });
+      if (!outcome.ok) {
+        // Send genuinely failed (kill switch, disabled integration, adapter
+        // error, ...) — report honestly rather than claiming delivery.
+        return Response.json({ outcome: "unavailable", text: UNAVAILABLE_TEXT }, { headers: { "Cache-Control": "no-store" } });
+      }
+    }
+    return Response.json({ outcome: "reply", text: replyText }, { headers: { "Cache-Control": "no-store" } });
+  }
 
   // PHASE 23: text-only v1. Non-text messages get a typed response and are
   // never analyzed — existing prospect media behavior is untouched because
@@ -119,7 +194,12 @@ export async function POST(request: Request) {
 
   if (parsed.kind === "link") {
     const reply = await handleLinkCommand(supabase, normalizedPhone, parsed.code);
-    return Response.json({ outcome: "reply", text: reply }, { headers: { "Cache-Control": "no-store" } });
+    // No resolved principal yet at this exact instant (and no tenantId to
+    // attribute an audit event to even for a client link — resolving it
+    // again here would be redundant work for a one-line ack) — sent as an
+    // unlinked_reply; the link itself is separately audited by
+    // handleLinkCommand -> auditPrincipalLinked.
+    return sendAgentReply(reply, { kind: "unlinked_reply" });
   }
 
   // A malformed LINK attempt ("LINK", "LINK ADMIN" with no/bad code) is
@@ -127,10 +207,7 @@ export async function POST(request: Request) {
   // even for a still-unlinked sender, rather than silently falling through
   // to the prospect flow. The nudge text discloses nothing sender-specific.
   if (parsed.kind === "malformed" && parsed.attempted === "link") {
-    return Response.json(
-      { outcome: "reply", text: formatAgentReply({ text: "That LINK command doesn't look right. Send HELP for the exact format." }) },
-      { headers: { "Cache-Control": "no-store" } }
-    );
+    return sendAgentReply(formatAgentReply({ text: "That LINK command doesn't look right. Send HELP for the exact format." }), { kind: "unlinked_reply" });
   }
 
   const resolution = await resolveWhatsAppPrincipal(supabase, normalizedPhone, "whatsapp");
@@ -140,36 +217,39 @@ export async function POST(request: Request) {
     // cannot distinguish the two, and neither creates a principal here.
     // The worker keeps this sender in the existing prospect/CRM flow.
     if (parsed.kind === "whoami") {
-      return Response.json({ outcome: "reply", text: handleWhoAmI(resolution) }, { headers: { "Cache-Control": "no-store" } });
+      return sendAgentReply(handleWhoAmI(resolution), { kind: "unlinked_reply" });
     }
     return Response.json({ outcome: "unlinked" }, { headers: { "Cache-Control": "no-store" } });
   }
 
   const principal = resolution.principal;
   await touchPrincipalLastUsed(supabase, normalizedPhone);
+  const recipientContext: AgentChannelRecipientContext = { kind: "channel_principal", authUserId: principal.authUserId };
+  const principalTenantId = principal.tenantId;
 
   if (parsed.kind === "whoami") {
-    return Response.json({ outcome: "reply", text: handleWhoAmI(resolution) }, { headers: { "Cache-Control": "no-store" } });
+    return sendAgentReply(handleWhoAmI(resolution), recipientContext, { principalTenantId });
   }
   if (parsed.kind === "help") {
-    return Response.json({ outcome: "reply", text: handleHelp() }, { headers: { "Cache-Control": "no-store" } });
+    return sendAgentReply(handleHelp(), recipientContext, { principalTenantId });
   }
   if (parsed.kind === "reset") {
     const reply = await handleReset(supabase, principal);
-    return Response.json({ outcome: "reply", text: reply }, { headers: { "Cache-Control": "no-store" } });
+    return sendAgentReply(reply, recipientContext, { principalTenantId });
   }
   if (parsed.kind === "confirm") {
     const { reply } = await handleConfirm(supabase, principal, parsed.code, SOCIAL_DELEGATION_TOOLS);
-    return Response.json({ outcome: "reply", text: reply }, { headers: { "Cache-Control": "no-store" } });
+    return sendAgentReply(reply, recipientContext, { principalTenantId });
   }
   if (parsed.kind === "cancel") {
     const reply = await handleCancel(supabase, principal, parsed.code);
-    return Response.json({ outcome: "reply", text: reply }, { headers: { "Cache-Control": "no-store" } });
+    return sendAgentReply(reply, recipientContext, { principalTenantId });
   }
   if (parsed.kind === "malformed") {
-    return Response.json(
-      { outcome: "reply", text: formatAgentReply({ text: `That ${parsed.attempted.toUpperCase()} command doesn't look right. Send HELP for the exact format.` }) },
-      { headers: { "Cache-Control": "no-store" } }
+    return sendAgentReply(
+      formatAgentReply({ text: `That ${parsed.attempted.toUpperCase()} command doesn't look right. Send HELP for the exact format.` }),
+      recipientContext,
+      { principalTenantId }
     );
   }
 
@@ -189,14 +269,16 @@ export async function POST(request: Request) {
 
     if (result.status === "duplicate") {
       // Idempotent redelivery of the same providerMessageId — do not
-      // re-invoke anything; nothing new to say.
+      // re-invoke anything, and do not attempt to resend (the original
+      // run's reply, if any, already went out under the same
+      // whatsapp_agent_reply:<providerMessageId>:0 idempotency key).
       return Response.json({ outcome: "reply", text: "" }, { headers: { "Cache-Control": "no-store" } });
     }
 
-    return Response.json({ outcome: "reply", text: result.replyText }, { headers: { "Cache-Control": "no-store" } });
+    return sendAgentReply(result.replyText, recipientContext, { principalTenantId, agentRunId: result.runId });
   } catch {
     return Response.json(
-      { outcome: "unavailable", text: "Stratxcel Agent is temporarily unavailable. Please try again shortly or use the dashboard." },
+      { outcome: "unavailable", text: UNAVAILABLE_TEXT },
       { status: 200, headers: { "Cache-Control": "no-store" } }
     );
   }
