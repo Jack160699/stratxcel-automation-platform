@@ -47,16 +47,21 @@ export async function sendOutboundWhatsAppMessage(supabase: ServiceClient, input
     .maybeSingle();
   if (!binding) return { ok: false, reason: "no_active_outbound_binding" };
 
-  // ZERO-SEND GUARANTEE (defense in depth): the verified legacy bot's
-  // binding is marked source='legacy_verified_bot'. This codebase must
-  // NEVER send through it — the old bot remains the sole external sender
-  // during shadow/parity. This check is unconditional: it does not read
-  // WHATSAPP_MIGRATION_MODE and has no override parameter, so setting the
-  // migration mode to "cutover" has no effect on it. A real cutover would
-  // require a deliberate future change to this exact line, not a runtime
-  // flag flip. (outbound_enabled is also hardcoded false for this binding
-  // in ensureLegacyBotBinding, so in practice this line is unreachable
-  // today — it exists anyway as defense in depth, per the task brief.)
+  // ZERO-SEND GUARANTEE (defense in depth): a binding marked
+  // source='legacy_verified_bot' is the shadow/parity mirror of the old
+  // bot — this codebase must NEVER send through it, full stop, regardless
+  // of WHATSAPP_MIGRATION_MODE (no override parameter exists). Once an
+  // owner-approved cutover actually happens, the binding for that number
+  // is deliberately re-marked source='migrated_verified_bot' (a distinct
+  // value — see 20260808260000) instead of flipping this check, so a real
+  // cutover is never silently blocked by shadow-mode safety code, and a
+  // still-shadow-only binding can never accidentally send. A
+  // 'migrated_verified_bot' or 'native' binding is gated only by the
+  // normal checks below (kill switch, consent, template approval,
+  // automation mode, idempotency) — exactly like any other real binding.
+  // (outbound_enabled is also hardcoded false in ensureLegacyBotBinding
+  // for 'legacy_verified_bot' rows, so in practice this line is
+  // unreachable today — it exists anyway as defense in depth.)
   if (binding.source === "legacy_verified_bot") return { ok: false, reason: "legacy_bot_shadow_no_send" };
 
   const kill = await isKillSwitchActive(supabase, [

@@ -1,6 +1,6 @@
 export type PhoneBindingEnvironment = "test" | "staging" | "production";
 export type PhoneBindingStatus = "pending" | "active" | "disabled" | "revoked";
-export type PhoneBindingSource = "native" | "legacy_verified_bot";
+export type PhoneBindingSource = "native" | "legacy_verified_bot" | "migrated_verified_bot";
 export type PhoneBindingMigrationStatus = "not_applicable" | "shadowing" | "ready_for_review" | "cutover_pending" | "cutover_live";
 
 export interface WhatsAppPhoneBindingRow {
