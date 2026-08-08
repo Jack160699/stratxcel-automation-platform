@@ -34,8 +34,9 @@ export interface PlanTier {
 
 /** Mirrors app/pricing/page.tsx's tier names/pitches — same public terminology, not a second taxonomy. */
 export const PLAN_TIERS: PlanTier[] = [
-  { key: "signal", name: "Signal", pitch: "One production system, end-to-end." },
-  { key: "mesh", name: "Mesh", pitch: "Multiple pipelines sharing context." },
-  { key: "fleet", name: "Fleet", pitch: "Program-wide operating model." },
+  { key: "starter", name: "Starter", pitch: "A complete entry system for one small business." },
+  { key: "growth", name: "Growth", pitch: "Recommended for recurring SMB growth and follow-up." },
+  { key: "business", name: "Business", pitch: "Advanced execution, CRM, Search, and priority assistance." },
+  { key: "scale", name: "Scale / Custom", pitch: "Quote-led for high volume or multiple locations." },
   { key: "unsure", name: "Not sure yet", pitch: "Talk to the team before choosing a tier." },
 ];

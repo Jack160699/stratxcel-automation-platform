@@ -206,12 +206,12 @@ export default function SettingsPage() {
   const dataExportTab = (
     <Card>
       <CardHeading>Data and export</CardHeading>
-      <p className="mt-1 text-xs text-sx-text-muted">Export isn&apos;t implemented yet for this workspace.</p>
+      <p className="mt-1 text-xs leading-5 text-sx-text-muted">Export includes permitted customer data, content, and assets. Account termination normally has a 30-day recovery/export window; eligible verified deletion is targeted within 30 days where operationally reasonable, and backups normally age out around 90 days subject to legal, security, tax, fraud, and dispute requirements.</p>
       <div className="mt-2 flex items-center gap-2">
         <Button variant="secondary" size="sm" disabled>
           Request data export
         </Button>
-        <ActionUnavailableNotice reason="Data export isn't available yet." />
+        <ActionUnavailableNotice reason="Automated export is not connected yet. Contact grievance@stratxcel.in to start a verified request." />
       </div>
     </Card>
   );

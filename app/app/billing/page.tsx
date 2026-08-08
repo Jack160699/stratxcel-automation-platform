@@ -6,6 +6,7 @@ import { Card } from "@/components/ui/Card";
 import { Metric } from "@/components/ui/Metric";
 import { ErrorState } from "@/components/ui/Feedback";
 import { EmptyState } from "@/components/ui/Feedback";
+import { PLANS, SELF_CHECKOUT_PLAN_IDS, formatGstInclusivePrice } from "@stratxcel/payments-and-wallet";
 
 interface WalletAccount {
   tenant_id: string;
@@ -61,7 +62,18 @@ export default function BillingPage() {
         </Card>
       )}
 
-      <EmptyState title="Plan and invoicing not yet connected" subtitle="Wallet balance above is real; plan management and invoice history have no backend yet." />
+      <section>
+        <h2 className="font-sx-sans text-base font-semibold text-sx-text">Available plans</h2>
+        <p className="mt-1 text-xs text-sx-text-subtle">Plan checkout remains disabled during payment safety certification. No charge can be created from this page.</p>
+        <div className="mt-4 grid gap-3 md:grid-cols-3">
+          {SELF_CHECKOUT_PLAN_IDS.map((id) => {
+            const plan = PLANS[id];
+            return <Card key={id} className="p-5"><p className="font-semibold text-sx-text">{plan.name}</p><p className="mt-1 text-sm text-sx-accent">{formatGstInclusivePrice(plan)}</p><p className="mt-2 text-xs text-sx-text-muted">{plan.summary}</p><button disabled className="mt-4 w-full cursor-not-allowed rounded-sx-sm border border-sx-border px-3 py-2 text-xs text-sx-text-subtle">Checkout unavailable</button></Card>;
+          })}
+        </div>
+      </section>
+
+      <EmptyState title="Invoice history not yet connected" subtitle="Wallet balance above is real; invoice history has no backend yet." />
     </div>
   );
 }

@@ -49,7 +49,7 @@ export function PublicHeader() {
         <Logo variant="dark" priority />
 
         {/* Desktop Navigation Row */}
-        <nav className="hidden items-center gap-8 md:flex" aria-label="Primary">
+        <nav className="hidden items-center gap-8 lg:flex" aria-label="Primary">
           {/* Products Mega Menu Trigger */}
           <div
             className="relative py-4"
@@ -100,7 +100,7 @@ export function PublicHeader() {
         </nav>
 
         {/* Right-Side Desktop Actions */}
-        <div className="hidden items-center gap-4 md:flex">
+        <div className="hidden items-center gap-4 lg:flex">
           <Link
             href="/login"
             className="rounded-sx-sm px-3.5 py-2 font-sx-sans text-[14px] font-semibold text-sx-text-muted transition-colors hover:text-sx-text"
@@ -118,7 +118,7 @@ export function PublicHeader() {
         {/* Mobile Hamburger Trigger */}
         <button
           type="button"
-          className="inline-flex h-10 w-10 items-center justify-center rounded-sx-sm border border-sx-border-strong text-sx-text md:hidden"
+          className="inline-flex h-10 w-10 items-center justify-center rounded-sx-sm border border-sx-border-strong text-sx-text lg:hidden"
           aria-expanded={open}
           aria-label={open ? "Close menu" : "Open menu"}
           onClick={() => setOpen((v) => !v)}
@@ -235,7 +235,7 @@ export function PublicHeader() {
                       AI Business Audit
                     </span>
                     <h4 className="mt-2 font-sx-sans text-base font-bold text-sx-text">
-                      Get Your Custom Growth Roadmap
+                      Get Your Growth Roadmap
                     </h4>
                     <p className="mt-1 text-xs text-sx-text-muted leading-relaxed">
                       Analyze your brand, competitors, and lead channels.
@@ -257,7 +257,7 @@ export function PublicHeader() {
 
       {/* Mobile Drawer */}
       {open && (
-        <div className="fixed inset-0 z-[60] flex flex-col bg-sx-bg md:hidden" role="dialog" aria-modal="true">
+        <div className="fixed inset-0 z-[60] flex flex-col bg-sx-bg lg:hidden" role="dialog" aria-modal="true">
           <div className="flex h-16 items-center justify-between px-4 sm:px-6 border-b border-sx-border">
             <Logo variant="dark" />
             <button

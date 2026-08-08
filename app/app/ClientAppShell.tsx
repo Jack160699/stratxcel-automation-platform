@@ -38,7 +38,8 @@ const SIDEBAR_GROUPS: SidebarNavGroup[] = [
   {
     label: "Growth",
     items: [
-      { key: "website", label: "Website & SEO", href: "/app/website", icon: <GlobeIcon /> },
+      { key: "website", label: "Website", href: "/app/website", icon: <GlobeIcon /> },
+      { key: "search", label: "Search & Discovery", href: "/app/search", icon: <SearchIcon /> },
       { key: "ads", label: "Ads", href: "/app/ads", icon: <TargetIcon /> },
       { key: "crm", label: "CRM & Leads", href: "/app/crm", icon: <PeopleIcon /> },
       { key: "conversations", label: "Conversations", href: "/app/conversations", icon: <ChatIcon /> },
@@ -172,6 +173,9 @@ function TargetIcon() {
       <circle cx="9" cy="9" r="0.6" fill="currentColor" />
     </svg>
   );
+}
+function SearchIcon() {
+  return <svg width="16" height="16" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.4"><circle cx="7.5" cy="7.5" r="4.5" /><path d="M11 11l4 4" /></svg>;
 }
 function ChatIcon() {
   return (

@@ -1,37 +1,15 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { LegalDocument, LegalSection } from "../legal/LegalDocument";
+import { LegalDocument, LegalList, LegalSection } from "../legal/LegalDocument";
 
-export const metadata: Metadata = {
-  title: "Data Deletion — Stratxcel",
-  description: "How to disconnect integrations and request deletion of Stratxcel data.",
-};
+export const metadata: Metadata = { title: "Data Deletion & Retention — Stratxcel", description: "How to disconnect integrations, request deletion, and understand Stratxcel retention." };
 
 export default function DataDeletionPage() {
-  return (
-    <LegalDocument
-      eyebrow="Privacy"
-      title="Data Deletion"
-      intro="You can disconnect a social integration or request deletion of data associated with your Stratxcel administrator account."
-    >
-      <LegalSection title="Disconnect a social account">
-        <ol className="list-decimal space-y-2 pl-5">
-          <li>Sign in to the Stratxcel administration product.</li>
-          <li>Open Social Autopilot, then Integrations.</li>
-          <li>Select Disconnect for the relevant social account.</li>
-          <li>You may also remove Stratxcel from the connected platform’s own app and permission settings.</li>
-        </ol>
-        <p>Disconnecting stops new platform access through that connection. It does not automatically erase content and operational records already stored in Stratxcel.</p>
-      </LegalSection>
-
-      <LegalSection title="Request deletion">
-        <p>Submit a request through the <Link href="/contact" className="font-semibold text-blue-700 hover:underline">Stratxcel contact form</Link>. Identify the administrator account and connected platform involved, but do not send passwords or access tokens.</p>
-        <p>We will verify the request before deleting data. After verification, we will delete or de-identify the relevant account data and private Copilot attachments, and revoke or remove stored integration credentials, subject to limited retention required for fraud prevention, security, dispute resolution, or law.</p>
-      </LegalSection>
-
-      <LegalSection title="What to expect">
-        <p>We will acknowledge the request through the contact channel you provide and explain any information needed to verify ownership. Completion time depends on the scope of the request and applicable obligations. Data held independently by a social platform must be managed through that platform.</p>
-      </LegalSection>
-    </LegalDocument>
-  );
+  return <LegalDocument eyebrow="Privacy" title="Data Deletion & Retention" intro="This page explains how to disconnect integrations, request deletion, and understand the records Stratxcel may need to retain.">
+    <LegalSection title="Disconnect an integration"><ol className="list-decimal space-y-2 pl-5"><li>Sign in and open the relevant Integrations area.</li><li>Select Disconnect or revoke access for the account.</li><li>Also remove Stratxcel in the provider’s app or permission settings where available.</li></ol><p>Disconnecting stops new access through that connection but does not erase existing content, audit, billing, or security records.</p></LegalSection>
+    <LegalSection title="Submit a deletion request"><p>Use the <Link href="/contact" className="font-semibold text-blue-700 hover:underline">verified contact form</Link>. Provide the account email, organization, relevant provider, and categories requested. Never send a password, token, API key, or full card number. We will verify identity and authority; where a client controls the data, we may direct the request to that client.</p></LegalSection>
+    <LegalSection title="What deletion covers"><p>Subject to verification and lawful exceptions, we will delete, anonymize, or place beyond ordinary use the applicable account profile, client content, private attachments, integration credentials, prompts, and related operational data. Data independently controlled by a connected platform or client must be requested from that controller.</p></LegalSection>
+    <LegalSection title="Retention framework"><LegalList><li>Account and client content: while the service is active, with a default 30-day recovery/export window after termination.</li><li>Eligible verified deletion or anonymization: targeted within 30 days where operationally reasonable.</li><li>Integration tokens: revoked on disconnect; historical imported data remains under this retention policy unless separately deleted.</li><li>Backups: normally age out around 90 days.</li><li>Invoices, payments, tax, contracts, consent, security, fraud, and audit records: retained as required or permitted by law and legitimate dispute or security needs.</li></LegalList><p>These are operational defaults, not a promise to delete records that must legally or safely be retained.</p></LegalSection>
+    <LegalSection title="Timing and exceptions"><p>We will acknowledge and complete verified requests within the period required by applicable law, subject to request complexity and lawful extensions. We may retain limited data to comply with law, establish or defend claims, enforce contracts, prevent fraud, preserve security and immutable audit integrity, or protect others. Retained data remains restricted and is deleted when the exception ends.</p></LegalSection>
+  </LegalDocument>;
 }

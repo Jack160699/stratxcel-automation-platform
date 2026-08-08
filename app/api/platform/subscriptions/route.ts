@@ -1,14 +1,8 @@
 import { requireTenantContext, getTenantServiceContext } from "@/lib/tenants/tenant-context";
-import { createPaymentLink, cancelPaymentLink, checkAuditCreditEligibility, isPaymentFeatureEnabled } from "@stratxcel/payments-and-wallet";
+import { createPaymentLink, cancelPaymentLink, checkAuditCreditEligibility, isPaymentFeatureEnabled, isPlanId, isSelfCheckoutPlan, PLANS } from "@stratxcel/payments-and-wallet";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-const PLAN_PRICES_CENTS: Record<string, number> = {
-  launch: 949900, // ₹9,499.00 / mo (GST Included)
-  growth: 1899900, // ₹18,999.00 / mo (GST Included)
-  custom_growth: 2399900, // Starting ₹23,999.00 / mo (GST Included)
-};
 
 export async function POST(request: Request) {
   if (!isPaymentFeatureEnabled("PAYMENTS_SUBSCRIPTIONS_ENABLED")) {
@@ -22,8 +16,11 @@ export async function POST(request: Request) {
     const body = await request.json().catch(() => ({}));
     const { tenantId, planTier } = body;
 
-    if (!tenantId || !planTier || !PLAN_PRICES_CENTS[planTier]) {
-      return Response.json({ error: "Invalid tenantId or planTier (launch, growth, custom_growth)" }, { status: 400 });
+    if (!tenantId || !isPlanId(planTier)) {
+      return Response.json({ error: "Invalid tenantId or canonical planTier" }, { status: 400 });
+    }
+    if (!isSelfCheckoutPlan(planTier)) {
+      return Response.json({ error: planTier === "scale" ? "Scale / Custom requires a reviewed quote and order form." : "This plan does not require subscription checkout." }, { status: 400 });
     }
 
     const ctx = await requireTenantContext(tenantId);
@@ -33,7 +30,8 @@ export async function POST(request: Request) {
 
     // Check provisional 7-day audit credit eligibility (DO NOT consume credit before payment)
     const creditCheck = await checkAuditCreditEligibility(serviceDb, tenantId);
-    const basePriceCents = PLAN_PRICES_CENTS[planTier];
+    const plan = PLANS[planTier];
+    const basePriceCents = plan.priceCents!;
     const discountCents = creditCheck.eligible ? creditCheck.creditAmountCents : 0;
     const finalPriceCents = Math.max(0, basePriceCents - discountCents);
 
@@ -68,7 +66,7 @@ export async function POST(request: Request) {
         tenantId,
         amountCents: finalPriceCents,
         currency: "INR",
-        description: `Stratxcel ${planTier.toUpperCase()} Subscription (GST Included)`,
+        description: `Stratxcel ${plan.name} Subscription (GST Included)`,
         paymentPurpose: "subscription_payment",
         referenceId: subscription.id,
       });

@@ -1,0 +1,16 @@
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
+const migration = fs.readFileSync(path.join(root, "supabase", "migrations", "20260809010000_subscription_v1_catalog_alignment.sql"), "utf8");
+for (const fragment of ["starter', 'growth', 'business", "v_base_price := 499900", "v_base_price := 999900", "v_base_price := 1999900", "array[12, 1, 100, 0]", "array[25, 1, 500, 1]", "array[50, 3, 1500, 1]"]) assert.ok(migration.includes(fragment), `missing ${fragment}`);
+assert.ok(migration.includes("legacy_plan_not_payable"));
+assert.ok(migration.includes("plan_not_self_checkout"));
+assert.ok(migration.includes("unknown_plan_tier"));
+assert.ok(migration.includes("refusing catalog alignment"));
+assert.ok(migration.includes("security definer") && migration.includes("set search_path = public"));
+assert.ok(migration.includes("revoke execute") && migration.includes("grant execute") && migration.includes("to service_role"));
+assert.equal(migration.includes("PAYMENTS_SUBSCRIPTIONS_ENABLED=true"), false);
+assert.equal(migration.includes("audit_fee_cents"), false, "audit product must remain separate and untouched");
+console.log("subscription-v1-catalog-migration.test.ts: ALL PASS (additive constraint/guard, exact prices/limits, legacy/free/scale fail closed, hardened RPC patch and ACLs)");

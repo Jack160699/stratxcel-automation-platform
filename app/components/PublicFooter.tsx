@@ -38,9 +38,15 @@ const COLUMNS: { title: string; links: { label: string; href: string }[] }[] = [
     links: [
       { label: "About Stratxcel", href: "/about" },
       { label: "Contact Support", href: "/contact" },
+      { label: "Customer Support", href: "/support" },
       { label: "Privacy Policy", href: "/privacy" },
       { label: "Terms of Service", href: "/terms" },
+      { label: "Refunds & Cancellation", href: "/refund-cancellation" },
       { label: "Data Deletion", href: "/data-deletion" },
+      { label: "Acceptable Use", href: "/acceptable-use" },
+      { label: "Domain & Website Terms", href: "/domain-website-terms" },
+      { label: "Third-Party Providers", href: "/third-party-providers" },
+      { label: "Data Processing Terms", href: "/data-processing-terms" },
     ],
   },
 ];

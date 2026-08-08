@@ -47,11 +47,21 @@ function run() {
   assert.ok(copilot.includes("uploadToSignedUrl"), "browser must upload directly to the private storage source");
   assert.ok(attachments.includes("finalizeAgentAttachment"), "server must verify and finalize uploaded objects");
 
-  for (const route of ["privacy", "terms", "data-deletion"]) {
+  const legalRoutes = [
+    "privacy",
+    "terms",
+    "refund-cancellation",
+    "data-deletion",
+    "acceptable-use",
+    "domain-website-terms",
+    "third-party-providers",
+    "data-processing-terms",
+  ];
+  for (const route of legalRoutes) {
     assert.ok(fs.existsSync(path.join(root, "app", "(marketing)", route, "page.tsx")), `${route} route must exist`);
   }
   const nav = read("lib", "site-nav.js");
-  assert.ok(nav.includes('href: "/privacy"') && nav.includes('href: "/terms"') && nav.includes('href: "/data-deletion"'));
+  for (const route of legalRoutes) assert.ok(nav.includes(`href: "/${route}"`), `footer must link /${route}`);
 
   console.log("workspace-safety.test.ts: ALL PASS (shell, resizing, attachments, canonical settings, legal routes)");
 }

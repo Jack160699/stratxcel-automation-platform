@@ -1,46 +1,23 @@
 import type { Metadata } from "next";
-import { LegalDocument, LegalSection } from "../legal/LegalDocument";
+import Link from "next/link";
+import { LegalDocument, LegalList, LegalSection } from "../legal/LegalDocument";
 
-export const metadata: Metadata = {
-  title: "Privacy Policy — Stratxcel",
-  description: "How Stratxcel collects, uses, stores, and protects personal data.",
-};
+export const metadata: Metadata = { title: "Privacy Policy — Stratxcel", description: "How Stratxcel collects, uses, shares, secures, and retains personal data." };
 
 export default function PrivacyPage() {
   return (
-    <LegalDocument
-      eyebrow="Legal"
-      title="Privacy Policy"
-      intro="This policy explains the information Stratxcel processes when you use our website, contact us, or use the Social Autopilot administration product."
-    >
-      <LegalSection title="Information we process">
-        <p>We process information you submit, including contact-form details, administrator account details, Brand Brain content, drafts, campaigns, Copilot conversations, and files you attach to Copilot.</p>
-        <p>When you connect a social account, we process platform account identifiers, granted permissions, encrypted access credentials, webhook events, publishing jobs, and performance metrics needed to provide the requested integration.</p>
-        <p>We also receive ordinary technical information such as timestamps, request and audit records, error diagnostics, and basic usage analytics. We do not intentionally collect payment-card details through Social Autopilot.</p>
-      </LegalSection>
-
-      <LegalSection title="How we use information">
-        <p>We use information to authenticate administrators, operate requested workflows, generate and store content, maintain integrations, secure and troubleshoot the service, prevent abuse, and respond to support or legal requests.</p>
-        <p>Copilot may send the conversation and text from supported attachments to the configured AI provider when needed for the requested mission. Images and PDFs may be stored without being interpreted when no supported extraction capability is configured.</p>
-      </LegalSection>
-
-      <LegalSection title="Service providers and platforms">
-        <p>We use infrastructure and service providers to run Stratxcel, including hosting, database, storage, authentication, analytics, and configured AI services. If you connect a social platform, information is also exchanged with that platform according to the permissions you grant and its own terms and privacy policy.</p>
-        <p>We do not sell personal information. We may disclose information when necessary to operate the service, follow your instructions, protect the service or others, or comply with applicable law.</p>
-      </LegalSection>
-
-      <LegalSection title="Storage, security, and retention">
-        <p>Copilot attachments are stored in private, owner-scoped storage. Access credentials are handled server-side and are not intentionally exposed in browser telemetry. No system is perfectly secure, but we use access controls, audit records, encryption for stored social tokens, and least-privilege product boundaries appropriate to the service.</p>
-        <p>We retain information while an account or integration is active and as reasonably necessary for operations, security, dispute resolution, and legal obligations. Retention periods vary by data type. You may request deletion as described in our Data Deletion page.</p>
-      </LegalSection>
-
-      <LegalSection title="Your choices">
-        <p>You can disconnect social integrations in the product, avoid attaching files, and request access, correction, or deletion through our contact form. We may need to verify the requester and may retain limited records where required for security or legal compliance.</p>
-      </LegalSection>
-
-      <LegalSection title="Changes">
-        <p>We may update this policy as the service changes. We will update the date shown above and provide additional notice when required.</p>
-      </LegalSection>
+    <LegalDocument eyebrow="Privacy" title="Privacy Policy" intro="This Policy explains how Startxcel Solutions OPC Pvt Ltd, India, operating as Stratxcel, processes personal data when you visit our websites, contact us, create an account, or use our software, AI, automation, messaging, payment, domain, and integration services.">
+      <LegalSection title="1. Our role and scope"><p>Depending on the activity, Stratxcel may act as the organization deciding why and how personal data is processed (including website, account, billing, security, and support data), or as a processor/service provider acting on a business client’s documented instructions for client-controlled data. Our <Link href="/data-processing-terms" className="font-semibold text-blue-700 hover:underline">Data Processing Terms</Link> apply to supported client processing.</p></LegalSection>
+      <LegalSection title="2. Data we collect"><LegalList><li>Identity, account, organization, contact, support, billing, transaction, and subscription information.</li><li>Client-provided records, leads, messages, prompts, files, brand material, content, approvals, campaigns, websites, domain details, and workflow instructions.</li><li>Connected-account identifiers, permissions, encrypted credentials or tokens, webhook events, publishing jobs, delivery status, and performance metrics.</li><li>Device, browser, IP address, timestamps, logs, audit events, cookie or analytics data, security signals, and diagnostic information.</li><li>Information from service providers, platforms, payment providers, or public sources when needed to provide a requested feature or prevent abuse.</li></LegalList><p>Do not submit sensitive personal data unless the feature expressly requires it and you have authority and a lawful basis. We do not intentionally collect full payment-card details; payment providers process them under their own notices.</p></LegalSection>
+      <LegalSection title="3. Purposes and legal grounds"><p>We process data to provide and personalize the Services; create accounts; execute approved workflows; process payments; provide support; secure, audit, debug, and improve the Services; communicate service and permitted marketing messages; enforce agreements; establish or defend claims; and comply with law. We rely on consent where required, performance of a contract or requested steps, compliance with law, and other grounds permitted by applicable data-protection law. You may withdraw consent, but prior lawful processing remains valid and some features may stop.</p></LegalSection>
+      <LegalSection title="4. AI and automated processing"><p>Prompts, instructions, conversations, and supported attachment text may be sent to configured AI providers to generate the requested output. Outputs may be stored with mission and audit records. We do not represent that AI decisions are error-free; clients must keep appropriate human review. We do not use solely automated decisions to produce legal or similarly significant effects on individuals unless specifically disclosed and lawfully configured.</p></LegalSection>
+      <LegalSection title="5. Sharing and international processing"><p>We share data only as reasonably necessary with hosting, database, storage, authentication, communications, analytics, AI, payment, domain, and other providers; connected platforms selected by you; professional advisers; authorities where legally required; and a successor in a lawful business transaction. We do not sell personal data. Providers may process data in other countries, subject to contractual and legal safeguards applicable to the transfer.</p></LegalSection>
+      <LegalSection title="6. Cookies and analytics"><p>We may use essential storage for authentication, security, tenant selection, and preferences, and limited analytics to understand performance and usage. Where law requires, non-essential technologies will be used only after valid consent. Browser controls may affect functionality.</p></LegalSection>
+      <LegalSection title="7. Retention and deletion"><p>We retain data only for as long as reasonably necessary for the stated purposes, the client relationship, security, backups, fraud prevention, disputes, and legal or accounting obligations. Periods vary by record and configuration. See <Link href="/data-deletion" className="font-semibold text-blue-700 hover:underline">Data Deletion & Retention</Link> for categories, deletion steps, and exceptions.</p></LegalSection>
+      <LegalSection title="8. Security"><p>We use measures appropriate to the service, including access controls, tenant boundaries, private storage, audit records, server-side credential handling, and encryption of supported stored integration tokens. No transmission or storage is completely secure. You are responsible for endpoint security, credential hygiene, permissions, and backups of data you must retain.</p></LegalSection>
+      <LegalSection title="9. Your rights and complaints"><p>Subject to applicable law and our role, you may request access or a summary, correction, completion, deletion, withdrawal of consent, and grievance resolution, and may nominate another person where law provides. Use the contact form and identify the relevant account without sending secrets. We may verify identity and authority, route client-controlled requests to the relevant client, and decline or limit requests where law permits.</p></LegalSection>
+      <LegalSection title="10. Children"><p>The Services are intended for businesses and people legally able to contract. They are not directed to children. Do not submit a child’s personal data unless legally authorized and specifically agreed with us.</p></LegalSection>
+      <LegalSection title="11. Changes and contact"><p>We may update this Policy as law, providers, or Services change. Material changes will receive additional notice where required. Privacy and grievance requests may be sent to <a className="font-semibold text-blue-700 hover:underline" href="mailto:grievance@stratxcel.in">grievance@stratxcel.in</a>. <strong>[PLACEHOLDER — insert the verified registered office and named grievance officer before launch]</strong>.</p></LegalSection>
     </LegalDocument>
   );
 }

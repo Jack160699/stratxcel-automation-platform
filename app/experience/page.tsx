@@ -39,7 +39,7 @@ const STARTER_STEPS: TourStep[] = [
         </div>
         <div className="flex justify-between">
           <span className="text-slate-400">Primary Offer:</span>
-          <span className="text-slate-300">₹3,999/mo Personal Guidance Membership</span>
+          <span className="text-slate-300">Growth plan workspace preview</span>
         </div>
       </div>
     ),

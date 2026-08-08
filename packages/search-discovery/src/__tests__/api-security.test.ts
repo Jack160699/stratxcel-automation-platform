@@ -1,0 +1,10 @@
+import assert from "node:assert/strict"; import fs from "node:fs"; import path from "node:path";
+const read = (...parts: string[]) => fs.readFileSync(path.join(process.cwd(), ...parts), "utf8");
+const state = read("app", "api", "platform", "search", "route.ts"); const run = read("app", "api", "platform", "search", "run", "route.ts"); const scheduler = read("app", "api", "internal", "search", "scheduler", "route.ts"); const ui = read("app", "app", "search", "page.tsx"); const repository = read("packages", "search-discovery", "src", "repository.ts");
+for (const route of [state, run]) assert.match(route, /requireTenantContext/, "customer routes must authenticate tenant membership");
+assert.match(state, /ctx\.supabase/, "reads must use authenticated RLS client"); assert.match(run, /mission:create/); assert.match(run, /SEARCH_RATE_LIMITED/); assert.match(run, /stableFingerprint/); assert.match(run, /getTenantServiceContext/);
+assert.match(scheduler, /schedulerCanRun\(\)/); assert.match(scheduler, /SEARCH_DISCOVERY_SCHEDULER_SECRET/); assert.match(scheduler, /Bearer/); assert.match(scheduler, /limit\(25\)/);
+assert.match(ui, /\/api\/platform\/search/); assert.match(ui, /Run Search Analysis/); assert.match(ui, /Missing provider data stays visibly unavailable/); assert.equal(/SEO score|92\/100|fake analytics/i.test(ui), false);
+assert.match(repository, /stableFingerprint/); assert.match(repository, /RESOLVED/); assert.match(repository, /recurrence_count/); assert.match(repository, /idempotency_key/); assert.match(repository, /ignoreDuplicates/); assert.match(repository, /SEARCH_RETENTION_POLICY/); assert.equal(/rawHtml/i.test(repository) && !/rawHtmlPersisted: false/.test(repository), false);
+assert.match(read("packages", "search-discovery", "src", "runtime.ts"), /project\.ownership_verified/);
+console.log("api-security.test.ts: ALL PASS (auth, tenant context, rate limit, scheduler secret/flag, truthful UI)");

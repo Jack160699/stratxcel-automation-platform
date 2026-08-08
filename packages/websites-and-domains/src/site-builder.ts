@@ -133,7 +133,7 @@ export function generate5PageSite(input: SiteProjectInput): SiteProject {
 
 export function requestSiteRevision(project: SiteProject, notes: string): SiteProject {
   if (project.revisionCount >= 1) {
-    throw new Error("Growth plan includes 1 revision cycle. Additional revisions require a Custom Growth pack.");
+    throw new Error("Growth includes 1 revision cycle. Additional revisions require an approved add-on.");
   }
   return {
     ...project,

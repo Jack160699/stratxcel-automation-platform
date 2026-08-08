@@ -93,19 +93,6 @@ async function testReconcilePaymentLinkUnitTests() {
   let walletBalance = 0;
 
   const mockDb = {
-    rpc: async (_fn: string, args: Record<string, unknown>) => {
-      const amountCents = (args.p_amount_cents as number) || 1000;
-      const existing = ledgerEntries.find(
-        (e) => e.tenant_id === args.p_tenant_id && e.reference_type === args.p_reference_type && e.reference_id === args.p_reference_id
-      );
-      if (existing) {
-        return { data: { inserted: false, entry_id: existing.id, balance_cents: walletBalance }, error: null };
-      }
-      const entryId = `entry_${Date.now()}`;
-      ledgerEntries.push({ id: entryId, tenant_id: args.p_tenant_id, amount_cents: amountCents, reference_type: args.p_reference_type, reference_id: args.p_reference_id });
-      walletBalance += amountCents;
-      return { data: { inserted: true, entry_id: entryId, balance_cents: walletBalance }, error: null };
-    },
     from: (table: string) => {
       if (table === "payment_links") {
         return {
