@@ -2,6 +2,7 @@ import { createWhatsAppAdapter } from "./adapter.ts";
 import { hasMarketingConsent } from "./consent.ts";
 import { isTemplateUsable } from "./templates/sync.ts";
 import type { ServiceClient } from "./db.ts";
+import { getIntegrationMode } from "./flags.ts";
 import { recordWhatsAppMessage } from "./messages.ts";
 import { isKillSwitchActive } from "@stratxcel/queue";
 import { hasEntitlement } from "@stratxcel/payments-and-wallet";
@@ -27,6 +28,22 @@ export type SendOutboundOutcome =
 
 const FREE_FORM_WINDOW_MS = 24 * 60 * 60 * 1000;
 
+/** Statuses that prove Meta (or the shadow adapter, standing in for it) actually accepted the message — the only states an idempotent retry may report as "already sent." */
+const PROVEN_SENT_STATUSES = new Set(["submitted", "sent", "delivered", "read"]);
+
+/**
+ * Defense in depth: the adapter's own thrown messages never embed the
+ * token/secret (see adapter.ts — the only credentials ever read are
+ * WHATSAPP_TOKEN/WHATSAPP_APP_SECRET, and neither is interpolated into any
+ * error string), but this value is persisted to the DB regardless, so it is
+ * scrubbed and length-capped here rather than trusted to stay clean forever.
+ */
+function sanitizeSendError(err: unknown): { message: string } {
+  const raw = err instanceof Error ? err.message : String(err);
+  const scrubbed = raw.replace(/[A-Za-z0-9_-]{20,}/g, "[redacted]");
+  return { message: scrubbed.slice(0, 500) };
+}
+
 /**
  * The one place a real outbound WhatsApp send can happen — every check here
  * fails closed. A message that fails any gate below is never queued/sent;
@@ -37,10 +54,32 @@ const FREE_FORM_WINDOW_MS = 24 * 60 * 60 * 1000;
  * apps/whatsapp-worker/src/processor.ts, and any future campaign/follow-up
  * sender) — there is intentionally no second, weaker send implementation
  * anywhere in this codebase.
+ *
+ * "A whatsapp_messages row exists for this idempotency key" is NOT the same
+ * fact as "Meta accepted this message" — a prior attempt may have failed
+ * after the row was created but before/during the adapter call, or may
+ * still be mid-flight (a genuine concurrent caller lost the same DB race).
+ * alreadySent:true is only ever returned when the existing row's own status
+ * proves a prior send actually completed (PROVEN_SENT_STATUSES below); a
+ * queued/failed/otherwise-unproven row instead returns a typed
+ * previous_send_incomplete/previous_send_failed rejection and the adapter
+ * is never called again for it. This is a deliberate choice to risk a
+ * missed retry over risking a second real customer message — see FIX 2/5
+ * in hotfix/whatsapp-worker-auto-reply's second commit for the incident
+ * this closes. The DB's own whatsapp_messages_tenant_idempotency_idx
+ * unique index (not touched here) is what actually serializes concurrent
+ * callers on the same key; this function only decides what each caller
+ * does once it learns it lost that race.
  */
 export async function sendOutboundWhatsAppMessage(supabase: ServiceClient, input: SendOutboundInput): Promise<SendOutboundOutcome> {
   const { data: lead } = await supabase.from("crm_leads").select("*").eq("id", input.leadId).eq("tenant_id", input.tenantId).maybeSingle();
   if (!lead) return { ok: false, reason: "lead_not_found" };
+
+  // FIX 1: resolved and checked before anything is ever recorded — a
+  // disabled integration must produce zero DB rows and zero adapter calls,
+  // not a queued row nobody will ever complete.
+  const mode = getIntegrationMode("WHATSAPP_INTEGRATION_MODE");
+  if (mode === "disabled") return { ok: false, reason: "integration_disabled" };
 
   const { data: binding } = await supabase
     .from("whatsapp_phone_bindings")
@@ -111,7 +150,24 @@ export async function sendOutboundWhatsAppMessage(supabase: ServiceClient, input
     status: "queued",
   });
   if (!recorded.success || !recorded.messageId) return { ok: false, reason: recorded.reason ?? "record_failed" };
-  if (recorded.alreadyRecorded) return { ok: true, messageId: recorded.messageId, alreadySent: true };
+
+  if (recorded.alreadyRecorded) {
+    // FIX 2/5: a row already existing for this idempotency key proves only
+    // that SOMEONE (an earlier attempt, or a concurrent caller that won the
+    // DB race) already created it — never that Meta accepted it. Load the
+    // row and classify its actual state; the adapter is never invoked from
+    // this branch under any circumstance.
+    const { data: existing } = await supabase.from("whatsapp_messages").select("*").eq("id", recorded.messageId).eq("tenant_id", input.tenantId).maybeSingle();
+    if (existing && PROVEN_SENT_STATUSES.has(existing.status as string)) {
+      return { ok: true, messageId: recorded.messageId, alreadySent: true };
+    }
+    if (existing?.status === "failed") return { ok: false, reason: "previous_send_failed" };
+    // "queued" (still mid-flight, or a prior attempt died before ever
+    // reaching the failure handler below), or the row was somehow
+    // unreadable — either way, unproven, so no adapter call and no
+    // automatic retry; see the module doc comment for why.
+    return { ok: false, reason: "previous_send_incomplete" };
+  }
 
   const adapter = createWhatsAppAdapter(supabase);
   try {
@@ -141,6 +197,25 @@ export async function sendOutboundWhatsAppMessage(supabase: ServiceClient, input
 
     return { ok: true, messageId: recorded.messageId, alreadySent: false, providerId: result.id, mode: result.mode as "shadow" | "live" };
   } catch (err) {
-    return { ok: false, reason: err instanceof Error ? err.message : "send_failed" };
+    // FIX 3: a newly-created row whose adapter call failed/threw is marked
+    // failed truthfully — never left looking like a live/submitted send,
+    // and provider_message_id stays null since Meta never returned one.
+    const sanitized = sanitizeSendError(err);
+    await supabase
+      .from("whatsapp_messages")
+      .update({ status: "failed", status_updated_at: new Date().toISOString(), error: sanitized })
+      .eq("id", recorded.messageId)
+      .eq("tenant_id", input.tenantId);
+
+    await recordAuditEvent(supabase, {
+      tenantId: input.tenantId,
+      actorKind: input.isHumanInitiated ? "user" : "integration",
+      action: "whatsapp.message_send_failed",
+      targetType: "crm_lead",
+      targetId: input.leadId,
+      metadata: { reason: sanitized.message },
+    }).catch(() => {});
+
+    return { ok: false, reason: sanitized.message };
   }
 }

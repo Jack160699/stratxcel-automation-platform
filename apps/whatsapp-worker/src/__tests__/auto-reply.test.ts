@@ -145,6 +145,50 @@ async function run() {
       assert.equal(tables.whatsapp_shadow_messages?.length, 1, "the adapter must only have actually been invoked once");
     }
 
+    // --- 10. auto reply with a previously-failed outbound row: no automatic retry ---
+    {
+      process.env.WHATSAPP_INTEGRATION_MODE = "shadow";
+      const providerMessageId = "wamid.10-previously-failed";
+      const idempotencyKey = `whatsapp_auto_reply:${providerMessageId}`;
+      const { client, tables } = createFakeSupabase(
+        seed({
+          whatsapp_messages: [
+            {
+              id: "auto-reply-failed-1",
+              tenant_id: TENANT,
+              lead_id: LEAD_ID,
+              conversation_id: "convo-auto-failed",
+              direction: "outbound",
+              body: "failed earlier",
+              idempotency_key: idempotencyKey,
+              provider_message_id: null,
+              status: "failed",
+              error: { message: "simulated prior Meta failure" },
+              status_updated_at: new Date().toISOString(),
+              created_at: new Date().toISOString(),
+            },
+          ],
+        })
+      );
+      await maybeSendAutomaticReply(client, TENANT, message(providerMessageId), result());
+      assert.equal(tables.whatsapp_shadow_messages?.length ?? 0, 0, "a known-failed prior send must never trigger an automatic retry through the adapter");
+      const rows = (tables.whatsapp_messages ?? []).filter((m) => m.idempotency_key === idempotencyKey);
+      assert.equal(rows.length, 1, "no second row may be created for the same inbound provider id");
+      assert.equal(rows[0]?.status, "failed", "the row must remain failed, never silently upgraded to look sent");
+    }
+
+    // --- 11. existing successful same-key auto reply: no second send (redelivery) ---
+    {
+      const { client, tables } = createFakeSupabase(seed());
+      const msg = message("wamid.11-already-sent");
+      await maybeSendAutomaticReply(client, TENANT, msg, result());
+      assert.equal(tables.whatsapp_shadow_messages?.length, 1);
+      await maybeSendAutomaticReply(client, TENANT, msg, result()); // redelivery of the same Meta webhook reaching the gate again
+      assert.equal(tables.whatsapp_shadow_messages?.length, 1, "a redelivery on an already-successfully-sent auto-reply must never invoke the adapter a second time");
+      const rows = (tables.whatsapp_messages ?? []).filter((m) => m.idempotency_key === `whatsapp_auto_reply:${msg.providerMessageId}`);
+      assert.equal(rows.length, 1);
+    }
+
     console.log("auto-reply.test.ts (@stratxcel/whatsapp-worker): ALL PASS");
   } finally {
     if (originalAutoReply === undefined) delete process.env.WHATSAPP_AUTO_REPLY_ENABLED;
