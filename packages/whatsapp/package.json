@@ -10,6 +10,8 @@
     "@stratxcel/human-handoff": "*",
     "@stratxcel/leads-and-crm": "*",
     "@stratxcel/missions": "*",
+    "@stratxcel/payments-and-wallet": "*",
+    "@stratxcel/queue": "*",
     "@supabase/supabase-js": "^2.110.7"
   }
 }

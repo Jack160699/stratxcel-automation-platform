@@ -18,7 +18,7 @@ const read = (...parts: string[]) => fs.readFileSync(path.join(root, ...parts), 
 
 function run() {
   // --- 1. Zero-send guarantee: unconditional, no migration-mode escape hatch ---
-  const sendSource = readCode("lib", "whatsapp", "send-outbound.ts");
+  const sendSource = readCode("packages", "whatsapp", "src", "outbound.ts");
   assert.ok(/binding\.source === "legacy_verified_bot"/.test(sendSource), "must block sends for the legacy-sourced binding");
   const bindingBlockIdx = sendSource.indexOf('binding.source === "legacy_verified_bot"');
   const adapterCallIdx = sendSource.indexOf("createWhatsAppAdapter(supabase)");

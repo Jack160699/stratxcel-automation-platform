@@ -7,7 +7,7 @@ const VALID_MODES: readonly WhatsAppMigrationMode[] = ["off", "shadow", "cutover
  * one environment variable and nothing else. Default is "shadow" per the
  * task brief, but this flag is NOT what makes shadow mode safe: the actual
  * zero-send guarantee is enforced unconditionally in
- * lib/whatsapp/send-outbound.ts by checking the phone binding's `source`
+ * packages/whatsapp/src/outbound.ts by checking the phone binding's `source`
  * column, independent of this mode value. Setting WHATSAPP_MIGRATION_MODE
  * to "cutover" this task has NO additional effect anywhere in this
  * codebase — no code path reads "cutover" to unlock a new capability. A

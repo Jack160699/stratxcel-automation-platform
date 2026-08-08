@@ -1,5 +1,5 @@
 export { createServiceClient, type ServiceClient } from "./db.ts";
-export { getIntegrationMode, type IntegrationMode } from "./flags.ts";
+export { getIntegrationMode, isAutoReplyEnabled, type IntegrationMode } from "./flags.ts";
 export * from "./types.ts";
 export * from "./webhook.ts";
 export * from "./adapter.ts";
@@ -18,3 +18,4 @@ export * from "./appointments.ts";
 export * from "./templates/sync.ts";
 export * from "./embedded-signup/state.ts";
 export * from "./legacy-bridge/index.ts";
+export * from "./outbound.ts";

@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import { requireTenantContext, getTenantServiceContext } from "@/lib/tenants/tenant-context";
 import { requirePermission, PermissionDeniedError } from "@/lib/rbac/policy";
-import { sendOutboundWhatsAppMessage } from "@/lib/whatsapp/send-outbound";
+import { sendOutboundWhatsAppMessage } from "@stratxcel/whatsapp";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

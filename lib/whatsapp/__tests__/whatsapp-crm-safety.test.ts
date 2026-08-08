@@ -3,6 +3,12 @@
 // Static safety checks on the outbound-send orchestrator and the additive
 // migration. Does not re-test the payment webhook/RPC internals — those are
 // unmodified by this task.
+//
+// The orchestrator itself now lives in packages/whatsapp/src/outbound.ts
+// (moved there in hotfix/whatsapp-worker-auto-reply so both the dashboard
+// send route and the standalone worker's automatic replies share the exact
+// same choke point instead of maintaining two copies) — these checks were
+// relocated to follow it, not weakened.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
@@ -18,7 +24,7 @@ const read = (...parts: string[]) => fs.readFileSync(path.join(root, ...parts), 
 
 function run() {
   // --- 1. Outbound sending: every gate is present, idempotency mandatory --
-  const sendSource = readCode("lib", "whatsapp", "send-outbound.ts");
+  const sendSource = readCode("packages", "whatsapp", "src", "outbound.ts");
   assert.ok(/idempotencyKey: string;/.test(sendSource), "idempotencyKey must be a required field, not optional");
   assert.ok(/isKillSwitchActive\(/.test(sendSource), "must check the kill switch before sending");
   assert.ok(/hasMarketingConsent\(/.test(sendSource), "must check consent before an outside-window send");

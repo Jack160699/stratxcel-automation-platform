@@ -57,8 +57,11 @@ async function recordShadowResponse(
  * addition to — never instead of — the existing shadow-response log
  * (whatsapp_shadow_messages), which still only ever records *proposed,
  * never-sent* automated replies; nothing here calls the WhatsApp send API.
- * Real outbound sending lives in the app-level orchestrator that also
- * checks consent/entitlement/kill-switch (see lib/whatsapp/send-outbound.ts).
+ * Real outbound sending lives in the shared orchestrator that also checks
+ * consent/entitlement/kill-switch (see ../outbound.ts) — the standalone
+ * whatsapp-worker processor calls it after this function returns, gated by
+ * WHATSAPP_AUTO_REPLY_ENABLED (see apps/whatsapp-worker/src/processor.ts);
+ * nothing in this file ever sends anything itself.
  */
 export async function processInboundMessage(
   supabase: ServiceClient,

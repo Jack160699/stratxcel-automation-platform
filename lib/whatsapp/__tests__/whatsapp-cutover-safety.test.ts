@@ -26,7 +26,7 @@ function run() {
   assert.ok(migrationSource.includes("'native', 'legacy_verified_bot', 'migrated_verified_bot'"), "source constraint must be widened, not replaced with a narrower set");
   assert.ok(/whatsapp_phone_bindings_single_migrated_idx/.test(migrationSource), "at most one migrated_verified_bot binding must be DB-enforced");
 
-  const sendSource = readCode("lib", "whatsapp", "send-outbound.ts");
+  const sendSource = readCode("packages", "whatsapp", "src", "outbound.ts");
   assert.ok(/binding\.source === "legacy_verified_bot"/.test(sendSource), "the shadow-only block must remain exact and unconditional");
   assert.equal(/binding\.source === "migrated_verified_bot"/.test(sendSource), false, "a migrated (cutover) binding must NOT be specially blocked — it goes through the normal gates only");
   assert.equal(/getWhatsAppMigrationMode/.test(sendSource), false, "the choke point still must not branch on migration mode");

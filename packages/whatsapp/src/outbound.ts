@@ -1,11 +1,11 @@
-import { createWhatsAppAdapter, hasMarketingConsent, isTemplateUsable } from "@stratxcel/whatsapp";
-import { recordWhatsAppMessage } from "@stratxcel/whatsapp";
+import { createWhatsAppAdapter } from "./adapter.ts";
+import { hasMarketingConsent } from "./consent.ts";
+import { isTemplateUsable } from "./templates/sync.ts";
+import type { ServiceClient } from "./db.ts";
+import { recordWhatsAppMessage } from "./messages.ts";
 import { isKillSwitchActive } from "@stratxcel/queue";
 import { hasEntitlement } from "@stratxcel/payments-and-wallet";
 import { recordAuditEvent } from "@stratxcel/audit";
-import { getTenantServiceContext } from "@/lib/tenants/tenant-context";
-
-type ServiceClient = ReturnType<typeof getTenantServiceContext>["supabase"];
 
 export interface SendOutboundInput {
   tenantId: string;
@@ -32,7 +32,11 @@ const FREE_FORM_WINDOW_MS = 24 * 60 * 60 * 1000;
  * fails closed. A message that fails any gate below is never queued/sent;
  * it returns a typed reason instead. Idempotency key is mandatory (not
  * optional) precisely because this function is the single choke point for
- * every outbound send path (follow-ups, human replies, future campaigns).
+ * every outbound send path (dashboard/manual sends via
+ * app/api/platform/whatsapp/send/route.ts, automatic worker replies via
+ * apps/whatsapp-worker/src/processor.ts, and any future campaign/follow-up
+ * sender) — there is intentionally no second, weaker send implementation
+ * anywhere in this codebase.
  */
 export async function sendOutboundWhatsAppMessage(supabase: ServiceClient, input: SendOutboundInput): Promise<SendOutboundOutcome> {
   const { data: lead } = await supabase.from("crm_leads").select("*").eq("id", input.leadId).eq("tenant_id", input.tenantId).maybeSingle();
