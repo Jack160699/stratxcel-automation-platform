@@ -1,0 +1,10 @@
+{
+  "name": "@stratxcel/search-discovery",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": { "test": "node --experimental-strip-types src/__tests__/search-discovery.test.ts && node --experimental-strip-types src/__tests__/runtime.test.ts && node --experimental-strip-types src/__tests__/google-oauth.test.ts && node --experimental-strip-types src/__tests__/google-providers.test.ts && node --experimental-strip-types src/__tests__/google-runtime-bridge.test.ts" },
+  "dependencies": { "@stratxcel/audit": "*", "@stratxcel/approvals": "*", "@stratxcel/byok": "*", "@supabase/supabase-js": "^2.110.7" }
+}

@@ -15,6 +15,7 @@ export const NAV_ICONS: Record<string, ReactNode> = {
   content: <MegaphoneIcon />,
   brand: <SparkIcon />,
   website: <GlobeIcon />,
+  search: <SearchIcon />,
   ads: <TargetIcon />,
   crm: <ChatIcon />,
   leads: <ChatIcon />,
@@ -78,6 +79,14 @@ export function GlobeIcon() {
     <svg width="16" height="16" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.4">
       <circle cx="9" cy="9" r="6.5" />
       <path d="M2.5 9h13M9 2.5c2 2 2 11 0 13M9 2.5c-2 2-2 11 0 13" />
+    </svg>
+  );
+}
+export function SearchIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.4">
+      <circle cx="7.5" cy="7.5" r="4.5" />
+      <path d="M11 11l4 4" />
     </svg>
   );
 }

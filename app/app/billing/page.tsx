@@ -17,7 +17,8 @@ interface WalletAccount {
 
 interface Subscription {
   id: string;
-  plan_tier: "launch" | "growth" | "custom_growth";
+  /** Canonical: free | starter | growth | business | scale. Historical rows may still carry launch | custom_growth (display-only; those tiers fail closed for new payments). */
+  plan_tier: string;
   price_cents: number;
   status: string;
   current_period_start: string | null;
@@ -68,9 +69,10 @@ const STATUS_CHIP: Record<string, { state: "success" | "warning" | "danger" | "n
   refunded: { state: "neutral", label: "Refunded" },
 };
 
-const SELF_SERVICE_PLANS: Array<{ tier: "launch" | "growth"; name: string; priceCents: number; blurb: string }> = [
-  { tier: "launch", name: "Launch", priceCents: 949_900, blurb: "Growth basics for establishing businesses." },
-  { tier: "growth", name: "Growth", priceCents: 1_899_900, blurb: "Complete marketing, website, WhatsApp & CRM operating system." },
+const SELF_SERVICE_PLANS: Array<{ tier: "starter" | "growth" | "business"; name: string; priceCents: number; blurb: string }> = [
+  { tier: "starter", name: "Starter", priceCents: 499_900, blurb: "A complete entry system for one small or local business." },
+  { tier: "growth", name: "Growth", priceCents: 999_900, blurb: "The serious SMB plan for recurring execution and follow-up." },
+  { tier: "business", name: "Business", priceCents: 1_999_900, blurb: "Advanced Search, CRM, publishing, ads support, and priority execution." },
 ];
 
 export default function BillingPage() {
@@ -134,7 +136,7 @@ export default function BillingPage() {
     load();
   }, [load]);
 
-  async function startCheckout(planTier: "launch" | "growth") {
+  async function startCheckout(planTier: "starter" | "growth" | "business") {
     if (!tenantId) return;
     setBusy(true);
     setError(null);
@@ -182,7 +184,7 @@ export default function BillingPage() {
     }
   }
 
-  async function changePlan(targetPlanTier: "launch" | "growth") {
+  async function changePlan(targetPlanTier: "starter" | "growth" | "business") {
     if (!tenantId || !subscription) return;
     setBusy(true);
     setError(null);
@@ -253,7 +255,7 @@ export default function BillingPage() {
 
         {!subscription && (
           <div className="mt-4 flex flex-col gap-4">
-            <EmptyState title="No active plan" subtitle="Choose Launch or Growth to get started. Custom Growth is quote-led — contact us." />
+            <EmptyState title="No active plan" subtitle="Choose Starter, Growth, or Business to get started. Scale / Custom is quote-led — contact us." />
             <div className="grid gap-4 sm:grid-cols-2">
               {SELF_SERVICE_PLANS.map((p) => (
                 <div key={p.tier} className="rounded-sx-md border border-sx-border p-4">
@@ -268,7 +270,7 @@ export default function BillingPage() {
               ))}
             </div>
             <p className="text-xs text-sx-text-subtle">
-              Need something larger or tailored? Custom Growth starts at {money(2_399_900)}/mo and is scoped with our team — request a quote
+              Need something larger or tailored? Scale / Custom starts at {money(3_499_900)}/mo and is scoped with our team — request a quote
               instead of self-service checkout.
             </p>
           </div>
