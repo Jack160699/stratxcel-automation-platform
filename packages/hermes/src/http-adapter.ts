@@ -58,31 +58,43 @@ const TOOL_DESCRIPTIONS: Record<ToolName, string> = {
 
 /**
  * Composes everything the run needs to act on this mission with zero
- * ambient access — no secret ever appears here. The mission token is
- * scoped to exactly this mission's tenant and tool allowlist for 15
- * minutes (token.ts); inlining it in the prompt is a deliberate, named
- * stand-in for native tool/function-calling wiring (see the module-level
- * comment on the tool bridge below), not an oversight.
+ * ambient access — no secret ever appears here except the mission
+ * capability token itself, which is *meant* to reach the model (it's the
+ * per-call credential the MCP bridge's tool schemas require — see
+ * apps/hermes-gateway/src/mcp-server.ts) and is explicitly scoped to this
+ * mission's tenant and tool allowlist for 15 minutes (token.ts).
+ *
+ * As of the MCP bridge (STRATXCEL_HERMES_MCP_ENABLED), StratExcel's tools
+ * are pre-registered in Hermes's own config.yaml (`mcp_servers.stratxcel`)
+ * and surfaced to every run under the `mcp__stratxcel__<tool>` naming
+ * Hermes's MCP client convention gives them — the model does not construct
+ * an HTTP request itself the way the earlier raw-callback design asked it
+ * to (that design predates the toolset-hardening work that removed
+ * Hermes's own HTTP-capable built-in tools, and could never actually have
+ * executed since). The wording below is deliberately accurate about what
+ * StratExcel controls and what it doesn't: Hermes registers all 10 bridge
+ * tools globally for every run on this installation regardless of any one
+ * mission's allowedTools — this prompt does not claim otherwise. The
+ * *enforceable* boundary is server-side, inside the MCP bridge itself,
+ * which independently re-verifies the same token and rejects anything
+ * outside allowedTools no matter what the model attempts.
  */
 function composeRunInput(mission: MissionRow, context: MissionScopedContext, missionToken: string): { input: string; instructions: string } {
-  const toolGatewayUrl = process.env.STRATXCEL_TOOL_GATEWAY_URL;
-  const availableTools = context.allowedTools.map((tool) => `- ${tool}: ${TOOL_DESCRIPTIONS[tool]}`).join("\n");
+  const mcpBridgeEnabled = process.env.STRATXCEL_HERMES_MCP_ENABLED === "true";
+  const availableTools = context.allowedTools.map((tool) => `- mcp__stratxcel__${tool}: ${TOOL_DESCRIPTIONS[tool]}`).join("\n");
 
-  const toolBridgeSection = toolGatewayUrl
+  const toolBridgeSection = mcpBridgeEnabled
     ? [
         "",
-        "To take any StratExcel-side action, call the matching tool via HTTP:",
-        `  POST ${toolGatewayUrl}/tools/<tool_name>`,
-        `  Authorization: Bearer ${missionToken}`,
-        "  Content-Type: application/json",
-        "  <JSON body per the tool's input, or {} if it takes none>",
-        "",
-        "Available tools for this mission:",
+        "This mission is authorized to use only the following tools:",
         availableTools,
         "",
-        "Any tool not in this list will be rejected. Do not attempt raw database, shell, or credential access — you have none.",
+        `Every call to one of these tools MUST include this exact mission capability token as the "missionCapability" argument: ${missionToken}`,
+        "This token is a per-mission credential, not a secret to protect from StratExcel — but never repeat, quote, or otherwise reveal it in your final response to the user; use it only as a tool argument.",
+        "Any tool call outside this list, or with a missing/incorrect capability token, will be rejected by the server regardless of what you attempt — the rejection is authoritative even if you believe the action is justified.",
+        "You have no shell, filesystem, browser, database, or raw credential access of any kind. The only way to affect StratExcel is through the tools listed above.",
       ].join("\n")
-    : "\n(No tool gateway URL is configured for this deployment — this run has no StratExcel tool access at all; produce your best output from the context below only.)";
+    : "\n(No StratExcel tool bridge is configured for this deployment — this run has no StratExcel tool access at all; produce your best output from the context below only.)";
 
   const brandBrainSection = context.brandBrain ? JSON.stringify(context.brandBrain).slice(0, 8000) : "(none on file)";
 

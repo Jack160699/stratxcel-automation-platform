@@ -55,7 +55,7 @@ async function run() {
   process.env.HERMES_GATEWAY_URL = "http://localhost:8642";
   process.env.HERMES_API_KEY = "test-key";
   process.env.HERMES_RUN_MAX_MS = "5000";
-  process.env.STRATXCEL_TOOL_GATEWAY_URL = "http://localhost:8082";
+  process.env.STRATXCEL_HERMES_MCP_ENABLED = "true";
 
   const { createHermesHttpAdapter } = await import("../http-adapter.ts");
 
@@ -83,7 +83,10 @@ async function run() {
     const sentBody = JSON.parse(String(calls[0].init?.body));
     assert.match(sentBody.input, /test goal/);
     assert.ok(!sentBody.input.includes("test-key"), "the Hermes API key must never appear in the run's prompt");
-    assert.match(sentBody.input, /mission-token-abc/, "the mission-scoped tool token must be inlined for the tool-bridge prompt");
+    assert.match(sentBody.input, /mission-token-abc/, "the mission-scoped capability token must be inlined for the MCP tool bridge");
+    assert.match(sentBody.input, /mcp__stratxcel__get_brand_context/, "allowed tools must be named using Hermes's real mcp__<server>__<tool> convention");
+    assert.match(sentBody.input, /mcp__stratxcel__create_draft_artifact/, "the other tool in this fixture's allowedTools must also be listed");
+    assert.ok(!sentBody.input.includes("mcp__stratxcel__create_crm_lead"), "a tool NOT in this mission's allowedTools must never be listed as available");
     assert.match(calls[1].url, /\/v1\/runs\/run-123$/);
     assert.match(calls[2].url, /\/v1\/runs\/run-123$/);
   }
@@ -141,6 +144,23 @@ async function run() {
     assert.equal(sentBody.provider, "openrouter");
     delete process.env.HERMES_DEFAULT_MODEL;
     delete process.env.HERMES_DEFAULT_PROVIDER;
+  }
+
+  // --- execute(): the fail-closed MCP bridge gate — when
+  // STRATXCEL_HERMES_MCP_ENABLED is not "true", the prompt must not claim
+  // any StratExcel tool access exists (no mcp__stratxcel__* names, no
+  // capability token echoed), since a stale/half-configured deployment
+  // must never tell a mission to use tools that don't actually work. ---
+  {
+    delete process.env.STRATXCEL_HERMES_MCP_ENABLED;
+    const calls = installFakeFetch([{ status: 200, body: { run_id: "run-nomcp", status: "completed", output: "ok" } }]);
+    const adapter = createHermesHttpAdapter();
+    await adapter.execute(fakeMission(), fakeContext(), "mission-token-should-not-appear");
+    const sentBody = JSON.parse(String(calls[0].init?.body));
+    assert.ok(!sentBody.input.includes("mcp__stratxcel__"), "no MCP tool names may be advertised while the bridge gate is off");
+    assert.ok(!sentBody.input.includes("mission-token-should-not-appear"), "the capability token must not appear in the prompt when there is no tool bridge to use it with");
+    assert.match(sentBody.input, /no StratExcel tool access/i);
+    process.env.STRATXCEL_HERMES_MCP_ENABLED = "true";
   }
 
   // --- execute(): unrecognized terminal-looking status keeps polling until timeout ---

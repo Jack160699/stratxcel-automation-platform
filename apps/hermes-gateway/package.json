@@ -14,6 +14,8 @@
     "@stratxcel/human-handoff": "*",
     "@stratxcel/leads-and-crm": "*",
     "@stratxcel/missions": "*",
-    "@stratxcel/queue": "*"
+    "@stratxcel/queue": "*",
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "zod": "4.4.3"
   }
 }

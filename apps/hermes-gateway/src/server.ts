@@ -4,6 +4,7 @@ import os from "node:os";
 import { verifyMissionToken, isToolAllowed, type ToolName } from "@stratxcel/hermes";
 import { createServiceClient as createQueueClient, isKillSwitchActive, recordWorkerHeartbeat, getWorkerHealth } from "@stratxcel/queue";
 import { invokeTool, ToolNotAvailableError } from "./tool-handlers.ts";
+import { handleMcpRequest, mcpBridgeStatus } from "./mcp-server.ts";
 
 /**
  * The restricted tool gateway Hermes calls back into — "services/hermes-
@@ -21,6 +22,17 @@ const WORKER_TYPE = "hermes-gateway" as const;
 const INSTANCE_ID = `${os.hostname()}-${process.pid}`;
 const VERSION = process.env.GIT_COMMIT_SHA ?? process.env.VERCEL_GIT_COMMIT_SHA ?? "unknown";
 const HEARTBEAT_INTERVAL_MS = 30_000;
+
+/**
+ * Fail-closed feature gate for the MCP bridge (see mcp-server.ts) — an
+ * environment that hasn't configured Hermes's side of the bridge yet must
+ * not have this gateway advertise/answer at /mcp at all, so a stale prompt
+ * telling a mission "use mcp__stratxcel__..." never meets a 200 OK from a
+ * server that silently does something unintended. Off unless explicitly
+ * turned on; unset/anything-other-than-"true" is off, matching the same
+ * fail-safe convention as HERMES_MODE's own default.
+ */
+const MCP_BRIDGE_ENABLED = process.env.STRATXCEL_HERMES_MCP_ENABLED === "true";
 
 let _queueClient: ReturnType<typeof createQueueClient> | undefined;
 function getQueueClient() {
@@ -41,6 +53,29 @@ function getCorrelationId(req: http.IncomingMessage): string {
   const header = req.headers["x-correlation-id"];
   const fromHeader = Array.isArray(header) ? header[0] : header;
   return fromHeader && fromHeader.trim() !== "" ? fromHeader.trim() : crypto.randomUUID();
+}
+
+/**
+ * Layer A of the MCP bridge's two-layer authorization (see mcp-server.ts's
+ * module comment for Layer B). A dedicated secret — never
+ * HERMES_GATEWAY_SECRET (mission tokens), HERMES_API_KEY (StratExcel ->
+ * Hermes), or OPENROUTER_API_KEY (Hermes -> provider) — that only proves
+ * "this caller is the StratExcel Hermes installation", nothing
+ * mission-specific. Checked once per HTTP request, before the request ever
+ * reaches the MCP protocol handler.
+ */
+export function checkMcpTransportAuth(req: http.IncomingMessage): boolean {
+  const secret = process.env.STRATXCEL_MCP_BRIDGE_SECRET;
+  if (!secret) return false; // unset secret can never authenticate anything — fail closed.
+
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith("Bearer ")) return false;
+  const provided = authHeader.slice("Bearer ".length);
+
+  const providedBuf = Buffer.from(provided);
+  const secretBuf = Buffer.from(secret);
+  if (providedBuf.length !== secretBuf.length) return false; // timingSafeEqual requires equal lengths; unequal length is itself already a safe, length-only signal.
+  return crypto.timingSafeEqual(providedBuf, secretBuf);
 }
 
 async function handleToolCall(toolName: string, req: http.IncomingMessage, res: http.ServerResponse) {
@@ -111,6 +146,29 @@ async function handleToolCall(toolName: string, req: http.IncomingMessage, res: 
   }
 }
 
+async function handleMcpEntry(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+  if (!MCP_BRIDGE_ENABLED) {
+    // Fail closed, not fail-open: an unconfigured bridge must look exactly
+    // like it doesn't exist, never like an open, unauthenticated one —
+    // same 404 an unrecognized path gets.
+    res.writeHead(404);
+    res.end();
+    return;
+  }
+  const kill = await isKillSwitchActive(getQueueClient(), [{ scope: "global_hermes" }, { scope: "worker_type", scopeId: WORKER_TYPE }]);
+  if (kill.active) {
+    res.writeHead(503, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "Hermes gateway is stopped (kill switch active)", reason: kill.reason }));
+    return;
+  }
+  if (!checkMcpTransportAuth(req)) {
+    res.writeHead(401, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "Missing or invalid MCP bridge transport credential" }));
+    return;
+  }
+  await handleMcpRequest(req, res);
+}
+
 const server = http.createServer((req, res) => {
   const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
 
@@ -119,7 +177,9 @@ const server = http.createServer((req, res) => {
       .then((report) => {
         const httpStatus = report.status === "unavailable" ? 503 : 200;
         res.writeHead(httpStatus, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ ...report, version: VERSION }));
+        // mcp field never includes a secret — just whether the bridge is
+        // turned on and, if so, a session count, both harmless to expose.
+        res.end(JSON.stringify({ ...report, version: VERSION, mcp: MCP_BRIDGE_ENABLED ? { enabled: true, ...mcpBridgeStatus() } : { enabled: false } }));
       })
       .catch((err) => {
         res.writeHead(503, { "Content-Type": "application/json" });
@@ -134,6 +194,21 @@ const server = http.createServer((req, res) => {
       console.error("[hermes-gateway] tool call error:", err);
       res.writeHead(500);
       res.end();
+    });
+    return;
+  }
+
+  // The MCP bridge (see mcp-server.ts). Streamable HTTP uses POST for
+  // JSON-RPC calls, GET for the optional SSE stream, and DELETE for
+  // explicit session termination — all three go through the same handler,
+  // which dispatches on method itself.
+  if (url.pathname === "/mcp" && (req.method === "POST" || req.method === "GET" || req.method === "DELETE")) {
+    handleMcpEntry(req, res).catch((err) => {
+      console.error("[hermes-gateway] MCP request error:", err);
+      if (!res.headersSent) {
+        res.writeHead(500);
+        res.end();
+      }
     });
     return;
   }
