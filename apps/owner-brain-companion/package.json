@@ -1,0 +1,23 @@
+{
+  "name": "@stratxcel/owner-brain-companion",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Windows desktop companion for the Owner Operating Brain — owner-consented active-app tracking and manual voice/text notes, synced to the admin's operating-brain instance.",
+  "type": "module",
+  "bin": {
+    "owner-brain-companion": "./src/index.ts"
+  },
+  "scripts": {
+    "start": "node --experimental-strip-types src/index.ts start",
+    "pair": "node --experimental-strip-types src/index.ts pair",
+    "status": "node --experimental-strip-types src/index.ts status",
+    "pause": "node --experimental-strip-types src/index.ts pause",
+    "resume": "node --experimental-strip-types src/index.ts resume",
+    "unpair": "node --experimental-strip-types src/index.ts unpair",
+    "remember": "node --experimental-strip-types src/index.ts remember",
+    "test": "node --experimental-strip-types src/__tests__/queue.test.ts && node --experimental-strip-types src/__tests__/consent.test.ts"
+  },
+  "dependencies": {
+    "get-windows": "^9.3.0"
+  }
+}
