@@ -20,6 +20,6 @@ History, memory, knowledge, and authorization remain separate:
 - Knowledge is read from existing authorized tenant and Brand Brain records. Brain V1 does not introduce embeddings or another vector/AI provider.
 - Authorization is the verified principal plus server-resolved tool filtering. The model never grants permissions.
 
-Gemini Developer API remains the single provider. Its current implementation supports function calls, multiple calls in one response, and ordered tool-result rounds. Agent Core retains a four-round bound. WhatsApp low-risk mutations require confirmation; external/high-risk work remains dashboard-only. `CONFIRM <code>` executes only the stored action and normalized input.
+Gemini Developer API remains the single provider. Its current implementation supports function calls, multiple calls in one response, and ordered tool-result rounds. Agent Core retains a five-round bound so four sequential retrieval steps still leave one final synthesis pass. WhatsApp low-risk mutations require confirmation; external/high-risk work remains dashboard-only. `CONFIRM <code>` executes only the stored action and normalized input.
 
 Social Autopilot remains a specialized orchestration subsystem. The shared Brain reuses its existing Gemini provider and reads existing Brand Brain data, without replacing Social Autopilot's richer content-specific workflow.
