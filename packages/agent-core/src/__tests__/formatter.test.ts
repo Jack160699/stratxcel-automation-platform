@@ -20,10 +20,16 @@ function run() {
   assert.ok(!privateSummary.includes("list_leads") && privateSummary.includes("Leads"), "fallback summaries must use user-facing labels, not raw tool names");
   const sanitized = formatAgentReply({ text: "Lead eb01696d-a902-4517-bad7-25272f31f00b called from 919584735857." });
   assert.ok(!sanitized.includes("eb01696d") && sanitized.includes("••••••••57"), "final replies must redact internal IDs and mask phone-like identifiers");
+  const timestamp = formatAgentReply({ text: "Last interaction: 2026-08-09 01:41:09" });
+  assert.ok(timestamp.includes("2026-08-09 01:41:09"), "ISO timestamps must not be mistaken for phone numbers");
+  const linkCode = formatAgentReply({ text: "The previous message was LINK ADMIN 657681." });
+  assert.ok(!linkCode.includes("657681") && linkCode.includes("LINK [redacted]"), "pairing codes must never be repeated in replies");
 
   const confirmPrompt = formatConfirmationPrompt({ humanSummary: "Ready to mark as CONTACTED.", code: "482917", ttlMinutes: 10 });
   assert.ok(confirmPrompt.includes("CONFIRM 482917"));
   assert.ok(confirmPrompt.includes("CANCEL 482917"));
+  const formattedConfirmation = formatAgentReply({ confirmationPrompt: confirmPrompt });
+  assert.ok(formattedConfirmation.includes("CONFIRM 482917") && formattedConfirmation.includes("CANCEL 482917"), "live confirmation challenges must remain usable");
 
   assert.equal(formatWhoAmI("staff"), "Linked as Stratxcel staff.");
   assert.equal(formatWhoAmI("unlinked"), "WhatsApp is not linked to a Stratxcel account.");
