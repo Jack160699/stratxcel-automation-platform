@@ -18,7 +18,7 @@ export const ADMIN_NAV_GROUPS_DATA: NavGroupData[] = [
     label: "Overview",
     items: [
       { key: "overview", label: "Agency Overview", href: "/admin" },
-      { key: "copilot", label: "Admin Copilot", href: "/admin/copilot" },
+      { key: "admin-copilot", label: "Admin Copilot", href: "/admin/copilot" },
     ],
   },
   {

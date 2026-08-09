@@ -13,7 +13,11 @@ interface PairingStatusResponse {
 }
 
 export interface WhatsAppAgentPairingCardProps {
-  tenantId: string;
+  /** Present for the tenant-scoped Client card; omitted for the platform-
+   *  staff-scoped Admin card, which resolves identity from the session
+   *  alone and needs no tenant selected — see app/api/admin/whatsapp-agent/*
+   *  routes, which no longer accept or require a tenantId. */
+  tenantId?: string;
   pairingUrl: string;
   statusUrl: string;
   linkUrl: string;
@@ -24,11 +28,12 @@ export interface WhatsAppAgentPairingCardProps {
 
 /**
  * Shared pairing UI for both Admin Integrations and Client Integrations —
- * differs only in which routes it calls (admin vs platform prefix) and the
- * LINK command format. The one-time code is held only in React state: never
- * logged (no console.log of it anywhere in this component) and never
- * persisted to localStorage — it disappears on navigation/unmount, matching
- * the build brief's explicit requirement.
+ * differs only in which routes it calls (admin vs platform prefix), the
+ * LINK command format, and whether a tenantId is threaded through at all.
+ * The one-time code is held only in React state: never logged (no
+ * console.log of it anywhere in this component) and never persisted to
+ * localStorage — it disappears on navigation/unmount, matching the build
+ * brief's explicit requirement.
  */
 export function WhatsAppAgentPairingCard(props: WhatsAppAgentPairingCardProps) {
   const [status, setStatus] = useState<PairingStatusResponse | null>(null);
@@ -38,8 +43,8 @@ export function WhatsAppAgentPairingCard(props: WhatsAppAgentPairingCardProps) {
   const [revoking, setRevoking] = useState(false);
 
   async function loadStatus() {
-    if (!props.tenantId) return;
-    const res = await fetch(`${props.statusUrl}?tenantId=${encodeURIComponent(props.tenantId)}`);
+    const url = props.tenantId ? `${props.statusUrl}?tenantId=${encodeURIComponent(props.tenantId)}` : props.statusUrl;
+    const res = await fetch(url);
     const body = await res.json();
     if (!res.ok) {
       setError(body.error ?? "Failed to load WhatsApp Agent status");
@@ -61,7 +66,7 @@ export function WhatsAppAgentPairingCard(props: WhatsAppAgentPairingCardProps) {
       const res = await fetch(props.pairingUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tenantId: props.tenantId }),
+        body: JSON.stringify(props.tenantId ? { tenantId: props.tenantId } : {}),
       });
       const body = await res.json();
       if (!res.ok) {
@@ -81,7 +86,7 @@ export function WhatsAppAgentPairingCard(props: WhatsAppAgentPairingCardProps) {
       const res = await fetch(props.linkUrl, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tenantId: props.tenantId }),
+        body: JSON.stringify(props.tenantId ? { tenantId: props.tenantId } : {}),
       });
       const body = await res.json();
       if (!res.ok) {

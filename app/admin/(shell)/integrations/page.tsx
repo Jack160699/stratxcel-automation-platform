@@ -189,16 +189,17 @@ export default function WhatsAppAdminPage() {
       </header>
       {error && <ErrorState message={error} />}
 
-      {tenantId && (
-        <WhatsAppAgentPairingCard
-          tenantId={tenantId}
-          pairingUrl="/api/admin/whatsapp-agent/pairing"
-          statusUrl="/api/admin/whatsapp-agent/status"
-          linkUrl="/api/admin/whatsapp-agent/link"
-          linkCommandPrefix="LINK ADMIN"
-          numberDisplay="+91 77778 12777"
-        />
-      )}
+      {/* Platform-staff scoped, not tenant-selection scoped — a
+          platform_owner/platform_admin with zero client tenants must still
+          be able to link their own WhatsApp. See app/api/admin/whatsapp-agent/*
+          routes, which resolve identity from the session alone. */}
+      <WhatsAppAgentPairingCard
+        pairingUrl="/api/admin/whatsapp-agent/pairing"
+        statusUrl="/api/admin/whatsapp-agent/status"
+        linkUrl="/api/admin/whatsapp-agent/link"
+        linkCommandPrefix="LINK ADMIN"
+        numberDisplay="+91 77778 12777"
+      />
 
       {tenantId && (
         <Card>

@@ -1,4 +1,5 @@
-import { requireTenantContext, getTenantServiceContext } from "@/lib/tenants/tenant-context";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { getTenantServiceContext } from "@/lib/tenants/tenant-context";
 import { requirePlatformStaff } from "@/lib/platform-staff/auth";
 import { createPairingChallenge } from "@stratxcel/agent-core";
 
@@ -6,34 +7,30 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * PHASE 18: authenticated server route for STAFF pairing-code generation.
- * Requires genuine platform staff auth (requirePlatformStaff) — tenant
- * membership alone is not enough. NOT a public/anonymous endpoint.
- *
- * The `tenantId` body field here is used ONLY to resolve the caller's
- * authenticated session (requireTenantContext's established pattern for
- * obtaining ctx.userId — see app/api/platform/admin/workers/health/route.ts
- * for the identical precedent). It is NOT stored as the staff principal's
- * tenantId — a staff whatsapp_channel_principals row always gets
- * tenant_id: null (platform staff are not scoped to one tenant).
+ * Authenticated server route for STAFF pairing-code generation. Platform
+ * staff are not scoped to any tenant (see platform_staff_users), so the
+ * caller's identity is resolved directly from their Supabase session —
+ * the same pattern already used by app/api/platform/tenants/route.ts for
+ * tenant-independent authenticated reads — never through tenant
+ * membership, and never trusted from request-body input.
  *
  * The plaintext code is returned exactly once, in this response, to the
  * authenticated caller. It is never persisted or logged — only its hash is
  * stored (see @stratxcel/agent-core's createPairingChallenge).
  */
-export async function POST(request: Request) {
-  const body = (await request.json().catch(() => null)) as { tenantId?: string } | null;
-  if (!body?.tenantId) return Response.json({ error: "tenantId is required" }, { status: 400 });
+export async function POST() {
+  const supabase = await createSupabaseServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return Response.json({ error: "Not authenticated" }, { status: 401 });
 
-  const ctx = await requireTenantContext(body.tenantId);
-  if (!ctx.ok) return Response.json({ error: ctx.error }, { status: ctx.status });
-
-  const staffAuth = await requirePlatformStaff(ctx.userId, ["platform_owner", "platform_admin"]);
+  const staffAuth = await requirePlatformStaff(user.id, ["platform_owner", "platform_admin"]);
   if (!staffAuth.ok) return Response.json({ error: staffAuth.error }, { status: staffAuth.status });
 
-  const { supabase } = getTenantServiceContext();
-  const challenge = await createPairingChallenge(supabase, {
-    authUserId: ctx.userId,
+  const { supabase: serviceDb } = getTenantServiceContext();
+  const challenge = await createPairingChallenge(serviceDb, {
+    authUserId: user.id,
     principalType: "staff",
     tenantId: null,
   });
