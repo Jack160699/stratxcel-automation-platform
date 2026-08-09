@@ -13,7 +13,7 @@ const OPERATING_LEVELS = [
   {
     title: "Starter Level",
     bestFor: "Establishing a professional growth foundation",
-    package: "Launch Plan · ₹9,499/mo",
+    package: "Starter Plan · ₹4,999/mo",
     features: [
       "Brand Brain configuration & tone guidelines",
       "Automated social content plan (Instagram & LinkedIn)",
@@ -27,7 +27,7 @@ const OPERATING_LEVELS = [
   {
     title: "Growth Level",
     bestFor: "Scaling active marketing, lead capture & WhatsApp follow-up",
-    package: "Growth Plan · ₹18,999/mo",
+    package: "Growth Plan · ₹9,999/mo",
     featured: true,
     features: [
       "Everything in Starter level",
@@ -42,17 +42,16 @@ const OPERATING_LEVELS = [
   },
   {
     title: "Advanced Level",
-    bestFor: "Custom business operations, multi-team permissions & campaigns",
-    package: "Custom Growth · Starting ₹23,999/mo",
+    bestFor: "Higher-volume execution, advanced Search, and priority support",
+    package: "Business Plan · ₹19,999/mo",
     features: [
       "Everything in Growth level",
-      "Multi-channel Meta & Search campaign missions",
-      "Custom workflow triggers & API integrations",
-      "Human assistance & dedicated engineer handoffs",
-      "Advanced CRM roles & multi-client permissions",
+      "Higher content & campaign volume, advanced Search & Discovery",
+      "Advanced WhatsApp + CRM automation",
+      "Priority execution & reporting",
     ],
-    ctaText: "Consult Our Team",
-    ctaHref: "/contact?intent=custom",
+    ctaText: "Get Started with Business",
+    ctaHref: "/signup",
   },
 ];
 

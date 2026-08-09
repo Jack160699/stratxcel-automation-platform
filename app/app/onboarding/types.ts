@@ -44,8 +44,10 @@ export interface PlanTier {
  */
 export const PLAN_TIERS: PlanTier[] = [
   { key: "audit", name: "Audit", pitch: "Start with a ₹999 AI Business Growth Audit." },
-  { key: "launch", name: "Launch", pitch: "Growth basics for establishing businesses." },
-  { key: "growth", name: "Growth", pitch: "Complete marketing, website, WhatsApp & CRM system." },
-  { key: "custom", name: "Custom Growth", pitch: "Tailored scope with a dedicated account owner." },
+  { key: "free", name: "Free", pitch: "Explore the workspace and prepare your growth system." },
+  { key: "starter", name: "Starter", pitch: "A complete entry system for one small or local business." },
+  { key: "growth", name: "Growth", pitch: "The serious SMB plan for recurring execution and follow-up." },
+  { key: "business", name: "Business", pitch: "Advanced Search, CRM, publishing, ads support, and priority execution." },
+  { key: "scale", name: "Scale / Custom", pitch: "Tailored scope with a dedicated account owner." },
   { key: "unsure", name: "Not sure yet", pitch: "Talk to the team before choosing a plan." },
 ];

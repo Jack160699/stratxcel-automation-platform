@@ -29,6 +29,9 @@
       ],
       "@stratxcel/websites-and-domains": [
         "./packages/websites-and-domains/src/index.ts"
+      ],
+      "@stratxcel/search-discovery": [
+        "./packages/search-discovery/src/index.ts"
       ]
     }
   },
