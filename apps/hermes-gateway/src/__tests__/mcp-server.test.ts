@@ -12,12 +12,23 @@
 // than mock security out of the test.
 import assert from "node:assert/strict";
 import http from "node:http";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { issueMissionToken } from "@stratxcel/hermes";
 
 process.env.HERMES_GATEWAY_SECRET = "test-only-mission-token-secret";
 process.env.NODE_ENV = "test"; // server.ts's own module-scope guard against calling .listen()/recordWorkerHeartbeat() (which needs a real Supabase client) on import
+// Dummy-but-well-formed Supabase config so createServiceClient() (called
+// lazily, on first tool call) constructs successfully — no real network
+// reachability is required for construction, only for the query itself.
+// This lets the SDK-path test below distinguish "rejected at the schema
+// layer" (no query ever attempted) from "reached the handler, then failed
+// on kill-switch/infra" (isKillSwitchActive fails CLOSED on a query error —
+// see packages/queue/src/kill-switch.ts) without needing a live database.
+process.env.NEXT_PUBLIC_SUPABASE_URL = "http://127.0.0.1:1";
+process.env.SUPABASE_SERVICE_ROLE_KEY = "test-only-not-a-real-key";
 
-const { authorizeMcpToolCall, mcpInputSchema } = await import("../mcp-server.ts");
+const { authorizeMcpToolCall, mcpInputSchema, buildMcpServer } = await import("../mcp-server.ts");
 const { checkMcpTransportAuth } = await import("../server.ts");
 
 function fakeRequest(headers: Record<string, string | undefined>): http.IncomingMessage {
@@ -195,6 +206,80 @@ async function run() {
   }
 
   console.log("Runtime schema validation: PASS");
+
+  // === Real MCP server/SDK path (Section: post-activation cleanup) ==========
+  //
+  // Everything above exercises authorizeMcpToolCall() and mcpInputSchema()
+  // directly — neither goes through McpServer.registerTool()'s actual
+  // request-handling pipeline, which is exactly where the live 2026-08-09
+  // defect lived (registerTool was given `schema.shape`, not `schema`,
+  // silently losing `.strict()`). This section builds the real McpServer
+  // via the real buildMcpServer() and drives it with a genuine MCP Client
+  // over an in-process transport pair (@modelcontextprotocol/sdk's own
+  // InMemoryTransport) — the same request/response machinery Hermes uses
+  // over the network, minus only the HTTP framing itself.
+  {
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const server = buildMcpServer();
+    await server.connect(serverTransport);
+
+    const client = new Client({ name: "regression-test-client", version: "0" });
+    await client.connect(clientTransport);
+
+    const tokenForInjectionTest = issueMissionToken({
+      missionId: "mission-real-path",
+      tenantId: "tenant-real-path",
+      allowedTools: ["get_brand_context"],
+    });
+
+    // 15. THE regression case: valid capability + an injected tenantId/
+    // missionId must be rejected by real schema validation, through the
+    // real SDK path, before invokeTool() (and therefore before
+    // authorizeMcpToolCall() even runs) — not merely ignored downstream.
+    {
+      const result = await client.callTool({
+        name: "get_brand_context",
+        arguments: {
+          missionCapability: tokenForInjectionTest,
+          tenantId: "attacker-tenant",
+          missionId: "attacker-mission",
+        },
+      });
+      assert.equal(result.isError, true, "a call with injected tenantId/missionId must be rejected, not silently accepted");
+      const text = (result.content as Array<{ type: string; text?: string }>)[0]?.text ?? "";
+      // The SDK reports its own schema/argument validation failures this
+      // way (confirmed live: "MCP error -32602: Input validation error:
+      // Invalid arguments for tool ..."), distinct from this codebase's own
+      // application-level error strings (e.g. "kill switch active",
+      // "Mission capability rejected") — asserting on this distinguishes a
+      // genuine schema-layer rejection from a downstream one.
+      assert.match(text, /invalid arguments|unrecognized|input validation/i, `expected a schema-validation rejection, got: ${text}`);
+      assert.doesNotMatch(text, /kill switch|mission capability rejected/i, `must be rejected BEFORE reaching the handler, got: ${text}`);
+    }
+
+    // 16. The same schema must still accept a clean, legitimate call with no
+    // extra fields — proving the fix didn't make the schema layer reject
+    // valid input outright. No live database is available in this test, so
+    // "still works" is verified as "reaches the real handler and fails only
+    // on kill-switch/infra (which itself fails closed on a query error),
+    // never on schema/argument validation" — a clear, honest signal that
+    // the request passed schema validation.
+    {
+      const result = await client.callTool({
+        name: "get_brand_context",
+        arguments: { missionCapability: tokenForInjectionTest },
+      });
+      assert.equal(result.isError, true, "expected a failure in this DB-less test environment, but not a schema failure");
+      const text = (result.content as Array<{ type: string; text?: string }>)[0]?.text ?? "";
+      assert.match(text, /kill switch/i, `a clean, valid call must reach the real handler (kill-switch check), got: ${text}`);
+      assert.doesNotMatch(text, /invalid arguments|unrecognized|input validation/i, `a clean, valid call must not fail schema validation, got: ${text}`);
+    }
+
+    await client.close();
+    await server.close();
+  }
+
+  console.log("Real MCP server/SDK path (schema.shape -> schema fix): PASS");
 
   console.log("mcp-server.test.ts (@stratxcel/hermes-gateway): ALL PASS");
 }

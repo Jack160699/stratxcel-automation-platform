@@ -191,7 +191,7 @@ async function handleMcpToolCall(tool: McpCallableName, rawArgs: Record<string, 
   }
 }
 
-function buildMcpServer(): McpServer {
+export function buildMcpServer(): McpServer {
   const server = new McpServer({ name: SERVER_NAME, version: SERVER_VERSION }, { capabilities: { tools: {} } });
 
   for (const tool of Object.keys(TOOL_INPUT_SCHEMAS) as McpCallableName[]) {
@@ -200,7 +200,33 @@ function buildMcpServer(): McpServer {
       tool,
       {
         description: TOOL_DESCRIPTIONS[tool],
-        inputSchema: schema.shape,
+        // Pass the built ZodObject itself, NOT `schema.shape`. The SDK's
+        // registerTool() accepts either a raw shape (a plain
+        // `{ field: ZodType }` map) or an actual Zod schema instance — but
+        // it treats them very differently: a raw shape is used to build a
+        // BRAND NEW `z.object(shape)` internally (see
+        // @modelcontextprotocol/sdk/server/zod-compat.js's
+        // `objectFromShape`), which silently drops whatever `.strict()`
+        // config the original schema had, since `.shape` only exposes the
+        // field map, not the wrapping object's strictness setting. A real
+        // schema instance, by contrast, is detected via its `_def`/`_zod`
+        // internals and used AS-IS, so its `.strict()` (see
+        // mcpInputSchema() above and schemas.ts) is preserved through the
+        // real MCP request-validation path. This was a live, confirmed
+        // defect (2026-08-09 activation): passing `.shape` here meant a
+        // tool call carrying extra `tenantId`/`missionId` arguments was
+        // silently accepted (fields dropped, not rejected) rather than
+        // failing schema validation as intended — see
+        // __tests__/mcp-server.test.ts's "rejects unknown fields through
+        // the real SDK path" case, which exercises this exact route via a
+        // genuine in-process MCP Client/Server pair, not just
+        // schema.safeParse() in isolation. The identity-isolation security
+        // property itself was never at risk either way — see
+        // authorizeMcpToolCall()'s own explicit stripping below, which is
+        // the authoritative enforcement regardless of what this schema
+        // layer does — but genuine schema-level rejection is the correct,
+        // intended behavior and is now what actually happens.
+        inputSchema: schema,
         annotations: {
           readOnlyHint: READ_ONLY_TOOLS.has(tool),
           destructiveHint: false,
