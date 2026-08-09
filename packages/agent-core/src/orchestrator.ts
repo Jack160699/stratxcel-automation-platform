@@ -199,7 +199,13 @@ export async function runAgentTurn(input: RunAgentTurnInput): Promise<RunAgentTu
   const status: RunAgentTurnStatus = failureReason ? "failed" : confirmationPending ? "blocked" : "completed";
   const replyText = failureReason
     ? AGENT_UNAVAILABLE_TEXT
-    : formatAgentReply({ text: finalText, toolSummaries: confirmationPending ? [] : toolSummaries });
+    : formatAgentReply({
+        text: finalText,
+        // Tool payloads are model context and audited telemetry, not a
+        // second user-facing transcript. Fall back to privacy-safe summaries
+        // only when the bounded loop produced no final synthesis.
+        toolSummaries: !confirmationPending && !finalText.trim() ? toolSummaries : [],
+      });
 
   await recordAgentMessage(supabase, { sessionId: session.id, role: "assistant", content: replyText });
   await completeAgentRun(supabase, runId, status, failureReason ?? undefined);

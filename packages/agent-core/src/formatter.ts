@@ -9,10 +9,24 @@ import type { CapabilityGroup } from "./brain/capabilities.ts";
 
 const MAX_REPLY_CHARS = 1400;
 const MAX_LIST_ITEMS = 5;
+const INTERNAL_ID_PATTERN = /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/gi;
+const PHONE_PATTERN = /\b(?:\+?\d[\d -]{8,}\d)\b/g;
 
 function truncate(text: string, max: number): string {
   if (text.length <= max) return text;
   return `${text.slice(0, max - 1).trimEnd()}…`;
+}
+
+/** Keep internal record identifiers and phone-like values out of normal
+ * user-facing chat while retaining raw tool payloads in model context and
+ * server-side audit telemetry. */
+export function sanitizeAgentReplyText(text: string): string {
+  return text
+    .replace(INTERNAL_ID_PATTERN, "[internal reference]")
+    .replace(PHONE_PATTERN, (value) => {
+      const digits = value.replace(/\D/g, "");
+      return digits.length >= 10 ? `••••••••${digits.slice(-2)}` : value;
+    });
 }
 
 /** Summarizes an arbitrary tool result object into a short bullet list.
@@ -33,6 +47,7 @@ export function summarizeToolResult(toolName: string, result: unknown): string {
       return summarizeArray(`${toolName} (${key})`, arr);
     }
     const lines = Object.entries(obj)
+      .filter(([key]) => !isPrivateToolField(key))
       .slice(0, 8)
       .map(([k, v]) => `- ${k}: ${summarizeScalar(v)}`);
     return lines.length ? lines.join("\n") : `${toolName}: done.`;
@@ -54,12 +69,17 @@ function summarizeListItem(item: unknown): string {
   if (typeof item !== "object") return summarizeScalar(item);
   const obj = item as Record<string, unknown>;
   // Prefer a small set of commonly-useful identifying fields if present.
-  const preferredKeys = ["name", "contact_name", "title", "status", "id", "email", "contact_phone"];
+  const preferredKeys = ["name", "contact_name", "title", "status"];
   const parts = preferredKeys
     .filter((k) => k in obj && obj[k] !== null && obj[k] !== undefined)
     .slice(0, 3)
     .map((k) => `${k}: ${summarizeScalar(obj[k])}`);
-  return parts.length ? parts.join(", ") : summarizeScalar(JSON.stringify(obj));
+  return parts.length ? parts.join(", ") : "item available";
+}
+
+function isPrivateToolField(key: string): boolean {
+  const normalized = key.toLowerCase();
+  return normalized === "id" || normalized.endsWith("_id") || normalized.includes("phone") || normalized.includes("token") || normalized.includes("secret") || normalized.includes("password") || normalized.includes("authorization");
 }
 
 function summarizeScalar(value: unknown): string {
@@ -83,7 +103,7 @@ export function formatAgentReply(input: FormatAgentReplyInput): string {
   if (input.toolSummaries?.length) sections.push(input.toolSummaries.join("\n\n"));
   if (input.confirmationPrompt) sections.push(input.confirmationPrompt.trim());
   const composed = sections.filter(Boolean).join("\n\n") || "Done.";
-  return truncate(composed, MAX_REPLY_CHARS);
+  return truncate(sanitizeAgentReplyText(composed), MAX_REPLY_CHARS);
 }
 
 export function formatConfirmationPrompt(input: { humanSummary: string; code: string; ttlMinutes: number }): string {

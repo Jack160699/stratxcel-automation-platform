@@ -25,6 +25,8 @@ async function run() {
   const tools: AgentTool[] = ["test_one", "test_two"].map((name) => ({ schema: { name, description: name, parameters: {} }, mutating: false, risk: "read", requiredPermission: "agent:read:test", async execute() { invoked.push(name); return { name, factual: true }; } }));
   const result = await runAgentTurn({ supabase: client as any, principal, provider, userText: "Which one is most important?", extraTools: tools });
   assert.equal(result.status, "completed");
+  assert.equal(result.replyText, "Acme should be first.", "the user reply must contain synthesis without appended raw tool traces");
+  assert.ok(!result.replyText.includes("test_one") && !result.replyText.includes("factual"), "tool names and payload fields must remain out of normal UX");
   assert.ok(calls[0].some((m) => m.content.includes("The first lead is Acme")), "previous assistant turn must be supplied to the next model call");
   assert.deepEqual(invoked, ["test_one", "test_two"], "multiple authorized tool calls in one round must execute");
   assert.ok(calls[1].some((m) => m.role === "tool" && m.toolName === "test_one"), "subsequent reasoning round must receive tool output");
