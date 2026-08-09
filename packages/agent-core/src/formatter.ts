@@ -4,6 +4,8 @@
  * assistant text — passes through here so output stays mobile-readable,
  * bounded, and never dumps raw JSON or a Markdown table on the user.
  */
+import type { AgentPrincipal, AgentPrincipalResolution } from "./principal.ts";
+import type { CapabilityGroup } from "./brain/capabilities.ts";
 
 const MAX_REPLY_CHARS = 1400;
 const MAX_LIST_ITEMS = 5;
@@ -88,10 +90,42 @@ export function formatConfirmationPrompt(input: { humanSummary: string; code: st
   return `${input.humanSummary}\nReply CONFIRM ${input.code} within ${input.ttlMinutes} minutes, or CANCEL ${input.code} to discard.`;
 }
 
-export function formatWhoAmI(
-  resolution: "staff" | "client_linked" | "unlinked",
-  workspaceName?: string
-): string {
+const PERMISSION_LABELS: Record<string, string> = {
+  clients: "clients and agency overview", leads: "leads", conversations: "conversations",
+  missions: "missions", approvals: "approvals", handoffs: "human handoffs",
+  operations: "operations", health: "platform health", integrations: "integrations",
+  audit: "audit information", finance: "finance information", social: "social accounts and publishing information",
+  workspace: "workspace", artifacts: "artifacts", reports: "reports", brand: "brand information",
+};
+
+function titleCase(value: string): string {
+  return value.split("_").map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ");
+}
+
+export function capabilitySummary(permissions: readonly string[]): { read: string[]; confirm: string[]; dashboardOnly: string[] } {
+  const read = new Set<string>();
+  const confirm = new Set<string>();
+  for (const permission of permissions) {
+    const parts = permission.split(":");
+    const label = PERMISSION_LABELS[parts[2]] ?? parts[2]?.replaceAll("_", " ");
+    if (!label) continue;
+    (parts[1] === "read" ? read : confirm).add(label);
+  }
+  return { read: [...read], confirm: [...confirm], dashboardOnly: ["security and access changes", "payments and destructive actions"] };
+}
+
+export function formatWhoAmI(resolution: AgentPrincipalResolution | "staff" | "client_linked" | "unlinked", capabilities: CapabilityGroup[] = []): string {
+  if (typeof resolution === "string") return formatLegacyWhoAmI(resolution);
+  if (resolution.status !== "resolved") return "WhatsApp is not linked to a Stratxcel account.";
+  const principal = resolution.principal;
+  const lines = ["✅ WhatsApp Agent linked", `Account: ${principal.kind === "staff" ? "Stratxcel staff" : "Client workspace"}`, `Role: ${titleCase(principal.role)}`];
+  if (principal.kind === "staff" && principal.department) lines.push(`Department: ${titleCase(principal.department)}`);
+  if (principal.kind === "staff") lines.push(`Access: ${titleCase(principal.accessProfile ?? "role_default")}`);
+  if (capabilities.length) lines.push(`Capabilities: ${capabilities.slice(0, 7).map((item) => item.name).join(", ")}`);
+  return lines.join("\n");
+}
+
+export function formatLegacyWhoAmI(resolution: "staff" | "client_linked" | "unlinked", workspaceName?: string): string {
   if (resolution === "staff") return "Linked as Stratxcel staff.";
   if (resolution === "client_linked") return `Linked to ${workspaceName ?? "your workspace"}.`;
   return "WhatsApp is not linked to a Stratxcel account.";
@@ -106,3 +140,17 @@ export const HELP_TEXT = [
   "- CANCEL <code> — cancel a pending action",
   "- HELP — show this message",
 ].join("\n");
+
+export function formatPermissionAwareHelp(principal: AgentPrincipal, capabilities: CapabilityGroup[]): string {
+  const examples = capabilities.slice(0, 3).map((area) => `• Show me ${area.name.toLowerCase()}`).join("\n");
+  const readable = capabilities.filter((item) => item.risk === "read");
+  const confirmable = capabilities.filter((item) => item.risk === "low_mutation");
+  return formatAgentReply({ text: [
+    `Stratxcel Agent — ${principal.kind === "staff" ? titleCase(principal.role) : titleCase(principal.role)}`,
+    readable.length ? `You can ask about:\n• ${readable.map((item) => item.name).join("\n• ")}` : "No read categories are currently assigned.",
+    confirmable.length ? `Eligible changes require confirmation:\n• ${confirmable.map((item) => item.name).join("\n• ")}` : "Your Agent access is read-only.",
+    examples ? `Try:\n${examples}` : "",
+    "Safety: security, payment, destructive and other high-risk actions stay dashboard-only.",
+    "Commands: WHOAMI · RESET / NEW CHAT · CONFIRM <code> · CANCEL <code> · HELP",
+  ].filter(Boolean).join("\n\n") });
+}
