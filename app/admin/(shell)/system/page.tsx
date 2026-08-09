@@ -1,4 +1,6 @@
 import { requireOwnerContext } from "@/lib/social/db-context";
+import { getTenantServiceContext } from "@/lib/tenants/tenant-context";
+import { heartbeatState } from "@/lib/hermes/mission-control";
 import { Card, CardHeading } from "@/components/ui/Card";
 import { StatusChip, type ChipState } from "@/components/ui/StatusChip";
 
@@ -27,6 +29,24 @@ interface IntegrationRow {
   detail: string;
 }
 
+async function currentHermesStatus(): Promise<IntegrationRow> {
+  const service = getTenantServiceContext().supabase;
+  const [heartbeat, killSwitch] = await Promise.all([
+    service.from("worker_heartbeats").select("status,last_heartbeat_at").eq("worker_type", "hermes-gateway").order("last_heartbeat_at", { ascending: false }).limit(1).maybeSingle(),
+    service.from("kill_switches").select("enabled").eq("scope", "global_hermes").eq("enabled", true).maybeSingle(),
+  ]);
+  if (killSwitch.data?.enabled) return { name: "Hermes", status: "blocked", detail: "The global Hermes kill switch is active." };
+  const signal = heartbeatState(heartbeat.data?.last_heartbeat_at ?? null, heartbeat.data?.status);
+  if (signal === "healthy") return { name: "Hermes", status: "live", detail: "Live Hermes gateway heartbeat received; open Hermes Mission Control for operational telemetry." };
+  if (signal === "degraded") return { name: "Hermes", status: "manual_action_required", detail: "Hermes gateway heartbeat is delayed or degraded; inspect Mission Control." };
+  if (signal === "offline") return { name: "Hermes", status: "blocked", detail: "Hermes gateway heartbeat is stale or stopped; inspect Mission Control." };
+  return {
+    name: "Hermes",
+    status: process.env.HERMES_MODE === "http" ? "manual_action_required" : "disconnected",
+    detail: process.env.HERMES_MODE === "http" ? "HTTP runtime is configured, but gateway heartbeat telemetry is unavailable." : "Hermes gateway heartbeat and runtime configuration are unavailable.",
+  };
+}
+
 /**
  * Reads actual env vars server-side — never a hardcoded "connected".
  * Every row here reflects genuinely current configuration, not an
@@ -44,6 +64,7 @@ export default async function SystemHealthPage() {
   const ctx = await requireOwnerContext();
   if (!ctx.ok) return null;
 
+  const hermes = await currentHermesStatus();
   const rows: IntegrationRow[] = [
     {
       name: "WhatsApp",
@@ -55,13 +76,7 @@ export default async function SystemHealthPage() {
       status: modeToStatus(process.env.RAZORPAY_INTEGRATION_MODE, true),
       detail: "Live Payment Links, state machine, webhook route (/api/webhook/razorpay), & refunds built.",
     },
-    {
-      name: "Hermes",
-      status: modeToStatus(process.env.HERMES_MODE, true),
-      detail: process.env.HERMES_MODE === "http"
-        ? "Configured for the HTTP runtime. Open Hermes Mission Control for heartbeat-backed live health."
-        : "Runtime status is derived from current configuration; open Hermes Mission Control for heartbeat telemetry.",
-    },
+    hermes,
     {
       name: "Google Drive",
       status: "manual_action_required",
