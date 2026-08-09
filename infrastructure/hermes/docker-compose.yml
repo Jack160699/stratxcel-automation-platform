@@ -1,28 +1,47 @@
-# Local, free Hermes development environment. No paid hosting — this is
-# meant for a developer's machine. Docker was not available in the
-# environment this file was authored in (verified via `docker --version`),
-# so this compose file is statically written and validated by reading, not
-# by an actual `docker compose up` run tonight — see
-# ../../MANUAL_SETUP_REQUIRED.md for the exact manual verification step.
+# Local, free Hermes Agent development environment. No paid hosting — this
+# is meant for a developer's machine, NOT the shared production t3.small
+# (see MANUAL_SETUP_REQUIRED.md M11 for why: Hermes Agent's own documented
+# minimum is 2GB RAM / 10GB disk on top of whatever else is on the box, and
+# the production host already runs four Node processes on ~2GB total).
 #
-# This assumes a local Hermes runtime image exists at HERMES_IMAGE (the
-# actual Hermes engine is a separate project this repo does not own the
-# source of) that exposes an HTTP API compatible with
-# packages/hermes/src/http-adapter.ts's expectations (POST /missions/execute,
-# POST /missions/:id/cancel, GET /health) and verifies the
-# X-Hermes-Signature header using the same HMAC-SHA256(body, HERMES_SHARED_SECRET)
-# scheme packages/hermes/src/signing.ts implements.
+# This targets the REAL upstream engine — NousResearch/hermes-agent's
+# official Docker image and its documented `gateway run` API-server mode
+# (verified against https://hermes-agent.nousresearch.com/docs/user-guide/docker
+# and Docker Hub `nousresearch/hermes-agent`, 2026-08-09) — replacing the
+# placeholder ${HERMES_IMAGE} this file used to reference before that engine
+# had been identified and verified. Still not run in this session (Docker
+# unavailable here); statically written against the documented `docker run`
+# example, not verified by an actual `docker compose up`.
+#
+# packages/hermes/src/http-adapter.ts talks to this over HERMES_GATEWAY_URL
+# (this container's base URL) using a bearer token (HERMES_API_KEY here,
+# API_SERVER_KEY on the Hermes side) — NOT the HMAC signature scheme this
+# file used to describe; the real server only checks Authorization: Bearer.
 services:
-  hermes:
-    image: ${HERMES_IMAGE:-hermes-local:latest}
+  hermes-agent:
+    image: nousresearch/hermes-agent:latest
+    command: ["gateway", "run"]
     ports:
-      # Bound to localhost only by default — never expose this publicly.
-      - "127.0.0.1:${HERMES_PORT:-4100}:4100"
+      # Bound to localhost only — never expose this publicly. If Hermes runs
+      # on its own separate host (the production recommendation), bind to
+      # that host's private/VPC interface instead, still never 0.0.0.0 on a
+      # publicly routable NIC.
+      - "127.0.0.1:${HERMES_PORT:-8642}:8642"
     environment:
-      HERMES_SHARED_SECRET: ${HERMES_SHARED_SECRET}
-      HERMES_GATEWAY_URL: ${HERMES_GATEWAY_URL:-http://host.docker.internal:8082}
+      API_SERVER_ENABLED: "true"
+      # 0.0.0.0 is safe here specifically because it's *inside* the
+      # container — the ports: line above is what controls host exposure.
+      API_SERVER_HOST: "0.0.0.0"
+      API_SERVER_KEY: ${HERMES_API_KEY}
+      API_SERVER_CORS_ORIGINS: "" # no browser client talks to this directly; leave CORS closed
+      # The chosen inference provider's own credential — see
+      # HERMES_SKILLS_AND_TOOLS.md's provider section. Not read or generated
+      # by any StratExcel code; this is entirely internal to the Hermes
+      # Agent process. Example shown for OpenRouter (recommended default);
+      # swap for whichever provider env var is actually configured.
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
     volumes:
-      - hermes_data:/data
+      - hermes_data:/opt/data
     restart: unless-stopped
 
 volumes:

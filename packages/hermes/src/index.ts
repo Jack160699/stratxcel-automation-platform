@@ -3,6 +3,8 @@ export * from "./adapter.ts";
 export * from "./disabled-adapter.ts";
 export * from "./mock-adapter.ts";
 export * from "./http-adapter.ts";
+export * from "./hermes-agent-client.ts";
+export * from "./profiles.ts";
 export * from "./select-adapter.ts";
 export * from "./signing.ts";
 export * from "./token.ts";

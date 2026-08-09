@@ -240,6 +240,21 @@ export async function cancelMission(
 }
 
 /**
+ * Records the real engine's run identifier once a Hermes execution has
+ * finished (mission-worker calls this right after `hermes.execute()`
+ * resolves with a `hermesRunId`, just before its own state transition —
+ * see packages/hermes/src/types.ts). Best-effort by design: a failure here
+ * must never block or fail the mission's own outcome — it only means a
+ * future cancel-by-run-id path has nothing to act on for this one mission.
+ * No version/state check, unlike setMissionState — this never competes with
+ * the state machine, it only ever adds information alongside it.
+ */
+export async function recordHermesRunId(supabase: ServiceClient, missionId: string, hermesRunId: string): Promise<void> {
+  const { error } = await supabase.from("missions").update({ hermes_run_id: hermesRunId }).eq("id", missionId);
+  if (error) throw new Error(`recordHermesRunId: ${error.message}`);
+}
+
+/**
  * Admin/owner override: re-queues a FAILED mission for another attempt.
  * This deliberately bypasses the normal state machine (FAILED has no
  * outgoing edges in state-machine.ts — it's terminal by design for

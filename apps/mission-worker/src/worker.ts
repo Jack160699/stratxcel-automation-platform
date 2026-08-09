@@ -6,6 +6,7 @@ import {
   transitionMission,
   appendMissionEvent,
   getRequiredEntitlementMetric,
+  recordHermesRunId,
   type MissionRow,
 } from "@stratxcel/missions";
 import { recordAuditEvent } from "@stratxcel/audit";
@@ -125,6 +126,14 @@ async function executeMission(
     });
 
     const result = await executeWithLeaseHeartbeat(queue, jobId, () => hermes.execute(running, context, missionToken));
+
+    if (result.hermesRunId) {
+      // Best-effort — see recordHermesRunId's doc comment. Never blocks or
+      // fails the mission's own state transition below.
+      await recordHermesRunId(supabase, mission.id, result.hermesRunId).catch((err) => {
+        console.error(`[mission-worker] failed to record hermesRunId for mission ${mission.id}:`, err);
+      });
+    }
 
     await transitionMission(supabase, {
       missionId: mission.id,

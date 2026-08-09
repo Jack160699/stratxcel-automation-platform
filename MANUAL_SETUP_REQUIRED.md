@@ -91,24 +91,30 @@ No secret values are included anywhere in this document — only variable names,
 - **Impact if skipped:** Drive stays in `disconnected` status — no functional loss, code is ready and waiting.
 - **Code readiness:** Full OAuth initiation/callback, token refresh, and Drive API v3 adapter (upload/download/copy/move/list) are built. Untested live.
 
-### M8 — Install Docker and acquire a local Hermes runtime image
+### M8 — Install Docker and run a real Hermes Agent instance — ✅ ENGINE IDENTIFIED (2026-08-09)
+- **Status update:** The upstream engine is now identified and verified: [`NousResearch/hermes-agent`](https://github.com/NousResearch/hermes-agent), official image `nousresearch/hermes-agent`, run via `gateway run` / `API_SERVER_ENABLED=true`. `infrastructure/hermes/docker-compose.yml` and its README now target this real image instead of a generic placeholder. Still not run — Docker remains unavailable in this session's environment.
 - **Priority:** Low (development convenience only — `MockHermesAdapter` works without this)
-- **System:** Local development machine
+- **System:** Local development machine, or the separate host from M11 for production
 - **Why manual:** Docker is not installed in this session's environment (`docker --version` → command not found, verified before writing `infrastructure/hermes/`).
 - **Steps:**
   1. Install Docker Desktop (or Docker Engine + Compose).
-  2. Obtain/build a Hermes runtime image (this repo doesn't contain the Hermes engine itself — a separate project).
+  2. Complete M9 (provider account) first — the container needs a model to call.
   3. Follow `infrastructure/hermes/README.md`.
-- **Verify success:** `scripts/hermes-health` returns healthy.
+  4. **Before trusting it for real:** confirm the two BEST-EFFORT items `HERMES_SKILLS_AND_TOOLS.md` calls out (the exact `POST /v1/runs` request body schema and the `GET /v1/runs/{id}` status vocabulary) against the actual running instance, and correct `hermes-agent-client.ts`/`http-adapter.ts` if they differ from what this session could verify from docs alone.
+- **Verify success:** `curl http://localhost:8642/health` returns `{"status":"ok"}`; a real `POST /v1/runs` call reaches a terminal status this adapter correctly maps.
 - **Impact if skipped:** No functional loss — `HERMES_MODE=mock` (or the default `disabled`) works without Docker. `HERMES_MODE=http` (a real Hermes instance) requires this.
-- **Code readiness:** Done — `HermesHttpAdapter`, `docker-compose.yml`, all four `scripts/hermes-*` scripts.
+- **Code readiness:** Done — `HermesHttpAdapter`, `hermes-agent-client.ts`, `docker-compose.yml`, all four `scripts/hermes-*` scripts, `packages/hermes/src/__tests__/http-adapter.test.ts`.
 
-### M9 — Generate and set signing/encryption secrets
+### M9 — Choose and activate an inference provider, then generate/rename signing secrets
 - **Priority:** High (blocks anything beyond `disabled`/pure-unit-test mode)
-- **System:** Wherever each service is hosted (Vercel for the dashboard app; TBD for the standalone workers — see M11)
-- **Names required:** `HERMES_GATEWAY_SECRET` (mission-token signing, used by dashboard + `apps/hermes-gateway`), `HERMES_SHARED_SECRET` (mission-worker ↔ Hermes instance signing, only needed for `HERMES_MODE=http`), `BYOK_VAULT_ENCRYPTION_KEY` (32-byte hex, for `@stratxcel/byok`'s dev vault), `DRIVE_OAUTH_STATE_SECRET` (see M7)
-- **Steps:** Generate each with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` and set as an env var wherever the relevant service runs. Use a different value for each — never reuse one secret across purposes.
-- **Verify success:** `packages/hermes/src/__tests__/token.test.ts` and `packages/byok/src/__tests__/vault.test.ts` already pass locally using session-scoped test values — this step is about setting *real* values in each deployment's environment, not testing the code.
+- **System:** An inference provider account (recommended: [OpenRouter](https://openrouter.ai)) + wherever each service is hosted (Vercel for the dashboard app; TBD for the standalone workers — see M11)
+- **Why manual:** Choosing and paying for a model provider is a business decision this session was explicitly told to stop at, not a code gap — see `HERMES_SKILLS_AND_TOOLS.md`'s provider section for the comparison already done.
+- **Steps:**
+  1. Create an OpenRouter account (or your preferred alternative — Google Gemini direct, Anthropic direct) and generate an API key. Do not activate a subscription-tier provider (Nous Portal, Claude Max, Copilot) unless you specifically want that billing model.
+  2. Set that key as an environment variable **on the Hermes Agent host only** (e.g. `OPENROUTER_API_KEY`) — it never touches StratExcel code or this repo's own env vars.
+  3. Generate each of the following with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` and set as env vars wherever the relevant service runs, a different value for each: `HERMES_GATEWAY_SECRET` (mission-token signing, used by dashboard + `apps/hermes-gateway`), `HERMES_API_KEY` (bearer token both Hermes Agent's `API_SERVER_KEY` and mission-worker's `HERMES_MODE=http` config must share — **renamed from `HERMES_SHARED_SECRET`**, which described an HMAC-signing scheme for a contract that turned out not to exist upstream; the real server only checks a static bearer token), `BYOK_VAULT_ENCRYPTION_KEY` (32-byte hex, for `@stratxcel/byok`'s dev vault), `DRIVE_OAUTH_STATE_SECRET` (see M7).
+  4. Set `STRATXCEL_TOOL_GATEWAY_URL` to wherever `apps/hermes-gateway` is reachable from the Hermes host (private/VPC address, not public).
+- **Verify success:** `packages/hermes/src/__tests__/token.test.ts` and `packages/hermes/src/__tests__/http-adapter.test.ts` already pass locally using session-scoped test values — this step is about setting *real* values in each deployment's environment, not testing the code. `adapter.healthCheck()` returns `healthy: true` against the real instance once M8 is also done.
 - **Impact if skipped:** The relevant feature throws a clear "not set" error rather than silently proceeding insecurely.
 - **Code readiness:** Done.
 
@@ -126,14 +132,21 @@ No secret values are included anywhere in this document — only variable names,
 - **Impact if skipped:** None of tonight's code can actually read/write real data — every route/worker will error with a clear message rather than silently using the wrong database.
 - **Code readiness:** Migrations written, reviewed, and covered by a static security test (`npm run test:security`). Applied and verified in production as of 2026-08-03 (see status above).
 
-### M11 — Decide where apps/whatsapp-worker, apps/mission-worker, and apps/hermes-gateway actually run
+### M11 — Decide where apps/whatsapp-worker, apps/mission-worker, and apps/hermes-gateway actually run — apps/*-worker/-gateway: ✅ RESOLVED (deployed to the AWS host below); Hermes Agent runtime itself: still open
+- **Status update (2026-08-09):** `apps/mission-worker` and `apps/hermes-gateway` are already deployed and healthy on EC2 `i-0067f6c0dfd60cc46` (`ap-south-1`, `t3.small`, ~2 GiB RAM, 20 GiB disk), alongside `stratxcel-whatsapp-webhook` and `stratxcel-whatsapp-processor`. What's still open is **where the Hermes Agent runtime itself runs** — a different question, addressed below.
 - **Priority:** Medium (a real infrastructure/cost decision, not a code gap)
-- **System:** Your choice — a VPS, a container platform (Fly.io, Railway, Render), or similar
-- **Why manual:** These are long-running Node processes (an HTTP server + poll loops) — Vercel's serverless functions are not a fit for them, and choosing a host has cost implications you should approve first, per "do not create paid hosting."
-- **Steps:** Once decided, each app has its own `package.json` with a `start` script; deploy however that platform expects (Dockerfile, buildpack, etc. — none written yet, since the platform isn't chosen).
-- **Verify success:** `scripts/hermes-health`-style checks against each service's `/health` endpoint.
-- **Impact if skipped:** All three apps run and typecheck correctly locally/in CI but aren't reachable from the internet — WhatsApp webhooks and Hermes execution can't happen for real until this is resolved.
-- **Code readiness:** Application code complete; no deployment configuration (Dockerfile, platform-specific config) written yet, since the target platform is undecided.
+- **System:** AWS (existing account/region)
+- **Why manual:** Adding a new always-on process has a cost/capacity implication you should approve before it's provisioned, per "do not resize AWS or create paid infrastructure without explicit approval."
+- **Evidence checked this session (read-only, nothing changed):** `i-0067f6c0dfd60cc46`'s CPU utilization over the last 24h averages 0.3–2.5% (a couple of short bursts to ~33% max) — plenty of CPU headroom. Its EBS volume is 20 GiB total. No CloudWatch agent is installed, so real memory usage isn't directly observable, but the host already runs **four** persistent Node processes on ~2 GiB total RAM. Hermes Agent's own documented minimum is **2 GB RAM / 10 GB disk just for itself** (API-based-inference use case, which is what StratExcel would run — no local model), with 4 GB called "more comfortable" for daily use.
+- **Recommendation: a separate small host for the Hermes Agent container**, not the shared t3.small. Adding a process that alone wants as much RAM as the whole existing box currently has, onto a box with no memory headroom visibility and an explicit "do not disturb the production WhatsApp services" constraint, is not a safe bet on CPU idle-time alone. `apps/hermes-gateway` (StratExcel's own thin tool boundary) stays exactly where it already is — it's small, already deployed, and is the trusted enforcement point regardless of where the heavier engine runs.
+- **Steps (once approved):**
+  1. Provision a small instance in the same region (`ap-south-1`, for latency) — a `t3.small`/2 GiB burstable instance matches Hermes Agent's own documented minimum with a little headroom.
+  2. Place it on the same VPC/private network as `i-0067f6c0dfd60cc46`, or reachable only via a security-group rule scoped to that instance's private IP (or a VPN/Tailscale link) — never a public listener. `docker-compose.yml`'s `127.0.0.1` binding assumes localhost; adjust to the private interface if the two hosts are separate.
+  3. Point `apps/mission-worker`'s `HERMES_GATEWAY_URL` at that host's private address.
+  4. Complete M8/M9 on that host.
+- **Verify success:** `scripts/hermes-health`-style checks against the new host's `/health` endpoint from the existing t3.small, over the private link only (a check from the public internet should fail/time out).
+- **Impact if skipped:** `HERMES_MODE` stays `disabled`/`mock` — no functional loss, just no real Hermes execution.
+- **Code readiness:** `apps/mission-worker`/`apps/hermes-gateway` deployment: done (already live). Hermes Agent runtime deployment: no Dockerfile/platform config needed beyond `infrastructure/hermes/docker-compose.yml`, since the target is "run the official `nousresearch/hermes-agent` image" rather than something to build.
 
 ---
 

@@ -21,6 +21,15 @@ export interface HermesExecutionResult {
   summary: string;
   progressEvents?: HermesProgressEvent[];
   artifactRefs?: string[];
+  /**
+   * The real engine's own run identifier (Hermes Agent's `run_id` from
+   * POST /v1/runs — see http-adapter.ts), when the adapter that produced
+   * this result has one. mission-worker persists it onto
+   * mission.hermes_run_id so a future cancel path has something real to
+   * call HermesRuntimeAdapter.cancel() with. Absent for disabled/mock runs,
+   * which never create a real upstream run.
+   */
+  hermesRunId?: string;
 }
 
 /**
