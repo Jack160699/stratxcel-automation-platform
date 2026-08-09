@@ -94,6 +94,9 @@ export async function runAgentTurn(input: RunAgentTurnInput): Promise<RunAgentTu
   const brain = await buildBrainContext({ supabase, principal, tools, history: priorHistory });
   const messages: AgentTurnMessage[] = [
     { role: "system", content: brain.systemPrompt },
+    // Sits immediately next to the history it caveats, not just in the main
+    // prompt — see buildBrainContext's STALE_HISTORY_NOTICE.
+    ...(brain.historyNotice ? [{ role: "system", content: brain.historyNotice } as AgentTurnMessage] : []),
     ...brain.history,
     { role: "user", content: input.userText },
   ];

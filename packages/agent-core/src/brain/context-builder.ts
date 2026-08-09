@@ -7,6 +7,15 @@ import { capabilityGroupsFromTools } from "./capabilities.ts";
 import { listAgentMemories } from "./memory/repository.ts";
 import { retrieveBrainKnowledge } from "./knowledge.ts";
 
+/** PHASE: brief freshness. Conversation history is intent/reference context,
+ *  never current operational truth — a mutation applied after an earlier
+ *  reply was written must never be shadowed by that reply's now-stale
+ *  wording. Placed immediately adjacent to the history (not just in the
+ *  main system prompt) for maximum salience. Only injected when there is
+ *  history to caveat — an empty-history turn needs no notice. */
+const STALE_HISTORY_NOTICE =
+  "The conversation turns below are prior context only, captured at the time they were written, and may now be OUT OF DATE (e.g. a lead status, count, or figure may have changed since). Use them to understand intent and references, but for any operational fact, status, or number you restate — especially in a fresh brief/status/summary — call the relevant tool again this turn and answer from its current result. Never reuse a status, count, or figure from history without re-verifying it.";
+
 export async function buildBrainContext(input: { supabase: ServiceClient; principal: AgentPrincipal; tools: AgentTool[]; history: AgentMessageRow[] }) {
   const { principal } = input;
   const [memories, knowledge] = await Promise.all([listAgentMemories(input.supabase, principal), retrieveBrainKnowledge(input.supabase, principal)]);
@@ -24,5 +33,13 @@ export async function buildBrainContext(input: { supabase: ServiceClient; princi
     knowledge.businessFacts.length ? `Authorized business context:\n${knowledge.businessFacts.join("\n")}` : "",
     memories.length ? `Explicit scoped memories:\n${memories.map((m) => `- [${m.scope}] ${m.memoryKey}: ${m.memoryValue}`).join("\n")}` : "",
   ].filter(Boolean).join("\n\n");
-  return { systemPrompt: prompt, history: boundConversationHistory(input.history), capabilities, memories, knowledge };
+  const history = boundConversationHistory(input.history);
+  return {
+    systemPrompt: prompt,
+    history,
+    historyNotice: history.length ? STALE_HISTORY_NOTICE : null,
+    capabilities,
+    memories,
+    knowledge,
+  };
 }

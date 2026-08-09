@@ -79,6 +79,40 @@ async function run() {
   assert.equal(recoveryResult.status, "completed", "one recoverable tool error must not fail the whole Agent turn");
   assert.equal(recoveryResult.replyText, "I recovered using the verified overview.");
   assert.ok(recoveryTables.agent_run_events.some((event) => event.event_type === "tool_failed" && event.tool_name === "failing_read"), "recoverable tool failures must remain auditable");
+  // Freshness regression: a mutation applied after an earlier reply must
+  // never be shadowed by that reply's now-stale wording in a later brief.
+  const { client: freshClient } = createFakeSupabase({
+    agent_sessions: [{ id: "session-fresh", principal_kind: "staff", auth_user_id: "staff-a", tenant_id: null, channel: "admin_web", status: "active", created_at: "2026-08-09T00:00:00Z", updated_at: "2026-08-09T00:00:00Z" }],
+    agent_messages: [
+      { id: "f1", session_id: "session-fresh", role: "user", content: "What's the status of the Acme lead?", tool_name: null, created_at: "2026-08-09T00:01:00Z" },
+      { id: "f2", session_id: "session-fresh", role: "assistant", content: "The Acme lead is currently NEW.", tool_name: null, created_at: "2026-08-09T00:01:01Z" },
+    ],
+  });
+  let leadStatus = "CONTACTED"; // mutated in the DB since the reply above was written
+  const freshCalls: AgentTurnMessage[][] = [];
+  let freshRound = 0;
+  const freshProvider: AgentLLMProvider = {
+    isConfigured: () => true,
+    async complete(messages) {
+      freshCalls.push(messages.map((m) => ({ ...m })));
+      freshRound += 1;
+      if (freshRound === 1) return { text: "", toolCalls: [{ id: "lead-check", name: "get_lead_status", arguments: {} }] };
+      return { text: `The Acme lead is currently ${leadStatus}.`, toolCalls: [] };
+    },
+  };
+  const freshTools: AgentTool[] = [{ schema: { name: "get_lead_status", description: "Get current lead status", parameters: {} }, mutating: false, risk: "read", requiredPermission: "agent:read:test", async execute() { return { status: leadStatus }; } }];
+  const freshResult = await runAgentTurn({ supabase: freshClient as any, principal, provider: freshProvider, userText: "Give me a fresh operational brief.", extraTools: freshTools });
+  assert.ok(freshCalls[0].some((m) => m.role === "system" && /OUT OF DATE/.test(m.content)), "a turn with prior history must receive an explicit staleness notice");
+  assert.ok(freshCalls[0].some((m) => m.content.includes("currently NEW")), "the stale wording must still be present as reference context, not deleted");
+  assert.equal(freshResult.replyText, "The Acme lead is currently CONTACTED.", "the final reply must reflect current tool data, never the stale pre-mutation status from history");
+  assert.ok(!freshResult.replyText.includes("NEW"), "stale pre-mutation status must never leak into the fresh reply");
+
+  // Ordinary referential conversation (no operational fact being restated)
+  // must keep working — the notice augments history, it does not remove it.
+  const refProvider: AgentLLMProvider = { isConfigured: () => true, async complete() { return { text: "You were asking about the Acme lead I mentioned.", toolCalls: [] }; } };
+  const refResult = await runAgentTurn({ supabase: freshClient as any, principal, provider: refProvider, userText: "Which lead did you just mention?", extraTools: freshTools });
+  assert.equal(refResult.replyText, "You were asking about the Acme lead I mentioned.", "referential questions must still resolve normally against history");
+
   console.log("brain-orchestrator.test.ts (@stratxcel/agent-core): ALL PASS");
 }
 run();
