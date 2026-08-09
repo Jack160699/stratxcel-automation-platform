@@ -18,50 +18,88 @@ import { HermesTimeoutError, HermesUnavailableError } from "./types.ts";
  * tokens for apps/hermes-gateway's tool endpoints, a completely separate
  * boundary from this outbound client.
  *
- * VERIFIED endpoints (docs + Docker Hub docs page, cross-checked against the
- * raw GitHub source markdown so a doc-rendering error can't fool this):
- *   POST /v1/runs                    -> { run_id } (202)
- *   GET  /v1/runs/{run_id}           -> a `hermes.run` object with a status
+ * VERIFIED against a live 0.20.0 instance (`stratxcel-hermes`,
+ * i-044f62e461200dda9, 2026-08-10) — both by exercising the running server
+ * directly and by reading its own installed source
+ * (`gateway/platforms/api_server.py` inside the `nousresearch/hermes-agent`
+ * image, via `docker exec` + `grep`/`sed`, not guessed from docs):
+ *   POST /v1/runs                    -> { run_id, status: "started" } (202)
+ *     body:  { input: string, instructions?: string, session_id?: string,
+ *              model?: string, provider?: string, conversation_history?:
+ *              [{role, content}], previous_response_id?: string }
+ *              (`_handle_runs` in api_server.py — a top-level `metadata`
+ *              field, previously sent for correlation, is accepted but
+ *              silently ignored: the handler only reads the fields above)
+ *   GET  /v1/runs/{run_id}           -> a `hermes.run` object:
+ *              { object: "hermes.run", run_id, status, created_at,
+ *                updated_at, session_id, model, last_event,
+ *                output? (string, only on "completed"),
+ *                usage? ({input_tokens, output_tokens, total_tokens}, only
+ *                  on "completed" — note the field names, NOT OpenAI's
+ *                  prompt_tokens/completion_tokens used by
+ *                  /v1/chat/completions),
+ *                error? (string, only on "failed") }
+ *              status vocabulary (`_set_run_status` call sites, exhaustive):
+ *              "queued" -> "running" -> one of "completed" | "failed" |
+ *              "cancelled" | "stopping" (transient, on the way to
+ *              "cancelled") | "waiting_for_approval" (only reachable if a
+ *              locally-executed tool call needs dangerous-command approval —
+ *              see http-adapter.ts's toolset-hardening note; unreachable
+ *              once all api_server toolsets are disabled, as StratExcel's
+ *              deployment does)
  *   GET  /v1/runs/{run_id}/events    -> SSE lifecycle stream (not consumed
  *                                       here; polling GET is sufficient and
  *                                       far simpler to get right first time)
- *   POST /v1/runs/{run_id}/stop      -> { status: "stopping" }
+ *   POST /v1/runs/{run_id}/stop      -> { run_id, status: "stopping" } (200);
+ *              404 `{error:{message,code:"run_not_found"}}` for an unknown id
+ *   POST /v1/runs/{run_id}/approval  -> body { choice: "once"|"session"|
+ *              "always"|"deny" (aliases "approve"/"approved"/"allow" ->
+ *              "once"), all?/resolve_all?: bool } -> { object:
+ *              "hermes.run.approval_response", run_id, choice, resolved }
  *   GET  /v1/capabilities            -> machine-readable API surface
  *   GET  /health                     -> { status: "ok" }, no auth required
  *   GET  /health/detailed            -> authenticated deeper readiness check
  *
- * BEST-EFFORT (not published in the docs this session could reach — the
- * exact POST /v1/runs request body schema and the GET /v1/runs/{id}
- * response's status-value vocabulary are not documented anywhere public as
- * of this writing). Modeled here on the one sibling endpoint whose body IS
- * documented (`POST /v1/responses`: `model`, `input`, `instructions`,
- * `store`, `previous_response_id`) since both are described as "OpenAI-
- * compatible" surfaces from the same server. Every place this guess is load-
- * bearing is marked `BEST-EFFORT` below. Confirming/correcting this against
- * a real running instance is the first thing to do once one exists — see
- * MANUAL_SETUP_REQUIRED.md M9.
+ * Nothing below is BEST-EFFORT anymore as of the 2026-08-10 verification —
+ * see HERMES_SKILLS_AND_TOOLS.md for the fuller writeup and how this was
+ * checked (source grep, not just docs).
  */
 
 export interface HermesAgentRunRequest {
-  /** BEST-EFFORT field name, modeled on POST /v1/responses's `input`. */
   input: string;
-  /** BEST-EFFORT field name, modeled on POST /v1/responses's `instructions`. */
   instructions?: string;
   /**
-   * Opaque bag of correlation/tenant metadata. Passed through unchanged if
-   * the server round-trips an unrecognized `metadata` object (the way most
-   * OpenAI-compatible servers do); ignored otherwise. Never contains a
-   * secret — see compileHermesRunInput in http-adapter.ts.
+   * Confirmed read by `_handle_runs` (`_resolve_route`/`_request_agent_overrides`).
+   * Omitted, a run uses Hermes's own internal default routing — verified
+   * live on 2026-08-10 to be `anthropic/claude-opus-4.6` via `provider:
+   * "auto"`, which failed with HTTP 402 ("requested up to 128000 tokens,
+   * but can only afford 1600") on the OpenRouter account funded for this
+   * deployment. Every real mission would hit that same failure with no
+   * override set — see HERMES_DEFAULT_MODEL/HERMES_DEFAULT_PROVIDER in
+   * http-adapter.ts, which is why those exist.
+   */
+  model?: string;
+  provider?: string;
+  /**
+   * Accepted by the server but not read by `_handle_runs` — confirmed from
+   * source; kept here only so correlationId/missionId/tenantId travel
+   * alongside the request for anyone inspecting outbound traffic (e.g. a
+   * proxy log), not because the server does anything with it. Real
+   * correlation is the client-set X-Correlation-Id header, independent of
+   * this field. Never contains a secret — see composeRunInput in
+   * http-adapter.ts.
    */
   metadata?: Record<string, string>;
 }
 
 export interface HermesAgentRun {
   run_id: string;
-  /** BEST-EFFORT — exact vocabulary unconfirmed; see mapRunStatus in http-adapter.ts. */
+  /** Verified vocabulary — see the module comment above and mapRunStatus in http-adapter.ts. */
   status: string;
   output?: unknown;
   usage?: Record<string, unknown>;
+  /** Only present when status is "failed" — see the module comment above. */
+  error?: string;
   [key: string]: unknown;
 }
 

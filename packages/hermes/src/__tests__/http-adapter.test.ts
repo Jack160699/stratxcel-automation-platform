@@ -88,12 +88,59 @@ async function run() {
     assert.match(calls[2].url, /\/v1\/runs\/run-123$/);
   }
 
-  // --- execute(): FAILED status maps to FAILED outcome ---
+  // --- execute(): FAILED status maps to FAILED outcome, and the summary is
+  // the real `error` field (a "failed" run never sets `output` on the real
+  // server — see hermes-agent-client.ts's module comment) ---
   {
-    installFakeFetch([{ status: 200, body: { run_id: "run-456", status: "failed", output: "boom" } }]);
+    installFakeFetch([{ status: 200, body: { run_id: "run-456", status: "failed", error: "Provider authentication failed: bad key" } }]);
     const adapter = createHermesHttpAdapter();
     const result = await adapter.execute(fakeMission(), fakeContext(), "tok");
     assert.equal(result.outcome, "FAILED");
+    assert.equal(result.summary, "Provider authentication failed: bad key", "a failed run's summary must surface the real error, not a generic fallback");
+  }
+
+  // --- execute(): the real "waiting_for_approval" string (not the previous
+  // guess of "requires_approval"/"awaiting_approval"/etc.) maps to
+  // AWAITING_APPROVAL, verified against the live 0.20.0 server's source ---
+  {
+    installFakeFetch([{ status: 200, body: { run_id: "run-appr", status: "waiting_for_approval" } }]);
+    const adapter = createHermesHttpAdapter();
+    const result = await adapter.execute(fakeMission(), fakeContext(), "tok");
+    assert.equal(result.outcome, "AWAITING_APPROVAL");
+  }
+
+  // --- execute(): "cancelled" and the transient "stopping" state both map
+  // to PARTIALLY_COMPLETED rather than hanging until timeout ---
+  {
+    installFakeFetch([{ status: 200, body: { run_id: "run-cancel", status: "cancelled" } }]);
+    const adapter = createHermesHttpAdapter();
+    const result = await adapter.execute(fakeMission(), fakeContext(), "tok");
+    assert.equal(result.outcome, "PARTIALLY_COMPLETED");
+  }
+  {
+    installFakeFetch([{ status: 200, body: { run_id: "run-stopping", status: "stopping" } }]);
+    const adapter = createHermesHttpAdapter();
+    const result = await adapter.execute(fakeMission(), fakeContext(), "tok");
+    assert.equal(result.outcome, "PARTIALLY_COMPLETED");
+  }
+
+  // --- execute(): HERMES_DEFAULT_MODEL/HERMES_DEFAULT_PROVIDER, when set,
+  // are sent on POST /v1/runs — real evidence (2026-08-10) showed Hermes's
+  // own default model/routing can 402 on an account without enough credit
+  // for it, so an operator must be able to pin an affordable model without
+  // a code change. Unset by default (verified by every earlier case in this
+  // file, none of which set these vars and none of which sent the fields). ---
+  {
+    process.env.HERMES_DEFAULT_MODEL = "nvidia/nemotron-3-super-120b-a12b:free";
+    process.env.HERMES_DEFAULT_PROVIDER = "openrouter";
+    const calls = installFakeFetch([{ status: 200, body: { run_id: "run-model", status: "completed", output: "ok" } }]);
+    const adapter = createHermesHttpAdapter();
+    await adapter.execute(fakeMission(), fakeContext(), "tok");
+    const sentBody = JSON.parse(String(calls[0].init?.body));
+    assert.equal(sentBody.model, "nvidia/nemotron-3-super-120b-a12b:free");
+    assert.equal(sentBody.provider, "openrouter");
+    delete process.env.HERMES_DEFAULT_MODEL;
+    delete process.env.HERMES_DEFAULT_PROVIDER;
   }
 
   // --- execute(): unrecognized terminal-looking status keeps polling until timeout ---

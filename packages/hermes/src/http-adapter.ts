@@ -100,28 +100,43 @@ function composeRunInput(mission: MissionRow, context: MissionScopedContext, mis
 }
 
 /**
- * BEST-EFFORT status mapping. GET /v1/runs/{id}'s exact `status` vocabulary
- * is not published anywhere this session could verify (see
- * hermes-agent-client.ts's module comment) — this recognizes the
- * status/outcome words explicit in the docs (`stopping`, and Hermes's own
- * "approval" concept from POST /v1/runs/{id}/approval) plus the obvious
- * OpenAI-convention terminal words, and treats anything else as still
- * running rather than guessing wrong in a direction that could look like a
- * false COMPLETED. Confirm/correct this against a real instance before
- * relying on it — see MANUAL_SETUP_REQUIRED.md M9.
+ * VERIFIED status mapping — read directly from the running 0.20.0 image's
+ * own `gateway/platforms/api_server.py` (`_set_run_status` call sites) on
+ * 2026-08-10, not guessed. The real vocabulary `_handle_runs`/
+ * `_handle_stop_run`/`_handle_run_approval` actually set is exactly:
+ * "queued", "running", "completed", "failed", "cancelled", "stopping",
+ * "waiting_for_approval" — the previous version of this function guessed
+ * "requires_approval"/"awaiting_approval"/"approval_required"/
+ * "paused_for_approval" for the approval case, none of which the real
+ * server ever sends, so a real approval-pending run fell through to the
+ * PENDING catch-all and polled until HermesTimeoutError instead of
+ * reporting AWAITING_APPROVAL. Fixed here against the real string.
+ * "started" is the literal immediate POST /v1/runs response body's status
+ * (a distinct, one-time value never seen again from GET /v1/runs/{id},
+ * which starts that run at "queued") — included in the PENDING set so the
+ * very first loop iteration doesn't rely on the catch-all.
  */
 function mapRunStatus(run: HermesAgentRun): HermesOutcome | "PENDING" {
   const status = String(run.status ?? "").toLowerCase();
-  if (["completed", "complete", "succeeded", "done"].includes(status)) return "COMPLETED";
-  if (["failed", "error", "errored"].includes(status)) return "FAILED";
-  if (["stopped", "stopping", "cancelled", "canceled", "interrupted"].includes(status)) return "PARTIALLY_COMPLETED";
-  if (["requires_approval", "awaiting_approval", "approval_required", "paused_for_approval"].includes(status)) return "AWAITING_APPROVAL";
-  if (["requires_input", "awaiting_input", "input_required"].includes(status)) return "AWAITING_INPUT";
-  if (["queued", "running", "in_progress", "pending", "processing"].includes(status)) return "PENDING";
+  if (status === "completed") return "COMPLETED";
+  if (status === "failed") return "FAILED";
+  if (status === "cancelled" || status === "stopping") return "PARTIALLY_COMPLETED";
+  if (status === "waiting_for_approval") return "AWAITING_APPROVAL";
+  if (status === "queued" || status === "running" || status === "started") return "PENDING";
   return "PENDING"; // unrecognized status: keep polling rather than guessing terminal
 }
 
+/**
+ * `run.output` (a plain string — the agent's final_response) is only ever
+ * set by the server on a "completed" run; a "failed" run instead sets
+ * `run.error` (also a plain string — see `_handle_runs`'s except-blocks).
+ * The previous version of this function only ever looked at `run.output`,
+ * so a real failure's summary was the uninformative
+ * "Hermes run <id> finished with status 'failed'" instead of the actual
+ * error message — fixed here to check `run.error` first.
+ */
 function extractSummary(run: HermesAgentRun): string {
+  if (typeof run.error === "string" && run.error) return run.error.slice(0, 4000);
   if (typeof run.output === "string") return run.output.slice(0, 4000);
   if (run.output && typeof run.output === "object") {
     const maybeText = (run.output as Record<string, unknown>).text ?? (run.output as Record<string, unknown>).summary;
@@ -145,24 +160,38 @@ function sleep(ms: number): Promise<void> {
  * file's git history) and is corrected here now that the real contract has
  * been read from NousResearch/hermes-agent's published docs.
  *
- * Tool bridge (Phase 4 of the integration brief): Hermes Agent's real
- * extensibility points for custom tools are MCP servers and its plugin
- * system, both configured per-installation in its own config.yaml — this
- * session could not confirm whether either supports scoping to a single
- * StratExcel mission's allowedTools on a *per-run* basis (the docs describe
- * them as install-wide, not per-request). Rather than fabricate that wiring,
- * this adapter inlines the mission token, tool list, and the callback URL
- * into the run's prompt (composeRunInput above) and relies on the model
- * making an HTTP request — which requires Hermes Agent to have some
- * general-purpose HTTP/web tool enabled, itself unconfirmed for this exact
- * use. This is a deliberately named gap: the honest, currently-buildable
- * middle ground between "no tool bridge at all" and claiming a native
- * integration this session could not verify. First thing to confirm once a
- * real instance exists — see MANUAL_SETUP_REQUIRED.md M9.
+ * Tool bridge (Phase 4 of the integration brief) — CONFIRMED from a live
+ * instance's own `/v1/capabilities` (`runtime.tool_execution: "server"`,
+ * `split_runtime: false`) and its `GET /v1/toolsets` response: Hermes
+ * Agent's built-in tools (terminal, file, code_execution, browser, web,
+ * ...) are resolved per-installation via config.yaml's
+ * `platform_toolsets.api_server` key — NOT scoped per API request, and
+ * there is no split-runtime mode where a caller supplies/scopes tools on a
+ * single POST /v1/runs call. This is not a documentation gap anymore; it is
+ * how the shipped 0.20.0 server actually works, read from its own source
+ * (`gateway/platforms/api_server.py`). Consequence: StratExcel's
+ * mission-scoped `allowedTools` cannot be enforced by Hermes's own native
+ * tool-calling at all. The StratExcel deployment's `platform_toolsets.
+ * api_server` is therefore hardened to `[]` (verified live 2026-08-10 —
+ * every one of Hermes's 27 built-in toolsets reports `enabled: false`) so
+ * the model has zero local tool access, full stop — not "restricted to
+ * StratExcel's 12 tools" but "none at all" until real per-mission tool
+ * wiring exists. This adapter's inlined-prompt tool bridge (composeRunInput
+ * above: mission token + tool list + callback URL in the prompt) therefore
+ * currently has no way to actually execute — the model has no HTTP-capable
+ * tool to make the call with. It is left in place as the addressed half of
+ * a two-part fix (what StratExcel sends) whose other half (a way for
+ * Hermes to actually reach apps/hermes-gateway per-mission — most likely a
+ * real MCP server StratExcel would need to host and have each mission's
+ * Hermes run connect to, since the built-in toolset path is a dead end for
+ * per-mission scoping) remains unbuilt. See HERMES_SKILLS_AND_TOOLS.md.
  *
- * Still inert: HERMES_MODE stays 'disabled' in production until a real
- * Hermes Agent instance, a chosen inference provider, and this adapter's
- * BEST-EFFORT fields are all confirmed against a live round trip.
+ * Still inert: HERMES_MODE stays 'disabled' in production. The engine
+ * connection, auth, run lifecycle, and provider routing are now verified
+ * end-to-end against a live instance (health, capabilities, toolsets,
+ * chat/completions via OpenRouter, and a real /v1/runs round trip all
+ * returned real, correct responses on 2026-08-10) — what remains unverified
+ * is specifically the tool bridge above, not the engine connection itself.
  */
 export function createHermesHttpAdapter(): HermesRuntimeAdapter {
   return {
@@ -173,9 +202,22 @@ export function createHermesHttpAdapter(): HermesRuntimeAdapter {
       const correlationId = crypto.randomUUID();
       const { input, instructions } = composeRunInput(mission, context, missionToken);
 
+      // Hermes's own default model/provider routing is opaque and, as
+      // observed live on 2026-08-10, can require more account credit than
+      // is actually funded (a real HTTP 402 from the exact same deployment
+      // this adapter targets — see hermes-agent-client.ts's doc comment on
+      // HermesAgentRunRequest.model). Omitted here, every mission silently
+      // inherits whatever Hermes considers "default" today, which is a cost
+      // and reliability decision StratExcel should control explicitly
+      // rather than discover via production failures — hence these two
+      // optional overrides, unset by default (preserves prior behavior
+      // until an operator opts in).
+      const model = process.env.HERMES_DEFAULT_MODEL || undefined;
+      const provider = process.env.HERMES_DEFAULT_PROVIDER || undefined;
+
       const created = await createRun(
         config,
-        { input, instructions, metadata: { missionId: mission.id, tenantId: mission.tenant_id, correlationId } },
+        { input, instructions, model, provider, metadata: { missionId: mission.id, tenantId: mission.tenant_id, correlationId } },
         correlationId,
         REQUEST_TIMEOUT_MS
       );
