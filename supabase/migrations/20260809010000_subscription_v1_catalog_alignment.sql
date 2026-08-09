@@ -39,8 +39,17 @@ do $catalog_alignment$
 declare
   v_signature regprocedure := 'public.reconcile_and_fulfill_razorpay_payment_v4(text,text,text,text,text,bigint,text,text,boolean,text,timestamptz)'::regprocedure;
   v_definition text := pg_get_functiondef(v_signature);
-  v_original text := v_definition;
+  v_original text;
 begin
+  -- Production's pg_get_functiondef() output may use CRLF line endings even
+  -- though this migration's literal comparison/replacement text below is
+  -- LF-only. Normalize before establishing the pre-patch baseline so the
+  -- exact-match safety checks (and the final v_definition = v_original
+  -- failed-patch check) are not fooled by line-ending differences alone.
+  v_definition := replace(v_definition, E'\r\n', E'\n');
+  v_definition := replace(v_definition, E'\r', E'\n');
+  v_original := v_definition;
+
   if position('v_limits_launch int[] := array[12, 1, 500, 0];' in v_definition) = 0
      or position('v_limits_growth int[] := array[30, 2, 2500, 1];' in v_definition) = 0
      or position('v_limits_custom int[] := array[60, 4, 10000, 1];' in v_definition) = 0 then
