@@ -5,16 +5,9 @@
  * NOT create a second, unrelated Gemini client (per the build brief: "DO NOT
  * create a second unrelated Gemini client").
  *
- * KNOWN LIMITATION (see @stratxcel/agent-core's provider.ts for the same
- * note): resolveConfiguredProvider()'s concrete GeminiProvider.complete()
- * does not perform a live tool-calling round-trip today — it always returns
- * toolCalls: []. That means, until the underlying provider is upgraded, an
- * agent turn that isn't handled by the deterministic command parser
- * (LINK/WHOAMI/CONFIRM/etc.) will get a text-only reply and will not invoke
- * read/mutation tools via the LLM loop. This is an accurate, not
- * aspirational, description of current behavior — Existing Social Copilot
- * tests are unaffected because this adapter is a new, additive call site and
- * does not modify lib/social/agent/provider.ts.
+ * The concrete Gemini provider performs live function calling; this adapter
+ * preserves the ordered conversation and normalized tool calls without
+ * creating another provider client.
  */
 import { resolveConfiguredProvider } from "../social/agent/provider";
 import type { AgentLLMProvider, AgentTurnMessage, ToolSchema } from "@stratxcel/agent-core";

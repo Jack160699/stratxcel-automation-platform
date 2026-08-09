@@ -1,7 +1,7 @@
 import type { ServiceClient } from "./db.ts";
 import type { AgentPrincipal, AgentPrincipalResolution } from "./principal.ts";
 import { consumePairingChallenge } from "./pairing/repository.ts";
-import { touchPrincipalLastUsed } from "./principals/repository.ts";
+import { resolveWhatsAppPrincipal, touchPrincipalLastUsed } from "./principals/repository.ts";
 import { consumeActionConfirmation, cancelActionConfirmation } from "./confirmations/repository.ts";
 import { resolveAgentTools } from "./tools/registry.ts";
 import { resetAgentSession } from "./sessions/repository.ts";
@@ -11,8 +11,9 @@ import {
   auditConfirmationCancelled,
   auditFailedAction,
 } from "./audit.ts";
-import { summarizeToolResult, formatAgentReply, formatWhoAmI, HELP_TEXT } from "./formatter.ts";
+import { summarizeToolResult, formatAgentReply, formatWhoAmI, formatPermissionAwareHelp } from "./formatter.ts";
 import type { AgentTool } from "./tools/contract.ts";
+import { capabilityGroupsFromTools } from "./brain/capabilities.ts";
 
 /**
  * Deterministic handlers for LINK / WHOAMI / RESET / NEW CHAT / CONFIRM /
@@ -25,7 +26,8 @@ import type { AgentTool } from "./tools/contract.ts";
 export async function handleLinkCommand(
   supabase: ServiceClient,
   normalizedPhone: string,
-  code: string
+  code: string,
+  extraTools: AgentTool[] = []
 ): Promise<string> {
   const result = await consumePairingChallenge(supabase, normalizedPhone, code);
   if (!result.ok) {
@@ -45,17 +47,30 @@ export async function handleLinkCommand(
     channel: "whatsapp",
   });
 
-  const label = result.principalType === "staff" ? "Stratxcel staff" : "your workspace";
-  return formatAgentReply({ text: `This number is now linked as ${label}. Send HELP to see available commands.` });
+  const resolution = await resolveWhatsAppPrincipal(supabase, normalizedPhone, "whatsapp");
+  if (resolution.status !== "resolved") return formatAgentReply({ text: "Your number is linked. Send WHOAMI to check access." });
+  const principal = resolution.principal;
+  const capabilities = capabilityGroupsFromTools(resolveAgentTools(principal, { extraTools }));
+  const lines = [
+    "✅ Stratxcel Agent connected",
+    "Your WhatsApp is now securely linked to your Stratxcel account.",
+    `Role: ${principal.role.replaceAll("_", " ")}`,
+    principal.kind === "staff" ? `Access: ${(principal.accessProfile ?? "role_default").replaceAll("_", " ")}` : "Access: Client Agent",
+    capabilities.length ? `I can help with:\n• ${capabilities.slice(0, 7).map((item) => item.name).join("\n• ")}` : "No Agent data categories are assigned yet.",
+    capabilities.some((item) => item.risk === "low_mutation") ? "Eligible low-risk changes require a confirmation code." : "Your access is read-only.",
+    "Security, payment, destructive and high-risk actions remain dashboard-only.",
+    "Commands: HELP · WHOAMI · RESET / NEW CHAT · CONFIRM <code> · CANCEL <code>",
+  ];
+  return formatAgentReply({ text: lines.join("\n\n") });
 }
 
-export function handleWhoAmI(resolution: AgentPrincipalResolution): string {
+export function handleWhoAmI(resolution: AgentPrincipalResolution, extraTools: AgentTool[] = []): string {
   if (resolution.status === "resolved") {
     return formatAgentReply({
-      text: formatWhoAmI(resolution.principal.kind === "staff" ? "staff" : "client_linked"),
+      text: formatWhoAmI(resolution, capabilityGroupsFromTools(resolveAgentTools(resolution.principal, { extraTools }))),
     });
   }
-  return formatAgentReply({ text: formatWhoAmI("unlinked") });
+  return formatAgentReply({ text: formatWhoAmI(resolution) });
 }
 
 export async function handleReset(supabase: ServiceClient, principal: AgentPrincipal): Promise<string> {
@@ -63,8 +78,8 @@ export async function handleReset(supabase: ServiceClient, principal: AgentPrinc
   return formatAgentReply({ text: "Started a new conversation. Your account link is unchanged." });
 }
 
-export function handleHelp(): string {
-  return HELP_TEXT;
+export function handleHelp(principal: AgentPrincipal, extraTools: AgentTool[] = []): string {
+  return formatPermissionAwareHelp(principal, capabilityGroupsFromTools(resolveAgentTools(principal, { extraTools })));
 }
 
 export interface ConfirmOutcome {

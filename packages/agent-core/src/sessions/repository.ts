@@ -45,12 +45,17 @@ export async function findActiveSession(
   supabase: ServiceClient,
   principal: AgentPrincipal
 ): Promise<AgentSessionRow | null> {
-  const { data, error } = await supabase
+  let query = supabase
     .from("agent_sessions")
     .select("*")
+    .eq("principal_kind", principal.kind)
     .eq("auth_user_id", principal.authUserId)
     .eq("channel", principal.channel)
-    .eq("status", "active")
+    .eq("status", "active");
+  query = principal.kind === "client"
+    ? query.eq("tenant_id", principal.tenantId)
+    : query.is("tenant_id", null);
+  const { data, error } = await query
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle<AgentSessionRow>();
@@ -64,12 +69,18 @@ export async function resetAgentSession(
   supabase: ServiceClient,
   principal: AgentPrincipal
 ): Promise<AgentSessionRow> {
-  await supabase
+  let query = supabase
     .from("agent_sessions")
     .update({ status: "closed", updated_at: new Date().toISOString() })
+    .eq("principal_kind", principal.kind)
     .eq("auth_user_id", principal.authUserId)
     .eq("channel", principal.channel)
     .eq("status", "active");
+  query = principal.kind === "client"
+    ? query.eq("tenant_id", principal.tenantId)
+    : query.is("tenant_id", null);
+  const { error } = await query;
+  if (error) throw error;
   return createAgentSession(supabase, principal);
 }
 

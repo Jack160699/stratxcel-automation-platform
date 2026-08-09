@@ -13,7 +13,7 @@
 export type Tables = Record<string, Array<Record<string, unknown>>>;
 
 export interface FakeSupabaseHandle {
-  client: unknown;
+  client: any;
   tables: Tables;
   /** Every `.from(table)` call, in order — lets a test assert an orchestration attempt happened (or didn't) without depending on its outcome. */
   fromCalls: string[];

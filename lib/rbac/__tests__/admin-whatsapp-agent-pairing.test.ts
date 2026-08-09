@@ -120,6 +120,12 @@ function run() {
   // so the same component serves both the tenant-scoped Client card and
   // the session-only Admin card without a fake/placeholder tenantId.
   assert.ok(/tenantId\?:\s*string/.test(pairingCard), "WhatsAppAgentPairingCardProps.tenantId must be optional");
+  assert.ok(/setTimeout\(poll,\s*2000\)/.test(pairingCard), "active pairing must poll on a bounded ~2 second cadence");
+  assert.ok(/Date\.now\(\)\s*>=\s*expiresAt/.test(pairingCard), "pairing poll must stop at expiry");
+  assert.ok(/cancelled\s*=\s*true/.test(pairingCard) && /clearTimeout\(timer\)/.test(pairingCard), "pairing poll must stop on unmount");
+  assert.ok(/setPendingCode\(null\).*plaintext code/s.test(pairingCard), "successful LINK detection must clear plaintext code state");
+  assert.equal(/localStorage|sessionStorage/.test(pairingCard), false, "pairing plaintext must never be persisted in browser storage");
+  assert.ok(/Refresh status/.test(pairingCard), "manual refresh fallback must remain available");
   assert.equal(/if\s*\(!props\.tenantId\)\s*return;/.test(pairingCard), false, "loadStatus() must not silently no-op when tenantId is absent (that hid the Admin card's status entirely)");
 
   console.log("admin-whatsapp-agent-pairing.test.ts: ALL PASS (staff-scoped identity, no tenant indirection, card renders without active tenant, client pairing unchanged)");

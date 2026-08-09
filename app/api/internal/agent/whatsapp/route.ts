@@ -193,7 +193,7 @@ export async function POST(request: Request) {
   const parsed = parseCommand(text);
 
   if (parsed.kind === "link") {
-    const reply = await handleLinkCommand(supabase, normalizedPhone, parsed.code);
+    const reply = await handleLinkCommand(supabase, normalizedPhone, parsed.code, SOCIAL_DELEGATION_TOOLS);
     // No resolved principal yet at this exact instant (and no tenantId to
     // attribute an audit event to even for a client link — resolving it
     // again here would be redundant work for a one-line ack) — sent as an
@@ -228,10 +228,10 @@ export async function POST(request: Request) {
   const principalTenantId = principal.tenantId;
 
   if (parsed.kind === "whoami") {
-    return sendAgentReply(handleWhoAmI(resolution), recipientContext, { principalTenantId });
+    return sendAgentReply(handleWhoAmI(resolution, SOCIAL_DELEGATION_TOOLS), recipientContext, { principalTenantId });
   }
   if (parsed.kind === "help") {
-    return sendAgentReply(handleHelp(), recipientContext, { principalTenantId });
+    return sendAgentReply(handleHelp(principal, SOCIAL_DELEGATION_TOOLS), recipientContext, { principalTenantId });
   }
   if (parsed.kind === "reset") {
     const reply = await handleReset(supabase, principal);

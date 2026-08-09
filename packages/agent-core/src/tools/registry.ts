@@ -3,6 +3,7 @@ import { resolveTools, type AgentTool } from "./contract.ts";
 import { ADMIN_READ_TOOLS } from "./admin/read-tools.ts";
 import { ADMIN_MUTATION_TOOLS } from "./admin/mutation-tools.ts";
 import { CLIENT_READ_TOOLS, CLIENT_MUTATION_TOOLS } from "./client/tools.ts";
+import { MEMORY_TOOLS } from "../brain/memory/tools.ts";
 
 export interface ResolveToolsOptions {
   /** Additional tools composed in at the app layer for capabilities that live
@@ -14,8 +15,8 @@ export interface ResolveToolsOptions {
   extraTools?: AgentTool[];
 }
 
-const ADMIN_CANDIDATE_TOOLS: AgentTool[] = [...ADMIN_READ_TOOLS, ...ADMIN_MUTATION_TOOLS];
-const CLIENT_CANDIDATE_TOOLS: AgentTool[] = [...CLIENT_READ_TOOLS, ...CLIENT_MUTATION_TOOLS];
+const ADMIN_CANDIDATE_TOOLS: AgentTool[] = [...ADMIN_READ_TOOLS, ...ADMIN_MUTATION_TOOLS, ...MEMORY_TOOLS];
+const CLIENT_CANDIDATE_TOOLS: AgentTool[] = [...CLIENT_READ_TOOLS, ...CLIENT_MUTATION_TOOLS, ...MEMORY_TOOLS];
 
 /** Staff principal must still have real permission evaluation — not every
  *  "staff" row is omnipotent. See STAFF_ROLE_PERMISSIONS in

@@ -17,6 +17,10 @@ export * from "./tools/contract.ts";
 export * from "./tools/registry.ts";
 
 export * from "./control-handlers.ts";
+export * from "./brain/capabilities.ts";
+export * from "./brain/conversation-context.ts";
+export * from "./brain/context-builder.ts";
+export * from "./brain/memory/repository.ts";
 
 export { runAgentTurn } from "./orchestrator.ts";
 export type { RunAgentTurnInput, RunAgentTurnResult, RunAgentTurnStatus } from "./orchestrator.ts";

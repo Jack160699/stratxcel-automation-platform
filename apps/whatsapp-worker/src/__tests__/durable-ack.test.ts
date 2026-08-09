@@ -12,8 +12,10 @@ import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import { EventEmitter } from "node:events";
 import type { QueueAdapter } from "@stratxcel/queue";
-import { handleInbound, handleVerification } from "../server.ts";
 import { createFakeSupabase, type Tables } from "../../../../packages/whatsapp/src/__tests__/support/fake-supabase.ts";
+
+Reflect.set(process.env, "NODE_ENV", "test");
+const { handleInbound, handleVerification } = await import("../server.ts");
 
 const TENANT = "tenant-1";
 const APP_SECRET = "test-app-secret-not-real";
