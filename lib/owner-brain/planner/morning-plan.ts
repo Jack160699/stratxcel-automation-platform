@@ -1,8 +1,9 @@
 import { getServiceContext } from "../db-context";
-import { getLatestReviewForOwner, upsertDailyPlan } from "../repositories/reviews-plans";
+import { getLatestReviewForOwner, upsertDailyPlan, attachHermesMissionToPlan } from "../repositories/reviews-plans";
 import { listOpenLoopsForOwner } from "../repositories/open-loops";
 import { listMemoriesForOwner } from "../repositories/memories";
 import { derivePlanShape } from "./rules";
+import { attemptHermesAssistedPlan } from "../hermes/morning-plan-hermes";
 
 export interface GeneratedPlan {
   top3: string[];
@@ -76,10 +77,22 @@ export async function generateRulesBasedPlan(ownerId: string, planDate: string):
   };
 }
 
+/**
+ * Always generates and saves the deterministic rules-based plan first —
+ * that write is unconditional and is what "today's plan" means in the UI
+ * the instant this function returns. Hermes assistance is layered on top,
+ * best-effort, after that save: attemptHermesAssistedPlan queues a real
+ * (audited, tenant-scoped, tool-restricted) mission and can never fail
+ * this function or overwrite the saved plan — see
+ * hermes/morning-plan-hermes.ts for the full rationale. `generatedBy`
+ * stays "rules" regardless of whether Hermes was attempted; the plan's
+ * `hermes_mission_id`/`hermes_suggestion` fields are what the UI uses to
+ * show Hermes's advisory suggestion alongside it once available.
+ */
 export async function generateAndSaveMorningPlan(ownerId: string, planDate: string, generatedBy: "rules" | "hermes" = "rules"): Promise<string> {
   const plan = await generateRulesBasedPlan(ownerId, planDate);
   const latestReview = await getLatestReviewForOwner(ownerId);
-  return upsertDailyPlan(ownerId, {
+  const planId = await upsertDailyPlan(ownerId, {
     planDate,
     top3: plan.top3,
     deepWork: plan.deepWork,
@@ -92,4 +105,14 @@ export async function generateAndSaveMorningPlan(ownerId: string, planDate: stri
     basedOnReviewId: (latestReview?.id as string | undefined) ?? null,
     generatedBy,
   });
+
+  const hermesResult = await attemptHermesAssistedPlan(ownerId, planDate).catch((err) => ({
+    used: false as const,
+    reason: err instanceof Error ? err.message : String(err),
+  }));
+  if (hermesResult.used && hermesResult.missionId) {
+    await attachHermesMissionToPlan(ownerId, planDate, hermesResult.missionId).catch(() => {});
+  }
+
+  return planId;
 }

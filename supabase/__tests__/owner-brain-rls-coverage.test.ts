@@ -84,6 +84,22 @@ function run() {
     assert.match(combinedSql, grantPattern, `${table}: missing explicit service_role grant`);
   }
 
+  // `authenticated` must ALSO be explicitly granted — RLS policies alone
+  // are not sufficient without the underlying Postgres table-level GRANT
+  // (this class of bug shipped once already, in the original schema
+  // migration, and was only caught by scripts/verify-owner-brain-rls.mjs
+  // running against the real database — a real authenticated Supabase
+  // client got 42501 "permission denied" despite a passing RLS policy).
+  // Statements may list several tables in one multi-line GRANT, so this
+  // matches on the statement text, not one grant-per-table.
+  const authenticatedGrantStatements = [...combinedSql.matchAll(/grant\s+((?:select|insert|update|delete|,|\s)+)\s+on\s+([\s\S]*?)\s+to\s+authenticated;/gi)];
+  assert.ok(authenticatedGrantStatements.length > 0, "expected at least one GRANT ... TO authenticated statement");
+
+  for (const table of tableNames) {
+    const grantedBySomeStatement = authenticatedGrantStatements.some((m) => new RegExp(`\\b${table}\\b`).test(m[2]));
+    assert.ok(grantedBySomeStatement, `${table}: missing an explicit 'to authenticated' grant (RLS policy alone is not enough)`);
+  }
+
   console.log(`owner-brain-rls-coverage.test.ts: checked ${tableNames.length} tables across ${files.length} migrations — ALL PASS`);
 }
 

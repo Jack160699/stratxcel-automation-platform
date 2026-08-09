@@ -161,3 +161,25 @@ export async function getDailyPlan(ctx: OwnerContext, planDate: string) {
   if (error) throw new Error(`getDailyPlan failed: ${error.message}`);
   return data;
 }
+
+/** Links a real Hermes mission to today's plan, best-effort — never called in a way that blocks the deterministic plan from being the one actually saved and shown. */
+export async function attachHermesMissionToPlan(ownerId: string, planDate: string, missionId: string): Promise<void> {
+  const service = getServiceContext().supabase;
+  const { error } = await service
+    .from("owner_daily_plans")
+    .update({ hermes_mission_id: missionId })
+    .eq("owner_id", ownerId)
+    .eq("plan_date", planDate);
+  if (error) throw new Error(`attachHermesMissionToPlan failed: ${error.message}`);
+}
+
+/** Caches the last-read Hermes mission outcome so the UI doesn't re-query mission_events every render. */
+export async function updateHermesSuggestion(ownerId: string, planDate: string, suggestion: Record<string, unknown>): Promise<void> {
+  const service = getServiceContext().supabase;
+  const { error } = await service
+    .from("owner_daily_plans")
+    .update({ hermes_suggestion: suggestion })
+    .eq("owner_id", ownerId)
+    .eq("plan_date", planDate);
+  if (error) throw new Error(`updateHermesSuggestion failed: ${error.message}`);
+}

@@ -72,6 +72,19 @@ export const SERVICE_CATALOGUE: readonly ServiceCatalogueEntry[] = [
     baseCostCents: 0,
     keywords: [],
   },
+  {
+    key: "owner_operating_brain_context",
+    label: "Owner Operating Brain — Context Review",
+    description:
+      "Internal, zero-cost agency-ops mission: reviews a bounded, pre-retrieved slice of the owner's own approved memory/open-loops/review and returns a short planning recommendation. Never customer-facing, never billed, never touches a client's Brand Brain.",
+    hermesProfile: "stratxcel-admin-growth",
+    baseCostCents: 0,
+    // Deliberately unique and unlikely to appear in a real client goal —
+    // lib/owner-brain/hermes/morning-plan-hermes.ts always prefixes its
+    // generated goal text with this exact keyword so the compiler routes
+    // it here deterministically instead of via generic fallback matching.
+    keywords: ["owner-operating-brain-context-review"],
+  },
 ] as const;
 
 export function getServiceCatalogueEntry(key: string): ServiceCatalogueEntry | undefined {
