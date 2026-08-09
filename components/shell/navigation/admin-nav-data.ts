@@ -31,6 +31,7 @@ export const ADMIN_NAV_GROUPS_DATA: NavGroupData[] = [
   {
     label: "Operations",
     items: [
+      { key: "hermes", label: "Hermes Mission Control", href: "/admin/hermes" },
       { key: "missions", label: "All Missions", href: "/admin/missions" },
       { key: "approvals", label: "Approvals", href: "/admin/approvals" },
       { key: "handoffs", label: "Human Handoffs", href: "/admin/handoffs" },

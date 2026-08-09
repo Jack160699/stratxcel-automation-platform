@@ -58,7 +58,9 @@ export default async function SystemHealthPage() {
     {
       name: "Hermes",
       status: modeToStatus(process.env.HERMES_MODE, true),
-      detail: "No Hermes instance reachable this session (Docker unavailable). MockHermesAdapter available for demos.",
+      detail: process.env.HERMES_MODE === "http"
+        ? "Configured for the HTTP runtime. Open Hermes Mission Control for heartbeat-backed live health."
+        : "Runtime status is derived from current configuration; open Hermes Mission Control for heartbeat telemetry.",
     },
     {
       name: "Google Drive",
