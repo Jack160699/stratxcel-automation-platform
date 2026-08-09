@@ -11,7 +11,7 @@ import {
   auditConfirmationCancelled,
   auditFailedAction,
 } from "./audit.ts";
-import { summarizeToolResult, formatAgentReply, formatWhoAmI, formatPermissionAwareHelp } from "./formatter.ts";
+import { formatAgentReply, formatWhoAmI, formatPermissionAwareHelp } from "./formatter.ts";
 import type { AgentTool } from "./tools/contract.ts";
 import { capabilityGroupsFromTools } from "./brain/capabilities.ts";
 
@@ -123,10 +123,10 @@ export async function handleConfirm(
   }
 
   try {
-    const output = await tool.execute({ principal, supabase }, result.normalizedInput);
+    await tool.execute({ principal, supabase }, result.normalizedInput);
     await auditConfirmationExecuted(supabase, principal, { confirmationId: result.id, actionName: result.actionName });
     return {
-      reply: formatAgentReply({ text: "Done.", toolSummaries: [summarizeToolResult(tool.schema.name, output)] }),
+      reply: formatAgentReply({ text: "Done. The requested change was completed." }),
       executed: true,
     };
   } catch (err) {
