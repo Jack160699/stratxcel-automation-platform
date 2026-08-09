@@ -15,6 +15,16 @@ function scopeFilter(principal: AgentPrincipal, scope: AgentMemory["scope"]) {
   throw new Error("Memory scope is not authorized for this principal.");
 }
 
+function applyScopeFilter(query: any, scoped: { owner_auth_user_id: string | null; tenant_id: string | null }) {
+  let filtered = scoped.owner_auth_user_id === null
+    ? query.is("owner_auth_user_id", null)
+    : query.eq("owner_auth_user_id", scoped.owner_auth_user_id);
+  filtered = scoped.tenant_id === null
+    ? filtered.is("tenant_id", null)
+    : filtered.eq("tenant_id", scoped.tenant_id);
+  return filtered;
+}
+
 export async function listAgentMemories(supabase: ServiceClient, principal: AgentPrincipal, limit = 20): Promise<AgentMemory[]> {
   let query = supabase.from("agent_memories").select("id, scope, memory_key, memory_value, updated_at").is("deleted_at", null);
   if (principal.kind === "client") query = query.or(`owner_auth_user_id.eq.${principal.authUserId},and(scope.eq.workspace,tenant_id.eq.${principal.tenantId})`);
@@ -27,7 +37,8 @@ export async function listAgentMemories(supabase: ServiceClient, principal: Agen
 export async function rememberAgentFact(supabase: ServiceClient, principal: AgentPrincipal, input: { scope: AgentMemory["scope"]; key: string; value: string }): Promise<void> {
   assertSafeMemoryValue(input.value);
   const scoped = scopeFilter(principal, input.scope);
-  const existing = await supabase.from("agent_memories").select("id").eq("scope", input.scope).eq("memory_key", input.key).match(scoped).is("deleted_at", null).maybeSingle<{id:string}>();
+  const existingQuery = supabase.from("agent_memories").select("id").eq("scope", input.scope).eq("memory_key", input.key).is("deleted_at", null);
+  const existing = await applyScopeFilter(existingQuery, scoped).maybeSingle() as { data: { id: string } | null; error: unknown };
   if (existing.error) throw existing.error;
   if (existing.data) {
     const { error } = await supabase.from("agent_memories").update({ memory_value: input.value, updated_at: new Date().toISOString() }).eq("id", existing.data.id);
@@ -40,7 +51,8 @@ export async function rememberAgentFact(supabase: ServiceClient, principal: Agen
 
 export async function forgetAgentFact(supabase: ServiceClient, principal: AgentPrincipal, input: { scope: AgentMemory["scope"]; key: string }): Promise<boolean> {
   const scoped = scopeFilter(principal, input.scope);
-  const { data, error } = await supabase.from("agent_memories").update({ deleted_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("scope", input.scope).eq("memory_key", input.key).match(scoped).is("deleted_at", null).select("id").maybeSingle();
+  const forgetQuery = supabase.from("agent_memories").update({ deleted_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("scope", input.scope).eq("memory_key", input.key).is("deleted_at", null);
+  const { data, error } = await applyScopeFilter(forgetQuery, scoped).select("id").maybeSingle();
   if (error) throw error;
   return Boolean(data);
 }

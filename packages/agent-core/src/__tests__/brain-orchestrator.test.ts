@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
 import { runAgentTurn } from "../orchestrator.ts";
 import { createFakeSupabase } from "./support/fake-supabase.ts";
+import { findActiveSession, resetAgentSession } from "../sessions/repository.ts";
+import { forgetAgentFact, rememberAgentFact } from "../brain/memory/repository.ts";
 import type { AgentLLMProvider, AgentTurnMessage } from "../provider.ts";
 import type { StaffAgentPrincipal } from "../principal.ts";
+import type { ClientAgentPrincipal } from "../principal.ts";
 import type { AgentTool } from "../tools/contract.ts";
 
 const principal: StaffAgentPrincipal = { kind: "staff", channel: "admin_web", authUserId: "staff-a", tenantId: null, role: "platform_admin", permissions: ["agent:read:test"] };
@@ -25,6 +28,28 @@ async function run() {
   assert.ok(calls[0].some((m) => m.content.includes("The first lead is Acme")), "previous assistant turn must be supplied to the next model call");
   assert.deepEqual(invoked, ["test_one", "test_two"], "multiple authorized tool calls in one round must execute");
   assert.ok(calls[1].some((m) => m.role === "tool" && m.toolName === "test_one"), "subsequent reasoning round must receive tool output");
+
+  const tenantA: ClientAgentPrincipal = { kind: "client", channel: "client_web", authUserId: "shared-user", tenantId: "tenant-a", role: "owner", permissions: [] };
+  const { client: tenantClient, tables } = createFakeSupabase({ agent_sessions: [
+    { id: "session-other", principal_kind: "client", auth_user_id: "shared-user", tenant_id: "tenant-b", channel: "client_web", status: "active", created_at: "2026-08-09T00:00:00Z", updated_at: "2026-08-09T00:00:00Z" },
+    { id: "session-own", principal_kind: "client", auth_user_id: "shared-user", tenant_id: "tenant-a", channel: "client_web", status: "active", created_at: "2026-08-09T00:00:01Z", updated_at: "2026-08-09T00:00:01Z" },
+  ] });
+  assert.equal((await findActiveSession(tenantClient as any, tenantA))?.id, "session-own", "active history must be tenant scoped");
+  await resetAgentSession(tenantClient as any, tenantA);
+  assert.equal(tables.agent_sessions.find((item) => item.id === "session-other")?.status, "active", "reset must not close another tenant's session");
+  assert.equal(tables.agent_sessions.find((item) => item.id === "session-own")?.status, "closed", "reset must close the current tenant's session");
+
+  const owner: StaffAgentPrincipal = { ...principal, authUserId: "owner-a", role: "platform_owner" };
+  const { client: memoryClient, tables: memoryTables } = createFakeSupabase({ agent_memories: [
+    { id: "agency-memory", scope: "agency", owner_auth_user_id: null, tenant_id: null, memory_key: "tone", memory_value: "Agency default", deleted_at: null },
+    { id: "personal-memory", scope: "personal", owner_auth_user_id: "owner-a", tenant_id: null, memory_key: "tone", memory_value: "Personal default", deleted_at: null },
+  ] });
+  await rememberAgentFact(memoryClient as any, owner, { scope: "personal", key: "tone", value: "Keep it concise" });
+  assert.equal(memoryTables.agent_memories.find((item) => item.id === "personal-memory")?.memory_value, "Keep it concise", "personal memory update must use null-safe owner and tenant scope");
+  assert.equal(memoryTables.agent_memories.find((item) => item.id === "agency-memory")?.memory_value, "Agency default", "personal memory update must not overwrite agency memory");
+  await forgetAgentFact(memoryClient as any, owner, { scope: "personal", key: "tone" });
+  assert.ok(memoryTables.agent_memories.find((item) => item.id === "personal-memory")?.deleted_at, "forget must soft-delete only the selected scoped memory");
+  assert.equal(memoryTables.agent_memories.find((item) => item.id === "agency-memory")?.deleted_at, null, "forget must preserve another scope with the same key");
   console.log("brain-orchestrator.test.ts (@stratxcel/agent-core): ALL PASS");
 }
 run();

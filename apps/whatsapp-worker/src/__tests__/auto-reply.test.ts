@@ -7,9 +7,11 @@
 // elsewhere; here a ProcessInboundResult is constructed directly so these
 // tests isolate exactly what the gate itself decides given that result.
 import assert from "node:assert/strict";
-import { maybeSendAutomaticReply } from "../processor.ts";
 import { createFakeSupabase, type Tables } from "../../../../packages/whatsapp/src/__tests__/support/fake-supabase.ts";
 import type { ParsedInboundWhatsAppMessage, ProcessInboundResult } from "@stratxcel/whatsapp";
+
+Reflect.set(process.env, "NODE_ENV", "test");
+const { maybeSendAutomaticReply } = await import("../processor.ts");
 
 const TENANT = "tenant-1";
 const LEAD_ID = "lead-1";
