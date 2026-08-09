@@ -64,6 +64,21 @@ async function run() {
   const deepResult = await runAgentTurn({ supabase: deepClient as any, principal, provider: deepProvider, userText: "Draft using the retrieved context", extraTools: tools });
   assert.equal(deepRound, 5, "the bounded loop must allow a synthesis pass after four sequential retrieval rounds");
   assert.equal(deepResult.replyText, "Final synthesis after four retrieval steps.");
+
+  const { client: recoveryClient, tables: recoveryTables } = createFakeSupabase();
+  let recoveryRound = 0;
+  const recoveryProvider: AgentLLMProvider = { isConfigured: () => true, async complete(messages) {
+    recoveryRound += 1;
+    if (recoveryRound === 1) return { text: "", toolCalls: [{ id: "bad-ref", name: "failing_read", arguments: { tenantId: "stale-reference" } }] };
+    assert.ok(messages.some((message) => message.role === "tool" && message.content.includes("invalid or unavailable")), "the provider must receive a generic retryable tool error");
+    assert.ok(!messages.some((message) => message.content.includes("stale-reference")), "failed tool context must not echo the invalid identifier");
+    return { text: "I recovered using the verified overview.", toolCalls: [] };
+  } };
+  const failingRead: AgentTool = { schema: { name: "failing_read", description: "Test a recoverable read failure.", parameters: {} }, mutating: false, risk: "read", requiredPermission: "agent:read:test", async execute() { throw new Error("invalid input syntax containing a private identifier"); } };
+  const recoveryResult = await runAgentTurn({ supabase: recoveryClient as any, principal, provider: recoveryProvider, userText: "Give me a brief", extraTools: [failingRead] });
+  assert.equal(recoveryResult.status, "completed", "one recoverable tool error must not fail the whole Agent turn");
+  assert.equal(recoveryResult.replyText, "I recovered using the verified overview.");
+  assert.ok(recoveryTables.agent_run_events.some((event) => event.event_type === "tool_failed" && event.tool_name === "failing_read"), "recoverable tool failures must remain auditable");
   console.log("brain-orchestrator.test.ts (@stratxcel/agent-core): ALL PASS");
 }
 run();

@@ -169,7 +169,29 @@ export async function runAgentTurn(input: RunAgentTurnInput): Promise<RunAgentTu
         }
 
         // decision.action === "execute"
-        const result = await tool.execute({ principal, supabase }, call.arguments);
+        let result: unknown;
+        try {
+          result = await tool.execute({ principal, supabase }, call.arguments);
+        } catch {
+          // A provider can select a stale/not-found record reference even
+          // when the tool itself is authorized. Keep that failure scoped to
+          // this call so the model can correct the lookup on the next bounded
+          // round; never echo database errors or input identifiers back into
+          // model/user-visible context.
+          await recordRunEvent(supabase, {
+            runId,
+            eventType: "tool_failed",
+            toolName: tool.schema.name,
+            risk: tool.risk,
+          });
+          messages.push({
+            role: "tool",
+            toolCallId: call.id,
+            toolName: call.name,
+            content: "error: the requested record reference was invalid or unavailable; use a verified record returned by an earlier tool and retry",
+          });
+          continue;
+        }
         await incrementToolCallCount(supabase, runId);
         await recordRunEvent(supabase, {
           runId,
