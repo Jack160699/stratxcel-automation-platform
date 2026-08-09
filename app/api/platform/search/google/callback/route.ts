@@ -1,5 +1,6 @@
 import { requireTenantContext, getTenantServiceContext } from "@/lib/tenants/tenant-context";
 import { requirePermission, PermissionDeniedError } from "@/lib/rbac/policy";
+import { CANONICAL_ORIGIN } from "@/lib/reporting/site";
 import { createDevEncryptedVault } from "@stratxcel/byok";
 import {
   verifyOAuthState,
@@ -16,8 +17,8 @@ export const dynamic = "force-dynamic";
 // request input — so this callback can never be used as an open redirect.
 const RETURN_PATH = "/app/search";
 
-function safeRedirect(origin: string, params: Record<string, string>) {
-  const url = new URL(RETURN_PATH, origin);
+function safeRedirect(params: Record<string, string>) {
+  const url = new URL(RETURN_PATH, CANONICAL_ORIGIN);
   for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
   return Response.redirect(url.toString());
 }
@@ -38,34 +39,34 @@ function safeRedirect(origin: string, params: Record<string, string>) {
  */
 export async function GET(request: Request) {
   const url = new URL(request.url);
-  const origin = url.origin;
   const code = url.searchParams.get("code");
   const state = url.searchParams.get("state");
   const oauthError = url.searchParams.get("error");
 
-  if (oauthError) return safeRedirect(origin, { googleConnectError: "denied" });
-  if (!state) return safeRedirect(origin, { googleConnectError: "missing_state" });
+  if (oauthError) return safeRedirect({ googleConnectError: "denied" });
+  if (!state) return safeRedirect({ googleConnectError: "missing_state" });
 
   const verified = verifyOAuthState(state);
-  if (!verified.ok) return safeRedirect(origin, { googleConnectError: `bad_state_${verified.reason}` });
-  if (!code) return safeRedirect(origin, { googleConnectError: "missing_code" });
+  if (!verified.ok) return safeRedirect({ googleConnectError: `bad_state_${verified.reason}` });
+  if (!code) return safeRedirect({ googleConnectError: "missing_code" });
 
   // Re-derive tenant membership from the CURRENT authenticated session —
   // the state's tenantId is never trusted on its own. A session that
   // doesn't belong to the tenant the state was issued for, or that lacks
   // permission, is rejected here even though the state itself verified.
   const ctx = await requireTenantContext(verified.tenantId);
-  if (!ctx.ok) return safeRedirect(origin, { googleConnectError: "not_authenticated" });
+  if (!ctx.ok) return safeRedirect({ googleConnectError: "not_authenticated" });
+  if (ctx.userId !== verified.userId) return safeRedirect({ googleConnectError: "user_mismatch" });
 
   try {
     requirePermission(ctx.role, "integration:configure");
   } catch (err) {
-    if (err instanceof PermissionDeniedError) return safeRedirect(origin, { googleConnectError: "forbidden" });
+    if (err instanceof PermissionDeniedError) return safeRedirect({ googleConnectError: "forbidden" });
     throw err;
   }
 
   const { supabase } = getTenantServiceContext();
-  const redirectUri = new URL("/api/platform/search/google/callback", origin).toString();
+  const redirectUri = new URL("/api/platform/search/google/callback", CANONICAL_ORIGIN).toString();
 
   try {
     const tokenAdapter = createGoogleSearchTokenAdapter();
@@ -103,7 +104,7 @@ export async function GET(request: Request) {
         targetType: "search_google_connection",
         metadata: { reason: "no_refresh_token" },
       });
-      return safeRedirect(origin, { googleConnectError: "no_refresh_token" });
+      return safeRedirect({ googleConnectError: "no_refresh_token" });
     }
 
     await upsertGoogleConnectionStatus(supabase, {
@@ -123,7 +124,7 @@ export async function GET(request: Request) {
       metadata: { scopes: tokens.grantedScopes },
     });
 
-    return safeRedirect(origin, { googleConnected: "1" });
+    return safeRedirect({ googleConnected: "1" });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     await upsertGoogleConnectionStatus(supabase, {
@@ -139,6 +140,6 @@ export async function GET(request: Request) {
       targetType: "search_google_connection",
       metadata: { reason: "exchange_failed" },
     });
-    return safeRedirect(origin, { googleConnectError: "connect_failed" });
+    return safeRedirect({ googleConnectError: "connect_failed" });
   }
 }

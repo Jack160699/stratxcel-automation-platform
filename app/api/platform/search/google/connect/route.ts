@@ -1,5 +1,6 @@
 import { requireTenantContext } from "@/lib/tenants/tenant-context";
 import { requirePermission, PermissionDeniedError } from "@/lib/rbac/policy";
+import { CANONICAL_ORIGIN } from "@/lib/reporting/site";
 import { generateOAuthState, buildGoogleAuthorizeUrl } from "@stratxcel/search-discovery";
 
 export const runtime = "nodejs";
@@ -32,7 +33,7 @@ export async function GET(request: Request) {
   }
 
   const state = generateOAuthState({ tenantId, userId: ctx.userId });
-  const redirectUri = new URL("/api/platform/search/google/callback", request.url).toString();
+  const redirectUri = new URL("/api/platform/search/google/callback", CANONICAL_ORIGIN).toString();
 
   let authorizeUrl: string;
   try {

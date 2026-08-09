@@ -167,15 +167,20 @@ export function createGoogleSearchTokenAdapter(): GoogleTokenAdapter {
         }),
       });
       if (!response.ok) {
-        const body = await response.text().catch(() => "");
-        throw new Error(`Google token exchange failed: HTTP ${response.status} ${body.slice(0, 200)}`);
+        // OAuth error bodies can echo credential-shaped request context. Keep
+        // provider diagnostics useful without persisting or surfacing them.
+        throw new Error(`Google token exchange failed: HTTP ${response.status}`);
       }
       const result = (await response.json()) as { access_token: string; refresh_token?: string; expires_in: number; scope?: string };
+      if (typeof result.access_token !== "string" || typeof result.expires_in !== "number") {
+        throw new Error("Google token exchange failed: malformed response");
+      }
+      const allowedScopes = new Set<string>(GOOGLE_SEARCH_SCOPES);
       return {
         accessToken: result.access_token,
         refreshToken: result.refresh_token ?? null,
         expiresInSeconds: result.expires_in,
-        grantedScopes: result.scope ? result.scope.split(" ").filter(Boolean) : [],
+        grantedScopes: result.scope ? result.scope.split(" ").filter((scope) => allowedScopes.has(scope)) : [],
       };
     },
 
@@ -192,10 +197,12 @@ export function createGoogleSearchTokenAdapter(): GoogleTokenAdapter {
         }),
       });
       if (!response.ok) {
-        const body = await response.text().catch(() => "");
-        throw new Error(`Google token refresh failed: HTTP ${response.status} ${body.slice(0, 200)}`);
+        throw new Error(`Google token refresh failed: HTTP ${response.status}`);
       }
       const result = (await response.json()) as { access_token: string; expires_in: number };
+      if (typeof result.access_token !== "string" || typeof result.expires_in !== "number") {
+        throw new Error("Google token refresh failed: malformed response");
+      }
       return { accessToken: result.access_token, expiresInSeconds: result.expires_in };
     },
 

@@ -66,6 +66,8 @@ export async function resolveGoogleProviderStates(input: {
       snapshots.ga4 = {
         dimensions: { landingPageCount: snapshot.landingPages.length, propertyId: connectionRow.ga4_property_id },
         values: { landingPages: snapshot.landingPages },
+        periodStart: snapshot.periodStart,
+        periodEnd: snapshot.periodEnd,
       };
       await markGoogleSyncTime(db, tenantId, "ga4");
     } catch (err) {

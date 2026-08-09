@@ -48,7 +48,9 @@ export async function GET(request: Request) {
     ga4PropertyId: connection?.ga4_property_id ?? null,
     ga4PropertyDisplayName: connection?.ga4_property_display_name ?? null,
     ga4LastSyncedAt: connection?.ga4_last_synced_at ?? null,
-    lastError: connection?.status === "error" ? connection.last_error : null,
+    // Raw provider failures remain server-side. They can contain property or
+    // upstream response details that are unnecessary in a browser payload.
+    lastError: connection?.status === "error" ? "SEARCH_GOOGLE_CONNECTION_ERROR" : null,
   };
 
   if (!connection || connection.status !== "connected") {

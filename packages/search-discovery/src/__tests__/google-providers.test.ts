@@ -184,6 +184,11 @@ async function run() {
     ]);
     try {
       const snapshot = await provider.readOutcomes("tenant-a", "https://owned.example/");
+      assert.match(snapshot.periodStart, /^\d{4}-\d{2}-\d{2}$/);
+      assert.match(snapshot.periodEnd, /^\d{4}-\d{2}-\d{2}$/);
+      assert.ok(snapshot.periodStart < snapshot.periodEnd);
+      assert.equal(capturedBody.dateRanges[0].startDate, snapshot.periodStart);
+      assert.equal(capturedBody.dateRanges[0].endDate, snapshot.periodEnd);
       assert.equal(snapshot.landingPages.length, 2);
       assert.equal(snapshot.landingPages[0].url, "/landing-a");
       assert.equal(snapshot.landingPages[0].organicVisits, 120);

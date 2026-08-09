@@ -1,7 +1,7 @@
 import type { ProviderConnection, QueryMetric } from "./types.ts";
 
 export interface SearchConsoleSnapshot { periodStart: string; periodEnd: string; rows: QueryMetric[]; indexingState?: Array<{ url: string; state: string }>; }
-export interface AnalyticsOutcomeSnapshot { landingPages: Array<{ url: string; organicVisits: number; engagedSessions?: number; conversions?: number; formSubmissions?: number; contactClicks?: number; attributedLeads?: number }>; }
+export interface AnalyticsOutcomeSnapshot { periodStart: string; periodEnd: string; landingPages: Array<{ url: string; organicVisits: number; engagedSessions?: number; conversions?: number; formSubmissions?: number; contactClicks?: number; attributedLeads?: number }>; }
 export interface SearchConsoleProvider { connection(): Promise<ProviderConnection>; readSnapshot(tenantId: string, propertyUrl: string): Promise<SearchConsoleSnapshot>; }
 export interface AnalyticsOutcomeProvider { connection(): Promise<ProviderConnection>; readOutcomes(tenantId: string, propertyUrl: string): Promise<AnalyticsOutcomeSnapshot>; }
 

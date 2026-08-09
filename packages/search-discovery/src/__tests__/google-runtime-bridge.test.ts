@@ -58,6 +58,9 @@ async function run() {
       assert.ok(resolved.snapshots.ga4, "a real GA4 snapshot must be present");
       assert.equal((resolved.snapshots.search_console!.values as any).rows[0].query, "shoes");
       assert.equal((resolved.snapshots.ga4!.values as any).landingPages[0].organicVisits, 50);
+      assert.match(resolved.snapshots.ga4!.periodStart ?? "", /^\d{4}-\d{2}-\d{2}$/);
+      assert.match(resolved.snapshots.ga4!.periodEnd ?? "", /^\d{4}-\d{2}-\d{2}$/);
+      assert.ok((resolved.snapshots.ga4!.periodStart ?? "") < (resolved.snapshots.ga4!.periodEnd ?? ""));
       // Sync timestamps must actually be persisted, independently per provider.
       const row = db.rows()[0];
       assert.ok(row.search_console_last_synced_at);

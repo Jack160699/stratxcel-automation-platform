@@ -28,7 +28,12 @@ assert.match(resources, /requirePermission\(ctx\.role, "integration:configure"\)
 // --- callback: signed state verification, tenant-bound, and a hardcoded same-origin return path (never an open redirect) ---
 assert.match(callback, /verifyOAuthState/);
 assert.match(callback, /requireTenantContext\(verified\.tenantId\)/, "callback must re-verify the CURRENT session against the state's tenantId, not just trust the state");
+assert.match(callback, /ctx\.userId !== verified\.userId/, "callback must bind the CURRENT session user to the user who initiated the signed state");
 assert.match(callback, /const RETURN_PATH = "\/app\/search"/, "the post-OAuth redirect target must be a hardcoded relative path");
+assert.match(connect, /CANONICAL_ORIGIN/, "the authorization redirect_uri must use the configured canonical production origin");
+assert.match(callback, /CANONICAL_ORIGIN/, "the callback redirect and token exchange redirect_uri must use the canonical production origin");
+assert.equal(/new URL\(RETURN_PATH,\s*(origin|request\.url|url\.origin)\)/.test(callback), false, "post-OAuth redirects must not trust a request-derived origin");
+assert.equal(/new URL\("\/api\/platform\/search\/google\/callback",\s*(request\.url|origin|url\.origin)\)/.test(`${connect}\n${callback}`), false, "OAuth redirect_uri must not trust a request-derived origin");
 assert.equal(/searchParams\.get\(["'`](redirectTo|return_to|next|url)["'`]\)/.test(callback), false, "callback must never read a redirect target from request input — that is an open-redirect vector");
 assert.match(callback, /if \(oauthError\) return safeRedirect/, "an explicit Google-reported error must be handled, not swallowed");
 assert.match(callback, /if \(!code\) return safeRedirect/, "a missing authorization code must be handled explicitly");
@@ -49,6 +54,8 @@ for (const [name, source] of [["resources", resources], ["config", config]] as c
   assert.equal(/accessToken/.test(source) === true, true, `${name} route resolves an access token server-side`);
   assert.equal(new RegExp(`Response\\.json\\([^)]*accessToken`).test(source), false, `${name} route must never put the resolved access token in a response body`);
 }
+assert.equal(/lastError:\s*connection\?\.last_error/.test(resources), false, "raw provider errors must not be returned to the browser");
+assert.match(resources, /SEARCH_GOOGLE_CONNECTION_ERROR/, "resources should return only a stable, non-sensitive connection error code");
 
 // --- disconnect: local credential removal + best-effort Google-side revocation ---
 assert.match(disconnect, /disconnectGoogleConnection/);
@@ -72,5 +79,6 @@ assert.match(oauthCode, /GOOGLE_SEARCH_OAUTH_CLIENT_ID/);
 assert.equal(/GOOGLE_DRIVE_CLIENT_ID|NEXT_PUBLIC_GOOGLE_CLIENT_ID/.test(oauthCode), false, "the actual code (not doc comments explaining the design choice) must never read Drive's or the login client's env vars");
 assert.match(oauthCode, /access_type: "offline"/);
 assert.match(oauthCode, /prompt: "consent"/);
+assert.equal(/response\.text\(\)/.test(oauthCode), false, "OAuth token response bodies must never be copied into thrown errors");
 
 console.log("api-security.test.ts (search/google): ALL PASS (tenant auth, RBAC, state/open-redirect safety, refresh-token preservation, no secret leakage, revocation, audit, scopes)");

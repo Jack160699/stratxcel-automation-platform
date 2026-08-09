@@ -81,7 +81,7 @@ async function run() {
   const okMock = installFetchMock([
     {
       match: (url) => url === "https://oauth2.googleapis.com/token",
-      respond: () => jsonResponse({ access_token: "at-123", refresh_token: "rt-456", expires_in: 3599, scope: GOOGLE_SEARCH_SCOPES.join(" ") }),
+      respond: () => jsonResponse({ access_token: "at-123", refresh_token: "rt-456", expires_in: 3599, scope: `${GOOGLE_SEARCH_SCOPES.join(" ")} https://www.googleapis.com/auth/drive` }),
     },
   ]);
   try {
@@ -125,8 +125,8 @@ async function run() {
     // said (Google's fake body here happens to mention it, so this proves
     // the adapter isn't ALSO appending the secret from its own credentials
     // a second time / logging it structurally).
-    const secretOccurrences = ((caught as Error).message.match(new RegExp(process.env.GOOGLE_SEARCH_OAUTH_CLIENT_SECRET as string, "g")) ?? []).length;
-    assert.ok(secretOccurrences <= 1, "client secret must not be duplicated/re-logged by the adapter itself");
+    assert.equal((caught as Error).message.includes(process.env.GOOGLE_SEARCH_OAUTH_CLIENT_SECRET as string), false, "client secret must never be exposed in the adapter error");
+    assert.equal((caught as Error).message.includes("invalid_grant"), false, "provider response bodies must not be copied into persisted errors");
   } finally {
     failMock.restore();
   }

@@ -37,10 +37,11 @@ assert.ok(declIdx < normIdx && normIdx < assignIdx, "normalization must run afte
 // line endings, and that the failed-patch guard (`v_definition = v_original`)
 // still correctly requires a real change.
 function extractPairs(sql: string): Array<[string, string]> {
+  sql = sql.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
   const pairs: Array<[string, string]> = [];
-  const simpleRe = /v_definition := replace\(v_definition,\s*\n\s*'([^']+)',\s*\n\s*'([^']+)'\);/g;
+  const simpleRe = /v_definition := replace\(v_definition,\s*\r?\n\s*'([^']+)',\s*\r?\n\s*'([^']+)'\);/g;
   for (const m of sql.matchAll(simpleRe)) pairs.push([m[1], m[2]]);
-  const blockRe = /replace\(v_definition,\n\$old\$([\s\S]*?)\$old\$,\n\$new\$([\s\S]*?)\$new\$\);/;
+  const blockRe = /replace\(v_definition,\r?\n\$old\$([\s\S]*?)\$old\$,\r?\n\$new\$([\s\S]*?)\$new\$\);/;
   const blockMatch = sql.match(blockRe);
   assert.ok(blockMatch, "expected the $old$/$new$ branch replacement block");
   pairs.push([blockMatch![1], blockMatch![2]]);

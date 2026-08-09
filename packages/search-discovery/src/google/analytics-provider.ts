@@ -200,7 +200,7 @@ export function createGoogleAnalyticsProvider(input: { db: SearchDb; vault: Secr
         };
       });
 
-      return { landingPages };
+      return { periodStart: window.startDate, periodEnd: window.endDate, landingPages };
     },
   };
 }
