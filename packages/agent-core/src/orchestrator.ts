@@ -14,7 +14,7 @@ import {
   loadSessionMessages,
 } from "./sessions/repository.ts";
 import { auditAgentRun, auditToolInvocation, auditConfirmationProposed, auditFailedAction } from "./audit.ts";
-import { summarizeToolResult, formatAgentReply, formatConfirmationPrompt } from "./formatter.ts";
+import { summarizeToolResult, formatAgentReply, formatConfirmationPrompt, describeToolAction } from "./formatter.ts";
 import { buildBrainContext } from "./brain/context-builder.ts";
 
 // Five rounds covers an observed lead -> conversation -> message lookup plus
@@ -161,7 +161,7 @@ export async function runAgentTurn(input: RunAgentTurnInput): Promise<RunAgentTu
           });
           confirmationPending = { code: confirmation.code, expiresAt: confirmation.expiresAt };
           finalText = formatConfirmationPrompt({
-            humanSummary: `Ready to run "${tool.schema.name}".`,
+            humanSummary: `Ready to ${describeToolAction(tool.schema.name)}.`,
             code: confirmation.code,
             ttlMinutes: CONFIRMATION_TTL_MINUTES,
           });

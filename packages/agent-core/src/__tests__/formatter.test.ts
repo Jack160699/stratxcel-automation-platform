@@ -1,6 +1,6 @@
 // Run with: node --experimental-strip-types packages/agent-core/src/__tests__/formatter.test.ts
 import assert from "node:assert/strict";
-import { summarizeToolResult, formatAgentReply, formatConfirmationPrompt, formatWhoAmI } from "../formatter.ts";
+import { summarizeToolResult, formatAgentReply, formatConfirmationPrompt, formatWhoAmI, describeToolAction } from "../formatter.ts";
 
 function run() {
   // No raw JSON dumps, no Markdown tables, arrays summarized as top-N + count.
@@ -18,6 +18,9 @@ function run() {
   const privateSummary = summarizeToolResult("list_leads", [{ id: "eb01696d-a902-4517-bad7-25272f31f00b", contact_phone: "919584735857", status: "NEW" }]);
   assert.ok(!privateSummary.includes("eb01696d") && !privateSummary.includes("919584735857"), "tool summaries must omit internal IDs and full phone numbers");
   assert.ok(!privateSummary.includes("list_leads") && privateSummary.includes("Leads"), "fallback summaries must use user-facing labels, not raw tool names");
+  const nestedMutation = summarizeToolResult("update_lead_status", { lead: { id: "eb01696d-a902-4517-bad7-25272f31f00b", tenant_id: "84044df2-e94b-423c-bf1f-123456789abc", status: "CONTACTED" } });
+  assert.ok(!nestedMutation.includes("eb01696d") && !nestedMutation.includes("84044df2"), "nested tool objects must never serialize internal identifiers");
+  assert.equal(describeToolAction("update_lead_status"), "update the lead status");
   const sanitized = formatAgentReply({ text: "Lead eb01696d-a902-4517-bad7-25272f31f00b called from 919584735857." });
   assert.ok(!sanitized.includes("eb01696d") && sanitized.includes("••••••••57"), "final replies must redact internal IDs and mask phone-like identifiers");
   const timestamp = formatAgentReply({ text: "Last interaction: 2026-08-09 01:41:09" });

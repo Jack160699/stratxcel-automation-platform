@@ -67,6 +67,23 @@ function humanizeLabel(value: string): string {
   return withoutVerb.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
+const TOOL_ACTION_LABELS: Record<string, string> = {
+  update_lead_status: "update the lead status",
+  assign_lead: "assign the lead",
+  set_conversation_automation_mode: "change the conversation automation mode",
+  create_follow_up: "schedule the follow-up",
+  schedule_appointment: "schedule the appointment",
+  create_mission: "create the mission",
+  create_handoff: "create the human handoff",
+  request_handoff: "request a human handoff",
+  remember_fact: "save this memory",
+  forget_fact: "forget this memory",
+};
+
+export function describeToolAction(toolName: string): string {
+  return TOOL_ACTION_LABELS[toolName] ?? toolName.replaceAll("_", " ");
+}
+
 function summarizeArray(label: string, arr: unknown[]): string {
   if (arr.length === 0) return `${label}: none found.`;
   const shown = arr.slice(0, MAX_LIST_ITEMS).map((item, i) => `${i + 1}. ${summarizeListItem(item)}`);
@@ -97,7 +114,8 @@ function summarizeScalar(value: unknown): string {
   if (value === null || value === undefined) return "—";
   if (typeof value === "string") return truncate(value, 80);
   if (typeof value === "number" || typeof value === "boolean") return String(value);
-  return truncate(JSON.stringify(value), 80);
+  if (Array.isArray(value)) return `${value.length} items`;
+  return "available";
 }
 
 export interface FormatAgentReplyInput {
