@@ -9,6 +9,7 @@ import {
   parseCommand,
   handleConfirm,
   handleCancel,
+  handleReset,
   type AgentPrincipal,
 } from "@stratxcel/agent-core";
 import { createAgentCoreProviderAdapter } from "./provider-adapter";
@@ -51,13 +52,19 @@ export async function sendCopilotMessage(principal: AgentPrincipal, userText: st
 
   const { supabase } = getTenantServiceContext();
 
-  // CONFIRM/CANCEL are deterministic, channel-independent commands (see
+  // RESET/CONFIRM/CANCEL are deterministic, channel-independent commands (see
   // packages/agent-core/src/control-handlers.ts) — runAgentTurn itself
   // never parses them (that's this call site's job, same as the WhatsApp
   // route), so they're handled here directly rather than going through the
   // LLM loop. Recorded into the session manually since handleConfirm/
   // handleCancel don't touch agent_messages themselves.
   const parsed = parseCommand(trimmed);
+  if (parsed.kind === "reset") {
+    const replyText = await handleReset(supabase, principal);
+    const session = await getOrCreateActiveSession(supabase, principal);
+    await recordAgentMessage(supabase, { sessionId: session.id, role: "assistant", content: replyText });
+    return { ok: true, replyText, status: "completed", confirmationRequired: false };
+  }
   if (parsed.kind === "confirm" || parsed.kind === "cancel") {
     const session = await getOrCreateActiveSession(supabase, principal);
     await recordAgentMessage(supabase, { sessionId: session.id, role: "user", content: trimmed });
