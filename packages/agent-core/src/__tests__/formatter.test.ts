@@ -15,6 +15,10 @@ function run() {
 
   const reply = formatAgentReply({ text: "Here you go.", toolSummaries: [summary] });
   assert.ok(reply.length <= 1400, "reply must be bounded in length");
+  const privateSummary = summarizeToolResult("list_leads", [{ id: "eb01696d-a902-4517-bad7-25272f31f00b", contact_phone: "919584735857", status: "NEW" }]);
+  assert.ok(!privateSummary.includes("eb01696d") && !privateSummary.includes("919584735857"), "tool summaries must omit internal IDs and full phone numbers");
+  const sanitized = formatAgentReply({ text: "Lead eb01696d-a902-4517-bad7-25272f31f00b called from 919584735857." });
+  assert.ok(!sanitized.includes("eb01696d") && sanitized.includes("••••••••57"), "final replies must redact internal IDs and mask phone-like identifiers");
 
   const confirmPrompt = formatConfirmationPrompt({ humanSummary: "Ready to mark as CONTACTED.", code: "482917", ttlMinutes: 10 });
   assert.ok(confirmPrompt.includes("CONFIRM 482917"));
