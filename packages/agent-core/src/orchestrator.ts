@@ -17,7 +17,10 @@ import { auditAgentRun, auditToolInvocation, auditConfirmationProposed, auditFai
 import { summarizeToolResult, formatAgentReply, formatConfirmationPrompt } from "./formatter.ts";
 import { buildBrainContext } from "./brain/context-builder.ts";
 
-const MAX_TOOL_ROUNDS = 4;
+// Five rounds covers an observed lead -> conversation -> message lookup plus
+// one final synthesis pass. Keep this bounded; the provider is not allowed to
+// loop indefinitely.
+const MAX_TOOL_ROUNDS = 5;
 const CONFIRMATION_TTL_MINUTES = 10;
 
 /** PHASE 22: deterministic, channel-agnostic failure text for a linked

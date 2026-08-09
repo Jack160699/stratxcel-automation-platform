@@ -52,6 +52,18 @@ async function run() {
   await forgetAgentFact(memoryClient as any, owner, { scope: "personal", key: "tone" });
   assert.ok(memoryTables.agent_memories.find((item) => item.id === "personal-memory")?.deleted_at, "forget must soft-delete only the selected scoped memory");
   assert.equal(memoryTables.agent_memories.find((item) => item.id === "agency-memory")?.deleted_at, null, "forget must preserve another scope with the same key");
+
+  const { client: deepClient } = createFakeSupabase();
+  let deepRound = 0;
+  const deepProvider: AgentLLMProvider = { isConfigured: () => true, async complete() {
+    deepRound += 1;
+    return deepRound <= 4
+      ? { text: "", toolCalls: [{ id: `deep-${deepRound}`, name: "test_one", arguments: { step: deepRound } }] }
+      : { text: "Final synthesis after four retrieval steps.", toolCalls: [] };
+  } };
+  const deepResult = await runAgentTurn({ supabase: deepClient as any, principal, provider: deepProvider, userText: "Draft using the retrieved context", extraTools: tools });
+  assert.equal(deepRound, 5, "the bounded loop must allow a synthesis pass after four sequential retrieval rounds");
+  assert.equal(deepResult.replyText, "Final synthesis after four retrieval steps.");
   console.log("brain-orchestrator.test.ts (@stratxcel/agent-core): ALL PASS");
 }
 run();

@@ -32,10 +32,11 @@ export function sanitizeAgentReplyText(text: string): string {
 /** Summarizes an arbitrary tool result object into a short bullet list.
  *  Arrays are shown as "top N items + total count", never dumped whole. */
 export function summarizeToolResult(toolName: string, result: unknown): string {
-  if (result === null || result === undefined) return `${toolName}: no result.`;
+  const toolLabel = humanizeLabel(toolName);
+  if (result === null || result === undefined) return `${toolLabel}: no result.`;
 
   if (Array.isArray(result)) {
-    return summarizeArray(toolName, result);
+    return summarizeArray(toolLabel, result);
   }
 
   if (typeof result === "object") {
@@ -44,16 +45,21 @@ export function summarizeToolResult(toolName: string, result: unknown): string {
     const arrayEntry = Object.entries(obj).find(([, v]) => Array.isArray(v));
     if (arrayEntry) {
       const [key, arr] = arrayEntry as [string, unknown[]];
-      return summarizeArray(`${toolName} (${key})`, arr);
+      return summarizeArray(humanizeLabel(key), arr);
     }
     const lines = Object.entries(obj)
       .filter(([key]) => !isPrivateToolField(key))
       .slice(0, 8)
-      .map(([k, v]) => `- ${k}: ${summarizeScalar(v)}`);
-    return lines.length ? lines.join("\n") : `${toolName}: done.`;
+      .map(([k, v]) => `- ${humanizeLabel(k)}: ${summarizeScalar(v)}`);
+    return lines.length ? lines.join("\n") : `${toolLabel}: done.`;
   }
 
-  return `${toolName}: ${summarizeScalar(result)}`;
+  return `${toolLabel}: ${summarizeScalar(result)}`;
+}
+
+function humanizeLabel(value: string): string {
+  const withoutVerb = value.replace(/^(?:list|get|find|show|fetch)_/, "");
+  return withoutVerb.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 function summarizeArray(label: string, arr: unknown[]): string {
