@@ -11,6 +11,8 @@ const MAX_REPLY_CHARS = 1400;
 const MAX_LIST_ITEMS = 5;
 const INTERNAL_ID_PATTERN = /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/gi;
 const PHONE_PATTERN = /\b(?:\+?\d[\d -]{8,}\d)\b/g;
+const LINK_CODE_PATTERN = /\bLINK(?:\s+ADMIN)?\s+[a-z0-9]{4,12}\b/gi;
+const ISO_DATE_HOUR_PATTERN = /^\d{4}-\d{2}-\d{2}(?:\s+\d{2})?$/;
 
 function truncate(text: string, max: number): string {
   if (text.length <= max) return text;
@@ -23,9 +25,12 @@ function truncate(text: string, max: number): string {
 export function sanitizeAgentReplyText(text: string): string {
   return text
     .replace(INTERNAL_ID_PATTERN, "[internal reference]")
+    .replace(LINK_CODE_PATTERN, "LINK [redacted]")
     .replace(PHONE_PATTERN, (value) => {
       const digits = value.replace(/\D/g, "");
-      return digits.length >= 10 ? `••••••••${digits.slice(-2)}` : value;
+      const normalized = value.trim();
+      if (ISO_DATE_HOUR_PATTERN.test(normalized)) return value;
+      return digits.length >= 10 && digits.length <= 15 ? `••••••••${digits.slice(-2)}` : value;
     });
 }
 
