@@ -25,6 +25,8 @@ assert.match(telemetry, /DEAD_LETTER/, "DLQ must be represented");
 assert.match(telemetry, /denied\|forbidden\|permission\|capability/i, "denied MCP calls must be represented");
 assert.match(telemetry, /killSwitches/, "kill switches must be represented");
 assert.doesNotMatch(system, /No Hermes instance reachable|MockHermesAdapter available for demos/, "stale mock-only Hermes copy must be removed");
+assert.match(system, /worker_heartbeats/, "System Health must derive Hermes state from the gateway heartbeat");
+assert.match(system, /global_hermes/, "System Health must honor the global Hermes kill switch");
 for (const forbidden of ["encrypted_secret_ref", "service_role", "authorization", "bearer", "api_key", "capabilities"]) {
   assert.doesNotMatch(route, new RegExp(forbidden, "i"), `route response must not expose ${forbidden}`);
 }
