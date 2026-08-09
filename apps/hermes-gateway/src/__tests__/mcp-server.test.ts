@@ -15,7 +15,7 @@ import http from "node:http";
 import { issueMissionToken } from "@stratxcel/hermes";
 
 process.env.HERMES_GATEWAY_SECRET = "test-only-mission-token-secret";
-process.env.NODE_ENV = "test"; // server.ts's own module-scope guard against calling .listen()/recordWorkerHeartbeat() (which needs a real Supabase client) on import
+Object.assign(process.env, { NODE_ENV: "test" }); // server.ts's own module-scope guard against calling .listen()/recordWorkerHeartbeat() (which needs a real Supabase client) on import
 
 const { authorizeMcpToolCall, mcpInputSchema } = await import("../mcp-server.ts");
 const { checkMcpTransportAuth } = await import("../server.ts");

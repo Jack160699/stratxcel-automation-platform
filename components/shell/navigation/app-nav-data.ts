@@ -36,7 +36,8 @@ export const APP_NAV_GROUPS_DATA: NavGroupData[] = [
   {
     label: "Growth",
     items: [
-      { key: "website", label: "Website & SEO", href: "/app/website" },
+      { key: "website", label: "Website", href: "/app/website" },
+      { key: "search", label: "Search & Discovery", href: "/app/search" },
       { key: "ads", label: "Ads", href: "/app/ads" },
       { key: "crm", label: "CRM", href: "/app/crm" },
     ],

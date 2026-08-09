@@ -12,9 +12,11 @@ export const metadata: Metadata = {
 };
 
 /**
- * The four customer-facing plans. app/app/onboarding/types.ts mirrors these
- * keys and names so the wizard's plan step and this page can never present
- * two different vocabularies.
+ * The customer-facing plans (one-time Audit plus the Notion v1 subscription
+ * catalog: Free, Starter, Growth, Business, Scale/Custom). Only
+ * Starter/Growth/Business are self-service checkout; Free and Scale are not.
+ * app/app/onboarding/types.ts mirrors these keys and names so the wizard's
+ * plan step and this page can never present two different vocabularies.
  */
 const tiers = [
   {
@@ -37,39 +39,55 @@ const tiers = [
     href: "/audit",
   },
   {
-    id: "launch",
-    name: "Launch",
+    id: "free",
+    name: "Free",
+    badge: "Explore",
+    price: "₹0",
+    period: "no card required",
+    pitch: "Explore the workspace and prepare your growth system.",
+    scope: [
+      "1 workspace, 1 user",
+      "AI drafts to explore Brand Brain",
+      "1 Search & Discovery task (preview only)",
+      "No published posts or campaigns yet",
+    ],
+    note: "Free is not a paid subscription — no card required.",
+    popular: false,
+    cta: "Start Free",
+    href: "/signup",
+  },
+  {
+    id: "starter",
+    name: "Starter",
     badge: "Essential Growth",
-    price: "₹9,499",
+    price: "₹4,999",
     period: "per month (GST included)",
-    pitch: "Growth basics for establishing businesses.",
+    pitch: "A complete entry system for one small or local business.",
     scope: [
       "Social media content creation & posting (12 posts/mo)",
       "1 Meta ad campaign workflow & ad creative",
-      "1 high-conversion ad landing page",
       "WhatsApp connection & inbox dashboard",
-      "Basic CRM lead capture & follow-up",
+      "Basic CRM lead capture & follow-up (up to 100 AI-handled leads)",
       "Monthly performance reporting",
     ],
     note: "Prices include GST. Ad spend & third-party software separate.",
     popular: false,
-    cta: "Start Launch Plan",
+    cta: "Start Starter Plan",
     href: "/signup",
   },
   {
     id: "growth",
     name: "Growth",
     badge: "Most Popular Fit",
-    price: "₹18,999",
+    price: "₹9,999",
     period: "per month (GST included)",
-    pitch: "Complete marketing, website, WhatsApp & CRM operating system.",
+    pitch: "The serious SMB plan for recurring execution and follow-up.",
     scope: [
-      "Everything in Launch + higher volume content (30 posts/mo)",
-      "2 Meta ad campaign workflows & ongoing optimization",
-      "Complete WhatsApp + CRM automated follow-up flows",
-      "1st Website included (controlled 5-page template scope)",
+      "Everything in Starter + higher volume content (25 posts/mo)",
+      "Complete WhatsApp + CRM automated follow-up flows (up to 500 AI-handled leads)",
+      "1st Website included (controlled template scope)",
       "Website hosting & maintenance included",
-      "SEO work & monthly growth reporting",
+      "Search & Discovery + monthly growth reporting",
     ],
     note: "Prices include GST. Domain registration & ad spend separate.",
     popular: true,
@@ -77,20 +95,38 @@ const tiers = [
     href: "/signup",
   },
   {
-    id: "custom",
-    name: "Custom Growth",
-    badge: "Scale & Enterprise",
-    price: "Starting ₹23,999",
+    id: "business",
+    name: "Business",
+    badge: "Advanced Execution",
+    price: "₹19,999",
     period: "per month (GST included)",
-    pitch: "Tailored combination of content, video, website, ads, and human assistance.",
+    pitch: "Advanced Search, CRM, publishing, ads support, and priority execution.",
+    scope: [
+      "Higher volume content (50 posts/mo) & 3 Meta ad campaign workflows",
+      "Advanced WhatsApp + CRM automation (up to 1,500 AI-handled leads)",
+      "Website hosting & maintenance included",
+      "Advanced Search & Discovery, priority execution & reporting",
+    ],
+    note: "Prices include GST. Domain registration & ad spend separate.",
+    popular: false,
+    cta: "Get Started with Business",
+    href: "/signup",
+  },
+  {
+    id: "scale",
+    name: "Scale / Custom",
+    badge: "Scale & Enterprise",
+    price: "Starting ₹34,999",
+    period: "per month (GST included)",
+    pitch: "Custom limits for multi-location, high-volume, or advanced execution.",
     scope: [
       "Tailored social post & premium video volume",
-      "Custom multi-page website & location management",
+      "Custom multi-location, multi-website management",
       "Multi-campaign Meta & Search ad management",
       "Advanced WhatsApp & custom CRM workflows",
       "Dedicated account owner & human assistance",
     ],
-    note: "Custom quoted to fit complex business needs.",
+    note: "Custom quoted to fit complex business needs. Not available through self-service checkout.",
     popular: false,
     cta: "Request Custom Quote",
     href: "/contact?intent=custom",
@@ -112,7 +148,7 @@ const faq = [
   },
   {
     q: "Can we upgrade or adjust our plan as we scale?",
-    a: "Yes! You can start with Launch and upgrade to Growth or Custom Growth at any time as your content volume and ad workflow needs expand.",
+    a: "Yes! You can start with Starter and upgrade to Growth or Business at any time as your content volume and ad workflow needs expand. Scale / Custom is quote-led for larger, multi-location needs.",
   },
 ];
 

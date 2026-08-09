@@ -7,23 +7,67 @@ export interface PlanEntitlementLimits {
   website_maintenance: number;
 }
 
-export const PLAN_LIMITS: Record<"launch" | "growth" | "custom_growth", PlanEntitlementLimits> = {
+/**
+ * Notion v1 catalog (free/starter/growth/business/scale), aligned with the
+ * production-applied migration 20260809010000_subscription_v1_catalog_alignment.sql,
+ * which patched the reconcile_and_fulfill_razorpay_payment_v4() SQL body in place —
+ * starter/growth/business are the only self-checkout-payable tiers; their four
+ * numbers here (social_posts, meta_ad_campaigns, whatsapp_contacts,
+ * website_maintenance) MUST stay byte-for-byte identical to that migration's
+ * v_limits_starter / v_limits_growth / v_limits_business arrays.
+ *
+ * `launch` and `custom_growth` are kept only as historical DB-compatibility
+ * identifiers (existing rows may still carry them) — their numbers are
+ * unchanged from before this alignment. They are not part of the current
+ * commercial offer and fail closed (`legacy_plan_not_payable`) for any NEW
+ * payment in the hardened SQL function; do not offer them in new checkout UI.
+ *
+ * `free` and `scale` have no self-checkout fulfilment path in the SQL RPC
+ * (`plan_not_self_checkout`) — free grants no paid automation, and scale's
+ * entitlements below are a display-only starting figure for a quote-led
+ * custom order, not an enforced self-checkout grant.
+ */
+export const PLAN_LIMITS: Record<"launch" | "custom_growth" | "free" | "starter" | "growth" | "business" | "scale", PlanEntitlementLimits> = {
   launch: {
     social_posts: 12,
     meta_ad_campaigns: 1,
     whatsapp_contacts: 500,
     website_maintenance: 0,
   },
-  growth: {
-    social_posts: 30,
-    meta_ad_campaigns: 2,
-    whatsapp_contacts: 2500,
-    website_maintenance: 1,
-  },
   custom_growth: {
     social_posts: 60,
     meta_ad_campaigns: 4,
     whatsapp_contacts: 10000,
+    website_maintenance: 1,
+  },
+  free: {
+    social_posts: 0,
+    meta_ad_campaigns: 0,
+    whatsapp_contacts: 0,
+    website_maintenance: 0,
+  },
+  starter: {
+    social_posts: 12,
+    meta_ad_campaigns: 1,
+    whatsapp_contacts: 100,
+    website_maintenance: 0,
+  },
+  growth: {
+    social_posts: 25,
+    meta_ad_campaigns: 1,
+    whatsapp_contacts: 500,
+    website_maintenance: 1,
+  },
+  business: {
+    social_posts: 50,
+    meta_ad_campaigns: 3,
+    whatsapp_contacts: 1500,
+    website_maintenance: 1,
+  },
+  scale: {
+    social_posts: 75,
+    meta_ad_campaigns: 5,
+    whatsapp_contacts: 2500,
     website_maintenance: 1,
   },
 };

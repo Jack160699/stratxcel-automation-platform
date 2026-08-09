@@ -37,7 +37,7 @@ export async function POST(request: Request) {
     const { tenantId, planTier, gstInvoice } = body as { tenantId?: string; planTier?: string; gstInvoice?: GstInvoiceDetails };
 
     if (!tenantId || !isPlanTier(planTier)) {
-      return Response.json({ error: "Invalid tenantId or planTier (launch, growth, custom_growth)" }, { status: 400 });
+      return Response.json({ error: "Invalid tenantId or planTier (starter, growth, business)" }, { status: 400 });
     }
 
     // Price and plan availability are resolved server-side only — never from client input.
@@ -46,7 +46,7 @@ export async function POST(request: Request) {
       return Response.json(
         {
           error:
-            "Custom Growth is a tailored plan and is not available through self-service checkout. Please request a quote and our team will confirm pricing with you directly.",
+            "This plan is not available through self-service checkout. Scale / Custom is a tailored plan — please request a quote and our team will confirm pricing with you directly.",
           contactRequired: true,
         },
         { status: 400 }

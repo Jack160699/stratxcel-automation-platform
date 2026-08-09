@@ -1,0 +1,4 @@
+import { requireTenantContext } from "@/lib/tenants/tenant-context";
+import { listSearchState } from "@stratxcel/search-discovery";
+export const runtime = "nodejs"; export const dynamic = "force-dynamic";
+export async function GET(request: Request) { const tenantId = new URL(request.url).searchParams.get("tenantId"); if (!tenantId) return Response.json({ error: "SEARCH_TENANT_REQUIRED" }, { status: 400 }); const ctx = await requireTenantContext(tenantId); if (!ctx.ok) return Response.json({ error: ctx.error }, { status: ctx.status }); try { return Response.json(await listSearchState(ctx.supabase, tenantId), { headers: { "Cache-Control": "no-store" } }); } catch (error) { const message = error instanceof Error ? error.message : "SEARCH_STATE_FAILED"; return Response.json({ error: message.startsWith("SEARCH_") ? message : "SEARCH_STATE_FAILED" }, { status: 500 }); } }
