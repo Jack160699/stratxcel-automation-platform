@@ -11,9 +11,11 @@ import {
   completeAgentRun,
   recordRunEvent,
   incrementToolCallCount,
+  loadSessionMessages,
 } from "./sessions/repository.ts";
 import { auditAgentRun, auditToolInvocation, auditConfirmationProposed, auditFailedAction } from "./audit.ts";
 import { summarizeToolResult, formatAgentReply, formatConfirmationPrompt } from "./formatter.ts";
+import { buildBrainContext } from "./brain/context-builder.ts";
 
 const MAX_TOOL_ROUNDS = 4;
 const CONFIRMATION_TTL_MINUTES = 10;
@@ -24,23 +26,6 @@ const CONFIRMATION_TTL_MINUTES = 10;
  *  handled entirely outside this module (see the worker router). */
 const AGENT_UNAVAILABLE_TEXT =
   "Stratxcel Agent is temporarily unavailable. Please try again shortly or use the dashboard.";
-
-function buildSystemPrompt(principal: AgentPrincipal): string {
-  if (principal.kind === "staff") {
-    return [
-      "You are the Stratxcel Operations Agent, assisting authorized Stratxcel staff.",
-      "You may work with clients, leads, conversations, missions, approvals, handoffs, operations, social, finance summaries, integrations, health, and audit evidence.",
-      "Use tools for every factual operational claim. Never claim an action succeeded without tool output.",
-      "Never expose secrets. Never bypass authorization. Never invent client data.",
-    ].join(" ");
-  }
-  return [
-    "You are the Stratxcel Client Agent, operating only inside this client's own workspace.",
-    "You may discuss the workspace, missions, approvals, artifacts, reports, brand, leads, conversations, and integrations.",
-    "You must never mention or access other tenants, internal agency operations, other clients, or staff-only audit information.",
-    "Use tools for every factual claim about this workspace. Never claim an action succeeded without tool output.",
-  ].join(" ");
-}
 
 export interface RunAgentTurnInput {
   supabase: ServiceClient;
@@ -87,6 +72,7 @@ export async function runAgentTurn(input: RunAgentTurnInput): Promise<RunAgentTu
   }
 
   const runId = runStart.run.id;
+  const priorHistory = await loadSessionMessages(supabase, session.id, 100);
   await recordAgentMessage(supabase, { sessionId: session.id, role: "user", content: input.userText });
 
   if (!provider.isConfigured()) {
@@ -102,8 +88,10 @@ export async function runAgentTurn(input: RunAgentTurnInput): Promise<RunAgentTu
   }
 
   const tools = resolveAgentTools(principal, { extraTools: input.extraTools });
+  const brain = await buildBrainContext({ supabase, principal, tools, history: priorHistory });
   const messages: AgentTurnMessage[] = [
-    { role: "system", content: buildSystemPrompt(principal) },
+    { role: "system", content: brain.systemPrompt },
+    ...brain.history,
     { role: "user", content: input.userText },
   ];
 

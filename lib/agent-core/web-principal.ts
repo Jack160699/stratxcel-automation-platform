@@ -1,6 +1,7 @@
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { requireTenantContext } from "@/lib/tenants/tenant-context";
 import { requirePlatformStaff } from "@/lib/platform-staff/auth";
+import { getTenantServiceContext } from "@/lib/tenants/tenant-context";
 import { buildStaffPrincipal, buildClientPrincipal, type AgentPrincipal } from "@stratxcel/agent-core";
 
 /**
@@ -12,7 +13,7 @@ import { buildStaffPrincipal, buildClientPrincipal, type AgentPrincipal } from "
  * requirePlatformStaff/requireTenantContext, which are app-side code.
  */
 
-export type WebPrincipalResult = { ok: true; principal: AgentPrincipal } | { ok: false; status: 401 | 403; error: string };
+export type WebPrincipalResult = { ok: true; principal: AgentPrincipal } | { ok: false; status: 401 | 403 | 503; error: string };
 
 /** Resolves the current admin session as a staff AgentPrincipal for the
  *  admin_web channel. Staff are never tenant-scoped (tenantId always null),
@@ -27,9 +28,16 @@ export async function resolveAdminWebPrincipal(): Promise<WebPrincipalResult> {
   const staffAuth = await requirePlatformStaff(user.id);
   if (!staffAuth.ok) return { ok: false, status: staffAuth.status as 401 | 403, error: staffAuth.error };
 
+  const { supabase: serviceDb } = getTenantServiceContext();
+  const { data: access, error: accessError } = await serviceDb
+    .from("platform_staff_agent_access")
+    .select("department, access_profile, permission_grants, permission_denials")
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (accessError) return { ok: false, status: 503, error: "Agent access metadata is temporarily unavailable" };
   return {
     ok: true,
-    principal: buildStaffPrincipal({ authUserId: user.id, tenantId: null, role: staffAuth.staff.role, channel: "admin_web" }),
+    principal: buildStaffPrincipal({ authUserId: user.id, tenantId: null, role: staffAuth.staff.role, channel: "admin_web", access }),
   };
 }
 

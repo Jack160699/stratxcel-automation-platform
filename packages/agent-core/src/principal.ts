@@ -30,6 +30,9 @@ export interface StaffAgentPrincipal {
   tenantId: string | null;
   /** Platform staff role, e.g. platform_owner | platform_admin | audit_reviewer | finance_reviewer. */
   role: string;
+  /** Descriptive business placement only; never used to grant authorization. */
+  department?: string | null;
+  accessProfile?: string;
   permissions: readonly string[];
 }
 

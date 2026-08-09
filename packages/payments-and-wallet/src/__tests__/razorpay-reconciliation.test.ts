@@ -93,7 +93,18 @@ async function testReconcilePaymentLinkUnitTests() {
   let walletBalance = 0;
 
   const mockDb = {
-    rpc: async (_fn: string, args: Record<string, unknown>) => {
+    rpc: async (fn: string, args: Record<string, unknown>) => {
+      if (fn === "reconcile_and_fulfill_razorpay_payment_v4") {
+        const link = dbLinks.get("link_rec_100");
+        if (link) { link.status = "paid"; dbLinks.set("link_rec_100", link); }
+        if (!ordersDb.has("ord_rec_100")) {
+          ordersDb.set("ord_rec_100", { id: "ord_rec_100", state: "CAPTURED" });
+          ledgerEntries.push({ id: "entry_rec_100", amount_cents: 1000 });
+          walletBalance += 1000;
+          return { data: { fulfilled: true, already_fulfilled: false, purpose: "wallet_topup" }, error: null };
+        }
+        return { data: { fulfilled: true, already_fulfilled: true, purpose: "wallet_topup" }, error: null };
+      }
       const amountCents = (args.p_amount_cents as number) || 1000;
       const existing = ledgerEntries.find(
         (e) => e.tenant_id === args.p_tenant_id && e.reference_type === args.p_reference_type && e.reference_id === args.p_reference_id
@@ -238,23 +249,6 @@ async function testReconcilePaymentLinkUnitTests() {
         return { insert: async () => ({ error: null }) };
       }
       return {};
-    },
-    rpc: async (fn: string) => {
-      if (fn === "reconcile_and_fulfill_razorpay_payment_v4") {
-        const link = dbLinks.get("link_rec_100");
-        if (link) {
-          link.status = "paid";
-          dbLinks.set("link_rec_100", link);
-        }
-        if (!ordersDb.has("ord_rec_100")) {
-          ordersDb.set("ord_rec_100", { id: "ord_rec_100", state: "CAPTURED" });
-          ledgerEntries.push({ id: "entry_rec_100", amount_cents: 1000 });
-          walletBalance += 1000;
-          return { data: { fulfilled: true, already_fulfilled: false, purpose: "wallet_topup" }, error: null };
-        }
-        return { data: { fulfilled: true, already_fulfilled: true, purpose: "wallet_topup" }, error: null };
-      }
-      return { data: null, error: null };
     },
   } as unknown as ServiceClient;
 

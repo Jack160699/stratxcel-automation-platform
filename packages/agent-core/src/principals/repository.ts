@@ -14,34 +14,67 @@ const STAFF_ROLE_PERMISSIONS: Record<string, readonly string[]> = {
     "agent:read:clients", "agent:read:leads", "agent:read:conversations", "agent:read:missions",
     "agent:read:approvals", "agent:read:handoffs", "agent:read:operations", "agent:read:health",
     "agent:read:integrations", "agent:read:audit", "agent:read:finance", "agent:read:social",
-    "agent:mutate:leads", "agent:mutate:missions", "agent:mutate:handoffs", "agent:mutate:conversations",
+    "agent:read:memory", "agent:mutate:memory", "agent:mutate:leads", "agent:mutate:missions", "agent:mutate:handoffs", "agent:mutate:conversations",
   ],
   platform_admin: [
     "agent:read:clients", "agent:read:leads", "agent:read:conversations", "agent:read:missions",
     "agent:read:approvals", "agent:read:handoffs", "agent:read:operations", "agent:read:health",
     "agent:read:integrations", "agent:read:social",
-    "agent:mutate:leads", "agent:mutate:missions", "agent:mutate:handoffs", "agent:mutate:conversations",
+    "agent:read:memory", "agent:mutate:memory", "agent:mutate:leads", "agent:mutate:missions", "agent:mutate:handoffs", "agent:mutate:conversations",
   ],
-  audit_reviewer: ["agent:read:audit", "agent:read:clients", "agent:read:leads"],
-  finance_reviewer: ["agent:read:finance", "agent:read:clients"],
+  audit_reviewer: ["agent:read:audit", "agent:read:clients", "agent:read:leads", "agent:read:memory", "agent:mutate:memory"],
+  finance_reviewer: ["agent:read:finance", "agent:read:clients", "agent:read:memory", "agent:mutate:memory"],
 };
+
+const MEMORY_PERMISSIONS = ["agent:read:memory", "agent:mutate:memory"] as const;
+export const STAFF_ACCESS_PROFILE_PERMISSIONS: Record<string, readonly string[]> = {
+  role_default: [],
+  full_owner: STAFF_ROLE_PERMISSIONS.platform_owner,
+  administrator: STAFF_ROLE_PERMISSIONS.platform_admin,
+  sales_crm: ["agent:read:clients", "agent:read:leads", "agent:read:conversations", "agent:mutate:leads", "agent:mutate:conversations", ...MEMORY_PERMISSIONS],
+  marketing_social: ["agent:read:clients", "agent:read:social", "agent:read:integrations", ...MEMORY_PERMISSIONS],
+  operations: ["agent:read:clients", "agent:read:missions", "agent:read:approvals", "agent:read:handoffs", "agent:read:operations", "agent:mutate:missions", "agent:mutate:handoffs", ...MEMORY_PERMISSIONS],
+  finance: ["agent:read:clients", "agent:read:finance", ...MEMORY_PERMISSIONS],
+  audit_read_only: ["agent:read:clients", "agent:read:audit", "agent:read:memory"],
+  custom: [],
+};
+
+export interface StaffAgentAccessRow {
+  department: string | null;
+  access_profile: string;
+  permission_grants: string[];
+  permission_denials: string[];
+}
+
+/** Effective access is always bounded by the platform role ceiling. A profile
+ * or custom grant can narrow a role, but can never mint authority the role lacks.
+ * Department is deliberately absent from this calculation. */
+export function resolveEffectiveStaffPermissions(role: string, access?: Partial<StaffAgentAccessRow> | null): readonly string[] {
+  const ceiling = new Set(STAFF_ROLE_PERMISSIONS[role] ?? []);
+  if (!access || !access.access_profile || access.access_profile === "role_default") return [...ceiling];
+  const requested = access.access_profile === "custom"
+    ? (access.permission_grants ?? [])
+    : (STAFF_ACCESS_PROFILE_PERMISSIONS[access.access_profile] ?? []);
+  const denied = new Set(access.permission_denials ?? []);
+  return requested.filter((permission) => ceiling.has(permission) && !denied.has(permission));
+}
 
 const CLIENT_ROLE_PERMISSIONS: Record<string, readonly string[]> = {
   owner: [
     "agent:read:workspace", "agent:read:missions", "agent:read:approvals", "agent:read:artifacts",
     "agent:read:reports", "agent:read:brand", "agent:read:leads", "agent:read:conversations",
-    "agent:read:integrations", "agent:mutate:missions", "agent:mutate:handoffs",
+    "agent:read:integrations", "agent:read:memory", "agent:mutate:memory", "agent:mutate:missions", "agent:mutate:handoffs",
   ],
   admin: [
     "agent:read:workspace", "agent:read:missions", "agent:read:approvals", "agent:read:artifacts",
     "agent:read:reports", "agent:read:brand", "agent:read:leads", "agent:read:conversations",
-    "agent:read:integrations", "agent:mutate:missions", "agent:mutate:handoffs",
+    "agent:read:integrations", "agent:read:memory", "agent:mutate:memory", "agent:mutate:missions", "agent:mutate:handoffs",
   ],
   operator: [
     "agent:read:workspace", "agent:read:missions", "agent:read:leads", "agent:read:conversations",
-    "agent:mutate:handoffs",
+    "agent:read:memory", "agent:mutate:memory", "agent:mutate:handoffs",
   ],
-  viewer: ["agent:read:workspace", "agent:read:missions", "agent:read:leads"],
+  viewer: ["agent:read:workspace", "agent:read:missions", "agent:read:leads", "agent:read:memory"],
 };
 
 /**
@@ -58,14 +91,16 @@ export function resolveClientPermissions(role: string): readonly string[] {
   return CLIENT_ROLE_PERMISSIONS[role] ?? [];
 }
 
-export function buildStaffPrincipal(input: { authUserId: string; tenantId: string | null; role: string; channel: AgentChannel }): StaffAgentPrincipal {
+export function buildStaffPrincipal(input: { authUserId: string; tenantId: string | null; role: string; channel: AgentChannel; access?: Partial<StaffAgentAccessRow> | null }): StaffAgentPrincipal {
   return {
     kind: "staff",
     channel: input.channel,
     authUserId: input.authUserId,
     tenantId: input.tenantId,
     role: input.role,
-    permissions: resolveStaffPermissions(input.role),
+    department: input.access?.department ?? null,
+    accessProfile: input.access?.access_profile ?? "role_default",
+    permissions: resolveEffectiveStaffPermissions(input.role, input.access),
   };
 }
 
@@ -122,9 +157,16 @@ export async function resolveWhatsAppPrincipal(
     if (staffErr) throw staffErr;
     if (!staff || !staff.is_active) return { status: "revoked" };
 
+    const { data: access, error: accessErr } = await supabase
+      .from("platform_staff_agent_access")
+      .select("department, access_profile, permission_grants, permission_denials")
+      .eq("user_id", row.auth_user_id)
+      .maybeSingle<StaffAgentAccessRow>();
+    if (accessErr) throw accessErr;
+
     return {
       status: "resolved",
-      principal: buildStaffPrincipal({ authUserId: row.auth_user_id, tenantId: row.tenant_id, role: staff.role, channel }),
+      principal: buildStaffPrincipal({ authUserId: row.auth_user_id, tenantId: row.tenant_id, role: staff.role, channel, access }),
     };
   }
 
