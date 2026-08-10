@@ -23,6 +23,7 @@ export const SOCIAL_NAV: SocialNavItem[] = [
   { href: "/admin/social/inbox", label: "Inbox", icon: "inbox" },
   { href: "/admin/social/analytics", label: "Analytics", icon: "analytics" },
   { href: "/admin/social/automations", label: "Automations", icon: "automations" },
+  { href: "/admin/social/packages", label: "Packages", icon: "automations" },
   { href: "/admin/social/brand", label: "Brand Brain", icon: "brand" },
   { href: "/admin/social/integrations", label: "Integrations", icon: "integrations" },
   { href: "/admin/social/system", label: "System", icon: "system" },
