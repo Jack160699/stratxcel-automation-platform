@@ -38,8 +38,8 @@ function run() {
 
   const combinedSql = files.map((f) => fs.readFileSync(path.join(migrationsDir, f), "utf8")).join("\n");
 
-  const tableNames = [...combinedSql.matchAll(/create table if not exists (\w+)/g)].map((m) => m[1]);
-  assert.equal(tableNames.length, 20, "the brief specifies 20 owner_* entities");
+  const tableNames = [...combinedSql.matchAll(/create table if not exists (owner_\w+)/g)].map((m) => m[1]);
+  assert.equal(tableNames.length, 24, "existing Owner Brain entities plus four additive provider-level chat entities");
 
   const failures: string[] = [];
 
@@ -71,7 +71,7 @@ function run() {
     if (!hasOwnerAdminPolicy) failures.push(`${table}: no owner_id + stratxcel_admins-scoped policy found`);
 
     // Never store a raw OAuth token/secret in a plain column — only an opaque vault ref.
-    if (table === "owner_source_connections" || table === "owner_desktop_devices") {
+    if (table === "owner_source_connections" || table === "owner_desktop_devices" || table === "owner_chat_connections") {
       assert.ok(!/refresh_token|access_token|plaintext/.test(combinedSql.split(table)[1]?.split(";")[0] ?? ""), `${table} must never have a raw-token column`);
     }
   }

@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import { createDevEncryptedVault } from "@stratxcel/byok";
 import { getServiceContext, type OwnerContext } from "../db-context";
 import { hashPairingCode } from "./pairing-hash";
+import { ensureSourceRows, reconcileDesktopSource } from "./sources";
 
 export { hashPairingCode };
 
@@ -36,6 +37,9 @@ export async function completeDevicePairing(input: { deviceId: string; pairingCo
     .eq("id", input.deviceId);
   if (updateError) throw new Error(`completeDevicePairing update failed: ${updateError.message}`);
 
+  await ensureSourceRows({ ownerId: device.owner_id as string, supabase: service });
+  await reconcileDesktopSource(device.owner_id as string);
+
   return { ok: true, bearerToken };
 }
 
@@ -56,6 +60,8 @@ export async function authenticateDevice(bearerToken: string): Promise<{ deviceI
     const b = Buffer.from(bearerToken);
     if (a.length === b.length && crypto.timingSafeEqual(a, b)) {
       await service.from("owner_desktop_devices").update({ last_seen_at: new Date().toISOString() }).eq("id", device.id);
+      await ensureSourceRows({ ownerId: device.owner_id as string, supabase: service });
+      await reconcileDesktopSource(device.owner_id as string);
       return { deviceId: device.id as string, ownerId: device.owner_id as string };
     }
   }
@@ -92,4 +98,5 @@ export async function revokeDevice(ctx: OwnerContext, deviceId: string): Promise
     .eq("id", deviceId)
     .eq("owner_id", ctx.ownerId);
   if (error) throw new Error(`revokeDevice failed: ${error.message}`);
+  await reconcileDesktopSource(ctx.ownerId);
 }
