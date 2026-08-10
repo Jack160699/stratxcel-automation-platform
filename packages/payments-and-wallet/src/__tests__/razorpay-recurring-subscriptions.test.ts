@@ -119,6 +119,7 @@ function testProviderManagedHelper() {
 
 async function testSubscriptionChargedRequiresPlanEvidence() {
   const rpcCalls: string[] = [];
+  let lastArgs: Record<string, unknown> | null = null;
   const issues: unknown[] = [];
   const mockDb = {
     from: (table: string) => {
@@ -151,6 +152,7 @@ async function testSubscriptionChargedRequiresPlanEvidence() {
     },
     rpc: async (name: string, args: Record<string, unknown>) => {
       rpcCalls.push(name);
+      lastArgs = args;
       assert.equal(args.p_mode, "test");
       assert.equal(args.p_provider_plan_id, "plan_test_starter");
       return {
@@ -177,9 +179,9 @@ async function testSubscriptionChargedRequiresPlanEvidence() {
   assert.equal(missingPlan.handled, false);
   assert.equal(rpcCalls.length, 0);
 
-  const ok = await processRazorpayWebhookEvent(mockDb as any, {
+  const missingPeriod = await processRazorpayWebhookEvent(mockDb as any, {
     eventType: "subscription.charged",
-    providerEventId: "evt_ok",
+    providerEventId: "evt_missing_period",
     payload: {
       event: "subscription.charged",
       payload: {
@@ -195,19 +197,172 @@ async function testSubscriptionChargedRequiresPlanEvidence() {
       },
     },
   });
+  assert.equal(missingPeriod.handled, false);
+  assert.equal(missingPeriod.actionTaken, "subscription_charge_failed_missing_provider_billing_period");
+  assert.equal(rpcCalls.length, 0);
+
+  const periodStart = 1890864000;
+  const periodEnd = 1893456000;
+  const chargeAt = 1893456000;
+  const ok = await processRazorpayWebhookEvent(mockDb as any, {
+    eventType: "subscription.charged",
+    providerEventId: "evt_ok",
+    payload: {
+      event: "subscription.charged",
+      payload: {
+        subscription: {
+          entity: {
+            id: "sub_rzp_1",
+            plan_id: "plan_test_starter",
+            status: "active",
+            current_start: periodStart,
+            current_end: periodEnd,
+            charge_at: chargeAt,
+            notes: { tenant_id: "tenant-1", subscription_id: "sub-local-1" },
+          },
+        },
+        payment: { entity: { id: "pay_1", amount: 499900, currency: "INR", status: "captured", order_id: "order_1" } },
+      },
+    },
+  });
   assert.equal(ok.handled, true);
   assert.deepEqual(rpcCalls, ["reconcile_and_fulfill_razorpay_subscription_charge"]);
   assert.equal(rpcCalls.includes("reconcile_and_fulfill_razorpay_payment_v4"), false);
+  assert.equal(lastArgs?.p_current_period_start, new Date(periodStart * 1000).toISOString());
+  assert.equal(lastArgs?.p_current_period_end, new Date(periodEnd * 1000).toISOString());
+  assert.equal(lastArgs?.p_next_charge_at, new Date(chargeAt * 1000).toISOString());
 }
 
-async function testSubscriptionUpdatedNoEntitlements() {
+async function testAuthoritativeBillingPeriodInRpcContract() {
+  const migration = read("supabase", "migrations", "20260811140000_razorpay_recurring_period_and_sync.sql");
+  assert.ok(/p_current_period_start/.test(migration));
+  assert.ok(/p_current_period_end/.test(migration));
+  assert.ok(/missing_provider_billing_period/.test(migration));
+  assert.ok(/invalid_provider_billing_period/.test(migration));
+  assert.equal(/now\(\) \+ interval '30 days'/.test(migration), false, "must not invent a 30-day period");
+  assert.ok(/v_next_charge := coalesce\(p_next_charge_at, p_current_period_end\)/.test(migration));
+  assert.ok(/p_cancel_at_cycle_end/.test(migration));
+
+  const webhook = read("packages", "payments-and-wallet", "src", "razorpay", "webhook-events.ts");
+  assert.ok(/p_current_period_start:\s*currentPeriodStart/.test(webhook));
+  assert.ok(/missing_provider_billing_period/.test(webhook));
+  assert.equal(/now\(\) \+ interval '30 days'/.test(webhook), false);
+}
+
+function testCancelAndPlanChangeFailClosedOrdering() {
+  const cancel = readCode("app", "api", "platform", "subscriptions", "[id]", "cancel", "route.ts");
+  assert.ok(/cancelRazorpaySubscriptionAtPeriodEnd/.test(cancel));
+  assert.ok(/provider_cancel_failed/.test(cancel));
+  assert.ok(/status:\s*502/.test(cancel));
+  assert.ok(/subscription_not_cancellable_in_current_state/.test(cancel), "must pre-validate before provider mutation");
+  const cancelProviderIdx = cancel.indexOf("cancelRazorpaySubscriptionAtPeriodEnd");
+  const cancelLocalIdx = cancel.indexOf("set_subscription_cancellation");
+  assert.ok(cancelProviderIdx > 0 && cancelLocalIdx > cancelProviderIdx, "provider cancel must run before local schedule for provider-managed");
+  assert.equal(/providerSyncWarning/.test(cancel), false);
+  assert.ok(/reconciliation_required/.test(cancel));
+  assert.ok(/provider_cancel_succeeded_local_persist_failed/.test(cancel));
+  assert.ok(/direct_idempotent|cancel_at_period_end:\s*true/.test(cancel));
+
+  const change = readCode("app", "api", "platform", "subscriptions", "[id]", "change-plan", "route.ts");
+  assert.ok(/updateRazorpaySubscriptionPlan/.test(change));
+  assert.ok(/provider_plan_update_failed/.test(change));
+  assert.ok(/status:\s*502/.test(change));
+  assert.ok(/subscription_not_active|already_on_target_plan/.test(change), "must pre-validate before provider mutation");
+  const changeProviderIdx = change.indexOf("updateRazorpaySubscriptionPlan");
+  const changeLocalIdx = change.indexOf("schedule_subscription_plan_change");
+  assert.ok(changeProviderIdx > 0 && changeLocalIdx > changeProviderIdx, "provider plan update must run before local pending_plan_tier");
+  assert.equal(/providerSyncWarning/.test(change), false);
+  assert.ok(/reconciliation_required/.test(change));
+  assert.ok(/provider_plan_change_succeeded_local_persist_failed/.test(change));
+}
+
+async function testWebhookConvergesCancelAndPlanChange() {
   let args: Record<string, unknown> | null = null;
   const mockDb = {
+    from: (table: string) => {
+      if (table === "subscriptions") {
+        return {
+          select: () => ({
+            eq: () => ({
+              eq: () => ({
+                maybeSingle: async () => ({
+                  data: {
+                    plan_tier: "starter",
+                    pending_plan_tier: null,
+                    fulfilment_status: "reconciliation_required",
+                  },
+                  error: null,
+                }),
+              }),
+            }),
+          }),
+        };
+      }
+      return { insert: async () => ({ error: null }) };
+    },
     rpc: async (_name: string, a: Record<string, unknown>) => {
       args = a;
       return { data: { success: true, entitlements_changed: false }, error: null };
     },
   };
+
+  const cancelled = await processRazorpayWebhookEvent(mockDb as any, {
+    eventType: "subscription.cancelled",
+    providerEventId: "evt_cancel_converge",
+    payload: {
+      event: "subscription.cancelled",
+      payload: { subscription: { entity: { id: "sub_rzp_1", status: "cancelled", cancel_at_cycle_end: true } } },
+    },
+  });
+  assert.equal(cancelled.handled, true);
+  assert.equal(args?.p_cancel_at_cycle_end, true);
+
+  process.env.RAZORPAY_SUBSCRIPTION_PLAN_GROWTH_ID = "plan_test_growth";
+  const updated = await processRazorpayWebhookEvent(mockDb as any, {
+    eventType: "subscription.updated",
+    providerEventId: "evt_plan_converge",
+    payload: {
+      event: "subscription.updated",
+      payload: {
+        subscription: {
+          entity: {
+            id: "sub_rzp_1",
+            status: "active",
+            plan_id: "plan_test_growth",
+            cancel_at_cycle_end: false,
+            current_start: 1890864000,
+            current_end: 1893456000,
+          },
+        },
+      },
+    },
+  });
+  assert.equal(updated.handled, true);
+  assert.equal(args?.p_pending_plan_tier, "growth");
+  assert.equal(args?.p_cancel_at_cycle_end, false);
+}
+
+async function testSubscriptionUpdatedNoEntitlements() {
+  let args: Record<string, unknown> | null = null;
+  const mockDb = {
+    from: () => ({
+      select: () => ({
+        eq: () => ({
+          eq: () => ({
+            maybeSingle: async () => ({
+              data: { plan_tier: "growth", pending_plan_tier: null, fulfilment_status: "fulfilled" },
+              error: null,
+            }),
+          }),
+        }),
+      }),
+    }),
+    rpc: async (_name: string, a: Record<string, unknown>) => {
+      args = a;
+      return { data: { success: true, entitlements_changed: false }, error: null };
+    },
+  };
+  process.env.RAZORPAY_SUBSCRIPTION_PLAN_GROWTH_ID = "plan_test_growth";
   const result = await processRazorpayWebhookEvent(mockDb as any, {
     eventType: "subscription.updated",
     providerEventId: "evt_updated",
@@ -234,26 +389,6 @@ async function testSubscriptionUpdatedNoEntitlements() {
   assert.ok(args?.p_next_charge_at);
 }
 
-function testCancelAndPlanChangeFailClosedOrdering() {
-  const cancel = readCode("app", "api", "platform", "subscriptions", "[id]", "cancel", "route.ts");
-  assert.ok(/cancelRazorpaySubscriptionAtPeriodEnd/.test(cancel));
-  assert.ok(/provider_cancel_failed/.test(cancel));
-  assert.ok(/status:\s*502/.test(cancel));
-  const cancelProviderIdx = cancel.indexOf("cancelRazorpaySubscriptionAtPeriodEnd");
-  const cancelLocalIdx = cancel.indexOf("set_subscription_cancellation");
-  assert.ok(cancelProviderIdx > 0 && cancelLocalIdx > cancelProviderIdx, "provider cancel must run before local schedule for provider-managed");
-  assert.equal(/providerSyncWarning/.test(cancel), false);
-
-  const change = readCode("app", "api", "platform", "subscriptions", "[id]", "change-plan", "route.ts");
-  assert.ok(/updateRazorpaySubscriptionPlan/.test(change));
-  assert.ok(/provider_plan_update_failed/.test(change));
-  assert.ok(/status:\s*502/.test(change));
-  const changeProviderIdx = change.indexOf("updateRazorpaySubscriptionPlan");
-  const changeLocalIdx = change.indexOf("schedule_subscription_plan_change");
-  assert.ok(changeProviderIdx > 0 && changeLocalIdx > changeProviderIdx, "provider plan update must run before local pending_plan_tier");
-  assert.equal(/providerSyncWarning/.test(change), false);
-}
-
 function testCheckoutAuditCreditAndEnv() {
   const checkout = readCode("app", "api", "platform", "subscriptions", "route.ts");
   assert.ok(/resolveRecurringAuditCreditHandling/.test(checkout));
@@ -272,6 +407,10 @@ function testMigrationSafety() {
   assert.ok(/subscription\.updated/.test(migration));
   assert.ok(/'test'/.test(migration));
   assert.equal(/'live',\s*\n\s*'razorpay_subscription'/.test(migration) || /subscription_payment', 'live'/.test(migration), false);
+
+  const periodMigration = read("supabase", "migrations", "20260811140000_razorpay_recurring_period_and_sync.sql");
+  assert.equal(/reconcile_and_fulfill_razorpay_payment_v4/.test(periodMigration) && /create or replace function public\.reconcile_and_fulfill_razorpay_payment_v4/.test(periodMigration), false);
+  assert.ok(/missing_provider_billing_period/.test(periodMigration));
 }
 
 async function run() {
@@ -280,12 +419,15 @@ async function run() {
   testRecurringGateFailClosed();
   testProviderManagedHelper();
   await testSubscriptionChargedRequiresPlanEvidence();
+  await testAuthoritativeBillingPeriodInRpcContract();
   await testSubscriptionUpdatedNoEntitlements();
   testCancelAndPlanChangeFailClosedOrdering();
+  await testWebhookConvergesCancelAndPlanChange();
   testCheckoutAuditCreditAndEnv();
   testMigrationSafety();
   console.log("razorpay-recurring-subscriptions.test.ts: ALL PASS");
 }
+
 
 run().catch((err) => {
   console.error(err);

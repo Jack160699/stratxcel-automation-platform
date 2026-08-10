@@ -542,6 +542,32 @@ async function processSubscriptionChargedEvent(
   const integrationMode = getIntegrationMode("RAZORPAY_INTEGRATION_MODE");
   const paymentMode = integrationMode === "live" ? "live" : "test";
 
+  let currentPeriodStart: string | null = null;
+  let currentPeriodEnd: string | null = null;
+  let nextChargeAt: string | null = null;
+  if (typeof subEntity?.current_start === "number" && Number.isFinite(subEntity.current_start)) {
+    currentPeriodStart = new Date(subEntity.current_start * 1000).toISOString();
+  }
+  if (typeof subEntity?.current_end === "number" && Number.isFinite(subEntity.current_end)) {
+    currentPeriodEnd = new Date(subEntity.current_end * 1000).toISOString();
+  }
+  if (typeof subEntity?.charge_at === "number" && Number.isFinite(subEntity.charge_at)) {
+    nextChargeAt = new Date(subEntity.charge_at * 1000).toISOString();
+  }
+
+  if (!currentPeriodStart || !currentPeriodEnd) {
+    await writeReconciliationIssue(supabase, {
+      providerEventId: headerProviderEventId,
+      paymentId: providerPaymentId,
+      tenantId: localSub.tenant_id,
+      failureReason: "missing_provider_billing_period",
+      purpose: "subscription_payment",
+      receivedAmountCents: amountCents,
+      receivedCurrency: currency,
+    });
+    return { eventType, handled: false, actionTaken: "subscription_charge_failed_missing_provider_billing_period" };
+  }
+
   const { data: rpcData, error: rpcErr } = await supabase.rpc("reconcile_and_fulfill_razorpay_subscription_charge", {
     p_provider_event_id: headerProviderEventId,
     p_provider_payment_id: providerPaymentId,
@@ -556,6 +582,9 @@ async function processSubscriptionChargedEvent(
     p_provider_plan_id: providerPlanId,
     p_notes_tenant_id: notesTenantId,
     p_notes_subscription_id: notesSubscriptionId,
+    p_current_period_start: currentPeriodStart,
+    p_current_period_end: currentPeriodEnd,
+    p_next_charge_at: nextChargeAt,
   });
 
   if (rpcErr) {
@@ -626,6 +655,38 @@ async function processSubscriptionLifecycleEvent(
       ? event.providerEventId.trim()
       : null;
 
+  let cancelAtCycleEnd: boolean | null = null;
+  if (typeof subEntity?.cancel_at_cycle_end === "boolean") {
+    cancelAtCycleEnd = subEntity.cancel_at_cycle_end;
+  } else if (eventType === "subscription.cancelled" || eventType === "subscription.completed") {
+    cancelAtCycleEnd = true;
+  }
+
+  // Converge scheduled plan changes after provider-success/local-failure:
+  // only set pending when provider plan maps to a different tier than local.
+  let pendingForSync: string | null = null;
+  if (eventType === "subscription.updated" || eventType === "subscription.activated") {
+    if (notes && typeof notes.pending_plan_tier === "string") {
+      pendingForSync = notes.pending_plan_tier;
+    } else if (pendingPlanTier) {
+      const { data: localSub } = await supabase
+        .from("subscriptions")
+        .select("plan_tier, pending_plan_tier, fulfilment_status")
+        .eq("billing_provider", "razorpay_subscription")
+        .eq("provider_subscription_id", providerSubscriptionId)
+        .maybeSingle();
+      if (
+        localSub &&
+        pendingPlanTier !== localSub.plan_tier &&
+        (localSub.fulfilment_status === "reconciliation_required" || !localSub.pending_plan_tier)
+      ) {
+        pendingForSync = pendingPlanTier;
+      } else if (localSub?.pending_plan_tier) {
+        pendingForSync = localSub.pending_plan_tier;
+      }
+    }
+  }
+
   const { data: rpcData, error: rpcErr } = await supabase.rpc("apply_razorpay_subscription_lifecycle_event", {
     p_provider_subscription_id: providerSubscriptionId,
     p_provider_status: providerStatus,
@@ -635,8 +696,9 @@ async function processSubscriptionLifecycleEvent(
     p_provider_plan_id: providerPlanId,
     p_current_period_start: currentPeriodStart,
     p_current_period_end: currentPeriodEnd,
-    p_pending_plan_tier: eventType === "subscription.updated" ? pendingPlanTier : null,
+    p_pending_plan_tier: pendingForSync,
     p_event_type: eventType,
+    p_cancel_at_cycle_end: cancelAtCycleEnd,
   });
 
   if (rpcErr) {

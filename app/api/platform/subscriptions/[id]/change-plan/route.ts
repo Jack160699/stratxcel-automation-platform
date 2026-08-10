@@ -11,9 +11,42 @@ import { requirePermission, PermissionDeniedError } from "@/lib/rbac/policy";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+async function markPlanChangeReconciliationRequired(
+  serviceDb: ReturnType<typeof getTenantServiceContext>["supabase"],
+  input: {
+    subscriptionId: string;
+    tenantId: string;
+    providerSubscriptionId: string;
+    providerPlanId: string;
+    providerStatus: string;
+    targetPlanTier: string;
+    reason: string;
+  }
+) {
+  await serviceDb.from("payment_reconciliation_issues").insert({
+    tenant_id: input.tenantId,
+    purpose: "subscription_payment",
+    failure_reason: `provider_plan_change_local_persist_failed:${input.reason}`,
+    resolution_status: "open",
+    order_id: input.providerSubscriptionId,
+  });
+  await serviceDb
+    .from("subscriptions")
+    .update({
+      fulfilment_status: "reconciliation_required",
+      provider_status: input.providerStatus,
+      provider_plan_id: input.providerPlanId,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", input.subscriptionId)
+    .eq("tenant_id", input.tenantId);
+}
+
 /**
  * Schedules a Starter/Growth/Business plan change, effective at next renewal.
- * Provider-managed: Razorpay plan update must succeed before local pending_plan_tier is set.
+ * Provider-managed: validate locally first, mutate provider, then persist locally with
+ * idempotent fallback + explicit reconciliation_required if persistence still fails.
+ * subscription.updated can converge pending_plan_tier from provider plan evidence.
  */
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -54,6 +87,20 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     isProviderManagedSubscription(sub) && isPaymentFeatureEnabled("PAYMENTS_RECURRING_SUBSCRIPTIONS_ENABLED");
 
   if (providerManaged) {
+    // Pre-validate without mutation — mirrors schedule_subscription_plan_change guards.
+    if (sub.status !== "active") {
+      return Response.json(
+        { success: false, error: "subscription_not_active", status: sub.status },
+        { status: 400, headers: { "Cache-Control": "no-store" } }
+      );
+    }
+    if (sub.plan_tier === targetPlanTier) {
+      return Response.json(
+        { success: false, error: "already_on_target_plan" },
+        { status: 400, headers: { "Cache-Control": "no-store" } }
+      );
+    }
+
     let providerPlanId: string;
     let providerStatus: string;
     try {
@@ -78,34 +125,66 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       p_target_plan_tier: targetPlanTier,
     });
 
-    if (error) {
+    if (!error && (data as { success?: boolean })?.success === true) {
+      await serviceDb
+        .from("subscriptions")
+        .update({
+          provider_plan_id: providerPlanId,
+          provider_status: providerStatus,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", id);
+      return Response.json({ ...(data as object), providerPlanId, providerStatus }, { headers: { "Cache-Control": "no-store" } });
+    }
+
+    // Idempotent direct persistence after provider success.
+    const { error: directErr } = await serviceDb
+      .from("subscriptions")
+      .update({
+        pending_plan_tier: targetPlanTier,
+        plan_change_requested_at: new Date().toISOString(),
+        provider_plan_id: providerPlanId,
+        provider_status: providerStatus,
+        fulfilment_status: sub.fulfilment_status === "reconciliation_required" ? "fulfilled" : sub.fulfilment_status,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", id)
+      .eq("tenant_id", tenantId);
+
+    if (!directErr) {
       return Response.json(
         {
-          success: false,
-          error: `Provider plan change succeeded but local schedule failed: ${error.message}`,
+          success: true,
+          subscription_id: id,
+          pending_plan_tier: targetPlanTier,
           providerPlanId,
           providerStatus,
+          persistence: "direct_idempotent",
         },
-        { status: 500, headers: { "Cache-Control": "no-store" } }
+        { headers: { "Cache-Control": "no-store" } }
       );
     }
 
-    const result = data as { success: boolean; reason?: string };
-    if (!result.success) {
-      const status = result.reason === "subscription_not_found" ? 404 : result.reason === "tenant_mismatch" ? 403 : 400;
-      return Response.json({ error: result.reason, success: false }, { status });
-    }
+    await markPlanChangeReconciliationRequired(serviceDb, {
+      subscriptionId: id,
+      tenantId,
+      providerSubscriptionId: sub.provider_subscription_id,
+      providerPlanId,
+      providerStatus,
+      targetPlanTier,
+      reason: error?.message ?? directErr.message ?? (data as { reason?: string })?.reason ?? "local_persist_failed",
+    });
 
-    await serviceDb
-      .from("subscriptions")
-      .update({
-        provider_plan_id: providerPlanId,
-        provider_status: providerStatus,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", id);
-
-    return Response.json({ ...result, providerPlanId, providerStatus }, { headers: { "Cache-Control": "no-store" } });
+    return Response.json(
+      {
+        success: false,
+        error: "reconciliation_required",
+        reason: "provider_plan_change_succeeded_local_persist_failed",
+        providerPlanId,
+        providerStatus,
+      },
+      { status: 500, headers: { "Cache-Control": "no-store" } }
+    );
   }
 
   // Legacy Payment-Link path: local schedule only.

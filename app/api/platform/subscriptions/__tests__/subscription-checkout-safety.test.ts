@@ -50,6 +50,7 @@ function run() {
   assert.ok(/p_tenant_id:\s*tenantId/.test(cancelSource), "cancellation RPC call must pass tenantId for server-side re-validation");
   assert.ok(/provider_cancel_failed/.test(cancelSource), "provider-managed cancel must fail closed on provider error");
   assert.equal(/providerSyncWarning/.test(cancelSource), false, "must not return success+warning on provider cancel failure");
+  assert.ok(/reconciliation_required/.test(cancelSource), "provider success + local failure must mark reconciliation_required");
 
   const changePlanSource = readCode("app", "api", "platform", "subscriptions", "[id]", "change-plan", "route.ts");
   assert.ok(/schedule_subscription_plan_change/.test(changePlanSource), "plan changes must go through the dedicated RPC, not a raw update");
@@ -57,6 +58,7 @@ function run() {
   assert.ok(/getSelfServicePlan\(targetPlanTier\)/.test(changePlanSource), "target plan must be self-service only");
   assert.ok(/provider_plan_update_failed/.test(changePlanSource), "provider-managed plan change must fail closed on provider error");
   assert.equal(/providerSyncWarning/.test(changePlanSource), false, "must not return success+warning on provider plan-change failure");
+  assert.ok(/reconciliation_required/.test(changePlanSource), "provider success + local failure must mark reconciliation_required");
 
   // --- 6. The recurring migration's plan-change RPC refuses non-self-service targets
   const migrationSource = read("supabase", "migrations", "20260811120000_razorpay_recurring_subscriptions.sql");
