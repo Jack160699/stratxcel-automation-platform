@@ -62,10 +62,10 @@ function SessionRail({
 
   return (
     <aside className="saut-agent-rail saut-agent-left flex h-full min-h-0 flex-col" aria-label="Copilot sessions">
-      <div className="shrink-0 p-3 pb-0">
-        <button onClick={onNew} className="saut-btn saut-btn-secondary mb-3 w-full justify-center">+ New conversation</button>
+      <div className="shrink-0 p-2.5 pb-0">
+        <button onClick={onNew} className="saut-btn saut-btn-secondary mb-2 w-full justify-center !h-8 text-xs">+ New conversation</button>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto p-3 pt-0">
+      <div className="min-h-0 flex-1 overflow-y-auto p-2.5 pt-0">
         {groups.length === 0 && (
           <p className="text-[11px]" style={{ color: "var(--saut-text-subtle)" }}>No conversations yet.</p>
         )}
@@ -74,7 +74,7 @@ function SessionRail({
           return (
             <details
               key={group.label}
-              className="mb-2"
+              className="mb-1.5"
               open={open}
               onToggle={(event) => {
                 const next = (event.target as HTMLDetailsElement).open;
@@ -90,29 +90,25 @@ function SessionRail({
                 <span className="saut-section-title">{group.label.toUpperCase()}</span>
                 <span className="saut-mono text-[9px]" style={{ color: "var(--saut-text-subtle)" }}>{group.sessions.length}</span>
               </summary>
-              <div className="mt-1">
+              <div className="mt-0.5">
                 {group.sessions.map((session) => (
                   <button
                     key={session.id}
                     onClick={() => onSelect(session.id)}
                     aria-current={session.id === activeId ? "true" : undefined}
-                    className="mb-1 block w-full rounded-lg px-2.5 py-2 text-left"
+                    className="mb-0.5 block w-full rounded-lg px-2 py-1.5 text-left"
                     style={session.id === activeId
                       ? { background: "var(--saut-accent-muted)", color: "var(--saut-text)" }
                       : { color: "var(--saut-text-muted)" }}
                   >
                     <span className="block truncate text-xs font-medium">{session.title || "Untitled session"}</span>
-                    <span className="saut-mono mt-1 block text-[9px] uppercase" style={{ color: "var(--saut-text-subtle)" }}>{session.status}</span>
+                    <span className="saut-mono mt-0.5 block text-[9px] uppercase" style={{ color: "var(--saut-text-subtle)" }}>{session.status}</span>
                   </button>
                 ))}
               </div>
             </details>
           );
         })}
-        <section className="mt-5 border-t pt-4" style={{ borderColor: "var(--saut-border)" }}>
-          <div className="saut-section-title mb-2">Shortcuts</div>
-          <p className="text-[11px] leading-relaxed" style={{ color: "var(--saut-text-subtle)" }}>Quick prompts are available in the empty canvas.</p>
-        </section>
       </div>
     </aside>
   );
@@ -176,6 +172,7 @@ export function CopilotFullPage({
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [voicePreview, setVoicePreview] = useState<{ blob: Blob; url: string; seconds: number } | null>(null);
   const [voiceBusy, setVoiceBusy] = useState(false);
+  const [focusMode, setFocusMode] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -371,14 +368,21 @@ export function CopilotFullPage({
   );
   const canvas = (
     <section className="saut-agent-canvas flex min-h-0 flex-col" aria-label="Agent work canvas">
-        <header className="flex items-center gap-3 border-b px-4 py-3" style={{ borderColor: "var(--saut-border)" }}>
-          <div className="min-w-0">
-            <div className="saut-section-title">Stratxcel Copilot</div>
-            <h1 className="truncate text-sm font-semibold">{missionTitle}</h1>
-          </div>
-          <span className={`saut-chip ml-auto ${pending ? "saut-chip-ai" : "saut-chip-neutral"}`}>
+        <header className="saut-canvas-header flex items-center gap-2.5 border-b px-3" style={{ borderColor: "var(--saut-border)" }}>
+          <h1 className="min-w-0 flex-1 truncate text-sm font-semibold">{missionTitle}</h1>
+          <span className={`saut-chip shrink-0 ${pending ? "saut-chip-ai" : "saut-chip-neutral"}`}>
             <span className={`saut-chip-dot ${pending ? "saut-pulse" : ""}`} />{pending ? "Working" : "Ready"}
           </span>
+          <button
+            type="button"
+            onClick={() => setFocusMode((value) => !value)}
+            className={`saut-btn saut-btn-ghost !h-7 !px-2 text-xs${focusMode ? " saut-focus-active" : ""}`}
+            aria-pressed={focusMode}
+            aria-label={focusMode ? "Exit focus mode" : "Enter focus mode"}
+            title={focusMode ? "Exit focus mode" : "Focus mode — hide side rails"}
+          >
+            Focus
+          </button>
           <button onClick={dockAndReturn} className="saut-btn saut-btn-ghost !h-7 !px-2 text-xs">Dock</button>
           <button onClick={() => { clearAttachments(); setSessionId(null); }} className="saut-btn saut-btn-ghost !h-7 !px-2 text-xs">New</button>
         </header>
@@ -399,7 +403,7 @@ export function CopilotFullPage({
         </div>
 
         <div
-          className="border-t p-3"
+          className="border-t p-2"
           style={{ borderColor: "var(--saut-border)" }}
           onDragOver={(event) => {
             event.preventDefault();
@@ -467,7 +471,7 @@ export function CopilotFullPage({
             >
               <span aria-hidden>+</span>
             </button>
-            <span className="text-[10px]" style={{ color: "var(--saut-text-subtle)" }}>Photos, video or document</span>
+            <span className="saut-composer-helper text-[10px]" style={{ color: "var(--saut-text-subtle)" }}>Photos, video or document</span>
             <span className="flex-1" />
             <button type="button" className="saut-composer-icon" onClick={() => recording ? stopRecording(false) : void startRecording()} disabled={pending || voiceBusy} aria-label={recording ? "Stop recording" : "Record voice note"}><span aria-hidden>◉</span></button>
             <button onClick={submit} disabled={pending || uploading || attachments.some((item) => item.uploadState === "uploading") || (!input.trim() && !attachments.some((item) => item.uploadState === "ready"))} className="saut-composer-send" aria-label="Send message">↑</button>
@@ -477,6 +481,9 @@ export function CopilotFullPage({
       </section>
   );
   const contextAccessed = brandUsed || accountsUsed || attachmentEvents.length > 0;
+
+  const waitingForApproval = session?.status === "WAITING_FOR_CHOICE";
+  const preferCompactProgress = waitingForApproval || (!pending && activePublishActions.length > 0);
 
   // Right rail: five compact accordion modules, one internal scrollbar (see
   // .saut-agent-rail on the containing <aside> in ResizableWorkspace) — never
@@ -488,7 +495,12 @@ export function CopilotFullPage({
         <p className="text-sm font-medium leading-snug">{missionTitle}</p>
       </RailModule>
       <RailModule title="Progress" defaultOpen className="saut-progress-module">
-        <ExecutionTrace run={run} events={runEvents} waitingForApproval={session?.status === "WAITING_FOR_CHOICE"} />
+        <ExecutionTrace
+          run={run}
+          events={runEvents}
+          waitingForApproval={waitingForApproval}
+          compactByDefault={preferCompactProgress}
+        />
       </RailModule>
     </div>
   );
@@ -540,6 +552,6 @@ export function CopilotFullPage({
   );
 
   return (
-    <ResizableWorkspace left={sessionRail} center={canvas} progress={progress} context={context} />
+    <ResizableWorkspace left={sessionRail} center={canvas} progress={progress} context={context} focusMode={focusMode} />
   );
 }

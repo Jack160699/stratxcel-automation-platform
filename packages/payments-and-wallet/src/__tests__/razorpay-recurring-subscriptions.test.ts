@@ -228,9 +228,9 @@ async function testSubscriptionChargedRequiresPlanEvidence() {
   assert.equal(ok.handled, true);
   assert.deepEqual(rpcCalls, ["reconcile_and_fulfill_razorpay_subscription_charge"]);
   assert.equal(rpcCalls.includes("reconcile_and_fulfill_razorpay_payment_v4"), false);
-  assert.equal(lastArgs?.p_current_period_start, new Date(periodStart * 1000).toISOString());
-  assert.equal(lastArgs?.p_current_period_end, new Date(periodEnd * 1000).toISOString());
-  assert.equal(lastArgs?.p_next_charge_at, new Date(chargeAt * 1000).toISOString());
+  assert.equal(lastArgs?.["p_current_period_start"], new Date(periodStart * 1000).toISOString());
+  assert.equal(lastArgs?.["p_current_period_end"], new Date(periodEnd * 1000).toISOString());
+  assert.equal(lastArgs?.["p_next_charge_at"], new Date(chargeAt * 1000).toISOString());
 }
 
 async function testAuthoritativeBillingPeriodInRpcContract() {
@@ -315,7 +315,7 @@ async function testWebhookConvergesCancelAndPlanChange() {
     },
   });
   assert.equal(cancelled.handled, true);
-  assert.equal(args?.p_cancel_at_cycle_end, true);
+  assert.equal(args?.["p_cancel_at_cycle_end"], true);
 
   process.env.RAZORPAY_SUBSCRIPTION_PLAN_GROWTH_ID = "plan_test_growth";
   const updated = await processRazorpayWebhookEvent(mockDb as any, {
@@ -338,8 +338,8 @@ async function testWebhookConvergesCancelAndPlanChange() {
     },
   });
   assert.equal(updated.handled, true);
-  assert.equal(args?.p_pending_plan_tier, "growth");
-  assert.equal(args?.p_cancel_at_cycle_end, false);
+  assert.equal(args?.["p_pending_plan_tier"], "growth");
+  assert.equal(args?.["p_cancel_at_cycle_end"], false);
 }
 
 async function testSubscriptionUpdatedNoEntitlements() {
@@ -384,9 +384,9 @@ async function testSubscriptionUpdatedNoEntitlements() {
   });
   assert.equal(result.handled, true);
   assert.equal(result.actionTaken, "subscription_updated_synced");
-  assert.equal(args?.p_event_type, "subscription.updated");
-  assert.equal(args?.p_provider_plan_id, "plan_test_growth");
-  assert.ok(args?.p_next_charge_at);
+  assert.equal(args?.["p_event_type"], "subscription.updated");
+  assert.equal(args?.["p_provider_plan_id"], "plan_test_growth");
+  assert.ok(args?.["p_next_charge_at"]);
 }
 
 function testCheckoutAuditCreditAndEnv() {

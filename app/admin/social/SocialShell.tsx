@@ -145,7 +145,7 @@ export default function SocialShell({
       </div>
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <header className="flex h-14 shrink-0 items-center gap-3 border-b px-4" style={{ borderColor: "var(--saut-border)", background: "var(--saut-surface-1)" }}>
+        <header className="flex h-12 shrink-0 items-center gap-3 border-b px-4" style={{ borderColor: "var(--saut-border)", background: "var(--saut-surface-1)" }}>
           <button className="rounded-lg border px-2.5 py-1.5 text-xs lg:hidden" style={{ borderColor: "var(--saut-border-strong)" }} onClick={() => setMobileOpen((v) => !v)} aria-expanded={mobileOpen} aria-label="Toggle navigation">
             Menu
           </button>

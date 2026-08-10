@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 
 const STORAGE_KEY = "saut:copilot:workspace-layout";
-const LEFT_MIN = 180;
-const LEFT_MAX = 360;
-const RIGHT_MIN = 260;
-const RIGHT_MAX = 440;
+const LEFT_MIN = 200;
+const LEFT_MAX = 280;
+const RIGHT_MIN = 280;
+const RIGHT_MAX = 340;
+const COLLAPSED_STRIP = 52;
 const KEYBOARD_STEP = 16;
 
 interface LayoutState {
@@ -17,8 +18,8 @@ interface LayoutState {
 }
 
 const DEFAULT_LAYOUT: LayoutState = {
-  leftWidth: 220,
-  rightWidth: 310,
+  leftWidth: 232,
+  rightWidth: 300,
   leftOpen: true,
   rightOpen: true,
 };
@@ -94,20 +95,48 @@ function Splitter({
   );
 }
 
+function CollapsedRailStrip({
+  side,
+  label,
+  onExpand,
+}: {
+  side: "left" | "right";
+  label: string;
+  onExpand: () => void;
+}) {
+  return (
+    <div className={`saut-workspace-rail-strip saut-workspace-rail-strip-${side}`} aria-label={`${label} collapsed`}>
+      <button
+        type="button"
+        className="saut-workspace-rail-expand"
+        onClick={onExpand}
+        aria-label={`Expand ${label}`}
+        title={`Expand ${label}`}
+      >
+        <span aria-hidden>{side === "left" ? "\u2630" : "\u2261"}</span>
+        <span className="saut-workspace-rail-expand-label">{label}</span>
+      </button>
+    </div>
+  );
+}
+
 export function ResizableWorkspace({
   left,
   center,
   progress,
   context,
+  focusMode = false,
 }: {
   left: ReactNode;
   center: ReactNode;
   progress: ReactNode;
   context: ReactNode;
+  focusMode?: boolean;
 }) {
   const [layout, setLayout] = useState(DEFAULT_LAYOUT);
   const [layoutReady, setLayoutReady] = useState(false);
   const [mobileTab, setMobileTab] = useState<"chat" | "progress" | "context">("chat");
+  const preFocusOpenRef = useRef<{ leftOpen: boolean; rightOpen: boolean } | null>(null);
 
   useEffect(() => {
     const restoreLayout = window.setTimeout(() => {
@@ -133,12 +162,30 @@ export function ResizableWorkspace({
     if (layoutReady) window.localStorage.setItem(STORAGE_KEY, JSON.stringify(layout));
   }, [layout, layoutReady]);
 
+  useEffect(() => {
+    if (focusMode) {
+      setLayout((current) => {
+        if (current.leftOpen || current.rightOpen) {
+          preFocusOpenRef.current = { leftOpen: current.leftOpen, rightOpen: current.rightOpen };
+          return { ...current, leftOpen: false, rightOpen: false };
+        }
+        return current;
+      });
+      return;
+    }
+    if (preFocusOpenRef.current) {
+      const restored = preFocusOpenRef.current;
+      preFocusOpenRef.current = null;
+      setLayout((current) => ({ ...current, leftOpen: restored.leftOpen, rightOpen: restored.rightOpen }));
+    }
+  }, [focusMode]);
+
   const columns = [
-    layout.leftOpen ? `${layout.leftWidth}px` : "0px",
+    layout.leftOpen ? `${layout.leftWidth}px` : `${COLLAPSED_STRIP}px`,
     layout.leftOpen ? "8px" : "0px",
-    "minmax(420px, 1fr)",
+    "minmax(360px, 1fr)",
     layout.rightOpen ? "8px" : "0px",
-    layout.rightOpen ? `${layout.rightWidth}px` : "0px",
+    layout.rightOpen ? `${layout.rightWidth}px` : `${COLLAPSED_STRIP}px`,
   ].join(" ");
 
   return (
@@ -152,7 +199,11 @@ export function ResizableWorkspace({
       </div>
 
       <div className="saut-desktop-workspace" data-mobile-tab={mobileTab} style={{ gridTemplateColumns: columns }}>
-        <div className={`min-h-0 min-w-0 overflow-hidden ${layout.leftOpen ? "" : "invisible"}`}>{left}</div>
+        {layout.leftOpen ? (
+          <div className="min-h-0 min-w-0 overflow-hidden">{left}</div>
+        ) : (
+          <CollapsedRailStrip side="left" label="Sessions" onExpand={() => setLayout((current) => ({ ...current, leftOpen: true }))} />
+        )}
         {layout.leftOpen ? (
           <Splitter
             side="left"
@@ -193,10 +244,14 @@ export function ResizableWorkspace({
           .saut-workspace-context is pinned below it with a bounded height of
           its own. See Section 5/6 of the live-progress cleanup brief.
         */}
-        <aside className={`saut-agent-rail saut-agent-right flex min-h-0 min-w-0 flex-col overflow-hidden ${layout.rightOpen ? "" : "invisible"}`} aria-label="Progress and context">
-          <div className="saut-workspace-progress">{progress}</div>
-          <div className="saut-workspace-context">{context}</div>
-        </aside>
+        {layout.rightOpen ? (
+          <aside className="saut-agent-rail saut-agent-right flex min-h-0 min-w-0 flex-col overflow-hidden" aria-label="Progress and context">
+            <div className="saut-workspace-progress">{progress}</div>
+            <div className="saut-workspace-context">{context}</div>
+          </aside>
+        ) : (
+          <CollapsedRailStrip side="right" label="Progress" onExpand={() => setLayout((current) => ({ ...current, rightOpen: true }))} />
+        )}
       </div>
     </div>
   );

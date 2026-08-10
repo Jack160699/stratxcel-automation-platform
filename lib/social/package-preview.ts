@@ -83,6 +83,7 @@ export async function getPackageQueueItemPreview(
     scheduledAt: item.scheduled_at,
     isImmediate: false,
     mediaAssetIds,
+    mediaMimeTypes: media.map((item) => item.mimeType),
     media,
     shadowMode: false,
   };
