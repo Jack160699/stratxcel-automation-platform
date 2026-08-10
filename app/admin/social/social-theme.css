@@ -525,7 +525,16 @@ body.saut-document-lock {
   height: 100%;
   min-height: 0;
 }
-.saut-agent-rail { min-width: 0; overflow-y: auto; background: var(--saut-surface-1); }
+/* Base rail styling only — scroll ownership is deliberately NOT set here.
+   The left rail scrolls its own inner list (see SessionRail's own markup);
+   the right rail is a fixed live console with its own internal top-fixed /
+   scrollable-middle / bottom-fixed regions (see .saut-agent-right and
+   .saut-workspace-progress/.saut-workspace-context below) — neither may
+   become one big overflow-y:auto blob, or a long Progress trace pushes
+   everything else out of view. */
+.saut-agent-rail { min-width: 0; background: var(--saut-surface-1); }
+.saut-agent-left { overflow-y: auto; }
+.saut-agent-right { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 .saut-agent-canvas { height: 100%; min-width: 0; background: var(--saut-bg); }
 .saut-agent-composer { min-height: 70px; resize: none; padding-block: 10px; line-height: 1.45; }
 .saut-attachment-chip {
@@ -619,6 +628,73 @@ body.saut-document-lock {
 }
 .saut-rail-module-body {
   padding: 0 16px 14px;
+}
+
+/*
+ * Right rail as a true fixed live console (not a growing document):
+ *
+ *   .saut-agent-right (flex column, fixed height, overflow hidden)
+ *     .saut-workspace-progress   <- flexible middle: Current Mission stays
+ *                                   its natural height, the Progress module
+ *                                   takes all remaining space and owns the
+ *                                   ONE scrolling region for stage history
+ *     .saut-workspace-context    <- fixed bottom cluster (Context/Working
+ *                                   With/Connected Systems), bounded height,
+ *                                   its own internal scroll if expanded wide
+ *
+ * A long execution trace can never push the bottom modules out of view or
+ * grow the document — only .saut-stage-list (inside ExecutionTrace) scrolls.
+ */
+.saut-workspace-progress {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+.saut-progress-rail {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+}
+.saut-progress-rail > .saut-rail-module {
+  flex: 0 0 auto;
+}
+.saut-progress-rail > .saut-progress-module {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 0 0 auto;
+}
+.saut-progress-rail > .saut-progress-module[open] {
+  flex: 1 1 auto;
+}
+.saut-progress-rail > .saut-progress-module > .saut-rail-module-body {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+.saut-workspace-context {
+  flex: 0 0 auto;
+  max-height: 46%;
+  overflow-y: auto;
+  border-top: 1px solid var(--saut-border);
+}
+.saut-stage-list {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-y: auto;
+  scroll-behavior: smooth;
+}
+/* The full technical trace is a secondary, opt-in detail — bounded to its
+   own scroll area so expanding it with 100+ events can never clip past the
+   fixed rail or grow the document. */
+.saut-full-trace[open] > ul {
+  max-height: 220px;
+  overflow-y: auto;
 }
 
 .saut-workspace-splitter {

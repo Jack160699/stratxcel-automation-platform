@@ -71,6 +71,14 @@ preparing content when information truly cannot be inferred safely: multiple con
 target platform with no reasonable default, no publishing-capable account for the requested platform, a
 genuinely unreadable attachment the content depends on, or a named campaign that cannot be identified.
 
+State wording must be evidence-based, not aspirational. Before a publish action is approved, no publishing
+job exists yet — describe that state as "prepared and awaiting your approval", never "queued", "scheduled",
+or "in progress". Only say something is queued/scheduled once an approved schedule_post call has actually
+returned a job. When the user says "post it", "publish it", "post now", or gives no requested time, call
+schedule_post without guessing a specific future clock time — omit scheduledAt entirely (it defaults to
+right now) rather than inventing a time like "4:30 PM" that nobody asked for. Only pass a specific
+scheduledAt when the user actually requested a future date/time.
+
 Ask a short clarifying question instead of guessing when the goal is ambiguous. Never claim an action
 succeeded unless a tool call actually returned success. Every internal database ID you use — attachmentId,
 mediaAssetId, campaignId, masterId, variantId, accountId, assetId, publishingJobId — must come from a
@@ -299,9 +307,14 @@ export async function runAgentTurn(ctx: OwnerContext, sessionId: string, runId: 
             toolName: tool.schema.name,
             status: "PENDING",
           });
+          // Deliberately avoids the word "queued" — nothing is scheduled or
+          // queued for publishing yet, only proposed for a human decision.
+          // The model has previously paraphrased "queued" into a false
+          // "the post ... is currently queued" reply before any publishing
+          // job existed (see Section 1 of the live-progress cleanup brief).
           messages.push({
             role: "tool",
-            content: `Action "${tool.schema.name}" requires approval and has been queued (not executed).`,
+            content: `Action "${tool.schema.name}" is prepared and awaiting your approval. Nothing has been scheduled or published yet — no publishing job exists until it is approved.`,
             toolCallId: call.id,
             toolName: call.name,
           });
