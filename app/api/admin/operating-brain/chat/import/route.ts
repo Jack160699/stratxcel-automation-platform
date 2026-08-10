@@ -17,7 +17,7 @@ export async function POST(request: Request) {
   if (!ALLOWED_MIME.has(file.type) && !/\.(json|zip)$/i.test(file.name)) return NextResponse.json({ error: "Only official JSON or ZIP exports are accepted" }, { status: 415 });
 
   const bytes = Buffer.from(await file.arrayBuffer());
-  let jsonBytes = bytes;
+  let jsonBytes: Buffer<ArrayBufferLike> = bytes;
   if (/\.zip$/i.test(file.name) || file.type.includes("zip")) {
     const expected = providerKey === "chatgpt" ? /(^|\/)conversations\.json$/i : /(^|\/)(conversations|claude).*\.json$/i;
     try { jsonBytes = readZipJson(bytes, expected); }
