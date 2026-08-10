@@ -1,7 +1,7 @@
 // Run with: node --experimental-strip-types lib/owner-brain/__tests__/connectors.test.ts
 import assert from "node:assert/strict";
 import { extractDomain, mapGitHubEventType } from "../connectors/pure.ts";
-import { scopeForGoogleSource } from "../connectors/google-oauth.ts";
+import { buildGoogleAuthorizeUrl, safeGoogleOAuthError, scopeForGoogleSource } from "../connectors/google-oauth.ts";
 import { connectorEnvReady, getSourceDefinition, SOURCE_REGISTRY } from "../sources/registry.ts";
 
 function run() {
@@ -28,6 +28,21 @@ function run() {
   for (const scope of ["gmail", "google_calendar", "google_drive"].map(scopeForGoogleSource)) {
     assert.ok(scope.endsWith(".readonly"), `every Google scope must be read-only, got: ${scope}`);
   }
+
+  process.env.GOOGLE_OWNER_BRAIN_CLIENT_ID = "owner-brain-client";
+  for (const sourceKey of ["google_calendar", "google_drive"]) {
+    const authorizeUrl = new URL(buildGoogleAuthorizeUrl({ state: "signed.state", redirectUri: "https://www.stratxcel.in/api/admin/operating-brain/connectors/google/callback", sourceKey }));
+    assert.equal(authorizeUrl.origin, "https://accounts.google.com");
+    assert.equal(authorizeUrl.searchParams.get("scope"), scopeForGoogleSource(sourceKey));
+    assert.equal(authorizeUrl.searchParams.get("state"), "signed.state");
+    assert.equal(authorizeUrl.searchParams.get("access_type"), "offline");
+    assert.equal(authorizeUrl.searchParams.get("prompt"), "consent");
+  }
+  assert.deepEqual(safeGoogleOAuthError("access_denied", "user detail must not leak"), {
+    code: "access_denied",
+    message: "Google access was denied. Approve the requested read-only permission and try again.",
+  });
+  assert.equal(safeGoogleOAuthError("unknown-error!", "private account detail").message.includes("private account detail"), false);
 
   // --- Source registry integrity ---
   assert.equal(SOURCE_REGISTRY.length, 10, "brief specifies 10 sources");

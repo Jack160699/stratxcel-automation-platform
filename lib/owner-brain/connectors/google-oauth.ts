@@ -16,6 +16,29 @@ const SCOPE_BY_SOURCE: Record<string, string> = {
   google_drive: "https://www.googleapis.com/auth/drive.readonly",
 };
 
+const GOOGLE_OAUTH_ERROR_MESSAGES: Record<string, string> = {
+  access_denied: "Google access was denied. Approve the requested read-only permission and try again.",
+  admin_policy_enforced: "Your Google Workspace administrator has blocked this permission.",
+  disallowed_useragent: "Google sign-in cannot be completed in this browser. Try again in a supported browser.",
+  org_internal: "This Google OAuth app is restricted to accounts in its organization.",
+  redirect_uri_mismatch: "The Google OAuth callback URL is not configured correctly.",
+  temporarily_unavailable: "Google OAuth is temporarily unavailable. Please try again.",
+};
+
+/** Maps provider errors to bounded, non-secret text safe for UI/database use. */
+export function safeGoogleOAuthError(error: string | null, errorDescription: string | null): { code: string; message: string } {
+  const normalized = error?.trim().toLowerCase().replace(/[^a-z0-9_]/g, "").slice(0, 64) || "oauth_error";
+  const knownMessage = GOOGLE_OAUTH_ERROR_MESSAGES[normalized];
+  if (knownMessage) return { code: normalized, message: knownMessage };
+
+  // Google descriptions can contain account or policy details, so never persist
+  // or reflect them verbatim. Their presence is useful only as a generic hint.
+  return {
+    code: normalized,
+    message: errorDescription ? "Google could not authorize this connection. Review the consent screen and try again." : "Google OAuth did not complete. Please try again.",
+  };
+}
+
 export function scopeForGoogleSource(sourceKey: string): string {
   const scope = SCOPE_BY_SOURCE[sourceKey];
   if (!scope) throw new Error(`No Google scope registered for source ${sourceKey}`);
