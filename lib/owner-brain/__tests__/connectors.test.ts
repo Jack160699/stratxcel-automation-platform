@@ -55,7 +55,7 @@ function run() {
   process.env.GOOGLE_OWNER_BRAIN_CLIENT_ID = "test-id";
   process.env.GOOGLE_OWNER_BRAIN_CLIENT_SECRET = "test-secret";
   assert.equal(connectorEnvReady("gmail"), true, "with both env vars set, gmail must report ready");
-  assert.equal(connectorEnvReady("chat_platforms"), false, "an unimplemented connector must never report ready regardless of env vars");
+  assert.equal(connectorEnvReady("chat_platforms"), true, "provider-based chat platform registry is implemented without a fake universal OAuth prerequisite");
   delete process.env.GOOGLE_OWNER_BRAIN_CLIENT_ID;
   delete process.env.GOOGLE_OWNER_BRAIN_CLIENT_SECRET;
 

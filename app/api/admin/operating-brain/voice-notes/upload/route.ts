@@ -4,7 +4,7 @@ import { createVoiceNote, setVoiceNoteStatus, saveTranscript } from "@/lib/owner
 import { transcribeVoiceNote } from "@/lib/owner-brain/voice/transcription";
 import { admitMemoryCandidate } from "@/lib/owner-brain/memory/lifecycle";
 import { createOpenLoop } from "@/lib/owner-brain/repositories/open-loops";
-import { getSourceByKey } from "@/lib/owner-brain/repositories/sources";
+import { getSourceByKey, updateSourceStatus } from "@/lib/owner-brain/repositories/sources";
 
 const BUCKET = "owner-voice-notes";
 
@@ -52,6 +52,10 @@ export async function POST(request: Request) {
     await setVoiceNoteStatus(voiceNoteId, "TRANSCRIBED");
 
     const voiceSource = await getSourceByKey(ctx, "voice_notes");
+    if (voiceSource) await updateSourceStatus(ctx.ownerId, voiceSource.id, {
+      status: "CONNECTED", last_sync_at: new Date().toISOString(), last_success_at: new Date().toISOString(),
+      last_error: null, health: { ready: true, mode: "direct_upload", last_upload_id: voiceNoteId },
+    });
     for (const task of result.structuredExtraction.followUps.concat(result.structuredExtraction.openLoops)) {
       await createOpenLoop(ctx.ownerId, { item: task, sourceId: voiceSource?.id ?? null });
     }
@@ -76,7 +80,13 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ voiceNoteId, transcribed: true });
   } catch (err) {
-    await setVoiceNoteStatus(voiceNoteId, "FAILED", err instanceof Error ? err.message : String(err));
+    const message = err instanceof Error ? err.message : String(err);
+    await setVoiceNoteStatus(voiceNoteId, "FAILED", message);
+    const voiceSource = await getSourceByKey(ctx, "voice_notes");
+    if (voiceSource) await updateSourceStatus(ctx.ownerId, voiceSource.id, {
+      status: "ERROR", last_sync_at: new Date().toISOString(), last_error: message,
+      health: { ready: true, mode: "direct_upload", audio_preserved: true, last_upload_id: voiceNoteId },
+    });
     return NextResponse.json({ voiceNoteId, transcribed: false, error: "Transcription failed — audio was saved, retry later." }, { status: 202 });
   }
 }
