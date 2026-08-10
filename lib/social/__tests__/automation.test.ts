@@ -26,19 +26,23 @@ const BASE: AutomationSettingsRow = {
 
 function run() {
   // SHADOW is independent: AUTOPILOT may do safe internal work.
-  assert.equal(requiresApproval("create_content_item", { ...BASE, shadow_mode: true }, 0.99), false);
+  assert.equal(requiresApproval("create_campaign", { ...BASE, shadow_mode: true }, 0.99), false);
   assert.equal(externalMutationDecision(true, "publish_post").allowed, false);
   assert.equal(externalMutationDecision(false, "publish_post").allowed, true);
 
-  // MANUAL/SUPERVISED always require approval.
-  assert.equal(requiresApproval("create_content_item", { ...BASE, autonomy_level: "MANUAL" }, 0.99), true);
-  assert.equal(requiresApproval("create_content_item", { ...BASE, autonomy_level: "SUPERVISED" }, 0.99), true);
+  // MANUAL/SUPERVISED always require approval — tested against
+  // create_campaign, a genuinely organizational (not low-risk-preparation)
+  // action still subject to the normal autonomy gate. Low-risk content
+  // preparation (create_content_item et al.) is covered separately below —
+  // it intentionally bypasses this gate regardless of autonomy level.
+  assert.equal(requiresApproval("create_campaign", { ...BASE, autonomy_level: "MANUAL" }, 0.99), true);
+  assert.equal(requiresApproval("create_campaign", { ...BASE, autonomy_level: "SUPERVISED" }, 0.99), true);
 
   // AUTOPILOT, tool not flagged, confidence above threshold -> auto.
-  assert.equal(requiresApproval("create_content_item", BASE, 0.9), false);
+  assert.equal(requiresApproval("create_campaign", BASE, 0.9), false);
 
   // AUTOPILOT, confidence below the configured minimum -> approval.
-  assert.equal(requiresApproval("create_content_item", BASE, 0.5), true);
+  assert.equal(requiresApproval("create_campaign", BASE, 0.5), true);
 
   // AUTOPILOT, tool explicitly flagged in require_approval_for -> approval
   // regardless of confidence.
@@ -58,7 +62,30 @@ function run() {
   // A tool unrelated to publishing is never swept in by the publish_post alias.
   assert.equal(requiresApproval("create_content_item", BASE, 0.99), false);
 
-  console.log("automation.test.ts: ALL PASS (independent shadow gate, manual/supervised gate, auto-act, confidence floor, flagged tool, publish_post alias)");
+  // Risk-based approval (single-approval publishing flow follow-up): a
+  // bounded publishing request should not interrupt the user separately for
+  // internal content preparation, regardless of autonomy level — only the
+  // actual external publish action (and organizational/settings actions)
+  // remain subject to the normal autonomy/confidence gate.
+  const manualSettings: AutomationSettingsRow = { ...BASE, autonomy_level: "MANUAL" };
+  for (const lowRiskTool of [
+    "create_content_item",
+    "create_content_variant",
+    "attach_media_to_content",
+    "update_content_variant",
+    "cancel_scheduled_post",
+  ]) {
+    assert.equal(requiresApproval(lowRiskTool, manualSettings, 0.99), false, `${lowRiskTool} must never block on approval, even under MANUAL`);
+  }
+  // Genuinely external/organizational actions still respect MANUAL.
+  assert.equal(requiresApproval("schedule_post", manualSettings, 0.99), true);
+  assert.equal(requiresApproval("create_campaign", manualSettings, 0.99), true);
+  assert.equal(requiresApproval("set_operating_mode", manualSettings, 0.99), true);
+  // An owner's explicit customization still overrides the low-risk default.
+  const explicitOverride = { ...manualSettings, require_approval_for: ["publish_post", "create_content_variant"] };
+  assert.equal(requiresApproval("create_content_variant", explicitOverride, 0.99), true, "an explicit require_approval_for entry must win over the low-risk default");
+
+  console.log("automation.test.ts: ALL PASS (independent shadow gate, manual/supervised gate, auto-act, confidence floor, flagged tool, publish_post alias, low-risk preparation bypass)");
 }
 
 run();

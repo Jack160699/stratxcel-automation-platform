@@ -12,7 +12,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { PUBLISH_INTENT_TOOLS, isProvenLivePublish, describePublishAttempt } from "../agent/publish-outcome-classify.ts";
+import { PUBLISH_INTENT_TOOLS, isProvenLivePublish, describePublishAttempt, platformLabel, outcomeNoteFor } from "../agent/publish-outcome-classify.ts";
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const read = (...parts: string[]) => fs.readFileSync(path.join(root, ...parts), "utf8");
@@ -71,6 +71,35 @@ function run() {
   assert.equal(unknownFailure.succeeded, false);
   assert.match(unknownFailure.note, /did not confirm a live publication/);
 
+  // Publish receipt evidence (Section 22 of the single-approval follow-up):
+  // the receipt is only ever built from what the tool/job actually returned.
+  assert.equal(liveResult.receipt.permalink, "https://www.threads.net/@stratxcel/post/xyz");
+  assert.equal(youtubeVerified.receipt.permalink, "https://youtube.com/watch?v=abc");
+  assert.equal(youtubeVerified.receipt.externalPostId, "yt-abc");
+  assert.deepEqual(unknownFailure.receipt, {});
+
+  // platformLabel: friendly names for the card/receipt UI, canonical value passthrough otherwise.
+  assert.equal(platformLabel("threads"), "Threads");
+  assert.equal(platformLabel("THREADS"), "Threads");
+  assert.equal(platformLabel("youtube"), "YouTube");
+  assert.equal(platformLabel("myspace"), "myspace");
+
+  // outcomeNoteFor with platform/account context — the approval-path and
+  // direct-path messages both read naturally ("Published successfully on
+  // Threads (@stratxcel.in)."), never a bare, contextless "Done."
+  const publishedJob = {
+    id: "job-1", account_id: "a", variant_id: "v", idempotency_key: "k", status: "PUBLISHED",
+    scheduled_at: "", attempts: 0, max_attempts: 3, locked_at: null, last_error: null,
+    result: { mode: "live", permalink: "https://threads.net/x" }, completed_at: "2026-08-10T12:00:00Z", created_at: "",
+  };
+  const note = outcomeNoteFor(publishedJob, true, { platform: "threads", accountLabel: "@stratxcel.in" });
+  assert.match(note, /on Threads \(@stratxcel\.in\)/);
+  assert.match(note, /https:\/\/threads\.net\/x/);
+  const shadowJob = { ...publishedJob, result: { mode: "shadow" } };
+  const shadowNote = outcomeNoteFor(shadowJob, true, { platform: "threads" });
+  assert.match(shadowNote, /Shadow Mode/);
+  assert.doesNotMatch(shadowNote, /Published successfully/);
+
   // --- Source-text checks: the integrity fixes are actually wired in. ---
   const tools = read("lib", "social", "agent", "tools.ts");
   const orchestrator = read("lib", "social", "agent", "orchestrator.ts");
@@ -79,7 +108,7 @@ function run() {
 
   assert.ok(tools.includes("platformsMatch(account.platform, variant.platform)"), "schedule_post must compare platforms canonically, not with !==");
   assert.ok(!tools.includes("account.platform !== variant.platform"), "the literal casing-sensitive comparison must be gone");
-  assert.ok(tools.includes("runPublishNow(service, jobId, scheduledAt, ctx.ownerId)"), "schedule_post must return the real terminal state, not just a job id");
+  assert.ok(tools.includes("runPublishNow(service, jobId, scheduledAt, ctx.ownerId,"), "schedule_post must return the real terminal state, not just a job id");
   assert.ok(tools.includes('requireUuid(args.accountId, "accountId")') && tools.includes('requireUuid(args.variantId, "variantId")'));
   assert.ok(tools.includes('optionalUuid(args.campaignId, "campaignId")'), "campaignId must never be a fabricated name");
   assert.ok(content.includes("requirePlatform(input.platform"), "content_variants.platform must be canonicalized at write time too");
@@ -114,7 +143,49 @@ function run() {
     "the Automations UI's publish_post approval toggle must actually gate the real publish tools"
   );
 
-  console.log("publish-outcome.test.ts: ALL PASS (live-publish proof, Shadow Mode honesty, queued/failed wording, integrity wiring present)");
+  // --- Single-approval publishing flow (follow-up brief) wiring. ---
+  assert.ok(
+    automation.includes("LOW_RISK_PREPARATION_TOOLS") &&
+      automation.includes('"create_content_item"') &&
+      automation.includes('"create_content_variant"') &&
+      automation.includes('"attach_media_to_content"'),
+    "low-risk content preparation must bypass approval regardless of autonomy level"
+  );
+
+  assert.ok(
+    orchestrator.includes("You are outcome-oriented, not tool-oriented") &&
+      /Do not\s+create a campaign unless the user explicitly asked/.test(orchestrator),
+    "the system prompt must instruct autonomous preparation and no unnecessary campaigns"
+  );
+
+  // approveAgentAction must reach the SAME real-outcome truth as the direct
+  // path — same classifier, and it must actually write it into the chat
+  // (Section 11: an explicitly flagged PR #15 gap).
+  const approveFnStart = orchestrator.indexOf("export async function approveAgentAction");
+  const approveFnEnd = orchestrator.indexOf("export async function rejectAgentAction");
+  assert.ok(approveFnStart > -1 && approveFnEnd > approveFnStart, "could not locate approveAgentAction");
+  const approveFn = orchestrator.slice(approveFnStart, approveFnEnd);
+  assert.ok(approveFn.includes("describePublishAttempt(action.tool_name, output)"), "approval path must use the shared outcome classifier");
+  assert.ok(approveFn.includes('insertMessage(ctx, action.session_id, "AGENT", publishOutcome.note'), "approval path must insert the real outcome into chat");
+  assert.ok(approveFn.includes("publish_receipt"), "a proven live publish approved by a human must also get a receipt");
+  assert.ok(approveFn.includes("hasPendingActions"), "approving must return the session to READY once nothing else is pending, never stay stuck on Waiting approval");
+
+  const rejectFn = orchestrator.slice(orchestrator.indexOf("export async function rejectAgentAction"));
+  assert.ok(rejectFn.includes("Publishing cancelled"), "cancelling a publish-intent action must say so plainly, never leave the user guessing");
+  assert.ok(rejectFn.includes("still available"), "cancelling must make clear the prepared draft was not discarded");
+
+  assert.ok(fs.existsSync(path.join(root, "lib", "social", "agent", "action-preview.ts")), "expected a preview builder for the Ready-to-publish card");
+  assert.ok(fs.existsSync(path.join(root, "app", "admin", "social", "agent", "PublishApprovalCard.tsx")), "expected the polished single-approval card component");
+  assert.ok(fs.existsSync(path.join(root, "app", "api", "social", "copilot", "media-preview", "route.ts")), "expected an owner-scoped media preview endpoint for the approval card thumbnail");
+
+  const agentMessage = read("app", "admin", "social", "agent", "AgentMessage.tsx");
+  assert.ok(agentMessage.includes("PublishApprovalGroup"), "publish-intent proposed actions must render as the Ready-to-publish card group, not the raw JSON approval card");
+  const publishCard = read("app", "admin", "social", "agent", "PublishApprovalCard.tsx");
+  assert.ok(!publishCard.includes("JSON.stringify(action"), "the Ready-to-publish card must never dump raw internal payloads/IDs");
+  assert.ok(publishCard.includes("Approve all"), "a bundled multi-platform request must offer one Approve-all affordance, not force separate interruptions");
+  assert.ok(publishCard.includes("SHADOW MODE"), "the card must warn truthfully when Shadow Mode will prevent external publishing");
+
+  console.log("publish-outcome.test.ts: ALL PASS (live-publish proof, Shadow Mode honesty, queued/failed wording, receipts, single-approval flow wiring)");
 }
 
 run();
