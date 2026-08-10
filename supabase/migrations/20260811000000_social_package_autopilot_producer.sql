@@ -1,7 +1,7 @@
 -- Social Package Autopilot: recurring queue producer support.
 --
 -- Additive only — extends the standing-authorization/queue-item tables from
--- 20260810190000_social_package_autopilot_authorization.sql (never edited in
+-- 20260810195000_social_package_autopilot_authorization.sql (never edited in
 -- place) with the columns/constraints a real recurring producer needs:
 -- service-period lifecycle, distribution/scheduling policy, media-type and
 -- content-unit tracking for counting semantics, a producer health log, and

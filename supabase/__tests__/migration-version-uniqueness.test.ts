@@ -1,0 +1,2 @@
+import assert from "node:assert/strict"; import fs from "node:fs"; import path from "node:path"; import { fileURLToPath } from "node:url";
+const root=path.join(path.dirname(fileURLToPath(import.meta.url)),"..",".."); const files=fs.readdirSync(path.join(root,"supabase","migrations")).filter((name)=>name.endsWith(".sql")); const versions=files.map((name)=>name.slice(0,14)); assert.equal(new Set(versions).size,versions.length,"migration version prefixes must be unique"); console.log("migration-version-uniqueness.test.ts: ALL PASS");

@@ -16,6 +16,8 @@ interface UpcomingItem {
   blockedReason: string | null;
   platform: string | null;
   accountLabel: string | null;
+  caption: string;
+  hashtags: string[];
 }
 interface HistoryItem {
   id: string;
@@ -51,6 +53,7 @@ interface NotActivated {
     remainingUnits: number;
     connectedPlatforms: string[];
     brandConfigured: boolean;
+    brandProfileId: string | null;
   };
 }
 
@@ -103,6 +106,8 @@ function ActivationChecklist({ tenantId, eligibility, onActivated }: { tenantId:
         entitlementId: eligibility.entitlementId,
         publishingMode: "AUTO_PUBLISH",
         allowedPlatforms: platforms,
+        brandProfileId: eligibility.brandProfileId,
+        packageSize: eligibility.remainingUnits,
       });
       onActivated();
     } catch (err) {
@@ -147,6 +152,10 @@ function ActivationChecklist({ tenantId, eligibility, onActivated }: { tenantId:
 function UpcomingRow({ item, tenantId, onChanged }: { item: UpcomingItem; tenantId: string; onChanged: () => void }) {
   const [editing, setEditing] = useState(false);
   const [caption, setCaption] = useState("");
+  const [hashtags, setHashtags] = useState("");
+  const [previewing, setPreviewing] = useState(false);
+  const [rescheduling, setRescheduling] = useState(false);
+  const [scheduledAt, setScheduledAt] = useState(() => item.scheduledAt.slice(0, 16));
   const [busy, setBusy] = useState(false);
 
   const skip = async () => {
@@ -161,7 +170,7 @@ function UpcomingRow({ item, tenantId, onChanged }: { item: UpcomingItem; tenant
   const saveEdit = async () => {
     setBusy(true);
     try {
-      await callAutopilotApi({ tenantId, action: "edit", queueItemId: item.id, caption });
+      await callAutopilotApi({ tenantId, action: "edit", queueItemId: item.id, caption, hashtags: hashtags.split(/[,\s]+/).map((tag) => tag.replace(/^#/, "")).filter(Boolean) });
       setEditing(false);
       onChanged();
     } finally {
@@ -177,9 +186,12 @@ function UpcomingRow({ item, tenantId, onChanged }: { item: UpcomingItem; tenant
       </div>
       <span className="text-sx-text-muted">{formatDate(item.scheduledAt)}{item.contentPillar ? ` · ${item.contentPillar}` : ""}</span>
       {item.blockedReason && <span className="text-[#FF8A90]">{item.blockedReason}</span>}
+      {previewing && <div className="w-full rounded-sx-sm border border-sx-border bg-sx-surface-2 p-3"><strong>{item.platform}</strong><p className="mt-2 whitespace-pre-wrap">{item.caption}</p><p className="mt-2 text-sx-accent">{item.hashtags.map((tag) => `#${tag}`).join(" ")}</p></div>}
+      {rescheduling && <div className="flex gap-2"><input type="datetime-local" value={scheduledAt} onChange={(event) => setScheduledAt(event.target.value)} className="rounded-sx-sm border border-sx-border bg-sx-surface-2 p-2" /><Button size="sm" onClick={() => void callAutopilotApi({ tenantId, action: "reschedule", queueItemId: item.id, scheduledAt: new Date(scheduledAt).toISOString() }).then(() => { setRescheduling(false); onChanged(); })}>Save time</Button></div>}
       {editing ? (
         <div className="mt-1 flex w-full flex-col gap-2">
           <textarea className="w-full rounded-sx-sm border border-sx-border bg-sx-surface-2 p-2 text-sx-text" rows={3} value={caption} onChange={(event) => setCaption(event.target.value)} />
+          <input className="w-full rounded-sx-sm border border-sx-border bg-sx-surface-2 p-2 text-sx-text" value={hashtags} onChange={(event) => setHashtags(event.target.value)} placeholder="#hashtags" />
           <div className="flex gap-2">
             <Button size="sm" variant="ghost" disabled={busy} onClick={() => setEditing(false)}>Discard</Button>
             <Button size="sm" variant="primary" disabled={busy} onClick={() => void saveEdit()}>Save</Button>
@@ -187,7 +199,9 @@ function UpcomingRow({ item, tenantId, onChanged }: { item: UpcomingItem; tenant
         </div>
       ) : (
         <div className="mt-1 flex gap-2">
-          <Button size="sm" variant="ghost" disabled={busy || item.status === "PLANNED" || item.status === "BLOCKED"} onClick={() => setEditing(true)}>Edit</Button>
+          <Button size="sm" variant="ghost" disabled={busy || item.status === "PLANNED" || item.status === "BLOCKED"} onClick={() => setPreviewing((value) => !value)}>Preview</Button>
+          <Button size="sm" variant="ghost" disabled={busy || item.status === "PLANNED" || item.status === "BLOCKED"} onClick={() => { setCaption(item.caption); setHashtags(item.hashtags.map((tag) => `#${tag}`).join(" ")); setEditing(true); }}>Edit</Button>
+          <Button size="sm" variant="ghost" disabled={busy} onClick={() => setRescheduling((value) => !value)}>Reschedule</Button>
           <Button size="sm" variant="ghost" disabled={busy} onClick={() => void skip()}>Skip</Button>
         </div>
       )}
@@ -215,6 +229,8 @@ export function AutopilotDashboard() {
 
   useEffect(() => {
     load();
+    const timer = window.setInterval(load, 15_000);
+    return () => window.clearInterval(timer);
   }, [load]);
 
   if (!tenantId) return null;

@@ -10,7 +10,10 @@ import {
   reschedulePackageQueueItem,
   editPackageQueueItemContent,
   type PackageAuthorizationRow,
+  assignSocialAccountToTenant,
 } from "@/lib/social/package-autopilot";
+import { packageErrorForClient } from "@/lib/social/package-errors";
+import { recordAudit } from "@/lib/social/repositories/system";
 
 async function authorizeTenant(tenantId: string) {
   const ctx = await requireClientContext();
@@ -71,7 +74,7 @@ export async function GET(req: NextRequest) {
       ? await service.from("usage_entitlements").select("id, is_paused, limit_amount, current_usage").eq("tenant_id", tenantId).eq("subscription_id", subscription.id).eq("metric", "social_posts").maybeSingle()
       : { data: null };
     const { data: connectedAccounts } = await service.from("social_accounts").select("platform").eq("tenant_id", tenantId).eq("status", "CONNECTED");
-    const { data: brand } = await service.from("social_brand_profiles").select("id").limit(1).maybeSingle();
+    const { data: brands } = await service.from("social_brand_profiles").select("id").eq("tenant_id", tenantId).limit(2);
     return NextResponse.json({
       activated: false,
       eligibility: {
@@ -81,7 +84,8 @@ export async function GET(req: NextRequest) {
         entitlementAvailable: Boolean(entitlement) && !entitlement!.is_paused && entitlement!.current_usage < entitlement!.limit_amount,
         remainingUnits: entitlement ? Math.max(0, entitlement.limit_amount - entitlement.current_usage) : 0,
         connectedPlatforms: [...new Set((connectedAccounts ?? []).map((row) => String(row.platform).toLowerCase()))],
-        brandConfigured: Boolean(brand),
+        brandConfigured: (brands ?? []).length === 1,
+        brandProfileId: (brands ?? []).length === 1 ? brands![0].id : null,
       },
     });
   }
@@ -91,7 +95,7 @@ export async function GET(req: NextRequest) {
     service.from("social_autopilot_queue_items").select("id", { count: "exact", head: true }).eq("authorization_id", row.id).eq("period_number", row.period_number).eq("status", "PUBLISHED"),
     service
       .from("social_autopilot_queue_items")
-      .select("id, package_sequence, scheduled_at, status, content_pillar, last_error, account_id, social_accounts(platform, display_name, username)")
+      .select("id, package_sequence, scheduled_at, status, content_pillar, last_error, account_id, variant_id, social_accounts(platform, display_name, username), content_variants(caption, hashtags)")
       .eq("authorization_id", row.id)
       .eq("period_number", row.period_number)
       .in("status", ["PLANNED", "PREPARED", "REVIEW_REQUIRED", "SCHEDULED", "BLOCKED"])
@@ -112,9 +116,11 @@ export async function GET(req: NextRequest) {
     scheduledAt: item.scheduled_at,
     status: item.status,
     contentPillar: item.content_pillar,
-    blockedReason: item.status === "BLOCKED" ? item.last_error : null,
+    blockedReason: item.status === "BLOCKED" && item.last_error ? packageErrorForClient(item.last_error) : null,
     platform: PLATFORM_LABEL[String((item.social_accounts as { platform?: string } | null)?.platform ?? "")] ?? null,
     accountLabel: (item.social_accounts as { display_name?: string; username?: string } | null)?.display_name || (item.social_accounts as { username?: string } | null)?.username || null,
+    caption: (item.content_variants as { caption?: string } | null)?.caption ?? "",
+    hashtags: (item.content_variants as { hashtags?: string[] } | null)?.hashtags ?? [],
   }));
   const history = (historyRows ?? []).map((item) => {
     const jobResult = Array.isArray(item.social_publishing_jobs)
@@ -130,7 +136,7 @@ export async function GET(req: NextRequest) {
       platform: PLATFORM_LABEL[String((item.social_accounts as { platform?: string } | null)?.platform ?? "")] ?? null,
       accountLabel: (item.social_accounts as { display_name?: string; username?: string } | null)?.display_name || (item.social_accounts as { username?: string } | null)?.username || null,
       permalink,
-      error: item.status === "FAILED" ? item.last_error : null,
+      error: item.status === "FAILED" && item.last_error ? packageErrorForClient(item.last_error) : null,
     };
   });
 
@@ -162,6 +168,8 @@ export async function POST(req: NextRequest) {
           allowedPlatforms: Array.isArray(body.allowedPlatforms) ? body.allowedPlatforms.map(String) : [],
           timezone: typeof body.timezone === "string" ? body.timezone : undefined,
           maxPostsPerDay: typeof body.maxPostsPerDay === "number" ? body.maxPostsPerDay : undefined,
+          brandProfileId: String(body.brandProfileId ?? ""),
+          composition: (body.composition && typeof body.composition === "object" ? body.composition : { items: [{ mediaType: "text", quantity: Number(body.packageSize ?? 1) }], countingPolicy: "CONTENT_UNIT", allowedPlatforms: Array.isArray(body.allowedPlatforms) ? body.allowedPlatforms.map(String) : [], publishingMode: "AUTO_PUBLISH", servicePeriodDays: 30 }) as Parameters<typeof activatePackageAutopilot>[1]["composition"],
         });
         return NextResponse.json({ ok: true, authorization });
       }
@@ -186,6 +194,10 @@ export async function POST(req: NextRequest) {
         });
         return NextResponse.json({ ok: true, result });
       }
+      case "assignAccount": {
+        const result = await assignSocialAccountToTenant(service as Parameters<typeof assignSocialAccountToTenant>[0], { accountId: String(body.accountId ?? ""), tenantId, clientUserId: auth.userId });
+        return NextResponse.json({ ok: true, result });
+      }
       case "skip": {
         const queueItemId = String(body.queueItemId ?? "");
         if (!(await verifyQueueItemTenant(service, queueItemId, tenantId))) return NextResponse.json({ error: "Queue item not found" }, { status: 404 });
@@ -193,6 +205,7 @@ export async function POST(req: NextRequest) {
           queueItemId,
           reason: typeof body.reason === "string" ? body.reason : undefined,
         });
+        await recordAudit({ actorType: "USER", actorId: auth.userId, action: "social.package.skip", targetType: "social_autopilot_queue_item", targetId: queueItemId, summary: "Skipped an upcoming package post", meta: { tenantId } });
         return NextResponse.json({ ok: true, result });
       }
       case "reschedule": {
@@ -202,6 +215,7 @@ export async function POST(req: NextRequest) {
           queueItemId,
           scheduledAt: String(body.scheduledAt ?? ""),
         });
+        await recordAudit({ actorType: "USER", actorId: auth.userId, action: "social.package.reschedule", targetType: "social_autopilot_queue_item", targetId: queueItemId, summary: "Rescheduled an upcoming package post", meta: { tenantId, scheduledAt: String(body.scheduledAt ?? "") } });
         return NextResponse.json({ ok: true, result });
       }
       case "edit": {
@@ -212,13 +226,14 @@ export async function POST(req: NextRequest) {
           caption: typeof body.caption === "string" ? body.caption : undefined,
           hashtags: Array.isArray(body.hashtags) ? body.hashtags.map(String) : undefined,
         });
+        await recordAudit({ actorType: "USER", actorId: auth.userId, action: "social.package.edit", targetType: "social_autopilot_queue_item", targetId: queueItemId, summary: "Edited an upcoming package post", meta: { tenantId } });
         return NextResponse.json({ ok: true, result });
       }
       default:
         return NextResponse.json({ error: "Unknown action" }, { status: 400 });
     }
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Request failed" }, { status: 400 });
+    return NextResponse.json({ error: packageErrorForClient(error) }, { status: 400 });
   }
 }
 

@@ -3,7 +3,7 @@ import { isKillSwitchActive, recordWorkerHeartbeat } from "@stratxcel/queue";
 import crypto from "node:crypto";
 import { scheduleJob } from "./repositories/publishing.ts";
 import { runPublishNow } from "./agent/publish-outcome.ts";
-import { getBrandProfile } from "./repositories/brand.ts";
+import { getBoundBrandProfile } from "./repositories/brand.ts";
 import { createContentMaster, createContentVariant } from "./repositories/content.ts";
 import { resolveConfiguredProvider } from "./agent/provider.ts";
 import { selectGeminiBrandInstructions } from "./agent/gemini-boundary.ts";
@@ -12,6 +12,9 @@ import { computePackageDistribution } from "./package-distribution.ts";
 import { notifyPackageEvent } from "./package-whatsapp-notify.ts";
 import type { OwnerContext } from "./db-context.ts";
 import { CONTENT_OBJECTIVE_VALUES } from "./content-options.ts";
+import { validatePackageComposition, compositionMediaTypeForUnit, type PackageComposition } from "./package-composition.ts";
+import { selectPackageMediaAsset } from "./package-media.ts";
+import { recordAudit } from "./repositories/system.ts";
 
 export type PackagePublishingMode = "AUTO_PUBLISH" | "REVIEW_BEFORE_PUBLISH";
 export type PackageAuthorizationState = "ACTIVE" | "PAUSED" | "CANCELLED" | "EXPIRED" | "NEEDS_ATTENTION";
@@ -48,6 +51,8 @@ export interface PackageAuthorizationRow {
   grace_window_minutes: number;
   counting_policy: CountingPolicy;
   skip_policy: SkipPolicy;
+  brand_profile_id: string;
+  package_composition: PackageComposition;
   starts_at: string;
   ends_at: string | null;
   activated_at: string;
@@ -68,6 +73,8 @@ export interface PackageQueueItemRow {
   publishing_job_id: string | null;
   last_error: string | null;
   content_pillar: string | null;
+  content_unit_key: string | null;
+  content_master_id: string | null;
   media_type: string | null;
   claimed_at: string | null;
   settled_at: string | null;
@@ -105,6 +112,8 @@ export async function activatePackageAutopilot(
     allowedPlatforms: string[];
     timezone?: string;
     maxPostsPerDay?: number;
+    brandProfileId: string;
+    composition: PackageComposition;
     startsAt?: string;
     endsAt?: string;
   }
@@ -137,8 +146,9 @@ export async function activatePackageAutopilot(
   const missing = platforms.filter((platform) => !connectedPlatforms.has(platform));
   if (missing.length) throw new Error(`prerequisite_missing: connect ${missing.join(", ")} for this workspace before activating`);
 
-  const { data: brand } = await service.from("social_brand_profiles").select("id").limit(1).maybeSingle();
-  if (!brand) throw new Error("prerequisite_missing: Brand Brain is not configured yet");
+  const { data: brand } = await service.from("social_brand_profiles").select("id,tenant_id").eq("id", input.brandProfileId).eq("tenant_id", input.tenantId).maybeSingle();
+  if (!brand) throw new Error("brand_binding_invalid");
+  const composition = validatePackageComposition(input.composition);
 
   const startsAt = input.startsAt ?? new Date().toISOString();
   const endsAt = input.endsAt ?? subscription.current_period_end;
@@ -161,6 +171,9 @@ export async function activatePackageAutopilot(
         period_target_units: Math.max(0, entitlement.limit_amount - entitlement.current_usage),
         timezone: input.timezone ?? "Asia/Kolkata",
         max_posts_per_day: input.maxPostsPerDay ?? 1,
+        brand_profile_id: brand.id,
+        package_composition: composition,
+        counting_policy: composition.countingPolicy,
         revoked_at: null,
         updated_at: new Date().toISOString(),
       },
@@ -169,13 +182,57 @@ export async function activatePackageAutopilot(
     .select("*")
     .single();
   if (error || !data) throw new Error("Could not activate Social Autopilot");
+  await recordAudit({ actorType: "USER", actorId: input.clientUserId, action: "social.package.activate", targetType: "social_autopilot_authorization", targetId: data.id, summary: "Activated package Social Autopilot", meta: { tenantId: input.tenantId, publishingMode: input.publishingMode, platforms } });
   return data as PackageAuthorizationRow;
 }
 
+export async function assignSocialAccountToTenant(service: ServiceClient, input: { accountId: string; tenantId: string; clientUserId: string }) {
+  const { data: membership } = await service.from("tenant_members").select("user_id").eq("tenant_id", input.tenantId).eq("user_id", input.clientUserId).maybeSingle();
+  if (!membership) throw new Error("account_assignment_not_authorized");
+  const { data: account } = await service.from("social_accounts").select("id,tenant_id").eq("id", input.accountId).maybeSingle();
+  if (!account || (account.tenant_id && account.tenant_id !== input.tenantId)) throw new Error("account_assignment_not_authorized");
+  const { data, error } = await service.from("social_accounts").update({ tenant_id: input.tenantId }).eq("id", input.accountId).is("tenant_id", null).select("id,tenant_id").maybeSingle();
+  if (error || (!data && !account.tenant_id)) throw new Error("account_assignment_failed");
+  await recordAudit({ actorType: "USER", actorId: input.clientUserId, action: "social.package.account_assigned", targetType: "social_account", targetId: input.accountId, summary: "Assigned a social destination to a client workspace", meta: { tenantId: input.tenantId } });
+  return data ?? account;
+}
+
+async function validatePackageResumePrerequisites(service: ServiceClient, authorizationId: string, tenantId: string, clientUserId: string) {
+  const { data: auth } = await service.from("social_autopilot_authorizations")
+    .select("id,subscription_id,entitlement_id,brand_profile_id,allowed_platforms,package_composition")
+    .eq("id", authorizationId).eq("tenant_id", tenantId).eq("client_user_id", clientUserId).maybeSingle();
+  if (!auth) throw new Error("authorization_not_found");
+  const [{ data: subscription }, { data: entitlement }, { data: brand }, { data: accounts }] = await Promise.all([
+    service.from("subscriptions").select("status,current_period_end").eq("id", auth.subscription_id).eq("tenant_id", tenantId).maybeSingle(),
+    service.from("usage_entitlements").select("metric,is_paused,limit_amount,current_usage").eq("id", auth.entitlement_id).eq("tenant_id", tenantId).eq("subscription_id", auth.subscription_id).maybeSingle(),
+    service.from("social_brand_profiles").select("id,owner_id,tenant_id").eq("id", auth.brand_profile_id).eq("tenant_id", tenantId).maybeSingle(),
+    service.from("social_accounts").select("platform").eq("tenant_id", tenantId).eq("status", "CONNECTED").in("platform", auth.allowed_platforms),
+  ]);
+  if (!subscription || subscription.status !== "active" || new Date(subscription.current_period_end).getTime() <= Date.now()) throw new Error("subscription_inactive");
+  if (!entitlement || entitlement.metric !== "social_posts" || entitlement.is_paused || entitlement.current_usage >= entitlement.limit_amount) throw new Error("entitlement_paused_or_exhausted");
+  if (!brand) throw new Error("brand_binding_invalid");
+  const connected = new Set((accounts ?? []).map((row) => String(row.platform).toLowerCase()));
+  if ((auth.allowed_platforms as string[]).some((platform) => !connected.has(platform.toLowerCase()))) throw new Error("account_disconnected");
+  const composition = validatePackageComposition(auth.package_composition as PackageComposition);
+  for (const mediaType of new Set(composition.items.map((item) => item.mediaType))) {
+    await selectPackageMediaAsset(service, { tenantId, ownerId: brand.owner_id, mediaType });
+  }
+}
+
 export async function setPackageAutopilotState(service: ServiceClient, input: { authorizationId: string; tenantId: string; clientUserId: string; state: PackageAuthorizationState }) {
+  if (input.state === "ACTIVE") {
+    try {
+      await validatePackageResumePrerequisites(service, input.authorizationId, input.tenantId, input.clientUserId);
+    } catch (error) {
+      await service.from("social_autopilot_authorizations").update({ state: "NEEDS_ATTENTION", updated_at: new Date().toISOString() })
+        .eq("id", input.authorizationId).eq("tenant_id", input.tenantId).eq("client_user_id", input.clientUserId);
+      throw error;
+    }
+  }
   const { data, error } = await service.from("social_autopilot_authorizations").update({ state: input.state, revoked_at: input.state === "CANCELLED" ? new Date().toISOString() : null, updated_at: new Date().toISOString() })
     .eq("id", input.authorizationId).eq("tenant_id", input.tenantId).eq("client_user_id", input.clientUserId).select("id,state").maybeSingle();
   if (error || !data) throw new Error("Package authorization was not found for this client");
+  await recordAudit({ actorType: "USER", actorId: input.clientUserId, action: `social.package.${input.state.toLowerCase()}`, targetType: "social_autopilot_authorization", targetId: input.authorizationId, summary: `Changed package Autopilot state to ${input.state}`, meta: { tenantId: input.tenantId } });
   return data;
 }
 
@@ -208,6 +265,7 @@ export async function setPackageAutopilotScope(service: ServiceClient, input: { 
       .in("status", ["PLANNED", "PREPARED", "REVIEW_REQUIRED", "SCHEDULED"])
       .in("account_id", nowOutOfScopeAccountIds);
   }
+  await recordAudit({ actorType: "USER", actorId: input.clientUserId, action: "social.package.scope_change", targetType: "social_autopilot_authorization", targetId: input.authorizationId, summary: "Changed package destination scope", meta: { tenantId: input.tenantId, platforms } });
   return auth;
 }
 
@@ -322,6 +380,10 @@ export interface PlanPeriodResult {
   blockedReason?: string;
 }
 
+export function contentUnitKeyFor(authorizationId: string, periodNumber: number, unitSequence: number) { return `${authorizationId}:${periodNumber}:${unitSequence}`; }
+export function packageSequenceForRow(unitSequence: number, platformIndex: number, countingPolicy: CountingPolicy) { return countingPolicy === "CONTENT_UNIT" ? unitSequence * 10 + platformIndex : unitSequence; }
+export function contentUnitIndexForRow(packageSequence: number, countingPolicy: CountingPolicy) { return Math.max(0, (countingPolicy === "CONTENT_UNIT" ? Math.floor(packageSequence / 10) : packageSequence) - 1); }
+
 /**
  * The "service plan" layer (Section 16): ensures the current service period
  * has a full set of future SLOTS (timestamp + destination, no content yet)
@@ -360,14 +422,17 @@ export async function planPackagePeriod(service: ServiceClient, authorizationId:
   }
   const resolvedPlatforms = authorization.allowed_platforms.filter((platform) => accountByPlatform.has(platform));
 
-  const { count: existingCount } = await service
+  const { data: existingRows } = await service
     .from("social_autopilot_queue_items")
-    .select("id", { count: "exact", head: true })
+    .select("package_sequence,content_unit_key")
     .eq("authorization_id", authorization.id)
     .eq("period_number", authorization.period_number);
+  const existingCount = authorization.counting_policy === "CONTENT_UNIT"
+    ? new Set((existingRows ?? []).map((row) => row.content_unit_key).filter(Boolean)).size
+    : (existingRows ?? []).length;
 
   const distribution = computePackageDistribution({
-    existingCount: existingCount ?? 0,
+    existingCount,
     targetUnits: authorization.period_target_units,
     now: new Date(),
     periodStart: new Date(authorization.starts_at),
@@ -385,20 +450,24 @@ export async function planPackagePeriod(service: ServiceClient, authorizationId:
 
   if (distribution.slots.length === 0) return { planned: 0, blockedReason: distribution.blockedReason };
 
-  const rows = distribution.slots.map((slot) => {
-    const account = accountByPlatform.get(slot.platform)!;
-    return {
+  const rows = distribution.slots.flatMap((slot) => {
+    const destinations = authorization.counting_policy === "CONTENT_UNIT" ? resolvedPlatforms : [slot.platform];
+    return destinations.map((destination, index) => {
+      const account = accountByPlatform.get(destination)!;
+      return {
       id: crypto.randomUUID(),
       authorization_id: authorization.id,
       tenant_id: authorization.tenant_id,
       owner_id: account.owner_id,
       variant_id: null,
       account_id: account.id,
-      package_sequence: slot.sequence,
+      package_sequence: packageSequenceForRow(slot.sequence, index, authorization.counting_policy),
       period_number: authorization.period_number,
+      content_unit_key: authorization.counting_policy === "CONTENT_UNIT" ? contentUnitKeyFor(authorization.id, authorization.period_number, slot.sequence) : null,
       scheduled_at: slot.scheduledAt,
       status: "PLANNED" as const,
-    };
+      };
+    });
   });
   // ON CONFLICT DO NOTHING against the (authorization_id, period_number,
   // package_sequence) unique index — the actual concurrency guard.
@@ -484,8 +553,8 @@ export async function prepareNearTermPackageItems(service: ServiceClient, author
       if (!platform) throw new Error("destination account unavailable");
 
       const ownerCtx: OwnerContext = { ok: true, ownerId: item.owner_id, email: null, supabase: service as OwnerContext["supabase"] };
-      const brandProfile = await getBrandProfile(ownerCtx);
-      if (!brandProfile.id) throw new Error("Brand Brain is not configured");
+      const brandProfile = await getBoundBrandProfile(ownerCtx, authorization.brand_profile_id, authorization.tenant_id);
+      if (!brandProfile) throw new Error("brand_binding_invalid");
       const pillarNames = brandProfile.content_pillars.map((pillar) => pillar.name);
       if (!pillarNames.length) throw new Error("Brand Brain has no content pillars yet");
 
@@ -521,14 +590,19 @@ export async function prepareNearTermPackageItems(service: ServiceClient, author
         ? generated.objective
         : requireContentObjective("ENGAGEMENT");
 
-      const masterId = await createContentMaster(ownerCtx, {
+      const mediaType = compositionMediaTypeForUnit(authorization.package_composition, contentUnitIndexForRow(item.package_sequence, authorization.counting_policy));
+      if (!mediaType) throw new Error("package_composition_exhausted");
+      const mediaAsset = await selectPackageMediaAsset(service, { tenantId: authorization.tenant_id, ownerId: brandProfile.owner_id, mediaType });
+      const brandCtx: OwnerContext = { ...ownerCtx, ownerId: brandProfile.owner_id };
+      const { data: sibling } = item.content_unit_key ? await service.from("social_autopilot_queue_items").select("content_master_id").eq("authorization_id", authorization.id).eq("content_unit_key", item.content_unit_key).not("content_master_id", "is", null).limit(1).maybeSingle() : { data: null };
+      const masterId = sibling?.content_master_id ?? await createContentMaster(brandCtx, {
         title: generated.title,
         masterIdea: generated.masterIdea,
         objective,
         contentPillar: canonicalPillar,
         campaignId: null,
       });
-      const variantId = await createContentVariant(ownerCtx, {
+      const variantId = await createContentVariant(brandCtx, {
         masterId,
         platform,
         format: "post",
@@ -537,13 +611,17 @@ export async function prepareNearTermPackageItems(service: ServiceClient, author
         hashtags: generated.hashtags,
         mediaUrls: [],
       });
+      if (mediaAsset) {
+        await service.from("social_content_variant_media").insert({ variant_id: variantId, asset_id: mediaAsset.id, position: 0 });
+      }
 
       await service
         .from("social_autopilot_queue_items")
         .update({
           variant_id: variantId,
+          content_master_id: masterId,
           content_pillar: canonicalPillar,
-          media_type: "text",
+          media_type: mediaType,
           status: authorization.publishing_mode === "AUTO_PUBLISH" ? "PREPARED" : "REVIEW_REQUIRED",
           last_error: null,
           updated_at: new Date().toISOString(),
@@ -648,7 +726,7 @@ export async function runPackageAutopilotBatch(service: ServiceClient, batchSize
   }
 
   await recordWorkerHeartbeat(service as Parameters<typeof recordWorkerHeartbeat>[0], {
-    workerType: PACKAGE_WORKER_TYPE,
+    workerType: PACKAGE_WORKER_TYPE as never,
     instanceId: `package-worker-${process.pid}`,
     status: "idle",
     queueBacklogHint: results.length,

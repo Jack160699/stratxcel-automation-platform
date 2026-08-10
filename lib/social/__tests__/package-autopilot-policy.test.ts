@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
-const migration = fs.readFileSync(path.join(root, "supabase/migrations/20260810190000_social_package_autopilot_authorization.sql"), "utf8");
+const migration = fs.readFileSync(path.join(root, "supabase/migrations/20260810195000_social_package_autopilot_authorization.sql"), "utf8");
 const policy = fs.readFileSync(path.join(root, "lib/social/package-autopilot.ts"), "utf8");
 const agentRepo = fs.readFileSync(path.join(root, "lib/social/repositories/agent.ts"), "utf8");
 

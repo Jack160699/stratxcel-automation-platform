@@ -48,6 +48,11 @@ export async function getBrandProfile(ctx: OwnerContext): Promise<BrandProfileRo
   return { id: "", owner_id: ctx.ownerId, ...DEFAULT_PROFILE, updated_at: "" };
 }
 
+export async function getBoundBrandProfile(ctx: OwnerContext, profileId: string, tenantId: string): Promise<BrandProfileRow | null> {
+  const { data } = await ctx.supabase.from("social_brand_profiles").select("*").eq("id", profileId).eq("tenant_id", tenantId).maybeSingle();
+  return data as BrandProfileRow | null;
+}
+
 export async function upsertBrandProfile(ctx: OwnerContext, patch: Partial<Omit<BrandProfileRow, "id" | "owner_id" | "updated_at">>) {
   const current = await getBrandProfile(ctx);
   const merged = { ...current, ...patch };

@@ -26,7 +26,7 @@ function run() {
   const notify = read("lib", "social", "package-whatsapp-notify.ts");
 
   // --- Migration: additive only, never edits the already-applied original file. ---
-  const originalMigration = read("supabase", "migrations", "20260810190000_social_package_autopilot_authorization.sql");
+  const originalMigration = read("supabase", "migrations", "20260810195000_social_package_autopilot_authorization.sql");
   assert.ok(originalMigration.includes("create table if not exists social_autopilot_authorizations"), "the original migration must remain byte-identical (never edited in place)");
 
   // --- Schema hardening: period lifecycle, distribution policy, NEEDS_ATTENTION, nullable variant_id, composite uniqueness. ---
@@ -76,7 +76,7 @@ function run() {
 
   // --- Preparation reuses the EXISTING content pipeline, never a second content generator. ---
   assert.ok(autopilot.includes("createContentMaster") && autopilot.includes("createContentVariant"), "package content must be created through the same repository functions the manual Copilot uses");
-  assert.ok(autopilot.includes("getBrandProfile"), "generation must be grounded in the tenant's real Brand Brain");
+  assert.ok(autopilot.includes("getBoundBrandProfile"), "generation must be grounded in the tenant's explicitly bound Brand Brain");
   assert.ok(autopilot.includes("pillarNames.find((name) => name.toLowerCase() === generated.contentPillar.toLowerCase())"), "a generated pillar must match a REAL saved Brand Brain pillar — invented taxonomy is rejected, matching the existing canonical-validation standard");
   assert.ok(autopilot.includes("status: \"BLOCKED\""), "a quality-gate failure must block the item, never publish garbage (Section 28/48)");
 

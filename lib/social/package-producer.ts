@@ -81,7 +81,7 @@ export async function runPackageAutopilotProducer(service: ServiceClient, batchL
   };
   await recordRun(service, result);
   await recordWorkerHeartbeat(service as Parameters<typeof recordWorkerHeartbeat>[0], {
-    workerType: PACKAGE_WORKER_TYPE,
+    workerType: PACKAGE_WORKER_TYPE as never,
     instanceId: `package-producer-${process.pid}`,
     status: failures.length > 0 ? "degraded" : "idle",
     queueBacklogHint: itemsPlanned,

@@ -1,0 +1,2 @@
+import assert from "node:assert/strict"; import { packageErrorForClient } from "../package-errors.ts";
+for(const raw of ["SQLSTATE 23505 uuid 11111111-1111-4111-8111-111111111111","provider token=secret","destination_removed_from_package_scope"]) { const safe=packageErrorForClient(raw); assert.ok(!/sql|uuid|11111111|token=|destination_removed/i.test(safe)); } console.log("package-errors.test.ts: ALL PASS");
