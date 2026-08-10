@@ -171,8 +171,11 @@ export function CopilotFullPage({
 
   const submit = () => {
     const value = input.trim();
-    if (!value) return;
-    send(value, attachments);
+    if (!value && attachments.length === 0) return;
+    const imageOnlyMission = attachments.some((attachment) => attachment.mimeType.startsWith("image/"))
+      ? "Review this image and help me choose the most useful social or marketing next step. Briefly explain what it communicates, then suggest a few relevant actions I can take. Do not publish or create final content until I choose."
+      : "Review the attached file and suggest the most useful next steps.";
+    send(value || imageOnlyMission, attachments);
     setInput("");
     setAttachments([]);
   };
@@ -362,7 +365,7 @@ export function CopilotFullPage({
               className="saut-input saut-agent-composer flex-1"
               disabled={pending || uploading}
             />
-            <button onClick={submit} disabled={pending || uploading || !input.trim()} className="saut-btn saut-btn-primary">Send</button>
+            <button onClick={submit} disabled={pending || uploading || (!input.trim() && attachments.length === 0)} className="saut-btn saut-btn-primary">Send</button>
           </div>
         </div>
       </section>

@@ -27,6 +27,8 @@ export interface PublishActionPreview {
   shadowMode: boolean;
   /** YouTube-only visibility, when applicable. */
   visibility?: string;
+  recommendationTier?: "recommended" | "optional";
+  recommendationReason?: string;
 }
 
 const IMMEDIATE_WINDOW_MS = 2 * 60 * 1000;
@@ -87,6 +89,8 @@ export async function getActionPreview(ctx: OwnerContext, actionId: string): Pro
       isImmediate: !scheduledAt || new Date(scheduledAt).getTime() <= Date.now() + IMMEDIATE_WINDOW_MS,
       mediaAssetIds: variantId ? await variantMediaAssetIds(ctx, variantId, variant?.master_id ?? null) : [],
       shadowMode: settings.shadow_mode,
+      recommendationTier: input.recommendationTier === "optional" ? "optional" : input.recommendationTier === "recommended" ? "recommended" : undefined,
+      recommendationReason: str(input.recommendationReason),
     };
   }
 

@@ -105,6 +105,7 @@ function run() {
   const orchestrator = read("lib", "social", "agent", "orchestrator.ts");
   const automation = read("lib", "social", "repositories", "automation.ts");
   const content = read("lib", "social", "repositories", "content.ts");
+  const actionPreview = read("lib", "social", "agent", "action-preview.ts");
 
   assert.ok(tools.includes("platformsMatch(account.platform, variant.platform)"), "schedule_post must compare platforms canonically, not with !==");
   assert.ok(!tools.includes("account.platform !== variant.platform"), "the literal casing-sensitive comparison must be gone");
@@ -182,7 +183,10 @@ function run() {
   assert.ok(agentMessage.includes("PublishApprovalGroup"), "publish-intent proposed actions must render as the Ready-to-publish card group, not the raw JSON approval card");
   const publishCard = read("app", "admin", "social", "agent", "PublishApprovalCard.tsx");
   assert.ok(!publishCard.includes("JSON.stringify(action"), "the Ready-to-publish card must never dump raw internal payloads/IDs");
-  assert.ok(publishCard.includes("Approve all"), "a bundled multi-platform request must offer one Approve-all affordance, not force separate interruptions");
+  assert.ok(publishCard.includes("Approve selected &amp; publish"), "a bundled multi-platform request must offer one combined approval affordance");
+  assert.ok(publishCard.includes("Recommended") && publishCard.includes("Optional"), "the combined artifact must distinguish recommended and optional destinations");
+  assert.ok(actionPreview.includes("recommendationTier") && actionPreview.includes("recommendationReason"), "the approval artifact must use Copilot's creative-fit recommendation metadata");
+  assert.ok(!agentMessage.includes("Technical details"), "approval UI must not expose raw technical payloads or internal IDs");
   assert.ok(publishCard.includes("SHADOW MODE"), "the card must warn truthfully when Shadow Mode will prevent external publishing");
 
   console.log("publish-outcome.test.ts: ALL PASS (live-publish proof, Shadow Mode honesty, queued/failed wording, receipts, single-approval flow wiring)");

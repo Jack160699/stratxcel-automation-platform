@@ -2,6 +2,7 @@ import { stripInternalInput } from "@/lib/social/agent/dependencies";
 import { PUBLISH_INTENT_TOOLS, platformLabel } from "@/lib/social/agent/publish-outcome-classify";
 import { AgentMarkdown } from "./AgentMarkdown";
 import { PublishApprovalGroup } from "./PublishApprovalCard";
+import { sanitizeUserFacingText } from "@/lib/social/agent/user-facing-text";
 
 export interface PublishReceiptData {
   platform?: string;
@@ -88,12 +89,6 @@ function ApprovalCard({
       )}
       {preview && <p className="mt-3 whitespace-pre-wrap text-[12.5px] leading-relaxed" style={{ color: "var(--saut-text)" }}>{preview}</p>}
       {hashtags && <p className="mt-2 text-xs" style={{ color: "var(--saut-ai)" }}>{hashtags}</p>}
-      <details className="mt-3 text-xs">
-        <summary style={{ color: "var(--saut-text-subtle)" }}>Technical details</summary>
-        <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-all" style={{ color: "var(--saut-text-muted)" }}>
-          {JSON.stringify(input, null, 2)}
-        </pre>
-      </details>
       <div className="mt-3 flex justify-end gap-2">
         <button onClick={() => onReject(action.id)} className="saut-btn saut-btn-ghost !h-7 !px-2.5 text-[11px]">Reject</button>
         <button onClick={() => onApprove(action.id)} className="saut-btn saut-btn-primary !h-7 !px-2.5 text-[11px]">Approve</button>
@@ -145,7 +140,7 @@ export function AgentMessage({
       >
         {isUser
           ? <p className="text-sm leading-relaxed" style={{ color: "var(--saut-text)" }}>{message.content}</p>
-          : <AgentMarkdown content={message.content} />}
+          : <AgentMarkdown content={sanitizeUserFacingText(message.content)} />}
       </div>
       {message.parts.map((part, index) => {
         if (part.type === "proposed_actions" && part.actions?.length) {

@@ -133,6 +133,7 @@ export function ExecutionTrace({
   const [pinned, setPinned] = useState<Record<string, boolean>>({});
   const [showFullTrace, setShowFullTrace] = useState(false);
   const stageRefs = useRef(new Map<string, HTMLDetailsElement>());
+  const stageListRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (run?.status !== "RUNNING") return;
@@ -157,7 +158,15 @@ export function ExecutionTrace({
   const activeKey = useMemo(() => activeStageKey(stages), [stages]);
   useEffect(() => {
     if (!activeKey) return;
-    stageRefs.current.get(activeKey)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    const viewport = stageListRef.current;
+    const row = stageRefs.current.get(activeKey);
+    if (!viewport || !row) return;
+    const rowTop = row.offsetTop;
+    const rowBottom = rowTop + row.offsetHeight;
+    const visibleTop = viewport.scrollTop;
+    const visibleBottom = visibleTop + viewport.clientHeight;
+    if (rowTop < visibleTop) viewport.scrollTo({ top: rowTop, behavior: "smooth" });
+    else if (rowBottom > visibleBottom) viewport.scrollTo({ top: rowBottom - viewport.clientHeight, behavior: "smooth" });
   }, [activeKey]);
 
   if (!run || events.length === 0) {
@@ -180,7 +189,7 @@ export function ExecutionTrace({
         {running ? "Working" : "Worked"} for {Math.max(0, Math.round(elapsedMs / 1000))}s
       </div>
 
-      <div className="saut-stage-list space-y-1.5" aria-label="Execution stages">
+      <div ref={stageListRef} className="saut-stage-list space-y-1.5" aria-label="Execution stages">
         {stages.map((stage, index) => {
           const isLast = index === stages.length - 1;
           // Active (running/pending-approval) or failed stages open by

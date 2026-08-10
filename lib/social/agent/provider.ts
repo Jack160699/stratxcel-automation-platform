@@ -35,6 +35,7 @@ export interface ProviderSafeContext {
   contentIdeas?: string[];
   draftCaptions?: string[];
   businessInformation?: string[];
+  creativeImages?: Array<{ mimeType: string; data: string }>;
 }
 
 export interface AIProvider {
@@ -114,6 +115,7 @@ class GeminiProvider implements AIProvider {
       conversation,
       systemInstruction: systemMessage,
       tools: tools.map((tool) => ({ name: tool.name, description: tool.description, parameters: tool.parameters })),
+      creativeImages: context.creativeImages,
     };
     const request = buildGeminiRequest(boundaryInput);
     const requestFields = Object.keys(request);

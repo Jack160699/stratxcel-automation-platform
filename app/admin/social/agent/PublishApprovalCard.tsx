@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   getActionPreviewAction,
   editProposedPublishActionAction,
@@ -21,6 +21,21 @@ function toDatetimeLocal(iso: string | undefined): string {
   if (Number.isNaN(date.getTime())) return "";
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function platformRecommendation(preview: PublishActionPreview | undefined) {
+  if (preview?.recommendationTier) {
+    return {
+      recommended: preview.recommendationTier === "recommended",
+      reason: preview.recommendationReason || "Recommended from the creative, Brand Brain, and platform fit.",
+    };
+  }
+  const platform = preview?.platform?.toLowerCase();
+  if (platform === "facebook") return { recommended: false, reason: "Broad, accessible reach; useful as an optional secondary version." };
+  if (platform === "instagram") return { recommended: true, reason: "Strong fit for visual engagement and concise, expressive copy." };
+  if (platform === "linkedin") return { recommended: true, reason: "Strong fit for a professional founder or business-value angle." };
+  if (platform === "threads") return { recommended: true, reason: "Strong fit for short, natural commentary and conversation." };
+  return { recommended: true, reason: "Available connected destination with a prepared platform-specific version." };
 }
 
 function MediaPreview({ assetId }: { assetId: string }) {
@@ -51,10 +66,14 @@ function ReadyToPublishCard({
   action,
   onApprove,
   onReject,
+  grouped = false,
+  onPreviewLoaded,
 }: {
   action: { id: string; tool: string; input: Record<string, unknown> };
   onApprove: (id: string) => void;
   onReject: (id: string) => void;
+  grouped?: boolean;
+  onPreviewLoaded?: (actionId: string, preview: PublishActionPreview) => void;
 }) {
   const [preview, setPreview] = useState<PublishActionPreview | null>(null);
   const [loading, setLoading] = useState(true);
@@ -77,12 +96,13 @@ function ReadyToPublishCard({
         setHashtags((result?.hashtags ?? []).map((tag) => `#${tag}`).join(" "));
         setScheduleMode(result?.isImmediate ? "now" : "custom");
         setCustomWhen(toDatetimeLocal(result?.scheduledAt));
+        if (result) onPreviewLoaded?.(action.id, result);
       })
       .finally(() => !cancelled && setLoading(false));
     return () => {
       cancelled = true;
     };
-  }, [action.id]);
+  }, [action.id, onPreviewLoaded]);
 
   const saveEdit = async () => {
     setSaving(true);
@@ -122,7 +142,7 @@ function ReadyToPublishCard({
 
   return (
     <section className="saut-publish-card" aria-label="Ready to publish">
-      <div className="saut-mono text-[10px] uppercase tracking-[0.14em]" style={{ color: "var(--saut-ai)" }}>Ready to publish</div>
+      {!grouped && <div className="saut-mono text-[10px] uppercase tracking-[0.14em]" style={{ color: "var(--saut-ai)" }}>Ready to publish</div>}
 
       {preview.mediaAssetIds[0] && <MediaPreview assetId={preview.mediaAssetIds[0]} />}
 
@@ -183,17 +203,22 @@ function ReadyToPublishCard({
             {preview.visibility && <div><dt>Visibility</dt><dd>{preview.visibility}</dd></div>}
           </dl>
 
-          {preview.shadowMode && (
+          {!grouped && preview.shadowMode && (
             <p className="saut-publish-warning" role="note">
               SHADOW MODE — this will be processed but not published externally.
             </p>
           )}
 
-          {!resolved && (
+          {!resolved && !grouped && (
             <div className="mt-3 flex flex-wrap justify-end gap-2">
               <button onClick={() => setEditing(true)} className="saut-btn saut-btn-ghost !h-7 !px-2.5 text-[11px]">Edit</button>
               <button onClick={() => decide(onReject)} className="saut-btn saut-btn-ghost !h-7 !px-2.5 text-[11px]">Cancel</button>
               <button onClick={() => decide(onApprove)} className="saut-btn saut-btn-primary !h-7 !px-2.5 text-[11px]">Approve &amp; Publish</button>
+            </div>
+          )}
+          {grouped && !resolved && (
+            <div className="mt-3 flex justify-end">
+              <button onClick={() => setEditing(true)} className="saut-btn saut-btn-ghost !h-7 !px-2.5 text-[11px]">Edit this preview</button>
             </div>
           )}
         </>
@@ -218,21 +243,71 @@ export function PublishApprovalGroup({
   onApprove: (id: string) => void;
   onReject: (id: string) => void;
 }) {
+  const [previews, setPreviews] = useState<Record<string, PublishActionPreview>>({});
+  const [selected, setSelected] = useState<Record<string, boolean>>({});
+
+  const handlePreviewLoaded = useCallback((actionId: string, preview: PublishActionPreview) => {
+    setPreviews((current) => ({ ...current, [actionId]: preview }));
+    setSelected((current) => current[actionId] === undefined
+      ? { ...current, [actionId]: platformRecommendation(preview).recommended }
+      : current);
+  }, []);
+
+  const selectedActions = actions.filter((action) => selected[action.id] ?? platformRecommendation(previews[action.id]).recommended);
+  const anyShadowMode = Object.values(previews).some((preview) => preview.shadowMode);
+
   return (
-    <div className="mt-2 space-y-2">
+    <section className="saut-publish-group mt-2" aria-label="Ready to publish combined approval">
+      <div className="saut-mono text-[10px] uppercase tracking-[0.14em]" style={{ color: "var(--saut-ai)" }}>Ready to publish</div>
       {actions.length > 1 && (
-        <div className="flex justify-end">
-          <button
-            onClick={() => actions.forEach((action) => onApprove(action.id))}
-            className="saut-btn saut-btn-primary !h-7 !px-2.5 text-[11px]"
-          >
-            Approve all ({actions.length})
-          </button>
+        <div className="mt-3">
+          <h3 className="text-xs font-semibold">Recommended platforms</h3>
+          <ul className="mt-2 space-y-1.5">
+            {actions.map((action) => {
+              const preview = previews[action.id];
+              const fit = platformRecommendation(preview);
+              return (
+                <li key={action.id} className="flex items-start gap-2 text-xs">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5"
+                    checked={selected[action.id] ?? fit.recommended}
+                    onChange={(event) => setSelected((current) => ({ ...current, [action.id]: event.target.checked }))}
+                    aria-label={`Include ${preview?.platformLabel ?? "platform"}`}
+                  />
+                  <span>
+                    <strong>{preview?.platformLabel ?? "Preparing platform"}</strong>
+                    <span className="ml-1" style={{ color: fit.recommended ? "var(--saut-success)" : "var(--saut-text-subtle)" }}>
+                      {fit.recommended ? "Recommended" : "Optional"}
+                    </span>
+                    <span className="block" style={{ color: "var(--saut-text-muted)" }}>{fit.reason}</span>
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
         </div>
       )}
-      {actions.map((action) => (
-        <ReadyToPublishCard key={action.id} action={action} onApprove={onApprove} onReject={onReject} />
-      ))}
-    </div>
+      <div className="mt-3 space-y-2" aria-label="Platform previews">
+        {actions.map((action) => (
+          <ReadyToPublishCard key={action.id} action={action} onApprove={onApprove} onReject={onReject} grouped onPreviewLoaded={handlePreviewLoaded} />
+        ))}
+      </div>
+      {anyShadowMode && (
+        <p className="saut-publish-warning" role="note">
+          SHADOW MODE — these drafts will be processed but nothing will be published externally.
+        </p>
+      )}
+      <div className="mt-3 flex flex-wrap justify-end gap-2">
+        <button onClick={() => actions.forEach((action) => onReject(action.id))} className="saut-btn saut-btn-ghost !h-7 !px-2.5 text-[11px]">Cancel</button>
+        <button
+          onClick={() => selectedActions.forEach((action) => onApprove(action.id))}
+          disabled={selectedActions.length === 0}
+          className="saut-btn saut-btn-primary !h-7 !px-2.5 text-[11px]"
+        >
+          Approve selected &amp; publish ({selectedActions.length})
+        </button>
+      </div>
+    </section>
   );
 }

@@ -32,10 +32,12 @@ import {
 } from "./dependencies";
 import { validateBrandEntities } from "./brand-validation";
 import { PUBLISH_INTENT_TOOLS, describePublishAttempt, type PublishReceipt } from "./publish-outcome-classify";
+import { sanitizeUserFacingText } from "./user-facing-text";
 import {
   attachmentPart,
   bindAttachmentsToMessage,
   getAttachmentsByIds,
+  loadImageAttachmentsForModel,
 } from "../repositories/agent-attachments";
 
 const SYSTEM_PROMPT = `You are the Stratxcel Social Autopilot Agent — an operational copilot for Stratxcel's own
@@ -79,6 +81,19 @@ hashtags; LinkedIn gets a professional founder/operator angle, business context 
 gets broad accessible language and a conversational CTA; Threads gets short, direct, natural copy. Use
 the same source media where appropriate. For schedule_post, pass the platform and let the server resolve
 the connected account locally; do not ask for or repeat account IDs, provider IDs, permissions, or metadata.
+When recommending destinations, include recommendationTier (recommended or optional) and one concise
+recommendationReason on each schedule_post based on Brand Brain, image/content format, the user's goal,
+and normal platform communication style. Prepare all variants before the single combined approval.
+Once publish actions are proposed, keep the chat reply to a brief readiness/recommendation summary. Do not
+repeat full captions, hashtags, technical tool names, or internal references in chat because the combined
+approval artifact renders the real platform previews and controls.
+
+When a message includes a creative image but no specific content instruction, review the actual image and
+respond with a short, natural explanation of what it communicates and why it could be useful for the
+brand. Then offer 4-6 relevant capability-oriented next actions, such as platform-specific posts, captions,
+best-platform recommendations, a founder angle, an educational angle, promotional copy, or approval-ready
+preparation. Tailor the options to the image instead of listing every feature. Do not claim to understand
+details that are not visible, and do not begin publishing preparation until the user chooses a direction.
 
 State wording must be evidence-based, not aspirational. Before a publish action is approved, no publishing
 job exists yet — describe that state as "prepared and awaiting your approval", never "queued", "scheduled",
@@ -190,7 +205,8 @@ export async function acceptAgentMission(
  */
 export async function runAgentTurn(ctx: OwnerContext, sessionId: string, runId: string) {
   const history = await loadHistory(ctx, sessionId);
-  const latestUserPrompt = [...history].reverse().find((message) => message.role === "USER")?.content ?? "";
+  const latestUserMessage = [...history].reverse().find((message) => message.role === "USER");
+  const latestUserPrompt = latestUserMessage?.content ?? "";
   const promptIntent = classifySocialPromptIntent(latestUserPrompt);
   if (requiresLocalMetaHandling(latestUserPrompt)) {
     const [metrics, accounts] = await Promise.all([listRecentMetrics(ctx, 50), listAccounts(ctx)]);
@@ -219,6 +235,7 @@ export async function runAgentTurn(ctx: OwnerContext, sessionId: string, runId: 
 
   const settings = await getAutomationSettings(ctx);
   const brandProfile = await getBrandProfile(ctx);
+  const creativeImages = latestUserMessage ? await loadImageAttachmentsForModel(ctx, latestUserMessage.id) : [];
   const roleMap: Record<string, AgentTurnMessage["role"]> = { USER: "user", AGENT: "assistant", SYSTEM: "system" };
   const messages: AgentTurnMessage[] = [
     { role: "system", content: SYSTEM_PROMPT },
@@ -260,6 +277,7 @@ export async function runAgentTurn(ctx: OwnerContext, sessionId: string, runId: 
       const providerStarted = Date.now();
       const result = await provider.complete(messages, toolSchemas(), {
         brandInstructions: selectGeminiBrandInstructions(brandProfile),
+        creativeImages,
       });
       await recordRunEvent(ctx, runId, {
         type: "PROVIDER_RESPONSE_RECEIVED",
@@ -402,6 +420,7 @@ export async function runAgentTurn(ctx: OwnerContext, sessionId: string, runId: 
     } else if (!responseText.trim()) {
       responseText = "Done.";
     }
+    responseText = sanitizeUserFacingText(responseText);
 
     const parts: Array<Record<string, unknown>> = [];
     if (proposedActions.length) parts.push({ type: "proposed_actions", actions: proposedActions });

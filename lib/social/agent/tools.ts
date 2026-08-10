@@ -217,6 +217,8 @@ const schedulePost: AgentTool = {
       properties: {
         accountId: { type: "string", description: "Optional trusted account ID from an internal workflow." },
         platform: { type: "string", description: "Use this to let the server resolve the connected account locally." },
+        recommendationTier: { type: "string", enum: ["recommended", "optional"], description: "Creative fit for this destination." },
+        recommendationReason: { type: "string", description: "Short user-facing reason based on Brand Brain, the creative, and platform style." },
         variantId: { type: "string" },
         scheduledAt: { type: "string" },
       },

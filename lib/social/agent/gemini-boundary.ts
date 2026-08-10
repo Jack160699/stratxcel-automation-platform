@@ -44,10 +44,13 @@ export interface GeminiBoundaryInput {
    *  request shape byte-identical to before for every existing caller —
    *  see gemini-boundary.test.ts's exact Object.keys() assertion. */
   tools?: GeminiToolDeclaration[];
+  /** Private user-uploaded creative images. IDs, paths, and account data are never included. */
+  creativeImages?: Array<{ mimeType: string; data: string }>;
 }
 
 export interface GeminiContentPart {
   text?: string;
+  inlineData?: { mimeType: string; data: string };
   functionCall?: { name: string; args?: Record<string, unknown> };
   functionResponse?: { name: string; response: { content: string } };
 }
@@ -139,9 +142,18 @@ export function buildGeminiRequest(input: GeminiBoundaryInput): GeminiGenerateCo
   ];
   const contextTurns = context.map((text) => ({ role: "user" as const, parts: [{ text }] }));
 
-  const conversationTurns = input.conversation
+  const conversationTurns: Array<{ role: "user" | "model"; parts: GeminiContentPart[] }> = input.conversation
     ? input.conversation.map(mapConversationTurn).filter((turn): turn is { role: "user" | "model"; parts: GeminiContentPart[] } => turn !== null)
     : allowed.userPrompts.map((text) => ({ role: "user" as const, parts: [{ text }] }));
+  const creativeImages = (input.creativeImages ?? [])
+    .filter((image) => /^(?:image\/(?:png|jpeg|webp|gif))$/.test(image.mimeType) && /^[A-Za-z0-9+/=]+$/.test(image.data))
+    .slice(0, 4)
+    .map((image) => ({ inlineData: { mimeType: image.mimeType, data: image.data } }));
+  if (creativeImages.length) {
+    const lastUserTurn = [...conversationTurns].reverse().find((turn) => turn.role === "user");
+    if (lastUserTurn) lastUserTurn.parts.push(...creativeImages);
+    else conversationTurns.push({ role: "user", parts: [{ text: "Review the attached creative image." }, ...creativeImages] });
+  }
 
   const toolDeclarations = Array.isArray(input.tools)
     ? input.tools

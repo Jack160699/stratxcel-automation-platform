@@ -183,6 +183,34 @@ export async function listAttachmentsForMessages(ctx: OwnerContext, messageIds: 
   return (data ?? []) as AgentAttachmentRow[];
 }
 
+export interface ModelImageAttachment {
+  mimeType: "image/png" | "image/jpeg" | "image/webp" | "image/gif";
+  data: string;
+}
+
+/**
+ * Loads only user-uploaded image bytes for the creative vision boundary.
+ * Storage paths, attachment/media IDs, and every database field stay local;
+ * Gemini receives private inline bytes rather than a public or signed URL.
+ */
+export async function loadImageAttachmentsForModel(
+  ctx: OwnerContext,
+  messageId: string,
+  maxImages = 4,
+): Promise<ModelImageAttachment[]> {
+  const rows = (await listAttachmentsForMessages(ctx, [messageId]))
+    .filter((attachment): attachment is AgentAttachmentRow & { mime_type: ModelImageAttachment["mimeType"] } =>
+      ["image/png", "image/jpeg", "image/webp", "image/gif"].includes(attachment.mime_type)
+    )
+    .slice(0, maxImages);
+  const images = await Promise.all(rows.map(async (attachment): Promise<ModelImageAttachment | null> => {
+    const { data: blob, error } = await ctx.supabase.storage.from(ATTACHMENT_BUCKET).download(attachment.storage_path);
+    if (error || !blob) return null;
+    return { mimeType: attachment.mime_type, data: Buffer.from(await blob.arrayBuffer()).toString("base64") };
+  }));
+  return images.filter((image): image is ModelImageAttachment => image !== null);
+}
+
 export async function removeUnsentAttachment(ctx: OwnerContext, attachmentId: string) {
   const { data } = await ctx.supabase
     .from("social_agent_attachments")
