@@ -9,9 +9,12 @@ export const metadata: Metadata = {
   title: "Agents — Stratxcel AI OS",
   description:
     "How AI agents operate inside the Stratxcel system: reasoning, tool use, human checkpoints, and module APIs — not chatbots bolted on the side.",
+  robots: { index: false, follow: false },
 };
 
-export default function AgentsPage() {
+export default async function AgentsPage() {
+  const { gatePublicTechnicalPage } = await import("@/lib/release/public-technical-gate");
+  await gatePublicTechnicalPage("/how-it-works");
   return (
     <div className="flex min-h-screen flex-col bg-sx-bg">
       <PublicHeader />

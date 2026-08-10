@@ -8,10 +8,17 @@
  * that way).
  */
 
+import type { ProductRelease } from "@/lib/release/product-release";
+
 export interface NavItemData {
   key: string;
   label: string;
   href: string;
+  /**
+   * Explicit product release. Required for every nav item.
+   * Unknown / missing values fail closed in filterNavGroupsByRelease.
+   */
+  release: ProductRelease;
 }
 
 export interface NavGroupData {

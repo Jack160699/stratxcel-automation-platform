@@ -10,9 +10,12 @@ export const metadata: Metadata = {
   title: "System — Stratxcel AI OS",
   description:
     "Architecture of the Stratxcel AI operating system: ingest, orchestration, execution, and observability for business systems.",
+  robots: { index: false, follow: false },
 };
 
-export default function SystemPage() {
+export default async function SystemPage() {
+  const { gatePublicTechnicalPage } = await import("@/lib/release/public-technical-gate");
+  await gatePublicTechnicalPage("/modules");
   return (
     <div className="flex min-h-screen flex-col bg-sx-bg">
       <PublicHeader />

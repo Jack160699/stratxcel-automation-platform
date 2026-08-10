@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createDevEncryptedVault } from "@stratxcel/byok";
-import { requireOwnerContext, getServiceContext } from "@/lib/owner-brain/db-context";
+import { requireOperatingBrainApiAccess } from "@/lib/release/operating-brain-api";
+import { getServiceContext } from "@/lib/owner-brain/db-context";
 import { getSourceByKey, upsertConnection } from "@/lib/owner-brain/repositories/sources";
 import { verifyGitHubToken } from "@/lib/owner-brain/connectors/github";
 
@@ -17,8 +18,9 @@ import { verifyGitHubToken } from "@/lib/owner-brain/connectors/github";
  * Notion connector's integration-secret flow.
  */
 export async function POST(request: Request) {
-  const ctx = await requireOwnerContext();
-  if (!ctx.ok) return NextResponse.json({ error: ctx.error }, { status: ctx.status });
+  const access = await requireOperatingBrainApiAccess();
+  if (!access.ok) return access.response;
+  const ctx = access.ctx;
 
   const body = (await request.json().catch(() => null)) as { token?: string } | null;
   const token = body?.token?.trim();

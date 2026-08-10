@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireOwnerContext } from "@/lib/owner-brain/db-context";
+import { requireOperatingBrainApiAccess } from "@/lib/release/operating-brain-api";
 import { createVoiceNote, setVoiceNoteStatus, saveTranscript } from "@/lib/owner-brain/repositories/voice-notes";
 import { transcribeVoiceNote } from "@/lib/owner-brain/voice/transcription";
 import { admitMemoryCandidate } from "@/lib/owner-brain/memory/lifecycle";
@@ -21,8 +21,9 @@ const BUCKET = "owner-voice-notes";
  * automatically.
  */
 export async function POST(request: Request) {
-  const ctx = await requireOwnerContext();
-  if (!ctx.ok) return NextResponse.json({ error: ctx.error }, { status: ctx.status });
+  const access = await requireOperatingBrainApiAccess();
+  if (!access.ok) return access.response;
+  const ctx = access.ctx;
 
   const formData = await request.formData().catch(() => null);
   const file = formData?.get("audio");

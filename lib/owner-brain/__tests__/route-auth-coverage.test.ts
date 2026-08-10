@@ -18,7 +18,13 @@ const routesDir = path.resolve(__dirname, "../../../app/api/admin/operating-brai
 // (verified inside completeDevicePairing, which rejects on any mismatch).
 const PAIRING_CODE_IS_THE_CREDENTIAL = new Set(["devices/pair/route.ts"]);
 
-const AUTH_MARKERS = ["requireOwnerContext", "CRON_SECRET", "authenticateDevice"];
+const AUTH_MARKERS = [
+  "requireOwnerContext",
+  "requireOperatingBrainApiAccess",
+  "requireReleaseAccessApi",
+  "CRON_SECRET",
+  "authenticateDevice",
+];
 
 function listRouteFiles(dir: string, base = dir): string[] {
   const out: string[] = [];

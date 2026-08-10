@@ -6,7 +6,6 @@ import { requirePermission, PermissionDeniedError } from "@/lib/rbac/policy";
 import { listMissionsForTenant } from "@stratxcel/missions";
 import { listPendingApprovals } from "@stratxcel/approvals";
 import { Card, CardHeading, CardRow } from "@/components/ui/Card";
-import { Metric } from "@/components/ui/Metric";
 import { StatusChip, type ChipState } from "@/components/ui/StatusChip";
 import { OnboardingPanel } from "./OnboardingPanel";
 import { JourneyPanel } from "./JourneyPanel";
@@ -30,15 +29,23 @@ const MISSION_STATE_CHIP: Record<string, { label: string; state: ChipState }> = 
   BLOCKED: { label: "Blocked", state: "danger" },
 };
 
+const ACTIVE_MISSION_STATES = new Set([
+  "QUEUED",
+  "RUNNING",
+  "READY",
+  "RESUMED",
+  "ESTIMATING",
+  "AWAITING_INPUT",
+  "AWAITING_APPROVAL",
+  "HUMAN_HANDOFF",
+  "AWAITING_FUNDS",
+  "BLOCKED",
+]);
+
+const DONE_MISSION_STATES = new Set(["COMPLETED", "PARTIALLY_COMPLETED"]);
+
 type SessionClient = Awaited<ReturnType<typeof createSupabaseServerClient>>;
 
-/**
- * Gathers the persisted state the journey is derived from. Every read runs on
- * the authenticated session client, so RLS scopes it to this customer's own
- * tenant — the journey can never describe someone else's progress. A read
- * that RLS or a missing table refuses degrades that stage to "not done"
- * rather than inventing completion.
- */
 async function loadJourneyInput(supabase: SessionClient, tenantId: string) {
   const [user, order, consultation] = await Promise.all([
     (async () => {
@@ -81,15 +88,19 @@ async function loadJourneyInput(supabase: SessionClient, tenantId: string) {
   return { account: user, order, consultationRequested: consultation };
 }
 
+const GROWTH_AREAS = [
+  { href: "/app/content", label: "Content & Media", hint: "Create demand" },
+  { href: "/app/website", label: "Website", hint: "Get discovered" },
+  { href: "/app/search", label: "Search & SEO", hint: "Get discovered" },
+  { href: "/app/crm", label: "Leads & CRM", hint: "Capture & convert" },
+  { href: "/app/ads", label: "Ads", hint: "Create demand" },
+  { href: "/app/reports", label: "Reports", hint: "Measure & improve" },
+];
+
 /**
- * /app's Command Center — the client-scoped counterpart of
- * app/admin/(shell)/page.tsx's Agency Overview. Same reused data functions
- * (listMissionsForTenant / listPendingApprovals, both already RLS-safe on
- * the authenticated session client — see the service-role fix earlier in
- * this build), scoped to the one active tenant since that's all a client
- * account can ever see. Independently re-guards with requireClientContext()
- * for the same RSC-disclosure reason every other gated page in this build
- * does — see docs/product-design/EMPTY_LOADING_ERROR_STATE_MATRIX.md §4.
+ * V1 Command Center — answers what Stratxcel is doing, what needs attention,
+ * what is in progress, recent outcomes, and where to grow next.
+ * Uses real available data only; never fabricates inbox/AI metric cards.
  */
 export default async function ClientCommandCenterPage() {
   const ctx = await requireClientContext();
@@ -99,7 +110,7 @@ export default async function ClientCommandCenterPage() {
   if (!active) return <OnboardingPanel />;
 
   const [missions, approvals, journeyInput] = await Promise.all([
-    listMissionsForTenant(ctx.supabase, active.tenantId, 5),
+    listMissionsForTenant(ctx.supabase, active.tenantId, 8),
     (async () => {
       try {
         requirePermission(active.role, "approval:decide");
@@ -114,66 +125,131 @@ export default async function ClientCommandCenterPage() {
 
   const stages = deriveJourney(journeyInput);
   const next = nextAction(stages);
+  const pendingApprovals = approvals ?? [];
+  const inProgress = missions.filter((m) => ACTIVE_MISSION_STATES.has(m.state));
+  const blocked = missions.filter((m) => m.state === "BLOCKED" || m.state === "FAILED" || m.state === "HUMAN_HANDOFF");
+  const recentDone = missions.filter((m) => DONE_MISSION_STATES.has(m.state)).slice(0, 4);
+
+  const attentionItems: { label: string; href: string; detail: string }[] = [];
+  if (approvals !== null && pendingApprovals.length > 0) {
+    attentionItems.push({
+      label: `${pendingApprovals.length} approval${pendingApprovals.length === 1 ? "" : "s"} waiting`,
+      href: "/app/approvals",
+      detail: "Needs your decision before work can continue.",
+    });
+  }
+  for (const m of blocked.slice(0, 3)) {
+    attentionItems.push({
+      label: m.goal_text,
+      href: `/app/missions/${m.id}`,
+      detail: MISSION_STATE_CHIP[m.state]?.label ?? m.state,
+    });
+  }
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-8">
       <header className="flex flex-col gap-1">
         <h1 className="font-sx-sans text-xl font-semibold text-sx-text">Command Center</h1>
         <p className="text-sm text-sx-text-muted">
-          {active.name} <span className="text-sx-text-subtle">·</span> {active.role}
+          {active.name} <span className="text-sx-text-subtle">·</span> what Stratxcel is doing for you
         </p>
       </header>
 
+      {/* A. Growth status / next best action */}
       <JourneyPanel stages={stages} next={next} tenantId={active.tenantId} />
 
-      <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Metric label="Missions" value={missions.length} deltaLabel="running now" />
-        <Metric label="Approvals" value={approvals === null ? "—" : approvals.length} deltaLabel={approvals === null ? "no access for your role" : "pending"} />
-        <Metric label="Unread inbox" value="—" deltaLabel="not yet connected" />
-        <Metric label="AI actions" value="—" deltaLabel="not yet connected" ai />
-      </section>
-
-      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Link href="/app/content" className="rounded-sx-md border border-sx-border bg-sx-surface-1 p-4 transition-colors hover:border-sx-border-strong">
-          <p className="text-[13px] font-medium text-sx-text">Content</p>
-          <p className="mt-1 text-xs text-sx-text-subtle">Campaigns, posts, Copilot.</p>
-        </Link>
-        <Link href="/app/missions" className="rounded-sx-md border border-sx-border bg-sx-surface-1 p-4 transition-colors hover:border-sx-border-strong">
-          <p className="text-[13px] font-medium text-sx-text">Missions</p>
-          <p className="mt-1 text-xs text-sx-text-subtle">{missions.length} recent.</p>
-        </Link>
-        <Link href="/app/approvals" className="rounded-sx-md border border-sx-border bg-sx-surface-1 p-4 transition-colors hover:border-sx-border-strong">
-          <p className="text-[13px] font-medium text-sx-text">Approvals</p>
-          <p className="mt-1 text-xs text-sx-text-subtle">{approvals === null ? "No access for your role" : `${approvals.length} pending`}</p>
-        </Link>
-        <Link href="/app/copilot" className="rounded-sx-md border border-sx-border bg-sx-surface-1 p-4 transition-colors hover:border-sx-border-strong">
-          <p className="text-[13px] font-medium text-sx-text">Copilot</p>
-          <p className="mt-1 text-xs text-sx-text-subtle">Ask Stratxcel to do something.</p>
-        </Link>
-      </section>
-
-      <Card>
-        <CardHeading>Recent missions</CardHeading>
-        {missions.length === 0 ? (
-          <p className="text-sm text-sx-text-subtle">No missions yet for {active.name}.</p>
+      {/* B. Needs your attention */}
+      <section className="flex flex-col gap-3">
+        <h2 className="font-sx-sans text-sm font-semibold text-sx-text">Needs your attention</h2>
+        {attentionItems.length === 0 ? (
+          <p className="text-sm text-sx-text-subtle">
+            Nothing needs a decision right now.
+            {approvals === null ? " Your role cannot decide approvals." : ""}
+          </p>
         ) : (
-          <div>
-            {missions.map((m) => {
+          <div className="flex flex-col gap-2">
+            {attentionItems.map((item) => (
+              <Link
+                key={item.href + item.label}
+                href={item.href}
+                className="rounded-sx-md border border-sx-border bg-sx-surface-1 px-4 py-3 transition-colors hover:border-sx-border-strong"
+              >
+                <p className="text-sm font-medium text-sx-text">{item.label}</p>
+                <p className="mt-0.5 text-xs text-sx-text-subtle">{item.detail}</p>
+              </Link>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* C. Work in progress */}
+      <section className="flex flex-col gap-3">
+        <div className="flex items-baseline justify-between gap-3">
+          <h2 className="font-sx-sans text-sm font-semibold text-sx-text">Work in progress</h2>
+          <Link href="/app/missions" className="text-xs font-medium text-sx-accent hover:underline">
+            All work
+          </Link>
+        </div>
+        {inProgress.length === 0 ? (
+          <p className="text-sm text-sx-text-subtle">No active work yet. Ask Copilot to start something, or open Work.</p>
+        ) : (
+          <Card>
+            {inProgress.map((m) => {
               const chip = MISSION_STATE_CHIP[m.state] ?? { label: m.state, state: "neutral" as ChipState };
               return (
                 <CardRow key={m.id}>
-                  <span className="min-w-0 flex-1 truncate text-sx-text-muted" title={m.goal_text}>
+                  <Link href={`/app/missions/${m.id}`} className="min-w-0 flex-1 truncate text-sx-text-muted hover:text-sx-text" title={m.goal_text}>
                     {m.goal_text}
-                  </span>
+                  </Link>
                   <StatusChip state={chip.state} pulse={chip.state === "ai"}>
                     {chip.label}
                   </StatusChip>
                 </CardRow>
               );
             })}
-          </div>
+          </Card>
         )}
-      </Card>
+      </section>
+
+      {/* D. Recent outcomes */}
+      <section className="flex flex-col gap-3">
+        <h2 className="font-sx-sans text-sm font-semibold text-sx-text">Recent outcomes</h2>
+        {recentDone.length === 0 ? (
+          <p className="text-sm text-sx-text-subtle">Completed work will show up here.</p>
+        ) : (
+          <Card>
+            <CardHeading>Finished recently</CardHeading>
+            {recentDone.map((m) => {
+              const chip = MISSION_STATE_CHIP[m.state] ?? { label: m.state, state: "success" as ChipState };
+              return (
+                <CardRow key={m.id}>
+                  <span className="min-w-0 flex-1 truncate text-sx-text-muted" title={m.goal_text}>
+                    {m.goal_text}
+                  </span>
+                  <StatusChip state={chip.state}>{chip.label}</StatusChip>
+                </CardRow>
+              );
+            })}
+          </Card>
+        )}
+      </section>
+
+      {/* E. Growth areas */}
+      <section className="flex flex-col gap-3">
+        <h2 className="font-sx-sans text-sm font-semibold text-sx-text">Grow</h2>
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          {GROWTH_AREAS.map((area) => (
+            <Link
+              key={area.href}
+              href={area.href}
+              className="rounded-sx-md border border-sx-border bg-sx-surface-1 px-4 py-3 transition-colors hover:border-sx-border-strong"
+            >
+              <p className="text-[13px] font-medium text-sx-text">{area.label}</p>
+              <p className="mt-0.5 text-xs text-sx-text-subtle">{area.hint}</p>
+            </Link>
+          ))}
+        </div>
+      </section>
     </div>
   );
 }

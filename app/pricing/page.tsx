@@ -62,7 +62,7 @@ const tiers = [
     badge: "Essential Growth",
     price: "₹4,999",
     period: "per month (GST included)",
-    pitch: "A complete entry system for one small or local business.",
+    pitch: "Build a consistent growth engine.",
     scope: [
       "Social media content creation & posting (12 posts/mo)",
       "1 Meta ad campaign workflow & ad creative",
@@ -81,7 +81,7 @@ const tiers = [
     badge: "Most Popular Fit",
     price: "₹9,999",
     period: "per month (GST included)",
-    pitch: "The serious SMB plan for recurring execution and follow-up.",
+    pitch: "Generate and follow up more opportunities.",
     scope: [
       "Everything in Starter + higher volume content (25 posts/mo)",
       "Complete WhatsApp + CRM automated follow-up flows (up to 500 AI-handled leads)",
@@ -100,7 +100,7 @@ const tiers = [
     badge: "Advanced Execution",
     price: "₹19,999",
     period: "per month (GST included)",
-    pitch: "Advanced Search, CRM, publishing, ads support, and priority execution.",
+    pitch: "Run higher-volume growth execution.",
     scope: [
       "Higher volume content (50 posts/mo) & 3 Meta ad campaign workflows",
       "Advanced WhatsApp + CRM automation (up to 1,500 AI-handled leads)",

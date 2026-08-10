@@ -59,7 +59,7 @@ async function run() {
 
   // /audit redirects to /login?next=/app/audit — advertising it would publish
   // an authenticated destination.
-  for (const privateRoute of ["/audit", "/login", "/signup", "/app", "/admin"]) {
+  for (const privateRoute of ["/audit", "/login", "/signup", "/app", "/admin", "/agents", "/system"]) {
     assert.equal(paths.includes(privateRoute), false, `${privateRoute} must never appear in the public sitemap`);
   }
 

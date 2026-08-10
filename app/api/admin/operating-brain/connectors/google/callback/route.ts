@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createDevEncryptedVault } from "@stratxcel/byok";
-import { requireOwnerContext, getServiceContext } from "@/lib/owner-brain/db-context";
+import { requireOperatingBrainApiAccess } from "@/lib/release/operating-brain-api";
+import { getServiceContext } from "@/lib/owner-brain/db-context";
 import { verifyOwnerBrainOAuthState } from "@/lib/owner-brain/connectors/oauth-state";
 import { exchangeGoogleCode, safeGoogleOAuthError, scopeForGoogleSource } from "@/lib/owner-brain/connectors/google-oauth";
 import { getSourceByKey, upsertConnection, updateSourceStatus } from "@/lib/owner-brain/repositories/sources";
@@ -34,8 +35,9 @@ export async function GET(request: NextRequest) {
   const verified = verifyOwnerBrainOAuthState(state);
   if (!verified.ok) return redirectToAdmin({ connect_error: "google", reason: `invalid_state_${verified.reason}` });
 
-  const ctx = await requireOwnerContext();
-  if (!ctx.ok) return NextResponse.json({ error: ctx.error }, { status: ctx.status });
+  const access = await requireOperatingBrainApiAccess();
+  if (!access.ok) return access.response;
+  const ctx = access.ctx;
   if (ctx.ownerId !== verified.ownerId) {
     return NextResponse.json({ error: "Session does not match the OAuth flow that was started" }, { status: 403 });
   }

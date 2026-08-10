@@ -3,35 +3,49 @@
 import { usePathname } from "next/navigation";
 import { signOutAction } from "@/app/admin/actions";
 import { CoreAppShell } from "@/components/shell/CoreAppShell";
-import { ADMIN_SIDEBAR_GROUPS, ADMIN_MOBILE_NAV, resolveAdminActiveKey } from "@/components/shell/navigation/admin-navigation";
+import {
+  getAdminSidebarGroups,
+  getAdminMobileNav,
+  resolveAdminActiveKey,
+} from "@/components/shell/navigation/admin-navigation";
+import { AdminBetaModeToggle } from "@/components/shell/AdminBetaModeToggle";
 import { ClientSwitcher } from "./ClientSwitcher";
 
 /**
  * /admin's own shell — Stratxcel staff/agency information architecture
  * (components/shell/navigation/admin-navigation.tsx), visually built from
  * the same shared CoreAppShell/Sidebar components /app uses, but a
- * deliberately separate destination list. A previous pass merged /app's and
- * /admin's navigation into one canonical item array (shared appHref/adminHref
- * per concept) — that conceptually merged two different products with
- * different jobs and was reverted; see admin-navigation.tsx's header
- * comment. Route paths are unchanged (no renames) so nothing here can break
- * a bookmark.
+ * deliberately separate destination list. Route paths are unchanged
+ * (no renames) so nothing here can break a bookmark.
+ *
+ * Beta Mode is resolved server-side and passed in — never from localStorage.
  */
-export function AppShell({ email, children }: { email: string; children: React.ReactNode }) {
+export function AppShell({
+  email,
+  betaEnabled,
+  children,
+}: {
+  email: string;
+  betaEnabled: boolean;
+  children: React.ReactNode;
+}) {
   const pathname = usePathname();
-  const activeKey = resolveAdminActiveKey(pathname);
+  const sidebarGroups = getAdminSidebarGroups(betaEnabled);
+  const mobileNavItems = getAdminMobileNav(betaEnabled);
+  const activeKey = resolveAdminActiveKey(pathname, betaEnabled);
 
   return (
     <CoreAppShell
       product="Admin"
-      sidebarGroups={ADMIN_SIDEBAR_GROUPS}
+      sidebarGroups={sidebarGroups}
       activeKey={activeKey}
-      mobileNavItems={ADMIN_MOBILE_NAV}
-      mobileMoreGroups={ADMIN_SIDEBAR_GROUPS.map((g) => ({
+      mobileNavItems={mobileNavItems}
+      mobileMoreGroups={sidebarGroups.map((g) => ({
         label: g.label ?? "Overview",
         items: g.items.map((i) => ({ key: i.key, label: i.label, href: i.href })),
       }))}
       topBarContext={<ClientSwitcher />}
+      staffBadge={<AdminBetaModeToggle enabled={betaEnabled} />}
       userMenu={
         <div className="flex items-center gap-2.5">
           <span className="hidden truncate text-xs text-sx-text-subtle sm:inline">{email}</span>

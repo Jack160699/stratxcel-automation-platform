@@ -6,8 +6,8 @@
  * canonical host and the only host that may appear in a sitemap. It matches
  * `metadataBase` in app/layout.tsx.
  *
- * PUBLIC_ROUTES lists only routes that return 200 and are genuinely public
- * content. Deliberately excluded:
+ * PUBLIC_ROUTES lists only V1 customer-facing acquisition/trust content.
+ * Deliberately excluded:
  *
  *  - /audit, and everything under /app and /admin — authenticated. /audit
  *    redirects to /login?next=/app/audit, so advertising it would publish an
@@ -18,6 +18,9 @@
  *    Sitemaps must list the redirect target, never the redirect.
  *  - /login, /signup, /forgot-password, /reset-password — auth entry points
  *    with no indexable content.
+ *  - /agents and /system — internal architecture pages; not part of the V1
+ *    public story. They redirect to V1 content in Stable mode.
+ *  - /work — no genuine published proof yet; do not index placeholders.
  */
 
 export const CANONICAL_ORIGIN = "https://www.stratxcel.in";
@@ -34,8 +37,6 @@ export const PUBLIC_ROUTES: PublicRoute[] = [
   { path: "/use-cases", changeFrequency: "weekly", priority: 0.9 },
   { path: "/social-autopilot", changeFrequency: "weekly", priority: 0.9 },
   { path: "/pricing", changeFrequency: "weekly", priority: 0.8 },
-  { path: "/agents", changeFrequency: "weekly", priority: 0.8 },
-  { path: "/system", changeFrequency: "weekly", priority: 0.8 },
   { path: "/how-it-works", changeFrequency: "monthly", priority: 0.7 },
   { path: "/about", changeFrequency: "monthly", priority: 0.7 },
   { path: "/security", changeFrequency: "monthly", priority: 0.7 },
@@ -69,4 +70,7 @@ export const DISALLOWED_PATHS = [
   "/signup",
   "/forgot-password",
   "/reset-password",
+  // V2 / internal architecture — not Stable public acquisition content.
+  "/agents",
+  "/system",
 ];
