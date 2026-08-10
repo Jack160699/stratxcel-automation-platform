@@ -524,6 +524,33 @@ body.saut-document-lock {
   display: grid;
   height: 100%;
   min-height: 0;
+  min-width: 0;
+  width: 100%;
+  grid-template-rows: minmax(0, 1fr);
+  /* Tracks come from inline style; center is always minmax(0, 1fr). */
+}
+.saut-workspace-slot {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.saut-workspace-slot-gutter {
+  overflow: visible;
+}
+.saut-workspace-center {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: hidden;
+}
+.saut-workspace-center > .saut-agent-canvas {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
 }
 /* Base rail styling only — scroll ownership is deliberately NOT set here.
    The left rail scrolls its own inner list (see SessionRail's own markup);
@@ -732,7 +759,9 @@ body.saut-document-lock {
 .saut-workspace-splitter {
   position: relative;
   z-index: 5;
-  min-width: 8px;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
   cursor: col-resize;
   touch-action: none;
   background: var(--saut-surface-1);
@@ -764,16 +793,36 @@ body.saut-document-lock {
   cursor: pointer;
 }
 .saut-pane-restore {
+  /* Deprecated — collapsed rails own their grid track; Focus uses edge icon toggles. */
+  display: none;
+}
+.saut-focus-edge-toggle {
   position: absolute;
-  top: 58px;
+  top: 56px;
   z-index: 8;
+  display: inline-flex;
+  width: 28px;
   height: 28px;
-  padding-inline: 8px;
+  align-items: center;
+  justify-content: center;
   border: 1px solid var(--saut-border-strong);
   border-radius: 6px;
   background: var(--saut-surface-2);
   color: var(--saut-text-muted);
-  font-size: 10px;
+  font-size: 13px;
+  cursor: pointer;
+  /* Float over center edges — must NOT participate in grid width. */
+  pointer-events: auto;
+}
+.saut-focus-edge-toggle:hover {
+  color: var(--saut-text);
+  background: var(--saut-surface-3);
+}
+.saut-focus-edge-toggle-left {
+  left: 8px;
+}
+.saut-focus-edge-toggle-right {
+  right: 8px;
 }
 .saut-mobile-workspace-tabs {
   display: none;
@@ -859,13 +908,7 @@ body.saut-document-lock {
   padding: 14px;
 }
 @media (max-width: 1180px) {
-  .saut-desktop-workspace {
-    grid-template-columns: 0 0 minmax(360px, 1fr) 8px 300px !important;
-  }
-  .saut-agent-left,
-  .saut-desktop-workspace > .saut-workspace-splitter:nth-child(2) {
-    visibility: hidden;
-  }
+  /* Mid-width behavior is owned by ResizableWorkspace track math — no !important grid overrides. */
 }
 @media (max-width: 760px) {
   .saut-agent-workspace {
@@ -875,22 +918,29 @@ body.saut-document-lock {
   .saut-desktop-workspace {
     display: block;
     height: 100%;
+    min-width: 0;
   }
-  .saut-desktop-workspace > :not(.saut-workspace-center):not(.saut-agent-right) {
+  .saut-desktop-workspace > :not(.saut-workspace-center):not(.saut-workspace-slot-right) {
     display: none;
   }
   .saut-desktop-workspace .saut-workspace-center,
+  .saut-desktop-workspace .saut-workspace-slot-right,
   .saut-desktop-workspace .saut-agent-right {
     height: 100%;
+    width: 100%;
+    min-width: 0;
     visibility: visible !important;
   }
-  .saut-desktop-workspace[data-mobile-tab="chat"] .saut-agent-right,
+  .saut-desktop-workspace[data-mobile-tab="chat"] .saut-workspace-slot-right,
   .saut-desktop-workspace[data-mobile-tab="progress"] .saut-workspace-center,
   .saut-desktop-workspace[data-mobile-tab="context"] .saut-workspace-center {
     display: none;
   }
   .saut-desktop-workspace[data-mobile-tab="progress"] .saut-workspace-context,
   .saut-desktop-workspace[data-mobile-tab="context"] .saut-workspace-progress {
+    display: none;
+  }
+  .saut-focus-edge-toggle {
     display: none;
   }
   .saut-mobile-workspace-tabs {
@@ -1028,8 +1078,11 @@ body.saut-document-lock {
   display: flex;
   flex-direction: column;
   align-items: center;
-  min-width: 52px;
-  width: 52px;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 48px;
+  min-width: 0;
+  height: 100%;
   border-right: 1px solid var(--saut-border);
   background: var(--saut-surface-1);
 }
@@ -1039,36 +1092,40 @@ body.saut-document-lock {
 }
 .saut-workspace-rail-expand {
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 4px;
   width: 100%;
-  height: 52px;
-  padding: 6px 4px;
+  height: 44px;
+  padding: 0;
   border: 0;
   background: transparent;
   color: var(--saut-text-muted);
   cursor: pointer;
-  font-size: 10px;
+  font-size: 14px;
   transition: background 120ms ease, color 120ms ease;
 }
 .saut-workspace-rail-expand:hover {
   background: var(--saut-surface-2);
   color: var(--saut-text);
 }
+/* Vertical labels removed — they forced collapsed-track width / layout thrash. */
 .saut-workspace-rail-expand-label {
-  writing-mode: vertical-rl;
-  text-orientation: mixed;
-  font-family: var(--saut-mono);
-  font-size: 9px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  display: none;
 }
 
-/* Idle composer: single ~56–64px row; expands only when needed */
+.saut-agent-workspace.is-focus .saut-workspace-slot-left,
+.saut-agent-workspace.is-focus .saut-workspace-slot-right,
+.saut-agent-workspace.is-focus .saut-workspace-slot-gutter {
+  /* Focus: rail tracks are 0 — do not paint or capture width */
+  overflow: hidden;
+  pointer-events: none;
+}
+
 .saut-composer-shell {
   flex-shrink: 0;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
   padding: 8px 10px;
   background: var(--saut-bg);
 }
@@ -1182,12 +1239,9 @@ body.saut-document-lock {
   min-height: 0;
 }
 
-/* Soften rail expand labels — human words, not enum strips */
+/* Soften rail expand labels — hidden; icon buttons only */
 .saut-workspace-rail-expand-label {
-  text-transform: none;
-  letter-spacing: 0.04em;
-  font-family: var(--saut-font, inherit);
-  font-size: 10px;
+  display: none;
 }
 
 .saut-exec-compact {

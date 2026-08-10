@@ -616,6 +616,7 @@ export function CopilotFullPage({
       context={context}
       focusMode={focusMode}
       readyReview={reviewMode}
+      onExitFocus={() => setFocusMode(false)}
     />
   );
 }
