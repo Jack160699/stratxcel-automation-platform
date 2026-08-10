@@ -14,7 +14,7 @@ import {
 } from "../repositories/agent";
 import { startRun, completeRun, recordRunEvent, getLatestRun } from "../repositories/agent-runs";
 import { resolveConfiguredProvider } from "./provider";
-import { classifySocialPromptIntent, requiresLocalMetaHandling, selectGeminiBrandInstructions } from "./gemini-boundary";
+import { classifyCreativeRequestMode, classifySocialPromptIntent, requiresLocalMetaHandling, selectGeminiBrandInstructions } from "./gemini-boundary";
 import { calculateLocalMetricsSummary } from "../local-meta-summary";
 import { listRecentMetrics } from "../repositories/analytics";
 import { listAccounts } from "../repositories/accounts";
@@ -239,6 +239,7 @@ export async function runAgentTurn(ctx: OwnerContext, sessionId: string, runId: 
   const creativeImages = latestUserMessage
     ? (await loadSessionImageAttachmentsForModel(ctx, sessionId)).slice(-8)
     : [];
+  const creativeRequestMode = classifyCreativeRequestMode(latestUserPrompt, creativeImages.length > 0);
   const roleMap: Record<string, AgentTurnMessage["role"]> = { USER: "user", AGENT: "assistant", SYSTEM: "system" };
   const messages: AgentTurnMessage[] = [
     { role: "system", content: SYSTEM_PROMPT },
@@ -259,6 +260,9 @@ export async function runAgentTurn(ctx: OwnerContext, sessionId: string, runId: 
       .map((account) => account.platform.toLowerCase()))];
     messages[0].content += `\n\nSafe locally-derived creative guidance: ${trend}. Publishing-capable destination candidates: ${connectedPlatforms.join(", ") || "none"}. Raw metrics, account records, identifiers, permissions, and provider metadata remain local. Continue the user's creative task; do not request raw Platform data.`;
   }
+  if (creativeRequestMode === "EXECUTE") {
+    messages[0].content += `\n\nExecution intent is explicit. The user has authorized safe draft preparation. Infer the strongest Brand Brain-grounded angle and the best connected publishing-capable destinations, create the real content master and platform variants, attach the supplied media in order, and propose the final combined publish approval now. Do not answer with angle suggestions, ask which option they prefer, or say "Would you like me to prepare". Creative preference ambiguity is not a reason to stop.`;
+  }
 
   await setSessionStatus(ctx, sessionId, "GENERATING");
 
@@ -269,6 +273,7 @@ export async function runAgentTurn(ctx: OwnerContext, sessionId: string, runId: 
 
   const proposedActions: Array<{ id: string; tool: string; input: Record<string, unknown> }> = [];
   let finalText = "";
+  let executionRecoveryAttempted = false;
   // Tracks the most recent schedule_post / execute_*_youtube_verification
   // outcome this turn — the deterministic backstop against a false
   // "Done."/"Posted."/"Published." reply (see Section 10 of the integrity brief).
@@ -290,7 +295,15 @@ export async function runAgentTurn(ctx: OwnerContext, sessionId: string, runId: 
       });
       if (result.text) finalText = result.text;
 
-      if (result.toolCalls.length === 0) break;
+      if (result.toolCalls.length === 0) {
+        if (creativeRequestMode === "EXECUTE" && creativeImages.length > 0 && proposedActions.length === 0 && !executionRecoveryAttempted) {
+          executionRecoveryAttempted = true;
+          messages.push({ role: "assistant", content: result.text || "" });
+          messages.push({ role: "user", content: "Prepare the real editable artifacts now using the available tools. Do not return suggestions or ask me to choose an angle. Stop only after the combined final publish approval has been proposed." });
+          continue;
+        }
+        break;
+      }
 
       // Record the model's own turn before appending tool results — without
       // this, a later round replays tool-result messages with no preceding
@@ -423,6 +436,7 @@ export async function runAgentTurn(ctx: OwnerContext, sessionId: string, runId: 
     } else if (!responseText.trim()) {
       responseText = "Done.";
     }
+    if (proposedActions.some((action) => PUBLISH_INTENT_TOOLS.has(action.tool))) responseText = "Prepared for review.";
     responseText = sanitizeUserFacingText(responseText);
 
     const parts: Array<Record<string, unknown>> = [];

@@ -172,6 +172,21 @@ export function buildGeminiRequest(input: GeminiBoundaryInput): GeminiGenerateCo
 }
 
 export type SocialPromptIntent = "LOCAL_PLATFORM_DATA" | "CREATIVE" | "MIXED" | "GENERAL";
+export type CreativeRequestMode = "EXECUTE" | "EXPLORE" | "UNSPECIFIED";
+
+const CREATIVE_EXECUTION_REQUEST = /\b(?:best\s+(?:use|post|content)|make\s+the\s+best|prepare(?:\s+this)?|ready\s+(?:kar|karo|kar\s+do)|(?:post|content|caption)\s+bana(?:o|na|\s+do)?|bana\s+do|use\s+this\s+for\s+(?:my|the)\s+brand|jahan\s+sahi\s+lage|best\s+output|taiyar\s+kar|use\s+karo)\b/i;
+const CREATIVE_EXPLORATION_REQUEST = /\b(?:what\s+can\s+i\s+do|what\s+could\s+i\s+do|what\s+are\s+(?:my|the)\s+options|kya\s+kya\s+kar\s+sakte|options?\s+(?:dikhao|batao)|ideas?\s+(?:do|batao))\b/i;
+
+/** Creative ambiguity is not execution ambiguity: an explicit prepare/best-use
+ * instruction authorizes safe draft creation, while a question about options
+ * remains exploratory. This signal is shared by web and WhatsApp orchestration. */
+export function classifyCreativeRequestMode(prompt: string, hasCreativeMedia: boolean): CreativeRequestMode {
+  const value = prompt.trim();
+  if (!value) return "UNSPECIFIED";
+  if (CREATIVE_EXECUTION_REQUEST.test(value)) return "EXECUTE";
+  if (CREATIVE_EXPLORATION_REQUEST.test(value)) return "EXPLORE";
+  return hasCreativeMedia ? "UNSPECIFIED" : "UNSPECIFIED";
+}
 
 const ANALYTICS_DATA_SUBJECT =
   /\b(?:insights?|analytics|metrics?|performance|reach|impressions?|engagement|followers?|comments?|messages?|inbox)\b/i;
