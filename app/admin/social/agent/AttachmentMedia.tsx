@@ -131,10 +131,59 @@ export function PrivateMedia({
   );
 }
 
-export function AttachmentCard({ attachment }: { attachment: AgentAttachmentData }) {
+export function AttachmentCard({
+  attachment,
+  compact = false,
+}: {
+  attachment: AgentAttachmentData;
+  /** READY review: compact source strip instead of large in-thread media. */
+  compact?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
   const visual = attachment.mediaAssetId && (attachment.mimeType.startsWith("image/") || attachment.mimeType.startsWith("video/"));
+
+  if (compact && visual) {
+    return (
+      <>
+        <article className="saut-source-strip" aria-label={`Source · ${attachment.name}`}>
+          <button type="button" className="saut-source-strip-thumb" onClick={() => setOpen(true)} aria-label={`Open ${attachment.name}`}>
+            <PrivateMedia assetId={attachment.mediaAssetId!} mimeType={attachment.mimeType} alt="" className="saut-source-strip-media" />
+          </button>
+          <span className="saut-source-strip-meta min-w-0 flex-1">
+            <strong className="block truncate">{attachment.name}</strong>
+            <small>
+              {humanFileType(attachment.mimeType)} · {statusLabel(attachment.processingStatus)}
+            </small>
+          </span>
+          <button type="button" className="saut-btn saut-btn-ghost !h-8 !px-2 text-[11px]" onClick={() => setOpen(true)}>
+            Open
+          </button>
+        </article>
+        {open ? (
+          <div className="saut-preview-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setOpen(false)}>
+            <div className="saut-source-lightbox" role="dialog" aria-modal="true" aria-label={attachment.name}>
+              <header>
+                <strong className="truncate">{attachment.name}</strong>
+                <button type="button" onClick={() => setOpen(false)} aria-label="Close">
+                  ×
+                </button>
+              </header>
+              <PrivateMedia
+                assetId={attachment.mediaAssetId!}
+                mimeType={attachment.mimeType}
+                alt={attachment.name}
+                controls={attachment.mimeType.startsWith("video/")}
+                className="saut-source-lightbox-media"
+              />
+            </div>
+          </div>
+        ) : null}
+      </>
+    );
+  }
+
   return (
-    <article className={`saut-file-card saut-history-attachment${visual ? " saut-file-card-visual" : ""}`}>
+    <article className={`saut-file-card saut-history-attachment${visual ? " saut-file-card-visual" : ""}${compact ? " is-compact" : ""}`}>
       {visual ? (
         <PrivateMedia assetId={attachment.mediaAssetId!} mimeType={attachment.mimeType} alt={attachment.name} controls={attachment.mimeType.startsWith("video/")} />
       ) : (
