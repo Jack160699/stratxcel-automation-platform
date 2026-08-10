@@ -26,6 +26,11 @@ interface Subscription {
   cancel_at_period_end: boolean;
   pending_plan_tier: string | null;
   grace_period_end: string | null;
+  billing_provider?: string | null;
+  provider_status?: string | null;
+  provider_short_url?: string | null;
+  next_charge_at?: string | null;
+  last_charged_at?: string | null;
 }
 
 interface PriceBreakdown {
@@ -60,7 +65,7 @@ function money(cents: number) {
 
 const STATUS_CHIP: Record<string, { state: "success" | "warning" | "danger" | "neutral"; label: string }> = {
   active: { state: "success", label: "Active" },
-  pending_payment: { state: "warning", label: "Awaiting payment" },
+  pending_payment: { state: "warning", label: "Awaiting authorization" },
   past_due: { state: "danger", label: "Payment issue" },
   paused: { state: "warning", label: "Paused" },
   cancelled: { state: "neutral", label: "Cancelled" },
@@ -68,6 +73,10 @@ const STATUS_CHIP: Record<string, { state: "success" | "warning" | "danger" | "n
   payment_failed: { state: "danger", label: "Payment failed" },
   refunded: { state: "neutral", label: "Refunded" },
 };
+
+function isAutoPay(sub: Subscription) {
+  return sub.billing_provider === "razorpay_subscription";
+}
 
 const SELF_SERVICE_PLANS: Array<{ tier: "starter" | "growth" | "business"; name: string; priceCents: number; blurb: string }> = [
   { tier: "starter", name: "Starter", priceCents: 499_900, blurb: "A complete entry system for one small or local business." },
@@ -306,36 +315,59 @@ export default function BillingPage() {
               </div>
             )}
 
-            {subscription.current_period_end && (
+            {isAutoPay(subscription) && (
+              <p className="text-xs text-sx-text-subtle">
+                AutoPay{subscription.provider_status ? ` · provider status: ${subscription.provider_status}` : ""}
+                {subscription.next_charge_at ? ` · next charge ${new Date(subscription.next_charge_at).toLocaleDateString()}` : ""}
+                {subscription.last_charged_at ? ` · last charged ${new Date(subscription.last_charged_at).toLocaleDateString()}` : ""}
+              </p>
+            )}
+
+            {(subscription.next_charge_at || subscription.current_period_end) && (
               <p className="text-xs text-sx-text-muted">
                 {subscription.status === "active" && !subscription.cancel_at_period_end
-                  ? `Renews ${new Date(subscription.current_period_end).toLocaleDateString()}`
-                  : `Access until ${new Date(subscription.current_period_end).toLocaleDateString()}`}
+                  ? `Next charge ${new Date((subscription.next_charge_at ?? subscription.current_period_end)!).toLocaleDateString()}`
+                  : `Access until ${new Date(subscription.current_period_end ?? subscription.next_charge_at!).toLocaleDateString()}`}
               </p>
             )}
 
             {subscription.status === "pending_payment" && paymentUrl && (
               <div className="rounded-sx-md border border-sx-accent/40 bg-sx-accent/10 p-3">
-                <p className="text-xs text-sx-text">Complete payment to activate this plan.</p>
+                <p className="text-xs text-sx-text">
+                  {isAutoPay(subscription)
+                    ? "Authorize AutoPay once to activate this plan. Razorpay will charge the monthly amount automatically."
+                    : "Complete payment to activate this plan."}
+                </p>
                 <a href={paymentUrl} className="mt-2 inline-block">
-                  <Button variant="primary" size="sm">Pay now</Button>
+                  <Button variant="primary" size="sm">{isAutoPay(subscription) ? "Authorize AutoPay" : "Pay now"}</Button>
                 </a>
               </div>
             )}
 
-            {subscription.status === "past_due" && (
+            {(subscription.status === "past_due" || subscription.provider_status === "halted") && (
               <div className="rounded-sx-md border border-[rgb(242_86_95_/_0.32)] bg-[rgb(242_86_95_/_0.06)] p-3">
                 <p className="text-xs text-[#FF8A90]">
-                  We couldn&apos;t collect your last payment. Your plan stays accessible until{" "}
+                  We couldn&apos;t collect your last payment
+                  {subscription.provider_status === "halted" ? " (AutoPay halted)" : ""}. Your plan stays accessible until{" "}
                   {subscription.grace_period_end ? new Date(subscription.grace_period_end).toLocaleDateString() : "your grace period ends"}.
                 </p>
                 {paymentUrl ? (
                   <a href={paymentUrl} className="mt-2 inline-block">
-                    <Button variant="danger" size="sm">Retry payment</Button>
+                    <Button variant="danger" size="sm">{isAutoPay(subscription) ? "Recover AutoPay" : "Retry payment"}</Button>
                   </a>
                 ) : (
-                  <p className="mt-1 text-[11px] text-sx-text-subtle">A payment link is being generated — check back shortly.</p>
+                  <p className="mt-1 text-[11px] text-sx-text-subtle">
+                    {isAutoPay(subscription)
+                      ? "Waiting for Razorpay recovery — check back shortly or contact support."
+                      : "A payment link is being generated — check back shortly."}
+                  </p>
                 )}
+              </div>
+            )}
+
+            {subscription.status === "paused" && (
+              <div className="rounded-sx-md border border-sx-border p-3">
+                <p className="text-xs text-sx-text-muted">Subscription is paused at the payment provider. Access may be limited until AutoPay resumes.</p>
               </div>
             )}
 

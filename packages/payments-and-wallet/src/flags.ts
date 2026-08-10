@@ -24,6 +24,7 @@ export function getRazorpayCredentials(mode = getIntegrationMode("RAZORPAY_INTEG
 
 export type PaymentFeatureFlag =
   | "PAYMENTS_SUBSCRIPTIONS_ENABLED"
+  | "PAYMENTS_RECURRING_SUBSCRIPTIONS_ENABLED"
   | "PAYMENTS_AUDIT_ENABLED"
   | "PAYMENTS_CONTINUATION_PACKS_ENABLED"
   | "PAYMENTS_DOMAINS_ENABLED";
@@ -31,6 +32,8 @@ export type PaymentFeatureFlag =
 /**
  * Evaluates payment feature flags for immediate safety state.
  * Returns false unless explicitly set to "true".
+ * PAYMENTS_RECURRING_SUBSCRIPTIONS_ENABLED must stay false in production —
+ * recurring AutoPay checkout/API calls are fail-closed by default.
  */
 export function isPaymentFeatureEnabled(flag: PaymentFeatureFlag): boolean {
   return process.env[flag] === "true";

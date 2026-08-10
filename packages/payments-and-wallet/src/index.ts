@@ -11,6 +11,8 @@ export * from "./razorpay/payment-state-machine.ts";
 export * from "./razorpay/webhook-events.ts";
 export * from "./razorpay/payment-orders.ts";
 export * from "./razorpay/payment-links.ts";
+export * from "./razorpay/subscriptions.ts";
+export * from "./razorpay/recurring-plans.ts";
 export * from "./razorpay/settlement.ts";
 export * from "./razorpay/refunds.ts";
 export * from "./razorpay/fixtures.ts";
