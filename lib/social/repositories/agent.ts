@@ -119,3 +119,13 @@ export async function updateActionStatus(ctx: OwnerContext, actionId: string, st
 export async function updateActionInput(ctx: OwnerContext, actionId: string, input: Record<string, unknown>) {
   await ctx.supabase.from("social_agent_actions").update({ input, updated_at: new Date().toISOString() }).eq("id", actionId);
 }
+
+/** Whether a session still has any action awaiting a human decision — used to decide whether resolving one approval/rejection can return the session to READY. */
+export async function hasPendingActions(ctx: OwnerContext, sessionId: string): Promise<boolean> {
+  const { count } = await ctx.supabase
+    .from("social_agent_actions")
+    .select("id", { count: "exact", head: true })
+    .eq("session_id", sessionId)
+    .eq("status", "PROPOSED");
+  return (count ?? 0) > 0;
+}

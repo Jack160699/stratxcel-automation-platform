@@ -63,6 +63,36 @@ export function requireContentObjective(value: string): ContentObjective {
   return value as ContentObjective;
 }
 
+/**
+ * Canonical platform normalization — the single boundary function every
+ * write path and comparison must go through. Historical rows and
+ * model-generated tool arguments can carry any casing ("THREADS", "Threads",
+ * "threads"); this maps all of them to the one lowercase internal value so
+ * `platform === platform` comparisons never depend on caller casing.
+ */
+export function normalizePlatform(value: unknown): ContentPlatform | null {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim().toLowerCase();
+  return PLATFORM_SET.has(normalized) ? (normalized as ContentPlatform) : null;
+}
+
+export function requirePlatform(value: unknown, field = "Platform"): ContentPlatform {
+  const normalized = normalizePlatform(value);
+  if (!normalized) {
+    throw new ContentDraftValidationError(
+      `${field} must be one of: ${CONTENT_PLATFORMS.map((option) => option.value).join(", ")}.`
+    );
+  }
+  return normalized;
+}
+
+/** Canonical-to-canonical comparison — safe against casing on either side, including legacy stored rows. */
+export function platformsMatch(a: unknown, b: unknown): boolean {
+  const normalizedA = normalizePlatform(a);
+  const normalizedB = normalizePlatform(b);
+  return normalizedA !== null && normalizedA === normalizedB;
+}
+
 export interface CreateContentDraftInput {
   campaignId: string | null;
   title: string;

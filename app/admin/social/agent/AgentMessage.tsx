@@ -1,5 +1,15 @@
 import { stripInternalInput } from "@/lib/social/agent/dependencies";
+import { PUBLISH_INTENT_TOOLS, platformLabel } from "@/lib/social/agent/publish-outcome-classify";
 import { AgentMarkdown } from "./AgentMarkdown";
+import { PublishApprovalGroup } from "./PublishApprovalCard";
+
+export interface PublishReceiptData {
+  platform?: string;
+  accountLabel?: string;
+  permalink?: string;
+  externalPostId?: string;
+  publishedAt?: string | null;
+}
 
 export interface AgentMessageData {
   id: string;
@@ -9,7 +19,7 @@ export interface AgentMessageData {
     type: string;
     actions?: Array<{ id: string; tool: string; input: Record<string, unknown> }>;
     attachments?: AgentAttachmentData[];
-  }>;
+  } & Partial<PublishReceiptData>>;
 }
 
 export interface AgentAttachmentData {
@@ -92,6 +102,29 @@ function ApprovalCard({
   );
 }
 
+function PublishReceiptCard({ receipt }: { receipt: PublishReceiptData }) {
+  const when = receipt.publishedAt ? new Date(receipt.publishedAt) : null;
+  return (
+    <section className="saut-publish-receipt" aria-label="Publishing receipt">
+      <div className="saut-mono text-[10px] uppercase tracking-[0.14em]" style={{ color: "var(--saut-success)" }}>Published</div>
+      <div className="mt-1 text-sm font-semibold">{receipt.platform ? platformLabel(receipt.platform) : "Live"}</div>
+      {receipt.accountLabel && <div className="text-xs" style={{ color: "var(--saut-text-subtle)" }}>{receipt.accountLabel}</div>}
+      {when && !Number.isNaN(when.getTime()) && (
+        <div className="mt-2 text-xs" style={{ color: "var(--saut-text-subtle)" }}>
+          Published at {when.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}
+        </div>
+      )}
+      {receipt.permalink ? (
+        <a href={receipt.permalink} target="_blank" rel="noreferrer" className="saut-btn saut-btn-secondary mt-3 inline-flex text-xs">
+          View live post
+        </a>
+      ) : receipt.externalPostId ? (
+        <p className="mt-2 text-xs" style={{ color: "var(--saut-text-subtle)" }}>Provider post ID: {receipt.externalPostId}</p>
+      ) : null}
+    </section>
+  );
+}
+
 export function AgentMessage({
   message,
   onApprove,
@@ -114,27 +147,47 @@ export function AgentMessage({
           ? <p className="text-sm leading-relaxed" style={{ color: "var(--saut-text)" }}>{message.content}</p>
           : <AgentMarkdown content={message.content} />}
       </div>
-      {message.parts.map((part, index) =>
-        part.type === "proposed_actions" && part.actions?.length ? (
-          <div key={index} className="mt-2 space-y-2">
-            {part.actions.map((action) => (
-              <ApprovalCard key={action.id} action={action} onApprove={onApprove} onReject={onReject} />
-            ))}
-          </div>
-        ) : part.type === "attachments" && part.attachments?.length ? (
-          <div key={index} className="mt-2 flex flex-wrap gap-2">
-            {part.attachments.map((attachment) => (
-              <span key={attachment.id} className="saut-attachment-chip" title={`${attachment.mimeType} · ${attachment.sizeBytes.toLocaleString()} bytes`}>
-                <span aria-hidden>{"\u{1F4CE}"}</span>
-                <span className="max-w-48 truncate">{attachment.name}</span>
-                <span className="saut-mono text-[9px]" style={{ color: "var(--saut-text-subtle)" }}>
-                  {attachment.processingStatus === "EXTRACTED" ? "text available" : "stored only"}
+      {message.parts.map((part, index) => {
+        if (part.type === "proposed_actions" && part.actions?.length) {
+          const publishActions = part.actions.filter((action) => PUBLISH_INTENT_TOOLS.has(action.tool));
+          const otherActions = part.actions.filter((action) => !PUBLISH_INTENT_TOOLS.has(action.tool));
+          return (
+            <div key={index}>
+              {publishActions.length > 0 && <PublishApprovalGroup actions={publishActions} onApprove={onApprove} onReject={onReject} />}
+              {otherActions.length > 0 && (
+                <div className="mt-2 space-y-2">
+                  {otherActions.map((action) => (
+                    <ApprovalCard key={action.id} action={action} onApprove={onApprove} onReject={onReject} />
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        }
+        if (part.type === "publish_receipt") {
+          return (
+            <div key={index} className="mt-2">
+              <PublishReceiptCard receipt={part} />
+            </div>
+          );
+        }
+        if (part.type === "attachments" && part.attachments?.length) {
+          return (
+            <div key={index} className="mt-2 flex flex-wrap gap-2">
+              {part.attachments.map((attachment) => (
+                <span key={attachment.id} className="saut-attachment-chip" title={`${attachment.mimeType} · ${attachment.sizeBytes.toLocaleString()} bytes`}>
+                  <span aria-hidden>{"\u{1F4CE}"}</span>
+                  <span className="max-w-48 truncate">{attachment.name}</span>
+                  <span className="saut-mono text-[9px]" style={{ color: "var(--saut-text-subtle)" }}>
+                    {attachment.processingStatus === "EXTRACTED" ? "text available" : "stored only"}
+                  </span>
                 </span>
-              </span>
-            ))}
-          </div>
-        ) : null
-      )}
+              ))}
+            </div>
+          );
+        }
+        return null;
+      })}
     </div>
   );
 }

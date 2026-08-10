@@ -180,6 +180,23 @@ export async function getMediaAssetsByIds(ctx: OwnerContext, ids: string[]): Pro
   return (data ?? []) as MediaAssetRow[];
 }
 
+/**
+ * A short-lived signed URL for displaying an owned media asset as a
+ * thumbnail (e.g. in the Copilot "Ready to publish" approval card) — never
+ * for publishing itself (that path stays on resolveMediaForPublish's
+ * service-role signed URL, minted only while a real job is running). Uses
+ * the caller's OWNER-SCOPED client, not the service client, so RLS/ownership
+ * is enforced by Postgres/Storage policy, not by this function's logic.
+ */
+export async function getMediaAssetPreviewUrl(ctx: OwnerContext, assetId: string): Promise<{ url: string; mimeType: string } | null> {
+  const assets = await getMediaAssetsByIds(ctx, [assetId]);
+  const asset = assets[0];
+  if (!asset) return null;
+  const { data, error } = await ctx.supabase.storage.from(asset.storage_bucket).createSignedUrl(asset.storage_path, 10 * 60);
+  if (error || !data) return null;
+  return { url: data.signedUrl, mimeType: asset.mime_type };
+}
+
 export async function ingestAttachmentMedia(ctx: OwnerContext, attachmentId: string) {
   const { data } = await ctx.supabase
     .from("social_agent_attachments")

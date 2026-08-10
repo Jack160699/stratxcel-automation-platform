@@ -64,6 +64,39 @@ export async function upsertAutomationSettings(ctx: OwnerContext, patch: Partial
 }
 
 /**
+ * The Automations settings UI's "Require approval before publishing"
+ * checkbox stores the human-facing action name "publish_post" (see
+ * app/admin/social/automations/page.tsx), not a literal Agent tool name.
+ * Every real tool that can cause an external publish maps to it here so the
+ * toggle actually gates them — without this alias, `require_approval_for`
+ * containing "publish_post" would silently never match any real tool name
+ * and the checkbox would be a no-op.
+ */
+const PUBLISH_ACTION_TOOLS = new Set(["schedule_post", "execute_youtube_verification", "execute_private_youtube_verification"]);
+
+/**
+ * Low-risk internal content preparation: never leaves Stratxcel, touches no
+ * external provider, and is trivially reversible (an internal draft can
+ * always be edited or deleted). The Copilot is outcome-oriented, not
+ * tool-oriented — a user who asked to "post this on Threads" should not be
+ * interrupted separately for "should I create the draft?"/"should I attach
+ * the media?"/"should I create the platform variant?". These always run
+ * autonomously regardless of autonomy level; only the actual bounded
+ * external action (schedule_post et al., governed by PUBLISH_ACTION_TOOLS
+ * below) and organizational/settings actions (create_campaign,
+ * set_operating_mode) remain subject to the normal autonomy/confidence gate.
+ * An owner's explicit `require_approval_for` customization still overrides
+ * this — checked first, below.
+ */
+const LOW_RISK_PREPARATION_TOOLS = new Set([
+  "create_content_item",
+  "create_content_variant",
+  "attach_media_to_content",
+  "update_content_variant",
+  "cancel_scheduled_post",
+]);
+
+/**
  * Whether a given tool/action may run automatically under the current
  * autonomy level + guardrails, or must be queued for human approval.
  * Autonomy and confidence govern approval. SHADOW is deliberately not part
@@ -72,6 +105,8 @@ export async function upsertAutomationSettings(ctx: OwnerContext, patch: Partial
  */
 export function requiresApproval(toolName: string, settings: AutomationSettingsRow, confidence: number): boolean {
   if (settings.require_approval_for.includes(toolName)) return true;
+  if (LOW_RISK_PREPARATION_TOOLS.has(toolName)) return false;
+  if (PUBLISH_ACTION_TOOLS.has(toolName) && settings.require_approval_for.includes("publish_post")) return true;
   if (settings.autonomy_level !== "AUTOPILOT") return true; // MANUAL/SUPERVISED always require approval
   if (confidence < settings.min_confidence_to_autoact) return true;
   return false;

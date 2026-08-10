@@ -541,6 +541,86 @@ body.saut-document-lock {
   color: var(--saut-text-muted);
   font-size: 11px;
 }
+/* Copilot execution-stage accordion (Progress rail) */
+.saut-current-action {
+  border: 1px solid var(--saut-border-strong);
+  border-radius: var(--saut-radius-sm);
+  background: var(--saut-surface-2);
+  padding: 8px 10px;
+}
+.saut-stage-accordion {
+  border: 1px solid var(--saut-border);
+  border-radius: var(--saut-radius-sm);
+  background: var(--saut-surface-2);
+}
+.saut-stage-accordion + .saut-stage-accordion {
+  margin-top: 6px;
+}
+.saut-stage-summary {
+  display: flex;
+  cursor: pointer;
+  list-style: none;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+}
+.saut-stage-summary::-webkit-details-marker {
+  display: none;
+}
+.saut-stage-summary:focus-visible {
+  outline: 2px solid var(--saut-accent);
+  outline-offset: -2px;
+}
+.saut-stage-body {
+  border-top: 1px solid var(--saut-border);
+  padding: 8px 10px 10px 28px;
+}
+.saut-full-trace summary {
+  cursor: pointer;
+  list-style: none;
+}
+.saut-full-trace summary::-webkit-details-marker {
+  display: none;
+}
+/* Copilot session rail date groups */
+.saut-session-group-summary {
+  display: flex;
+  cursor: pointer;
+  list-style: none;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 2px;
+}
+.saut-session-group-summary::-webkit-details-marker {
+  display: none;
+}
+.saut-session-group-summary:focus-visible {
+  outline: 2px solid var(--saut-accent);
+  outline-offset: 1px;
+}
+/* Copilot right-rail modules (accordion cards) */
+.saut-rail-module {
+  border-bottom: 1px solid var(--saut-border);
+}
+.saut-rail-module-summary {
+  display: flex;
+  cursor: pointer;
+  list-style: none;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+}
+.saut-rail-module-summary::-webkit-details-marker {
+  display: none;
+}
+.saut-rail-module-summary:focus-visible {
+  outline: 2px solid var(--saut-accent);
+  outline-offset: -2px;
+}
+.saut-rail-module-body {
+  padding: 0 16px 14px;
+}
+
 .saut-workspace-splitter {
   position: relative;
   z-index: 5;
@@ -594,6 +674,68 @@ body.saut-document-lock {
   border: 1px solid rgb(240 180 41 / 0.3);
   border-radius: var(--saut-radius-md);
   background: linear-gradient(155deg, rgb(240 180 41 / 0.07), transparent 55%), var(--saut-surface-2);
+  padding: 14px;
+}
+/* Copilot "Ready to publish" single-approval card and publish receipt */
+.saut-publish-card {
+  border: 1px solid rgb(79 220 229 / 0.28);
+  border-radius: var(--saut-radius-md);
+  background: linear-gradient(155deg, rgb(79 220 229 / 0.08), transparent 55%), var(--saut-surface-2);
+  padding: 14px;
+}
+.saut-publish-media {
+  display: block;
+  width: 100%;
+  max-height: 260px;
+  margin-top: 10px;
+  border-radius: var(--saut-radius-sm);
+  border: 1px solid var(--saut-border);
+  object-fit: cover;
+  background: var(--saut-surface-3);
+}
+.saut-publish-media-placeholder {
+  height: 120px;
+  margin-top: 10px;
+  border-radius: var(--saut-radius-sm);
+  border: 1px dashed var(--saut-border-strong);
+  background: var(--saut-surface-3);
+}
+.saut-publish-meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+.saut-publish-meta > div {
+  border: 1px solid var(--saut-border);
+  border-radius: var(--saut-radius-sm);
+  background: var(--saut-surface-1);
+  padding: 6px 8px;
+}
+.saut-publish-meta dt {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--saut-text-subtle);
+}
+.saut-publish-meta dd {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: var(--saut-text);
+}
+.saut-publish-warning {
+  margin-top: 10px;
+  border: 1px solid rgb(240 180 41 / 0.3);
+  border-radius: var(--saut-radius-sm);
+  background: rgb(240 180 41 / 0.08);
+  color: var(--saut-warning);
+  padding: 6px 8px;
+  font-size: 11px;
+}
+.saut-publish-receipt {
+  border: 1px solid rgb(53 201 140 / 0.3);
+  border-radius: var(--saut-radius-md);
+  background: linear-gradient(155deg, rgb(53 201 140 / 0.08), transparent 55%), var(--saut-surface-2);
   padding: 14px;
 }
 @media (max-width: 1180px) {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AgentMessage, type AgentAttachmentData } from "../agent/AgentMessage";
 import { EmptyState } from "../components/EmptyState";
 import { StatusBadge } from "../components/StatusBadge";
@@ -11,7 +11,7 @@ import { useCopilot } from "./CopilotContext";
 import { useAgentSession } from "./useAgentSession";
 import { ExecutionTrace } from "./ExecutionTrace";
 import { ResizableWorkspace } from "./ResizableWorkspace";
-import { groupSessionsByDay } from "./session-groups";
+import { defaultOpenGroups, groupSessionsByRecency, type SessionGroupLabel } from "./session-groups";
 import { quickActionsForPath } from "./quick-actions";
 
 interface VariantRow {
@@ -22,6 +22,10 @@ interface VariantRow {
   content_master: { title: string; content_pillar: string } | null;
 }
 
+// The full-screen shell is fixed (see .saut-agent-workspace / 100dvh); this
+// rail owns its own scroll area, so "+ New conversation" stays pinned above
+// it and hundreds of sessions never grow the page — see Section 1/2 of the
+// workspace repair brief.
 function SessionRail({
   sessions,
   activeId,
@@ -33,32 +37,104 @@ function SessionRail({
   onSelect: (id: string) => void;
   onNew: () => void;
 }) {
+  const groups = useMemo(() => groupSessionsByRecency(sessions), [sessions]);
+  const [openGroups, setOpenGroups] = useState<Set<SessionGroupLabel>>(() => defaultOpenGroups(groups, activeId));
+
+  // If the active session lives in a currently-collapsed group (e.g. the
+  // user picked an older session), open that group automatically — never
+  // leave the active session hidden inside a collapsed date group.
+  useEffect(() => {
+    if (!activeId) return;
+    const owner = groups.find((group) => group.sessions.some((session) => session.id === activeId));
+    if (owner && !openGroups.has(owner.label)) {
+      setOpenGroups((current) => new Set(current).add(owner.label));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeId, groups]);
+
   return (
-    <aside className="saut-agent-rail saut-agent-left p-3" aria-label="Copilot sessions">
-      <button onClick={onNew} className="saut-btn saut-btn-secondary mb-4 w-full justify-center">+ New conversation</button>
-      {groupSessionsByDay(sessions).map((group) => (
-        <section key={group.label} className="mb-4">
-          <div className="saut-section-title mb-1.5">{group.label}</div>
-          {group.sessions.map((session) => (
-            <button
-              key={session.id}
-              onClick={() => onSelect(session.id)}
-              className="mb-1 block w-full rounded-lg px-2.5 py-2 text-left"
-              style={session.id === activeId
-                ? { background: "var(--saut-accent-muted)", color: "var(--saut-text)" }
-                : { color: "var(--saut-text-muted)" }}
+    <aside className="saut-agent-rail saut-agent-left flex h-full min-h-0 flex-col" aria-label="Copilot sessions">
+      <div className="shrink-0 p-3 pb-0">
+        <button onClick={onNew} className="saut-btn saut-btn-secondary mb-3 w-full justify-center">+ New conversation</button>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto p-3 pt-0">
+        {groups.length === 0 && (
+          <p className="text-[11px]" style={{ color: "var(--saut-text-subtle)" }}>No conversations yet.</p>
+        )}
+        {groups.map((group) => {
+          const open = openGroups.has(group.label);
+          return (
+            <details
+              key={group.label}
+              className="mb-2"
+              open={open}
+              onToggle={(event) => {
+                const next = (event.target as HTMLDetailsElement).open;
+                setOpenGroups((current) => {
+                  const updated = new Set(current);
+                  if (next) updated.add(group.label);
+                  else updated.delete(group.label);
+                  return updated;
+                });
+              }}
             >
-              <span className="block truncate text-xs font-medium">{session.title || "Untitled session"}</span>
-              <span className="saut-mono mt-1 block text-[9px] uppercase" style={{ color: "var(--saut-text-subtle)" }}>{session.status}</span>
-            </button>
-          ))}
+              <summary className="saut-session-group-summary">
+                <span className="saut-section-title">{group.label.toUpperCase()}</span>
+                <span className="saut-mono text-[9px]" style={{ color: "var(--saut-text-subtle)" }}>{group.sessions.length}</span>
+              </summary>
+              <div className="mt-1">
+                {group.sessions.map((session) => (
+                  <button
+                    key={session.id}
+                    onClick={() => onSelect(session.id)}
+                    aria-current={session.id === activeId ? "true" : undefined}
+                    className="mb-1 block w-full rounded-lg px-2.5 py-2 text-left"
+                    style={session.id === activeId
+                      ? { background: "var(--saut-accent-muted)", color: "var(--saut-text)" }
+                      : { color: "var(--saut-text-muted)" }}
+                  >
+                    <span className="block truncate text-xs font-medium">{session.title || "Untitled session"}</span>
+                    <span className="saut-mono mt-1 block text-[9px] uppercase" style={{ color: "var(--saut-text-subtle)" }}>{session.status}</span>
+                  </button>
+                ))}
+              </div>
+            </details>
+          );
+        })}
+        <section className="mt-5 border-t pt-4" style={{ borderColor: "var(--saut-border)" }}>
+          <div className="saut-section-title mb-2">Shortcuts</div>
+          <p className="text-[11px] leading-relaxed" style={{ color: "var(--saut-text-subtle)" }}>Quick prompts are available in the empty canvas.</p>
         </section>
-      ))}
-      <section className="mt-5 border-t pt-4" style={{ borderColor: "var(--saut-border)" }}>
-        <div className="saut-section-title mb-2">Shortcuts</div>
-        <p className="text-[11px] leading-relaxed" style={{ color: "var(--saut-text-subtle)" }}>Quick prompts are available in the empty canvas.</p>
-      </section>
+      </div>
     </aside>
+  );
+}
+
+// One collapsible card for the right rail (Current Mission / Progress /
+// Context / Working With / Connected Systems — Section 4 of the workspace
+// repair brief). Each module owns its own open/closed state so expanding
+// one never resizes or jumps the center canvas, and the rail itself keeps a
+// single scrollbar (see .saut-agent-rail on the containing <aside>).
+function RailModule({
+  title,
+  defaultOpen,
+  badge,
+  children,
+}: {
+  title: string;
+  defaultOpen: boolean;
+  badge?: ReactNode;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <details className="saut-rail-module" open={open} onToggle={(event) => setOpen((event.target as HTMLDetailsElement).open)}>
+      <summary className="saut-rail-module-summary">
+        <span className="saut-section-title">{title}</span>
+        {badge}
+      </summary>
+      <div className="saut-rail-module-body">{children}</div>
+    </details>
   );
 }
 
@@ -284,53 +360,58 @@ export function CopilotFullPage({
         </div>
       </section>
   );
+  const contextAccessed = brandUsed || accountsUsed || attachmentEvents.length > 0;
+
+  // Right rail: five compact accordion modules, one internal scrollbar (see
+  // .saut-agent-rail on the containing <aside> in ResizableWorkspace) — never
+  // an ever-growing Progress section pushing the whole workspace. Defaults
+  // per Section 4 of the workspace repair brief.
   const progress = (
-    <section className="p-4">
-          <div className="saut-section-title mb-2">Current mission</div>
-          <p className="mb-4 text-sm font-medium leading-snug">{missionTitle}</p>
-          <div className="saut-section-title mb-3">Progress</div>
-          <ExecutionTrace run={run} events={runEvents} />
-    </section>
+    <div>
+      <RailModule title="Current mission" defaultOpen>
+        <p className="text-sm font-medium leading-snug">{missionTitle}</p>
+      </RailModule>
+      <RailModule title="Progress" defaultOpen>
+        <ExecutionTrace run={run} events={runEvents} waitingForApproval={session?.status === "WAITING_FOR_CHOICE"} />
+      </RailModule>
+    </div>
   );
   const context = (
-    <div className="p-4 pt-0">
-      <section className="border-t pt-4" style={{ borderColor: "var(--saut-border)" }}>
-          <div className="saut-section-title mb-3">Context</div>
-          {!brandUsed && !accountsUsed && attachmentEvents.length === 0 ? (
-            <p className="text-xs" style={{ color: "var(--saut-text-subtle)" }}>Accessed context appears here during the run.</p>
-          ) : (
-            <div className="space-y-2 text-xs">
-              {brandUsed && <div className="saut-card-2 p-2.5">Brand Brain · Used in this run</div>}
-              {accountsUsed && <div className="saut-card-2 p-2.5">Connected accounts · Checked</div>}
-              {attachmentEvents.map((event) => (
-                <div key={event.id} className="saut-card-2 p-2.5">{event.label} · Used in this run</div>
-              ))}
-            </div>
-          )}
-      </section>
-
-      <section className="mt-6 border-t pt-4" style={{ borderColor: "var(--saut-border)" }}>
-          <div className="saut-section-title mb-3">Working with</div>
-          <div className="space-y-2">
-            {initialVariants.length === 0 ? <p className="text-xs" style={{ color: "var(--saut-text-subtle)" }}>No artifacts yet.</p> :
-              initialVariants.slice(0, 4).map((variant) => (
-                <a key={variant.id} href="/admin/social/create" className="saut-card-2 block p-2.5 text-xs">
-                  <span className="block truncate">{variant.content_master?.title || `${variant.platform} draft`}</span>
-                  <span className="mt-1 flex items-center gap-2"><StatusBadge label={variant.status} /></span>
-                </a>
-              ))}
+    <div>
+      <RailModule title="Context" defaultOpen={contextAccessed}>
+        {!contextAccessed ? (
+          <p className="text-xs" style={{ color: "var(--saut-text-subtle)" }}>Accessed context appears here during the run.</p>
+        ) : (
+          <div className="space-y-2 text-xs">
+            {brandUsed && <div className="saut-card-2 p-2.5">Brand Brain · Used in this run</div>}
+            {accountsUsed && <div className="saut-card-2 p-2.5">Connected accounts · Checked</div>}
+            {attachmentEvents.map((event) => (
+              <div key={event.id} className="saut-card-2 p-2.5">{event.label} · Used in this run</div>
+            ))}
           </div>
-      </section>
+        )}
+      </RailModule>
 
-      <section className="mt-6 border-t pt-4 text-xs" style={{ borderColor: "var(--saut-border)" }}>
-          <div className="saut-section-title mb-3">Connected systems</div>
-          <div className="space-y-2">
-            <div className="flex justify-between gap-3"><span>Supabase</span><span style={{ color: "var(--saut-success)" }}>Available</span></div>
-            <div className="flex justify-between gap-3"><span>AI Provider</span><span>{provider.provider}</span></div>
-            <div className="flex justify-between gap-3"><span>Protocol</span><span>{provider.protocol}</span></div>
-            <div className="truncate text-right" title={provider.model} style={{ color: "var(--saut-text-subtle)" }}>{provider.model}</div>
-          </div>
-      </section>
+      <RailModule title="Working with" defaultOpen={false}>
+        <div className="space-y-2">
+          {initialVariants.length === 0 ? <p className="text-xs" style={{ color: "var(--saut-text-subtle)" }}>No artifacts yet.</p> :
+            initialVariants.slice(0, 4).map((variant) => (
+              <a key={variant.id} href="/admin/social/create" className="saut-card-2 block p-2.5 text-xs">
+                <span className="block truncate">{variant.content_master?.title || `${variant.platform} draft`}</span>
+                <span className="mt-1 flex items-center gap-2"><StatusBadge label={variant.status} /></span>
+              </a>
+            ))}
+        </div>
+      </RailModule>
+
+      <RailModule title="Connected systems" defaultOpen={false}>
+        <div className="space-y-2 text-xs">
+          <div className="flex justify-between gap-3"><span>Supabase</span><span style={{ color: "var(--saut-success)" }}>Available</span></div>
+          <div className="flex justify-between gap-3"><span>AI Provider</span><span>{provider.provider}</span></div>
+          <div className="flex justify-between gap-3"><span>Protocol</span><span>{provider.protocol}</span></div>
+          <div className="truncate text-right" title={provider.model} style={{ color: "var(--saut-text-subtle)" }}>{provider.model}</div>
+        </div>
+      </RailModule>
     </div>
   );
 

@@ -1,5 +1,5 @@
 import { createSupabaseServiceClient } from "../../supabase/service";
-import { requireContentObjective } from "../content-options";
+import { requireContentObjective, requirePlatform } from "../content-options";
 import type { OwnerContext } from "../db-context";
 
 type ServiceClient = ReturnType<typeof createSupabaseServiceClient>;
@@ -109,7 +109,7 @@ export async function createContentVariant(
     .from("content_variants")
     .insert({
       master_id: input.masterId,
-      platform: input.platform,
+      platform: requirePlatform(input.platform, "platform"),
       format: input.format,
       objective: requireContentObjective(input.objective),
       caption: input.caption,
