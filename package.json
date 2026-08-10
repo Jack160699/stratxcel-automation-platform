@@ -24,7 +24,7 @@
     "test:social-whatsapp-bridge": "node --experimental-strip-types lib/social/__tests__/whatsapp-bridge.test.ts",
     "test:social-creative-intent": "node --experimental-strip-types lib/social/__tests__/creative-execution-intent.test.ts",
     "test:social-final-artifact": "node --experimental-strip-types lib/social/__tests__/final-artifact-approval-policy.test.ts",
-    "test:social-package-autopilot": "node --experimental-strip-types lib/social/__tests__/package-autopilot-policy.test.ts",
+    "test:social-package-autopilot": "node --experimental-strip-types lib/social/__tests__/package-autopilot-policy.test.ts && node --experimental-strip-types lib/social/__tests__/package-distribution.test.ts && node --experimental-strip-types lib/social/__tests__/package-autopilot-producer.test.ts",
     "test:unified-shell-crm": "node --experimental-strip-types lib/rbac/__tests__/unified-shell-tenant-ux.test.ts && node --experimental-strip-types lib/rbac/__tests__/client-app-shell.test.ts && node --experimental-strip-types lib/rbac/__tests__/client-modules-completion.test.ts && node --experimental-strip-types lib/rbac/__tests__/unified-crm-inbox.test.ts",
     "test:whatsapp-auto-reply": "node --experimental-strip-types packages/whatsapp/src/__tests__/outbound.test.ts && node --experimental-strip-types apps/whatsapp-worker/src/__tests__/auto-reply.test.ts",
     "test:whatsapp-durable-ack": "node --experimental-strip-types apps/whatsapp-worker/src/__tests__/durable-ack.test.ts",
