@@ -1,15 +1,19 @@
 import { requireTenantContext, getTenantServiceContext } from "@/lib/tenants/tenant-context";
-import { isPlanTier } from "@stratxcel/payments-and-wallet";
+import {
+  getSelfServicePlan,
+  isPaymentFeatureEnabled,
+  isPlanTier,
+  isProviderManagedSubscription,
+  updateRazorpaySubscriptionPlan,
+} from "@stratxcel/payments-and-wallet";
 import { requirePermission, PermissionDeniedError } from "@/lib/rbac/policy";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * Schedules a Launch <-> Growth plan change, effective at the subscription's next
- * renewal (no mid-cycle proration is invented — see billing page copy). The target
- * plan tier is validated server-side against the canonical plan list; Custom Growth
- * is rejected here too since it is quote-led, not a self-service target.
+ * Schedules a Starter/Growth/Business plan change, effective at next renewal.
+ * For provider-managed subscriptions, also schedules the Razorpay plan change at cycle end.
  */
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -18,6 +22,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
   if (!tenantId || !isPlanTier(targetPlanTier)) {
     return Response.json({ error: "Invalid tenantId or targetPlanTier" }, { status: 400 });
+  }
+
+  if (!getSelfServicePlan(targetPlanTier)) {
+    return Response.json({ error: "target_plan_not_self_service" }, { status: 400 });
   }
 
   const ctx = await requireTenantContext(tenantId);
@@ -44,6 +52,31 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   if (!result.success) {
     const status = result.reason === "subscription_not_found" ? 404 : result.reason === "tenant_mismatch" ? 403 : 400;
     return Response.json({ error: result.reason }, { status });
+  }
+
+  const { data: sub } = await serviceDb.from("subscriptions").select("*").eq("id", id).eq("tenant_id", tenantId).maybeSingle();
+
+  if (sub && isProviderManagedSubscription(sub) && isPaymentFeatureEnabled("PAYMENTS_RECURRING_SUBSCRIPTIONS_ENABLED")) {
+    try {
+      const provider = await updateRazorpaySubscriptionPlan(sub.provider_subscription_id, targetPlanTier);
+      await serviceDb
+        .from("subscriptions")
+        .update({
+          provider_plan_id: provider.providerPlanId,
+          provider_status: provider.providerStatus,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", id);
+    } catch (providerErr) {
+      console.error("[Subscription Change Plan] Razorpay plan update failed", providerErr);
+      return Response.json(
+        {
+          ...result,
+          providerSyncWarning: providerErr instanceof Error ? providerErr.message : "provider_plan_update_failed",
+        },
+        { headers: { "Cache-Control": "no-store" } }
+      );
+    }
   }
 
   return Response.json(result, { headers: { "Cache-Control": "no-store" } });

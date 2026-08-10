@@ -1,5 +1,11 @@
 import { getTenantServiceContext } from "@/lib/tenants/tenant-context";
-import { createPaymentLink, isPaymentFeatureEnabled, getPlanDefinition, type PlanTier } from "@stratxcel/payments-and-wallet";
+import {
+  createPaymentLink,
+  isPaymentFeatureEnabled,
+  getPlanDefinition,
+  isProviderManagedSubscription,
+  type PlanTier,
+} from "@stratxcel/payments-and-wallet";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -7,19 +13,12 @@ export const dynamic = "force-dynamic";
 /**
  * Internal, cron-only endpoint (see vercel.json). Two jobs, always in this order:
  *
- *  1. run_subscription_lifecycle_cycle — pure state transitions (cancel-at-period-end
- *     -> cancelled, active-past-period-end -> past_due, past_due-past-grace ->
- *     expired). Never creates a payment link; never grants entitlements, only revokes.
+ *  1. run_subscription_lifecycle_cycle — pure state transitions.
+ *  2. For Payment-Link-managed subscriptions renewing within 3 days (or past_due)
+ *     without a live renewal link, generate the next period's payment link.
  *
- *  2. For subscriptions renewing within 3 days (or already past_due) that don't
- *     already have a live renewal link, generate the next period's payment link —
- *     the same purpose-isolated, price-server-resolved path checkout uses. A
- *     scheduled upgrade/downgrade (pending_plan_tier) is applied here, before the
- *     link is created, so the next payment reflects the new plan.
- *
- * Gated on PAYMENTS_SUBSCRIPTIONS_ENABLED — while subscriptions checkout is disabled,
- * no subscription can be active yet, so this is a no-op, but the gate is enforced
- * explicitly rather than assumed.
+ * Provider-managed Razorpay AutoPay subscriptions are skipped — Razorpay charges them.
+ * Gated on PAYMENTS_SUBSCRIPTIONS_ENABLED.
  */
 export async function POST(request: Request) {
   const expectedSecret = process.env.CRON_SECRET?.trim();
@@ -53,10 +52,17 @@ export async function POST(request: Request) {
 
   let linksCreated = 0;
   let skippedExisting = 0;
+  let skippedProviderManaged = 0;
   const failures: Array<{ subscriptionId: string; error: string }> = [];
 
   for (const sub of candidates ?? []) {
     try {
+      // Provider-managed AutoPay: Razorpay charges — never mint a renewal Payment Link.
+      if (isProviderManagedSubscription(sub)) {
+        skippedProviderManaged += 1;
+        continue;
+      }
+
       if (sub.next_renewal_link_id) {
         const { data: existingLink } = await serviceDb.from("payment_links").select("status").eq("id", sub.next_renewal_link_id).maybeSingle();
         if (existingLink?.status === "created") {
@@ -66,7 +72,7 @@ export async function POST(request: Request) {
       }
 
       let planTier = sub.plan_tier as PlanTier;
-      if (sub.pending_plan_tier && (sub.pending_plan_tier === "launch" || sub.pending_plan_tier === "growth")) {
+      if (sub.pending_plan_tier && (sub.pending_plan_tier === "starter" || sub.pending_plan_tier === "growth" || sub.pending_plan_tier === "business")) {
         planTier = sub.pending_plan_tier;
         await serviceDb
           .from("subscriptions")
@@ -101,6 +107,7 @@ export async function POST(request: Request) {
     renewalCandidates: candidates?.length ?? 0,
     linksCreated,
     skippedExisting,
+    skippedProviderManaged,
     failures,
   });
 }

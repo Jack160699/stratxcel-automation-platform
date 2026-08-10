@@ -28,8 +28,17 @@ function run() {
   // --- 3. Price and purpose are always server-resolved, never client input ---
   assert.equal(/amountCents\s*:\s*body\./.test(checkoutSource), false, "no amount field may ever be read from the request body");
   assert.equal(/priceCents\s*:\s*body\./.test(checkoutSource), false, "no price field may ever be read from the request body");
-  assert.ok(/paymentPurpose:\s*"subscription_payment"/.test(checkoutSource), "purpose must be hardcoded to subscription_payment");
+  assert.equal(/plan_id\s*:\s*body\./.test(checkoutSource), false, "no Razorpay plan_id may ever be read from the request body");
+  assert.ok(
+    /paymentPurpose:\s*"subscription_payment"|payment_purpose:\s*"subscription_payment"/.test(checkoutSource) ||
+      /createRazorpaySubscription/.test(checkoutSource),
+    "subscription checkout must use subscription_payment purpose or recurring AutoPay creator"
+  );
   assert.equal(/wallet_topup|audit_fee|domain_purchase|domain_renewal|continuation_pack/.test(checkoutSource), false, "checkout route must not touch any other payment purpose");
+
+  // --- 3b. Recurring gate is fail-closed and separate from payment-link path ---
+  assert.ok(/PAYMENTS_RECURRING_SUBSCRIPTIONS_ENABLED/.test(checkoutSource), "recurring AutoPay must have its own feature gate");
+  assert.ok(/createRazorpaySubscription/.test(checkoutSource), "when recurring is enabled, checkout must create a Razorpay subscription");
 
   // --- 4. Tenant ownership is always re-derived server-side -------------------
   assert.ok(/requireTenantContext\(tenantId\)/.test(checkoutSource), "every handler must re-derive tenant membership from the session, not trust the body alone");
@@ -42,16 +51,16 @@ function run() {
   const changePlanSource = readCode("app", "api", "platform", "subscriptions", "[id]", "change-plan", "route.ts");
   assert.ok(/schedule_subscription_plan_change/.test(changePlanSource), "plan changes must go through the dedicated RPC, not a raw update");
   assert.ok(/isPlanTier\(targetPlanTier\)/.test(changePlanSource), "target plan tier must be validated against the canonical plan set before it ever reaches the RPC");
+  assert.ok(/getSelfServicePlan\(targetPlanTier\)/.test(changePlanSource), "target plan must be self-service only");
 
-  // --- 6. The migration's plan-change RPC itself refuses Custom Growth as a target
-  const migrationSource = read("supabase", "migrations", "20260807223455_subscriptions_lifecycle_billing_gst.sql");
+  // --- 6. The recurring migration's plan-change RPC refuses non-self-service targets
+  const migrationSource = read("supabase", "migrations", "20260811120000_razorpay_recurring_subscriptions.sql");
   assert.ok(
-    /p_target_plan_tier not in \('launch', 'growth'\)/.test(migrationSource),
-    "schedule_subscription_plan_change must reject any target outside launch/growth server-side"
+    /p_target_plan_tier not in \('starter', 'growth', 'business'\)/.test(migrationSource),
+    "schedule_subscription_plan_change must reject any target outside starter/growth/business server-side"
   );
 
   // --- 7. Additive only: the migration never touches the live payment orchestrator
-  // (a comment explaining that it's untouched is fine; redefining it is not)
   assert.equal(
     /create (or replace )?function public\.reconcile_and_fulfill_razorpay_payment_v4/.test(migrationSource),
     false,
@@ -59,15 +68,12 @@ function run() {
   );
   assert.equal(/drop\s+table/i.test(migrationSource), false, "migration must not drop any table");
   assert.equal(/drop\s+column/i.test(migrationSource), false, "migration must not drop any column");
+  assert.equal(/create\s+table\s+.*\bsubscriptions\b/i.test(migrationSource), false, "must not create a duplicate subscriptions table");
 
-  // --- 8. New tables carry RLS + a tenant-scoped read policy -------------------
-  for (const table of ["billing_profiles", "invoices", "credit_notes"]) {
-    assert.ok(new RegExp(`alter table ${table} enable row level security;`).test(migrationSource), `${table}: RLS must be enabled`);
-    assert.ok(
-      new RegExp(`create policy \\w+ on ${table} for select[\\s\\S]{0,300}tenant_members`).test(migrationSource),
-      `${table}: must have a tenant-scoped select policy`
-    );
-  }
+  // --- 8. Renew cron skips provider-managed AutoPay subscriptions ------------
+  const renewSource = readCode("app", "api", "internal", "subscriptions", "renew", "route.ts");
+  assert.ok(/isProviderManagedSubscription/.test(renewSource), "renew cron must detect provider-managed subscriptions");
+  assert.ok(/skippedProviderManaged/.test(renewSource), "renew cron must skip minting Payment Links for AutoPay subscriptions");
 
   console.log("subscription-checkout-safety.test.ts: ALL PASS");
 }

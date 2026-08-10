@@ -199,6 +199,24 @@ export async function processRazorpayWebhookEvent(
 ): Promise<WebhookProcessResult> {
   const { eventType, payload } = event;
 
+  // Recurring AutoPay: subscription.charged must NOT go through Payment-Link v4.
+  if (eventType === "subscription.charged") {
+    return processSubscriptionChargedEvent(supabase, event);
+  }
+
+  if (
+    eventType === "subscription.authenticated" ||
+    eventType === "subscription.activated" ||
+    eventType === "subscription.pending" ||
+    eventType === "subscription.halted" ||
+    eventType === "subscription.paused" ||
+    eventType === "subscription.resumed" ||
+    eventType === "subscription.cancelled" ||
+    eventType === "subscription.completed"
+  ) {
+    return processSubscriptionLifecycleEvent(supabase, event);
+  }
+
   if (eventType === "payment_link.paid" || eventType === "payment.captured") {
     const normalized = normalizeRazorpayWebhookEvent(eventType, payload);
 
@@ -363,4 +381,141 @@ export async function processRazorpayWebhookEvent(
   }
 
   return { eventType, handled: false, actionTaken: "unsupported_event_type" };
+}
+
+function extractSubscriptionEntity(payload: Record<string, unknown>): Record<string, unknown> | null {
+  const entityObj = payload.payload as Record<string, Record<string, unknown>> | undefined;
+  const sub = entityObj?.subscription?.entity;
+  return sub && typeof sub === "object" ? (sub as Record<string, unknown>) : null;
+}
+
+function extractPaymentEntity(payload: Record<string, unknown>): Record<string, unknown> | null {
+  const entityObj = payload.payload as Record<string, Record<string, unknown>> | undefined;
+  const pay = entityObj?.payment?.entity;
+  return pay && typeof pay === "object" ? (pay as Record<string, unknown>) : null;
+}
+
+async function processSubscriptionChargedEvent(
+  supabase: ServiceClient,
+  event: { eventType: string; payload: Record<string, unknown>; providerEventId?: string | null }
+): Promise<WebhookProcessResult> {
+  const { eventType, payload } = event;
+  const subEntity = extractSubscriptionEntity(payload);
+  const payEntity = extractPaymentEntity(payload);
+
+  const providerSubscriptionId =
+    (typeof subEntity?.id === "string" && subEntity.id.trim()) ||
+    (typeof payEntity?.notes === "object" &&
+      payEntity.notes &&
+      typeof (payEntity.notes as Record<string, unknown>).subscription_id === "string" &&
+      String((payEntity.notes as Record<string, unknown>).subscription_id)) ||
+    null;
+
+  const providerPaymentId = typeof payEntity?.id === "string" && payEntity.id.trim() ? payEntity.id.trim() : null;
+  const providerOrderId = typeof payEntity?.order_id === "string" ? payEntity.order_id : null;
+  const amountCents = typeof payEntity?.amount === "number" ? payEntity.amount : null;
+  const currency = typeof payEntity?.currency === "string" ? payEntity.currency : null;
+  const status = typeof payEntity?.status === "string" ? payEntity.status : null;
+  const captured =
+    typeof status === "string" && (status.toLowerCase() === "captured" || status.toLowerCase() === "paid");
+  const headerProviderEventId =
+    typeof event.providerEventId === "string" && event.providerEventId.trim() !== ""
+      ? event.providerEventId.trim()
+      : null;
+
+  if (!providerSubscriptionId || !providerPaymentId || !amountCents || !currency || !status || !headerProviderEventId) {
+    await writeReconciliationIssue(supabase, {
+      providerEventId: headerProviderEventId,
+      paymentId: providerPaymentId,
+      failureReason: "missing_subscription_charge_provider_fields",
+      purpose: "subscription_payment",
+      receivedAmountCents: amountCents,
+      receivedCurrency: currency,
+    });
+    return { eventType, handled: false, actionTaken: "missing_subscription_charge_provider_fields" };
+  }
+
+  const { data: rpcData, error: rpcErr } = await supabase.rpc("reconcile_and_fulfill_razorpay_subscription_charge", {
+    p_provider_event_id: headerProviderEventId,
+    p_provider_payment_id: providerPaymentId,
+    p_provider_subscription_id: providerSubscriptionId,
+    p_provider_order_id: providerOrderId,
+    p_actual_amount_cents: amountCents,
+    p_actual_currency: currency,
+    p_provider_status: typeof subEntity?.status === "string" ? subEntity.status : status,
+    p_captured: captured,
+    p_event_type: eventType,
+  });
+
+  if (rpcErr) {
+    console.error("[Razorpay subscription.charged RPC Error]", rpcErr);
+    throw new Error(`reconcile_and_fulfill_razorpay_subscription_charge RPC failed: ${rpcErr.message}`);
+  }
+
+  if (!rpcData || (rpcData as { fulfilled?: boolean }).fulfilled !== true) {
+    const reason = (rpcData as { reason?: string })?.reason ?? "subscription_charge_rejected";
+    return { eventType, handled: false, actionTaken: `subscription_charge_failed_${reason}` };
+  }
+
+  const already = (rpcData as { already_fulfilled?: boolean }).already_fulfilled === true;
+  return {
+    eventType,
+    handled: true,
+    actionTaken: already ? "subscription_charge_already_fulfilled" : "subscription_charge_fulfilled",
+    orderId: (rpcData as { order_id?: string }).order_id ?? null,
+    purpose: "subscription_payment",
+  };
+}
+
+async function processSubscriptionLifecycleEvent(
+  supabase: ServiceClient,
+  event: { eventType: string; payload: Record<string, unknown>; providerEventId?: string | null }
+): Promise<WebhookProcessResult> {
+  const { eventType, payload } = event;
+  const subEntity = extractSubscriptionEntity(payload);
+  const providerSubscriptionId = typeof subEntity?.id === "string" && subEntity.id.trim() ? subEntity.id.trim() : null;
+  const providerStatus =
+    typeof subEntity?.status === "string" && subEntity.status.trim()
+      ? subEntity.status.trim()
+      : eventType.replace("subscription.", "");
+
+  if (!providerSubscriptionId) {
+    return { eventType, handled: false, actionTaken: "missing_provider_subscription_id" };
+  }
+
+  let nextChargeAt: string | null = null;
+  const chargeAt = subEntity?.charge_at;
+  if (typeof chargeAt === "number" && Number.isFinite(chargeAt)) {
+    nextChargeAt = new Date(chargeAt * 1000).toISOString();
+  }
+
+  const shortUrl = typeof subEntity?.short_url === "string" ? subEntity.short_url : null;
+  const headerProviderEventId =
+    typeof event.providerEventId === "string" && event.providerEventId.trim() !== ""
+      ? event.providerEventId.trim()
+      : null;
+
+  const { data: rpcData, error: rpcErr } = await supabase.rpc("apply_razorpay_subscription_lifecycle_event", {
+    p_provider_subscription_id: providerSubscriptionId,
+    p_provider_status: providerStatus,
+    p_provider_event_id: headerProviderEventId,
+    p_next_charge_at: nextChargeAt,
+    p_short_url: shortUrl,
+  });
+
+  if (rpcErr) {
+    throw new Error(`apply_razorpay_subscription_lifecycle_event RPC failed: ${rpcErr.message}`);
+  }
+
+  if (!rpcData || (rpcData as { success?: boolean }).success !== true) {
+    const reason = (rpcData as { reason?: string })?.reason ?? "lifecycle_rejected";
+    // Unknown subscription is not retryable forever for lifecycle-only events — mark handled=false so claim can retry briefly.
+    return { eventType, handled: false, actionTaken: `subscription_lifecycle_failed_${reason}` };
+  }
+
+  return {
+    eventType,
+    handled: true,
+    actionTaken: `subscription_lifecycle_${providerStatus}`,
+  };
 }

@@ -9,6 +9,8 @@ import {
   upsertBillingProfile,
   getBillingProfile,
   listInvoicesForTenant,
+  createRazorpaySubscription,
+  isProviderManagedSubscription,
 } from "@stratxcel/payments-and-wallet";
 import { splitGstInclusive } from "@/lib/payments/gst";
 import { requirePermission, PermissionDeniedError } from "@/lib/rbac/policy";
@@ -31,6 +33,8 @@ export async function POST(request: Request) {
       { status: 503 }
     );
   }
+
+  const useRecurring = isPaymentFeatureEnabled("PAYMENTS_RECURRING_SUBSCRIPTIONS_ENABLED");
 
   try {
     const body = await request.json().catch(() => ({}));
@@ -100,6 +104,7 @@ export async function POST(request: Request) {
         activated_at: null,
         entitlements_granted_at: null,
         fulfilment_status: "awaiting_payment",
+        billing_provider: useRecurring ? "razorpay_subscription" : "razorpay_payment_link",
       })
       .select("*")
       .single();
@@ -108,7 +113,67 @@ export async function POST(request: Request) {
       return Response.json({ error: `Failed to create pending subscription: ${subErr?.message}` }, { status: 500 });
     }
 
-    // 2. Create Razorpay payment link with mandatory payment_purpose = "subscription_payment"
+    if (useRecurring) {
+      let providerSub;
+      try {
+        providerSub = await createRazorpaySubscription(serviceDb, {
+          tenantId,
+          subscriptionId: subscription.id,
+          planTier,
+        });
+      } catch (subCreateErr) {
+        await serviceDb
+          .from("subscriptions")
+          .update({
+            status: "payment_failed",
+            fulfilment_status: "provider_subscription_creation_failed",
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", subscription.id);
+        const msg = subCreateErr instanceof Error ? subCreateErr.message : "Failed to create Razorpay subscription";
+        return Response.json({ error: `Subscription created but AutoPay setup failed: ${msg}` }, { status: 502 });
+      }
+
+      const { error: providerUpdateErr } = await serviceDb
+        .from("subscriptions")
+        .update({
+          provider_subscription_id: providerSub.providerSubscriptionId,
+          provider_plan_id: providerSub.providerPlanId,
+          provider_status: providerSub.providerStatus,
+          provider_short_url: providerSub.shortUrl,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", subscription.id);
+
+      if (providerUpdateErr) {
+        await serviceDb
+          .from("subscriptions")
+          .update({
+            status: "payment_failed",
+            fulfilment_status: "reconciliation_required",
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", subscription.id);
+        return Response.json({ error: "Failed to persist Razorpay subscription reference." }, { status: 500 });
+      }
+
+      return Response.json({
+        subscription: {
+          ...subscription,
+          billing_provider: "razorpay_subscription",
+          provider_subscription_id: providerSub.providerSubscriptionId,
+          provider_plan_id: providerSub.providerPlanId,
+          provider_status: providerSub.providerStatus,
+          provider_short_url: providerSub.shortUrl,
+        },
+        auditCreditProvisional: creditCheck.eligible ? creditCheck.creditAmountCents / 100 : 0,
+        priceBreakdown: splitGstInclusive(finalPriceCents),
+        paymentUrl: providerSub.shortUrl,
+        billingMode: "razorpay_subscription",
+      });
+    }
+
+    // Legacy one-time Payment Link path (only when recurring gate is off)
     let link;
     try {
       link = await createPaymentLink(serviceDb, {
@@ -120,7 +185,6 @@ export async function POST(request: Request) {
         referenceId: subscription.id,
       });
     } catch (linkErr) {
-      // Payment link creation failed — mark subscription as payment_failed
       await serviceDb
         .from("subscriptions")
         .update({ status: "payment_failed", fulfilment_status: "payment_link_creation_failed", updated_at: new Date().toISOString() })
@@ -129,18 +193,16 @@ export async function POST(request: Request) {
       return Response.json({ error: `Subscription created but payment link failed: ${linkMsg}` }, { status: 502 });
     }
 
-    // 3. Persist payment link reference on subscription record
     const { error: linkUpdateErr } = await serviceDb
       .from("subscriptions")
       .update({ payment_link_id: link.id })
       .eq("id", subscription.id);
 
     if (linkUpdateErr) {
-      // Linking failed — compensate: cancel Razorpay link, mark subscription reconciliation_required
       try {
         await cancelPaymentLink(serviceDb, { linkId: link.id, tenantId });
       } catch {
-        // Best-effort compensation — manual review required
+        // Best-effort compensation
       }
       await serviceDb
         .from("subscriptions")
@@ -155,6 +217,7 @@ export async function POST(request: Request) {
       priceBreakdown: splitGstInclusive(finalPriceCents),
       paymentLink: link,
       paymentUrl: link.short_url,
+      billingMode: "razorpay_payment_link",
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to create subscription";
@@ -192,11 +255,17 @@ export async function GET(request: Request) {
     .maybeSingle();
 
   let paymentUrl: string | null = null;
-  if (subscription?.status === "pending_payment" && subscription.payment_link_id) {
+  if (subscription && isProviderManagedSubscription(subscription)) {
+    if (
+      (subscription.status === "pending_payment" || subscription.status === "past_due" || subscription.provider_status === "halted") &&
+      subscription.provider_short_url
+    ) {
+      paymentUrl = subscription.provider_short_url;
+    }
+  } else if (subscription?.status === "pending_payment" && subscription.payment_link_id) {
     const { data: link } = await serviceDb.from("payment_links").select("short_url, status").eq("id", subscription.payment_link_id).maybeSingle();
     if (link?.status === "created") paymentUrl = link.short_url;
-  }
-  if (subscription?.status === "past_due" && subscription.next_renewal_link_id) {
+  } else if (subscription?.status === "past_due" && subscription.next_renewal_link_id) {
     const { data: link } = await serviceDb.from("payment_links").select("short_url, status").eq("id", subscription.next_renewal_link_id).maybeSingle();
     if (link?.status === "created") paymentUrl = link.short_url;
   }
@@ -213,6 +282,7 @@ export async function GET(request: Request) {
       paymentUrl,
       billingProfile,
       invoices: invoices.slice(0, 12),
+      recurringEnabled: isPaymentFeatureEnabled("PAYMENTS_RECURRING_SUBSCRIPTIONS_ENABLED"),
     },
     { headers: { "Cache-Control": "no-store" } }
   );
