@@ -10,6 +10,7 @@ import {
   getAction,
   updateActionStatus,
   hasPendingActions,
+  claimAgentAction,
 } from "../repositories/agent";
 import { startRun, completeRun, recordRunEvent, getLatestRun } from "../repositories/agent-runs";
 import { resolveConfiguredProvider } from "./provider";
@@ -37,7 +38,7 @@ import {
   attachmentPart,
   bindAttachmentsToMessage,
   getAttachmentsByIds,
-  loadImageAttachmentsForModel,
+  loadSessionImageAttachmentsForModel,
 } from "../repositories/agent-attachments";
 
 const SYSTEM_PROMPT = `You are the Stratxcel Social Autopilot Agent — an operational copilot for Stratxcel's own
@@ -235,7 +236,9 @@ export async function runAgentTurn(ctx: OwnerContext, sessionId: string, runId: 
 
   const settings = await getAutomationSettings(ctx);
   const brandProfile = await getBrandProfile(ctx);
-  const creativeImages = latestUserMessage ? await loadImageAttachmentsForModel(ctx, latestUserMessage.id) : [];
+  const creativeImages = latestUserMessage
+    ? (await loadSessionImageAttachmentsForModel(ctx, sessionId)).slice(-8)
+    : [];
   const roleMap: Record<string, AgentTurnMessage["role"]> = { USER: "user", AGENT: "assistant", SYSTEM: "system" };
   const messages: AgentTurnMessage[] = [
     { role: "system", content: SYSTEM_PROMPT },
@@ -476,7 +479,7 @@ export async function approveAgentAction(ctx: OwnerContext, actionId: string) {
 
   const run = action.session_id ? await getLatestRun(ctx, action.session_id) : null;
   const isPublishIntent = PUBLISH_INTENT_TOOLS.has(action.tool_name);
-  await updateActionStatus(ctx, actionId, "EXECUTING");
+  if (!(await claimAgentAction(ctx, actionId, "EXECUTING"))) return { alreadyResolved: true };
   if (run) {
     await recordRunEvent(ctx, run.id, {
       type: "APPROVAL_APPROVED",
@@ -577,7 +580,7 @@ export async function approveAgentAction(ctx: OwnerContext, actionId: string) {
 export async function rejectAgentAction(ctx: OwnerContext, actionId: string) {
   const action = await getAction(ctx, actionId);
   if (!action) throw new Error("action not found");
-  await updateActionStatus(ctx, actionId, "REJECTED");
+  if (!(await claimAgentAction(ctx, actionId, "REJECTED"))) return { alreadyResolved: true };
   if (action.session_id) {
     const run = await getLatestRun(ctx, action.session_id);
     if (run) {

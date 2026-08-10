@@ -11,12 +11,12 @@ function Profile({ preview }: { preview: PublishActionPreview }) {
   </div>;
 }
 
-function MediaCarousel({ preview }: { preview: PublishActionPreview }) {
+function MediaCarousel({ preview, handoffToken }: { preview: PublishActionPreview; handoffToken?: string }) {
   const [index, setIndex] = useState(0);
   const assets = preview.mediaAssetIds;
   if (!assets.length) return null;
   return <div className="saut-preview-carousel">
-    <PrivateMedia assetId={assets[index]} mimeType={preview.platform === "youtube" ? "video/mp4" : "image/jpeg"} alt={`Post media ${index + 1} of ${assets.length}`} controls={preview.platform === "youtube"} />
+    <PrivateMedia assetId={assets[index]} mimeType={preview.platform === "youtube" ? "video/mp4" : "image/jpeg"} alt={`Post media ${index + 1} of ${assets.length}`} controls={preview.platform === "youtube"} handoffToken={handoffToken} />
     {assets.length > 1 ? <>
       <button className="saut-carousel-prev" onClick={() => setIndex((index - 1 + assets.length) % assets.length)} aria-label="Previous image">‹</button>
       <button className="saut-carousel-next" onClick={() => setIndex((index + 1) % assets.length)} aria-label="Next image">›</button>
@@ -25,20 +25,20 @@ function MediaCarousel({ preview }: { preview: PublishActionPreview }) {
   </div>;
 }
 
-function PlatformPost({ preview }: { preview: PublishActionPreview }) {
+function PlatformPost({ preview, handoffToken }: { preview: PublishActionPreview; handoffToken?: string }) {
   const platform = preview.platform?.toLowerCase() || "other";
   const actions = platform === "linkedin" ? "Like   Comment   Repost   Send" : platform === "facebook" ? "Like   Comment   Share" : platform === "threads" ? "♡   Reply   Repost   Share" : platform === "youtube" ? "Like   Share   Save" : "♡   Comment   Share   Save";
   return <article className={`saut-platform-preview saut-platform-${platform}`}>
     <Profile preview={preview} />
     {platform === "linkedin" || platform === "facebook" || platform === "threads" ? <p className="saut-preview-copy">{preview.caption}</p> : null}
-    <MediaCarousel preview={preview} />
+    <MediaCarousel preview={preview} handoffToken={handoffToken} />
     {platform === "instagram" || platform === "youtube" ? <p className="saut-preview-copy"><strong>{preview.accountHandle || preview.accountLabel}</strong> {preview.caption}</p> : null}
     {preview.hashtags.length ? <p className="saut-preview-tags">{preview.hashtags.map((tag) => `#${tag.replace(/^#/, "")}`).join(" ")}</p> : null}
     <div className="saut-preview-actions" aria-hidden>{actions}</div>
   </article>;
 }
 
-export function PlatformPreviewModal({ preview, onClose, onEdit, onApprove }: { preview: PublishActionPreview; onClose: () => void; onEdit: () => void; onApprove: () => void }) {
+export function PlatformPreviewModal({ preview, onClose, onEdit, onApprove, handoffToken }: { preview: PublishActionPreview; onClose: () => void; onEdit: () => void; onApprove: () => void; handoffToken?: string }) {
   const dialogRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
@@ -61,7 +61,7 @@ export function PlatformPreviewModal({ preview, onClose, onEdit, onApprove }: { 
   return <div className="saut-preview-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
     <div ref={dialogRef} className="saut-preview-dialog" role="dialog" aria-modal="true" aria-labelledby="platform-preview-title" tabIndex={-1}>
       <header><div><strong id="platform-preview-title">{preview.platformLabel} preview</strong><small>Approximate appearance · actual prepared content</small></div><button onClick={onClose} aria-label="Close preview">×</button></header>
-      <main><PlatformPost preview={preview} /></main>
+      <main><PlatformPost preview={preview} handoffToken={handoffToken} /></main>
       <footer><button className="saut-btn saut-btn-ghost" onClick={onClose}>Back</button><button className="saut-btn saut-btn-secondary" onClick={onEdit}>Edit</button><button className="saut-btn saut-btn-primary" onClick={onApprove}>{preview.shadowMode ? "Approve shadow run" : "Approve this platform"}</button></footer>
     </div>
   </div>;

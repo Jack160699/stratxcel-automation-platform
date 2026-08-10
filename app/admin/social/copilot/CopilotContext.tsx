@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { getLatestSessionAction } from "../agent/actions";
 
 export type PanelMode = "closed" | "minimized" | "docked";
@@ -69,6 +69,7 @@ const CopilotContext = createContext<CopilotContextValue | null>(null);
 export function CopilotProvider({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const isFullPage = pathname === COPILOT_FULL_PAGE_PATH;
 
   const [state, setState] = useState<PersistedState>(DEFAULT_STATE);
@@ -79,6 +80,11 @@ export function CopilotProvider({ children }: { children: React.ReactNode }) {
     setState(readPersisted());
     setHydrated(true);
   }, []);
+
+  useEffect(() => {
+    const linkedSession = searchParams.get("session");
+    if (linkedSession) setState((current) => ({ ...current, sessionId: linkedSession, lastPresentation: "fullpage" }));
+  }, [searchParams]);
 
   useEffect(() => {
     if (!hydrated) return;

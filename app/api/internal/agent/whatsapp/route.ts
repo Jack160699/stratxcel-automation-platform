@@ -17,6 +17,7 @@ import {
 } from "@stratxcel/agent-core";
 import { createAgentCoreProviderAdapter } from "@/lib/agent-core/provider-adapter";
 import { SOCIAL_DELEGATION_TOOLS } from "@/lib/agent-core/social-delegation-tools";
+import { decideWhatsAppSocialMission, runWhatsAppSocialMission } from "@/lib/social/whatsapp-bridge";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -48,6 +49,8 @@ interface AgentChannelRequestBody {
   phoneBindingId?: unknown;
   timestamp?: unknown;
   messageType?: unknown;
+  mediaId?: unknown;
+  mimeType?: unknown;
 }
 
 function validateBody(body: AgentChannelRequestBody): string | null {
@@ -61,6 +64,8 @@ function validateBody(body: AgentChannelRequestBody): string | null {
   if (body.messageType !== undefined && body.messageType !== null && typeof body.messageType !== "string") {
     return "messageType must be a string";
   }
+  if (body.mediaId !== undefined && body.mediaId !== null && typeof body.mediaId !== "string") return "mediaId must be a string";
+  if (body.mimeType !== undefined && body.mimeType !== null && typeof body.mimeType !== "string") return "mimeType must be a string";
   return null;
 }
 
@@ -120,6 +125,8 @@ export async function POST(request: Request) {
   const providerMessageId = body.providerMessageId as string;
   const text = body.text as string;
   const messageType = typeof body.messageType === "string" ? body.messageType : "text";
+  const mediaId = typeof body.mediaId === "string" ? body.mediaId : null;
+  const mimeType = typeof body.mimeType === "string" ? body.mimeType : null;
   const phoneBindingId = typeof body.phoneBindingId === "string" ? body.phoneBindingId : null;
 
   const normalizedPhoneRaw = normalizePhoneNumber(senderPhone);
@@ -153,7 +160,7 @@ export async function POST(request: Request) {
   async function sendAgentReply(
     replyText: string,
     recipientContext: AgentChannelRecipientContext,
-    options?: { principalTenantId?: string | null; agentRunId?: string | null; to?: string }
+    options?: { principalTenantId?: string | null; agentRunId?: string | null; to?: string; interactiveButtons?: Array<{ id: string; title: string }> }
   ): Promise<Response> {
     if (!replyText) {
       return Response.json({ outcome: "reply", text: "" }, { headers: { "Cache-Control": "no-store" } });
@@ -168,7 +175,8 @@ export async function POST(request: Request) {
         recipientContext,
         principalTenantId: options?.principalTenantId ?? null,
         agentRunId: options?.agentRunId ?? null,
-      });
+        interactiveButtons: i === 0 ? options?.interactiveButtons : undefined,
+      } as never);
       if (!outcome.ok) {
         // Send genuinely failed (kill switch, disabled integration, adapter
         // error, ...) — report honestly rather than claiming delivery.
@@ -182,10 +190,6 @@ export async function POST(request: Request) {
   // never analyzed — existing prospect media behavior is untouched because
   // this endpoint only ever runs for a message the worker already decided
   // to route here (behind the still-default-off feature flag).
-  if (messageType !== "text") {
-    return Response.json({ outcome: "unsupported_agent_media" }, { headers: { "Cache-Control": "no-store" } });
-  }
-
   // Deterministic command parsing happens BEFORE principal resolution
   // matters for LINK specifically, because LINK is how an UNLINKED sender
   // becomes linked — see command-parser.ts's header comment for why this
@@ -226,6 +230,47 @@ export async function POST(request: Request) {
   await touchPrincipalLastUsed(supabase, normalizedPhone);
   const recipientContext: AgentChannelRecipientContext = { kind: "channel_principal", authUserId: principal.authUserId };
   const principalTenantId = principal.tenantId;
+
+  if (text.startsWith("sx-social:")) {
+    const [, operation, token] = text.split(":", 3);
+    if ((operation === "approve" || operation === "cancel") && token) {
+      try {
+        const decided = await decideWhatsAppSocialMission({ supabase, principal, token, operation });
+        return sendAgentReply(decided.text, recipientContext, { principalTenantId });
+      } catch {
+        return sendAgentReply("This action expired or does not belong to your account. Open the latest preview and try again.", recipientContext, { principalTenantId });
+      }
+    }
+    if (operation === "edit" && token) {
+      const base = process.env.NEXT_PUBLIC_SITE_URL || "https://stratxcel.in";
+      return sendAgentReply(`Edit this exact prepared mission: ${base}/api/social/copilot/whatsapp-handoff?token=${encodeURIComponent(token)}`, recipientContext, { principalTenantId });
+    }
+  }
+
+  const isSocialMission = messageType !== "text" || /\b(?:post|social|instagram|insta|linkedin|facebook|threads|youtube|caption|carousel|reel)\b/i.test(text) || /(?:bana do|best use|ready karo|post kar)/i.test(text);
+  if (isSocialMission) {
+    try {
+      const result = await runWhatsAppSocialMission({ supabase, principal, normalizedPhone, phoneBindingId: verifiedPhoneBindingId, providerMessageId, kind: messageType, body: text, mediaId, mimeType });
+      const controls = `\n\nView Preview: ${result.previewUrl}\nApprove · Edit · Cancel`;
+      const response = await sendAgentReply(`${result.text}${controls}`, recipientContext, {
+        principalTenantId,
+        interactiveButtons: [
+          { id: `sx-social:approve:${result.approveToken}`, title: result.shadowMode ? "Approve shadow" : "Approve" },
+          { id: `sx-social:edit:${result.editToken}`, title: "Edit" },
+          { id: `sx-social:cancel:${result.cancelToken}`, title: "Cancel" },
+        ],
+      });
+      const responseBody = await response.json() as Record<string, unknown>;
+      return Response.json({ ...responseBody, social: { previewUrl: result.previewUrl, approveToken: result.approveToken, editToken: result.editToken, cancelToken: result.cancelToken, shadowMode: result.shadowMode } }, { headers: { "Cache-Control": "no-store" } });
+    } catch (error) {
+      const reply = error instanceof Error && /credential|configured/i.test(error.message)
+        ? "WhatsApp media is not configured for this workspace yet. Connect the media credential and try again."
+        : error instanceof Error && /ambiguous/.test(error.message)
+          ? "Your WhatsApp identity is linked to more than one client workspace. Open Stratxcel and select the correct workspace before trying again."
+        : "I couldn't prepare that Social Copilot mission. Nothing was published. Please try again or use the dashboard.";
+      return sendAgentReply(reply, recipientContext, { principalTenantId });
+    }
+  }
 
   if (parsed.kind === "whoami") {
     return sendAgentReply(handleWhoAmI(resolution, SOCIAL_DELEGATION_TOOLS), recipientContext, { principalTenantId });

@@ -132,6 +132,7 @@ interface SendViaAdapterInput {
   templateLanguage?: string;
   templateParams?: string[];
   recorder: OutboundRecorder;
+  interactiveButtons?: Array<{ id: string; title: string }>;
 }
 
 /**
@@ -167,7 +168,9 @@ async function sendViaAdapterAndRecord(supabase: ServiceClient, input: SendViaAd
 
   const adapter = createWhatsAppAdapter(supabase);
   try {
-    const result = input.useTemplate
+    const result = input.interactiveButtons?.length
+      ? await adapter.sendInteractiveMessage({ tenantId: input.tenantIdForAdapter, to: input.to, body: input.body, buttons: input.interactiveButtons })
+      : input.useTemplate
       ? await adapter.sendTemplateMessage({
           tenantId: input.tenantIdForAdapter,
           to: input.to,
@@ -339,6 +342,7 @@ export interface SendOutboundToRecipientInput {
   /** Present for a client channel_principal; null for staff (not tenant-scoped) and for a pre-link reply where no principal row exists yet. */
   principalTenantId?: string | null;
   agentRunId?: string | null;
+  interactiveButtons?: Array<{ id: string; title: string }>;
 }
 
 /**
@@ -454,6 +458,7 @@ export async function sendOutboundWhatsAppToRecipient(supabase: ServiceClient, i
     to: input.to,
     body: input.body,
     useTemplate: false,
+    interactiveButtons: input.interactiveButtons,
     recorder,
   });
 }

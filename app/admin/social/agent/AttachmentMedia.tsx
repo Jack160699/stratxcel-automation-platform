@@ -25,17 +25,20 @@ function statusLabel(status: AgentAttachmentData["processingStatus"]) {
   return "Ready";
 }
 
-export function PrivateMedia({ assetId, mimeType, alt = "Attached media", controls = false }: { assetId: string; mimeType: string; alt?: string; controls?: boolean }) {
+export function PrivateMedia({ assetId, mimeType, alt = "Attached media", controls = false, handoffToken }: { assetId: string; mimeType: string; alt?: string; controls?: boolean; handoffToken?: string }) {
   const [url, setUrl] = useState<string | null>(null);
   const [resolvedMimeType, setResolvedMimeType] = useState(mimeType);
   useEffect(() => {
     let active = true;
-    fetch(`/api/social/copilot/media-preview?assetId=${encodeURIComponent(assetId)}`)
+    const endpoint = handoffToken
+      ? `/api/social/copilot/whatsapp-media?assetId=${encodeURIComponent(assetId)}&token=${encodeURIComponent(handoffToken)}`
+      : `/api/social/copilot/media-preview?assetId=${encodeURIComponent(assetId)}`;
+    fetch(endpoint)
       .then((response) => response.ok ? response.json() : null)
       .then((result) => { if (active && result?.url) { setUrl(result.url); setResolvedMimeType(result.mimeType || mimeType); } })
       .catch(() => {});
     return () => { active = false; };
-  }, [assetId, mimeType]);
+  }, [assetId, mimeType, handoffToken]);
   if (!url) return <span className="saut-media-skeleton" aria-label="Loading media preview" />;
   if (resolvedMimeType.startsWith("video/")) return <video src={url} className="saut-attachment-media" controls={controls} muted={!controls} playsInline />;
   return <img src={url} alt={alt} className="saut-attachment-media" />;
