@@ -263,7 +263,7 @@ export function PlatformPreviewModal({
             Edit
           </button>
           <button type="button" className="saut-btn saut-btn-primary !h-10 !px-4" onClick={onApprove}>
-            {preview.shadowMode ? "Approve shadow run" : "Approve this post"}
+            {preview.shadowMode ? "Approve shadow run" : "Approve selected & publish (1)"}
           </button>
         </footer>
       </div>

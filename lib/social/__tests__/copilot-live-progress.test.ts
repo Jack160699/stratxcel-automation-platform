@@ -70,7 +70,11 @@ function run() {
   // --- Sections 5/6/12/13: right rail is a fixed live console, not a growing document. ---
   assert.ok(!theme.includes(".saut-agent-rail { min-width: 0; overflow-y: auto;"), "the shared rail rule must no longer force a single-blob scrollbar");
   assert.ok(theme.includes(".saut-agent-right {") && /\.saut-agent-right\s*\{[^}]*overflow:\s*hidden/.test(theme), "the right rail itself must never scroll as one blob");
-  assert.ok(resizable.includes('flex min-h-0 min-w-0 flex-col overflow-hidden'), "the right <aside> must be a non-scrolling flex column");
+  assert.ok(
+    resizable.includes("flex h-full min-h-0 min-w-0 flex-col overflow-hidden") ||
+      resizable.includes("flex min-h-0 min-w-0 flex-col overflow-hidden"),
+    "the right <aside> must be a non-scrolling flex column"
+  );
   assert.ok(/\.saut-workspace-progress\s*\{[^}]*flex:\s*1 1 auto/.test(theme), "Progress must be the flexible region that absorbs remaining rail height");
   assert.ok(/\.saut-workspace-context\s*\{[^}]*max-height/.test(theme), "the bottom Context/Working With/Connected Systems cluster must have a bounded height, not grow unbounded");
   assert.ok(theme.includes(".saut-stage-list {") && /\.saut-stage-list\s*\{[^}]*overflow-y:\s*auto/.test(theme), "the stage list is the ONE scrolling region for execution history");
