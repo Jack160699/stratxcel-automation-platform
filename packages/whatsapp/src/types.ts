@@ -29,9 +29,22 @@ export interface SendTemplateMessageInput {
   bodyParams?: string[];
 }
 
+export interface WhatsAppReplyButton {
+  id: string;
+  title: string;
+}
+
+export interface SendInteractiveMessageInput {
+  tenantId: string;
+  to: string;
+  body: string;
+  buttons: WhatsAppReplyButton[];
+}
+
 export interface WhatsAppAdapter {
   readonly mode: "disabled" | "shadow" | "live";
   sendMessage(input: { tenantId: string; to: string; body: string }): Promise<SendWhatsAppMessageResult>;
+  sendInteractiveMessage(input: SendInteractiveMessageInput): Promise<SendWhatsAppMessageResult>;
   /** Meta requires an approved template for any business-initiated message outside the 24h customer-service window. */
   sendTemplateMessage(input: SendTemplateMessageInput): Promise<SendWhatsAppMessageResult>;
 }

@@ -82,7 +82,8 @@ function run() {
   assert.ok(orchestrator.includes("creativeImages"), "the orchestrator must supply image pixels to the creative provider boundary");
   const copilotFullPage = read("app", "admin", "social", "copilot", "CopilotFullPage.tsx");
   assert.ok(copilotFullPage.includes("imageOnlyMission"), "an image-only submission must start a guided capability mission");
-  assert.ok(copilotFullPage.includes("attachments.length === 0"), "Send must allow attachments without typed prompt text");
+  assert.ok(copilotFullPage.includes('readyAttachments.length === 0'), "Send must allow ready attachments without typed prompt text");
+  assert.ok(copilotFullPage.includes('uploadState === "failed"'), "one failed upload must not discard successful files");
   assert.ok(
     orchestrator.includes("const MAX_TOOL_ROUNDS = 8"),
     "media workflows need enough bounded rounds for inspection before the final proposal"

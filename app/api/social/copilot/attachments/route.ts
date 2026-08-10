@@ -43,7 +43,8 @@ export async function POST(request: Request) {
     }
     let sessionId = typeof body.sessionId === "string" && body.sessionId ? body.sessionId : null;
     if (sessionId && !(await getSession(ctx, sessionId))) return Response.json({ error: "Session not found" }, { status: 404 });
-    sessionId ??= await createAgentSession(ctx, `Attachment · ${body.name.slice(0, 42)}`);
+    const type = body.mimeType.startsWith("image/") ? "Image ideas" : body.mimeType.startsWith("video/") ? "Video content" : body.mimeType === "application/pdf" ? "Document content" : "New content mission";
+    sessionId ??= await createAgentSession(ctx, type);
     const prepared = await prepareAgentAttachment(ctx, sessionId, {
       name: body.name,
       mimeType: body.mimeType,

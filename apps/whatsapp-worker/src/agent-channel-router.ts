@@ -49,6 +49,8 @@ export async function routeToAgentChannel(input: RouteToAgentChannelInput): Prom
     phoneBindingId: input.phoneBindingId ?? null,
     timestamp: Date.now(),
     messageType: input.message.kind ?? "text",
+    mediaId: input.message.mediaId,
+    mimeType: input.message.mimeType,
   });
 
   const signed = buildAgentChannelSignature(body);

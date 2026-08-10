@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AgentMessage, type AgentAttachmentData } from "../agent/AgentMessage";
+import { humanFileSize, humanFileType } from "../agent/AttachmentMedia";
 import { EmptyState } from "../components/EmptyState";
 import { StatusBadge } from "../components/StatusBadge";
 import type { AgentSessionRow } from "@/lib/social/repositories/agent";
@@ -20,6 +21,13 @@ interface VariantRow {
   status: string;
   updated_at: string;
   content_master: { title: string; content_pillar: string } | null;
+}
+
+interface ComposerAttachment extends AgentAttachmentData {
+  localUrl?: string;
+  uploadState: "uploading" | "ready" | "failed";
+  uploadProgress: number;
+  error?: string;
 }
 
 // The full-screen shell is fixed (see .saut-agent-workspace / 100dvh); this
@@ -158,26 +166,43 @@ export function CopilotFullPage({
   const { messages, pending, loadingHistory, failedReason, run, runEvents, session, send, approve, reject } =
     useAgentSession(sessionId, setSessionId);
   const [input, setInput] = useState("");
-  const [attachments, setAttachments] = useState<AgentAttachmentData[]>([]);
+  const [attachments, setAttachments] = useState<ComposerAttachment[]>([]);
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const [recording, setRecording] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const [voicePreview, setVoicePreview] = useState<{ blob: Blob; url: string; seconds: number } | null>(null);
+  const [voiceBusy, setVoiceBusy] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const recordingChunksRef = useRef<Blob[]>([]);
+  const recordingStartedRef = useRef(0);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, runEvents]);
 
+  const clearAttachments = () => {
+    attachments.forEach((attachment) => { if (attachment.localUrl) URL.revokeObjectURL(attachment.localUrl); });
+    setAttachments([]);
+  };
+
   const submit = () => {
     const value = input.trim();
-    if (!value && attachments.length === 0) return;
-    const imageOnlyMission = attachments.some((attachment) => attachment.mimeType.startsWith("image/"))
-      ? "Review this image and help me choose the most useful social or marketing next step. Briefly explain what it communicates, then suggest a few relevant actions I can take. Do not publish or create final content until I choose."
+    const readyAttachments = attachments.filter((attachment) => attachment.uploadState === "ready");
+    if (!value && readyAttachments.length === 0) return;
+    const imageCount = readyAttachments.filter((attachment) => attachment.mimeType.startsWith("image/")).length;
+    const imageOnlyMission = imageCount > 0
+      ? imageCount > 1
+        ? "Analyze these images together. Show a concise BEST USE artifact with no more than four action choices. Preserve their order and do not create or publish final content until I choose. Use English unless this session already has a user-language preference."
+        : "Analyze this image silently. Show a concise THIS COULD WORK AS artifact with four to six relevant action choices and a best-fit platform suggestion. Do not create or publish final content until I choose. Use English unless this session already has a user-language preference."
       : "Review the attached file and suggest the most useful next steps.";
-    send(value || imageOnlyMission, attachments);
+    send(value || imageOnlyMission, readyAttachments);
     setInput("");
-    setAttachments([]);
+    clearAttachments();
   };
   const uploadFiles = async (files: FileList | File[]) => {
     const selected = Array.from(files).slice(0, Math.max(0, 8 - attachments.length));
@@ -187,6 +212,9 @@ export function CopilotFullPage({
     let activeSessionId = sessionId;
     try {
       for (const file of selected) {
+        const localId = `local-${crypto.randomUUID()}`;
+        const localUrl = (file.type.startsWith("image/") || file.type.startsWith("video/") || file.type.startsWith("audio/")) ? URL.createObjectURL(file) : undefined;
+        setAttachments((current) => [...current, { id: localId, name: file.name, mimeType: file.type, sizeBytes: file.size, processingStatus: "UPLOADED", uploadState: "uploading", uploadProgress: 0, localUrl }]);
         const prepareResponse = await fetch("/api/social/copilot/attachments", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -199,14 +227,18 @@ export function CopilotFullPage({
           }),
         });
         const prepared = await prepareResponse.json();
-        if (!prepareResponse.ok) throw new Error(prepared.error ?? "Attachment upload failed");
+        if (!prepareResponse.ok) {
+          setAttachments((current) => current.map((item) => item.id === localId ? { ...item, uploadState: "failed", error: prepared.error ?? "Upload failed" } : item));
+          continue;
+        }
         activeSessionId = prepared.sessionId as string;
         if (activeSessionId !== sessionId) setSessionId(activeSessionId);
         try {
-          await uploadToSignedUrlWithProgress(prepared.signedUrl as string, file, setUploadProgress);
+          await uploadToSignedUrlWithProgress(prepared.signedUrl as string, file, (progress) => setAttachments((current) => current.map((item) => item.id === localId ? { ...item, uploadProgress: progress } : item)));
         } catch (uploadError) {
           await fetch(`/api/social/copilot/attachments?id=${encodeURIComponent(prepared.attachment.id as string)}`, { method: "DELETE" });
-          throw uploadError;
+          setAttachments((current) => current.map((item) => item.id === localId ? { ...item, uploadState: "failed", error: uploadError instanceof Error ? uploadError.message : "Upload failed" } : item));
+          continue;
         }
         const finalizeResponse = await fetch("/api/social/copilot/attachments", {
           method: "POST",
@@ -216,7 +248,8 @@ export function CopilotFullPage({
         const finalized = await finalizeResponse.json();
         if (!finalizeResponse.ok) {
           await fetch(`/api/social/copilot/attachments?id=${encodeURIComponent(prepared.attachment.id as string)}`, { method: "DELETE" });
-          throw new Error(finalized.error ?? "Attachment processing failed");
+          setAttachments((current) => current.map((item) => item.id === localId ? { ...item, uploadState: "failed", error: finalized.error ?? "Processing failed" } : item));
+          continue;
         }
         const row = finalized.attachment as {
           id: string;
@@ -226,23 +259,30 @@ export function CopilotFullPage({
           processing_status: AgentAttachmentData["processingStatus"];
           media_asset_id: string | null;
         };
-        setAttachments((current) => [...current, {
+        setAttachments((current) => current.map((item) => item.id === localId ? {
           id: row.id,
           name: row.original_name,
           mimeType: row.mime_type,
           sizeBytes: row.size_bytes,
           processingStatus: row.processing_status,
           mediaAssetId: row.media_asset_id,
-        }]);
+          uploadState: "ready",
+          uploadProgress: 100,
+          localUrl: item.localUrl,
+        } : item));
       }
     } catch (error) {
       setAttachmentError(error instanceof Error ? error.message : "Attachment upload failed");
     } finally {
       setUploading(false);
-      setUploadProgress(null);
     }
   };
-  const removeAttachment = async (attachment: AgentAttachmentData) => {
+  const removeAttachment = async (attachment: ComposerAttachment) => {
+    if (attachment.localUrl) URL.revokeObjectURL(attachment.localUrl);
+    if (attachment.id.startsWith("local-")) {
+      setAttachments((current) => current.filter((item) => item.id !== attachment.id));
+      return;
+    }
     const response = await fetch(`/api/social/copilot/attachments?id=${encodeURIComponent(attachment.id)}`, { method: "DELETE" });
     if (response.ok) {
       setAttachments((current) => current.filter((item) => item.id !== attachment.id));
@@ -250,6 +290,60 @@ export function CopilotFullPage({
     }
     const result = await response.json().catch(() => ({}));
     setAttachmentError(result.error ?? "Attachment removal failed");
+  };
+  useEffect(() => () => {
+    attachments.forEach((attachment) => { if (attachment.localUrl) URL.revokeObjectURL(attachment.localUrl); });
+    if (voicePreview) URL.revokeObjectURL(voicePreview.url);
+    recorderRef.current?.stream.getTracks().forEach((track) => track.stop());
+    if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
+  // Object URLs are owned for the lifetime of this composer.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const startRecording = async () => {
+    setAttachmentError(null);
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") { setAttachmentError("Voice recording is not supported in this browser."); return; }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      recordingChunksRef.current = [];
+      recorder.ondataavailable = (event) => { if (event.data.size) recordingChunksRef.current.push(event.data); };
+      recorder.onstop = () => {
+        const blob = new Blob(recordingChunksRef.current, { type: recorder.mimeType || "audio/webm" });
+        const url = URL.createObjectURL(blob);
+        setVoicePreview({ blob, url, seconds: Math.max(1, Math.round((Date.now() - recordingStartedRef.current) / 1000)) });
+        stream.getTracks().forEach((track) => track.stop());
+      };
+      recorderRef.current = recorder;
+      recordingStartedRef.current = Date.now();
+      setRecordingSeconds(0); setRecording(true); recorder.start();
+      recordingTimerRef.current = setInterval(() => setRecordingSeconds((seconds) => seconds + 1), 1000);
+    } catch { setAttachmentError("Microphone permission was denied. Allow access and try again."); }
+  };
+  const stopRecording = (discard = false) => {
+    if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
+    recordingTimerRef.current = null;
+    const recorder = recorderRef.current;
+    if (discard) recorder?.stream.getTracks().forEach((track) => track.stop());
+    if (recorder && recorder.state !== "inactive") {
+      if (discard) recorder.onstop = null;
+      recorder.stop();
+    }
+    setRecording(false);
+    if (discard) { recordingChunksRef.current = []; setRecordingSeconds(0); }
+  };
+  const transcribeVoice = async () => {
+    if (!voicePreview) return;
+    setVoiceBusy(true); setAttachmentError(null);
+    const form = new FormData();
+    form.append("audio", new File([voicePreview.blob], "voice-note.webm", { type: voicePreview.blob.type }));
+    if (sessionId) form.append("sessionId", sessionId);
+    const response = await fetch("/api/social/copilot/transcribe", { method: "POST", body: form });
+    const result = await response.json().catch(() => ({}));
+    setVoiceBusy(false);
+    if (!response.ok) { setAttachmentError(result.error ?? "Could not transcribe voice note."); return; }
+    if (result.sessionId && result.sessionId !== sessionId) setSessionId(result.sessionId);
+    setInput((current) => current ? `${current}\n${result.transcript}` : result.transcript);
   };
   const brandUsed = runEvents.some((event) => event.tool_name === "inspect_brand");
   const accountsUsed = runEvents.some((event) => event.tool_name === "inspect_accounts");
@@ -261,12 +355,12 @@ export function CopilotFullPage({
       sessions={initialSessions}
       activeId={sessionId}
       onSelect={(id) => {
-        setAttachments([]);
+        clearAttachments();
         setAttachmentError(null);
         setSessionId(id);
       }}
       onNew={() => {
-        setAttachments([]);
+        clearAttachments();
         setAttachmentError(null);
         setSessionId(null);
       }}
@@ -283,7 +377,7 @@ export function CopilotFullPage({
             <span className={`saut-chip-dot ${pending ? "saut-pulse" : ""}`} />{pending ? "Working" : "Ready"}
           </span>
           <button onClick={dockAndReturn} className="saut-btn saut-btn-ghost !h-7 !px-2 text-xs">Dock</button>
-          <button onClick={() => { setAttachments([]); setSessionId(null); }} className="saut-btn saut-btn-ghost !h-7 !px-2 text-xs">New</button>
+          <button onClick={() => { clearAttachments(); setSessionId(null); }} className="saut-btn saut-btn-ghost !h-7 !px-2 text-xs">New</button>
         </header>
 
         <div ref={scrollRef} className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
@@ -313,23 +407,42 @@ export function CopilotFullPage({
             void uploadFiles(event.dataTransfer.files);
           }}
         >
-          <div className="mb-2 text-[10px]" style={{ color: "var(--saut-text-subtle)" }}>Context · Social Autopilot</div>
+          <div className="saut-unified-composer" data-busy={pending || uploading || voiceBusy}>
           {attachments.length > 0 && (
-            <div className="mb-2 flex flex-wrap gap-2">
+            <div className="saut-composer-tray" aria-label={`${attachments.length} files attached`}>
               {attachments.map((attachment) => (
-                <span key={attachment.id} className="saut-attachment-chip">
-                  <span className="max-w-44 truncate">
-                    {attachment.name} · {attachment.mimeType} · {(attachment.sizeBytes / 1024 / 1024).toFixed(1)} MB
-                  </span>
+                <article key={attachment.id} className={`saut-composer-file saut-upload-${attachment.uploadState}`}>
+                  {attachment.localUrl && attachment.mimeType.startsWith("image/") ? <img src={attachment.localUrl} alt="" /> : attachment.localUrl && attachment.mimeType.startsWith("video/") ? <video src={attachment.localUrl} muted playsInline /> : <span className="saut-file-icon" aria-hidden>{humanFileType(attachment.mimeType).slice(0, 3).toUpperCase()}</span>}
+                  <span className="min-w-0 flex-1"><strong>{attachment.name}</strong><small>{humanFileType(attachment.mimeType)} · {humanFileSize(attachment.sizeBytes)} · {attachment.uploadState === "uploading" ? `${attachment.uploadProgress}%` : attachment.uploadState === "failed" ? "Failed" : "Ready"}</small></span>
                   <button type="button" onClick={() => void removeAttachment(attachment)} aria-label={`Remove ${attachment.name}`} className="text-xs" style={{ color: "var(--saut-danger)" }}>
                     {"\u00d7"}
                   </button>
-                </span>
+                  {attachment.uploadState === "uploading" ? <span className="saut-upload-meter" style={{ width: `${attachment.uploadProgress}%` }} /> : null}
+                </article>
               ))}
+              {attachments.length < 8 ? <button type="button" className="saut-tray-add" onClick={() => fileInputRef.current?.click()} aria-label="Add another file">+ add</button> : null}
             </div>
           )}
+          {voicePreview ? <div className="saut-voice-preview"><audio src={voicePreview.url} controls /><span>{voicePreview.seconds}s</span><button onClick={() => void transcribeVoice()} disabled={voiceBusy}>{voiceBusy ? "Transcribing…" : "Use transcript"}</button><button aria-label="Remove voice note" onClick={() => { URL.revokeObjectURL(voicePreview.url); setVoicePreview(null); }}>×</button></div> : null}
+          {recording ? <div className="saut-recording" role="status"><span>● {String(Math.floor(recordingSeconds / 60)).padStart(2, "0")}:{String(recordingSeconds % 60).padStart(2, "0")}</span><button onClick={() => stopRecording(true)}>Cancel</button><button onClick={() => stopRecording(false)}>Stop</button></div> : null}
           {attachmentError && <p className="mb-2 text-xs" role="alert" style={{ color: "var(--saut-danger)" }}>{attachmentError}</p>}
-          <div className="flex items-end gap-2">
+          <textarea
+              ref={textareaRef}
+              value={input}
+              onChange={(event) => { setInput(event.target.value); event.target.style.height = "auto"; event.target.style.height = `${Math.min(event.target.scrollHeight, 160)}px`; }}
+              onPaste={(event) => {
+                const images = Array.from(event.clipboardData.files).filter((file) => file.type.startsWith("image/"));
+                if (images.length) { event.preventDefault(); void uploadFiles(images); }
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); submit(); }
+              }}
+              placeholder="Message Copilot…"
+              aria-label="Message Copilot"
+              className="saut-composer-textarea"
+              disabled={pending}
+            />
+          <div className="saut-composer-actions">
             <input
               ref={fileInputRef}
               type="file"
@@ -345,27 +458,17 @@ export function CopilotFullPage({
               type="button"
               onClick={() => fileInputRef.current?.click()}
               disabled={pending || uploading || attachments.length >= 8}
-              className="saut-btn saut-btn-secondary !px-2.5"
+              className="saut-composer-icon"
               aria-label="Attach files"
               title="Attach documents/images up to 10 MB or MP4 video up to 100 MB"
             >
-              {uploading ? `Uploading${uploadProgress === null ? "…" : ` ${uploadProgress}%`}` : "Attach"}
+              <span aria-hidden>+</span>
             </button>
-            <textarea
-              value={input}
-              onChange={(event) => setInput(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && !event.shiftKey) {
-                  event.preventDefault();
-                  submit();
-                }
-              }}
-              placeholder="Give Copilot a mission…"
-              aria-label="Message Copilot"
-              className="saut-input saut-agent-composer flex-1"
-              disabled={pending || uploading}
-            />
-            <button onClick={submit} disabled={pending || uploading || (!input.trim() && attachments.length === 0)} className="saut-btn saut-btn-primary">Send</button>
+            <span className="text-[10px]" style={{ color: "var(--saut-text-subtle)" }}>Photos, video or document</span>
+            <span className="flex-1" />
+            <button type="button" className="saut-composer-icon" onClick={() => recording ? stopRecording(false) : void startRecording()} disabled={pending || voiceBusy} aria-label={recording ? "Stop recording" : "Record voice note"}><span aria-hidden>◉</span></button>
+            <button onClick={submit} disabled={pending || uploading || attachments.some((item) => item.uploadState === "uploading") || (!input.trim() && !attachments.some((item) => item.uploadState === "ready"))} className="saut-composer-send" aria-label="Send message">↑</button>
+          </div>
           </div>
         </div>
       </section>

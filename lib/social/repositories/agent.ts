@@ -116,6 +116,12 @@ export async function updateActionStatus(ctx: OwnerContext, actionId: string, st
   await ctx.supabase.from("social_agent_actions").update({ status, updated_at: new Date().toISOString(), ...extra }).eq("id", actionId);
 }
 
+export async function claimAgentAction(ctx: OwnerContext, actionId: string, targetStatus: "EXECUTING" | "REJECTED"): Promise<boolean> {
+  const { data, error } = await ctx.supabase.rpc("claim_social_agent_action", { p_action_id: actionId, p_owner_id: ctx.ownerId, p_target_status: targetStatus });
+  if (error) throw new Error(error.message);
+  return data === true;
+}
+
 export async function updateActionInput(ctx: OwnerContext, actionId: string, input: Record<string, unknown>) {
   await ctx.supabase.from("social_agent_actions").update({ input, updated_at: new Date().toISOString() }).eq("id", actionId);
 }

@@ -1,6 +1,6 @@
 import type { ServiceClient } from "./db.ts";
 import { getIntegrationMode } from "./flags.ts";
-import { IntegrationDisabledError, type SendTemplateMessageInput, type SendWhatsAppMessageResult, type WhatsAppAdapter } from "./types.ts";
+import { IntegrationDisabledError, type SendInteractiveMessageInput, type SendTemplateMessageInput, type SendWhatsAppMessageResult, type WhatsAppAdapter } from "./types.ts";
 
 /**
  * The one adapter implementation, branching on mode internally rather than
@@ -59,6 +59,30 @@ export function createWhatsAppAdapter(supabase: ServiceClient): WhatsAppAdapter 
         throw new Error(`WhatsApp live send failed: HTTP ${response.status}`);
       }
       const result = (await response.json()) as { messages?: { id: string }[] };
+      return { id: result.messages?.[0]?.id ?? "unknown", mode: "live" };
+    },
+
+    async sendInteractiveMessage(input: SendInteractiveMessageInput): Promise<SendWhatsAppMessageResult> {
+      if (mode === "disabled") throw new IntegrationDisabledError("WhatsApp");
+      if (input.buttons.length < 1 || input.buttons.length > 3) throw new Error("WhatsApp reply buttons require between 1 and 3 choices");
+      if (mode === "shadow") {
+        const { data, error } = await supabase.from("whatsapp_shadow_messages").insert({
+          tenant_id: input.tenantId, direction: "outbound_shadow", body: input.body, would_send: true,
+          metadata: { to: input.to, interactive: true, buttons: input.buttons.map((button) => button.title) },
+        }).select("id").single();
+        if (error) throw new Error(`WhatsApp shadow interactive send failed: ${error.message}`);
+        return { id: data.id as string, mode: "shadow" };
+      }
+      const token = process.env.WHATSAPP_TOKEN;
+      const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+      const apiVersion = process.env.WHATSAPP_GRAPH_API_VERSION ?? "v20.0";
+      if (!token || !phoneNumberId) throw new Error("WhatsApp live credentials are not set");
+      const response = await fetch(`https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`, {
+        method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ messaging_product: "whatsapp", to: input.to, type: "interactive", interactive: { type: "button", body: { text: input.body }, action: { buttons: input.buttons.map((button) => ({ type: "reply", reply: button })) } } }),
+      });
+      if (!response.ok) throw new Error(`WhatsApp live interactive send failed: HTTP ${response.status}`);
+      const result = await response.json() as { messages?: { id: string }[] };
       return { id: result.messages?.[0]?.id ?? "unknown", mode: "live" };
     },
 

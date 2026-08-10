@@ -211,6 +211,22 @@ export async function loadImageAttachmentsForModel(
   return images.filter((image): image is ModelImageAttachment => image !== null);
 }
 
+/** Loads the most recent ordered image set across a session. This is used by
+ * WhatsApp's conservative 45-second grouping adapter; web behavior remains
+ * identical for ordinary single-message missions. */
+export async function loadSessionImageAttachmentsForModel(ctx: OwnerContext, sessionId: string, maxImages = 8): Promise<ModelImageAttachment[]> {
+  const rows = (await listSessionAttachments(ctx, sessionId))
+    .filter((attachment): attachment is AgentAttachmentRow & { mime_type: ModelImageAttachment["mimeType"] } =>
+      ["image/png", "image/jpeg", "image/webp", "image/gif"].includes(attachment.mime_type))
+    .slice(-maxImages);
+  const images = await Promise.all(rows.map(async (attachment): Promise<ModelImageAttachment | null> => {
+    const { data: blob, error } = await ctx.supabase.storage.from(ATTACHMENT_BUCKET).download(attachment.storage_path);
+    if (error || !blob) return null;
+    return { mimeType: attachment.mime_type, data: Buffer.from(await blob.arrayBuffer()).toString("base64") };
+  }));
+  return images.filter((image): image is ModelImageAttachment => image !== null);
+}
+
 export async function removeUnsentAttachment(ctx: OwnerContext, attachmentId: string) {
   const { data } = await ctx.supabase
     .from("social_agent_attachments")

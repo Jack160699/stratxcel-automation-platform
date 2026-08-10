@@ -37,6 +37,7 @@ interface RawWhatsAppMessage {
   document?: { id?: string; mime_type?: string; caption?: string; filename?: string };
   audio?: { id?: string; mime_type?: string };
   voice?: { id?: string; mime_type?: string };
+  interactive?: { type?: string; button_reply?: { id?: string; title?: string }; list_reply?: { id?: string; title?: string } };
 }
 
 interface RawWhatsAppStatus {
@@ -120,6 +121,10 @@ function classifyMessage(message: RawWhatsAppMessage): {
       return { kind: "audio", body: "", mediaId: message.audio?.id ?? null, mimeType: message.audio?.mime_type ?? null };
     case "voice":
       return { kind: "voice", body: "", mediaId: message.voice?.id ?? null, mimeType: message.voice?.mime_type ?? null };
+    case "interactive": {
+      const reply = message.interactive?.button_reply ?? message.interactive?.list_reply;
+      return { kind: "text", body: reply?.id ?? reply?.title ?? "", mediaId: null, mimeType: null };
+    }
     default:
       return { kind: "unsupported", body: "", mediaId: null, mimeType: null };
   }

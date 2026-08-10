@@ -6,6 +6,7 @@ import {
   editProposedPublishActionAction,
 } from "./actions";
 import type { PublishActionPreview } from "@/lib/social/agent/action-preview";
+import { PlatformPreviewModal } from "./PlatformPreviewModal";
 
 function formatWhen(iso: string | undefined, isImmediate: boolean): string {
   if (isImmediate) return "Now";
@@ -85,6 +86,7 @@ function ReadyToPublishCard({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [resolved, setResolved] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -217,12 +219,14 @@ function ReadyToPublishCard({
             </div>
           )}
           {grouped && !resolved && (
-            <div className="mt-3 flex justify-end">
-              <button onClick={() => setEditing(true)} className="saut-btn saut-btn-ghost !h-7 !px-2.5 text-[11px]">Edit this preview</button>
+            <div className="mt-3 flex justify-end gap-2">
+              <button onClick={() => setPreviewOpen(true)} className="saut-btn saut-btn-secondary !h-7 !px-2.5 text-[11px]">Preview</button>
+              <button onClick={() => setEditing(true)} className="saut-btn saut-btn-ghost !h-7 !px-2.5 text-[11px]">Edit</button>
             </div>
           )}
         </>
       )}
+      {previewOpen && <PlatformPreviewModal preview={preview} onClose={() => setPreviewOpen(false)} onEdit={() => { setPreviewOpen(false); setEditing(true); }} onApprove={() => { setPreviewOpen(false); decide(onApprove); }} />}
     </section>
   );
 }
