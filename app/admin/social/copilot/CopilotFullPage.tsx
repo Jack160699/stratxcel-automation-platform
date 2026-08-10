@@ -165,6 +165,9 @@ export function CopilotFullPage({
   const { sessionId, setSessionId, dockAndReturn } = useCopilot();
   const { messages, pending, loadingHistory, failedReason, run, runEvents, session, send, approve, reject } =
     useAgentSession(sessionId, setSessionId);
+  const activePublishActions = useMemo(() => messages.flatMap((message) => message.parts.flatMap((part) =>
+    part.type === "proposed_actions" ? (part.actions ?? []).filter((action) => ["schedule_post", "execute_youtube_verification", "execute_private_youtube_verification"].includes(action.tool)) : []
+  )), [messages]);
   const [input, setInput] = useState("");
   const [attachments, setAttachments] = useState<ComposerAttachment[]>([]);
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
@@ -507,10 +510,18 @@ export function CopilotFullPage({
 
       <RailModule title="Working with" defaultOpen={false}>
         <div className="space-y-2">
-          {initialVariants.length === 0 ? <p className="text-xs" style={{ color: "var(--saut-text-subtle)" }}>No artifacts yet.</p> :
+          {activePublishActions.length > 0 ? activePublishActions.map((action) => {
+            const platform = typeof action.input.platform === "string" ? action.input.platform : action.tool.includes("youtube") ? "YouTube" : "Platform";
+            return <div key={action.id} className="saut-card-2 p-2.5 text-xs">
+              <strong className="block capitalize">{platform}</strong>
+              <span className="mt-0.5 block truncate" style={{ color: "var(--saut-text-muted)" }}>{missionTitle}</span>
+              <span className="mt-1 flex items-center gap-2"><StatusBadge label="READY" /></span>
+            </div>;
+          }) : initialVariants.length === 0 ? <p className="text-xs" style={{ color: "var(--saut-text-subtle)" }}>No artifacts yet.</p> :
             initialVariants.slice(0, 4).map((variant) => (
               <a key={variant.id} href="/admin/social/create" className="saut-card-2 block p-2.5 text-xs">
-                <span className="block truncate">{variant.content_master?.title || `${variant.platform} draft`}</span>
+                <strong className="block capitalize">{variant.platform}</strong>
+                <span className="mt-0.5 block truncate">{variant.content_master?.title || `${variant.platform} draft`}</span>
                 <span className="mt-1 flex items-center gap-2"><StatusBadge label={variant.status} /></span>
               </a>
             ))}

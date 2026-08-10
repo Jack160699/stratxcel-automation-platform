@@ -35,7 +35,7 @@ export interface AgentActionRow {
 export async function createAgentSession(ctx: OwnerContext, title: string | null): Promise<string> {
   const { data, error } = await ctx.supabase
     .from("social_agent_sessions")
-    .insert({ owner_id: ctx.ownerId, title, status: "IDLE" })
+    .insert({ owner_id: ctx.ownerId, title, status: "IDLE", context: { source: "MANUAL" } })
     .select("id")
     .single();
   if (error || !data) throw new Error(error?.message ?? "agent session insert failed");

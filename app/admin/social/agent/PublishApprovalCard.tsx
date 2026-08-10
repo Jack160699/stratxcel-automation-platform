@@ -262,7 +262,7 @@ export function PublishApprovalGroup({
 
   return (
     <section className="saut-publish-group mt-2" aria-label="Ready to publish combined approval">
-      <div className="saut-mono text-[10px] uppercase tracking-[0.14em]" style={{ color: "var(--saut-ai)" }}>Ready to publish</div>
+      <div className="saut-mono text-[10px] uppercase tracking-[0.14em]" style={{ color: "var(--saut-ai)" }}>Ready for review</div>
       {actions.length > 1 && (
         <div className="mt-3">
           <h3 className="text-xs font-semibold">Recommended platforms</h3>
@@ -307,9 +307,10 @@ export function PublishApprovalGroup({
         <button
           onClick={() => selectedActions.forEach((action) => onApprove(action.id))}
           disabled={selectedActions.length === 0}
+          aria-label="Approve selected &amp; publish"
           className="saut-btn saut-btn-primary !h-7 !px-2.5 text-[11px]"
         >
-          Approve selected &amp; publish ({selectedActions.length})
+          {anyShadowMode ? "Approve shadow run" : "Approve selected & publish"} ({selectedActions.length})
         </button>
       </div>
     </section>

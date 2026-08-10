@@ -8,6 +8,7 @@ import {
   proposeAction,
   recordExecutedAction,
   getAction,
+  getSessionDetail,
   updateActionStatus,
   hasPendingActions,
   claimAgentAction,
@@ -136,7 +137,6 @@ interface AttachmentContextEntry {
   id: string;
   name: string;
   mimeType: string;
-  processingStatus: string;
 }
 
 function isAttachmentsPart(part: unknown): part is { type: "attachments"; attachments: AttachmentContextEntry[] } {
@@ -167,7 +167,7 @@ function attachmentContextSuffix(parts: unknown[]): string {
   if (!attachmentsPart || attachmentsPart.attachments.length === 0) return "";
   const lines = attachmentsPart.attachments.map(
     (attachment) =>
-      `- attachmentId=${attachment.id} name=${attachment.name} mimeType=${attachment.mimeType} processingStatus=${attachment.processingStatus}`
+      `- attachmentId=${attachment.id} name=${attachment.name} mimeType=${attachment.mimeType}`
   );
   return `\n\n[Trusted attachment context — the real attachmentId(s) for this message, use verbatim with ingest_media, never invent your own]\n${lines.join("\n")}`;
 }
@@ -329,7 +329,12 @@ export async function runAgentTurn(ctx: OwnerContext, sessionId: string, runId: 
           continue;
         }
 
-        const needsApproval = tool.mutating && requiresApproval(tool.schema.name, settings, 0.75);
+        // A conversational/manual mission always requires a deliberate UI or
+        // WhatsApp control at the external publish boundary. Subscription
+        // standing authorization is evaluated by the separate package queue,
+        // never inferred from chat text or global AUTOPILOT settings.
+        const needsApproval = PUBLISH_INTENT_TOOLS.has(tool.schema.name) ||
+          (tool.mutating && requiresApproval(tool.schema.name, settings, 0.75));
 
         if (needsApproval) {
           const dependents = deferredByUpstream.get(call.id) ?? [];
@@ -426,6 +431,39 @@ export async function runAgentTurn(ctx: OwnerContext, sessionId: string, runId: 
     // "Published." — replace only an empty reply or a bare success template
     // with the tool-derived truth, and never touch a longer, already-honest
     // model reply (see Section 10/13 of the integrity brief).
+    // Deterministic persisted-data backstop: if the provider prepared real
+    // variants but omitted final schedule tool calls, construct the manual
+    // approval actions from those successful variant records. The artifact
+    // renderer therefore depends on stored Social data, not model Markdown.
+    if (creativeRequestMode === "EXECUTE" && !proposedActions.some((action) => PUBLISH_INTENT_TOOLS.has(action.tool))) {
+      const detail = await getSessionDetail(ctx, sessionId);
+      const variants = detail.actions
+        .filter((action) => action.tool_name === "create_content_variant" && action.status === "SUCCEEDED")
+        .map((action) => action.output as { id?: unknown; platform?: unknown } | null)
+        .filter((output): output is { id: string; platform?: unknown } => typeof output?.id === "string");
+      for (const variant of variants) {
+        const platform = typeof variant.platform === "string" ? variant.platform.toLowerCase() : "";
+        const input = {
+          variantId: variant.id,
+          platform,
+          recommendationTier: platform === "facebook" ? "optional" : "recommended",
+          recommendationReason: platform === "facebook" ? "Useful as an optional secondary destination." : "Strong fit for this prepared creative and brand context.",
+        };
+        const id = await proposeAction(ctx, sessionId, "schedule_post", input);
+        if (id) proposedActions.push({ id, tool: "schedule_post", input });
+      }
+    }
+
+    const hasPublishArtifact = proposedActions.some((action) => PUBLISH_INTENT_TOOLS.has(action.tool));
+    if (creativeRequestMode === "EXECUTE" && !hasPublishArtifact) {
+      const safeFailure = "We couldn’t prepare the review artifact. Please retry.";
+      await insertMessage(ctx, sessionId, "AGENT", safeFailure);
+      await setSessionStatus(ctx, sessionId, "ATTENTION_REQUIRED");
+      await recordRunEvent(ctx, runId, { type: "RUN_FAILED", label: "Review artifact needs attention", status: "FAILED", meta: { reason: "persisted_publish_artifact_missing" } });
+      await completeRun(ctx, runId, "FAILED", "persisted publish artifact missing");
+      return { blocked: false as const, failed: true as const, text: safeFailure, proposedActions: [], runId, reason: "review_artifact_missing" };
+    }
+
     const BARE_SUCCESS_CLAIM = /^(done|posted|published)\.?$/i;
     let responseText = finalText;
     if (lastPublishOutcome) {
@@ -436,7 +474,7 @@ export async function runAgentTurn(ctx: OwnerContext, sessionId: string, runId: 
     } else if (!responseText.trim()) {
       responseText = "Done.";
     }
-    if (proposedActions.some((action) => PUBLISH_INTENT_TOOLS.has(action.tool))) responseText = "Prepared for review.";
+    if (hasPublishArtifact) responseText = "Prepared for review.";
     responseText = sanitizeUserFacingText(responseText);
 
     const parts: Array<Record<string, unknown>> = [];

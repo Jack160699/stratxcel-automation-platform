@@ -174,7 +174,7 @@ export function buildGeminiRequest(input: GeminiBoundaryInput): GeminiGenerateCo
 export type SocialPromptIntent = "LOCAL_PLATFORM_DATA" | "CREATIVE" | "MIXED" | "GENERAL";
 export type CreativeRequestMode = "EXECUTE" | "EXPLORE" | "UNSPECIFIED";
 
-const CREATIVE_EXECUTION_REQUEST = /\b(?:best\s+(?:use|post|content)|make\s+the\s+best|prepare(?:\s+this)?|ready\s+(?:kar|karo|kar\s+do)|(?:post|content|caption)\s+bana(?:o|na|\s+do)?|bana\s+do|use\s+this\s+for\s+(?:my|the)\s+brand|jahan\s+sahi\s+lage|best\s+output|taiyar\s+kar|use\s+karo)\b/i;
+const CREATIVE_EXECUTION_REQUEST = /\b(?:best\s+(?:use|post|content)|make\s+the\s+best|prepare(?:\s+(?:this|it))?|ready\s+(?:kar|karo|kar\s+do)|(?:post|content|caption)\s+bana(?:o|na|\s+do)?|bana\s+do|kar\s+do|final\s+karo|done\s+karo|go\s+ahead|proceed|make\s+(?:it|this)(?:\s+final)?|use\s+this\s+for\s+(?:my|the)\s+brand|jahan\s+sahi\s+lage|best\s+output|taiyar\s+kar|use\s+karo)\b/i;
 const CREATIVE_EXPLORATION_REQUEST = /\b(?:what\s+can\s+i\s+do|what\s+could\s+i\s+do|what\s+are\s+(?:my|the)\s+options|kya\s+kya\s+kar\s+sakte|options?\s+(?:dikhao|batao)|ideas?\s+(?:do|batao))\b/i;
 
 /** Creative ambiguity is not execution ambiguity: an explicit prepare/best-use
