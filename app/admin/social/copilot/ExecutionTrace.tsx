@@ -94,7 +94,16 @@ function StageRow({ stage, open, onToggle }: { stage: ExecutionStage; open: bool
   );
 }
 
-export function ExecutionTrace({ run, events }: { run: AgentRunRow | null; events: AgentRunEventRow[] }) {
+export function ExecutionTrace({
+  run,
+  events,
+  waitingForApproval = false,
+}: {
+  run: AgentRunRow | null;
+  events: AgentRunEventRow[];
+  /** Session is WAITING_FOR_CHOICE — the mission is still open even though the run itself finished executing. */
+  waitingForApproval?: boolean;
+}) {
   const [now, setNow] = useState(0);
   const [pinned, setPinned] = useState<Record<string, boolean>>({});
   const [showFullTrace, setShowFullTrace] = useState(false);
@@ -111,7 +120,10 @@ export function ExecutionTrace({ run, events }: { run: AgentRunRow | null; event
 
   const stages = useMemo(() => groupEventsIntoStages(events, run?.status), [events, run?.status]);
   const running = run?.status === "RUNNING";
-  const currentAction = useMemo(() => currentActionLabel(events, running), [events, running]);
+  const currentAction = useMemo(
+    () => currentActionLabel(events, running, waitingForApproval),
+    [events, running, waitingForApproval]
+  );
 
   if (!run || events.length === 0) {
     return <p className="text-xs" style={{ color: "var(--saut-text-subtle)" }}>Real operations appear here as they happen.</p>;
@@ -124,7 +136,7 @@ export function ExecutionTrace({ run, events }: { run: AgentRunRow | null; event
       {currentAction && (
         <div className="saut-current-action mb-3" role="status" aria-live="polite">
           <span className="saut-section-title">Currently</span>
-          <span className={`saut-mono block text-[11.5px] ${running ? "saut-pulse" : ""}`} style={{ color: "var(--saut-ai)" }}>
+          <span className={`saut-mono block text-[11.5px] ${running || waitingForApproval ? "saut-pulse" : ""}`} style={{ color: "var(--saut-ai)" }}>
             {currentAction}
           </span>
         </div>

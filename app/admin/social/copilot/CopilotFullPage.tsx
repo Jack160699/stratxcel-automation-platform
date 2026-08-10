@@ -372,7 +372,7 @@ export function CopilotFullPage({
         <p className="text-sm font-medium leading-snug">{missionTitle}</p>
       </RailModule>
       <RailModule title="Progress" defaultOpen>
-        <ExecutionTrace run={run} events={runEvents} />
+        <ExecutionTrace run={run} events={runEvents} waitingForApproval={session?.status === "WAITING_FOR_CHOICE"} />
       </RailModule>
     </div>
   );

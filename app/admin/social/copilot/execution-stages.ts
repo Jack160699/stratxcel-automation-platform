@@ -121,9 +121,15 @@ export function groupEventsIntoStages(events: AgentRunEventRow[], runStatus?: st
   });
 }
 
-/** The single "Currently…" line for the fixed banner above the stage list — the label of the most recent in-flight event. */
-export function currentActionLabel(events: AgentRunEventRow[], running: boolean): string | null {
+/**
+ * The single "Currently…" line for the fixed banner above the stage list.
+ * A mission waiting on a human decision is still "current" even though its
+ * underlying run has technically finished executing — never blank the
+ * banner out from under a user who's mid-approval (Section 12/14 of the
+ * follow-up brief).
+ */
+export function currentActionLabel(events: AgentRunEventRow[], running: boolean, waitingForApproval = false): string | null {
+  if (waitingForApproval) return "Ready for your approval";
   if (!running || events.length === 0) return null;
-  const last = events[events.length - 1];
-  return last.label;
+  return events[events.length - 1].label;
 }

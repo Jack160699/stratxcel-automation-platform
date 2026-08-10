@@ -676,6 +676,68 @@ body.saut-document-lock {
   background: linear-gradient(155deg, rgb(240 180 41 / 0.07), transparent 55%), var(--saut-surface-2);
   padding: 14px;
 }
+/* Copilot "Ready to publish" single-approval card and publish receipt */
+.saut-publish-card {
+  border: 1px solid rgb(79 220 229 / 0.28);
+  border-radius: var(--saut-radius-md);
+  background: linear-gradient(155deg, rgb(79 220 229 / 0.08), transparent 55%), var(--saut-surface-2);
+  padding: 14px;
+}
+.saut-publish-media {
+  display: block;
+  width: 100%;
+  max-height: 260px;
+  margin-top: 10px;
+  border-radius: var(--saut-radius-sm);
+  border: 1px solid var(--saut-border);
+  object-fit: cover;
+  background: var(--saut-surface-3);
+}
+.saut-publish-media-placeholder {
+  height: 120px;
+  margin-top: 10px;
+  border-radius: var(--saut-radius-sm);
+  border: 1px dashed var(--saut-border-strong);
+  background: var(--saut-surface-3);
+}
+.saut-publish-meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+.saut-publish-meta > div {
+  border: 1px solid var(--saut-border);
+  border-radius: var(--saut-radius-sm);
+  background: var(--saut-surface-1);
+  padding: 6px 8px;
+}
+.saut-publish-meta dt {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--saut-text-subtle);
+}
+.saut-publish-meta dd {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: var(--saut-text);
+}
+.saut-publish-warning {
+  margin-top: 10px;
+  border: 1px solid rgb(240 180 41 / 0.3);
+  border-radius: var(--saut-radius-sm);
+  background: rgb(240 180 41 / 0.08);
+  color: var(--saut-warning);
+  padding: 6px 8px;
+  font-size: 11px;
+}
+.saut-publish-receipt {
+  border: 1px solid rgb(53 201 140 / 0.3);
+  border-radius: var(--saut-radius-md);
+  background: linear-gradient(155deg, rgb(53 201 140 / 0.08), transparent 55%), var(--saut-surface-2);
+  padding: 14px;
+}
 @media (max-width: 1180px) {
   .saut-desktop-workspace {
     grid-template-columns: 0 0 minmax(420px, 1fr) 8px 300px !important;
