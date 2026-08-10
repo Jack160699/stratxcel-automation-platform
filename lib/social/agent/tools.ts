@@ -207,13 +207,15 @@ const schedulePost: AgentTool = {
   schema: {
     name: "schedule_post",
     description:
-      "Schedule an existing content variant to publish from a connected account at a specific time (ISO 8601). " +
-      "Use an ISO timestamp at or near the current time for \"post it now\" — the tool will run publishing " +
-      "synchronously and return the real terminal status (published/failed/still queued); never assume success.",
+      "Schedule an existing content variant to publish from a connected account. Omit scheduledAt entirely " +
+      "for \"post it\"/\"post now\"/\"publish this\" or when no time was requested — it defaults to right now, " +
+      "which runs publishing synchronously and returns the real terminal status (published/failed/still queued); " +
+      "never assume success. Only pass scheduledAt (ISO 8601) when the user explicitly requested a future date/time — " +
+      "never invent one.",
     parameters: {
       type: "object",
       properties: { accountId: { type: "string" }, variantId: { type: "string" }, scheduledAt: { type: "string" } },
-      required: ["accountId", "variantId", "scheduledAt"],
+      required: ["accountId", "variantId"],
     },
   },
   mutating: true,
@@ -232,7 +234,12 @@ const schedulePost: AgentTool = {
       throw new Error("The account platform must match the content variant platform.");
     }
     const service = createSupabaseServiceClient();
-    const scheduledAt = str(args, "scheduledAt");
+    // "Post it now" is the default: an omitted/empty scheduledAt means right
+    // now, not a guessed clock time. This is the actual fix for the model
+    // inventing an arbitrary future timestamp for a plain "post it" request
+    // — making "now" the easy, argument-free path removes the temptation to
+    // synthesize one at all (see Section 2 of the live-progress cleanup brief).
+    const scheduledAt = str(args, "scheduledAt") || new Date().toISOString();
     const jobId = await scheduleJob(service, { accountId, variantId, scheduledAt });
     return runPublishNow(service, jobId, scheduledAt, ctx.ownerId, {
       platform: account.platform,

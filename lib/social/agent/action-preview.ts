@@ -10,6 +10,7 @@ import { getAutomationSettings } from "../repositories/automation";
 import { updateContentVariant } from "../repositories/media-assets";
 import { stripInternalInput } from "./dependencies";
 import { PUBLISH_INTENT_TOOLS, platformLabel } from "./publish-outcome-classify";
+import { dedupeCaptionForPreview } from "./caption-format";
 
 export interface PublishActionPreview {
   actionId: string;
@@ -70,16 +71,20 @@ export async function getActionPreview(ctx: OwnerContext, actionId: string): Pro
     ]);
     const platform = account?.platform ?? variant?.platform;
     const scheduledAt = str(input.scheduledAt);
+    const hashtags = Array.isArray(variant?.hashtags) ? (variant.hashtags as string[]) : [];
     return {
       actionId,
       tool: action.tool_name,
       platform,
       platformLabel: platform ? platformLabel(platform) : undefined,
       accountLabel: account?.display_name || account?.username || undefined,
-      caption: variant?.caption ?? undefined,
-      hashtags: Array.isArray(variant?.hashtags) ? (variant.hashtags as string[]) : [],
+      caption: variant?.caption ? dedupeCaptionForPreview(variant.caption, hashtags) : undefined,
+      hashtags,
       scheduledAt,
-      isImmediate: scheduledAt ? new Date(scheduledAt).getTime() <= Date.now() + IMMEDIATE_WINDOW_MS : false,
+      // An omitted scheduledAt means "post now" — see schedule_post's tool
+      // execute(), which defaults it the same way. Never read absence as a
+      // future time.
+      isImmediate: !scheduledAt || new Date(scheduledAt).getTime() <= Date.now() + IMMEDIATE_WINDOW_MS,
       mediaAssetIds: variantId ? await variantMediaAssetIds(ctx, variantId, variant?.master_id ?? null) : [],
       shadowMode: settings.shadow_mode,
     };
@@ -97,14 +102,15 @@ export async function getActionPreview(ctx: OwnerContext, actionId: string): Pro
     action.tool_name === "execute_private_youtube_verification"
       ? "PRIVATE"
       : str(input.privacyStatus)?.toUpperCase();
+  const youtubeHashtags = Array.isArray(variant?.hashtags) ? (variant.hashtags as string[]) : [];
   return {
     actionId,
     tool: action.tool_name,
     platform: "youtube",
     platformLabel: "YouTube",
     accountLabel: account?.display_name || account?.username || undefined,
-    caption: variant?.caption ?? undefined,
-    hashtags: Array.isArray(variant?.hashtags) ? (variant.hashtags as string[]) : [],
+    caption: variant?.caption ? dedupeCaptionForPreview(variant.caption, youtubeHashtags) : undefined,
+    hashtags: youtubeHashtags,
     scheduledAt: undefined,
     isImmediate: true,
     mediaAssetIds: assetId ? [assetId] : [],
