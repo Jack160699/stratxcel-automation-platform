@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
 import { requireOwnerContext } from "@/lib/social/db-context";
 import { createSupabaseServiceClient } from "@/lib/supabase/service";
+import { listMyTenants } from "@/lib/tenants/current-tenant";
 import { StatusBadge } from "../components/StatusBadge";
+import { PackageAssignmentPanel } from "./PackageAssignmentPanel";
 
 export const metadata: Metadata = {
   title: "Packages — Social Autopilot — Stratxcel Admin",
@@ -21,6 +23,7 @@ export default async function SocialPackagesPage() {
   if (!ctx.ok) return null;
 
   const service = createSupabaseServiceClient();
+  const tenants = await listMyTenants(ctx.supabase, ctx.ownerId);
   const [{ data: runs }, { data: authorizations }, { data: blockedItems }] = await Promise.all([
     service.from("social_autopilot_producer_runs").select("*").order("run_at", { ascending: false }).limit(10),
     service.from("social_autopilot_authorizations").select("id, tenant_id, state, publishing_mode, period_number, period_target_units, starts_at, ends_at, allowed_platforms").order("updated_at", { ascending: false }).limit(50),
@@ -48,6 +51,11 @@ export default async function SocialPackagesPage() {
             <div><div className="saut-mono text-[10px]" style={{ color: "var(--saut-text-subtle)" }}>Failures (last 10 runs)</div><div style={{ color: totalFailuresRecent > 0 ? "var(--saut-danger)" : undefined }}>{totalFailuresRecent}</div></div>
           </div>
         )}
+      </section>
+
+      <section className="saut-card mb-6 p-4">
+        <div className="saut-section-title mb-3">Workspace assignment</div>
+        <PackageAssignmentPanel tenants={tenants} />
       </section>
 
       <section className="saut-card mb-6 p-4">

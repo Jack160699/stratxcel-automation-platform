@@ -1,4 +1,4 @@
-import type { Permission, TenantRole } from "./types";
+import type { Permission, TenantRole } from "./types.ts";
 
 /**
  * Closed role -> permission map. Every permission check in the platform

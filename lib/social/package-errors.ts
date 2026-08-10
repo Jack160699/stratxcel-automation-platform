@@ -6,6 +6,12 @@ const PACKAGE_ERROR_COPY: Record<string, string> = {
   media_capability_unavailable: "The required media capability is not configured for this package.",
   account_disconnected: "Reconnect this social account to continue.",
   brand_binding_invalid: "Choose the correct Brand Brain for this workspace.",
+  assignment_not_authorized: "You do not have permission to assign this resource to this workspace.",
+  assignment_resource_not_found: "That Brand Brain or social account could not be found.",
+  assignment_cross_tenant_reassignment: "This resource is already assigned to another workspace and cannot be moved here.",
+  assignment_ambiguous_candidate: "More than one unassigned resource matches. Contact support to finish setup.",
+  assignment_tenant_already_has_brand: "This workspace already has a Brand Brain assigned.",
+  assignment_arbitrary_uuid_claim_rejected: "You cannot claim a resource you do not own.",
 };
 
 export function packageErrorForClient(value: unknown): string {

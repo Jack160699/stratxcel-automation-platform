@@ -9,8 +9,10 @@ import {
   skipPackageQueueItem,
   reschedulePackageQueueItem,
   editPackageQueueItemContent,
-  type PackageAuthorizationRow,
+  assignBrandProfileToTenant,
   assignSocialAccountToTenant,
+  listAssignablePackageResources,
+  type PackageAuthorizationRow,
 } from "@/lib/social/package-autopilot";
 import { packageErrorForClient } from "@/lib/social/package-errors";
 import { recordAudit } from "@/lib/social/repositories/system";
@@ -64,10 +66,6 @@ export async function GET(req: NextRequest) {
   const service = createSupabaseServiceClient();
   const { data: authorization } = await service.from("social_autopilot_authorizations").select("*").eq("tenant_id", tenantId).order("activated_at", { ascending: false }).limit(1).maybeSingle();
   if (!authorization) {
-    // Not yet activated — resolve real activation eligibility so the client
-    // never has to guess subscriptionId/entitlementId, and so a missing
-    // prerequisite (Section 8) is reported precisely rather than as a
-    // generic failure.
     const { data: subscription } = await service.from("subscriptions").select("id, status, current_period_end").eq("tenant_id", tenantId).order("created_at", { ascending: false }).limit(1).maybeSingle();
     const subscriptionActive = Boolean(subscription) && subscription!.status === "active" && new Date(subscription!.current_period_end).getTime() > Date.now();
     const { data: entitlement } = subscription
@@ -75,6 +73,24 @@ export async function GET(req: NextRequest) {
       : { data: null };
     const { data: connectedAccounts } = await service.from("social_accounts").select("platform").eq("tenant_id", tenantId).eq("status", "CONNECTED");
     const { data: brands } = await service.from("social_brand_profiles").select("id").eq("tenant_id", tenantId).limit(2);
+    const assignmentRaw = await listAssignablePackageResources(service as Parameters<typeof listAssignablePackageResources>[0], {
+      tenantId,
+      actorUserId: auth.userId,
+    });
+    const assignment = {
+      brand: {
+        available: assignmentRaw.brand.available,
+        label: assignmentRaw.brand.label,
+        alreadyBound: assignmentRaw.brand.alreadyBound,
+      },
+      accounts: assignmentRaw.accounts.map((account) => ({
+        platform: account.platform,
+        platformLabel: PLATFORM_LABEL[account.platform] ?? account.platform,
+        label: account.label,
+        available: account.available,
+        alreadyBound: account.alreadyBound,
+      })),
+    };
     return NextResponse.json({
       activated: false,
       eligibility: {
@@ -86,6 +102,7 @@ export async function GET(req: NextRequest) {
         connectedPlatforms: [...new Set((connectedAccounts ?? []).map((row) => String(row.platform).toLowerCase()))],
         brandConfigured: (brands ?? []).length === 1,
         brandProfileId: (brands ?? []).length === 1 ? brands![0].id : null,
+        assignment,
       },
     });
   }
@@ -194,8 +211,21 @@ export async function POST(req: NextRequest) {
         });
         return NextResponse.json({ ok: true, result });
       }
+      case "assignBrand": {
+        const result = await assignBrandProfileToTenant(service as Parameters<typeof assignBrandProfileToTenant>[0], {
+          tenantId,
+          actorUserId: auth.userId,
+        });
+        return NextResponse.json({ ok: true, result });
+      }
       case "assignAccount": {
-        const result = await assignSocialAccountToTenant(service as Parameters<typeof assignSocialAccountToTenant>[0], { accountId: String(body.accountId ?? ""), tenantId, clientUserId: auth.userId });
+        const platform = typeof body.platform === "string" ? body.platform : "";
+        if (!platform) return NextResponse.json({ error: "platform is required" }, { status: 400 });
+        const result = await assignSocialAccountToTenant(service as Parameters<typeof assignSocialAccountToTenant>[0], {
+          tenantId,
+          actorUserId: auth.userId,
+          platform,
+        });
         return NextResponse.json({ ok: true, result });
       }
       case "skip": {

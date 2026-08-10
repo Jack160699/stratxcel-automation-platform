@@ -16,6 +16,14 @@ import { validatePackageComposition, compositionMediaTypeForUnit, type PackageCo
 import { selectPackageMediaAsset } from "./package-media.ts";
 import { recordAudit } from "./repositories/system.ts";
 
+export {
+  assignBrandProfileToTenant,
+  assignSocialAccountToTenant,
+  listAssignablePackageResources,
+  decideBrandAssignment,
+  decideAccountAssignment,
+} from "./package-tenant-assignment.ts";
+
 export type PackagePublishingMode = "AUTO_PUBLISH" | "REVIEW_BEFORE_PUBLISH";
 export type PackageAuthorizationState = "ACTIVE" | "PAUSED" | "CANCELLED" | "EXPIRED" | "NEEDS_ATTENTION";
 export type QueueItemStatus =
@@ -184,17 +192,6 @@ export async function activatePackageAutopilot(
   if (error || !data) throw new Error("Could not activate Social Autopilot");
   await recordAudit({ actorType: "USER", actorId: input.clientUserId, action: "social.package.activate", targetType: "social_autopilot_authorization", targetId: data.id, summary: "Activated package Social Autopilot", meta: { tenantId: input.tenantId, publishingMode: input.publishingMode, platforms } });
   return data as PackageAuthorizationRow;
-}
-
-export async function assignSocialAccountToTenant(service: ServiceClient, input: { accountId: string; tenantId: string; clientUserId: string }) {
-  const { data: membership } = await service.from("tenant_members").select("user_id").eq("tenant_id", input.tenantId).eq("user_id", input.clientUserId).maybeSingle();
-  if (!membership) throw new Error("account_assignment_not_authorized");
-  const { data: account } = await service.from("social_accounts").select("id,tenant_id").eq("id", input.accountId).maybeSingle();
-  if (!account || (account.tenant_id && account.tenant_id !== input.tenantId)) throw new Error("account_assignment_not_authorized");
-  const { data, error } = await service.from("social_accounts").update({ tenant_id: input.tenantId }).eq("id", input.accountId).is("tenant_id", null).select("id,tenant_id").maybeSingle();
-  if (error || (!data && !account.tenant_id)) throw new Error("account_assignment_failed");
-  await recordAudit({ actorType: "USER", actorId: input.clientUserId, action: "social.package.account_assigned", targetType: "social_account", targetId: input.accountId, summary: "Assigned a social destination to a client workspace", meta: { tenantId: input.tenantId } });
-  return data ?? account;
 }
 
 async function validatePackageResumePrerequisites(service: ServiceClient, authorizationId: string, tenantId: string, clientUserId: string) {

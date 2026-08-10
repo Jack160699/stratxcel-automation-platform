@@ -54,6 +54,10 @@ interface NotActivated {
     connectedPlatforms: string[];
     brandConfigured: boolean;
     brandProfileId: string | null;
+    assignment: {
+      brand: { available: boolean; label: string | null; alreadyBound: boolean };
+      accounts: Array<{ platform: string; platformLabel: string; label: string; available: boolean; alreadyBound: boolean }>;
+    };
   };
 }
 
@@ -92,8 +96,36 @@ async function callAutopilotApi(body: Record<string, unknown>) {
 function ActivationChecklist({ tenantId, eligibility, onActivated }: { tenantId: string; eligibility: NotActivated["eligibility"]; onActivated: () => void }) {
   const [platforms, setPlatforms] = useState<string[]>(eligibility.connectedPlatforms);
   const [activating, setActivating] = useState(false);
+  const [assigningBrand, setAssigningBrand] = useState(false);
+  const [assigningPlatform, setAssigningPlatform] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const ready = eligibility.subscriptionActive && eligibility.entitlementAvailable && eligibility.brandConfigured && eligibility.connectedPlatforms.length > 0;
+
+  const assignBrand = async () => {
+    setAssigningBrand(true);
+    setError(null);
+    try {
+      await callAutopilotApi({ tenantId, action: "assignBrand" });
+      onActivated();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not assign Brand Brain.");
+    } finally {
+      setAssigningBrand(false);
+    }
+  };
+
+  const assignAccount = async (platform: string) => {
+    setAssigningPlatform(platform);
+    setError(null);
+    try {
+      await callAutopilotApi({ tenantId, action: "assignAccount", platform });
+      onActivated();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not assign social account.");
+    } finally {
+      setAssigningPlatform(null);
+    }
+  };
 
   const activate = async () => {
     setActivating(true);
@@ -122,7 +154,15 @@ function ActivationChecklist({ tenantId, eligibility, onActivated }: { tenantId:
       <CardHeading>Autopilot needs setup</CardHeading>
       <div className="mt-3 space-y-2 text-[12.5px] text-sx-text-muted">
         <CardRow>{eligibility.subscriptionActive ? "✓" : "○"} Subscription active</CardRow>
-        <CardRow>{eligibility.brandConfigured ? "✓" : "○"} Brand configured</CardRow>
+        <CardRow>{eligibility.brandConfigured ? "✓" : "○"} Brand configured{eligibility.assignment.brand.alreadyBound && eligibility.assignment.brand.label ? ` (${eligibility.assignment.brand.label})` : ""}</CardRow>
+        {!eligibility.brandConfigured && eligibility.assignment.brand.available && eligibility.assignment.brand.label && (
+          <CardRow className="flex-wrap items-center gap-2">
+            <span>Unassigned Brand Brain found: {eligibility.assignment.brand.label}</span>
+            <Button size="sm" variant="primary" disabled={assigningBrand} onClick={() => void assignBrand()}>
+              {assigningBrand ? "Assigning…" : "Assign to this workspace"}
+            </Button>
+          </CardRow>
+        )}
         <CardRow>{eligibility.entitlementAvailable ? "✓" : "○"} Social posts entitlement available ({eligibility.remainingUnits} remaining)</CardRow>
         <CardRow>
           {eligibility.connectedPlatforms.length > 0 ? "✓" : "○"} Connected accounts
@@ -137,6 +177,14 @@ function ActivationChecklist({ tenantId, eligibility, onActivated }: { tenantId:
             </span>
           )}
         </CardRow>
+        {eligibility.assignment.accounts.filter((account) => account.available && !account.alreadyBound).map((account) => (
+          <CardRow key={account.platform} className="flex-wrap items-center gap-2">
+            <span>Connected but not assigned: {account.platformLabel}{account.label ? ` · ${account.label}` : ""}</span>
+            <Button size="sm" variant="primary" disabled={assigningPlatform === account.platform} onClick={() => void assignAccount(account.platform)}>
+              {assigningPlatform === account.platform ? "Assigning…" : "Assign to this workspace"}
+            </Button>
+          </CardRow>
+        ))}
       </div>
       {!eligibility.connectedPlatforms.length && <p className="mt-3 text-[12.5px] text-sx-text-muted">Connect at least one social account to continue.</p>}
       {error && <p className="mt-2 text-[12.5px] text-[#FF8A90]">{error}</p>}
