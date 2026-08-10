@@ -466,7 +466,17 @@ export function CopilotFullPage({
             <div className="saut-composer-tray" aria-label={`${attachments.length} files attached`}>
               {attachments.map((attachment) => (
                 <article key={attachment.id} className={`saut-composer-file saut-upload-${attachment.uploadState}`}>
-                  {attachment.localUrl && attachment.mimeType.startsWith("image/") ? <img src={attachment.localUrl} alt="" /> : attachment.localUrl && attachment.mimeType.startsWith("video/") ? <video src={attachment.localUrl} muted playsInline /> : <span className="saut-file-icon" aria-hidden>{humanFileType(attachment.mimeType).slice(0, 3).toUpperCase()}</span>}
+                  {/* Blob/object URLs from local file pickers — next/image cannot optimize these. */}
+                  {attachment.localUrl && attachment.mimeType.startsWith("image/") ? (
+                    // eslint-disable-next-line @next/next/no-img-element -- local blob: preview before upload
+                    <img src={attachment.localUrl} alt="" />
+                  ) : attachment.localUrl && attachment.mimeType.startsWith("video/") ? (
+                    <video src={attachment.localUrl} muted playsInline />
+                  ) : (
+                    <span className="saut-file-icon" aria-hidden>
+                      {humanFileType(attachment.mimeType).slice(0, 3).toUpperCase()}
+                    </span>
+                  )}
                   <span className="min-w-0 flex-1"><strong>{attachment.name}</strong><small>{humanFileType(attachment.mimeType)} · {humanFileSize(attachment.sizeBytes)} · {attachment.uploadState === "uploading" ? `${attachment.uploadProgress}%` : attachment.uploadState === "failed" ? "Failed" : "Ready"}</small></span>
                   <button type="button" onClick={() => void removeAttachment(attachment)} aria-label={`Remove ${attachment.name}`} className="text-xs" style={{ color: "var(--saut-danger)" }}>
                     {"\u00d7"}

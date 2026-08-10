@@ -116,10 +116,48 @@ export async function updateActionStatus(ctx: OwnerContext, actionId: string, st
   await ctx.supabase.from("social_agent_actions").update({ status, updated_at: new Date().toISOString(), ...extra }).eq("id", actionId);
 }
 
+function isMissingClaimRpc(message: string): boolean {
+  return /claim_social_agent_action/i.test(message) && /schema cache|could not find the function|PGRST202/i.test(message);
+}
+
+/**
+ * Atomic claim: preferred path is the DB RPC. If PostgREST has not yet exposed
+ * that function (schema-cache miss), fall back to an equivalent conditional
+ * update that still requires PROPOSED → target and owner-owned session.
+ */
 export async function claimAgentAction(ctx: OwnerContext, actionId: string, targetStatus: "EXECUTING" | "REJECTED"): Promise<boolean> {
-  const { data, error } = await ctx.supabase.rpc("claim_social_agent_action", { p_action_id: actionId, p_owner_id: ctx.ownerId, p_target_status: targetStatus });
+  const { data, error } = await ctx.supabase.rpc("claim_social_agent_action", {
+    p_action_id: actionId,
+    p_owner_id: ctx.ownerId,
+    p_target_status: targetStatus,
+  });
+  if (!error) return data === true;
+  if (!isMissingClaimRpc(error.message)) throw new Error(error.message);
+  return claimAgentActionFallback(ctx, actionId, targetStatus);
+}
+
+async function claimAgentActionFallback(
+  ctx: OwnerContext,
+  actionId: string,
+  targetStatus: "EXECUTING" | "REJECTED"
+): Promise<boolean> {
+  const action = await getAction(ctx, actionId);
+  if (!action || action.status !== "PROPOSED" || !action.session_id) return false;
+  const { data: session } = await ctx.supabase
+    .from("social_agent_sessions")
+    .select("id")
+    .eq("id", action.session_id)
+    .eq("owner_id", ctx.ownerId)
+    .maybeSingle();
+  if (!session) return false;
+  const { data, error } = await ctx.supabase
+    .from("social_agent_actions")
+    .update({ status: targetStatus, updated_at: new Date().toISOString() })
+    .eq("id", actionId)
+    .eq("status", "PROPOSED")
+    .select("id");
   if (error) throw new Error(error.message);
-  return data === true;
+  return (data?.length ?? 0) === 1;
 }
 
 export async function updateActionInput(ctx: OwnerContext, actionId: string, input: Record<string, unknown>) {
