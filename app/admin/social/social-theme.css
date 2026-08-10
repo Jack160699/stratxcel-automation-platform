@@ -541,6 +541,86 @@ body.saut-document-lock {
   color: var(--saut-text-muted);
   font-size: 11px;
 }
+/* Copilot execution-stage accordion (Progress rail) */
+.saut-current-action {
+  border: 1px solid var(--saut-border-strong);
+  border-radius: var(--saut-radius-sm);
+  background: var(--saut-surface-2);
+  padding: 8px 10px;
+}
+.saut-stage-accordion {
+  border: 1px solid var(--saut-border);
+  border-radius: var(--saut-radius-sm);
+  background: var(--saut-surface-2);
+}
+.saut-stage-accordion + .saut-stage-accordion {
+  margin-top: 6px;
+}
+.saut-stage-summary {
+  display: flex;
+  cursor: pointer;
+  list-style: none;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+}
+.saut-stage-summary::-webkit-details-marker {
+  display: none;
+}
+.saut-stage-summary:focus-visible {
+  outline: 2px solid var(--saut-accent);
+  outline-offset: -2px;
+}
+.saut-stage-body {
+  border-top: 1px solid var(--saut-border);
+  padding: 8px 10px 10px 28px;
+}
+.saut-full-trace summary {
+  cursor: pointer;
+  list-style: none;
+}
+.saut-full-trace summary::-webkit-details-marker {
+  display: none;
+}
+/* Copilot session rail date groups */
+.saut-session-group-summary {
+  display: flex;
+  cursor: pointer;
+  list-style: none;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 2px;
+}
+.saut-session-group-summary::-webkit-details-marker {
+  display: none;
+}
+.saut-session-group-summary:focus-visible {
+  outline: 2px solid var(--saut-accent);
+  outline-offset: 1px;
+}
+/* Copilot right-rail modules (accordion cards) */
+.saut-rail-module {
+  border-bottom: 1px solid var(--saut-border);
+}
+.saut-rail-module-summary {
+  display: flex;
+  cursor: pointer;
+  list-style: none;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+}
+.saut-rail-module-summary::-webkit-details-marker {
+  display: none;
+}
+.saut-rail-module-summary:focus-visible {
+  outline: 2px solid var(--saut-accent);
+  outline-offset: -2px;
+}
+.saut-rail-module-body {
+  padding: 0 16px 14px;
+}
+
 .saut-workspace-splitter {
   position: relative;
   z-index: 5;
