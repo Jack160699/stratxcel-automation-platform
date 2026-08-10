@@ -119,15 +119,34 @@ function StageRow({
   );
 }
 
+function buildCompactLines(stages: ExecutionStage[], events: AgentRunEventRow[]): string[] {
+  const completedStages = stages.filter((stage) => stage.status === "success" || stage.status === "pending");
+  const postCount = events.filter((event) => event.tool_name === "schedule_post" && event.type === "TOOL_COMPLETED").length;
+  if (completedStages.length === 0) {
+    return ["Run complete"];
+  }
+  const lines = completedStages.map((stage) => stage.title);
+  if (postCount > 0) {
+    const publishingIndex = lines.findIndex((line) => line === "Publishing");
+    const postLine = `${postCount} ${postCount === 1 ? "post" : "posts"} prepared`;
+    if (publishingIndex >= 0) lines[publishingIndex] = postLine;
+    else lines.push(postLine);
+  }
+  return lines;
+}
+
 export function ExecutionTrace({
   run,
   events,
   waitingForApproval = false,
+  compactByDefault = false,
 }: {
   run: AgentRunRow | null;
   events: AgentRunEventRow[];
   /** Session is WAITING_FOR_CHOICE — the mission is still open even though the run itself finished executing. */
   waitingForApproval?: boolean;
+  /** Prefer a compact summary over the full stage accordion (e.g. when awaiting approval). */
+  compactByDefault?: boolean;
 }) {
   const [now, setNow] = useState(0);
   const [pinned, setPinned] = useState<Record<string, boolean>>({});
@@ -152,12 +171,20 @@ export function ExecutionTrace({
     [events, running, waitingForApproval]
   );
 
+  const hasActiveStages = stages.some((stage) => stage.status === "running" || stage.status === "pending" || stage.status === "failed");
+  const runSettled = run?.status !== "RUNNING" && run?.status !== "FAILED";
+  const preferCompact = compactByDefault || waitingForApproval || (runSettled && !hasActiveStages && stages.length > 0);
+  const [detailsExpanded, setDetailsExpanded] = useState(false);
+  const showFullStages = preferCompact ? detailsExpanded : true;
+
+  const compactLines = useMemo(() => buildCompactLines(stages, events), [stages, events]);
+
   // Auto-follow: scroll only when the ACTIVE stage identity changes (a new
   // stage starts, one fails, or one starts waiting for approval) — never on
   // every raw event, so the live console doesn't jitter (Section 11).
   const activeKey = useMemo(() => activeStageKey(stages), [stages]);
   useEffect(() => {
-    if (!activeKey) return;
+    if (!activeKey || !showFullStages) return;
     const viewport = stageListRef.current;
     const row = stageRefs.current.get(activeKey);
     if (!viewport || !row) return;
@@ -167,6 +194,8 @@ export function ExecutionTrace({
     const visibleBottom = visibleTop + viewport.clientHeight;
     if (rowTop < visibleTop) viewport.scrollTo({ top: rowTop, behavior: "smooth" });
     else if (rowBottom > visibleBottom) viewport.scrollTo({ top: rowBottom - viewport.clientHeight, behavior: "smooth" });
+    // Intentionally depend on activeKey only — auto-follow must not re-fire on every event.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- showFullStages is a gate, not a follow trigger
   }, [activeKey]);
 
   if (!run || events.length === 0) {
@@ -189,28 +218,60 @@ export function ExecutionTrace({
         {running ? "Working" : "Worked"} for {Math.max(0, Math.round(elapsedMs / 1000))}s
       </div>
 
-      <div ref={stageListRef} className="saut-stage-list space-y-1.5" aria-label="Execution stages">
-        {stages.map((stage, index) => {
-          const isLast = index === stages.length - 1;
-          // Active (running/pending-approval) or failed stages open by
-          // default; a recovered/completed stage collapses on its own
-          // unless the user pinned it open (see Section 10).
-          const defaultOpen = stage.status === "failed" || stage.status === "pending" || (stage.status === "running" && isLast);
-          const open = pinned[stage.key] ?? defaultOpen;
-          return (
-            <StageRow
-              key={stage.key}
-              stage={stage}
-              open={open}
-              onToggle={(nextOpen) => setPinned((current) => ({ ...current, [stage.key]: nextOpen }))}
-              rowRef={(node) => {
-                if (node) stageRefs.current.set(stage.key, node);
-                else stageRefs.current.delete(stage.key);
-              }}
-            />
-          );
-        })}
-      </div>
+      {!showFullStages && preferCompact ? (
+        <div className="saut-exec-compact shrink-0" aria-label="Run summary">
+          <ul className="saut-exec-compact-list">
+            {compactLines.map((line) => (
+              <li key={line} className="saut-exec-compact-line">
+                <span aria-hidden style={{ color: "var(--saut-success)" }}>✓</span>
+                <span>{line}</span>
+              </li>
+            ))}
+          </ul>
+          <button
+            type="button"
+            className="saut-exec-compact-expand saut-mono text-[10px]"
+            onClick={() => setDetailsExpanded(true)}
+          >
+            View run details
+          </button>
+        </div>
+      ) : (
+        <>
+          {preferCompact && (
+            <button
+              type="button"
+              className="saut-exec-compact-collapse saut-mono mb-2 shrink-0 text-[10px]"
+              onClick={() => setDetailsExpanded(false)}
+              style={{ color: "var(--saut-text-subtle)" }}
+            >
+              Hide run details
+            </button>
+          )}
+          <div ref={stageListRef} className="saut-stage-list space-y-1.5" aria-label="Execution stages">
+            {stages.map((stage, index) => {
+              const isLast = index === stages.length - 1;
+              // Active (running/pending-approval) or failed stages open by
+              // default; a recovered/completed stage collapses on its own
+              // unless the user pinned it open (see Section 10).
+              const defaultOpen = stage.status === "failed" || stage.status === "pending" || (stage.status === "running" && isLast);
+              const open = pinned[stage.key] ?? defaultOpen;
+              return (
+                <StageRow
+                  key={stage.key}
+                  stage={stage}
+                  open={open}
+                  onToggle={(nextOpen) => setPinned((current) => ({ ...current, [stage.key]: nextOpen }))}
+                  rowRef={(node) => {
+                    if (node) stageRefs.current.set(stage.key, node);
+                    else stageRefs.current.delete(stage.key);
+                  }}
+                />
+              );
+            })}
+          </div>
+        </>
+      )}
 
       {run.status === "FAILED" && run.error_reason && (
         <p className="mt-2 shrink-0 text-xs" style={{ color: "var(--saut-danger)" }}>
