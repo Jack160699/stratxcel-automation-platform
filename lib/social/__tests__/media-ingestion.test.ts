@@ -76,7 +76,13 @@ function run() {
   assert.ok(verificationMigration.includes("ALTER COLUMN privacy_status SET NOT NULL"));
   assert.ok(mediaRepo.includes("stored.mimeType !== asset.mime_type") && mediaRepo.includes("stored.sizeBytes !== Number(asset.size_bytes)"));
   assert.ok(attachmentRepo.includes("media_asset_id"), "canonical media identity remains available to local publishing code");
+  assert.ok(attachmentRepo.includes("loadImageAttachmentsForModel"), "image-only missions must load actual private image bytes for creative understanding");
+  assert.ok(attachmentRepo.includes('Buffer.from(await blob.arrayBuffer()).toString("base64")'), "vision input must be inline rather than a public URL");
   assert.equal(orchestrator.includes("mediaAssetId=${attachment.media_asset_id}"), false, "media identifiers never enter external AI prompts");
+  assert.ok(orchestrator.includes("creativeImages"), "the orchestrator must supply image pixels to the creative provider boundary");
+  const copilotFullPage = read("app", "admin", "social", "copilot", "CopilotFullPage.tsx");
+  assert.ok(copilotFullPage.includes("imageOnlyMission"), "an image-only submission must start a guided capability mission");
+  assert.ok(copilotFullPage.includes("attachments.length === 0"), "Send must allow attachments without typed prompt text");
   assert.ok(
     orchestrator.includes("const MAX_TOOL_ROUNDS = 8"),
     "media workflows need enough bounded rounds for inspection before the final proposal"

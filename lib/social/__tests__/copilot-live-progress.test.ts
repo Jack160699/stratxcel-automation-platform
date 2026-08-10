@@ -78,23 +78,28 @@ function run() {
 
   // --- Sections 8/9/10/11: auto-follow the active stage, not every raw event. ---
   assert.ok(execTrace.includes("activeStageKey"), "ExecutionTrace must track which stage the viewport should follow");
-  assert.ok(execTrace.includes("scrollIntoView"), "the active stage must be scrolled into view automatically");
+  assert.ok(execTrace.includes("stageListRef") && execTrace.includes("viewport.scrollTo"), "the active stage must auto-follow inside the event viewport");
+  assert.equal(execTrace.includes("scrollIntoView"), false, "auto-follow must never scroll outer page/rail ancestors");
   assert.ok(
     execTrace.includes("}, [activeKey]);") || /useEffect\([^)]*\[activeKey\]/.test(execTrace),
     "auto-follow must fire only when the ACTIVE STAGE changes, not on every event — must depend on activeKey, not raw events"
   );
   assert.ok(
-    !/useEffect\([^)]*scrollIntoView[^)]*\[events\]/.test(execTrace),
+    !/useEffect\([^)]*scrollTo[^)]*\[events\]/.test(execTrace),
     "auto-follow must not be wired to fire on every raw event append (jitter)"
   );
 
   // --- Section 7: Currently stays visible / correct waiting-for-approval copy is untouched from the prior round. ---
   assert.ok(execTrace.includes("Currently") && execTrace.includes("waitingForApproval"), "the Currently banner must still reflect the waiting-for-approval state");
+  assert.ok(/\.saut-progress-rail\s*>\s*\.saut-progress-module\s*>\s*\.saut-rail-module-summary\s*\{[^}]*position:\s*sticky/.test(theme), "the Progress title must remain fixed above its body");
+  assert.ok(theme.includes(".saut-current-action") && execTrace.includes("shrink-0"), "Currently must remain outside and above the scrollable event list");
   assert.ok(executionStages.includes('"Ready for your approval"'));
 
   // --- Section 15: the one-approval publishing flow from the prior round remains intact. ---
   const publishCard = read("app", "admin", "social", "agent", "PublishApprovalCard.tsx");
-  assert.ok(publishCard.includes("Approve all"));
+  assert.ok(publishCard.includes("Approve selected &amp; publish"));
+  assert.ok(publishCard.includes("Recommended") && publishCard.includes("Optional"));
+  assert.ok(publishCard.includes('aria-label="Platform previews"'));
   assert.ok(publishCard.includes("SHADOW MODE"));
   const automation = read("lib", "social", "repositories", "automation.ts");
   assert.ok(automation.includes("LOW_RISK_PREPARATION_TOOLS"));

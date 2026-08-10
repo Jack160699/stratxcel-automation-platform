@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { buildGeminiRequest, classifySocialPromptIntent, requiresLocalMetaHandling, selectGeminiBrandInstructions } from "../agent/gemini-boundary.ts";
 import { serializeToolOutput } from "../agent/tool-output.ts";
+import { sanitizeUserFacingText } from "../agent/user-facing-text.ts";
 import type { BrandProfileRow } from "../repositories/brand.ts";
 
 function run() {
@@ -85,6 +86,18 @@ function run() {
   const metricsProjection = serializeToolOutput({ metrics: [{ reach: 9000, comments: 44 }], costs: [{ id: "cost-id" }] }, 8000, "get_performance");
   assert.equal(metricsProjection.includes("9000"), false);
   assert.equal(metricsProjection.includes("comments"), false);
+  const visionRequest = buildGeminiRequest({
+    userPrompts: ["Help me with this image"],
+    brandInstructions: [], contentIdeas: [], draftCaptions: [], businessInformation: [],
+    creativeImages: [{ mimeType: "image/png", data: "aGVsbG8=" }],
+  });
+  assert.equal(visionRequest.contents[0].parts[1].inlineData?.mimeType, "image/png", "private image bytes must reach Gemini inline");
+  assert.equal(JSON.stringify(visionRequest).includes("attachmentId"), false, "image IDs and storage paths must not cross the model boundary");
+
+  const userFacing = sanitizeUserFacingText("Master ID: 11111111-1111-4111-8111-111111111111\nCreated via create_content_item.");
+  assert.equal(userFacing.includes("11111111"), false);
+  assert.equal(userFacing.includes("Master ID"), false);
+  assert.equal(userFacing.includes("create_content_item"), false);
   console.log("gemini-boundary.test.ts: ALL PASS (allowlist, redaction, intent routing, tool projections)");
 }
 

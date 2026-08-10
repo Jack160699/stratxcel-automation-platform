@@ -669,6 +669,14 @@ body.saut-document-lock {
 }
 .saut-progress-rail > .saut-progress-module[open] {
   flex: 1 1 auto;
+  overflow: hidden;
+}
+.saut-progress-rail > .saut-progress-module > .saut-rail-module-summary {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  flex: 0 0 auto;
+  background: var(--saut-surface-1);
 }
 .saut-progress-rail > .saut-progress-module > .saut-rail-module-body {
   display: flex;
@@ -684,6 +692,7 @@ body.saut-document-lock {
   border-top: 1px solid var(--saut-border);
 }
 .saut-stage-list {
+  position: relative;
   min-height: 0;
   flex: 1 1 auto;
   overflow-y: auto;
@@ -758,6 +767,17 @@ body.saut-document-lock {
   border-radius: var(--saut-radius-md);
   background: linear-gradient(155deg, rgb(79 220 229 / 0.08), transparent 55%), var(--saut-surface-2);
   padding: 14px;
+}
+.saut-publish-group {
+  overflow: hidden;
+  border: 1px solid var(--saut-border-strong);
+  border-radius: var(--saut-radius-md);
+  background: var(--saut-surface-1);
+  padding: 14px;
+}
+.saut-publish-group .saut-publish-card {
+  margin: 0;
+  background: var(--saut-surface-2);
 }
 .saut-publish-media {
   display: block;
