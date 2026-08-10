@@ -39,8 +39,8 @@ function run() {
   assert.ok(fullPage.includes("compactSources={reviewMode}"));
   assert.ok(theme.includes(".saut-source-strip") && theme.includes("max-height: 88px"));
 
-  // Card density
-  assert.ok(/minmax\(\s*340px\s*,\s*1fr\s*\)/.test(theme));
+  // Card density — min(100%, Npx) prevents artifact horizontal overflow
+  assert.ok(/minmax\(\s*min\(\s*100%\s*,\s*280px\s*\)\s*,\s*1fr\s*\)/.test(theme));
   assert.ok(theme.includes("max-height: 380px") || theme.includes("max-height:380px"));
   assert.ok(theme.includes("max-height: 160px") || /saut-artifact-media[\s\S]*max-height:\s*160px/.test(theme));
   assert.ok(publishCard.includes("saut-artifact-tag-summary"));

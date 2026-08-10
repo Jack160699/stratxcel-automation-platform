@@ -137,8 +137,12 @@ function run() {
   assert.ok(theme.includes(".saut-artifact-caption-clamp"));
   assert.ok(theme.includes("font-size: 12px") || theme.includes("font-size: 12.5px"));
 
-  // 9. Responsive grid threshold — 3 cols only when cards are wide enough
-  assert.ok(/minmax\(\s*340px\s*,\s*1fr\s*\)/.test(theme), "artifact grid must use ~340px min card width");
+  // 9. Responsive grid threshold — min(100%, Npx) prevents horizontal overflow at laptop widths
+  assert.ok(
+    /minmax\(\s*min\(\s*100%\s*,\s*280px\s*\)\s*,\s*1fr\s*\)/.test(theme) ||
+      /minmax\(\s*340px\s*,\s*1fr\s*\)/.test(theme),
+    "artifact grid must use overflow-safe minmax"
+  );
 
   // History cleanup — attachment cards look conversational
   assert.ok(attachmentMedia.includes("statusLabel") || attachmentMedia.includes("Ready"));

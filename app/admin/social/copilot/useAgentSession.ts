@@ -199,9 +199,22 @@ export function useAgentSession(sessionId: string | null, onSessionCreated: (id:
   );
 
   const approve = useCallback((actionId: string) => {
-    setMessages((prev) => prev.map((m) => ({ ...m, parts: m.parts.map((p) => (p.type === "proposed_actions" ? { ...p, actions: p.actions?.filter((a) => a.id !== actionId) } : p)) })));
+    // Do not optimistically strip the READY artifact — a failed claim/refresh
+    // used to leave "0 selected" with no recovery path.
     approveAgentActionAction(actionId)
-      .then(() => {
+      .then((result) => {
+        if (!result?.ok) {
+          setFailedReason(result?.error ?? "Something went wrong while approving this review.");
+          return;
+        }
+        setMessages((prev) =>
+          prev.map((m) => ({
+            ...m,
+            parts: m.parts.map((p) =>
+              p.type === "proposed_actions" ? { ...p, actions: p.actions?.filter((a) => a.id !== actionId) } : p
+            ),
+          }))
+        );
         if (sessionId) {
           hydratedSessionRef.current = null;
           return getAgentSessionAction(sessionId).then(({ messages: rows, actions }) => {
@@ -231,12 +244,28 @@ export function useAgentSession(sessionId: string | null, onSessionCreated: (id:
           });
         }
       })
-      .catch((error) => setFailedReason(error instanceof Error ? error.message : "Approval failed"));
+      .catch((error) =>
+        setFailedReason(error instanceof Error ? error.message : "Something went wrong while approving this review.")
+      );
   }, [sessionId]);
 
   const reject = useCallback((actionId: string) => {
-    setMessages((prev) => prev.map((m) => ({ ...m, parts: m.parts.map((p) => (p.type === "proposed_actions" ? { ...p, actions: p.actions?.filter((a) => a.id !== actionId) } : p)) })));
-    rejectAgentActionAction(actionId).catch(() => {});
+    rejectAgentActionAction(actionId)
+      .then((result) => {
+        if (!result?.ok) {
+          setFailedReason(result?.error ?? "Something went wrong while cancelling this review.");
+          return;
+        }
+        setMessages((prev) =>
+          prev.map((m) => ({
+            ...m,
+            parts: m.parts.map((p) =>
+              p.type === "proposed_actions" ? { ...p, actions: p.actions?.filter((a) => a.id !== actionId) } : p
+            ),
+          }))
+        );
+      })
+      .catch(() => setFailedReason("Something went wrong while cancelling this review."));
   }, []);
 
   return {

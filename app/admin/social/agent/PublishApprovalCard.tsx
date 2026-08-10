@@ -108,6 +108,35 @@ function CardHeader({ preview }: { preview: PublishActionPreview }) {
   );
 }
 
+const REVIEW_SELECTION_KEY = "saut:review-selection";
+const LIVE_CONFIRM_KEY = "saut:live-publish-confirmed";
+
+function readPersistedSelection(actionIds: string[]): Record<string, boolean> | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.sessionStorage.getItem(REVIEW_SELECTION_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { ids: string[]; selected: Record<string, boolean> };
+    const key = actionIds.slice().sort().join(",");
+    if (parsed.ids.slice().sort().join(",") !== key) return null;
+    return parsed.selected;
+  } catch {
+    return null;
+  }
+}
+
+function writePersistedSelection(actionIds: string[], selected: Record<string, boolean>) {
+  if (typeof window === "undefined") return;
+  try {
+    window.sessionStorage.setItem(
+      REVIEW_SELECTION_KEY,
+      JSON.stringify({ ids: actionIds, selected })
+    );
+  } catch {
+    /* ignore quota */
+  }
+}
+
 function ReadyToPublishCard({
   action,
   onApprove,
@@ -123,6 +152,8 @@ function ReadyToPublishCard({
 }) {
   const [preview, setPreview] = useState<PublishActionPreview | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [reloadToken, setReloadToken] = useState(0);
   const [editing, setEditing] = useState(false);
   const [caption, setCaption] = useState("");
   const [hashtags, setHashtags] = useState("");
@@ -135,21 +166,35 @@ function ReadyToPublishCard({
 
   useEffect(() => {
     let cancelled = false;
+    setLoading(true);
+    setLoadError(null);
     getActionPreviewAction(action.id)
       .then((result) => {
         if (cancelled) return;
+        if (!result) {
+          setLoadError("Something went wrong while refreshing this review.");
+          return;
+        }
         setPreview(result);
-        setCaption(result?.caption ?? "");
-        setHashtags((result?.hashtags ?? []).map((tag) => `#${tag}`).join(" "));
-        setScheduleMode(result?.isImmediate ? "now" : "custom");
-        setCustomWhen(toDatetimeLocal(result?.scheduledAt));
-        if (result) onPreviewLoaded?.(action.id, result);
+        setCaption(result.caption ?? "");
+        setHashtags((result.hashtags ?? []).map((tag) => `#${tag}`).join(" "));
+        setScheduleMode(result.isImmediate ? "now" : "custom");
+        setCustomWhen(toDatetimeLocal(result.scheduledAt));
+        onPreviewLoaded?.(action.id, result);
+      })
+      .catch((previewError) => {
+        if (cancelled) return;
+        setLoadError(
+          previewError instanceof Error
+            ? previewError.message
+            : "Something went wrong while refreshing this review."
+        );
       })
       .finally(() => !cancelled && setLoading(false));
     return () => {
       cancelled = true;
     };
-  }, [action.id, onPreviewLoaded]);
+  }, [action.id, onPreviewLoaded, reloadToken]);
 
   const saveEdit = async () => {
     setSaving(true);
@@ -165,6 +210,7 @@ function ReadyToPublishCard({
       }
       const updated = await editProposedPublishActionAction(action.id, patch);
       setPreview(updated);
+      onPreviewLoaded?.(action.id, updated);
       setEditing(false);
     } catch (editError) {
       setError(editError instanceof Error ? editError.message : "Could not save changes.");
@@ -173,14 +219,27 @@ function ReadyToPublishCard({
     }
   };
 
-  if (loading) {
+  if (loading && !preview) {
     return (
       <section className="saut-publish-card saut-artifact-card" aria-label="Preparing publish preview">
         <p className="text-xs" style={{ color: "var(--saut-text-subtle)" }}>Preparing…</p>
       </section>
     );
   }
-  if (!preview) return null;
+  if (!preview) {
+    return (
+      <section className="saut-publish-card saut-artifact-card" aria-label="Review refresh failed" data-review-refresh-error="true">
+        <p className="text-sm" style={{ color: "var(--saut-text)" }}>
+          {loadError || "Something went wrong while refreshing this review."}
+        </p>
+        <div className="saut-artifact-actions">
+          <button type="button" className="saut-btn saut-btn-primary" onClick={() => setReloadToken((n) => n + 1)}>
+            Try again
+          </button>
+        </div>
+      </section>
+    );
+  }
 
   const decide = (fn: (id: string) => void) => {
     setResolved(true);
@@ -249,7 +308,7 @@ function ReadyToPublishCard({
               <button onClick={() => setEditing(true)} className="saut-btn saut-btn-ghost !h-9 !px-3 text-[12px]">Edit</button>
               <button onClick={() => decide(onReject)} className="saut-btn saut-btn-ghost !h-9 !px-3 text-[12px]">Cancel</button>
               <button onClick={() => decide(onApprove)} className="saut-btn saut-btn-primary !h-10 !px-4 text-[13px]">
-                {preview.shadowMode ? "Approve shadow run" : "Approve & Publish"}
+                {preview.shadowMode ? "Approve shadow run" : "Approve selected & publish (1)"}
               </button>
             </div>
           )}
@@ -284,6 +343,7 @@ function ApprovalDock({
   selectedActions,
   previews,
   anyShadowMode,
+  emptySelectionReason,
   onApprove,
   onReject,
 }: {
@@ -291,33 +351,56 @@ function ApprovalDock({
   selectedActions: Array<{ id: string; tool: string; input: Record<string, unknown> }>;
   previews: Record<string, PublishActionPreview>;
   anyShadowMode: boolean;
+  emptySelectionReason: string | null;
   onApprove: (id: string) => void;
   onReject: (id: string) => void;
 }) {
+  const approveLabel = anyShadowMode
+    ? `Approve shadow run (${selectedActions.length})`
+    : `Approve selected & publish (${selectedActions.length})`;
+
+  const requestApprove = () => {
+    if (selectedActions.length === 0) return;
+    if (!anyShadowMode && typeof window !== "undefined") {
+      const confirmed = window.sessionStorage.getItem(LIVE_CONFIRM_KEY) === "1";
+      if (!confirmed) {
+        const ok = window.confirm("These posts will be published to real connected accounts.");
+        if (!ok) return;
+        window.sessionStorage.setItem(LIVE_CONFIRM_KEY, "1");
+      }
+    }
+    selectedActions.forEach((action) => onApprove(action.id));
+  };
+
   return (
     <div className="saut-sticky-approve" role="region" aria-label="Combined approval" data-sticky-review-dock="true">
       <div className="saut-sticky-approve-meta">
-        <strong>
+        <strong data-selected-count={selectedActions.length}>
           {selectedActions.length} selected
         </strong>
         <span>
           {selectedActions
             .map((action) => previews[action.id]?.platformLabel)
             .filter(Boolean)
-            .join(" · ") || "Choose platforms"}
+            .join(" · ") || (emptySelectionReason ?? "Choose platforms")}
         </span>
+        {!anyShadowMode ? (
+          <span className="saut-live-publish-chip" data-live-publishing="true">
+            LIVE PUBLISHING
+          </span>
+        ) : null}
       </div>
       <div className="saut-sticky-approve-actions">
         <button onClick={() => actions.forEach((action) => onReject(action.id))} className="saut-btn saut-btn-ghost !h-10 !px-3 text-[12px]">
           Cancel
         </button>
         <button
-          onClick={() => selectedActions.forEach((action) => onApprove(action.id))}
+          onClick={requestApprove}
           disabled={selectedActions.length === 0}
           aria-label="Approve selected &amp; publish"
           className="saut-btn saut-btn-primary !h-11 !px-4 text-[13px]"
         >
-          {anyShadowMode ? `Approve shadow run (${selectedActions.length})` : `Approve selected & publish (${selectedActions.length})`}
+          {approveLabel}
         </button>
       </div>
     </div>
@@ -338,10 +421,23 @@ export function PublishApprovalGroup({
   onApprove: (id: string) => void;
   onReject: (id: string) => void;
 }) {
+  const actionIds = actions.map((action) => action.id);
+  const selectionKey = actionIds.slice().sort().join(",");
   const [previews, setPreviews] = useState<Record<string, PublishActionPreview>>({});
-  const [selected, setSelected] = useState<Record<string, boolean>>({});
+  const [selected, setSelected] = useState<Record<string, boolean>>(() => readPersistedSelection(actionIds) ?? {});
+  const [selectionScope, setSelectionScope] = useState(selectionKey);
   const [reasonsOpen, setReasonsOpen] = useState(false);
   const [dockEl, setDockEl] = useState<HTMLElement | null>(null);
+
+  // Restore selection when the proposed-action set changes (e.g. remount after refresh).
+  if (selectionScope !== selectionKey) {
+    setSelectionScope(selectionKey);
+    setSelected(readPersistedSelection(actionIds) ?? {});
+  }
+
+  useEffect(() => {
+    writePersistedSelection(actionIds, selected);
+  }, [selectionKey, selected, actionIds]);
 
   useEffect(() => {
     let cancelled = false;
@@ -367,12 +463,22 @@ export function PublishApprovalGroup({
     );
   }, []);
 
-  const selectedActions = actions.filter((action) => selected[action.id] ?? platformRecommendation(previews[action.id]).recommended);
+  const selectedActions = actions.filter((action) => {
+    if (selected[action.id] !== undefined) return selected[action.id];
+    return platformRecommendation(previews[action.id]).recommended;
+  });
   const anyShadowMode = Object.values(previews).some((preview) => preview.shadowMode);
+  const liveMode = Object.values(previews).length > 0 && !anyShadowMode;
   const mediaCount = new Set(Object.values(previews).flatMap((preview) => preview.mediaAssetIds)).size;
   const platformNames = actions
     .map((action) => previews[action.id]?.platformLabel)
     .filter(Boolean) as string[];
+  const emptySelectionReason =
+    selectedActions.length === 0 && actions.length > 0
+      ? Object.keys(previews).length === 0
+        ? "Still preparing platforms — selection will restore when previews load."
+        : "No platforms selected. Turn a platform back on to approve."
+      : null;
 
   const dock = (
     <ApprovalDock
@@ -380,6 +486,7 @@ export function PublishApprovalGroup({
       selectedActions={selectedActions}
       previews={previews}
       anyShadowMode={anyShadowMode}
+      emptySelectionReason={emptySelectionReason}
       onApprove={onApprove}
       onReject={onReject}
     />
@@ -396,7 +503,7 @@ export function PublishApprovalGroup({
           </h3>
           <p className="saut-artifact-summary">
             {platformNames.length ? platformNames.join(" · ") : "Preparing platforms…"}
-            {anyShadowMode ? " · No external publishing yet" : ""}
+            {anyShadowMode ? " · No external publishing yet" : liveMode ? " · Live publishing" : ""}
           </p>
         </div>
       </header>
@@ -446,9 +553,20 @@ export function PublishApprovalGroup({
         ))}
       </div>
 
+      {emptySelectionReason && (
+        <p className="saut-publish-warning" role="status" data-empty-selection-reason="true">
+          {emptySelectionReason}
+        </p>
+      )}
+
       {anyShadowMode && (
         <p className="saut-publish-warning" role="note">
           SHADOW MODE — these drafts will be processed but nothing will be published externally.
+        </p>
+      )}
+      {liveMode && (
+        <p className="saut-publish-warning saut-publish-warning-live" role="note" data-live-publishing="true">
+          LIVE PUBLISHING — approved posts go to real connected accounts.
         </p>
       )}
 

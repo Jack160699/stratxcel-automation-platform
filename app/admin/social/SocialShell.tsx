@@ -157,7 +157,7 @@ export default function SocialShell({
               : { background: "rgb(53 201 140 / 0.10)", border: "1px solid rgb(53 201 140 / 0.28)", color: "#5bdca7" }}
           >
             <span className="saut-chip-dot saut-pulse" style={{ background: !shadowMode ? "var(--saut-warning)" : "var(--saut-success)" }} />
-            {!shadowMode ? "Live publishing" : "Shadow mode"}
+            {!shadowMode ? "LIVE PUBLISHING" : "Shadow mode"}
           </span>
           <span className="ml-auto truncate text-xs" style={{ color: "var(--saut-text-subtle)" }}>{email}</span>
         </header>
