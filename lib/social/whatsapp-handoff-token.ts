@@ -14,6 +14,7 @@ export function signWhatsAppSocialHandoff(input: Omit<WhatsAppHandoffClaims, "v"
 }
 export function verifyWhatsAppSocialHandoff(token: string, expected?: { sub?: string; operation?: WhatsAppSocialOperation }): WhatsAppHandoffClaims | null {
   const [payload, supplied] = token.split("."); if (!payload || !supplied) return null;
+  if (Buffer.from(payload, "base64url").toString("base64url") !== payload || Buffer.from(supplied, "base64url").toString("base64url") !== supplied) return null;
   const valid = crypto.createHmac("sha256", secret()).update(payload).digest(); const actual = Buffer.from(supplied, "base64url");
   if (actual.length !== valid.length || !crypto.timingSafeEqual(actual, valid)) return null;
   try { const c = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as { v: 1; s: string; t: string | null; n: string; o: string; e: number }; const claims = { v: c.v, sub: unpackId(c.s)!, tenant: unpackId(c.t), session: unpackId(c.n)!, op: operation[c.o], exp: c.e } satisfies WhatsAppHandoffClaims; if (claims.v !== 1 || !claims.op || claims.exp <= Math.floor(Date.now() / 1000) || !claims.sub || !claims.session || (expected?.sub && claims.sub !== expected.sub) || (expected?.operation && claims.op !== expected.operation)) return null; return claims; } catch { return null; }

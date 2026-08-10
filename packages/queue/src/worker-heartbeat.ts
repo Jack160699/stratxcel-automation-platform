@@ -1,6 +1,6 @@
 import type { ServiceClient } from "./db.ts";
 
-export type WorkerType = "mission-worker" | "whatsapp-worker" | "hermes-gateway";
+export type WorkerType = "mission-worker" | "whatsapp-worker" | "hermes-gateway" | "package-autopilot-worker";
 export type WorkerStatus = "idle" | "busy" | "degraded" | "stopped";
 
 export interface WorkerHeartbeatInput {

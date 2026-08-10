@@ -5,6 +5,10 @@
       "schedule": "*/15 * * * *"
     },
     {
+      "path": "/api/social/package-producer",
+      "schedule": "0 * * * *"
+    },
+    {
       "path": "/api/internal/subscriptions/renew",
       "schedule": "0 3 * * *"
     },
