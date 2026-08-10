@@ -133,15 +133,15 @@ export function AgentMessage({
   const isUser = message.role === "user";
   const hasPreparedArtifact = message.parts.some((part) => part.type === "proposed_actions" && part.actions?.some((action) => PUBLISH_INTENT_TOOLS.has(action.tool)));
   return (
-    <div className="max-w-[88%]" style={isUser ? { marginLeft: "auto" } : undefined}>
+    <div className="saut-agent-message max-w-[88%]" style={isUser ? { marginLeft: "auto" } : undefined}>
       {(!hasPreparedArtifact || isUser) && <div
-        className="rounded-lg px-3.5 py-2.5"
+        className="rounded-md px-3 py-2"
         style={isUser
           ? { background: "var(--saut-accent-muted)" }
           : { background: "var(--saut-surface-2)", border: "1px solid var(--saut-border)" }}
       >
         {isUser
-          ? <p className="text-sm leading-relaxed" style={{ color: "var(--saut-text)" }}>{message.content}</p>
+          ? <p className="text-[13px] leading-snug" style={{ color: "var(--saut-text)" }}>{message.content}</p>
           : <AgentMarkdown content={sanitizeUserFacingText(message.content)} />}
       </div>}
       {message.parts.map((part, index) => {
@@ -170,7 +170,7 @@ export function AgentMessage({
         }
         if (part.type === "attachments" && part.attachments?.length) {
           return (
-            <div key={index} className="saut-sent-attachments mt-2">
+            <div key={index} className="saut-sent-attachments mt-1.5">
               {part.attachments.map((attachment) => (
                 <AttachmentCard key={attachment.id} attachment={attachment} />
               ))}

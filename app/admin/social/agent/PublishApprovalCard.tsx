@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   getActionPreviewAction,
   editProposedPublishActionAction,
@@ -8,6 +9,7 @@ import {
 import type { PublishActionPreview } from "@/lib/social/agent/action-preview";
 import { PlatformPreviewModal } from "./PlatformPreviewModal";
 import { PrivateMedia } from "./AttachmentMedia";
+import { PlatformIcon, type Platform } from "../components/PlatformIcon";
 
 function formatWhen(iso: string | undefined, isImmediate: boolean): string {
   if (isImmediate) return "Now";
@@ -23,6 +25,12 @@ function toDatetimeLocal(iso: string | undefined): string {
   if (Number.isNaN(date.getTime())) return "";
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function asPlatform(value: string | undefined): Platform | null {
+  const key = (value || "").toLowerCase();
+  if (key === "instagram" || key === "facebook" || key === "threads" || key === "linkedin" || key === "youtube") return key;
+  return null;
 }
 
 function platformRecommendation(preview: PublishActionPreview | undefined) {
@@ -60,18 +68,43 @@ function MediaThumb({ preview }: { preview: PublishActionPreview }) {
   );
 }
 
-function CaptionExcerpt({ caption, expanded, onToggle }: { caption?: string; expanded: boolean; onToggle: () => void }) {
+function CaptionExcerpt({ caption }: { caption?: string }) {
   if (!caption) return null;
-  const long = caption.length > 160 || caption.split("\n").length > 4;
   return (
     <div className="saut-artifact-caption">
-      <p className={expanded ? "" : "saut-artifact-caption-clamp"}>{caption}</p>
-      {long ? (
-        <button type="button" className="saut-artifact-expand" onClick={onToggle}>
-          {expanded ? "Show less" : "Expand"}
-        </button>
-      ) : null}
+      <p className="saut-artifact-caption-clamp">{caption}</p>
     </div>
+  );
+}
+
+function CardHeader({ preview }: { preview: PublishActionPreview }) {
+  const platformKey = asPlatform(preview.platform);
+  const platformName = preview.platformLabel ?? "Post";
+  const accountName = preview.accountLabel ?? (platformName ? `${platformName} account` : "Account");
+  const handle = preview.accountHandle ? `@${preview.accountHandle.replace(/^@/, "")}` : null;
+  const showHandle =
+    Boolean(handle) &&
+    handle!.toLowerCase() !== `@${accountName.replace(/^@/, "").toLowerCase()}` &&
+    !accountName.includes("@");
+
+  return (
+    <header className="saut-artifact-head">
+      <div className="saut-artifact-platform-row">
+        {platformKey ? <PlatformIcon platform={platformKey} size={18} /> : null}
+        <strong className="saut-artifact-platform">{platformName}</strong>
+        <span className="saut-artifact-when">{formatWhen(preview.scheduledAt, preview.isImmediate)}</span>
+      </div>
+      <div className="saut-artifact-account-block">
+        <span className="saut-artifact-account truncate" title={accountName}>
+          {accountName}
+        </span>
+        {showHandle ? (
+          <span className="saut-artifact-handle truncate" title={handle!}>
+            {handle}
+          </span>
+        ) : null}
+      </div>
+    </header>
   );
 }
 
@@ -99,7 +132,6 @@ function ReadyToPublishCard({
   const [error, setError] = useState<string | null>(null);
   const [resolved, setResolved] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
-  const [captionExpanded, setCaptionExpanded] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -155,26 +187,13 @@ function ReadyToPublishCard({
     fn(action.id);
   };
 
-  const handle = preview.accountHandle ? `@${preview.accountHandle.replace(/^@/, "")}` : null;
+  const tagCount = preview.hashtags.length;
 
   return (
     <section className="saut-publish-card saut-artifact-card" aria-label="Ready to publish">
       {!grouped && <div className="saut-artifact-eyebrow">Ready for review</div>}
 
-      <header className="saut-artifact-head">
-        <div className="min-w-0">
-          <strong className="saut-artifact-platform">{preview.platformLabel ?? "Post"}</strong>
-          <span className="saut-artifact-account truncate">
-            {preview.accountLabel ?? "Account"}
-            {handle && handle.toLowerCase() !== `@${(preview.accountLabel || "").replace(/^@/, "").toLowerCase()}`
-              ? ` · ${handle}`
-              : handle && !(preview.accountLabel ?? "").includes("@")
-                ? ` · ${handle}`
-                : ""}
-          </span>
-        </div>
-        <span className="saut-artifact-when">{formatWhen(preview.scheduledAt, preview.isImmediate)}</span>
-      </header>
+      <CardHeader preview={preview} />
 
       {editing ? (
         <div className="mt-2 space-y-2">
@@ -210,10 +229,12 @@ function ReadyToPublishCard({
       ) : (
         <>
           <MediaThumb preview={preview} />
-          <CaptionExcerpt caption={preview.caption} expanded={captionExpanded} onToggle={() => setCaptionExpanded((value) => !value)} />
-          {preview.hashtags.length > 0 && (
-            <p className="saut-artifact-tags">{preview.hashtags.map((tag) => `#${tag}`).join(" ")}</p>
-          )}
+          <CaptionExcerpt caption={preview.caption} />
+          {tagCount > 0 ? (
+            <p className="saut-artifact-tag-summary">
+              {tagCount} {tagCount === 1 ? "hashtag" : "hashtags"}
+            </p>
+          ) : null}
           {preview.visibility && <p className="saut-artifact-meta">Visibility · {preview.visibility}</p>}
 
           {!grouped && preview.shadowMode && (
@@ -258,6 +279,51 @@ function ReadyToPublishCard({
   );
 }
 
+function ApprovalDock({
+  actions,
+  selectedActions,
+  previews,
+  anyShadowMode,
+  onApprove,
+  onReject,
+}: {
+  actions: Array<{ id: string; tool: string; input: Record<string, unknown> }>;
+  selectedActions: Array<{ id: string; tool: string; input: Record<string, unknown> }>;
+  previews: Record<string, PublishActionPreview>;
+  anyShadowMode: boolean;
+  onApprove: (id: string) => void;
+  onReject: (id: string) => void;
+}) {
+  return (
+    <div className="saut-sticky-approve" role="region" aria-label="Combined approval" data-sticky-review-dock="true">
+      <div className="saut-sticky-approve-meta">
+        <strong>
+          {selectedActions.length} selected
+        </strong>
+        <span>
+          {selectedActions
+            .map((action) => previews[action.id]?.platformLabel)
+            .filter(Boolean)
+            .join(" · ") || "Choose platforms"}
+        </span>
+      </div>
+      <div className="saut-sticky-approve-actions">
+        <button onClick={() => actions.forEach((action) => onReject(action.id))} className="saut-btn saut-btn-ghost !h-10 !px-3 text-[12px]">
+          Cancel
+        </button>
+        <button
+          onClick={() => selectedActions.forEach((action) => onApprove(action.id))}
+          disabled={selectedActions.length === 0}
+          aria-label="Approve selected &amp; publish"
+          className="saut-btn saut-btn-primary !h-11 !px-4 text-[13px]"
+        >
+          {anyShadowMode ? `Approve shadow run (${selectedActions.length})` : `Approve selected & publish (${selectedActions.length})`}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /**
  * Renders every publish-intent action attached to one Copilot message as ONE
  * grouped "Ready to publish" experience — a single request that produced N
@@ -275,6 +341,24 @@ export function PublishApprovalGroup({
   const [previews, setPreviews] = useState<Record<string, PublishActionPreview>>({});
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [reasonsOpen, setReasonsOpen] = useState(false);
+  const [dockEl, setDockEl] = useState<HTMLElement | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const find = () => {
+      if (cancelled) return;
+      const el = document.getElementById("saut-review-dock");
+      if (el) {
+        setDockEl(el);
+        return;
+      }
+      window.requestAnimationFrame(find);
+    };
+    find();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handlePreviewLoaded = useCallback((actionId: string, preview: PublishActionPreview) => {
     setPreviews((current) => ({ ...current, [actionId]: preview }));
@@ -289,6 +373,17 @@ export function PublishApprovalGroup({
   const platformNames = actions
     .map((action) => previews[action.id]?.platformLabel)
     .filter(Boolean) as string[];
+
+  const dock = (
+    <ApprovalDock
+      actions={actions}
+      selectedActions={selectedActions}
+      previews={previews}
+      anyShadowMode={anyShadowMode}
+      onApprove={onApprove}
+      onReject={onReject}
+    />
+  );
 
   return (
     <section className="saut-publish-group saut-artifact-group" aria-label="Ready to publish combined approval">
@@ -357,32 +452,8 @@ export function PublishApprovalGroup({
         </p>
       )}
 
-      <div className="saut-sticky-approve" role="region" aria-label="Combined approval">
-        <div className="saut-sticky-approve-meta">
-          <strong>
-            {selectedActions.length} selected
-          </strong>
-          <span>
-            {selectedActions
-              .map((action) => previews[action.id]?.platformLabel)
-              .filter(Boolean)
-              .join(" · ") || "Choose platforms"}
-          </span>
-        </div>
-        <div className="saut-sticky-approve-actions">
-          <button onClick={() => actions.forEach((action) => onReject(action.id))} className="saut-btn saut-btn-ghost !h-10 !px-3 text-[12px]">
-            Cancel
-          </button>
-          <button
-            onClick={() => selectedActions.forEach((action) => onApprove(action.id))}
-            disabled={selectedActions.length === 0}
-            aria-label="Approve selected &amp; publish"
-            className="saut-btn saut-btn-primary !h-11 !px-4 text-[13px]"
-          >
-            {anyShadowMode ? `Approve shadow run (${selectedActions.length})` : `Approve selected & publish (${selectedActions.length})`}
-          </button>
-        </div>
-      </div>
+      {/* Prefer canvas dock above composer; fall back inline if dock mount is missing. */}
+      {dockEl ? createPortal(dock, dockEl) : dock}
     </section>
   );
 }

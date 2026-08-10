@@ -30,6 +30,26 @@ interface ComposerAttachment extends AgentAttachmentData {
   error?: string;
 }
 
+function humanSessionStatus(status: string): string {
+  switch (status) {
+    case "READY":
+    case "IDLE":
+      return "Ready";
+    case "RUNNING":
+      return "Working";
+    case "WAITING_FOR_CHOICE":
+      return "Waiting for input";
+    case "FAILED":
+      return "Needs attention";
+    default:
+      return status
+        .toLowerCase()
+        .split("_")
+        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+        .join(" ");
+  }
+}
+
 // The full-screen shell is fixed (see .saut-agent-workspace / 100dvh); this
 // rail owns its own scroll area, so "+ New conversation" stays pinned above
 // it and hundreds of sessions never grow the page — see Section 1/2 of the
@@ -74,7 +94,7 @@ function SessionRail({
           return (
             <details
               key={group.label}
-              className="mb-1.5"
+              className="mb-1"
               open={open}
               onToggle={(event) => {
                 const next = (event.target as HTMLDetailsElement).open;
@@ -87,8 +107,8 @@ function SessionRail({
               }}
             >
               <summary className="saut-session-group-summary">
-                <span className="saut-section-title">{group.label.toUpperCase()}</span>
-                <span className="saut-mono text-[9px]" style={{ color: "var(--saut-text-subtle)" }}>{group.sessions.length}</span>
+                <span className="saut-section-title">{group.label}</span>
+                <span className="text-[9px]" style={{ color: "var(--saut-text-subtle)" }}>{group.sessions.length}</span>
               </summary>
               <div className="mt-0.5">
                 {group.sessions.map((session) => (
@@ -96,13 +116,13 @@ function SessionRail({
                     key={session.id}
                     onClick={() => onSelect(session.id)}
                     aria-current={session.id === activeId ? "true" : undefined}
-                    className="mb-0.5 block w-full rounded-lg px-2 py-1.5 text-left"
+                    className="saut-session-row mb-0.5 block w-full rounded-md px-2 py-1 text-left"
                     style={session.id === activeId
                       ? { background: "var(--saut-accent-muted)", color: "var(--saut-text)" }
                       : { color: "var(--saut-text-muted)" }}
                   >
-                    <span className="block truncate text-xs font-medium">{session.title || "Untitled session"}</span>
-                    <span className="saut-mono mt-0.5 block text-[9px] uppercase" style={{ color: "var(--saut-text-subtle)" }}>{session.status}</span>
+                    <span className="block truncate text-[12px] font-medium leading-snug">{session.title || "Untitled session"}</span>
+                    <span className="mt-0.5 block truncate text-[10px]" style={{ color: "var(--saut-text-subtle)" }}>{humanSessionStatus(session.status)}</span>
                   </button>
                 ))}
               </div>
@@ -366,6 +386,20 @@ export function CopilotFullPage({
       }}
     />
   );
+  const waitingForApproval = session?.status === "WAITING_FOR_CHOICE";
+  const preferCompactProgress = waitingForApproval || (!pending && activePublishActions.length > 0);
+  const reviewMode = preferCompactProgress;
+  const enteredReviewRef = useRef(false);
+
+  // Enter Focus once when READY artifacts appear — owner can exit anytime.
+  useEffect(() => {
+    if (reviewMode && !enteredReviewRef.current) {
+      enteredReviewRef.current = true;
+      setFocusMode(true);
+    }
+    if (!reviewMode) enteredReviewRef.current = false;
+  }, [reviewMode]);
+
   const canvas = (
     <section className="saut-agent-canvas flex min-h-0 flex-col" aria-label="Agent work canvas">
         <header className="saut-canvas-header flex items-center gap-2.5 border-b px-3" style={{ borderColor: "var(--saut-border)" }}>
@@ -387,7 +421,7 @@ export function CopilotFullPage({
           <button onClick={() => { clearAttachments(); setSessionId(null); }} className="saut-btn saut-btn-ghost !h-7 !px-2 text-xs">New</button>
         </header>
 
-        <div ref={scrollRef} className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
+        <div ref={scrollRef} className="saut-history-compact min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
           {loadingHistory ? <p className="text-xs" style={{ color: "var(--saut-text-subtle)" }}>Loading session…</p> : null}
           {!loadingHistory && messages.length === 0 ? (
             <div className="mx-auto mt-16 max-w-lg space-y-4">
@@ -402,8 +436,11 @@ export function CopilotFullPage({
           {failedReason && <div className="saut-chip saut-chip-danger"><span className="saut-chip-dot" />Failed · {failedReason}</div>}
         </div>
 
+        {/* Sticky review dock: approval CTA stays above the composer while the artifact scrolls. */}
+        <div id="saut-review-dock" className="saut-review-dock" data-sticky-review-dock-host="true" />
+
         <div
-          className="border-t p-2"
+          className="saut-composer-shell border-t"
           style={{ borderColor: "var(--saut-border)" }}
           onDragOver={(event) => {
             event.preventDefault();
@@ -414,7 +451,10 @@ export function CopilotFullPage({
             void uploadFiles(event.dataTransfer.files);
           }}
         >
-          <div className="saut-unified-composer" data-busy={pending || uploading || voiceBusy}>
+          <div
+            className={`saut-unified-composer${attachments.length || recording || voicePreview || attachmentError || input.includes("\n") ? " is-expanded" : " is-idle"}`}
+            data-busy={pending || uploading || voiceBusy}
+          >
           {attachments.length > 0 && (
             <div className="saut-composer-tray" aria-label={`${attachments.length} files attached`}>
               {attachments.map((attachment) => (
@@ -432,24 +472,8 @@ export function CopilotFullPage({
           )}
           {voicePreview ? <div className="saut-voice-preview"><audio src={voicePreview.url} controls /><span>{voicePreview.seconds}s</span><button onClick={() => void transcribeVoice()} disabled={voiceBusy}>{voiceBusy ? "Transcribing…" : "Use transcript"}</button><button aria-label="Remove voice note" onClick={() => { URL.revokeObjectURL(voicePreview.url); setVoicePreview(null); }}>×</button></div> : null}
           {recording ? <div className="saut-recording" role="status"><span>● {String(Math.floor(recordingSeconds / 60)).padStart(2, "0")}:{String(recordingSeconds % 60).padStart(2, "0")}</span><button onClick={() => stopRecording(true)}>Cancel</button><button onClick={() => stopRecording(false)}>Stop</button></div> : null}
-          {attachmentError && <p className="mb-2 text-xs" role="alert" style={{ color: "var(--saut-danger)" }}>{attachmentError}</p>}
-          <textarea
-              ref={textareaRef}
-              value={input}
-              onChange={(event) => { setInput(event.target.value); event.target.style.height = "auto"; event.target.style.height = `${Math.min(event.target.scrollHeight, 160)}px`; }}
-              onPaste={(event) => {
-                const images = Array.from(event.clipboardData.files).filter((file) => file.type.startsWith("image/"));
-                if (images.length) { event.preventDefault(); void uploadFiles(images); }
-              }}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); submit(); }
-              }}
-              placeholder="Message Copilot…"
-              aria-label="Message Copilot"
-              className="saut-composer-textarea"
-              disabled={pending}
-            />
-          <div className="saut-composer-actions">
+          {attachmentError && <p className="mb-1 text-xs" role="alert" style={{ color: "var(--saut-danger)" }}>{attachmentError}</p>}
+          <div className="saut-composer-row">
             <input
               ref={fileInputRef}
               type="file"
@@ -471,8 +495,27 @@ export function CopilotFullPage({
             >
               <span aria-hidden>+</span>
             </button>
-            <span className="saut-composer-helper text-[10px]" style={{ color: "var(--saut-text-subtle)" }}>Photos, video or document</span>
-            <span className="flex-1" />
+            <textarea
+              ref={textareaRef}
+              value={input}
+              rows={1}
+              onChange={(event) => {
+                setInput(event.target.value);
+                event.target.style.height = "auto";
+                event.target.style.height = `${Math.min(event.target.scrollHeight, 160)}px`;
+              }}
+              onPaste={(event) => {
+                const images = Array.from(event.clipboardData.files).filter((file) => file.type.startsWith("image/"));
+                if (images.length) { event.preventDefault(); void uploadFiles(images); }
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); submit(); }
+              }}
+              placeholder="Message Copilot…"
+              aria-label="Message Copilot"
+              className="saut-composer-textarea"
+              disabled={pending}
+            />
             <button type="button" className="saut-composer-icon" onClick={() => recording ? stopRecording(false) : void startRecording()} disabled={pending || voiceBusy} aria-label={recording ? "Stop recording" : "Record voice note"}><span aria-hidden>◉</span></button>
             <button onClick={submit} disabled={pending || uploading || attachments.some((item) => item.uploadState === "uploading") || (!input.trim() && !attachments.some((item) => item.uploadState === "ready"))} className="saut-composer-send" aria-label="Send message">↑</button>
           </div>
@@ -482,14 +525,26 @@ export function CopilotFullPage({
   );
   const contextAccessed = brandUsed || accountsUsed || attachmentEvents.length > 0;
 
-  const waitingForApproval = session?.status === "WAITING_FOR_CHOICE";
-  const preferCompactProgress = waitingForApproval || (!pending && activePublishActions.length > 0);
-
-  // Right rail: five compact accordion modules, one internal scrollbar (see
-  // .saut-agent-rail on the containing <aside> in ResizableWorkspace) — never
-  // an ever-growing Progress section pushing the whole workspace. Defaults
-  // per Section 4 of the workspace repair brief.
-  const progress = (
+  // Right rail: when READY, prefer a compact status control; expand strip for details.
+  const progress = reviewMode ? (
+    <div className="saut-ready-rail-control">
+      <div className="saut-ready-pill" role="status" aria-label="Ready for review">
+        <span aria-hidden>✓</span>
+        Ready
+      </div>
+      {run?.status === "FAILED" || failedReason ? (
+        <div className="saut-ready-pill is-danger" role="alert">
+          Needs attention
+        </div>
+      ) : null}
+      <ExecutionTrace
+        run={run}
+        events={runEvents}
+        waitingForApproval={waitingForApproval}
+        compactByDefault
+      />
+    </div>
+  ) : (
     <div className="saut-progress-rail">
       <RailModule title="Current mission" defaultOpen>
         <p className="text-sm font-medium leading-snug">{missionTitle}</p>
@@ -504,7 +559,9 @@ export function CopilotFullPage({
       </RailModule>
     </div>
   );
-  const context = (
+  const context = reviewMode ? (
+    <div className="saut-ready-context-quiet" aria-hidden />
+  ) : (
     <div>
       <RailModule title="Context" defaultOpen={contextAccessed}>
         {!contextAccessed ? (
@@ -527,14 +584,14 @@ export function CopilotFullPage({
             return <div key={action.id} className="saut-card-2 p-2.5 text-xs">
               <strong className="block capitalize">{platform}</strong>
               <span className="mt-0.5 block truncate" style={{ color: "var(--saut-text-muted)" }}>{missionTitle}</span>
-              <span className="mt-1 flex items-center gap-2"><StatusBadge label="READY" /></span>
+              <span className="mt-1 flex items-center gap-2"><StatusBadge label="Ready" /></span>
             </div>;
           }) : initialVariants.length === 0 ? <p className="text-xs" style={{ color: "var(--saut-text-subtle)" }}>No artifacts yet.</p> :
             initialVariants.slice(0, 4).map((variant) => (
               <a key={variant.id} href="/admin/social/create" className="saut-card-2 block p-2.5 text-xs">
                 <strong className="block capitalize">{variant.platform}</strong>
                 <span className="mt-0.5 block truncate">{variant.content_master?.title || `${variant.platform} draft`}</span>
-                <span className="mt-1 flex items-center gap-2"><StatusBadge label={variant.status} /></span>
+                <span className="mt-1 flex items-center gap-2"><StatusBadge label={humanSessionStatus(variant.status)} /></span>
               </a>
             ))}
         </div>
@@ -552,6 +609,13 @@ export function CopilotFullPage({
   );
 
   return (
-    <ResizableWorkspace left={sessionRail} center={canvas} progress={progress} context={context} focusMode={focusMode} />
+    <ResizableWorkspace
+      left={sessionRail}
+      center={canvas}
+      progress={progress}
+      context={context}
+      focusMode={focusMode}
+      readyReview={reviewMode}
+    />
   );
 }

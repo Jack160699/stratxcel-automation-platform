@@ -134,18 +134,18 @@ export function PrivateMedia({
 export function AttachmentCard({ attachment }: { attachment: AgentAttachmentData }) {
   const visual = attachment.mediaAssetId && (attachment.mimeType.startsWith("image/") || attachment.mimeType.startsWith("video/"));
   return (
-    <article className={`saut-file-card${visual ? " saut-file-card-visual" : ""}`}>
+    <article className={`saut-file-card saut-history-attachment${visual ? " saut-file-card-visual" : ""}`}>
       {visual ? (
         <PrivateMedia assetId={attachment.mediaAssetId!} mimeType={attachment.mimeType} alt={attachment.name} controls={attachment.mimeType.startsWith("video/")} />
       ) : (
         <span className="saut-file-icon" aria-hidden>
-          {humanFileType(attachment.mimeType).slice(0, 3).toUpperCase()}
+          {humanFileType(attachment.mimeType).slice(0, 3)}
         </span>
       )}
       <span className="min-w-0 flex-1">
         <strong className="block truncate text-xs">{attachment.name}</strong>
         <span className="text-[10px]" style={{ color: "var(--saut-text-subtle)" }}>
-          {humanFileType(attachment.mimeType)} · {humanFileSize(attachment.sizeBytes)} · {statusLabel(attachment.processingStatus)}
+          {humanFileType(attachment.mimeType)} · {statusLabel(attachment.processingStatus)}
         </span>
       </span>
     </article>

@@ -1,4 +1,4 @@
-// Premium Social Copilot workspace + preview path regressions.
+// Premium Social Copilot workspace + final visual polish regressions.
 // Run with: node --experimental-strip-types lib/social/__tests__/copilot-premium-workspace.test.ts
 
 import assert from "node:assert/strict";
@@ -22,6 +22,7 @@ function run() {
   const execTrace = read("app", "admin", "social", "copilot", "ExecutionTrace.tsx");
   const automation = read("lib", "social", "repositories", "automation.ts");
   const orchestrator = read("lib", "social", "agent", "orchestrator.ts");
+  const agentMessage = read("app", "admin", "social", "agent", "AgentMessage.tsx");
 
   // Connected account labels — never "Not resolved" when a real account exists
   assert.ok(actionPreview.includes("resolveConnectedAccountForPreview"));
@@ -83,6 +84,65 @@ function run() {
   // Typed natural language must not be the publish gate — approval UI only
   const finalArtifact = read("lib", "social", "__tests__", "final-artifact-approval-policy.test.ts");
   assert.ok(finalArtifact.includes("approve") || finalArtifact.length > 0);
+
+  // —— Final visual polish contracts ——
+
+  // 1. Card header hierarchy: platform / account / handle as separate nodes
+  assert.ok(publishCard.includes("saut-artifact-head"));
+  assert.ok(publishCard.includes("saut-artifact-platform"));
+  assert.ok(publishCard.includes("saut-artifact-account"));
+  assert.ok(publishCard.includes("saut-artifact-handle") || publishCard.includes("accountHandle"));
+  assert.ok(theme.includes(".saut-artifact-platform-row"));
+  assert.ok(theme.includes(".saut-artifact-account-block"));
+  assert.ok(publishCard.includes("PlatformIcon"));
+  assert.ok(!publishCard.includes("{platformName}{accountName}"), "platform must not concatenate into account name");
+
+  // 2. Compact READY cards — caption clamp + hashtag summary, not full list on card
+  assert.ok(publishCard.includes("saut-artifact-caption-clamp") || theme.includes("saut-artifact-caption-clamp"));
+  assert.ok(publishCard.includes("hashtag") && publishCard.includes("tagCount"));
+  assert.ok(publishCard.includes("saut-artifact-tag-summary"));
+  assert.ok(!/preview\.hashtags\.map\(/.test(publishCard), "collapsed card must not render full hashtag list");
+  assert.ok(publishCard.includes(">Preview<") && publishCard.includes(">Edit<"));
+
+  // 3. Sticky approval stays visible via canvas dock (above composer)
+  assert.ok(fullPage.includes('id="saut-review-dock"') || fullPage.includes("saut-review-dock"));
+  assert.ok(fullPage.includes("data-sticky-review-dock-host") || theme.includes(".saut-review-dock"));
+  assert.ok(publishCard.includes("createPortal") && publishCard.includes("saut-review-dock"));
+  assert.ok(publishCard.includes('data-sticky-review-dock="true"'));
+  assert.ok(theme.includes(".saut-review-dock"));
+  assert.ok(!/saut-publish-group\s*\{\s*overflow:\s*hidden/.test(theme), "publish group must not clip approval dock");
+
+  // 4. Compact idle composer
+  assert.ok(fullPage.includes("saut-composer-row"));
+  assert.ok(fullPage.includes("is-idle") && fullPage.includes("is-expanded"));
+  assert.ok(theme.includes(".saut-unified-composer.is-idle"));
+  assert.ok(fullPage.includes("Message Copilot"));
+
+  // 5. READY right rail collapses to Ready control
+  assert.ok(workspace.includes("readyReview"));
+  assert.ok(fullPage.includes("readyReview={reviewMode}") || fullPage.includes("readyReview={reviewMode}"));
+  assert.ok(fullPage.includes("saut-ready-pill") || theme.includes(".saut-ready-pill"));
+  assert.ok(workspace.includes('"Ready"') || workspace.includes("Ready"));
+
+  // 6. READY left rail quieter via Focus auto-enter once
+  assert.ok(fullPage.includes("enteredReviewRef") || fullPage.includes("setFocusMode(true)"));
+
+  // 7. Human status labels — not raw enums in session rail
+  assert.ok(fullPage.includes("humanSessionStatus"));
+  assert.ok(fullPage.includes('"Waiting for input"') || fullPage.includes("Waiting for input"));
+  assert.ok(fullPage.includes('case "READY"'));
+  assert.ok(!fullPage.includes("WAITING_FOR_CHOICE</") && !fullPage.includes("{session.status}"));
+
+  // 8. Card typography hierarchy in theme
+  assert.ok(theme.includes(".saut-artifact-caption-clamp"));
+  assert.ok(theme.includes("font-size: 12px") || theme.includes("font-size: 12.5px"));
+
+  // 9. Responsive grid threshold — 3 cols only when cards are wide enough
+  assert.ok(/minmax\(\s*280px\s*,\s*1fr\s*\)/.test(theme), "artifact grid must use ~280px min card width");
+
+  // History cleanup — attachment cards look conversational
+  assert.ok(attachmentMedia.includes("statusLabel") || attachmentMedia.includes("Ready"));
+  assert.ok(agentMessage.includes("saut-agent-message") || fullPage.includes("saut-history-compact"));
 
   console.log("copilot-premium-workspace.test.ts: ALL PASS");
 }
