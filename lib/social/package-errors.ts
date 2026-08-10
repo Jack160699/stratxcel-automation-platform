@@ -12,6 +12,8 @@ const PACKAGE_ERROR_COPY: Record<string, string> = {
   assignment_ambiguous_candidate: "More than one unassigned resource matches. Contact support to finish setup.",
   assignment_tenant_already_has_brand: "This workspace already has a Brand Brain assigned.",
   assignment_arbitrary_uuid_claim_rejected: "You cannot claim a resource you do not own.",
+  package_configuration_required: "Your purchased package mix is not configured yet. Contact Stratxcel to finish setup before activating Autopilot.",
+  invalid_schedule_wall_time: "Choose a valid date and time for this package.",
 };
 
 export function packageErrorForClient(value: unknown): string {

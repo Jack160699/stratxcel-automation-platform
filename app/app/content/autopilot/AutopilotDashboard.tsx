@@ -6,11 +6,14 @@ import { Card, CardHeading, CardRow } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { StatusChip, type ChipState } from "@/components/ui/StatusChip";
 import { ErrorState, EmptyState } from "@/components/ui/Feedback";
+import { PackagePublishPreviewCard } from "./PackagePublishPreview";
+import type { PackagePublishPreview } from "@/lib/social/package-preview";
 
 interface UpcomingItem {
   id: string;
   sequence: number;
   scheduledAt: string;
+  scheduledWall: string;
   status: string;
   contentPillar: string | null;
   blockedReason: string | null;
@@ -39,6 +42,8 @@ interface Overview {
   remaining: number;
   periodStart: string;
   periodEnd: string | null;
+  timezone: string;
+  compositionLabel: string;
   destinations: string[];
   upcoming: UpcomingItem[];
   history: HistoryItem[];
@@ -54,6 +59,9 @@ interface NotActivated {
     connectedPlatforms: string[];
     brandConfigured: boolean;
     brandProfileId: string | null;
+    packageConfigured: boolean;
+    compositionLabel: string | null;
+    compositionItems: Array<{ mediaType: string; quantity: number }> | null;
     assignment: {
       brand: { available: boolean; label: string | null; alreadyBound: boolean };
       accounts: Array<{ platform: string; platformLabel: string; label: string; available: boolean; alreadyBound: boolean }>;
@@ -77,9 +85,9 @@ const STATUS_LABEL: Record<string, string> = {
   BLOCKED: "Needs attention",
 };
 
-function formatDate(iso: string | null) {
+function formatDate(iso: string | null, timeZone?: string) {
   if (!iso) return "—";
-  return new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+  return new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short", ...(timeZone ? { timeZone } : {}) });
 }
 
 async function callAutopilotApi(body: Record<string, unknown>) {
@@ -99,7 +107,12 @@ function ActivationChecklist({ tenantId, eligibility, onActivated }: { tenantId:
   const [assigningBrand, setAssigningBrand] = useState(false);
   const [assigningPlatform, setAssigningPlatform] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const ready = eligibility.subscriptionActive && eligibility.entitlementAvailable && eligibility.brandConfigured && eligibility.connectedPlatforms.length > 0;
+  const ready =
+    eligibility.subscriptionActive &&
+    eligibility.entitlementAvailable &&
+    eligibility.brandConfigured &&
+    eligibility.packageConfigured &&
+    eligibility.connectedPlatforms.length > 0;
 
   const assignBrand = async () => {
     setAssigningBrand(true);
@@ -139,7 +152,6 @@ function ActivationChecklist({ tenantId, eligibility, onActivated }: { tenantId:
         publishingMode: "AUTO_PUBLISH",
         allowedPlatforms: platforms,
         brandProfileId: eligibility.brandProfileId,
-        packageSize: eligibility.remainingUnits,
       });
       onActivated();
     } catch (err) {
@@ -164,6 +176,13 @@ function ActivationChecklist({ tenantId, eligibility, onActivated }: { tenantId:
           </CardRow>
         )}
         <CardRow>{eligibility.entitlementAvailable ? "✓" : "○"} Social posts entitlement available ({eligibility.remainingUnits} remaining)</CardRow>
+        <CardRow>
+          {eligibility.packageConfigured ? "✓" : "○"} Package composition
+          {eligibility.compositionLabel ? ` · ${eligibility.compositionLabel}` : " · needs setup"}
+        </CardRow>
+        {!eligibility.packageConfigured && (
+          <CardRow className="text-[#FF8A90]">Package configuration required — your purchased mix is not available for Autopilot yet.</CardRow>
+        )}
         <CardRow>
           {eligibility.connectedPlatforms.length > 0 ? "✓" : "○"} Connected accounts
           {eligibility.connectedPlatforms.length > 0 && (
@@ -197,13 +216,14 @@ function ActivationChecklist({ tenantId, eligibility, onActivated }: { tenantId:
   );
 }
 
-function UpcomingRow({ item, tenantId, onChanged }: { item: UpcomingItem; tenantId: string; onChanged: () => void }) {
+function UpcomingRow({ item, tenantId, timezone, onChanged }: { item: UpcomingItem; tenantId: string; timezone: string; onChanged: () => void }) {
   const [editing, setEditing] = useState(false);
   const [caption, setCaption] = useState("");
   const [hashtags, setHashtags] = useState("");
-  const [previewing, setPreviewing] = useState(false);
+  const [preview, setPreview] = useState<PackagePublishPreview | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
   const [rescheduling, setRescheduling] = useState(false);
-  const [scheduledAt, setScheduledAt] = useState(() => item.scheduledAt.slice(0, 16));
+  const [scheduledWall, setScheduledWall] = useState(() => item.scheduledWall);
   const [busy, setBusy] = useState(false);
 
   const skip = async () => {
@@ -225,6 +245,17 @@ function UpcomingRow({ item, tenantId, onChanged }: { item: UpcomingItem; tenant
       setBusy(false);
     }
   };
+  const openPreview = async () => {
+    setPreviewLoading(true);
+    try {
+      const result = await callAutopilotApi({ tenantId, action: "preview", queueItemId: item.id });
+      setPreview(result.preview as PackagePublishPreview);
+    } catch {
+      setPreview(null);
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
 
   return (
     <CardRow className="flex-col items-start gap-1.5">
@@ -232,10 +263,26 @@ function UpcomingRow({ item, tenantId, onChanged }: { item: UpcomingItem; tenant
         <span className="font-medium text-sx-text">Post {item.sequence} · {item.platform ?? "—"}{item.accountLabel ? ` · ${item.accountLabel}` : ""}</span>
         <StatusChip state={item.status === "BLOCKED" ? "danger" : "accent"}>{STATUS_LABEL[item.status] ?? item.status}</StatusChip>
       </div>
-      <span className="text-sx-text-muted">{formatDate(item.scheduledAt)}{item.contentPillar ? ` · ${item.contentPillar}` : ""}</span>
+      <span className="text-sx-text-muted">{formatDate(item.scheduledAt, timezone)}{item.contentPillar ? ` · ${item.contentPillar}` : ""}</span>
       {item.blockedReason && <span className="text-[#FF8A90]">{item.blockedReason}</span>}
-      {previewing && <div className="w-full rounded-sx-sm border border-sx-border bg-sx-surface-2 p-3"><strong>{item.platform}</strong><p className="mt-2 whitespace-pre-wrap">{item.caption}</p><p className="mt-2 text-sx-accent">{item.hashtags.map((tag) => `#${tag}`).join(" ")}</p></div>}
-      {rescheduling && <div className="flex gap-2"><input type="datetime-local" value={scheduledAt} onChange={(event) => setScheduledAt(event.target.value)} className="rounded-sx-sm border border-sx-border bg-sx-surface-2 p-2" /><Button size="sm" onClick={() => void callAutopilotApi({ tenantId, action: "reschedule", queueItemId: item.id, scheduledAt: new Date(scheduledAt).toISOString() }).then(() => { setRescheduling(false); onChanged(); })}>Save time</Button></div>}
+      {preview && <PackagePublishPreviewCard preview={preview} onClose={() => setPreview(null)} />}
+      {rescheduling && (
+        <div className="flex flex-wrap items-center gap-2">
+          <input type="datetime-local" value={scheduledWall} onChange={(event) => setScheduledWall(event.target.value)} className="rounded-sx-sm border border-sx-border bg-sx-surface-2 p-2" />
+          <span className="text-[11px] text-sx-text-subtle">{timezone}</span>
+          <Button
+            size="sm"
+            onClick={() =>
+              void callAutopilotApi({ tenantId, action: "reschedule", queueItemId: item.id, scheduledWall }).then(() => {
+                setRescheduling(false);
+                onChanged();
+              })
+            }
+          >
+            Save time
+          </Button>
+        </div>
+      )}
       {editing ? (
         <div className="mt-1 flex w-full flex-col gap-2">
           <textarea className="w-full rounded-sx-sm border border-sx-border bg-sx-surface-2 p-2 text-sx-text" rows={3} value={caption} onChange={(event) => setCaption(event.target.value)} />
@@ -247,9 +294,11 @@ function UpcomingRow({ item, tenantId, onChanged }: { item: UpcomingItem; tenant
         </div>
       ) : (
         <div className="mt-1 flex gap-2">
-          <Button size="sm" variant="ghost" disabled={busy || item.status === "PLANNED" || item.status === "BLOCKED"} onClick={() => setPreviewing((value) => !value)}>Preview</Button>
+          <Button size="sm" variant="ghost" disabled={busy || previewLoading || item.status === "PLANNED" || item.status === "BLOCKED"} onClick={() => void openPreview()}>
+            {previewLoading ? "Loading…" : "Preview"}
+          </Button>
           <Button size="sm" variant="ghost" disabled={busy || item.status === "PLANNED" || item.status === "BLOCKED"} onClick={() => { setCaption(item.caption); setHashtags(item.hashtags.map((tag) => `#${tag}`).join(" ")); setEditing(true); }}>Edit</Button>
-          <Button size="sm" variant="ghost" disabled={busy} onClick={() => setRescheduling((value) => !value)}>Reschedule</Button>
+          <Button size="sm" variant="ghost" disabled={busy} onClick={() => { setScheduledWall(item.scheduledWall); setRescheduling((value) => !value); }}>Reschedule</Button>
           <Button size="sm" variant="ghost" disabled={busy} onClick={() => void skip()}>Skip</Button>
         </div>
       )}
@@ -305,12 +354,12 @@ export function AutopilotDashboard() {
           <StatusChip state={STATE_CHIP[data.stateLabel] ?? "neutral"}>{data.stateLabel}</StatusChip>
         </div>
         <p className="mt-2 text-sm text-sx-text-muted">
-          {data.packageSize} posts / service period · {data.publishingMode === "AUTO_PUBLISH" ? "Auto-publish" : "Review before publish"}
+          {data.compositionLabel} · {data.packageSize} units / service period · {data.publishingMode === "AUTO_PUBLISH" ? "Auto-publish" : "Review before publish"} · {data.timezone}
         </p>
         <div className="mt-3 grid grid-cols-2 gap-3 text-[12.5px] sm:grid-cols-4">
           <div><div className="text-sx-text-subtle">Published</div><div className="text-lg font-semibold text-sx-text">{data.published}</div></div>
           <div><div className="text-sx-text-subtle">Remaining</div><div className="text-lg font-semibold text-sx-text">{data.remaining}</div></div>
-          <div><div className="text-sx-text-subtle">Period</div><div>{formatDate(data.periodStart)} → {formatDate(data.periodEnd)}</div></div>
+          <div><div className="text-sx-text-subtle">Period</div><div>{formatDate(data.periodStart, data.timezone)} → {formatDate(data.periodEnd, data.timezone)}</div></div>
           <div><div className="text-sx-text-subtle">Destinations</div><div>{data.destinations.join(", ") || "—"}</div></div>
         </div>
         <div className="mt-4 flex flex-wrap gap-2">
@@ -327,7 +376,7 @@ export function AutopilotDashboard() {
         ) : (
           <div className="mt-2">
             {data.upcoming.map((item) => (
-              <UpcomingRow key={item.id} item={item} tenantId={tenantId} onChanged={load} />
+              <UpcomingRow key={item.id} item={item} tenantId={tenantId} timezone={data.timezone} onChanged={load} />
             ))}
           </div>
         )}

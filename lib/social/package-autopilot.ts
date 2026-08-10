@@ -8,11 +8,11 @@ import { createContentMaster, createContentVariant } from "./repositories/conten
 import { resolveConfiguredProvider } from "./agent/provider.ts";
 import { selectGeminiBrandInstructions } from "./agent/gemini-boundary.ts";
 import { requirePlatform, requireContentObjective } from "./content-options.ts";
-import { computePackageDistribution } from "./package-distribution.ts";
+import { computePackageDistribution, datetimeLocalValueToUtcIso } from "./package-distribution.ts";
 import { notifyPackageEvent } from "./package-whatsapp-notify.ts";
 import type { OwnerContext } from "./db-context.ts";
 import { CONTENT_OBJECTIVE_VALUES } from "./content-options.ts";
-import { validatePackageComposition, compositionMediaTypeForUnit, type PackageComposition } from "./package-composition.ts";
+import { validatePackageComposition, compositionMediaTypeForUnit, resolvePurchasedPackageComposition, type PackageComposition } from "./package-composition.ts";
 import { selectPackageMediaAsset } from "./package-media.ts";
 import { recordAudit } from "./repositories/system.ts";
 
@@ -23,6 +23,14 @@ export {
   decideBrandAssignment,
   decideAccountAssignment,
 } from "./package-tenant-assignment.ts";
+export { getPackageQueueItemPreview } from "./package-preview.ts";
+export {
+  resolvePurchasedPackageComposition,
+  formatPackageCompositionLabel,
+  compositionUnitTotal,
+  PLAN_PACKAGE_COMPOSITIONS,
+} from "./package-composition.ts";
+export { utcIsoToDatetimeLocalValue, datetimeLocalValueToUtcIso, utcIsoToZonedWallParts } from "./package-distribution.ts";
 
 export type PackagePublishingMode = "AUTO_PUBLISH" | "REVIEW_BEFORE_PUBLISH";
 export type PackageAuthorizationState = "ACTIVE" | "PAUSED" | "CANCELLED" | "EXPIRED" | "NEEDS_ATTENTION";
@@ -121,14 +129,15 @@ export async function activatePackageAutopilot(
     timezone?: string;
     maxPostsPerDay?: number;
     brandProfileId: string;
-    composition: PackageComposition;
+    /** Ignored for package Autopilot — composition always comes from the purchased plan catalog. */
+    composition?: PackageComposition;
     startsAt?: string;
     endsAt?: string;
   }
 ) {
   const [{ data: membership }, { data: subscription }, { data: entitlement }] = await Promise.all([
     service.from("tenant_members").select("user_id").eq("tenant_id", input.tenantId).eq("user_id", input.clientUserId).maybeSingle(),
-    service.from("subscriptions").select("id,status,current_period_start,current_period_end").eq("id", input.subscriptionId).eq("tenant_id", input.tenantId).maybeSingle(),
+    service.from("subscriptions").select("id,status,current_period_start,current_period_end,plan_tier").eq("id", input.subscriptionId).eq("tenant_id", input.tenantId).maybeSingle(),
     service.from("usage_entitlements").select("id,metric,is_paused,limit_amount,current_usage").eq("id", input.entitlementId).eq("tenant_id", input.tenantId).eq("subscription_id", input.subscriptionId).maybeSingle(),
   ]);
   if (!membership) throw new Error("prerequisite_missing: this account is not a member of the client workspace");
@@ -156,7 +165,17 @@ export async function activatePackageAutopilot(
 
   const { data: brand } = await service.from("social_brand_profiles").select("id,tenant_id").eq("id", input.brandProfileId).eq("tenant_id", input.tenantId).maybeSingle();
   if (!brand) throw new Error("brand_binding_invalid");
-  const composition = validatePackageComposition(input.composition);
+
+  // Composition MUST come from the purchased plan catalog — never a silent
+  // text×packageSize fallback that could turn an image/reel package into text.
+  const composition = resolvePurchasedPackageComposition({
+    planTier: typeof subscription.plan_tier === "string" ? subscription.plan_tier : null,
+    allowedPlatforms: platforms,
+    publishingMode: input.publishingMode,
+    entitlementLimit: entitlement.limit_amount,
+  });
+  if (!composition) throw new Error("package_configuration_required");
+  const validated = validatePackageComposition(composition);
 
   const startsAt = input.startsAt ?? new Date().toISOString();
   const endsAt = input.endsAt ?? subscription.current_period_end;
@@ -180,8 +199,8 @@ export async function activatePackageAutopilot(
         timezone: input.timezone ?? "Asia/Kolkata",
         max_posts_per_day: input.maxPostsPerDay ?? 1,
         brand_profile_id: brand.id,
-        package_composition: composition,
-        counting_policy: composition.countingPolicy,
+        package_composition: validated,
+        counting_policy: validated.countingPolicy,
         revoked_at: null,
         updated_at: new Date().toISOString(),
       },
@@ -190,7 +209,7 @@ export async function activatePackageAutopilot(
     .select("*")
     .single();
   if (error || !data) throw new Error("Could not activate Social Autopilot");
-  await recordAudit({ actorType: "USER", actorId: input.clientUserId, action: "social.package.activate", targetType: "social_autopilot_authorization", targetId: data.id, summary: "Activated package Social Autopilot", meta: { tenantId: input.tenantId, publishingMode: input.publishingMode, platforms } });
+  await recordAudit({ actorType: "USER", actorId: input.clientUserId, action: "social.package.activate", targetType: "social_autopilot_authorization", targetId: data.id, summary: "Activated package Social Autopilot", meta: { tenantId: input.tenantId, publishingMode: input.publishingMode, platforms, composition: validated.items } });
   return data as PackageAuthorizationRow;
 }
 
@@ -287,7 +306,7 @@ export async function claimAuthorizedPackagePost(service: ServiceClient, queueIt
 
 /** Finalizes once. The database transition and entitlement increment are
  * atomic, so retries cannot consume or publish a package unit twice. */
-export async function settleAuthorizedPackagePost(service: ServiceClient, input: { queueItemId: string; outcome: "PUBLISHED" | "FAILED" | "SKIPPED" | "SHADOW_COMPLETED"; publishingJobId?: string; error?: string }) {
+export async function settleAuthorizedPackagePost(service: ServiceClient, input: { queueItemId: string; outcome: "PUBLISHED" | "FAILED" | "SKIPPED" | "SHADOW_COMPLETED"; publishingJobId?: string; error?: string; tenantId?: string }) {
   const { data, error } = await service.rpc("settle_social_package_post", {
     p_queue_item_id: input.queueItemId,
     p_outcome: input.outcome,
@@ -295,7 +314,20 @@ export async function settleAuthorizedPackagePost(service: ServiceClient, input:
     p_error: input.error ?? null,
   });
   if (error) throw new Error("Could not settle package post");
-  return data as { settled?: boolean; already_settled?: boolean };
+  const result = data as { settled?: boolean; already_settled?: boolean; counted?: boolean; quota_consumed?: boolean };
+  // Settlement audit is idempotent under retries: only emit when the RPC
+  // reports a fresh settlement (not already_settled).
+  if (result.settled && !result.already_settled && result.quota_consumed) {
+    await recordAudit({
+      actorType: "SYSTEM",
+      action: "social.package.entitlement_settled",
+      targetType: "social_autopilot_queue_item",
+      targetId: input.queueItemId,
+      summary: "Package entitlement settled after publish outcome",
+      meta: { outcome: input.outcome, counted: Boolean(result.counted), tenantId: input.tenantId ?? null },
+    }).catch(() => {});
+  }
+  return result;
 }
 
 /** Executes one package item through the existing publishing engine. The
@@ -303,19 +335,92 @@ export async function settleAuthorizedPackagePost(service: ServiceClient, input:
  * publishing job is created. */
 export async function executeAuthorizedPackagePost(service: ServiceClient, queueItemId: string, scheduledAt = new Date().toISOString()) {
   const claim = await claimAuthorizedPackagePost(service, queueItemId);
-  if (!claim.allowed || !claim.ownerId || !claim.accountId || !claim.variantId) return claim;
+  if (!claim.allowed || !claim.ownerId || !claim.accountId || !claim.variantId) {
+    if (claim.reason && !["already_claimed_or_not_ready", "queue_item_not_found"].includes(claim.reason)) {
+      await recordAudit({
+        actorType: "SYSTEM",
+        action: "social.package.publish_attempted",
+        targetType: "social_autopilot_queue_item",
+        targetId: queueItemId,
+        summary: "Automatic package publish was not authorized",
+        meta: { reason: claim.reason, tenantId: claim.tenantId ?? null },
+      }).catch(() => {});
+    }
+    return claim;
+  }
+
+  await recordAudit({
+    actorType: "SYSTEM",
+    action: "social.package.publish_attempted",
+    targetType: "social_autopilot_queue_item",
+    targetId: queueItemId,
+    summary: "Automatic package publish attempted",
+    meta: { tenantId: claim.tenantId ?? null, accountId: claim.accountId, shadowMode: Boolean(claim.shadowMode) },
+  }).catch(() => {});
+
   if (claim.shadowMode) {
-    await settleAuthorizedPackagePost(service, { queueItemId, outcome: "SHADOW_COMPLETED" });
+    await settleAuthorizedPackagePost(service, { queueItemId, outcome: "SHADOW_COMPLETED", tenantId: claim.tenantId });
+    await recordAudit({
+      actorType: "SYSTEM",
+      action: "social.package.publish_succeeded",
+      targetType: "social_autopilot_queue_item",
+      targetId: queueItemId,
+      summary: "Shadow Mode package run completed (nothing published externally)",
+      meta: { tenantId: claim.tenantId ?? null, shadow: true },
+    }).catch(() => {});
     return { ...claim, published: false, shadow: true, text: "Shadow run complete. Nothing was published externally." };
   }
   try {
     const jobId = await scheduleJob(service as Parameters<typeof scheduleJob>[0], { accountId: claim.accountId, variantId: claim.variantId, scheduledAt, idempotencyKey: `package:${queueItemId}` });
     const result = await runPublishNow(service as Parameters<typeof runPublishNow>[0], jobId, scheduledAt, claim.ownerId);
     const published = result.jobStatus === "PUBLISHED" && result.mode !== "shadow";
-    await settleAuthorizedPackagePost(service, { queueItemId, outcome: published ? "PUBLISHED" : "FAILED", publishingJobId: jobId, error: published ? undefined : result.lastError ?? result.outcomeNote });
+    const unknownOutcome = !published && result.jobStatus !== "FAILED" && result.mode !== "shadow";
+    await settleAuthorizedPackagePost(service, {
+      queueItemId,
+      outcome: published ? "PUBLISHED" : "FAILED",
+      publishingJobId: jobId,
+      error: published ? undefined : result.lastError ?? result.outcomeNote,
+      tenantId: claim.tenantId,
+    });
+    if (published) {
+      await recordAudit({
+        actorType: "SYSTEM",
+        action: "social.package.publish_succeeded",
+        targetType: "social_autopilot_queue_item",
+        targetId: queueItemId,
+        summary: "Automatic package publish succeeded",
+        meta: { tenantId: claim.tenantId ?? null, jobId },
+      }).catch(() => {});
+    } else if (unknownOutcome) {
+      await recordAudit({
+        actorType: "SYSTEM",
+        action: "social.package.publish_reconciliation_required",
+        targetType: "social_autopilot_queue_item",
+        targetId: queueItemId,
+        summary: "Package publish outcome requires reconciliation",
+        meta: { tenantId: claim.tenantId ?? null, jobId, jobStatus: result.jobStatus, mode: result.mode },
+      }).catch(() => {});
+    } else {
+      await recordAudit({
+        actorType: "SYSTEM",
+        action: "social.package.publish_failed",
+        targetType: "social_autopilot_queue_item",
+        targetId: queueItemId,
+        summary: "Automatic package publish failed",
+        meta: { tenantId: claim.tenantId ?? null, jobId, error: result.lastError ?? result.outcomeNote ?? null },
+      }).catch(() => {});
+    }
     return { ...claim, published, jobId, result };
   } catch (error) {
-    await settleAuthorizedPackagePost(service, { queueItemId, outcome: "FAILED", error: error instanceof Error ? error.message : "package publish failed" });
+    await settleAuthorizedPackagePost(service, { queueItemId, outcome: "FAILED", error: error instanceof Error ? error.message : "package publish failed", tenantId: claim.tenantId });
+    await recordAudit({
+      actorType: "SYSTEM",
+      action: "social.package.publish_failed",
+      targetType: "social_autopilot_queue_item",
+      targetId: queueItemId,
+      summary: "Automatic package publish failed",
+      meta: { tenantId: claim.tenantId ?? null, error: error instanceof Error ? error.message : "package publish failed" },
+    }).catch(() => {});
     throw error;
   }
 }
@@ -365,7 +470,23 @@ async function rollServicePeriodIfNeeded(service: ServiceClient, authorization: 
     .eq("period_number", authorization.period_number) // CAS guard
     .select("*")
     .maybeSingle();
-  if (rolled) return rolled as PackageAuthorizationRow;
+  if (rolled) {
+    const next = rolled as PackageAuthorizationRow;
+    await recordAudit({
+      actorType: "SYSTEM",
+      action: "social.package.service_period_rolled",
+      targetType: "social_autopilot_authorization",
+      targetId: authorization.id,
+      summary: "Package Autopilot service period rolled forward",
+      meta: {
+        tenantId: authorization.tenant_id,
+        fromPeriod: authorization.period_number,
+        toPeriod: next.period_number,
+        periodTargetUnits: next.period_target_units,
+      },
+    }).catch(() => {});
+    return next;
+  }
 
   // Lost the race (another run already rolled it) — re-read the current row.
   const { data: current } = await service.from("social_autopilot_authorizations").select("*").eq("id", authorization.id).single();
@@ -783,7 +904,8 @@ export async function skipPackageQueueItem(service: ServiceClient, input: { queu
   return { skipped: true, countsAgainstQuota };
 }
 
-/** Reschedule while preserving the exact caption/media already prepared — never a duplicate row, never a stale second schedule (Section 34). */
+/** Reschedule while preserving the exact caption/media already prepared — never a duplicate row, never a stale second schedule (Section 34).
+ * `scheduledAt` must already be a UTC ISO instant. Prefer `reschedulePackageQueueItemInTimezone` from the client control surface. */
 export async function reschedulePackageQueueItem(service: ServiceClient, input: { queueItemId: string; scheduledAt: string }) {
   const { data, error } = await service
     .from("social_autopilot_queue_items")
@@ -794,6 +916,27 @@ export async function reschedulePackageQueueItem(service: ServiceClient, input: 
     .maybeSingle();
   if (error || !data) throw new Error("This item can no longer be rescheduled");
   return data;
+}
+
+/**
+ * Client-safe reschedule: accepts a package-timezone wall clock
+ * (`YYYY-MM-DDTHH:mm`) and converts to UTC using the authorization's IANA
+ * timezone — never the browser timezone.
+ */
+export async function reschedulePackageQueueItemInTimezone(
+  service: ServiceClient,
+  input: { queueItemId: string; tenantId: string; scheduledWall: string }
+) {
+  const { data: item } = await service
+    .from("social_autopilot_queue_items")
+    .select("id, authorization_id, social_autopilot_authorizations!inner(timezone, tenant_id)")
+    .eq("id", input.queueItemId)
+    .eq("tenant_id", input.tenantId)
+    .maybeSingle();
+  if (!item) throw new Error("Queue item not found");
+  const timezone = String((item.social_autopilot_authorizations as { timezone?: string }).timezone ?? "Asia/Kolkata");
+  const scheduledAt = datetimeLocalValueToUtcIso(input.scheduledWall, timezone);
+  return reschedulePackageQueueItem(service, { queueItemId: input.queueItemId, scheduledAt });
 }
 
 /** Edits the prepared caption/hashtags in place — the worker always resolves the CURRENT variant at execution time, so this can never publish a stale payload (Section 33/47). */

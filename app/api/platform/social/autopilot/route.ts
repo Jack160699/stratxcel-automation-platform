@@ -7,11 +7,15 @@ import {
   setPackageAutopilotState,
   setPackageAutopilotScope,
   skipPackageQueueItem,
-  reschedulePackageQueueItem,
+  reschedulePackageQueueItemInTimezone,
   editPackageQueueItemContent,
   assignBrandProfileToTenant,
   assignSocialAccountToTenant,
   listAssignablePackageResources,
+  getPackageQueueItemPreview,
+  resolvePurchasedPackageComposition,
+  formatPackageCompositionLabel,
+  utcIsoToDatetimeLocalValue,
   type PackageAuthorizationRow,
 } from "@/lib/social/package-autopilot";
 import { packageErrorForClient } from "@/lib/social/package-errors";
@@ -51,6 +55,8 @@ function overviewFromAuthorization(authorization: PackageAuthorizationRow, publi
     remaining: Math.max(0, authorization.period_target_units - publishedCount),
     periodStart: authorization.starts_at,
     periodEnd: authorization.ends_at,
+    timezone: authorization.timezone,
+    compositionLabel: formatPackageCompositionLabel(authorization.package_composition.items),
     destinations: authorization.allowed_platforms.map((platform) => PLATFORM_LABEL[platform] ?? platform),
     upcoming,
     history: recentHistory,
@@ -66,13 +72,20 @@ export async function GET(req: NextRequest) {
   const service = createSupabaseServiceClient();
   const { data: authorization } = await service.from("social_autopilot_authorizations").select("*").eq("tenant_id", tenantId).order("activated_at", { ascending: false }).limit(1).maybeSingle();
   if (!authorization) {
-    const { data: subscription } = await service.from("subscriptions").select("id, status, current_period_end").eq("tenant_id", tenantId).order("created_at", { ascending: false }).limit(1).maybeSingle();
+    const { data: subscription } = await service.from("subscriptions").select("id, status, current_period_end, plan_tier").eq("tenant_id", tenantId).order("created_at", { ascending: false }).limit(1).maybeSingle();
     const subscriptionActive = Boolean(subscription) && subscription!.status === "active" && new Date(subscription!.current_period_end).getTime() > Date.now();
     const { data: entitlement } = subscription
       ? await service.from("usage_entitlements").select("id, is_paused, limit_amount, current_usage").eq("tenant_id", tenantId).eq("subscription_id", subscription.id).eq("metric", "social_posts").maybeSingle()
       : { data: null };
     const { data: connectedAccounts } = await service.from("social_accounts").select("platform").eq("tenant_id", tenantId).eq("status", "CONNECTED");
     const { data: brands } = await service.from("social_brand_profiles").select("id").eq("tenant_id", tenantId).limit(2);
+    const connectedPlatforms = [...new Set((connectedAccounts ?? []).map((row) => String(row.platform).toLowerCase()))];
+    const composition = resolvePurchasedPackageComposition({
+      planTier: typeof subscription?.plan_tier === "string" ? subscription.plan_tier : null,
+      allowedPlatforms: connectedPlatforms.length ? connectedPlatforms : ["instagram"],
+      publishingMode: "AUTO_PUBLISH",
+      entitlementLimit: entitlement?.limit_amount,
+    });
     const assignmentRaw = await listAssignablePackageResources(service as Parameters<typeof listAssignablePackageResources>[0], {
       tenantId,
       actorUserId: auth.userId,
@@ -99,9 +112,12 @@ export async function GET(req: NextRequest) {
         entitlementId: entitlement?.id ?? null,
         entitlementAvailable: Boolean(entitlement) && !entitlement!.is_paused && entitlement!.current_usage < entitlement!.limit_amount,
         remainingUnits: entitlement ? Math.max(0, entitlement.limit_amount - entitlement.current_usage) : 0,
-        connectedPlatforms: [...new Set((connectedAccounts ?? []).map((row) => String(row.platform).toLowerCase()))],
+        connectedPlatforms,
         brandConfigured: (brands ?? []).length === 1,
         brandProfileId: (brands ?? []).length === 1 ? brands![0].id : null,
+        packageConfigured: Boolean(composition),
+        compositionLabel: composition ? formatPackageCompositionLabel(composition.items) : null,
+        compositionItems: composition?.items ?? null,
         assignment,
       },
     });
@@ -131,6 +147,7 @@ export async function GET(req: NextRequest) {
     id: item.id,
     sequence: item.package_sequence,
     scheduledAt: item.scheduled_at,
+    scheduledWall: utcIsoToDatetimeLocalValue(item.scheduled_at, row.timezone),
     status: item.status,
     contentPillar: item.content_pillar,
     blockedReason: item.status === "BLOCKED" && item.last_error ? packageErrorForClient(item.last_error) : null,
@@ -186,7 +203,6 @@ export async function POST(req: NextRequest) {
           timezone: typeof body.timezone === "string" ? body.timezone : undefined,
           maxPostsPerDay: typeof body.maxPostsPerDay === "number" ? body.maxPostsPerDay : undefined,
           brandProfileId: String(body.brandProfileId ?? ""),
-          composition: (body.composition && typeof body.composition === "object" ? body.composition : { items: [{ mediaType: "text", quantity: Number(body.packageSize ?? 1) }], countingPolicy: "CONTENT_UNIT", allowedPlatforms: Array.isArray(body.allowedPlatforms) ? body.allowedPlatforms.map(String) : [], publishingMode: "AUTO_PUBLISH", servicePeriodDays: 30 }) as Parameters<typeof activatePackageAutopilot>[1]["composition"],
         });
         return NextResponse.json({ ok: true, authorization });
       }
@@ -238,14 +254,24 @@ export async function POST(req: NextRequest) {
         await recordAudit({ actorType: "USER", actorId: auth.userId, action: "social.package.skip", targetType: "social_autopilot_queue_item", targetId: queueItemId, summary: "Skipped an upcoming package post", meta: { tenantId } });
         return NextResponse.json({ ok: true, result });
       }
+      case "preview": {
+        const queueItemId = String(body.queueItemId ?? "");
+        if (!(await verifyQueueItemTenant(service, queueItemId, tenantId))) return NextResponse.json({ error: "Queue item not found" }, { status: 404 });
+        const preview = await getPackageQueueItemPreview(service as Parameters<typeof getPackageQueueItemPreview>[0], { queueItemId, tenantId });
+        if (!preview) return NextResponse.json({ error: "Preview is not available until this post is prepared." }, { status: 404 });
+        return NextResponse.json({ ok: true, preview });
+      }
       case "reschedule": {
         const queueItemId = String(body.queueItemId ?? "");
         if (!(await verifyQueueItemTenant(service, queueItemId, tenantId))) return NextResponse.json({ error: "Queue item not found" }, { status: 404 });
-        const result = await reschedulePackageQueueItem(service as Parameters<typeof reschedulePackageQueueItem>[0], {
+        const scheduledWall = typeof body.scheduledWall === "string" ? body.scheduledWall : "";
+        if (!scheduledWall) return NextResponse.json({ error: "scheduledWall is required" }, { status: 400 });
+        const result = await reschedulePackageQueueItemInTimezone(service as Parameters<typeof reschedulePackageQueueItemInTimezone>[0], {
           queueItemId,
-          scheduledAt: String(body.scheduledAt ?? ""),
+          tenantId,
+          scheduledWall,
         });
-        await recordAudit({ actorType: "USER", actorId: auth.userId, action: "social.package.reschedule", targetType: "social_autopilot_queue_item", targetId: queueItemId, summary: "Rescheduled an upcoming package post", meta: { tenantId, scheduledAt: String(body.scheduledAt ?? "") } });
+        await recordAudit({ actorType: "USER", actorId: auth.userId, action: "social.package.reschedule", targetType: "social_autopilot_queue_item", targetId: queueItemId, summary: "Rescheduled an upcoming package post", meta: { tenantId, scheduledWall, scheduledAt: result.scheduled_at } });
         return NextResponse.json({ ok: true, result });
       }
       case "edit": {
