@@ -9,6 +9,8 @@ import { listDailyReviews, getDailyPlan, getDailyReview } from "@/lib/owner-brai
 import { listRecommendations } from "@/lib/owner-brain/repositories/recommendations";
 import { listVoiceNotes } from "@/lib/owner-brain/repositories/voice-notes";
 import { listDevices } from "@/lib/owner-brain/repositories/desktop-devices";
+import { listChatConnections } from "@/lib/owner-brain/repositories/chat-connections";
+import { getChatProvider } from "@/lib/owner-brain/chat/providers";
 import { getFreshHermesSuggestion } from "@/lib/owner-brain/hermes/refresh-suggestion";
 import { currentIstDateString } from "@/lib/owner-brain/db-context";
 import { getSourceDefinition } from "@/lib/owner-brain/sources/registry";
@@ -20,6 +22,7 @@ import { SourceControls } from "./components/SourceControls";
 import { DeviceManager } from "./components/DeviceManager";
 import { NightReviewForm } from "./components/NightReviewForm";
 import { VoiceNoteUploader } from "./components/VoiceNoteUploader";
+import { ChatProviderControls } from "./components/ChatProviderControls";
 import {
   setSourceEnabledAction,
   deleteSourceDataAction,
@@ -57,7 +60,7 @@ export default async function OperatingBrainPage() {
 
   const today = currentIstDateString();
 
-  const [sources, memories, openLoops, decisions, decisionAnalytics, commPatterns, workPatterns, reviews, todaysPlan, todaysReview, recommendations, voiceNotes, devices] =
+  const [sources, memories, openLoops, decisions, decisionAnalytics, commPatterns, workPatterns, reviews, todaysPlan, todaysReview, recommendations, voiceNotes, devices, chatConnections] =
     await Promise.all([
       listSources(ctx),
       listMemories(ctx, { limit: 40 }),
@@ -72,6 +75,7 @@ export default async function OperatingBrainPage() {
       listRecommendations(ctx, "PENDING"),
       listVoiceNotes(ctx, 10),
       listDevices(ctx),
+      listChatConnections(ctx),
     ]);
 
   const sourcesHealthy = sources.filter((s) => s.status === "CONNECTED").length;
@@ -245,6 +249,13 @@ export default async function OperatingBrainPage() {
                 <div className="mt-0.5 font-sx-mono text-[10px] uppercase tracking-[0.06em] text-sx-text-subtle">
                   {s.last_sync_at ? `last sync ${new Date(s.last_sync_at).toLocaleString()}` : "never synced"} · retention {s.retention_days}d
                 </div>
+                {s.source_key === "desktop_companion" && <div className="mt-1 text-[10.5px] text-sx-text-muted">
+                  {devices.filter((device) => device.status === "PAIRED").length
+                    ? `${devices.filter((device) => device.status === "PAIRED").map((device) => device.device_name).join(", ")} · ${devices.filter((device) => device.status === "PAIRED").length} paired device(s)`
+                    : "Pair a device below to activate this source."}
+                </div>}
+                {(s.source_key === "stratxcel_internal" || s.source_key === "stratxcel_admin_ui") && <div className="mt-1 text-[10.5px] text-sx-text-muted">Internal / active · no external account required</div>}
+                {s.source_key === "voice_notes" && <div className="mt-1 text-[10.5px] text-sx-text-muted">Ready · upload a voice note below</div>}
               </div>
               <SourceControls
                 sourceKey={s.source_key}
@@ -262,6 +273,20 @@ export default async function OperatingBrainPage() {
         <div className="mt-4 border-t border-sx-border pt-3">
           <div className="mb-2 text-[11px] font-semibold text-sx-text">Desktop Companion devices</div>
           <DeviceManager devices={devices} onCreate={createPendingDeviceAction} onRevoke={revokeDeviceAction} />
+        </div>
+        <div className="mt-4 border-t border-sx-border pt-3">
+          <div className="mb-2 text-[11px] font-semibold text-sx-text">Chat platforms</div>
+          {chatConnections.map((connection) => {
+            const provider = getChatProvider(connection.provider_key)!;
+            return <div key={connection.id} className="flex items-start justify-between gap-4 border-t border-sx-border py-2 first:border-0">
+              <div>
+                <div className="flex items-center gap-2 text-[12px] text-sx-text"><span>{provider.displayName}</span><StatusChip state={connection.status === "CONNECTED" ? "success" : connection.status === "ERROR" ? "danger" : "warning"}>{connection.status.replaceAll("_", " ")}</StatusChip></div>
+                <div className="mt-0.5 max-w-2xl text-[10.5px] text-sx-text-muted">{provider.capability}</div>
+                <div className="font-sx-mono text-[9.5px] uppercase text-sx-text-subtle">{connection.last_success_at ? `last import/sync ${new Date(connection.last_success_at).toLocaleString()}` : provider.authMode}</div>
+              </div>
+              <ChatProviderControls providerKey={provider.key} supportsImport={provider.supportsImport} />
+            </div>;
+          })}
         </div>
       </Card>
 

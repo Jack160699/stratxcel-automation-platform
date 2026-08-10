@@ -49,6 +49,55 @@ export async function ensureSourceRows(ctx: OwnerScoped): Promise<void> {
         { onConflict: "owner_id,source_key", ignoreDuplicates: true }
       );
   }
+  await reconcileDirectSources(ctx);
+}
+
+const DIRECT_READY_SOURCES: readonly SourceKey[] = ["stratxcel_internal", "stratxcel_admin_ui", "voice_notes"];
+
+/** Bootstraps implemented, credential-free sources while preserving an explicit pause. */
+export async function reconcileDirectSources(ctx: OwnerScoped): Promise<void> {
+  const service = getServiceContext().supabase;
+  const { data, error } = await service
+    .from("owner_sources")
+    .select("id, source_key, status, paused_at")
+    .eq("owner_id", ctx.ownerId)
+    .in("source_key", [...DIRECT_READY_SOURCES]);
+  if (error) throw new Error(`reconcileDirectSources failed: ${error.message}`);
+  for (const source of data ?? []) {
+    if (source.status === "PAUSED" || source.paused_at) continue;
+    if (source.source_key === "voice_notes" && !process.env.GEMINI_API_KEY) {
+      await service.from("owner_sources").update({ status: "UNAVAILABLE", enabled: false, health: { mode: "direct_upload", ready: false, reason: "transcription_runtime_unavailable" }, updated_at: new Date().toISOString() }).eq("id", source.id).eq("owner_id", ctx.ownerId);
+      continue;
+    }
+    const { error: updateError } = await service.from("owner_sources").update({
+      status: "CONNECTED",
+      enabled: true,
+      last_error: null,
+      health: { mode: source.source_key === "voice_notes" ? "direct_upload" : "internal", ready: true },
+      updated_at: new Date().toISOString(),
+    }).eq("id", source.id).eq("owner_id", ctx.ownerId);
+    if (updateError) throw new Error(`reconcileDirectSources update failed: ${updateError.message}`);
+  }
+}
+
+export async function reconcileDesktopSource(ownerId: string): Promise<void> {
+  const service = getServiceContext().supabase;
+  const { data: source, error: sourceError } = await service.from("owner_sources")
+    .select("id, status, paused_at").eq("owner_id", ownerId).eq("source_key", "desktop_companion").maybeSingle();
+  if (sourceError) throw new Error(`reconcileDesktopSource source failed: ${sourceError.message}`);
+  if (!source) return;
+  const { data: devices, error } = await service.from("owner_desktop_devices")
+    .select("id, last_seen_at").eq("owner_id", ownerId).eq("status", "PAIRED");
+  if (error) throw new Error(`reconcileDesktopSource devices failed: ${error.message}`);
+  const latest = (devices ?? []).map((d) => d.last_seen_at as string | null).filter(Boolean).sort().at(-1) ?? null;
+  const paused = source.status === "PAUSED" || Boolean(source.paused_at);
+  await service.from("owner_sources").update({
+    status: paused ? "PAUSED" : devices?.length ? "CONNECTED" : "AUTH_REQUIRED",
+    enabled: paused ? false : Boolean(devices?.length),
+    last_error: null,
+    health: { paired_device_count: devices?.length ?? 0, latest_last_seen_at: latest },
+    updated_at: new Date().toISOString(),
+  }).eq("id", source.id).eq("owner_id", ownerId);
 }
 
 export async function listSources(ctx: OwnerScoped): Promise<OwnerSourceRow[]> {
@@ -76,7 +125,7 @@ export async function getSourceByKey(ctx: OwnerScoped, sourceKey: SourceKey): Pr
 export async function setSourceEnabled(ctx: OwnerContext, sourceKey: SourceKey, enabled: boolean): Promise<void> {
   const { error } = await ctx.supabase
     .from("owner_sources")
-    .update({ enabled, paused_at: enabled ? null : new Date().toISOString(), updated_at: new Date().toISOString() })
+    .update({ enabled, status: enabled ? "CONNECTED" : "PAUSED", paused_at: enabled ? null : new Date().toISOString(), updated_at: new Date().toISOString() })
     .eq("owner_id", ctx.ownerId)
     .eq("source_key", sourceKey);
   if (error) throw new Error(`setSourceEnabled failed: ${error.message}`);
