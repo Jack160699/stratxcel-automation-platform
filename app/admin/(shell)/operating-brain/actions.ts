@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireOwnerContext } from "@/lib/owner-brain/db-context";
+import { requireOwnerBetaContext } from "@/lib/release/require-release-access";
 import { setSourceEnabled, deleteSourceData, revokeConnection } from "@/lib/owner-brain/repositories/sources";
 import { applyMemoryFeedback } from "@/lib/owner-brain/repositories/memories";
 import { setOpenLoopStatus, createOpenLoop } from "@/lib/owner-brain/repositories/open-loops";
@@ -15,7 +15,7 @@ import type { SourceKey } from "@/lib/owner-brain/types";
 const PATH = "/admin/operating-brain";
 
 async function ownerCtxOrThrow() {
-  const ctx = await requireOwnerContext();
+  const ctx = await requireOwnerBetaContext();
   if (!ctx.ok) throw new Error(ctx.error);
   return ctx;
 }

@@ -1,13 +1,14 @@
 import { NextResponse } from "next/server";
-import { requireOwnerContext } from "@/lib/owner-brain/db-context";
+import { requireOperatingBrainApiAccess } from "@/lib/release/operating-brain-api";
 import { getChatProvider } from "@/lib/owner-brain/chat/providers";
 import { importHash, MAX_CHAT_IMPORT_BYTES, parseChatGptExport, parseClaudeExport, readZipJson } from "@/lib/owner-brain/chat/imports";
 
 const ALLOWED_MIME = new Set(["application/json", "application/zip", "application/x-zip-compressed"]);
 
 export async function POST(request: Request) {
-  const ctx = await requireOwnerContext();
-  if (!ctx.ok) return NextResponse.json({ error: ctx.error }, { status: ctx.status });
+  const access = await requireOperatingBrainApiAccess();
+  if (!access.ok) return access.response;
+  const ctx = access.ctx;
   const form = await request.formData().catch(() => null);
   const providerKey = String(form?.get("provider") ?? "");
   const provider = getChatProvider(providerKey);

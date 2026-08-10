@@ -12,45 +12,53 @@ import type { NavGroupData } from "./nav-types";
  * a specific client's own workspace, that goes through an explicit "View
  * client workspace" action (docs/product-design/ROLE_AND_PERMISSION_EXPERIENCE.md §6),
  * not by adding client-facing routes into this list.
+ *
+ * V2 / experimental surfaces declare release: "v2" and are only revealed
+ * when an authorized owner-admin has Beta Mode ON (server cookie).
  */
 export const ADMIN_NAV_GROUPS_DATA: NavGroupData[] = [
   {
     label: "Overview",
     items: [
-      { key: "overview", label: "Agency Overview", href: "/admin" },
-      { key: "admin-copilot", label: "Admin Copilot", href: "/admin/copilot" },
-      { key: "operating-brain", label: "My Operating Brain", href: "/admin/operating-brain" },
+      { key: "overview", label: "Agency Overview", href: "/admin", release: "v1" },
+      { key: "admin-copilot", label: "Admin Copilot", href: "/admin/copilot", release: "v1" },
     ],
   },
   {
     label: "Clients",
     items: [
-      { key: "clients", label: "Clients", href: "/admin/clients" },
-      { key: "leads", label: "Leads / CRM", href: "/admin/leads" },
+      { key: "clients", label: "Clients", href: "/admin/clients", release: "v1" },
+      { key: "leads", label: "Leads / CRM", href: "/admin/leads", release: "v1" },
     ],
   },
   {
     label: "Operations",
     items: [
-      { key: "hermes", label: "Hermes Mission Control", href: "/admin/hermes" },
-      { key: "missions", label: "All Missions", href: "/admin/missions" },
-      { key: "approvals", label: "Approvals", href: "/admin/approvals" },
-      { key: "handoffs", label: "Human Handoffs", href: "/admin/handoffs" },
-      { key: "operations", label: "Operations Queue", href: "/admin/operations" },
+      { key: "missions", label: "All Missions", href: "/admin/missions", release: "v1" },
+      { key: "approvals", label: "Approvals", href: "/admin/approvals", release: "v1" },
+      { key: "handoffs", label: "Human Handoffs", href: "/admin/handoffs", release: "v1" },
+      { key: "operations", label: "Operations Queue", href: "/admin/operations", release: "v1" },
     ],
   },
   {
-    label: "Content",
-    items: [{ key: "social", label: "Social Autopilot", href: "/admin/social" }],
+    label: "Growth",
+    items: [{ key: "social", label: "Social Autopilot", href: "/admin/social", release: "v1" }],
   },
   {
     label: "Platform",
     items: [
-      { key: "finance", label: "Finance", href: "/admin/finance" },
-      { key: "team", label: "Team", href: "/admin/team" },
-      { key: "integrations", label: "Integrations", href: "/admin/integrations" },
-      { key: "system", label: "System Health", href: "/admin/system" },
-      { key: "audit", label: "Audit Log", href: "/admin/audit" },
+      { key: "finance", label: "Finance", href: "/admin/finance", release: "v1" },
+      { key: "team", label: "Team", href: "/admin/team", release: "v1" },
+      { key: "integrations", label: "Integrations", href: "/admin/integrations", release: "v1" },
+      { key: "system", label: "System Health", href: "/admin/system", release: "v1" },
+      { key: "audit", label: "Audit Log", href: "/admin/audit", release: "v1" },
+    ],
+  },
+  {
+    label: "Beta",
+    items: [
+      { key: "operating-brain", label: "My Operating Brain", href: "/admin/operating-brain", release: "v2" },
+      { key: "hermes", label: "Hermes Mission Control", href: "/admin/hermes", release: "v2" },
     ],
   },
 ];

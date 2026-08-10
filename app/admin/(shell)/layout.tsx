@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { requireOwnerContext } from "@/lib/social/db-context";
 import { resolveCurrentTenant } from "@/lib/tenants/current-tenant";
+import { isBetaModeEnabled } from "@/lib/release/release-mode";
 import AdminLogin from "@/app/admin/AdminLogin";
 import { CurrentTenantProvider } from "./CurrentTenantContext";
 import { AppShell } from "./AppShell";
@@ -41,11 +42,16 @@ export default async function ShellLayout({ children }: { children: ReactNode })
     );
   }
 
-  const { tenants, active } = await resolveCurrentTenant(ctx.supabase, ctx.ownerId);
+  const [{ tenants, active }, betaEnabled] = await Promise.all([
+    resolveCurrentTenant(ctx.supabase, ctx.ownerId),
+    isBetaModeEnabled(),
+  ]);
 
   return (
     <CurrentTenantProvider initialTenants={tenants} initialActive={active}>
-      <AppShell email={ctx.email ?? ""}>{children}</AppShell>
+      <AppShell email={ctx.email ?? ""} betaEnabled={betaEnabled}>
+        {children}
+      </AppShell>
     </CurrentTenantProvider>
   );
 }

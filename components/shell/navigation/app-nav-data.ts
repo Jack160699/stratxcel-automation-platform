@@ -10,49 +10,49 @@ import type { NavGroupData } from "./nav-types";
  * regression this file exists to undo. /app and /admin share the visual
  * shell (Sidebar, CoreAppShell, icons, spacing) — never the destination
  * list itself.
+ *
+ * Customer /app is V1 only — no Beta toggle, and no V2 release classification on items.
+ * Secondary surfaces (studio, calendar, pipeline, files, etc.) remain
+ * reachable contextually from hubs like Content & Media.
  */
 export const APP_NAV_GROUPS_DATA: NavGroupData[] = [
   {
     label: "Overview",
+    items: [{ key: "home", label: "Command Center", href: "/app", release: "v1" }],
+  },
+  {
+    label: "Get things done",
     items: [
-      { key: "home", label: "Command Center", href: "/app" },
-      { key: "copilot", label: "Copilot", href: "/app/copilot" },
+      { key: "copilot", label: "Copilot", href: "/app/copilot", release: "v1" },
+      { key: "missions", label: "Work", href: "/app/missions", release: "v1" },
+      { key: "approvals", label: "Approvals", href: "/app/approvals", release: "v1" },
     ],
   },
   {
-    label: "Work",
+    label: "Grow",
     items: [
-      { key: "missions", label: "Missions", href: "/app/missions" },
-      { key: "approvals", label: "Approvals", href: "/app/approvals" },
+      { key: "content", label: "Content & Media", href: "/app/content", release: "v1" },
+      { key: "website", label: "Website", href: "/app/website", release: "v1" },
+      { key: "search", label: "Search & SEO", href: "/app/search", release: "v1" },
+      { key: "crm", label: "Leads & CRM", href: "/app/crm", release: "v1" },
+      { key: "ads", label: "Ads", href: "/app/ads", release: "v1" },
     ],
   },
   {
-    label: "Content",
-    items: [
-      { key: "content", label: "Content", href: "/app/content" },
-      { key: "brand", label: "Brand Brain", href: "/app/brand" },
-    ],
+    label: "Results",
+    items: [{ key: "reports", label: "Reports", href: "/app/reports", release: "v1" }],
   },
   {
-    label: "Growth",
+    label: "Business",
     items: [
-      { key: "website", label: "Website", href: "/app/website" },
-      { key: "search", label: "Search & Discovery", href: "/app/search" },
-      { key: "ads", label: "Ads", href: "/app/ads" },
-      { key: "crm", label: "CRM", href: "/app/crm" },
-    ],
-  },
-  {
-    label: "Workspace",
-    items: [
-      { key: "files", label: "Files", href: "/app/files" },
-      { key: "reports", label: "Reports", href: "/app/reports" },
-      { key: "integrations", label: "Integrations", href: "/app/integrations" },
-      { key: "billing", label: "Billing", href: "/app/billing" },
-      { key: "team", label: "Team", href: "/app/team" },
-      { key: "settings", label: "Settings", href: "/app/settings" },
+      { key: "brand", label: "Brand Brain", href: "/app/brand", release: "v1" },
+      { key: "integrations", label: "Integrations", href: "/app/integrations", release: "v1" },
+      { key: "billing", label: "Billing", href: "/app/billing", release: "v1" },
+      { key: "team", label: "Team", href: "/app/team", release: "v1" },
+      { key: "settings", label: "Settings", href: "/app/settings", release: "v1" },
     ],
   },
 ];
 
+/** Mobile primary: Home, Copilot, Work, Approvals — remaining modules in More. */
 export const APP_MOBILE_NAV_KEYS = ["home", "copilot", "missions", "approvals"];

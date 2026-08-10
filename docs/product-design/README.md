@@ -22,7 +22,7 @@ The approved visual language comes from a single HTML document provided in-conve
 2. `SHARED_SHELL_SPECIFICATION.md` + `SIDEBAR_INTERACTION_SPECIFICATION.md` + `RESPONSIVE_AND_MOBILE_SPECIFICATION.md` — the one shell component both `/app` and `/admin` consume.
 3. `COMPONENT_INVENTORY.md` — every reusable primitive, cross-referenced to its design-system source section.
 4. `ROUTE_AND_REDIRECT_MAP.md` + `AUTH_AND_ONBOARDING_FLOW.md` — the identity/redirect layer that has to exist before any page is reachable correctly.
-5. `CLIENT_APP_INFORMATION_ARCHITECTURE.md` + `ADMIN_INFORMATION_ARCHITECTURE.md` + `PAGE_BY_PAGE_SPECIFICATIONS.md` — what to actually build, page by page.
+5. `CLIENT_APP_INFORMATION_ARCHITECTURE.md` + `ADMIN_INFORMATION_ARCHITECTURE.md` + `V1_STABLE_BETA_RELEASE_CONTRACT.md` + `PAGE_BY_PAGE_SPECIFICATIONS.md` — what to actually build, page by page, including Stable vs Beta release boundaries.
 6. `EMPTY_LOADING_ERROR_STATE_MATRIX.md` + `CONTENT_AND_UX_VOICE.md` — how every state and every sentence should read.
 7. `IMPLEMENTATION_PHASES.md` — the recommended build order.
 8. `ACCEPTANCE_TEST_PLAN.md` — how to know each phase is actually done.

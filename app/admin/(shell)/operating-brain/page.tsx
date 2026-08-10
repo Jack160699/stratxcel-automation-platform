@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { requireOwnerContext } from "@/lib/owner-brain/db-context";
+import { requireReleaseAccess } from "@/lib/release/require-release-access";
 import { listSources } from "@/lib/owner-brain/repositories/sources";
 import { listMemories } from "@/lib/owner-brain/repositories/memories";
 import { listOpenLoops } from "@/lib/owner-brain/repositories/open-loops";
@@ -49,15 +49,8 @@ const SOURCE_STATUS_CHIP: Record<string, ChipState> = {
 };
 
 export default async function OperatingBrainPage() {
-  const ctx = await requireOwnerContext();
-  if (!ctx.ok) {
-    return (
-      <main className="flex min-h-[40vh] items-center justify-center">
-        <p className="text-sm text-sx-text-muted">Not authorized.</p>
-      </main>
-    );
-  }
-
+  // V2 surface: owner-admin + Beta Mode required before any brain data loads.
+  const ctx = await requireReleaseAccess("v2");
   const today = currentIstDateString();
 
   const [sources, memories, openLoops, decisions, decisionAnalytics, commPatterns, workPatterns, reviews, todaysPlan, todaysReview, recommendations, voiceNotes, devices, chatConnections] =

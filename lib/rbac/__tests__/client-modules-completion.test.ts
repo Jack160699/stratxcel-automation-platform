@@ -11,6 +11,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { APP_NAV_GROUPS_DATA } from "../../../components/shell/navigation/app-nav-data.ts";
+import { flattenNavGroups } from "../../../components/shell/navigation/active-route.ts";
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const read = (...parts: string[]) => fs.readFileSync(path.join(root, ...parts), "utf8");
@@ -154,16 +156,17 @@ function run() {
   assert.equal(/\bappHref\s*:|\badminHref\s*:/.test(appNavData + adminNavData), false, "neither nav-data file may reuse the old appHref/adminHref shared-item field shape");
 
   for (const href of [
+    "/app",
     "/app/copilot",
     "/app/missions",
     "/app/approvals",
     "/app/content",
-    "/app/brand",
     "/app/website",
-    "/app/ads",
+    "/app/search",
     "/app/crm",
-    "/app/files",
+    "/app/ads",
     "/app/reports",
+    "/app/brand",
     "/app/integrations",
     "/app/billing",
     "/app/team",
@@ -171,9 +174,16 @@ function run() {
   ]) {
     assert.ok(appNavData.includes(`href: "${href}"`), `app-nav-data.ts must include ${href}`);
   }
+  // Files stays reachable contextually — not a top-level V1 sidebar item.
+  assert.equal(/href:\s*["']\/app\/files["']/.test(appNavData), false, "app-nav-data.ts must not list /app/files as a top-level destination");
   // Conversations is no longer a separate nav destination — merged into the
   // one CRM item (see app/app/conversations/page.tsx's redirect above).
   assert.equal(/href:\s*["']\/app\/conversations["']/.test(appNavData), false, "app-nav-data.ts must not list /app/conversations as its own destination");
+  assert.equal(
+    flattenNavGroups(APP_NAV_GROUPS_DATA).some((i) => i.release === "v2"),
+    false,
+    "customer /app nav must never declare release v2"
+  );
   // /app must never carry agency-only staff destinations.
   for (const forbidden of ["/admin/clients", "/admin/handoffs", "/admin/operations", "/admin/system", "/admin/audit"]) {
     assert.equal(appNavData.includes(`href: "${forbidden}"`), false, `app-nav-data.ts must never include the agency-only route ${forbidden}`);
@@ -182,6 +192,10 @@ function run() {
   for (const href of ["/admin", "/admin/clients", "/admin/leads", "/admin/missions", "/admin/approvals", "/admin/handoffs", "/admin/operations", "/admin/social", "/admin/finance", "/admin/team", "/admin/integrations", "/admin/system", "/admin/audit"]) {
     assert.ok(adminNavData.includes(`href: "${href}"`), `admin-nav-data.ts must include ${href}`);
   }
+  // V2 surfaces exist in admin-nav-data but are release:"v2" — Stable filter hides them.
+  assert.ok(adminNavData.includes('href: "/admin/operating-brain"'), "operating-brain must remain classified in admin nav data");
+  assert.ok(adminNavData.includes('href: "/admin/hermes"'), "hermes must remain classified in admin nav data");
+  assert.ok(/release:\s*["']v2["']/.test(adminNavData), "admin nav must declare V2 items with release v2");
   // /admin must never carry client-only modules merely because they exist in /app.
   for (const forbidden of ["/app/copilot", "/app/website", "/app/ads", "/app/brand", "/app/files", "/app/billing", "/app/settings"]) {
     assert.equal(adminNavData.includes(`href: "${forbidden}"`), false, `admin-nav-data.ts must never include the client-only route ${forbidden}`);
@@ -190,16 +204,18 @@ function run() {
   const shell = read("app", "app", "ClientAppShell.tsx");
   assert.ok(/APP_SIDEBAR_GROUPS/.test(shell), "ClientAppShell must build its sidebar from the app-specific nav model");
   assert.equal(/ADMIN_SIDEBAR_GROUPS|ADMIN_NAV_GROUPS/.test(shell), false, "ClientAppShell must never import the admin nav model");
+  assert.equal(/Beta|release-mode|AdminBetaModeToggle/.test(shell), false, "customer shell must never expose Beta mode");
   const adminShell = read("app", "admin", "(shell)", "AppShell.tsx");
-  assert.ok(/ADMIN_SIDEBAR_GROUPS/.test(adminShell), "AppShell (admin) must build its sidebar from the admin-specific nav model");
+  assert.ok(/getAdminSidebarGroups/.test(adminShell), "AppShell (admin) must build its sidebar from the admin-specific nav model");
+  assert.ok(/AdminBetaModeToggle/.test(adminShell), "admin shell must expose the Beta mode toggle");
   assert.equal(/APP_SIDEBAR_GROUPS|APP_NAV_GROUPS/.test(adminShell), false, "AppShell (admin) must never import the client nav model");
 
   const mobileNavMatch = appNavData.match(/APP_MOBILE_NAV_KEYS = \[([\s\S]*?)\]/);
   assert.ok(mobileNavMatch, "APP_MOBILE_NAV_KEYS must be defined in app-nav-data.ts");
   const mobileNavItemCount = (mobileNavMatch![1].match(/"/g) ?? []).length / 2;
-  assert.equal(mobileNavItemCount, 4, "Mobile bottom nav must stay at exactly 4 items (Home, Copilot, Missions, Approvals) — everything else lives in the More sheet");
+  assert.equal(mobileNavItemCount, 4, "Mobile bottom nav must stay at exactly 4 items (Home, Copilot, Work, Approvals) — everything else lives in the More sheet");
   assert.ok(/mobileMoreGroups=\{APP_SIDEBAR_GROUPS\.map/.test(shell), "The mobile More sheet must be derived from APP_SIDEBAR_GROUPS, not a separately hand-maintained list");
-  assert.ok(/mobileMoreGroups=\{ADMIN_SIDEBAR_GROUPS\.map/.test(adminShell), "Admin's mobile More sheet must be derived from ADMIN_SIDEBAR_GROUPS, not a separately hand-maintained list");
+  assert.ok(/mobileMoreGroups=\{sidebarGroups\.map/.test(adminShell), "Admin's mobile More sheet must be derived from the filtered admin sidebar groups");
 
   // --- 12. No service-role dependency in any new client-rendered module --
   for (const parts of [

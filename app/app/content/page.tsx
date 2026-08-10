@@ -26,8 +26,8 @@ export default async function ContentPage() {
   return (
     <div className="flex flex-col gap-6">
       <header>
-        <h1 className="font-sx-sans text-xl font-semibold text-sx-text">Content</h1>
-        <p className="mt-1 text-sm text-sx-text-muted">Missions, drafts, schedule and channels for this workspace.</p>
+        <h1 className="font-sx-sans text-xl font-semibold text-sx-text">Content & Media</h1>
+        <p className="mt-1 text-sm text-sx-text-muted">Studio, calendar, pipeline, and channels for this workspace.</p>
       </header>
 
       <StaffScopedNotice what="Content" />

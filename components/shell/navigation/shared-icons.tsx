@@ -32,6 +32,9 @@ export const NAV_ICONS: Record<string, ReactNode> = {
   system: <PulseIcon />,
   audit: <DocIcon />,
   social: <MegaphoneIcon />,
+  "admin-copilot": <CopilotIcon />,
+  "operating-brain": <SparkIcon />,
+  hermes: <PulseIcon />,
 };
 
 export function GridIcon() {
