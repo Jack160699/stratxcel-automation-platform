@@ -71,7 +71,7 @@ function run() {
   // Compact composer + focus mode + rail collapse
   assert.ok(fullPage.includes("focusMode") && fullPage.includes("Focus"));
   assert.ok(workspace.includes("focusMode"));
-  assert.ok(workspace.includes("52") || theme.includes("52px") || workspace.includes("saut-rail-collapsed"));
+  assert.ok(workspace.includes("COLLAPSED_STRIP") || workspace.includes("48") || theme.includes("48px"));
   assert.ok(theme.includes("saut-composer-textarea") || fullPage.includes("saut-composer-textarea"));
   assert.ok(execTrace.includes("View run details") || execTrace.includes("compactByDefault"));
 
@@ -143,6 +143,31 @@ function run() {
   // History cleanup — attachment cards look conversational
   assert.ok(attachmentMedia.includes("statusLabel") || attachmentMedia.includes("Ready"));
   assert.ok(agentMessage.includes("saut-agent-message") || fullPage.includes("saut-history-compact"));
+
+  // —— Focus / collapsed-rail layout contracts (critical desktop regression) ——
+  // Center track must be minmax(0, 1fr) so cards cannot collapse the artifact.
+  assert.ok(workspace.includes("minmax(0, 1fr)"), "center grid track must be minmax(0, 1fr)");
+  assert.ok(theme.includes(".saut-workspace-center") && theme.includes("min-width: 0"));
+
+  // Focus mode: rail tracks are 0 width (maximize center), not collapsed strips.
+  assert.ok(workspace.includes('focusMode ? "0px"') || /focusMode \? ["']0px["']/.test(workspace));
+  assert.ok(workspace.includes('data-focus-mode={focusMode ? "true" : "false"}') || workspace.includes('data-focus-mode'));
+  assert.ok(workspace.includes("saut-focus-edge-toggle") || theme.includes(".saut-focus-edge-toggle"));
+
+  // Normal collapsed rails stay in their own bounded track (~48px), not absolute overlays into center.
+  assert.ok(workspace.includes("COLLAPSED_STRIP = 48") || workspace.includes("const COLLAPSED_STRIP = 48"));
+  assert.ok(theme.includes("max-width: 48px") || theme.includes("max-width:48px"));
+  assert.ok(workspace.includes("gridColumn") || workspace.includes("gridColumn:"), "stable grid-column placement required");
+  assert.ok(theme.includes(".saut-pane-restore") && /saut-pane-restore\s*\{[^}]*display:\s*none/.test(theme.replace(/\n/g, " ")));
+  assert.ok(!theme.includes("writing-mode: vertical-rl") || theme.includes(".saut-workspace-rail-expand-label {\n  display: none"), "vertical rail labels must not force width");
+
+  // Composer stays inside center column full width
+  assert.ok(fullPage.includes("saut-composer-shell"));
+  assert.ok(theme.includes(".saut-composer-shell") && /saut-composer-shell\s*\{[^}]*width:\s*100%/.test(theme.replace(/\n/g, " ")));
+  assert.ok(theme.includes(".saut-workspace-center > .saut-agent-canvas") || theme.includes("saut-agent-canvas"));
+
+  // No absolute rail overlay into workspace for normal collapse (Focus edge toggles float only in Focus).
+  assert.ok(!workspace.includes("saut-pane-restore") || workspace.includes("saut-focus-edge-toggle"));
 
   console.log("copilot-premium-workspace.test.ts: ALL PASS");
 }

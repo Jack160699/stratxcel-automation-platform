@@ -7,7 +7,8 @@ const LEFT_MIN = 200;
 const LEFT_MAX = 280;
 const RIGHT_MIN = 280;
 const RIGHT_MAX = 340;
-const COLLAPSED_STRIP = 52;
+/** Normal collapsed rail strip — must stay in its own grid track (never overlay center). */
+const COLLAPSED_STRIP = 48;
 const KEYBOARD_STEP = 16;
 
 interface LayoutState {
@@ -95,6 +96,7 @@ function Splitter({
   );
 }
 
+/** Icon-only collapsed rail control — no vertical text that forces track width. */
 function CollapsedRailStrip({
   side,
   label,
@@ -104,8 +106,13 @@ function CollapsedRailStrip({
   label: string;
   onExpand: () => void;
 }) {
+  const icon = side === "left" ? "\u2630" : label === "Ready" ? "\u2713" : "\u2261";
   return (
-    <div className={`saut-workspace-rail-strip saut-workspace-rail-strip-${side}`} aria-label={`${label} collapsed`}>
+    <div
+      className={`saut-workspace-rail-strip saut-workspace-rail-strip-${side}`}
+      aria-label={`${label} collapsed`}
+      data-collapsed-rail={side}
+    >
       <button
         type="button"
         className="saut-workspace-rail-expand"
@@ -113,9 +120,25 @@ function CollapsedRailStrip({
         aria-label={`Expand ${label}`}
         title={`Expand ${label}`}
       >
-        <span aria-hidden>{side === "left" ? "\u2630" : label === "Ready" ? "\u2713" : "\u2261"}</span>
-        <span className="saut-workspace-rail-expand-label">{label}</span>
+        <span aria-hidden>{icon}</span>
       </button>
+    </div>
+  );
+}
+
+/** Always occupies a grid track so auto-placement never shifts siblings. */
+function GridSlot({
+  column,
+  children,
+  className,
+}: {
+  column: number;
+  children?: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={className ?? "saut-workspace-slot"} style={{ gridColumn: column, minWidth: 0, minHeight: 0 }}>
+      {children}
     </div>
   );
 }
@@ -127,6 +150,7 @@ export function ResizableWorkspace({
   context,
   focusMode = false,
   readyReview = false,
+  onExitFocus,
 }: {
   left: ReactNode;
   center: ReactNode;
@@ -135,6 +159,8 @@ export function ResizableWorkspace({
   focusMode?: boolean;
   /** READY_FOR_REVIEW: keep right rail collapsed to a compact Ready control. */
   readyReview?: boolean;
+  /** Called when owner expands a rail from Focus edge toggles. */
+  onExitFocus?: () => void;
 }) {
   const [layout, setLayout] = useState(DEFAULT_LAYOUT);
   const [layoutReady, setLayoutReady] = useState(false);
@@ -183,13 +209,11 @@ export function ResizableWorkspace({
       setLayout((current) => ({
         ...current,
         leftOpen: restored.leftOpen,
-        // In READY review, prefer keeping the tall progress rail collapsed.
         rightOpen: readyReview ? false : restored.rightOpen,
       }));
     }
   }, [focusMode, readyReview]);
 
-  // READY review starts with a compact right rail; owner can expand for details.
   useEffect(() => {
     if (!readyReview) return;
     const frame = window.requestAnimationFrame(() => setReadyRightExpanded(false));
@@ -199,16 +223,26 @@ export function ResizableWorkspace({
   const leftOpen = focusMode ? false : layout.leftOpen;
   const rightOpen = focusMode ? false : readyReview ? readyRightExpanded : layout.rightOpen;
 
-  const columns = [
-    leftOpen ? `${layout.leftWidth}px` : `${COLLAPSED_STRIP}px`,
-    leftOpen ? "8px" : "0px",
-    "minmax(360px, 1fr)",
-    rightOpen ? "8px" : "0px",
-    rightOpen ? `${layout.rightWidth}px` : `${COLLAPSED_STRIP}px`,
-  ].join(" ");
+  // Stable 5-track grid. Focus removes rails from the flow (0 width).
+  // Center is always minmax(0, 1fr) so cards/labels cannot collapse it.
+  const leftTrack = focusMode ? "0px" : leftOpen ? `${layout.leftWidth}px` : `${COLLAPSED_STRIP}px`;
+  const leftGutter = !focusMode && leftOpen ? "8px" : "0px";
+  const rightGutter = !focusMode && rightOpen ? "8px" : "0px";
+  const rightTrack = focusMode ? "0px" : rightOpen ? `${layout.rightWidth}px` : `${COLLAPSED_STRIP}px`;
+  const columns = `${leftTrack} ${leftGutter} minmax(0, 1fr) ${rightGutter} ${rightTrack}`;
+
+  const expandLeft = () => {
+    if (focusMode) onExitFocus?.();
+    setLayout((current) => ({ ...current, leftOpen: true }));
+  };
+  const expandRight = () => {
+    if (focusMode) onExitFocus?.();
+    if (readyReview) setReadyRightExpanded(true);
+    else setLayout((current) => ({ ...current, rightOpen: true }));
+  };
 
   return (
-    <div className="saut-agent-workspace">
+    <div className={`saut-agent-workspace${focusMode ? " is-focus" : ""}`} data-focus-mode={focusMode ? "true" : "false"}>
       <div className="saut-mobile-workspace-tabs" role="tablist" aria-label="Copilot workspace panels">
         {(["chat", "progress", "context"] as const).map((tab) => (
           <button key={tab} type="button" role="tab" aria-selected={mobileTab === tab} onClick={() => setMobileTab(tab)}>
@@ -217,63 +251,96 @@ export function ResizableWorkspace({
         ))}
       </div>
 
-      <div className="saut-desktop-workspace" data-mobile-tab={mobileTab} style={{ gridTemplateColumns: columns }}>
-        {leftOpen ? (
-          <div className="min-h-0 min-w-0 overflow-hidden">{left}</div>
-        ) : (
-          <CollapsedRailStrip side="left" label="Sessions" onExpand={() => setLayout((current) => ({ ...current, leftOpen: true }))} />
-        )}
-        {leftOpen ? (
-          <Splitter
-            side="left"
-            value={layout.leftWidth}
-            min={LEFT_MIN}
-            max={LEFT_MAX}
-            onChange={(leftWidth) => setLayout((current) => ({ ...current, leftWidth }))}
-            onCollapse={() => setLayout((current) => ({ ...current, leftOpen: false }))}
-          />
-        ) : null}
-        <div className="saut-workspace-center relative min-h-0 min-w-0">
-          {!leftOpen && (
-            <button type="button" className="saut-pane-restore left-2" onClick={() => setLayout((current) => ({ ...current, leftOpen: true }))} aria-label="Show session rail" title="Show session rail">
-              Sessions &gt;
-            </button>
+      <div
+        className="saut-desktop-workspace"
+        data-mobile-tab={mobileTab}
+        data-left-open={leftOpen ? "true" : "false"}
+        data-right-open={rightOpen ? "true" : "false"}
+        data-focus-mode={focusMode ? "true" : "false"}
+        style={{ gridTemplateColumns: columns }}
+      >
+        {/* Column 1 — left rail / collapsed strip / focus empty */}
+        <GridSlot column={1} className="saut-workspace-slot saut-workspace-slot-left min-h-0 min-w-0 overflow-hidden">
+          {focusMode ? null : leftOpen ? (
+            left
+          ) : (
+            <CollapsedRailStrip side="left" label="Sessions" onExpand={expandLeft} />
           )}
-          {!rightOpen && !readyReview && (
-            <button type="button" className="saut-pane-restore right-2" onClick={() => setLayout((current) => ({ ...current, rightOpen: true }))} aria-label="Show progress rail" title="Show progress rail">
-              &lt; Progress
-            </button>
-          )}
+        </GridSlot>
+
+        {/* Column 2 — splitter or empty track (always present for stable placement) */}
+        <GridSlot column={2} className="saut-workspace-slot saut-workspace-slot-gutter min-h-0 min-w-0">
+          {!focusMode && leftOpen ? (
+            <Splitter
+              side="left"
+              value={layout.leftWidth}
+              min={LEFT_MIN}
+              max={LEFT_MAX}
+              onChange={(leftWidth) => setLayout((current) => ({ ...current, leftWidth }))}
+              onCollapse={() => setLayout((current) => ({ ...current, leftOpen: false }))}
+            />
+          ) : null}
+        </GridSlot>
+
+        {/* Column 3 — center artifact (always minmax(0,1fr)) */}
+        <div className="saut-workspace-center relative min-h-0 min-w-0" style={{ gridColumn: 3 }}>
+          {focusMode ? (
+            <>
+              <button
+                type="button"
+                className="saut-focus-edge-toggle saut-focus-edge-toggle-left"
+                onClick={expandLeft}
+                aria-label="Show session rail"
+                title="Show sessions"
+              >
+                <span aria-hidden>{"\u2630"}</span>
+              </button>
+              <button
+                type="button"
+                className="saut-focus-edge-toggle saut-focus-edge-toggle-right"
+                onClick={expandRight}
+                aria-label={readyReview ? "Show progress details" : "Show progress rail"}
+                title={readyReview ? "Show Ready details" : "Show progress"}
+              >
+                <span aria-hidden>{readyReview ? "\u2713" : "\u2261"}</span>
+              </button>
+            </>
+          ) : null}
           {center}
         </div>
-        {rightOpen ? (
-          <Splitter
-            side="right"
-            value={layout.rightWidth}
-            min={RIGHT_MIN}
-            max={RIGHT_MAX}
-            onChange={(rightWidth) => setLayout((current) => ({ ...current, rightWidth }))}
-            onCollapse={() => {
-              if (readyReview) setReadyRightExpanded(false);
-              else setLayout((current) => ({ ...current, rightOpen: false }));
-            }}
-          />
-        ) : null}
-        {rightOpen ? (
-          <aside className="saut-agent-rail saut-agent-right flex min-h-0 min-w-0 flex-col overflow-hidden" aria-label="Progress and context">
-            <div className="saut-workspace-progress">{progress}</div>
-            <div className="saut-workspace-context">{context}</div>
-          </aside>
-        ) : (
-          <CollapsedRailStrip
-            side="right"
-            label={readyReview ? "Ready" : "Progress"}
-            onExpand={() => {
-              if (readyReview) setReadyRightExpanded(true);
-              else setLayout((current) => ({ ...current, rightOpen: true }));
-            }}
-          />
-        )}
+
+        {/* Column 4 — splitter or empty track */}
+        <GridSlot column={4} className="saut-workspace-slot saut-workspace-slot-gutter min-h-0 min-w-0">
+          {!focusMode && rightOpen ? (
+            <Splitter
+              side="right"
+              value={layout.rightWidth}
+              min={RIGHT_MIN}
+              max={RIGHT_MAX}
+              onChange={(rightWidth) => setLayout((current) => ({ ...current, rightWidth }))}
+              onCollapse={() => {
+                if (readyReview) setReadyRightExpanded(false);
+                else setLayout((current) => ({ ...current, rightOpen: false }));
+              }}
+            />
+          ) : null}
+        </GridSlot>
+
+        {/* Column 5 — right rail / collapsed strip / focus empty */}
+        <GridSlot column={5} className="saut-workspace-slot saut-workspace-slot-right min-h-0 min-w-0 overflow-hidden">
+          {focusMode ? null : rightOpen ? (
+            <aside className="saut-agent-rail saut-agent-right flex h-full min-h-0 min-w-0 flex-col overflow-hidden" aria-label="Progress and context">
+              <div className="saut-workspace-progress">{progress}</div>
+              <div className="saut-workspace-context">{context}</div>
+            </aside>
+          ) : (
+            <CollapsedRailStrip
+              side="right"
+              label={readyReview ? "Ready" : "Progress"}
+              onExpand={expandRight}
+            />
+          )}
+        </GridSlot>
       </div>
     </div>
   );
