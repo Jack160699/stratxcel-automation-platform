@@ -43,7 +43,9 @@ function run() {
 
   // --- Section 2: "post it" means publish now, never an invented future time. ---
   assert.ok(!tools.includes('required: ["accountId", "variantId", "scheduledAt"]'), "scheduledAt must no longer be a forced argument");
-  assert.ok(tools.includes('required: ["accountId", "variantId"]'), "schedule_post must allow omitting scheduledAt");
+  assert.ok(tools.includes('required: ["variantId"]'), "schedule_post must allow omitting scheduledAt and resolving the account locally");
+  assert.ok(tools.includes('str(args, "platform") || variant.platform'), "schedule_post must derive the destination platform locally");
+  assert.ok(tools.includes('.eq("status", "CONNECTED")'), "only connected accounts may be resolved for publishing");
   assert.ok(
     tools.includes('str(args, "scheduledAt") || new Date().toISOString()'),
     "an omitted scheduledAt must default to right now, not force the model to invent a time"

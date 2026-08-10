@@ -13,7 +13,7 @@ import {
 } from "../repositories/agent";
 import { startRun, completeRun, recordRunEvent, getLatestRun } from "../repositories/agent-runs";
 import { resolveConfiguredProvider } from "./provider";
-import { requiresLocalMetaHandling, selectGeminiBrandInstructions } from "./gemini-boundary";
+import { classifySocialPromptIntent, requiresLocalMetaHandling, selectGeminiBrandInstructions } from "./gemini-boundary";
 import { calculateLocalMetricsSummary } from "../local-meta-summary";
 import { listRecentMetrics } from "../repositories/analytics";
 import { listAccounts } from "../repositories/accounts";
@@ -70,6 +70,15 @@ all surface together as one approval rather than one at a time. Only ask a clari
 preparing content when information truly cannot be inferred safely: multiple connected accounts on the
 target platform with no reasonable default, no publishing-capable account for the requested platform, a
 genuinely unreadable attachment the content depends on, or a named campaign that cannot be identified.
+
+Natural language such as "connected accounts", platform names, or Hinglish phrases like "alag version
+bana do" is destination context, not automatically an analytics request. When the user asks where content
+would fit, inspect only the safe connected-platform projection, recommend sensible destinations, and make
+meaningfully different variants: Instagram gets a visual hook, concise engaging copy and appropriate
+hashtags; LinkedIn gets a professional founder/operator angle, business context and useful CTA; Facebook
+gets broad accessible language and a conversational CTA; Threads gets short, direct, natural copy. Use
+the same source media where appropriate. For schedule_post, pass the platform and let the server resolve
+the connected account locally; do not ask for or repeat account IDs, provider IDs, permissions, or metadata.
 
 State wording must be evidence-based, not aspirational. Before a publish action is approved, no publishing
 job exists yet — describe that state as "prepared and awaiting your approval", never "queued", "scheduled",
@@ -182,6 +191,7 @@ export async function acceptAgentMission(
 export async function runAgentTurn(ctx: OwnerContext, sessionId: string, runId: string) {
   const history = await loadHistory(ctx, sessionId);
   const latestUserPrompt = [...history].reverse().find((message) => message.role === "USER")?.content ?? "";
+  const promptIntent = classifySocialPromptIntent(latestUserPrompt);
   if (requiresLocalMetaHandling(latestUserPrompt)) {
     const [metrics, accounts] = await Promise.all([listRecentMetrics(ctx, 50), listAccounts(ctx)]);
     const summary = calculateLocalMetricsSummary(metrics);
@@ -217,6 +227,18 @@ export async function runAgentTurn(ctx: OwnerContext, sessionId: string, runId: 
       content: message.content + attachmentContextSuffix(message.parts),
     })),
   ];
+
+  if (promptIntent === "MIXED") {
+    const [metrics, accounts] = await Promise.all([listRecentMetrics(ctx, 50), listAccounts(ctx)]);
+    const summary = calculateLocalMetricsSummary(metrics);
+    const trend = summary.reachTrendPercent === null
+      ? "insufficient local history for a trend"
+      : summary.reachTrendPercent >= 0 ? "recent reach trend is improving" : "recent reach trend is declining";
+    const connectedPlatforms = [...new Set(accounts
+      .filter((account) => account.status === "CONNECTED")
+      .map((account) => account.platform.toLowerCase()))];
+    messages[0].content += `\n\nSafe locally-derived creative guidance: ${trend}. Publishing-capable destination candidates: ${connectedPlatforms.join(", ") || "none"}. Raw metrics, account records, identifiers, permissions, and provider metadata remain local. Continue the user's creative task; do not request raw Platform data.`;
+  }
 
   await setSessionStatus(ctx, sessionId, "GENERATING");
 
@@ -346,7 +368,7 @@ export async function runAgentTurn(ctx: OwnerContext, sessionId: string, runId: 
           if (PUBLISH_INTENT_TOOLS.has(tool.schema.name)) {
             lastPublishOutcome = describePublishAttempt(tool.schema.name, output);
           }
-          messages.push({ role: "tool", content: serializeToolOutput(output, tool.outputBudget), toolCallId: call.id, toolName: call.name });
+          messages.push({ role: "tool", content: serializeToolOutput(output, tool.outputBudget, tool.schema.name), toolCallId: call.id, toolName: call.name });
         } catch (err) {
           const errorMessage = err instanceof Error ? err.message : "tool execution failed";
           await recordExecutedAction(ctx, sessionId, tool.schema.name, call.arguments, null, "FAILED", errorMessage);

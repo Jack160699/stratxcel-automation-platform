@@ -214,18 +214,35 @@ const schedulePost: AgentTool = {
       "never invent one.",
     parameters: {
       type: "object",
-      properties: { accountId: { type: "string" }, variantId: { type: "string" }, scheduledAt: { type: "string" } },
-      required: ["accountId", "variantId"],
+      properties: {
+        accountId: { type: "string", description: "Optional trusted account ID from an internal workflow." },
+        platform: { type: "string", description: "Use this to let the server resolve the connected account locally." },
+        variantId: { type: "string" },
+        scheduledAt: { type: "string" },
+      },
+      required: ["variantId"],
     },
   },
   mutating: true,
   execute: async (ctx, args) => {
-    const accountId = requireUuid(args.accountId, "accountId");
     const variantId = requireUuid(args.variantId, "variantId");
-    const [{ data: account }, { data: variant }] = await Promise.all([
-      ctx.supabase.from("social_accounts").select("id, platform, username, display_name").eq("id", accountId).maybeSingle(),
-      ctx.supabase.from("content_variants").select("id, platform").eq("id", variantId).maybeSingle(),
-    ]);
+    const { data: variant } = await ctx.supabase.from("content_variants").select("id, platform").eq("id", variantId).maybeSingle();
+    if (!variant) throw new Error("Content variant is not available to this owner.");
+    const requestedAccountId = optionalUuid(args.accountId, "accountId");
+    const requestedPlatform = str(args, "platform") || variant.platform;
+    let accountQuery = ctx.supabase
+      .from("social_accounts")
+      .select("id, platform, username, display_name")
+      .eq("status", "CONNECTED");
+    accountQuery = requestedAccountId
+      ? accountQuery.eq("id", requestedAccountId)
+      : accountQuery.ilike("platform", requestedPlatform);
+    const { data: candidateAccounts } = await accountQuery.limit(2);
+    if (!requestedAccountId && (candidateAccounts?.length ?? 0) > 1) {
+      throw new Error(`Multiple connected ${requestedPlatform} accounts are available; choose one locally before publishing.`);
+    }
+    const account = candidateAccounts?.[0] ?? null;
+    const accountId = account?.id ?? "";
     if (!account || !variant) throw new Error("Account or content variant is not available to this owner.");
     // Canonical-to-canonical comparison — immune to "THREADS" vs "threads"
     // casing on either side, including legacy rows written before

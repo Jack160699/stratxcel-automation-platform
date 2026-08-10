@@ -18,17 +18,42 @@
 
 const DEFAULT_MAX_CHARS = 8000;
 
-export function serializeToolOutput(output: unknown, maxChars: number = DEFAULT_MAX_CHARS): string {
-  const full = JSON.stringify(output);
+export function projectToolOutputForModel(toolName: string | undefined, output: unknown): unknown {
+  if (toolName === "inspect_accounts") {
+    const accounts = Array.isArray(output) ? output : [];
+    return {
+      connected_platforms: [...new Set(accounts
+        .filter((account) => isRecord(account) && account.status === "CONNECTED")
+        .map((account) => String((account as Record<string, unknown>).platform ?? "").toLowerCase())
+        .filter(Boolean))],
+      note: "Account selection and trusted identifiers are resolved locally during publishing.",
+    };
+  }
+  if (toolName === "get_performance") {
+    return { local_only: true, note: "Raw performance data is not available to the external model." };
+  }
+  if (toolName === "inspect_health") {
+    return { local_only: true, note: "Account, provider, and worker health details remain local." };
+  }
+  return output;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+export function serializeToolOutput(output: unknown, maxChars: number = DEFAULT_MAX_CHARS, toolName?: string): string {
+  const modelSafeOutput = projectToolOutputForModel(toolName, output);
+  const full = JSON.stringify(modelSafeOutput);
   if (full === undefined) return "null";
   if (full.length <= maxChars) return full;
 
-  if (Array.isArray(output)) {
-    return JSON.stringify(truncateArrayOutput(output, maxChars));
+  if (Array.isArray(modelSafeOutput)) {
+    return JSON.stringify(truncateArrayOutput(modelSafeOutput, maxChars));
   }
 
-  if (output && typeof output === "object") {
-    return JSON.stringify(truncateObjectOutput(output as Record<string, unknown>, maxChars));
+  if (modelSafeOutput && typeof modelSafeOutput === "object") {
+    return JSON.stringify(truncateObjectOutput(modelSafeOutput as Record<string, unknown>, maxChars));
   }
 
   // A single oversized primitive/string (rare) — still never silently cut without saying so.
