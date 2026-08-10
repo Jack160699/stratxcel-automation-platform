@@ -221,7 +221,7 @@ const schedulePost: AgentTool = {
     const accountId = requireUuid(args.accountId, "accountId");
     const variantId = requireUuid(args.variantId, "variantId");
     const [{ data: account }, { data: variant }] = await Promise.all([
-      ctx.supabase.from("social_accounts").select("id, platform").eq("id", accountId).maybeSingle(),
+      ctx.supabase.from("social_accounts").select("id, platform, username, display_name").eq("id", accountId).maybeSingle(),
       ctx.supabase.from("content_variants").select("id, platform").eq("id", variantId).maybeSingle(),
     ]);
     if (!account || !variant) throw new Error("Account or content variant is not available to this owner.");
@@ -234,7 +234,10 @@ const schedulePost: AgentTool = {
     const service = createSupabaseServiceClient();
     const scheduledAt = str(args, "scheduledAt");
     const jobId = await scheduleJob(service, { accountId, variantId, scheduledAt });
-    return runPublishNow(service, jobId, scheduledAt, ctx.ownerId);
+    return runPublishNow(service, jobId, scheduledAt, ctx.ownerId, {
+      platform: account.platform,
+      accountLabel: account.display_name || account.username,
+    });
   },
 };
 

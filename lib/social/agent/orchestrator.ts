@@ -9,6 +9,7 @@ import {
   recordExecutedAction,
   getAction,
   updateActionStatus,
+  hasPendingActions,
 } from "../repositories/agent";
 import { startRun, completeRun, recordRunEvent, getLatestRun } from "../repositories/agent-runs";
 import { resolveConfiguredProvider } from "./provider";
@@ -30,7 +31,7 @@ import {
   stripInternalInput,
 } from "./dependencies";
 import { validateBrandEntities } from "./brand-validation";
-import { PUBLISH_INTENT_TOOLS, describePublishAttempt } from "./publish-outcome-classify";
+import { PUBLISH_INTENT_TOOLS, describePublishAttempt, type PublishReceipt } from "./publish-outcome-classify";
 import {
   attachmentPart,
   bindAttachmentsToMessage,
@@ -53,6 +54,22 @@ section, call inspect_brand again with that specific section to get the rest bef
 state that a section is empty or absent without having actually retrieved it. Don't force a full Brand
 Brain read for questions unrelated to brand content, e.g. "are connected accounts healthy?" only needs
 inspect_accounts or inspect_health.
+
+You are outcome-oriented, not tool-oriented. For a bounded publishing request like "post this on
+Threads", autonomously do ALL of the safe preparation yourself — inspecting the attachment, resolving
+media, reading Brand Brain, choosing the canonical content pillar, writing the caption, creating/reusing
+the content master, creating the platform variant, attaching the media, checking the connected account —
+without asking the user to approve or confirm any of those internal steps. Do not ask "should I create a
+content item?", "which content pillar?", "should I attach the media?", or "should I schedule it?" as chat
+questions — just do the preparation, then let the one real publish action (schedule_post /
+execute_*_youtube_verification) speak for itself; that is the single point where a human approves. Do not
+create a campaign unless the user explicitly asked for one or the content genuinely belongs to an existing
+campaign they named — pass campaignId as omitted/null for an ordinary one-off post. If the user asked to
+post on multiple platforms, prepare every platform's variant before proposing any publish action, so they
+all surface together as one approval rather than one at a time. Only ask a clarifying question before
+preparing content when information truly cannot be inferred safely: multiple connected accounts on the
+target platform with no reasonable default, no publishing-capable account for the requested platform, a
+genuinely unreadable attachment the content depends on, or a named campaign that cannot be identified.
 
 Ask a short clarifying question instead of guessing when the goal is ambiguous. Never claim an action
 succeeded unless a tool call actually returned success. Every internal database ID you use — attachmentId,
@@ -205,7 +222,7 @@ export async function runAgentTurn(ctx: OwnerContext, sessionId: string, runId: 
   // Tracks the most recent schedule_post / execute_*_youtube_verification
   // outcome this turn — the deterministic backstop against a false
   // "Done."/"Posted."/"Published." reply (see Section 10 of the integrity brief).
-  let lastPublishOutcome: { succeeded: boolean; note: string } | null = null;
+  let lastPublishOutcome: { succeeded: boolean; note: string; receipt: PublishReceipt } | null = null;
 
   try {
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
@@ -328,7 +345,7 @@ export async function runAgentTurn(ctx: OwnerContext, sessionId: string, runId: 
             meta: { durationMs: Date.now() - toolStarted, reason: errorMessage },
           });
           if (PUBLISH_INTENT_TOOLS.has(tool.schema.name)) {
-            lastPublishOutcome = { succeeded: false, note: `Publishing failed: ${errorMessage}. No post was created.` };
+            lastPublishOutcome = { succeeded: false, note: `Publishing failed: ${errorMessage}. No post was created.`, receipt: {} };
           }
           messages.push({ role: "tool", content: `Error: ${errorMessage}`, toolCallId: call.id, toolName: call.name });
         }
@@ -351,7 +368,11 @@ export async function runAgentTurn(ctx: OwnerContext, sessionId: string, runId: 
       responseText = "Done.";
     }
 
-    const parts = proposedActions.length ? [{ type: "proposed_actions", actions: proposedActions }] : [];
+    const parts: Array<Record<string, unknown>> = [];
+    if (proposedActions.length) parts.push({ type: "proposed_actions", actions: proposedActions });
+    if (lastPublishOutcome?.succeeded && lastPublishOutcome.receipt.permalink) {
+      parts.push({ type: "publish_receipt", ...lastPublishOutcome.receipt });
+    }
     await insertMessage(ctx, sessionId, "AGENT", responseText, parts);
     await setSessionStatus(ctx, sessionId, proposedActions.length ? "WAITING_FOR_CHOICE" : "READY");
     // A mission's terminal event reflects whether the user's requested
@@ -382,6 +403,16 @@ export async function runAgentTurn(ctx: OwnerContext, sessionId: string, runId: 
   }
 }
 
+/**
+ * Executes a human-approved action and — for a publish-intent tool — closes
+ * the loop the direct "post now" turn loop already closes: determine the
+ * REAL outcome (via the exact same publish-outcome-classify module, so the
+ * two paths can never diverge on wording), write it into the run's
+ * telemetry, and insert an honest Copilot chat message reporting it. Before
+ * this fix, approving a publish action executed it but the conversation
+ * never learned what actually happened — a known, explicitly flagged PR #15
+ * gap (Section 11 of the follow-up brief).
+ */
 export async function approveAgentAction(ctx: OwnerContext, actionId: string) {
   const action = await getAction(ctx, actionId);
   if (!action) throw new Error("action not found");
@@ -390,6 +421,7 @@ export async function approveAgentAction(ctx: OwnerContext, actionId: string) {
   if (!tool) throw new Error(`unknown tool: ${action.tool_name}`);
 
   const run = action.session_id ? await getLatestRun(ctx, action.session_id) : null;
+  const isPublishIntent = PUBLISH_INTENT_TOOLS.has(action.tool_name);
   await updateActionStatus(ctx, actionId, "EXECUTING");
   if (run) {
     await recordRunEvent(ctx, run.id, {
@@ -409,13 +441,20 @@ export async function approveAgentAction(ctx: OwnerContext, actionId: string) {
     const validInput = await validateBrandEntities(ctx, action.tool_name, publicInput);
     const output = await tool.execute(ctx, validInput);
     await updateActionStatus(ctx, actionId, "SUCCEEDED", { output });
+
+    // Same classifier, same wording rules as runAgentTurn's lastPublishOutcome.
+    const publishOutcome = isPublishIntent ? describePublishAttempt(action.tool_name, output) : null;
+
     if (run) {
       await recordRunEvent(ctx, run.id, {
         type: "TOOL_COMPLETED",
         label: labelForTool(action.tool_name),
         toolName: action.tool_name,
         status: "SUCCESS",
-        meta: summarizeForEvent(output),
+        meta: {
+          ...summarizeForEvent(output),
+          ...(publishOutcome ? { missionOutcome: publishOutcome.succeeded ? "COMPLETED" : "FAILED" } : {}),
+        },
       });
     }
     for (const deferred of readDeferredActions(action.input ?? {})) {
@@ -440,6 +479,21 @@ export async function approveAgentAction(ctx: OwnerContext, actionId: string) {
       summary: `Agent action "${action.tool_name}" approved and executed`,
       meta: { input: action.input },
     });
+
+    if (action.session_id) {
+      if (publishOutcome) {
+        const parts = publishOutcome.succeeded && publishOutcome.receipt.permalink
+          ? [{ type: "publish_receipt", ...publishOutcome.receipt }]
+          : [];
+        await insertMessage(ctx, action.session_id, "AGENT", publishOutcome.note, parts);
+      }
+      // Only return the session to READY once nothing else is still
+      // awaiting a decision (e.g. a dependent action this approval just
+      // created) — never leave it permanently stuck on "Waiting approval".
+      if (!(await hasPendingActions(ctx, action.session_id))) {
+        await setSessionStatus(ctx, action.session_id, "READY");
+      }
+    }
     return output;
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : "execution failed";
@@ -450,8 +504,17 @@ export async function approveAgentAction(ctx: OwnerContext, actionId: string) {
         label: labelForTool(action.tool_name),
         toolName: action.tool_name,
         status: "FAILED",
-        meta: { reason: errorMessage },
+        meta: { reason: errorMessage, ...(isPublishIntent ? { missionOutcome: "FAILED" } : {}) },
       });
+    }
+    if (action.session_id) {
+      const failureNote = isPublishIntent
+        ? `I couldn't publish this. ${errorMessage} The prepared draft is still available.`
+        : `I couldn't complete "${labelForTool(action.tool_name)}". ${errorMessage}`;
+      await insertMessage(ctx, action.session_id, "AGENT", failureNote);
+      if (!(await hasPendingActions(ctx, action.session_id))) {
+        await setSessionStatus(ctx, action.session_id, "READY");
+      }
     }
     throw err;
   }
@@ -459,8 +522,9 @@ export async function approveAgentAction(ctx: OwnerContext, actionId: string) {
 
 export async function rejectAgentAction(ctx: OwnerContext, actionId: string) {
   const action = await getAction(ctx, actionId);
+  if (!action) throw new Error("action not found");
   await updateActionStatus(ctx, actionId, "REJECTED");
-  if (action?.session_id) {
+  if (action.session_id) {
     const run = await getLatestRun(ctx, action.session_id);
     if (run) {
       await recordRunEvent(ctx, run.id, {
@@ -469,6 +533,16 @@ export async function rejectAgentAction(ctx: OwnerContext, actionId: string) {
         toolName: action.tool_name,
         status: "FAILED",
       });
+    }
+    // Cancelling never publishes anything and never discards the prepared
+    // work — the underlying content master/variant/media stay exactly as
+    // they were, just unscheduled (see Section 9 of the follow-up brief).
+    const cancelNote = PUBLISH_INTENT_TOOLS.has(action.tool_name)
+      ? "Publishing cancelled. Nothing was published. Your prepared draft is still available."
+      : `Cancelled — "${labelForTool(action.tool_name)}" was not performed.`;
+    await insertMessage(ctx, action.session_id, "AGENT", cancelNote);
+    if (!(await hasPendingActions(ctx, action.session_id))) {
+      await setSessionStatus(ctx, action.session_id, "READY");
     }
   }
 }

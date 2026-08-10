@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireOwnerContext } from "@/lib/social/db-context";
 import { acceptAgentMission, runAgentTurn, approveAgentAction, rejectAgentAction } from "@/lib/social/agent/orchestrator";
+import { getActionPreview, editProposedPublishAction } from "@/lib/social/agent/action-preview";
 import { getSessionDetail, getLatestSession, listSessions, getSession } from "@/lib/social/repositories/agent";
 import { getLatestRunWithEvents } from "@/lib/social/repositories/agent-runs";
 
@@ -41,6 +42,21 @@ export async function rejectAgentActionAction(actionId: string) {
   const ctx = await assertOwner();
   await rejectAgentAction(ctx, actionId);
   revalidatePath("/admin/social", "layout");
+}
+
+export async function getActionPreviewAction(actionId: string) {
+  const ctx = await assertOwner();
+  return getActionPreview(ctx, actionId);
+}
+
+export async function editProposedPublishActionAction(
+  actionId: string,
+  patch: { caption?: string; hashtags?: string[]; scheduledAt?: string }
+) {
+  const ctx = await assertOwner();
+  const preview = await editProposedPublishAction(ctx, actionId, patch);
+  revalidatePath("/admin/social", "layout");
+  return preview;
 }
 
 export async function getAgentSessionAction(sessionId: string) {

@@ -122,6 +122,8 @@ export async function executeYoutubeVerification(
   return {
     jobId,
     authorizationId: authorization.id,
+    platform: "youtube",
+    accountLabel: account.display_name || account.username,
     account: account.display_name || account.username,
     variantId: input.variantId,
     assetId: asset.id,
@@ -129,5 +131,6 @@ export async function executeYoutubeVerification(
     status: job.status,
     externalPostId: job.result?.external_post_id,
     permalink: job.result?.permalink,
+    publishedAt: job.completed_at,
   };
 }
