@@ -133,14 +133,25 @@ export async function decideWhatsAppSocialMission(input: { supabase: ServiceClie
   const claims = verifyWhatsAppSocialHandoff(input.token, { sub: input.principal.authUserId, operation: input.operation });
   if (!claims || claims.tenant !== input.principal.tenantId) throw new Error("This action link is invalid or expired");
   const ctx = ownerContext(input.supabase, input.principal);
-  const mapping = await input.supabase.from("social_whatsapp_sessions").select("session_id").eq("session_id", claims.session).eq("auth_user_id", input.principal.authUserId).maybeSingle();
+  const mapping = await input.supabase.from("social_whatsapp_sessions").select("session_id,language").eq("session_id", claims.session).eq("auth_user_id", input.principal.authUserId).maybeSingle();
   if (!mapping.data) throw new Error("Mission not found for this WhatsApp identity");
+  const language = (mapping.data.language ?? "en") as UserLanguage;
   const detail = await getSessionDetail(ctx, claims.session);
   const pending = detail.actions.filter((action) => action.status === "PROPOSED");
-  if (!pending.length) return { sessionId: claims.session, alreadyResolved: true, text: "This mission was already resolved." };
+  if (!pending.length) return { sessionId: claims.session, alreadyResolved: true, text: language === "hi" ? "यह मिशन पहले ही पूरा हो चुका है।" : language === "hinglish" ? "Yeh mission pehle hi resolve ho chuka hai." : "This mission was already resolved." };
   for (const action of pending) {
     if (input.operation === "approve") await approveAgentAction(ctx, action.id);
     else await rejectAgentAction(ctx, action.id);
   }
-  return { sessionId: claims.session, alreadyResolved: false, text: input.operation === "cancel" ? "Cancelled. Nothing was published." : "Approved. Check the shared mission for the final publishing receipt." };
+  if (input.operation === "cancel") return { sessionId: claims.session, alreadyResolved: false, text: language === "hi" ? "रद्द किया गया। कुछ भी प्रकाशित नहीं हुआ।" : language === "hinglish" ? "Cancel ho gaya. Kuch bhi publish nahi hua." : "Cancelled. Nothing was published." };
+  const after = await getSessionDetail(ctx, claims.session);
+  const settings = await getAutomationSettings(ctx);
+  const settled = after.actions.filter((action) => pending.some((item) => item.id === action.id));
+  const lines = settled.map((action) => {
+    const platform = String(action.input.platform || "Post");
+    return `${platform[0].toUpperCase()}${platform.slice(1)} ${action.status === "FAILED" ? "failed" : "✓"}`;
+  });
+  if (settings.shadow_mode) return { sessionId: claims.session, alreadyResolved: false, text: `${language === "hi" ? "शैडो रन पूरा हुआ" : language === "hinglish" ? "Shadow run complete" : "Shadow run complete"}:\n${lines.join("\n")}\n${language === "hi" ? "बाहर कुछ भी प्रकाशित नहीं हुआ।" : language === "hinglish" ? "Externally kuch publish nahi hua." : "Nothing was published externally."}` };
+  const failed = settled.some((action) => action.status === "FAILED");
+  return { sessionId: claims.session, alreadyResolved: false, text: `${failed ? "Publishing result" : "Published"}:\n${lines.join("\n")}` };
 }
