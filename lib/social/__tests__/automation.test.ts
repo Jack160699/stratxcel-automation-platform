@@ -44,7 +44,21 @@ function run() {
   // regardless of confidence.
   assert.equal(requiresApproval("publish_post", BASE, 0.99), true);
 
-  console.log("automation.test.ts: ALL PASS (independent shadow gate, manual/supervised gate, auto-act, confidence floor, flagged tool)");
+  // The Automations UI's "Require approval before publishing" checkbox
+  // stores the human-facing action name "publish_post" — it must actually
+  // gate the real publish-capable tools, not silently no-op because no tool
+  // is literally named "publish_post". Without the alias this entire block
+  // would incorrectly be `false`.
+  for (const tool of ["schedule_post", "execute_youtube_verification", "execute_private_youtube_verification"]) {
+    assert.equal(requiresApproval(tool, BASE, 0.99), true, `"${tool}" must be gated by the publish_post approval toggle`);
+  }
+  // The toggle is off (not in require_approval_for) -> AUTOPILOT + high confidence auto-acts as normal.
+  const noApprovalRequired = { ...BASE, require_approval_for: [] };
+  assert.equal(requiresApproval("schedule_post", noApprovalRequired, 0.99), false);
+  // A tool unrelated to publishing is never swept in by the publish_post alias.
+  assert.equal(requiresApproval("create_content_item", BASE, 0.99), false);
+
+  console.log("automation.test.ts: ALL PASS (independent shadow gate, manual/supervised gate, auto-act, confidence floor, flagged tool, publish_post alias)");
 }
 
 run();

@@ -1,6 +1,8 @@
-// Tests for Copilot presentation-mode helpers: session-history day grouping,
-// per-page contextual quick actions, and a safety check that only
-// presentation state (never conversation content) is persisted to
+// Tests for Copilot presentation-mode helpers: session-history recency
+// grouping (Today/Yesterday/This week/Older — see session-groups.ts and
+// copilot-session-groups.test.ts for the dedicated grouping/default-open
+// coverage), per-page contextual quick actions, and a safety check that
+// only presentation state (never conversation content) is persisted to
 // localStorage.
 //
 // Run with: node --experimental-strip-types lib/social/__tests__/copilot-presentation.test.ts
@@ -9,7 +11,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { groupSessionsByDay } from "../../../app/admin/social/copilot/session-groups.ts";
+import { groupSessionsByRecency } from "../../../app/admin/social/copilot/session-groups.ts";
 import { quickActionsForPath, contextChipForPath } from "../../../app/admin/social/copilot/quick-actions.ts";
 import type { AgentSessionRow } from "../repositories/agent.ts";
 
@@ -21,24 +23,25 @@ function run() {
   const now = new Date();
   const todayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 12));
   const yesterdayStart = new Date(todayStart.getTime() - 86400000);
-  const olderStart = new Date(todayStart.getTime() - 5 * 86400000);
+  const olderStart = new Date(todayStart.getTime() - 30 * 86400000);
   const today = todayStart.toISOString();
   const yesterday = yesterdayStart.toISOString();
   const older = olderStart.toISOString();
 
-  // 1. Sessions group into real, honest day buckets — no fabricated history.
-  const groups = groupSessionsByDay([session("a", today), session("b", yesterday), session("c", older)]);
+  // 1. Sessions group into real, honest recency buckets — no fabricated history.
+  const groups = groupSessionsByRecency([session("a", today), session("b", yesterday), session("c", older)], now);
   assert.equal(groups[0].label, "Today");
   assert.equal(groups[0].sessions.length, 1);
   assert.equal(groups[1].label, "Yesterday");
+  assert.equal(groups[2].label, "Older");
   assert.equal(groups[2].sessions[0].id, "c");
 
-  // 2. Newest day group first (most recent activity surfaces first).
+  // 2. Most-recent buckets first (Today, then Yesterday, then Older).
   const days = groups.map((g) => g.label);
-  assert.deepEqual(days, ["Today", "Yesterday", older.slice(0, 10)]);
+  assert.deepEqual(days, ["Today", "Yesterday", "Older"]);
 
   // 3. Empty input never fabricates a group.
-  assert.deepEqual(groupSessionsByDay([]), []);
+  assert.deepEqual(groupSessionsByRecency([], now), []);
 
   // 4. Contextual quick actions match the mission's approved phrase list per page.
   assert.deepEqual(quickActionsForPath("/admin/social/brand"), ["Summarize Brand Brain", "Find missing context"]);
