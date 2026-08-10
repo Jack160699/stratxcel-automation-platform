@@ -11,7 +11,7 @@ import { upsertAutomationSettings } from "../repositories/automation";
 import { createSupabaseServiceClient } from "../../supabase/service";
 import type { OwnerContext } from "../db-context";
 import type { ToolSchema } from "./provider";
-import { CONTENT_OBJECTIVE_VALUES } from "../content-options";
+import { CONTENT_OBJECTIVE_VALUES, platformsMatch } from "../content-options";
 import {
   attachMediaToMaster,
   attachMediaToVariant,
@@ -20,6 +20,8 @@ import {
   updateContentVariant,
 } from "../repositories/media-assets";
 import { executePrivateYoutubeVerification, executeYoutubeVerification } from "../verification-publish";
+import { requireUuid, optionalUuid } from "./id-validation";
+import { runPublishNow } from "./publish-outcome";
 
 export interface AgentTool {
   schema: ToolSchema;
@@ -165,7 +167,8 @@ const createContentItem: AgentTool = {
       masterIdea: str(args, "masterIdea"),
       objective: str(args, "objective"),
       contentPillar: str(args, "contentPillar"),
-      campaignId: str(args, "campaignId") || null,
+      // Optional relationship: omit/null rather than a fabricated campaign name.
+      campaignId: optionalUuid(args.campaignId, "campaignId"),
     }),
 };
 
@@ -190,7 +193,7 @@ const createVariant: AgentTool = {
   mutating: true,
   execute: async (ctx, args) =>
     createContentVariant(ctx, {
-      masterId: str(args, "masterId"),
+      masterId: requireUuid(args.masterId, "masterId"),
       platform: str(args, "platform"),
       format: str(args, "format"),
       objective: str(args, "objective"),
@@ -203,7 +206,10 @@ const createVariant: AgentTool = {
 const schedulePost: AgentTool = {
   schema: {
     name: "schedule_post",
-    description: "Schedule an existing content variant to publish from a connected account at a specific time (ISO 8601).",
+    description:
+      "Schedule an existing content variant to publish from a connected account at a specific time (ISO 8601). " +
+      "Use an ISO timestamp at or near the current time for \"post it now\" — the tool will run publishing " +
+      "synchronously and return the real terminal status (published/failed/still queued); never assume success.",
     parameters: {
       type: "object",
       properties: { accountId: { type: "string" }, variantId: { type: "string" }, scheduledAt: { type: "string" } },
@@ -212,16 +218,23 @@ const schedulePost: AgentTool = {
   },
   mutating: true,
   execute: async (ctx, args) => {
-    const accountId = str(args, "accountId");
-    const variantId = str(args, "variantId");
+    const accountId = requireUuid(args.accountId, "accountId");
+    const variantId = requireUuid(args.variantId, "variantId");
     const [{ data: account }, { data: variant }] = await Promise.all([
       ctx.supabase.from("social_accounts").select("id, platform").eq("id", accountId).maybeSingle(),
       ctx.supabase.from("content_variants").select("id, platform").eq("id", variantId).maybeSingle(),
     ]);
     if (!account || !variant) throw new Error("Account or content variant is not available to this owner.");
-    if (account.platform !== variant.platform) throw new Error("The account platform must match the content variant platform.");
+    // Canonical-to-canonical comparison — immune to "THREADS" vs "threads"
+    // casing on either side, including legacy rows written before
+    // normalization existed. See lib/social/content-options.ts.
+    if (!platformsMatch(account.platform, variant.platform)) {
+      throw new Error("The account platform must match the content variant platform.");
+    }
     const service = createSupabaseServiceClient();
-    return scheduleJob(service, { accountId, variantId, scheduledAt: str(args, "scheduledAt") });
+    const scheduledAt = str(args, "scheduledAt");
+    const jobId = await scheduleJob(service, { accountId, variantId, scheduledAt });
+    return runPublishNow(service, jobId, scheduledAt, ctx.ownerId);
   },
 };
 
@@ -233,7 +246,7 @@ const cancelScheduledPost: AgentTool = {
   },
   mutating: true,
   execute: async (ctx, args) => {
-    const id = str(args, "id");
+    const id = requireUuid(args.id, "id");
     const { data: ownedJob } = await ctx.supabase.from("social_publishing_jobs").select("id").eq("id", id).maybeSingle();
     if (!ownedJob) throw new Error("Publishing job not found or owned by another account.");
     const service = createSupabaseServiceClient();
@@ -281,7 +294,7 @@ const ingestMedia: AgentTool = {
   // Finalization normally creates the asset before the Agent runs; this is an
   // idempotent identity/access operation, not an external or content mutation.
   mutating: false,
-  execute: async (ctx, args) => ingestAttachmentMedia(ctx, str(args, "attachmentId")),
+  execute: async (ctx, args) => ingestAttachmentMedia(ctx, requireUuid(args.attachmentId, "attachmentId")),
 };
 
 const inspectContentMediaTool: AgentTool = {
@@ -301,8 +314,8 @@ const inspectContentMediaTool: AgentTool = {
   },
   mutating: false,
   execute: async (ctx, args) => inspectContentMedia(ctx, {
-    masterId: str(args, "masterId") || undefined,
-    variantId: str(args, "variantId") || undefined,
+    masterId: optionalUuid(args.masterId, "masterId") ?? undefined,
+    variantId: optionalUuid(args.variantId, "variantId") ?? undefined,
     title: str(args, "title") || undefined,
   }),
 };
@@ -326,14 +339,14 @@ const attachMediaToContentTool: AgentTool = {
   },
   mutating: true,
   execute: async (ctx, args) => {
-    const masterId = str(args, "masterId");
-    const variantId = str(args, "variantId");
+    const masterId = optionalUuid(args.masterId, "masterId");
+    const variantId = optionalUuid(args.variantId, "variantId");
     if (Boolean(masterId) === Boolean(variantId)) throw new Error("Provide exactly one of masterId or variantId.");
-    const assetIds = arr(args, "assetIds");
+    const assetIds = arr(args, "assetIds").map((id) => requireUuid(id, "assetIds"));
     const replace = args.replace === true;
     return masterId
       ? attachMediaToMaster(ctx, masterId, assetIds, replace)
-      : attachMediaToVariant(ctx, variantId, assetIds, replace);
+      : attachMediaToVariant(ctx, variantId as string, assetIds, replace);
   },
 };
 
@@ -357,11 +370,11 @@ const updateContentVariantTool: AgentTool = {
   },
   mutating: true,
   execute: async (ctx, args) => updateContentVariant(ctx, {
-    variantId: str(args, "variantId"),
+    variantId: requireUuid(args.variantId, "variantId"),
     ...(typeof args.caption === "string" ? { caption: args.caption } : {}),
     ...(Array.isArray(args.hashtags) ? { hashtags: arr(args, "hashtags") } : {}),
     ...(typeof args.format === "string" ? { format: args.format } : {}),
-    ...(Array.isArray(args.mediaAssetIds) ? { mediaAssetIds: arr(args, "mediaAssetIds") } : {}),
+    ...(Array.isArray(args.mediaAssetIds) ? { mediaAssetIds: arr(args, "mediaAssetIds").map((id) => requireUuid(id, "mediaAssetIds")) } : {}),
     ...(args.youtubePrivacyStatus === "private" || args.youtubePrivacyStatus === "unlisted" || args.youtubePrivacyStatus === "public"
       ? { youtubePrivacyStatus: args.youtubePrivacyStatus }
       : {}),
@@ -388,9 +401,9 @@ const executeYoutubeVerificationTool: AgentTool = {
   },
   mutating: true,
   execute: async (ctx, args) => executeYoutubeVerification(ctx, {
-    accountId: str(args, "accountId"),
-    variantId: str(args, "variantId"),
-    assetId: str(args, "assetId"),
+    accountId: requireUuid(args.accountId, "accountId"),
+    variantId: requireUuid(args.variantId, "variantId"),
+    assetId: requireUuid(args.assetId, "assetId"),
     privacyStatus: str(args, "privacyStatus") as "private" | "unlisted",
   }),
 };
@@ -414,9 +427,9 @@ const executePrivateYoutubeVerificationTool: AgentTool = {
   },
   mutating: true,
   execute: async (ctx, args) => executePrivateYoutubeVerification(ctx, {
-    accountId: str(args, "accountId"),
-    variantId: str(args, "variantId"),
-    assetId: str(args, "assetId"),
+    accountId: requireUuid(args.accountId, "accountId"),
+    variantId: requireUuid(args.variantId, "variantId"),
+    assetId: requireUuid(args.assetId, "assetId"),
   }),
 };
 

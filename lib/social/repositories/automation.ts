@@ -64,6 +64,17 @@ export async function upsertAutomationSettings(ctx: OwnerContext, patch: Partial
 }
 
 /**
+ * The Automations settings UI's "Require approval before publishing"
+ * checkbox stores the human-facing action name "publish_post" (see
+ * app/admin/social/automations/page.tsx), not a literal Agent tool name.
+ * Every real tool that can cause an external publish maps to it here so the
+ * toggle actually gates them — without this alias, `require_approval_for`
+ * containing "publish_post" would silently never match any real tool name
+ * and the checkbox would be a no-op.
+ */
+const PUBLISH_ACTION_TOOLS = new Set(["schedule_post", "execute_youtube_verification", "execute_private_youtube_verification"]);
+
+/**
  * Whether a given tool/action may run automatically under the current
  * autonomy level + guardrails, or must be queued for human approval.
  * Autonomy and confidence govern approval. SHADOW is deliberately not part
@@ -72,6 +83,7 @@ export async function upsertAutomationSettings(ctx: OwnerContext, patch: Partial
  */
 export function requiresApproval(toolName: string, settings: AutomationSettingsRow, confidence: number): boolean {
   if (settings.require_approval_for.includes(toolName)) return true;
+  if (PUBLISH_ACTION_TOOLS.has(toolName) && settings.require_approval_for.includes("publish_post")) return true;
   if (settings.autonomy_level !== "AUTOPILOT") return true; // MANUAL/SUPERVISED always require approval
   if (confidence < settings.min_confidence_to_autoact) return true;
   return false;

@@ -30,6 +30,7 @@ import {
   stripInternalInput,
 } from "./dependencies";
 import { validateBrandEntities } from "./brand-validation";
+import { PUBLISH_INTENT_TOOLS, describePublishAttempt } from "./publish-outcome-classify";
 import {
   attachmentPart,
   bindAttachmentsToMessage,
@@ -54,16 +55,72 @@ Brain read for questions unrelated to brand content, e.g. "are connected account
 inspect_accounts or inspect_health.
 
 Ask a short clarifying question instead of guessing when the goal is ambiguous. Never claim an action
-succeeded unless a tool call actually returned success. Media attachments include both an attachment ID
-and a canonical media asset ID. Use those exact IDs with ingest_media / attach_media_to_content /
-update_content_variant; never invent a storage URL or media ID. For private YouTube verification while
-SHADOW is active, only use execute_private_youtube_verification when the user explicitly requested that
-exact private upload. Keep responses concise and operational, not hype-y.`;
+succeeded unless a tool call actually returned success. Every internal database ID you use — attachmentId,
+mediaAssetId, campaignId, masterId, variantId, accountId, assetId, publishingJobId — must come from a
+trusted source: a "Trusted attachment context" block, or the output of list_/inspect_/create_* tool calls.
+Never invent, guess, or reconstruct an ID; if you don't have one, call the tool that looks it up first, or
+for an optional field like campaignId, omit it. When a message includes a "Trusted attachment context"
+block, that is the exact real attachmentId for that upload — pass it verbatim to ingest_media, which
+returns the canonical mediaAssetId to use with attach_media_to_content / update_content_variant. Never
+reuse an attachmentId where a mediaAssetId is required.
+
+Publishing completion wording is safety-critical. Only say "Published" / "Posted" / "Done" for a publish
+request when a schedule_post or execute_*_youtube_verification tool result shows jobStatus/status
+"PUBLISHED" with a live (non-shadow) mode — quote the tool's outcomeNote/permalink rather than
+paraphrasing an assumption. If the tool result shows Shadow Mode, say plainly that a draft was prepared
+but nothing was published externally because Social Autopilot is in Shadow Mode. If it failed, say you
+couldn't publish it and give the real reason. If it's still queued for a future time, say it's queued and
+not live yet. If it requires human approval, say it's ready and waiting for approval. Never use "Done."
+as a substitute for reporting the real outcome of a publish request.
+
+For private YouTube verification while SHADOW is active, only use execute_private_youtube_verification
+when the user explicitly requested that exact private upload. Keep responses concise and operational, not
+hype-y.`;
 
 // Media publishing may require: attachment identity, content lookup, variant
 // inspection, account selection, policy validation, then the final proposal.
 // Keep the loop bounded, but leave enough room for those real prerequisites.
 const MAX_TOOL_ROUNDS = 8;
+
+interface AttachmentContextEntry {
+  id: string;
+  name: string;
+  mimeType: string;
+  processingStatus: string;
+}
+
+function isAttachmentsPart(part: unknown): part is { type: "attachments"; attachments: AttachmentContextEntry[] } {
+  return (
+    Boolean(part) &&
+    typeof part === "object" &&
+    (part as { type?: unknown }).type === "attachments" &&
+    Array.isArray((part as { attachments?: unknown }).attachments)
+  );
+}
+
+/**
+ * The model must never guess a database attachment ID — it can only use one
+ * actually present in its context, and previously none ever was (the
+ * conversation only carried `message.content`; the real attachment identity
+ * lived solely in the `parts` column, rendered for the UI but never sent to
+ * the provider). This deterministically appends the real, server-persisted
+ * attachmentId for a message — built from the DB-backed `parts` column,
+ * never from anything the model wrote — so the model has the exact ID to
+ * pass to ingest_media instead of inventing one. Only attachmentId is
+ * exposed here; the canonical mediaAssetId is deliberately NOT pre-supplied
+ * — the model must resolve it via ingest_media(attachmentId), the same
+ * trusted, ownership-checked round trip as before, keeping this addition
+ * narrowly scoped to the one identifier that was actually missing.
+ */
+function attachmentContextSuffix(parts: unknown[]): string {
+  const attachmentsPart = (parts ?? []).find(isAttachmentsPart);
+  if (!attachmentsPart || attachmentsPart.attachments.length === 0) return "";
+  const lines = attachmentsPart.attachments.map(
+    (attachment) =>
+      `- attachmentId=${attachment.id} name=${attachment.name} mimeType=${attachment.mimeType} processingStatus=${attachment.processingStatus}`
+  );
+  return `\n\n[Trusted attachment context — the real attachmentId(s) for this message, use verbatim with ingest_media, never invent your own]\n${lines.join("\n")}`;
+}
 
 export async function createAgentSession(ctx: OwnerContext, title: string | null) {
   return createSessionRepo(ctx, title);
@@ -130,7 +187,10 @@ export async function runAgentTurn(ctx: OwnerContext, sessionId: string, runId: 
   const roleMap: Record<string, AgentTurnMessage["role"]> = { USER: "user", AGENT: "assistant", SYSTEM: "system" };
   const messages: AgentTurnMessage[] = [
     { role: "system", content: SYSTEM_PROMPT },
-    ...history.map((message) => ({ role: roleMap[message.role] ?? "user", content: message.content })),
+    ...history.map((message) => ({
+      role: roleMap[message.role] ?? "user",
+      content: message.content + attachmentContextSuffix(message.parts),
+    })),
   ];
 
   await setSessionStatus(ctx, sessionId, "GENERATING");
@@ -142,6 +202,10 @@ export async function runAgentTurn(ctx: OwnerContext, sessionId: string, runId: 
 
   const proposedActions: Array<{ id: string; tool: string; input: Record<string, unknown> }> = [];
   let finalText = "";
+  // Tracks the most recent schedule_post / execute_*_youtube_verification
+  // outcome this turn — the deterministic backstop against a false
+  // "Done."/"Posted."/"Published." reply (see Section 10 of the integrity brief).
+  let lastPublishOutcome: { succeeded: boolean; note: string } | null = null;
 
   try {
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
@@ -188,7 +252,25 @@ export async function runAgentTurn(ctx: OwnerContext, sessionId: string, runId: 
 
         if (needsApproval) {
           const dependents = deferredByUpstream.get(call.id) ?? [];
-          const publicInput = await validateBrandEntities(ctx, tool.schema.name, stripInternalInput(call.arguments));
+          let publicInput: Record<string, unknown>;
+          try {
+            // Canonicalize/validate brand entities (pillar/audience/product)
+            // before queuing for approval. A mismatch (e.g. an invented
+            // pillar) must become a normal, retryable tool error — not an
+            // uncaught throw that crashes the whole run (see Section 7).
+            publicInput = await validateBrandEntities(ctx, tool.schema.name, stripInternalInput(call.arguments));
+          } catch (err) {
+            const errorMessage = err instanceof Error ? err.message : "invalid input";
+            await recordRunEvent(ctx, runId, {
+              type: "TOOL_FAILED",
+              label: labelForTool(tool.schema.name),
+              toolName: tool.schema.name,
+              status: "FAILED",
+              meta: { reason: errorMessage },
+            });
+            messages.push({ role: "tool", content: `Error: ${errorMessage}`, toolCallId: call.id, toolName: call.name });
+            continue;
+          }
           const storedInput = dependents.length
             ? { ...publicInput, [INTERNAL_DEPENDENTS_KEY]: dependents }
             : publicInput;
@@ -231,6 +313,9 @@ export async function runAgentTurn(ctx: OwnerContext, sessionId: string, runId: 
             status: "SUCCESS",
             meta: { durationMs: Date.now() - toolStarted, ...summarizeForEvent(output) },
           });
+          if (PUBLISH_INTENT_TOOLS.has(tool.schema.name)) {
+            lastPublishOutcome = describePublishAttempt(tool.schema.name, output);
+          }
           messages.push({ role: "tool", content: serializeToolOutput(output, tool.outputBudget), toolCallId: call.id, toolName: call.name });
         } catch (err) {
           const errorMessage = err instanceof Error ? err.message : "tool execution failed";
@@ -242,18 +327,51 @@ export async function runAgentTurn(ctx: OwnerContext, sessionId: string, runId: 
             status: "FAILED",
             meta: { durationMs: Date.now() - toolStarted, reason: errorMessage },
           });
+          if (PUBLISH_INTENT_TOOLS.has(tool.schema.name)) {
+            lastPublishOutcome = { succeeded: false, note: `Publishing failed: ${errorMessage}. No post was created.` };
+          }
           messages.push({ role: "tool", content: `Error: ${errorMessage}`, toolCallId: call.id, toolName: call.name });
         }
       }
     }
 
+    // Outcome-aware completion: a publish mission that did not prove a live
+    // publication this turn must never be reported as "Done."/"Posted."/
+    // "Published." — replace only an empty reply or a bare success template
+    // with the tool-derived truth, and never touch a longer, already-honest
+    // model reply (see Section 10/13 of the integrity brief).
+    const BARE_SUCCESS_CLAIM = /^(done|posted|published)\.?$/i;
+    let responseText = finalText;
+    if (lastPublishOutcome) {
+      const trimmed = responseText.trim();
+      if (!trimmed || (!lastPublishOutcome.succeeded && BARE_SUCCESS_CLAIM.test(trimmed))) {
+        responseText = lastPublishOutcome.note;
+      }
+    } else if (!responseText.trim()) {
+      responseText = "Done.";
+    }
+
     const parts = proposedActions.length ? [{ type: "proposed_actions", actions: proposedActions }] : [];
-    await insertMessage(ctx, sessionId, "AGENT", finalText || "Done.", parts);
+    await insertMessage(ctx, sessionId, "AGENT", responseText, parts);
     await setSessionStatus(ctx, sessionId, proposedActions.length ? "WAITING_FOR_CHOICE" : "READY");
-    await recordRunEvent(ctx, runId, { type: "RUN_COMPLETED", label: PHASE_LABELS.RUN_COMPLETED, status: "SUCCESS" });
+    // A mission's terminal event reflects whether the user's requested
+    // outcome was actually achieved, not just that the run executed without
+    // crashing — a failed publish attempt must never look like a clean
+    // success in the trace.
+    const missionOutcome = lastPublishOutcome
+      ? (lastPublishOutcome.succeeded ? "COMPLETED" : "FAILED")
+      : proposedActions.length
+        ? "WAITING_FOR_APPROVAL"
+        : "COMPLETED";
+    await recordRunEvent(ctx, runId, {
+      type: "RUN_COMPLETED",
+      label: PHASE_LABELS.RUN_COMPLETED,
+      status: missionOutcome === "FAILED" ? "FAILED" : "SUCCESS",
+      meta: { missionOutcome },
+    });
     await completeRun(ctx, runId, "COMPLETED");
 
-    return { blocked: false as const, failed: false as const, text: finalText, proposedActions, runId };
+    return { blocked: false as const, failed: false as const, text: responseText, proposedActions, runId };
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : "Agent run failed unexpectedly.";
     await recordRunEvent(ctx, runId, { type: "RUN_FAILED", label: PHASE_LABELS.RUN_FAILED, status: "FAILED", meta: { reason: errorMessage } });
