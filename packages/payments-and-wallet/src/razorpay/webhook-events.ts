@@ -1,4 +1,6 @@
 import type { ServiceClient } from "../db.ts";
+import { getIntegrationMode } from "../flags.ts";
+import { getTierForRazorpayPlanId } from "./recurring-plans.ts";
 import { SUPPORTED_PAYMENT_PURPOSES } from "./types.ts";
 
 export class DuplicateWebhookEventError extends Error {
@@ -212,7 +214,8 @@ export async function processRazorpayWebhookEvent(
     eventType === "subscription.paused" ||
     eventType === "subscription.resumed" ||
     eventType === "subscription.cancelled" ||
-    eventType === "subscription.completed"
+    eventType === "subscription.completed" ||
+    eventType === "subscription.updated"
   ) {
     return processSubscriptionLifecycleEvent(supabase, event);
   }
@@ -404,12 +407,19 @@ async function processSubscriptionChargedEvent(
   const payEntity = extractPaymentEntity(payload);
 
   const providerSubscriptionId =
-    (typeof subEntity?.id === "string" && subEntity.id.trim()) ||
-    (typeof payEntity?.notes === "object" &&
-      payEntity.notes &&
-      typeof (payEntity.notes as Record<string, unknown>).subscription_id === "string" &&
-      String((payEntity.notes as Record<string, unknown>).subscription_id)) ||
-    null;
+    typeof subEntity?.id === "string" && subEntity.id.trim() ? subEntity.id.trim() : null;
+  const providerPlanId =
+    typeof subEntity?.plan_id === "string" && subEntity.plan_id.trim() ? subEntity.plan_id.trim() : null;
+
+  const notes =
+    (typeof subEntity?.notes === "object" && subEntity.notes ? (subEntity.notes as Record<string, unknown>) : null) ??
+    (typeof payEntity?.notes === "object" && payEntity.notes ? (payEntity.notes as Record<string, unknown>) : null);
+  const notesTenantId =
+    notes && typeof notes.tenant_id === "string" && notes.tenant_id.trim() ? notes.tenant_id.trim() : null;
+  const notesSubscriptionId =
+    notes && typeof notes.subscription_id === "string" && notes.subscription_id.trim()
+      ? notes.subscription_id.trim()
+      : null;
 
   const providerPaymentId = typeof payEntity?.id === "string" && payEntity.id.trim() ? payEntity.id.trim() : null;
   const providerOrderId = typeof payEntity?.order_id === "string" ? payEntity.order_id : null;
@@ -423,7 +433,15 @@ async function processSubscriptionChargedEvent(
       ? event.providerEventId.trim()
       : null;
 
-  if (!providerSubscriptionId || !providerPaymentId || !amountCents || !currency || !status || !headerProviderEventId) {
+  if (
+    !providerSubscriptionId ||
+    !providerPlanId ||
+    !providerPaymentId ||
+    !amountCents ||
+    !currency ||
+    !status ||
+    !headerProviderEventId
+  ) {
     await writeReconciliationIssue(supabase, {
       providerEventId: headerProviderEventId,
       paymentId: providerPaymentId,
@@ -435,6 +453,95 @@ async function processSubscriptionChargedEvent(
     return { eventType, handled: false, actionTaken: "missing_subscription_charge_provider_fields" };
   }
 
+  if (!captured) {
+    await writeReconciliationIssue(supabase, {
+      providerEventId: headerProviderEventId,
+      paymentId: providerPaymentId,
+      failureReason: "subscription_charge_not_captured",
+      purpose: "subscription_payment",
+      receivedAmountCents: amountCents,
+      receivedCurrency: currency,
+    });
+    return { eventType, handled: false, actionTaken: "subscription_charge_not_captured" };
+  }
+
+  const { data: localSub, error: localSubErr } = await supabase
+    .from("subscriptions")
+    .select("id, tenant_id, plan_tier, provider_plan_id, provider_subscription_id, price_cents, pending_plan_tier")
+    .eq("billing_provider", "razorpay_subscription")
+    .eq("provider_subscription_id", providerSubscriptionId)
+    .maybeSingle();
+
+  if (localSubErr) throw new Error(`subscription lookup failed: ${localSubErr.message}`);
+  if (!localSub) {
+    await writeReconciliationIssue(supabase, {
+      providerEventId: headerProviderEventId,
+      paymentId: providerPaymentId,
+      failureReason: "subscription_not_found_for_provider_id",
+      purpose: "subscription_payment",
+      receivedAmountCents: amountCents,
+      receivedCurrency: currency,
+    });
+    return { eventType, handled: false, actionTaken: "subscription_charge_failed_subscription_not_found" };
+  }
+
+  if (notesTenantId && notesTenantId !== localSub.tenant_id) {
+    await writeReconciliationIssue(supabase, {
+      providerEventId: headerProviderEventId,
+      paymentId: providerPaymentId,
+      tenantId: localSub.tenant_id,
+      failureReason: "subscription_notes_tenant_mismatch",
+      purpose: "subscription_payment",
+      receivedAmountCents: amountCents,
+      receivedCurrency: currency,
+    });
+    return { eventType, handled: false, actionTaken: "subscription_charge_failed_notes_tenant_mismatch" };
+  }
+
+  if (notesSubscriptionId && notesSubscriptionId !== localSub.id) {
+    await writeReconciliationIssue(supabase, {
+      providerEventId: headerProviderEventId,
+      paymentId: providerPaymentId,
+      tenantId: localSub.tenant_id,
+      failureReason: "subscription_notes_id_mismatch",
+      purpose: "subscription_payment",
+      receivedAmountCents: amountCents,
+      receivedCurrency: currency,
+    });
+    return { eventType, handled: false, actionTaken: "subscription_charge_failed_notes_subscription_mismatch" };
+  }
+
+  const mappedTier = getTierForRazorpayPlanId(providerPlanId);
+  const expectedTier = localSub.pending_plan_tier || localSub.plan_tier;
+  if (localSub.provider_plan_id && localSub.provider_plan_id !== providerPlanId && mappedTier !== expectedTier) {
+    await writeReconciliationIssue(supabase, {
+      providerEventId: headerProviderEventId,
+      paymentId: providerPaymentId,
+      tenantId: localSub.tenant_id,
+      failureReason: "subscription_provider_plan_mismatch",
+      purpose: "subscription_payment",
+      receivedAmountCents: amountCents,
+      receivedCurrency: currency,
+    });
+    return { eventType, handled: false, actionTaken: "subscription_charge_failed_provider_plan_mismatch" };
+  }
+
+  if (mappedTier && mappedTier !== expectedTier && mappedTier !== localSub.plan_tier) {
+    await writeReconciliationIssue(supabase, {
+      providerEventId: headerProviderEventId,
+      paymentId: providerPaymentId,
+      tenantId: localSub.tenant_id,
+      failureReason: "subscription_plan_tier_mapping_mismatch",
+      purpose: "subscription_payment",
+      receivedAmountCents: amountCents,
+      receivedCurrency: currency,
+    });
+    return { eventType, handled: false, actionTaken: "subscription_charge_failed_plan_tier_mapping_mismatch" };
+  }
+
+  const integrationMode = getIntegrationMode("RAZORPAY_INTEGRATION_MODE");
+  const paymentMode = integrationMode === "live" ? "live" : "test";
+
   const { data: rpcData, error: rpcErr } = await supabase.rpc("reconcile_and_fulfill_razorpay_subscription_charge", {
     p_provider_event_id: headerProviderEventId,
     p_provider_payment_id: providerPaymentId,
@@ -445,6 +552,10 @@ async function processSubscriptionChargedEvent(
     p_provider_status: typeof subEntity?.status === "string" ? subEntity.status : status,
     p_captured: captured,
     p_event_type: eventType,
+    p_mode: paymentMode,
+    p_provider_plan_id: providerPlanId,
+    p_notes_tenant_id: notesTenantId,
+    p_notes_subscription_id: notesSubscriptionId,
   });
 
   if (rpcErr) {
@@ -489,6 +600,26 @@ async function processSubscriptionLifecycleEvent(
     nextChargeAt = new Date(chargeAt * 1000).toISOString();
   }
 
+  let currentPeriodStart: string | null = null;
+  let currentPeriodEnd: string | null = null;
+  if (typeof subEntity?.current_start === "number" && Number.isFinite(subEntity.current_start)) {
+    currentPeriodStart = new Date(subEntity.current_start * 1000).toISOString();
+  }
+  if (typeof subEntity?.current_end === "number" && Number.isFinite(subEntity.current_end)) {
+    currentPeriodEnd = new Date(subEntity.current_end * 1000).toISOString();
+  }
+
+  const providerPlanId =
+    typeof subEntity?.plan_id === "string" && subEntity.plan_id.trim() ? subEntity.plan_id.trim() : null;
+
+  let pendingPlanTier: string | null = null;
+  const notes = typeof subEntity?.notes === "object" && subEntity.notes ? (subEntity.notes as Record<string, unknown>) : null;
+  if (notes && typeof notes.pending_plan_tier === "string") {
+    pendingPlanTier = notes.pending_plan_tier;
+  } else if (providerPlanId) {
+    pendingPlanTier = getTierForRazorpayPlanId(providerPlanId);
+  }
+
   const shortUrl = typeof subEntity?.short_url === "string" ? subEntity.short_url : null;
   const headerProviderEventId =
     typeof event.providerEventId === "string" && event.providerEventId.trim() !== ""
@@ -501,6 +632,11 @@ async function processSubscriptionLifecycleEvent(
     p_provider_event_id: headerProviderEventId,
     p_next_charge_at: nextChargeAt,
     p_short_url: shortUrl,
+    p_provider_plan_id: providerPlanId,
+    p_current_period_start: currentPeriodStart,
+    p_current_period_end: currentPeriodEnd,
+    p_pending_plan_tier: eventType === "subscription.updated" ? pendingPlanTier : null,
+    p_event_type: eventType,
   });
 
   if (rpcErr) {
@@ -509,13 +645,13 @@ async function processSubscriptionLifecycleEvent(
 
   if (!rpcData || (rpcData as { success?: boolean }).success !== true) {
     const reason = (rpcData as { reason?: string })?.reason ?? "lifecycle_rejected";
-    // Unknown subscription is not retryable forever for lifecycle-only events — mark handled=false so claim can retry briefly.
     return { eventType, handled: false, actionTaken: `subscription_lifecycle_failed_${reason}` };
   }
 
   return {
     eventType,
     handled: true,
-    actionTaken: `subscription_lifecycle_${providerStatus}`,
+    actionTaken:
+      eventType === "subscription.updated" ? "subscription_updated_synced" : `subscription_lifecycle_${providerStatus}`,
   };
 }

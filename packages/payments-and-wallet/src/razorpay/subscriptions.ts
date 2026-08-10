@@ -13,6 +13,10 @@ export interface CreateRazorpaySubscriptionInput {
   customerEmail?: string | null;
   customerName?: string | null;
   totalCount?: number;
+  /** Optional Razorpay offer_id for first-charge Audit credit discount */
+  offerId?: string | null;
+  /** Expected first charge in paise (after offer). Stored in notes for reconciliation. */
+  expectedFirstChargeCents?: number | null;
 }
 
 export interface CreateRazorpaySubscriptionResult {
@@ -21,6 +25,7 @@ export interface CreateRazorpaySubscriptionResult {
   shortUrl: string | null;
   providerStatus: string;
   mode: "shadow" | "test" | "live";
+  offerId: string | null;
 }
 
 function authHeader(keyId: string, keySecret: string) {
@@ -29,7 +34,7 @@ function authHeader(keyId: string, keySecret: string) {
 
 /**
  * Creates a Razorpay Subscription for AutoPay. Plan ID and amount are always
- * resolved server-side from the canonical catalog — never from client input.
+ * resolved server-side from env/catalog — never from client input.
  * Gated by PAYMENTS_RECURRING_SUBSCRIPTIONS_ENABLED (fail-closed) and
  * RAZORPAY_INTEGRATION_MODE.
  */
@@ -46,13 +51,11 @@ export async function createRazorpaySubscription(
     throw new Error(`Plan ${input.planTier} is not available for recurring self-checkout`);
   }
 
-  const providerPlanId = getRazorpayRecurringPlanId(input.planTier);
-  if (!providerPlanId) {
-    throw new Error(`No Razorpay recurring plan mapped for tier ${input.planTier}`);
-  }
-
   const mode = getIntegrationMode("RAZORPAY_INTEGRATION_MODE");
   if (mode === "disabled") throw new IntegrationDisabledError("Razorpay");
+
+  const providerPlanId = getRazorpayRecurringPlanId(input.planTier, mode);
+  const offerId = input.offerId?.trim() ? input.offerId.trim() : null;
 
   if (mode === "shadow") {
     const shadowId = `sub_shadow_${input.subscriptionId.replace(/-/g, "").slice(0, 20)}`;
@@ -62,6 +65,7 @@ export async function createRazorpaySubscription(
       shortUrl: `https://shadow.razorpay.local/v1/subscriptions/${shadowId}/auth`,
       providerStatus: "created",
       mode: "shadow",
+      offerId,
     };
   }
 
@@ -77,8 +81,14 @@ export async function createRazorpaySubscription(
       subscription_id: input.subscriptionId,
       plan_tier: input.planTier,
       payment_purpose: "subscription_payment",
+      expected_first_charge_cents:
+        typeof input.expectedFirstChargeCents === "number" ? String(input.expectedFirstChargeCents) : String(plan.priceCents),
     },
   };
+
+  if (offerId) {
+    body.offer_id = offerId;
+  }
 
   if (input.customerContact || input.customerEmail || input.customerName) {
     body.customer = {
@@ -117,6 +127,7 @@ export async function createRazorpaySubscription(
     shortUrl: result.short_url ?? null,
     providerStatus: result.status ?? "created",
     mode,
+    offerId,
   };
 }
 
@@ -166,11 +177,10 @@ export async function updateRazorpaySubscriptionPlan(
     throw new Error("Recurring subscriptions are disabled");
   }
 
-  const providerPlanId = getRazorpayRecurringPlanId(planTier);
-  if (!providerPlanId) throw new Error(`No Razorpay recurring plan mapped for tier ${planTier}`);
-
   const mode = getIntegrationMode("RAZORPAY_INTEGRATION_MODE");
   if (mode === "disabled") throw new IntegrationDisabledError("Razorpay");
+
+  const providerPlanId = getRazorpayRecurringPlanId(planTier, mode);
   if (mode === "shadow") return { providerPlanId, providerStatus: "active" };
 
   const { keyId, keySecret } = getRazorpayCredentials(mode)!;

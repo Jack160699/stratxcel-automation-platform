@@ -39,6 +39,7 @@ function run() {
   // --- 3b. Recurring gate is fail-closed and separate from payment-link path ---
   assert.ok(/PAYMENTS_RECURRING_SUBSCRIPTIONS_ENABLED/.test(checkoutSource), "recurring AutoPay must have its own feature gate");
   assert.ok(/createRazorpaySubscription/.test(checkoutSource), "when recurring is enabled, checkout must create a Razorpay subscription");
+  assert.ok(/resolveRecurringAuditCreditHandling/.test(checkoutSource), "recurring audit credit must be handled without assuming plan discount");
 
   // --- 4. Tenant ownership is always re-derived server-side -------------------
   assert.ok(/requireTenantContext\(tenantId\)/.test(checkoutSource), "every handler must re-derive tenant membership from the session, not trust the body alone");
@@ -47,11 +48,15 @@ function run() {
   const cancelSource = readCode("app", "api", "platform", "subscriptions", "[id]", "cancel", "route.ts");
   assert.ok(/set_subscription_cancellation/.test(cancelSource), "cancellation must go through the dedicated RPC, not a raw update");
   assert.ok(/p_tenant_id:\s*tenantId/.test(cancelSource), "cancellation RPC call must pass tenantId for server-side re-validation");
+  assert.ok(/provider_cancel_failed/.test(cancelSource), "provider-managed cancel must fail closed on provider error");
+  assert.equal(/providerSyncWarning/.test(cancelSource), false, "must not return success+warning on provider cancel failure");
 
   const changePlanSource = readCode("app", "api", "platform", "subscriptions", "[id]", "change-plan", "route.ts");
   assert.ok(/schedule_subscription_plan_change/.test(changePlanSource), "plan changes must go through the dedicated RPC, not a raw update");
   assert.ok(/isPlanTier\(targetPlanTier\)/.test(changePlanSource), "target plan tier must be validated against the canonical plan set before it ever reaches the RPC");
   assert.ok(/getSelfServicePlan\(targetPlanTier\)/.test(changePlanSource), "target plan must be self-service only");
+  assert.ok(/provider_plan_update_failed/.test(changePlanSource), "provider-managed plan change must fail closed on provider error");
+  assert.equal(/providerSyncWarning/.test(changePlanSource), false, "must not return success+warning on provider plan-change failure");
 
   // --- 6. The recurring migration's plan-change RPC refuses non-self-service targets
   const migrationSource = read("supabase", "migrations", "20260811120000_razorpay_recurring_subscriptions.sql");
@@ -69,6 +74,11 @@ function run() {
   assert.equal(/drop\s+table/i.test(migrationSource), false, "migration must not drop any table");
   assert.equal(/drop\s+column/i.test(migrationSource), false, "migration must not drop any column");
   assert.equal(/create\s+table\s+.*\bsubscriptions\b/i.test(migrationSource), false, "must not create a duplicate subscriptions table");
+
+  const pr24 = read("supabase", "migrations", "20260811133000_razorpay_recurring_pr24_fixes.sql");
+  assert.equal(/create (or replace )?function public\.reconcile_and_fulfill_razorpay_payment_v4/.test(pr24), false);
+  assert.ok(/p_mode/.test(pr24));
+  assert.ok(/audit_credit_deferred_cents/.test(pr24));
 
   // --- 8. Renew cron skips provider-managed AutoPay subscriptions ------------
   const renewSource = readCode("app", "api", "internal", "subscriptions", "renew", "route.ts");

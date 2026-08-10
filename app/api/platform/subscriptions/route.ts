@@ -11,6 +11,7 @@ import {
   listInvoicesForTenant,
   createRazorpaySubscription,
   isProviderManagedSubscription,
+  resolveRecurringAuditCreditHandling,
 } from "@stratxcel/payments-and-wallet";
 import { splitGstInclusive } from "@/lib/payments/gst";
 import { requirePermission, PermissionDeniedError } from "@/lib/rbac/policy";
@@ -85,8 +86,26 @@ export async function POST(request: Request) {
     // Check provisional 7-day audit credit eligibility (DO NOT consume credit before payment)
     const creditCheck = await checkAuditCreditEligibility(serviceDb, tenantId);
     const basePriceCents = plan.priceCents!;
-    const discountCents = creditCheck.eligible ? creditCheck.creditAmountCents : 0;
-    const finalPriceCents = Math.max(0, basePriceCents - discountCents);
+
+    // Recurring AutoPay cannot silently discount a fixed Razorpay Plan amount.
+    // Offer path: provider-verifiable first-charge discount. Else: defer ₹999 as wallet credit after activation.
+    const recurringCredit = useRecurring
+      ? resolveRecurringAuditCreditHandling({
+          eligible: creditCheck.eligible,
+          creditAmountCents: creditCheck.creditAmountCents,
+          catalogPriceCents: basePriceCents,
+        })
+      : null;
+
+    const discountCents = useRecurring
+      ? recurringCredit!.auditCreditAppliedCents
+      : creditCheck.eligible
+        ? creditCheck.creditAmountCents
+        : 0;
+    const deferredCreditCents = useRecurring ? recurringCredit!.auditCreditDeferredCents : 0;
+    const finalPriceCents = useRecurring
+      ? recurringCredit!.chargePriceCents
+      : Math.max(0, basePriceCents - discountCents);
 
     // 1. Create subscription in pending_payment state with explicit NULL dates and 0 paid_months_count
     const { data: subscription, error: subErr } = await serviceDb
@@ -96,6 +115,7 @@ export async function POST(request: Request) {
         plan_tier: planTier,
         price_cents: finalPriceCents,
         audit_credit_applied_cents: discountCents,
+        audit_credit_deferred_cents: deferredCreditCents,
         audit_order_id: creditCheck.eligible ? creditCheck.auditOrderId : null,
         status: "pending_payment",
         current_period_start: null,
@@ -105,6 +125,7 @@ export async function POST(request: Request) {
         entitlements_granted_at: null,
         fulfilment_status: "awaiting_payment",
         billing_provider: useRecurring ? "razorpay_subscription" : "razorpay_payment_link",
+        provider_offer_id: recurringCredit?.offerId ?? null,
       })
       .select("*")
       .single();
@@ -120,6 +141,8 @@ export async function POST(request: Request) {
           tenantId,
           subscriptionId: subscription.id,
           planTier,
+          offerId: recurringCredit!.offerId,
+          expectedFirstChargeCents: finalPriceCents,
         });
       } catch (subCreateErr) {
         await serviceDb
@@ -141,6 +164,7 @@ export async function POST(request: Request) {
           provider_plan_id: providerSub.providerPlanId,
           provider_status: providerSub.providerStatus,
           provider_short_url: providerSub.shortUrl,
+          provider_offer_id: providerSub.offerId,
           updated_at: new Date().toISOString(),
         })
         .eq("id", subscription.id);
@@ -165,8 +189,11 @@ export async function POST(request: Request) {
           provider_plan_id: providerSub.providerPlanId,
           provider_status: providerSub.providerStatus,
           provider_short_url: providerSub.shortUrl,
+          provider_offer_id: providerSub.offerId,
+          audit_credit_deferred_cents: deferredCreditCents,
         },
         auditCreditProvisional: creditCheck.eligible ? creditCheck.creditAmountCents / 100 : 0,
+        auditCreditMode: recurringCredit!.creditMode,
         priceBreakdown: splitGstInclusive(finalPriceCents),
         paymentUrl: providerSub.shortUrl,
         billingMode: "razorpay_subscription",

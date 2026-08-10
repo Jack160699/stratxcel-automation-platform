@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 
 /**
  * Schedules a Starter/Growth/Business plan change, effective at next renewal.
- * For provider-managed subscriptions, also schedules the Razorpay plan change at cycle end.
+ * Provider-managed: Razorpay plan update must succeed before local pending_plan_tier is set.
  */
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -40,6 +40,75 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
   const { supabase: serviceDb } = getTenantServiceContext();
 
+  const { data: sub, error: subErr } = await serviceDb
+    .from("subscriptions")
+    .select("*")
+    .eq("id", id)
+    .eq("tenant_id", tenantId)
+    .maybeSingle();
+
+  if (subErr) return Response.json({ error: `Failed to load subscription: ${subErr.message}` }, { status: 500 });
+  if (!sub) return Response.json({ error: "subscription_not_found" }, { status: 404 });
+
+  const providerManaged =
+    isProviderManagedSubscription(sub) && isPaymentFeatureEnabled("PAYMENTS_RECURRING_SUBSCRIPTIONS_ENABLED");
+
+  if (providerManaged) {
+    let providerPlanId: string;
+    let providerStatus: string;
+    try {
+      const provider = await updateRazorpaySubscriptionPlan(sub.provider_subscription_id, targetPlanTier);
+      providerPlanId = provider.providerPlanId;
+      providerStatus = provider.providerStatus;
+    } catch (providerErr) {
+      console.error("[Subscription Change Plan] Razorpay plan update failed", providerErr);
+      return Response.json(
+        {
+          success: false,
+          error: "provider_plan_update_failed",
+          reason: providerErr instanceof Error ? providerErr.message : "provider_plan_update_failed",
+        },
+        { status: 502, headers: { "Cache-Control": "no-store" } }
+      );
+    }
+
+    const { data, error } = await serviceDb.rpc("schedule_subscription_plan_change", {
+      p_subscription_id: id,
+      p_tenant_id: tenantId,
+      p_target_plan_tier: targetPlanTier,
+    });
+
+    if (error) {
+      return Response.json(
+        {
+          success: false,
+          error: `Provider plan change succeeded but local schedule failed: ${error.message}`,
+          providerPlanId,
+          providerStatus,
+        },
+        { status: 500, headers: { "Cache-Control": "no-store" } }
+      );
+    }
+
+    const result = data as { success: boolean; reason?: string };
+    if (!result.success) {
+      const status = result.reason === "subscription_not_found" ? 404 : result.reason === "tenant_mismatch" ? 403 : 400;
+      return Response.json({ error: result.reason, success: false }, { status });
+    }
+
+    await serviceDb
+      .from("subscriptions")
+      .update({
+        provider_plan_id: providerPlanId,
+        provider_status: providerStatus,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", id);
+
+    return Response.json({ ...result, providerPlanId, providerStatus }, { headers: { "Cache-Control": "no-store" } });
+  }
+
+  // Legacy Payment-Link path: local schedule only.
   const { data, error } = await serviceDb.rpc("schedule_subscription_plan_change", {
     p_subscription_id: id,
     p_tenant_id: tenantId,
@@ -52,31 +121,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   if (!result.success) {
     const status = result.reason === "subscription_not_found" ? 404 : result.reason === "tenant_mismatch" ? 403 : 400;
     return Response.json({ error: result.reason }, { status });
-  }
-
-  const { data: sub } = await serviceDb.from("subscriptions").select("*").eq("id", id).eq("tenant_id", tenantId).maybeSingle();
-
-  if (sub && isProviderManagedSubscription(sub) && isPaymentFeatureEnabled("PAYMENTS_RECURRING_SUBSCRIPTIONS_ENABLED")) {
-    try {
-      const provider = await updateRazorpaySubscriptionPlan(sub.provider_subscription_id, targetPlanTier);
-      await serviceDb
-        .from("subscriptions")
-        .update({
-          provider_plan_id: provider.providerPlanId,
-          provider_status: provider.providerStatus,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", id);
-    } catch (providerErr) {
-      console.error("[Subscription Change Plan] Razorpay plan update failed", providerErr);
-      return Response.json(
-        {
-          ...result,
-          providerSyncWarning: providerErr instanceof Error ? providerErr.message : "provider_plan_update_failed",
-        },
-        { headers: { "Cache-Control": "no-store" } }
-      );
-    }
   }
 
   return Response.json(result, { headers: { "Cache-Control": "no-store" } });
