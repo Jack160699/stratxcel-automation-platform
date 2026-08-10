@@ -1,5 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { runWorkerBatch } from "@/lib/social/worker";
+import { runPackageAutopilotBatch } from "@/lib/social/package-autopilot";
+import { createSupabaseServiceClient } from "@/lib/supabase/service";
 
 /**
  * GET/POST /api/social/worker
@@ -28,7 +30,17 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const result = await runWorkerBatch();
-  return NextResponse.json(result);
+  // Package Autopilot's execution tick shares this same cron slot (every 15
+  // minutes) rather than adding a new one — publishing due package items
+  // should stay close to their scheduled time, unlike planning/preparation
+  // which runs on its own, less time-sensitive cron
+  // (app/api/social/package-producer/route.ts). A failure here never blocks
+  // or is blocked by the regular job worker above.
+  const packageResult = await runPackageAutopilotBatch(createSupabaseServiceClient() as Parameters<typeof runPackageAutopilotBatch>[0]).catch((err) => ({
+    processed: 0,
+    error: err instanceof Error ? err.message : "package batch failed",
+  }));
+  return NextResponse.json({ ...result, packageAutopilot: packageResult });
 }
 
 export async function POST(req: NextRequest) {
