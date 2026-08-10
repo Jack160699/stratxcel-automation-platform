@@ -113,7 +113,7 @@ function CollapsedRailStrip({
         aria-label={`Expand ${label}`}
         title={`Expand ${label}`}
       >
-        <span aria-hidden>{side === "left" ? "\u2630" : "\u2261"}</span>
+        <span aria-hidden>{side === "left" ? "\u2630" : label === "Ready" ? "\u2713" : "\u2261"}</span>
         <span className="saut-workspace-rail-expand-label">{label}</span>
       </button>
     </div>
@@ -126,16 +126,20 @@ export function ResizableWorkspace({
   progress,
   context,
   focusMode = false,
+  readyReview = false,
 }: {
   left: ReactNode;
   center: ReactNode;
   progress: ReactNode;
   context: ReactNode;
   focusMode?: boolean;
+  /** READY_FOR_REVIEW: keep right rail collapsed to a compact Ready control. */
+  readyReview?: boolean;
 }) {
   const [layout, setLayout] = useState(DEFAULT_LAYOUT);
   const [layoutReady, setLayoutReady] = useState(false);
   const [mobileTab, setMobileTab] = useState<"chat" | "progress" | "context">("chat");
+  const [readyRightExpanded, setReadyRightExpanded] = useState(false);
   const preFocusOpenRef = useRef<{ leftOpen: boolean; rightOpen: boolean } | null>(null);
 
   useEffect(() => {
@@ -176,16 +180,31 @@ export function ResizableWorkspace({
     if (preFocusOpenRef.current) {
       const restored = preFocusOpenRef.current;
       preFocusOpenRef.current = null;
-      setLayout((current) => ({ ...current, leftOpen: restored.leftOpen, rightOpen: restored.rightOpen }));
+      setLayout((current) => ({
+        ...current,
+        leftOpen: restored.leftOpen,
+        // In READY review, prefer keeping the tall progress rail collapsed.
+        rightOpen: readyReview ? false : restored.rightOpen,
+      }));
     }
-  }, [focusMode]);
+  }, [focusMode, readyReview]);
+
+  // READY review starts with a compact right rail; owner can expand for details.
+  useEffect(() => {
+    if (!readyReview) return;
+    const frame = window.requestAnimationFrame(() => setReadyRightExpanded(false));
+    return () => window.cancelAnimationFrame(frame);
+  }, [readyReview]);
+
+  const leftOpen = focusMode ? false : layout.leftOpen;
+  const rightOpen = focusMode ? false : readyReview ? readyRightExpanded : layout.rightOpen;
 
   const columns = [
-    layout.leftOpen ? `${layout.leftWidth}px` : `${COLLAPSED_STRIP}px`,
-    layout.leftOpen ? "8px" : "0px",
+    leftOpen ? `${layout.leftWidth}px` : `${COLLAPSED_STRIP}px`,
+    leftOpen ? "8px" : "0px",
     "minmax(360px, 1fr)",
-    layout.rightOpen ? "8px" : "0px",
-    layout.rightOpen ? `${layout.rightWidth}px` : `${COLLAPSED_STRIP}px`,
+    rightOpen ? "8px" : "0px",
+    rightOpen ? `${layout.rightWidth}px` : `${COLLAPSED_STRIP}px`,
   ].join(" ");
 
   return (
@@ -199,12 +218,12 @@ export function ResizableWorkspace({
       </div>
 
       <div className="saut-desktop-workspace" data-mobile-tab={mobileTab} style={{ gridTemplateColumns: columns }}>
-        {layout.leftOpen ? (
+        {leftOpen ? (
           <div className="min-h-0 min-w-0 overflow-hidden">{left}</div>
         ) : (
           <CollapsedRailStrip side="left" label="Sessions" onExpand={() => setLayout((current) => ({ ...current, leftOpen: true }))} />
         )}
-        {layout.leftOpen ? (
+        {leftOpen ? (
           <Splitter
             side="left"
             value={layout.leftWidth}
@@ -215,42 +234,45 @@ export function ResizableWorkspace({
           />
         ) : null}
         <div className="saut-workspace-center relative min-h-0 min-w-0">
-          {!layout.leftOpen && (
+          {!leftOpen && (
             <button type="button" className="saut-pane-restore left-2" onClick={() => setLayout((current) => ({ ...current, leftOpen: true }))} aria-label="Show session rail" title="Show session rail">
               Sessions &gt;
             </button>
           )}
-          {!layout.rightOpen && (
+          {!rightOpen && !readyReview && (
             <button type="button" className="saut-pane-restore right-2" onClick={() => setLayout((current) => ({ ...current, rightOpen: true }))} aria-label="Show progress rail" title="Show progress rail">
               &lt; Progress
             </button>
           )}
           {center}
         </div>
-        {layout.rightOpen ? (
+        {rightOpen ? (
           <Splitter
             side="right"
             value={layout.rightWidth}
             min={RIGHT_MIN}
             max={RIGHT_MAX}
             onChange={(rightWidth) => setLayout((current) => ({ ...current, rightWidth }))}
-            onCollapse={() => setLayout((current) => ({ ...current, rightOpen: false }))}
+            onCollapse={() => {
+              if (readyReview) setReadyRightExpanded(false);
+              else setLayout((current) => ({ ...current, rightOpen: false }));
+            }}
           />
         ) : null}
-        {/*
-          Fixed live console, not a long document: the rail itself never
-          scrolls as one blob (no overflow-y here) — .saut-workspace-progress
-          is the one flexible region with its own internal scroller, and
-          .saut-workspace-context is pinned below it with a bounded height of
-          its own. See Section 5/6 of the live-progress cleanup brief.
-        */}
-        {layout.rightOpen ? (
+        {rightOpen ? (
           <aside className="saut-agent-rail saut-agent-right flex min-h-0 min-w-0 flex-col overflow-hidden" aria-label="Progress and context">
             <div className="saut-workspace-progress">{progress}</div>
             <div className="saut-workspace-context">{context}</div>
           </aside>
         ) : (
-          <CollapsedRailStrip side="right" label="Progress" onExpand={() => setLayout((current) => ({ ...current, rightOpen: true }))} />
+          <CollapsedRailStrip
+            side="right"
+            label={readyReview ? "Ready" : "Progress"}
+            onExpand={() => {
+              if (readyReview) setReadyRightExpanded(true);
+              else setLayout((current) => ({ ...current, rightOpen: true }));
+            }}
+          />
         )}
       </div>
     </div>
