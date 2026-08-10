@@ -159,8 +159,38 @@ export function buildGeminiRequest(input: GeminiBoundaryInput): GeminiGenerateCo
   };
 }
 
+export type SocialPromptIntent = "LOCAL_PLATFORM_DATA" | "CREATIVE" | "MIXED" | "GENERAL";
+
+const ANALYTICS_DATA_SUBJECT =
+  /\b(?:insights?|analytics|metrics?|performance|reach|impressions?|engagement|followers?|comments?|messages?|inbox)\b/i;
+const ACCOUNT_DATA_SUBJECT =
+  /\b(?:connected\s+(?:accounts?|platforms?)|connections?|connection\s+status|account\s+(?:status|health)|page\s+id|account\s+id|user\s+id|username|display\s+name|permissions?|access\s+tokens?)\b/i;
+const PLATFORM_READ_ACTION =
+  /\b(?:show|list|read|check|compare|analy[sz]e|summari[sz]e|review|report|tell|give|what|which|how(?:\s+many|\s+is|\s+are)|based\s+on|dikha|bata|dekho?|dekhna|check\s+karo|compare\s+karo)\b/i;
+const ACCOUNT_READ_ACTION =
+  /\b(?:show|list|read|check|status|health|how\s+many|what\s+is|tell\s+me|dikha|check\s+karo)\b/i;
+const CREATIVE_ACTION =
+  /\b(?:create|make|draft|write|prepare|generate|suggest|recommend|adapt|caption|content|post(?:ing)?|publish|schedule|preview|version|variant|suitable|relevant|ready|bana(?:o|na|do|dena)?|likh(?:o|na|do)?|taiyar|alag|caption\s+bana|post\s+karo)\b/i;
+
+/**
+ * Routes by the user's mission, not by isolated nouns. Platform names and
+ * "connected accounts" are valid creative destination context. A request is
+ * local-only only when it asks to read/analyse workspace Platform data and
+ * contains no content/publishing objective. Mixed missions preserve both
+ * halves: local derivation first, creative workflow second.
+ */
+export function classifySocialPromptIntent(prompt: string): SocialPromptIntent {
+  const hasDataRead = (ANALYTICS_DATA_SUBJECT.test(prompt) && PLATFORM_READ_ACTION.test(prompt)) ||
+    (ACCOUNT_DATA_SUBJECT.test(prompt) && ACCOUNT_READ_ACTION.test(prompt));
+  const hasCreative = CREATIVE_ACTION.test(prompt);
+  if (hasDataRead && hasCreative) return "MIXED";
+  if (hasDataRead) return "LOCAL_PLATFORM_DATA";
+  if (hasCreative) return "CREATIVE";
+  return "GENERAL";
+}
+
 export function requiresLocalMetaHandling(prompt: string): boolean {
-  return /\b(?:insights?|analytics|metrics?|performance|reach|impressions?|engagement|followers?|comments?|messages?|inbox|connected\s+accounts?|connection\s+status|page\s+id|account\s+id|user\s+id|username|display\s+name|permissions?|access\s+tokens?)\b/i.test(prompt);
+  return classifySocialPromptIntent(prompt) === "LOCAL_PLATFORM_DATA";
 }
 
 export function selectGeminiBrandInstructions(profile: BrandProfileRow): string[] {
