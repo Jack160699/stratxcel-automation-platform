@@ -125,15 +125,18 @@ export function AgentMessage({
   message,
   onApprove,
   onReject,
+  compactSources = false,
 }: {
   message: AgentMessageData;
   onApprove: (actionId: string) => void;
   onReject: (actionId: string) => void;
+  /** When READY, collapse source attachments into a compact strip. */
+  compactSources?: boolean;
 }) {
   const isUser = message.role === "user";
   const hasPreparedArtifact = message.parts.some((part) => part.type === "proposed_actions" && part.actions?.some((action) => PUBLISH_INTENT_TOOLS.has(action.tool)));
   return (
-    <div className="saut-agent-message max-w-[88%]" style={isUser ? { marginLeft: "auto" } : undefined}>
+    <div className={`saut-agent-message max-w-[88%]${hasPreparedArtifact ? " saut-agent-message-artifact" : ""}`} style={isUser ? { marginLeft: "auto" } : undefined}>
       {(!hasPreparedArtifact || isUser) && <div
         className="rounded-md px-3 py-2"
         style={isUser
@@ -170,9 +173,9 @@ export function AgentMessage({
         }
         if (part.type === "attachments" && part.attachments?.length) {
           return (
-            <div key={index} className="saut-sent-attachments mt-1.5">
+            <div key={index} className={`saut-sent-attachments mt-1.5${compactSources ? " is-ready-compact" : ""}`}>
               {part.attachments.map((attachment) => (
-                <AttachmentCard key={attachment.id} attachment={attachment} />
+                <AttachmentCard key={attachment.id} attachment={attachment} compact={compactSources} />
               ))}
             </div>
           );

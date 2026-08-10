@@ -178,7 +178,7 @@ export function CopilotFullPage({
   initialVariants: VariantRow[];
   provider: EffectiveProviderIdentity;
 }) {
-  const { sessionId, setSessionId, dockAndReturn } = useCopilot();
+  const { sessionId, setSessionId } = useCopilot();
   const { messages, pending, loadingHistory, failedReason, run, runEvents, session, send, approve, reject } =
     useAgentSession(sessionId, setSessionId);
   const activePublishActions = useMemo(() => messages.flatMap((message) => message.parts.flatMap((part) =>
@@ -413,11 +413,10 @@ export function CopilotFullPage({
             className={`saut-btn saut-btn-ghost !h-7 !px-2 text-xs${focusMode ? " saut-focus-active" : ""}`}
             aria-pressed={focusMode}
             aria-label={focusMode ? "Exit focus mode" : "Enter focus mode"}
-            title={focusMode ? "Exit focus mode" : "Focus mode — hide side rails"}
+            title={focusMode ? "Exit focus mode" : "Focus mode — maximize artifact"}
           >
             Focus
           </button>
-          <button onClick={dockAndReturn} className="saut-btn saut-btn-ghost !h-7 !px-2 text-xs">Dock</button>
           <button onClick={() => { clearAttachments(); setSessionId(null); }} className="saut-btn saut-btn-ghost !h-7 !px-2 text-xs">New</button>
         </header>
 
@@ -432,7 +431,15 @@ export function CopilotFullPage({
                 ))}
               </div>
             </div>
-          ) : messages.map((message) => <AgentMessage key={message.id} message={message} onApprove={approve} onReject={reject} />)}
+          ) : messages.map((message) => (
+            <AgentMessage
+              key={message.id}
+              message={message}
+              onApprove={approve}
+              onReject={reject}
+              compactSources={reviewMode}
+            />
+          ))}
           {failedReason && <div className="saut-chip saut-chip-danger"><span className="saut-chip-dot" />Failed · {failedReason}</div>}
         </div>
 
@@ -525,26 +532,8 @@ export function CopilotFullPage({
   );
   const contextAccessed = brandUsed || accountsUsed || attachmentEvents.length > 0;
 
-  // Right rail: when READY, prefer a compact status control; expand strip for details.
-  const progress = reviewMode ? (
-    <div className="saut-ready-rail-control">
-      <div className="saut-ready-pill" role="status" aria-label="Ready for review">
-        <span aria-hidden>✓</span>
-        Ready
-      </div>
-      {run?.status === "FAILED" || failedReason ? (
-        <div className="saut-ready-pill is-danger" role="alert">
-          Needs attention
-        </div>
-      ) : null}
-      <ExecutionTrace
-        run={run}
-        events={runEvents}
-        waitingForApproval={waitingForApproval}
-        compactByDefault
-      />
-    </div>
-  ) : (
+  // Right rail / Activity drawer: full progress details (READY status lives on edge chip).
+  const progress = (
     <div className="saut-progress-rail">
       <RailModule title="Current mission" defaultOpen>
         <p className="text-sm font-medium leading-snug">{missionTitle}</p>
