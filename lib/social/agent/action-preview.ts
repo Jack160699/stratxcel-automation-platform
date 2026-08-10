@@ -18,6 +18,8 @@ export interface PublishActionPreview {
   platform?: string;
   platformLabel?: string;
   accountLabel?: string;
+  accountHandle?: string;
+  accountAvatarUrl?: string;
   caption?: string;
   hashtags: string[];
   scheduledAt?: string;
@@ -65,7 +67,7 @@ export async function getActionPreview(ctx: OwnerContext, actionId: string): Pro
   if (action.tool_name === "schedule_post") {
     const [{ data: account }, { data: variant }] = await Promise.all([
       accountId
-        ? ctx.supabase.from("social_accounts").select("platform, username, display_name").eq("id", accountId).maybeSingle()
+        ? ctx.supabase.from("social_accounts").select("platform, username, display_name, avatar_url").eq("id", accountId).maybeSingle()
         : Promise.resolve({ data: null }),
       variantId
         ? ctx.supabase.from("content_variants").select("platform, caption, hashtags, master_id").eq("id", variantId).maybeSingle()
@@ -80,6 +82,8 @@ export async function getActionPreview(ctx: OwnerContext, actionId: string): Pro
       platform,
       platformLabel: platform ? platformLabel(platform) : undefined,
       accountLabel: account?.display_name || account?.username || undefined,
+      accountHandle: account?.username || undefined,
+      accountAvatarUrl: account?.avatar_url || undefined,
       caption: variant?.caption ? dedupeCaptionForPreview(variant.caption, hashtags) : undefined,
       hashtags,
       scheduledAt,
@@ -98,7 +102,7 @@ export async function getActionPreview(ctx: OwnerContext, actionId: string): Pro
   const assetId = str(input.assetId);
   const [{ data: account }, { data: variant }] = await Promise.all([
     accountId
-      ? ctx.supabase.from("social_accounts").select("username, display_name").eq("id", accountId).maybeSingle()
+      ? ctx.supabase.from("social_accounts").select("username, display_name, avatar_url").eq("id", accountId).maybeSingle()
       : Promise.resolve({ data: null }),
     variantId ? ctx.supabase.from("content_variants").select("caption, hashtags").eq("id", variantId).maybeSingle() : Promise.resolve({ data: null }),
   ]);
@@ -113,6 +117,8 @@ export async function getActionPreview(ctx: OwnerContext, actionId: string): Pro
     platform: "youtube",
     platformLabel: "YouTube",
     accountLabel: account?.display_name || account?.username || undefined,
+    accountHandle: account?.username || undefined,
+    accountAvatarUrl: account?.avatar_url || undefined,
     caption: variant?.caption ? dedupeCaptionForPreview(variant.caption, youtubeHashtags) : undefined,
     hashtags: youtubeHashtags,
     scheduledAt: undefined,

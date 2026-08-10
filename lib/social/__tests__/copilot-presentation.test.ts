@@ -66,7 +66,24 @@ function run() {
   }
   assert.ok(!source.includes("messages"), "CopilotContext must never reference message content directly — that stays server-side");
 
-  console.log("copilot-presentation.test.ts: ALL PASS (session grouping, contextual quick actions, presentation-only persistence)");
+  const fullPagePath = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "app", "admin", "social", "copilot", "CopilotFullPage.tsx");
+  const fullPage = fs.readFileSync(fullPagePath, "utf8");
+  for (const behavior of ["saut-unified-composer", "MediaRecorder", "onPaste", "uploadState", "event.shiftKey", "revokeObjectURL"]) {
+    assert.ok(fullPage.includes(behavior), `unified composer must preserve ${behavior}`);
+  }
+  const previewPath = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "app", "admin", "social", "agent", "PlatformPreviewModal.tsx");
+  const preview = fs.readFileSync(previewPath, "utf8");
+  for (const platform of ["instagram", "linkedin", "facebook", "threads", "youtube"]) assert.ok(preview.includes(platform));
+  assert.ok(preview.includes('event.key === "Escape"'), "preview must close with Escape");
+  assert.ok(preview.includes('event.key === "Tab"'), "preview must trap keyboard focus");
+
+  const transcriptionPath = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "app", "api", "social", "copilot", "transcribe", "route.ts");
+  const transcription = fs.readFileSync(transcriptionPath, "utf8");
+  for (const forbidden of ["admitMemoryCandidate", "createOpenLoop", "createVoiceNote", "saveTranscript"]) {
+    assert.equal(transcription.includes(forbidden), false, `Social voice transcription must not call ${forbidden}`);
+  }
+
+  console.log("copilot-presentation.test.ts: ALL PASS (session grouping, composer, previews, voice isolation)");
 }
 
 run();

@@ -98,6 +98,11 @@ function run() {
   assert.equal(userFacing.includes("11111111"), false);
   assert.equal(userFacing.includes("Master ID"), false);
   assert.equal(userFacing.includes("create_content_item"), false);
+  const metadataLeak = sanitizeUserFacingText("Useful user sentence.\ncom.apple.kit.metadata: bplist00 dyn.ah62d4rv4ge80g55\nproviderResponse={\"debug\":true}\nKeep this too.");
+  assert.equal(metadataLeak.includes("com.apple"), false, "Apple clipboard metadata must be removed");
+  assert.equal(metadataLeak.includes("providerResponse"), false, "provider wrappers must be removed");
+  assert.match(metadataLeak, /Useful user sentence/);
+  assert.match(metadataLeak, /Keep this too/);
   console.log("gemini-boundary.test.ts: ALL PASS (allowlist, redaction, intent routing, tool projections)");
 }
 

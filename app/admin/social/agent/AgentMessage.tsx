@@ -3,6 +3,7 @@ import { PUBLISH_INTENT_TOOLS, platformLabel } from "@/lib/social/agent/publish-
 import { AgentMarkdown } from "./AgentMarkdown";
 import { PublishApprovalGroup } from "./PublishApprovalCard";
 import { sanitizeUserFacingText } from "@/lib/social/agent/user-facing-text";
+import { AttachmentCard } from "./AttachmentMedia";
 
 export interface PublishReceiptData {
   platform?: string;
@@ -130,9 +131,10 @@ export function AgentMessage({
   onReject: (actionId: string) => void;
 }) {
   const isUser = message.role === "user";
+  const hasPreparedArtifact = message.parts.some((part) => part.type === "proposed_actions" && part.actions?.some((action) => PUBLISH_INTENT_TOOLS.has(action.tool)));
   return (
     <div className="max-w-[88%]" style={isUser ? { marginLeft: "auto" } : undefined}>
-      <div
+      {(!hasPreparedArtifact || isUser) && <div
         className="rounded-lg px-3.5 py-2.5"
         style={isUser
           ? { background: "var(--saut-accent-muted)" }
@@ -141,7 +143,7 @@ export function AgentMessage({
         {isUser
           ? <p className="text-sm leading-relaxed" style={{ color: "var(--saut-text)" }}>{message.content}</p>
           : <AgentMarkdown content={sanitizeUserFacingText(message.content)} />}
-      </div>
+      </div>}
       {message.parts.map((part, index) => {
         if (part.type === "proposed_actions" && part.actions?.length) {
           const publishActions = part.actions.filter((action) => PUBLISH_INTENT_TOOLS.has(action.tool));
@@ -168,15 +170,9 @@ export function AgentMessage({
         }
         if (part.type === "attachments" && part.attachments?.length) {
           return (
-            <div key={index} className="mt-2 flex flex-wrap gap-2">
+            <div key={index} className="saut-sent-attachments mt-2">
               {part.attachments.map((attachment) => (
-                <span key={attachment.id} className="saut-attachment-chip" title={`${attachment.mimeType} · ${attachment.sizeBytes.toLocaleString()} bytes`}>
-                  <span aria-hidden>{"\u{1F4CE}"}</span>
-                  <span className="max-w-48 truncate">{attachment.name}</span>
-                  <span className="saut-mono text-[9px]" style={{ color: "var(--saut-text-subtle)" }}>
-                    {attachment.processingStatus === "EXTRACTED" ? "text available" : "stored only"}
-                  </span>
-                </span>
+                <AttachmentCard key={attachment.id} attachment={attachment} />
               ))}
             </div>
           );
