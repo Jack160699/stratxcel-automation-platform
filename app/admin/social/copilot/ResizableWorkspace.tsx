@@ -186,7 +186,14 @@ export function ResizableWorkspace({
             onCollapse={() => setLayout((current) => ({ ...current, rightOpen: false }))}
           />
         ) : null}
-        <aside className={`saut-agent-rail saut-agent-right min-h-0 min-w-0 overflow-y-auto ${layout.rightOpen ? "" : "invisible"}`} aria-label="Progress and context">
+        {/*
+          Fixed live console, not a long document: the rail itself never
+          scrolls as one blob (no overflow-y here) — .saut-workspace-progress
+          is the one flexible region with its own internal scroller, and
+          .saut-workspace-context is pinned below it with a bounded height of
+          its own. See Section 5/6 of the live-progress cleanup brief.
+        */}
+        <aside className={`saut-agent-rail saut-agent-right flex min-h-0 min-w-0 flex-col overflow-hidden ${layout.rightOpen ? "" : "invisible"}`} aria-label="Progress and context">
           <div className="saut-workspace-progress">{progress}</div>
           <div className="saut-workspace-context">{context}</div>
         </aside>

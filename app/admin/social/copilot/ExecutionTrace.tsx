@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { AgentRunEventRow, AgentRunRow } from "@/lib/social/repositories/agent-runs";
-import { currentActionLabel, groupEventsIntoStages, type ExecutionStage, type StageStatus } from "./execution-stages";
+import { activeStageKey, currentActionLabel, groupEventsIntoStages, type ExecutionStage, type StageStatus } from "./execution-stages";
 
 function StageGlyph({ status }: { status: StageStatus }) {
   const color =
@@ -51,11 +51,26 @@ function EventRow({ event }: { event: AgentRunEventRow }) {
   );
 }
 
-function StageRow({ stage, open, onToggle }: { stage: ExecutionStage; open: boolean; onToggle: (open: boolean) => void }) {
-  const failureReason = stage.status === "failed" ? stage.events.find((event) => event.status === "FAILED")?.meta?.reason : undefined;
+function StageRow({
+  stage,
+  open,
+  onToggle,
+  rowRef,
+}: {
+  stage: ExecutionStage;
+  open: boolean;
+  onToggle: (open: boolean) => void;
+  rowRef: (node: HTMLDetailsElement | null) => void;
+}) {
+  // The stage's headline reflects its FINAL outcome only — a failed attempt
+  // that a later retry recovered from stays visible below, but never turns
+  // the whole stage red (see Section 3 of the live-progress cleanup brief).
+  const failedEvent = stage.events.find((event) => event.type === "TOOL_FAILED" && event.status === "FAILED");
+  const showFailureReason = stage.status === "failed" && typeof failedEvent?.meta?.reason === "string";
   const durationLabel = stage.durationMs !== null ? `${(stage.durationMs / 1000).toFixed(1)}s` : stage.status === "running" ? "Working…" : null;
   return (
     <details
+      ref={rowRef}
       className="saut-stage-accordion"
       open={open}
       onToggle={(event) => onToggle((event.target as HTMLDetailsElement).open)}
@@ -64,6 +79,11 @@ function StageRow({ stage, open, onToggle }: { stage: ExecutionStage; open: bool
         <StageGlyph status={stage.status} />
         <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium" style={{ color: stage.status === "failed" ? "var(--saut-danger)" : "var(--saut-text)" }}>
           {stage.title}
+          {stage.recovered && (
+            <span className="saut-mono ml-1.5 font-normal" style={{ color: "var(--saut-text-subtle)" }}>
+              · completed after retry
+            </span>
+          )}
         </span>
         {durationLabel && (
           <span className="saut-mono shrink-0 text-[10px]" style={{ color: "var(--saut-text-subtle)" }}>
@@ -72,9 +92,14 @@ function StageRow({ stage, open, onToggle }: { stage: ExecutionStage; open: bool
         )}
       </summary>
       <div className="saut-stage-body">
-        {typeof failureReason === "string" && (
+        {showFailureReason && (
           <p className="mb-2 text-[11.5px]" style={{ color: "var(--saut-danger)" }}>
-            {failureReason}
+            {String(failedEvent!.meta.reason)}
+          </p>
+        )}
+        {stage.recovered && (
+          <p className="mb-2 text-[10.5px]" style={{ color: "var(--saut-text-subtle)" }}>
+            An earlier attempt in this stage failed and was automatically retried — see the failed attempt below.
           </p>
         )}
         {stage.providerCalls > 0 && (
@@ -107,6 +132,7 @@ export function ExecutionTrace({
   const [now, setNow] = useState(0);
   const [pinned, setPinned] = useState<Record<string, boolean>>({});
   const [showFullTrace, setShowFullTrace] = useState(false);
+  const stageRefs = useRef(new Map<string, HTMLDetailsElement>());
 
   useEffect(() => {
     if (run?.status !== "RUNNING") return;
@@ -125,6 +151,15 @@ export function ExecutionTrace({
     [events, running, waitingForApproval]
   );
 
+  // Auto-follow: scroll only when the ACTIVE stage identity changes (a new
+  // stage starts, one fails, or one starts waiting for approval) — never on
+  // every raw event, so the live console doesn't jitter (Section 11).
+  const activeKey = useMemo(() => activeStageKey(stages), [stages]);
+  useEffect(() => {
+    if (!activeKey) return;
+    stageRefs.current.get(activeKey)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [activeKey]);
+
   if (!run || events.length === 0) {
     return <p className="text-xs" style={{ color: "var(--saut-text-subtle)" }}>Real operations appear here as they happen.</p>;
   }
@@ -132,23 +167,26 @@ export function ExecutionTrace({
   const elapsedMs = (run.completed_at ? new Date(run.completed_at).getTime() : now || new Date(run.started_at).getTime()) - new Date(run.started_at).getTime();
 
   return (
-    <div>
+    <div className="saut-exec-trace flex h-full min-h-0 flex-col">
       {currentAction && (
-        <div className="saut-current-action mb-3" role="status" aria-live="polite">
+        <div className="saut-current-action mb-2 shrink-0" role="status" aria-live="polite">
           <span className="saut-section-title">Currently</span>
           <span className={`saut-mono block text-[11.5px] ${running || waitingForApproval ? "saut-pulse" : ""}`} style={{ color: "var(--saut-ai)" }}>
             {currentAction}
           </span>
         </div>
       )}
-      <div className="saut-mono mb-3 text-[10px]" style={{ color: "var(--saut-text-subtle)" }}>
+      <div className="saut-mono mb-2 shrink-0 text-[10px]" style={{ color: "var(--saut-text-subtle)" }}>
         {running ? "Working" : "Worked"} for {Math.max(0, Math.round(elapsedMs / 1000))}s
       </div>
 
-      <div className="space-y-1.5" aria-label="Execution stages">
+      <div className="saut-stage-list space-y-1.5" aria-label="Execution stages">
         {stages.map((stage, index) => {
           const isLast = index === stages.length - 1;
-          const defaultOpen = stage.status === "failed" || (stage.status === "running" && isLast);
+          // Active (running/pending-approval) or failed stages open by
+          // default; a recovered/completed stage collapses on its own
+          // unless the user pinned it open (see Section 10).
+          const defaultOpen = stage.status === "failed" || stage.status === "pending" || (stage.status === "running" && isLast);
           const open = pinned[stage.key] ?? defaultOpen;
           return (
             <StageRow
@@ -156,18 +194,22 @@ export function ExecutionTrace({
               stage={stage}
               open={open}
               onToggle={(nextOpen) => setPinned((current) => ({ ...current, [stage.key]: nextOpen }))}
+              rowRef={(node) => {
+                if (node) stageRefs.current.set(stage.key, node);
+                else stageRefs.current.delete(stage.key);
+              }}
             />
           );
         })}
       </div>
 
       {run.status === "FAILED" && run.error_reason && (
-        <p className="mt-3 text-xs" style={{ color: "var(--saut-danger)" }}>
+        <p className="mt-2 shrink-0 text-xs" style={{ color: "var(--saut-danger)" }}>
           {run.error_reason}
         </p>
       )}
 
-      <details className="saut-full-trace mt-3" open={showFullTrace} onToggle={(event) => setShowFullTrace((event.target as HTMLDetailsElement).open)}>
+      <details className="saut-full-trace mt-2 shrink-0" open={showFullTrace} onToggle={(event) => setShowFullTrace((event.target as HTMLDetailsElement).open)}>
         <summary className="saut-mono text-[10px]" style={{ color: "var(--saut-text-subtle)" }}>
           View full technical trace ({events.length} event{events.length === 1 ? "" : "s"})
         </summary>

@@ -52,6 +52,8 @@ export interface ExecutionStage {
   title: string;
   events: AgentRunEventRow[];
   status: StageStatus;
+  /** True when this stage had a failed attempt that a later retry recovered from — the stage still reads SUCCESS, but the UI notes it. */
+  recovered: boolean;
   /** Sum of every event's recorded durationMs within this stage, when available. */
   durationMs: number | null;
   /** How many provider (AI) request/response round-trips happened inside this stage. */
@@ -64,11 +66,26 @@ function eventDuration(event: AgentRunEventRow): number | null {
   return typeof value === "number" ? value : null;
 }
 
+/**
+ * A stage's status reflects its FINAL outcome, not whether anything inside
+ * it ever failed. A tool call that failed and was then successfully retried
+ * (e.g. an invented content pillar corrected to the real canonical one) must
+ * not leave the whole stage looking red — only the last terminal
+ * (TOOL_COMPLETED/TOOL_FAILED) event decides failed vs. recovered. The
+ * original failed attempt stays visible in the stage's own event list and
+ * in the full technical trace; it is never hidden, just not the headline.
+ */
 function stageStatus(events: AgentRunEventRow[], isLastStage: boolean, runStatus: string | undefined): StageStatus {
-  if (events.some((event) => event.status === "FAILED")) return "failed";
   if (events.some((event) => event.status === "PENDING")) return "pending"; // waiting for approval
+  const terminalEvents = events.filter((event) => event.type === "TOOL_COMPLETED" || event.type === "TOOL_FAILED");
+  const lastTerminal = terminalEvents[terminalEvents.length - 1];
+  if (lastTerminal?.status === "FAILED") return "failed"; // ended in failure — nothing recovered it
   if (isLastStage && runStatus === "RUNNING") return "running";
   return "success";
+}
+
+function stageRecovered(events: AgentRunEventRow[], status: StageStatus): boolean {
+  return status === "success" && events.some((event) => event.type === "TOOL_FAILED" && event.status === "FAILED");
 }
 
 /**
@@ -108,12 +125,14 @@ export function groupEventsIntoStages(events: AgentRunEventRow[], runStatus?: st
   return segments.map((segment, index) => {
     const providerEvents = segment.events.filter((event) => event.type === "PROVIDER_RESPONSE_RECEIVED");
     const durations = segment.events.map(eventDuration).filter((value): value is number => value !== null);
+    const status = stageStatus(segment.events, index === segments.length - 1, runStatus);
     return {
       id: segment.id,
       key: `${segment.id}-${index}`,
       title: STAGE_TITLES[segment.id],
       events: segment.events,
-      status: stageStatus(segment.events, index === segments.length - 1, runStatus),
+      status,
+      recovered: stageRecovered(segment.events, status),
       durationMs: durations.length ? durations.reduce((sum, value) => sum + value, 0) : null,
       providerCalls: providerEvents.length,
       providerDurationMs: providerEvents.reduce((sum, event) => sum + (eventDuration(event) ?? 0), 0),
@@ -132,4 +151,18 @@ export function currentActionLabel(events: AgentRunEventRow[], running: boolean,
   if (waitingForApproval) return "Ready for your approval";
   if (!running || events.length === 0) return null;
   return events[events.length - 1].label;
+}
+
+/**
+ * Which stage the Progress viewport should auto-follow: the first stage
+ * that's still failed/pending/running, or the last stage if everything so
+ * far reads as finished (e.g. right after a terminal event lands). Used to
+ * scroll only when the ACTIVE stage identity changes — never on every raw
+ * event — so the live console doesn't jitter (Section 11 of the live-
+ * progress cleanup brief).
+ */
+export function activeStageKey(stages: ExecutionStage[]): string | null {
+  if (stages.length === 0) return null;
+  const active = stages.find((stage) => stage.status === "failed" || stage.status === "pending" || stage.status === "running");
+  return (active ?? stages[stages.length - 1]).key;
 }

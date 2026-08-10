@@ -119,16 +119,23 @@ function RailModule({
   title,
   defaultOpen,
   badge,
+  className,
   children,
 }: {
   title: string;
   defaultOpen: boolean;
   badge?: ReactNode;
+  /** Extra class on the <details> — e.g. "saut-progress-module" so it can flex-fill the remaining rail height while open. */
+  className?: string;
   children: ReactNode;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <details className="saut-rail-module" open={open} onToggle={(event) => setOpen((event.target as HTMLDetailsElement).open)}>
+    <details
+      className={`saut-rail-module${className ? ` ${className}` : ""}`}
+      open={open}
+      onToggle={(event) => setOpen((event.target as HTMLDetailsElement).open)}
+    >
       <summary className="saut-rail-module-summary">
         <span className="saut-section-title">{title}</span>
         {badge}
@@ -367,11 +374,11 @@ export function CopilotFullPage({
   // an ever-growing Progress section pushing the whole workspace. Defaults
   // per Section 4 of the workspace repair brief.
   const progress = (
-    <div>
+    <div className="saut-progress-rail">
       <RailModule title="Current mission" defaultOpen>
         <p className="text-sm font-medium leading-snug">{missionTitle}</p>
       </RailModule>
-      <RailModule title="Progress" defaultOpen>
+      <RailModule title="Progress" defaultOpen className="saut-progress-module">
         <ExecutionTrace run={run} events={runEvents} waitingForApproval={session?.status === "WAITING_FOR_CHOICE"} />
       </RailModule>
     </div>
