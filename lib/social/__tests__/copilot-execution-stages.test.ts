@@ -5,7 +5,7 @@
 // Run with: node --experimental-strip-types lib/social/__tests__/copilot-execution-stages.test.ts
 
 import assert from "node:assert/strict";
-import { groupEventsIntoStages, currentActionLabel, STAGE_TITLES } from "../../../app/admin/social/copilot/execution-stages.ts";
+import { groupEventsIntoStages, currentActionLabel, activeStageKey, STAGE_TITLES } from "../../../app/admin/social/copilot/execution-stages.ts";
 import type { AgentRunEventRow } from "../repositories/agent-runs.ts";
 
 let seq = 0;
@@ -95,7 +95,43 @@ function run() {
   assert.equal(currentActionLabel(events, false), null, "no 'Currently…' banner once the run is done");
   assert.equal(currentActionLabel([], true), null);
 
-  console.log("copilot-execution-stages.test.ts: ALL PASS (stage merging, provider round-trip summarization, failure surfacing, Currently banner)");
+  // --- Recovered tool retry must not leave the whole stage FAILED (Section 3). ---
+  const recoveredEvents: AgentRunEventRow[] = [
+    evt({ type: "RUN_STARTED", label: "Starting" }),
+    evt({ type: "TOOL_STARTED", label: "Creating content concept", tool_name: "create_content_item" }),
+    evt({
+      type: "TOOL_FAILED",
+      label: "Creating content concept",
+      tool_name: "create_content_item",
+      status: "FAILED",
+      meta: { reason: 'Content pillar must match a saved Brand Brain value. Available: AI Agents & Autonomous Systems, ...' },
+    }),
+    evt({ type: "TOOL_STARTED", label: "Creating content concept", tool_name: "create_content_item" }),
+    evt({ type: "TOOL_COMPLETED", label: "Creating content concept", tool_name: "create_content_item", status: "SUCCESS", meta: { durationMs: 180 } }),
+    evt({ type: "TOOL_STARTED", label: "Checking connected accounts", tool_name: "inspect_accounts" }),
+    evt({ type: "TOOL_COMPLETED", label: "Checking connected accounts", tool_name: "inspect_accounts", status: "SUCCESS", meta: { durationMs: 90 } }),
+  ];
+  const recoveredStages = groupEventsIntoStages(recoveredEvents, "RUNNING");
+  const recoveredContent = recoveredStages.find((stage) => stage.id === "content");
+  assert.ok(recoveredContent, "expected a Content Planning stage");
+  assert.equal(recoveredContent!.status, "success", "a retry that ultimately succeeds must not leave the stage FAILED");
+  assert.equal(recoveredContent!.recovered, true, "the stage must note it recovered after a retry");
+  // The original failed attempt stays visible, never hidden.
+  assert.ok(recoveredContent!.events.some((event) => event.type === "TOOL_FAILED"), "the failed attempt must remain in the stage's own events");
+  assert.match(String(recoveredContent!.events.find((event) => event.type === "TOOL_FAILED")?.meta.reason), /Content pillar must match/);
+
+  // An UNrecovered failure (nothing after it succeeds) keeps the stage FAILED.
+  const unrecoveredStages = groupEventsIntoStages(recoveredEvents.slice(0, 3), "RUNNING");
+  const unrecoveredContent = unrecoveredStages.find((stage) => stage.id === "content");
+  assert.equal(unrecoveredContent!.status, "failed");
+  assert.equal(unrecoveredContent!.recovered, false);
+
+  // --- activeStageKey: what the Progress viewport should auto-follow. ---
+  assert.equal(activeStageKey([]), null);
+  assert.equal(activeStageKey(recoveredStages), recoveredStages[recoveredStages.length - 1].key, "with nothing pending/failed, the active stage is the last one");
+  assert.equal(activeStageKey(unrecoveredStages), unrecoveredContent!.key, "a failed stage is the active one to follow, even if it isn't last");
+
+  console.log("copilot-execution-stages.test.ts: ALL PASS (stage merging, provider round-trip summarization, recovered-retry status, active-stage tracking, Currently banner)");
 }
 
 run();
