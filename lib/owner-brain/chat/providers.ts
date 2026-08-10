@@ -14,11 +14,11 @@ export interface ChatProvider {
 export const CHAT_PROVIDERS: readonly ChatProvider[] = [
   { key: "chatgpt", displayName: "ChatGPT", capability: "Official personal export import; OpenAI API project conversations are separate", authMode: "IMPORT", supportsLiveSync: false, supportsImport: true, scopes: [] },
   { key: "claude", displayName: "Claude", capability: "Official personal export import; live sync requires Enterprise Compliance API", authMode: "IMPORT", supportsLiveSync: false, supportsImport: true, scopes: [] },
-  { key: "gemini", displayName: "Gemini", capability: "Stratxcel-owned API interactions only; personal Gemini history requires import", authMode: "PROJECT_API", supportsLiveSync: false, supportsImport: true, scopes: [] },
+  { key: "gemini", displayName: "Gemini", capability: "Personal Gemini history API unavailable; Stratxcel-owned API interactions remain separate", authMode: "PROJECT_API", supportsLiveSync: false, supportsImport: false, scopes: [] },
   { key: "whatsapp_business", displayName: "WhatsApp Business", capability: "Business Cloud API signals through existing Stratxcel infrastructure; no personal WhatsApp", authMode: "EXISTING_BRIDGE", supportsLiveSync: true, supportsImport: false, scopes: ["business signals only"] },
   { key: "slack", displayName: "Slack", capability: "Selected workspace channels only, read-only", authMode: "OAUTH", supportsLiveSync: true, supportsImport: false, scopes: ["channels:read", "channels:history", "users:read"] },
   { key: "telegram", displayName: "Telegram", capability: "Bot conversations only", authMode: "BOT_TOKEN", supportsLiveSync: true, supportsImport: false, scopes: ["bot updates"] },
-  { key: "other_import", displayName: "Other / import", capability: "Bounded normalized JSON import", authMode: "IMPORT", supportsLiveSync: false, supportsImport: true, scopes: [] },
+  { key: "other_import", displayName: "Other / import", capability: "Unavailable until an official, safely normalizable export format is selected", authMode: "IMPORT", supportsLiveSync: false, supportsImport: false, scopes: [] },
 ] as const;
 
 export function getChatProvider(key: string): ChatProvider | undefined {
