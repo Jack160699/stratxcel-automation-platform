@@ -148,6 +148,19 @@ export function AgentMessage({
           : <AgentMarkdown content={sanitizeUserFacingText(message.content)} />}
       </div>}
       {message.parts.map((part, index) => {
+        if (part.type === "social_copilot_review") {
+          const displayStatus =
+            typeof (part as { displayStatus?: unknown }).displayStatus === "string"
+              ? String((part as unknown as { displayStatus: string }).displayStatus).replace(/_/g, " ")
+              : "Ready for approval";
+          return (
+            <div key={index} className="mt-2 rounded-md px-3 py-2" style={{ background: "var(--saut-surface-2)", border: "1px solid var(--saut-border)" }}>
+              <div className="saut-mono text-[10px] uppercase tracking-[0.14em]" style={{ color: "var(--saut-text-subtle)" }}>
+                Current review · {displayStatus}
+              </div>
+            </div>
+          );
+        }
         if (part.type === "proposed_actions" && part.actions?.length) {
           const publishActions = part.actions.filter((action) => PUBLISH_INTENT_TOOLS.has(action.tool));
           const otherActions = part.actions.filter((action) => !PUBLISH_INTENT_TOOLS.has(action.tool));

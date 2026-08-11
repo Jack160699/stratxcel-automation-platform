@@ -730,13 +730,13 @@ export async function prepareNearTermPackageItems(service: ServiceClient, author
         mediaUrls: [],
       });
       if (mediaAsset) {
-        await service.from("social_content_variant_media").insert({ variant_id: variantId, asset_id: mediaAsset.id, position: 0 });
+        await service.from("social_content_variant_media").insert({ variant_id: variantId.id, asset_id: mediaAsset.id, position: 0 });
       }
 
       await service
         .from("social_autopilot_queue_items")
         .update({
-          variant_id: variantId,
+          variant_id: variantId.id,
           content_master_id: masterId,
           content_pillar: canonicalPillar,
           media_type: mediaType,

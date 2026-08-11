@@ -103,25 +103,52 @@ export async function createContentVariant(
     hashtags: string[];
     mediaUrls: string[];
     creativeSpec?: Record<string, unknown>;
+    /** Deterministic generation key for idempotent reuse within a review revision. */
+    generationKey?: string | null;
   }
-): Promise<string> {
+): Promise<{ id: string; platform: string; reused: boolean; generationKey: string | null }> {
+  const platform = requirePlatform(input.platform, "platform");
+  const generationKey = input.generationKey?.trim() || null;
+
+  if (generationKey) {
+    const { data: existingRows } = await ctx.supabase
+      .from("content_variants")
+      .select("id, platform, creative_spec")
+      .eq("master_id", input.masterId)
+      .eq("platform", platform)
+      .order("created_at", { ascending: false })
+      .limit(25);
+    const reused = (existingRows ?? []).find((row) => {
+      const spec = (row.creative_spec ?? {}) as Record<string, unknown>;
+      return spec.generationKey === generationKey;
+    });
+    if (reused?.id) {
+      return { id: reused.id as string, platform, reused: true, generationKey };
+    }
+  }
+
+  const creativeSpec = {
+    ...(input.creativeSpec ?? {}),
+    ...(generationKey ? { generationKey } : {}),
+  };
+
   const { data, error } = await ctx.supabase
     .from("content_variants")
     .insert({
       master_id: input.masterId,
-      platform: requirePlatform(input.platform, "platform"),
+      platform,
       format: input.format,
       objective: requireContentObjective(input.objective),
       caption: input.caption,
       hashtags: input.hashtags,
       media_urls: input.mediaUrls,
-      creative_spec: input.creativeSpec ?? {},
+      creative_spec: creativeSpec,
       status: "READY",
     })
     .select("id")
     .single();
   if (error || !data) throw new Error(error?.message ?? "content_variant insert failed");
-  return data.id as string;
+  return { id: data.id as string, platform, reused: false, generationKey };
 }
 
 export async function getVariantForPublish(service: ServiceClient, variantId: string): Promise<ContentVariantRow | null> {

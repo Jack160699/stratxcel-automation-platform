@@ -27,6 +27,12 @@ export interface PublishActionPreview {
   caption?: string;
   hashtags: string[];
   scheduledAt?: string;
+  /** Tenant timezone for scheduled wall-clock display. */
+  timeZone?: string;
+  /** Deterministic local wall-clock label (YYYY-MM-DDTHH:mm). */
+  wallClockLabel?: string;
+  scheduleSource?: string;
+  reviewDisplayStatus?: string;
   /** True when scheduledAt is "now"-ish (or the tool always publishes immediately, like YouTube verification). */
   isImmediate: boolean;
   mediaAssetIds: string[];
@@ -126,6 +132,8 @@ export async function getActionPreview(ctx: OwnerContext, actionId: string): Pro
     const hashtags = Array.isArray(variant?.hashtags) ? (variant.hashtags as string[]) : [];
     const mediaAssetIds = variantId ? await variantMediaAssetIds(ctx, variantId, variant?.master_id ?? null) : [];
     const mediaMimeTypes = await mediaMimeTypesFor(ctx, mediaAssetIds);
+    const wallClockLabel = str(input.wallClockLabel);
+    const timeZone = str(input.timeZone);
     return {
       actionId,
       tool: action.tool_name,
@@ -137,6 +145,10 @@ export async function getActionPreview(ctx: OwnerContext, actionId: string): Pro
       caption: variant?.caption ? dedupeCaptionForPreview(variant.caption, hashtags) : undefined,
       hashtags,
       scheduledAt,
+      timeZone,
+      wallClockLabel,
+      scheduleSource: str(input.scheduleSource),
+      reviewDisplayStatus: action.status === "SUPERSEDED" ? "SUPERSEDED" : "READY_FOR_APPROVAL",
       // An omitted scheduledAt means "post now" — see schedule_post's tool
       // execute(), which defaults it the same way. Never read absence as a
       // future time.

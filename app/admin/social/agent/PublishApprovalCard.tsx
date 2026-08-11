@@ -11,12 +11,27 @@ import { PlatformPreviewModal } from "./PlatformPreviewModal";
 import { PrivateMedia } from "./AttachmentMedia";
 import { PlatformIcon, type Platform } from "../components/PlatformIcon";
 
-function formatWhen(iso: string | undefined, isImmediate: boolean): string {
+function formatWhen(iso: string | undefined, isImmediate: boolean, wallClockLabel?: string, timeZone?: string): string {
   if (isImmediate) return "Now";
+  if (wallClockLabel) {
+    const [datePart, timePart] = wallClockLabel.split("T");
+    if (datePart && timePart) {
+      const pretty = `${datePart} ${timePart}`;
+      return timeZone ? `${pretty} · ${timeZone}` : pretty;
+    }
+    return timeZone ? `${wallClockLabel} · ${timeZone}` : wallClockLabel;
+  }
   if (!iso) return "Now";
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "Now";
-  return date.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+  return date.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short", ...(timeZone ? { timeZone } : {}) });
+}
+
+function reviewStatusLabel(preview: PublishActionPreview): string {
+  if (preview.reviewDisplayStatus === "SUPERSEDED") return "Superseded";
+  if (preview.shadowMode) return "Ready for approval · Shadow";
+  if (preview.isImmediate) return "Ready for approval";
+  return "Ready for approval · Scheduled";
 }
 
 function toDatetimeLocal(iso: string | undefined): string {
@@ -92,7 +107,10 @@ function CardHeader({ preview }: { preview: PublishActionPreview }) {
       <div className="saut-artifact-platform-row">
         {platformKey ? <PlatformIcon platform={platformKey} size={18} /> : null}
         <strong className="saut-artifact-platform">{platformName}</strong>
-        <span className="saut-artifact-when">{formatWhen(preview.scheduledAt, preview.isImmediate)}</span>
+        <span className="saut-artifact-when">{formatWhen(preview.scheduledAt, preview.isImmediate, preview.wallClockLabel, preview.timeZone)}</span>
+      </div>
+      <div className="saut-mono text-[10px] uppercase tracking-[0.12em]" style={{ color: "var(--saut-text-subtle)" }}>
+        {reviewStatusLabel(preview)}
       </div>
       <div className="saut-artifact-account-block">
         <span className="saut-artifact-account truncate" title={accountName}>

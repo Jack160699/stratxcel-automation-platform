@@ -12,10 +12,27 @@ import {
   updateActionStatus,
   hasPendingActions,
   claimAgentAction,
+  supersedeProposedActions,
 } from "../repositories/agent";
 import { startRun, completeRun, recordRunEvent, getLatestRun } from "../repositories/agent-runs";
 import { resolveConfiguredProvider } from "./provider";
 import { classifyCreativeRequestMode, classifySocialPromptIntent, requiresLocalMetaHandling, selectGeminiBrandInstructions } from "./gemini-boundary";
+import {
+  classifySocialCopilotIntent,
+  isArtifactDisplayIntent,
+  isSafePreparationIntent,
+  requiresConcreteFutureSchedule,
+} from "./copilot-intents";
+import { planWeekSlots } from "../workforce/week-planner.ts";
+import { isNaturalPublishPhrase } from "../workforce/authorization.ts";
+import {
+  buildResurfaceReviewResponse,
+  buildShowVariantsResponse,
+  computeSupersedeIdsForNewRevision,
+  currentActiveReviewId,
+  loadCurrentReviewArtifact,
+} from "./review-session";
+import { narrativeFromReview, reviewArtifactMessagePart } from "./review-artifact";
 import { calculateLocalMetricsSummary } from "../local-meta-summary";
 import { listRecentMetrics } from "../repositories/analytics";
 import { listAccounts } from "../repositories/accounts";
@@ -39,8 +56,12 @@ import {
   attachmentPart,
   bindAttachmentsToMessage,
   getAttachmentsByIds,
-  loadSessionImageAttachmentsForModel,
+  loadImageAttachmentsForModel,
 } from "../repositories/agent-attachments";
+import { evaluateBrandTrustHardGate, canShowApprovalControl } from "./trust-hard-gate";
+import { buildProductCapabilityEvidence, resolveImageGenerationRuntimeStatus } from "./capability-evidence";
+import { getImageProvider, BlockedImageProvider } from "@stratxcel/creative-studio";
+import { decideManualPublishGate } from "../workforce/authorization.ts";
 
 const SYSTEM_PROMPT = `You are the Stratxcel Social Autopilot Agent — an operational copilot for Stratxcel's own
 Instagram, Facebook, Threads, LinkedIn, and YouTube presence. You plan, draft, schedule, and analyze
@@ -105,6 +126,17 @@ schedule_post without guessing a specific future clock time — omit scheduledAt
 right now) rather than inventing a time like "4:30 PM" that nobody asked for. Only pass a specific
 scheduledAt when the user actually requested a future date/time.
 
+CRITICAL WEEK PLANNING: When the user asks to "plan this week" / "plan my week" / prepare this week's
+posts, that authorizes INTERNAL draft preparation only — NOT external publish. Do NOT ask "Should I
+proceed with drafting?", "Would you like me to create these?", or "Should I generate the variants?".
+Prepare drafts automatically. For EVERY schedule_post in a week plan you MUST pass the exact
+scheduledAt / timeZone / wallClockLabel values provided in the [Deterministic week plan slots] block —
+never invent timestamps and never omit scheduledAt for weekly plans (omitting would incorrectly mean NOW).
+
+Natural language like "yes", "haan", "kar do", "go ahead", "push it", "post kar do" never authorizes
+external publish and must not regenerate variants when a review already exists — resurface the review
+and wait for the explicit approval control.
+
 Ask a short clarifying question instead of guessing when the goal is ambiguous. Never claim an action
 succeeded unless a tool call actually returned success. Every internal database ID you use — attachmentId,
 mediaAssetId, campaignId, masterId, variantId, accountId, assetId, publishingJobId — must come from a
@@ -113,7 +145,8 @@ Never invent, guess, or reconstruct an ID; if you don't have one, call the tool 
 for an optional field like campaignId, omit it. When a message includes a "Trusted attachment context"
 block, that is the exact real attachmentId for that upload — pass it verbatim to ingest_media, which
 returns the canonical mediaAssetId to use with attach_media_to_content / update_content_variant. Never
-reuse an attachmentId where a mediaAssetId is required.
+reuse an attachmentId where a mediaAssetId is required. Never silently reuse media from older sessions
+or older missions — only current-message attachments or explicitly selected library media.
 
 Publishing completion wording is safety-critical. Only say "Published" / "Posted" / "Done" for a publish
 request when a schedule_post or execute_*_youtube_verification tool result shows jobStatus/status
@@ -172,6 +205,10 @@ function attachmentContextSuffix(parts: unknown[]): string {
   return `\n\n[Trusted attachment context — the real attachmentId(s) for this message, use verbatim with ingest_media, never invent your own]\n${lines.join("\n")}`;
 }
 
+function strOrEmpty(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
 export async function createAgentSession(ctx: OwnerContext, title: string | null) {
   return createSessionRepo(ctx, title);
 }
@@ -208,7 +245,50 @@ export async function runAgentTurn(ctx: OwnerContext, sessionId: string, runId: 
   const history = await loadHistory(ctx, sessionId);
   const latestUserMessage = [...history].reverse().find((message) => message.role === "USER");
   const latestUserPrompt = latestUserMessage?.content ?? "";
+  const copilotIntent = classifySocialCopilotIntent(latestUserPrompt);
   const promptIntent = classifySocialPromptIntent(latestUserPrompt);
+
+  // Artifact-first local paths: no AI call required to display persisted variants/review.
+  if (isArtifactDisplayIntent(copilotIntent)) {
+    const existing = await loadCurrentReviewArtifact(ctx, sessionId);
+    if (existing) {
+      const response =
+        copilotIntent === "SHOW_VARIANTS" || copilotIntent === "SHOW_CURRENT_REVIEW"
+          ? buildShowVariantsResponse(existing)
+          : buildResurfaceReviewResponse(existing);
+      await insertMessage(ctx, sessionId, "AGENT", response.text, response.parts);
+      await setSessionStatus(ctx, sessionId, "WAITING_FOR_CHOICE");
+      await recordRunEvent(ctx, runId, {
+        type: "RUN_COMPLETED",
+        label: "Resurfaced persisted review artifact",
+        status: "SUCCESS",
+        meta: { intent: copilotIntent, aiCalls: 0, variantCount: existing.variants.length },
+      });
+      await completeRun(ctx, runId, "COMPLETED");
+      return {
+        blocked: false as const,
+        failed: false as const,
+        text: response.text,
+        proposedActions: existing.variants.filter((v) => v.actionId).map((v) => ({
+          id: v.actionId!,
+          tool: "schedule_post",
+          input: { variantId: v.variantId, platform: v.platform, scheduledAt: v.scheduledAtIso },
+        })),
+        runId,
+        reviewArtifact: existing,
+        aiCalls: 0,
+      };
+    }
+    if (copilotIntent === "NATURAL_AFFIRMATION" || isNaturalPublishPhrase(latestUserPrompt)) {
+      const message = "No active review is ready yet. Tell me what to prepare, or use Plan this week — chat confirmations never publish.";
+      await insertMessage(ctx, sessionId, "AGENT", message);
+      await setSessionStatus(ctx, sessionId, "READY");
+      await recordRunEvent(ctx, runId, { type: "RUN_COMPLETED", label: "Natural affirmation without review", status: "SUCCESS" });
+      await completeRun(ctx, runId, "COMPLETED");
+      return { blocked: false as const, failed: false as const, text: message, proposedActions: [], runId, aiCalls: 0 };
+    }
+  }
+
   if (requiresLocalMetaHandling(latestUserPrompt)) {
     const [metrics, accounts] = await Promise.all([listRecentMetrics(ctx, 50), listAccounts(ctx)]);
     const summary = calculateLocalMetricsSummary(metrics);
@@ -236,10 +316,46 @@ export async function runAgentTurn(ctx: OwnerContext, sessionId: string, runId: 
 
   const settings = await getAutomationSettings(ctx);
   const brandProfile = await getBrandProfile(ctx);
-  const creativeImages = latestUserMessage
-    ? (await loadSessionImageAttachmentsForModel(ctx, sessionId)).slice(-8)
+  // Current mission media only: attachments on the latest user message — never old-session fallback.
+  const creativeImages = latestUserMessage?.id
+    ? await loadImageAttachmentsForModel(ctx, latestUserMessage.id)
     : [];
-  const creativeRequestMode = classifyCreativeRequestMode(latestUserPrompt, creativeImages.length > 0);
+  const creativeRequestMode =
+    isSafePreparationIntent(copilotIntent) || requiresConcreteFutureSchedule(copilotIntent)
+      ? "EXECUTE"
+      : classifyCreativeRequestMode(latestUserPrompt, creativeImages.length > 0);
+
+  const tenantTimeZone = "Asia/Kolkata";
+  const weekSlots =
+    copilotIntent === "PREPARE_WEEK_PLAN"
+      ? planWeekSlots({
+          timeZone: tenantTimeZone,
+          itemCount: Math.max(3, creativeImages.length || 3),
+          scheduleSource: "SYSTEM_DEFAULT",
+        })
+      : null;
+
+  const detailForRevision = await getSessionDetail(ctx, sessionId);
+  const priorMaxRevision = detailForRevision.actions.reduce((max, action) => {
+    const revision = Number(action.input?.revision);
+    return Number.isFinite(revision) && revision > max ? revision : max;
+  }, 0);
+  const reviewRevision =
+    copilotIntent === "REVISE_CURRENT_ARTIFACT" ? priorMaxRevision + 1 : Math.max(1, priorMaxRevision || 1);
+  const activeReviewId = currentActiveReviewId(sessionId, reviewRevision);
+
+  if (copilotIntent === "REVISE_CURRENT_ARTIFACT" || (isSafePreparationIntent(copilotIntent) && priorMaxRevision > 0)) {
+    const legacyProposed = detailForRevision.actions
+      .filter((a) => a.status === "PROPOSED" && PUBLISH_INTENT_TOOLS.has(a.tool_name))
+      .map((a) => a.id);
+    const supersedeIds = computeSupersedeIdsForNewRevision(detailForRevision.actions, {
+      reviewId: currentActiveReviewId(sessionId, Math.max(1, priorMaxRevision)),
+      revision: reviewRevision,
+      missionId: sessionId,
+    });
+    await supersedeProposedActions(ctx, sessionId, [...new Set([...supersedeIds, ...legacyProposed])]);
+  }
+
   const roleMap: Record<string, AgentTurnMessage["role"]> = { USER: "user", AGENT: "assistant", SYSTEM: "system" };
   const messages: AgentTurnMessage[] = [
     { role: "system", content: SYSTEM_PROMPT },
@@ -261,15 +377,22 @@ export async function runAgentTurn(ctx: OwnerContext, sessionId: string, runId: 
     messages[0].content += `\n\nSafe locally-derived creative guidance: ${trend}. Publishing-capable destination candidates: ${connectedPlatforms.join(", ") || "none"}. Raw metrics, account records, identifiers, permissions, and provider metadata remain local. Continue the user's creative task; do not request raw Platform data.`;
   }
   if (creativeRequestMode === "EXECUTE") {
-    messages[0].content += `\n\nExecution intent is explicit. The user has authorized safe draft preparation. Infer the strongest Brand Brain-grounded angle and the best connected publishing-capable destinations, create the real content master and platform variants, attach the supplied media in order, and propose the final combined publish approval now. Do not answer with angle suggestions, ask which option they prefer, or say "Would you like me to prepare". Creative preference ambiguity is not a reason to stop.`;
+    messages[0].content += `\n\nExecution intent is explicit. The user has authorized safe draft preparation. Infer the strongest Brand Brain-grounded angle and the best connected publishing-capable destinations, create the real content master and platform variants, attach the supplied media in order, and propose the final combined publish approval now. Do not answer with angle suggestions, ask which option they prefer, or say "Would you like me to prepare". Creative preference ambiguity is not a reason to stop. Do not ask intermediate drafting confirmation questions.`;
   }
+  if (weekSlots) {
+    const slotLines = weekSlots
+      .map((slot, index) => `${index + 1}. scheduledAt=${slot.scheduledAtIso} timeZone=${slot.timeZone} wallClockLabel=${slot.wallClockLabel} scheduleSource=${slot.scheduleSource}`)
+      .join("\n");
+    messages[0].content += `\n\n[Deterministic week plan slots — REQUIRED for every schedule_post in this turn]\n${slotLines}\nPass requiresFutureSchedule=true, reviewId=${activeReviewId}, revision=${reviewRevision}, timeZone, wallClockLabel, scheduleSource, and the exact scheduledAt for each item. Never omit scheduledAt.`;
+  }
+  messages[0].content += `\n\n[Review scope] reviewId=${activeReviewId} revision=${reviewRevision} missionId=${sessionId} sessionId=${sessionId}. Include these on create_content_variant and schedule_post inputs for idempotency and supersession.`;
 
   await setSessionStatus(ctx, sessionId, "GENERATING");
 
   // Execution telemetry: a real, append-only trace of what this turn actually
   // did (provider round-trips, tool calls, approval gates) — never the
   // model's internal reasoning. See lib/social/repositories/agent-runs.ts.
-  await recordRunEvent(ctx, runId, { type: "UNDERSTANDING_REQUEST", label: PHASE_LABELS.UNDERSTANDING_REQUEST });
+  await recordRunEvent(ctx, runId, { type: "UNDERSTANDING_REQUEST", label: PHASE_LABELS.UNDERSTANDING_REQUEST, meta: { intent: copilotIntent } });
 
   const proposedActions: Array<{ id: string; tool: string; input: Record<string, unknown> }> = [];
   let finalText = "";
@@ -278,6 +401,7 @@ export async function runAgentTurn(ctx: OwnerContext, sessionId: string, runId: 
   // outcome this turn — the deterministic backstop against a false
   // "Done."/"Posted."/"Published." reply (see Section 10 of the integrity brief).
   let lastPublishOutcome: { succeeded: boolean; note: string; receipt: PublishReceipt } | null = null;
+  let weekSlotCursor = 0;
 
   try {
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
@@ -357,6 +481,47 @@ export async function runAgentTurn(ctx: OwnerContext, sessionId: string, runId: 
             messages.push({ role: "tool", content: `Error: ${errorMessage}`, toolCallId: call.id, toolName: call.name });
             continue;
           }
+
+          // Enrich schedule_post with deterministic week slots + review scope.
+          if (tool.schema.name === "schedule_post") {
+            publicInput = {
+              ...publicInput,
+              reviewId: activeReviewId,
+              revision: reviewRevision,
+              missionId: sessionId,
+              sessionId,
+            };
+            if (weekSlots) {
+              const slot = weekSlots[Math.min(weekSlotCursor, weekSlots.length - 1)];
+              weekSlotCursor += 1;
+              if (!strOrEmpty(publicInput.scheduledAt) && slot) {
+                publicInput.scheduledAt = slot.scheduledAtIso;
+                publicInput.timeZone = slot.timeZone;
+                publicInput.wallClockLabel = slot.wallClockLabel;
+                publicInput.scheduleSource = slot.scheduleSource;
+              }
+              publicInput.requiresFutureSchedule = true;
+              if (!strOrEmpty(publicInput.scheduledAt)) {
+                messages.push({
+                  role: "tool",
+                  content: "Error: weekly plan schedule_post requires a concrete scheduledAt — proposal blocked.",
+                  toolCallId: call.id,
+                  toolName: call.name,
+                });
+                continue;
+              }
+            }
+          }
+          if (tool.schema.name === "create_content_variant") {
+            publicInput = {
+              ...publicInput,
+              reviewId: activeReviewId,
+              revision: reviewRevision,
+              missionId: sessionId,
+              sessionId,
+            };
+          }
+
           const storedInput = dependents.length
             ? { ...publicInput, [INTERNAL_DEPENDENTS_KEY]: dependents }
             : publicInput;
@@ -437,18 +602,48 @@ export async function runAgentTurn(ctx: OwnerContext, sessionId: string, runId: 
     // renderer therefore depends on stored Social data, not model Markdown.
     if (creativeRequestMode === "EXECUTE" && !proposedActions.some((action) => PUBLISH_INTENT_TOOLS.has(action.tool))) {
       const detail = await getSessionDetail(ctx, sessionId);
-      const variants = detail.actions
-        .filter((action) => action.tool_name === "create_content_variant" && action.status === "SUCCEEDED")
-        .map((action) => action.output as { id?: unknown; platform?: unknown } | null)
-        .filter((output): output is { id: string; platform?: unknown } => typeof output?.id === "string");
+      const variants: Array<{ id: string; platform: string }> = [];
+      for (const action of detail.actions) {
+        if (action.tool_name !== "create_content_variant" || action.status !== "SUCCEEDED") continue;
+        const output = action.output;
+        let id: string | null = null;
+        let platformRaw: unknown = action.input?.platform;
+        if (typeof output === "string") {
+          id = output;
+        } else if (output && typeof output === "object" && typeof (output as { id?: unknown }).id === "string") {
+          id = (output as { id: string }).id;
+          platformRaw = (output as { platform?: unknown }).platform ?? platformRaw;
+        }
+        if (!id) continue;
+        variants.push({
+          id,
+          platform: typeof platformRaw === "string" ? platformRaw.toLowerCase() : "",
+        });
+      }
       for (const variant of variants) {
-        const platform = typeof variant.platform === "string" ? variant.platform.toLowerCase() : "";
-        const input = {
+        const platform = variant.platform;
+        const slot = weekSlots?.[Math.min(weekSlotCursor, Math.max(weekSlots.length - 1, 0))];
+        if (weekSlots) weekSlotCursor += 1;
+        const input: Record<string, unknown> = {
           variantId: variant.id,
           platform,
           recommendationTier: platform === "facebook" ? "optional" : "recommended",
           recommendationReason: platform === "facebook" ? "Useful as an optional secondary destination." : "Strong fit for this prepared creative and brand context.",
+          reviewId: activeReviewId,
+          revision: reviewRevision,
+          missionId: sessionId,
+          sessionId,
+          ...(slot
+            ? {
+                scheduledAt: slot.scheduledAtIso,
+                timeZone: slot.timeZone,
+                wallClockLabel: slot.wallClockLabel,
+                scheduleSource: slot.scheduleSource,
+                requiresFutureSchedule: true,
+              }
+            : {}),
         };
+        if (weekSlots && !slot?.scheduledAtIso) continue;
         const id = await proposeAction(ctx, sessionId, "schedule_post", input);
         if (id) proposedActions.push({ id, tool: "schedule_post", input });
       }
@@ -479,6 +674,13 @@ export async function runAgentTurn(ctx: OwnerContext, sessionId: string, runId: 
 
     const parts: Array<Record<string, unknown>> = [];
     if (proposedActions.length) parts.push({ type: "proposed_actions", actions: proposedActions });
+    if (hasPublishArtifact) {
+      const review = await loadCurrentReviewArtifact(ctx, sessionId);
+      if (review) {
+        parts.unshift(reviewArtifactMessagePart(review));
+        responseText = narrativeFromReview(review);
+      }
+    }
     if (lastPublishOutcome?.succeeded && lastPublishOutcome.receipt.permalink) {
       parts.push({ type: "publish_receipt", ...lastPublishOutcome.receipt });
     }
@@ -497,7 +699,7 @@ export async function runAgentTurn(ctx: OwnerContext, sessionId: string, runId: 
       type: "RUN_COMPLETED",
       label: PHASE_LABELS.RUN_COMPLETED,
       status: missionOutcome === "FAILED" ? "FAILED" : "SUCCESS",
-      meta: { missionOutcome },
+      meta: { missionOutcome, intent: copilotIntent },
     });
     await completeRun(ctx, runId, "COMPLETED");
 
@@ -525,12 +727,80 @@ export async function runAgentTurn(ctx: OwnerContext, sessionId: string, runId: 
 export async function approveAgentAction(ctx: OwnerContext, actionId: string) {
   const action = await getAction(ctx, actionId);
   if (!action) throw new Error("action not found");
+  if (action.status === "SUPERSEDED") {
+    throw new Error("This review was superseded. Approve the current review instead.");
+  }
 
   const tool = getTool(action.tool_name);
   if (!tool) throw new Error(`unknown tool: ${action.tool_name}`);
 
   const run = action.session_id ? await getLatestRun(ctx, action.session_id) : null;
   const isPublishIntent = PUBLISH_INTENT_TOOLS.has(action.tool_name);
+
+  // Trust hard gate + workforce binding before claim/execute.
+  if (isPublishIntent) {
+    const brand = await getBrandProfile(ctx);
+    const caption = typeof action.input?.caption === "string" ? action.input.caption : "";
+    let variantCaption = caption;
+    if (!variantCaption && typeof action.input?.variantId === "string") {
+      const { data: variant } = await ctx.supabase
+        .from("content_variants")
+        .select("caption")
+        .eq("id", action.input.variantId)
+        .maybeSingle();
+      variantCaption = typeof variant?.caption === "string" ? variant.caption : "";
+    }
+    const settings = await getAutomationSettings(ctx);
+    const imageProvider = getImageProvider();
+    const capabilityEvidence = buildProductCapabilityEvidence({
+      shadowMode: settings.shadow_mode !== false,
+      dryRun: process.env.SOCIAL_DRY_RUN === "1",
+      socialPublishExecutable: settings.shadow_mode === false,
+      imageGenerationStatus: resolveImageGenerationRuntimeStatus({
+        providerConfigured: Boolean(imageProvider) && !(imageProvider instanceof BlockedImageProvider),
+      }),
+    });
+    const trust = evaluateBrandTrustHardGate({
+      caption: variantCaption,
+      blockedPhrases: brand.voice?.blocked_phrases ?? [],
+      forbiddenClaims: brand.voice?.forbidden_claims ?? [],
+      capabilityEvidence,
+      isSelfMarketing: /\bstratxcel\b/i.test(variantCaption),
+    });
+    if (!canShowApprovalControl(trust.decision)) {
+      throw new Error(`Trust gate blocked approval (${trust.decision}): ${trust.reasons.join("; ") || "needs revision"}`);
+    }
+
+    const exactVersion = typeof action.input?.artifactVersion === "string"
+      ? action.input.artifactVersion
+      : typeof action.input?.revision === "number"
+        ? `v${action.input.revision}`
+        : undefined;
+    const previewVersion = typeof action.input?.previewArtifactVersion === "string"
+      ? action.input.previewArtifactVersion
+      : exactVersion;
+    if (previewVersion && exactVersion && previewVersion !== exactVersion) {
+      throw new Error("Exact artifact version mismatch: preview revision does not match approval revision.");
+    }
+
+    const gate = decideManualPublishGate({
+      explicitApprovalControl: true,
+      actionId,
+      shadowMode: settings.shadow_mode !== false,
+      qualityStatus: trust.decision === "PASS" ? "PASS" : "REVISE",
+      complianceStatus: trust.decision === "PASS" ? "PASS" : "REVISE",
+      releaseReadiness: exactVersion
+        ? { readyToRelease: trust.decision === "PASS", reviewedArtifactVersion: exactVersion }
+        : undefined,
+      exactArtifactVersion: exactVersion,
+    });
+    // Shadow still allows preparation execution through existing executor (simulated).
+    // Hard trust/version failures must block.
+    if (!gate.allowed && !gate.shadowBlocked) {
+      throw new Error(`Publish gate blocked: ${gate.reason}`);
+    }
+  }
+
   if (!(await claimAgentAction(ctx, actionId, "EXECUTING"))) return { alreadyResolved: true };
   if (run) {
     await recordRunEvent(ctx, run.id, {

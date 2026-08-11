@@ -9,6 +9,7 @@ export * from "./platform-adaptation.ts";
 export * from "./tenant-scope.ts";
 export * from "./artifact-resolution.ts";
 export * from "./schedule.ts";
+export * from "./week-planner.ts";
 export * from "./authorization.ts";
 export * from "./trust-release-gate.ts";
 export * from "./publication-status.ts";

@@ -22,6 +22,7 @@ export const TOOL_LABELS: Record<string, string> = {
   create_campaign: "Creating campaign",
   create_content_item: "Creating content concept",
   create_content_variant: "Preparing platform variant",
+  generate_image: "Generating image candidates",
   attach_media_to_content: "Attaching media",
   update_content_variant: "Updating platform variant",
   schedule_post: "Scheduling post",
