@@ -18,10 +18,12 @@ import type {
 } from "./snapshots.ts";
 import type {
   CapabilityAuthorizationReferences,
+  ResolveAuthorizationDeps,
+  TrustedExecutionScope,
   resolveCapabilityAuthorization,
 } from "./resolve-authorization.ts";
 
-export type { CapabilityAuthorizationReferences };
+export type { CapabilityAuthorizationReferences, TrustedExecutionScope };
 
 export interface ExecuteWorkforceCapabilityServerInput {
   requestId: string;
@@ -55,6 +57,7 @@ export interface ExecuteWorkforceCapabilityServerDeps {
   loadShadowKill?: typeof loadShadowAndKillSwitch;
   resolveArtifact?: typeof resolveMissionArtifactRecord;
   resolveAuthorization?: typeof resolveCapabilityAuthorization;
+  resolveAuthorizationDeps?: ResolveAuthorizationDeps;
   requestCapabilityFn?: typeof requestCapability;
 }
 
@@ -70,6 +73,49 @@ async function defaultLoadMission(
     .maybeSingle();
   if (error || !data) return null;
   return { id: String(data.id), tenant_id: String(data.tenant_id) };
+}
+
+function buildTrustedExecutionScope(
+  input: ExecuteWorkforceCapabilityServerInput,
+): TrustedExecutionScope {
+  const payload = input.input ?? {};
+  const inputArtifactIds = [...(input.inputArtifactIds ?? [])];
+  const artifactId =
+    typeof payload.artifactId === "string" && payload.artifactId.trim()
+      ? payload.artifactId.trim()
+      : inputArtifactIds[0] ?? null;
+  const accountId =
+    typeof payload.accountId === "string" && payload.accountId.trim()
+      ? payload.accountId.trim()
+      : null;
+  const destinationId =
+    typeof payload.destinationId === "string" && payload.destinationId.trim()
+      ? payload.destinationId.trim()
+      : typeof payload.leadId === "string" && payload.leadId.trim()
+        ? payload.leadId.trim()
+        : accountId;
+  return {
+    inputArtifactIds,
+    expectedArtifactVersions: input.expectedArtifactVersions,
+    operation: typeof payload.operation === "string" ? payload.operation : null,
+    accountId,
+    variantId:
+      typeof payload.variantId === "string" && payload.variantId.trim()
+        ? payload.variantId.trim()
+        : null,
+    artifactId,
+    actionFingerprint:
+      typeof payload.exactPayloadFingerprint === "string"
+        ? payload.exactPayloadFingerprint
+        : typeof payload.actionFingerprint === "string"
+          ? payload.actionFingerprint
+          : null,
+    destinationId,
+    idempotencyKey:
+      typeof payload.idempotencyKey === "string" && payload.idempotencyKey.trim()
+        ? payload.idempotencyKey.trim()
+        : null,
+  };
 }
 
 /**
@@ -124,21 +170,24 @@ export async function executeWorkforceCapabilityServer(
   const resolveAuth = deps.resolveAuthorization ?? authModule.resolveCapabilityAuthorization;
   const run = deps.requestCapabilityFn ?? requestCapability;
 
-  const operation =
-    typeof input.input?.operation === "string" ? input.input.operation : null;
+  const execution = buildTrustedExecutionScope(input);
 
   const [entitlementSnapshot, integrationSnapshot, shadowKill, resolvedAuth] =
     await Promise.all([
       loadEnt(tenantId),
       loadInt(tenantId),
       loadShadow({ tenantId, capability: input.capability }),
-      resolveAuth({
-        tenantId,
-        missionId: input.missionId,
-        capability: input.capability,
-        operation,
-        references: input.authorization ?? null,
-      }),
+      resolveAuth(
+        {
+          tenantId,
+          missionId: input.missionId,
+          capability: input.capability,
+          operation: execution.operation,
+          execution,
+          references: input.authorization ?? null,
+        },
+        deps.resolveAuthorizationDeps ?? {},
+      ),
     ]);
   const environment = loadEnv();
 
