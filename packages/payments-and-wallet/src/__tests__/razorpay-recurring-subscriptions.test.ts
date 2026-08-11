@@ -411,6 +411,17 @@ function testMigrationSafety() {
   const periodMigration = read("supabase", "migrations", "20260811140000_razorpay_recurring_period_and_sync.sql");
   assert.equal(/reconcile_and_fulfill_razorpay_payment_v4/.test(periodMigration) && /create or replace function public\.reconcile_and_fulfill_razorpay_payment_v4/.test(periodMigration), false);
   assert.ok(/missing_provider_billing_period/.test(periodMigration));
+
+  const multiCharge = read(
+    "supabase",
+    "migrations",
+    "20260811150000_razorpay_recurring_multi_charge_orders.sql"
+  );
+  assert.ok(/payment_orders_business_reference_idx/.test(multiCharge));
+  assert.ok(
+    /reference_type <> 'razorpay_subscription'/.test(multiCharge),
+    "renewal charges must not share the one-shot business-reference unique key"
+  );
 }
 
 async function run() {
