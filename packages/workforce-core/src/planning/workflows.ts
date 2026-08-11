@@ -30,7 +30,17 @@ export function resolveWorkflowFocus(
     }
     if (top.code === "WEAK_SEARCH_VISIBILITY") return "seo_content";
     if (top.code === "MISSING_DIGITAL_FOUNDATION") return "foundation_new_business";
-    if (top.code === "LOW_DISCOVERY" && (input.businessSignals?.hasAds || (input.entitlementSnapshot.relevantEntitlements.meta_ad_campaigns ?? 0) > 0)) {
+    if (
+      (top.code === "LOW_DISCOVERY" || top.code === "INSUFFICIENT_DEMAND") &&
+      (input.businessSignals?.hasAds ||
+        (input.entitlementSnapshot.relevantEntitlements.meta_ad_campaigns ?? 0) > 0 ||
+        ((input.businessSignals?.postContactConversionStrength === "high" ||
+          input.businessSignals?.postContactConversionStrength === "medium" ||
+          input.businessSignals?.leadCaptureStrength === "adequate" ||
+          input.businessSignals?.leadCaptureStrength === "strong") &&
+          (input.businessSignals?.websiteTrafficStrength === "low" ||
+            input.businessSignals?.websiteTrafficStrength === "none")))
+    ) {
       return "paid_acquisition_readiness";
     }
   }
@@ -325,11 +335,21 @@ export function buildWorkflowStages(input: {
     case "paid_acquisition_readiness":
       return [
         stage({
+          stageId: "s_growth",
+          department: "growth",
+          specialistRole: "funnel_architect",
+          objective:
+            "Select growth levers (organic/search/social/paid/conversion/CRM/retention) — paid is optional",
+          dependencies: [],
+          outputKind: "funnel_map",
+          allowedCapabilityClasses: ["analytics.read"],
+        }),
+        stage({
           stageId: "s_research",
           department: "research",
           specialistRole: "audience_researcher",
-          objective: "Validate acquisition readiness evidence",
-          dependencies: [],
+          objective: "Validate paid acquisition readiness evidence",
+          dependencies: ["s_growth"],
           outputKind: "research_summary",
           allowedCapabilityClasses: ["ads.audit"],
         }),
@@ -337,17 +357,53 @@ export function buildWorkflowStages(input: {
           stageId: "s_ads",
           department: "advertising",
           specialistRole: "media_planner",
-          objective: "Plan paid acquisition (no spend from planning alone)",
+          objective: "Build CampaignPlan (no spend from planning alone; authorizesSpend=false)",
           dependencies: ["s_research"],
           outputKind: "ads_plan",
+          allowedCapabilityClasses: ["ads.plan"],
+        }),
+        stage({
+          stageId: "s_creative_brief",
+          department: "advertising",
+          specialistRole: "creative_tester",
+          objective: "Produce AdCreativeBrief handoff for Creative Studio (no asset production here)",
+          dependencies: ["s_ads"],
+          outputKind: "creative_test_plan",
+          allowedCapabilityClasses: ["ads.plan"],
+        }),
+        stage({
+          stageId: "s_landing_handoff",
+          department: "website",
+          specialistRole: "landing_page_builder",
+          objective: "If landing required, accept Website Department handoff — do not duplicate website engine",
+          dependencies: ["s_ads"],
+          outputKind: "page_brief",
+          allowedCapabilityClasses: ["website.generate"],
+        }),
+        stage({
+          stageId: "s_experiment",
+          department: "growth",
+          specialistRole: "experiment_designer",
+          objective: "Define ExperimentPlan without claiming statistical significance",
+          dependencies: ["s_ads"],
+          outputKind: "experiment_plan",
+          allowedCapabilityClasses: ["analytics.read"],
+        }),
+        stage({
+          stageId: "s_finance",
+          department: "finance",
+          specialistRole: "cost_guardian",
+          objective: "Review budget proposal against commercial envelope — clearance ≠ unlimited spend",
+          dependencies: ["s_ads"],
+          outputKind: "budget_report",
           allowedCapabilityClasses: ["ads.plan"],
         }),
         stage({
           stageId: "s_quality",
           department: "quality",
           specialistRole: "final_reviewer",
-          objective: "QA ads plan before any publish",
-          dependencies: ["s_ads"],
+          objective: "QA ads plan before any future publish path",
+          dependencies: ["s_creative_brief", "s_experiment", "s_finance"],
           outputKind: "qa_report",
         }),
       ];
