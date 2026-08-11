@@ -5,6 +5,7 @@ export * from "./copy/copywriter.ts";
 export * from "./art/art-direction.ts";
 export * from "./brand/context.ts";
 export * from "./image/provider.ts";
+export * from "./image/ai-runtime-provider.ts";
 export * from "./image/quality.ts";
 export * from "./image/fidelity.ts";
 export * from "./references/library.ts";

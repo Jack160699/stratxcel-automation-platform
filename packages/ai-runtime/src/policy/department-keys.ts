@@ -1,0 +1,30 @@
+/** Mirrors workforce-core DEPARTMENT_KEYS without a hard package dependency. */
+export const DEPARTMENT_KEYS = [
+  "executive",
+  "strategy",
+  "research",
+  "brand",
+  "creative",
+  "content",
+  "media",
+  "social",
+  "seo",
+  "website",
+  "advertising",
+  "growth",
+  "sales",
+  "crm",
+  "whatsapp",
+  "conversion",
+  "analytics",
+  "reporting",
+  "optimization",
+  "quality",
+  "compliance",
+  "customer_success",
+  "operations",
+  "engineering",
+  "finance",
+] as const;
+
+export type DepartmentKey = (typeof DEPARTMENT_KEYS)[number];

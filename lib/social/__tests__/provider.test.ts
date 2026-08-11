@@ -95,16 +95,22 @@ function run() {
   const originalGeminiKey = process.env.GEMINI_API_KEY;
   const originalOpenAIKey = process.env.OPENAI_API_KEY;
   try {
-    assert.equal(GEMINI_MODEL, "gemini-3.1-flash-lite");
-    assert.equal(GEMINI_GENERATE_CONTENT_URL, "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent");
-    assert.deepEqual(listProviders().map((provider) => provider.name), ["gemini"]);
+    assert.equal(GEMINI_MODEL, "gemini-3.5-flash-lite");
+    assert.equal(GEMINI_GENERATE_CONTENT_URL, "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent");
+    assert.ok(listProviders().some((provider) => provider.name === "ai-runtime" || provider.name === "gemini"));
     delete process.env.GEMINI_API_KEY;
-    process.env.OPENAI_API_KEY = "legacy-key-must-not-configure-provider";
-    assert.equal(listProviders()[0].isConfigured(), false);
-    assert.equal(resolveEffectiveProviderIdentity().configured, false);
+    process.env.OPENAI_API_KEY = "openai-only-configures-via-ai-runtime";
+    assert.equal(listProviders()[0].isConfigured(), true);
+    assert.equal(resolveEffectiveProviderIdentity().configured, true);
+    assert.equal(resolveEffectiveProviderIdentity().provider, "OpenAI");
     process.env.GEMINI_API_KEY = "test-only";
-    assert.deepEqual(resolveEffectiveProviderIdentity(), { provider: "Google Gemini", protocol: "Gemini Developer API", model: "gemini-3.1-flash-lite", configured: true });
-    console.log("provider.test.ts: ALL PASS (fixed Gemini endpoint/model, no legacy fallback)");
+    assert.deepEqual(resolveEffectiveProviderIdentity(), {
+      provider: "Google Gemini",
+      protocol: "AI Runtime / Gemini Developer API",
+      model: "gemini-3.5-flash-lite",
+      configured: true,
+    });
+    console.log("provider.test.ts: ALL PASS (AI runtime wiring, Gemini boundary preserved)");
   } finally {
     if (originalGeminiKey === undefined) delete process.env.GEMINI_API_KEY;
     else process.env.GEMINI_API_KEY = originalGeminiKey;
