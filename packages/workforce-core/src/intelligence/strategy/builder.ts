@@ -42,5 +42,11 @@ export function assertObjectiveDistinctFromTactics(artifact: GrowthStrategyArtif
 }
 
 export function assertResponseBottlenecksNotRoutedToSocial(artifact: GrowthStrategyArtifact): void {
-  for (const item of artifact.workItems) if ((item.department === "whatsapp" || item.department === "crm") && item.department === "social") throw new Error("response_bottleneck_routed_to_social");
+  for (const item of artifact.workItems) {
+    if (item.department !== "social") continue;
+    const text = `${item.objective} ${item.tactic}`.toLowerCase();
+    if (/slow.?response|follow.?up|lead response|qualification|whatsapp|crm/.test(text)) {
+      throw new Error("response_bottleneck_routed_to_social");
+    }
+  }
 }

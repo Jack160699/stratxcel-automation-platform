@@ -9,11 +9,20 @@ export class ProhibitedClaimError extends Error { constructor(m: string) { super
 export function assessBrandReadiness(brandBrain: BrandBrainContent): BrandReadinessAssessment {
   const presentFields: string[] = []; const missingRequired: string[] = [];
   for (const f of REQUIRED) {
-    const v = brandBrain[f]; const ok = typeof v === "string" ? v.trim().length > 0 : Array.isArray(v) ? v.length > 0 : v != null;
+    const v = (brandBrain as Record<string, unknown>)[f];
+    const ok =
+      typeof v === "string"
+        ? v.trim().length > 0
+        : Array.isArray(v)
+          ? v.length > 0
+          : v != null;
     (ok ? presentFields : missingRequired).push(f);
   }
   const warnings: string[] = [];
-  if (!brandBrain.products?.length && !brandBrain.industry?.trim()) warnings.push("Offer context missing — do not invent SKUs");
+  const products = (brandBrain as { products?: unknown }).products;
+  if (!(Array.isArray(products) && products.length > 0) && !brandBrain.industry?.trim()) {
+    warnings.push("Offer context missing — do not invent SKUs");
+  }
   let level: BrandReadinessLevel = missingRequired.length === REQUIRED.length ? "MISSING_REQUIRED_CONTEXT" : missingRequired.length ? "PARTIAL" : "READY";
   const scan = JSON.stringify(brandBrain);
   return { level, presentFields, missingRequired, warnings, prohibitedClaimViolations: PROHIBITED.filter((rx) => rx.test(scan)).map((rx) => rx.source) };

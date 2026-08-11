@@ -2,12 +2,12 @@ import type {
   CompanyOpsContext,
   IntegrationFlags,
   OnboardingReadiness,
-  ReadinessDimension,
+  CompanyOpsReadinessDimension,
   ReadinessItem,
   ReadinessStatus,
 } from "../types.ts";
 
-const ALL_DIMENSIONS: readonly ReadinessDimension[] = [
+const ALL_DIMENSIONS: readonly CompanyOpsReadinessDimension[] = [
   "business_context",
   "brand_brain",
   "website",
@@ -21,7 +21,7 @@ const ALL_DIMENSIONS: readonly ReadinessDimension[] = [
 ] as const;
 
 /** Purchased services → required readiness dimensions (never force irrelevant integrations). */
-const SERVICE_REQUIREMENTS: Record<string, readonly ReadinessDimension[]> = {
+const SERVICE_REQUIREMENTS: Record<string, readonly CompanyOpsReadinessDimension[]> = {
   social_package: ["business_context", "brand_brain", "social", "billing", "permissions"],
   brand_audit: ["business_context", "brand_brain", "billing", "permissions"],
   audit: ["business_context", "brand_brain", "billing", "permissions"],
@@ -33,8 +33,8 @@ const SERVICE_REQUIREMENTS: Record<string, readonly ReadinessDimension[]> = {
   analytics: ["business_context", "brand_brain", "analytics", "billing", "permissions"],
 };
 
-function requiredDimensions(purchasedServices: readonly string[]): Set<ReadinessDimension> {
-  const required = new Set<ReadinessDimension>();
+function requiredDimensions(purchasedServices: readonly string[]): Set<CompanyOpsReadinessDimension> {
+  const required = new Set<CompanyOpsReadinessDimension>();
   for (const service of purchasedServices) {
     const dims = SERVICE_REQUIREMENTS[service] ?? ["business_context", "brand_brain", "billing", "permissions"];
     for (const d of dims) required.add(d);
@@ -48,7 +48,7 @@ function requiredDimensions(purchasedServices: readonly string[]): Set<Readiness
   return required;
 }
 
-function dimensionReady(dimension: ReadinessDimension, ctx: CompanyOpsContext): boolean {
+function dimensionReady(dimension: CompanyOpsReadinessDimension, ctx: CompanyOpsContext): boolean {
   const integrations: IntegrationFlags = ctx.integrations ?? {};
   switch (dimension) {
     case "business_context":
@@ -77,8 +77,8 @@ function dimensionReady(dimension: ReadinessDimension, ctx: CompanyOpsContext): 
 }
 
 function statusFor(
-  dimension: ReadinessDimension,
-  required: Set<ReadinessDimension>,
+  dimension: CompanyOpsReadinessDimension,
+  required: Set<CompanyOpsReadinessDimension>,
   ctx: CompanyOpsContext,
 ): ReadinessStatus {
   if (!required.has(dimension)) return "NOT_REQUIRED";

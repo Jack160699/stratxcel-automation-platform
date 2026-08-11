@@ -107,10 +107,10 @@ Research â†’ Strategy â†’ Specialist production â†’ Independent c
 
 Additive tables: `workforce_plans`, `workforce_stages`, `workforce_reviews` (RLS).
 **Production migration: NOT applied by this PR.**
-`HERMES_MODE` production default remains disabled â€” unchanged.
+`HERMES_MODE` production default remains disabled — unchanged.
 
-## Next parallel sprints
+## Integrated departments
 
-Department/capability providers (media, SEO publish, website deploy, ads, WhatsApp send) behind the registry â€” not in this foundation PR.
+See [AI_WORKFORCE_INTEGRATION.md](./AI_WORKFORCE_INTEGRATION.md) and [CAPABILITY_FINAL_AUDIT.md](./CAPABILITY_FINAL_AUDIT.md) for the final integrated flow, Trust↔Social gates, and capability truth table.
 
 Performance Intelligence (analytics / reporting / optimization learning loop): see [PERFORMANCE_INTELLIGENCE.md](./PERFORMANCE_INTELLIGENCE.md).

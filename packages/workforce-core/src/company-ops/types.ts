@@ -17,7 +17,7 @@ export type LifecyclePhase =
   | "offboarding"
   | "churned";
 
-export type ReadinessDimension =
+export type CompanyOpsReadinessDimension =
   | "business_context"
   | "brand_brain"
   | "website"
@@ -132,7 +132,7 @@ export interface CustomerSuccessAlert {
 }
 
 export interface ReadinessItem {
-  dimension: ReadinessDimension;
+  dimension: CompanyOpsReadinessDimension;
   status: ReadinessStatus;
   required: boolean;
   detail: string;

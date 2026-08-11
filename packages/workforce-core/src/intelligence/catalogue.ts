@@ -4,12 +4,13 @@ export interface PlanDefinitionInput {
   tier: string;
   publicName: string;
   priceCents: number | null;
-  entitlements: Record<string, number>;
+  /** Accepts PlanEntitlementLimits or a plain record. */
+  entitlements: Readonly<Partial<Record<string, number>>> | Record<string, number>;
   selfServiceCheckout: boolean;
   status: "active" | "legacy";
 }
 
-function domainsForEntitlements(ent: Record<string, number>): string[] {
+function domainsForEntitlements(ent: Readonly<Partial<Record<string, number>>> | Record<string, number>): string[] {
   const d = new Set<string>();
   if ((ent.whatsapp_contacts ?? 0) > 0) d.add("crm");
   if ((ent.website_maintenance ?? 0) > 0) d.add("website");

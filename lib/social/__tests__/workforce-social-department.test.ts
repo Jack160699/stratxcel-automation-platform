@@ -232,6 +232,8 @@ function run() {
     shadowMode: true,
     qualityStatus: "PASS",
     complianceStatus: "PASS",
+    releaseReadiness: { readyToRelease: true, reviewedArtifactVersion: "1" },
+    exactArtifactVersion: "1",
   });
   assert.equal(shadowed.allowed, false);
   assert.equal(shadowed.shadowBlocked, true);
@@ -274,6 +276,8 @@ function run() {
     missionSource: "PACKAGE",
     qualityStatus: "PASS",
     complianceStatus: "PASS",
+    releaseReadiness: { readyToRelease: true, reviewedArtifactVersion: "1" },
+    exactArtifactVersion: "1",
   });
   assert.equal(packageShadow.allowed, false);
   assert.equal(packageShadow.shadowBlocked, true);
@@ -287,6 +291,8 @@ function run() {
     missionSource: "PACKAGE",
     qualityStatus: "PASS",
     complianceStatus: "PASS",
+    releaseReadiness: { readyToRelease: true, reviewedArtifactVersion: "1" },
+    exactArtifactVersion: "1",
   });
   assert.equal(packageAuto.allowed, true);
 

@@ -52,35 +52,27 @@ export function evaluateSocialTrustReleaseGate(
     };
   }
 
-  if (input.releaseReadiness) {
-    if (input.releaseReadiness.readyToRelease !== true) {
-      return {
-        allowed: false,
-        reason: "release_not_ready",
-        readyToRelease: false,
-      };
-    }
-    const reviewed = input.releaseReadiness.reviewedArtifactVersion;
-    const exact = input.exactArtifactVersion;
-    if (reviewed != null && exact != null && reviewed !== exact) {
-      return {
-        allowed: false,
-        reason: "artifact_version_mismatch",
-        readyToRelease: false,
-      };
-    }
-    if (reviewed != null && exact == null) {
-      return {
-        allowed: false,
-        reason: "artifact_version_required",
-        readyToRelease: false,
-      };
-    }
-  } else if (input.exactArtifactVersion != null) {
-    // Exact version supplied without release readiness — fail closed on version gate.
+  if (!input.releaseReadiness || input.releaseReadiness.readyToRelease !== true) {
     return {
       allowed: false,
-      reason: "release_readiness_required_for_version_gate",
+      reason: "release_not_ready",
+      readyToRelease: false,
+    };
+  }
+
+  const reviewed = input.releaseReadiness.reviewedArtifactVersion;
+  const exact = input.exactArtifactVersion;
+  if (reviewed != null && exact != null && String(reviewed) !== String(exact)) {
+    return {
+      allowed: false,
+      reason: "artifact_version_mismatch",
+      readyToRelease: false,
+    };
+  }
+  if (reviewed != null && exact == null) {
+    return {
+      allowed: false,
+      reason: "artifact_version_required",
       readyToRelease: false,
     };
   }
