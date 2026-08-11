@@ -1,7 +1,7 @@
 # AI Workforce Master E2E
 
-**Status:** Deterministic integration harness against WorkforceCore  
-**Package:** `@stratxcel/workforce-core` → `src/e2e/`  
+**Status:** Deterministic integration harness against WorkforceCore
+**Package:** `@stratxcel/workforce-core` → `src/e2e/`
 **Runner:** `packages/workforce-core/src/__tests__/company-ops-e2e.test.ts`
 
 ## Safety

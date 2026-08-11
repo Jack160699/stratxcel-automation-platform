@@ -1,7 +1,7 @@
 # Company Operations
 
-**Status:** Supporting internal departments for AI workforce reliability and customer accountability  
-**Package:** `@stratxcel/workforce-core` → `src/company-ops/`  
+**Status:** Supporting internal departments for AI workforce reliability and customer accountability
+**Package:** `@stratxcel/workforce-core` → `src/company-ops/`
 **Scope:** customer_success · operations · engineering · finance
 
 ## Principles
