@@ -6,18 +6,24 @@ import {
   isProviderManagedSubscription,
   type PlanTier,
 } from "@stratxcel/payments-and-wallet";
+import {
+  createPostgresEmailOutboxStore,
+  enqueueSubscriptionRenewalUpcomingEmailsBestEffort,
+} from "@stratxcel/email-runtime";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * Internal, cron-only endpoint (see vercel.json). Two jobs, always in this order:
+ * Internal, cron-only endpoint (see vercel.json). Jobs, always in this order:
  *
  *  1. run_subscription_lifecycle_cycle — pure state transitions.
- *  2. For Payment-Link-managed subscriptions renewing within 3 days (or past_due)
+ *  2. Best-effort SUBSCRIPTION_RENEWAL_UPCOMING emails for eligible candidates.
+ *  3. For Payment-Link-managed subscriptions renewing within 3 days (or past_due)
  *     without a live renewal link, generate the next period's payment link.
  *
- * Provider-managed Razorpay AutoPay subscriptions are skipped — Razorpay charges them.
+ * Provider-managed Razorpay AutoPay subscriptions are skipped for Payment Link minting —
+ * Razorpay charges them. Upcoming-renewal email still applies when local state says renewal will occur.
  * Gated on PAYMENTS_SUBSCRIPTIONS_ENABLED.
  */
 export async function POST(request: Request) {
@@ -48,6 +54,14 @@ export async function POST(request: Request) {
 
   if (candidatesErr) {
     return Response.json({ error: `Failed to load renewal candidates: ${candidatesErr.message}`, lifecycle: cycleResult }, { status: 500 });
+  }
+
+  // Best-effort upcoming renewal notices — never affect link minting below.
+  try {
+    const emailStore = createPostgresEmailOutboxStore(serviceDb);
+    await enqueueSubscriptionRenewalUpcomingEmailsBestEffort(serviceDb, emailStore, candidates ?? []);
+  } catch (err) {
+    console.error("[Subscription Renewal Cron] renewal-upcoming email failed", err);
   }
 
   let linksCreated = 0;

@@ -29,7 +29,7 @@ function categorizeHttpFailure(status: number, message: string): {
     lower.includes("domain is not verified") ||
     lower.includes("from address")
   ) {
-    return { retryable: false, errorCategory: "sender_unverified", errorCode: `HTTP_${status}` };
+    return { retryable: false, errorCategory: "sender_unverified", errorCode: "SENDER_UNVERIFIED" };
   }
   if (status === 422 || lower.includes("invalid") || lower.includes("recipient")) {
     return { retryable: false, errorCategory: "invalid_recipient", errorCode: `HTTP_${status}` };
@@ -48,14 +48,39 @@ function safeErrorMessage(raw: string): string {
     .slice(0, 280);
 }
 
+async function fetchWithTimeout(
+  fetchImpl: typeof fetch,
+  url: string,
+  init: RequestInit,
+  timeoutMs: number
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetchImpl(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export class ResendEmailProvider implements EmailProvider {
   readonly name = "resend";
   private readonly apiKey: string | null;
   private readonly fetchImpl: typeof fetch;
+  private readonly sendTimeoutMs: number;
+  private readonly probeTimeoutMs: number;
 
-  constructor(options: { apiKey?: string | null; fetchImpl?: typeof fetch } = {}) {
+  constructor(options: {
+    apiKey?: string | null;
+    fetchImpl?: typeof fetch;
+    sendTimeoutMs?: number;
+    probeTimeoutMs?: number;
+  } = {}) {
+    const config = loadEmailRuntimeConfig();
     this.apiKey = options.apiKey ?? process.env.RESEND_API_KEY?.trim() ?? null;
     this.fetchImpl = options.fetchImpl ?? fetch;
+    this.sendTimeoutMs = options.sendTimeoutMs ?? config.providerTimeoutMs;
+    this.probeTimeoutMs = options.probeTimeoutMs ?? config.probeTimeoutMs;
   }
 
   isConfigured(): boolean {
@@ -94,11 +119,16 @@ export class ResendEmailProvider implements EmailProvider {
       if (request.headers) body.headers = request.headers;
       if (request.tags) body.tags = request.tags;
 
-      const response = await this.fetchImpl(`${RESEND_API}/emails`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(body),
-      });
+      const response = await fetchWithTimeout(
+        this.fetchImpl,
+        `${RESEND_API}/emails`,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify(body),
+        },
+        this.sendTimeoutMs
+      );
 
       const rawText = await response.text();
       let parsed: Record<string, unknown> = {};
@@ -172,11 +202,15 @@ export class ResendEmailProvider implements EmailProvider {
     }
 
     try {
-      // Domains list is a lightweight authenticated probe — never logs the key.
-      const response = await this.fetchImpl(`${RESEND_API}/domains`, {
-        method: "GET",
-        headers: { Authorization: `Bearer ${this.apiKey}` },
-      });
+      const response = await fetchWithTimeout(
+        this.fetchImpl,
+        `${RESEND_API}/domains`,
+        {
+          method: "GET",
+          headers: { Authorization: `Bearer ${this.apiKey}` },
+        },
+        this.probeTimeoutMs
+      );
 
       if (response.status === 401 || response.status === 403) {
         return {
@@ -218,11 +252,15 @@ export class ResendEmailProvider implements EmailProvider {
               : "Resend reachable; sender domain verification unknown",
       };
     } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      const isTimeout = /timeout|aborted|AbortError/i.test(message);
       return {
         configured: true,
         reachable: false,
         senderVerified: null,
-        detail: err instanceof Error ? safeErrorMessage(err.message) : "Resend probe network failure",
+        detail: isTimeout
+          ? `Resend probe timed out after ${this.probeTimeoutMs}ms`
+          : safeErrorMessage(message),
       };
     }
   }

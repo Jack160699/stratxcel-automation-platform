@@ -1,4 +1,5 @@
 import { loadEmailRuntimeConfig } from "../config.ts";
+import { getEmailEventContract } from "../events.ts";
 import { emitEmailOperationalEvent } from "../observability.ts";
 import { assertSafeHeaderValue } from "../recipient.ts";
 import type { EmailOutboxRow, EmailProvider } from "../types.ts";
@@ -7,6 +8,7 @@ import { EMAIL_MAX_ATTEMPTS, isRetryExhausted, nextEmailAttemptAt } from "./back
 
 export interface ProcessOutboxResult {
   claimed: number;
+  recovered: number;
   sent: number;
   retried: number;
   failed: number;
@@ -21,12 +23,23 @@ function extractRendered(row: EmailOutboxRow): { html: string; text: string } | 
   return null;
 }
 
+function resolveMaxAttempts(row: EmailOutboxRow): number {
+  try {
+    const contract = getEmailEventContract(row.event_type);
+    if (typeof contract.maxAttempts === "number" && contract.maxAttempts > 0) {
+      return contract.maxAttempts;
+    }
+  } catch {
+    // malformed/legacy row
+  }
+  return EMAIL_MAX_ATTEMPTS;
+}
+
 async function processOne(
   store: EmailOutboxStore,
   provider: EmailProvider,
   row: EmailOutboxRow
 ): Promise<"sent" | "retried" | "failed" | "skipped"> {
-  // Already sent — worker restart / double-claim safety.
   if (row.status === "SENT" && row.provider_message_id) {
     return "skipped";
   }
@@ -53,22 +66,25 @@ async function processOne(
   }
 
   if (!provider.isConfigured()) {
+    // Park without burning attempts — recovery will re-enter PENDING later.
     await store.markFailed(row.id, {
-      attemptCount: attempt,
+      attemptCount: row.attempt_count,
       errorCode: "NOT_CONFIGURED",
       errorSafe: "Email provider is not configured",
       status: "WAITING_CONFIGURATION",
+      preserveAttemptCount: true,
     });
     emitEmailOperationalEvent({
       event: "email_send_failed",
       eventType: row.event_type,
       templateKey: row.template_key,
       tenantId: row.tenant_id,
-      attempt,
+      attempt: row.attempt_count,
       provider: provider.name,
       correlationId: row.correlation_id,
       outboxId: row.id,
       errorCategory: "not_configured",
+      status: "WAITING_CONFIGURATION",
     });
     return "failed";
   }
@@ -135,7 +151,7 @@ async function processOne(
     return "sent";
   }
 
-  const maxAttempts = EMAIL_MAX_ATTEMPTS;
+  const maxAttempts = resolveMaxAttempts(row);
   if (outcome.retryable && !isRetryExhausted(attempt, maxAttempts)) {
     const nextAt = nextEmailAttemptAt(attempt);
     await store.markRetry(row.id, {
@@ -160,17 +176,18 @@ async function processOne(
   }
 
   const terminalStatus =
-    outcome.errorCategory === "not_configured" || outcome.errorCategory === "auth_config"
+    outcome.errorCategory === "not_configured" ||
+    outcome.errorCategory === "auth_config" ||
+    outcome.errorCategory === "sender_unverified"
       ? "WAITING_CONFIGURATION"
-      : outcome.errorCategory === "sender_unverified"
-        ? "WAITING_CONFIGURATION"
-        : "FAILED";
+      : "FAILED";
 
   await store.markFailed(row.id, {
     attemptCount: attempt,
     errorCode: outcome.errorCode,
     errorSafe: outcome.errorSafe,
     status: terminalStatus,
+    preserveAttemptCount: terminalStatus === "WAITING_CONFIGURATION" && outcome.errorCategory === "not_configured",
   });
   emitEmailOperationalEvent({
     event: "email_send_failed",
@@ -189,6 +206,7 @@ async function processOne(
 
 /**
  * Claim pending/retry emails atomically and send via the provider adapter.
+ * When provider is configured, recovers eligible WAITING_CONFIGURATION rows first.
  * Never marks SENT without a real provider message id.
  */
 export async function processEmailOutboxBatch(
@@ -196,6 +214,12 @@ export async function processEmailOutboxBatch(
   provider: EmailProvider,
   options: { limit?: number; leaseOwner?: string } = {}
 ): Promise<ProcessOutboxResult> {
+  let recovered = 0;
+  if (provider.isConfigured() && typeof store.recoverWaitingConfiguration === "function") {
+    const rows = await store.recoverWaitingConfiguration(options.limit ?? 100);
+    recovered = rows.length;
+  }
+
   const claimed = await store.claimPending({
     limit: options.limit ?? 20,
     leaseOwner: options.leaseOwner ?? "email-processor",
@@ -203,6 +227,7 @@ export async function processEmailOutboxBatch(
 
   const result: ProcessOutboxResult = {
     claimed: claimed.length,
+    recovered,
     sent: 0,
     retried: 0,
     failed: 0,

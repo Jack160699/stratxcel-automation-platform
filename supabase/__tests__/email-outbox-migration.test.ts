@@ -6,9 +6,18 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const migrationPath = path.join(__dirname, "../migrations/20260813120000_transactional_email_outbox.sql");
+const recoveryMigrationPath = path.join(
+  __dirname,
+  "../migrations/20260813140000_email_outbox_waiting_configuration_recovery.sql"
+);
 
 function run() {
   const sql = fs.readFileSync(migrationPath, "utf8");
+  const recoverySql = fs.readFileSync(recoveryMigrationPath, "utf8");
+  assert.ok(recoverySql.includes("recover_email_outbox_waiting_configuration"));
+  assert.ok(recoverySql.includes("email-processor"));
+  assert.ok(recoverySql.includes("grant execute on function public.recover_email_outbox_waiting_configuration"));
+  assert.ok(!/grant execute .+ to (anon|authenticated)/i.test(recoverySql));
 
   assert.ok(sql.includes("create table if not exists public.email_outbox"));
   for (const col of [

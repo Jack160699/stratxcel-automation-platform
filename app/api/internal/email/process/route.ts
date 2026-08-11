@@ -9,7 +9,13 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * Internal cron endpoint — processes the durable email outbox.
+ * Authenticated manual/backup email outbox processor.
+ *
+ * Primary V1 processor is the independent poll loop inside apps/mission-worker
+ * (EMAIL_PROCESSOR_MODE=mission-worker). This HTTP endpoint is intentionally
+ * NOT scheduled via Vercel sub-daily cron (Hobby-incompatible). Call with
+ * Authorization: Bearer $CRON_SECRET for ops recovery / external schedulers.
+ *
  * Never sends unless provider is configured; never fabricates success.
  */
 export async function POST(request: Request) {
@@ -26,7 +32,7 @@ export async function POST(request: Request) {
   try {
     const result = await processEmailOutboxBatch(store, provider, {
       limit: 25,
-      leaseOwner: "vercel-email-cron",
+      leaseOwner: "http-email-manual",
     });
     return Response.json({ status: "ok", ...result }, { status: 200, headers: { "Cache-Control": "no-store" } });
   } catch (err) {
@@ -36,6 +42,5 @@ export async function POST(request: Request) {
 }
 
 export async function GET(request: Request) {
-  // Vercel cron uses GET for some schedules; require the same secret.
   return POST(request);
 }

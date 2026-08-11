@@ -177,18 +177,36 @@ export async function enqueuePaymentOutcomeEmails(
         })
       );
       if (input.actionTaken?.includes("subscription_charge")) {
+        const subscriptionId = input.subscriptionId ?? order.reference_id ?? null;
+        let periodEnd = "";
+        let resolvedSubscriptionId = subscriptionId;
+        if (subscriptionId) {
+          const { data: subRow } = await supabase
+            .from("subscriptions")
+            .select("id, current_period_end, plan_tier")
+            .eq("id", subscriptionId)
+            .maybeSingle();
+          if (subRow?.current_period_end) {
+            periodEnd = String(subRow.current_period_end);
+            resolvedSubscriptionId = subRow.id;
+          }
+        }
+        if (!periodEnd) {
+          // Fail closed on period truth — do not substitute payment timestamp.
+          return results;
+        }
         results.push(
           await enqueueTransactionalEmail(store, {
             eventType: "SUBSCRIPTION_RENEWED",
             recipient: email,
-            idempotencyKey: `sub_renewed:${order.id}`,
+            idempotencyKey: `sub_renewed:${resolvedSubscriptionId}:${periodEnd}`,
             tenantId: order.tenant_id,
             ownerId,
             correlationId: order.id,
             payload: {
               planName,
-              subscriptionId: input.subscriptionId ?? order.reference_id ?? order.id,
-              periodEnd: paidAt,
+              subscriptionId: resolvedSubscriptionId,
+              periodEnd,
             },
           })
         );

@@ -44,8 +44,15 @@ export interface EmailOutboxStore {
       errorCode: string;
       errorSafe: string;
       status?: "FAILED" | "WAITING_CONFIGURATION" | "CANCELLED";
+      /** When true, do not increment conceptually — keep provided attemptCount as-is (config waits). */
+      preserveAttemptCount?: boolean;
     }
   ): Promise<EmailOutboxRow>;
+  /**
+   * Re-enter PENDING for eligible WAITING_CONFIGURATION rows after provider recovery.
+   * Preserves attempt_count; never resurrects CANCELLED or invalid-recipient failures.
+   */
+  recoverWaitingConfiguration?(limit?: number): Promise<EmailOutboxRow[]>;
   getById(id: string): Promise<EmailOutboxRow | null>;
   listByTenant(tenantId: string): Promise<EmailOutboxRow[]>;
   /** Optional connectivity probe for System Health. */

@@ -16,7 +16,14 @@ export type {
 } from "./types.ts";
 
 export { createServiceClient, type ServiceClient } from "./db.ts";
-export { loadEmailRuntimeConfig, extractEmailAddress, type EmailRuntimeConfig } from "./config.ts";
+export { loadEmailRuntimeConfig, extractEmailAddress, isEmailProcessorPathConfigured, type EmailRuntimeConfig } from "./config.ts";
+export { resolveCanonicalAppOrigin, CANONICAL_APP_ORIGIN_DEFAULT } from "./app-origin.ts";
+export {
+  EMAIL_EVENT_DELIVERY_STATUS,
+  getEmailEventDeliveryStatus,
+  type EmailDeliveryReadiness,
+  type EmailEventDeliveryStatus,
+} from "./delivery-status.ts";
 export {
   validateRecipient,
   sanitizeHeaderValue,
@@ -70,3 +77,8 @@ export {
   enqueueSupportEscalationEmailBestEffort,
   type SupportEscalationEmailInput,
 } from "./integrations/support.ts";
+export {
+  enqueueSubscriptionRenewalUpcomingEmails,
+  enqueueSubscriptionRenewalUpcomingEmailsBestEffort,
+  type RenewalUpcomingCandidate,
+} from "./integrations/renewal.ts";

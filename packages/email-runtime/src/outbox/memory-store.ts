@@ -46,6 +46,8 @@ export class InMemoryEmailOutboxStore implements EmailOutboxStore {
       last_error_safe: null,
       sent_at: null,
       correlation_id: input.correlationId ?? null,
+      lease_owner: null,
+      lease_expires_at: null,
       created_at: ts,
       updated_at: ts,
     };
@@ -104,6 +106,8 @@ export class InMemoryEmailOutboxStore implements EmailOutboxStore {
       last_attempt_at: ts,
       last_error_code: null,
       last_error_safe: null,
+      lease_owner: null,
+      lease_expires_at: null,
     };
     this.rows.set(id, updated);
     return updated;
@@ -130,6 +134,8 @@ export class InMemoryEmailOutboxStore implements EmailOutboxStore {
       last_error_safe: data.errorSafe,
       last_attempt_at: ts,
       updated_at: ts,
+      lease_owner: null,
+      lease_expires_at: null,
     };
     this.rows.set(id, updated);
     return updated;
@@ -142,6 +148,7 @@ export class InMemoryEmailOutboxStore implements EmailOutboxStore {
       errorCode: string;
       errorSafe: string;
       status?: "FAILED" | "WAITING_CONFIGURATION" | "CANCELLED";
+      preserveAttemptCount?: boolean;
     }
   ): Promise<EmailOutboxRow> {
     const row = this.rows.get(id);
@@ -150,14 +157,47 @@ export class InMemoryEmailOutboxStore implements EmailOutboxStore {
     const updated: EmailOutboxRow = {
       ...row,
       status: data.status ?? "FAILED",
-      attempt_count: data.attemptCount,
+      attempt_count: data.preserveAttemptCount ? row.attempt_count : data.attemptCount,
       last_error_code: data.errorCode,
       last_error_safe: data.errorSafe,
       last_attempt_at: ts,
       updated_at: ts,
+      lease_owner: null,
+      lease_expires_at: null,
     };
     this.rows.set(id, updated);
     return updated;
+  }
+
+  async recoverWaitingConfiguration(limit = 100): Promise<EmailOutboxRow[]> {
+    const recoverableCodes = new Set(["NOT_CONFIGURED", "HTTP_401", "HTTP_403", "SENDER_UNVERIFIED"]);
+    const permanentCodes = new Set(["HTTP_422", "INVALID_RECIPIENT", "HEADER_INJECTION"]);
+    const recovered: EmailOutboxRow[] = [];
+    const candidates = [...this.rows.values()]
+      .filter(
+        (r) =>
+          r.status === "WAITING_CONFIGURATION" &&
+          recoverableCodes.has(r.last_error_code ?? "") &&
+          !permanentCodes.has(r.last_error_code ?? "")
+      )
+      .sort((a, b) => a.updated_at.localeCompare(b.updated_at))
+      .slice(0, limit);
+
+    for (const row of candidates) {
+      const updated: EmailOutboxRow = {
+        ...row,
+        status: "PENDING",
+        next_attempt_at: nowIso(),
+        lease_owner: null,
+        lease_expires_at: null,
+        last_error_code: null,
+        last_error_safe: null,
+        updated_at: nowIso(),
+      };
+      this.rows.set(row.id, updated);
+      recovered.push(updated);
+    }
+    return recovered;
   }
 
   async getById(id: string): Promise<EmailOutboxRow | null> {

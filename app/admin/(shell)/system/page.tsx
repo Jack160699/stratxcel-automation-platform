@@ -79,10 +79,31 @@ async function currentEmailStatus(): Promise<IntegrationRow> {
   } catch {
     outboxAccessible = false;
   }
+
+  // Prove processor path via email-processor heartbeat (mission-worker hosted loop)
+  // or explicit external-scheduler mode — never hard-code workerPathAvailable as true.
+  // Do not require EMAIL_PROCESSOR_MODE on the web app: that env is set inside the worker process.
+  const processorMode = (process.env.EMAIL_PROCESSOR_MODE ?? "").trim().toLowerCase();
+  let workerPathAvailable = false;
+  const heartbeat = await service
+    .from("worker_heartbeats")
+    .select("status,last_heartbeat_at")
+    .eq("worker_type", "email-processor")
+    .order("last_heartbeat_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (heartbeat.data?.last_heartbeat_at) {
+    const ageMs = Date.now() - new Date(heartbeat.data.last_heartbeat_at).getTime();
+    workerPathAvailable = ageMs < 5 * 60 * 1000;
+  } else if (processorMode === "http-manual-with-external-scheduler") {
+    // Explicit supported scheduler configuration without heartbeat telemetry.
+    workerPathAvailable = true;
+  }
+
   const health = await probeEmailSystemHealth({
     provider,
     outboxAccessible,
-    workerPathAvailable: true,
+    workerPathAvailable,
   });
   return {
     name: "Email",

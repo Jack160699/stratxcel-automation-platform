@@ -122,6 +122,8 @@ export interface EmailOutboxRow {
   last_error_safe: string | null;
   sent_at: string | null;
   correlation_id: string | null;
+  lease_owner?: string | null;
+  lease_expires_at?: string | null;
   created_at: string;
   updated_at: string;
 }

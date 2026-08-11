@@ -81,6 +81,8 @@ export class PostgresEmailOutboxStore implements EmailOutboxStore {
         last_attempt_at: ts,
         last_error_code: null,
         last_error_safe: null,
+        lease_owner: null,
+        lease_expires_at: null,
         updated_at: ts,
       })
       .eq("id", id)
@@ -109,6 +111,8 @@ export class PostgresEmailOutboxStore implements EmailOutboxStore {
         last_error_code: data.errorCode,
         last_error_safe: data.errorSafe,
         last_attempt_at: ts,
+        lease_owner: null,
+        lease_expires_at: null,
         updated_at: ts,
       })
       .eq("id", id)
@@ -125,24 +129,38 @@ export class PostgresEmailOutboxStore implements EmailOutboxStore {
       errorCode: string;
       errorSafe: string;
       status?: "FAILED" | "WAITING_CONFIGURATION" | "CANCELLED";
+      preserveAttemptCount?: boolean;
     }
   ): Promise<EmailOutboxRow> {
     const ts = new Date().toISOString();
+    const patch: Record<string, unknown> = {
+      status: data.status ?? "FAILED",
+      last_error_code: data.errorCode,
+      last_error_safe: data.errorSafe,
+      last_attempt_at: ts,
+      lease_owner: null,
+      lease_expires_at: null,
+      updated_at: ts,
+    };
+    if (!data.preserveAttemptCount) {
+      patch.attempt_count = data.attemptCount;
+    }
     const { data: row, error } = await this.supabase
       .from("email_outbox")
-      .update({
-        status: data.status ?? "FAILED",
-        attempt_count: data.attemptCount,
-        last_error_code: data.errorCode,
-        last_error_safe: data.errorSafe,
-        last_attempt_at: ts,
-        updated_at: ts,
-      })
+      .update(patch)
       .eq("id", id)
       .select("*")
       .single();
     if (error) throw new Error(`email_outbox markFailed failed: ${error.message}`);
     return mapRow(row);
+  }
+
+  async recoverWaitingConfiguration(limit = 100): Promise<EmailOutboxRow[]> {
+    const { data, error } = await this.supabase.rpc("recover_email_outbox_waiting_configuration", {
+      p_limit: limit,
+    });
+    if (error) throw new Error(`recover_email_outbox_waiting_configuration failed: ${error.message}`);
+    return Array.isArray(data) ? data.map((r) => mapRow(r as Record<string, unknown>)) : [];
   }
 
   async getById(id: string): Promise<EmailOutboxRow | null> {

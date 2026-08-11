@@ -13,10 +13,6 @@
       "schedule": "0 3 * * *"
     },
     {
-      "path": "/api/internal/email/process",
-      "schedule": "*/5 * * * *"
-    },
-    {
       "path": "/api/admin/operating-brain/worker",
       "schedule": "*/30 * * * *"
     },
