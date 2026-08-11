@@ -1,5 +1,6 @@
 import { humanReasonForCode, type CapabilityReasonCode } from "./reason-codes.ts";
 import { getCapability } from "./registry.ts";
+import { authorizeArtifactForCapability } from "./artifact-authorization.ts";
 import {
   resolveCapabilityReadiness,
   type CapabilityEntitlementView,
@@ -8,6 +9,7 @@ import {
 } from "./readiness.ts";
 import type {
   ArtifactResolver,
+  ArtifactUsagePolicy,
   CapabilityExecutionRequest,
   CapabilityExecutionResult,
 } from "./request.ts";
@@ -15,7 +17,7 @@ import { executeWithFailover } from "../providers/failover.ts";
 import { getProvidersForCapability } from "../providers/registry.ts";
 import "../providers/bootstrap.ts";
 
-export type { ArtifactRecord, ArtifactResolver } from "./request.ts";
+export type { ArtifactRecord, ArtifactResolver, ArtifactUsagePolicy } from "./request.ts";
 
 export interface CapabilityExecutionDeps {
   entitlementSnapshot?: CapabilityEntitlementView | null;
@@ -23,8 +25,13 @@ export interface CapabilityExecutionDeps {
   environment?: CapabilityEnvironmentView | null;
   /** Optional override for tests. */
   executeProvider?: typeof executeWithFailover;
-  /** Resolves input artifacts for tenant/kind security checks. */
+  /** Resolves input artifacts for tenant/kind/mission/status/version security checks. */
   artifactResolver?: ArtifactResolver;
+  /**
+   * Trusted runtime artifact usage policy — never model-supplied.
+   * Controls cross-mission reusable tenant assets (Brand Brain, media library, etc.).
+   */
+  artifactUsagePolicy?: ArtifactUsagePolicy | null;
 }
 
 function mapReadinessToExecutionStatus(
@@ -120,6 +127,9 @@ export async function requestCapability(
     authorization: {
       approvalGranted: auth.approvalGranted,
       standingAuthorizationGranted: auth.standingAuthorizationGranted,
+      authorizationKind: auth.authorizationKind,
+      authorizationCapability: auth.authorizationCapability,
+      authorizationScopeId: auth.authorizationScopeId,
       shadowMode: auth.shadowMode,
       killSwitchActive: auth.killSwitchActive,
     },
@@ -173,20 +183,24 @@ export async function requestCapability(
         }
         return blockedResult(request, "ARTIFACT_UNKNOWN");
       }
-      if (record.tenantId !== request.tenantId) {
+
+      const authz = authorizeArtifactForCapability({
+        artifact: record,
+        requestMissionId: request.missionId,
+        requestTenantId: request.tenantId,
+        capability: def,
+        usagePolicy: deps.artifactUsagePolicy,
+        expectedArtifactVersions: request.expectedArtifactVersions,
+      });
+      if (!authz.ok) {
         if (providerInvocationCount !== 0) {
           throw new Error("invariant_provider_invoked_on_artifact_block");
         }
-        return blockedResult(request, "ARTIFACT_TENANT_MISMATCH");
-      }
-      if (
-        def.supportedInputArtifacts.length > 0 &&
-        !def.supportedInputArtifacts.includes(record.kind)
-      ) {
-        if (providerInvocationCount !== 0) {
-          throw new Error("invariant_provider_invoked_on_artifact_block");
-        }
-        return blockedResult(request, "ARTIFACT_KIND_UNSUPPORTED");
+        return blockedResult(
+          request,
+          authz.reasonCode ?? "POLICY_BLOCK",
+          authz.humanReason,
+        );
       }
     }
   }

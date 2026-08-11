@@ -225,6 +225,56 @@ function run() {
   assert.equal(versionMismatch.allowed, false);
   assert.match(versionMismatch.reason, /artifact_version_mismatch/);
 
+  // Missing reviewed version blocks manual publish (even with PASS/PASS + readyToRelease)
+  const missingReviewed = decideManualPublishGate({
+    explicitApprovalControl: true,
+    actionId: "action-no-rev",
+    shadowMode: false,
+    qualityStatus: "PASS",
+    complianceStatus: "PASS",
+    releaseReadiness: { readyToRelease: true },
+    exactArtifactVersion: "1",
+  });
+  assert.equal(missingReviewed.allowed, false);
+  assert.equal(missingReviewed.reason, "reviewed_artifact_version_required");
+
+  // Missing exact version blocks manual publish
+  const missingExact = decideManualPublishGate({
+    explicitApprovalControl: true,
+    actionId: "action-no-exact",
+    shadowMode: false,
+    qualityStatus: "PASS",
+    complianceStatus: "PASS",
+    releaseReadiness: { readyToRelease: true, reviewedArtifactVersion: "1" },
+  });
+  assert.equal(missingExact.allowed, false);
+  assert.equal(missingExact.reason, "artifact_version_required");
+
+  // Both versions missing blocks
+  const bothMissing = decideManualPublishGate({
+    explicitApprovalControl: true,
+    actionId: "action-both-missing",
+    shadowMode: false,
+    qualityStatus: "PASS",
+    complianceStatus: "PASS",
+    releaseReadiness: { readyToRelease: true },
+  });
+  assert.equal(bothMissing.allowed, false);
+  assert.equal(bothMissing.reason, "reviewed_artifact_version_required");
+
+  // Empty reviewed string blocks
+  const emptyReviewed = decideManualPublishGate({
+    explicitApprovalControl: true,
+    actionId: "action-empty-rev",
+    shadowMode: false,
+    qualityStatus: "PASS",
+    complianceStatus: "PASS",
+    releaseReadiness: { readyToRelease: true, reviewedArtifactVersion: "  " },
+    exactArtifactVersion: "1",
+  });
+  assert.equal(emptyReviewed.allowed, false);
+  assert.equal(emptyReviewed.reason, "reviewed_artifact_version_required");
+
   // Shadow blocks mutation (preparation can still have completed upstream)
   const shadowed = decideManualPublishGate({
     explicitApprovalControl: true,
@@ -295,6 +345,53 @@ function run() {
     exactArtifactVersion: "1",
   });
   assert.equal(packageAuto.allowed, true);
+
+  // Package AUTO_PUBLISH cannot bypass missing reviewed version
+  const packageMissingReviewed = decidePackagePublishGate({
+    standingAuthorizationActive: true,
+    authorizationId: "auth-1",
+    publishingMode: "AUTO_PUBLISH",
+    reviewCompleted: false,
+    shadowMode: false,
+    missionSource: "PACKAGE",
+    qualityStatus: "PASS",
+    complianceStatus: "PASS",
+    releaseReadiness: { readyToRelease: true },
+    exactArtifactVersion: "1",
+  });
+  assert.equal(packageMissingReviewed.allowed, false);
+  assert.equal(packageMissingReviewed.reason, "reviewed_artifact_version_required");
+
+  // Package AUTO_PUBLISH cannot bypass missing exact version
+  const packageMissingExact = decidePackagePublishGate({
+    standingAuthorizationActive: true,
+    authorizationId: "auth-1",
+    publishingMode: "AUTO_PUBLISH",
+    reviewCompleted: false,
+    shadowMode: false,
+    missionSource: "PACKAGE",
+    qualityStatus: "PASS",
+    complianceStatus: "PASS",
+    releaseReadiness: { readyToRelease: true, reviewedArtifactVersion: "1" },
+  });
+  assert.equal(packageMissingExact.allowed, false);
+  assert.equal(packageMissingExact.reason, "artifact_version_required");
+
+  // Package AUTO_PUBLISH cannot bypass version mismatch
+  const packageMismatch = decidePackagePublishGate({
+    standingAuthorizationActive: true,
+    authorizationId: "auth-1",
+    publishingMode: "AUTO_PUBLISH",
+    reviewCompleted: false,
+    shadowMode: false,
+    missionSource: "PACKAGE",
+    qualityStatus: "PASS",
+    complianceStatus: "PASS",
+    releaseReadiness: { readyToRelease: true, reviewedArtifactVersion: "1" },
+    exactArtifactVersion: "2",
+  });
+  assert.equal(packageMismatch.allowed, false);
+  assert.equal(packageMismatch.reason, "artifact_version_mismatch");
 
   const packageReview = decidePackagePublishGate({
     standingAuthorizationActive: true,

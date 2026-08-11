@@ -35,12 +35,35 @@ export interface CapabilityEnvironmentView {
 export interface CapabilityAuthorizationView {
   /** Deterministic approval already granted for this mutation. */
   approvalGranted?: boolean;
-  /** Standing package authorization (deterministic policy only). */
+  /**
+   * Standing authorization flag — NOT universal across capabilities.
+   * Must be paired with authorizationCapability matching the requested capability
+   * (and preferably authorizationKind / authorizationScopeId).
+   */
   standingAuthorizationGranted?: boolean;
+  /** Standing authorization kind (e.g. PACKAGE_AUTO_PUBLISH). */
+  authorizationKind?: string;
+  /** Capability this standing auth applies to — must match capabilityKey. */
+  authorizationCapability?: string;
+  /** Optional deterministic scope id. */
+  authorizationScopeId?: string;
   /** Shadow mode blocks external mutation when true. */
   shadowMode?: boolean;
   /** Kill switch active for this capability/scope. */
   killSwitchActive?: boolean;
+}
+
+/**
+ * Standing authorization is capability-scoped.
+ * A boolean alone never authorizes a different capability.
+ */
+export function standingAuthorizationMatchesCapability(
+  auth: CapabilityAuthorizationView | null | undefined,
+  capabilityKey: string,
+): boolean {
+  if (!auth || auth.standingAuthorizationGranted !== true) return false;
+  if (typeof auth.authorizationCapability !== "string") return false;
+  return auth.authorizationCapability === capabilityKey;
 }
 
 export interface CapabilityReadinessInput {
@@ -337,20 +360,23 @@ export function resolveCapabilityReadiness(input: CapabilityReadinessInput): Cap
   }
 
   if (def.approvalRequired && op === "execute") {
-    const approved = auth.approvalGranted === true || auth.standingAuthorizationGranted === true;
-    if (!approved) {
+    const explicitApproval = auth.approvalGranted === true;
+    const standingOk = standingAuthorizationMatchesCapability(auth, def.key);
+    // Bare standingAuthorizationGranted without matching capability scope does NOT authorize.
+    if (!explicitApproval && !standingOk) {
       return blockedFromDefinition(def, {
-        readiness: auth.standingAuthorizationGranted === false && !auth.approvalGranted
-          ? "WAITING_APPROVAL"
-          : "WAITING_APPROVAL",
+        readiness: "WAITING_APPROVAL",
         executable: false,
-        reasonCode: auth.standingAuthorizationGranted === false && auth.approvalGranted !== true
-          ? "APPROVAL_REQUIRED"
-          : auth.approvalGranted === false
-            ? "APPROVAL_REQUIRED"
+        reasonCode:
+          auth.standingAuthorizationGranted === true && !standingOk
+            ? "STANDING_AUTH_REQUIRED"
             : "APPROVAL_REQUIRED",
         entitlementSatisfied,
-        missingRequirements: ["deterministic_approval_or_standing_auth"],
+        missingRequirements: ["deterministic_approval_or_scoped_standing_auth"],
+        humanReason:
+          auth.standingAuthorizationGranted === true && !standingOk
+            ? "Standing authorization does not match the requested capability."
+            : humanReasonForCode("APPROVAL_REQUIRED"),
       });
     }
   }

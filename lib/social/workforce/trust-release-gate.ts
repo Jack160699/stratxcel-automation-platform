@@ -2,6 +2,9 @@
  * Social trust ↔ release gate.
  * Wraps @stratxcel/trust-department assessReleaseReadiness / canProceedToPublish semantics
  * for Social publish authorization (quality + compliance PASS/PASS only).
+ *
+ * Publish eligibility requires exact artifact binding:
+ * PREVIEW = REVIEWED VERSION = APPROVED VERSION = PUBLISH PAYLOAD VERSION
  */
 import {
   assessReleaseReadiness,
@@ -12,14 +15,19 @@ import {
 
 const PASS = "PASS";
 
+function isPresentVersion(value: string | number | null | undefined): boolean {
+  if (value === null || value === undefined) return false;
+  return String(value).trim().length > 0;
+}
+
 export interface SocialTrustReleaseGateInput {
   qualityStatus: string;
   complianceStatus: string;
   releaseReadiness?: {
     readyToRelease: boolean;
-    reviewedArtifactVersion?: string;
+    reviewedArtifactVersion?: string | number;
   };
-  exactArtifactVersion?: string;
+  exactArtifactVersion?: string | number;
 }
 
 export interface SocialTrustReleaseGateResult {
@@ -31,8 +39,14 @@ export interface SocialTrustReleaseGateResult {
 /**
  * ONLY qualityStatus === "PASS" AND complianceStatus === "PASS" may proceed.
  * ALL other values (REJECT, BLOCK, REVISE, HUMAN_REVIEW, not_reviewed, missing, unknown) BLOCK.
- * When releaseReadiness / exactArtifactVersion are provided, also require readyToRelease
- * and matching reviewed version.
+ *
+ * Additionally requires:
+ * - releaseReadiness.readyToRelease === true
+ * - reviewedArtifactVersion present/non-empty
+ * - exactArtifactVersion present/non-empty
+ * - reviewedArtifactVersion === exactArtifactVersion
+ *
+ * Manual approval and package AUTO_PUBLISH must not bypass this gate.
  */
 export function evaluateSocialTrustReleaseGate(
   input: SocialTrustReleaseGateInput,
@@ -62,17 +76,25 @@ export function evaluateSocialTrustReleaseGate(
 
   const reviewed = input.releaseReadiness.reviewedArtifactVersion;
   const exact = input.exactArtifactVersion;
-  if (reviewed != null && exact != null && String(reviewed) !== String(exact)) {
+
+  if (!isPresentVersion(reviewed)) {
     return {
       allowed: false,
-      reason: "artifact_version_mismatch",
+      reason: "reviewed_artifact_version_required",
       readyToRelease: false,
     };
   }
-  if (reviewed != null && exact == null) {
+  if (!isPresentVersion(exact)) {
     return {
       allowed: false,
       reason: "artifact_version_required",
+      readyToRelease: false,
+    };
+  }
+  if (String(reviewed).trim() !== String(exact).trim()) {
+    return {
+      allowed: false,
+      reason: "artifact_version_mismatch",
       readyToRelease: false,
     };
   }

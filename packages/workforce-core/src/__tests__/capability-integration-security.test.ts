@@ -386,9 +386,69 @@ async function run() {
 
   // Artifact helpers
   const artifacts = new Map<string, ArtifactRecord>([
-    ["ok-snap", { id: "ok-snap", tenantId: "tenant-a", kind: "website_snapshot" }],
-    ["cross-snap", { id: "cross-snap", tenantId: "tenant-b", kind: "website_snapshot" }],
-    ["wrong-kind", { id: "wrong-kind", tenantId: "tenant-a", kind: "social_final" }],
+    [
+      "ok-snap",
+      {
+        id: "ok-snap",
+        tenantId: "tenant-a",
+        missionId: "mission-1",
+        kind: "website_snapshot",
+        version: "3",
+        status: "ready",
+      },
+    ],
+    [
+      "cross-snap",
+      { id: "cross-snap", tenantId: "tenant-b", missionId: "mission-1", kind: "website_snapshot" },
+    ],
+    [
+      "wrong-kind",
+      { id: "wrong-kind", tenantId: "tenant-a", missionId: "mission-1", kind: "social_final" },
+    ],
+    [
+      "wrong-mission",
+      {
+        id: "wrong-mission",
+        tenantId: "tenant-a",
+        missionId: "mission-OTHER",
+        kind: "website_snapshot",
+        version: "1",
+        status: "ready",
+      },
+    ],
+    [
+      "brand-brain-shared",
+      {
+        id: "brand-brain-shared",
+        tenantId: "tenant-a",
+        missionId: "mission-FOUNDATION",
+        kind: "brand_brain",
+        version: "1",
+        status: "active",
+      },
+    ],
+    [
+      "draft-mutation",
+      {
+        id: "draft-mutation",
+        tenantId: "tenant-a",
+        missionId: "mission-1",
+        kind: "social_final",
+        version: "1",
+        status: "draft",
+      },
+    ],
+    [
+      "approved-social",
+      {
+        id: "approved-social",
+        tenantId: "tenant-a",
+        missionId: "mission-1",
+        kind: "social_final",
+        version: "3",
+        status: "approved",
+      },
+    ],
   ]);
   const resolver = (id: string) => artifacts.get(id) ?? null;
 
@@ -662,6 +722,195 @@ async function run() {
     revenueBypass.reasonCode === "PROVIDER_NOT_CONFIGURED" ||
       revenueBypass.reasonCode === "FEATURE_FLAG_DISABLED",
   );
+
+  // --- same-tenant wrong-mission artifact blocks ---
+  providerCalls = 0;
+  const wrongMission = await requestCapability(
+    baseRequest({
+      requestId: "wrong-mission",
+      inputArtifactIds: ["wrong-mission"],
+      input: { propertyUrl: "https://example.com", pages: auditPages },
+    }),
+    {
+      environment: { featureFlags: { search_web: true } },
+      artifactResolver: resolver,
+      executeProvider: countingExecute,
+    },
+  );
+  assert.equal(wrongMission.status, "BLOCKED");
+  assert.equal(wrongMission.reasonCode, "ARTIFACT_MISSION_MISMATCH");
+  assert.equal(providerCalls, 0);
+
+  // --- wrong artifact version blocks ---
+  providerCalls = 0;
+  const wrongVersion = await requestCapability(
+    baseRequest({
+      requestId: "wrong-ver",
+      inputArtifactIds: ["ok-snap"],
+      input: { propertyUrl: "https://example.com", pages: auditPages },
+      expectedArtifactVersions: { "ok-snap": "2" },
+    }),
+    {
+      environment: { featureFlags: { search_web: true } },
+      artifactResolver: resolver,
+      executeProvider: countingExecute,
+    },
+  );
+  assert.equal(wrongVersion.status, "BLOCKED");
+  assert.equal(wrongVersion.reasonCode, "ARTIFACT_VERSION_MISMATCH");
+  assert.equal(providerCalls, 0);
+
+  // --- matching expected version passes ---
+  providerCalls = 0;
+  const versionOk = await requestCapability(
+    baseRequest({
+      requestId: "ver-ok",
+      inputArtifactIds: ["ok-snap"],
+      input: { propertyUrl: "https://example.com", pages: auditPages },
+      expectedArtifactVersions: { "ok-snap": "3" },
+    }),
+    {
+      environment: { featureFlags: { search_web: true } },
+      artifactResolver: resolver,
+      executeProvider: countingExecute,
+    },
+  );
+  assert.equal(versionOk.status, "SUCCEEDED");
+  assert.equal(providerCalls, 1);
+
+  // --- explicitly trusted reusable tenant artifact can pass (cross-mission) ---
+  // website.audit only accepts website_snapshot — use policy authorizedArtifactIds on wrong-mission snap
+  providerCalls = 0;
+  const trustedReuse = await requestCapability(
+    baseRequest({
+      requestId: "trusted-reuse",
+      inputArtifactIds: ["wrong-mission"],
+      input: { propertyUrl: "https://example.com", pages: auditPages },
+    }),
+    {
+      environment: { featureFlags: { search_web: true } },
+      artifactResolver: resolver,
+      artifactUsagePolicy: {
+        authorizedArtifactIds: ["wrong-mission"],
+      },
+      executeProvider: countingExecute,
+    },
+  );
+  assert.equal(trustedReuse.status, "SUCCEEDED");
+  assert.equal(providerCalls, 1);
+
+  // Reusable kind policy — brand_brain kind not supported by website.audit → still kind block
+  providerCalls = 0;
+  const reusableKindWrongCap = await requestCapability(
+    baseRequest({
+      requestId: "reuse-kind",
+      inputArtifactIds: ["brand-brain-shared"],
+      input: { propertyUrl: "https://example.com", pages: auditPages },
+    }),
+    {
+      environment: { featureFlags: { search_web: true } },
+      artifactResolver: resolver,
+      artifactUsagePolicy: { allowReusableTenantKinds: ["brand_brain"] },
+      executeProvider: countingExecute,
+    },
+  );
+  assert.equal(reusableKindWrongCap.status, "BLOCKED");
+  assert.equal(reusableKindWrongCap.reasonCode, "ARTIFACT_KIND_UNSUPPORTED");
+  assert.equal(providerCalls, 0);
+
+  // --- invalid artifact status blocks when capability requires final status ---
+  const { authorizeArtifactForCapability } = await import("../capabilities/artifact-authorization.ts");
+  const { getCapability: getCap } = await import("../capabilities/registry.ts");
+  const socialDef = getCap("social.publish")!;
+  assert.equal(socialDef.externalMutation, true);
+  const draftBlocked = authorizeArtifactForCapability({
+    artifact: artifacts.get("draft-mutation")!,
+    requestMissionId: "mission-1",
+    requestTenantId: "tenant-a",
+    capability: socialDef,
+  });
+  assert.equal(draftBlocked.ok, false);
+  assert.equal(draftBlocked.reasonCode, "ARTIFACT_STATUS_INVALID");
+
+  const approvedOk = authorizeArtifactForCapability({
+    artifact: artifacts.get("approved-social")!,
+    requestMissionId: "mission-1",
+    requestTenantId: "tenant-a",
+    capability: socialDef,
+    expectedArtifactVersions: { "approved-social": "3" },
+  });
+  assert.equal(approvedOk.ok, true);
+
+  const supersededBlocked = authorizeArtifactForCapability({
+    artifact: {
+      id: "sup",
+      tenantId: "tenant-a",
+      missionId: "mission-1",
+      kind: "social_final",
+      version: "1",
+      status: "superseded",
+    },
+    requestMissionId: "mission-1",
+    requestTenantId: "tenant-a",
+    capability: socialDef,
+  });
+  assert.equal(supersededBlocked.ok, false);
+  assert.equal(supersededBlocked.reasonCode, "ARTIFACT_STATUS_INVALID");
+
+  // Read-only audit may accept snapshot without final mutation status
+  const auditDef = getCap("website.audit")!;
+  const draftAuditOk = authorizeArtifactForCapability({
+    artifact: {
+      id: "draft-snap",
+      tenantId: "tenant-a",
+      missionId: "mission-1",
+      kind: "website_snapshot",
+      status: "draft",
+    },
+    requestMissionId: "mission-1",
+    requestTenantId: "tenant-a",
+    capability: auditDef,
+  });
+  assert.equal(draftAuditOk.ok, true);
+
+  // --- standing auth for one capability cannot authorize another ---
+  const { standingAuthorizationMatchesCapability } = await import("../capabilities/readiness.ts");
+  assert.equal(
+    standingAuthorizationMatchesCapability(
+      {
+        standingAuthorizationGranted: true,
+        authorizationCapability: "social.publish",
+        authorizationKind: "PACKAGE_AUTO_PUBLISH",
+      },
+      "social.publish",
+    ),
+    true,
+  );
+  assert.equal(
+    standingAuthorizationMatchesCapability(
+      {
+        standingAuthorizationGranted: true,
+        authorizationCapability: "social.publish",
+        authorizationKind: "PACKAGE_AUTO_PUBLISH",
+      },
+      "whatsapp.send",
+    ),
+    false,
+    "standing auth for social.publish must not cover whatsapp.send",
+  );
+  assert.equal(
+    standingAuthorizationMatchesCapability(
+      { standingAuthorizationGranted: true },
+      "social.publish",
+    ),
+    false,
+    "bare standingAuthorizationGranted without capability scope must not authorize",
+  );
+
+  // Readiness: bare standing auth does not satisfy approval for mutation caps
+  // (crm.write is NOT_CONFIGURED so fails earlier — still prove scoped mismatch reason when status allows).
+  // Use resolve with standing for wrong capability on a path that reaches approval:
+  // Inject environment so we can observe STANDING_AUTH_REQUIRED via direct helper contract above.
 
   // Restore production bootstrap
   resetAndBootstrapProvidersForTests();

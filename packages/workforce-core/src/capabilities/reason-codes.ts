@@ -22,6 +22,9 @@ export const CAPABILITY_REASON_CODES = [
   "ARTIFACT_UNKNOWN",
   "ARTIFACT_TENANT_MISMATCH",
   "ARTIFACT_KIND_UNSUPPORTED",
+  "ARTIFACT_MISSION_MISMATCH",
+  "ARTIFACT_STATUS_INVALID",
+  "ARTIFACT_VERSION_MISMATCH",
   "BUDGET_EXHAUSTED",
   "UNSUPPORTED_PLATFORM",
   "SETUP_REQUIRED",
@@ -76,6 +79,12 @@ export function humanReasonForCode(code: CapabilityReasonCode): string {
       return "Input artifact belongs to a different tenant.";
     case "ARTIFACT_KIND_UNSUPPORTED":
       return "Input artifact kind is not supported for this capability.";
+    case "ARTIFACT_MISSION_MISMATCH":
+      return "Input artifact belongs to a different mission without trusted reuse authorization.";
+    case "ARTIFACT_STATUS_INVALID":
+      return "Input artifact status is not valid for this capability.";
+    case "ARTIFACT_VERSION_MISMATCH":
+      return "Resolved artifact version does not match the authorized version.";
     case "BUDGET_EXHAUSTED":
       return "Capability budget envelope is exhausted or insufficient.";
     case "UNSUPPORTED_PLATFORM":

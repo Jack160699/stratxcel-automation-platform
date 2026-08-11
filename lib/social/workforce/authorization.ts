@@ -36,7 +36,7 @@ export function isNaturalPublishPhrase(text: string): boolean {
 
 export interface ReleaseReadinessGateInput {
   readyToRelease: boolean;
-  reviewedArtifactVersion?: string;
+  reviewedArtifactVersion?: string | number;
 }
 
 export interface ManualPublishGateInput {

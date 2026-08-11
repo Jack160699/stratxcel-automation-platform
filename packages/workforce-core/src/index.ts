@@ -8,6 +8,7 @@ export * from "./capabilities/registry.ts";
 export * from "./capabilities/readiness.ts";
 export * from "./capabilities/request.ts";
 export * from "./capabilities/execution.ts";
+export * from "./capabilities/artifact-authorization.ts";
 export * from "./capabilities/snapshot.ts";
 export * from "./capabilities/tool-mapping.ts";
 export * from "./providers/types.ts";
