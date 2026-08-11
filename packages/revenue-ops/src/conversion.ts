@@ -95,7 +95,7 @@ export function buildConversionPlan(input: {
   diagnosisId?: string;
   nowIso?: string;
 }): ConversionPlan {
-  const actions: ConversionPlan["actions"] = [];
+  const actions: Array<ConversionPlan["actions"][number]> = [];
   const leak = input.diagnosis.primaryLeak;
 
   if (leak === "response" || input.diagnosis.funnel.find((f) => f.stage === "response")?.status === "UNKNOWN") {

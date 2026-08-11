@@ -189,10 +189,10 @@ export function gateWhatsAppSend(input: {
   conversationAutomationMode?: "automated" | "human_only" | "paused" | "handoff" | null;
   isHumanInitiated?: boolean;
 }): MutationGateResult {
+  const { leadTenantId, ...rest } = input;
   return authorizeRevenueMutation({
-    tenantId: input.tenantId,
-    resourceTenantId: input.leadTenantId,
+    ...rest,
+    resourceTenantId: leadTenantId,
     kind: "whatsapp.send",
-    ...input,
   });
 }

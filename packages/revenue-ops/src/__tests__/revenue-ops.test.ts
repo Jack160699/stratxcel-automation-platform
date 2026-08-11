@@ -115,7 +115,7 @@ function run() {
         monthlyInquiries: signals.monthlyInquiries ?? 120,
         medianResponseTimeHours: signals.medianResponseTimeHours,
         crmFollowUpStrength: signals.crmFollowUpStrength ?? "weak",
-        postContactConversionStrength: "moderate",
+        postContactConversionStrength: "medium",
         signalEvidenceIds: signals.signalEvidenceIds.length ? signals.signalEvidenceIds : ["ev-rev-1"],
       },
     }),

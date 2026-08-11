@@ -4,13 +4,13 @@ import type { ResponseTimeDiagnosis } from "./types.ts";
 export function toBusinessGrowthSignals(diagnosis: ResponseTimeDiagnosis): {
   monthlyInquiries?: number;
   medianResponseTimeHours?: number;
-  crmFollowUpStrength?: "weak" | "moderate" | "strong";
+  crmFollowUpStrength?: "none" | "weak" | "adequate" | "strong";
   signalEvidenceIds: string[];
 } {
   const signals: {
     monthlyInquiries?: number;
     medianResponseTimeHours?: number;
-    crmFollowUpStrength?: "weak" | "moderate" | "strong";
+    crmFollowUpStrength?: "none" | "weak" | "adequate" | "strong";
     signalEvidenceIds: string[];
   } = { signalEvidenceIds: [...diagnosis.evidenceIds] };
 
@@ -24,7 +24,7 @@ export function toBusinessGrowthSignals(diagnosis: ResponseTimeDiagnosis): {
   } else if (diagnosis.sampleSize > 0 && (diagnosis.medianResponseTimeHours ?? 0) <= 2) {
     signals.crmFollowUpStrength = "strong";
   } else if (diagnosis.sampleSize > 0) {
-    signals.crmFollowUpStrength = "moderate";
+    signals.crmFollowUpStrength = "adequate";
   }
   return signals;
 }

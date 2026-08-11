@@ -24,7 +24,7 @@ function matchesAny(value: string, options: readonly string[]): boolean {
 export function qualifyLead(input: QualifyLeadInput): LeadQualificationArtifact {
   const { intelligence: intel, businessContext } = input;
   const generatedAtIso = input.nowIso ?? new Date().toISOString();
-  const criteria: LeadQualificationArtifact["criteria"] = [];
+  const criteria: Array<LeadQualificationArtifact["criteria"][number]> = [];
   const unknownFields: string[] = ["budget"];
 
   const intentUnknown = intel.intent.status === "unknown" || intel.intent.value === null;
