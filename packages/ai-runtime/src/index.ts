@@ -23,3 +23,4 @@ export * from "./adapters/creative-studio.ts";
 export * from "./factory.ts";
 export * from "./runtime.ts";
 export * from "./admin-health.ts";
+export * from "./mission-auth.ts";

@@ -3,6 +3,7 @@ import { assertActiveModel, isForbiddenModel, resolveModelId } from "../catalog/
 import { AIProviderError, classifyHttpStatus, classifyProviderError, isNonHopError } from "../errors.ts";
 import { ProviderCircuitBreaker } from "../health/circuit-breaker.ts";
 import { evaluateBudgetGate } from "../budget/envelope.ts";
+import { safeAiLog } from "../observability.ts";
 import type { AIBudgetEnvelope, FetchLike } from "../types.ts";
 import type { AIUsageRecorder } from "../usage/recorder.ts";
 import {
@@ -46,6 +47,8 @@ export interface ImageCandidateResult {
   storedAsset?: CanonicalStoredAsset;
 }
 
+export type UsageAccountingStatus = "RECORDED" | "FAILED" | "SKIPPED";
+
 export interface ImageGenerationOutcome {
   outcome: "OK" | "NOT_CONFIGURED" | "FAILED" | "SAFETY_REFUSAL" | "WAITING_CONFIGURATION" | "BUDGET_EXHAUSTED";
   candidates: ImageCandidateResult[];
@@ -56,6 +59,8 @@ export interface ImageGenerationOutcome {
   storageReady: boolean;
   /** Provider spend recorded for this request (may exceed persisted candidates). */
   recordedProviderCostUsd?: number;
+  /** Observability for billable metering — never silently pretend ledger write succeeded. */
+  usageAccountingStatus?: UsageAccountingStatus;
 }
 
 export interface ImageMediaDeps {
@@ -121,6 +126,17 @@ export class ImageMediaRuntime {
     const missionId = request.missionId ?? this.defaultMissionId;
     const generationRequestId = request.generationRequestId ?? crypto.randomUUID();
     let requestAccumulatedCostUsd = 0;
+    let usageAccountingStatus: UsageAccountingStatus = "SKIPPED";
+
+    const mergeAccounting = (next: UsageAccountingStatus) => {
+      if (next === "FAILED" || usageAccountingStatus === "FAILED") {
+        usageAccountingStatus = "FAILED";
+      } else if (next === "RECORDED" || usageAccountingStatus === "RECORDED") {
+        usageAccountingStatus = "RECORDED";
+      } else {
+        usageAccountingStatus = next;
+      }
+    };
 
     if (!this.isConfigured()) {
       return {
@@ -220,16 +236,18 @@ export class ImageMediaRuntime {
         requestAccumulatedCostUsd += providerCost;
         // Record billable provider attempt even if persistence/QA later fails.
         if (candidates.length) {
-          await this.recordProviderAttempt({
-            request: enrichedRequest,
-            missionId,
-            generationRequestId,
-            model: primaryModel,
-            provider: "google",
-            attemptNumber: 1,
-            candidates,
-            fallbackUsed: false,
-          });
+          mergeAccounting(
+            await this.recordProviderAttempt({
+              request: enrichedRequest,
+              missionId,
+              generationRequestId,
+              model: primaryModel,
+              provider: "google",
+              attemptNumber: 1,
+              candidates,
+              fallbackUsed: false,
+            }),
+          );
         }
         const persisted = await this.maybePersist(enrichedRequest, candidates);
         return {
@@ -245,6 +263,7 @@ export class ImageMediaRuntime {
           model: primaryModel,
           storageReady,
           recordedProviderCostUsd: requestAccumulatedCostUsd,
+          usageAccountingStatus,
         };
       }
     } catch (err) {
@@ -258,6 +277,7 @@ export class ImageMediaRuntime {
           model: null,
           storageReady,
           recordedProviderCostUsd: requestAccumulatedCostUsd,
+          usageAccountingStatus,
         };
       }
       const category = classifyProviderError(err);
@@ -272,6 +292,7 @@ export class ImageMediaRuntime {
           model: primaryModel,
           storageReady,
           recordedProviderCostUsd: requestAccumulatedCostUsd,
+          usageAccountingStatus,
         };
       }
       // Fall through to OpenAI when hop-eligible.
@@ -288,6 +309,7 @@ export class ImageMediaRuntime {
         model: null,
         storageReady,
         recordedProviderCostUsd: requestAccumulatedCostUsd,
+        usageAccountingStatus,
       };
     }
 
@@ -301,6 +323,7 @@ export class ImageMediaRuntime {
         model: null,
         storageReady,
         recordedProviderCostUsd: requestAccumulatedCostUsd,
+        usageAccountingStatus,
       };
     }
 
@@ -325,6 +348,7 @@ export class ImageMediaRuntime {
           model: primaryModel,
           storageReady,
           recordedProviderCostUsd: requestAccumulatedCostUsd,
+          usageAccountingStatus,
         };
       }
     }
@@ -335,16 +359,18 @@ export class ImageMediaRuntime {
       const providerCost = candidates.reduce((s, c) => s + c.estimatedCostUsd, 0);
       requestAccumulatedCostUsd += providerCost;
       if (candidates.length) {
-        await this.recordProviderAttempt({
-          request: enrichedRequest,
-          missionId,
-          generationRequestId,
-          model: fallbackModel,
-          provider: "openai",
-          attemptNumber: 2,
-          candidates,
-          fallbackUsed: true,
-        });
+        mergeAccounting(
+          await this.recordProviderAttempt({
+            request: enrichedRequest,
+            missionId,
+            generationRequestId,
+            model: fallbackModel,
+            provider: "openai",
+            attemptNumber: 2,
+            candidates,
+            fallbackUsed: true,
+          }),
+        );
       }
       const persisted = await this.maybePersist(enrichedRequest, candidates);
       return {
@@ -360,6 +386,7 @@ export class ImageMediaRuntime {
         model: fallbackModel,
         storageReady,
         recordedProviderCostUsd: requestAccumulatedCostUsd,
+        usageAccountingStatus,
       };
     } catch (err) {
       this.circuit.recordFailure("openai", fallbackModel);
@@ -372,6 +399,7 @@ export class ImageMediaRuntime {
         model: fallbackModel,
         storageReady,
         recordedProviderCostUsd: requestAccumulatedCostUsd,
+        usageAccountingStatus,
       };
     }
   }
@@ -385,8 +413,8 @@ export class ImageMediaRuntime {
     attemptNumber: number;
     candidates: ImageCandidateResult[];
     fallbackUsed: boolean;
-  }): Promise<void> {
-    if (!this.usageRecorder || !args.candidates.length) return;
+  }): Promise<UsageAccountingStatus> {
+    if (!this.usageRecorder || !args.candidates.length) return "SKIPPED";
     const cost = args.candidates.reduce((s, c) => s + c.estimatedCostUsd, 0);
     try {
       await this.usageRecorder.record({
@@ -414,8 +442,18 @@ export class ImageMediaRuntime {
         createdAt: new Date().toISOString(),
         mediaUnits: args.candidates.length,
       });
-    } catch {
-      /* non-blocking */
+      return "RECORDED";
+    } catch (err) {
+      safeAiLog({
+        event: "ai_usage_accounting_failed",
+        provider: args.provider,
+        model: args.model,
+        taskClass: "IMAGE",
+        estimatedCostUsd: cost,
+        safeErrorCategory: "USAGE_LEDGER_WRITE_FAILED",
+        detail: err instanceof Error ? err.message.slice(0, 120) : "usage_ledger_write_failed",
+      });
+      return "FAILED";
     }
   }
 

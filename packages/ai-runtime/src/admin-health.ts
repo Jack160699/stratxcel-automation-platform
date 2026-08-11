@@ -1,7 +1,7 @@
 import { buildTaskPolicies } from "./policy/task-policies.ts";
 import { DEPARTMENT_POLICY_MAP, assertAllDepartmentsMapped } from "./policy/department-map.ts";
 import { ProviderCircuitBreaker } from "./health/circuit-breaker.ts";
-import { probeGeminiReadiness, probeOpenAIReadiness, ReadinessCache } from "./health/readiness.ts";
+import { probeGeminiReadiness, probeOpenAIReadiness, ReadinessCache, GOOGLE_IMAGE_REQUIRED_GENERATION_METHODS, GOOGLE_VIDEO_REQUIRED_GENERATION_METHODS } from "./health/readiness.ts";
 import { resolveModelId } from "./catalog/models.ts";
 import type { AIProviderHealth } from "./types.ts";
 
@@ -160,11 +160,13 @@ export async function buildAiAdminHealthSnapshot(args?: {
         cache: readinessCache,
       }),
       // Actual media models — text readiness must not imply image/video readiness.
+      // Require generation methods used by ImageMediaRuntime / VideoMediaRuntime.
       probeGeminiReadiness({
         apiKey: process.env.GEMINI_API_KEY,
         model: imagePrimary,
         fetchImpl: args?.fetchImpl,
         cache: readinessCache,
+        requiredGenerationMethods: GOOGLE_IMAGE_REQUIRED_GENERATION_METHODS,
       }),
       process.env.OPENAI_API_KEY
         ? probeOpenAIReadiness({
@@ -185,6 +187,7 @@ export async function buildAiAdminHealthSnapshot(args?: {
         model: videoEconomy,
         fetchImpl: args?.fetchImpl,
         cache: readinessCache,
+        requiredGenerationMethods: GOOGLE_VIDEO_REQUIRED_GENERATION_METHODS,
       }),
     ]);
 

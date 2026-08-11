@@ -73,6 +73,11 @@ export interface ProviderSafeContext {
   internalWriteClient?: Parameters<typeof createTenantAIRuntime>[0]["internalWriteClient"];
   plan?: PlanTier;
   spentUsdThisMonth?: number;
+  /**
+   * Test/production seam: inject AIRuntime deps (fake providers) without weakening
+   * the Social provider encapsulation for callers that omit this field.
+   */
+  runtimeDeps?: import("@stratxcel/ai-runtime").AIRuntimeDeps;
 }
 
 export interface AIProvider {
@@ -268,6 +273,7 @@ class AiRuntimeSocialProvider implements AIProvider {
       deps: {
         google: new GeminiTextProvider({ applySocialBoundarySanitize: sanitizeGeminiText }),
         openai: new OpenAITextProvider(),
+        ...context.runtimeDeps,
       },
     });
 
@@ -293,6 +299,11 @@ class AiRuntimeSocialProvider implements AIProvider {
   }
 }
 
+/** Testable factory — production listProviders uses the same class. */
+export function createAiRuntimeSocialProvider(): AIProvider {
+  return new AiRuntimeSocialProvider();
+}
+
 const LEGACY_DIRECT = process.env.AI_ROUTER_ENABLED === "0";
 
 const PROVIDERS: AIProvider[] = LEGACY_DIRECT
@@ -307,4 +318,4 @@ export function resolveConfiguredProvider(): AIProvider | null {
   return PROVIDERS.find((provider) => provider.isConfigured()) ?? null;
 }
 
-export { GEMINI_GENERATE_CONTENT_URL, GEMINI_MODEL, mapCopilotIntentToTaskClass };
+export { GEMINI_GENERATE_CONTENT_URL, GEMINI_MODEL, mapCopilotIntentToTaskClass, AiRuntimeSocialProvider };

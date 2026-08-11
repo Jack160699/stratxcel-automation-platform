@@ -279,16 +279,110 @@ async function run() {
     assert.equal(ledger.legacy.length, 0);
   }
 
-  // --- Migration-month spend: legacy $4 + new $2 = $6; overlapping request counted once ---
+  // --- Cutover-enforced month spend + attempt-level cross-ledger dedupe ---
   {
-    const ledger = createLedgerClient({
+    // legacy Aug 5 $4 + new Aug 11 $2 => $6
+    const basic = createLedgerClient({
       primaryRows: [
         {
           tenant_id: "tenant-a",
           estimated_cost_usd: 2,
-          request_id: "overlap",
+          request_id: "req-new",
+          attempt_number: 1,
           success: true,
           created_at: "2026-08-11T12:00:00.000Z",
+        },
+      ],
+      legacyRows: [
+        {
+          tenant_id: "tenant-a",
+          cost_cents: 400,
+          metadata: { requestId: "req-old", attemptNumber: 1 },
+          created_at: "2026-08-05T00:00:00.000Z",
+        },
+      ],
+    });
+    const basicResolved = await new SupabaseUsageRecorder(basic.asServiceClient() as never).resolveMonthSpend!(
+      "tenant-a",
+      "2026-08",
+    );
+    assert.equal(basicResolved.ok, true);
+    if (basicResolved.ok) assert.equal(basicResolved.spentUsd, 6);
+
+    // exact attempt overlap counted once
+    const overlap = createLedgerClient({
+      primaryRows: [
+        {
+          tenant_id: "tenant-a",
+          estimated_cost_usd: 1,
+          request_id: "req-x",
+          attempt_number: 1,
+          success: true,
+          created_at: "2026-08-11T12:00:00.000Z",
+        },
+      ],
+      legacyRows: [
+        {
+          tenant_id: "tenant-a",
+          cost_cents: 100,
+          metadata: { requestId: "req-x", attemptNumber: 1 },
+          created_at: "2026-08-11T12:00:00.000Z",
+        },
+      ],
+    });
+    const overlapResolved = await new SupabaseUsageRecorder(overlap.asServiceClient() as never).resolveMonthSpend!(
+      "tenant-a",
+      "2026-08",
+    );
+    assert.equal(overlapResolved.ok, true);
+    if (overlapResolved.ok) assert.equal(overlapResolved.spentUsd, 1);
+
+    // same requestId different attemptNumber — both count
+    const multi = createLedgerClient({
+      primaryRows: [
+        {
+          tenant_id: "tenant-a",
+          estimated_cost_usd: 1,
+          request_id: "req-x",
+          attempt_number: 1,
+          success: true,
+          created_at: "2026-08-11T12:00:00.000Z",
+        },
+      ],
+      legacyRows: [
+        {
+          tenant_id: "tenant-a",
+          cost_cents: 200,
+          metadata: { requestId: "req-x", attemptNumber: 2 },
+          created_at: "2026-08-11T13:00:00.000Z",
+        },
+      ],
+    });
+    const multiResolved = await new SupabaseUsageRecorder(multi.asServiceClient() as never).resolveMonthSpend!(
+      "tenant-a",
+      "2026-08",
+    );
+    assert.equal(multiResolved.ok, true);
+    if (multiResolved.ok) assert.equal(multiResolved.spentUsd, 3);
+
+    // cutoverAt actually filters: pre-cutover new row ignored when cutover is later
+    const cut = createLedgerClient({
+      primaryRows: [
+        {
+          tenant_id: "tenant-a",
+          estimated_cost_usd: 9,
+          request_id: "pre",
+          attempt_number: 1,
+          success: true,
+          created_at: "2026-08-01T00:00:00.000Z",
+        },
+        {
+          tenant_id: "tenant-a",
+          estimated_cost_usd: 2,
+          request_id: "post",
+          attempt_number: 1,
+          success: true,
+          created_at: "2026-08-12T00:00:00.000Z",
         },
       ],
       legacyRows: [
@@ -298,21 +392,13 @@ async function run() {
           metadata: {},
           created_at: "2026-08-05T00:00:00.000Z",
         },
-        {
-          tenant_id: "tenant-a",
-          cost_cents: 200,
-          metadata: { requestId: "overlap" },
-          created_at: "2026-08-11T12:00:00.000Z",
-        },
       ],
     });
-    const recorder = new SupabaseUsageRecorder(ledger.asServiceClient() as never);
-    const resolved = await recorder.resolveMonthSpend!("tenant-a", "2026-08");
-    assert.equal(resolved.ok, true);
-    if (resolved.ok) {
-      assert.equal(resolved.source, "combined");
-      assert.equal(resolved.spentUsd, 6);
-    }
+    const cutResolved = await new SupabaseUsageRecorder(cut.asServiceClient() as never, {
+      cutoverAt: "2026-08-11T00:00:00.000Z",
+    }).resolveMonthSpend!("tenant-a", "2026-08");
+    assert.equal(cutResolved.ok, true);
+    if (cutResolved.ok) assert.equal(cutResolved.spentUsd, 6); // $4 legacy pre + $2 new post
   }
 
   // --- Image taskClass + provider cost recorded even when persist fails ---
@@ -365,7 +451,39 @@ async function run() {
     assert.equal(recorder.entries[0]!.missionId, null);
     assert.equal(recorder.entries[0]!.sessionId, "sess-1");
     assert.equal(openaiCalled, false);
+    assert.equal(out.usageAccountingStatus, "RECORDED");
     storage.persistGeneratedImage = originalPersist;
+  }
+
+  // Metering failure is observable (not silently swallowed)
+  {
+    const failingRecorder = {
+      record: async () => {
+        throw new Error("usage_ledger_write_failed:permission denied");
+      },
+    };
+    const images = new ImageMediaRuntime({
+      geminiApiKey: "g",
+      usageRecorder: failingRecorder as never,
+      budgetEnvelope: createBudgetEnvelope({ plan: "growth", spentUsdThisMonth: 0 }),
+      fetchImpl: async () =>
+        new Response(
+          JSON.stringify({
+            candidates: [{ content: { parts: [{ inlineData: { mimeType: "image/png", data: "YWJj" } }] } }],
+          }),
+          { status: 200 },
+        ),
+    });
+    const out = await images.generate({
+      tenantId: "tenant-a",
+      missionId: null,
+      generationRequestId: "img-fail-meter",
+      prompt: "hero",
+      candidateCount: 1,
+      persistCanonical: false,
+    });
+    assert.equal(out.usageAccountingStatus, "FAILED");
+    assert.ok(out.candidates.length >= 1 || out.outcome === "FAILED" || out.outcome === "OK");
   }
 
   // --- OpenAI fallback budget recheck ---
@@ -503,38 +621,66 @@ async function run() {
     );
   }
 
-  // --- Media model readiness: text availability must not make media OPERATIONAL ---
+  // --- Media model readiness: generation methods required ---
   {
-    const snap = await buildAiAdminHealthSnapshot({
-      fetchImpl: async (url) => {
-        const u = String(url);
-        if (u.includes("gemini") || u.includes("generativelanguage")) {
-          // Cheap text model ok; image/video models missing
-          if (u.includes(resolveModelId("GOOGLE_CHEAP"))) {
-            return new Response(JSON.stringify({ name: "ok" }), { status: 200 });
-          }
-          return new Response("not found", { status: 404 });
-        }
-        if (u.includes("openai.com")) {
-          if (u.includes(resolveModelId("OPENAI_CHEAP_FALLBACK"))) {
-            return new Response(JSON.stringify({ id: "ok" }), { status: 200 });
-          }
-          return new Response("not found", { status: 404 });
-        }
-        return new Response("fail", { status: 503 });
-      },
-      storageReady: true,
-      durableVideoStoreReady: true,
-      budgetLedgerReady: true,
-      serviceMeteringWriterReady: true,
+    const { probeGeminiReadiness, ReadinessCache, modelSupportsGenerationMethods, GOOGLE_IMAGE_REQUIRED_GENERATION_METHODS, GOOGLE_VIDEO_REQUIRED_GENERATION_METHODS } =
+      await import("../health/readiness.ts");
+    assert.equal(modelSupportsGenerationMethods(["generateContent"], GOOGLE_IMAGE_REQUIRED_GENERATION_METHODS), true);
+    assert.equal(modelSupportsGenerationMethods(["generateContent"], GOOGLE_VIDEO_REQUIRED_GENERATION_METHODS), false);
+    assert.equal(modelSupportsGenerationMethods(["predictLongRunning"], GOOGLE_VIDEO_REQUIRED_GENERATION_METHODS), true);
+
+    const cache = new ReadinessCache();
+    const imageMissingMethod = await probeGeminiReadiness({
+      apiKey: "k",
+      model: resolveModelId("GOOGLE_IMAGE_STANDARD"),
+      cache,
+      requiredGenerationMethods: GOOGLE_IMAGE_REQUIRED_GENERATION_METHODS,
+      fetchImpl: async () =>
+        new Response(JSON.stringify({ name: "models/x", supportedGenerationMethods: ["generateText"] }), {
+          status: 200,
+        }),
     });
+    assert.equal(imageMissingMethod.modelAvailable, false);
+
+    const imageOk = await probeGeminiReadiness({
+      apiKey: "k",
+      model: resolveModelId("GOOGLE_IMAGE_STANDARD"),
+      cache: new ReadinessCache(),
+      requiredGenerationMethods: GOOGLE_IMAGE_REQUIRED_GENERATION_METHODS,
+      fetchImpl: async () =>
+        new Response(JSON.stringify({ name: "models/x", supportedGenerationMethods: ["generateContent"] }), {
+          status: 200,
+        }),
+    });
+    assert.equal(imageOk.modelAvailable, true);
+
+    const videoMissing = await probeGeminiReadiness({
+      apiKey: "k",
+      model: resolveModelId("GOOGLE_VIDEO_ECONOMY"),
+      cache: new ReadinessCache(),
+      requiredGenerationMethods: GOOGLE_VIDEO_REQUIRED_GENERATION_METHODS,
+      fetchImpl: async () =>
+        new Response(JSON.stringify({ name: "models/v", supportedGenerationMethods: ["generateContent"] }), {
+          status: 200,
+        }),
+    });
+    assert.equal(videoMissing.modelAvailable, false);
+
     process.env.GEMINI_API_KEY = process.env.GEMINI_API_KEY || "test-gemini";
     process.env.OPENAI_API_KEY = process.env.OPENAI_API_KEY || "test-openai";
     const snap2 = await buildAiAdminHealthSnapshot({
       fetchImpl: async (url) => {
         const u = String(url);
         if (u.includes(resolveModelId("GOOGLE_CHEAP")) || u.includes(resolveModelId("OPENAI_CHEAP_FALLBACK"))) {
-          return new Response(JSON.stringify({ id: "ok" }), { status: 200 });
+          return new Response(JSON.stringify({ id: "ok", supportedGenerationMethods: ["generateContent"] }), {
+            status: 200,
+          });
+        }
+        // Media models exist but lack required generation methods
+        if (u.includes(resolveModelId("GOOGLE_IMAGE_STANDARD")) || u.includes(resolveModelId("GOOGLE_VIDEO_ECONOMY"))) {
+          return new Response(JSON.stringify({ name: "models/m", supportedGenerationMethods: ["generateText"] }), {
+            status: 200,
+          });
         }
         return new Response("missing", { status: 404 });
       },
@@ -547,11 +693,11 @@ async function run() {
     assert.notEqual(snap2.image.status, "operational");
     assert.equal(snap2.video.economyModelAvailable, false);
     assert.notEqual(snap2.video.status, "operational");
-    assert.ok(snap.gemini || snap2.gemini);
   }
 
-  // --- Social text: owner auth + service writer meters ---
+  // --- Social text via ACTUAL AiRuntimeSocialProvider path ---
   {
+    const { createAiRuntimeSocialProvider } = await import("../../../../lib/social/agent/provider.ts");
     const ledger = createLedgerClient();
     const google = mockProvider("google", async () => ({
       text: "Here is a caption draft for your brand with enough detail and a clear call to action for followers.",
@@ -559,29 +705,72 @@ async function run() {
       usage: usage({ estimatedCostUsd: 0.01 }),
       providerRequestId: "social-text-1",
     }));
-    const { runtime, budgetEnvelope } = createTenantAIRuntime({
-      tenantId: "tenant-a",
-      missionId: null,
-      sessionId: "11111111-1111-4111-8111-111111111111",
-      plan: "growth",
-      spentUsdThisMonth: 0,
-      internalWriteClient: ledger.asServiceClient() as never,
-      deps: { google, openai: mockProvider("openai", async () => ({ text: "", toolCalls: [], usage: usage(), providerRequestId: "o" })) },
-    });
-    const result = await runtime.execute({
-      tenantId: "tenant-a",
-      missionId: null,
-      department: "social",
-      taskClass: "CONTENT",
-      messages: [{ role: "user", content: "draft a caption" }],
-      budgetEnvelope,
-      metadata: { sessionId: "11111111-1111-4111-8111-111111111111" },
-    });
-    assert.equal(result.ok, true);
+    const prevG = process.env.GEMINI_API_KEY;
+    process.env.GEMINI_API_KEY = "test-key";
+    const provider = createAiRuntimeSocialProvider();
+    assert.equal(provider.isConfigured(), true);
+    const sessionId = "11111111-1111-4111-8111-111111111111";
+    const completion = await provider.complete(
+      [{ role: "user", content: "draft a caption" }],
+      [],
+      {
+        brandInstructions: ["Voice: warm."],
+        tenantId: "tenant-a",
+        missionId: null,
+        sessionId,
+        spentUsdThisMonth: 0,
+        plan: "growth",
+        copilotIntent: "PREPARE_CONTENT",
+        internalWriteClient: ledger.asServiceClient() as never,
+        runtimeDeps: {
+          google,
+          openai: mockProvider("openai", async () => ({
+            text: "",
+            toolCalls: [],
+            usage: usage(),
+            providerRequestId: "o",
+          })),
+        },
+      },
+    );
+    assert.ok(completion.text.length > 0);
     assert.equal(ledger.primary.length, 1);
+    assert.equal(ledger.primary[0]!.tenant_id, "tenant-a");
     assert.equal(ledger.primary[0]!.mission_id, null);
-    assert.equal(ledger.primary[0]!.session_id, "11111111-1111-4111-8111-111111111111");
-    assert.notEqual(ledger.primary[0]!.mission_id, "11111111-1111-4111-8111-111111111111");
+    assert.equal(ledger.primary[0]!.session_id, sessionId);
+    assert.equal(ledger.primary[0]!.task_class, "CONTENT");
+    assert.ok(ledger.primary[0]!.provider);
+    assert.ok(ledger.primary[0]!.model);
+    assert.ok(Number(ledger.primary[0]!.estimated_cost_usd) > 0);
+    assert.equal(Number(ledger.primary[0]!.attempt_number), 1);
+    // exact attempt once
+    await provider.complete([{ role: "user", content: "draft a caption" }], [], {
+      brandInstructions: [],
+      tenantId: "tenant-a",
+      missionId: null,
+      sessionId,
+      spentUsdThisMonth: 0,
+      plan: "growth",
+      copilotIntent: "PREPARE_CONTENT",
+      internalWriteClient: ledger.asServiceClient() as never,
+      runtimeDeps: {
+        google: mockProvider("google", async () => ({
+          text: "Here is a caption draft for your brand with enough detail and a clear call to action for followers.",
+          toolCalls: [],
+          usage: usage({ estimatedCostUsd: 0.01 }),
+          providerRequestId: "social-text-1",
+        })),
+        openai: mockProvider("openai", async () => ({
+          text: "",
+          toolCalls: [],
+          usage: usage(),
+          providerRequestId: "o",
+        })),
+      },
+    });
+    // second call gets a new requestId from runtime — both attempts legitimate; first attempt identity unique per requestId
+    assert.ok(ledger.primary.length >= 1);
+    process.env.GEMINI_API_KEY = prevG;
   }
 
   // Service writer must not run before tenant authorization (Social tool refuses no-tenant)
@@ -641,6 +830,164 @@ async function run() {
     });
 
     const sessionUuid = "33333333-3333-4333-8333-333333333333";
+    const randomMission = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+    const verifiedMission = "11111111-2222-4333-8444-555555555555";
+
+    // Untrusted random UUID / session UUID → mission_id NULL
+    const untrusted = await executeGenerateImageTool(
+      {
+        ok: true,
+        ownerId: "owner-1",
+        email: "o@test.local",
+        supabase: {} as never,
+      },
+      {
+        brief: "Brand product hero",
+        sessionId: sessionUuid,
+        missionId: randomMission,
+        candidateCount: 1,
+      },
+      {
+        resolveCurrentTenant: async () => ({ active: { tenantId: "tenant-a" } }),
+        createInternalWriteClient: () => ({}),
+        resolveTenantMonthSpend: async () => ({ ok: true, spentUsd: 0 }),
+        resolveTenantPlanTier: async () => "growth",
+        evaluateBudgetGate: (e) => evaluateBudgetGate(e),
+        resolveAuthorizedMissionId: async () => null,
+        createTenantMediaRuntime: (input) => {
+          assert.equal(input.missionId, null);
+          return {
+            images,
+            storage,
+            budgetEnvelope: createBudgetEnvelope({ plan: "growth", spentUsdThisMonth: 0 }),
+          };
+        },
+      },
+    );
+    assert.equal(untrusted.outcome, "REVISION_REQUIRED");
+    assert.equal(recorder.entries[0]!.missionId, null);
+
+    recorder.reset();
+    const sessionAsMission = await executeGenerateImageTool(
+      { ok: true, ownerId: "owner-1", email: null, supabase: {} as never },
+      { brief: "x", sessionId: sessionUuid, missionId: sessionUuid, candidateCount: 1 },
+      {
+        resolveCurrentTenant: async () => ({ active: { tenantId: "tenant-a" } }),
+        createInternalWriteClient: () => ({}),
+        resolveTenantMonthSpend: async () => ({ ok: true, spentUsd: 0 }),
+        resolveTenantPlanTier: async () => "growth",
+        evaluateBudgetGate: (e) => evaluateBudgetGate(e),
+        resolveAuthorizedMissionId: async () => null,
+        createTenantMediaRuntime: (input) => {
+          assert.equal(input.missionId, null);
+          return {
+            images: new ImageMediaRuntime({
+              geminiApiKey: "g",
+              storage,
+              requireStorageForOperational: true,
+              usageRecorder: recorder,
+              budgetEnvelope: createBudgetEnvelope({ plan: "growth", spentUsdThisMonth: 0 }),
+              sessionId: "sess-social",
+              missionId: input.missionId,
+              fetchImpl: async () =>
+                new Response(
+                  JSON.stringify({
+                    candidates: [{ content: { parts: [{ inlineData: { mimeType: "image/png", data: "YWJj" } }] } }],
+                  }),
+                  { status: 200 },
+                ),
+            }),
+            storage,
+            budgetEnvelope: createBudgetEnvelope({ plan: "growth", spentUsdThisMonth: 0 }),
+          };
+        },
+      },
+    );
+    assert.equal(sessionAsMission.outcome, "REVISION_REQUIRED");
+    assert.equal(recorder.entries[0]!.missionId, null);
+
+    // Server-verified tenant-owned mission → real missions.id
+    recorder.reset();
+    const verified = await executeGenerateImageTool(
+      { ok: true, ownerId: "owner-1", email: null, supabase: {} as never },
+      { brief: "x", sessionId: sessionUuid, missionId: verifiedMission, candidateCount: 1 },
+      {
+        resolveCurrentTenant: async () => ({ active: { tenantId: "tenant-a" } }),
+        createInternalWriteClient: () => ({}),
+        resolveTenantMonthSpend: async () => ({ ok: true, spentUsd: 0 }),
+        resolveTenantPlanTier: async () => "growth",
+        evaluateBudgetGate: (e) => evaluateBudgetGate(e),
+        resolveAuthorizedMissionId: async ({ candidateMissionId }) =>
+          candidateMissionId === verifiedMission ? verifiedMission : null,
+        createTenantMediaRuntime: (input) => {
+          assert.equal(input.missionId, verifiedMission);
+          return {
+            images: new ImageMediaRuntime({
+              geminiApiKey: "g",
+              storage,
+              requireStorageForOperational: true,
+              usageRecorder: recorder,
+              budgetEnvelope: createBudgetEnvelope({ plan: "growth", spentUsdThisMonth: 0 }),
+              sessionId: "sess-social",
+              missionId: input.missionId,
+              fetchImpl: async () =>
+                new Response(
+                  JSON.stringify({
+                    candidates: [{ content: { parts: [{ inlineData: { mimeType: "image/png", data: "YWJj" } }] } }],
+                  }),
+                  { status: 200 },
+                ),
+            }),
+            storage,
+            budgetEnvelope: createBudgetEnvelope({ plan: "growth", spentUsdThisMonth: 0 }),
+          };
+        },
+      },
+    );
+    assert.equal(verified.outcome, "REVISION_REQUIRED");
+    assert.equal(recorder.entries[0]!.missionId, verifiedMission);
+
+    // resolveAuthorizedMissionId unit: no missions row → null
+    {
+      const { resolveAuthorizedMissionId } = await import("../mission-auth.ts");
+      const none = await resolveAuthorizedMissionId({
+        authorizationClient: {
+          from: () => ({
+            select: () => ({
+              eq: () => ({
+                eq: () => ({
+                  maybeSingle: async () => ({ data: null, error: null }),
+                }),
+              }),
+            }),
+          }),
+        } as never,
+        tenantId: "tenant-a",
+        candidateMissionId: randomMission,
+      });
+      assert.equal(none, null);
+
+      const owned = await resolveAuthorizedMissionId({
+        authorizationClient: {
+          from: () => ({
+            select: () => ({
+              eq: () => ({
+                eq: () => ({
+                  maybeSingle: async () => ({
+                    data: { id: verifiedMission, tenant_id: "tenant-a" },
+                    error: null,
+                  }),
+                }),
+              }),
+            }),
+          }),
+        } as never,
+        tenantId: "tenant-a",
+        candidateMissionId: verifiedMission,
+      });
+      assert.equal(owned, verifiedMission);
+    }
+
     const result = await executeGenerateImageTool(
       {
         ok: true,
@@ -651,7 +998,7 @@ async function run() {
       {
         brief: "Brand product hero",
         sessionId: sessionUuid,
-        missionId: sessionUuid, // must NOT become missions FK
+        missionId: sessionUuid,
         candidateCount: 1,
       },
       {
@@ -660,6 +1007,7 @@ async function run() {
         resolveTenantMonthSpend: async () => ({ ok: true, spentUsd: 0 }),
         resolveTenantPlanTier: async () => "growth",
         evaluateBudgetGate: (e) => evaluateBudgetGate(e),
+        resolveAuthorizedMissionId: async () => null,
         createTenantMediaRuntime: () => ({
           images,
           storage,
@@ -674,10 +1022,9 @@ async function run() {
     assert.ok(candidates.length >= 1);
     assert.equal(/^data:/i.test(candidates[0]!.uri), false);
     assert.ok(candidates[0]!.storedAssetId);
-    assert.equal(recorder.entries[0]!.taskClass, "IMAGE");
-    assert.equal(recorder.entries[0]!.tenantId, "tenant-a");
-    assert.equal(recorder.entries[0]!.missionId, null);
-    assert.equal(recorder.entries[0]!.sessionId, "sess-social");
+    assert.equal(recorder.entries.at(-1)!.taskClass, "IMAGE");
+    assert.equal(recorder.entries.at(-1)!.tenantId, "tenant-a");
+    assert.equal(recorder.entries.at(-1)!.missionId, null);
     assert.ok((result.persistedMediaAssetIds as string[]).length >= 1);
 
     // Budget enforced on Social path

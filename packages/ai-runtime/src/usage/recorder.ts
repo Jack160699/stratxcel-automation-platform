@@ -56,6 +56,10 @@ function isMissingRelation(message: string): boolean {
   return /does not exist|could not find the table|schema cache|undefined table/i.test(message);
 }
 
+export function attemptIdentityKey(requestId: string, attemptNumber: number): string {
+  return `${requestId}::${attemptNumber}`;
+}
+
 /** In-memory recorder for tests — enforces tenant attribution + attempt idempotency. */
 export class InMemoryUsageRecorder implements AIUsageRecorder {
   readonly entries: AIUsageRecord[] = [];
@@ -101,6 +105,20 @@ type SupabaseLike = {
   };
 };
 
+type LegacySpendRow = {
+  costUsd: number;
+  requestId: string | null;
+  attemptNumber: number | null;
+  createdAt: string | null;
+};
+
+type NewSpendRow = {
+  costUsd: number;
+  requestId: string | null;
+  attemptNumber: number;
+  createdAt: string | null;
+};
+
 /**
  * Service-role usage writer for ai_execution_usage.
  * Falls back to provider_usage_events only when the primary table is missing —
@@ -115,7 +133,7 @@ export class SupabaseUsageRecorder implements AIUsageRecorder {
     opts?: { cutoverAt?: string },
   ) {
     this.client = client;
-    this.cutoverAt = opts?.cutoverAt ?? process.env.AI_USAGE_LEDGER_CUTOVER_AT ?? "2026-08-11T00:00:00.000Z";
+    this.cutoverAt = opts?.cutoverAt ?? process.env.AI_USAGE_LEDGER_CUTOVER_AT ?? DEFAULT_AI_USAGE_CUTOVER_AT;
   }
 
   async record(entry: AIUsageRecord): Promise<void> {
@@ -189,7 +207,10 @@ export class SupabaseUsageRecorder implements AIUsageRecorder {
 
   /**
    * Cutover-safe month spend:
-   * legacy rows (no overlapping requestId) + new ledger rows, without double-counting.
+   * legacy provider_usage_events BEFORE cutover
+   * + ai_execution_usage at/after cutover
+   * + orphan post-cutover legacy attempts not present in the new ledger
+   * with attempt-level (requestId + attemptNumber) dedupe — never requestId alone.
    */
   async resolveMonthSpend(
     tenantId: string,
@@ -210,28 +231,58 @@ export class SupabaseUsageRecorder implements AIUsageRecorder {
     }
 
     if (primary.ok && !legacy.ok) {
-      return { ok: true, spentUsd: primary.sum, source: "ai_execution_usage" };
+      const postCutover = primary.rows.filter((r) => (r.createdAt ?? "") >= cutover);
+      return {
+        ok: true,
+        spentUsd: roundUsd(postCutover.reduce((s, r) => s + r.costUsd, 0)),
+        source: "ai_execution_usage",
+      };
     }
     if (!primary.ok && legacy.ok) {
       return { ok: true, spentUsd: legacy.sumUsd, source: "provider_usage_events" };
     }
 
-    // Combined with requestId dedupe.
-    const primaryOk = primary as { ok: true; sum: number; requestIds: string[] };
-    const legacyOk = legacy as {
-      ok: true;
-      sumUsd: number;
-      rows: Array<{ costUsd: number; requestId: string | null; createdAt: string | null }>;
-    };
-    const seen = new Set(primaryOk.requestIds);
+    const primaryOk = primary as { ok: true; rows: NewSpendRow[] };
+    const legacyOk = legacy as { ok: true; rows: LegacySpendRow[] };
+
+    const newRows = primaryOk.rows.filter((r) => (r.createdAt ?? "") >= cutover);
+    const seenAttempts = new Set<string>();
+    let newUsd = 0;
+    for (const row of newRows) {
+      newUsd += row.costUsd;
+      if (row.requestId) {
+        seenAttempts.add(attemptIdentityKey(row.requestId, row.attemptNumber));
+      }
+    }
+
     let legacyUsd = 0;
     for (const row of legacyOk.rows) {
-      if (row.requestId && seen.has(row.requestId)) continue;
-      legacyUsd += row.costUsd;
+      const createdAt = row.createdAt ?? "";
+      const beforeCutover = createdAt < cutover;
+      const attemptKey =
+        row.requestId != null
+          ? attemptIdentityKey(row.requestId, row.attemptNumber ?? 1)
+          : null;
+
+      if (attemptKey && seenAttempts.has(attemptKey)) {
+        continue; // exact dual-write / retry — count once from new ledger
+      }
+
+      if (beforeCutover) {
+        legacyUsd += row.costUsd;
+        continue;
+      }
+
+      // Post-cutover legacy: only count identifiable orphan attempts.
+      // Rows without request identity must not silently double-count with new ledger.
+      if (attemptKey) {
+        legacyUsd += row.costUsd;
+      }
     }
+
     return {
       ok: true,
-      spentUsd: roundUsd(primaryOk.sum + legacyUsd),
+      spentUsd: roundUsd(newUsd + legacyUsd),
       source: "combined",
     };
   }
@@ -240,22 +291,24 @@ export class SupabaseUsageRecorder implements AIUsageRecorder {
     tenantId: string,
     monthStart: string,
   ): Promise<
-    | { ok: true; sum: number; requestIds: string[]; unavailable?: false }
-    | { ok: false; unavailable: boolean; sum?: number; requestIds?: string[] }
+    | { ok: true; rows: NewSpendRow[]; unavailable?: false }
+    | { ok: false; unavailable: boolean; rows?: never }
   > {
     const select = this.client.from("ai_execution_usage").select;
     if (typeof select !== "function") return { ok: false, unavailable: true };
     try {
       const chain = select.call(
         this.client.from("ai_execution_usage"),
-        "estimated_cost_usd,request_id,success",
+        "estimated_cost_usd,request_id,attempt_number,success,created_at",
       ) as {
         eq: (c: string, v: string) => {
           gte: (c: string, v: string) => PromiseLike<{
             data: Array<{
               estimated_cost_usd?: number | string;
               request_id?: string | null;
+              attempt_number?: number | string | null;
               success?: boolean;
+              created_at?: string;
             }> | null;
             error: { message?: string } | null;
           }>;
@@ -263,10 +316,15 @@ export class SupabaseUsageRecorder implements AIUsageRecorder {
       };
       const { data, error } = await chain.eq("tenant_id", tenantId).gte("created_at", monthStart);
       if (error) return { ok: false, unavailable: isMissingRelation(error.message ?? "") };
-      const rows = (data ?? []).filter((r) => r.success !== false);
-      const sum = rows.reduce((s, row) => s + Number(row.estimated_cost_usd ?? 0), 0);
-      const requestIds = rows.map((r) => r.request_id).filter((id): id is string => Boolean(id));
-      return { ok: true, sum, requestIds };
+      const rows = (data ?? [])
+        .filter((r) => r.success !== false)
+        .map((r) => ({
+          costUsd: Number(r.estimated_cost_usd ?? 0),
+          requestId: typeof r.request_id === "string" ? r.request_id : null,
+          attemptNumber: Number(r.attempt_number ?? 1),
+          createdAt: r.created_at ?? null,
+        }));
+      return { ok: true, rows };
     } catch (err) {
       return { ok: false, unavailable: isMissingRelation(err instanceof Error ? err.message : "") };
     }
@@ -276,12 +334,7 @@ export class SupabaseUsageRecorder implements AIUsageRecorder {
     tenantId: string,
     monthStart: string,
   ): Promise<
-    | {
-        ok: true;
-        sumUsd: number;
-        rows: Array<{ costUsd: number; requestId: string | null; createdAt: string | null }>;
-        unavailable?: false;
-      }
+    | { ok: true; sumUsd: number; rows: LegacySpendRow[]; unavailable?: false }
     | { ok: false; unavailable: boolean; sumUsd?: number; rows?: never }
   > {
     const select = this.client.from("provider_usage_events").select;
@@ -295,7 +348,7 @@ export class SupabaseUsageRecorder implements AIUsageRecorder {
           gte: (c: string, v: string) => PromiseLike<{
             data: Array<{
               cost_cents?: number | string;
-              metadata?: { requestId?: string } | null;
+              metadata?: { requestId?: string; attemptNumber?: number | string } | null;
               created_at?: string;
             }> | null;
             error: { message?: string } | null;
@@ -304,11 +357,19 @@ export class SupabaseUsageRecorder implements AIUsageRecorder {
       };
       const { data, error } = await chain.eq("tenant_id", tenantId).gte("created_at", monthStart);
       if (error) return { ok: false, unavailable: isMissingRelation(error.message ?? "") };
-      const rows = (data ?? []).map((r) => ({
-        costUsd: Number(r.cost_cents ?? 0) / 100,
-        requestId: typeof r.metadata?.requestId === "string" ? r.metadata.requestId : null,
-        createdAt: r.created_at ?? null,
-      }));
+      const rows: LegacySpendRow[] = (data ?? []).map((r) => {
+        const meta = r.metadata ?? null;
+        const attemptRaw = meta?.attemptNumber;
+        return {
+          costUsd: Number(r.cost_cents ?? 0) / 100,
+          requestId: typeof meta?.requestId === "string" ? meta.requestId : null,
+          attemptNumber:
+            attemptRaw == null || attemptRaw === ""
+              ? null
+              : Number(attemptRaw),
+          createdAt: r.created_at ?? null,
+        };
+      });
       const sumUsd = rows.reduce((s, r) => s + r.costUsd, 0);
       return { ok: true, sumUsd, rows };
     } catch (err) {

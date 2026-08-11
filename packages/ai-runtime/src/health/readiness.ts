@@ -8,6 +8,11 @@ export interface ReadinessCacheEntry {
 
 const DEFAULT_TTL_MS = 60_000;
 
+/** ImageMediaRuntime calls models/{id}:generateContent */
+export const GOOGLE_IMAGE_REQUIRED_GENERATION_METHODS = ["generateContent"] as const;
+/** VideoMediaRuntime calls models/{id}:predictLongRunning */
+export const GOOGLE_VIDEO_REQUIRED_GENERATION_METHODS = ["predictLongRunning"] as const;
+
 export class ReadinessCache {
   private readonly store = new Map<string, ReadinessCacheEntry>();
   private readonly ttlMs: number;
@@ -37,13 +42,29 @@ export class ReadinessCache {
   }
 }
 
+export function modelSupportsGenerationMethods(
+  supported: readonly string[] | undefined,
+  required: readonly string[],
+): boolean {
+  if (!required.length) return true;
+  if (!supported?.length) return false;
+  const normalized = new Set(supported.map((m) => m.trim()));
+  return required.every((method) => normalized.has(method));
+}
+
 export async function probeGeminiReadiness(args: {
   apiKey: string | undefined;
   model?: string;
   fetchImpl?: FetchLike;
   cache?: ReadinessCache;
+  /**
+   * When set, HTTP 200 alone is insufficient — model metadata must advertise
+   * these supportedGenerationMethods (cheap GET, no generation call).
+   */
+  requiredGenerationMethods?: readonly string[];
 }): Promise<Omit<AIProviderHealth, "provider" | "circuitOpen">> {
-  const cacheKey = `google:${args.model ?? "default"}`;
+  const methodKey = args.requiredGenerationMethods?.slice().sort().join(",") ?? "";
+  const cacheKey = `google:${args.model ?? "default"}:${methodKey}`;
   const cached = args.cache?.get(cacheKey);
   if (cached) return cached;
 
@@ -80,12 +101,32 @@ export async function probeGeminiReadiness(args: {
       args.cache?.set(cacheKey, result);
       return result;
     }
+
+    let modelAvailable = true;
+    let safeErrorCode: string | null = null;
+    if (args.requiredGenerationMethods?.length && args.model) {
+      try {
+        const json = (await response.json()) as {
+          supportedGenerationMethods?: string[];
+          name?: string;
+        };
+        const supported = json.supportedGenerationMethods ?? [];
+        modelAvailable = modelSupportsGenerationMethods(supported, args.requiredGenerationMethods);
+        if (!modelAvailable) {
+          safeErrorCode = "GEMINI_METHOD_UNSUPPORTED";
+        }
+      } catch {
+        modelAvailable = false;
+        safeErrorCode = "GEMINI_METADATA_UNPARSEABLE";
+      }
+    }
+
     const result = {
       configured: true,
       reachable: true,
-      modelAvailable: true,
+      modelAvailable,
       lastCheckedAt: now,
-      safeErrorCode: null,
+      safeErrorCode,
     };
     args.cache?.set(cacheKey, result);
     return result;

@@ -47,6 +47,12 @@ export interface GenerateImageToolDeps {
   evaluateBudgetGate: (envelope: import("@stratxcel/ai-runtime").AIBudgetEnvelope) => {
     allowExecution: boolean;
   };
+  /** Server-side mission verification — never trust tool/model missionId alone. */
+  resolveAuthorizedMissionId?: (args: {
+    authorizationClient: OwnerContext["supabase"];
+    tenantId: string;
+    candidateMissionId?: string | null;
+  }) => Promise<string | null>;
 }
 
 async function defaultDeps(): Promise<GenerateImageToolDeps> {
@@ -59,6 +65,12 @@ async function defaultDeps(): Promise<GenerateImageToolDeps> {
     resolveTenantPlanTier: runtime.resolveTenantPlanTier as GenerateImageToolDeps["resolveTenantPlanTier"],
     createTenantMediaRuntime: runtime.createTenantMediaRuntime as GenerateImageToolDeps["createTenantMediaRuntime"],
     evaluateBudgetGate: runtime.evaluateBudgetGate,
+    resolveAuthorizedMissionId: async (args) =>
+      runtime.resolveAuthorizedMissionId({
+        authorizationClient: args.authorizationClient as never,
+        tenantId: args.tenantId,
+        candidateMissionId: args.candidateMissionId,
+      }),
   };
 }
 
@@ -80,6 +92,7 @@ export async function executeGenerateImageTool(
         resolveTenantPlanTier: depsOverride.resolveTenantPlanTier!,
         createTenantMediaRuntime: depsOverride.createTenantMediaRuntime!,
         evaluateBudgetGate: depsOverride.evaluateBudgetGate!,
+        resolveAuthorizedMissionId: depsOverride.resolveAuthorizedMissionId,
       } as GenerateImageToolDeps)
     : { ...(await defaultDeps()), ...depsOverride };
   const tenantResolution = await deps.resolveCurrentTenant(ctx.supabase, ctx.ownerId);
@@ -98,9 +111,15 @@ export async function executeGenerateImageTool(
   }
 
   const sessionId = str(args, "sessionId") || `session_${ctx.ownerId}`;
-  const rawMission = str(args, "missionId");
-  const missionId =
-    rawMission && !rawMission.startsWith("mission_") && rawMission !== sessionId ? rawMission : null;
+  // Tool/model-supplied missionId is never authoritative for Social Copilot.
+  const resolveMission =
+    deps.resolveAuthorizedMissionId ??
+    (async () => null as string | null);
+  const missionId = await resolveMission({
+    authorizationClient: ctx.supabase,
+    tenantId,
+    candidateMissionId: str(args, "missionId") || null,
+  });
 
   let media: ReturnType<GenerateImageToolDeps["createTenantMediaRuntime"]>;
   try {
