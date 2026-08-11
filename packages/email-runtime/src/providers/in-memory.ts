@@ -4,6 +4,13 @@ import type {
   EmailSendRequest,
 } from "../types.ts";
 
+export type InMemoryProbeState = {
+  configured: boolean;
+  reachable: boolean;
+  senderVerified: boolean | null;
+  detail: string;
+};
+
 /**
  * Deterministic fake provider for tests. Never contacts a network.
  * Does not fabricate success unless callers enqueue successful responses.
@@ -14,9 +21,19 @@ export class InMemoryEmailProvider implements EmailProvider {
   readonly sent: EmailSendRequest[] = [];
   private nextOutcome: EmailProviderSendOutcome | null = null;
   private sequence = 0;
+  private probeOverride: InMemoryProbeState | null = null;
+  probeCallCount = 0;
 
-  constructor(options: { configured?: boolean } = {}) {
+  constructor(options: { configured?: boolean; probe?: Partial<InMemoryProbeState> } = {}) {
     this.configured = options.configured !== false;
+    if (options.probe) {
+      this.probeOverride = {
+        configured: options.probe.configured ?? this.configured,
+        reachable: options.probe.reachable ?? this.configured,
+        senderVerified: options.probe.senderVerified ?? (this.configured ? true : null),
+        detail: options.probe.detail ?? "In-memory probe override",
+      };
+    }
   }
 
   isConfigured(): boolean {
@@ -25,6 +42,19 @@ export class InMemoryEmailProvider implements EmailProvider {
 
   setConfigured(value: boolean): void {
     this.configured = value;
+  }
+
+  setProbe(probe: Partial<InMemoryProbeState> | null): void {
+    if (probe == null) {
+      this.probeOverride = null;
+      return;
+    }
+    this.probeOverride = {
+      configured: probe.configured ?? this.configured,
+      reachable: probe.reachable ?? false,
+      senderVerified: probe.senderVerified ?? null,
+      detail: probe.detail ?? "In-memory probe override",
+    };
   }
 
   /** Queue a one-shot outcome for the next send(). */
@@ -62,6 +92,10 @@ export class InMemoryEmailProvider implements EmailProvider {
   }
 
   async probeReadiness() {
+    this.probeCallCount += 1;
+    if (this.probeOverride) {
+      return { ...this.probeOverride };
+    }
     return {
       configured: this.configured,
       reachable: this.configured,

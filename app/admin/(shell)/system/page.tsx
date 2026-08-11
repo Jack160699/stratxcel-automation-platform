@@ -1,6 +1,7 @@
 import { requireOwnerContext } from "@/lib/social/db-context";
 import { getTenantServiceContext } from "@/lib/tenants/tenant-context";
 import { heartbeatState } from "@/lib/hermes/mission-control";
+import { resolveEmailProcessorPathAvailable } from "@/lib/email/processor-path";
 import { Card, CardHeading } from "@/components/ui/Card";
 import { StatusChip, type ChipState } from "@/components/ui/StatusChip";
 import {
@@ -82,9 +83,8 @@ async function currentEmailStatus(): Promise<IntegrationRow> {
 
   // Prove processor path via email-processor heartbeat (mission-worker hosted loop)
   // or explicit external-scheduler mode — never hard-code workerPathAvailable as true.
-  // Do not require EMAIL_PROCESSOR_MODE on the web app: that env is set inside the worker process.
+  // Fresh degraded/unavailable heartbeats are NOT healthy (reuse heartbeatState semantics).
   const processorMode = (process.env.EMAIL_PROCESSOR_MODE ?? "").trim().toLowerCase();
-  let workerPathAvailable = false;
   const heartbeat = await service
     .from("worker_heartbeats")
     .select("status,last_heartbeat_at")
@@ -92,13 +92,12 @@ async function currentEmailStatus(): Promise<IntegrationRow> {
     .order("last_heartbeat_at", { ascending: false })
     .limit(1)
     .maybeSingle();
-  if (heartbeat.data?.last_heartbeat_at) {
-    const ageMs = Date.now() - new Date(heartbeat.data.last_heartbeat_at).getTime();
-    workerPathAvailable = ageMs < 5 * 60 * 1000;
-  } else if (processorMode === "http-manual-with-external-scheduler") {
-    // Explicit supported scheduler configuration without heartbeat telemetry.
-    workerPathAvailable = true;
-  }
+  const workerPathAvailable = resolveEmailProcessorPathAvailable({
+    lastHeartbeatAt: heartbeat.data?.last_heartbeat_at ?? null,
+    heartbeatStatus: heartbeat.data?.status ?? null,
+    heartbeatQueryFailed: Boolean(heartbeat.error),
+    processorMode,
+  });
 
   const health = await probeEmailSystemHealth({
     provider,

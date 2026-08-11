@@ -206,9 +206,18 @@ async function processOne(
 
 /**
  * Claim pending/retry emails atomically and send via the provider adapter.
- * When provider is configured, recovers eligible WAITING_CONFIGURATION rows first.
- * Never marks SENT without a real provider message id.
+ * Recovers WAITING_CONFIGURATION only after a real readiness probe proves
+ * configured + reachable + senderVerified (never from isConfigured()/key presence alone).
+ * Probe runs at most once per batch. Never marks SENT without a real provider message id.
  */
+export function isProviderReadyForWaitingConfigRecovery(probe: {
+  configured: boolean;
+  reachable: boolean;
+  senderVerified: boolean | null;
+}): boolean {
+  return probe.configured === true && probe.reachable === true && probe.senderVerified === true;
+}
+
 export async function processEmailOutboxBatch(
   store: EmailOutboxStore,
   provider: EmailProvider,
@@ -216,8 +225,12 @@ export async function processEmailOutboxBatch(
 ): Promise<ProcessOutboxResult> {
   let recovered = 0;
   if (provider.isConfigured() && typeof store.recoverWaitingConfiguration === "function") {
-    const rows = await store.recoverWaitingConfiguration(options.limit ?? 100);
-    recovered = rows.length;
+    // One readiness probe per batch — never per queued row, never on key presence alone.
+    const probe = await provider.probeReadiness();
+    if (isProviderReadyForWaitingConfigRecovery(probe)) {
+      const rows = await store.recoverWaitingConfiguration(options.limit ?? 100);
+      recovered = rows.length;
+    }
   }
 
   const claimed = await store.claimPending({

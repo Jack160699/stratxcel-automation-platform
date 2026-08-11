@@ -46,7 +46,7 @@ export {
   isRetryExhausted,
   EMAIL_MAX_ATTEMPTS,
 } from "./processor/backoff.ts";
-export { processEmailOutboxBatch, type ProcessOutboxResult } from "./processor/process.ts";
+export { processEmailOutboxBatch, isProviderReadyForWaitingConfigRecovery, type ProcessOutboxResult } from "./processor/process.ts";
 export { enqueueTransactionalEmail } from "./outbox/enqueue.ts";
 export { InMemoryEmailOutboxStore } from "./outbox/memory-store.ts";
 export { PostgresEmailOutboxStore, createPostgresEmailOutboxStore } from "./outbox/postgres-store.ts";
@@ -80,5 +80,8 @@ export {
 export {
   enqueueSubscriptionRenewalUpcomingEmails,
   enqueueSubscriptionRenewalUpcomingEmailsBestEffort,
+  filterSubscriptionRenewalUpcomingEmailCandidates,
+  isEligibleForSubscriptionRenewalUpcomingEmail,
+  SUBSCRIPTION_RENEWAL_UPCOMING_WINDOW_MS,
   type RenewalUpcomingCandidate,
 } from "./integrations/renewal.ts";

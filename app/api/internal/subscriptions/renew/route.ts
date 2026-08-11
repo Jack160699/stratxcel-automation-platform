@@ -9,6 +9,7 @@ import {
 import {
   createPostgresEmailOutboxStore,
   enqueueSubscriptionRenewalUpcomingEmailsBestEffort,
+  filterSubscriptionRenewalUpcomingEmailCandidates,
 } from "@stratxcel/email-runtime";
 
 export const runtime = "nodejs";
@@ -18,12 +19,14 @@ export const dynamic = "force-dynamic";
  * Internal, cron-only endpoint (see vercel.json). Jobs, always in this order:
  *
  *  1. run_subscription_lifecycle_cycle — pure state transitions.
- *  2. Best-effort SUBSCRIPTION_RENEWAL_UPCOMING emails for eligible candidates.
+ *  2. Best-effort SUBSCRIPTION_RENEWAL_UPCOMING emails for *active* future renewals only
+ *     (filtered separately from payment-link processing candidates — never past_due).
  *  3. For Payment-Link-managed subscriptions renewing within 3 days (or past_due)
  *     without a live renewal link, generate the next period's payment link.
  *
  * Provider-managed Razorpay AutoPay subscriptions are skipped for Payment Link minting —
- * Razorpay charges them. Upcoming-renewal email still applies when local state says renewal will occur.
+ * Razorpay charges them. Upcoming-renewal email applies only when status is active,
+ * cancel_at_period_end is false, and current_period_end is in the future reminder window.
  * Gated on PAYMENTS_SUBSCRIPTIONS_ENABLED.
  */
 export async function POST(request: Request) {
@@ -56,10 +59,15 @@ export async function POST(request: Request) {
     return Response.json({ error: `Failed to load renewal candidates: ${candidatesErr.message}`, lifecycle: cycleResult }, { status: 500 });
   }
 
+  // Payment/recovery candidates may include past_due — do not change that set.
+  const processingCandidates = candidates ?? [];
+  // Upcoming-renewal email is a separate, stricter filter (active + future window only).
+  const upcomingEmailCandidates = filterSubscriptionRenewalUpcomingEmailCandidates(processingCandidates);
+
   // Best-effort upcoming renewal notices — never affect link minting below.
   try {
     const emailStore = createPostgresEmailOutboxStore(serviceDb);
-    await enqueueSubscriptionRenewalUpcomingEmailsBestEffort(serviceDb, emailStore, candidates ?? []);
+    await enqueueSubscriptionRenewalUpcomingEmailsBestEffort(serviceDb, emailStore, upcomingEmailCandidates);
   } catch (err) {
     console.error("[Subscription Renewal Cron] renewal-upcoming email failed", err);
   }
@@ -69,7 +77,7 @@ export async function POST(request: Request) {
   let skippedProviderManaged = 0;
   const failures: Array<{ subscriptionId: string; error: string }> = [];
 
-  for (const sub of candidates ?? []) {
+  for (const sub of processingCandidates) {
     try {
       // Provider-managed AutoPay: Razorpay charges — never mint a renewal Payment Link.
       if (isProviderManagedSubscription(sub)) {

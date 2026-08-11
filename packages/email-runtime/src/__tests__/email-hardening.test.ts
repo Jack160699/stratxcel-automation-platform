@@ -8,9 +8,12 @@ import {
   CANONICAL_APP_ORIGIN_DEFAULT,
   enqueueSubscriptionRenewalUpcomingEmails,
   enqueueTransactionalEmail,
+  filterSubscriptionRenewalUpcomingEmailCandidates,
   getEmailEventDeliveryStatus,
   InMemoryEmailOutboxStore,
   InMemoryEmailProvider,
+  isEligibleForSubscriptionRenewalUpcomingEmail,
+  isProviderReadyForWaitingConfigRecovery,
   processEmailOutboxBatch,
   probeEmailSystemHealth,
   ResendEmailProvider,
@@ -102,6 +105,113 @@ async function run() {
   // Second process does not re-send
   await processEmailOutboxBatch(store, configured, { limit: 5 });
   assert.equal(configured.sent.length, 1);
+
+  // --- WAITING_CONFIGURATION: key present but readiness broken → no recovery churn ---
+  const authStore = new InMemoryEmailOutboxStore();
+  const brokenAuth = new InMemoryEmailProvider({
+    configured: true,
+    probe: {
+      configured: true,
+      reachable: true,
+      senderVerified: false,
+      detail: "Resend API key rejected (auth/config)",
+    },
+  });
+  brokenAuth.enqueueOutcome({
+    ok: false,
+    provider: "in-memory",
+    retryable: false,
+    errorCode: "HTTP_401",
+    errorCategory: "auth_config",
+    errorSafe: "unauthorized",
+  });
+  const authEnq = await enqueueTransactionalEmail(authStore, {
+    eventType: "AUDIT_PAYMENT_RECEIPT",
+    recipient: "customer@stratxcel.ai",
+    idempotencyKey: "audit_receipt:order-auth-park",
+    tenantId: "tenant-a",
+    payload: auditPayload(),
+  });
+  await processEmailOutboxBatch(authStore, brokenAuth, { limit: 5 });
+  const authWaiting = await authStore.getById(authEnq.outboxId!);
+  assert.equal(authWaiting?.status, "WAITING_CONFIGURATION");
+  const authAttempts = authWaiting?.attempt_count ?? -1;
+  const sendsAfterPark = brokenAuth.sent.length;
+
+  // Key still present + readiness still broken → stay parked, no repeated send
+  for (let i = 0; i < 3; i++) {
+    const batch = await processEmailOutboxBatch(authStore, brokenAuth, { limit: 5 });
+    assert.equal(batch.recovered, 0);
+    assert.equal(batch.claimed, 0);
+  }
+  assert.equal(brokenAuth.sent.length, sendsAfterPark);
+  assert.equal((await authStore.getById(authEnq.outboxId!))?.attempt_count, authAttempts);
+  assert.equal(isProviderReadyForWaitingConfigRecovery(await brokenAuth.probeReadiness()), false);
+
+  // Sender unverified probe → stays parked
+  const unverifiedStore = new InMemoryEmailOutboxStore();
+  const unverified = new InMemoryEmailProvider({
+    configured: true,
+    probe: {
+      configured: true,
+      reachable: true,
+      senderVerified: false,
+      detail: "sender domain not verified",
+    },
+  });
+  unverified.enqueueOutcome({
+    ok: false,
+    provider: "in-memory",
+    retryable: false,
+    errorCode: "SENDER_UNVERIFIED",
+    errorCategory: "sender_unverified",
+    errorSafe: "sender unverified",
+  });
+  const unverifiedEnq = await enqueueTransactionalEmail(unverifiedStore, {
+    eventType: "AUDIT_PAYMENT_RECEIPT",
+    recipient: "customer@stratxcel.ai",
+    idempotencyKey: "audit_receipt:order-unverified",
+    tenantId: "tenant-a",
+    payload: auditPayload(),
+  });
+  await processEmailOutboxBatch(unverifiedStore, unverified, { limit: 5 });
+  assert.equal((await unverifiedStore.getById(unverifiedEnq.outboxId!))?.status, "WAITING_CONFIGURATION");
+  const unverifiedAttempts = (await unverifiedStore.getById(unverifiedEnq.outboxId!))?.attempt_count;
+  const batchUnverified = await processEmailOutboxBatch(unverifiedStore, unverified, { limit: 5 });
+  assert.equal(batchUnverified.recovered, 0);
+  assert.equal((await unverifiedStore.getById(unverifiedEnq.outboxId!))?.attempt_count, unverifiedAttempts);
+
+  // Provider verified later → recover once → exactly one send → SENT
+  brokenAuth.setProbe({
+    configured: true,
+    reachable: true,
+    senderVerified: true,
+    detail: "ready",
+  });
+  // Clear residual failure outcome; default send succeeds
+  const recoveredAuth = await processEmailOutboxBatch(authStore, brokenAuth, { limit: 5 });
+  assert.equal(recoveredAuth.recovered, 1);
+  assert.equal(recoveredAuth.sent, 1);
+  assert.equal((await authStore.getById(authEnq.outboxId!))?.status, "SENT");
+  const sentCountAfterRecover = brokenAuth.sent.length;
+  await processEmailOutboxBatch(authStore, brokenAuth, { limit: 5 });
+  assert.equal(brokenAuth.sent.length, sentCountAfterRecover);
+
+  // Probe at most once per batch (not per row)
+  const multiStore = new InMemoryEmailOutboxStore();
+  const multiProvider = new InMemoryEmailProvider({ configured: true });
+  for (let i = 0; i < 3; i++) {
+    await enqueueTransactionalEmail(multiStore, {
+      eventType: "AUDIT_PAYMENT_RECEIPT",
+      recipient: "customer@stratxcel.ai",
+      idempotencyKey: `audit_receipt:multi-${i}`,
+      tenantId: "tenant-a",
+      payload: auditPayload(),
+    });
+  }
+  const probesBefore = multiProvider.probeCallCount;
+  await processEmailOutboxBatch(multiStore, multiProvider, { limit: 10 });
+  assert.equal(multiProvider.probeCallCount - probesBefore, 1);
 
   // --- Lease cleared after retry ---
   const retryStore = new InMemoryEmailOutboxStore();
@@ -233,7 +343,76 @@ async function run() {
   assert.notEqual(health.status, "OPERATIONAL");
   assert.equal(health.status, "DEGRADED");
 
-  // --- Renewal upcoming skips cancelled / cancel_at_period_end ---
+  // --- Renewal upcoming: active + future window only ---
+  const renewNow = new Date("2026-08-12T00:00:00.000Z");
+  const tomorrow = new Date(renewNow.getTime() + 24 * 60 * 60 * 1000).toISOString();
+  const yesterday = new Date(renewNow.getTime() - 24 * 60 * 60 * 1000).toISOString();
+  assert.equal(
+    isEligibleForSubscriptionRenewalUpcomingEmail(
+      {
+        id: "a",
+        tenant_id: "t",
+        status: "active",
+        cancel_at_period_end: false,
+        current_period_end: tomorrow,
+      },
+      renewNow
+    ),
+    true
+  );
+  assert.equal(
+    isEligibleForSubscriptionRenewalUpcomingEmail(
+      {
+        id: "a",
+        tenant_id: "t",
+        status: "active",
+        cancel_at_period_end: false,
+        current_period_end: yesterday,
+      },
+      renewNow
+    ),
+    false
+  );
+  assert.equal(
+    isEligibleForSubscriptionRenewalUpcomingEmail(
+      {
+        id: "a",
+        tenant_id: "t",
+        status: "past_due",
+        cancel_at_period_end: false,
+        current_period_end: tomorrow,
+      },
+      renewNow
+    ),
+    false
+  );
+  assert.equal(
+    isEligibleForSubscriptionRenewalUpcomingEmail(
+      {
+        id: "a",
+        tenant_id: "t",
+        status: "past_due",
+        cancel_at_period_end: false,
+        current_period_end: yesterday,
+      },
+      renewNow
+    ),
+    false
+  );
+  assert.equal(
+    isEligibleForSubscriptionRenewalUpcomingEmail(
+      {
+        id: "a",
+        tenant_id: "t",
+        status: "active",
+        cancel_at_period_end: true,
+        current_period_end: tomorrow,
+      },
+      renewNow
+    ),
+    false
+  );
+
   const renewStore = new InMemoryEmailOutboxStore();
   const supabaseStub = {
     auth: { admin: { getUserById: async () => ({ data: { user: { email: "owner@stratxcel.ai" } } }) } },
@@ -252,24 +431,38 @@ async function run() {
       };
     },
   };
-  // Patch resolve path via tenant members + auth admin already stubbed above.
-  // enqueueSubscriptionRenewalUpcomingEmails uses resolveTenantOwnerEmailForNotify.
-  const results = await enqueueSubscriptionRenewalUpcomingEmails(supabaseStub as never, renewStore, [
+  const mixedCandidates = [
     {
       id: "sub-cancel-end",
       tenant_id: "tenant-a",
       plan_tier: "growth",
       status: "active",
       cancel_at_period_end: true,
-      current_period_end: "2026-09-01T00:00:00.000Z",
+      current_period_end: tomorrow,
     },
     {
-      id: "sub-cancelled",
+      id: "sub-past-due-future",
       tenant_id: "tenant-a",
       plan_tier: "growth",
-      status: "cancelled",
+      status: "past_due",
       cancel_at_period_end: false,
-      current_period_end: "2026-09-01T00:00:00.000Z",
+      current_period_end: tomorrow,
+    },
+    {
+      id: "sub-past-due-past",
+      tenant_id: "tenant-a",
+      plan_tier: "growth",
+      status: "past_due",
+      cancel_at_period_end: false,
+      current_period_end: yesterday,
+    },
+    {
+      id: "sub-active-expired",
+      tenant_id: "tenant-a",
+      plan_tier: "growth",
+      status: "active",
+      cancel_at_period_end: false,
+      current_period_end: yesterday,
     },
     {
       id: "sub-ok",
@@ -277,22 +470,44 @@ async function run() {
       plan_tier: "growth",
       status: "active",
       cancel_at_period_end: false,
-      current_period_end: "2026-09-01T00:00:00.000Z",
+      current_period_end: tomorrow,
     },
-  ]);
+  ];
+  assert.equal(filterSubscriptionRenewalUpcomingEmailCandidates(mixedCandidates, renewNow).length, 1);
+  assert.equal(filterSubscriptionRenewalUpcomingEmailCandidates(mixedCandidates, renewNow)[0]?.id, "sub-ok");
+
+  const results = await enqueueSubscriptionRenewalUpcomingEmails(
+    supabaseStub as never,
+    renewStore,
+    mixedCandidates,
+    { now: renewNow }
+  );
   assert.equal(results.filter((r) => r.enqueued).length, 1);
   assert.equal(results.find((r) => r.enqueued)?.outboxId != null, true);
-  const dup = await enqueueSubscriptionRenewalUpcomingEmails(supabaseStub as never, renewStore, [
-    {
-      id: "sub-ok",
-      tenant_id: "tenant-a",
-      plan_tier: "growth",
-      status: "active",
-      cancel_at_period_end: false,
-      current_period_end: "2026-09-01T00:00:00.000Z",
-    },
-  ]);
+  const dup = await enqueueSubscriptionRenewalUpcomingEmails(
+    supabaseStub as never,
+    renewStore,
+    [
+      {
+        id: "sub-ok",
+        tenant_id: "tenant-a",
+        plan_tier: "growth",
+        status: "active",
+        cancel_at_period_end: false,
+        current_period_end: tomorrow,
+      },
+    ],
+    { now: renewNow }
+  );
   assert.equal(dup[0]?.duplicate, true);
+
+  const renewRoute = fs.readFileSync(
+    path.join(root, "app", "api", "internal", "subscriptions", "renew", "route.ts"),
+    "utf8"
+  );
+  assert.ok(renewRoute.includes("filterSubscriptionRenewalUpcomingEmailCandidates"));
+  assert.ok(renewRoute.includes("upcomingEmailCandidates"));
+  assert.ok(renewRoute.includes("processingCandidates"));
 
   // --- SUBSCRIPTION_RENEWED uses current_period_end (static + unit) ---
   const paymentsSrc = fs.readFileSync(
@@ -346,6 +561,14 @@ async function run() {
   const systemPage = fs.readFileSync(path.join(root, "app", "admin", "(shell)", "system", "page.tsx"), "utf8");
   assert.equal(/probeEmailSystemHealth\(\{[\s\S]*?workerPathAvailable:\s*true/.test(systemPage), false);
   assert.ok(systemPage.includes('eq("worker_type", "email-processor")'));
+  assert.ok(systemPage.includes("resolveEmailProcessorPathAvailable"));
+  assert.ok(systemPage.includes("heartbeatQueryFailed"));
+
+  // Recovery requires readiness helper (not isConfigured alone)
+  const processSrc = fs.readFileSync(path.join(root, "packages", "email-runtime", "src", "processor", "process.ts"), "utf8");
+  assert.ok(processSrc.includes("isProviderReadyForWaitingConfigRecovery"));
+  assert.ok(processSrc.includes("probeReadiness"));
+  assert.equal(/if \(provider\.isConfigured\(\)[\s\S]*?recoverWaitingConfiguration\(/.test(processSrc.replace(/\s+/g, " ")) || processSrc.includes("isProviderReadyForWaitingConfigRecovery(probe)"), true);
 
   // Recovery migration present
   const recoveryMig = fs.readFileSync(

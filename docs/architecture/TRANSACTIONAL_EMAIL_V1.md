@@ -40,7 +40,7 @@ Key surfaces:
 6. On success: persist real `provider_message_id`, status `SENT`, clear lease metadata.
 7. On retryable failure: `RETRY_WAIT` with bounded backoff; clear lease metadata.
 8. On permanent / config failure: `FAILED` or `WAITING_CONFIGURATION`; clear lease metadata.
-9. When provider becomes configured, `recover_email_outbox_waiting_configuration` re-enters eligible rows to `PENDING` (preserves `attempt_count`, never resurrects `CANCELLED` / invalid recipients).
+9. When provider **readiness probe** proves `configured && reachable && senderVerified`, `recover_email_outbox_waiting_configuration` re-enters eligible rows to `PENDING` (preserves `attempt_count`, never resurrects `CANCELLED` / invalid recipients). Key presence alone must never recover parked rows (avoids 401/unverified churn).
 
 ## Free-plan / Hobby compatibility
 
