@@ -31,6 +31,7 @@ export interface AiAdminHealthSnapshot {
     status: AdminProviderStatus;
     durableStoreReady: boolean;
   };
+  budgetLedgerReady: boolean;
   modelPolicySummary: Array<{ taskClass: string; primary: string; fallback: string | null }>;
   departmentMappingCount: { mapped: number; total: number };
   circuit: Array<{ key: string; failures: number; open: boolean }>;
@@ -55,6 +56,51 @@ function deriveStatus(
   return "configured";
 }
 
+export async function probeBudgetLedgerReady(supabase?: {
+  from: (table: string) => {
+    select: (cols: string) => {
+      limit: (n: number) => PromiseLike<{ error: { message?: string } | null }>;
+    };
+  };
+}): Promise<boolean> {
+  if (!supabase) return false;
+  try {
+    const primary = await supabase.from("ai_execution_usage").select("estimated_cost_usd").limit(1);
+    if (!primary.error) return true;
+    const fallback = await supabase.from("provider_usage_events").select("cost_cents").limit(1);
+    return !fallback.error;
+  } catch {
+    return false;
+  }
+}
+
+export async function probeDurableVideoStoreReady(supabase?: {
+  from: (table: string) => {
+    select: (cols: string) => {
+      limit: (n: number) => PromiseLike<{ error: { message?: string } | null }>;
+    };
+  };
+}): Promise<boolean> {
+  if (!supabase) return false;
+  try {
+    const { error } = await supabase.from("ai_media_operations").select("id").limit(1);
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
+export async function probeCanonicalStorageReady(storage?: {
+  isWritable: () => Promise<boolean>;
+}): Promise<boolean> {
+  if (!storage) return false;
+  try {
+    return await storage.isWritable();
+  } catch {
+    return false;
+  }
+}
+
 export async function buildAiAdminHealthSnapshot(args?: {
   circuitBreaker?: ProviderCircuitBreaker;
   estimatedMonthSpendUsd?: number | null;
@@ -62,6 +108,15 @@ export async function buildAiAdminHealthSnapshot(args?: {
   fetchImpl?: typeof fetch;
   storageReady?: boolean;
   durableVideoStoreReady?: boolean;
+  budgetLedgerReady?: boolean;
+  supabase?: {
+    from: (table: string) => {
+      select: (cols: string) => {
+        limit: (n: number) => PromiseLike<{ error: { message?: string } | null }>;
+      };
+    };
+  };
+  storage?: { isWritable: () => Promise<boolean> };
 }): Promise<AiAdminHealthSnapshot> {
   const circuit = args?.circuitBreaker ?? new ProviderCircuitBreaker();
   const [geminiProbe, openaiProbe] = await Promise.all([
@@ -81,8 +136,18 @@ export async function buildAiAdminHealthSnapshot(args?: {
 
   const policies = buildTaskPolicies();
   const mapping = assertAllDepartmentsMapped();
-  const storageReady = args?.storageReady ?? false;
-  const durableVideoStoreReady = args?.durableVideoStoreReady ?? false;
+
+  const [storageReady, durableVideoStoreReady, budgetLedgerReady] = await Promise.all([
+    args?.storageReady != null
+      ? Promise.resolve(args.storageReady)
+      : probeCanonicalStorageReady(args?.storage),
+    args?.durableVideoStoreReady != null
+      ? Promise.resolve(args.durableVideoStoreReady)
+      : probeDurableVideoStoreReady(args?.supabase),
+    args?.budgetLedgerReady != null
+      ? Promise.resolve(args.budgetLedgerReady)
+      : probeBudgetLedgerReady(args?.supabase),
+  ]);
 
   const geminiCircuit = circuit.isOpen("google", resolveModelId("GOOGLE_CHEAP"));
   const openaiCircuit = circuit.isOpen("openai", resolveModelId("OPENAI_CHEAP_FALLBACK"));
@@ -112,7 +177,7 @@ export async function buildAiAdminHealthSnapshot(args?: {
           modelAvailable: geminiProbe.modelAvailable || openaiProbe.modelAvailable,
         },
         geminiCircuit && openaiCircuit,
-        storageReady,
+        storageReady && budgetLedgerReady,
       ),
     },
     video: {
@@ -127,9 +192,10 @@ export async function buildAiAdminHealthSnapshot(args?: {
           modelAvailable: geminiProbe.modelAvailable,
         },
         geminiCircuit,
-        durableVideoStoreReady,
+        durableVideoStoreReady && storageReady && budgetLedgerReady,
       ),
     },
+    budgetLedgerReady,
     modelPolicySummary: Object.values(policies).map((p) => ({
       taskClass: p.taskClass,
       primary: p.candidates.find((c) => c.role === "primary")?.model ?? "—",

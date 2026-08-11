@@ -70,10 +70,28 @@ export default async function SystemHealthPage() {
   if (!ctx.ok) return null;
 
   const hermes = await currentHermesStatus();
+  const service = getTenantServiceContext().supabase;
+  const { SupabaseCanonicalMediaStorage, resolveTenantMonthSpend } = await import("@stratxcel/ai-runtime");
+  const storage = new SupabaseCanonicalMediaStorage({
+    client: service as never,
+    ownerId: ctx.ownerId,
+  });
+  let estimatedMonthSpendUsd: number | null = null;
+  try {
+    const tenant = await import("@/lib/tenants/current-tenant").then((m) =>
+      m.resolveCurrentTenant(ctx.supabase, ctx.ownerId),
+    );
+    if (tenant.active?.tenantId) {
+      const spend = await resolveTenantMonthSpend(service as never, tenant.active.tenantId);
+      estimatedMonthSpendUsd = spend.ok ? spend.spentUsd : null;
+    }
+  } catch {
+    estimatedMonthSpendUsd = null;
+  }
   const ai = await buildAiAdminHealthSnapshot({
-    // Storage/durable readiness require separate probes — do not equate key presence with Live.
-    storageReady: false,
-    durableVideoStoreReady: false,
+    supabase: service as never,
+    storage,
+    estimatedMonthSpendUsd,
   });
 
   const rows: IntegrationRow[] = [
@@ -101,12 +119,12 @@ export default async function SystemHealthPage() {
     {
       name: "AI Media (Image)",
       status: aiStatusToIntegration(ai.image.status),
-      detail: `Status=${ai.image.status}; storageReady=${ai.image.storageReady}; primary=${ai.image.primaryModel}. Key presence alone is not Live.`,
+      detail: `Status=${ai.image.status}; storageReady=${ai.image.storageReady}; budgetLedgerReady=${ai.budgetLedgerReady}; primary=${ai.image.primaryModel}. Key presence alone is not Live.`,
     },
     {
       name: "AI Media (Video/Veo)",
       status: aiStatusToIntegration(ai.video.status),
-      detail: `Status=${ai.video.status}; durableStoreReady=${ai.video.durableStoreReady}; Sora active=false; economy=${ai.video.economyModel}.`,
+      detail: `Status=${ai.video.status}; durableStoreReady=${ai.video.durableStoreReady}; storageReady=${ai.image.storageReady}; budgetLedgerReady=${ai.budgetLedgerReady}; Sora active=false; economy=${ai.video.economyModel}.`,
     },
     {
       name: "Google Drive",

@@ -34,16 +34,11 @@ export interface SocialOutboundEnvelope {
   };
 }
 
-const SECRET_VALUE = /\b(?:bearer\s+|access[_ -]?token\s*[:=]\s*|refresh[_ -]?token\s*[:=]\s*)[^\s,;]+/gi;
-
-function redactSecretsOnly(value: string): string {
-  return value.replace(SECRET_VALUE, "[REDACTED SECRET]");
-}
-
 /**
  * Sanitize conversation + Brand/business context before ANY provider hop.
- * Preserves toolCallId / toolName / order. Applies full Social sanitize to
- * system/user/context; secret-only redaction for assistant/tool continuity.
+ * Applies the same Platform-data sanitize to system/user/assistant/tool
+ * so OpenAI fallback never receives a wider data class than Google.
+ * Preserves toolCallId / toolName / toolCalls order and IDs.
  */
 export function buildSocialOutboundBoundary(args: {
   messages: Array<{
@@ -65,26 +60,49 @@ export function buildSocialOutboundBoundary(args: {
     creativeImages: args.context.creativeImages,
   };
 
-  const messages: SocialBoundaryMessage[] = args.messages.map((m) => {
-    if (m.role === "system" || m.role === "developer" || m.role === "user") {
-      return { ...m, content: sanitizeGeminiText(m.content) };
-    }
-    return {
-      ...m,
-      content: redactSecretsOnly(m.content),
-      functionCallArguments: m.functionCallArguments
-        ? redactSecretsOnly(m.functionCallArguments)
-        : undefined,
-    };
-  });
+  const messages: SocialBoundaryMessage[] = args.messages.map((m) => ({
+    ...m,
+    content: sanitizeGeminiText(m.content),
+    functionCallArguments: m.functionCallArguments
+      ? sanitizeGeminiText(m.functionCallArguments)
+      : undefined,
+    toolCalls: m.toolCalls?.map((call) => ({
+      id: call.id,
+      name: call.name,
+      arguments: sanitizeToolArgs(call.arguments),
+    })),
+  }));
 
   return { messages, context };
+}
+
+function sanitizeToolArgs(args: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(args)) {
+    if (typeof value === "string") out[key] = sanitizeGeminiText(value);
+    else if (Array.isArray(value)) {
+      out[key] = value.map((v) => (typeof v === "string" ? sanitizeGeminiText(v) : v));
+    } else if (value && typeof value === "object") {
+      out[key] = sanitizeToolArgs(value as Record<string, unknown>);
+    } else {
+      out[key] = value;
+    }
+  }
+  return out;
 }
 
 export function assertSocialOutboundSafe(envelope: SocialOutboundEnvelope): void {
   const blob = JSON.stringify(envelope);
   if (/EAAG[A-Za-z0-9]+/.test(blob) || /sk-[a-zA-Z0-9]{20,}/.test(blob) || /AIza[0-9A-Za-z_-]{20,}/.test(blob)) {
     throw new Error("social_outbound_boundary_secret_leak");
+  }
+  const stripped = blob
+    .replace(/\[REDACTED PLATFORM DATA\]/gi, "")
+    .replace(/\[REDACTED SECRET\]/gi, "")
+    .replace(/\[REDACTED HANDLE\]/gi, "")
+    .replace(/\[REDACTED IDENTIFIER\]/gi, "");
+  if (/\b(?:insights?|analytics|page\s+id|access[_ -]?token)\b/i.test(stripped)) {
+    throw new Error("social_outbound_boundary_platform_data_leak");
   }
 }
 

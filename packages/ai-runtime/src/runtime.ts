@@ -124,6 +124,7 @@ export class AIRuntime {
     let fallbackReason: AIFallbackReason = "none";
     let escalationLevel = 0;
     let lastErrorCategory: ReturnType<typeof classifyProviderError> | undefined;
+    let accumulatedCostUsd = 0;
 
     const runCandidate = async (
       candidate: AIRoutingCandidate,
@@ -221,6 +222,14 @@ export class AIRuntime {
           attempts: [...attempts],
         };
 
+        // Every successful provider response is billable — record even if quality later fails.
+        await this.persistUsage(request, {
+          ...result,
+          successOverride: true,
+          selectionReasonOverride: `provider_ok:${candidate.model}`,
+        });
+        accumulatedCostUsd += completion.usage.estimatedCostUsd;
+
         if (request.qualityTarget != null || shouldQualityCheck(request.taskClass)) {
           const assessment = this.qualityAssessor({
             taskClass: request.taskClass,
@@ -238,13 +247,11 @@ export class AIRuntime {
             shouldEscalateForQuality(assessment, escalationLevel, policy.maxQualityEscalations) &&
             escalationPool.length > 0
           ) {
-            // Return null to trigger escalation path with recorded attempt.
             lastErrorCategory = undefined;
             return { ...result, ok: false, errorCategory: undefined, userSafeError: undefined };
           }
         }
 
-        await this.persistUsage(request, result);
         safeAiLog({
           event: "ai_execution_success",
           provider: candidate.provider,
@@ -337,6 +344,24 @@ export class AIRuntime {
         // Budget may already have filtered; double-check Sol never for captions/general.
         if (esc.model.includes("sol") && !allowsFrontier(request.taskClass)) continue;
 
+        // In-request accumulated-cost budget recheck before premium escalation.
+        if (request.budgetEnvelope) {
+          const recheck = evaluateBudgetGate(
+            {
+              ...request.budgetEnvelope,
+              spentUsdThisMonth: request.budgetEnvelope.spentUsdThisMonth + accumulatedCostUsd,
+            },
+            {
+              isCriticalWorkflow: Boolean(request.metadata?.critical),
+              isDiscretionaryPremium: true,
+            },
+          );
+          budgetStatus = recheck.status;
+          if (!recheck.allowExecution || !recheck.allowDiscretionaryPremium) {
+            break;
+          }
+        }
+
         escalationLevel += 1;
         attemptNumber += 1;
         fallbackUsed = true;
@@ -360,7 +385,7 @@ export class AIRuntime {
         }
       }
       if (qualityPending) {
-        // Exhausted escalations — return last quality-failed success content? Prefer fail closed for quality.
+        // Exhausted escalations — fail closed for quality (attempts already accounted).
         const failed = {
           ...qualityPending,
           ok: false,
@@ -368,8 +393,6 @@ export class AIRuntime {
           userSafeError: "Needs human review",
           errorDetailSafe: "quality_gate_failed",
         } satisfies AIExecutionResult;
-        // Actually return the last generated content with FAIL decision but ok=false so callers can decide.
-        await this.persistUsage(request, failed);
         return failed;
       }
     }
@@ -390,7 +413,13 @@ export class AIRuntime {
     );
   }
 
-  private async persistUsage(request: AIExecutionRequest, result: AIExecutionResult): Promise<void> {
+  private async persistUsage(
+    request: AIExecutionRequest,
+    result: AIExecutionResult & {
+      successOverride?: boolean;
+      selectionReasonOverride?: string;
+    },
+  ): Promise<void> {
     if (!this.usageRecorder) return;
     try {
       await this.usageRecorder.record({
@@ -410,9 +439,9 @@ export class AIRuntime {
         outputTokens: result.outputTokens,
         estimatedCostUsd: result.estimatedCostUsd,
         latencyMs: result.latencyMs,
-        success: result.ok,
+        success: result.successOverride ?? result.ok,
         errorCategory: result.errorCategory ?? null,
-        selectionReason: result.selection.selectedModel,
+        selectionReason: result.selectionReasonOverride ?? result.selection.selectedModel,
         requestId: result.requestId,
         createdAt: result.createdAt,
       });

@@ -1,6 +1,7 @@
 import { estimateVideoCostUsd } from "../catalog/costs.ts";
 import { assertActiveModel, isForbiddenModel, resolveModelId } from "../catalog/models.ts";
 import { AIProviderError, classifyHttpStatus } from "../errors.ts";
+import { evaluateBudgetGate } from "../budget/envelope.ts";
 import type { FetchLike } from "../types.ts";
 import type { CanonicalMediaStorage } from "./canonical-storage.ts";
 
@@ -82,7 +83,7 @@ export class SupabaseVideoOperationStore implements VideoOperationStore {
   }
 
   async save(op: VideoOperation): Promise<void> {
-    await this.client.from("ai_media_operations").upsert(
+    const { error } = await this.client.from("ai_media_operations").upsert(
       {
         tenant_id: op.tenantId,
         mission_id: op.missionId || null,
@@ -102,6 +103,9 @@ export class SupabaseVideoOperationStore implements VideoOperationStore {
       },
       { onConflict: "provider,provider_operation_id" },
     );
+    if (error) {
+      throw new AIProviderError("PROVIDER_FAILURE", `durable_store_save_failed:${error.message}`);
+    }
   }
 
   async load(operationId: string): Promise<VideoOperation | null> {
@@ -139,6 +143,8 @@ export interface VideoMediaDeps {
   store?: VideoOperationStore;
   /** Optional canonical storage — required for VIDEO_CANONICAL_STORAGE readiness. */
   storage?: CanonicalMediaStorage;
+  usageRecorder?: import("../usage/recorder.ts").AIUsageRecorder;
+  budgetEnvelope?: import("../types.ts").AIBudgetEnvelope;
 }
 
 function modelForTier(tier: VideoTier, env = process.env): string {
@@ -154,6 +160,8 @@ export class VideoMediaRuntime {
   private readonly sleepMs: (ms: number) => Promise<void>;
   private readonly store: VideoOperationStore;
   private readonly storage?: CanonicalMediaStorage;
+  private readonly usageRecorder?: import("../usage/recorder.ts").AIUsageRecorder;
+  private readonly budgetEnvelope?: import("../types.ts").AIBudgetEnvelope;
 
   constructor(deps: VideoMediaDeps = {}) {
     this.apiKey = Object.prototype.hasOwnProperty.call(deps, "geminiApiKey")
@@ -164,6 +172,8 @@ export class VideoMediaRuntime {
     this.sleepMs = deps.sleepMs ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
     this.store = deps.store ?? new InMemoryVideoOperationStore();
     this.storage = deps.storage;
+    this.usageRecorder = deps.usageRecorder;
+    this.budgetEnvelope = deps.budgetEnvelope;
   }
 
   /** Test helper — prefer shared durable store across runtimes instead. */
@@ -173,6 +183,53 @@ export class VideoMediaRuntime {
 
   isConfigured(): boolean {
     return Boolean(this.apiKey);
+  }
+
+  private async persistOp(op: VideoOperation): Promise<VideoOperation> {
+    try {
+      await this.store.save(op);
+      return op;
+    } catch (err) {
+      const failed: VideoOperation = {
+        ...op,
+        status: "failed",
+        errorSafe: err instanceof Error ? err.message.slice(0, 160) : "durable_store_save_failed",
+        updatedAt: new Date().toISOString(),
+      };
+      return failed;
+    }
+  }
+
+  private async recordUsage(op: VideoOperation, success: boolean): Promise<void> {
+    if (!this.usageRecorder) return;
+    try {
+      await this.usageRecorder.record({
+        tenantId: op.tenantId,
+        missionId: op.missionId || null,
+        department: "creative",
+        specialistRole: null,
+        taskClass: "CREATIVE_TEXT",
+        provider: "google",
+        model: op.model,
+        attemptNumber: 1,
+        fallbackUsed: false,
+        fallbackReason: "none",
+        escalationLevel: 0,
+        inputTokens: 0,
+        cachedInputTokens: 0,
+        outputTokens: 0,
+        estimatedCostUsd: op.estimatedCostUsd,
+        latencyMs: 0,
+        success,
+        errorCategory: success ? null : "PROVIDER_FAILURE",
+        selectionReason: `video:${op.model}`,
+        requestId: op.operationId,
+        createdAt: op.createdAt,
+        mediaUnits: op.durationSeconds ?? 1,
+      });
+    } catch {
+      /* non-blocking */
+    }
   }
 
   async submit(request: VideoSubmitRequest): Promise<VideoOperation> {
@@ -202,6 +259,32 @@ export class VideoMediaRuntime {
 
     const duration = Math.max(1, Math.min(request.durationSeconds ?? 6, 30));
     const resolution = request.resolution ?? "720p";
+    const estimatedCostUsd = estimateVideoCostUsd(model, duration, { resolution });
+
+    if (this.budgetEnvelope) {
+      const projected = {
+        ...this.budgetEnvelope,
+        spentUsdThisMonth: this.budgetEnvelope.spentUsdThisMonth + estimatedCostUsd,
+      };
+      const gate = evaluateBudgetGate(projected);
+      if (!gate.allowExecution) {
+        const now = new Date().toISOString();
+        return {
+          operationId: `budget_${crypto.randomUUID()}`,
+          status: "failed",
+          provider: "google",
+          model,
+          tenantId: request.tenantId,
+          missionId: request.missionId,
+          estimatedCostUsd: 0,
+          errorSafe: "BUDGET_EXHAUSTED",
+          pollCount: 0,
+          createdAt: now,
+          updatedAt: now,
+        };
+      }
+    }
+
     const body = {
       instances: [{ prompt: request.prompt }],
       parameters: {
@@ -234,15 +317,17 @@ export class VideoMediaRuntime {
       model,
       tenantId: request.tenantId,
       missionId: request.missionId,
-      estimatedCostUsd: estimateVideoCostUsd(model, duration, { resolution }),
+      estimatedCostUsd,
       pollCount: 0,
       resolution,
       durationSeconds: duration,
       createdAt: now,
       updatedAt: now,
     };
-    await this.store.save(op);
-    return op;
+    const saved = await this.persistOp(op);
+    if (saved.status === "failed") return saved;
+    await this.recordUsage(saved, true);
+    return saved;
   }
 
   async poll(operationId: string): Promise<VideoOperation> {
@@ -264,8 +349,7 @@ export class VideoMediaRuntime {
     }
     if (!this.apiKey) {
       const failed = { ...existing, status: "failed" as const, errorSafe: "NOT_CONFIGURED" };
-      await this.store.save(failed);
-      return failed;
+      return this.persistOp(failed);
     }
     if (existing.pollCount >= this.maxPolls) {
       const failed = {
@@ -274,8 +358,7 @@ export class VideoMediaRuntime {
         errorSafe: "poll_budget_exhausted",
         updatedAt: new Date().toISOString(),
       };
-      await this.store.save(failed);
-      return failed;
+      return this.persistOp(failed);
     }
 
     const response = await this.fetchImpl(`https://generativelanguage.googleapis.com/v1beta/${operationId}`, {
@@ -290,8 +373,7 @@ export class VideoMediaRuntime {
         pollCount: existing.pollCount + 1,
         updatedAt: new Date().toISOString(),
       };
-      await this.store.save(failed);
-      return failed;
+      return this.persistOp(failed);
     }
 
     const json = (await response.json()) as {
@@ -309,8 +391,7 @@ export class VideoMediaRuntime {
         pollCount,
         updatedAt: new Date().toISOString(),
       };
-      await this.store.save(failed);
-      return failed;
+      return this.persistOp(failed);
     }
 
     if (json.done) {
@@ -360,8 +441,7 @@ export class VideoMediaRuntime {
         completed.artifactUri = providerUri;
         completed.artifactStoragePath = undefined;
       }
-      await this.store.save(completed);
-      return completed;
+      return this.persistOp(completed);
     }
 
     const polling: VideoOperation = {
@@ -370,8 +450,7 @@ export class VideoMediaRuntime {
       pollCount,
       updatedAt: new Date().toISOString(),
     };
-    await this.store.save(polling);
-    return polling;
+    return this.persistOp(polling);
   }
 
   async awaitCompletion(operationId: string, backoffMs = 1500): Promise<VideoOperation> {

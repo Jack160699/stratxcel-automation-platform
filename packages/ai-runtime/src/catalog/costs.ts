@@ -149,11 +149,11 @@ export const COST_CATALOG: Record<string, AICostMetadataExtended> = {
     imageUnitCostUsd: 0.134,
     imageByResolutionUsd: {
       "1K": 0.134,
-      "2K": 0.202,
-      "4K": 0.302,
+      "2K": 0.134,
+      "4K": 0.24,
     },
     verifiedAt: "2026-08-11",
-    sourceNote: "Gemini 3 Pro Image — premium tier estimate anchored to Flash Image token economics",
+    sourceNote: "Official Gemini 3 Pro Image — 1K/2K $0.134, 4K $0.24 per image",
   },
   [MODEL_CATALOG.OPENAI_IMAGE_FALLBACK.id]: {
     provider: "openai",

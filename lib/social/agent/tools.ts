@@ -402,6 +402,12 @@ const generateImageTool: AgentTool = {
   mutating: true,
   execute: async (ctx, args) => {
     const { resolveCurrentTenant } = await import("../../tenants/current-tenant.ts");
+    const {
+      createTenantMediaRuntime,
+      resolveTenantMonthSpend,
+      resolveTenantPlanTier,
+      SupabaseCanonicalMediaStorage,
+    } = await import("@stratxcel/ai-runtime");
     const tenantResolution = await resolveCurrentTenant(ctx.supabase, ctx.ownerId);
     const tenantId = tenantResolution.active?.tenantId;
     if (!tenantId) {
@@ -416,11 +422,55 @@ const generateImageTool: AgentTool = {
         uiState: "setup_required",
       };
     }
+
+    let storage: InstanceType<typeof SupabaseCanonicalMediaStorage> | undefined;
+    let spentUsdThisMonth = 0;
+    let plan: "starter" | "growth" | "business" | "scale" | "custom" = "starter";
+    try {
+      const spend = await resolveTenantMonthSpend(ctx.supabase as never, tenantId);
+      if (!spend.ok) {
+        return {
+          outcome: "WAITING_CONFIGURATION",
+          runtimeStatus: "WAITING_CONFIGURATION",
+          candidates: [],
+          selectedCandidateId: null,
+          reason: `month_spend_${spend.reason}`,
+          capability: "media.image_generation",
+          persistedMediaAssetIds: [] as string[],
+          uiState: "setup_required",
+        };
+      }
+      spentUsdThisMonth = spend.spentUsd;
+      plan = await resolveTenantPlanTier(ctx.supabase as never, tenantId);
+      const media = createTenantMediaRuntime({
+        tenantId,
+        ownerId: ctx.ownerId,
+        plan,
+        spentUsdThisMonth,
+        supabase: ctx.supabase as never,
+      });
+      storage = media.storage as InstanceType<typeof SupabaseCanonicalMediaStorage>;
+    } catch (err) {
+      return {
+        outcome: "WAITING_CONFIGURATION",
+        runtimeStatus: "WAITING_CONFIGURATION",
+        candidates: [],
+        selectedCandidateId: null,
+        reason: err instanceof Error ? err.message.slice(0, 160) : "media_factory_failed",
+        capability: "media.image_generation",
+        persistedMediaAssetIds: [] as string[],
+        uiState: "setup_required",
+      };
+    }
+
     const provider = getImageProvider();
+    const storageReady = storage ? await storage.isWritable() : false;
     const runtime = resolveImageGenerationRuntimeStatus({
       providerConfigured: Boolean(provider) && !(provider instanceof BlockedImageProvider),
-      storageReady: false,
+      storageReady,
       tenantAuthorized: true,
+      budgetValid: true,
+      modelAvailable: Boolean(process.env.GEMINI_API_KEY || process.env.OPENAI_API_KEY),
     });
     const result = await requestGenerateImage({
       tenantId,
@@ -429,13 +479,15 @@ const generateImageTool: AgentTool = {
       briefText: str(args, "brief"),
       referenceMediaAssetIds: arr(args, "referenceMediaAssetIds"),
       candidateCount: typeof args.candidateCount === "number" ? args.candidateCount : 2,
+      storage,
     });
     return {
       ...result,
       capability: "media.image_generation",
       runtimeStatus: result.runtimeStatus || runtime,
-      // Explicit: no social_media_assets row is created until a real selected candidate is persisted.
-      persistedMediaAssetIds: [] as string[],
+      persistedMediaAssetIds: result.candidates
+        .map((c) => c.storedAssetId)
+        .filter((id): id is string => Boolean(id)),
       uiState: result.outcome === "NOT_CONFIGURED" || result.outcome === "WAITING_CONFIGURATION" ? "setup_required" : "candidates_ready",
     };
   },

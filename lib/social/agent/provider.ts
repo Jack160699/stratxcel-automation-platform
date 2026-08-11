@@ -8,7 +8,7 @@ import {
   GeminiTextProvider,
   OpenAITextProvider,
   resolveModelId,
-  resolveTenantMonthSpendUsd,
+  resolveTenantMonthSpend,
   resolveTenantPlanTier,
   type AIExecutionResult,
   type AIMessage,
@@ -222,13 +222,20 @@ class AiRuntimeSocialProvider implements AIProvider {
     let plan = context.plan ?? ("starter" as PlanTier);
     if (context.supabase) {
       if (spent == null) {
-        spent = await resolveTenantMonthSpendUsd(context.supabase as never, tenantId);
+        const resolved = await resolveTenantMonthSpend(context.supabase as never, tenantId);
+        if (!resolved.ok) {
+          throw new Error(`tenant_month_spend_${resolved.reason}`);
+        }
+        spent = resolved.spentUsd;
       }
       try {
         plan = await resolveTenantPlanTier(context.supabase as never, tenantId);
       } catch {
         plan = context.plan ?? "starter";
       }
+    } else if (spent == null) {
+      // Without a ledger client, refuse silent $0 for billable Social AI.
+      throw new Error("tenant_month_spend_ledger_unavailable");
     }
 
     const { runtime, budgetEnvelope } = createTenantAIRuntime({

@@ -1,11 +1,22 @@
 import { GeminiTextProvider } from "./providers/gemini.ts";
 import { OpenAITextProvider } from "./providers/openai.ts";
 import { ProviderCircuitBreaker } from "./health/circuit-breaker.ts";
-import { SupabaseUsageRecorder, type AIUsageRecorder } from "./usage/recorder.ts";
+import {
+  SupabaseUsageRecorder,
+  type AIUsageRecorder,
+  type MonthSpendResolution,
+} from "./usage/recorder.ts";
 import { AIRuntime, type AIRuntimeDeps } from "./runtime.ts";
 import { createBudgetEnvelope } from "./budget/envelope.ts";
 import type { AIBudgetEnvelope, PlanTier } from "./types.ts";
 import { resolveMonthlyBudgetUsd } from "./policy/task-policies.ts";
+import {
+  SupabaseCanonicalMediaStorage,
+  type CanonicalMediaStorage,
+  type SupabaseCanonicalMediaClient,
+} from "./media/canonical-storage.ts";
+import { ImageMediaRuntime } from "./media/image.ts";
+import { SupabaseVideoOperationStore, VideoMediaRuntime } from "./media/video.ts";
 
 export interface TenantAIRuntimeFactoryInput {
   tenantId: string;
@@ -16,19 +27,36 @@ export interface TenantAIRuntimeFactoryInput {
   /** Optional override for custom plans. */
   monthlyBudgetUsd?: number | null;
   spentUsdThisMonth: number;
-  supabase?: {
+  supabase?: ConstructorParameters<typeof SupabaseUsageRecorder>[0];
+  usageRecorder?: AIUsageRecorder;
+  circuitBreaker?: ProviderCircuitBreaker;
+  deps?: Partial<AIRuntimeDeps>;
+}
+
+export interface TenantMediaRuntimeFactoryInput {
+  tenantId: string;
+  ownerId: string;
+  missionId?: string | null;
+  plan: PlanTier;
+  spentUsdThisMonth: number;
+  monthlyBudgetUsd?: number | null;
+  supabase: SupabaseCanonicalMediaClient & ConstructorParameters<typeof SupabaseUsageRecorder>[0] & {
     from: (table: string) => {
-      insert: (row: Record<string, unknown>) => PromiseLike<{ error: { message: string } | null }>;
-      select?: (cols: string) => {
+      upsert: (row: Record<string, unknown>, opts?: { onConflict?: string }) => PromiseLike<{ error: { message: string } | null }>;
+      select: (cols: string) => {
         eq: (col: string, val: string) => {
-          gte?: (col: string, val: string) => PromiseLike<{ data: Array<{ estimated_cost_usd?: number }> | null; error: unknown }>;
+          maybeSingle: () => PromiseLike<{ data: Record<string, unknown> | null; error: unknown }>;
+          gte?: (col: string, val: string) => PromiseLike<{
+            data: Array<{ estimated_cost_usd?: number | string; cost_cents?: number | string }> | null;
+            error: unknown;
+          }>;
         };
       };
+      insert: (row: Record<string, unknown>) => PromiseLike<{ error: { message: string } | null }>;
     };
   };
   usageRecorder?: AIUsageRecorder;
   circuitBreaker?: ProviderCircuitBreaker;
-  deps?: Partial<AIRuntimeDeps>;
 }
 
 const sharedCircuit = new ProviderCircuitBreaker();
@@ -70,14 +98,54 @@ export function createTenantAIRuntime(input: TenantAIRuntimeFactoryInput): {
   return { runtime, budgetEnvelope };
 }
 
+/**
+ * Production media factory — injects durable video store + canonical media storage + usage ledger.
+ */
+export function createTenantMediaRuntime(input: TenantMediaRuntimeFactoryInput): {
+  images: ImageMediaRuntime;
+  video: VideoMediaRuntime;
+  storage: CanonicalMediaStorage;
+  budgetEnvelope: AIBudgetEnvelope;
+  usageRecorder: AIUsageRecorder;
+} {
+  if (!input.tenantId || input.tenantId === "social-session") {
+    throw new Error("tenant_required_for_billable_ai");
+  }
+  const budgetEnvelope = createBudgetEnvelope({
+    plan: input.plan,
+    spentUsdThisMonth: input.spentUsdThisMonth,
+    monthlyBudgetUsd: input.monthlyBudgetUsd,
+  });
+  const usageRecorder = input.usageRecorder ?? new SupabaseUsageRecorder(input.supabase);
+  const storage = new SupabaseCanonicalMediaStorage({
+    client: input.supabase,
+    ownerId: input.ownerId,
+  });
+  const videoStore = new SupabaseVideoOperationStore(input.supabase);
+  const images = new ImageMediaRuntime({
+    storage,
+    requireStorageForOperational: true,
+    circuitBreaker: input.circuitBreaker ?? sharedCircuit,
+    usageRecorder,
+    budgetEnvelope,
+  });
+  const video = new VideoMediaRuntime({
+    store: videoStore,
+    storage,
+    usageRecorder,
+    budgetEnvelope,
+  });
+  return { images, video, storage, budgetEnvelope, usageRecorder };
+}
+
 export async function resolveTenantMonthSpendUsd(
   supabase: {
     from: (table: string) => {
       select: (cols: string) => {
         eq: (col: string, val: string) => {
           gte: (col: string, val: string) => PromiseLike<{
-            data: Array<{ estimated_cost_usd?: number | string }> | null;
-            error: unknown;
+            data: Array<{ estimated_cost_usd?: number | string; cost_cents?: number | string }> | null;
+            error: { message?: string } | null;
           }>;
         };
       };
@@ -86,14 +154,33 @@ export async function resolveTenantMonthSpendUsd(
   tenantId: string,
   now = new Date(),
 ): Promise<number> {
-  const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
-  const { data, error } = await supabase
-    .from("ai_execution_usage")
-    .select("estimated_cost_usd")
-    .eq("tenant_id", tenantId)
-    .gte("created_at", monthStart);
-  if (error || !data) return 0;
-  return data.reduce((sum, row) => sum + Number(row.estimated_cost_usd ?? 0), 0);
+  const resolved = await resolveTenantMonthSpend(supabase, tenantId, now);
+  if (!resolved.ok) {
+    throw new Error(`month_spend_${resolved.reason}`);
+  }
+  return resolved.spentUsd;
+}
+
+/** Safe spend resolution — unavailable ledger must NOT silently become $0. */
+export async function resolveTenantMonthSpend(
+  supabase: {
+    from: (table: string) => {
+      select: (cols: string) => {
+        eq: (col: string, val: string) => {
+          gte: (col: string, val: string) => PromiseLike<{
+            data: Array<{ estimated_cost_usd?: number | string; cost_cents?: number | string }> | null;
+            error: { message?: string } | null;
+          }>;
+        };
+      };
+    };
+  },
+  tenantId: string,
+  now = new Date(),
+): Promise<MonthSpendResolution> {
+  const recorder = new SupabaseUsageRecorder(supabase as ConstructorParameters<typeof SupabaseUsageRecorder>[0]);
+  const monthKey = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
+  return recorder.resolveMonthSpend!(tenantId, monthKey);
 }
 
 export async function resolveTenantPlanTier(
@@ -128,3 +215,4 @@ export async function resolveTenantPlanTier(
 }
 
 export { resolveMonthlyBudgetUsd };
+export type { MonthSpendResolution };

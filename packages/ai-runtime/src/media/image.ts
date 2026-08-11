@@ -2,7 +2,9 @@ import { estimateImageCostUsd } from "../catalog/costs.ts";
 import { assertActiveModel, isForbiddenModel, resolveModelId } from "../catalog/models.ts";
 import { AIProviderError, classifyHttpStatus, classifyProviderError, isNonHopError } from "../errors.ts";
 import { ProviderCircuitBreaker } from "../health/circuit-breaker.ts";
-import type { FetchLike } from "../types.ts";
+import { evaluateBudgetGate } from "../budget/envelope.ts";
+import type { AIBudgetEnvelope, FetchLike } from "../types.ts";
+import type { AIUsageRecorder } from "../usage/recorder.ts";
 import {
   decodeDataUri,
   type CanonicalMediaStorage,
@@ -59,6 +61,8 @@ export interface ImageMediaDeps {
   storage?: CanonicalMediaStorage;
   /** When true, OPERATIONAL generate requires writable storage. */
   requireStorageForOperational?: boolean;
+  usageRecorder?: AIUsageRecorder;
+  budgetEnvelope?: AIBudgetEnvelope;
 }
 
 function modelForTier(tier: ImageTier, env = process.env): string {
@@ -74,6 +78,8 @@ export class ImageMediaRuntime {
   private readonly circuit: ProviderCircuitBreaker;
   private readonly storage?: CanonicalMediaStorage;
   private readonly requireStorageForOperational: boolean;
+  private readonly usageRecorder?: AIUsageRecorder;
+  private readonly budgetEnvelope?: AIBudgetEnvelope;
 
   constructor(deps: ImageMediaDeps = {}) {
     this.geminiKey = Object.prototype.hasOwnProperty.call(deps, "geminiApiKey")
@@ -86,6 +92,8 @@ export class ImageMediaRuntime {
     this.circuit = deps.circuitBreaker ?? new ProviderCircuitBreaker();
     this.storage = deps.storage;
     this.requireStorageForOperational = deps.requireStorageForOperational ?? Boolean(deps.storage);
+    this.usageRecorder = deps.usageRecorder;
+    this.budgetEnvelope = deps.budgetEnvelope;
   }
 
   isConfigured(): boolean {
@@ -126,6 +134,28 @@ export class ImageMediaRuntime {
     const tier = request.tier ?? "standard";
     const primaryModel = modelForTier(tier);
     assertActiveModel(primaryModel);
+    const projectedUnit = estimateImageCostUsd(primaryModel, Math.max(1, request.candidateCount ?? 1), {
+      resolution: request.resolution ?? "1K",
+      quality: request.quality,
+      size: request.size,
+    });
+    if (this.budgetEnvelope) {
+      const gate = evaluateBudgetGate({
+        ...this.budgetEnvelope,
+        spentUsdThisMonth: this.budgetEnvelope.spentUsdThisMonth + projectedUnit,
+      });
+      if (!gate.allowExecution) {
+        return {
+          outcome: "FAILED",
+          candidates: [],
+          selected: null,
+          reason: "BUDGET_EXHAUSTED",
+          provider: null,
+          model: null,
+          storageReady,
+        };
+      }
+    }
 
     let referenceImages = [...(request.referenceImages ?? [])];
     if (request.referenceAssetIds?.length) {
@@ -170,6 +200,7 @@ export class ImageMediaRuntime {
         const candidates = await this.generateGemini(enrichedRequest, primaryModel);
         this.circuit.recordSuccess("google", primaryModel);
         const persisted = await this.maybePersist(request, candidates);
+        await this.recordMediaUsage(request, primaryModel, "google", persisted);
         // Never auto-release candidate[0] as final — leave selected null for QA/selection.
         return {
           outcome: persisted.length ? "OK" : "FAILED",
@@ -237,6 +268,7 @@ export class ImageMediaRuntime {
       const candidates = await this.generateOpenAI(enrichedRequest, fallbackModel);
       this.circuit.recordSuccess("openai", fallbackModel);
       const persisted = await this.maybePersist(request, candidates);
+      await this.recordMediaUsage(request, fallbackModel, "openai", persisted);
       return {
         outcome: persisted.length ? "OK" : "FAILED",
         candidates: persisted,
@@ -257,6 +289,44 @@ export class ImageMediaRuntime {
         model: fallbackModel,
         storageReady,
       };
+    }
+  }
+
+  private async recordMediaUsage(
+    request: ImageGenerateRequest,
+    model: string,
+    provider: "google" | "openai",
+    candidates: ImageCandidateResult[],
+  ): Promise<void> {
+    if (!this.usageRecorder || !candidates.length) return;
+    const cost = candidates.reduce((s, c) => s + c.estimatedCostUsd, 0);
+    try {
+      await this.usageRecorder.record({
+        tenantId: request.tenantId,
+        missionId: request.missionId,
+        department: "creative",
+        specialistRole: null,
+        taskClass: "CREATIVE_TEXT",
+        provider,
+        model,
+        attemptNumber: 1,
+        fallbackUsed: provider === "openai",
+        fallbackReason: provider === "openai" ? "model_unavailable" : "none",
+        escalationLevel: 0,
+        inputTokens: 0,
+        cachedInputTokens: 0,
+        outputTokens: 0,
+        estimatedCostUsd: cost,
+        latencyMs: 0,
+        success: true,
+        errorCategory: null,
+        selectionReason: `image:${model}`,
+        requestId: crypto.randomUUID(),
+        createdAt: new Date().toISOString(),
+        mediaUnits: candidates.length,
+      });
+    } catch {
+      /* non-blocking */
     }
   }
 
