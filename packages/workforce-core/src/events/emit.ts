@@ -17,7 +17,13 @@ export type WorkforceEventName =
   | "intelligence.bottleneck.identified"
   | "intelligence.strategy.completed"
   | "intelligence.recommendation.created"
-  | "intelligence.audit.completed";
+  | "intelligence.audit.completed"
+  | "workforce.metric.observed"
+  | "workforce.anomaly.detected"
+  | "workforce.optimization.recommended"
+  | "workforce.weekly_review.created"
+  | "workforce.monthly_review.created"
+  | "workforce.learning.applied";
 
 export interface WorkforceEventPayload {
   tenantId: string;
