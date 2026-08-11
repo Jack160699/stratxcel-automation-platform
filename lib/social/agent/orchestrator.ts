@@ -412,9 +412,11 @@ export async function runAgentTurn(ctx: OwnerContext, sessionId: string, runId: 
         brandInstructions: selectGeminiBrandInstructions(brandProfile),
         creativeImages,
         tenantId,
-        missionId: sessionId,
+        // Social session UUID is NOT missions.id — never write it into mission_id FK.
+        missionId: null,
         sessionId,
         copilotIntent,
+        authorizationClient: ctx.supabase as never,
         supabase: ctx.supabase as never,
       });
       await recordRunEvent(ctx, runId, {

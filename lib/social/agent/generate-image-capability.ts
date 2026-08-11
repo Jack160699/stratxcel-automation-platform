@@ -1,6 +1,6 @@
 /**
  * Social Copilot generate_image capability adapter.
- * Routes through Creative Studio media.image_generation — never fakes success.
+ * Production path must use createTenantMediaRuntime().images — never a fresh unmetered ImageMediaRuntime.
  */
 
 import {
@@ -16,9 +16,12 @@ import {
   type StudioBudget,
 } from "@stratxcel/creative-studio";
 import {
+  evaluateBudgetGate,
   InMemoryCanonicalMediaStorage,
   ImageMediaRuntime,
+  type AIBudgetEnvelope,
   type CanonicalMediaStorage,
+  type ImageGenerationOutcome,
 } from "@stratxcel/ai-runtime";
 import { resolveImageGenerationRuntimeStatus, type CapabilityRuntimeStatus } from "./capability-evidence.ts";
 
@@ -32,7 +35,8 @@ export type GenerateImageOutcome =
 
 export interface GenerateImageRequest {
   tenantId: string;
-  missionId: string;
+  /** Real missions.id only — null when Social has no mapped workforce mission. */
+  missionId?: string | null;
   sessionId: string;
   briefText: string;
   brandBrainVersion?: number | null;
@@ -41,6 +45,14 @@ export interface GenerateImageRequest {
   budget?: StudioBudget;
   /** Production storage — required for OPERATIONAL persistence. */
   storage?: CanonicalMediaStorage;
+  /**
+   * Canonical production ImageMediaRuntime from createTenantMediaRuntime().images.
+   * When supplied, requestGenerateImage MUST NOT construct a fresh ImageMediaRuntime.
+   */
+  runtime?: ImageMediaRuntime;
+  budgetEnvelope?: AIBudgetEnvelope;
+  /** From real resolved envelope — never hardcode true in production. */
+  budgetValid?: boolean;
   /** Test-only injected provider — never used in production paths. */
   testProvider?: ImageProvider | null;
 }
@@ -64,7 +76,7 @@ export interface GenerateImageResult {
   reason?: string;
   provenance: {
     tenantId: string;
-    missionId: string;
+    missionId: string | null;
     sessionId: string;
     provider: string | null;
     model: string | null;
@@ -76,10 +88,11 @@ export interface GenerateImageResult {
 
 function minimalBrief(input: GenerateImageRequest): CreativeBrief {
   const text = input.briefText.slice(0, 500);
+  const missionKey = input.missionId ?? input.sessionId;
   return {
-    id: `brief_${input.missionId}`,
+    id: `brief_${missionKey}`,
     tenantId: input.tenantId,
-    missionId: input.missionId,
+    missionId: missionKey,
     singleMindedObjective: text,
     audienceInsight: "brand audience",
     conceptSeed: text,
@@ -106,7 +119,7 @@ function minimalBrief(input: GenerateImageRequest): CreativeBrief {
 
 function minimalArt(input: GenerateImageRequest): ArtDirectionArtifact {
   return {
-    id: `art_${input.missionId}`,
+    id: `art_${input.missionId ?? input.sessionId}`,
     visualConcept: input.briefText.slice(0, 200),
     composition: "centered subject with clear hierarchy",
     subject: "brand subject",
@@ -129,6 +142,14 @@ function minimalArt(input: GenerateImageRequest): ArtDirectionArtifact {
   };
 }
 
+function mapRuntimeOutcome(generated: ImageGenerationOutcome): GenerateImageOutcome {
+  if (generated.outcome === "BUDGET_EXHAUSTED") return "BUDGET_EXCEEDED";
+  if (generated.outcome === "NOT_CONFIGURED") return "NOT_CONFIGURED";
+  if (generated.outcome === "WAITING_CONFIGURATION") return "WAITING_CONFIGURATION";
+  if (generated.outcome === "OK") return "REVISION_REQUIRED";
+  return "FAILED";
+}
+
 /**
  * Request image generation via capability runtime.
  * Without a real/configured provider + storage: NOT_CONFIGURED / WAITING_CONFIGURATION and zero assets.
@@ -137,7 +158,7 @@ export async function requestGenerateImage(input: GenerateImageRequest): Promise
   const generatedAtIso = new Date().toISOString();
   const provenanceBase = {
     tenantId: input.tenantId,
-    missionId: input.missionId,
+    missionId: input.missionId ?? null,
     sessionId: input.sessionId,
     brandBrainVersion: input.brandBrainVersion ?? null,
     referenceMediaAssetIds: [...(input.referenceMediaAssetIds ?? [])],
@@ -159,12 +180,16 @@ export async function requestGenerateImage(input: GenerateImageRequest): Promise
     const provider = getImageProvider();
     const storage = input.storage;
     const storageReady = storage ? await storage.isWritable() : false;
+    const budgetValid =
+      input.budgetValid ??
+      (input.budgetEnvelope ? evaluateBudgetGate(input.budgetEnvelope).allowExecution : true);
+
     const runtimeStatus = resolveImageGenerationRuntimeStatus({
       providerConfigured: Boolean(provider) && !(provider instanceof BlockedImageProvider),
       testProviderInjected: injectedTest,
       storageReady: injectedTest ? true : storageReady,
       tenantAuthorized: Boolean(input.tenantId),
-      budgetValid: true,
+      budgetValid,
       modelAvailable: Boolean(process.env.GEMINI_API_KEY || process.env.OPENAI_API_KEY) || injectedTest,
     });
 
@@ -179,6 +204,17 @@ export async function requestGenerateImage(input: GenerateImageRequest): Promise
       };
     }
 
+    if (!injectedTest && !budgetValid) {
+      return {
+        outcome: "BUDGET_EXCEEDED",
+        runtimeStatus: "OPERATIONAL",
+        candidates: [],
+        selectedCandidateId: null,
+        reason: "BUDGET_EXHAUSTED",
+        provenance: { ...provenanceBase, provider: provider.name, model: null },
+      };
+    }
+
     if (!injectedTest && runtimeStatus === "WAITING_CONFIGURATION") {
       return {
         outcome: "WAITING_CONFIGURATION",
@@ -190,42 +226,40 @@ export async function requestGenerateImage(input: GenerateImageRequest): Promise
       };
     }
 
-    // Prefer direct AI Runtime path when storage is present so reference bytes are resolved.
-    if (storage && !injectedTest) {
-      const runtime = new ImageMediaRuntime({
-        storage,
-        requireStorageForOperational: true,
-      });
-      let referenceImages: Array<{ mimeType: string; data: string }> = [];
-      try {
-        if (input.referenceMediaAssetIds?.length) {
-          const resolved = await storage.resolveReferenceImages({
-            tenantId: input.tenantId,
-            missionId: input.missionId,
-            referenceAssetIds: input.referenceMediaAssetIds,
-          });
-          referenceImages = resolved.map((r) => ({ mimeType: r.mimeType, data: r.data }));
-        }
-      } catch (err) {
+    // Production: use canonical media.images from createTenantMediaRuntime.
+    // Never construct a fresh unbudgeted ImageMediaRuntime when runtime is supplied.
+    if ((input.runtime || storage) && !injectedTest) {
+      const runtime = input.runtime;
+      if (!runtime) {
         return {
-          outcome: "FAILED",
-          runtimeStatus: "OPERATIONAL",
+          outcome: "WAITING_CONFIGURATION",
+          runtimeStatus: "WAITING_CONFIGURATION",
           candidates: [],
           selectedCandidateId: null,
-          reason: err instanceof Error ? err.message : "reference_resolve_failed",
+          reason: "production_image_runtime_required",
           provenance: { ...provenanceBase, provider: provider.name, model: null },
         };
       }
 
       const generated = await runtime.generate({
         tenantId: input.tenantId,
-        missionId: input.missionId,
+        missionId: input.missionId ?? null,
         prompt: input.briefText,
-        referenceImages,
-        referenceAssetIds: [],
+        referenceAssetIds: [...(input.referenceMediaAssetIds ?? [])],
         candidateCount: input.candidateCount ?? 2,
         persistCanonical: true,
       });
+
+      if (generated.outcome === "BUDGET_EXHAUSTED") {
+        return {
+          outcome: "BUDGET_EXCEEDED",
+          runtimeStatus: "OPERATIONAL",
+          candidates: [],
+          selectedCandidateId: null,
+          reason: "BUDGET_EXHAUSTED",
+          provenance: { ...provenanceBase, provider: generated.provider, model: generated.model },
+        };
+      }
 
       if (generated.outcome === "WAITING_CONFIGURATION" || generated.outcome === "NOT_CONFIGURED") {
         return {
@@ -240,7 +274,7 @@ export async function requestGenerateImage(input: GenerateImageRequest): Promise
 
       if (generated.outcome !== "OK" || generated.candidates.length === 0) {
         return {
-          outcome: "FAILED",
+          outcome: mapRuntimeOutcome(generated),
           runtimeStatus: "OPERATIONAL",
           candidates: [],
           selectedCandidateId: null,
@@ -258,7 +292,6 @@ export async function requestGenerateImage(input: GenerateImageRequest): Promise
         format: c.mimeType,
       }));
 
-      // Never auto-select candidate[0] as final release.
       return {
         outcome: "REVISION_REQUIRED",
         runtimeStatus: "OPERATIONAL",
@@ -358,7 +391,7 @@ export async function requestGenerateImage(input: GenerateImageRequest): Promise
 /** Persist contract for a selected candidate → social_media_assets (caller performs storage). */
 export interface GeneratedMediaAssetProvenance {
   tenantId: string;
-  missionId: string;
+  missionId: string | null;
   sessionId: string;
   artifactId?: string | null;
   provider: string;

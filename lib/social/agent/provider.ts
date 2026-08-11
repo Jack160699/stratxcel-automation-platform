@@ -65,8 +65,12 @@ export interface ProviderSafeContext {
   sessionId?: string | null;
   /** Copilot intent → task class mapping. */
   copilotIntent?: string;
-  /** Optional supabase for usage/budget. */
+  /** Optional owner/authorization client for plan reads (RLS-bound). */
+  authorizationClient?: Parameters<typeof createTenantAIRuntime>[0]["supabase"];
+  /** @deprecated Prefer authorizationClient — never pass as ledger writer. */
   supabase?: Parameters<typeof createTenantAIRuntime>[0]["supabase"];
+  /** Service-role writer for metering — set after owner/tenant authorization. */
+  internalWriteClient?: Parameters<typeof createTenantAIRuntime>[0]["internalWriteClient"];
   plan?: PlanTier;
   spentUsdThisMonth?: number;
 }
@@ -220,31 +224,47 @@ class AiRuntimeSocialProvider implements AIProvider {
 
     let spent = context.spentUsdThisMonth;
     let plan = context.plan ?? ("starter" as PlanTier);
-    if (context.supabase) {
+    const authClient = context.authorizationClient ?? context.supabase;
+    const { createSupabaseServiceClient } = await import("../../supabase/service.ts");
+    let internalWriteClient = context.internalWriteClient;
+    if (!internalWriteClient) {
+      try {
+        internalWriteClient = createSupabaseServiceClient() as never;
+      } catch {
+        throw new Error("service_metering_writer_unavailable");
+      }
+    }
+
+    if (authClient || internalWriteClient) {
       if (spent == null) {
-        const resolved = await resolveTenantMonthSpend(context.supabase as never, tenantId);
+        const resolved = await resolveTenantMonthSpend(
+          (internalWriteClient ?? authClient) as never,
+          tenantId,
+        );
         if (!resolved.ok) {
           throw new Error(`tenant_month_spend_${resolved.reason}`);
         }
         spent = resolved.spentUsd;
       }
-      try {
-        plan = await resolveTenantPlanTier(context.supabase as never, tenantId);
-      } catch {
-        plan = context.plan ?? "starter";
+      if (authClient) {
+        try {
+          plan = await resolveTenantPlanTier(authClient as never, tenantId);
+        } catch {
+          plan = context.plan ?? "starter";
+        }
       }
     } else if (spent == null) {
-      // Without a ledger client, refuse silent $0 for billable Social AI.
       throw new Error("tenant_month_spend_ledger_unavailable");
     }
 
     const { runtime, budgetEnvelope } = createTenantAIRuntime({
       tenantId,
-      missionId: context.missionId,
+      missionId: context.missionId ?? null,
       sessionId: context.sessionId,
       plan,
       spentUsdThisMonth: spent ?? 0,
-      supabase: context.supabase,
+      productionBillable: true,
+      internalWriteClient,
       deps: {
         google: new GeminiTextProvider({ applySocialBoundarySanitize: sanitizeGeminiText }),
         openai: new OpenAITextProvider(),
@@ -254,7 +274,7 @@ class AiRuntimeSocialProvider implements AIProvider {
     const taskClass = mapCopilotIntentToTaskClass(context.copilotIntent ?? "GENERAL_CONVERSATION");
     const result: AIExecutionResult = await runtime.execute({
       tenantId,
-      missionId: context.missionId,
+      missionId: context.missionId ?? null,
       department: "social",
       taskClass,
       messages: runtimeMessages,

@@ -20,13 +20,23 @@ import { SupabaseVideoOperationStore, VideoMediaRuntime } from "./media/video.ts
 
 export interface TenantAIRuntimeFactoryInput {
   tenantId: string;
+  /** Real missions.id only — never social session UUID. */
   missionId?: string | null;
+  /** Social/conversational session identity. */
   sessionId?: string | null;
-  /** Active commercial plan for COGS ceiling. */
   plan: PlanTier;
-  /** Optional override for custom plans. */
   monthlyBudgetUsd?: number | null;
   spentUsdThisMonth: number;
+  /**
+   * Production customer AI requires a usage writer.
+   * Default true — set internalUnmetered for explicit test/agency paths.
+   */
+  productionBillable?: boolean;
+  /** Explicit opt-out for tests / internal non-customer work. */
+  internalUnmetered?: boolean;
+  /** Service-role client for ledger writes AFTER owner/tenant authorization. */
+  internalWriteClient?: ConstructorParameters<typeof SupabaseUsageRecorder>[0];
+  /** @deprecated Use internalWriteClient — never pass RLS owner client for ledger writes. */
   supabase?: ConstructorParameters<typeof SupabaseUsageRecorder>[0];
   usageRecorder?: AIUsageRecorder;
   circuitBreaker?: ProviderCircuitBreaker;
@@ -36,25 +46,43 @@ export interface TenantAIRuntimeFactoryInput {
 export interface TenantMediaRuntimeFactoryInput {
   tenantId: string;
   ownerId: string;
+  /** Real missions.id only. */
   missionId?: string | null;
+  sessionId?: string | null;
   plan: PlanTier;
   spentUsdThisMonth: number;
   monthlyBudgetUsd?: number | null;
-  supabase: SupabaseCanonicalMediaClient & ConstructorParameters<typeof SupabaseUsageRecorder>[0] & {
-    from: (table: string) => {
-      upsert: (row: Record<string, unknown>, opts?: { onConflict?: string }) => PromiseLike<{ error: { message: string } | null }>;
-      select: (cols: string) => {
-        eq: (col: string, val: string) => {
-          maybeSingle: () => PromiseLike<{ data: Record<string, unknown> | null; error: unknown }>;
-          gte?: (col: string, val: string) => PromiseLike<{
-            data: Array<{ estimated_cost_usd?: number | string; cost_cents?: number | string }> | null;
-            error: unknown;
-          }>;
+  productionBillable?: boolean;
+  internalUnmetered?: boolean;
+  /** Service-role client for durable ops + media + metering. */
+  internalWriteClient: SupabaseCanonicalMediaClient &
+    ConstructorParameters<typeof SupabaseUsageRecorder>[0] & {
+      from: (table: string) => {
+        upsert: (
+          row: Record<string, unknown>,
+          opts?: { onConflict?: string },
+        ) => PromiseLike<{ error: { message: string } | null }>;
+        select: (cols: string) => {
+          eq: (col: string, val: string) => {
+            maybeSingle: () => PromiseLike<{ data: Record<string, unknown> | null; error: unknown }>;
+            in?: (col: string, vals: string[]) => PromiseLike<{
+              data: Array<Record<string, unknown>> | null;
+              error: { message: string } | null;
+            }>;
+            gte?: (col: string, val: string) => PromiseLike<{
+              data: Array<{ estimated_cost_usd?: number | string; cost_cents?: number | string }> | null;
+              error: unknown;
+            }>;
+          };
         };
+        insert: (row: Record<string, unknown>) => PromiseLike<{ error: { message: string } | null }> & {
+          select?: (cols: string) => {
+            single: () => PromiseLike<{ data: Record<string, unknown> | null; error: { message: string } | null }>;
+          };
+        };
+        delete?: () => { eq: (col: string, val: string) => PromiseLike<{ error: { message: string } | null }> };
       };
-      insert: (row: Record<string, unknown>) => PromiseLike<{ error: { message: string } | null }>;
     };
-  };
   usageRecorder?: AIUsageRecorder;
   circuitBreaker?: ProviderCircuitBreaker;
 }
@@ -65,16 +93,38 @@ export function getSharedCircuitBreaker(): ProviderCircuitBreaker {
   return sharedCircuit;
 }
 
+function assertRealMissionId(missionId: string | null | undefined): string | null {
+  if (missionId == null || missionId === "") return null;
+  if (missionId.startsWith("mission_") || missionId.startsWith("session_")) {
+    throw new Error("mission_id_must_be_real_missions_row_or_null");
+  }
+  return missionId;
+}
+
 /**
  * Canonical production AI Runtime factory.
- * Attaches usage recorder + shared circuit breaker; resolves budget envelope from plan + spend.
+ * Billable customer AI requires an explicit usage writer (service role).
  */
 export function createTenantAIRuntime(input: TenantAIRuntimeFactoryInput): {
   runtime: AIRuntime;
   budgetEnvelope: AIBudgetEnvelope;
+  usageRecorder: AIUsageRecorder | undefined;
 } {
   if (!input.tenantId || input.tenantId === "social-session") {
     throw new Error("tenant_required_for_billable_ai");
+  }
+  assertRealMissionId(input.missionId);
+
+  const billable = input.internalUnmetered ? false : input.productionBillable !== false;
+
+  const usageRecorder =
+    input.usageRecorder ??
+    (input.internalWriteClient
+      ? new SupabaseUsageRecorder(input.internalWriteClient)
+      : undefined);
+
+  if (billable && !usageRecorder) {
+    throw new Error("usage_writer_required_for_billable_ai");
   }
 
   const budgetEnvelope = createBudgetEnvelope({
@@ -83,23 +133,21 @@ export function createTenantAIRuntime(input: TenantAIRuntimeFactoryInput): {
     monthlyBudgetUsd: input.monthlyBudgetUsd,
   });
 
-  const usageRecorder =
-    input.usageRecorder ??
-    (input.supabase ? new SupabaseUsageRecorder(input.supabase) : undefined);
-
   const runtime = new AIRuntime({
+    ...input.deps,
     google: input.deps?.google ?? new GeminiTextProvider(),
     openai: input.deps?.openai ?? new OpenAITextProvider(),
-    circuitBreaker: input.circuitBreaker ?? sharedCircuit,
-    usageRecorder,
-    ...input.deps,
+    circuitBreaker: input.circuitBreaker ?? input.deps?.circuitBreaker ?? sharedCircuit,
+    usageRecorder: input.deps?.usageRecorder ?? usageRecorder,
+    defaultSessionId: input.sessionId ?? input.deps?.defaultSessionId ?? null,
   });
 
-  return { runtime, budgetEnvelope };
+  return { runtime, budgetEnvelope, usageRecorder };
 }
 
 /**
- * Production media factory — injects durable video store + canonical media storage + usage ledger.
+ * Production media factory — durable video store + canonical storage + usage ledger
+ * via service-role internalWriteClient only (never InMemory in production).
  */
 export function createTenantMediaRuntime(input: TenantMediaRuntimeFactoryInput): {
   images: ImageMediaRuntime;
@@ -111,29 +159,45 @@ export function createTenantMediaRuntime(input: TenantMediaRuntimeFactoryInput):
   if (!input.tenantId || input.tenantId === "social-session") {
     throw new Error("tenant_required_for_billable_ai");
   }
+  assertRealMissionId(input.missionId);
+  if (!input.internalWriteClient) {
+    throw new Error("internal_write_client_required_for_media");
+  }
+
+  const billable = input.internalUnmetered ? false : input.productionBillable !== false;
+  const usageRecorder =
+    input.usageRecorder ?? new SupabaseUsageRecorder(input.internalWriteClient);
+  if (billable && !usageRecorder) {
+    throw new Error("usage_writer_required_for_billable_ai");
+  }
+
   const budgetEnvelope = createBudgetEnvelope({
     plan: input.plan,
     spentUsdThisMonth: input.spentUsdThisMonth,
     monthlyBudgetUsd: input.monthlyBudgetUsd,
   });
-  const usageRecorder = input.usageRecorder ?? new SupabaseUsageRecorder(input.supabase);
+
   const storage = new SupabaseCanonicalMediaStorage({
-    client: input.supabase,
+    client: input.internalWriteClient,
     ownerId: input.ownerId,
+    tenantId: input.tenantId,
   });
-  const videoStore = new SupabaseVideoOperationStore(input.supabase);
+  const videoStore = new SupabaseVideoOperationStore(input.internalWriteClient);
   const images = new ImageMediaRuntime({
     storage,
     requireStorageForOperational: true,
     circuitBreaker: input.circuitBreaker ?? sharedCircuit,
     usageRecorder,
     budgetEnvelope,
+    sessionId: input.sessionId ?? null,
+    missionId: input.missionId ?? null,
   });
   const video = new VideoMediaRuntime({
     store: videoStore,
     storage,
     usageRecorder,
     budgetEnvelope,
+    sessionId: input.sessionId ?? null,
   });
   return { images, video, storage, budgetEnvelope, usageRecorder };
 }
@@ -178,7 +242,9 @@ export async function resolveTenantMonthSpend(
   tenantId: string,
   now = new Date(),
 ): Promise<MonthSpendResolution> {
-  const recorder = new SupabaseUsageRecorder(supabase as ConstructorParameters<typeof SupabaseUsageRecorder>[0]);
+  const recorder = new SupabaseUsageRecorder(
+    supabase as ConstructorParameters<typeof SupabaseUsageRecorder>[0],
+  );
   const monthKey = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
   return recorder.resolveMonthSpend!(tenantId, monthKey);
 }
@@ -214,5 +280,5 @@ export async function resolveTenantPlanTier(
   return "starter";
 }
 
-export { resolveMonthlyBudgetUsd };
+export { resolveMonthlyBudgetUsd, assertRealMissionId };
 export type { MonthSpendResolution };

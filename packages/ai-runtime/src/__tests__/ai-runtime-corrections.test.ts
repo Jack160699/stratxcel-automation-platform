@@ -163,6 +163,10 @@ async function run() {
     () => createTenantAIRuntime({ tenantId: "social-session", plan: "starter", spentUsdThisMonth: 0 }),
     /tenant_required/,
   );
+  assert.throws(
+    () => createTenantAIRuntime({ tenantId: "tenant-real", plan: "starter", spentUsdThisMonth: 0 }),
+    /usage_writer_required_for_billable_ai/,
+  );
 
   // Safe monthly-spend rollout — missing ledger must NOT silently mean $0
   {
@@ -338,7 +342,7 @@ async function run() {
       persistCanonical: true,
     });
     assert.equal(img.outcome, "OK");
-    assert.ok(recorder.entries.some((e) => e.selectionReason.startsWith("image:")));
+    assert.ok(recorder.entries.some((e) => e.selectionReason.startsWith("image:") && e.taskClass === "IMAGE"));
 
     const db = createFakePersistentSupabase();
     const store = new SupabaseVideoOperationStore(db as never);
@@ -353,7 +357,7 @@ async function run() {
     });
     const submitted = await video.submit({ tenantId: "t1", missionId: "m1", prompt: "scene" });
     assert.equal(submitted.status, "submitted");
-    assert.ok(recorder.entries.some((e) => e.selectionReason.startsWith("video:")));
+    assert.ok(recorder.entries.some((e) => e.selectionReason.startsWith("video:") && e.taskClass === "VIDEO"));
   }
 
   // Real restart test: two separate store instances + fake persistent backend
@@ -420,8 +424,10 @@ async function run() {
       storageReady: false,
       durableVideoStoreReady: false,
       budgetLedgerReady: false,
+      serviceMeteringWriterReady: false,
     });
     assert.equal(snap.budgetLedgerReady, false);
+    assert.equal(snap.serviceMeteringWriterReady, false);
     assert.equal(snap.image.storageReady, false);
     assert.notEqual(snap.image.status, "operational");
     assert.equal(snap.video.durableStoreReady, false);

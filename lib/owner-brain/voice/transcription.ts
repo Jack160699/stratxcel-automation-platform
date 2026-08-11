@@ -122,10 +122,19 @@ async function extractStructuredFromTranscript(
   }
 
   try {
+    const { createSupabaseServiceClient } = await import("@/lib/supabase/service");
+    let internalWriteClient: ReturnType<typeof createSupabaseServiceClient>;
+    try {
+      internalWriteClient = createSupabaseServiceClient();
+    } catch {
+      return localHeuristicExtraction(transcript);
+    }
     const { runtime } = createTenantAIRuntime({
       tenantId,
       plan: "starter",
       spentUsdThisMonth: 0,
+      productionBillable: true,
+      internalWriteClient: internalWriteClient as never,
     });
     const result = await runtime.execute({
       tenantId,

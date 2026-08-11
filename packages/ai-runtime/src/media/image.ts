@@ -15,7 +15,10 @@ export type ImageTier = "fast" | "standard" | "premium";
 
 export interface ImageGenerateRequest {
   tenantId: string;
-  missionId: string;
+  /** Real missions.id only — null when no workforce mission row. */
+  missionId?: string | null;
+  /** Stable generation identity for usage idempotency (retries reuse this). */
+  generationRequestId?: string;
   prompt: string;
   aspectRatio?: string;
   size?: string;
@@ -44,13 +47,15 @@ export interface ImageCandidateResult {
 }
 
 export interface ImageGenerationOutcome {
-  outcome: "OK" | "NOT_CONFIGURED" | "FAILED" | "SAFETY_REFUSAL" | "WAITING_CONFIGURATION";
+  outcome: "OK" | "NOT_CONFIGURED" | "FAILED" | "SAFETY_REFUSAL" | "WAITING_CONFIGURATION" | "BUDGET_EXHAUSTED";
   candidates: ImageCandidateResult[];
   selected: ImageCandidateResult | null;
   reason?: string;
   provider: "google" | "openai" | null;
   model: string | null;
   storageReady: boolean;
+  /** Provider spend recorded for this request (may exceed persisted candidates). */
+  recordedProviderCostUsd?: number;
 }
 
 export interface ImageMediaDeps {
@@ -63,6 +68,8 @@ export interface ImageMediaDeps {
   requireStorageForOperational?: boolean;
   usageRecorder?: AIUsageRecorder;
   budgetEnvelope?: AIBudgetEnvelope;
+  sessionId?: string | null;
+  missionId?: string | null;
 }
 
 function modelForTier(tier: ImageTier, env = process.env): string {
@@ -80,6 +87,8 @@ export class ImageMediaRuntime {
   private readonly requireStorageForOperational: boolean;
   private readonly usageRecorder?: AIUsageRecorder;
   private readonly budgetEnvelope?: AIBudgetEnvelope;
+  private readonly sessionId: string | null;
+  private readonly defaultMissionId: string | null;
 
   constructor(deps: ImageMediaDeps = {}) {
     this.geminiKey = Object.prototype.hasOwnProperty.call(deps, "geminiApiKey")
@@ -94,6 +103,8 @@ export class ImageMediaRuntime {
     this.requireStorageForOperational = deps.requireStorageForOperational ?? Boolean(deps.storage);
     this.usageRecorder = deps.usageRecorder;
     this.budgetEnvelope = deps.budgetEnvelope;
+    this.sessionId = deps.sessionId ?? null;
+    this.defaultMissionId = deps.missionId ?? null;
   }
 
   isConfigured(): boolean {
@@ -107,6 +118,10 @@ export class ImageMediaRuntime {
 
   async generate(request: ImageGenerateRequest): Promise<ImageGenerationOutcome> {
     const storageReady = await this.isStorageReady();
+    const missionId = request.missionId ?? this.defaultMissionId;
+    const generationRequestId = request.generationRequestId ?? crypto.randomUUID();
+    let requestAccumulatedCostUsd = 0;
+
     if (!this.isConfigured()) {
       return {
         outcome: "NOT_CONFIGURED",
@@ -146,7 +161,7 @@ export class ImageMediaRuntime {
       });
       if (!gate.allowExecution) {
         return {
-          outcome: "FAILED",
+          outcome: "BUDGET_EXHAUSTED",
           candidates: [],
           selected: null,
           reason: "BUDGET_EXHAUSTED",
@@ -173,7 +188,7 @@ export class ImageMediaRuntime {
       try {
         const resolved = await this.storage.resolveReferenceImages({
           tenantId: request.tenantId,
-          missionId: request.missionId,
+          missionId,
           referenceAssetIds: request.referenceAssetIds,
         });
         referenceImages = [
@@ -193,23 +208,43 @@ export class ImageMediaRuntime {
       }
     }
 
-    const enrichedRequest: ImageGenerateRequest = { ...request, referenceImages };
+    const enrichedRequest: ImageGenerateRequest = { ...request, missionId, referenceImages };
+    let geminiAttempted = false;
 
     try {
       if (this.geminiKey && !this.circuit.isOpen("google", primaryModel)) {
+        geminiAttempted = true;
         const candidates = await this.generateGemini(enrichedRequest, primaryModel);
         this.circuit.recordSuccess("google", primaryModel);
-        const persisted = await this.maybePersist(request, candidates);
-        await this.recordMediaUsage(request, primaryModel, "google", persisted);
-        // Never auto-release candidate[0] as final — leave selected null for QA/selection.
+        const providerCost = candidates.reduce((s, c) => s + c.estimatedCostUsd, 0);
+        requestAccumulatedCostUsd += providerCost;
+        // Record billable provider attempt even if persistence/QA later fails.
+        if (candidates.length) {
+          await this.recordProviderAttempt({
+            request: enrichedRequest,
+            missionId,
+            generationRequestId,
+            model: primaryModel,
+            provider: "google",
+            attemptNumber: 1,
+            candidates,
+            fallbackUsed: false,
+          });
+        }
+        const persisted = await this.maybePersist(enrichedRequest, candidates);
         return {
           outcome: persisted.length ? "OK" : "FAILED",
           candidates: persisted,
           selected: null,
-          reason: persisted.length ? "candidate_selection_required" : "empty_candidates",
+          reason: persisted.length
+            ? "candidate_selection_required"
+            : candidates.length
+              ? "canonical_persist_failed"
+              : "empty_candidates",
           provider: "google",
           model: primaryModel,
           storageReady,
+          recordedProviderCostUsd: requestAccumulatedCostUsd,
         };
       }
     } catch (err) {
@@ -222,6 +257,7 @@ export class ImageMediaRuntime {
           provider: null,
           model: null,
           storageReady,
+          recordedProviderCostUsd: requestAccumulatedCostUsd,
         };
       }
       const category = classifyProviderError(err);
@@ -235,8 +271,10 @@ export class ImageMediaRuntime {
           provider: "google",
           model: primaryModel,
           storageReady,
+          recordedProviderCostUsd: requestAccumulatedCostUsd,
         };
       }
+      // Fall through to OpenAI when hop-eligible.
     }
 
     const fallbackModel = resolveModelId("OPENAI_IMAGE_FALLBACK");
@@ -249,6 +287,7 @@ export class ImageMediaRuntime {
         provider: null,
         model: null,
         storageReady,
+        recordedProviderCostUsd: requestAccumulatedCostUsd,
       };
     }
 
@@ -257,26 +296,70 @@ export class ImageMediaRuntime {
         outcome: "FAILED",
         candidates: [],
         selected: null,
-        reason: "google_failed_openai_not_configured",
+        reason: geminiAttempted ? "google_failed_openai_not_configured" : "openai_not_configured",
         provider: null,
         model: null,
         storageReady,
+        recordedProviderCostUsd: requestAccumulatedCostUsd,
       };
+    }
+
+    // Recheck budget: accumulated request cost + projected OpenAI + monthly spend.
+    const openaiProjected = estimateImageCostUsd(fallbackModel, Math.max(1, request.candidateCount ?? 1), {
+      quality: request.quality ?? "high",
+      size: request.size ?? "1024x1024",
+    });
+    if (this.budgetEnvelope) {
+      const gate = evaluateBudgetGate({
+        ...this.budgetEnvelope,
+        spentUsdThisMonth:
+          this.budgetEnvelope.spentUsdThisMonth + requestAccumulatedCostUsd + openaiProjected,
+      });
+      if (!gate.allowExecution) {
+        return {
+          outcome: "BUDGET_EXHAUSTED",
+          candidates: [],
+          selected: null,
+          reason: "BUDGET_EXHAUSTED",
+          provider: "google",
+          model: primaryModel,
+          storageReady,
+          recordedProviderCostUsd: requestAccumulatedCostUsd,
+        };
+      }
     }
 
     try {
       const candidates = await this.generateOpenAI(enrichedRequest, fallbackModel);
       this.circuit.recordSuccess("openai", fallbackModel);
-      const persisted = await this.maybePersist(request, candidates);
-      await this.recordMediaUsage(request, fallbackModel, "openai", persisted);
+      const providerCost = candidates.reduce((s, c) => s + c.estimatedCostUsd, 0);
+      requestAccumulatedCostUsd += providerCost;
+      if (candidates.length) {
+        await this.recordProviderAttempt({
+          request: enrichedRequest,
+          missionId,
+          generationRequestId,
+          model: fallbackModel,
+          provider: "openai",
+          attemptNumber: 2,
+          candidates,
+          fallbackUsed: true,
+        });
+      }
+      const persisted = await this.maybePersist(enrichedRequest, candidates);
       return {
         outcome: persisted.length ? "OK" : "FAILED",
         candidates: persisted,
         selected: null,
-        reason: persisted.length ? "candidate_selection_required" : "empty_candidates",
+        reason: persisted.length
+          ? "candidate_selection_required"
+          : candidates.length
+            ? "canonical_persist_failed"
+            : "empty_candidates",
         provider: "openai",
         model: fallbackModel,
         storageReady,
+        recordedProviderCostUsd: requestAccumulatedCostUsd,
       };
     } catch (err) {
       this.circuit.recordFailure("openai", fallbackModel);
@@ -288,30 +371,36 @@ export class ImageMediaRuntime {
         provider: "openai",
         model: fallbackModel,
         storageReady,
+        recordedProviderCostUsd: requestAccumulatedCostUsd,
       };
     }
   }
 
-  private async recordMediaUsage(
-    request: ImageGenerateRequest,
-    model: string,
-    provider: "google" | "openai",
-    candidates: ImageCandidateResult[],
-  ): Promise<void> {
-    if (!this.usageRecorder || !candidates.length) return;
-    const cost = candidates.reduce((s, c) => s + c.estimatedCostUsd, 0);
+  private async recordProviderAttempt(args: {
+    request: ImageGenerateRequest;
+    missionId: string | null | undefined;
+    generationRequestId: string;
+    model: string;
+    provider: "google" | "openai";
+    attemptNumber: number;
+    candidates: ImageCandidateResult[];
+    fallbackUsed: boolean;
+  }): Promise<void> {
+    if (!this.usageRecorder || !args.candidates.length) return;
+    const cost = args.candidates.reduce((s, c) => s + c.estimatedCostUsd, 0);
     try {
       await this.usageRecorder.record({
-        tenantId: request.tenantId,
-        missionId: request.missionId,
+        tenantId: args.request.tenantId,
+        missionId: args.missionId ?? null,
+        sessionId: this.sessionId,
         department: "creative",
         specialistRole: null,
-        taskClass: "CREATIVE_TEXT",
-        provider,
-        model,
-        attemptNumber: 1,
-        fallbackUsed: provider === "openai",
-        fallbackReason: provider === "openai" ? "model_unavailable" : "none",
+        taskClass: "IMAGE",
+        provider: args.provider,
+        model: args.model,
+        attemptNumber: args.attemptNumber,
+        fallbackUsed: args.fallbackUsed,
+        fallbackReason: args.fallbackUsed ? "model_unavailable" : "none",
         escalationLevel: 0,
         inputTokens: 0,
         cachedInputTokens: 0,
@@ -320,10 +409,10 @@ export class ImageMediaRuntime {
         latencyMs: 0,
         success: true,
         errorCategory: null,
-        selectionReason: `image:${model}`,
-        requestId: crypto.randomUUID(),
+        selectionReason: `image:${args.model}`,
+        requestId: args.generationRequestId,
         createdAt: new Date().toISOString(),
-        mediaUnits: candidates.length,
+        mediaUnits: args.candidates.length,
       });
     } catch {
       /* non-blocking */
@@ -335,7 +424,6 @@ export class ImageMediaRuntime {
     candidates: ImageCandidateResult[],
   ): Promise<ImageCandidateResult[]> {
     if (!request.persistCanonical || !this.storage) {
-      // Strip data URIs from release surface when storage is required.
       if (this.requireStorageForOperational) {
         return [];
       }
@@ -346,24 +434,27 @@ export class ImageMediaRuntime {
     for (const cand of candidates) {
       const decoded = decodeDataUri(cand.uri);
       if (!decoded) {
-        // Already a non-data URI — keep only if storage-safe.
         if (!/^data:/i.test(cand.uri)) {
           out.push(cand);
         }
         continue;
       }
-      const stored = await this.storage.persistGeneratedImage({
-        tenantId: request.tenantId,
-        missionId: request.missionId,
-        mimeType: decoded.mimeType,
-        bytes: decoded.bytes,
-        originalName: `${cand.id}.png`,
-      });
-      out.push({
-        ...cand,
-        uri: stored.uri,
-        storedAsset: stored,
-      });
+      try {
+        const stored = await this.storage.persistGeneratedImage({
+          tenantId: request.tenantId,
+          missionId: request.missionId,
+          mimeType: decoded.mimeType,
+          bytes: decoded.bytes,
+          originalName: `${cand.id}.png`,
+        });
+        out.push({
+          ...cand,
+          uri: stored.uri,
+          storedAsset: stored,
+        });
+      } catch {
+        // Provider cost already recorded — persistence failure does not erase spend.
+      }
     }
     return out;
   }
@@ -421,7 +512,7 @@ export class ImageMediaRuntime {
   private async generateOpenAI(request: ImageGenerateRequest, model: string): Promise<ImageCandidateResult[]> {
     const count = Math.max(1, Math.min(request.candidateCount ?? 1, 4));
     const size = request.size ?? "1024x1024";
-    const quality = request.quality ?? "medium";
+    const quality = request.quality ?? "high";
     const body = {
       model,
       prompt: request.prompt,

@@ -10,7 +10,8 @@ export type VideoOperationStatus = "submitted" | "polling" | "completed" | "fail
 
 export interface VideoSubmitRequest {
   tenantId: string;
-  missionId: string;
+  /** Real missions.id only — null when no workforce mission row. */
+  missionId?: string | null;
   prompt: string;
   durationSeconds?: number;
   tier?: VideoTier;
@@ -24,7 +25,7 @@ export interface VideoOperation {
   provider: "google";
   model: string;
   tenantId: string;
-  missionId: string;
+  missionId: string | null;
   estimatedCostUsd: number;
   artifactUri?: string;
   artifactStoragePath?: string;
@@ -121,7 +122,7 @@ export class SupabaseVideoOperationStore implements VideoOperationStore {
       provider: "google",
       model: String(data.model),
       tenantId: String(data.tenant_id),
-      missionId: String(data.mission_id ?? ""),
+      missionId: data.mission_id != null ? String(data.mission_id) : null,
       estimatedCostUsd: Number(data.estimated_cost_usd ?? 0),
       artifactUri: data.artifact_storage_path ? String(data.artifact_storage_path) : undefined,
       artifactStoragePath: data.artifact_storage_path ? String(data.artifact_storage_path) : undefined,
@@ -145,6 +146,7 @@ export interface VideoMediaDeps {
   storage?: CanonicalMediaStorage;
   usageRecorder?: import("../usage/recorder.ts").AIUsageRecorder;
   budgetEnvelope?: import("../types.ts").AIBudgetEnvelope;
+  sessionId?: string | null;
 }
 
 function modelForTier(tier: VideoTier, env = process.env): string {
@@ -162,6 +164,7 @@ export class VideoMediaRuntime {
   private readonly storage?: CanonicalMediaStorage;
   private readonly usageRecorder?: import("../usage/recorder.ts").AIUsageRecorder;
   private readonly budgetEnvelope?: import("../types.ts").AIBudgetEnvelope;
+  private readonly sessionId: string | null;
 
   constructor(deps: VideoMediaDeps = {}) {
     this.apiKey = Object.prototype.hasOwnProperty.call(deps, "geminiApiKey")
@@ -174,6 +177,7 @@ export class VideoMediaRuntime {
     this.storage = deps.storage;
     this.usageRecorder = deps.usageRecorder;
     this.budgetEnvelope = deps.budgetEnvelope;
+    this.sessionId = deps.sessionId ?? null;
   }
 
   /** Test helper — prefer shared durable store across runtimes instead. */
@@ -206,9 +210,10 @@ export class VideoMediaRuntime {
       await this.usageRecorder.record({
         tenantId: op.tenantId,
         missionId: op.missionId || null,
+        sessionId: this.sessionId,
         department: "creative",
         specialistRole: null,
-        taskClass: "CREATIVE_TEXT",
+        taskClass: "VIDEO",
         provider: "google",
         model: op.model,
         attemptNumber: 1,
@@ -242,7 +247,7 @@ export class VideoMediaRuntime {
         provider: "google",
         model: modelForTier(request.tier ?? "economy"),
         tenantId: request.tenantId,
-        missionId: request.missionId,
+        missionId: request.missionId ?? null,
         estimatedCostUsd: 0,
         errorSafe: "NOT_CONFIGURED",
         pollCount: 0,
@@ -275,7 +280,7 @@ export class VideoMediaRuntime {
           provider: "google",
           model,
           tenantId: request.tenantId,
-          missionId: request.missionId,
+          missionId: request.missionId ?? null,
           estimatedCostUsd: 0,
           errorSafe: "BUDGET_EXHAUSTED",
           pollCount: 0,
@@ -316,7 +321,7 @@ export class VideoMediaRuntime {
       provider: "google",
       model,
       tenantId: request.tenantId,
-      missionId: request.missionId,
+      missionId: request.missionId ?? null,
       estimatedCostUsd,
       pollCount: 0,
       resolution,
@@ -326,6 +331,7 @@ export class VideoMediaRuntime {
     };
     const saved = await this.persistOp(op);
     if (saved.status === "failed") return saved;
+    // Provider accepted the billable operation — record even if later poll/persist fails.
     await this.recordUsage(saved, true);
     return saved;
   }
@@ -339,7 +345,7 @@ export class VideoMediaRuntime {
         provider: "google",
         model: resolveModelId("GOOGLE_VIDEO_ECONOMY"),
         tenantId: "",
-        missionId: "",
+        missionId: null,
         estimatedCostUsd: 0,
         errorSafe: "unknown_operation",
         pollCount: 0,

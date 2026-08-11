@@ -37,6 +37,8 @@ export interface AIRuntimeDeps {
   defaultTimeoutMs?: number;
   now?: () => Date;
   qualityAssessor?: typeof assessQuality;
+  /** Default session attribution for usage rows (not missions FK). */
+  defaultSessionId?: string | null;
 }
 
 function emptyUsage(): AIUsage {
@@ -53,6 +55,7 @@ export class AIRuntime {
   private readonly defaultTimeoutMs: number;
   private readonly now: () => Date;
   private readonly qualityAssessor: typeof assessQuality;
+  private readonly defaultSessionId: string | null;
 
   constructor(deps: AIRuntimeDeps = {}) {
     this.google = deps.google ?? new GeminiTextProvider();
@@ -67,6 +70,7 @@ export class AIRuntime {
     this.defaultTimeoutMs = deps.defaultTimeoutMs ?? Number(process.env.AI_PROVIDER_TIMEOUT_MS ?? 45_000);
     this.now = deps.now ?? (() => new Date());
     this.qualityAssessor = deps.qualityAssessor ?? assessQuality;
+    this.defaultSessionId = deps.defaultSessionId ?? null;
   }
 
   getCircuitBreaker(): ProviderCircuitBreaker {
@@ -425,6 +429,10 @@ export class AIRuntime {
       await this.usageRecorder.record({
         tenantId: request.tenantId,
         missionId: request.missionId ?? null,
+        sessionId:
+          (typeof request.metadata?.sessionId === "string" ? request.metadata.sessionId : null) ??
+          this.defaultSessionId,
+        correlationId: typeof request.metadata?.correlationId === "string" ? request.metadata.correlationId : null,
         department: request.department ?? null,
         specialistRole: request.specialistRole ?? null,
         taskClass: request.taskClass,

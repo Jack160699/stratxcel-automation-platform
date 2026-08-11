@@ -23,6 +23,8 @@ export interface AiAdminHealthSnapshot {
     fallbackModel: string;
     status: AdminProviderStatus;
     storageReady: boolean;
+    primaryModelAvailable: boolean;
+    fallbackModelAvailable: boolean;
   };
   video: {
     configured: boolean;
@@ -30,8 +32,10 @@ export interface AiAdminHealthSnapshot {
     soraActive: false;
     status: AdminProviderStatus;
     durableStoreReady: boolean;
+    economyModelAvailable: boolean;
   };
   budgetLedgerReady: boolean;
+  serviceMeteringWriterReady: boolean;
   modelPolicySummary: Array<{ taskClass: string; primary: string; fallback: string | null }>;
   departmentMappingCount: { mapped: number; total: number };
   circuit: Array<{ key: string; failures: number; open: boolean }>;
@@ -74,6 +78,23 @@ export async function probeBudgetLedgerReady(supabase?: {
   }
 }
 
+/** Service-role metering writer must be available for production OPERATIONAL claims. */
+export async function probeServiceMeteringWriterReady(args?: {
+  hasServiceRoleKey?: boolean;
+  supabase?: {
+    from: (table: string) => {
+      select: (cols: string) => {
+        limit: (n: number) => PromiseLike<{ error: { message?: string } | null }>;
+      };
+    };
+  };
+}): Promise<boolean> {
+  const hasKey =
+    args?.hasServiceRoleKey ?? Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY);
+  if (!hasKey) return false;
+  return probeBudgetLedgerReady(args?.supabase);
+}
+
 export async function probeDurableVideoStoreReady(supabase?: {
   from: (table: string) => {
     select: (cols: string) => {
@@ -109,6 +130,7 @@ export async function buildAiAdminHealthSnapshot(args?: {
   storageReady?: boolean;
   durableVideoStoreReady?: boolean;
   budgetLedgerReady?: boolean;
+  serviceMeteringWriterReady?: boolean;
   supabase?: {
     from: (table: string) => {
       select: (cols: string) => {
@@ -119,38 +141,81 @@ export async function buildAiAdminHealthSnapshot(args?: {
   storage?: { isWritable: () => Promise<boolean> };
 }): Promise<AiAdminHealthSnapshot> {
   const circuit = args?.circuitBreaker ?? new ProviderCircuitBreaker();
-  const [geminiProbe, openaiProbe] = await Promise.all([
-    probeGeminiReadiness({
-      apiKey: process.env.GEMINI_API_KEY,
-      model: resolveModelId("GOOGLE_CHEAP"),
-      fetchImpl: args?.fetchImpl,
-      cache: readinessCache,
-    }),
-    probeOpenAIReadiness({
-      apiKey: process.env.OPENAI_API_KEY,
-      model: resolveModelId("OPENAI_CHEAP_FALLBACK"),
-      fetchImpl: args?.fetchImpl,
-      cache: readinessCache,
-    }),
-  ]);
+  const imagePrimary = resolveModelId("GOOGLE_IMAGE_STANDARD");
+  const imageFallback = resolveModelId("OPENAI_IMAGE_FALLBACK");
+  const videoEconomy = resolveModelId("GOOGLE_VIDEO_ECONOMY");
+
+  const [geminiProbe, openaiProbe, imagePrimaryProbe, imageFallbackProbe, videoEconomyProbe] =
+    await Promise.all([
+      probeGeminiReadiness({
+        apiKey: process.env.GEMINI_API_KEY,
+        model: resolveModelId("GOOGLE_CHEAP"),
+        fetchImpl: args?.fetchImpl,
+        cache: readinessCache,
+      }),
+      probeOpenAIReadiness({
+        apiKey: process.env.OPENAI_API_KEY,
+        model: resolveModelId("OPENAI_CHEAP_FALLBACK"),
+        fetchImpl: args?.fetchImpl,
+        cache: readinessCache,
+      }),
+      // Actual media models — text readiness must not imply image/video readiness.
+      probeGeminiReadiness({
+        apiKey: process.env.GEMINI_API_KEY,
+        model: imagePrimary,
+        fetchImpl: args?.fetchImpl,
+        cache: readinessCache,
+      }),
+      process.env.OPENAI_API_KEY
+        ? probeOpenAIReadiness({
+            apiKey: process.env.OPENAI_API_KEY,
+            model: imageFallback,
+            fetchImpl: args?.fetchImpl,
+            cache: readinessCache,
+          })
+        : Promise.resolve({
+            configured: false,
+            reachable: false,
+            modelAvailable: false,
+            lastCheckedAt: new Date().toISOString(),
+            safeErrorCode: "OPENAI_NOT_CONFIGURED",
+          }),
+      probeGeminiReadiness({
+        apiKey: process.env.GEMINI_API_KEY,
+        model: videoEconomy,
+        fetchImpl: args?.fetchImpl,
+        cache: readinessCache,
+      }),
+    ]);
 
   const policies = buildTaskPolicies();
   const mapping = assertAllDepartmentsMapped();
 
-  const [storageReady, durableVideoStoreReady, budgetLedgerReady] = await Promise.all([
-    args?.storageReady != null
-      ? Promise.resolve(args.storageReady)
-      : probeCanonicalStorageReady(args?.storage),
-    args?.durableVideoStoreReady != null
-      ? Promise.resolve(args.durableVideoStoreReady)
-      : probeDurableVideoStoreReady(args?.supabase),
-    args?.budgetLedgerReady != null
-      ? Promise.resolve(args.budgetLedgerReady)
-      : probeBudgetLedgerReady(args?.supabase),
-  ]);
+  const [storageReady, durableVideoStoreReady, budgetLedgerReady, serviceMeteringWriterReady] =
+    await Promise.all([
+      args?.storageReady != null
+        ? Promise.resolve(args.storageReady)
+        : probeCanonicalStorageReady(args?.storage),
+      args?.durableVideoStoreReady != null
+        ? Promise.resolve(args.durableVideoStoreReady)
+        : probeDurableVideoStoreReady(args?.supabase),
+      args?.budgetLedgerReady != null
+        ? Promise.resolve(args.budgetLedgerReady)
+        : probeBudgetLedgerReady(args?.supabase),
+      args?.serviceMeteringWriterReady != null
+        ? Promise.resolve(args.serviceMeteringWriterReady)
+        : probeServiceMeteringWriterReady({ supabase: args?.supabase }),
+    ]);
 
   const geminiCircuit = circuit.isOpen("google", resolveModelId("GOOGLE_CHEAP"));
   const openaiCircuit = circuit.isOpen("openai", resolveModelId("OPENAI_CHEAP_FALLBACK"));
+  const imageCircuit = circuit.isOpen("google", imagePrimary) && circuit.isOpen("openai", imageFallback);
+  const videoCircuit = circuit.isOpen("google", videoEconomy);
+
+  const imageModelAvailable =
+    imagePrimaryProbe.modelAvailable ||
+    (Boolean(process.env.OPENAI_API_KEY) && imageFallbackProbe.modelAvailable);
+  const imageReachable = imagePrimaryProbe.reachable || imageFallbackProbe.reachable;
 
   return {
     gemini: {
@@ -167,35 +232,39 @@ export async function buildAiAdminHealthSnapshot(args?: {
     },
     image: {
       configured: Boolean(process.env.GEMINI_API_KEY || process.env.OPENAI_API_KEY),
-      primaryModel: resolveModelId("GOOGLE_IMAGE_STANDARD"),
-      fallbackModel: resolveModelId("OPENAI_IMAGE_FALLBACK"),
+      primaryModel: imagePrimary,
+      fallbackModel: imageFallback,
       storageReady,
+      primaryModelAvailable: imagePrimaryProbe.modelAvailable,
+      fallbackModelAvailable: imageFallbackProbe.modelAvailable,
       status: deriveStatus(
         {
           configured: Boolean(process.env.GEMINI_API_KEY || process.env.OPENAI_API_KEY),
-          reachable: geminiProbe.reachable || openaiProbe.reachable,
-          modelAvailable: geminiProbe.modelAvailable || openaiProbe.modelAvailable,
+          reachable: imageReachable,
+          modelAvailable: imageModelAvailable,
         },
-        geminiCircuit && openaiCircuit,
-        storageReady && budgetLedgerReady,
+        imageCircuit,
+        storageReady && budgetLedgerReady && serviceMeteringWriterReady,
       ),
     },
     video: {
       configured: Boolean(process.env.GEMINI_API_KEY),
-      economyModel: resolveModelId("GOOGLE_VIDEO_ECONOMY"),
+      economyModel: videoEconomy,
       soraActive: false,
       durableStoreReady: durableVideoStoreReady,
+      economyModelAvailable: videoEconomyProbe.modelAvailable,
       status: deriveStatus(
         {
           configured: Boolean(process.env.GEMINI_API_KEY),
-          reachable: geminiProbe.reachable,
-          modelAvailable: geminiProbe.modelAvailable,
+          reachable: videoEconomyProbe.reachable,
+          modelAvailable: videoEconomyProbe.modelAvailable,
         },
-        geminiCircuit,
-        durableVideoStoreReady && storageReady && budgetLedgerReady,
+        videoCircuit,
+        durableVideoStoreReady && storageReady && budgetLedgerReady && serviceMeteringWriterReady,
       ),
     },
     budgetLedgerReady,
+    serviceMeteringWriterReady,
     modelPolicySummary: Object.values(policies).map((p) => ({
       taskClass: p.taskClass,
       primary: p.candidates.find((c) => c.role === "primary")?.model ?? "—",

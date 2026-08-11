@@ -1,6 +1,11 @@
 /**
  * Canonical tenant media storage for AI-generated assets.
  * Temporary data: URIs may exist only during processing — never as customer assets.
+ *
+ * Path convention (service-role after OwnerContext authorization):
+ *   {ownerId}/{tenantId}/ai-generated/<asset>
+ * Matches owner-root storage policy when authenticated uploads are used;
+ * production factory uses service-role after tenant ownership is validated.
  */
 
 export interface ResolvedReferenceImage {
@@ -31,14 +36,14 @@ export interface CanonicalMediaStorage {
   }): Promise<ResolvedReferenceImage[]>;
   persistGeneratedImage(args: {
     tenantId: string;
-    missionId: string;
+    missionId?: string | null;
     mimeType: string;
     bytes: Uint8Array;
     originalName: string;
   }): Promise<CanonicalStoredAsset>;
   persistGeneratedVideo?(args: {
     tenantId: string;
-    missionId: string;
+    missionId?: string | null;
     mimeType: string;
     bytes: Uint8Array;
     originalName: string;
@@ -57,12 +62,29 @@ function safeFileName(name: string): string {
   return name.replace(/[^\w.\-]+/g, "-").slice(0, 120) || "media.bin";
 }
 
-/** In-memory storage for unit tests — enforces tenant isolation and non-data URIs. */
+export function buildCanonicalGeneratedPath(args: {
+  ownerId: string;
+  tenantId: string;
+  assetId: string;
+  originalName: string;
+}): string {
+  return `${args.ownerId}/${args.tenantId}/ai-generated/${args.assetId}-${safeFileName(args.originalName)}`;
+}
+
+export function buildCanonicalProbePath(args: { ownerId: string; tenantId: string }): string {
+  return `${args.ownerId}/${args.tenantId}/.ai-runtime-write-probe`;
+}
+
+/**
+ * In-memory storage for unit tests — enforces tenant isolation, owner-root paths,
+ * and optional authorized-tenant policy (mirrors production auth-then-write).
+ */
 export class InMemoryCanonicalMediaStorage implements CanonicalMediaStorage {
   readonly assets = new Map<
     string,
     {
       tenantId: string;
+      ownerId: string;
       missionId?: string | null;
       mimeType: string;
       bytes: Uint8Array;
@@ -70,9 +92,41 @@ export class InMemoryCanonicalMediaStorage implements CanonicalMediaStorage {
     }
   >();
   writable = true;
+  /** When set, persist only succeeds for these tenants (after "authorization"). */
+  authorizedTenantIds: Set<string> | null = null;
+  ownerId: string;
+
+  constructor(args?: { ownerId?: string; authorizedTenantIds?: Iterable<string> }) {
+    this.ownerId = args?.ownerId ?? "owner-test";
+    this.authorizedTenantIds = args?.authorizedTenantIds
+      ? new Set(args.authorizedTenantIds)
+      : null;
+  }
+
+  authorizeTenant(tenantId: string): void {
+    if (!this.authorizedTenantIds) this.authorizedTenantIds = new Set();
+    this.authorizedTenantIds.add(tenantId);
+  }
+
+  private assertAuthorized(tenantId: string): void {
+    if (this.authorizedTenantIds && !this.authorizedTenantIds.has(tenantId)) {
+      throw new Error(`cross_tenant_storage_forbidden:${tenantId}`);
+    }
+  }
 
   async isWritable(): Promise<boolean> {
-    return this.writable;
+    if (!this.writable) return false;
+    // Probe uses same authorization/path semantics as real writes.
+    try {
+      const probeTenant = [...(this.authorizedTenantIds ?? [])][0];
+      if (this.authorizedTenantIds && !probeTenant) return false;
+      const tenantId = probeTenant ?? "probe-tenant";
+      this.assertAuthorized(tenantId);
+      const path = buildCanonicalProbePath({ ownerId: this.ownerId, tenantId });
+      return path.startsWith(`${this.ownerId}/`);
+    } catch {
+      return false;
+    }
   }
 
   async resolveReferenceImages(args: {
@@ -80,6 +134,7 @@ export class InMemoryCanonicalMediaStorage implements CanonicalMediaStorage {
     missionId?: string | null;
     referenceAssetIds: readonly string[];
   }): Promise<ResolvedReferenceImage[]> {
+    this.assertAuthorized(args.tenantId);
     const out: ResolvedReferenceImage[] = [];
     for (const id of args.referenceAssetIds) {
       const asset = this.assets.get(id);
@@ -103,18 +158,25 @@ export class InMemoryCanonicalMediaStorage implements CanonicalMediaStorage {
 
   async persistGeneratedImage(args: {
     tenantId: string;
-    missionId: string;
+    missionId?: string | null;
     mimeType: string;
     bytes: Uint8Array;
     originalName: string;
   }): Promise<CanonicalStoredAsset> {
     if (!this.writable) throw new Error("storage_not_writable");
+    this.assertAuthorized(args.tenantId);
     const assetId = crypto.randomUUID();
-    const storagePath = `${args.tenantId}/ai-generated/${assetId}-${safeFileName(args.originalName)}`;
+    const storagePath = buildCanonicalGeneratedPath({
+      ownerId: this.ownerId,
+      tenantId: args.tenantId,
+      assetId,
+      originalName: args.originalName,
+    });
     const uri = `storage://${CANONICAL_MEDIA_BUCKET}/${storagePath}`;
     assertNotDataUri(uri);
     this.assets.set(assetId, {
       tenantId: args.tenantId,
+      ownerId: this.ownerId,
       missionId: args.missionId,
       mimeType: args.mimeType,
       bytes: args.bytes,
@@ -132,7 +194,7 @@ export class InMemoryCanonicalMediaStorage implements CanonicalMediaStorage {
 
   async persistGeneratedVideo(args: {
     tenantId: string;
-    missionId: string;
+    missionId?: string | null;
     mimeType: string;
     bytes: Uint8Array;
     originalName: string;
@@ -149,10 +211,11 @@ export class InMemoryCanonicalMediaStorage implements CanonicalMediaStorage {
   }): void {
     this.assets.set(args.id, {
       tenantId: args.tenantId,
+      ownerId: this.ownerId,
       missionId: args.missionId,
       mimeType: args.mimeType,
       bytes: args.bytes,
-      storagePath: `${args.tenantId}/refs/${args.id}`,
+      storagePath: `${this.ownerId}/${args.tenantId}/refs/${args.id}`,
     });
   }
 }
@@ -185,6 +248,7 @@ export interface SupabaseCanonicalMediaClient {
         opts?: { contentType?: string; upsert?: boolean },
       ) => PromiseLike<{ error: { message: string } | null }>;
       download: (path: string) => PromiseLike<{ data: Blob | null; error: { message: string } | null }>;
+      remove?: (paths: string[]) => PromiseLike<{ error: { message: string } | null }>;
       list?: (
         path?: string,
         opts?: { limit?: number },
@@ -194,27 +258,43 @@ export interface SupabaseCanonicalMediaClient {
 }
 
 /**
- * Production canonical media storage backed by Supabase Storage + social_media_assets.
+ * Production canonical media storage — service-role client after OwnerContext auth.
+ * Readiness probe and generated writes share ownerId/tenantId path semantics.
  */
 export class SupabaseCanonicalMediaStorage implements CanonicalMediaStorage {
   private readonly client: SupabaseCanonicalMediaClient;
   private readonly ownerId: string;
+  private readonly tenantId: string;
   private readonly bucket: string;
 
-  constructor(args: { client: SupabaseCanonicalMediaClient; ownerId: string; bucket?: string }) {
+  constructor(args: {
+    client: SupabaseCanonicalMediaClient;
+    ownerId: string;
+    tenantId: string;
+    bucket?: string;
+  }) {
+    if (!args.tenantId) throw new Error("tenant_required_for_canonical_storage");
     this.client = args.client;
     this.ownerId = args.ownerId;
+    this.tenantId = args.tenantId;
     this.bucket = args.bucket ?? CANONICAL_MEDIA_BUCKET;
   }
 
   async isWritable(): Promise<boolean> {
+    const probePath = buildCanonicalProbePath({ ownerId: this.ownerId, tenantId: this.tenantId });
     try {
-      const probePath = `${this.ownerId}/.ai-runtime-write-probe`;
       const { error } = await this.client.storage.from(this.bucket).upload(probePath, new Uint8Array([1]), {
         contentType: "application/octet-stream",
         upsert: true,
       });
-      return !error;
+      if (error) return false;
+      // Best-effort cleanup — non-leaking deterministic probe.
+      try {
+        await this.client.storage.from(this.bucket).remove?.([probePath]);
+      } catch {
+        /* ignore */
+      }
+      return true;
     } catch {
       return false;
     }
@@ -225,6 +305,9 @@ export class SupabaseCanonicalMediaStorage implements CanonicalMediaStorage {
     missionId?: string | null;
     referenceAssetIds: readonly string[];
   }): Promise<ResolvedReferenceImage[]> {
+    if (args.tenantId !== this.tenantId) {
+      throw new Error(`cross_tenant_reference_forbidden:${args.tenantId}`);
+    }
     if (!args.referenceAssetIds.length) return [];
     const { data, error } = await this.client
       .from("social_media_assets")
@@ -240,6 +323,9 @@ export class SupabaseCanonicalMediaStorage implements CanonicalMediaStorage {
       if (!row || String(row.status) !== "READY") throw new Error(`reference_not_found:${id}`);
       if (String(row.tenant_id) !== args.tenantId) {
         throw new Error(`cross_tenant_reference_forbidden:${id}`);
+      }
+      if (String(row.owner_id) !== this.ownerId) {
+        throw new Error(`cross_owner_reference_forbidden:${id}`);
       }
       const bucket = String(row.storage_bucket ?? this.bucket);
       const path = String(row.storage_path);
@@ -261,13 +347,21 @@ export class SupabaseCanonicalMediaStorage implements CanonicalMediaStorage {
 
   async persistGeneratedImage(args: {
     tenantId: string;
-    missionId: string;
+    missionId?: string | null;
     mimeType: string;
     bytes: Uint8Array;
     originalName: string;
   }): Promise<CanonicalStoredAsset> {
+    if (args.tenantId !== this.tenantId) {
+      throw new Error(`cross_tenant_storage_forbidden:${args.tenantId}`);
+    }
     const assetId = crypto.randomUUID();
-    const storagePath = `${args.tenantId}/ai-generated/${assetId}-${safeFileName(args.originalName)}`;
+    const storagePath = buildCanonicalGeneratedPath({
+      ownerId: this.ownerId,
+      tenantId: args.tenantId,
+      assetId,
+      originalName: args.originalName,
+    });
     const uri = `storage://${this.bucket}/${storagePath}`;
     assertNotDataUri(uri);
 
@@ -310,7 +404,7 @@ export class SupabaseCanonicalMediaStorage implements CanonicalMediaStorage {
 
   async persistGeneratedVideo(args: {
     tenantId: string;
-    missionId: string;
+    missionId?: string | null;
     mimeType: string;
     bytes: Uint8Array;
     originalName: string;
