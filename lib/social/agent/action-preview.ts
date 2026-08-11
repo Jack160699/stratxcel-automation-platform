@@ -4,14 +4,25 @@
 // requested (never cached in the stored action), so an edit made after
 // proposing still shows correctly, and the card never needs to display a
 // raw UUID/tool name/internal payload (Section 3 of the follow-up brief).
-import type { OwnerContext } from "../db-context";
-import { getAction, updateActionInput } from "../repositories/agent";
-import { getAutomationSettings } from "../repositories/automation";
-import { updateContentVariant } from "../repositories/media-assets";
-import { stripInternalInput } from "./dependencies";
-import { PUBLISH_INTENT_TOOLS, platformLabel } from "./publish-outcome-classify";
-import { dedupeCaptionForPreview } from "./caption-format";
+import type { OwnerContext } from "../db-context.ts";
+import {
+  getAction,
+  getSessionDetail,
+  proposeAction,
+  supersedeProposedActions,
+} from "../repositories/agent.ts";
+import { getAutomationSettings } from "../repositories/automation.ts";
+import { getBrandProfile } from "../repositories/brand.ts";
+import { createContentVariant } from "../repositories/content.ts";
+import { stripInternalInput } from "./dependencies.ts";
+import { PUBLISH_INTENT_TOOLS, platformLabel } from "./publish-outcome-classify.ts";
+import { dedupeCaptionForPreview } from "./caption-format.ts";
 import { formatAccountPresentation } from "./account-presentation.ts";
+import { reviewFamilyId, selectActionsToSupersede } from "./action-supersession.ts";
+import { aggregateVariantTrust } from "./review-trust.ts";
+import { buildProductCapabilityEvidence, resolveImageGenerationRuntimeStatus } from "./capability-evidence.ts";
+import { getImageProvider, BlockedImageProvider } from "@stratxcel/creative-studio";
+import { buildVariantGenerationKey } from "./variant-idempotency.ts";
 
 export { formatAccountPresentation } from "./account-presentation.ts";
 export type { AccountPresentationRow } from "./account-presentation.ts";
@@ -33,6 +44,12 @@ export interface PublishActionPreview {
   wallClockLabel?: string;
   scheduleSource?: string;
   reviewDisplayStatus?: string;
+  trustStatus?: "PASS" | "REVISE" | "BLOCK" | "PENDING";
+  approvalAllowed?: boolean;
+  trustReasons?: string[];
+  reviewId?: string;
+  revision?: number;
+  artifactVersion?: string;
   /** True when scheduledAt is "now"-ish (or the tool always publishes immediately, like YouTube verification). */
   isImmediate: boolean;
   mediaAssetIds: string[];
@@ -134,6 +151,24 @@ export async function getActionPreview(ctx: OwnerContext, actionId: string): Pro
     const mediaMimeTypes = await mediaMimeTypesFor(ctx, mediaAssetIds);
     const wallClockLabel = str(input.wallClockLabel);
     const timeZone = str(input.timeZone);
+    const brand = await getBrandProfile(ctx);
+    const imageProvider = getImageProvider();
+    const capabilityEvidence = buildProductCapabilityEvidence({
+      shadowMode: settings.shadow_mode !== false,
+      dryRun: process.env.SOCIAL_DRY_RUN === "1",
+      socialPublishExecutable: settings.shadow_mode === false,
+      imageGenerationStatus: resolveImageGenerationRuntimeStatus({
+        providerConfigured: Boolean(imageProvider) && !(imageProvider instanceof BlockedImageProvider),
+      }),
+    });
+    const captionText = variant?.caption ? String(variant.caption) : "";
+    const trust = aggregateVariantTrust({
+      variants: [{ variantId: variantId || "unknown", caption: captionText }],
+      blockedPhrases: brand.voice?.blocked_phrases ?? [],
+      forbiddenClaims: brand.voice?.forbidden_claims ?? [],
+      capabilityEvidence,
+    });
+    const revision = typeof input.revision === "number" ? input.revision : Number(input.revision) || undefined;
     return {
       actionId,
       tool: action.tool_name,
@@ -148,7 +183,13 @@ export async function getActionPreview(ctx: OwnerContext, actionId: string): Pro
       timeZone,
       wallClockLabel,
       scheduleSource: str(input.scheduleSource),
-      reviewDisplayStatus: action.status === "SUPERSEDED" ? "SUPERSEDED" : "READY_FOR_APPROVAL",
+      reviewDisplayStatus: action.status === "SUPERSEDED" ? "SUPERSEDED" : trust.displayStatus,
+      trustStatus: trust.trustStatus,
+      approvalAllowed: trust.approvalAllowed && action.status === "PROPOSED",
+      trustReasons: trust.reasons,
+      reviewId: str(input.reviewId),
+      revision,
+      artifactVersion: revision ? `v${revision}` : str(input.artifactVersion),
       // An omitted scheduledAt means "post now" — see schedule_post's tool
       // execute(), which defaults it the same way. Never read absence as a
       // future time.
@@ -195,11 +236,9 @@ export async function getActionPreview(ctx: OwnerContext, actionId: string): Pro
 }
 
 /**
- * Edit-before-approval (Section 8): patches the underlying content variant
- * (caption/hashtags live there, not in the proposed action's tool
- * arguments) and, for schedule_post, the proposed timing. Never touches
- * platform/account/media identity — those still come from trusted IDs the
- * model already resolved. Only a still-PROPOSED action can be edited.
+ * Edit-before-approval creates a NEW review revision.
+ * Historic revision content/actions remain immutable; prior PROPOSED rows become SUPERSEDED.
+ * Returns the preview for the NEW action identity.
  */
 export async function editProposedPublishAction(
   ctx: OwnerContext,
@@ -208,23 +247,109 @@ export async function editProposedPublishAction(
 ): Promise<PublishActionPreview> {
   const action = await getAction(ctx, actionId);
   if (!action) throw new Error("Action not found.");
+  if (action.status === "SUPERSEDED") throw new Error("This review was superseded. Edit the current review instead.");
   if (action.status !== "PROPOSED") throw new Error("This action is no longer awaiting approval.");
   if (!PUBLISH_INTENT_TOOLS.has(action.tool_name)) throw new Error("This action cannot be edited.");
+  if (!action.session_id) throw new Error("Action is missing session scope.");
 
   const input = stripInternalInput(action.input ?? {});
   const variantId = str(input.variantId);
-  if ((patch.caption !== undefined || patch.hashtags !== undefined) && variantId) {
-    await updateContentVariant(ctx, {
-      variantId,
-      ...(patch.caption !== undefined ? { caption: patch.caption } : {}),
-      ...(patch.hashtags !== undefined ? { hashtags: patch.hashtags } : {}),
-    });
-  }
-  if (patch.scheduledAt !== undefined && action.tool_name === "schedule_post") {
-    await updateActionInput(ctx, actionId, { ...action.input, scheduledAt: patch.scheduledAt });
+  if (!variantId) throw new Error("Action is missing a content variant.");
+
+  const { data: oldVariant } = await ctx.supabase
+    .from("content_variants")
+    .select("id, master_id, platform, format, objective, caption, hashtags, media_urls, creative_spec")
+    .eq("id", variantId)
+    .maybeSingle();
+  if (!oldVariant) throw new Error("Content variant not found");
+
+  const sessionId = action.session_id;
+  const detail = await getSessionDetail(ctx, sessionId);
+  const contentMasterId = str(input.contentMasterId) || String(oldVariant.master_id);
+  const reviewId =
+    str(input.reviewId) || reviewFamilyId(sessionId, contentMasterId);
+  const priorRevision = Number(input.revision);
+  const nextRevision = Number.isFinite(priorRevision) && priorRevision > 0 ? priorRevision + 1 : 2;
+
+  const newCaption = patch.caption !== undefined ? patch.caption : String(oldVariant.caption ?? "");
+  const newHashtags =
+    patch.hashtags !== undefined
+      ? patch.hashtags
+      : Array.isArray(oldVariant.hashtags)
+        ? (oldVariant.hashtags as string[])
+        : [];
+  const newScheduledAt = patch.scheduledAt !== undefined ? patch.scheduledAt : str(input.scheduledAt);
+
+  const generationKey = buildVariantGenerationKey({
+    tenantId: ctx.ownerId,
+    missionId: str(input.missionId) || sessionId,
+    sessionId,
+    contentSlot: `${oldVariant.platform}:${oldVariant.format ?? "post"}`,
+    masterId: String(oldVariant.master_id),
+    platform: String(oldVariant.platform),
+    format: String(oldVariant.format ?? "post"),
+    briefVersion: `edit-v${nextRevision}`,
+    revision: nextRevision,
+  });
+
+  // Create a NEW variant row — never mutate the historic revision's caption/media.
+  const created = await createContentVariant(ctx, {
+    masterId: String(oldVariant.master_id),
+    platform: String(oldVariant.platform),
+    format: String(oldVariant.format ?? "post"),
+    objective: String(oldVariant.objective ?? "ENGAGEMENT"),
+    caption: newCaption,
+    hashtags: newHashtags,
+    mediaUrls: Array.isArray(oldVariant.media_urls) ? (oldVariant.media_urls as string[]) : [],
+    generationKey,
+    creativeSpec: {
+      ...(typeof oldVariant.creative_spec === "object" && oldVariant.creative_spec ? (oldVariant.creative_spec as Record<string, unknown>) : {}),
+      parentVariantId: oldVariant.id,
+      parentRevision: Number.isFinite(priorRevision) ? priorRevision : 1,
+      revision: nextRevision,
+    },
+  });
+
+  // Copy media attachments from the parent variant to the new revision.
+  const { data: mediaRows } = await ctx.supabase
+    .from("social_content_variant_media")
+    .select("asset_id, position")
+    .eq("variant_id", oldVariant.id)
+    .order("position", { ascending: true });
+  if (mediaRows?.length) {
+    await ctx.supabase.from("social_content_variant_media").insert(
+      mediaRows.map((row) => ({
+        variant_id: created.id,
+        asset_id: row.asset_id,
+        position: row.position,
+      })),
+    );
   }
 
-  const preview = await getActionPreview(ctx, actionId);
+  // Supersede all PROPOSED actions in this review family (scoped — unrelated families untouched).
+  const supersedeIds = selectActionsToSupersede(
+    detail.actions.map((a) => ({ id: a.id, status: a.status, tool_name: a.tool_name, input: a.input ?? {} })),
+    { reviewId, revision: nextRevision, contentMasterId },
+  );
+  await supersedeProposedActions(ctx, sessionId, supersedeIds);
+
+  const newInput: Record<string, unknown> = {
+    ...input,
+    variantId: created.id,
+    scheduledAt: newScheduledAt ?? undefined,
+    reviewId,
+    revision: nextRevision,
+    artifactVersion: `v${nextRevision}`,
+    previewArtifactVersion: `v${nextRevision}`,
+    contentMasterId,
+    parentActionId: actionId,
+    parentVariantId: oldVariant.id,
+  };
+
+  const newActionId = await proposeAction(ctx, sessionId, action.tool_name, newInput);
+  if (!newActionId) throw new Error("Could not create the revised review action.");
+
+  const preview = await getActionPreview(ctx, newActionId);
   if (!preview) throw new Error("Could not load the updated preview.");
   return preview;
 }

@@ -29,6 +29,9 @@ function formatWhen(iso: string | undefined, isImmediate: boolean, wallClockLabe
 
 function reviewStatusLabel(preview: PublishActionPreview): string {
   if (preview.reviewDisplayStatus === "SUPERSEDED") return "Superseded";
+  if (preview.approvalAllowed === false || preview.trustStatus === "BLOCK" || preview.trustStatus === "REVISE") {
+    return "Needs revision";
+  }
   if (preview.shadowMode) return "Ready for approval · Shadow";
   if (preview.isImmediate) return "Ready for approval";
   return "Ready for approval · Scheduled";
@@ -181,6 +184,12 @@ function ReadyToPublishCard({
   const [error, setError] = useState<string | null>(null);
   const [resolved, setResolved] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
+  /** After edit creates a new revision, approve/reject must target the new action id. */
+  const [activeActionId, setActiveActionId] = useState(action.id);
+
+  useEffect(() => {
+    setActiveActionId(action.id);
+  }, [action.id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -194,11 +203,12 @@ function ReadyToPublishCard({
           return;
         }
         setPreview(result);
+        setActiveActionId(result.actionId || action.id);
         setCaption(result.caption ?? "");
         setHashtags((result.hashtags ?? []).map((tag) => `#${tag}`).join(" "));
         setScheduleMode(result.isImmediate ? "now" : "custom");
         setCustomWhen(toDatetimeLocal(result.scheduledAt));
-        onPreviewLoaded?.(action.id, result);
+        onPreviewLoaded?.(result.actionId || action.id, result);
       })
       .catch((previewError) => {
         if (cancelled) return;
@@ -226,9 +236,10 @@ function ReadyToPublishCard({
       if (preview?.tool === "schedule_post") {
         patch.scheduledAt = scheduleMode === "now" ? new Date().toISOString() : new Date(customWhen).toISOString();
       }
-      const updated = await editProposedPublishActionAction(action.id, patch);
+      const updated = await editProposedPublishActionAction(activeActionId, patch);
       setPreview(updated);
-      onPreviewLoaded?.(action.id, updated);
+      setActiveActionId(updated.actionId);
+      onPreviewLoaded?.(updated.actionId, updated);
       setEditing(false);
     } catch (editError) {
       setError(editError instanceof Error ? editError.message : "Could not save changes.");
@@ -261,7 +272,7 @@ function ReadyToPublishCard({
 
   const decide = (fn: (id: string) => void) => {
     setResolved(true);
-    fn(action.id);
+    fn(activeActionId);
   };
 
   const tagCount = preview.hashtags.length;
@@ -325,11 +336,22 @@ function ReadyToPublishCard({
               <button onClick={() => setPreviewOpen(true)} className="saut-btn saut-btn-secondary !h-9 !px-3 text-[12px]">Preview</button>
               <button onClick={() => setEditing(true)} className="saut-btn saut-btn-ghost !h-9 !px-3 text-[12px]">Edit</button>
               <button onClick={() => decide(onReject)} className="saut-btn saut-btn-ghost !h-9 !px-3 text-[12px]">Cancel</button>
-              <button onClick={() => decide(onApprove)} className="saut-btn saut-btn-primary !h-10 !px-4 text-[13px]">
-                {preview.shadowMode ? "Approve shadow run" : "Approve selected & publish (1)"}
-              </button>
+              {preview.approvalAllowed === false ? (
+                <span className="saut-btn saut-btn-ghost !h-10 !px-4 text-[13px]" style={{ color: "var(--saut-danger)", pointerEvents: "none" }}>
+                  Needs revision
+                </span>
+              ) : (
+                <button onClick={() => decide(onApprove)} className="saut-btn saut-btn-primary !h-10 !px-4 text-[13px]">
+                  {preview.shadowMode ? "Approve shadow run" : "Approve selected & publish (1)"}
+                </button>
+              )}
             </div>
           )}
+          {preview.approvalAllowed === false && preview.trustReasons?.length ? (
+            <p className="mt-2 text-xs" role="status" style={{ color: "var(--saut-danger)" }}>
+              {preview.trustReasons.slice(0, 3).join(" · ")}
+            </p>
+          ) : null}
           {grouped && !resolved && (
             <div className="saut-artifact-actions">
               <button onClick={() => setPreviewOpen(true)} className="saut-btn saut-btn-secondary !h-9 !px-3 text-[12px]">Preview</button>
@@ -373,12 +395,17 @@ function ApprovalDock({
   onApprove: (id: string) => void;
   onReject: (id: string) => void;
 }) {
-  const approveLabel = anyShadowMode
-    ? `Approve shadow run (${selectedActions.length})`
-    : `Approve selected & publish (${selectedActions.length})`;
+  const needsRevision = selectedActions.some((action) => previews[action.id]?.approvalAllowed === false);
+  const approvableCount = selectedActions.filter((action) => previews[action.id]?.approvalAllowed !== false).length;
+  const approveLabel = needsRevision
+    ? "Needs revision"
+    : anyShadowMode
+      ? `Approve shadow run (${approvableCount})`
+      : `Approve selected & publish (${approvableCount})`;
 
   const requestApprove = () => {
-    if (selectedActions.length === 0) return;
+    const approvable = selectedActions.filter((action) => previews[action.id]?.approvalAllowed !== false);
+    if (approvable.length === 0 || needsRevision) return;
     if (!anyShadowMode && typeof window !== "undefined") {
       const confirmed = window.sessionStorage.getItem(LIVE_CONFIRM_KEY) === "1";
       if (!confirmed) {
@@ -387,7 +414,7 @@ function ApprovalDock({
         window.sessionStorage.setItem(LIVE_CONFIRM_KEY, "1");
       }
     }
-    selectedActions.forEach((action) => onApprove(action.id));
+    approvable.forEach((action) => onApprove(action.id));
   };
 
   return (
@@ -402,7 +429,7 @@ function ApprovalDock({
             .filter(Boolean)
             .join(" · ") || (emptySelectionReason ?? "Choose platforms")}
         </span>
-        {!anyShadowMode ? (
+        {!anyShadowMode && !needsRevision ? (
           <span className="saut-live-publish-chip" data-live-publishing="true">
             LIVE PUBLISHING
           </span>
@@ -412,14 +439,19 @@ function ApprovalDock({
         <button onClick={() => actions.forEach((action) => onReject(action.id))} className="saut-btn saut-btn-ghost !h-10 !px-3 text-[12px]">
           Cancel
         </button>
-        <button
-          onClick={requestApprove}
-          disabled={selectedActions.length === 0}
-          aria-label="Approve selected &amp; publish"
-          className="saut-btn saut-btn-primary !h-11 !px-4 text-[13px]"
-        >
-          {approveLabel}
-        </button>
+        {needsRevision || approvableCount === 0 ? (
+          <span className="saut-btn saut-btn-ghost !h-11 !px-4 text-[13px]" style={{ color: "var(--saut-danger)", pointerEvents: "none" }}>
+            Needs revision
+          </span>
+        ) : (
+          <button
+            onClick={requestApprove}
+            aria-label="Approve selected &amp; publish"
+            className="saut-btn saut-btn-primary !h-11 !px-4 text-[13px]"
+          >
+            {approveLabel}
+          </button>
+        )}
       </div>
     </div>
   );

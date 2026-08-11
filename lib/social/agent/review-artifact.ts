@@ -46,6 +46,8 @@ export interface SocialCopilotReviewArtifact {
   variants: SocialCopilotReviewVariant[];
   brandBrainVersion: number | null;
   trustStatus: "PASS" | "REVISE" | "BLOCK" | "PENDING";
+  approvalAllowed: boolean;
+  trustReasons: string[];
   capabilityReadiness: Record<string, string>;
   artifactVersion: string;
   payloadFingerprint: string;
@@ -61,12 +63,16 @@ export interface BuildReviewArtifactInput {
   tenantId: string;
   missionId: string;
   sessionId: string;
+  /** Stable review family id (unchanged across revisions). */
+  reviewId?: string;
   sourceRunId?: string | null;
   contentMasterId?: string | null;
   revision: number;
   variants: SocialCopilotReviewVariant[];
   brandBrainVersion?: number | null;
   trustStatus: SocialCopilotReviewArtifact["trustStatus"];
+  approvalAllowed?: boolean;
+  trustReasons?: string[];
   capabilityReadiness?: Record<string, string>;
   displayStatus: ReviewDisplayStatus;
   active?: boolean;
@@ -97,7 +103,7 @@ function fingerprintPayload(input: {
 }
 
 export function buildSocialCopilotReviewArtifact(input: BuildReviewArtifactInput): SocialCopilotReviewArtifact {
-  const reviewId = `review_${input.sessionId}_${input.revision}`;
+  const reviewId = input.reviewId?.trim() || `review_${input.sessionId}_${input.contentMasterId ?? "default"}`;
   const artifactVersion = `v${input.revision}`;
   const payloadFingerprint = fingerprintPayload({
     reviewId,
@@ -114,6 +120,8 @@ export function buildSocialCopilotReviewArtifact(input: BuildReviewArtifactInput
       wallClockLabel: v.wallClockLabel,
     }));
 
+  const approvalAllowed = input.approvalAllowed ?? input.trustStatus === "PASS";
+
   return {
     reviewId,
     revision: input.revision,
@@ -125,6 +133,8 @@ export function buildSocialCopilotReviewArtifact(input: BuildReviewArtifactInput
     variants: input.variants,
     brandBrainVersion: input.brandBrainVersion ?? null,
     trustStatus: input.trustStatus,
+    approvalAllowed,
+    trustReasons: input.trustReasons ?? [],
     capabilityReadiness: input.capabilityReadiness ?? {},
     artifactVersion,
     payloadFingerprint,
@@ -145,6 +155,8 @@ export function reviewArtifactMessagePart(artifact: SocialCopilotReviewArtifact)
     artifactVersion: artifact.artifactVersion,
     displayStatus: artifact.displayStatus,
     trustStatus: artifact.trustStatus,
+    approvalAllowed: artifact.approvalAllowed,
+    trustReasons: artifact.trustReasons,
     active: artifact.active,
     payloadFingerprint: artifact.payloadFingerprint,
     variants: artifact.variants.map((v) => ({

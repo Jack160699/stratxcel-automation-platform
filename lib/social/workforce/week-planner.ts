@@ -148,7 +148,8 @@ export function planWeekSlots(input: WeekPlanInput): PlannedWeekSlot[] {
 
   const hours = candidateHours(input.preferredHours);
   const minute = DEFAULT_WEEKLY_SLOT_POLICY.minute;
-  const source = input.scheduleSource ?? (input.preferredHours?.length ? "TENANT_PREFERENCE" : "SYSTEM_DEFAULT");
+  const hasPreferredHours = Boolean(input.preferredHours?.length);
+  const source = input.scheduleSource ?? (hasPreferredHours ? "TENANT_PREFERENCE" : "SYSTEM_DEFAULT");
 
   const slots: PlannedWeekSlot[] = [];
   let cursor = { ...start };
@@ -156,9 +157,12 @@ export function planWeekSlots(input: WeekPlanInput): PlannedWeekSlot[] {
   while (compareDay(cursor, end) <= 0 && slots.length < input.itemCount) {
     const weekday = isoWeekday(cursor, timeZone);
     const isWeekend = weekday >= 6;
-    const dayHours = isWeekend && DEFAULT_WEEKLY_SLOT_POLICY.preferWeekdays && hours === candidateHours(input.preferredHours)
-      ? [...DEFAULT_WEEKLY_SLOT_POLICY.weekendHours]
-      : hours;
+    // Default policy prefers weekdays; on weekends use weekendHours only when
+    // no explicit preferredHours were supplied.
+    const dayHours =
+      isWeekend && DEFAULT_WEEKLY_SLOT_POLICY.preferWeekdays && !hasPreferredHours
+        ? [...DEFAULT_WEEKLY_SLOT_POLICY.weekendHours]
+        : hours;
 
     for (const hour of dayHours) {
       if (slots.length >= input.itemCount) break;

@@ -1,6 +1,6 @@
-import { createSupabaseServiceClient } from "../../supabase/service";
-import { requireContentObjective, requirePlatform } from "../content-options";
-import type { OwnerContext } from "../db-context";
+import { createSupabaseServiceClient } from "../../supabase/service.ts";
+import { requireContentObjective, requirePlatform } from "../content-options.ts";
+import type { OwnerContext } from "../db-context.ts";
 
 type ServiceClient = ReturnType<typeof createSupabaseServiceClient>;
 
@@ -147,6 +147,29 @@ export async function createContentVariant(
     })
     .select("id")
     .single();
+
+  // Concurrent prepare race: unique generationKey index may reject the loser — reuse the winner.
+  if (
+    error &&
+    generationKey &&
+    (/duplicate|unique|23505/i.test(error.message) || (error as { code?: string }).code === "23505")
+  ) {
+    const { data: raced } = await ctx.supabase
+      .from("content_variants")
+      .select("id, platform, creative_spec")
+      .eq("master_id", input.masterId)
+      .eq("platform", platform)
+      .order("created_at", { ascending: false })
+      .limit(25);
+    const winner = (raced ?? []).find((row) => {
+      const spec = (row.creative_spec ?? {}) as Record<string, unknown>;
+      return spec.generationKey === generationKey;
+    });
+    if (winner?.id) {
+      return { id: winner.id as string, platform, reused: true, generationKey };
+    }
+  }
+
   if (error || !data) throw new Error(error?.message ?? "content_variant insert failed");
   return { id: data.id as string, platform, reused: false, generationKey };
 }

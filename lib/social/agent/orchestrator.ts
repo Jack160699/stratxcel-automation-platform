@@ -23,15 +23,13 @@ import {
   isSafePreparationIntent,
   requiresConcreteFutureSchedule,
 } from "./copilot-intents";
+import { handleLocalArtifactDisplayTurn } from "./local-artifact-turn";
 import { planWeekSlots } from "../workforce/week-planner.ts";
-import { isNaturalPublishPhrase } from "../workforce/authorization.ts";
 import {
-  buildResurfaceReviewResponse,
-  buildShowVariantsResponse,
   computeSupersedeIdsForNewRevision,
-  currentActiveReviewId,
   loadCurrentReviewArtifact,
 } from "./review-session";
+import { reviewFamilyId } from "./action-supersession";
 import { narrativeFromReview, reviewArtifactMessagePart } from "./review-artifact";
 import { calculateLocalMetricsSummary } from "../local-meta-summary";
 import { listRecentMetrics } from "../repositories/analytics";
@@ -250,42 +248,17 @@ export async function runAgentTurn(ctx: OwnerContext, sessionId: string, runId: 
 
   // Artifact-first local paths: no AI call required to display persisted variants/review.
   if (isArtifactDisplayIntent(copilotIntent)) {
-    const existing = await loadCurrentReviewArtifact(ctx, sessionId);
-    if (existing) {
-      const response =
-        copilotIntent === "SHOW_VARIANTS" || copilotIntent === "SHOW_CURRENT_REVIEW"
-          ? buildShowVariantsResponse(existing)
-          : buildResurfaceReviewResponse(existing);
-      await insertMessage(ctx, sessionId, "AGENT", response.text, response.parts);
-      await setSessionStatus(ctx, sessionId, "WAITING_FOR_CHOICE");
-      await recordRunEvent(ctx, runId, {
-        type: "RUN_COMPLETED",
-        label: "Resurfaced persisted review artifact",
-        status: "SUCCESS",
-        meta: { intent: copilotIntent, aiCalls: 0, variantCount: existing.variants.length },
-      });
-      await completeRun(ctx, runId, "COMPLETED");
+    const local = await handleLocalArtifactDisplayTurn(ctx, sessionId, runId, latestUserPrompt, copilotIntent);
+    if (local.handled) {
       return {
         blocked: false as const,
         failed: false as const,
-        text: response.text,
-        proposedActions: existing.variants.filter((v) => v.actionId).map((v) => ({
-          id: v.actionId!,
-          tool: "schedule_post",
-          input: { variantId: v.variantId, platform: v.platform, scheduledAt: v.scheduledAtIso },
-        })),
+        text: local.text ?? "",
+        proposedActions: local.proposedActions ?? [],
         runId,
-        reviewArtifact: existing,
+        reviewArtifact: local.reviewArtifact,
         aiCalls: 0,
       };
-    }
-    if (copilotIntent === "NATURAL_AFFIRMATION" || isNaturalPublishPhrase(latestUserPrompt)) {
-      const message = "No active review is ready yet. Tell me what to prepare, or use Plan this week — chat confirmations never publish.";
-      await insertMessage(ctx, sessionId, "AGENT", message);
-      await setSessionStatus(ctx, sessionId, "READY");
-      await recordRunEvent(ctx, runId, { type: "RUN_COMPLETED", label: "Natural affirmation without review", status: "SUCCESS" });
-      await completeRun(ctx, runId, "COMPLETED");
-      return { blocked: false as const, failed: false as const, text: message, proposedActions: [], runId, aiCalls: 0 };
     }
   }
 
@@ -336,24 +309,37 @@ export async function runAgentTurn(ctx: OwnerContext, sessionId: string, runId: 
       : null;
 
   const detailForRevision = await getSessionDetail(ctx, sessionId);
+  const activeProposed = detailForRevision.actions.filter(
+    (a) => a.status === "PROPOSED" && PUBLISH_INTENT_TOOLS.has(a.tool_name),
+  );
+  const focusReviewId =
+    copilotIntent === "REVISE_CURRENT_ARTIFACT" && typeof activeProposed[0]?.input?.reviewId === "string"
+      ? String(activeProposed[0].input.reviewId)
+      : reviewFamilyId(sessionId);
   const priorMaxRevision = detailForRevision.actions.reduce((max, action) => {
+    if (action.input?.reviewId && action.input.reviewId !== focusReviewId) return max;
     const revision = Number(action.input?.revision);
     return Number.isFinite(revision) && revision > max ? revision : max;
   }, 0);
+  // Fresh preparation into an empty family stays at revision 1; replacement/revise bumps.
   const reviewRevision =
-    copilotIntent === "REVISE_CURRENT_ARTIFACT" ? priorMaxRevision + 1 : Math.max(1, priorMaxRevision || 1);
-  const activeReviewId = currentActiveReviewId(sessionId, reviewRevision);
+    priorMaxRevision > 0 && (copilotIntent === "REVISE_CURRENT_ARTIFACT" || isSafePreparationIntent(copilotIntent))
+      ? priorMaxRevision + 1
+      : Math.max(1, priorMaxRevision || 1);
+  const activeReviewId = focusReviewId;
+  const contentMasterId =
+    typeof activeProposed.find((a) => a.input?.reviewId === focusReviewId)?.input?.contentMasterId === "string"
+      ? String(activeProposed.find((a) => a.input?.reviewId === focusReviewId)!.input.contentMasterId)
+      : null;
 
-  if (copilotIntent === "REVISE_CURRENT_ARTIFACT" || (isSafePreparationIntent(copilotIntent) && priorMaxRevision > 0)) {
-    const legacyProposed = detailForRevision.actions
-      .filter((a) => a.status === "PROPOSED" && PUBLISH_INTENT_TOOLS.has(a.tool_name))
-      .map((a) => a.id);
+  if (reviewRevision > priorMaxRevision && priorMaxRevision > 0) {
+    // Scope supersession to this review family only — never cancel unrelated session reviews.
     const supersedeIds = computeSupersedeIdsForNewRevision(detailForRevision.actions, {
-      reviewId: currentActiveReviewId(sessionId, Math.max(1, priorMaxRevision)),
+      reviewId: activeReviewId,
       revision: reviewRevision,
-      missionId: sessionId,
+      contentMasterId,
     });
-    await supersedeProposedActions(ctx, sessionId, [...new Set([...supersedeIds, ...legacyProposed])]);
+    await supersedeProposedActions(ctx, sessionId, supersedeIds);
   }
 
   const roleMap: Record<string, AgentTurnMessage["role"]> = { USER: "user", AGENT: "assistant", SYSTEM: "system" };

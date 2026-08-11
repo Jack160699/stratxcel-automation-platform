@@ -262,9 +262,15 @@ export function PlatformPreviewModal({
           <button type="button" className="saut-btn saut-btn-secondary" onClick={onEdit}>
             Edit
           </button>
-          <button type="button" className="saut-btn saut-btn-primary !h-10 !px-4" onClick={onApprove}>
-            {preview.shadowMode ? "Approve shadow run" : "Approve selected & publish (1)"}
-          </button>
+          {preview.approvalAllowed === false ? (
+            <span className="saut-btn saut-btn-ghost !h-10 !px-4" style={{ color: "var(--saut-danger)", pointerEvents: "none" }}>
+              Needs revision
+            </span>
+          ) : (
+            <button type="button" className="saut-btn saut-btn-primary !h-10 !px-4" onClick={onApprove}>
+              {preview.shadowMode ? "Approve shadow run" : "Approve selected & publish (1)"}
+            </button>
+          )}
         </footer>
       </div>
     </div>
