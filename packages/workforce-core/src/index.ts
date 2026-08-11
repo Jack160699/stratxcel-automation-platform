@@ -29,3 +29,5 @@ export * from "./events/emit.ts";
 export * from "./evidence/types.ts";
 export * from "./learning/types.ts";
 export * from "./catalogue/v2-metadata.ts";
+export * from "./company-ops/index.ts";
+export * from "./e2e/index.ts";
