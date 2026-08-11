@@ -21,11 +21,19 @@ function run() {
   assert.throws(() => assertRole("research", "fake_role"), /unknown_role/);
 
   assert.equal(getCapability("research.web")?.status, "PLANNED");
-  assert.equal(getCapability("social.publish")?.status, "NOT_CONFIGURED");
+  assert.equal(getCapability("social.publish")?.status, "AVAILABLE");
+  assert.equal(getCapability("social.schedule")?.status, "AVAILABLE");
+  assert.equal(getCapability("seo.audit")?.status, "AVAILABLE");
+  assert.equal(getCapability("website.generate")?.status, "AVAILABLE");
+  assert.equal(getCapability("crm.read")?.status, "AVAILABLE");
+  assert.equal(getCapability("crm.write")?.status, "AVAILABLE");
+  assert.equal(getCapability("whatsapp.send")?.status, "AVAILABLE");
+  assert.equal(getCapability("analytics.read")?.status, "AVAILABLE");
   assert.equal(getCapability("website.audit")?.status, "AVAILABLE");
   assert.equal(getCapability("media.image_generation")?.status, "NOT_CONFIGURED");
   assert.equal(getCapability("media.carousel_generation")?.status, "UNAVAILABLE");
   assert.equal(getCapability("media.video_generation")?.status, "UNAVAILABLE");
+  assert.equal(getCapability("content.shortform")?.status, "NOT_CONFIGURED");
 
   for (const def of listCapabilities()) {
     assert.ok(def.status, `every capability needs explicit status: ${def.key}`);

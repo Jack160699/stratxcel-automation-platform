@@ -22,3 +22,4 @@ export * from "./handoffs.ts";
 export * from "./retry.ts";
 export * from "./calendar.ts";
 export * from "./whatsapp-bridge-contract.ts";
+export * from "./capability-host.ts";

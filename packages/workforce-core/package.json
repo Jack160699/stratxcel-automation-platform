@@ -9,9 +9,11 @@
     "@stratxcel/audit": "*",
     "@stratxcel/brand-brain": "*",
     "@stratxcel/hermes": "*",
+    "@stratxcel/leads-and-crm": "*",
     "@stratxcel/missions": "*",
     "@stratxcel/search-discovery": "*",
     "@stratxcel/websites-and-domains": "*",
+    "@stratxcel/whatsapp": "*",
     "zod": "^3.24.2"
   }
 }
