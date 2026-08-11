@@ -8,7 +8,7 @@ import {
   type SocialScheduleHostInput,
   type SocialScheduleHostResult,
 } from "@stratxcel/workforce-core";
-import { createSupabaseServiceClient } from "../../supabase/service";
+import { createSupabaseServiceClient } from "../../supabase/service.ts";
 import { scheduleJob } from "../repositories/publishing";
 import { runPublishNow } from "../agent/publish-outcome";
 import { buildScheduleIntent } from "./schedule.ts";
@@ -201,6 +201,22 @@ async function socialPublish(input: SocialPublishHostInput): Promise<SocialPubli
       };
     }
 
+    const accountOwnerId = account?.owner_id ?? null;
+    if (!accountOwnerId) {
+      return {
+        ok: false,
+        errorCategory: "AUTH_CONFIGURATION",
+        errorMessage: "account_owner_missing",
+      };
+    }
+    if (input.ownerId && input.ownerId !== accountOwnerId) {
+      return {
+        ok: false,
+        errorCategory: "POLICY_BLOCK",
+        errorMessage: "owner_mismatch",
+      };
+    }
+
     const scheduledAt = input.scheduledAtIso ?? new Date().toISOString();
     const jobId = await scheduleJob(service, {
       accountId: input.accountId,
@@ -209,14 +225,14 @@ async function socialPublish(input: SocialPublishHostInput): Promise<SocialPubli
       idempotencyKey: input.idempotencyKey,
     });
 
-    const outcome = await runPublishNow(service, jobId, scheduledAt, input.ownerId, {
+    const outcome = await runPublishNow(service, jobId, scheduledAt, accountOwnerId, {
       platform: account?.platform ?? undefined,
     });
 
-    const published =
-      String(outcome.jobStatus).toUpperCase() === "PUBLISHED" && Boolean(outcome.externalPostId);
+    const jobStatus = String(outcome.jobStatus).toUpperCase();
+    const published = jobStatus === "PUBLISHED" && Boolean(outcome.externalPostId);
 
-    if (String(outcome.jobStatus).toUpperCase() === "PUBLISHED" && !outcome.externalPostId) {
+    if (jobStatus === "PUBLISHED" && !outcome.externalPostId) {
       return {
         ok: false,
         errorCategory: "PROVIDER_FAILURE",
@@ -240,6 +256,7 @@ async function socialPublish(input: SocialPublishHostInput): Promise<SocialPubli
         artifactId: input.artifactId,
         outcomeNote: outcome.outcomeNote,
         mode: outcome.mode ?? null,
+        ownerDerivedFromAccount: true,
       },
     };
   } catch (err) {

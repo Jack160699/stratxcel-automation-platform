@@ -6,11 +6,13 @@ import {
   type ProviderReadinessProbeResult,
 } from "../providers/types.ts";
 import { buildCapabilityExecutionReceipt } from "./receipts.ts";
+import { getCapabilityHost } from "./host.ts";
 
 const PROVIDER_KEY = "website-generate-domains";
 
 /**
  * Draft-only website generation. Never claims production deploy authorization.
+ * Persists the full generated site through the host artifact binder when available.
  */
 export function createWebsiteGenerateProvider(): CapabilityProvider {
   return {
@@ -64,7 +66,43 @@ export function createWebsiteGenerateProvider(): CapabilityProvider {
           typeof input.input?.contactPhone === "string" ? input.input.contactPhone : undefined,
       });
 
-      const draftId = `website_draft_${crypto.randomUUID()}`;
+      const persist = getCapabilityHost().persistMissionArtifact;
+      let artifactId: string | null = null;
+      if (persist) {
+        const persisted = await persist({
+          tenantId: input.tenantId,
+          missionId: input.missionId,
+          kind: "website_draft",
+          storageRef: `workforce://website.generate/${input.requestId}`,
+          providerKey: PROVIDER_KEY,
+          capability: "website.generate",
+          requestId: input.requestId,
+          metadata: {
+            draftOnly: true,
+            productionDeployAuthorized: false,
+            deployed: false,
+            previewSubdomain: site.previewSubdomain,
+            pageCount: site.pages.length,
+            site,
+            provenance: {
+              provider: PROVIDER_KEY,
+              requestId: input.requestId,
+              capability: "website.generate",
+            },
+          },
+        });
+        if (!persisted.ok) {
+          return {
+            ok: false,
+            providerKey: PROVIDER_KEY,
+            errorCategory: "PROVIDER_FAILURE",
+            errorMessage: persisted.errorMessage,
+            usage: unknownCostUsage({ requests: 0 }),
+          };
+        }
+        artifactId = persisted.id;
+      }
+
       const receipt = buildCapabilityExecutionReceipt({
         capability: "website.generate",
         providerKey: PROVIDER_KEY,
@@ -72,21 +110,25 @@ export function createWebsiteGenerateProvider(): CapabilityProvider {
         missionId: input.missionId,
         requestId: input.requestId,
         externalMutation: false,
+        approvalUsed:
+          input.authorization?.approvalGranted === true ||
+          input.authorization?.standingAuthorizationGranted === true,
+        outputArtifactIds: artifactId ? [artifactId] : [],
         detail: {
-          draftId,
           pageCount: site.pages.length,
           previewSubdomain: site.previewSubdomain,
           productionDeployAuthorized: false,
           draftOnly: true,
           deployed: false,
+          artifactPersisted: Boolean(artifactId),
         },
       });
 
       return {
         ok: true,
         providerKey: PROVIDER_KEY,
-        providerReference: draftId,
-        outputArtifactIds: [draftId],
+        providerReference: artifactId ?? site.previewSubdomain,
+        outputArtifactIds: artifactId ? [artifactId] : [],
         usage: unknownCostUsage({ requests: 1 }),
         receipt: receipt as unknown as Record<string, unknown>,
       };

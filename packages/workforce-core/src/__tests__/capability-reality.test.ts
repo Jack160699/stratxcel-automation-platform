@@ -60,8 +60,9 @@ function run() {
   }
 
   const counts = countCapabilitiesByStatus();
-  // website.audit + current image runtime + 8 newly wired capabilities.
-  assert.equal(counts.AVAILABLE, 10);
+  // website.audit + current image runtime + seven newly wired capabilities.
+  // analytics.read is truthfully downgraded because its real metric readers are not wired yet.
+  assert.equal(counts.AVAILABLE, 9);
   assert.equal(counts.UNAVAILABLE, 2); // video + carousel
   assert.equal(counts.NOT_CONFIGURED, 4);
   assert.equal(
@@ -82,8 +83,9 @@ function run() {
   assert.equal(getCapability("crm.read")?.status, "AVAILABLE");
   assert.equal(getCapability("crm.write")?.status, "AVAILABLE");
   assert.equal(getCapability("whatsapp.send")?.status, "AVAILABLE");
-  assert.equal(getCapability("analytics.read")?.status, "AVAILABLE");
+  assert.equal(getCapability("analytics.read")?.status, "NOT_CONFIGURED");
   assert.deepEqual(getCapability("analytics.read")?.providerKeys, ["analytics-read-reporting"]);
+  assert.equal(getCapability("social.schedule")?.approvalRequired, true);
   assert.equal(getCapability("website.audit")?.status, "AVAILABLE");
   assert.equal(getCapability("website.audit")?.requiredEntitlementClass, null);
   assert.equal(getCapability("website.generate")?.requiredEntitlementClass, "website_maintenance");

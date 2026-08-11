@@ -120,7 +120,7 @@ export const CAPABILITY_REGISTRY: Record<CapabilityKey, CapabilityDefinition> = 
     externalMutation: false,
     status: "AVAILABLE",
     requiredEntitlementClass: "social_posts",
-    approvalRequired: false,
+    approvalRequired: true,
     supportedInputArtifacts: ["social_final"],
     supportedOutputArtifacts: ["schedule_receipt"],
     providerKeys: ["social-schedule-queue"],
@@ -357,7 +357,7 @@ export const CAPABILITY_REGISTRY: Record<CapabilityKey, CapabilityDefinition> = 
     label: "Analytics read",
     riskLevel: "low",
     externalMutation: false,
-    status: "AVAILABLE",
+    status: "NOT_CONFIGURED",
     requiredEntitlementClass: null,
     approvalRequired: false,
     supportedInputArtifacts: [],
@@ -366,7 +366,7 @@ export const CAPABILITY_REGISTRY: Record<CapabilityKey, CapabilityDefinition> = 
     integrationRequirements: ["analytics_property"],
     tenantScoped: true,
     implementationPath:
-      "packages/workforce-core/src/adapters/analytics.ts + lib/reporting/capability-host.ts",
+      "status/diagnostics only today — real metric readers not wired (GA4/social_metrics exist but not through this capability)",
   }),
   "analytics.attribution": cap("analytics.attribution", {
     label: "Analytics attribution",
@@ -533,4 +533,42 @@ export function countCapabilitiesByStatus(): Record<CapabilityStatus, number> {
     counts[def.status] += 1;
   }
   return counts;
+}
+
+/**
+ * Static catalogue AVAILABLE count vs runtime-operational count.
+ * Runtime requires provider probe ready for the given tenant/env.
+ */
+export async function countCapabilityOperationalMatrix(args: {
+  tenantId: string;
+}): Promise<{
+  staticAvailable: number;
+  runtimeOperational: number;
+  staticByStatus: Record<CapabilityStatus, number>;
+}> {
+  const staticByStatus = countCapabilitiesByStatus();
+  const { getProvidersForCapability } = await import("../providers/registry.ts");
+  let runtimeOperational = 0;
+  for (const def of listCapabilities()) {
+    if (def.status !== "AVAILABLE") continue;
+    const providers = getProvidersForCapability(def.key);
+    let ready = false;
+    for (const provider of providers) {
+      if (provider.status !== "IMPLEMENTED") continue;
+      const probe = await provider.probeReadiness({
+        tenantId: args.tenantId,
+        capability: def.key,
+      });
+      if (probe.ready && probe.status === "IMPLEMENTED") {
+        ready = true;
+        break;
+      }
+    }
+    if (ready) runtimeOperational += 1;
+  }
+  return {
+    staticAvailable: staticByStatus.AVAILABLE,
+    runtimeOperational,
+    staticByStatus,
+  };
 }

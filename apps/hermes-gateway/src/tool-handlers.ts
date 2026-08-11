@@ -2,7 +2,6 @@ import { createServiceClient as createBrandBrainClient, getCurrentBrandBrain } f
 import { createServiceClient as createMissionsClient, appendMissionEvent, getServiceCatalogueEntry } from "@stratxcel/missions";
 import { createServiceClient as createApprovalsClient, requestApproval, listPendingApprovals } from "@stratxcel/approvals";
 import { createServiceClient as createHandoffClient, createHumanHandoff } from "@stratxcel/human-handoff";
-import { createServiceClient as createCrmClient, createLead } from "@stratxcel/leads-and-crm";
 import { recordAuditEvent, createServiceClient as createAuditClient } from "@stratxcel/audit";
 import type { ToolName } from "@stratxcel/hermes";
 import { STRATXCEL_CONTROLLED_TOOLS } from "@stratxcel/hermes";
@@ -128,16 +127,50 @@ export const TOOL_HANDLERS: Partial<Record<ToolName, ToolHandler>> = {
   },
 
   async create_crm_lead(ctx, input) {
-    const supabase = createCrmClient();
-    const lead = await createLead(supabase, {
-      tenantId: ctx.tenantId,
-      source: "manual",
-      contactName: input.contactName as string | undefined,
-      contactPhone: input.contactPhone as string | undefined,
-      contactEmail: input.contactEmail as string | undefined,
-      metadata: (input.metadata as Record<string, unknown>) ?? {},
+    // Route through canonical Workforce capability executor — never bypass
+    // tenant/entitlement/receipt policy with a direct createLead call alone.
+    const { executeWorkforceCapabilityServer } = await import(
+      "../../../lib/workforce/execute-capability.ts"
+    );
+    const result = await executeWorkforceCapabilityServer({
+      requestId: `hermes-crm-${ctx.correlationId}`,
+      missionId: ctx.missionId,
+      claimedTenantId: ctx.tenantId,
+      capability: "crm.write",
+      department: "crm",
+      role: "crm_writer",
+      inputArtifactIds: [],
+      authorization: {
+        approvalGranted: true,
+        standingAuthorizationGranted: true,
+        authorizationKind: "HERMES_MISSION_TOOL",
+        authorizationCapability: "crm.write",
+        authorizationScopeId: ctx.missionId,
+      },
+      input: {
+        operation: "create_lead",
+        contactName: input.contactName,
+        contactPhone: input.contactPhone,
+        contactEmail: input.contactEmail,
+        source: "manual",
+        metadata: {
+          ...((input.metadata as Record<string, unknown>) ?? {}),
+          hermesCorrelationId: ctx.correlationId,
+        },
+        idempotencyKey: `hermes-crm-lead:${ctx.missionId}:${ctx.correlationId}`,
+      },
     });
-    return { leadId: lead.id };
+
+    if (result.status !== "SUCCEEDED") {
+      return {
+        ok: false,
+        status: result.status,
+        reasonCode: result.reasonCode ?? null,
+        humanReason: result.humanReason ?? "crm.write_failed",
+      };
+    }
+    const leadId = result.providerReference ?? result.outputArtifactIds[0] ?? null;
+    return { leadId, receipt: result.receipt ?? null, capabilityStatus: result.status };
   },
 
   async attach_research_evidence(ctx, input) {

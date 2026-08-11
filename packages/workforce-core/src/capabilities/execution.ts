@@ -227,6 +227,23 @@ export async function requestCapability(
 
   const run = deps.executeProvider ?? executeWithFailover;
   providerInvocationCount += 1;
+  const trustedAuthorization = {
+    approvalGranted: auth.approvalGranted === true,
+    standingAuthorizationGranted:
+      auth.standingAuthorizationGranted === true &&
+      auth.authorizationCapability === request.capability,
+    authorizationKind:
+      typeof auth.authorizationKind === "string" ? auth.authorizationKind : null,
+    authorizationCapability:
+      typeof auth.authorizationCapability === "string"
+        ? auth.authorizationCapability
+        : null,
+    authorizationScopeId:
+      typeof auth.authorizationScopeId === "string" ? auth.authorizationScopeId : null,
+    shadowMode: auth.shadowMode === true,
+    killSwitchActive: auth.killSwitchActive === true,
+    actorKind: "workforce" as const,
+  };
   const outcome = await run(request.capability, {
     requestId: request.requestId,
     tenantId: request.tenantId,
@@ -234,6 +251,7 @@ export async function requestCapability(
     capability: request.capability,
     inputArtifactIds: request.inputArtifactIds,
     input: request.input,
+    authorization: trustedAuthorization,
   });
 
   if (!outcome.result.ok) {
@@ -268,10 +286,18 @@ export async function requestCapability(
   }
 
   const usage = outcome.result.usage;
+  const nonTerminal = outcome.result.executionStatus;
+  const status =
+    nonTerminal === "QUEUED" || nonTerminal === "IN_PROGRESS"
+      ? nonTerminal
+      : nonTerminal === "FAILED"
+        ? "FAILED"
+        : "SUCCEEDED";
+
   return {
     requestId: request.requestId,
     capability: request.capability,
-    status: "SUCCEEDED",
+    status,
     outputArtifactIds: outcome.result.outputArtifactIds ?? [],
     providerKey: outcome.result.providerKey,
     providerReference: outcome.result.providerReference,
@@ -282,8 +308,15 @@ export async function requestCapability(
       costKnown: usage?.costKnown === true,
     },
     receipt: outcome.result.receipt,
-    reasonCode: "READY",
-    humanReason: humanReasonForCode("READY"),
+    reasonCode: status === "SUCCEEDED" ? "READY" : status === "FAILED" ? "POLICY_BLOCK" : "READY",
+    humanReason:
+      status === "QUEUED"
+        ? "Capability accepted and queued; external completion not yet confirmed."
+        : status === "IN_PROGRESS"
+          ? "Capability execution in progress; external completion not yet confirmed."
+          : status === "FAILED"
+            ? "Provider reported failure after acceptance."
+            : humanReasonForCode("READY"),
     evaluatedAt,
   };
 }

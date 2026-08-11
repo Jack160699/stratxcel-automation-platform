@@ -22,22 +22,14 @@ export function createAnalyticsReadProvider(): CapabilityProvider {
   return {
     key: PROVIDER_KEY,
     capabilityKeys: ["analytics.read"],
-    status: "IMPLEMENTED",
+    status: "NOT_CONFIGURED",
     probeReadiness: (): ProviderReadinessProbeResult => {
-      const host = getCapabilityHost();
-      if (!host.analyticsRead) {
-        return {
-          ready: false,
-          status: "NOT_CONFIGURED",
-          reasonCode: "PROVIDER_NOT_CONFIGURED",
-          details: "analyticsRead host binding missing",
-        };
-      }
       return {
-        ready: true,
-        status: "IMPLEMENTED",
-        reasonCode: "READY",
-        details: "Reporting analytics host bound",
+        ready: false,
+        status: "NOT_CONFIGURED",
+        reasonCode: "PROVIDER_NOT_CONFIGURED",
+        details:
+          "analytics.read is diagnostics/status only until real metric readers are wired",
       };
     },
     execute: async (input): Promise<ProviderExecuteResult> => {
@@ -81,7 +73,6 @@ export function createAnalyticsReadProvider(): CapabilityProvider {
         };
       });
 
-      const snapshotId = `analytics_snapshot_${crypto.randomUUID()}`;
       const receipt = buildCapabilityExecutionReceipt({
         capability: "analytics.read",
         providerKey: PROVIDER_KEY,
@@ -92,19 +83,19 @@ export function createAnalyticsReadProvider(): CapabilityProvider {
         externalMutation: false,
         externalMutationOccurred: false,
         inputArtifactIds: input.inputArtifactIds,
-        outputArtifactIds: [snapshotId],
+        outputArtifactIds: [],
         detail: {
-          kind: "analytics_evidence",
-          snapshotId,
+          kind: "analytics_status_diagnostics",
           metricsInvented: false,
+          note: "status/connectivity only — not metric evidence",
         },
       });
 
       return {
         ok: true,
         providerKey: PROVIDER_KEY,
-        providerReference: snapshotId,
-        outputArtifactIds: [snapshotId],
+        providerReference: `analytics_status_${input.requestId}`,
+        outputArtifactIds: [],
         usage: unknownCostUsage({ requests: 1 }),
         receipt: { ...receipt, sources } as unknown as Record<string, unknown>,
       };

@@ -18,7 +18,8 @@ async function run() {
   resetAndBootstrapProvidersForTests();
 
   const counts = countCapabilitiesByStatus();
-  assert.equal(counts.AVAILABLE, 9);
+  assert.equal(counts.AVAILABLE, 8);
+  assert.equal(counts.NOT_CONFIGURED, 5);
   assert.equal(counts.UNAVAILABLE, 2);
   assert.equal(getCapabilityOperationClass("social.publish"), "EXTERNAL_MUTATION");
   assert.throws(() => assertSafePublicHttpUrl("http://127.0.0.1/x"), /private|unsafe_url/);
@@ -360,19 +361,78 @@ async function run() {
       capability: "social.schedule",
       inputArtifactIds: ["final-1"],
       requestedAt: new Date().toISOString(),
-      authorizationContext: { trustedTenantId: A },
+      authorizationContext: { trustedTenantId: A, approvalGranted: true },
       input: {
         accountId: "acct-a",
         variantId: "v1",
         scheduledAtIso: future(),
         timeZone: "Asia/Kolkata",
         idempotencyKey: "s-idem",
-        approvalGranted: true,
+        // Raw payload approval must be ignored — trusted context above is authority.
+        approvalGranted: false,
       },
     },
     socialDeps,
   );
   assert.equal(sched.status, "SUCCEEDED", String(sched.humanReason ?? sched.reasonCode ?? sched.status));
+
+  // Attack: trusted approval false + raw input approval true → blocked
+  const schedAttack = await requestCapability(
+    {
+      requestId: "s-attack",
+      missionId: "m-a",
+      tenantId: A,
+      department: "social",
+      role: "scheduler",
+      capability: "social.schedule",
+      inputArtifactIds: ["final-1"],
+      requestedAt: new Date().toISOString(),
+      authorizationContext: { trustedTenantId: A, approvalGranted: false },
+      input: {
+        accountId: "acct-a",
+        variantId: "v1",
+        scheduledAtIso: future(),
+        timeZone: "Asia/Kolkata",
+        idempotencyKey: "s-attack",
+        approvalGranted: true,
+        standingAuthorizationGranted: true,
+        standingAuthorizationCapability: "social.schedule",
+      },
+    },
+    socialDeps,
+  );
+  assert.notEqual(schedAttack.status, "SUCCEEDED");
+  assert.equal(schedAttack.status, "WAITING_APPROVAL");
+
+  // Standing auth for social.schedule (trusted) allows schedule
+  const schedStanding = await requestCapability(
+    {
+      requestId: "s-stand",
+      missionId: "m-a",
+      tenantId: A,
+      department: "social",
+      role: "scheduler",
+      capability: "social.schedule",
+      inputArtifactIds: ["final-1"],
+      requestedAt: new Date().toISOString(),
+      authorizationContext: {
+        trustedTenantId: A,
+        approvalGranted: false,
+        standingAuthorizationGranted: true,
+        authorizationKind: "PACKAGE_AUTO_PUBLISH",
+        authorizationCapability: "social.schedule",
+      },
+      input: {
+        accountId: "acct-a",
+        variantId: "v1",
+        scheduledAtIso: future(),
+        timeZone: "Asia/Kolkata",
+        idempotencyKey: "s-stand",
+      },
+    },
+    socialDeps,
+  );
+  assert.equal(schedStanding.status, "SUCCEEDED");
 
   const pubNo = await requestCapability(
     {
@@ -450,6 +510,38 @@ async function run() {
   bindCapabilityHost({
     socialPublish: async () => ({
       ok: true,
+      jobId: "jq",
+      jobStatus: "SCHEDULED",
+      providerPostId: null,
+      externalMutationOccurred: false,
+    }),
+  });
+  const pubQueued = await requestCapability(
+    {
+      requestId: "pq",
+      missionId: "m-a",
+      tenantId: A,
+      department: "social",
+      role: "publisher",
+      capability: "social.publish",
+      inputArtifactIds: ["final-1"],
+      requestedAt: new Date().toISOString(),
+      authorizationContext: { trustedTenantId: A, approvalGranted: true, shadowMode: false },
+      input: {
+        accountId: "acct-a",
+        variantId: "v1",
+        artifactId: "final-1",
+        idempotencyKey: "pq",
+      },
+    },
+    socialDeps,
+  );
+  assert.equal(pubQueued.status, "QUEUED");
+  assert.notEqual(pubQueued.status, "SUCCEEDED");
+
+  bindCapabilityHost({
+    socialPublish: async () => ({
+      ok: true,
       jobId: "jx",
       jobStatus: "PUBLISHED",
       providerPostId: null,
@@ -518,12 +610,11 @@ async function run() {
     },
     { integrationSnapshot: { tenantId: A, connected: ["analytics_property"] } },
   );
-  assert.equal(an.status, "SUCCEEDED", String(an.humanReason ?? an.reasonCode ?? an.status));
-  const ga = (
-    an.receipt as { sources?: Array<{ source: string; metrics: unknown; available: boolean }> }
-  )?.sources?.find((s) => s.source === "google_analytics");
-  assert.equal(ga?.available, false);
-  assert.equal(ga?.metrics, null);
+  assert.notEqual(an.status, "SUCCEEDED");
+  assert.ok(
+    an.status === "WAITING_CONFIGURATION" || an.status === "BLOCKED",
+    "analytics.read truthfully not operational without real metric readers",
+  );
 
   // WhatsApp unbound → waiting configuration
   resetCapabilityHostForTests();
@@ -570,6 +661,72 @@ async function run() {
     },
   );
   assert.equal(wa.status, "WAITING_CONFIGURATION");
+
+  // WhatsApp: model isHumanInitiated must never escalate — adapter always forces false.
+  {
+    let seenHuman: boolean | undefined;
+    let seenActor: string | undefined;
+    const prevMode = process.env.WHATSAPP_INTEGRATION_MODE;
+    process.env.WHATSAPP_INTEGRATION_MODE = "shadow";
+    bindCapabilityHost({
+      getServiceClient: () => ({ from: () => ({}) }) as never,
+    });
+    try {
+      const authProbe = await requestCapability(
+        {
+          requestId: "wa-human",
+          missionId: "m-a",
+          tenantId: A,
+          department: "whatsapp",
+          role: "sender",
+          capability: "whatsapp.send",
+          inputArtifactIds: ["d1"],
+          requestedAt: new Date().toISOString(),
+          authorizationContext: { trustedTenantId: A, approvalGranted: true },
+          input: {
+            leadId: "l1",
+            body: "hi",
+            idempotencyKey: "wa-human",
+            isHumanInitiated: true,
+          },
+        },
+        {
+          entitlementSnapshot: {
+            tenantId: A,
+            metrics: { whatsapp_contacts: 5 },
+            remaining: { whatsapp_contacts: 5 },
+          },
+          integrationSnapshot: { tenantId: A, connected: ["whatsapp_binding"] },
+          artifactResolver: (id) =>
+            id === "d1"
+              ? { id, tenantId: A, missionId: "m-a", kind: "whatsapp_message_draft", status: "approved" }
+              : null,
+          executeProvider: async (_cap, input) => {
+            seenHuman = input.input?.isHumanInitiated === true;
+            seenActor = input.authorization?.actorKind;
+            assert.equal(input.authorization?.actorKind, "workforce");
+            return {
+              result: {
+                ok: false,
+                providerKey: "whatsapp-meta",
+                errorCategory: "POLICY_BLOCK",
+                errorMessage: "conversation_awaiting_human",
+                usage: { costKnown: false },
+              },
+              attempts: 1,
+              providersTried: ["whatsapp-meta"],
+            };
+          },
+        },
+      );
+      assert.equal(seenHuman, true, "payload may carry the flag");
+      assert.equal(seenActor, "workforce");
+      assert.notEqual(authProbe.status, "SUCCEEDED");
+    } finally {
+      if (prevMode === undefined) delete process.env.WHATSAPP_INTEGRATION_MODE;
+      else process.env.WHATSAPP_INTEGRATION_MODE = prevMode;
+    }
+  }
 
   const forged = await requestCapability({
     requestId: "forge",

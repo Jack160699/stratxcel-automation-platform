@@ -7,7 +7,7 @@ import {
   type AnalyticsReadHostResult,
   type AnalyticsSourceSnapshot,
 } from "@stratxcel/workforce-core";
-import { createSupabaseServiceClient } from "../supabase/service";
+import { createSupabaseServiceClient } from "../supabase/service.ts";
 import {
   deriveGoogleAnalyticsStatus,
   deriveSearchConsoleStatus,
