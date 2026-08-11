@@ -45,7 +45,7 @@ async function analyticsRead(input: AnalyticsReadHostInput): Promise<AnalyticsRe
       (r) => r.tenant_id === input.tenantId,
     );
     const wanted = input.sources?.length
-      ? new Set(input.sources.map((s) => s.toLowerCase()))
+      ? new Set(input.sources.map((s: string) => s.toLowerCase()))
       : null;
 
     const sources: AnalyticsSourceSnapshot[] = [];
@@ -92,5 +92,3 @@ export function ensureAnalyticsCapabilityHostBound(): void {
   bound = true;
   bindCapabilityHost({ analyticsRead });
 }
-
-ensureAnalyticsCapabilityHostBound();

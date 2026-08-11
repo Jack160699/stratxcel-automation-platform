@@ -167,7 +167,7 @@ async function executeCrmRead(
     providerReference: snapshotId,
     outputArtifactIds: [snapshotId],
     usage: unknownCostUsage({ requests: 1 }),
-    receipt: { ...receipt, leads: safe },
+    receipt: { ...receipt, leads: safe } as unknown as Record<string, unknown>,
   };
 }
 
@@ -217,7 +217,7 @@ async function executeCrmWrite(
         providerReference: String(prior.id),
         outputArtifactIds: [String(prior.id)],
         usage: unknownCostUsage({ requests: 1 }),
-        receipt,
+        receipt: receipt as unknown as Record<string, unknown>,
       };
     }
 
@@ -280,7 +280,7 @@ async function executeCrmWrite(
       providerReference: lead.id,
       outputArtifactIds: [lead.id],
       usage: unknownCostUsage({ requests: 1 }),
-      receipt,
+      receipt: receipt as unknown as Record<string, unknown>,
     };
   }
 
@@ -371,7 +371,7 @@ async function executeCrmWrite(
     providerReference: leadId,
     outputArtifactIds: [leadId],
     usage: unknownCostUsage({ requests: 1 }),
-    receipt,
+    receipt: receipt as unknown as Record<string, unknown>,
   };
 }
 

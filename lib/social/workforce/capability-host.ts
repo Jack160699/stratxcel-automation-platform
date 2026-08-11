@@ -260,5 +260,3 @@ export function ensureSocialCapabilityHostBound(): void {
   bound = true;
   bindCapabilityHost({ socialSchedule, socialPublish });
 }
-
-ensureSocialCapabilityHostBound();

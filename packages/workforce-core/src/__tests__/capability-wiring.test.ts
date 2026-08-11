@@ -51,7 +51,7 @@ async function run() {
           : null,
     },
   );
-  assert.equal(seo.status, "SUCCEEDED", seo.humanReason);
+  assert.equal(seo.status, "SUCCEEDED", String(seo.humanReason ?? seo.reasonCode ?? seo.status));
   assert.equal((seo.receipt as { kind?: string })?.kind, "capability_execution_receipt");
 
   const seoCross = await requestCapability(
@@ -101,7 +101,7 @@ async function run() {
         id === "brief-1" ? { id, tenantId: A, missionId: "m-a", kind: "page_brief" } : null,
     },
   );
-  assert.equal(site.status, "SUCCEEDED", site.humanReason);
+  assert.equal(site.status, "SUCCEEDED", String(site.humanReason ?? site.reasonCode ?? site.status));
   const siteDetail = (site.receipt as { detail?: Record<string, unknown> })?.detail ?? {};
   assert.ok(siteDetail.draftOnly === true || siteDetail.deployed === false || siteDetail.productionDeployAuthorized === false);
 
@@ -255,7 +255,7 @@ async function run() {
     },
     crmWriteDeps,
   );
-  assert.equal(w1.status, "SUCCEEDED", w1.humanReason);
+  assert.equal(w1.status, "SUCCEEDED", String(w1.humanReason ?? w1.reasonCode ?? w1.status));
 
   const w2 = await requestCapability(
     {
@@ -266,7 +266,7 @@ async function run() {
     },
     crmWriteDeps,
   );
-  assert.equal(w2.status, "SUCCEEDED", w2.humanReason);
+  assert.equal(w2.status, "SUCCEEDED", String(w2.humanReason ?? w2.reasonCode ?? w2.status));
   assert.equal((w2.receipt as { detail?: { idempotentReplay?: boolean } })?.detail?.idempotentReplay, true);
   assert.equal(store.filter((x) => x.tenant_id === A).length, 1);
 
@@ -328,12 +328,12 @@ async function run() {
     analyticsRead: async () => ({
       ok: true,
       sources: [
-        { source: "instagram", status: "connected", reason: null, metrics: { impressions: 3 } },
+        { source: "instagram", status: "connected", reason: null, metrics: { impressions: 3 } as Record<string, number> },
         {
           source: "google_analytics",
           status: "not_configured",
           reason: "missing",
-          metrics: { sessions: 0 },
+          metrics: { sessions: 0 } as Record<string, number>,
         },
       ],
     }),
@@ -372,7 +372,7 @@ async function run() {
     },
     socialDeps,
   );
-  assert.equal(sched.status, "SUCCEEDED", sched.humanReason);
+  assert.equal(sched.status, "SUCCEEDED", String(sched.humanReason ?? sched.reasonCode ?? sched.status));
 
   const pubNo = await requestCapability(
     {
@@ -444,7 +444,7 @@ async function run() {
     },
     socialDeps,
   );
-  assert.equal(pubOk.status, "SUCCEEDED", pubOk.humanReason);
+  assert.equal(pubOk.status, "SUCCEEDED", String(pubOk.humanReason ?? pubOk.reasonCode ?? pubOk.status));
   assert.ok((pubOk.receipt as { providerExternalId?: string })?.providerExternalId);
 
   bindCapabilityHost({
@@ -486,12 +486,12 @@ async function run() {
     analyticsRead: async () => ({
       ok: true,
       sources: [
-        { source: "instagram", status: "connected", reason: null, metrics: { impressions: 3 } },
+        { source: "instagram", status: "connected", reason: null, metrics: { impressions: 3 } as Record<string, number> },
         {
           source: "google_analytics",
           status: "not_configured",
           reason: "missing",
-          metrics: { sessions: 0 },
+          metrics: { sessions: 0 } as Record<string, number>,
         },
       ],
     }),
@@ -518,7 +518,7 @@ async function run() {
     },
     { integrationSnapshot: { tenantId: A, connected: ["analytics_property"] } },
   );
-  assert.equal(an.status, "SUCCEEDED", an.humanReason);
+  assert.equal(an.status, "SUCCEEDED", String(an.humanReason ?? an.reasonCode ?? an.status));
   const ga = (
     an.receipt as { sources?: Array<{ source: string; metrics: unknown; available: boolean }> }
   )?.sources?.find((s) => s.source === "google_analytics");

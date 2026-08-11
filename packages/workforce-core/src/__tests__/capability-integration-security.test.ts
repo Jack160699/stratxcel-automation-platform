@@ -72,26 +72,49 @@ async function run() {
         `no simulated receipt: ${provider.key}`,
       );
     } else {
-      assert.equal(probe.ready, true, `implemented should probe ready: ${provider.key}`);
-      const result = await provider.execute({
-        requestId: "probe-impl",
-        tenantId: "tenant-a",
-        missionId: "m",
-        capability: provider.capabilityKeys[0]!,
-        inputArtifactIds: [],
-      });
-      assert.notEqual(
-        (result.receipt as { simulated?: boolean } | undefined)?.simulated,
-        true,
-        `implemented production provider must not mark simulated: ${provider.key}`,
-      );
-      // Production IMPLEMENTED providers must never return ok:true + simulated:true
-      if (result.ok) {
+      // Host-bound adapters (Social / analytics / CRM without env) stay IMPLEMENTED
+      // in catalogue wiring but probe not-ready until the host/env is bound.
+      if (!probe.ready) {
+        assert.ok(
+          probe.status === "NOT_CONFIGURED" ||
+            probe.reasonCode === "PROVIDER_NOT_CONFIGURED",
+          `unimplemented host probe must be NOT_CONFIGURED: ${provider.key}`,
+        );
+        const result = await provider.execute({
+          requestId: "probe-impl-unbound",
+          tenantId: "tenant-a",
+          missionId: "m",
+          capability: provider.capabilityKeys[0]!,
+          inputArtifactIds: [],
+        });
+        assert.equal(result.ok, false, `unbound host provider must fail closed: ${provider.key}`);
         assert.notEqual(
           (result.receipt as { simulated?: boolean } | undefined)?.simulated,
           true,
-          `no simulated success stub: ${provider.key}`,
+          `no simulated receipt: ${provider.key}`,
         );
+      } else {
+        assert.equal(probe.ready, true, `implemented should probe ready: ${provider.key}`);
+        const result = await provider.execute({
+          requestId: "probe-impl",
+          tenantId: "tenant-a",
+          missionId: "m",
+          capability: provider.capabilityKeys[0]!,
+          inputArtifactIds: [],
+        });
+        assert.notEqual(
+          (result.receipt as { simulated?: boolean } | undefined)?.simulated,
+          true,
+          `implemented production provider must not mark simulated: ${provider.key}`,
+        );
+        // Production IMPLEMENTED providers must never return ok:true + simulated:true
+        if (result.ok) {
+          assert.notEqual(
+            (result.receipt as { simulated?: boolean } | undefined)?.simulated,
+            true,
+            `no simulated success stub: ${provider.key}`,
+          );
+        }
       }
     }
   }
@@ -101,7 +124,8 @@ async function run() {
   assert.ok(!productionKeys.some((k) => k.includes("simulat")), "no simulated stub keys in bootstrap");
   assert.ok(productionKeys.includes("website-audit-internal"));
   assert.ok(productionKeys.includes("social-publish-meta"));
-  assert.equal(getCapability("social.publish")?.status, "NOT_CONFIGURED");
+  // Catalogue AVAILABLE means adapter wired; runtime still probes host binding.
+  assert.equal(getCapability("social.publish")?.status, "AVAILABLE");
   assert.equal(getCapability("website.audit")?.status, "AVAILABLE");
 
   // --- requestCapabilityCannotReturnSucceededFromSimulatedRuntimeProvider ---
@@ -185,7 +209,8 @@ async function run() {
       capabilityKeys: ["social.publish"],
     }),
   );
-  // social.publish remains NOT_CONFIGURED in catalogue → still waiting
+  // social.publish is AVAILABLE in catalogue; simulated registry provider still cannot SUCCEED
+  // via production path without a non-simulated host-backed adapter.
   const withSimProvider = await requestCapability({
     requestId: "sim-reg",
     missionId: "mission-1",
@@ -290,7 +315,7 @@ async function run() {
   assert.notEqual(noInjectPublish.status, "SUCCEEDED");
 
   // --- unrelatedDisabledFeatureFlagDoesNotBlockCapability ---
-  // seo.audit requiredFeatureFlags: ["search_web"]
+  // seo.audit requiredFeatureFlags: ["search_web"] — unrelated flags must not block.
   const unrelated = await requestCapability({
     requestId: "seo-unrelated-flag",
     missionId: "mission-1",
@@ -301,6 +326,7 @@ async function run() {
     inputArtifactIds: ["snap-1"],
     requestedAt: new Date().toISOString(),
     authorizationContext: { trustedTenantId: "tenant-a" },
+    input: { propertyUrl: "https://example.com", pages: auditPages },
   }, {
     environment: {
       featureFlags: {
@@ -314,9 +340,7 @@ async function run() {
         : null,
   });
   assert.notEqual(unrelated.reasonCode, "FEATURE_FLAG_DISABLED");
-  assert.ok(
-    unrelated.status === "WAITING_CONFIGURATION" || unrelated.status === "BLOCKED",
-  );
+  assert.equal(unrelated.status, "SUCCEEDED");
 
   const unrelatedReady = resolveCapabilityReadiness({
     capabilityKey: "seo.audit",
@@ -330,7 +354,7 @@ async function run() {
     requiredInputArtifactsPresent: true,
   });
   assert.notEqual(unrelatedReady.reasonCode, "FEATURE_FLAG_DISABLED");
-  assert.equal(unrelatedReady.executable, false);
+  assert.equal(unrelatedReady.executable, true);
 
   // website.audit with unrelated flags must remain executable
   const websiteUnrelated = resolveCapabilityReadiness({
@@ -649,8 +673,8 @@ async function run() {
   assert.equal(plannerReady.reasonCode, "POLICY_BLOCK");
 
   // --- revenueDomainApprovalAloneCannotBypassCapabilityGate ---
-  assert.equal(getCapability("whatsapp.send")?.status, "NOT_CONFIGURED");
-  assert.equal(getCapability("crm.write")?.status, "NOT_CONFIGURED");
+  assert.equal(getCapability("whatsapp.send")?.status, "AVAILABLE");
+  assert.equal(getCapability("crm.write")?.status, "AVAILABLE");
 
   const revenueGate = authorizeRevenueMutation({
     tenantId: "tenant-a",
@@ -667,26 +691,19 @@ async function run() {
   });
   assert.equal(revenueGate.allowed, true);
 
-  const whatsappReady = resolveCapabilityReadiness({
-    capabilityKey: "whatsapp.send",
+  // Catalogue readiness can be executable while host/env is still unbound.
+  // Prove revenue eligibility still fails when capabilityExecutable is forced false,
+  // and that unbound host still blocks requestCapability.
+  const notConfiguredCapReady = resolveCapabilityReadiness({
+    capabilityKey: "media.image_generation",
     trustedTenantId: "tenant-a",
-    entitlementSnapshot: {
-      tenantId: "tenant-a",
-      metrics: { whatsapp_contacts: 100 },
-      remaining: { whatsapp_contacts: 50 },
-    },
-    integrationSnapshot: {
-      tenantId: "tenant-a",
-      connected: ["whatsapp_binding"],
-    },
-    authorization: { approvalGranted: true, shadowMode: false },
     requiredInputArtifactsPresent: true,
   });
-  assert.equal(whatsappReady.executable, false);
+  assert.equal(notConfiguredCapReady.executable, false);
   assert.equal(
     isRevenueExecutionEligible({
       revenueGate,
-      capabilityExecutable: whatsappReady.executable,
+      capabilityExecutable: notConfiguredCapReady.executable,
     }),
     false,
     "revenue allowed + capabilityExecutable false → overall false",
@@ -705,6 +722,7 @@ async function run() {
       trustedTenantId: "tenant-a",
       approvalGranted: true,
       standingAuthorizationGranted: true,
+      authorizationCapability: "whatsapp.send",
     },
   }, {
     entitlementSnapshot: {
@@ -733,6 +751,7 @@ async function run() {
       trustedTenantId: "tenant-a",
       approvalGranted: true,
       standingAuthorizationGranted: true,
+      authorizationCapability: "crm.write",
     },
   });
   assert.notEqual(revenueBypass.status, "SUCCEEDED");
@@ -741,7 +760,8 @@ async function run() {
   );
   assert.ok(
     revenueBypass.reasonCode === "PROVIDER_NOT_CONFIGURED" ||
-      revenueBypass.reasonCode === "FEATURE_FLAG_DISABLED",
+      revenueBypass.reasonCode === "FEATURE_FLAG_DISABLED" ||
+      revenueBypass.reasonCode === "POLICY_BLOCK",
   );
 
   // --- same-tenant wrong-mission artifact blocks ---

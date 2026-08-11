@@ -188,7 +188,7 @@ export function createWhatsAppSendProvider(): CapabilityProvider {
           providerReference: outcome.messageId,
           outputArtifactIds: [outcome.messageId],
           usage: unknownCostUsage({ requests: 1 }),
-          receipt,
+          receipt: receipt as unknown as Record<string, unknown>,
         };
       } catch (err) {
         return {

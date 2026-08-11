@@ -14,7 +14,16 @@
 
 Entrypoint: `requestCapability` (`packages/workforce-core/src/capabilities/execution.ts`).
 
-Adapters implement `CapabilityProvider`, registered in `providers/bootstrap.ts`. Host bindings via `bindCapabilityHost` for Social + analytics paths that live under `lib/`.
+Adapters implement `CapabilityProvider`, registered in `providers/bootstrap.ts`.
+
+App host binding (Social schedule/publish, analytics read, CRM/WhatsApp service client):
+
+```ts
+import { ensureWorkforceCapabilityHostsBound } from "@/lib/workforce/bind-capability-hosts";
+ensureWorkforceCapabilityHostsBound();
+```
+
+Do not re-export Social `capability-host` from the Social workforce barrel — that pulls Supabase into pure Node ESM tests.
 
 ## Adapter registry
 

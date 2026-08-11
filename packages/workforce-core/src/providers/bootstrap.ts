@@ -164,7 +164,7 @@ export function bootstrapCapabilityProviders(): void {
           providerReference: audit.id,
           outputArtifactIds: [audit.id],
           usage: unknownCostUsage({ requests: 1 }),
-          receipt,
+          receipt: receipt as unknown as Record<string, unknown>,
         };
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);

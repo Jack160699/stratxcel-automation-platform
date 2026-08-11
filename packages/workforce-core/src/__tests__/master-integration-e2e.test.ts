@@ -303,7 +303,11 @@ async function run() {
       },
     });
     assert.notEqual(wa.status, "SUCCEEDED");
-    assert.equal(getCapability("whatsapp.send")?.status, "NOT_CONFIGURED");
+    // Catalogue AVAILABLE (adapter wired); runtime still fails closed without host/env.
+    assert.equal(getCapability("whatsapp.send")?.status, "AVAILABLE");
+    assert.ok(
+      wa.status === "WAITING_CONFIGURATION" || wa.status === "BLOCKED" || wa.status === "FAILED",
+    );
   }
 
   // ========== C Content/Social ==========
@@ -818,7 +822,7 @@ async function run() {
     assert.equal((injected.receipt as { testOnly?: boolean })?.testOnly, true);
     assert.notEqual((injected.receipt as { simulated?: boolean })?.simulated, true);
 
-    // Also register test provider for a NOT_CONFIGURED capability catalogue still blocks
+    // Registering a provider must not mutate catalogue definitions.
     resetProviderRegistryForTests();
     registerProvider(
       createTestSuccessProvider({
@@ -826,8 +830,8 @@ async function run() {
         capabilityKeys: ["social.publish"],
       }),
     );
-    // Catalogue status NOT_CONFIGURED still wins without changing registry definition
-    assert.equal(getCapability("social.publish")?.status, "NOT_CONFIGURED");
+    assert.equal(getCapability("social.publish")?.status, "AVAILABLE");
+    assert.equal(getCapability("media.image_generation")?.status, "NOT_CONFIGURED");
     resetAndBootstrapProvidersForTests();
   }
 
