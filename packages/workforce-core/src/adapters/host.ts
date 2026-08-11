@@ -54,7 +54,8 @@ export interface SocialPublishHostInput {
   requestId: string;
   accountId: string;
   variantId: string;
-  ownerId: string;
+  /** @deprecated Ignored as authority — host derives owner from account. */
+  ownerId?: string | null;
   artifactId: string;
   idempotencyKey: string;
   approvalGranted?: boolean;
@@ -108,11 +109,29 @@ export type AnalyticsReadHostResult =
   | { ok: true; sources: AnalyticsSourceSnapshot[] }
   | { ok: false; errorCategory: HostErrorCategory; errorMessage: string };
 
+export interface PersistMissionArtifactInput {
+  tenantId: string;
+  missionId: string;
+  kind: string;
+  storageRef?: string | null;
+  metadata: Record<string, unknown>;
+  requestId?: string;
+  providerKey?: string;
+  capability?: string;
+}
+
+export type PersistMissionArtifactResult =
+  | { ok: true; id: string }
+  | { ok: false; errorMessage: string };
+
 export interface CapabilityHostBindings {
   socialSchedule?: (input: SocialScheduleHostInput) => Promise<SocialScheduleHostResult>;
   socialPublish?: (input: SocialPublishHostInput) => Promise<SocialPublishHostResult>;
   analyticsRead?: (input: AnalyticsReadHostInput) => Promise<AnalyticsReadHostResult>;
   getServiceClient?: () => LooseServiceClient | null | Promise<LooseServiceClient | null>;
+  persistMissionArtifact?: (
+    input: PersistMissionArtifactInput,
+  ) => Promise<PersistMissionArtifactResult>;
 }
 
 let bindings: CapabilityHostBindings = {};

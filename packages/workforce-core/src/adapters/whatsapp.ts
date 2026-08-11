@@ -136,7 +136,7 @@ export function createWhatsAppSendProvider(): CapabilityProvider {
           templateParams: Array.isArray(input.input?.templateParams)
             ? (input.input.templateParams as string[])
             : undefined,
-          isHumanInitiated: input.input?.isHumanInitiated === true,
+          isHumanInitiated: false,
         });
 
         if (!outcome.ok) {
@@ -166,7 +166,9 @@ export function createWhatsAppSendProvider(): CapabilityProvider {
           externalMutation: true,
           externalMutationOccurred: !outcome.alreadySent && outcome.mode === "live",
           shadowPreventedMutation: !outcome.alreadySent && outcome.mode === "shadow",
-          approvalUsed: true,
+          approvalUsed:
+            input.authorization?.approvalGranted === true ||
+            input.authorization?.standingAuthorizationGranted === true,
           idempotencyKey,
           inputArtifactIds: input.inputArtifactIds,
           outputArtifactIds: [outcome.messageId],

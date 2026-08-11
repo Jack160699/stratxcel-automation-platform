@@ -9,6 +9,7 @@ import {
 } from "../providers/types.ts";
 import { buildCapabilityExecutionReceipt } from "./receipts.ts";
 import { assertSafePublicHttpUrl, UnsafePublicUrlError } from "./url-safety.ts";
+import { getCapabilityHost } from "./host.ts";
 
 const PROVIDER_KEY = "seo-audit-search-discovery";
 
@@ -91,6 +92,42 @@ export function createSeoAuditProvider(): CapabilityProvider {
             : undefined,
         });
 
+        const persist = getCapabilityHost().persistMissionArtifact;
+        let artifactId: string | null = null;
+        if (persist) {
+          const persisted = await persist({
+            tenantId: input.tenantId,
+            missionId: input.missionId,
+            kind: "seo_audit_report",
+            storageRef: `workforce://seo.audit/${input.requestId}`,
+            providerKey: PROVIDER_KEY,
+            capability: "seo.audit",
+            requestId: input.requestId,
+            metadata: {
+              report,
+              propertyUrl: report.propertyUrl,
+              findingCount: report.findings.length,
+              findings: report.findings,
+              evidenceIds: report.evidenceIds ?? [],
+              provenance: {
+                provider: PROVIDER_KEY,
+                requestId: input.requestId,
+                capability: "seo.audit",
+              },
+            },
+          });
+          if (!persisted.ok) {
+            return {
+              ok: false,
+              providerKey: PROVIDER_KEY,
+              errorCategory: "PROVIDER_FAILURE",
+              errorMessage: persisted.errorMessage,
+              usage: unknownCostUsage({ requests: 0 }),
+            };
+          }
+          artifactId = persisted.id;
+        }
+
         const receipt = buildCapabilityExecutionReceipt({
           capability: "seo.audit",
           providerKey: PROVIDER_KEY,
@@ -98,18 +135,23 @@ export function createSeoAuditProvider(): CapabilityProvider {
           missionId: input.missionId,
           requestId: input.requestId,
           externalMutation: false,
+          approvalUsed:
+            input.authorization?.approvalGranted === true ||
+            input.authorization?.standingAuthorizationGranted === true,
+          outputArtifactIds: artifactId ? [artifactId] : [],
           detail: {
             reportId: report.id,
             propertyUrl: report.propertyUrl,
             findingCount: report.findings.length,
+            artifactPersisted: Boolean(artifactId),
           },
         });
 
         return {
           ok: true,
           providerKey: PROVIDER_KEY,
-          providerReference: report.id,
-          outputArtifactIds: [report.id],
+          providerReference: artifactId ?? report.id,
+          outputArtifactIds: artifactId ? [artifactId] : [],
           usage: unknownCostUsage({ requests: 1 }),
           receipt: receipt as unknown as Record<string, unknown>,
         };

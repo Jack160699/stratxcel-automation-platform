@@ -65,6 +65,8 @@ export type CapabilityExecutionStatus =
   | "SUCCEEDED"
   | "FAILED"
   | "BLOCKED"
+  | "QUEUED"
+  | "IN_PROGRESS"
   | "WAITING_CONFIGURATION"
   | "WAITING_INTEGRATION"
   | "WAITING_ENTITLEMENT"

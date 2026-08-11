@@ -37,6 +37,22 @@ export interface ProviderReadinessProbeResult {
   details?: string;
 }
 
+/**
+ * Trusted authorization derived by requestCapability after central readiness.
+ * NEVER sourced from request.input / model / tool payload.
+ */
+export interface ProviderTrustedAuthorization {
+  approvalGranted: boolean;
+  standingAuthorizationGranted: boolean;
+  authorizationKind: string | null;
+  authorizationCapability: string | null;
+  authorizationScopeId: string | null;
+  shadowMode: boolean;
+  killSwitchActive: boolean;
+  /** Workforce automation is never a human actor. */
+  actorKind: "workforce" | "system";
+}
+
 export interface ProviderExecuteInput {
   requestId: string;
   tenantId: string;
@@ -44,6 +60,8 @@ export interface ProviderExecuteInput {
   capability: CapabilityKey | string;
   inputArtifactIds: readonly string[];
   input?: Record<string, unknown>;
+  /** Present on production requestCapability path after readiness passes. */
+  authorization?: ProviderTrustedAuthorization;
 }
 
 export interface ProviderExecuteResult {
@@ -55,6 +73,11 @@ export interface ProviderExecuteResult {
   receipt?: Record<string, unknown>;
   errorCategory?: ProviderErrorCategory;
   errorMessage?: string;
+  /**
+   * Non-terminal outcomes (async publish still queued).
+   * When omitted and ok=true, requestCapability treats as SUCCEEDED.
+   */
+  executionStatus?: "SUCCEEDED" | "QUEUED" | "IN_PROGRESS" | "FAILED";
 }
 
 export interface CapabilityProvider {

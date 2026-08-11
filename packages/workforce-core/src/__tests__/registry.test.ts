@@ -28,7 +28,8 @@ function run() {
   assert.equal(getCapability("crm.read")?.status, "AVAILABLE");
   assert.equal(getCapability("crm.write")?.status, "AVAILABLE");
   assert.equal(getCapability("whatsapp.send")?.status, "AVAILABLE");
-  assert.equal(getCapability("analytics.read")?.status, "AVAILABLE");
+  assert.equal(getCapability("analytics.read")?.status, "NOT_CONFIGURED");
+  assert.equal(getCapability("social.schedule")?.approvalRequired, true);
   assert.equal(getCapability("website.audit")?.status, "AVAILABLE");
   assert.equal(getCapability("media.image_generation")?.status, "NOT_CONFIGURED");
   assert.equal(getCapability("media.carousel_generation")?.status, "UNAVAILABLE");

@@ -8,6 +8,33 @@ import {
   isSocialScheduleHostBound,
 } from "./host.ts";
 
+function trustedAuth(input: {
+  authorization?: {
+    approvalGranted: boolean;
+    standingAuthorizationGranted: boolean;
+    authorizationCapability: string | null;
+    shadowMode: boolean;
+    killSwitchActive: boolean;
+  };
+}) {
+  return (
+    input.authorization ?? {
+      approvalGranted: false,
+      standingAuthorizationGranted: false,
+      authorizationCapability: null,
+      shadowMode: false,
+      killSwitchActive: false,
+    }
+  );
+}
+
+function approvalUsedFromTrusted(auth: {
+  approvalGranted: boolean;
+  standingAuthorizationGranted: boolean;
+}): boolean {
+  return auth.approvalGranted === true || auth.standingAuthorizationGranted === true;
+}
+
 export function createSocialScheduleProvider(): CapabilityProvider {
   return {
     key: "social-schedule-queue",
@@ -39,6 +66,17 @@ export function createSocialScheduleProvider(): CapabilityProvider {
           errorMessage: "Social schedule host not bound",
           usage: unknownCostUsage({ requests: 0 }),
         };
+      }
+
+      const auth = trustedAuth(input);
+      // Ignore raw payload authorization flags — trusted auth only.
+      if (
+        input.input?.approvalGranted !== undefined ||
+        input.input?.standingAuthorizationGranted !== undefined ||
+        input.input?.shadowMode !== undefined ||
+        input.input?.killSwitchActive !== undefined
+      ) {
+        // Strip/ignore — do not escalate. Continue with trusted auth.
       }
 
       const accountId = typeof input.input?.accountId === "string" ? input.input.accountId : null;
@@ -76,6 +114,20 @@ export function createSocialScheduleProvider(): CapabilityProvider {
         };
       }
 
+      const hasAuth =
+        auth.approvalGranted === true ||
+        (auth.standingAuthorizationGranted === true &&
+          auth.authorizationCapability === "social.schedule");
+      if (!hasAuth) {
+        return {
+          ok: false,
+          providerKey: "social-schedule-queue",
+          errorCategory: "POLICY_BLOCK",
+          errorMessage: "APPROVAL_REQUIRED",
+          usage: unknownCostUsage({ requests: 0 }),
+        };
+      }
+
       const result = await host({
         tenantId: input.tenantId,
         missionId: input.missionId,
@@ -86,12 +138,9 @@ export function createSocialScheduleProvider(): CapabilityProvider {
         timeZone,
         idempotencyKey,
         artifactId: typeof input.input?.artifactId === "string" ? input.input.artifactId : null,
-        approvalGranted: input.input?.approvalGranted === true,
-        standingAuthorizationGranted: input.input?.standingAuthorizationGranted === true,
-        standingAuthorizationCapability:
-          typeof input.input?.standingAuthorizationCapability === "string"
-            ? input.input.standingAuthorizationCapability
-            : undefined,
+        approvalGranted: auth.approvalGranted,
+        standingAuthorizationGranted: auth.standingAuthorizationGranted,
+        standingAuthorizationCapability: auth.authorizationCapability ?? undefined,
       });
 
       if (!result.ok) {
@@ -113,9 +162,10 @@ export function createSocialScheduleProvider(): CapabilityProvider {
         operationClass: getCapabilityOperationClass("social.schedule"),
         externalMutation: false,
         externalMutationOccurred: false,
+        approvalUsed: approvalUsedFromTrusted(auth),
         idempotencyKey,
         inputArtifactIds: input.inputArtifactIds,
-        outputArtifactIds: [result.jobId],
+        outputArtifactIds: [],
         integrationKey: "social_account",
         providerExternalId: result.jobId,
         detail: {
@@ -135,7 +185,7 @@ export function createSocialScheduleProvider(): CapabilityProvider {
         ok: true,
         providerKey: "social-schedule-queue",
         providerReference: result.jobId,
-        outputArtifactIds: [result.jobId],
+        outputArtifactIds: [],
         usage: unknownCostUsage({ requests: 1 }),
         receipt: receipt as unknown as Record<string, unknown>,
       };
@@ -176,27 +226,28 @@ export function createSocialPublishProvider(): CapabilityProvider {
         };
       }
 
+      const auth = trustedAuth(input);
+
       const accountId = typeof input.input?.accountId === "string" ? input.input.accountId : null;
       const variantId = typeof input.input?.variantId === "string" ? input.input.variantId : null;
       const artifactId = typeof input.input?.artifactId === "string" ? input.input.artifactId : null;
-      const ownerId = typeof input.input?.ownerId === "string" ? input.input.ownerId : null;
       const idempotencyKey =
         typeof input.input?.idempotencyKey === "string" && input.input.idempotencyKey.trim()
           ? input.input.idempotencyKey.trim()
           : null;
 
-      if (!accountId || !variantId || !artifactId || !ownerId || !idempotencyKey) {
+      if (!accountId || !variantId || !artifactId || !idempotencyKey) {
         return {
           ok: false,
           providerKey: "social-publish-meta",
           errorCategory: "INVALID_INPUT",
           errorMessage:
-            "social.publish requires accountId, variantId, artifactId, ownerId, idempotencyKey",
+            "social.publish requires accountId, variantId, artifactId, idempotencyKey",
           usage: unknownCostUsage({ requests: 0 }),
         };
       }
 
-      if (input.input?.killSwitchActive === true) {
+      if (auth.killSwitchActive) {
         return {
           ok: false,
           providerKey: "social-publish-meta",
@@ -206,7 +257,7 @@ export function createSocialPublishProvider(): CapabilityProvider {
         };
       }
 
-      if (input.input?.shadowMode === true) {
+      if (auth.shadowMode) {
         return {
           ok: false,
           providerKey: "social-publish-meta",
@@ -229,6 +280,20 @@ export function createSocialPublishProvider(): CapabilityProvider {
         };
       }
 
+      const hasAuth =
+        auth.approvalGranted === true ||
+        (auth.standingAuthorizationGranted === true &&
+          auth.authorizationCapability === "social.publish");
+      if (!hasAuth) {
+        return {
+          ok: false,
+          providerKey: "social-publish-meta",
+          errorCategory: "POLICY_BLOCK",
+          errorMessage: "APPROVAL_REQUIRED",
+          usage: unknownCostUsage({ requests: 0 }),
+        };
+      }
+
       const result = await host({
         tenantId: input.tenantId,
         missionId: input.missionId,
@@ -236,16 +301,15 @@ export function createSocialPublishProvider(): CapabilityProvider {
         accountId,
         variantId,
         artifactId,
-        ownerId,
+        // Legacy ownerId ignored as authority — host derives from account.
+        ownerId:
+          typeof input.input?.ownerId === "string" ? input.input.ownerId : null,
         idempotencyKey,
-        approvalGranted: input.input?.approvalGranted === true,
-        standingAuthorizationGranted: input.input?.standingAuthorizationGranted === true,
-        standingAuthorizationCapability:
-          typeof input.input?.standingAuthorizationCapability === "string"
-            ? input.input.standingAuthorizationCapability
-            : undefined,
-        shadowMode: false,
-        killSwitchActive: false,
+        approvalGranted: auth.approvalGranted,
+        standingAuthorizationGranted: auth.standingAuthorizationGranted,
+        standingAuthorizationCapability: auth.authorizationCapability ?? undefined,
+        shadowMode: auth.shadowMode,
+        killSwitchActive: auth.killSwitchActive,
         scheduledAtIso:
           typeof input.input?.scheduledAtIso === "string" ? input.input.scheduledAtIso : null,
         artifactVersion:
@@ -266,20 +330,37 @@ export function createSocialPublishProvider(): CapabilityProvider {
         };
       }
 
+      const jobStatus = String(result.jobStatus ?? "").toUpperCase();
       const published =
         result.externalMutationOccurred === true &&
         Boolean(result.providerPostId) &&
-        String(result.jobStatus ?? "").toUpperCase() === "PUBLISHED";
+        jobStatus === "PUBLISHED";
 
-      if (result.externalMutationOccurred && !result.providerPostId) {
+      if (jobStatus === "PUBLISHED" && !result.providerPostId) {
         return {
           ok: false,
           providerKey: "social-publish-meta",
           errorCategory: "PROVIDER_FAILURE",
           errorMessage: "missing_external_receipt",
           usage: unknownCostUsage({ requests: 1 }),
+          executionStatus: "FAILED",
         };
       }
+
+      if (jobStatus === "FAILED") {
+        return {
+          ok: false,
+          providerKey: "social-publish-meta",
+          errorCategory: "PROVIDER_FAILURE",
+          errorMessage: "publish_failed",
+          usage: unknownCostUsage({ requests: 1 }),
+          executionStatus: "FAILED",
+        };
+      }
+
+      const nonTerminal = ["SCHEDULED", "QUEUED", "PROCESSING", "RETRY_WAIT", "UNKNOWN"].includes(
+        jobStatus,
+      );
 
       const receipt = buildCapabilityExecutionReceipt({
         capability: "social.publish",
@@ -290,10 +371,10 @@ export function createSocialPublishProvider(): CapabilityProvider {
         operationClass: getCapabilityOperationClass("social.publish"),
         externalMutation: true,
         externalMutationOccurred: published,
-        approvalUsed: true,
+        approvalUsed: approvalUsedFromTrusted(auth),
         idempotencyKey,
         inputArtifactIds: input.inputArtifactIds,
-        outputArtifactIds: [result.jobId],
+        outputArtifactIds: [],
         integrationKey: "social_account",
         providerExternalId: result.providerPostId ?? null,
         detail: {
@@ -312,13 +393,38 @@ export function createSocialPublishProvider(): CapabilityProvider {
         },
       });
 
+      if (published) {
+        return {
+          ok: true,
+          providerKey: "social-publish-meta",
+          providerReference: result.jobId,
+          outputArtifactIds: [],
+          usage: unknownCostUsage({ requests: 1 }),
+          receipt: receipt as unknown as Record<string, unknown>,
+          executionStatus: "SUCCEEDED",
+        };
+      }
+
+      if (nonTerminal) {
+        return {
+          ok: true,
+          providerKey: "social-publish-meta",
+          providerReference: result.jobId,
+          outputArtifactIds: [],
+          usage: unknownCostUsage({ requests: 1 }),
+          receipt: receipt as unknown as Record<string, unknown>,
+          executionStatus: "QUEUED",
+        };
+      }
+
       return {
-        ok: true,
+        ok: false,
         providerKey: "social-publish-meta",
-        providerReference: result.jobId,
-        outputArtifactIds: [result.jobId],
+        errorCategory: "PROVIDER_FAILURE",
+        errorMessage: `publish_incomplete:${jobStatus || "unknown"}`,
         usage: unknownCostUsage({ requests: 1 }),
         receipt: receipt as unknown as Record<string, unknown>,
+        executionStatus: "FAILED",
       };
     },
   };

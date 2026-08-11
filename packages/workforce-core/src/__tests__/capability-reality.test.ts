@@ -60,10 +60,10 @@ function run() {
   }
 
   const counts = countCapabilitiesByStatus();
-  // website.audit + 8 newly wired adapters
-  assert.equal(counts.AVAILABLE, 9);
+  // analytics.read truthfully downgraded from AVAILABLE
+  assert.equal(counts.AVAILABLE, 8);
   assert.equal(counts.UNAVAILABLE, 2); // video + carousel
-  assert.equal(counts.NOT_CONFIGURED, 4);
+  assert.equal(counts.NOT_CONFIGURED, 5);
   assert.equal(
     counts.AVAILABLE + counts.NOT_CONFIGURED + counts.PLANNED + counts.UNAVAILABLE,
     CAPABILITY_KEYS.length,
@@ -82,8 +82,9 @@ function run() {
   assert.equal(getCapability("crm.read")?.status, "AVAILABLE");
   assert.equal(getCapability("crm.write")?.status, "AVAILABLE");
   assert.equal(getCapability("whatsapp.send")?.status, "AVAILABLE");
-  assert.equal(getCapability("analytics.read")?.status, "AVAILABLE");
+  assert.equal(getCapability("analytics.read")?.status, "NOT_CONFIGURED");
   assert.deepEqual(getCapability("analytics.read")?.providerKeys, ["analytics-read-reporting"]);
+  assert.equal(getCapability("social.schedule")?.approvalRequired, true);
   assert.equal(getCapability("website.audit")?.status, "AVAILABLE");
   assert.equal(getCapability("website.audit")?.requiredEntitlementClass, null);
   assert.equal(getCapability("website.generate")?.requiredEntitlementClass, "website_maintenance");

@@ -51,13 +51,40 @@ Trusted tenant only from `authorizationContext.trustedTenantId`. Entitlements fa
 
 `buildCapabilityExecutionReceipt` — no tokens/secrets. Mutation adapters require stable idempotency keys (Social job key, CRM metadata key, WhatsApp outbound key).
 
-## Matrix (static)
+## Matrix (static vs runtime)
 
-Use `countCapabilitiesByStatus()` — expected AVAILABLE=9, UNAVAILABLE=2 after this wiring.
+Use `countCapabilitiesByStatus()` for static catalogue counts.
+Use `countCapabilityOperationalMatrix({ tenantId })` for runtime-operational (provider probe ready).
 
-## Hermes
+After this PR (analytics.read truthfully downgraded):
 
-Native toolsets remain disabled. Path: Hermes → Stratxcel dispatcher → mission token → `requestCapability` → adapter → receipt.
+- static AVAILABLE ≈ 8
+- NOT_CONFIGURED includes analytics.read + content.shortform (+ media/seo.publish/content.publish)
+- Runtime operational ≤ static AVAILABLE and depends on host binding + integrations.
+
+## Canonical server executor
+
+`lib/workforce/execute-capability.ts` → `executeWorkforceCapabilityServer(...)`
+
+Auto-binds hosts, loads mission tenant, entitlements, integrations, artifacts, shadow/kill, then `requestCapability`.
+
+Callers must not manufacture security snapshots.
+
+## Hermes call graph (truthful)
+
+Native Hermes toolsets remain **disabled**.
+
+Actual path for CRM lead creation (after this PR):
+
+`Hermes tool create_crm_lead` → `apps/hermes-gateway` handler → `executeWorkforceCapabilityServer` → host bind → entitlement/integration/artifact snapshots → `requestCapability` → CRM adapter → receipt.
+
+Still **not** routed through Workforce (by design / not yet):
+
+- `query_publication_status` — Social status lookup only
+- `create_draft_artifact` — direct `mission_artifacts` insert
+- Controlled tools `submit_publish_request` / `create_website_change_request` — **not registered**, throw `ToolNotAvailableError`
+
+Docs must not claim a universal Hermes → capability path for every tool.
 
 ## Migrations
 
