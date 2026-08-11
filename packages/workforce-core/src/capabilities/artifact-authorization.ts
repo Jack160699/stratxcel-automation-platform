@@ -81,8 +81,9 @@ export function authorizeArtifactForCapability(
     };
   }
 
-  const sameMission =
-    !artifact.missionId || artifact.missionId === requestMissionId;
+  // Fail closed: missing missionId is NOT same-mission.
+  // Missionless/tenant-level artifacts require explicit trusted reuse policy.
+  const sameMission = artifact.missionId === requestMissionId;
   if (!sameMission) {
     const trustedReuse =
       isExplicitlyAuthorizedArtifact(artifact, usagePolicy) ||
@@ -91,8 +92,9 @@ export function authorizeArtifactForCapability(
       return {
         ok: false,
         reasonCode: "ARTIFACT_MISSION_MISMATCH",
-        humanReason:
-          "Input artifact belongs to a different mission and is not authorized for cross-mission reuse by trusted runtime policy.",
+        humanReason: artifact.missionId
+          ? "Input artifact belongs to a different mission and is not authorized for cross-mission reuse by trusted runtime policy."
+          : "Input artifact has no missionId and is not authorized for tenant-level reuse by trusted runtime policy.",
       };
     }
   }

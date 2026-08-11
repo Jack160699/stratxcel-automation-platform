@@ -404,7 +404,7 @@ function run() {
         environment: { featureFlags: { search_web: true } },
         artifactResolver: (id) =>
           id === "website-snap-1"
-            ? { id, tenantId: "tenant-a", kind: "website_snapshot" }
+            ? { id, tenantId: "tenant-a", missionId: "mission-1", kind: "website_snapshot" }
             : null,
       },
     );

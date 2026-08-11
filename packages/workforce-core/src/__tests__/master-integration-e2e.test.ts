@@ -377,7 +377,7 @@ async function run() {
       environment: { featureFlags: { search_web: true } },
       artifactResolver: (id) =>
         id === "snap-c"
-          ? { id, tenantId: "tenant-social-c", kind: "website_snapshot" }
+          ? { id, tenantId: "tenant-social-c", missionId: "mission-social-c", kind: "website_snapshot" }
           : null,
       executeProvider: async (_cap, input) => {
         const provider = createTestSuccessProvider({
@@ -527,7 +527,7 @@ async function run() {
       environment: { featureFlags: { search_web: true } },
       artifactResolver: (id) =>
         id === "tenant-b-snap"
-          ? { id, tenantId: "tenant-b", kind: "website_snapshot" }
+          ? { id, tenantId: "tenant-b", missionId: "mission-e", kind: "website_snapshot" }
           : null,
       executeProvider: async () => {
         providerInvocations += 1;
@@ -566,7 +566,7 @@ async function run() {
       },
       artifactResolver: (id) =>
         id === "snap-f"
-          ? { id, tenantId: "tenant-f", kind: "website_snapshot" }
+          ? { id, tenantId: "tenant-f", missionId: "mission-f", kind: "website_snapshot" }
           : null,
     });
     assert.notEqual(unrelated.reasonCode, "FEATURE_FLAG_DISABLED");
@@ -585,7 +585,7 @@ async function run() {
       environment: { featureFlags: { search_web: false } },
       artifactResolver: (id) =>
         id === "snap-f"
-          ? { id, tenantId: "tenant-f", kind: "website_snapshot" }
+          ? { id, tenantId: "tenant-f", missionId: "mission-f", kind: "website_snapshot" }
           : null,
     });
     assert.equal(requiredOff.reasonCode, "FEATURE_FLAG_DISABLED");
@@ -797,7 +797,7 @@ async function run() {
       environment: { featureFlags: { search_web: true } },
       artifactResolver: (id) =>
         id === "snap-i"
-          ? { id, tenantId: "tenant-i", kind: "website_snapshot" }
+          ? { id, tenantId: "tenant-i", missionId: "mission-i", kind: "website_snapshot" }
           : null,
       executeProvider: async (_cap, input) => {
         const provider = createTestSuccessProvider({
@@ -851,9 +851,9 @@ async function run() {
         environment: { featureFlags: { search_web: true } },
         artifactResolver: (id) =>
           id === "snap-a"
-            ? { id, tenantId: "tenant-iso-A", kind: "website_snapshot" }
+            ? { id, tenantId: "tenant-iso-A", missionId: "mission-j-a", kind: "website_snapshot" }
             : id === "snap-b"
-              ? { id, tenantId: "tenant-iso-B", kind: "website_snapshot" }
+              ? { id, tenantId: "tenant-iso-B", missionId: "mission-j-b", kind: "website_snapshot" }
               : null,
       }),
       requestCapability({
@@ -871,9 +871,9 @@ async function run() {
         environment: { featureFlags: { search_web: true } },
         artifactResolver: (id) =>
           id === "snap-a"
-            ? { id, tenantId: "tenant-iso-A", kind: "website_snapshot" }
+            ? { id, tenantId: "tenant-iso-A", missionId: "mission-j-a", kind: "website_snapshot" }
             : id === "snap-b"
-              ? { id, tenantId: "tenant-iso-B", kind: "website_snapshot" }
+              ? { id, tenantId: "tenant-iso-B", missionId: "mission-j-b", kind: "website_snapshot" }
               : null,
       }),
     ]);

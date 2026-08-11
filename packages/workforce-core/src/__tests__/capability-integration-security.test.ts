@@ -154,7 +154,7 @@ async function run() {
       environment: { featureFlags: { search_web: true } },
       artifactResolver: (id) =>
         id === "snap-1"
-          ? { id, tenantId: "tenant-a", kind: "website_snapshot" }
+          ? { id, tenantId: "tenant-a", missionId: "mission-1", kind: "website_snapshot" }
           : null,
       executeProvider: async () => {
         simulatedCalls += 1;
@@ -222,7 +222,7 @@ async function run() {
       environment: { featureFlags: { search_web: true } },
       artifactResolver: (id) =>
         id === "snap-1"
-          ? { id, tenantId: "tenant-a", kind: "website_snapshot" }
+          ? { id, tenantId: "tenant-a", missionId: "mission-1", kind: "website_snapshot" }
           : null,
       executeProvider: async (_cap, input) => {
         const provider = createTestSuccessProvider({
@@ -257,7 +257,7 @@ async function run() {
       environment: { featureFlags: { search_web: true } },
       artifactResolver: (id) =>
         id === "snap-1"
-          ? { id, tenantId: "tenant-a", kind: "website_snapshot" }
+          ? { id, tenantId: "tenant-a", missionId: "mission-1", kind: "website_snapshot" }
           : null,
     },
   );
@@ -310,7 +310,7 @@ async function run() {
     },
     artifactResolver: (id) =>
       id === "snap-1"
-        ? { id, tenantId: "tenant-a", kind: "website_snapshot" }
+        ? { id, tenantId: "tenant-a", missionId: "mission-1", kind: "website_snapshot" }
         : null,
   });
   assert.notEqual(unrelated.reasonCode, "FEATURE_FLAG_DISABLED");
@@ -364,7 +364,7 @@ async function run() {
     environment: { featureFlags: { search_web: false, payments_recurring: true } },
     artifactResolver: (id) =>
       id === "snap-1"
-        ? { id, tenantId: "tenant-a", kind: "website_snapshot" }
+        ? { id, tenantId: "tenant-a", missionId: "mission-1", kind: "website_snapshot" }
         : null,
   });
   assert.equal(requiredOffSeo.status, "BLOCKED");
@@ -414,6 +414,27 @@ async function run() {
         kind: "website_snapshot",
         version: "1",
         status: "ready",
+      },
+    ],
+    [
+      "missionless-snap",
+      {
+        id: "missionless-snap",
+        tenantId: "tenant-a",
+        // intentionally no missionId — tenant-level / missionless artifact
+        kind: "website_snapshot",
+        version: "1",
+        status: "ready",
+      },
+    ],
+    [
+      "missionless-brand",
+      {
+        id: "missionless-brand",
+        tenantId: "tenant-a",
+        kind: "brand_brain",
+        version: "1",
+        status: "active",
       },
     ],
     [
@@ -739,6 +760,100 @@ async function run() {
   );
   assert.equal(wrongMission.status, "BLOCKED");
   assert.equal(wrongMission.reasonCode, "ARTIFACT_MISSION_MISMATCH");
+  assert.equal(providerCalls, 0);
+
+  // --- missionless artifact (missing missionId) defaults to BLOCK without policy ---
+  providerCalls = 0;
+  const missionlessBlocked = await requestCapability(
+    baseRequest({
+      requestId: "missionless-block",
+      inputArtifactIds: ["missionless-snap"],
+      input: { propertyUrl: "https://example.com", pages: auditPages },
+    }),
+    {
+      environment: { featureFlags: { search_web: true } },
+      artifactResolver: resolver,
+      executeProvider: countingExecute,
+    },
+  );
+  assert.equal(missionlessBlocked.status, "BLOCKED");
+  assert.equal(missionlessBlocked.reasonCode, "ARTIFACT_MISSION_MISMATCH");
+  assert.equal(providerCalls, 0);
+
+  // --- missionless + explicitly authorizedArtifactIds may pass ---
+  providerCalls = 0;
+  const missionlessById = await requestCapability(
+    baseRequest({
+      requestId: "missionless-by-id",
+      inputArtifactIds: ["missionless-snap"],
+      input: { propertyUrl: "https://example.com", pages: auditPages },
+    }),
+    {
+      environment: { featureFlags: { search_web: true } },
+      artifactResolver: resolver,
+      artifactUsagePolicy: { authorizedArtifactIds: ["missionless-snap"] },
+      executeProvider: countingExecute,
+    },
+  );
+  assert.equal(missionlessById.status, "SUCCEEDED");
+  assert.equal(providerCalls, 1);
+
+  // --- missionless + allowed reusable kind passes only when capability accepts kind ---
+  providerCalls = 0;
+  const missionlessByKind = await requestCapability(
+    baseRequest({
+      requestId: "missionless-by-kind",
+      inputArtifactIds: ["missionless-snap"],
+      input: { propertyUrl: "https://example.com", pages: auditPages },
+    }),
+    {
+      environment: { featureFlags: { search_web: true } },
+      artifactResolver: resolver,
+      artifactUsagePolicy: { allowReusableTenantKinds: ["website_snapshot"] },
+      executeProvider: countingExecute,
+    },
+  );
+  assert.equal(missionlessByKind.status, "SUCCEEDED");
+  assert.equal(providerCalls, 1);
+
+  providerCalls = 0;
+  const missionlessKindUnsupported = await requestCapability(
+    baseRequest({
+      requestId: "missionless-kind-bad",
+      inputArtifactIds: ["missionless-brand"],
+      input: { propertyUrl: "https://example.com", pages: auditPages },
+    }),
+    {
+      environment: { featureFlags: { search_web: true } },
+      artifactResolver: resolver,
+      artifactUsagePolicy: { allowReusableTenantKinds: ["brand_brain"] },
+      executeProvider: countingExecute,
+    },
+  );
+  assert.equal(missionlessKindUnsupported.status, "BLOCKED");
+  assert.equal(missionlessKindUnsupported.reasonCode, "ARTIFACT_KIND_UNSUPPORTED");
+  assert.equal(providerCalls, 0);
+
+  // --- wrong tenant still blocks regardless of reuse policy ---
+  providerCalls = 0;
+  const wrongTenantReuse = await requestCapability(
+    baseRequest({
+      requestId: "wrong-tenant-reuse",
+      inputArtifactIds: ["cross-snap"],
+      input: { propertyUrl: "https://example.com", pages: auditPages },
+    }),
+    {
+      environment: { featureFlags: { search_web: true } },
+      artifactResolver: resolver,
+      artifactUsagePolicy: {
+        authorizedArtifactIds: ["cross-snap"],
+        allowReusableTenantKinds: ["website_snapshot"],
+      },
+      executeProvider: countingExecute,
+    },
+  );
+  assert.equal(wrongTenantReuse.status, "BLOCKED");
+  assert.equal(wrongTenantReuse.reasonCode, "ARTIFACT_TENANT_MISMATCH");
   assert.equal(providerCalls, 0);
 
   // --- wrong artifact version blocks ---
