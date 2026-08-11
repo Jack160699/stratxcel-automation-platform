@@ -32,6 +32,9 @@
       ],
       "@stratxcel/search-discovery": [
         "./packages/search-discovery/src/index.ts"
+      ],
+      "@stratxcel/revenue-ops": [
+        "./packages/revenue-ops/src/index.ts"
       ]
     }
   },
