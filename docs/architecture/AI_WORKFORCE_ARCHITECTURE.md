@@ -57,6 +57,10 @@ Hermes CEO operates the **entire business-growth system**:
 
 Profile: `stratxcel-ceo` (compatibility: `stratxcel-orchestrator`).
 
+## Intelligence Department
+
+For the evidence-gated audit → diagnosis → bottleneck → strategy → commercial-fit pipeline, see [INTELLIGENCE_DEPARTMENT.md](./INTELLIGENCE_DEPARTMENT.md).
+
 ## Planning concepts
 
 | Concept | Role |

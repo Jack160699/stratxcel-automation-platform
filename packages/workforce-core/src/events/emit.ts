@@ -9,7 +9,15 @@ export type WorkforceEventName =
   | "workforce.revision.requested"
   | "workforce.plan.revised"
   | "workforce.handoff.created"
-  | "workforce.capability.blocked";
+  | "workforce.capability.blocked"
+  | "intelligence.research.started"
+  | "intelligence.research.completed"
+  | "intelligence.evidence.reviewed"
+  | "intelligence.diagnosis.completed"
+  | "intelligence.bottleneck.identified"
+  | "intelligence.strategy.completed"
+  | "intelligence.recommendation.created"
+  | "intelligence.audit.completed";
 
 export interface WorkforceEventPayload {
   tenantId: string;
