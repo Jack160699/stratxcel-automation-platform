@@ -49,7 +49,7 @@ const TOOL_DESCRIPTIONS: Record<ToolName, string> = {
   request_approval: "Ask a human to approve a sensitive action before taking it. Input: { kind, subject }.",
   get_approval_status: "Check a previously requested approval's status. Input: { approvalId }.",
   create_human_handoff: "Hand this mission off to a human when blocked. Input: { reason, contextSnapshot }.",
-  query_publication_status: "Check publication status of a prior submission. Input: { reference }. (Currently always returns 'unknown' — no publishing pipeline is wired yet.)",
+  query_publication_status: "Check publication status of a prior Social submission. Input: { reference }. Resolved via Social Department against tenant-scoped publishing jobs/queue (never fabricates status; never returns provider credentials).",
   submit_publish_request: "Not available to Hermes — publishing stays StratExcel-controlled.",
   create_website_change_request: "Not available to Hermes — website changes stay StratExcel-controlled.",
   create_crm_lead: "Record a new CRM lead. Input: { contactName?, contactPhone?, contactEmail?, metadata? }.",

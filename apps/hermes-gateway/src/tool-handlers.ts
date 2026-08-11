@@ -6,6 +6,8 @@ import { createServiceClient as createCrmClient, createLead } from "@stratxcel/l
 import { recordAuditEvent, createServiceClient as createAuditClient } from "@stratxcel/audit";
 import type { ToolName } from "@stratxcel/hermes";
 import { STRATXCEL_CONTROLLED_TOOLS } from "@stratxcel/hermes";
+import { lookupSocialPublicationStatus } from "../../../lib/social/workforce/publication-status-lookup.ts";
+import { toHermesPublicationStatusPayload } from "../../../lib/social/workforce/publication-status.ts";
 
 export interface ToolCallContext {
   missionId: string;
@@ -103,11 +105,26 @@ export const TOOL_HANDLERS: Partial<Record<ToolName, ToolHandler>> = {
     return { handoffId: handoff.id };
   },
 
-  async query_publication_status() {
-    // No publishing pipeline is wired to Hermes yet (submit_publish_request
-    // is StratExcel-controlled and not registered below) — always
-    // "unknown" until that pipeline exists, rather than fabricating a status.
-    return { status: "unknown" };
+  async query_publication_status(ctx, input) {
+    // Social Department owns publication state. Query tenant-scoped Social
+    // jobs/queue only — never fabricate status or return provider credentials.
+    const reference = String(input.reference ?? "");
+    try {
+      const supabase = createMissionsClient();
+      const result = await lookupSocialPublicationStatus(supabase as never, ctx.tenantId, reference);
+      return toHermesPublicationStatusPayload(result);
+    } catch {
+      return toHermesPublicationStatusPayload({
+        status: "UNKNOWN",
+        reference,
+        liveUrl: null,
+        providerPublishId: null,
+        publishedAtIso: null,
+        scheduleJobId: null,
+        shadow: false,
+        safeDetail: "publication_status_lookup_unavailable",
+      });
+    }
   },
 
   async create_crm_lead(ctx, input) {
