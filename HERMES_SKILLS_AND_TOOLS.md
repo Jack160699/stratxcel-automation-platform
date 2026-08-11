@@ -64,7 +64,9 @@ Hermes Agent
 
 ### Profiles
 
-`resolveProfileInstructions()` (`packages/hermes/src/profiles.ts`) maps each of the six `hermes_profile` values to a StratExcel-authored persona/instruction preamble sent as part of the run's `instructions`. Hermes Agent has no native per-request profile switch (its own "profiles" concept is machine-level — separate config/state/credential directories for running several installations side by side, not a field on one API call), so this keeps StratExcel as the authorization/behavior authority exactly as the master brief requires, rather than delegating that decision into Hermes.
+`resolveProfileInstructions()` (`packages/hermes/src/profiles.ts`) maps each StratExcel `hermes_profile` value to a persona/instruction preamble sent as part of the run's `instructions`. Profiles include the original six plus **`stratxcel-ceo`** (Hermes CEO — plan/delegate/evaluate; does not authorize publish/deploy/spend). Compatibility profile `stratxcel-orchestrator` is unchanged. Hermes Agent has no native per-request profile switch (its own "profiles" concept is machine-level — separate config/state/credential directories for running several installations side by side, not a field on one API call), so this keeps StratExcel as the authorization/behavior authority exactly as the master brief requires, rather than delegating that decision into Hermes.
+
+Workforce architecture (25 departments, specialist sub-runs, 30-day planner): see `docs/architecture/AI_WORKFORCE_ARCHITECTURE.md` and package `@stratxcel/workforce-core`.
 
 ## Mission-scoped authorization
 

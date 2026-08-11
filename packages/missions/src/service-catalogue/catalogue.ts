@@ -85,6 +85,15 @@ export const SERVICE_CATALOGUE: readonly ServiceCatalogueEntry[] = [
     // it here deterministically instead of via generic fallback matching.
     keywords: ["owner-operating-brain-context-review"],
   },
+  {
+    key: "thirty_day_growth_plan",
+    label: "30-Day Growth Plan",
+    description:
+      "Hermes CEO plans a structured 30-day growth strategy within the customer's purchased package envelope, then delegates specialist stages. Planning does not authorize publish/deploy/spend.",
+    hermesProfile: "stratxcel-ceo",
+    baseCostCents: 75000,
+    keywords: ["30 day plan", "30-day plan", "monthly growth plan", "growth planner", "thirty day"],
+  },
 ] as const;
 
 export function getServiceCatalogueEntry(key: string): ServiceCatalogueEntry | undefined {

@@ -1,0 +1,47 @@
+export type WorkforceEventName =
+  | "workforce.plan.created"
+  | "workforce.plan.validated"
+  | "workforce.stage.ready"
+  | "workforce.stage.started"
+  | "workforce.stage.completed"
+  | "workforce.stage.failed"
+  | "workforce.review.completed"
+  | "workforce.revision.requested"
+  | "workforce.plan.revised"
+  | "workforce.handoff.created"
+  | "workforce.capability.blocked";
+
+export interface WorkforceEventPayload {
+  tenantId: string;
+  missionId: string;
+  planId?: string;
+  stageId?: string;
+  department?: string;
+  role?: string;
+  correlationId?: string;
+  data?: Record<string, unknown>;
+}
+
+export interface WorkforceEvent {
+  name: WorkforceEventName;
+  atIso: string;
+  payload: WorkforceEventPayload;
+}
+
+export interface WorkforceEventEmitter {
+  emit(event: WorkforceEvent): void | Promise<void>;
+}
+
+export function createNoopWorkforceEventEmitter(): WorkforceEventEmitter {
+  return { emit() {} };
+}
+
+export function createCollectingWorkforceEventEmitter(): WorkforceEventEmitter & { events: WorkforceEvent[] } {
+  const events: WorkforceEvent[] = [];
+  return {
+    events,
+    emit(event) {
+      events.push(event);
+    },
+  };
+}
