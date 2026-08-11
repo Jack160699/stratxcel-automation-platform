@@ -47,3 +47,4 @@ export * from "./acquisition/index.ts";
 export * from "./search-web/index.ts";
 export * from "./company-ops/index.ts";
 export * from "./e2e/index.ts";
+export * from "./adapters/index.ts";

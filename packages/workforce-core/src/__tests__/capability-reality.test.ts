@@ -41,8 +41,12 @@ import { executeWithFailover } from "../providers/failover.ts";
 import { resetAndBootstrapProvidersForTests } from "../providers/bootstrap.ts";
 import type { CapabilityProvider, ProviderExecuteResult } from "../providers/types.ts";
 import { unknownCostUsage } from "../providers/types.ts";
+import { resetCapabilityHostForTests } from "../adapters/host.ts";
 
 function run() {
+  resetCapabilityHostForTests();
+  resetAndBootstrapProvidersForTests();
+
   // --- Registry integrity / explicit status ---
   assertRegistryIntegrity();
   assert.equal(listCapabilities().length, CAPABILITY_KEYS.length);
@@ -56,30 +60,36 @@ function run() {
   }
 
   const counts = countCapabilitiesByStatus();
-  // website.audit + implemented image runtime; provider readiness remains dynamic.
-  assert.equal(counts.AVAILABLE, 2);
+  // website.audit + current image runtime + 8 newly wired capabilities.
+  assert.equal(counts.AVAILABLE, 10);
   assert.equal(counts.UNAVAILABLE, 2); // video + carousel
-  assert.ok(counts.NOT_CONFIGURED >= 11);
+  assert.equal(counts.NOT_CONFIGURED, 4);
   assert.equal(
     counts.AVAILABLE + counts.NOT_CONFIGURED + counts.PLANNED + counts.UNAVAILABLE,
     CAPABILITY_KEYS.length,
   );
 
   assert.equal(getCapability("content.shortform")?.status, "NOT_CONFIGURED");
-  assert.equal(getCapability("social.schedule")?.status, "NOT_CONFIGURED");
-  assert.equal(getCapability("social.publish")?.status, "NOT_CONFIGURED");
-  assert.equal(getCapability("seo.audit")?.status, "NOT_CONFIGURED");
-  assert.equal(getCapability("website.generate")?.status, "NOT_CONFIGURED");
-  assert.equal(getCapability("crm.read")?.status, "NOT_CONFIGURED");
-  assert.equal(getCapability("crm.write")?.status, "NOT_CONFIGURED");
+  assert.ok(
+    (getCapability("content.shortform")?.implementationPath ?? "").includes(
+      "PENDING_AI_RUNTIME_PR_45",
+    ),
+  );
+  assert.equal(getCapability("social.schedule")?.status, "AVAILABLE");
+  assert.equal(getCapability("social.publish")?.status, "AVAILABLE");
+  assert.equal(getCapability("seo.audit")?.status, "AVAILABLE");
+  assert.equal(getCapability("website.generate")?.status, "AVAILABLE");
+  assert.equal(getCapability("crm.read")?.status, "AVAILABLE");
+  assert.equal(getCapability("crm.write")?.status, "AVAILABLE");
+  assert.equal(getCapability("whatsapp.send")?.status, "AVAILABLE");
+  assert.equal(getCapability("analytics.read")?.status, "AVAILABLE");
+  assert.deepEqual(getCapability("analytics.read")?.providerKeys, ["analytics-read-reporting"]);
   assert.equal(getCapability("website.audit")?.status, "AVAILABLE");
   assert.equal(getCapability("website.audit")?.requiredEntitlementClass, null);
   assert.equal(getCapability("website.generate")?.requiredEntitlementClass, "website_maintenance");
 
   assert.equal(getCapability("media.image_generation")?.status, "AVAILABLE");
   assert.equal(getCapability("seo.publish")?.status, "NOT_CONFIGURED");
-  assert.equal(getCapability("whatsapp.send")?.status, "NOT_CONFIGURED");
-  assert.equal(getCapability("analytics.read")?.status, "NOT_CONFIGURED");
   assert.equal(getCapability("content.publish")?.status, "NOT_CONFIGURED");
 
   assert.equal(getCapability("media.video_generation")?.status, "UNAVAILABLE");
@@ -97,6 +107,7 @@ function run() {
 
   assert.throws(() => assertCapability("not.a.capability"), /unknown_capability/);
   assert.equal(isCapabilityAvailable("website.audit"), true);
+  assert.equal(isCapabilityAvailable("seo.audit"), true);
   assert.equal(isCapabilityAvailable("content.shortform"), false);
   assert.equal(isCapabilityUnavailable("media.image_generation"), false);
   assert.equal(isCapabilityUnavailable("media.carousel_generation"), true);
@@ -138,16 +149,8 @@ function run() {
   assert.equal(videoReady.executable, false);
   assert.equal(videoReady.reasonCode, "IMPLEMENTATION_UNAVAILABLE");
 
-  // Formerly simulated-success capabilities must wait configuration
-  for (const key of [
-    "content.shortform",
-    "social.schedule",
-    "social.publish",
-    "seo.audit",
-    "website.generate",
-    "crm.read",
-    "crm.write",
-  ] as const) {
+  // Still-NOT_CONFIGURED catalogue entries wait configuration
+  for (const key of ["content.shortform"] as const) {
     const ready = resolveCapabilityReadiness({
       capabilityKey: key,
       trustedTenantId: "tenant-a",
@@ -176,7 +179,36 @@ function run() {
   };
   assert.equal(resolveCapabilityReadiness(auditNeeds).executable, true);
 
-  // --- Tenant isolation still applies to social contract (even when NOT_CONFIGURED) ---
+  // seo.audit / website.generate readiness executable
+  assert.equal(
+    resolveCapabilityReadiness({
+      capabilityKey: "seo.audit",
+      trustedTenantId: "tenant-a",
+      environment: { featureFlags: { search_web: true } },
+      authorization: { approvalGranted: true, shadowMode: false },
+      requestedOperation: "execute",
+      requiredInputArtifactsPresent: true,
+    }).executable,
+    true,
+  );
+  assert.equal(
+    resolveCapabilityReadiness({
+      capabilityKey: "website.generate",
+      trustedTenantId: "tenant-a",
+      entitlementSnapshot: {
+        tenantId: "tenant-a",
+        metrics: { website_maintenance: 1 },
+        remaining: { website_maintenance: 1 },
+      },
+      environment: { featureFlags: { website_generate: true } },
+      authorization: { approvalGranted: true, shadowMode: false },
+      requestedOperation: "execute",
+      requiredInputArtifactsPresent: true,
+    }).executable,
+    true,
+  );
+
+  // --- social.publish readiness READY when AVAILABLE + gates satisfied ---
   const socialNeeds = {
     capabilityKey: "social.publish",
     trustedTenantId: "tenant-a",
@@ -194,8 +226,10 @@ function run() {
     requiredInputArtifactsPresent: true,
   };
 
-  assert.equal(resolveCapabilityReadiness(socialNeeds).executable, false);
-  assert.equal(resolveCapabilityReadiness(socialNeeds).reasonCode, "PROVIDER_NOT_CONFIGURED");
+  const socialReady = resolveCapabilityReadiness(socialNeeds);
+  assert.equal(socialReady.executable, true);
+  assert.equal(socialReady.readiness, "READY");
+  assert.equal(socialReady.reasonCode, "READY");
 
   const missingTenant = resolveCapabilityReadiness({
     capabilityKey: "website.audit",
@@ -244,6 +278,7 @@ function run() {
   assert.ok(staticSnap.unavailableKeys.includes("media.carousel_generation"));
   assert.ok(staticSnap.availableKeys.includes("media.image_generation"));
   assert.ok(staticSnap.availableKeys.includes("website.audit"));
+  assert.ok(staticSnap.availableKeys.includes("social.publish"));
 
   const tenantSnap = buildCapabilityPlannerSnapshot({
     trustedTenantId: "tenant-a",
@@ -265,6 +300,7 @@ function run() {
 
   // --- requestCapability public API ---
   return (async () => {
+    resetCapabilityHostForTests();
     resetAndBootstrapProvidersForTests();
 
     const blockedPlan = await requestCapability({
@@ -317,6 +353,7 @@ function run() {
     assert.notEqual(mediaBlocked.status, "SUCCEEDED");
     assert.equal(mediaBlocked.outputArtifactIds.length, 0);
 
+    // CRM AVAILABLE but unbound service client → WAITING_CONFIGURATION
     const crmBlocked = await requestCapability(
       {
         requestId: "req-crm",
@@ -335,6 +372,7 @@ function run() {
     assert.equal(crmBlocked.reasonCode, "PROVIDER_NOT_CONFIGURED");
     assert.equal(crmBlocked.outputArtifactIds.length, 0);
 
+    // social.publish without host binding → WAITING_CONFIGURATION
     const publishBlocked = await requestCapability(
       {
         requestId: "req-pub",
@@ -380,8 +418,7 @@ function run() {
         integrationSnapshot: socialNeeds.integrationSnapshot,
       },
     );
-    // NOT_CONFIGURED is evaluated before shadow for catalogue status
-    assert.equal(shadow.status, "WAITING_CONFIGURATION");
+    assert.equal(shadow.status, "SHADOW_COMPLETED");
     assert.equal(shadow.outputArtifactIds.length, 0);
 
     const auditOk = await requestCapability(
@@ -510,6 +547,7 @@ function run() {
     assert.deepEqual([...noHop.providersTried], ["policy-a"]);
 
     // Restore default providers for any subsequent imports in same process
+    resetCapabilityHostForTests();
     resetAndBootstrapProvidersForTests();
     assert.ok(listProvidersForCapability("crm.read").length >= 1);
     assert.ok(listProvidersForCapability("website.audit").length >= 1);
@@ -541,9 +579,11 @@ function run() {
       requiredInputArtifactsPresent: true,
     });
     assert.ok(executable.includes("website.audit"));
-    assert.ok(!executable.includes("crm.read"));
+    assert.ok(executable.includes("seo.audit"));
+    assert.ok(executable.includes("crm.read"));
     assert.ok(executable.includes("media.image_generation"));
     assert.ok(!executable.includes("media.video_generation"));
+    assert.ok(!executable.includes("content.shortform"));
 
     const prov = createCapabilityProvenance({
       capabilityKey: "website.audit",
