@@ -18,6 +18,15 @@ const ROLE_SLICES: Record<string, readonly BrandContextSliceKey[]> = {
   "content.copywriter": ["voice", "audience", "campaign_objective", "approved_claims"],
   "research.audience_researcher": ["audience", "product_facts"],
   "quality.creative_critic": ["voice", "visual_identity", "approved_claims"],
+  "seo.keyword_researcher": ["audience", "product_facts", "campaign_objective"],
+  "seo.serp_researcher": ["audience", "product_facts"],
+  "seo.seo_writer": ["voice", "audience", "approved_claims", "product_facts", "campaign_objective"],
+  "seo.onpage_optimizer": ["product_facts", "approved_claims", "voice"],
+  "seo.internal_linking_specialist": ["product_facts", "audience"],
+  "website.ux_architect": ["audience", "campaign_objective", "product_facts", "visual_identity"],
+  "website.page_copy_specialist": ["voice", "audience", "approved_claims", "campaign_objective", "product_facts"],
+  "website.landing_page_builder": ["visual_identity", "voice", "audience", "campaign_objective", "approved_claims"],
+  "website.deploy_coordinator": ["campaign_objective", "product_facts"],
 };
 
 export function compileBrandContextSlice(args: {
