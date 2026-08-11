@@ -122,7 +122,6 @@ function mapBottleneckToService(bn: GrowthBottleneck): {
         suggestedTier: "growth",
       };
     case "WEAK_SEARCH_VISIBILITY":
-    case "LOW_DISCOVERY":
       return {
         serviceOrCapability: "seo.audit + content.longform",
         capabilityKey: "seo.audit",
@@ -148,6 +147,18 @@ function mapBottleneckToService(bn: GrowthBottleneck): {
         outcomeClass: "improve attribution clarity for learning loops",
         entitlementRequirement: null,
         suggestedTier: null,
+      };
+    case "LOW_DISCOVERY":
+    case "INSUFFICIENT_DEMAND":
+      return {
+        serviceOrCapability: "ads.plan + growth.lever_selection",
+        capabilityKey: "ads.plan",
+        reason:
+          "Discovery/demand bottleneck with healthier conversion signals — evaluate paid acquisition readiness before any spend",
+        outcomeClass: "improve qualified discovery when conversion foundation supports it",
+        entitlementRequirement: "meta_ad_campaigns",
+        suggestedTier: "growth",
+        dependency: "paid_acquisition_readiness_and_approvals",
       };
     default:
       return {

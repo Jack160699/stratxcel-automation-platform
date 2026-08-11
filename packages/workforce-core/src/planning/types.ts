@@ -168,6 +168,7 @@ export type ServiceDomain =
   | "seo"
   | "website"
   | "advertising"
+  | "growth"
   | "crm"
   | "whatsapp"
   | "sales"

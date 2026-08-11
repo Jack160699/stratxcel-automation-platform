@@ -221,6 +221,54 @@ function buildNonSocialWorkItems(
           entitlementClass: "website_maintenance",
         },
       ];
+    case "paid_acquisition_readiness": {
+      const hasEntitlement =
+        (input.entitlementSnapshot.relevantEntitlements.meta_ad_campaigns ?? 0) > 0;
+      return [
+        {
+          id: "work-growth-1",
+          serviceDomain: "growth",
+          department: "growth",
+          capability: "analytics.read",
+          deliverableKind: "funnel_map",
+          objective: "Growth lever selection — paid is one optional lever",
+          week: 1,
+          status: "PLANNED",
+        },
+        {
+          id: "work-ads-1",
+          serviceDomain: "advertising",
+          department: "advertising",
+          capability: "ads.plan",
+          deliverableKind: "ads_plan",
+          objective: "CampaignPlan + readiness (planning only — does not authorize spend)",
+          week: 2,
+          status: hasEntitlement ? "PLANNED" : "SETUP_REQUIRED",
+          entitlementClass: "meta_ad_campaigns",
+        },
+        {
+          id: "work-ads-2",
+          serviceDomain: "advertising",
+          department: "advertising",
+          capability: "ads.plan",
+          deliverableKind: "creative_test_plan",
+          objective: "AdCreativeBrief handoff to Creative Studio",
+          week: 2,
+          status: "PLANNED",
+          entitlementClass: "meta_ad_campaigns",
+        },
+        {
+          id: "work-ads-3",
+          serviceDomain: "growth",
+          department: "growth",
+          capability: "analytics.read",
+          deliverableKind: "experiment_plan",
+          objective: "ExperimentPlan with minimum evidence criterion (no significance claims)",
+          week: 3,
+          status: "PLANNED",
+        },
+      ];
+    }
     default:
       return [];
   }
