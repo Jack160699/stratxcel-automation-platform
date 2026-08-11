@@ -11,11 +11,14 @@ import {
   resetAndBootstrapProvidersForTests,
   countCapabilitiesByStatus,
   countCapabilityOperationalMatrix,
-  type CapabilityAuthorizationContext,
 } from "@stratxcel/workforce-core";
 import { executeWorkforceCapabilityServer } from "../execute-capability.ts";
 import { loadShadowAndKillSwitch } from "../snapshots.ts";
 import { buildTenantCapabilityRuntimeMatrix } from "../capability-runtime-matrix.ts";
+import {
+  resolveCapabilityAuthorization,
+  type ResolveAuthorizationDeps,
+} from "../resolve-authorization.ts";
 import { createFakeSupabase } from "../../../packages/whatsapp/src/__tests__/support/fake-supabase.ts";
 import { sendOutboundWhatsAppMessage } from "@stratxcel/whatsapp";
 
@@ -154,7 +157,12 @@ async function run() {
     mission_id: "mission-a",
     kind: "content_publish",
     status: "APPROVED",
-    subject: { capability: "social.publish" },
+    subject: {
+      capability: "social.publish",
+      artifactId: "final-a",
+      accountId: "acct-a",
+      variantId: "v1",
+    },
   });
   approvals.set("appr-site-a", {
     id: "appr-site-a",
@@ -178,7 +186,10 @@ async function run() {
     mission_id: "mission-a",
     kind: "other",
     status: "APPROVED",
-    subject: { capability: "whatsapp.send" },
+    subject: {
+      capability: "whatsapp.send",
+      destinationId: "lead-wa-a",
+    },
   });
   approvals.set("appr-crm-a", {
     id: "appr-crm-a",
@@ -186,7 +197,7 @@ async function run() {
     mission_id: "mission-a",
     kind: "other",
     status: "APPROVED",
-    subject: { capability: "crm.write" },
+    subject: { capability: "crm.write", operation: "update_lead_status" },
   });
   approvals.set("appr-sched-a", {
     id: "appr-sched-a",
@@ -194,30 +205,99 @@ async function run() {
     mission_id: "mission-a",
     kind: "content_publish",
     status: "APPROVED",
-    subject: { capability: "social.schedule" },
+    subject: {
+      capability: "social.schedule",
+      artifactId: "final-a",
+      accountId: "acct-a",
+      variantId: "v1",
+    },
+  });
+  approvals.set("appr-broad", {
+    id: "appr-broad",
+    tenant_id: A,
+    mission_id: "mission-a",
+    kind: "content_publish",
+    status: "APPROVED",
+    subject: {},
   });
 
-  const standing = new Map<
-    string,
-    {
-      id: string;
-      tenant_id: string;
-      state: string;
-      publishing_mode: string;
-      starts_at: string | null;
-      ends_at: string | null;
-      revoked_at: string | null;
-    }
-  >();
-  standing.set("pkg-sched-a", {
-    id: "pkg-sched-a",
-    tenant_id: A,
-    state: "ACTIVE",
-    publishing_mode: "REVIEW_BEFORE_PUBLISH",
-    starts_at: null,
-    ends_at: null,
-    revoked_at: null,
-  });
+  const queueItems = new Map([
+    [
+      "qi-sched-a",
+      {
+        id: "qi-sched-a",
+        authorization_id: "pkg-auth-a",
+        tenant_id: A,
+        variant_id: "v1",
+        account_id: "acct-a",
+        status: "PREPARED",
+      },
+    ],
+  ]);
+  const packageAuths = new Map([
+    [
+      "pkg-auth-a",
+      {
+        id: "pkg-auth-a",
+        tenant_id: A,
+        state: "ACTIVE",
+        publishing_mode: "REVIEW_BEFORE_PUBLISH",
+        starts_at: null as string | null,
+        ends_at: null as string | null,
+        revoked_at: null as string | null,
+        subscription_id: "sub-a",
+        entitlement_id: "ent-a",
+        allowed_platforms: ["instagram"],
+        content_scope: { metric: "social_posts" } as Record<string, unknown>,
+      },
+    ],
+  ]);
+  const authLoaders: ResolveAuthorizationDeps = {
+    loadApproval: async (id) => {
+      const row = approvals.get(id);
+      if (!row) return null;
+      return {
+        id: row.id,
+        tenant_id: row.tenant_id,
+        mission_id: row.mission_id,
+        kind: row.kind,
+        status: row.status,
+        subject: row.subject,
+      };
+    },
+    loadQueueItem: async (id) => queueItems.get(id) ?? null,
+    loadPackageAuthorization: async (id) => packageAuths.get(id) ?? null,
+    loadSubscription: async (id, tenantId) =>
+      id === "sub-a" && tenantId === A
+        ? {
+            id: "sub-a",
+            tenant_id: A,
+            status: "active",
+            current_period_end: new Date(Date.now() + 86_400_000).toISOString(),
+          }
+        : null,
+    loadEntitlement: async (id, tenantId, subscriptionId) =>
+      id === "ent-a" && tenantId === A && subscriptionId === "sub-a"
+        ? {
+            id: "ent-a",
+            tenant_id: A,
+            subscription_id: "sub-a",
+            metric: "social_posts",
+            is_paused: false,
+            limit_amount: 10,
+            current_usage: 1,
+          }
+        : null,
+    loadSocialAccount: async (id, tenantId) =>
+      tenantId === A && (id === "acct-a" || id === "acct-b")
+        ? {
+            id,
+            tenant_id: A,
+            platform: "instagram",
+            status: "CONNECTED",
+          }
+        : null,
+  };
 
   const waSeed = createFakeSupabase({
     crm_leads: [
@@ -292,101 +372,8 @@ async function run() {
     return null;
   };
 
-  const resolveAuthorization = async (args: {
-    tenantId: string;
-    missionId: string;
-    capability: string;
-    operation?: string | null;
-    references?: {
-      approvalId?: string | null;
-      standingAuthorizationScopeId?: string | null;
-      trustedSystemGrant?: {
-        kind: "HERMES_MISSION_TOOL_GRANT";
-        toolName: "create_crm_lead";
-        missionToolAllowed: boolean;
-      } | null;
-    } | null;
-  }): Promise<CapabilityAuthorizationContext> => {
-    const base: CapabilityAuthorizationContext = {
-      trustedTenantId: args.tenantId,
-      approvalGranted: false,
-      standingAuthorizationGranted: false,
-    };
-    const refs = args.references;
-    if (!refs) return base;
-
-    if (refs.trustedSystemGrant?.kind === "HERMES_MISSION_TOOL_GRANT") {
-      const g = refs.trustedSystemGrant;
-      if (
-        g.missionToolAllowed &&
-        g.toolName === "create_crm_lead" &&
-        args.capability === "crm.write" &&
-        (args.operation == null || args.operation === "create_lead")
-      ) {
-        return {
-          ...base,
-          standingAuthorizationGranted: true,
-          authorizationKind: "HERMES_MISSION_TOOL_GRANT",
-          authorizationCapability: "crm.write",
-          authorizationScopeId: "create_lead",
-        };
-      }
-      return base;
-    }
-
-    if (refs.approvalId) {
-      const row = approvals.get(refs.approvalId);
-      if (
-        row &&
-        row.tenant_id === args.tenantId &&
-        (row.mission_id == null || row.mission_id === args.missionId) &&
-        row.status === "APPROVED"
-      ) {
-        const subjectCap =
-          typeof row.subject.capability === "string" ? row.subject.capability : null;
-        const kindOk =
-          (row.kind === "content_publish" &&
-            (args.capability === "social.publish" || args.capability === "social.schedule")) ||
-          (row.kind === "deploy" &&
-            (args.capability === "website.generate" || args.capability === "website.deploy")) ||
-          subjectCap === args.capability;
-        if (kindOk) {
-          return {
-            ...base,
-            approvalGranted: true,
-            authorizationKind: "EXPLICIT_APPROVAL",
-            authorizationCapability: args.capability,
-            authorizationScopeId: refs.approvalId,
-          };
-        }
-      }
-    }
-
-    if (refs.standingAuthorizationScopeId) {
-      const row = standing.get(refs.standingAuthorizationScopeId);
-      if (row && row.tenant_id === args.tenantId && row.state === "ACTIVE" && !row.revoked_at) {
-        if (args.capability === "social.schedule") {
-          return {
-            ...base,
-            standingAuthorizationGranted: true,
-            authorizationKind: "PACKAGE_AUTO_SCHEDULE",
-            authorizationCapability: "social.schedule",
-            authorizationScopeId: row.id,
-          };
-        }
-        if (args.capability === "social.publish" && row.publishing_mode === "AUTO_PUBLISH") {
-          return {
-            ...base,
-            standingAuthorizationGranted: true,
-            authorizationKind: "PACKAGE_AUTO_PUBLISH",
-            authorizationCapability: "social.publish",
-            authorizationScopeId: row.id,
-          };
-        }
-      }
-    }
-    return base;
-  };
+  const resolveAuthorization: typeof resolveCapabilityAuthorization = (input, deps) =>
+    resolveCapabilityAuthorization(input, { ...authLoaders, ...(deps ?? {}) });
 
   const successResults: Array<{ capability: string; outputArtifactIds: readonly string[] }> = [];
 
@@ -539,7 +526,7 @@ async function run() {
   );
   assert.notEqual(scheduleAttack.status, "SUCCEEDED");
 
-  // standing auth via scope id
+  // standing auth via queue item id (not bare authorization row)
   const scheduleOk = await executeWorkforceCapabilityServer(
     {
       requestId: "sched-ok",
@@ -548,7 +535,7 @@ async function run() {
       department: "social",
       role: "scheduler",
       inputArtifactIds: ["final-a"],
-      authorization: { standingAuthorizationScopeId: "pkg-sched-a" },
+      authorization: { standingAuthorizationQueueItemId: "qi-sched-a" },
       input: {
         accountId: "acct-a",
         variantId: "v1",
@@ -561,6 +548,123 @@ async function run() {
     baseDeps,
   );
   assert.equal(scheduleOk.status, "SUCCEEDED", String(scheduleOk.humanReason ?? scheduleOk.status));
+
+  // bare package authorization ID on manual mission cannot authorize
+  const bareAuthBlocked = await executeWorkforceCapabilityServer(
+    {
+      requestId: "bare-auth",
+      missionId: "mission-a",
+      capability: "social.schedule",
+      department: "social",
+      role: "scheduler",
+      inputArtifactIds: ["final-a"],
+      authorization: { standingAuthorizationScopeId: "pkg-auth-a" },
+      input: {
+        accountId: "acct-a",
+        variantId: "v1",
+        scheduledAtIso: future(),
+        timeZone: "UTC",
+        idempotencyKey: "bare-auth",
+      },
+    },
+    baseDeps,
+  );
+  assert.notEqual(bareAuthBlocked.status, "SUCCEEDED");
+
+  // broad ambiguous content_publish approval fails closed
+  const broadBlocked = await executeWorkforceCapabilityServer(
+    {
+      requestId: "broad",
+      missionId: "mission-a",
+      capability: "social.publish",
+      department: "social",
+      role: "publisher",
+      inputArtifactIds: ["final-a"],
+      authorization: { approvalId: "appr-broad" },
+      input: {
+        accountId: "acct-a",
+        variantId: "v1",
+        artifactId: "final-a",
+        idempotencyKey: "broad",
+      },
+    },
+    baseDeps,
+  );
+  assert.notEqual(broadBlocked.status, "SUCCEEDED");
+  assert.notEqual(broadBlocked.status, "QUEUED");
+
+  // approval for artifact A cannot publish artifact B
+  artifacts.set("final-b-tenant-a", {
+    id: "final-b-tenant-a",
+    tenantId: A,
+    missionId: "mission-a",
+    kind: "social_final",
+    metadata: { status: "approved" },
+  });
+  const wrongArtifact = await executeWorkforceCapabilityServer(
+    {
+      requestId: "wrong-art",
+      missionId: "mission-a",
+      capability: "social.publish",
+      department: "social",
+      role: "publisher",
+      inputArtifactIds: ["final-b-tenant-a"],
+      authorization: { approvalId: "appr-social-a" },
+      input: {
+        accountId: "acct-a",
+        variantId: "v1",
+        artifactId: "final-b-tenant-a",
+        idempotencyKey: "wrong-art",
+      },
+    },
+    baseDeps,
+  );
+  assert.notEqual(wrongArtifact.status, "SUCCEEDED");
+  assert.notEqual(wrongArtifact.status, "QUEUED");
+
+  // approval for account A cannot publish account B
+  const wrongAccount = await executeWorkforceCapabilityServer(
+    {
+      requestId: "wrong-acct",
+      missionId: "mission-a",
+      capability: "social.publish",
+      department: "social",
+      role: "publisher",
+      inputArtifactIds: ["final-a"],
+      authorization: { approvalId: "appr-social-a" },
+      input: {
+        accountId: "acct-b",
+        variantId: "v1",
+        artifactId: "final-a",
+        idempotencyKey: "wrong-acct",
+      },
+    },
+    baseDeps,
+  );
+  assert.notEqual(wrongAccount.status, "SUCCEEDED");
+  assert.notEqual(wrongAccount.status, "QUEUED");
+
+  // schedule approval cannot authorize publish
+  const schedAsPublish = await executeWorkforceCapabilityServer(
+    {
+      requestId: "sched-as-pub",
+      missionId: "mission-a",
+      capability: "social.publish",
+      department: "social",
+      role: "publisher",
+      inputArtifactIds: ["final-a"],
+      authorization: { approvalId: "appr-sched-a" },
+      input: {
+        accountId: "acct-a",
+        variantId: "v1",
+        artifactId: "final-a",
+        idempotencyKey: "sched-as-pub",
+      },
+    },
+    baseDeps,
+  );
+  assert.notEqual(schedAsPublish.status, "SUCCEEDED");
+  assert.notEqual(schedAsPublish.status, "QUEUED");
 
   // social.publish SCHEDULED → QUEUED via resolved approvalId
   const pubQueued = await executeWorkforceCapabilityServer(
@@ -632,7 +736,13 @@ async function run() {
     },
     baseDeps,
   );
-  assert.equal(crossArt.status, "BLOCKED");
+  assert.notEqual(crossArt.status, "SUCCEEDED");
+  // Cross-tenant artifact is rejected either at approval scope (wrong artifact)
+  // or at artifact tenant binding once approval matches.
+  assert.ok(
+    crossArt.status === "BLOCKED" || crossArt.status === "WAITING_APPROVAL",
+    `expected BLOCKED/WAITING_APPROVAL, got ${crossArt.status}`,
+  );
 
   // website.generate
   const site = await executeWorkforceCapabilityServer(

@@ -159,7 +159,8 @@ export async function buildTenantCapabilityRuntimeMatrix(args: {
       (executeNoAuth.reasonCode === "APPROVAL_REQUIRED" ||
         executeNoAuth.reasonCode === "STANDING_AUTH_REQUIRED");
 
-    const runtimeExecutableNow = executeWithAuth.executable === true;
+    const runtimeExecutableNow =
+      staticAvailable && providerReady && executeWithAuth.executable === true;
 
     if (technically) TENANT_TECHNICALLY_READY_COUNT += 1;
     if (executionRequiresApproval) EXECUTION_REQUIRES_APPROVAL_COUNT += 1;
