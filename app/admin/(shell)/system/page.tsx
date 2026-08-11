@@ -65,6 +65,8 @@ export default async function SystemHealthPage() {
   if (!ctx.ok) return null;
 
   const hermes = await currentHermesStatus();
+  const geminiConfigured = Boolean(process.env.GEMINI_API_KEY);
+  const openaiConfigured = Boolean(process.env.OPENAI_API_KEY);
   const rows: IntegrationRow[] = [
     {
       name: "WhatsApp",
@@ -77,6 +79,27 @@ export default async function SystemHealthPage() {
       detail: "Live Payment Links, state machine, webhook route (/api/webhook/razorpay), & refunds built.",
     },
     hermes,
+    {
+      name: "AI Runtime (Gemini)",
+      status: geminiConfigured ? "live" : "disconnected",
+      detail: geminiConfigured
+        ? "GEMINI_API_KEY configured. Model policy + circuit state via @stratxcel/ai-runtime (no key values exposed)."
+        : "GEMINI_API_KEY not set.",
+    },
+    {
+      name: "AI Runtime (OpenAI)",
+      status: openaiConfigured ? "live" : "disconnected",
+      detail: openaiConfigured
+        ? "OPENAI_API_KEY configured. Used for fallback/escalation and voice routes (server-only)."
+        : "OPENAI_API_KEY not set.",
+    },
+    {
+      name: "AI Media (Image/Video)",
+      status: geminiConfigured || openaiConfigured ? "test" : "disconnected",
+      detail: geminiConfigured || openaiConfigured
+        ? "Image: Gemini primary / OpenAI fallback. Video: Veo async only (Sora not active)."
+        : "No image/video provider keys configured — remains NOT_CONFIGURED.",
+    },
     {
       name: "Google Drive",
       status: "manual_action_required",

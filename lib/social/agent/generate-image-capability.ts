@@ -9,6 +9,7 @@ import {
   getImageProvider,
   resetImageProvider,
   setImageProvider,
+  AiRuntimeImageProvider,
   type ImageProvider,
   type ArtDirectionArtifact,
   type CreativeBrief,
@@ -137,10 +138,14 @@ export async function requestGenerateImage(input: GenerateImageRequest): Promise
 
   const previous = getImageProvider();
   let injectedTest = false;
+  let bootstrappedRuntime = false;
   try {
     if (input.testProvider) {
       setImageProvider(input.testProvider);
       injectedTest = true;
+    } else if (!getImageProvider() && (process.env.GEMINI_API_KEY || process.env.OPENAI_API_KEY)) {
+      setImageProvider(new AiRuntimeImageProvider());
+      bootstrappedRuntime = true;
     }
 
     const provider = getImageProvider();
@@ -225,7 +230,7 @@ export async function requestGenerateImage(input: GenerateImageRequest): Promise
       },
     };
   } finally {
-    if (injectedTest) {
+    if (injectedTest || bootstrappedRuntime) {
       if (previous) setImageProvider(previous);
       else resetImageProvider();
     }

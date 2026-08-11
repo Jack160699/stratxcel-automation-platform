@@ -1,7 +1,21 @@
+/**
+ * Social Copilot provider — routes through @stratxcel/ai-runtime while preserving
+ * the Gemini Platform-data boundary (buildGeminiRequest / sanitizeGeminiText).
+ */
+
+import {
+  AIRuntime,
+  GeminiTextProvider,
+  OpenAITextProvider,
+  resolveModelId,
+  resolveSocialTaskClass,
+  type AIExecutionResult,
+} from "@stratxcel/ai-runtime";
 import {
   buildGeminiRequest,
   GEMINI_GENERATE_CONTENT_URL,
   GEMINI_MODEL,
+  sanitizeGeminiText,
   type GeminiBoundaryInput,
   type GeminiConversationTurn,
 } from "./gemini-boundary.ts";
@@ -39,8 +53,8 @@ export interface ProviderSafeContext {
 }
 
 export interface AIProvider {
-  readonly name: "gemini";
-  readonly envKey: "GEMINI_API_KEY";
+  readonly name: "gemini" | "openai" | "ai-runtime";
+  readonly envKey: "GEMINI_API_KEY" | "OPENAI_API_KEY" | "AI_ROUTER";
   isConfigured(): boolean;
   complete(messages: AgentTurnMessage[], tools: ToolSchema[], context: ProviderSafeContext): Promise<CompletionResult>;
 }
@@ -53,9 +67,25 @@ export interface EffectiveProviderIdentity {
 }
 
 export function resolveEffectiveProviderIdentity(): EffectiveProviderIdentity {
-  return process.env.GEMINI_API_KEY
-    ? { provider: "Google Gemini", protocol: "Gemini Developer API", model: GEMINI_MODEL, configured: true }
-    : { provider: "Not configured", protocol: "—", model: "—", configured: false };
+  const gemini = Boolean(process.env.GEMINI_API_KEY);
+  const openai = Boolean(process.env.OPENAI_API_KEY);
+  if (gemini) {
+    return {
+      provider: "Google Gemini",
+      protocol: "AI Runtime / Gemini Developer API",
+      model: resolveModelId("GOOGLE_CHEAP"),
+      configured: true,
+    };
+  }
+  if (openai) {
+    return {
+      provider: "OpenAI",
+      protocol: "AI Runtime / Responses API",
+      model: resolveModelId("OPENAI_CHEAP_FALLBACK"),
+      configured: true,
+    };
+  }
+  return { provider: "Not configured", protocol: "—", model: "—", configured: false };
 }
 
 export interface GeminiResponseCandidatePart {
@@ -63,14 +93,6 @@ export interface GeminiResponseCandidatePart {
   functionCall?: { name: string; args?: Record<string, unknown> };
 }
 
-/**
- * Pure, network-free parsing of Gemini's response parts into the normalized
- * {text, toolCalls} shape — factored out of GeminiProvider.complete() so
- * this mapping (the actual "Blocker B" fix) is unit-testable without a real
- * HTTP call. Gemini never returns a call id, so one is synthesized per part
- * — it only needs to be unique within this single response, to correlate
- * the pushed tool-result message back to this call within the same round.
- */
 export function parseGeminiCompletionParts(parts: GeminiResponseCandidatePart[]): CompletionResult {
   let text = "";
   const toolCalls: ToolCallRequest[] = [];
@@ -83,6 +105,10 @@ export function parseGeminiCompletionParts(parts: GeminiResponseCandidatePart[])
   return { text, toolCalls };
 }
 
+/**
+ * Direct Gemini path — still uses buildGeminiRequest as the only Social boundary constructor.
+ * Used when AI_ROUTER_ENABLED=0 for emergency rollback.
+ */
 class GeminiProvider implements AIProvider {
   readonly name = "gemini" as const;
   readonly envKey = "GEMINI_API_KEY" as const;
@@ -95,12 +121,6 @@ class GeminiProvider implements AIProvider {
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) throw new Error("GEMINI_API_KEY not configured");
 
-    // Real multi-round tool calling needs the full ordered history —
-    // assistant text and prior tool results — not just the user turns a
-    // single-shot caller would send. The system-role message (if any)
-    // becomes the request's system_instruction instead of the fixed
-    // Social-Copilot default, so callers with their own system prompt
-    // (e.g. Agent Core's admin/client prompts) aren't silently overridden.
     const systemMessage = messages.find((message) => message.role === "system")?.content;
     const conversation: GeminiConversationTurn[] = messages
       .filter((message): message is AgentTurnMessage & { role: "user" | "assistant" | "tool" } => message.role !== "system")
@@ -119,23 +139,104 @@ class GeminiProvider implements AIProvider {
     };
     const request = buildGeminiRequest(boundaryInput);
     const requestFields = Object.keys(request);
+    const model = resolveModelId("GOOGLE_CHEAP");
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
 
-    const response = await fetch(GEMINI_GENERATE_CONTENT_URL, {
+    const response = await fetch(url, {
       method: "POST",
       headers: { "x-goog-api-key": apiKey, "Content-Type": "application/json" },
       body: JSON.stringify(request),
     });
-    console.info("Gemini request", { requestFields, status: response.status });
+    console.info("Gemini request", { requestFields, status: response.status, model });
     if (!response.ok) throw new Error(`Gemini request failed: HTTP ${response.status}`);
 
-    const json = await response.json() as {
+    const json = (await response.json()) as {
       candidates?: Array<{ content?: { parts?: GeminiResponseCandidatePart[] } }>;
     };
     return parseGeminiCompletionParts(json.candidates?.[0]?.content?.parts ?? []);
   }
 }
 
-const PROVIDERS: AIProvider[] = [new GeminiProvider()];
+/**
+ * Canonical Social path: AI Runtime with Gemini boundary sanitization on Google traffic.
+ */
+class AiRuntimeSocialProvider implements AIProvider {
+  readonly name = "ai-runtime" as const;
+  readonly envKey = "AI_ROUTER" as const;
+
+  isConfigured() {
+    return Boolean(process.env.GEMINI_API_KEY || process.env.OPENAI_API_KEY);
+  }
+
+  async complete(messages: AgentTurnMessage[], tools: ToolSchema[], context: ProviderSafeContext): Promise<CompletionResult> {
+    const safeContext = {
+      brandInstructions: context.brandInstructions.map(sanitizeGeminiText),
+      contentIdeas: (context.contentIdeas ?? []).map(sanitizeGeminiText),
+      draftCaptions: (context.draftCaptions ?? []).map(sanitizeGeminiText),
+      businessInformation: (context.businessInformation ?? []).map(sanitizeGeminiText),
+      creativeImages: context.creativeImages,
+    };
+
+    const systemMessage = messages.find((message) => message.role === "system")?.content;
+    const conversation: GeminiConversationTurn[] = messages
+      .filter((message): message is AgentTurnMessage & { role: "user" | "assistant" | "tool" } => message.role !== "system")
+      .map((message) => ({ role: message.role, content: message.content, toolName: message.toolName }));
+
+    const boundaryInput: GeminiBoundaryInput = {
+      userPrompts: [],
+      brandInstructions: safeContext.brandInstructions,
+      contentIdeas: safeContext.contentIdeas,
+      draftCaptions: safeContext.draftCaptions,
+      businessInformation: safeContext.businessInformation,
+      conversation,
+      systemInstruction: systemMessage,
+      tools: tools.map((tool) => ({ name: tool.name, description: tool.description, parameters: tool.parameters })),
+      creativeImages: safeContext.creativeImages,
+    };
+    const boundaryRequest = buildGeminiRequest(boundaryInput);
+    const systemText = boundaryRequest.system_instruction.parts.map((p) => p.text).join("\n");
+
+    const runtimeMessages = [
+      { role: "system" as const, content: systemText },
+      ...messages
+        .filter((m) => m.role !== "system")
+        .map((m) => ({
+          role: m.role,
+          content: m.content,
+          toolCallId: m.toolCallId,
+          toolName: m.toolName,
+        })),
+    ];
+
+    const runtime = new AIRuntime({
+      google: new GeminiTextProvider({
+        applySocialBoundarySanitize: sanitizeGeminiText,
+      }),
+      openai: new OpenAITextProvider(),
+    });
+
+    const taskClass = resolveSocialTaskClass("operations");
+    const result: AIExecutionResult = await runtime.execute({
+      tenantId: "social-session",
+      department: "social",
+      taskClass,
+      messages: runtimeMessages,
+      tools: tools.map((t) => ({ name: t.name, description: t.description, parameters: t.parameters })),
+    });
+
+    if (!result.ok) {
+      throw new Error(result.userSafeError ?? result.errorDetailSafe ?? "AI processing failed");
+    }
+
+    return { text: result.text, toolCalls: result.toolCalls };
+  }
+}
+
+const LEGACY_DIRECT = process.env.AI_ROUTER_ENABLED === "0";
+
+const PROVIDERS: AIProvider[] = LEGACY_DIRECT
+  ? [new GeminiProvider()]
+  : [new AiRuntimeSocialProvider(), new GeminiProvider()];
 
 export function listProviders(): AIProvider[] {
   return PROVIDERS;
@@ -144,3 +245,5 @@ export function listProviders(): AIProvider[] {
 export function resolveConfiguredProvider(): AIProvider | null {
   return PROVIDERS.find((provider) => provider.isConfigured()) ?? null;
 }
+
+export { GEMINI_GENERATE_CONTENT_URL, GEMINI_MODEL };

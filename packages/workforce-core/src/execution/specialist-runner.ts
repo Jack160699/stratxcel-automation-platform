@@ -40,6 +40,18 @@ export interface SpecialistRunRequest {
   parentBudgetRemainingCents: number;
   correlationId: string;
   requiredCapabilities?: readonly string[];
+  /** AI Runtime workload class — planner may recommend; router remains authoritative. */
+  taskClass?: string;
+  qualityTarget?: number;
+  routingPolicy?: string;
+  budgetEnvelope?: {
+    plan: "starter" | "growth" | "business" | "scale" | "custom";
+    monthlyBudgetUsd: number;
+    spentUsdThisMonth: number;
+    reservedCriticalUsd?: number;
+    allowEmergencyMargin?: boolean;
+    ownerApprovedOverage?: boolean;
+  };
 }
 
 export type SpecialistRunStatus = "COMPLETED" | "FAILED";
@@ -106,7 +118,31 @@ export async function runSpecialistAgent(
       assertCapabilitiesExecutable(request.requiredCapabilities);
     }
 
-    const context = deps.buildContext({ instructions: request.instructions });
+    // AI Runtime routing metadata: specialist may narrow, never widen. Hermes remains
+    // the execution backend for mission specialists; model authority for direct AI
+    // calls is packages/ai-runtime. Planner recommendations are advisory only.
+    let routingNote = "";
+    try {
+      const { buildSpecialistRouting } = await import("@stratxcel/ai-runtime");
+      const routing = buildSpecialistRouting({
+        department: request.department,
+        qualityTarget: request.qualityTarget,
+        budgetEnvelope: request.budgetEnvelope,
+        parentTaskClass: request.taskClass as
+          | "ROUTING"
+          | "GENERAL_SPECIALIST"
+          | "CONTENT"
+          | "STRATEGY"
+          | "EXECUTIVE"
+          | "RESEARCH"
+          | undefined,
+      });
+      routingNote = `\n[ai-runtime] taskClass=${routing.taskClass} qualityTarget=${routing.qualityTarget ?? "default"} authority=ai_runtime_router`;
+    } catch {
+      routingNote = "";
+    }
+
+    const context = deps.buildContext({ instructions: `${request.instructions}${routingNote}` });
     const token = deps.issueToken();
     const result = await deps.hermes.execute(mission, context, token);
 
