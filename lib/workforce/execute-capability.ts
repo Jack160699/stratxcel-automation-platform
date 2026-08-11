@@ -16,6 +16,12 @@ import type {
   loadCapabilityIntegrationSnapshot,
   loadShadowAndKillSwitch,
 } from "./snapshots.ts";
+import type {
+  CapabilityAuthorizationReferences,
+  resolveCapabilityAuthorization,
+} from "./resolve-authorization.ts";
+
+export type { CapabilityAuthorizationReferences };
 
 export interface ExecuteWorkforceCapabilityServerInput {
   requestId: string;
@@ -32,10 +38,11 @@ export interface ExecuteWorkforceCapabilityServerInput {
    */
   claimedTenantId?: string | null;
   /**
-   * Trusted authorization from server approval / standing-auth resolvers.
-   * Never from model tool payload alone.
+   * Authorization REFERENCES / grants — never trust caller-supplied
+   * approvalGranted / standingAuthorizationGranted booleans.
+   * The executor resolves CapabilityAuthorizationContext server-side.
    */
-  authorization?: Omit<CapabilityAuthorizationContext, "trustedTenantId">;
+  authorization?: CapabilityAuthorizationReferences | null;
   expectedArtifactVersions?: Readonly<Record<string, string>>;
 }
 
@@ -47,6 +54,7 @@ export interface ExecuteWorkforceCapabilityServerDeps {
   loadEnvironment?: typeof loadCapabilityEnvironmentView;
   loadShadowKill?: typeof loadShadowAndKillSwitch;
   resolveArtifact?: typeof resolveMissionArtifactRecord;
+  resolveAuthorization?: typeof resolveCapabilityAuthorization;
   requestCapabilityFn?: typeof requestCapability;
 }
 
@@ -107,33 +115,39 @@ export async function executeWorkforceCapabilityServer(
 
   const snapshots = await import("./snapshots.ts");
   const artifacts = await import("./mission-artifacts.ts");
+  const authModule = await import("./resolve-authorization.ts");
   const loadEnt = deps.loadEntitlementSnapshot ?? snapshots.loadCapabilityEntitlementSnapshot;
   const loadInt = deps.loadIntegrationSnapshot ?? snapshots.loadCapabilityIntegrationSnapshot;
   const loadEnv = deps.loadEnvironment ?? snapshots.loadCapabilityEnvironmentView;
   const loadShadow = deps.loadShadowKill ?? snapshots.loadShadowAndKillSwitch;
   const resolveArtifact = deps.resolveArtifact ?? artifacts.resolveMissionArtifactRecord;
+  const resolveAuth = deps.resolveAuthorization ?? authModule.resolveCapabilityAuthorization;
   const run = deps.requestCapabilityFn ?? requestCapability;
 
-  const [entitlementSnapshot, integrationSnapshot, shadowKill] = await Promise.all([
-    loadEnt(tenantId),
-    loadInt(tenantId),
-    loadShadow(tenantId),
-  ]);
+  const operation =
+    typeof input.input?.operation === "string" ? input.input.operation : null;
+
+  const [entitlementSnapshot, integrationSnapshot, shadowKill, resolvedAuth] =
+    await Promise.all([
+      loadEnt(tenantId),
+      loadInt(tenantId),
+      loadShadow({ tenantId, capability: input.capability }),
+      resolveAuth({
+        tenantId,
+        missionId: input.missionId,
+        capability: input.capability,
+        operation,
+        references: input.authorization ?? null,
+      }),
+    ]);
   const environment = loadEnv();
 
   const authorizationContext: CapabilityAuthorizationContext = {
+    ...resolvedAuth,
     trustedTenantId: tenantId,
-    approvalGranted: input.authorization?.approvalGranted === true,
-    standingAuthorizationGranted: input.authorization?.standingAuthorizationGranted === true,
-    authorizationKind: input.authorization?.authorizationKind,
-    authorizationCapability: input.authorization?.authorizationCapability,
-    authorizationScopeId: input.authorization?.authorizationScopeId,
-    shadowMode:
-      input.authorization?.shadowMode === true || shadowKill.shadowMode === true,
+    shadowMode: resolvedAuth.shadowMode === true || shadowKill.shadowMode === true,
     killSwitchActive:
-      input.authorization?.killSwitchActive === true ||
-      shadowKill.killSwitchActive === true,
-    fromPlannerSnapshot: input.authorization?.fromPlannerSnapshot === true,
+      resolvedAuth.killSwitchActive === true || shadowKill.killSwitchActive === true,
   };
 
   return run(

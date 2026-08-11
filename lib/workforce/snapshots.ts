@@ -12,6 +12,14 @@ import { createSupabaseServiceClient } from "../supabase/service.ts";
 
 type ServiceClient = ReturnType<typeof createSupabaseServiceClient>;
 
+function isSocialCapability(capability: string): boolean {
+  return capability.startsWith("social.");
+}
+
+function isWhatsAppCapability(capability: string): boolean {
+  return capability.startsWith("whatsapp.");
+}
+
 export async function loadCapabilityEntitlementSnapshot(
   tenantId: string,
   service: ServiceClient = createSupabaseServiceClient(),
@@ -54,15 +62,19 @@ export async function loadCapabilityIntegrationSnapshot(
 
   const { data: waBindings } = await service
     .from("whatsapp_phone_bindings")
-    .select("id, status, outbound_enabled")
+    .select("id, status, outbound_enabled, source")
     .eq("tenant_id", tenantId)
     .limit(20);
+  // Must match WhatsApp outbound preflight: active + outbound_enabled === true.
   if (
-    (waBindings ?? []).some(
-      (b) =>
-        String(b.status).toLowerCase() === "active" &&
-        (b.outbound_enabled === true || b.outbound_enabled == null),
-    )
+    (waBindings ?? []).some((b) => {
+      if (String(b.status).toLowerCase() !== "active") return false;
+      if (b.outbound_enabled !== true) return false;
+      // Legacy verified bot bindings are prohibited from live outbound.
+      const source = String(b.source ?? "").toLowerCase();
+      if (source === "legacy_verified_bot") return false;
+      return true;
+    })
   ) {
     connected.push("whatsapp_binding");
   }
@@ -107,31 +119,67 @@ export function loadCapabilityEnvironmentView(): CapabilityEnvironmentView {
   };
 }
 
-export async function loadShadowAndKillSwitch(tenantId: string): Promise<{
+/**
+ * Capability-scoped shadow / kill switches.
+ * Social and WhatsApp env flags must not bleed into unrelated capabilities.
+ */
+export async function loadShadowAndKillSwitch(args: {
+  tenantId: string;
+  capability: string;
+}): Promise<{
   shadowMode: boolean;
   killSwitchActive: boolean;
 }> {
-  const globalShadow =
-    process.env.STRATXCEL_SHADOW_MODE === "1" ||
-    process.env.SOCIAL_SHADOW_MODE === "1" ||
-    process.env.WHATSAPP_SHADOW_MODE === "1";
-  const globalKill =
-    process.env.STRATXCEL_KILL_SWITCH === "1" ||
-    process.env.SOCIAL_PUBLISH_KILL_SWITCH === "1";
+  const { tenantId, capability } = args;
+  const globalShadow = process.env.STRATXCEL_SHADOW_MODE === "1";
+  const globalKill = process.env.STRATXCEL_KILL_SWITCH === "1";
 
-  // Tenant-scoped automation settings when present.
+  const socialShadow =
+    isSocialCapability(capability) && process.env.SOCIAL_SHADOW_MODE === "1";
+  const whatsappShadow =
+    isWhatsAppCapability(capability) && process.env.WHATSAPP_SHADOW_MODE === "1";
+
+  const socialPublishKill =
+    capability === "social.publish" && process.env.SOCIAL_PUBLISH_KILL_SWITCH === "1";
+
+  let tenantSocialShadow = false;
+  let tenantSocialKill = false;
+  if (isSocialCapability(capability)) {
+    try {
+      const service = createSupabaseServiceClient();
+      const { data } = await service
+        .from("social_automation_settings")
+        .select("shadow_mode, kill_switch")
+        .eq("tenant_id", tenantId)
+        .maybeSingle();
+      tenantSocialShadow = data?.shadow_mode === true;
+      // Tenant social kill applies to social.publish (and schedule) defense-in-depth.
+      tenantSocialKill =
+        data?.kill_switch === true &&
+        (capability === "social.publish" || capability === "social.schedule");
+    } catch {
+      // omit
+    }
+  }
+
+  let tenantKillSwitch = false;
   try {
     const service = createSupabaseServiceClient();
-    const { data } = await service
-      .from("social_automation_settings")
-      .select("shadow_mode, kill_switch")
-      .eq("tenant_id", tenantId)
-      .maybeSingle();
-    return {
-      shadowMode: globalShadow || data?.shadow_mode === true,
-      killSwitchActive: globalKill || data?.kill_switch === true,
-    };
+    const { isKillSwitchActive } = await import("@stratxcel/queue");
+    const kill = await isKillSwitchActive(service as never, [
+      { scope: "tenant", scopeId: tenantId },
+    ]);
+    // Tenant kill_switches rows are global to the tenant when enabled.
+    tenantKillSwitch = kill.active === true;
   } catch {
-    return { shadowMode: globalShadow, killSwitchActive: globalKill };
+    // Fail open on unreadable table here — queue workers still fail closed.
+    // Capability executor must not block all capabilities on a missing table
+    // in local/test; env + social settings remain authoritative.
   }
+
+  return {
+    shadowMode: globalShadow || socialShadow || whatsappShadow || tenantSocialShadow,
+    killSwitchActive:
+      globalKill || socialPublishKill || tenantSocialKill || tenantKillSwitch,
+  };
 }

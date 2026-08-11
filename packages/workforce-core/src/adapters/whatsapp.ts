@@ -4,6 +4,28 @@ import { buildCapabilityExecutionReceipt } from "./receipts.ts";
 import { getCapabilityOperationClass } from "./operation-class.ts";
 import { getCapabilityHost, type LooseServiceClient } from "./host.ts";
 
+type WhatsAppSendFn = (
+  client: LooseServiceClient,
+  input: {
+    tenantId: string;
+    leadId: string;
+    body: string;
+    idempotencyKey: string;
+    templateId?: string | null;
+    templateName?: string | null;
+    templateLanguage?: string | null;
+    templateParams?: string[];
+    isHumanInitiated?: boolean;
+  },
+) => Promise<{
+  ok: boolean;
+  reason?: string;
+  messageId?: string;
+  alreadySent?: boolean;
+  mode?: string;
+  providerId?: string | null;
+}>;
+
 function envConfigured(): boolean {
   return Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
 }
@@ -120,8 +142,13 @@ export function createWhatsAppSendProvider(): CapabilityProvider {
       }
 
       try {
+        const host = getCapabilityHost();
         const { sendOutboundWhatsAppMessage } = await import("@stratxcel/whatsapp");
-        const outcome = await sendOutboundWhatsAppMessage(client as never, {
+        const sendFn: WhatsAppSendFn =
+          (host.sendWhatsAppOutbound as WhatsAppSendFn | undefined) ??
+          ((c, args) => sendOutboundWhatsAppMessage(c as never, args));
+        // Workforce automation never claims human-initiated — hard-force false.
+        const outcome = await sendFn(client, {
           tenantId: input.tenantId,
           leadId,
           body: body.slice(0, 4000),
@@ -140,7 +167,7 @@ export function createWhatsAppSendProvider(): CapabilityProvider {
         });
 
         if (!outcome.ok) {
-          const mapped = mapSendReason(outcome.reason);
+          const mapped = mapSendReason(String(outcome.reason ?? "send_failed"));
           return {
             ok: false,
             providerKey: "whatsapp-meta",
@@ -150,12 +177,14 @@ export function createWhatsAppSendProvider(): CapabilityProvider {
           };
         }
 
+        const messageId = String(outcome.messageId ?? "");
         const deliveryStatus = outcome.alreadySent
           ? "SENT"
           : outcome.mode === "shadow"
             ? "QUEUED"
             : "SENT";
 
+        // whatsapp_messages.id is a provider reference — never a mission artifact ID.
         const receipt = buildCapabilityExecutionReceipt({
           capability: "whatsapp.send",
           tenantId: input.tenantId,
@@ -171,24 +200,25 @@ export function createWhatsAppSendProvider(): CapabilityProvider {
             input.authorization?.standingAuthorizationGranted === true,
           idempotencyKey,
           inputArtifactIds: input.inputArtifactIds,
-          outputArtifactIds: [outcome.messageId],
+          outputArtifactIds: [],
           integrationKey: "whatsapp_binding",
-          providerExternalId: outcome.alreadySent ? null : outcome.providerId,
+          providerExternalId: outcome.alreadySent ? null : (outcome.providerId ?? null),
           detail: {
             kind: "whatsapp_send_receipt",
-            messageId: outcome.messageId,
+            messageId,
             deliveryStatus,
-            alreadySent: outcome.alreadySent,
-            mode: outcome.alreadySent ? null : outcome.mode,
+            alreadySent: outcome.alreadySent === true,
+            mode: outcome.alreadySent ? null : outcome.mode ?? null,
             delivered: false,
+            authorizationKind: input.authorization?.authorizationKind ?? null,
           },
         });
 
         return {
           ok: true,
           providerKey: "whatsapp-meta",
-          providerReference: outcome.messageId,
-          outputArtifactIds: [outcome.messageId],
+          providerReference: messageId,
+          outputArtifactIds: [],
           usage: unknownCostUsage({ requests: 1 }),
           receipt: receipt as unknown as Record<string, unknown>,
         };

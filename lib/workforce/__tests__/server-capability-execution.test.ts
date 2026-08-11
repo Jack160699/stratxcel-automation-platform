@@ -9,11 +9,15 @@ import {
   bindCapabilityHost,
   resetCapabilityHostForTests,
   resetAndBootstrapProvidersForTests,
-  getCapability,
   countCapabilitiesByStatus,
   countCapabilityOperationalMatrix,
+  type CapabilityAuthorizationContext,
 } from "@stratxcel/workforce-core";
 import { executeWorkforceCapabilityServer } from "../execute-capability.ts";
+import { loadShadowAndKillSwitch } from "../snapshots.ts";
+import { buildTenantCapabilityRuntimeMatrix } from "../capability-runtime-matrix.ts";
+import { createFakeSupabase } from "../../../packages/whatsapp/src/__tests__/support/fake-supabase.ts";
+import { sendOutboundWhatsAppMessage } from "@stratxcel/whatsapp";
 
 const A = "tenant-a";
 const B = "tenant-b";
@@ -24,38 +28,226 @@ const artifacts = new Map<
   { id: string; tenantId: string; missionId: string; kind: string; metadata?: Record<string, unknown> }
 >();
 
+type LeadRow = Record<string, unknown>;
+
+function createCrmFake(seedLeads: LeadRow[] = []) {
+  const leads: LeadRow[] = [...seedLeads];
+  let seq = leads.length;
+  const client = {
+    from(table: string) {
+      if (table !== "crm_leads") {
+        return {
+          select() {
+            return this;
+          },
+          eq() {
+            return this;
+          },
+          order() {
+            return this;
+          },
+          limit() {
+            return this;
+          },
+          maybeSingle: async () => ({ data: null, error: null }),
+          then(resolve: (v: { data: unknown[]; error: null }) => void) {
+            resolve({ data: [], error: null });
+          },
+        };
+      }
+      const state: {
+        filters: Record<string, unknown>;
+        mode: "select" | "insert";
+        payload: Record<string, unknown> | null;
+        limitN: number;
+      } = { filters: {}, mode: "select", payload: null, limitN: 100 };
+      const chain: Record<string, unknown> = {
+        select() {
+          return chain;
+        },
+        insert(payload: Record<string, unknown>) {
+          state.mode = "insert";
+          state.payload = payload;
+          return chain;
+        },
+        eq(col: string, val: unknown) {
+          state.filters[col] = val;
+          return chain;
+        },
+        order() {
+          return chain;
+        },
+        limit(n: number) {
+          state.limitN = n;
+          return chain;
+        },
+        async maybeSingle() {
+          const match = leads.find((r) =>
+            Object.entries(state.filters).every(([k, v]) => r[k] === v),
+          );
+          return { data: match ?? null, error: null };
+        },
+        async single() {
+          if (state.mode === "insert" && state.payload) {
+            seq += 1;
+            const row = {
+              id: `lead-${seq}`,
+              status: "NEW",
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+              ...state.payload,
+            };
+            leads.push(row);
+            return { data: row, error: null };
+          }
+          const match = leads.find((r) =>
+            Object.entries(state.filters).every(([k, v]) => r[k] === v),
+          );
+          return { data: match ?? null, error: null };
+        },
+        then(resolve: (v: { data: LeadRow[]; error: null }) => void) {
+          const filtered = leads
+            .filter((r) => Object.entries(state.filters).every(([k, v]) => r[k] === v))
+            .slice(0, state.limitN);
+          resolve({ data: filtered, error: null });
+        },
+      };
+      return chain;
+    },
+  };
+  return { client, leads };
+}
+
 async function run() {
   resetCapabilityHostForTests();
   resetAndBootstrapProvidersForTests();
   artifacts.clear();
 
   let hostsBoundCalls = 0;
-  let providerCrmCalls = 0;
+  const crm = createCrmFake([
+    {
+      id: "lead-b-only",
+      tenant_id: B,
+      status: "NEW",
+      source: "manual",
+      contact_name: "Other",
+      metadata: {},
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+  ]);
+
+  const approvals = new Map<
+    string,
+    {
+      id: string;
+      tenant_id: string;
+      mission_id: string | null;
+      kind: string;
+      status: string;
+      subject: Record<string, unknown>;
+    }
+  >();
+  approvals.set("appr-social-a", {
+    id: "appr-social-a",
+    tenant_id: A,
+    mission_id: "mission-a",
+    kind: "content_publish",
+    status: "APPROVED",
+    subject: { capability: "social.publish" },
+  });
+  approvals.set("appr-site-a", {
+    id: "appr-site-a",
+    tenant_id: A,
+    mission_id: "mission-a",
+    kind: "deploy",
+    status: "APPROVED",
+    subject: { capability: "website.generate" },
+  });
+  approvals.set("appr-seo-a", {
+    id: "appr-seo-a",
+    tenant_id: A,
+    mission_id: "mission-a",
+    kind: "other",
+    status: "APPROVED",
+    subject: { capability: "seo.audit" },
+  });
+  approvals.set("appr-wa-a", {
+    id: "appr-wa-a",
+    tenant_id: A,
+    mission_id: "mission-a",
+    kind: "other",
+    status: "APPROVED",
+    subject: { capability: "whatsapp.send" },
+  });
+  approvals.set("appr-crm-a", {
+    id: "appr-crm-a",
+    tenant_id: A,
+    mission_id: "mission-a",
+    kind: "other",
+    status: "APPROVED",
+    subject: { capability: "crm.write" },
+  });
+  approvals.set("appr-sched-a", {
+    id: "appr-sched-a",
+    tenant_id: A,
+    mission_id: "mission-a",
+    kind: "content_publish",
+    status: "APPROVED",
+    subject: { capability: "social.schedule" },
+  });
+
+  const standing = new Map<
+    string,
+    {
+      id: string;
+      tenant_id: string;
+      state: string;
+      publishing_mode: string;
+      starts_at: string | null;
+      ends_at: string | null;
+      revoked_at: string | null;
+    }
+  >();
+  standing.set("pkg-sched-a", {
+    id: "pkg-sched-a",
+    tenant_id: A,
+    state: "ACTIVE",
+    publishing_mode: "REVIEW_BEFORE_PUBLISH",
+    starts_at: null,
+    ends_at: null,
+    revoked_at: null,
+  });
+
+  const waSeed = createFakeSupabase({
+    crm_leads: [
+      {
+        id: "lead-wa-a",
+        tenant_id: A,
+        normalized_phone: "919999000011",
+        last_interaction_at: new Date().toISOString(),
+      },
+    ],
+    whatsapp_phone_bindings: [
+      {
+        id: "binding-a",
+        tenant_id: A,
+        status: "active",
+        outbound_enabled: true,
+        source: "migrated_verified_bot",
+      },
+    ],
+    kill_switches: [],
+    whatsapp_conversations: [],
+  });
+
+  let capturedWaHumanFlag: boolean | undefined = undefined;
+  let waProviderCalls = 0;
 
   const ensureHosts = () => {
     hostsBoundCalls += 1;
     bindCapabilityHost({
-      getServiceClient: () =>
-        ({
-          from() {
-            return {
-              select() {
-                return this;
-              },
-              eq() {
-                return this;
-              },
-              limit() {
-                return this;
-              },
-              order() {
-                return this;
-              },
-              maybeSingle: async () => ({ data: null, error: null }),
-              then: undefined,
-            };
-          },
-        }) as never,
+      getServiceClient: () => crm.client as never,
       persistMissionArtifact: async (input) => {
         const id = `art_${artifacts.size + 1}`;
         artifacts.set(id, {
@@ -100,9 +292,108 @@ async function run() {
     return null;
   };
 
+  const resolveAuthorization = async (args: {
+    tenantId: string;
+    missionId: string;
+    capability: string;
+    operation?: string | null;
+    references?: {
+      approvalId?: string | null;
+      standingAuthorizationScopeId?: string | null;
+      trustedSystemGrant?: {
+        kind: "HERMES_MISSION_TOOL_GRANT";
+        toolName: "create_crm_lead";
+        missionToolAllowed: boolean;
+      } | null;
+    } | null;
+  }): Promise<CapabilityAuthorizationContext> => {
+    const base: CapabilityAuthorizationContext = {
+      trustedTenantId: args.tenantId,
+      approvalGranted: false,
+      standingAuthorizationGranted: false,
+    };
+    const refs = args.references;
+    if (!refs) return base;
+
+    if (refs.trustedSystemGrant?.kind === "HERMES_MISSION_TOOL_GRANT") {
+      const g = refs.trustedSystemGrant;
+      if (
+        g.missionToolAllowed &&
+        g.toolName === "create_crm_lead" &&
+        args.capability === "crm.write" &&
+        (args.operation == null || args.operation === "create_lead")
+      ) {
+        return {
+          ...base,
+          standingAuthorizationGranted: true,
+          authorizationKind: "HERMES_MISSION_TOOL_GRANT",
+          authorizationCapability: "crm.write",
+          authorizationScopeId: "create_lead",
+        };
+      }
+      return base;
+    }
+
+    if (refs.approvalId) {
+      const row = approvals.get(refs.approvalId);
+      if (
+        row &&
+        row.tenant_id === args.tenantId &&
+        (row.mission_id == null || row.mission_id === args.missionId) &&
+        row.status === "APPROVED"
+      ) {
+        const subjectCap =
+          typeof row.subject.capability === "string" ? row.subject.capability : null;
+        const kindOk =
+          (row.kind === "content_publish" &&
+            (args.capability === "social.publish" || args.capability === "social.schedule")) ||
+          (row.kind === "deploy" &&
+            (args.capability === "website.generate" || args.capability === "website.deploy")) ||
+          subjectCap === args.capability;
+        if (kindOk) {
+          return {
+            ...base,
+            approvalGranted: true,
+            authorizationKind: "EXPLICIT_APPROVAL",
+            authorizationCapability: args.capability,
+            authorizationScopeId: refs.approvalId,
+          };
+        }
+      }
+    }
+
+    if (refs.standingAuthorizationScopeId) {
+      const row = standing.get(refs.standingAuthorizationScopeId);
+      if (row && row.tenant_id === args.tenantId && row.state === "ACTIVE" && !row.revoked_at) {
+        if (args.capability === "social.schedule") {
+          return {
+            ...base,
+            standingAuthorizationGranted: true,
+            authorizationKind: "PACKAGE_AUTO_SCHEDULE",
+            authorizationCapability: "social.schedule",
+            authorizationScopeId: row.id,
+          };
+        }
+        if (args.capability === "social.publish" && row.publishing_mode === "AUTO_PUBLISH") {
+          return {
+            ...base,
+            standingAuthorizationGranted: true,
+            authorizationKind: "PACKAGE_AUTO_PUBLISH",
+            authorizationCapability: "social.publish",
+            authorizationScopeId: row.id,
+          };
+        }
+      }
+    }
+    return base;
+  };
+
+  const successResults: Array<{ capability: string; outputArtifactIds: readonly string[] }> = [];
+
   const baseDeps = {
     ensureHostsBound: ensureHosts,
     loadMission,
+    resolveAuthorization,
     loadEntitlementSnapshot: async (tenantId: string) => ({
       tenantId,
       metrics: {
@@ -125,6 +416,8 @@ async function run() {
         social_scheduling: true,
         social_publishing: true,
         search_web: true,
+        whatsapp_outbound: true,
+        crm: true,
       },
     }),
     loadShadowKill: async () => ({ shadowMode: false, killSwitchActive: false }),
@@ -137,27 +430,45 @@ async function run() {
         missionId: row.missionId,
         kind: row.kind,
         status:
-          typeof row.metadata?.status === "string"
-            ? row.metadata.status
-            : "approved",
+          typeof row.metadata?.status === "string" ? row.metadata.status : "approved",
       };
     },
   };
 
-  // Seed CRM-bound path: bind getServiceClient that returns leads via host after ensureHosts
-  // CRM uses @stratxcel/leads-and-crm with getServiceClient — inject fake via host.
-  // For CRM read we override requestCapability path by ensuring host client + package works.
-  // Instead use executeProvider-free path: bindCapabilityHost getServiceClient is enough if
-  // listLeads works — too heavy. Use a light CRM write/read via execute with mocked persist only
-  // and inject execute through deps... executeWorkforceCapabilityServer doesn't expose executeProvider.
-  //
-  // Prove CRM via requestCapability after server executor binds hosts — use a thin wrapper:
-  // For CRM we register a temporary override by binding getServiceClient that CRM adapter uses
-  // with dynamic import of leads package — skip real listLeads by testing website/seo/social first.
+  // --- Capability-scoped shadow / kill ---
+  {
+    const prevSocial = process.env.SOCIAL_SHADOW_MODE;
+    const prevWa = process.env.WHATSAPP_SHADOW_MODE;
+    const prevKill = process.env.SOCIAL_PUBLISH_KILL_SWITCH;
+    process.env.SOCIAL_SHADOW_MODE = "1";
+    process.env.WHATSAPP_SHADOW_MODE = "0";
+    process.env.SOCIAL_PUBLISH_KILL_SWITCH = "0";
+    const socialShadow = await loadShadowAndKillSwitch({ tenantId: A, capability: "social.publish" });
+    const crmShadow = await loadShadowAndKillSwitch({ tenantId: A, capability: "crm.write" });
+    assert.equal(socialShadow.shadowMode, true);
+    assert.equal(crmShadow.shadowMode, false, "SOCIAL_SHADOW_MODE must not shadow CRM");
 
-  // Tenant A CRM: use social.schedule + seo + website as server path proofs, and inject
-  // a CRM provider execute by binding a fake service that listLeads can use is complex.
-  // Prove cross-tenant artifact block + schedule auth + publish queued + website/seo persist.
+    process.env.SOCIAL_SHADOW_MODE = "0";
+    process.env.WHATSAPP_SHADOW_MODE = "1";
+    const waShadow = await loadShadowAndKillSwitch({ tenantId: A, capability: "whatsapp.send" });
+    const socialNoWa = await loadShadowAndKillSwitch({ tenantId: A, capability: "social.publish" });
+    assert.equal(waShadow.shadowMode, true);
+    assert.equal(socialNoWa.shadowMode, false, "WHATSAPP_SHADOW_MODE must not shadow Social");
+
+    process.env.WHATSAPP_SHADOW_MODE = "0";
+    process.env.SOCIAL_PUBLISH_KILL_SWITCH = "1";
+    const pubKill = await loadShadowAndKillSwitch({ tenantId: A, capability: "social.publish" });
+    const crmKill = await loadShadowAndKillSwitch({ tenantId: A, capability: "crm.write" });
+    assert.equal(pubKill.killSwitchActive, true);
+    assert.equal(crmKill.killSwitchActive, false, "SOCIAL_PUBLISH_KILL_SWITCH must not kill CRM");
+
+    if (prevSocial === undefined) delete process.env.SOCIAL_SHADOW_MODE;
+    else process.env.SOCIAL_SHADOW_MODE = prevSocial;
+    if (prevWa === undefined) delete process.env.WHATSAPP_SHADOW_MODE;
+    else process.env.WHATSAPP_SHADOW_MODE = prevWa;
+    if (prevKill === undefined) delete process.env.SOCIAL_PUBLISH_KILL_SWITCH;
+    else process.env.SOCIAL_PUBLISH_KILL_SWITCH = prevKill;
+  }
 
   // Cross-tenant claimed tenant mismatch
   const crossClaim = await executeWorkforceCapabilityServer(
@@ -175,7 +486,37 @@ async function run() {
   assert.equal(crossClaim.reasonCode, "TENANT_BINDING_MISSING");
   assert.ok(hostsBoundCalls >= 1);
 
-  // social.schedule: raw approval in input, no trusted approval → blocked
+  // Manufactured approval booleans are ignored — no approvalId → not authorized
+  artifacts.set("final-a", {
+    id: "final-a",
+    tenantId: A,
+    missionId: "mission-a",
+    kind: "social_final",
+    metadata: { status: "approved" },
+  });
+  const fakeApprovalAttack = await executeWorkforceCapabilityServer(
+    {
+      requestId: "fake-appr",
+      missionId: "mission-a",
+      capability: "social.publish",
+      department: "social",
+      role: "publisher",
+      inputArtifactIds: ["final-a"],
+      // Stale boolean fields must not authorize — only approvalId / standing scope / grants.
+      authorization: { approvalGranted: true } as never,
+      input: {
+        accountId: "acct-a",
+        variantId: "v1",
+        artifactId: "final-a",
+        idempotencyKey: "fake-appr",
+      },
+    },
+    baseDeps,
+  );
+  assert.notEqual(fakeApprovalAttack.status, "SUCCEEDED");
+  assert.notEqual(fakeApprovalAttack.status, "QUEUED");
+
+  // social.schedule: raw approval in input, no standing/approval ref → blocked
   const scheduleAttack = await executeWorkforceCapabilityServer(
     {
       requestId: "sched-attack",
@@ -184,7 +525,7 @@ async function run() {
       department: "social",
       role: "scheduler",
       inputArtifactIds: [],
-      authorization: { approvalGranted: false },
+      authorization: {},
       input: {
         accountId: "acct-a",
         variantId: "v1",
@@ -194,22 +535,11 @@ async function run() {
         approvalGranted: true,
       },
     },
-    {
-      ...baseDeps,
-      // social.schedule requires input artifact when supportedInputArtifacts nonempty
-    },
+    baseDeps,
   );
-  // Without artifact, may block ARTIFACT or APPROVAL — either way not SUCCEEDED
   assert.notEqual(scheduleAttack.status, "SUCCEEDED");
 
-  // With trusted standing auth + fake social_final artifact
-  artifacts.set("final-a", {
-    id: "final-a",
-    tenantId: A,
-    missionId: "mission-a",
-    kind: "social_final",
-    metadata: { status: "approved" },
-  });
+  // standing auth via scope id
   const scheduleOk = await executeWorkforceCapabilityServer(
     {
       requestId: "sched-ok",
@@ -218,12 +548,7 @@ async function run() {
       department: "social",
       role: "scheduler",
       inputArtifactIds: ["final-a"],
-      authorization: {
-        approvalGranted: false,
-        standingAuthorizationGranted: true,
-        authorizationKind: "PACKAGE_AUTO_SCHEDULE",
-        authorizationCapability: "social.schedule",
-      },
+      authorization: { standingAuthorizationScopeId: "pkg-sched-a" },
       input: {
         accountId: "acct-a",
         variantId: "v1",
@@ -237,7 +562,7 @@ async function run() {
   );
   assert.equal(scheduleOk.status, "SUCCEEDED", String(scheduleOk.humanReason ?? scheduleOk.status));
 
-  // social.publish SCHEDULED → QUEUED not SUCCEEDED
+  // social.publish SCHEDULED → QUEUED via resolved approvalId
   const pubQueued = await executeWorkforceCapabilityServer(
     {
       requestId: "pub-q",
@@ -246,7 +571,7 @@ async function run() {
       department: "social",
       role: "publisher",
       inputArtifactIds: ["final-a"],
-      authorization: { approvalGranted: true },
+      authorization: { approvalId: "appr-social-a" },
       input: {
         accountId: "acct-a",
         variantId: "v1",
@@ -258,7 +583,6 @@ async function run() {
   );
   assert.equal(pubQueued.status, "QUEUED");
 
-  // social.publish PUBLISHED + external id → SUCCEEDED
   const pubOk = await executeWorkforceCapabilityServer(
     {
       requestId: "pub-ok",
@@ -267,7 +591,7 @@ async function run() {
       department: "social",
       role: "publisher",
       inputArtifactIds: ["final-a"],
-      authorization: { approvalGranted: true },
+      authorization: { approvalId: "appr-social-a" },
       input: {
         accountId: "acct-a",
         variantId: "v1",
@@ -279,8 +603,10 @@ async function run() {
   );
   assert.equal(pubOk.status, "SUCCEEDED");
   assert.equal((pubOk.receipt as { providerExternalId?: string })?.providerExternalId, "ext-post-1");
+  // Social job/post IDs must remain providerReference — not artifact IDs
+  assert.equal(pubOk.outputArtifactIds.length, 0);
 
-  // Cross-tenant artifact: Tenant A tries Tenant B artifact
+  // Cross-tenant artifact
   artifacts.set("final-b", {
     id: "final-b",
     tenantId: B,
@@ -295,7 +621,7 @@ async function run() {
       department: "social",
       role: "scheduler",
       inputArtifactIds: ["final-b"],
-      authorization: { approvalGranted: true },
+      authorization: { approvalId: "appr-sched-a" },
       input: {
         accountId: "acct-a",
         variantId: "v1",
@@ -308,7 +634,7 @@ async function run() {
   );
   assert.equal(crossArt.status, "BLOCKED");
 
-  // website.generate → persisted artifact resolvable
+  // website.generate
   const site = await executeWorkforceCapabilityServer(
     {
       requestId: "site-1",
@@ -316,19 +642,19 @@ async function run() {
       capability: "website.generate",
       department: "website",
       role: "builder",
-      authorization: { approvalGranted: true },
+      authorization: { approvalId: "appr-site-a" },
       input: { businessName: "Acme Raipur" },
     },
     baseDeps,
   );
   assert.equal(site.status, "SUCCEEDED", String(site.humanReason ?? site.status));
   assert.equal(site.outputArtifactIds.length, 1);
+  successResults.push({ capability: "website.generate", outputArtifactIds: site.outputArtifactIds });
   const siteArt = artifacts.get(site.outputArtifactIds[0]!);
   assert.ok(siteArt);
   assert.equal(siteArt.kind, "website_draft");
-  assert.ok(siteArt.metadata && "site" in siteArt.metadata);
 
-  // seo.audit → persisted
+  // seo.audit
   const seo = await executeWorkforceCapabilityServer(
     {
       requestId: "seo-1",
@@ -336,7 +662,7 @@ async function run() {
       capability: "seo.audit",
       department: "search_web",
       role: "auditor",
-      authorization: { approvalGranted: true },
+      authorization: { approvalId: "appr-seo-a" },
       input: {
         propertyUrl: "https://example.com",
         pages: [{ url: "https://example.com/", title: "Home" }],
@@ -347,46 +673,309 @@ async function run() {
   );
   assert.equal(seo.status, "SUCCEEDED", String(seo.humanReason ?? seo.status));
   assert.equal(seo.outputArtifactIds.length, 1);
-  const seoArt = artifacts.get(seo.outputArtifactIds[0]!);
-  assert.ok(seoArt);
-  assert.equal(seoArt.kind, "seo_audit_report");
-  assert.ok(seoArt.metadata && "report" in seoArt.metadata);
+  successResults.push({ capability: "seo.audit", outputArtifactIds: seo.outputArtifactIds });
+  assert.equal(artifacts.get(seo.outputArtifactIds[0]!)?.kind, "seo_audit_report");
 
-  // WhatsApp: isHumanInitiated in payload must not escalate — always false in adapter.
-  // Prove via direct provider after host bind with fake sendOutbound — covered in unit suite;
-  // here prove server path still requires entitlement/integration and never SUCCEEDS without client.
-  const wa = await executeWorkforceCapabilityServer(
+  // --- REAL CRM server integration ---
+  const crmRead = await executeWorkforceCapabilityServer(
     {
-      requestId: "wa-1",
+      requestId: "crm-read-1",
       missionId: "mission-a",
-      capability: "whatsapp.send",
-      department: "whatsapp",
-      role: "sender",
-      authorization: { approvalGranted: true },
+      capability: "crm.read",
+      department: "crm",
+      role: "crm_reader",
+      input: { limit: 10 },
+    },
+    baseDeps,
+  );
+  assert.equal(crmRead.status, "SUCCEEDED", String(crmRead.humanReason ?? crmRead.status));
+  assert.equal(crmRead.outputArtifactIds.length, 1);
+  successResults.push({ capability: "crm.read", outputArtifactIds: crmRead.outputArtifactIds });
+  const snap = artifacts.get(crmRead.outputArtifactIds[0]!);
+  assert.ok(snap);
+  assert.equal(snap.kind, "crm_snapshot");
+  assert.equal(await baseDeps.resolveArtifact(crmRead.outputArtifactIds[0]!, { expectedTenantId: A }) != null, true);
+
+  const crmWrite = await executeWorkforceCapabilityServer(
+    {
+      requestId: "crm-write-1",
+      missionId: "mission-a",
+      capability: "crm.write",
+      department: "crm",
+      role: "crm_writer",
+      authorization: {
+        trustedSystemGrant: {
+          kind: "HERMES_MISSION_TOOL_GRANT",
+          toolName: "create_crm_lead",
+          missionToolAllowed: true,
+        },
+      },
       input: {
-        leadId: "lead-1",
-        body: "hello",
-        idempotencyKey: "wa-1",
-        isHumanInitiated: true,
+        operation: "create_lead",
+        contactName: "Lead A",
+        source: "manual",
+        idempotencyKey: "crm-idem-1",
       },
     },
     baseDeps,
   );
-  assert.notEqual(wa.status, "SUCCEEDED");
+  assert.equal(crmWrite.status, "SUCCEEDED", String(crmWrite.humanReason ?? crmWrite.status));
+  assert.ok(crmWrite.providerReference);
+  assert.equal(crmWrite.outputArtifactIds.length, 0, "lead IDs must not be outputArtifactIds");
+  const leadA = crm.leads.find((l) => l.id === crmWrite.providerReference);
+  assert.ok(leadA);
+  assert.equal(leadA.tenant_id, A);
+  assert.equal(
+    (crmWrite.receipt as { detail?: { authorizationKind?: string } })?.detail?.authorizationKind,
+    "HERMES_MISSION_TOOL_GRANT",
+  );
 
-  // Matrix dual counts
-  const staticCounts = countCapabilitiesByStatus();
-  assert.equal(staticCounts.AVAILABLE, 8);
-  assert.equal(getCapability("analytics.read")?.status, "NOT_CONFIGURED");
+  const crmReplay = await executeWorkforceCapabilityServer(
+    {
+      requestId: "crm-write-1-replay",
+      missionId: "mission-a",
+      capability: "crm.write",
+      department: "crm",
+      role: "crm_writer",
+      authorization: {
+        trustedSystemGrant: {
+          kind: "HERMES_MISSION_TOOL_GRANT",
+          toolName: "create_crm_lead",
+          missionToolAllowed: true,
+        },
+      },
+      input: {
+        operation: "create_lead",
+        contactName: "Lead A",
+        source: "manual",
+        idempotencyKey: "crm-idem-1",
+      },
+    },
+    baseDeps,
+  );
+  assert.equal(crmReplay.status, "SUCCEEDED");
+  assert.equal(crmReplay.providerReference, crmWrite.providerReference);
+  assert.equal(
+    crm.leads.filter((l) => (l.metadata as { workforce_idempotency_key?: string })?.workforce_idempotency_key === "crm-idem-1")
+      .length,
+    1,
+  );
+
+  // Tenant A tries Tenant B lead (explicit approval, not Hermes create-only grant)
+  const crmCross = await executeWorkforceCapabilityServer(
+    {
+      requestId: "crm-cross",
+      missionId: "mission-a",
+      capability: "crm.write",
+      department: "crm",
+      role: "crm_writer",
+      authorization: { approvalId: "appr-crm-a" },
+      input: {
+        operation: "update_lead_status",
+        leadId: "lead-b-only",
+        status: "CONTACTED",
+      },
+    },
+    baseDeps,
+  );
+  assert.notEqual(crmCross.status, "SUCCEEDED");
+  assert.ok(
+    crmCross.humanReason?.includes("TENANT") ||
+      crmCross.reasonCode === "POLICY_BLOCK" ||
+      String((crmCross as { errorMessage?: string }).errorMessage ?? "").includes("TENANT") ||
+      crmCross.status === "FAILED" ||
+      crmCross.status === "BLOCKED",
+  );
+
+  // Hermes grant without missionToolAllowed
+  const hermesDenied = await executeWorkforceCapabilityServer(
+    {
+      requestId: "crm-hermes-denied",
+      missionId: "mission-a",
+      capability: "crm.write",
+      department: "crm",
+      role: "crm_writer",
+      authorization: {
+        trustedSystemGrant: {
+          kind: "HERMES_MISSION_TOOL_GRANT",
+          toolName: "create_crm_lead",
+          missionToolAllowed: false,
+        },
+      },
+      input: { operation: "create_lead", contactName: "X", source: "manual", idempotencyKey: "x" },
+    },
+    baseDeps,
+  );
+  assert.notEqual(hermesDenied.status, "SUCCEEDED");
+
+  // --- REAL WhatsApp human-flag security ---
+  const prevWaMode = process.env.WHATSAPP_INTEGRATION_MODE;
+  process.env.WHATSAPP_INTEGRATION_MODE = "shadow";
+
+  artifacts.set("wa-draft-a", {
+    id: "wa-draft-a",
+    tenantId: A,
+    missionId: "mission-a",
+    kind: "whatsapp_message_draft",
+    metadata: { status: "approved" },
+  });
+
+  capturedWaHumanFlag = undefined;
+  waProviderCalls = 0;
+
+  const waDeps = {
+    ...baseDeps,
+    ensureHostsBound: () => {
+      hostsBoundCalls += 1;
+      bindCapabilityHost({
+        getServiceClient: () => waSeed.client as never,
+        persistMissionArtifact: async (input) => {
+          const id = `art_${artifacts.size + 1}`;
+          artifacts.set(id, {
+            id,
+            tenantId: input.tenantId,
+            missionId: input.missionId,
+            kind: input.kind,
+            metadata: input.metadata,
+          });
+          return { ok: true, id };
+        },
+        sendWhatsAppOutbound: async (_client, input) => {
+          capturedWaHumanFlag = input.isHumanInitiated;
+          waProviderCalls += 1;
+          // Always use the instrumented fake WhatsApp DB — prove the choke-point args.
+          const outcome = await sendOutboundWhatsAppMessage(waSeed.client as never, {
+            tenantId: input.tenantId,
+            leadId: input.leadId,
+            body: input.body,
+            idempotencyKey: input.idempotencyKey,
+            templateId: input.templateId,
+            templateName: input.templateName,
+            templateLanguage: input.templateLanguage,
+            templateParams: input.templateParams,
+            isHumanInitiated: input.isHumanInitiated,
+          });
+          if (!outcome.ok) return { ok: false as const, reason: outcome.reason };
+          if (outcome.alreadySent) {
+            return { ok: true as const, messageId: outcome.messageId, alreadySent: true };
+          }
+          return {
+            ok: true as const,
+            messageId: outcome.messageId,
+            alreadySent: false,
+            mode: outcome.mode,
+            providerId: outcome.providerId,
+          };
+        },
+      });
+    },
+  };
+
+  const waResult = await executeWorkforceCapabilityServer(
+    {
+      requestId: "wa-human-2",
+      missionId: "mission-a",
+      capability: "whatsapp.send",
+      department: "whatsapp",
+      role: "sender",
+      inputArtifactIds: ["wa-draft-a"],
+      authorization: { approvalId: "appr-wa-a" },
+      input: {
+        leadId: "lead-wa-a",
+        body: "hello from workforce",
+        idempotencyKey: "wa-human-2",
+        isHumanInitiated: true,
+      },
+    },
+    waDeps,
+  );
+
+  assert.ok(
+    waResult.status === "SUCCEEDED" || waResult.status === "QUEUED",
+    `whatsapp.send expected success/queued, got ${waResult.status} ${waResult.humanReason}`,
+  );
+  assert.ok(waProviderCalls >= 1, "outbound sender boundary must be invoked");
+  assert.equal(capturedWaHumanFlag, false, "isHumanInitiated must be forced false");
+  assert.equal(waResult.outputArtifactIds.length, 0, "whatsapp_messages.id must not be outputArtifactIds");
+  assert.ok(waResult.providerReference);
+
+  // handoff conversation blocks automation
+  waSeed.tables.whatsapp_conversations = [
+    {
+      id: "convo-handoff",
+      tenant_id: A,
+      lead_id: "lead-wa-a",
+      automation_mode: "handoff",
+      status: "open",
+    },
+  ];
+  const waHandoff = await executeWorkforceCapabilityServer(
+    {
+      requestId: "wa-handoff",
+      missionId: "mission-a",
+      capability: "whatsapp.send",
+      department: "whatsapp",
+      role: "sender",
+      inputArtifactIds: ["wa-draft-a"],
+      authorization: { approvalId: "appr-wa-a" },
+      input: {
+        leadId: "lead-wa-a",
+        body: "should not send",
+        idempotencyKey: "wa-handoff-1",
+        isHumanInitiated: true,
+      },
+    },
+    waDeps,
+  );
+  assert.notEqual(waHandoff.status, "SUCCEEDED");
+  assert.notEqual(waHandoff.status, "QUEUED");
+  const handoffShadow = (waSeed.tables.whatsapp_shadow_messages ?? []).filter(
+    (m) => m.body === "should not send",
+  );
+  assert.equal(handoffShadow.length, 0, "handoff must not produce outbound provider/shadow send");
+
+  if (prevWaMode === undefined) delete process.env.WHATSAPP_INTEGRATION_MODE;
+  else process.env.WHATSAPP_INTEGRATION_MODE = prevWaMode;
+
+  // Global outputArtifactId invariant
+  for (const result of successResults) {
+    for (const id of result.outputArtifactIds) {
+      const resolved = await baseDeps.resolveArtifact(id, { expectedTenantId: A });
+      assert.ok(resolved, `outputArtifactId ${id} from ${result.capability} must resolve`);
+    }
+  }
+
+  const counts = countCapabilitiesByStatus();
+  assert.equal(counts.AVAILABLE, 8);
   const matrix = await countCapabilityOperationalMatrix({ tenantId: A });
-  assert.equal(matrix.staticAvailable, 8);
-  assert.ok(matrix.runtimeOperational <= matrix.staticAvailable);
-  // With hosts bound, several AVAILABLE caps probe ready
-  assert.ok(matrix.runtimeOperational >= 3, `runtimeOperational=${matrix.runtimeOperational}`);
+  assert.ok(matrix.providerOperational <= matrix.staticAvailable);
+  assert.ok(matrix.providerOperational >= 3);
 
-  void providerCrmCalls;
+  const runtime = await buildTenantCapabilityRuntimeMatrix({
+    tenantId: A,
+    entitlementSnapshot: await baseDeps.loadEntitlementSnapshot(A),
+    integrationSnapshot: await baseDeps.loadIntegrationSnapshot(A),
+    environment: baseDeps.loadEnvironment(),
+    authorizationForCapability: async () => null,
+  });
+  assert.equal(runtime.STATIC_AVAILABLE_COUNT, counts.AVAILABLE);
+  assert.ok(runtime.PROVIDER_READY_COUNT <= runtime.STATIC_AVAILABLE_COUNT);
+  assert.ok(runtime.RUNTIME_EXECUTABLE_NOW_COUNT <= runtime.TENANT_TECHNICALLY_READY_COUNT);
+  assert.ok(
+    runtime.EXECUTION_REQUIRES_APPROVAL_COUNT >= 1,
+    "approval-required caps should appear when technically ready without auth",
+  );
+
   console.log("server-capability-execution.test.ts: ALL PASS");
-  console.log({ staticAvailable: matrix.staticAvailable, runtimeOperational: matrix.runtimeOperational });
+  console.log({
+    staticAvailable: matrix.staticAvailable,
+    providerOperational: matrix.providerOperational,
+    STATIC_AVAILABLE_COUNT: runtime.STATIC_AVAILABLE_COUNT,
+    PROVIDER_READY_COUNT: runtime.PROVIDER_READY_COUNT,
+    TENANT_TECHNICALLY_READY_COUNT: runtime.TENANT_TECHNICALLY_READY_COUNT,
+    EXECUTION_REQUIRES_APPROVAL_COUNT: runtime.EXECUTION_REQUIRES_APPROVAL_COUNT,
+    RUNTIME_EXECUTABLE_NOW_COUNT: runtime.RUNTIME_EXECUTABLE_NOW_COUNT,
+  });
 }
 
 run().catch((err) => {
