@@ -1,4 +1,5 @@
 import type { CapabilityKey } from "../capabilities/types.ts";
+import { isNonExecutableStatus } from "../capabilities/types.ts";
 import { getCapability } from "../capabilities/registry.ts";
 import type {
   BusinessGrowthPlannerInput,
@@ -30,7 +31,17 @@ export function resolveWorkflowFocus(
     }
     if (top.code === "WEAK_SEARCH_VISIBILITY") return "seo_content";
     if (top.code === "MISSING_DIGITAL_FOUNDATION") return "foundation_new_business";
-    if (top.code === "LOW_DISCOVERY" && (input.businessSignals?.hasAds || (input.entitlementSnapshot.relevantEntitlements.meta_ad_campaigns ?? 0) > 0)) {
+    if (
+      (top.code === "LOW_DISCOVERY" || top.code === "INSUFFICIENT_DEMAND") &&
+      (input.businessSignals?.hasAds ||
+        (input.entitlementSnapshot.relevantEntitlements.meta_ad_campaigns ?? 0) > 0 ||
+        ((input.businessSignals?.postContactConversionStrength === "high" ||
+          input.businessSignals?.postContactConversionStrength === "medium" ||
+          input.businessSignals?.leadCaptureStrength === "adequate" ||
+          input.businessSignals?.leadCaptureStrength === "strong") &&
+          (input.businessSignals?.websiteTrafficStrength === "low" ||
+            input.businessSignals?.websiteTrafficStrength === "none")))
+    ) {
       return "paid_acquisition_readiness";
     }
   }
@@ -47,7 +58,9 @@ function stage(
     Partial<WorkforceStage>,
 ): WorkforceStage {
   const caps = partial.allowedCapabilityClasses ?? [];
-  const blocked = caps.map((c) => ({ c, status: getCapability(c)?.status })).find((x) => x.status === "UNAVAILABLE" || x.status === "NOT_CONFIGURED");
+  const blocked = caps
+    .map((c) => ({ c, status: getCapability(c)?.status }))
+    .find((x) => x.status && isNonExecutableStatus(x.status));
   return {
     inputs: [],
     requiredEvidence: [],
@@ -71,7 +84,7 @@ export function buildWorkflowStages(input: {
     return input.proposedStages.map((s) => {
       const blocked = s.allowedCapabilityClasses
         .map((c) => ({ c, status: getCapability(c)?.status }))
-        .find((x) => x.status === "UNAVAILABLE" || x.status === "NOT_CONFIGURED");
+        .find((x) => x.status && isNonExecutableStatus(x.status));
       return {
         ...s,
         state: blocked ? ("WAITING_CAPABILITY" as const) : s.state,
@@ -200,11 +213,11 @@ export function buildWorkflowStages(input: {
       return [
         stage({
           stageId: "s_research",
-          department: "research",
-          specialistRole: "audience_researcher",
-          objective: "Evidence website conversion friction",
+          department: "website",
+          specialistRole: "ux_architect",
+          objective: "Audit website conversion friction using real page inventory",
           dependencies: [],
-          outputKind: "research_summary",
+          outputKind: "website_audit",
           allowedCapabilityClasses: ["website.audit"],
         }),
         stage({
@@ -213,24 +226,33 @@ export function buildWorkflowStages(input: {
           specialistRole: "ux_architect",
           objective: "Propose conversion/lead-capture website changes (preview only)",
           dependencies: ["s_research"],
-          outputKind: "website_draft",
-          allowedCapabilityClasses: ["website.generate", "conversion.audit"],
+          outputKind: "website_change",
+          allowedCapabilityClasses: ["website.generate"],
         }),
         stage({
-          stageId: "s_conversion",
-          department: "conversion",
-          specialistRole: "cro_specialist",
-          objective: "Prioritize conversion fixes",
+          stageId: "s_landing",
+          department: "website",
+          specialistRole: "page_copy_specialist",
+          objective: "Draft landing page: traffic → promise → evidence → offer → CTA → lead capture",
           dependencies: ["s_website"],
-          outputKind: "conversion_audit_report",
-          allowedCapabilityClasses: ["conversion.audit"],
+          outputKind: "landing_page_draft",
+          allowedCapabilityClasses: ["website.generate", "content.longform"],
+        }),
+        stage({
+          stageId: "s_preview",
+          department: "website",
+          specialistRole: "deploy_coordinator",
+          objective: "Bind revision to preview deploy candidate (no production deploy)",
+          dependencies: ["s_landing"],
+          outputKind: "website_preview",
+          allowedCapabilityClasses: ["website.generate"],
         }),
         stage({
           stageId: "s_quality",
           department: "quality",
           specialistRole: "final_reviewer",
-          objective: "QA website recommendations",
-          dependencies: ["s_conversion"],
+          objective: "QA website recommendations before any deployment request",
+          dependencies: ["s_preview"],
           outputKind: "qa_report",
         }),
       ];
@@ -243,34 +265,53 @@ export function buildWorkflowStages(input: {
           specialistRole: "serp_researcher",
           objective: "SERP/demand research with citations",
           dependencies: [],
-          outputKind: "serp_evidence",
+          outputKind: "serp_analysis",
           allowedCapabilityClasses: ["research.serp", "seo.audit"],
           requiredEvidence: ["serp_evidence"],
+        }),
+        stage({
+          stageId: "s_keyword",
+          department: "seo",
+          specialistRole: "keyword_researcher",
+          objective: "Build keyword and content-gap maps from query evidence only",
+          dependencies: ["s_research"],
+          outputKind: "keyword_map",
+          allowedCapabilityClasses: ["seo.audit", "seo.article"],
         }),
         stage({
           stageId: "s_seo",
           department: "seo",
           specialistRole: "seo_writer",
           objective: "Plan SEO article/on-page work within entitlements",
-          dependencies: ["s_research"],
-          outputKind: "seo_article_draft",
+          dependencies: ["s_keyword"],
+          outputKind: "seo_article_brief",
           allowedCapabilityClasses: ["seo.article", "content.longform"],
+          requiredEvidence: ["serp_evidence"],
         }),
         stage({
           stageId: "s_content",
           department: "content",
           specialistRole: "longform_writer",
-          objective: "Draft long-form search content",
+          objective: "Draft long-form search content with cited claims",
           dependencies: ["s_seo"],
-          outputKind: "longform_draft",
-          allowedCapabilityClasses: ["content.longform"],
+          outputKind: "seo_article_draft",
+          allowedCapabilityClasses: ["content.longform", "seo.article"],
+        }),
+        stage({
+          stageId: "s_links",
+          department: "seo",
+          specialistRole: "internal_linking_specialist",
+          objective: "Internal link plan from known page inventory",
+          dependencies: ["s_content"],
+          outputKind: "internal_link_plan",
+          allowedCapabilityClasses: ["seo.audit"],
         }),
         stage({
           stageId: "s_quality",
           department: "quality",
           specialistRole: "final_reviewer",
           objective: "QA SEO content for brand and factuality",
-          dependencies: ["s_content"],
+          dependencies: ["s_links"],
           outputKind: "qa_report",
         }),
       ];
@@ -325,11 +366,21 @@ export function buildWorkflowStages(input: {
     case "paid_acquisition_readiness":
       return [
         stage({
+          stageId: "s_growth",
+          department: "growth",
+          specialistRole: "funnel_architect",
+          objective:
+            "Select growth levers (organic/search/social/paid/conversion/CRM/retention) — paid is optional",
+          dependencies: [],
+          outputKind: "funnel_map",
+          allowedCapabilityClasses: ["analytics.read"],
+        }),
+        stage({
           stageId: "s_research",
           department: "research",
           specialistRole: "audience_researcher",
-          objective: "Validate acquisition readiness evidence",
-          dependencies: [],
+          objective: "Validate paid acquisition readiness evidence",
+          dependencies: ["s_growth"],
           outputKind: "research_summary",
           allowedCapabilityClasses: ["ads.audit"],
         }),
@@ -337,17 +388,53 @@ export function buildWorkflowStages(input: {
           stageId: "s_ads",
           department: "advertising",
           specialistRole: "media_planner",
-          objective: "Plan paid acquisition (no spend from planning alone)",
+          objective: "Build CampaignPlan (no spend from planning alone; authorizesSpend=false)",
           dependencies: ["s_research"],
           outputKind: "ads_plan",
+          allowedCapabilityClasses: ["ads.plan"],
+        }),
+        stage({
+          stageId: "s_creative_brief",
+          department: "advertising",
+          specialistRole: "creative_tester",
+          objective: "Produce AdCreativeBrief handoff for Creative Studio (no asset production here)",
+          dependencies: ["s_ads"],
+          outputKind: "creative_test_plan",
+          allowedCapabilityClasses: ["ads.plan"],
+        }),
+        stage({
+          stageId: "s_landing_handoff",
+          department: "website",
+          specialistRole: "landing_page_builder",
+          objective: "If landing required, accept Website Department handoff — do not duplicate website engine",
+          dependencies: ["s_ads"],
+          outputKind: "page_brief",
+          allowedCapabilityClasses: ["website.generate"],
+        }),
+        stage({
+          stageId: "s_experiment",
+          department: "growth",
+          specialistRole: "experiment_designer",
+          objective: "Define ExperimentPlan without claiming statistical significance",
+          dependencies: ["s_ads"],
+          outputKind: "experiment_plan",
+          allowedCapabilityClasses: ["analytics.read"],
+        }),
+        stage({
+          stageId: "s_finance",
+          department: "finance",
+          specialistRole: "cost_guardian",
+          objective: "Review budget proposal against commercial envelope — clearance ≠ unlimited spend",
+          dependencies: ["s_ads"],
+          outputKind: "budget_report",
           allowedCapabilityClasses: ["ads.plan"],
         }),
         stage({
           stageId: "s_quality",
           department: "quality",
           specialistRole: "final_reviewer",
-          objective: "QA ads plan before any publish",
-          dependencies: ["s_ads"],
+          objective: "QA ads plan before any future publish path",
+          dependencies: ["s_creative_brief", "s_experiment", "s_finance"],
           outputKind: "qa_report",
         }),
       ];
@@ -440,6 +527,44 @@ export function buildWorkflowStages(input: {
           dependencies: mediaDeps,
           outputKind: "qa_report",
         }),
+        stage({
+          stageId: "s_compliance",
+          department: "compliance",
+          specialistRole: "policy_checker",
+          objective: "Claim and policy compliance before Social execution",
+          dependencies: ["s_quality"],
+          outputKind: "compliance_report",
+          qualityGate: ["claim_accuracy", "policy_compliance"],
+        }),
+        stage({
+          stageId: "s_social_adapt",
+          department: "social",
+          specialistRole: "social_strategist",
+          objective: "Adapt upstream final creative into platform-specific Social release artifacts",
+          dependencies: ["s_compliance"],
+          outputKind: "social_final",
+          qualityGate: ["brand_fit", "platform_compliance"],
+        }),
+        stage({
+          stageId: "s_social_schedule",
+          department: "social",
+          specialistRole: "scheduling_specialist",
+          objective: "Schedule approved Social release artifacts with real timezone timestamps",
+          dependencies: ["s_social_adapt"],
+          outputKind: "schedule_receipt",
+          allowedCapabilityClasses: ["social.schedule"],
+          qualityGate: ["timing_fit"],
+        }),
+        stage({
+          stageId: "s_social_publish",
+          department: "social",
+          specialistRole: "community_manager",
+          objective: "Publish via explicit approval or package standing authorization (Shadow-safe)",
+          dependencies: ["s_social_schedule"],
+          outputKind: "publish_receipt",
+          allowedCapabilityClasses: ["social.publish"],
+          qualityGate: ["platform_compliance"],
+        }),
       );
 
       return stages;
@@ -475,17 +600,17 @@ export function buildWeeklyStrategy(input: {
       ];
     case "website_conversion":
       return [
-        { week: 1, focus: "Conversion audit", objectives: ["Identify friction"] },
-        { week: 2, focus: "Capture fixes", objectives: ["Lead forms / CTAs"] },
-        { week: 3, focus: "Preview changes", objectives: ["Draft updates"] },
-        { week: 4, focus: "Validation", objectives: ["QA", "Approval path"] },
+        { week: 1, focus: "Website audit", objectives: ["Map strong vs weak pages", "Consume conversion findings"] },
+        { week: 2, focus: "Page briefs & generation", objectives: ["Targeted changes", "Landing page draft"] },
+        { week: 3, focus: "Preview binding", objectives: ["Bind revision to deploy candidate"] },
+        { week: 4, focus: "Validation", objectives: ["QA", "Deployment request boundary only"] },
       ];
     case "seo_content":
       return [
-        { week: 1, focus: "Demand research", objectives: ["Evidence keywords/SERP"] },
-        { week: 2, focus: "Content architecture", objectives: ["Topics", "Internal links"] },
-        { week: 3, focus: "Draft production", objectives: ["Long-form drafts"] },
-        { week: 4, focus: "QA", objectives: ["Brand/fact checks"] },
+        { week: 1, focus: "Demand & SERP research", objectives: ["Evidence keywords/SERP", "No fabricated rankings"] },
+        { week: 2, focus: "Keyword & gap architecture", objectives: ["Keyword map", "Content gaps", "Internal links"] },
+        { week: 3, focus: "Article production", objectives: ["Evidence-backed briefs", "Long-form drafts"] },
+        { week: 4, focus: "QA & publish boundary", objectives: ["Brand/fact checks", "Publish request only"] },
       ];
     case "foundation_new_business":
       return [

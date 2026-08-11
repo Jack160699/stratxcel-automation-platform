@@ -278,6 +278,60 @@ export function diagnoseBusinessGrowth(input: BusinessGrowthPlannerInput): Busin
     );
   }
 
+
+  // Discovery / demand — only when conversion systems are not the primary leak
+  const conversionHealthy =
+    signals.postContactConversionStrength === "high" ||
+    signals.postContactConversionStrength === "medium" ||
+    signals.leadCaptureStrength === "adequate" ||
+    signals.leadCaptureStrength === "strong";
+  const responseOk =
+    typeof signals.medianResponseTimeHours !== "number" || signals.medianResponseTimeHours < 4;
+  const followUpOk =
+    signals.crmFollowUpStrength !== "weak" && signals.crmFollowUpStrength !== "none";
+
+  if (
+    conversionHealthy &&
+    responseOk &&
+    followUpOk &&
+    (signals.websiteTrafficStrength === "low" || signals.websiteTrafficStrength === "none") &&
+    (signals.searchVisibilityStrength === "low" ||
+      signals.searchVisibilityStrength === "none" ||
+      signals.socialPresenceStrength === "none" ||
+      signals.socialPresenceStrength === "low")
+  ) {
+    findings.push(
+      finding({
+        domain: "paid_acquisition",
+        finding: "Conversion foundation appears healthier than discovery — demand creation may be the bottleneck",
+        status: hasEvidence ? "DERIVED" : "RESEARCH_REQUIRED",
+        severity: "medium",
+        opportunityLevel: "high",
+        confidence: hasEvidence ? "medium" : "low",
+        evidenceIds: hasEvidence ? evidence : [],
+        businessImpact:
+          "Paid acquisition may be considered as one lever after readiness checks — not mandatory and never uncontrolled spend",
+        recommendedActionClass: "evaluate_paid_acquisition_readiness",
+      }),
+    );
+  }
+
+  if (signals.hasAds === true) {
+    findings.push(
+      finding({
+        domain: "paid_acquisition",
+        finding: "Business reports existing ads activity — Stratxcel remains planning-only until Marketing API + approvals exist",
+        status: hasEvidence ? "KNOWN" : "ASSUMPTION",
+        severity: "info",
+        opportunityLevel: "low",
+        confidence: hasEvidence ? "medium" : "low",
+        evidenceIds: hasEvidence ? evidence : [],
+        businessImpact: "Existing spend is outside Stratxcel control; plans do not authorize additional spend",
+        recommendedActionClass: "plan_ads_without_spend",
+      }),
+    );
+  }
+
   if (input.connectedChannels.length === 0) {
     findings.push(
       finding({
@@ -358,6 +412,9 @@ export function deriveBottlenecks(diagnosis: BusinessGrowthDiagnosis): GrowthBot
       push("WEAK_WEBSITE_CONVERSION", "website", f.finding, f, 80);
     } else if (f.domain === "search_seo") {
       push("WEAK_SEARCH_VISIBILITY", "search_seo", f.finding, f, 75);
+    } else if (f.domain === "paid_acquisition" && f.recommendedActionClass === "evaluate_paid_acquisition_readiness") {
+      push("LOW_DISCOVERY", "paid_acquisition", f.finding, f, 70);
+      push("INSUFFICIENT_DEMAND", "paid_acquisition", f.finding, f, 68);
     } else if (f.domain === "social_presence" && f.opportunityLevel === "high") {
       push("LOW_DISCOVERY", "social_presence", f.finding, f, 60);
     } else if (f.domain === "analytics_attribution") {

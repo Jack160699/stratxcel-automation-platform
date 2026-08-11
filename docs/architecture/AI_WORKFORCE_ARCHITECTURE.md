@@ -57,6 +57,10 @@ Hermes CEO operates the **entire business-growth system**:
 
 Profile: `stratxcel-ceo` (compatibility: `stratxcel-orchestrator`).
 
+## Intelligence Department
+
+For the evidence-gated audit → diagnosis → bottleneck → strategy → commercial-fit pipeline, see [INTELLIGENCE_DEPARTMENT.md](./INTELLIGENCE_DEPARTMENT.md).
+
 ## Planning concepts
 
 | Concept | Role |
@@ -90,6 +94,8 @@ Never invent Instagram/channels when none are connected (`NO_CONNECTED_CHANNEL` 
 25 departments remain logical operating units â€” **grant nothing**.
 Capabilities are independently compiled; unavailable media cannot fake reel success via image generation.
 
+Canonical runtime contract: [CAPABILITY_RUNTIME.md](./CAPABILITY_RUNTIME.md) (department ≠ capability ≠ provider ≠ integration ≠ entitlement ≠ authorization).
+
 ## Quality principle
 
 Stratxcel does not sell task counts as primary value.
@@ -101,8 +107,10 @@ Research â†’ Strategy â†’ Specialist production â†’ Independent c
 
 Additive tables: `workforce_plans`, `workforce_stages`, `workforce_reviews` (RLS).
 **Production migration: NOT applied by this PR.**
-`HERMES_MODE` production default remains disabled â€” unchanged.
+`HERMES_MODE` production default remains disabled — unchanged.
 
-## Next parallel sprints
+## Integrated departments
 
-Department/capability providers (media, SEO publish, website deploy, ads, WhatsApp send) behind the registry â€” not in this foundation PR.
+See [AI_WORKFORCE_INTEGRATION.md](./AI_WORKFORCE_INTEGRATION.md) and [CAPABILITY_FINAL_AUDIT.md](./CAPABILITY_FINAL_AUDIT.md) for the final integrated flow, Trust↔Social gates, and capability truth table.
+
+Performance Intelligence (analytics / reporting / optimization learning loop): see [PERFORMANCE_INTELLIGENCE.md](./PERFORMANCE_INTELLIGENCE.md).

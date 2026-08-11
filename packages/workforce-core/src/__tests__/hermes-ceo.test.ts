@@ -73,6 +73,8 @@ async function runAsync() {
     createdAtIso: new Date().toISOString(),
   });
   assert.equal(plan.status, "VALIDATING");
+  // content.shortform is NOT_CONFIGURED — CEO must park stage as WAITING_CAPABILITY
+  assert.equal(plan.departmentStages[0]!.state, "WAITING_CAPABILITY");
 
   assert.throws(
     () =>

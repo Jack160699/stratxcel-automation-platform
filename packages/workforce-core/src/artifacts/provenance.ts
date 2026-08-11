@@ -46,3 +46,41 @@ export function assertSameMissionArtifact(expectedMissionId: string, artifactMis
     throw new Error("cross_mission_artifact_rejected");
   }
 }
+
+export interface CapabilityProvenance {
+  capabilityKey: string;
+  providerKey: string | null;
+  providerModel: string | null;
+  requestId: string;
+  generatedAtIso: string;
+  tenantId: string;
+  missionId: string;
+  stageId: string | null;
+  parentArtifactIds: readonly string[];
+  usage?: Record<string, unknown>;
+}
+
+export function createCapabilityProvenance(args: {
+  capabilityKey: string;
+  providerKey?: string | null;
+  providerModel?: string | null;
+  requestId: string;
+  tenantId: string;
+  missionId: string;
+  stageId?: string | null;
+  parentArtifactIds?: readonly string[];
+  usage?: Record<string, unknown>;
+}): CapabilityProvenance {
+  return {
+    capabilityKey: args.capabilityKey,
+    providerKey: args.providerKey ?? null,
+    providerModel: args.providerModel ?? null,
+    requestId: args.requestId,
+    generatedAtIso: new Date().toISOString(),
+    tenantId: args.tenantId,
+    missionId: args.missionId,
+    stageId: args.stageId ?? null,
+    parentArtifactIds: args.parentArtifactIds ?? [],
+    usage: args.usage,
+  };
+}

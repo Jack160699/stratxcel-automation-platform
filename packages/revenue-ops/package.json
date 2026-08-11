@@ -1,0 +1,15 @@
+{
+  "name": "@stratxcel/revenue-ops",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "test": "node --experimental-strip-types src/__tests__/revenue-ops.test.ts"
+  },
+  "dependencies": {
+    "@stratxcel/leads-and-crm": "*",
+    "@stratxcel/workforce-core": "*"
+  }
+}

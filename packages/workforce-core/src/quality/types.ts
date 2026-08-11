@@ -10,7 +10,9 @@ export type QualityDimension =
   | "platform_fit"
   | "conversion_strength"
   | "visual_quality"
-  | "technical_quality";
+  | "technical_quality"
+  | "evidence_quality"
+  | "compliance";
 
 export interface QualityScore {
   dimension: QualityDimension;
@@ -24,12 +26,27 @@ export interface QualityThresholds {
   mandatoryDimensions: readonly QualityDimension[];
 }
 
+/**
+ * Hard gates cannot be averaged away. Failure → REJECT (BLOCK).
+ * Soft thresholds still yield REVISE when overall/dimension mins fail.
+ */
+export interface QualityHardGates {
+  /** Score below this for a listed dimension → REJECT */
+  blockBelow: Partial<Record<QualityDimension, number>>;
+  blockOnProhibitedClaim?: boolean;
+  blockOnCrossTenant?: boolean;
+  blockOnMissingEvidence?: boolean;
+  blockOnPolicyViolation?: boolean;
+}
+
 export interface QualityPolicy {
   id: string;
   thresholds: QualityThresholds;
   maxRevisionCount: number;
   requireIndependentCritic: boolean;
   blockOnMissingEvidence: boolean;
+  /** Optional hard gates; when omitted, only legacy soft rules apply. */
+  hardGates?: QualityHardGates;
 }
 
 export const defaultQualityPolicy: QualityPolicy = {
@@ -45,6 +62,17 @@ export const defaultQualityPolicy: QualityPolicy = {
   maxRevisionCount: 3,
   requireIndependentCritic: true,
   blockOnMissingEvidence: true,
+  hardGates: {
+    blockBelow: {
+      factuality: 60,
+      compliance: 60,
+      evidence_quality: 50,
+    },
+    blockOnProhibitedClaim: true,
+    blockOnCrossTenant: true,
+    blockOnMissingEvidence: true,
+    blockOnPolicyViolation: true,
+  },
 };
 
 export interface QualityCandidateArtifact {
@@ -65,4 +93,5 @@ export interface QualityCritiqueResult {
   requiredChanges: readonly string[];
   reviewerDepartment: string;
   reviewerRole: string;
+  hardGateFailures?: readonly string[];
 }
