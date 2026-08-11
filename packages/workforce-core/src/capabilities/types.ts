@@ -12,20 +12,30 @@ export const CAPABILITY_KEYS = [
   "social.publish",
   "seo.audit",
   "seo.article",
+  "seo.publish",
   "website.generate",
   "website.deploy",
+  "website.audit",
   "ads.plan",
   "ads.publish",
+  "ads.audit",
   "crm.read",
   "crm.write",
+  "crm.followup_plan",
   "whatsapp.send",
+  "whatsapp.followup_plan",
   "analytics.read",
+  "analytics.attribution",
   "report.generate",
+  "brand.audit",
+  "conversion.audit",
+  "sales.analyze",
+  "content.publish",
 ] as const;
 
 export type CapabilityKey = (typeof CAPABILITY_KEYS)[number];
 
-export type CapabilityStatus = "AVAILABLE" | "PLANNED" | "UNAVAILABLE" | "NOT_CONFIGURED";
+export type CapabilityStatus = "AVAILABLE" | "PLANNED" | "NOT_CONFIGURED" | "UNAVAILABLE";
 
 export interface CapabilityDefinition {
   key: CapabilityKey;

@@ -1,124 +1,108 @@
-# AI Workforce Architecture
+﻿# AI Workforce Architecture
 
-**Status:** Foundation (WorkforceCore + Hermes CEO + 30-Day Planner)  
-**Branch intent:** Contract PR — verify before launching parallel department builds.  
-**Verified main base:** `1757d15`
+**Status:** Foundation (WorkforceCore + Hermes CEO + Business Growth Operating System)
+**PR:** #32 (draft) â€” verify before parallel department builds.
 
-## Reality check (Hermes mode)
+## Product model
 
-Production mission-worker selects Hermes via `HERMES_MODE`:
+Stratxcel is a **full AI growth agency / business growth operating system**.
+**Social is one execution channel**, not the center of the architecture.
 
-| Value | Behavior |
-|-------|----------|
-| unset / `disabled` / unrecognized | `DisabledHermesAdapter` → missions `BLOCKED` |
-| `mock` | Deterministic local fake |
-| `http` | Live Nous Hermes Agent `/v1/runs` |
-
-**This PR does not change production environment variables.** Default remains fail-closed `disabled`. See `HERMES_SKILLS_AND_TOOLS.md`.
-
-## Architectural rule
+Canonical lifecycle:
 
 ```
-USER / PACKAGE / AUTOMATIC TRIGGER
-        ↓
-STRATXCEL MISSION
-        ↓
-HERMES CEO
-        ↓
-30-DAY / MISSION STRATEGY
-        ↓
-DEPARTMENT WORKFLOW DAG
-        ↓
-SPECIALIST HERMES SUB-RUNS
-        ↓
-ARTIFACTS → CRITIQUE / REVISION / QA → FINAL
-        ↓
-SAFE EXECUTION → MEASUREMENT → LEARNING → NEXT PLAN
+BUSINESS
+â†’ DIAGNOSE
+â†’ IDENTIFY BOTTLENECKS
+â†’ PRIORITIZE
+â†’ RECOMMEND
+â†’ PLAN
+â†’ ASSEMBLE DEPARTMENTS
+â†’ EXECUTE PURCHASED SERVICES
+â†’ CAPTURE OPPORTUNITIES
+â†’ CONVERT
+â†’ MEASURE
+â†’ OPTIMIZE
+â†’ REPLAN
 ```
 
-- **Hermes** is the central CEO / orchestration intelligence.
-- **Stratxcel** owns departments, roles, delegation, mission state, tenant isolation, entitlements, tools, artifacts, quality, budgets, approvals, audit, and external execution.
-- Specialist agents are **not** separate permanent Hermes installations — they are bounded Hermes runs with narrowed tools/budget/output contracts.
-- **Never** delegate authorization decisions to model text.
+### Customer entry modes
 
-## Package: `@stratxcel/workforce-core`
-
-```
-packages/workforce-core/src/
-  departments/     # 25-department registry
-  roles/           # specialist roles under departments
-  capabilities/    # provider-independent capability registry
-  planning/        # WorkforcePlan, allocation, 30-day planner, validator
-  execution/       # DAG, Hermes CEO compile/parse, specialist runner
-  quality/         # scores, critic, critique/revision loop
-  artifacts/       # provenance metadata for mission_artifacts
-  handoffs/        # DepartmentHandoff contract
-  budgets/         # hierarchical envelopes
-  events/          # structured workforce.* events
-  security/        # tool/capability/budget narrowing
-  evidence/        # EvidenceReference contract
-  learning/        # measured-signal interfaces only
-  brand-context/   # Brand Brain slice compiler
-  catalogue/       # V2 metadata layer (non-breaking)
-```
-
-## Departments vs capabilities
-
-Departments are logical operating units. **A department name grants NOTHING.**
-
-Authorization is compiled by narrowing against the parent mission allowlist.
-
-Capabilities report `AVAILABLE` | `NOT_CONFIGURED` | `UNAVAILABLE` | `PLANNED`.  
-Unavailable media must not produce fake artifacts.
+| Mode | Meaning |
+|------|---------|
+| `AUDIT_ONLY` | Diagnostic product â€” recommend, do not execute unpurchased work |
+| `NEW_BUSINESS` | Foundation-first (positioning, website, capture, CRM skeleton) |
+| `EXISTING_BUSINESS` | Preserve what works; bottleneck-first routing |
+| `ACTIVE_PACKAGE_CUSTOMER` | Allocate purchased entitlements to highest-priority work |
+| `EXISTING_CUSTOMER_RENEWAL` | Optimization / renewal cycle |
 
 ## Hermes CEO
 
-- Profile: `stratxcel-ceo` (new). Compatibility profile `stratxcel-orchestrator` unchanged.
-- CEO: understand → plan → delegate → evaluate → escalate. Does not write every final artifact.
-- `compileHermesCeoPlan` / `parseCeoPlanProposal` validate departments, roles, DAG, budgets, and capability non-escalation.
+Hermes CEO operates the **entire business-growth system**:
 
-## Specialist sub-runs
+1. What kind of business is this?
+2. What stage is it in?
+3. What is already working?
+4. What evidence do we have?
+5. Where is the biggest growth bottleneck?
+6. What should we NOT change?
+7. What should we improve first?
+8. What did the customer purchase?
+9. What can Stratxcel actually execute?
+10. Which departments are required?
+11. What is the 30-day plan?
+12. What requires setup/approval?
+13. What should be measured?
+14. What should we reconsider after measurement?
 
-`runSpecialistAgent({...})` verifies tenant/mission from trusted mission row, verifies department/role registries, verifies artifact ownership, narrows tools ⊆ parent, budget ≤ parent remaining, issues bounded capability token, invokes Hermes, audits, fails closed.
+Profile: `stratxcel-ceo` (compatibility: `stratxcel-orchestrator`).
 
-## 30-Day Growth Planner
+## Planning concepts
 
-| Policy | Behavior |
-|--------|----------|
-| `FIXED_COMPOSITION` | Preserve exact purchased mix (e.g. Starter 8 image + 4 reel) |
-| `FLEXIBLE_COMPOSITION` | Choose mix totaling ≤ unit cap |
-| `MINIMUM_COMPOSITION` | Meet floors |
-| `CUSTOM_CONTRACT` | Explicit contract composition |
-| `UNKNOWN` | **Fail closed** |
+| Concept | Role |
+|---------|------|
+| **Business Growth Plan** | Canonical plan object |
+| **30-Day Execution Plan** | Immediate entitlement-bound horizon |
+| **Strategic horizon** | now / 30 / 31â€“60 / 61â€“90 **direction** (not fabricated unpurchased execution) |
 
-Planner may optimize topics, themes, sequence, timing, platforms, creative style, funnel purpose, messaging, CTA — **inside** the contract.
+Social allocation lives at `businessGrowthPlan.socialPlan?.allocation` and is **optional**.
+Audit-only, SEO-only, website-only, CRM-only plans may omit it.
 
-Compatible with `lib/social/package-composition.ts` via allocation helpers. Package Autopilot is **not** replaced; Shadow / AUTO_PUBLISH unchanged.
+## Diagnosis â†’ bottlenecks â†’ recommendations
 
-Claims are `KNOWN` | `DERIVED` | `ASSUMPTION` | `RESEARCH_REQUIRED`. No fabricated market/competitor/SERP/performance facts.
+```
+AUDIT / SIGNALS
+â†’ BusinessGrowthDiagnosis (KNOWN | DERIVED | ASSUMPTION | RESEARCH_REQUIRED)
+â†’ GrowthBottleneck (priority-scored)
+â†’ GrowthRecommendation + PlanRecommendation
+â†’ commercial fit = SMALLEST covering option (or CUSTOM)
+â†’ 30-day Business Growth Plan
+â†’ department DAG
+â†’ measurement â†’ optimization
+```
 
-## Quality loop
+Never guarantee revenue, leads, ROAS, rankings, or sales.
+Never upsell the highest plan for revenue alone.
+Never invent Instagram/channels when none are connected (`NO_CONNECTED_CHANNEL` / `SETUP_REQUIRED`).
 
-`GENERATE → CRITIQUE → SCORE → REVISE → COMPARE → VALIDATE → SELECT`
+## Departments vs capabilities
 
-Creator ≠ sole critic. Revision attempts bounded. Brand / factuality gates enforceable.
+25 departments remain logical operating units â€” **grant nothing**.
+Capabilities are independently compiled; unavailable media cannot fake reel success via image generation.
 
-## Persistence
+## Quality principle
 
-| Reused | Added |
-|--------|-------|
-| missions, mission_events, mission_artifacts, audit_events, usage_entitlements, subscriptions | `workforce_plans`, `workforce_stages`, `workforce_reviews` |
+Stratxcel does not sell task counts as primary value.
+Purchased entitlements fund the highest-quality, highest-priority evidence-backed work:
 
-Migration: `supabase/migrations/20260812090000_workforce_core.sql`  
-**Production migration applied: NO**
+Research â†’ Strategy â†’ Specialist production â†’ Independent critique â†’ Revision â†’ Brand/fact QA â†’ Safe execution â†’ Measurement â†’ Learning
 
-## Security boundary
+## Persistence / security
 
-- Tenant from trusted mission context only.
-- Child cannot broaden tenant/tools/entitlement/approval/budget.
-- No Hermes built-in host toolsets re-enabled.
-- Planning does **not** authorize social publish, website deploy, ad spend, WhatsApp send, or destructive CRM.
+Additive tables: `workforce_plans`, `workforce_stages`, `workforce_reviews` (RLS).
+**Production migration: NOT applied by this PR.**
+`HERMES_MODE` production default remains disabled â€” unchanged.
 
-## Next phase
+## Next parallel sprints
 
-After this contract PR is verified: media providers behind capability registry, department execution adapters, Package Autopilot consuming approved 30-day allocation, Command Center week view, enable `HERMES_MODE=http` only when model/credit path is solid.
+Department/capability providers (media, SEO publish, website deploy, ads, WhatsApp send) behind the registry â€” not in this foundation PR.

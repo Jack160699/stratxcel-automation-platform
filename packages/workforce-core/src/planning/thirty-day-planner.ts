@@ -1,14 +1,20 @@
 import { randomUUID } from "node:crypto";
 import { enforceSocialAllocation } from "./allocation.ts";
 import { assertValidWorkforcePlan } from "./validator.ts";
+import { diagnoseBusinessGrowth, deriveBottlenecks, resolveEntryMode } from "./diagnosis.ts";
+import { buildGrowthRecommendations, buildPlanRecommendations } from "./recommendations.ts";
+import { buildWeeklyStrategy, buildWorkflowStages, resolveWorkflowFocus } from "./workflows.ts";
 import type {
+  BusinessGrowthPlan,
+  BusinessGrowthPlannerInput,
   FunnelPurpose,
   PlannedDeliverable,
+  PlannedWorkItem,
+  SocialSubPlan,
   ThirtyDayPlan,
-  ThirtyDayPlannerInput,
   ThirtyDayPlanRevisionInput,
+  ThirtyDayPlannerInput,
   WorkforcePlan,
-  WorkforceStage,
 } from "./types.ts";
 import { AllocationPolicyError } from "./types.ts";
 
@@ -21,256 +27,425 @@ const FUNNEL_ROTATION: FunnelPurpose[] = [
   "conversion",
 ];
 
-function buildStages(allocation: { images: number; reels: number }): WorkforceStage[] {
-  const stages: WorkforceStage[] = [
-    {
-      stageId: "s_research_audience",
-      department: "research",
-      specialistRole: "audience_researcher",
-      objective: "Profile target audience needs and language",
-      dependencies: [],
-      inputs: ["research_brief"],
-      requiredEvidence: [],
-      outputKind: "research_summary",
-      allowedCapabilityClasses: ["research.web"],
-      budgetCents: 500,
-      qualityGate: ["evidence_sufficiency"],
-      maxAttempts: 2,
-      state: "PENDING",
-    },
-    {
-      stageId: "s_research_competitor",
-      department: "research",
-      specialistRole: "competitor_researcher",
-      objective: "Analyze competitor positioning",
-      dependencies: [],
-      inputs: ["competitor_list"],
-      requiredEvidence: [],
-      outputKind: "research_summary",
-      allowedCapabilityClasses: ["research.web"],
-      budgetCents: 500,
-      qualityGate: ["evidence_sufficiency"],
-      maxAttempts: 2,
-      state: "PENDING",
-    },
-    {
-      stageId: "s_research",
-      department: "research",
-      specialistRole: "market_researcher",
-      objective: "Synthesize market context",
-      dependencies: ["s_research_audience", "s_research_competitor"],
-      inputs: ["research_brief"],
-      requiredEvidence: [],
-      outputKind: "research_summary",
-      allowedCapabilityClasses: ["research.web"],
-      budgetCents: 500,
-      qualityGate: ["evidence_sufficiency"],
-      maxAttempts: 2,
-      state: "PENDING",
-    },
-    {
-      stageId: "s_strategy",
-      department: "strategy",
-      specialistRole: "growth_strategist",
-      objective: "Define 30-day growth strategy",
-      dependencies: ["s_research"],
-      inputs: ["research_summary"],
-      requiredEvidence: [],
-      outputKind: "strategy_memo",
-      allowedCapabilityClasses: ["analytics.read"],
-      budgetCents: 800,
-      qualityGate: ["strategic_alignment"],
-      maxAttempts: 3,
-      state: "PENDING",
-    },
-    {
-      stageId: "s_content",
-      department: "content",
-      specialistRole: "copywriter",
-      objective: "Draft social copy aligned to strategy",
-      dependencies: ["s_strategy"],
-      inputs: ["content_brief"],
-      requiredEvidence: [],
-      outputKind: "caption_set",
-      allowedCapabilityClasses: ["content.shortform"],
-      budgetCents: 1200,
-      qualityGate: ["brand_fit"],
-      maxAttempts: 4,
-      state: "PENDING",
-    },
-    {
-      stageId: "s_media",
-      department: "media",
-      specialistRole: "image_producer",
-      objective: `Produce ${allocation.images} images and ${allocation.reels} reels`,
-      dependencies: ["s_content"],
-      inputs: ["art_direction"],
-      requiredEvidence: [],
-      outputKind: "image_final",
-      allowedCapabilityClasses: ["media.image_generation"],
-      budgetCents: 2000,
-      qualityGate: ["visual_quality"],
-      maxAttempts: 4,
-      state: "PENDING",
-    },
-    {
-      stageId: "s_quality",
-      department: "quality",
-      specialistRole: "creative_critic",
-      objective: "Review deliverables before release",
-      dependencies: ["s_media"],
-      inputs: ["caption_set"],
-      requiredEvidence: [],
-      outputKind: "qa_report",
-      allowedCapabilityClasses: [],
-      budgetCents: 300,
-      qualityGate: ["brand_fit"],
-      maxAttempts: 2,
-      state: "PENDING",
-    },
-  ];
-
-  const dependencies: Record<string, string[]> = {};
-  for (const stage of stages) {
-    dependencies[stage.stageId] = [...stage.dependencies];
+function needsSocialSubplan(input: BusinessGrowthPlannerInput): boolean {
+  const focus = input.workflowFocus;
+  if (focus && focus !== "auto" && focus !== "social_package" && focus !== "mixed_package") {
+    return false;
   }
-
-  return stages;
+  const composition = input.entitlementSnapshot.packageComposition;
+  const socialPosts = input.entitlementSnapshot.relevantEntitlements.social_posts ?? 0;
+  const flexible = input.entitlementSnapshot.relevantEntitlements.social_content_units ?? 0;
+  return composition.length > 0 || socialPosts > 0 || flexible > 0;
 }
 
-function buildDeliverables(
-  input: ThirtyDayPlannerInput,
+function buildSocialWorkItems(
+  input: BusinessGrowthPlannerInput,
   allocation: { images: number; reels: number; carousels: number; stories: number },
-): PlannedDeliverable[] {
-  const deliverables: PlannedDeliverable[] = [];
-  let id = 0;
-  const channels = input.connectedChannels.length > 0 ? input.connectedChannels : ["Instagram"];
+): { workItems: PlannedWorkItem[]; deliverables: PlannedDeliverable[]; socialPlan: SocialSubPlan } {
+  const channelStatus =
+    input.connectedChannels.length === 0 ? ("NO_CONNECTED_CHANNEL" as const) : ("CONNECTED" as const);
+  // Never fabricate Instagram — channel may be null / SETUP_REQUIRED
+  const channels = input.connectedChannels;
   const themes = [
-    "Local brand awareness",
-    "Expert authority",
-    "Educational tips",
-    "Customer proof",
-    "Limited offer",
-    "Conversion push",
+    input.positioning || "Brand clarity",
+    `${input.brandBrain.industry ?? "services"} expertise`,
+    "Local trust and proof",
+    "Educational value",
+    "Offer clarity",
+    "Clear next step",
   ];
 
-  const addItems = (mediaType: "image" | "reel", count: number) => {
+  const workItems: PlannedWorkItem[] = [];
+  const deliverables: PlannedDeliverable[] = [];
+  let id = 0;
+
+  const add = (mediaType: "image" | "reel", count: number) => {
     for (let i = 0; i < count; i++) {
-      const week = Math.floor(i / 3) + 1;
+      const week = Math.min(Math.floor(i / 3) + 1, 4);
       const day = (i % 7) + 1;
+      const purpose = FUNNEL_ROTATION[i % FUNNEL_ROTATION.length]!;
+      const channel = channels.length > 0 ? channels[i % channels.length]! : null;
+      const itemId = `work-${++id}`;
+      const status =
+        channelStatus === "NO_CONNECTED_CHANNEL"
+          ? ("NO_CONNECTED_CHANNEL" as const)
+          : mediaType === "reel"
+            ? ("BLOCKED_CAPABILITY" as const)
+            : ("PLANNED" as const);
+      workItems.push({
+        id: itemId,
+        serviceDomain: "social",
+        department: mediaType === "reel" ? "media" : "content",
+        capability: mediaType === "reel" ? "media.video_generation" : "media.image_generation",
+        deliverableKind: mediaType === "reel" ? "reel_candidate" : "image_final",
+        objective: `${purpose}: ${themes[i % themes.length]}`,
+        funnelPurpose: purpose,
+        week,
+        day,
+        channel,
+        quantity: 1,
+        entitlementClass: "social_posts",
+        status,
+        blockedReason:
+          status === "NO_CONNECTED_CHANNEL"
+            ? "NO_CONNECTED_CHANNEL"
+            : mediaType === "reel"
+              ? "media.video_generation:UNAVAILABLE"
+              : undefined,
+        social: {
+          mediaType,
+          platform: channel ?? undefined,
+          contentObjective: purpose,
+        },
+      });
       deliverables.push({
-        id: `del-${++id}`,
-        week: Math.min(week, 4),
+        id: `del-${id}`,
+        week,
         day,
         mediaType,
-        funnelPurpose: FUNNEL_ROTATION[i % FUNNEL_ROTATION.length]!,
-        channel: channels[i % channels.length]!,
+        funnelPurpose: purpose,
+        channel: channel ?? "SETUP_REQUIRED",
         theme: themes[i % themes.length]!,
-        objective: input.businessGoals[0] ?? "Grow qualified leads",
+        objective: input.businessGoals[0] ?? "Allocate purchased units to priority growth work",
+        workItemId: itemId,
       });
     }
   };
 
-  addItems("image", allocation.images);
-  addItems("reel", allocation.reels);
-  return deliverables;
+  add("image", allocation.images);
+  add("reel", allocation.reels);
+
+  return {
+    workItems,
+    deliverables,
+    socialPlan: {
+      allocation: {
+        images: allocation.images,
+        reels: allocation.reels,
+        carousels: allocation.carousels,
+        stories: allocation.stories,
+        totalUnits: allocation.images + allocation.reels + allocation.carousels + allocation.stories,
+      },
+      connectedChannels: channels,
+      channelStatus,
+      plannedUnits: workItems,
+    },
+  };
+}
+
+function buildNonSocialWorkItems(
+  focus: ReturnType<typeof resolveWorkflowFocus>,
+  input: BusinessGrowthPlannerInput,
+): PlannedWorkItem[] {
+  switch (focus) {
+    case "audit_diagnosis":
+      return [
+        {
+          id: "work-audit-1",
+          serviceDomain: "audit",
+          department: "reporting",
+          capability: "report.generate",
+          deliverableKind: "audit_report",
+          objective: "Evidence-backed business growth audit report",
+          week: 4,
+          status: "PLANNED",
+        },
+      ];
+    case "crm_whatsapp_conversion":
+      return [
+        {
+          id: "work-crm-1",
+          serviceDomain: "crm",
+          department: "crm",
+          capability: "crm.followup_plan",
+          deliverableKind: "crm_followup_plan",
+          objective: "CRM follow-up workflow addressing response delay",
+          week: 2,
+          crm: { workflowKind: "follow_up" },
+          status: "PLANNED",
+          entitlementClass: "whatsapp_contacts",
+        },
+        {
+          id: "work-wa-1",
+          serviceDomain: "whatsapp",
+          department: "whatsapp",
+          capability: "whatsapp.followup_plan",
+          deliverableKind: "whatsapp_followup_plan",
+          objective: "WhatsApp follow-up plan (planning only — no autonomous send)",
+          week: 2,
+          status: "PLANNED",
+          entitlementClass: "whatsapp_contacts",
+        },
+      ];
+    case "website_conversion":
+      return [
+        {
+          id: "work-web-1",
+          serviceDomain: "website",
+          department: "website",
+          capability: "website.generate",
+          deliverableKind: "website_draft",
+          objective: "Conversion/lead-capture website improvements (preview)",
+          week: 3,
+          website: { pageType: "landing", changeKind: "conversion_fix" },
+          entitlementClass: "website_maintenance",
+          status: "PLANNED",
+        },
+      ];
+    case "seo_content":
+      return [
+        {
+          id: "work-seo-1",
+          serviceDomain: "seo",
+          department: "seo",
+          capability: "seo.article",
+          deliverableKind: "seo_article_draft",
+          objective: "SEO article draft grounded in SERP evidence",
+          week: 3,
+          seoArticle: { topic: input.businessGoals[0] ?? "Category education" },
+          status: "PLANNED",
+        },
+      ];
+    case "foundation_new_business":
+      return [
+        {
+          id: "work-found-1",
+          serviceDomain: "website",
+          department: "website",
+          capability: "website.generate",
+          deliverableKind: "website_draft",
+          objective: "Digital foundation plan",
+          week: 2,
+          funnelPurpose: "foundation",
+          status: input.entitlementSnapshot.relevantEntitlements.website_maintenance ? "PLANNED" : "SETUP_REQUIRED",
+          entitlementClass: "website_maintenance",
+        },
+      ];
+    default:
+      return [];
+  }
 }
 
 function buildWorkforcePlan(
-  input: ThirtyDayPlannerInput,
-  allocation: ReturnType<typeof enforceSocialAllocation>,
-  version: number,
-  previousPlanId?: string,
+  input: BusinessGrowthPlannerInput,
+  stages: ReturnType<typeof buildWorkflowStages>,
+  meta: {
+    version: number;
+    previousPlanId?: string;
+    businessObjective: string;
+    businessOutcomeTarget: string;
+    positioningContext: string;
+    revisionReason?: string;
+    revisionEvidenceIds?: readonly string[];
+  },
 ): WorkforcePlan {
-  const stages = buildStages(allocation);
   const dependencies: Record<string, string[]> = {};
-  for (const stage of stages) dependencies[stage.stageId] = [...stage.dependencies];
+  for (const s of stages) dependencies[s.stageId] = [...s.dependencies];
 
   const plan: WorkforcePlan = {
     id: randomUUID(),
     tenantId: input.tenantId,
     missionId: input.missionId,
-    version,
-    previousPlanId,
-    objective: input.businessGoals[0] ?? "30-day growth",
-    businessOutcome: input.positioning,
-    planningHorizon: "30_day",
+    version: meta.version,
+    previousPlanId: meta.previousPlanId,
+    objective: meta.businessObjective,
+    businessOutcome: meta.businessOutcomeTarget,
+    businessObjective: meta.businessObjective,
+    businessOutcomeTarget: meta.businessOutcomeTarget,
+    positioningContext: meta.positioningContext,
+    planningHorizon: "business_growth",
     entitlementSnapshot: input.entitlementSnapshot,
     capabilitySnapshot: [...input.availableCapabilities],
     departmentStages: stages,
     dependencies,
-    expectedDeliverables: ["social_plan", "caption_set", "image_final", "reel_candidate"],
+    expectedDeliverables: stages.map((s) => s.outputKind),
     qualityPolicyId: "default",
     revisionPolicyId: "default",
     budgetEnvelope: input.budgetEnvelope,
     approvalPolicyId: "default",
     createdAtIso: input.currentDateIso,
     status: "DRAFT",
+    revisionReason: meta.revisionReason ?? null,
+    revisionEvidenceIds: meta.revisionEvidenceIds,
   };
 
   return assertValidWorkforcePlan(plan);
 }
 
-export function planThirtyDayGrowth(input: ThirtyDayPlannerInput): ThirtyDayPlan {
-  let allocation;
-  try {
-    allocation = enforceSocialAllocation(input.entitlementSnapshot, {});
-  } catch (err) {
-    if (err instanceof AllocationPolicyError) {
-      throw err;
+/** Canonical entry: Business Growth Plan with 30-day execution horizon. */
+export function planBusinessGrowth(input: BusinessGrowthPlannerInput): BusinessGrowthPlan {
+  const entryMode = resolveEntryMode(input);
+  const diagnosis = diagnoseBusinessGrowth(input);
+  const bottlenecks = deriveBottlenecks(diagnosis);
+  const recommendations = buildGrowthRecommendations({
+    bottlenecks,
+    entitlementSnapshot: input.entitlementSnapshot,
+  });
+  const planRecommendations = buildPlanRecommendations({
+    recommendations,
+    bottlenecks,
+    entitlementSnapshot: input.entitlementSnapshot,
+    entryMode,
+  });
+
+  const focus = resolveWorkflowFocus(input, bottlenecks);
+
+  let socialPlan: SocialSubPlan | undefined;
+  let socialAllocation: BusinessGrowthPlan["socialAllocation"];
+  let plannedDeliverables: PlannedDeliverable[] = [];
+  let plannedWorkItems: PlannedWorkItem[] = buildNonSocialWorkItems(focus, input);
+
+  if (needsSocialSubplan(input) || focus === "social_package" || focus === "mixed_package") {
+    try {
+      const allocation = enforceSocialAllocation(input.entitlementSnapshot, {});
+      const built = buildSocialWorkItems(input, allocation);
+      socialPlan = built.socialPlan;
+      socialAllocation = built.socialPlan.allocation;
+      plannedDeliverables = built.deliverables;
+      plannedWorkItems = [...plannedWorkItems, ...built.workItems];
+    } catch (err) {
+      if (err instanceof AllocationPolicyError && focus !== "social_package" && focus !== "mixed_package") {
+        // Non-social plans may omit social allocation even if policy is UNKNOWN
+      } else {
+        throw err;
+      }
     }
-    throw err;
   }
 
+  // Social-package focus with UNKNOWN and no composition still fails closed via enforce above.
+  if ((focus === "social_package" || focus === "mixed_package") && !socialAllocation) {
+    socialAllocation = enforceSocialAllocation(input.entitlementSnapshot, {});
+  }
+
+  const stages = buildWorkflowStages({
+    focus,
+    allocation: socialAllocation ?? null,
+    availableCapabilities: input.availableCapabilities,
+    proposedStages: input.proposedStages,
+  });
+
   const businessName = input.brandBrain.business_name ?? "the business";
-  const workforcePlan = buildWorkforcePlan(input, allocation, 1);
+  const businessObjective = input.businessGoals[0] ?? "Improve priority growth systems within purchased entitlements";
+  const businessOutcomeTarget =
+    bottlenecks[0]?.code === "SLOW_LEAD_RESPONSE" || bottlenecks[0]?.code === "WEAK_FOLLOW_UP"
+      ? "reduce lead-response delay and strengthen follow-up"
+      : bottlenecks[0]?.code === "WEAK_WEBSITE_CONVERSION" || bottlenecks[0]?.code === "POOR_LEAD_CAPTURE"
+        ? "improve inquiry capture"
+        : bottlenecks[0]?.code === "WEAK_SEARCH_VISIBILITY" || bottlenecks[0]?.code === "LOW_DISCOVERY"
+          ? "improve qualified discovery"
+          : entryMode === "NEW_BUSINESS"
+            ? "establish digital foundation"
+            : "improve priority growth outcomes supported by evidence";
+
+  const weeklyStrategy = buildWeeklyStrategy({
+    focus,
+    proposed: input.proposedWeeklyStrategy,
+    businessName,
+  });
+
+  const workforcePlan = buildWorkforcePlan(input, stages, {
+    version: 1,
+    businessObjective,
+    businessOutcomeTarget,
+    positioningContext: input.positioning,
+  });
+
+  const knowledgeClaims = [
+    ...diagnosis.findings
+      .filter((f) => f.status === "RESEARCH_REQUIRED" || f.status === "KNOWN")
+      .map((f) => ({
+        claim: f.finding,
+        status: f.status,
+        evidenceIds: f.evidenceIds,
+      })),
+    {
+      claim: `Local demand patterns in ${input.geography}`,
+      status: input.existingResearchEvidence.length > 0 ? ("KNOWN" as const) : ("RESEARCH_REQUIRED" as const),
+      evidenceIds: input.existingResearchEvidence,
+    },
+  ];
+
+  // Unpurchased execution must not be implied for audit-only
+  if (entryMode === "AUDIT_ONLY") {
+    plannedWorkItems = plannedWorkItems.map((w) =>
+      w.serviceDomain === "audit" || w.deliverableKind.includes("audit") || w.deliverableKind.includes("report")
+        ? w
+        : { ...w, status: "SETUP_REQUIRED" as const, blockedReason: "unpurchased_execution_blocked" },
+    );
+  }
+
+  const topOpportunity = bottlenecks[0]?.description ?? "Continue evidence-based optimization";
 
   return {
     id: randomUUID(),
     tenantId: input.tenantId,
     missionId: input.missionId,
     version: 1,
-    strategicThesis: `${businessName} will grow in ${input.geography} through varied funnel content within purchased package limits.`,
-    primaryObjective: input.businessGoals[0] ?? "Grow qualified leads",
+    entryMode,
+    strategicThesis: `${businessName}: ${diagnosis.executiveSummary}`,
+    businessObjective,
+    businessOutcomeTarget,
+    positioningContext: input.positioning,
+    primaryObjective: businessObjective,
     secondaryObjectives: input.businessGoals.slice(1),
     targetSegments: [input.targetAudience],
-    messagingThemes: [
-      input.positioning,
-      `${input.brandBrain.industry ?? "services"} expertise`,
-      "Local trust and proof",
-    ],
-    funnelMap: ["awareness", "education", "proof", "conversion"],
-    channelRoles: Object.fromEntries(input.connectedChannels.map((c) => [c, "primary reach"])),
-    weeklyStrategy: [
-      { week: 1, focus: "Research and awareness", objectives: ["Validate audience", "Launch awareness content"] },
-      { week: 2, focus: "Education and authority", objectives: ["Teach value", "Build authority"] },
-      { week: 3, focus: "Proof and trust", objectives: ["Show results", "Handle objections"] },
-      { week: 4, focus: "Offer and conversion", objectives: ["Drive action", "Prepare next cycle"] },
-    ],
-    plannedDeliverables: buildDeliverables(input, allocation),
-    researchTasks: [
-      "Validate local competitor positioning",
-      "Confirm audience language on connected channels",
-    ],
-    knowledgeClaims: [
-      {
-        claim: `Local demand patterns in ${input.geography}`,
-        status: input.existingResearchEvidence.length > 0 ? "KNOWN" : "RESEARCH_REQUIRED",
-        evidenceIds: input.existingResearchEvidence,
-      },
-      {
-        claim: "Competitor pricing benchmarks",
-        status: "RESEARCH_REQUIRED",
-      },
-      {
-        claim: input.positioning,
-        status: "KNOWN",
-      },
-    ],
-    socialAllocation: allocation,
+    messagingThemes: [input.positioning, `${input.brandBrain.industry ?? "services"} expertise`].filter(Boolean),
+    funnelMap: weeklyStrategy.map((w) => w.focus),
+    channelRoles: Object.fromEntries(input.connectedChannels.map((c) => [c, "connected_execution_channel"])),
+    weeklyStrategy,
+    plannedWorkItems,
+    plannedDeliverables,
+    researchTasks: diagnosis.researchGaps,
+    knowledgeClaims,
+    diagnosis,
+    bottlenecks,
+    recommendations,
+    planRecommendations,
+    socialPlan,
+    socialAllocation,
+    strategicHorizon: {
+      nowDiagnosis: diagnosis.executiveSummary,
+      first30Days: weeklyStrategy.map((w) => `W${w.week}: ${w.focus}`).join(" · "),
+      days31to60Direction:
+        planRecommendations[0] && entryMode === "AUDIT_ONLY"
+          ? `Recommended direction only (not purchased): ${planRecommendations[0].recommendedOption}`
+          : "Replan from measured signals — do not fabricate unpurchased work",
+      days61to90Direction: "Optimization roadmap pending measurement evidence",
+    },
+    customerFacing: {
+      yourBusiness: businessName,
+      yourCurrentPosition: diagnosis.executiveSummary,
+      whatsWorking: diagnosis.strongestAssets,
+      biggestGrowthOpportunities: bottlenecks.slice(0, 3).map((b) => b.description),
+      thirtyDayPlanSummary: businessOutcomeTarget,
+      thisWeekFocus: weeklyStrategy[0]?.focus ?? "Diagnosis",
+      workInProgress: stages.filter((s) => s.state === "READY" || s.state === "RUNNING").map((s) => s.objective),
+      whatNeedsYou: [
+        ...(input.connectedChannels.length === 0 && needsSocialSubplan(input) ? ["Connect social channels"] : []),
+        ...stages.filter((s) => s.state === "WAITING_APPROVAL").map((s) => s.objective),
+      ],
+      results: [],
+      nextRecommendation: planRecommendations[0]?.recommendedOption ?? topOpportunity,
+    },
+    planningContext: {
+      brandBrain: input.brandBrain,
+      brandBrainVersion: input.brandBrainVersion ?? null,
+      productsServices: [...input.productsServices],
+      targetAudience: input.targetAudience,
+      geography: input.geography,
+      positioning: input.positioning,
+      timezone: input.timezone,
+      connectedChannels: [...input.connectedChannels],
+      businessGoals: [...input.businessGoals],
+    },
     workforcePlan,
     createdAtIso: input.currentDateIso,
   };
+}
+
+/** Backward-compatible alias. */
+export function planThirtyDayGrowth(input: ThirtyDayPlannerInput): ThirtyDayPlan {
+  return planBusinessGrowth(input);
 }
 
 export function reviseThirtyDayPlan(
@@ -281,39 +456,55 @@ export function reviseThirtyDayPlan(
     throw new Error("revision_requires_evidence");
   }
 
+  // Preserve original planning snapshot — never replace with empty Brand Brain / UTC defaults
+  const ctx = current.planningContext;
+  const nextInput: BusinessGrowthPlannerInput = {
+    tenantId: current.tenantId,
+    missionId: current.missionId,
+    timezone: ctx.timezone,
+    currentDateIso: current.createdAtIso,
+    brandBrain: ctx.brandBrain,
+    brandBrainVersion: ctx.brandBrainVersion,
+    productsServices: ctx.productsServices,
+    targetAudience: ctx.targetAudience,
+    geography: ctx.geography,
+    positioning: ctx.positioning,
+    connectedChannels: ctx.connectedChannels,
+    businessGoals: [revision.patch.primaryObjective ?? current.primaryObjective, ...(revision.patch.secondaryObjectives ?? current.secondaryObjectives)],
+    previousPerformance: [],
+    existingResearchEvidence: [...revision.evidenceIds],
+    activeCampaigns: [],
+    availableCapabilities: current.workforcePlan.capabilitySnapshot,
+    entitlementSnapshot: current.workforcePlan.entitlementSnapshot,
+    budgetEnvelope: current.workforcePlan.budgetEnvelope,
+    entryMode: current.entryMode,
+    businessSignals: undefined,
+    proposedWeeklyStrategy: revision.patch.weeklyStrategy ?? current.weeklyStrategy,
+  };
+
+  const rebuilt = planBusinessGrowth(nextInput);
   const nextVersion = current.version + 1;
-  const workforcePlan = buildWorkforcePlan(
-    {
-      tenantId: current.tenantId,
-      missionId: current.missionId,
-      timezone: "UTC",
-      currentDateIso: current.createdAtIso,
-      brandBrain: {},
-      productsServices: [],
-      targetAudience: current.targetSegments[0] ?? "local",
-      geography: "local",
-      positioning: current.strategicThesis,
-      connectedChannels: Object.keys(current.channelRoles),
-      businessGoals: [current.primaryObjective, ...current.secondaryObjectives],
-      previousPerformance: [],
-      existingResearchEvidence: [...revision.evidenceIds],
-      activeCampaigns: [],
-      availableCapabilities: current.workforcePlan.capabilitySnapshot,
-      entitlementSnapshot: current.workforcePlan.entitlementSnapshot,
-      budgetEnvelope: current.workforcePlan.budgetEnvelope,
-    },
-    current.socialAllocation,
-    nextVersion,
-    current.workforcePlan.id,
-  );
 
   return {
-    ...current,
+    ...rebuilt,
+    id: current.id,
     version: nextVersion,
     messagingThemes: revision.patch.messagingThemes ?? current.messagingThemes,
     primaryObjective: revision.patch.primaryObjective ?? current.primaryObjective,
     secondaryObjectives: revision.patch.secondaryObjectives ?? current.secondaryObjectives,
-    workforcePlan,
+    businessOutcomeTarget: revision.patch.businessOutcomeTarget ?? current.businessOutcomeTarget,
+    diagnosis: current.diagnosis,
+    bottlenecks: current.bottlenecks,
+    planningContext: current.planningContext,
+    workforcePlan: {
+      ...rebuilt.workforcePlan,
+      version: nextVersion,
+      previousPlanId: current.workforcePlan.id,
+      revisionReason: revision.revisionReason,
+      revisionEvidenceIds: revision.evidenceIds,
+    },
     createdAtIso: new Date().toISOString(),
   };
 }
+
+export { resolveEntryMode, resolveWorkflowFocus };

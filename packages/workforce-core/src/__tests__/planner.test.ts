@@ -41,6 +41,7 @@ function run() {
       }),
     ),
   );
+  assert.ok(starter.socialAllocation);
   assert.equal(starter.socialAllocation.images, 8);
   assert.equal(starter.socialAllocation.reels, 4);
 
@@ -56,6 +57,7 @@ function run() {
       }),
     ),
   );
+  assert.ok(growth.socialAllocation);
   assert.equal(growth.socialAllocation.images, 20);
   assert.equal(growth.socialAllocation.reels, 5);
 
@@ -71,6 +73,7 @@ function run() {
       }),
     ),
   );
+  assert.ok(business.socialAllocation);
   assert.equal(business.socialAllocation.images, 40);
   assert.equal(business.socialAllocation.reels, 10);
 
@@ -83,6 +86,7 @@ function run() {
       }),
     ),
   );
+  assert.ok(image30.socialAllocation);
   assert.equal(image30.socialAllocation.images, 30);
   assert.equal(image30.socialAllocation.reels, 0);
 
@@ -95,6 +99,7 @@ function run() {
       }),
     ),
   );
+  assert.ok(flexible.socialAllocation);
   assert.ok(flexible.socialAllocation.totalUnits <= 12);
 
   assert.throws(
@@ -133,6 +138,7 @@ function run() {
     positioning: "Premium interior design for discerning local homeowners",
   });
 
+  assert.ok(interior.socialAllocation);
   assert.equal(interior.socialAllocation.images, 8);
   assert.equal(interior.socialAllocation.reels, 4);
   const purposes = new Set(interior.plannedDeliverables.map((d) => d.funnelPurpose));

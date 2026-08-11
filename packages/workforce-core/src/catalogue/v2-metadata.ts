@@ -2,21 +2,58 @@ import type { DepartmentKey } from "../departments/types.ts";
 
 /**
  * V2 internal catalogue metadata — does not replace existing SERVICE_CATALOGUE keys.
+ * Entitlements for planning are derived from planned execution, not hard-required socially.
  */
 export interface ServiceCatalogueV2Metadata {
   serviceKey: string;
   defaultDepartmentWorkflow: readonly DepartmentKey[];
   deliverableClasses: readonly string[];
   requiredCapabilityClasses: readonly string[];
+  /** Optional hints — actual requirements come from planned work items. */
   entitlementClasses: readonly string[];
 }
 
 export const SERVICE_CATALOGUE_V2: Record<string, ServiceCatalogueV2Metadata> = {
   brand_audit: {
     serviceKey: "brand_audit",
-    defaultDepartmentWorkflow: ["executive", "research", "brand", "analytics", "reporting", "quality"],
-    deliverableClasses: ["brand_audit_report"],
-    requiredCapabilityClasses: ["research.web", "analytics.read", "report.generate"],
+    defaultDepartmentWorkflow: [
+      "executive",
+      "research",
+      "strategy",
+      "brand",
+      "website",
+      "seo",
+      "social",
+      "advertising",
+      "crm",
+      "whatsapp",
+      "sales",
+      "conversion",
+      "analytics",
+      "quality",
+      "reporting",
+    ],
+    deliverableClasses: ["business_growth_audit_report", "brand_audit_report"],
+    requiredCapabilityClasses: ["brand.audit", "research.web", "report.generate"],
+    entitlementClasses: [],
+  },
+  business_growth_audit: {
+    serviceKey: "business_growth_audit",
+    defaultDepartmentWorkflow: [
+      "executive",
+      "research",
+      "strategy",
+      "brand",
+      "website",
+      "seo",
+      "crm",
+      "conversion",
+      "analytics",
+      "quality",
+      "reporting",
+    ],
+    deliverableClasses: ["business_growth_audit_report"],
+    requiredCapabilityClasses: ["brand.audit", "website.audit", "conversion.audit", "report.generate"],
     entitlementClasses: [],
   },
   social_campaign: {
@@ -88,24 +125,19 @@ export const SERVICE_CATALOGUE_V2: Record<string, ServiceCatalogueV2Metadata> = 
   },
   thirty_day_growth_plan: {
     serviceKey: "thirty_day_growth_plan",
-    defaultDepartmentWorkflow: [
-      "executive",
-      "strategy",
-      "research",
-      "brand",
-      "content",
-      "media",
-      "quality",
-      "compliance",
-      "social",
-      "analytics",
-    ],
-    deliverableClasses: ["thirty_day_growth_plan", "social_execution_allocation"],
-    requiredCapabilityClasses: ["content.shortform", "research.web", "analytics.read"],
-    entitlementClasses: ["social_posts"],
+    defaultDepartmentWorkflow: ["executive", "strategy", "research", "quality", "analytics"],
+    deliverableClasses: ["business_growth_plan", "thirty_day_execution_plan"],
+    requiredCapabilityClasses: ["research.web", "analytics.read", "report.generate"],
+    entitlementClasses: [],
   },
 };
 
 export function getServiceCatalogueV2(serviceKey: string): ServiceCatalogueV2Metadata | undefined {
   return SERVICE_CATALOGUE_V2[serviceKey];
+}
+
+/** Map legacy paid Audit checkout to broad diagnostic workflow metadata. */
+export function resolveAuditCatalogueKey(serviceKey: string): string {
+  if (serviceKey === "brand_audit") return "business_growth_audit";
+  return serviceKey;
 }

@@ -1,5 +1,6 @@
 import type {
   AllocationPolicy,
+  BusinessGrowthEntitlementSnapshot,
   ContractSnapshotInput,
   EntitlementSnapshot,
   PackageCompositionItem,
@@ -23,14 +24,23 @@ const PACKAGE_PRESETS: Record<string, readonly PackageCompositionItem[]> = {
   image_30: [{ mediaType: "image", quantity: 30 }],
 };
 
-export function snapshotFromContract(input: ContractSnapshotInput): EntitlementSnapshot {
+export function snapshotFromContract(input: ContractSnapshotInput): BusinessGrowthEntitlementSnapshot {
+  const usage = input.currentUsage ?? {};
+  const remaining: Record<string, number> = {};
+  for (const [k, limit] of Object.entries(input.relevantEntitlements)) {
+    remaining[k] = Math.max(0, limit - (usage[k] ?? 0));
+  }
   return {
     allocationPolicy: input.allocationPolicy,
     packageComposition: [...input.packageComposition],
     relevantEntitlements: { ...input.relevantEntitlements },
+    currentUsage: { ...usage },
+    remainingUsage: remaining,
     planTier: input.planTier,
+    subscriptionId: input.subscriptionId ?? null,
     periodStartIso: input.periodStartIso,
     periodEndIso: input.periodEndIso,
+    purchasedServiceKeys: input.purchasedServiceKeys,
   };
 }
 

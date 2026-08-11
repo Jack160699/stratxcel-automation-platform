@@ -91,6 +91,8 @@ function run() {
 
   assert.equal(v2.version, 2);
   assert.equal(v2.workforcePlan.previousPlanId, v1.workforcePlan.id);
+  assert.equal(v2.planningContext.brandBrain.business_name, "Handoff Test Co");
+  assert.equal(v2.planningContext.timezone, "Asia/Kolkata");
   assert.throws(
     () =>
       reviseThirtyDayPlan(v1, {

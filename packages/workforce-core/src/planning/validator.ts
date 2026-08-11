@@ -35,7 +35,9 @@ export function validateWorkforcePlan(plan: WorkforcePlan): string[] {
 
     for (const cap of stage.allowedCapabilityClasses) {
       if (!getCapability(cap)) errors.push(`unknown_capability:${cap}`);
-      else if (isBlockedCapability(cap)) errors.push(`blocked_capability:${cap}`);
+      else if (isBlockedCapability(cap) && stage.state !== "WAITING_CAPABILITY") {
+        errors.push(`blocked_capability:${cap}`);
+      }
     }
   }
 

@@ -87,12 +87,12 @@ export const SERVICE_CATALOGUE: readonly ServiceCatalogueEntry[] = [
   },
   {
     key: "thirty_day_growth_plan",
-    label: "30-Day Growth Plan",
+    label: "Business Growth Plan (30-Day Execution)",
     description:
-      "Hermes CEO plans a structured 30-day growth strategy within the customer's purchased package envelope, then delegates specialist stages. Planning does not authorize publish/deploy/spend.",
+      "Hermes CEO diagnoses the business, prioritizes bottlenecks, and builds a 30-day Business Growth Plan within purchased entitlements. Social is optional. Planning does not authorize publish/deploy/spend.",
     hermesProfile: "stratxcel-ceo",
     baseCostCents: 75000,
-    keywords: ["30 day plan", "30-day plan", "monthly growth plan", "growth planner", "thirty day"],
+    keywords: ["30 day plan", "30-day plan", "monthly growth plan", "growth planner", "thirty day", "business growth plan"],
   },
 ] as const;
 
