@@ -106,3 +106,5 @@ Additive tables: `workforce_plans`, `workforce_stages`, `workforce_reviews` (RLS
 ## Next parallel sprints
 
 Department/capability providers (media, SEO publish, website deploy, ads, WhatsApp send) behind the registry â€” not in this foundation PR.
+
+Performance Intelligence (analytics / reporting / optimization learning loop): see [PERFORMANCE_INTELLIGENCE.md](./PERFORMANCE_INTELLIGENCE.md).

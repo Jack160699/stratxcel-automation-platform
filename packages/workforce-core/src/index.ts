@@ -28,4 +28,5 @@ export * from "./brand-context/compiler.ts";
 export * from "./events/emit.ts";
 export * from "./evidence/types.ts";
 export * from "./learning/types.ts";
+export * from "./performance/index.ts";
 export * from "./catalogue/v2-metadata.ts";
