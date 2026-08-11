@@ -1,4 +1,5 @@
 import type { CapabilityKey } from "../capabilities/types.ts";
+import { isNonExecutableStatus } from "../capabilities/types.ts";
 import { getCapability } from "../capabilities/registry.ts";
 import type {
   BusinessGrowthPlannerInput,
@@ -47,7 +48,9 @@ function stage(
     Partial<WorkforceStage>,
 ): WorkforceStage {
   const caps = partial.allowedCapabilityClasses ?? [];
-  const blocked = caps.map((c) => ({ c, status: getCapability(c)?.status })).find((x) => x.status === "UNAVAILABLE" || x.status === "NOT_CONFIGURED");
+  const blocked = caps
+    .map((c) => ({ c, status: getCapability(c)?.status }))
+    .find((x) => x.status && isNonExecutableStatus(x.status));
   return {
     inputs: [],
     requiredEvidence: [],
@@ -71,7 +74,7 @@ export function buildWorkflowStages(input: {
     return input.proposedStages.map((s) => {
       const blocked = s.allowedCapabilityClasses
         .map((c) => ({ c, status: getCapability(c)?.status }))
-        .find((x) => x.status === "UNAVAILABLE" || x.status === "NOT_CONFIGURED");
+        .find((x) => x.status && isNonExecutableStatus(x.status));
       return {
         ...s,
         state: blocked ? ("WAITING_CAPABILITY" as const) : s.state,

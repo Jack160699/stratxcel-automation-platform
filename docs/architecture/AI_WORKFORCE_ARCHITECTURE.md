@@ -90,6 +90,8 @@ Never invent Instagram/channels when none are connected (`NO_CONNECTED_CHANNEL` 
 25 departments remain logical operating units â€” **grant nothing**.
 Capabilities are independently compiled; unavailable media cannot fake reel success via image generation.
 
+Canonical runtime contract: [CAPABILITY_RUNTIME.md](./CAPABILITY_RUNTIME.md) (department ≠ capability ≠ provider ≠ integration ≠ entitlement ≠ authorization).
+
 ## Quality principle
 
 Stratxcel does not sell task counts as primary value.

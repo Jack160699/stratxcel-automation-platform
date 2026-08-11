@@ -1,6 +1,6 @@
 import type { ToolName } from "@stratxcel/hermes";
 import { getCapability } from "../capabilities/registry.ts";
-import { isCapabilityKey } from "../capabilities/types.ts";
+import { isCapabilityKey, isNonExecutableStatus } from "../capabilities/types.ts";
 
 export class SecurityValidationError extends Error {
   readonly code: string;
@@ -80,7 +80,7 @@ export function assertNoExternalMutationFromPlanAlone(
 
 export function isBlockedCapability(key: string): boolean {
   const cap = getCapability(key);
-  return cap?.status === "UNAVAILABLE" || cap?.status === "NOT_CONFIGURED";
+  return !!cap && isNonExecutableStatus(cap.status);
 }
 
 export function assertCapabilitiesExecutable(required: readonly string[]): void {
@@ -89,7 +89,7 @@ export function assertCapabilitiesExecutable(required: readonly string[]): void 
     if (!def) {
       throw new SecurityValidationError("unknown_capability", `Unknown capability: ${cap}`);
     }
-    if (def.status === "UNAVAILABLE" || def.status === "NOT_CONFIGURED") {
+    if (isNonExecutableStatus(def.status)) {
       throw new SecurityValidationError("capability_unavailable", `Capability unavailable: ${cap}`);
     }
   }

@@ -5,6 +5,7 @@ import type {
   PlanRecommendation,
 } from "./growth-types.ts";
 import { getCapability } from "../capabilities/registry.ts";
+import { isNonExecutableStatus } from "../capabilities/types.ts";
 
 /**
  * Evidence-based recommendations.
@@ -37,9 +38,11 @@ export function buildGrowthRecommendations(input: {
       dependency: mapped.dependency,
       entitlementRequirement: entitlement,
       currentAvailability: purchased
-        ? cap?.status === "UNAVAILABLE" || cap?.status === "NOT_CONFIGURED"
+        ? cap && isNonExecutableStatus(cap.status)
           ? cap.status
-          : "AVAILABLE"
+          : cap
+            ? "AVAILABLE"
+            : "UNAVAILABLE"
         : "NOT_PURCHASED",
       suggestedPlanOrServiceTier: mapped.suggestedTier,
     });
