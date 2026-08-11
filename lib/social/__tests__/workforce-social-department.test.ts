@@ -165,15 +165,65 @@ function run() {
     assert.equal(denied.allowed, false);
   }
 
-  // Explicit approval publishes only when gates pass
+  // Explicit approval publishes only when Trust PASS/PASS
   const approved = decideManualPublishGate({
     explicitApprovalControl: true,
     actionId: "action-1",
     shadowMode: false,
     qualityStatus: "PASS",
     complianceStatus: "PASS",
+    releaseReadiness: { readyToRelease: true, reviewedArtifactVersion: "1" },
+    exactArtifactVersion: "1",
   });
   assert.equal(approved.allowed, true);
+
+  // Non-PASS quality/compliance always block — even with explicit approval
+  for (const status of ["REJECT", "BLOCK", "REVISE", "HUMAN_REVIEW", "not_reviewed", "missing", "unknown"]) {
+    const blockedQuality = decideManualPublishGate({
+      explicitApprovalControl: true,
+      actionId: "action-q",
+      shadowMode: false,
+      qualityStatus: status,
+      complianceStatus: "PASS",
+    });
+    assert.equal(blockedQuality.allowed, false, `quality ${status} must block`);
+    assert.match(blockedQuality.reason, /quality_not_pass/);
+    const blockedCompliance = decideManualPublishGate({
+      explicitApprovalControl: true,
+      actionId: "action-c",
+      shadowMode: false,
+      qualityStatus: "PASS",
+      complianceStatus: status,
+    });
+    assert.equal(blockedCompliance.allowed, false, `compliance ${status} must block`);
+    assert.match(blockedCompliance.reason, /compliance_not_pass/);
+  }
+
+  // Explicit approval cannot override Trust release block
+  const approvalVsTrust = decideManualPublishGate({
+    explicitApprovalControl: true,
+    actionId: "action-trust",
+    shadowMode: false,
+    qualityStatus: "PASS",
+    complianceStatus: "PASS",
+    releaseReadiness: { readyToRelease: false, reviewedArtifactVersion: "1" },
+    exactArtifactVersion: "1",
+  });
+  assert.equal(approvalVsTrust.allowed, false);
+  assert.match(approvalVsTrust.reason, /release_not_ready/);
+
+  // Version mismatch blocks
+  const versionMismatch = decideManualPublishGate({
+    explicitApprovalControl: true,
+    actionId: "action-ver",
+    shadowMode: false,
+    qualityStatus: "PASS",
+    complianceStatus: "PASS",
+    releaseReadiness: { readyToRelease: true, reviewedArtifactVersion: "1" },
+    exactArtifactVersion: "2",
+  });
+  assert.equal(versionMismatch.allowed, false);
+  assert.match(versionMismatch.reason, /artifact_version_mismatch/);
 
   // Shadow blocks mutation (preparation can still have completed upstream)
   const shadowed = decideManualPublishGate({
@@ -194,9 +244,39 @@ function run() {
     reviewCompleted: false,
     shadowMode: false,
     missionSource: "MANUAL",
+    qualityStatus: "PASS",
+    complianceStatus: "PASS",
   });
   assert.equal(manualInherit.allowed, false);
   assert.match(manualInherit.reason, /manual_mission_does_not_inherit/);
+
+  // Package standing auth cannot override Trust block
+  const packageTrustBlock = decidePackagePublishGate({
+    standingAuthorizationActive: true,
+    authorizationId: "auth-1",
+    publishingMode: "AUTO_PUBLISH",
+    reviewCompleted: false,
+    shadowMode: false,
+    missionSource: "PACKAGE",
+    qualityStatus: "PASS",
+    complianceStatus: "BLOCK",
+  });
+  assert.equal(packageTrustBlock.allowed, false);
+  assert.match(packageTrustBlock.reason, /compliance_not_pass/);
+
+  // Package standing auth cannot override Shadow
+  const packageShadow = decidePackagePublishGate({
+    standingAuthorizationActive: true,
+    authorizationId: "auth-1",
+    publishingMode: "AUTO_PUBLISH",
+    reviewCompleted: false,
+    shadowMode: true,
+    missionSource: "PACKAGE",
+    qualityStatus: "PASS",
+    complianceStatus: "PASS",
+  });
+  assert.equal(packageShadow.allowed, false);
+  assert.equal(packageShadow.shadowBlocked, true);
 
   const packageAuto = decidePackagePublishGate({
     standingAuthorizationActive: true,
@@ -205,6 +285,8 @@ function run() {
     reviewCompleted: false,
     shadowMode: false,
     missionSource: "PACKAGE",
+    qualityStatus: "PASS",
+    complianceStatus: "PASS",
   });
   assert.equal(packageAuto.allowed, true);
 
@@ -215,6 +297,8 @@ function run() {
     reviewCompleted: false,
     shadowMode: false,
     missionSource: "PACKAGE",
+    qualityStatus: "PASS",
+    complianceStatus: "PASS",
   });
   assert.equal(packageReview.allowed, false);
 

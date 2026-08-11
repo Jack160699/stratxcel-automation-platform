@@ -185,7 +185,7 @@ const DEFINITIONS: DeptInput[] = [
       "deploy_receipt",
     ],
     defaultQualityGates: ["brand_fit", "ux_clarity", "conversion_fit"],
-    requestableCapabilityClasses: ["website.generate", "website.deploy", "content.longform"],
+    requestableCapabilityClasses: ["website.generate", "website.deploy", "website.audit", "content.longform"],
     riskLevel: "critical",
     externalMutationEverPermitted: true,
     defaultMaxRevisionCount: 4,

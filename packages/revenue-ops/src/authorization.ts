@@ -2,8 +2,18 @@ import type { MutationGateInput, MutationGateResult } from "./types.ts";
 import { assertSameTenant } from "./tenant-scope.ts";
 
 /**
- * Mutation authorization for CRM writes and WhatsApp sends.
- * Hermes-proposed text never grants send/write authorization.
+ * Revenue domain gate for CRM writes and WhatsApp sends.
+ *
+ * This is NOT the sole final authorization for external mutation.
+ * Callers must ALSO pass:
+ * - Capability Runtime gate (requestCapability / resolveCapabilityReadiness)
+ * - tenant ownership
+ * - entitlement
+ * - integration readiness
+ * - kill switch / Shadow where applicable
+ *
+ * Standing authorization must be kind-scoped — a boolean alone is never
+ * universal across Social / Ads / Website.
  */
 export function authorizeRevenueMutation(input: MutationGateInput): MutationGateResult {
   try {
@@ -13,6 +23,10 @@ export function authorizeRevenueMutation(input: MutationGateInput): MutationGate
   }
 
   void input.hermesProposedText;
+
+  const standingOk =
+    input.standingAuthorization === true &&
+    input.standingAuthorizationKind === input.kind;
 
   if (input.kind === "whatsapp.send") {
     if (input.optedOut === true) {
@@ -27,13 +41,13 @@ export function authorizeRevenueMutation(input: MutationGateInput): MutationGate
     if (input.outsideSessionWindow && input.hasMarketingConsent !== true) {
       return { allowed: false, reason: "marketing_consent_required", draftingAllowed: true };
     }
-    if (input.approvalStatus === "APPROVED" || input.standingAuthorization === true) {
+    if (input.approvalStatus === "APPROVED" || standingOk) {
       return { allowed: true, reason: "authorized", draftingAllowed: true };
     }
     return { allowed: false, reason: "send_authorization_required", draftingAllowed: true };
   }
 
-  if (input.approvalStatus === "APPROVED" || input.standingAuthorization === true) {
+  if (input.approvalStatus === "APPROVED" || standingOk) {
     return { allowed: true, reason: "authorized", draftingAllowed: true };
   }
   return { allowed: false, reason: "crm_write_authorization_required", draftingAllowed: true };
@@ -41,4 +55,15 @@ export function authorizeRevenueMutation(input: MutationGateInput): MutationGate
 
 export function isDraftOnly(sequence: { sendAuthorized: boolean }): boolean {
   return sequence.sendAuthorized === false;
+}
+
+/**
+ * Combined eligibility: revenue domain gate AND capability runtime executable.
+ * Revenue approval alone cannot bypass capability gate.
+ */
+export function isRevenueExecutionEligible(input: {
+  revenueGate: MutationGateResult;
+  capabilityExecutable: boolean;
+}): boolean {
+  return input.revenueGate.allowed === true && input.capabilityExecutable === true;
 }

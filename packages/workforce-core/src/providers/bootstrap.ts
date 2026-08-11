@@ -3,7 +3,6 @@ import { registerProvider, getProvider, resetProviderRegistryForTests } from "./
 import {
   unknownCostUsage,
   type CapabilityProvider,
-  type ProviderExecuteInput,
   type ProviderExecuteResult,
   type ProviderImplementationStatus,
   type ProviderReadinessProbeResult,
@@ -37,125 +36,121 @@ function placeholderProvider(args: {
   };
 }
 
-function implementedStub(args: {
-  key: string;
-  capabilityKeys: readonly CapabilityKey[];
-  execute: (input: ProviderExecuteInput) => Promise<ProviderExecuteResult>;
-}): CapabilityProvider {
-  return {
-    key: args.key,
-    capabilityKeys: args.capabilityKeys,
-    status: "IMPLEMENTED",
-    probeReadiness: (): ProviderReadinessProbeResult => ({
-      ready: true,
-      status: "IMPLEMENTED",
-      reasonCode: "READY",
-    }),
-    execute: args.execute,
-  };
-}
-
 /**
  * Register real/placeholder providers. Idempotent.
  * Registration does not imply runtime readiness.
+ * Never registers simulated ok:true providers.
  */
 export function bootstrapCapabilityProviders(): void {
   if (bootstrapped) return;
   bootstrapped = true;
 
+  // Formerly stubbed capabilities — truthful NOT_CONFIGURED placeholders only.
   registerProvider(
-    implementedStub({
+    placeholderProvider({
       key: "content-shortform-hermes",
       capabilityKeys: ["content.shortform"],
-      execute: async (input) => ({
-        ok: true,
-        providerKey: "content-shortform-hermes",
-        providerReference: `content-shortform:${input.requestId}`,
-        outputArtifactIds: [`artifact:shortform:${input.requestId}`],
-        usage: unknownCostUsage({ requests: 1 }),
-        receipt: { kind: "shortform_copy", simulated: true },
-      }),
+      status: "NOT_CONFIGURED",
+      reason: "Short-form content provider not configured for workforce execution",
     }),
   );
-
   registerProvider(
-    implementedStub({
+    placeholderProvider({
       key: "social-schedule-queue",
       capabilityKeys: ["social.schedule"],
-      execute: async (input) => ({
-        ok: true,
-        providerKey: "social-schedule-queue",
-        providerReference: `schedule:${input.requestId}`,
-        outputArtifactIds: [`artifact:schedule:${input.requestId}`],
-        usage: unknownCostUsage({ requests: 1 }),
-        receipt: { kind: "schedule_receipt", simulated: true },
-      }),
+      status: "NOT_CONFIGURED",
+      reason: "Social schedule queue provider not configured for workforce execution",
     }),
   );
-
   registerProvider(
-    implementedStub({
+    placeholderProvider({
       key: "social-publish-meta",
       capabilityKeys: ["social.publish"],
-      execute: async (input) => ({
-        ok: true,
-        providerKey: "social-publish-meta",
-        providerReference: `publish:${input.requestId}`,
-        outputArtifactIds: [`artifact:publish:${input.requestId}`],
-        usage: unknownCostUsage({ requests: 1 }),
-        receipt: { kind: "publish_receipt", simulated: true },
-      }),
+      status: "NOT_CONFIGURED",
+      reason: "Social publish provider not configured for workforce execution",
     }),
   );
-
   registerProvider(
-    implementedStub({
+    placeholderProvider({
       key: "seo-audit-search-discovery",
       capabilityKeys: ["seo.audit"],
-      execute: async (input) => ({
-        ok: true,
-        providerKey: "seo-audit-search-discovery",
-        providerReference: `seo-audit:${input.requestId}`,
-        outputArtifactIds: [`artifact:seo_audit:${input.requestId}`],
-        usage: unknownCostUsage({ requests: 1 }),
-        receipt: { kind: "seo_audit_report", simulated: true },
-      }),
+      status: "NOT_CONFIGURED",
+      reason: "SEO audit capability provider not wired; use search-web department engine separately",
     }),
   );
-
   registerProvider(
-    implementedStub({
+    placeholderProvider({
       key: "website-generate-domains",
       capabilityKeys: ["website.generate"],
-      execute: async (input) => ({
-        ok: true,
-        providerKey: "website-generate-domains",
-        providerReference: `website-draft:${input.requestId}`,
-        outputArtifactIds: [`artifact:website_draft:${input.requestId}`],
-        usage: unknownCostUsage({ requests: 1 }),
-        receipt: { kind: "website_draft", simulated: true },
-      }),
+      status: "NOT_CONFIGURED",
+      reason: "Website generate provider not configured for workforce capability path",
+    }),
+  );
+  registerProvider(
+    placeholderProvider({
+      key: "crm-supabase",
+      capabilityKeys: ["crm.read", "crm.write"],
+      status: "NOT_CONFIGURED",
+      reason: "CRM provider not configured for workforce capability path",
     }),
   );
 
-  registerProvider(
-    implementedStub({
-      key: "crm-supabase",
-      capabilityKeys: ["crm.read", "crm.write"],
-      execute: async (input) => ({
-        ok: true,
-        providerKey: "crm-supabase",
-        providerReference: `crm:${input.capability}:${input.requestId}`,
-        outputArtifactIds: [
-          input.capability === "crm.write"
-            ? `artifact:crm_write:${input.requestId}`
-            : `artifact:crm_snapshot:${input.requestId}`,
-        ],
-        usage: unknownCostUsage({ requests: 1 }),
-        receipt: { kind: input.capability === "crm.write" ? "crm_write_receipt" : "crm_snapshot", simulated: true },
-      }),
+  // Internal website audit — calls real search-web engine; no simulated receipts.
+  registerProvider({
+    key: "website-audit-internal",
+    capabilityKeys: ["website.audit"],
+    status: "IMPLEMENTED",
+    probeReadiness: (): ProviderReadinessProbeResult => ({
+      ready: true,
+      status: "IMPLEMENTED",
+      reasonCode: "READY",
+      details: "Internal search-web website audit engine",
     }),
-  );
+    execute: async (input): Promise<ProviderExecuteResult> => {
+      const { buildWebsiteAudit } = await import("../search-web/website-audit.ts");
+      const pages = Array.isArray(input.input?.pages)
+        ? (input.input.pages as {
+            url: string;
+            strength?: "strong" | "weak" | "unknown";
+            title?: string;
+          }[])
+        : null;
+      const propertyUrl =
+        typeof input.input?.propertyUrl === "string" ? input.input.propertyUrl : null;
+      if (!pages || !propertyUrl) {
+        return {
+          ok: false,
+          providerKey: "website-audit-internal",
+          errorCategory: "UNSUPPORTED",
+          errorMessage: "website.audit requires propertyUrl and pages inventory input",
+          usage: unknownCostUsage({ requests: 0 }),
+        };
+      }
+      const audit = buildWebsiteAudit({
+        trustedTenantId: input.tenantId,
+        siteTenantId: input.tenantId,
+        propertyUrl,
+        pages,
+        conversionFindings: Array.isArray(input.input?.conversionFindings)
+          ? (input.input.conversionFindings as never[])
+          : undefined,
+      });
+      return {
+        ok: true,
+        providerKey: "website-audit-internal",
+        providerReference: audit.id,
+        outputArtifactIds: [audit.id],
+        usage: unknownCostUsage({ requests: 1 }),
+        receipt: {
+          kind: "website_audit_report",
+          engine: "search-web/website-audit",
+          propertyUrl: audit.propertyUrl,
+          strongPageCount: audit.strongPages.length,
+          weakPageCount: audit.weakPages.length,
+        },
+      };
+    },
+  });
 
   // Placeholders — registered but NOT_CONFIGURED / UNAVAILABLE
   registerProvider(
@@ -171,7 +166,15 @@ export function bootstrapCapabilityProviders(): void {
       key: "media-carousel-placeholder",
       capabilityKeys: ["media.carousel_generation"],
       status: "UNAVAILABLE",
-      reason: "Carousel generation pipeline not implemented",
+      reason: "Carousel generation pipeline not implemented without fake images",
+    }),
+  );
+  registerProvider(
+    placeholderProvider({
+      key: "media-video-placeholder",
+      capabilityKeys: ["media.video_generation"],
+      status: "UNAVAILABLE",
+      reason: "Video generation intentionally unsupported",
     }),
   );
   registerProvider(

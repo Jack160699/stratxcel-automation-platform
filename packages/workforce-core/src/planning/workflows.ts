@@ -218,7 +218,7 @@ export function buildWorkflowStages(input: {
           objective: "Audit website conversion friction using real page inventory",
           dependencies: [],
           outputKind: "website_audit",
-          allowedCapabilityClasses: ["website.generate"],
+          allowedCapabilityClasses: ["website.audit"],
         }),
         stage({
           stageId: "s_website",

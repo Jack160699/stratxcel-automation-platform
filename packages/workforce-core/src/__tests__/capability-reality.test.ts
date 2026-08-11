@@ -56,18 +56,25 @@ function run() {
   }
 
   const counts = countCapabilitiesByStatus();
-  assert.equal(counts.AVAILABLE, 7);
-  assert.equal(counts.NOT_CONFIGURED, 5);
-  assert.equal(counts.UNAVAILABLE, 1);
-  assert.equal(counts.PLANNED, CAPABILITY_KEYS.length - 7 - 5 - 1);
+  // website.audit is the only truthfully AVAILABLE capability after stub removal
+  assert.equal(counts.AVAILABLE, 1);
+  assert.equal(counts.UNAVAILABLE, 2); // video + carousel
+  assert.ok(counts.NOT_CONFIGURED >= 12);
+  assert.equal(
+    counts.AVAILABLE + counts.NOT_CONFIGURED + counts.PLANNED + counts.UNAVAILABLE,
+    CAPABILITY_KEYS.length,
+  );
 
-  assert.equal(getCapability("content.shortform")?.status, "AVAILABLE");
-  assert.equal(getCapability("social.schedule")?.status, "AVAILABLE");
-  assert.equal(getCapability("social.publish")?.status, "AVAILABLE");
-  assert.equal(getCapability("seo.audit")?.status, "AVAILABLE");
-  assert.equal(getCapability("website.generate")?.status, "AVAILABLE");
-  assert.equal(getCapability("crm.read")?.status, "AVAILABLE");
-  assert.equal(getCapability("crm.write")?.status, "AVAILABLE");
+  assert.equal(getCapability("content.shortform")?.status, "NOT_CONFIGURED");
+  assert.equal(getCapability("social.schedule")?.status, "NOT_CONFIGURED");
+  assert.equal(getCapability("social.publish")?.status, "NOT_CONFIGURED");
+  assert.equal(getCapability("seo.audit")?.status, "NOT_CONFIGURED");
+  assert.equal(getCapability("website.generate")?.status, "NOT_CONFIGURED");
+  assert.equal(getCapability("crm.read")?.status, "NOT_CONFIGURED");
+  assert.equal(getCapability("crm.write")?.status, "NOT_CONFIGURED");
+  assert.equal(getCapability("website.audit")?.status, "AVAILABLE");
+  assert.equal(getCapability("website.audit")?.requiredEntitlementClass, null);
+  assert.equal(getCapability("website.generate")?.requiredEntitlementClass, "website_maintenance");
 
   assert.equal(getCapability("media.image_generation")?.status, "NOT_CONFIGURED");
   assert.equal(getCapability("seo.publish")?.status, "NOT_CONFIGURED");
@@ -76,7 +83,7 @@ function run() {
   assert.equal(getCapability("content.publish")?.status, "NOT_CONFIGURED");
 
   assert.equal(getCapability("media.video_generation")?.status, "UNAVAILABLE");
-  assert.equal(getCapability("media.carousel_generation")?.status, "PLANNED");
+  assert.equal(getCapability("media.carousel_generation")?.status, "UNAVAILABLE");
   assert.equal(getCapability("content.longform")?.status, "PLANNED");
   assert.equal(getCapability("website.deploy")?.status, "PLANNED");
   assert.equal(getCapability("ads.publish")?.status, "PLANNED");
@@ -89,7 +96,8 @@ function run() {
   assert.equal(getCapability("website.deploy")?.requiredEntitlementClass, "website_maintenance");
 
   assert.throws(() => assertCapability("not.a.capability"), /unknown_capability/);
-  assert.equal(isCapabilityAvailable("content.shortform"), true);
+  assert.equal(isCapabilityAvailable("website.audit"), true);
+  assert.equal(isCapabilityAvailable("content.shortform"), false);
   assert.equal(isCapabilityUnavailable("media.image_generation"), true);
   assert.equal(isCapabilityUnavailable("media.carousel_generation"), true);
   assert.equal(isCapabilityUnavailable("media.video_generation"), true);
@@ -121,7 +129,7 @@ function run() {
     trustedTenantId: "tenant-a",
   });
   assert.equal(carouselReady.executable, false);
-  assert.equal(carouselReady.reasonCode, "IMPLEMENTATION_PLANNED");
+  assert.equal(carouselReady.reasonCode, "IMPLEMENTATION_UNAVAILABLE");
 
   const videoReady = resolveCapabilityReadiness({
     capabilityKey: "media.video_generation",
@@ -130,7 +138,45 @@ function run() {
   assert.equal(videoReady.executable, false);
   assert.equal(videoReady.reasonCode, "IMPLEMENTATION_UNAVAILABLE");
 
-  // --- Tenant isolation ---
+  // Formerly simulated-success capabilities must wait configuration
+  for (const key of [
+    "content.shortform",
+    "social.schedule",
+    "social.publish",
+    "seo.audit",
+    "website.generate",
+    "crm.read",
+    "crm.write",
+  ] as const) {
+    const ready = resolveCapabilityReadiness({
+      capabilityKey: key,
+      trustedTenantId: "tenant-a",
+      entitlementSnapshot: {
+        tenantId: "tenant-a",
+        metrics: { social_posts: 10, website_maintenance: 1 },
+        remaining: { social_posts: 5, website_maintenance: 1 },
+      },
+      integrationSnapshot: { tenantId: "tenant-a", connected: ["social_account"] },
+      authorization: { approvalGranted: true, shadowMode: false },
+      requiredInputArtifactsPresent: true,
+    });
+    assert.equal(ready.executable, false, `${key} must not be executable`);
+    assert.equal(ready.reasonCode, "PROVIDER_NOT_CONFIGURED", `${key} reason`);
+    assert.equal(ready.readiness, "WAITING_CONFIGURATION", `${key} readiness`);
+  }
+
+  // --- website.audit readiness (truthful AVAILABLE + internal provider) ---
+  const auditNeeds = {
+    capabilityKey: "website.audit",
+    trustedTenantId: "tenant-a",
+    environment: { featureFlags: { search_web: true } },
+    authorization: { approvalGranted: true, shadowMode: false },
+    requestedOperation: "execute" as const,
+    requiredInputArtifactsPresent: true,
+  };
+  assert.equal(resolveCapabilityReadiness(auditNeeds).executable, true);
+
+  // --- Tenant isolation still applies to social contract (even when NOT_CONFIGURED) ---
   const socialNeeds = {
     capabilityKey: "social.publish",
     trustedTenantId: "tenant-a",
@@ -148,74 +194,41 @@ function run() {
     requiredInputArtifactsPresent: true,
   };
 
-  assert.equal(resolveCapabilityReadiness(socialNeeds).executable, true);
-
-  const crossEntitlement = resolveCapabilityReadiness({
-    ...socialNeeds,
-    entitlementSnapshot: {
-      tenantId: "tenant-b",
-      metrics: { social_posts: 99 },
-      remaining: { social_posts: 99 },
-    },
-  });
-  assert.equal(crossEntitlement.executable, false);
-  assert.equal(crossEntitlement.reasonCode, "ENTITLEMENT_MISSING");
-
-  const crossIntegration = resolveCapabilityReadiness({
-    ...socialNeeds,
-    integrationSnapshot: {
-      tenantId: "tenant-b",
-      connected: ["social_account"],
-    },
-  });
-  assert.equal(crossIntegration.executable, false);
+  assert.equal(resolveCapabilityReadiness(socialNeeds).executable, false);
+  assert.equal(resolveCapabilityReadiness(socialNeeds).reasonCode, "PROVIDER_NOT_CONFIGURED");
 
   const missingTenant = resolveCapabilityReadiness({
-    capabilityKey: "crm.read",
+    capabilityKey: "website.audit",
     trustedTenantId: null,
+    environment: { featureFlags: { search_web: true } },
   });
   assert.equal(missingTenant.executable, false);
   assert.equal(missingTenant.reasonCode, "TENANT_BINDING_MISSING");
 
-  // --- Authorization / shadow / kill switch / planner ---
+  // Feature-flag specificity: payments off must not block website.audit
   assert.equal(
     resolveCapabilityReadiness({
-      ...socialNeeds,
-      authorization: { approvalGranted: false, shadowMode: false },
-    }).reasonCode,
-    "APPROVAL_REQUIRED",
+      ...auditNeeds,
+      environment: { featureFlags: { payments_live: false, search_web: true } },
+    }).executable,
+    true,
   );
+
+  // --- Authorization / shadow / kill switch still evaluated when AVAILABLE ---
   assert.equal(
     resolveCapabilityReadiness({
-      ...socialNeeds,
-      authorization: { approvalGranted: true, shadowMode: true },
-    }).reasonCode,
-    "SHADOW_BLOCKED",
-  );
-  assert.equal(
-    resolveCapabilityReadiness({
-      ...socialNeeds,
-      authorization: { approvalGranted: true, shadowMode: false, killSwitchActive: true },
+      ...auditNeeds,
+      authorization: { killSwitchActive: true },
     }).reasonCode,
     "KILL_SWITCH_ACTIVE",
   );
   assert.equal(
     resolveCapabilityReadiness({
-      ...socialNeeds,
+      ...auditNeeds,
       fromPlannerSnapshot: true,
     }).executable,
     false,
   );
-
-  const exhausted = resolveCapabilityReadiness({
-    ...socialNeeds,
-    entitlementSnapshot: {
-      tenantId: "tenant-a",
-      metrics: { social_posts: 10 },
-      remaining: { social_posts: 0 },
-    },
-  });
-  assert.equal(exhausted.reasonCode, "ENTITLEMENT_EXHAUSTED");
 
   const parentCaps = ["content.shortform", "research.web"];
   assert.throws(
@@ -228,22 +241,24 @@ function run() {
   assert.ok(staticSnap.plannedKeys.includes("research.web"));
   assert.ok(staticSnap.setupRequiredKeys.includes("media.image_generation"));
   assert.ok(staticSnap.unavailableKeys.includes("media.video_generation"));
+  assert.ok(staticSnap.unavailableKeys.includes("media.carousel_generation"));
   assert.ok(!staticSnap.availableKeys.includes("media.image_generation"));
+  assert.ok(staticSnap.availableKeys.includes("website.audit"));
 
   const tenantSnap = buildCapabilityPlannerSnapshot({
     trustedTenantId: "tenant-a",
     entitlementSnapshot: socialNeeds.entitlementSnapshot,
     integrationSnapshot: socialNeeds.integrationSnapshot,
     authorization: socialNeeds.authorization,
+    environment: { featureFlags: { search_web: true } },
   });
   assert.ok(tenantSnap.entries.length === CAPABILITY_KEYS.length);
 
   const revalidated = revalidateCapabilityForExecution({
-    capabilityKey: "social.publish",
+    capabilityKey: "website.audit",
     trustedTenantId: "tenant-a",
-    entitlementSnapshot: socialNeeds.entitlementSnapshot,
-    integrationSnapshot: socialNeeds.integrationSnapshot,
-    authorization: socialNeeds.authorization,
+    environment: { featureFlags: { search_web: true } },
+    authorization: { approvalGranted: true },
     requiredInputArtifactsPresent: true,
   });
   assert.equal(revalidated.executable, true);
@@ -302,7 +317,7 @@ function run() {
     assert.notEqual(mediaBlocked.status, "SUCCEEDED");
     assert.equal(mediaBlocked.outputArtifactIds.length, 0);
 
-    const crmOk = await requestCapability(
+    const crmBlocked = await requestCapability(
       {
         requestId: "req-crm",
         missionId: "mission-1",
@@ -316,11 +331,11 @@ function run() {
       },
       {},
     );
-    assert.equal(crmOk.status, "SUCCEEDED");
-    assert.ok(crmOk.outputArtifactIds.length > 0);
-    assert.equal(crmOk.cost?.costKnown, false);
+    assert.equal(crmBlocked.status, "WAITING_CONFIGURATION");
+    assert.equal(crmBlocked.reasonCode, "PROVIDER_NOT_CONFIGURED");
+    assert.equal(crmBlocked.outputArtifactIds.length, 0);
 
-    const publishOk = await requestCapability(
+    const publishBlocked = await requestCapability(
       {
         requestId: "req-pub",
         missionId: "mission-1",
@@ -341,7 +356,8 @@ function run() {
         integrationSnapshot: socialNeeds.integrationSnapshot,
       },
     );
-    assert.equal(publishOk.status, "SUCCEEDED");
+    assert.equal(publishBlocked.status, "WAITING_CONFIGURATION");
+    assert.equal(publishBlocked.reasonCode, "PROVIDER_NOT_CONFIGURED");
 
     const shadow = await requestCapability(
       {
@@ -364,8 +380,37 @@ function run() {
         integrationSnapshot: socialNeeds.integrationSnapshot,
       },
     );
-    assert.equal(shadow.status, "SHADOW_COMPLETED");
+    // NOT_CONFIGURED is evaluated before shadow for catalogue status
+    assert.equal(shadow.status, "WAITING_CONFIGURATION");
     assert.equal(shadow.outputArtifactIds.length, 0);
+
+    const auditOk = await requestCapability(
+      {
+        requestId: "req-audit",
+        missionId: "mission-1",
+        tenantId: "tenant-a",
+        department: "search_web",
+        role: "auditor",
+        capability: "website.audit",
+        inputArtifactIds: ["website-snap-1"],
+        requestedAt: new Date().toISOString(),
+        authorizationContext: { trustedTenantId: "tenant-a" },
+        input: {
+          propertyUrl: "https://example.com",
+          pages: [{ url: "https://example.com/", strength: "strong" }],
+        },
+      },
+      {
+        environment: { featureFlags: { search_web: true } },
+        artifactResolver: (id) =>
+          id === "website-snap-1"
+            ? { id, tenantId: "tenant-a", kind: "website_snapshot" }
+            : null,
+      },
+    );
+    assert.equal(auditOk.status, "SUCCEEDED");
+    assert.ok(auditOk.outputArtifactIds.length > 0);
+    assert.notEqual((auditOk.receipt as { simulated?: boolean } | undefined)?.simulated, true);
 
     // --- Provider failover ---
     resetProviderRegistryForTests();
@@ -467,6 +512,7 @@ function run() {
     // Restore default providers for any subsequent imports in same process
     resetAndBootstrapProvidersForTests();
     assert.ok(listProvidersForCapability("crm.read").length >= 1);
+    assert.ok(listProvidersForCapability("website.audit").length >= 1);
 
     const executable = listExecutableCapabilityKeys({
       trustedTenantId: "tenant-a",
@@ -489,24 +535,26 @@ function run() {
         tenantId: "tenant-a",
         connected: ["social_account", "media_generator", "analytics_property", "whatsapp_binding"],
       },
+      environment: { featureFlags: { search_web: true } },
       authorization: { approvalGranted: true, shadowMode: false },
       requestedOperation: "execute",
       requiredInputArtifactsPresent: true,
     });
-    assert.ok(executable.includes("crm.read"));
+    assert.ok(executable.includes("website.audit"));
+    assert.ok(!executable.includes("crm.read"));
     assert.ok(!executable.includes("media.image_generation"));
     assert.ok(!executable.includes("media.video_generation"));
 
     const prov = createCapabilityProvenance({
-      capabilityKey: "crm.read",
-      providerKey: "crm-supabase",
-      requestId: "req-crm",
+      capabilityKey: "website.audit",
+      providerKey: "website-audit-internal",
+      requestId: "req-audit",
       tenantId: "tenant-a",
       missionId: "mission-1",
       parentArtifactIds: [],
       usage: { requests: 1, costKnown: false },
     });
-    assert.equal(prov.capabilityKey, "crm.read");
+    assert.equal(prov.capabilityKey, "website.audit");
     assert.equal(prov.tenantId, "tenant-a");
 
     console.log("capability-reality.test.ts (@stratxcel/workforce-core): ALL PASS");

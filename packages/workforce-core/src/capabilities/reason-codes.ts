@@ -19,6 +19,10 @@ export const CAPABILITY_REASON_CODES = [
   "SHADOW_BLOCKED",
   "KILL_SWITCH_ACTIVE",
   "MISSING_REQUIRED_ARTIFACT",
+  "ARTIFACT_UNKNOWN",
+  "ARTIFACT_TENANT_MISMATCH",
+  "ARTIFACT_KIND_UNSUPPORTED",
+  "BUDGET_EXHAUSTED",
   "UNSUPPORTED_PLATFORM",
   "SETUP_REQUIRED",
   "UNKNOWN_CAPABILITY",
@@ -66,6 +70,14 @@ export function humanReasonForCode(code: CapabilityReasonCode): string {
       return "Kill switch is active for this scope.";
     case "MISSING_REQUIRED_ARTIFACT":
       return "Required input artifact is missing.";
+    case "ARTIFACT_UNKNOWN":
+      return "Input artifact could not be resolved.";
+    case "ARTIFACT_TENANT_MISMATCH":
+      return "Input artifact belongs to a different tenant.";
+    case "ARTIFACT_KIND_UNSUPPORTED":
+      return "Input artifact kind is not supported for this capability.";
+    case "BUDGET_EXHAUSTED":
+      return "Capability budget envelope is exhausted or insufficient.";
     case "UNSUPPORTED_PLATFORM":
       return "Requested platform is unsupported for this capability.";
     case "SETUP_REQUIRED":

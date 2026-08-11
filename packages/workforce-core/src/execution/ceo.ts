@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { ToolName } from "@stratxcel/hermes";
 import { assertDepartment } from "../departments/registry.ts";
 import { assertRole } from "../roles/registry.ts";
-import { narrowCapabilityClasses, narrowTools } from "../security/narrowing.ts";
+import { narrowCapabilityClasses, narrowTools, isBlockedCapability } from "../security/narrowing.ts";
 import { assertBudgetNarrowing } from "../budgets/hierarchy.ts";
 import type { WorkforcePlan, WorkforceStage } from "../planning/types.ts";
 import { assertValidWorkforcePlan } from "../planning/validator.ts";
@@ -61,11 +61,13 @@ export function compileHermesCeoPlan(input: CompileHermesCeoPlanInput): Workforc
     assertRole(stage.department, stage.specialistRole);
     const narrowedCaps = narrowCapabilityClasses(input.parentAllowedCapabilities, stage.allowedCapabilityClasses);
     assertBudgetNarrowing(input.parentBudgetRemainingCents, stage.budgetCents);
+    const blocked = narrowedCaps.find((c) => isBlockedCapability(c));
     return {
       ...stage,
       department: stage.department as WorkforceStage["department"],
       allowedCapabilityClasses: narrowedCaps as WorkforceStage["allowedCapabilityClasses"],
-      state: "PENDING",
+      state: blocked ? ("WAITING_CAPABILITY" as const) : "PENDING",
+      blockedCapability: blocked ?? null,
     };
   });
 

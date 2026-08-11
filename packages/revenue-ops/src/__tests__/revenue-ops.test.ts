@@ -173,6 +173,24 @@ function run() {
   });
   assert.equal(approvedSend.allowed, true);
 
+  // Bare standingAuthorization without matching kind must not authorize
+  const bareStanding = authorizeRevenueMutation({
+    tenantId: "tenant-a",
+    resourceTenantId: "tenant-a",
+    kind: "whatsapp.send",
+    standingAuthorization: true,
+  });
+  assert.equal(bareStanding.allowed, false);
+
+  const scopedStanding = authorizeRevenueMutation({
+    tenantId: "tenant-a",
+    resourceTenantId: "tenant-a",
+    kind: "whatsapp.send",
+    standingAuthorization: true,
+    standingAuthorizationKind: "whatsapp.send",
+  });
+  assert.equal(scopedStanding.allowed, true);
+
   const optedIntel = buildLeadIntelligence({
     lead: lead(),
     consent: { optedIn: false, optedOut: true, provenance: "customer sent STOP", evidenceIds: ["consent:1"] },

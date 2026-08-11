@@ -182,6 +182,7 @@ export function gateWhatsAppSend(input: {
   leadTenantId: string;
   approvalStatus?: "PENDING" | "APPROVED" | "REJECTED" | "EXPIRED" | null;
   standingAuthorization?: boolean;
+  standingAuthorizationKind?: "crm.write" | "whatsapp.send";
   optedOut?: boolean;
   hasMarketingConsent?: boolean;
   outsideSessionWindow?: boolean;
@@ -194,5 +195,8 @@ export function gateWhatsAppSend(input: {
     ...rest,
     resourceTenantId: leadTenantId,
     kind: "whatsapp.send",
+    standingAuthorizationKind:
+      rest.standingAuthorizationKind ??
+      (rest.standingAuthorization ? "whatsapp.send" : undefined),
   });
 }

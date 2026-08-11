@@ -169,6 +169,25 @@ export function resolveCapabilityReadiness(input: CapabilityReadinessInput): Cap
     });
   }
 
+  const env = input.environment ?? null;
+  // Only flags listed on the capability definition gate readiness.
+  // Unrelated disabled flags must not block. Empty/undefined = flags do not block.
+  // Checked before NOT_CONFIGURED so a disabled required flag is the more specific reason.
+  const requiredFlags = def.requiredFeatureFlags ?? [];
+  if (requiredFlags.length > 0) {
+    const flags = env?.featureFlags ?? {};
+    for (const flag of requiredFlags) {
+      if (flags[flag] === false) {
+        return blockedFromDefinition(def, {
+          readiness: "BLOCKED",
+          executable: false,
+          reasonCode: "FEATURE_FLAG_DISABLED",
+          missingRequirements: [`feature_flag:${flag}`],
+        });
+      }
+    }
+  }
+
   if (def.status === "NOT_CONFIGURED") {
     return blockedFromDefinition(def, {
       readiness: "WAITING_CONFIGURATION",
@@ -188,20 +207,6 @@ export function resolveCapabilityReadiness(input: CapabilityReadinessInput): Cap
         reasonCode: "TENANT_BINDING_MISSING",
         missingRequirements: ["trusted_tenant_binding"],
       });
-    }
-  }
-
-  const env = input.environment ?? null;
-  if (env?.featureFlags) {
-    for (const [flag, enabled] of Object.entries(env.featureFlags)) {
-      if (enabled === false) {
-        return blockedFromDefinition(def, {
-          readiness: "BLOCKED",
-          executable: false,
-          reasonCode: "FEATURE_FLAG_DISABLED",
-          missingRequirements: [`feature_flag:${flag}`],
-        });
-      }
     }
   }
 

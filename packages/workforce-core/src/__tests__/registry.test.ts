@@ -21,9 +21,10 @@ function run() {
   assert.throws(() => assertRole("research", "fake_role"), /unknown_role/);
 
   assert.equal(getCapability("research.web")?.status, "PLANNED");
-  assert.equal(getCapability("social.publish")?.status, "AVAILABLE");
+  assert.equal(getCapability("social.publish")?.status, "NOT_CONFIGURED");
+  assert.equal(getCapability("website.audit")?.status, "AVAILABLE");
   assert.equal(getCapability("media.image_generation")?.status, "NOT_CONFIGURED");
-  assert.equal(getCapability("media.carousel_generation")?.status, "PLANNED");
+  assert.equal(getCapability("media.carousel_generation")?.status, "UNAVAILABLE");
   assert.equal(getCapability("media.video_generation")?.status, "UNAVAILABLE");
 
   for (const def of listCapabilities()) {

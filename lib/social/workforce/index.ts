@@ -10,6 +10,7 @@ export * from "./tenant-scope.ts";
 export * from "./artifact-resolution.ts";
 export * from "./schedule.ts";
 export * from "./authorization.ts";
+export * from "./trust-release-gate.ts";
 export * from "./publication-status.ts";
 export * from "./publication-status-lookup.ts";
 export * from "./receipt.ts";

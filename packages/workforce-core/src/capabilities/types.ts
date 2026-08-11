@@ -92,6 +92,11 @@ export interface CapabilityDefinition {
   integrationRequirements: readonly string[];
   tenantScoped: boolean;
   implementationPath: string;
+  /**
+   * When set, only these feature flags gate readiness.
+   * Unrelated disabled flags must not block. Empty/undefined = flags do not block.
+   */
+  requiredFeatureFlags?: readonly string[];
 }
 
 export function isCapabilityKey(key: string): key is CapabilityKey {

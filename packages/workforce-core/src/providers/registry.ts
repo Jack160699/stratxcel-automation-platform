@@ -26,6 +26,11 @@ export function listProvidersForCapability(capability: CapabilityKey | string): 
   return listProviders().filter((p) => p.capabilityKeys.includes(capability as CapabilityKey));
 }
 
+/** Alias used by capability execution readiness reconciliation. */
+export function getProvidersForCapability(capability: CapabilityKey | string): CapabilityProvider[] {
+  return listProvidersForCapability(capability);
+}
+
 export function assertProvider(key: string): CapabilityProvider {
   const p = getProvider(key);
   if (!p) throw new Error(`unknown_provider:${key}`);

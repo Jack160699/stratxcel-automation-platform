@@ -102,7 +102,11 @@ export interface CrmWorkflowContract {
 export type StandingAuthorizationKind = "crm.write" | "whatsapp.send";
 export interface MutationGateInput {
   tenantId: string; resourceTenantId: string; kind: StandingAuthorizationKind;
-  approvalStatus?: "PENDING" | "APPROVED" | "REJECTED" | "EXPIRED" | null; standingAuthorization?: boolean;
+  approvalStatus?: "PENDING" | "APPROVED" | "REJECTED" | "EXPIRED" | null;
+  /** @deprecated Prefer standingAuthorizationKind — bare true is not universal auth. */
+  standingAuthorization?: boolean;
+  /** Must match `kind` for standing authorization to apply. */
+  standingAuthorizationKind?: StandingAuthorizationKind;
   optedOut?: boolean; hasMarketingConsent?: boolean; outsideSessionWindow?: boolean;
   hermesProposedText?: string | null;
   conversationAutomationMode?: "automated" | "human_only" | "paused" | "handoff" | null;
