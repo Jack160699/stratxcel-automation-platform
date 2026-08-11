@@ -8,6 +8,10 @@ import {
   DuplicateWebhookEventError,
   WebhookEventInProgressError,
 } from "@stratxcel/payments-and-wallet";
+import {
+  createPostgresEmailOutboxStore,
+  issueEmailNotificationsBestEffort,
+} from "@stratxcel/email-runtime";
 import { fulfillDomainRegistrationBestEffort } from "@/lib/domains/fulfillment";
 
 /**
@@ -34,6 +38,30 @@ async function issueBillingRecordsBestEffort(
     }
   } catch (err) {
     console.error("[Billing Records] Best-effort invoice/credit-note/domain issuance failed", err);
+  }
+}
+
+/**
+ * Best-effort transactional email enqueue after authoritative payment outcomes.
+ * Must never affect webhook handled/response semantics.
+ */
+async function issueEmailRecordsBestEffort(
+  supabase: ReturnType<typeof getTenantServiceContext>["supabase"],
+  processResult: Awaited<ReturnType<typeof processRazorpayWebhookEvent>>
+) {
+  try {
+    const store = createPostgresEmailOutboxStore(supabase);
+    await issueEmailNotificationsBestEffort(supabase, store, {
+      handled: processResult.handled,
+      orderId: processResult.orderId,
+      purpose: processResult.purpose,
+      eventType: processResult.eventType,
+      actionTaken: processResult.actionTaken,
+      subscriptionId: processResult.subscriptionId,
+      cancelAtCycleEnd: processResult.cancelAtCycleEnd,
+    });
+  } catch (err) {
+    console.error("[Email Notifications] Best-effort enqueue failed", err);
   }
 }
 
@@ -123,6 +151,7 @@ export async function POST(request: Request) {
 
     // Best-effort — never affects the response below, see the function doc.
     await issueBillingRecordsBestEffort(supabase, processResult);
+    await issueEmailRecordsBestEffort(supabase, processResult);
 
     return Response.json({
       success: true,

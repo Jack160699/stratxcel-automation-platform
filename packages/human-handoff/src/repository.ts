@@ -1,4 +1,8 @@
 import { recordAuditEvent } from "@stratxcel/audit";
+import {
+  createPostgresEmailOutboxStore,
+  enqueueSupportEscalationEmailBestEffort,
+} from "@stratxcel/email-runtime";
 import { transitionMission } from "@stratxcel/missions";
 import type { ServiceClient } from "./db.ts";
 import type { HumanHandoffRow } from "./types.ts";
@@ -46,6 +50,23 @@ export async function createHumanHandoff(
     targetId: data.id,
     metadata: { missionId: input.missionId ?? null, reason: input.reason },
   });
+
+  // Best-effort support escalation email — never rolls back the handoff.
+  try {
+    const store = createPostgresEmailOutboxStore(supabase);
+    let tenantLabel = input.tenantId;
+    const { data: tenant } = await supabase.from("tenants").select("name").eq("id", input.tenantId).maybeSingle();
+    if (tenant?.name) tenantLabel = String(tenant.name);
+    await enqueueSupportEscalationEmailBestEffort(store, {
+      handoffId: data.id,
+      tenantId: input.tenantId,
+      tenantLabel,
+      issueSummary: input.reason.slice(0, 500),
+      priority: "high",
+    });
+  } catch (err) {
+    console.error("[human-handoff] email notify failed", err instanceof Error ? err.message : err);
+  }
 
   return data as HumanHandoffRow;
 }

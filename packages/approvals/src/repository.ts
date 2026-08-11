@@ -1,4 +1,9 @@
 import { recordAuditEvent } from "@stratxcel/audit";
+import {
+  createPostgresEmailOutboxStore,
+  enqueueApprovalRequiredEmailBestEffort,
+  resolveTenantOwnerEmailForNotify,
+} from "@stratxcel/email-runtime";
 import type { ServiceClient } from "./db.ts";
 import type { ApprovalKind, ApprovalRow, ApprovalStatus } from "./types.ts";
 
@@ -31,7 +36,40 @@ export async function requestApproval(
     .select("*")
     .single();
   if (error) throw new Error(`requestApproval: ${error.message}`);
-  return data as ApprovalRow;
+  const row = data as ApprovalRow;
+
+  // Best-effort notification — never rolls back the approval row.
+  try {
+    const store = createPostgresEmailOutboxStore(supabase);
+    const { email, ownerId } = await resolveTenantOwnerEmailForNotify(supabase, input.tenantId);
+    if (email) {
+      const missionTitle =
+        typeof input.subject.title === "string"
+          ? input.subject.title
+          : typeof input.subject.missionTitle === "string"
+            ? input.subject.missionTitle
+            : `${input.kind} approval`;
+      const summary =
+        typeof input.subject.summary === "string"
+          ? input.subject.summary
+          : `A ${input.kind} action requires your approval before Stratxcel continues.`;
+      const businessName =
+        typeof input.subject.businessName === "string" ? input.subject.businessName : "Your business";
+      await enqueueApprovalRequiredEmailBestEffort(store, {
+        approvalId: row.id,
+        tenantId: input.tenantId,
+        recipient: email,
+        businessName,
+        missionTitle,
+        approvalSummary: summary,
+        ownerId,
+      });
+    }
+  } catch (err) {
+    console.error("[approvals] email notify failed", err instanceof Error ? err.message : err);
+  }
+
+  return row;
 }
 
 /**

@@ -3,6 +3,12 @@ import { getTenantServiceContext } from "@/lib/tenants/tenant-context";
 import { heartbeatState } from "@/lib/hermes/mission-control";
 import { Card, CardHeading } from "@/components/ui/Card";
 import { StatusChip, type ChipState } from "@/components/ui/StatusChip";
+import {
+  createEmailProvider,
+  createPostgresEmailOutboxStore,
+  probeEmailSystemHealth,
+  type EmailHealthStatus,
+} from "@stratxcel/email-runtime";
 
 type IntegrationStatus = "live" | "test" | "shadow" | "disconnected" | "blocked" | "manual_action_required";
 
@@ -21,6 +27,22 @@ function modeToStatus(mode: string | undefined, disabledIsBlocked = false): Inte
   if (mode === "mock") return "test";
   if (mode === "http") return "live";
   return disabledIsBlocked ? "blocked" : "disconnected";
+}
+
+function emailHealthToIntegration(status: EmailHealthStatus): IntegrationStatus {
+  switch (status) {
+    case "OPERATIONAL":
+      return "live";
+    case "REACHABLE":
+    case "CONFIGURED":
+      return "test";
+    case "SENDER_UNVERIFIED":
+    case "DEGRADED":
+      return "manual_action_required";
+    case "NOT_CONFIGURED":
+    default:
+      return "disconnected";
+  }
 }
 
 interface IntegrationRow {
@@ -47,6 +69,28 @@ async function currentHermesStatus(): Promise<IntegrationRow> {
   };
 }
 
+async function currentEmailStatus(): Promise<IntegrationRow> {
+  const service = getTenantServiceContext().supabase;
+  const store = createPostgresEmailOutboxStore(service);
+  const provider = createEmailProvider();
+  let outboxAccessible: boolean | null = null;
+  try {
+    outboxAccessible = (await store.ping?.()) ?? null;
+  } catch {
+    outboxAccessible = false;
+  }
+  const health = await probeEmailSystemHealth({
+    provider,
+    outboxAccessible,
+    workerPathAvailable: true,
+  });
+  return {
+    name: "Email",
+    status: emailHealthToIntegration(health.status),
+    detail: `${health.status}: ${health.detail}`,
+  };
+}
+
 /**
  * Reads actual env vars server-side — never a hardcoded "connected".
  * Every row here reflects genuinely current configuration, not an
@@ -64,7 +108,7 @@ export default async function SystemHealthPage() {
   const ctx = await requireOwnerContext();
   if (!ctx.ok) return null;
 
-  const hermes = await currentHermesStatus();
+  const [hermes, email] = await Promise.all([currentHermesStatus(), currentEmailStatus()]);
   const rows: IntegrationRow[] = [
     {
       name: "WhatsApp",
@@ -77,6 +121,7 @@ export default async function SystemHealthPage() {
       detail: "Live Payment Links, state machine, webhook route (/api/webhook/razorpay), & refunds built.",
     },
     hermes,
+    email,
     {
       name: "Google Drive",
       status: "manual_action_required",

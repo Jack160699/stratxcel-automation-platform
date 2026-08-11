@@ -25,6 +25,11 @@ import {
   isRetryableHermesFailure,
   type HermesRuntimeAdapter,
 } from "@stratxcel/hermes";
+import {
+  createPostgresEmailOutboxStore,
+  enqueueMissionTerminalEmailBestEffort,
+  resolveTenantOwnerEmailForNotify,
+} from "@stratxcel/email-runtime";
 
 /**
  * Standalone async mission executor — separated from the Next.js dashboard
@@ -117,6 +122,10 @@ async function executeMission(
 
   const running = await transitionMission(supabase, { missionId: mission.id, nextState: "RUNNING" });
 
+  let terminalState: string | null = null;
+  let terminalSummary: string | null = null;
+  let retryableFailure = false;
+
   try {
     const context = await compileMissionContext(supabase, running);
     const missionToken = issueMissionToken({
@@ -135,22 +144,27 @@ async function executeMission(
       });
     }
 
+    const nextState = OUTCOME_TO_STATE[result.outcome];
     await transitionMission(supabase, {
       missionId: mission.id,
-      nextState: OUTCOME_TO_STATE[result.outcome],
+      nextState,
       payload: { summary: result.summary },
     });
+    terminalState = nextState;
+    terminalSummary = result.summary ?? null;
 
     for (const event of result.progressEvents ?? []) {
       await appendMissionEvent(supabase, { missionId: mission.id, eventType: "hermes_progress", payload: { ...event } });
     }
   } catch (err) {
+    retryableFailure = isRetryableHermesFailure(err);
     await appendMissionEvent(supabase, {
       missionId: mission.id,
       eventType: "execution_error",
-      payload: { message: err instanceof Error ? err.message : String(err), retryable: isRetryableHermesFailure(err) },
+      payload: { message: err instanceof Error ? err.message : String(err), retryable: retryableFailure },
     });
     await transitionMission(supabase, { missionId: mission.id, nextState: "FAILED" });
+    terminalState = "FAILED";
   }
 
   await recordAuditEvent(supabase, {
@@ -160,6 +174,26 @@ async function executeMission(
     targetType: "mission",
     targetId: mission.id,
   });
+
+  // Best-effort email — never rolls back mission terminal state.
+  if (terminalState === "COMPLETED" || terminalState === "PARTIALLY_COMPLETED" || terminalState === "FAILED") {
+    try {
+      const store = createPostgresEmailOutboxStore(supabase);
+      const { email, ownerId } = await resolveTenantOwnerEmailForNotify(supabase, mission.tenant_id);
+      await enqueueMissionTerminalEmailBestEffort(store, {
+        state: terminalState,
+        missionId: mission.id,
+        tenantId: mission.tenant_id,
+        recipient: email,
+        missionTitle: mission.goal_text?.slice(0, 120) || mission.service_key || `Mission ${mission.id.slice(0, 8)}`,
+        summary: terminalSummary,
+        ownerId,
+        retryableFailure,
+      });
+    } catch (err) {
+      console.error(`[mission-worker] email notify failed for mission ${mission.id}:`, err);
+    }
+  }
 }
 
 export async function processOnce(
