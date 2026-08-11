@@ -21,7 +21,14 @@ import {
 } from "../repositories/media-assets";
 import { executePrivateYoutubeVerification, executeYoutubeVerification } from "../verification-publish";
 import { requireUuid, optionalUuid } from "./id-validation";
+import { assertAttachmentSlot, asMediaAssetId } from "./media-identity";
+import { buildVariantGenerationKey } from "./variant-idempotency";
+import { validateProposedScheduleAction } from "../workforce/schedule.ts";
+import { requestGenerateImage } from "./generate-image-capability";
 import { runPublishNow } from "./publish-outcome";
+import { getImageProvider, BlockedImageProvider } from "@stratxcel/creative-studio";
+import { resolveImageGenerationRuntimeStatus } from "./capability-evidence";
+import { evaluateBrandTrustHardGate } from "./trust-hard-gate";
 
 export interface AgentTool {
   schema: ToolSchema;
@@ -186,32 +193,69 @@ const createVariant: AgentTool = {
         caption: { type: "string" },
         hashtags: { type: "array", items: { type: "string" } },
         mediaUrls: { type: "array", items: { type: "string" } },
+        generationKey: { type: "string", description: "Optional deterministic generation identity for idempotent reuse." },
+        contentSlot: { type: "string" },
+        briefVersion: { type: "string" },
+        revision: { type: "number" },
+        missionId: { type: "string" },
+        sessionId: { type: "string" },
       },
       required: ["masterId", "platform", "format", "objective", "caption"],
     },
   },
   mutating: true,
-  execute: async (ctx, args) =>
-    createContentVariant(ctx, {
-      masterId: requireUuid(args.masterId, "masterId"),
-      platform: str(args, "platform"),
-      format: str(args, "format"),
+  execute: async (ctx, args) => {
+    const masterId = requireUuid(args.masterId, "masterId");
+    const platform = str(args, "platform");
+    const format = str(args, "format");
+    const caption = str(args, "caption");
+    const brand = await getBrandProfile(ctx);
+    const trust = evaluateBrandTrustHardGate({
+      caption,
+      blockedPhrases: brand.voice?.blocked_phrases ?? [],
+      forbiddenClaims: brand.voice?.forbidden_claims ?? [],
+      isSelfMarketing: /\bstratxcel\b/i.test(caption),
+    });
+    if (trust.decision === "BLOCK" || trust.decision === "REVISE") {
+      throw new Error(`Brand/Trust gate: ${trust.decision}. ${trust.reasons.join("; ") || "Caption requires revision before READY."}`);
+    }
+    const revision = typeof args.revision === "number" ? args.revision : Number(args.revision) || 1;
+    const generationKey =
+      str(args, "generationKey") ||
+      (str(args, "sessionId") && str(args, "missionId")
+        ? buildVariantGenerationKey({
+            tenantId: ctx.ownerId,
+            missionId: str(args, "missionId"),
+            sessionId: str(args, "sessionId"),
+            contentSlot: str(args, "contentSlot") || `${platform}:${format}`,
+            masterId,
+            platform,
+            format,
+            briefVersion: str(args, "briefVersion") || "v1",
+            revision,
+          })
+        : null);
+    return createContentVariant(ctx, {
+      masterId,
+      platform,
+      format,
       objective: str(args, "objective"),
-      caption: str(args, "caption"),
+      caption,
       hashtags: arr(args, "hashtags"),
       mediaUrls: arr(args, "mediaUrls"),
-    }),
+      generationKey,
+      creativeSpec: { trustDecision: trust.decision },
+    });
+  },
 };
 
 const schedulePost: AgentTool = {
   schema: {
     name: "schedule_post",
     description:
-      "Schedule an existing content variant to publish from a connected account. Omit scheduledAt entirely " +
-      "for \"post it\"/\"post now\"/\"publish this\" or when no time was requested — it defaults to right now, " +
-      "which runs publishing synchronously and returns the real terminal status (published/failed/still queued); " +
-      "never assume success. Only pass scheduledAt (ISO 8601) when the user explicitly requested a future date/time — " +
-      "never invent one.",
+      "Schedule an existing content variant to publish from a connected account. " +
+      "For \"post it\"/\"post now\" omit scheduledAt (defaults to now). " +
+      "For week-planning requests, scheduledAt is REQUIRED and must be a concrete future ISO timestamp from the server week planner — never invent times and never omit them for weekly plans.",
     parameters: {
       type: "object",
       properties: {
@@ -221,6 +265,14 @@ const schedulePost: AgentTool = {
         recommendationReason: { type: "string", description: "Short user-facing reason based on Brand Brain, the creative, and platform style." },
         variantId: { type: "string" },
         scheduledAt: { type: "string" },
+        timeZone: { type: "string" },
+        wallClockLabel: { type: "string" },
+        scheduleSource: { type: "string", enum: ["USER_SPECIFIED", "TENANT_PREFERENCE", "PACKAGE_PLAN", "SYSTEM_DEFAULT"] },
+        reviewId: { type: "string" },
+        revision: { type: "number" },
+        missionId: { type: "string" },
+        contentMasterId: { type: "string" },
+        requiresFutureSchedule: { type: "boolean" },
       },
       required: ["variantId"],
     },
@@ -246,18 +298,19 @@ const schedulePost: AgentTool = {
     const account = candidateAccounts?.[0] ?? null;
     const accountId = account?.id ?? "";
     if (!account || !variant) throw new Error("Account or content variant is not available to this owner.");
-    // Canonical-to-canonical comparison — immune to "THREADS" vs "threads"
-    // casing on either side, including legacy rows written before
-    // normalization existed. See lib/social/content-options.ts.
     if (!platformsMatch(account.platform, variant.platform)) {
       throw new Error("The account platform must match the content variant platform.");
     }
+    const requiresFuture = args.requiresFutureSchedule === true;
+    if (requiresFuture) {
+      const timeZone = str(args, "timeZone") || "Asia/Kolkata";
+      validateProposedScheduleAction({
+        requiresFutureDate: true,
+        scheduledAt: str(args, "scheduledAt") || null,
+        timeZone,
+      });
+    }
     const service = createSupabaseServiceClient();
-    // "Post it now" is the default: an omitted/empty scheduledAt means right
-    // now, not a guessed clock time. This is the actual fix for the model
-    // inventing an arbitrary future timestamp for a plain "post it" request
-    // — making "now" the easy, argument-free path removes the temptation to
-    // synthesize one at all (see Section 2 of the live-progress cleanup brief).
     const scheduledAt = str(args, "scheduledAt") || new Date().toISOString();
     const jobId = await scheduleJob(service, { accountId, variantId, scheduledAt });
     return runPublishNow(service, jobId, scheduledAt, ctx.ownerId, {
@@ -313,7 +366,8 @@ const ingestMedia: AgentTool = {
     name: "ingest_media",
     description:
       "Resolve an uploaded Copilot media attachment into its canonical owner-scoped media asset. " +
-      "Use the exact attachmentId shown in the attachment context. This operation is idempotent.",
+      "Use the exact attachmentId shown in the attachment context. This operation is idempotent. " +
+      "Never pass mediaAssetId here — attachmentId and mediaAssetId are different identities.",
     parameters: {
       type: "object",
       properties: { attachmentId: { type: "string" } },
@@ -323,7 +377,51 @@ const ingestMedia: AgentTool = {
   // Finalization normally creates the asset before the Agent runs; this is an
   // idempotent identity/access operation, not an external or content mutation.
   mutating: false,
-  execute: async (ctx, args) => ingestAttachmentMedia(ctx, requireUuid(args.attachmentId, "attachmentId")),
+  execute: async (ctx, args) => ingestAttachmentMedia(ctx, assertAttachmentSlot(args)),
+};
+
+const generateImageTool: AgentTool = {
+  schema: {
+    name: "generate_image",
+    description:
+      "Request fresh image generation for the current Social mission via media.image_generation. " +
+      "Returns NOT_CONFIGURED when no real image provider is available — never invents an image. " +
+      "Successful candidates require selection before becoming READY media assets.",
+    parameters: {
+      type: "object",
+      properties: {
+        brief: { type: "string" },
+        missionId: { type: "string" },
+        sessionId: { type: "string" },
+        referenceMediaAssetIds: { type: "array", items: { type: "string" } },
+        candidateCount: { type: "number" },
+      },
+      required: ["brief"],
+    },
+  },
+  mutating: true,
+  execute: async (ctx, args) => {
+    const provider = getImageProvider();
+    const runtime = resolveImageGenerationRuntimeStatus({
+      providerConfigured: Boolean(provider) && !(provider instanceof BlockedImageProvider),
+    });
+    const result = await requestGenerateImage({
+      tenantId: ctx.ownerId,
+      missionId: str(args, "missionId") || `mission_${ctx.ownerId}`,
+      sessionId: str(args, "sessionId") || `session_${ctx.ownerId}`,
+      briefText: str(args, "brief"),
+      referenceMediaAssetIds: arr(args, "referenceMediaAssetIds"),
+      candidateCount: typeof args.candidateCount === "number" ? args.candidateCount : 2,
+    });
+    return {
+      ...result,
+      capability: "media.image_generation",
+      runtimeStatus: result.runtimeStatus || runtime,
+      // Explicit: no social_media_assets row is created until a real selected candidate is persisted.
+      persistedMediaAssetIds: [] as string[],
+      uiState: result.outcome === "NOT_CONFIGURED" || result.outcome === "WAITING_CONFIGURATION" ? "setup_required" : "candidates_ready",
+    };
+  },
 };
 
 const inspectContentMediaTool: AgentTool = {
@@ -371,7 +469,11 @@ const attachMediaToContentTool: AgentTool = {
     const masterId = optionalUuid(args.masterId, "masterId");
     const variantId = optionalUuid(args.variantId, "variantId");
     if (Boolean(masterId) === Boolean(variantId)) throw new Error("Provide exactly one of masterId or variantId.");
-    const assetIds = arr(args, "assetIds").map((id) => requireUuid(id, "assetIds"));
+    const assetIds = arr(args, "assetIds").map((id) => asMediaAssetId(id, "assetIds"));
+    // Reject accidental attachmentId misuse in the media-asset slot.
+    if (Object.hasOwn(args, "attachmentId") && !Object.hasOwn(args, "assetIds") && !Object.hasOwn(args, "mediaAssetIds")) {
+      throw new Error("mediaAssetId_required_attachmentId_rejected");
+    }
     const replace = args.replace === true;
     return masterId
       ? attachMediaToMaster(ctx, masterId, assetIds, replace)
@@ -472,6 +574,7 @@ export const AGENT_TOOLS: AgentTool[] = [
   inspectBrand,
   listContentTool,
   ingestMedia,
+  generateImageTool,
   inspectContentMediaTool,
   createCampaignTool,
   createContentItem,

@@ -1,4 +1,4 @@
-import type { OwnerContext } from "../db-context";
+import type { OwnerContext } from "../db-context.ts";
 
 export interface AgentSessionRow {
   id: string;
@@ -103,6 +103,28 @@ export async function proposeAction(ctx: OwnerContext, sessionId: string, toolNa
   return data?.id as string | undefined;
 }
 
+/**
+ * Atomically mark scoped active PROPOSED actions as SUPERSEDED.
+ * Does not delete rows — history remains queryable.
+ */
+export async function supersedeProposedActions(
+  ctx: OwnerContext,
+  sessionId: string,
+  actionIds: string[],
+  reason = "superseded_by_newer_review_revision"
+): Promise<number> {
+  if (!actionIds.length) return 0;
+  const { data, error } = await ctx.supabase
+    .from("social_agent_actions")
+    .update({ status: "SUPERSEDED", reason, updated_at: new Date().toISOString() })
+    .eq("session_id", sessionId)
+    .eq("status", "PROPOSED")
+    .in("id", actionIds)
+    .select("id");
+  if (error) throw new Error(error.message);
+  return data?.length ?? 0;
+}
+
 export async function recordExecutedAction(ctx: OwnerContext, sessionId: string, toolName: string, input: Record<string, unknown>, output: unknown, status: "SUCCEEDED" | "FAILED", reason?: string) {
   await ctx.supabase.from("social_agent_actions").insert({ session_id: sessionId, tool_name: toolName, input, output: output as never, status, reason: reason ?? null });
 }
@@ -142,6 +164,7 @@ async function claimAgentActionFallback(
   targetStatus: "EXECUTING" | "REJECTED"
 ): Promise<boolean> {
   const action = await getAction(ctx, actionId);
+  // SUPERSEDED and any non-PROPOSED status must never execute.
   if (!action || action.status !== "PROPOSED" || !action.session_id) return false;
   const { data: session } = await ctx.supabase
     .from("social_agent_sessions")

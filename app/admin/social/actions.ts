@@ -112,7 +112,7 @@ export async function createContentItemAction(
     });
 
     try {
-      const variantId = await createContentVariant(owner, {
+      const variant = await createContentVariant(owner, {
         masterId,
         platform: input.platform,
         format: input.format,
@@ -127,7 +127,7 @@ export async function createContentItemAction(
       });
       if (mediaAssetIds.length) {
         await attachMediaToMaster(owner, masterId, mediaAssetIds, true);
-        await attachMediaToVariant(owner, variantId, mediaAssetIds, true);
+        await attachMediaToVariant(owner, variant.id, mediaAssetIds, true);
       }
     } catch (error) {
       await owner.supabase.from("content_master").delete().eq("id", masterId);
