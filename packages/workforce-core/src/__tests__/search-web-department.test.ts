@@ -512,7 +512,11 @@ function base(overrides: Partial<BusinessGrowthPlannerInput> = {}): BusinessGrow
   const slice = compileBrandContextSlice({
     department: "seo",
     role: "seo_writer",
-    brandBrain: { business_name: "Acme", tone_of_voice: "calm", products: ["implants"] },
+    brandBrain: {
+      business_name: "Acme",
+      tone_of_voice: "calm",
+      products: [{ name: "implants", description: "Dental implants" }],
+    },
     campaignObjective: "organic leads",
     approvedClaims: ["Licensed clinic"],
   });
