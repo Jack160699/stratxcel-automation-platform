@@ -39,7 +39,7 @@ export interface PaidAcquisitionReadiness {
   blockingReasons: readonly string[];
   mayRecommendPaid: boolean;
   mayPlanCampaign: boolean;
-  /** Always false in this workstream — plan never equals spend. */
+  /** Always false — plan never equals spend. */
   authorizesSpend: false;
   summary: string;
   evidenceIds: readonly string[];
@@ -62,7 +62,6 @@ export interface GrowthLeverSelection {
   paidVsOrganicReasoning: string;
   bottleneckCodes: readonly string[];
   evidenceIds: readonly string[];
-  /** Paid is never mandatory solely because growth is desired. */
   paidMandatory: false;
   recommendPaid: boolean;
 }
@@ -83,7 +82,6 @@ export interface AudienceHypothesis {
   eligible: boolean;
   platformSupported: boolean;
   reason: string;
-  /** Sensitive-category risk — never recommend violating targeting. */
   sensitiveTargetingRisk: boolean;
   evidenceIds: readonly string[];
 }
@@ -94,11 +92,9 @@ export interface BudgetProposal {
   proposedMaxCents: number | null;
   envelopeCapCents: number | null;
   withinCommercialEnvelope: boolean;
-  /** Always false — proposal is not spend clearance. */
   authorizesSpend: false;
   assumptions: readonly string[];
   evidenceIds: readonly string[];
-  /** Never fabricate CPC/CPA; leave null when unsupported. */
   predictedCpcCents: null;
   predictedCpaCents: null;
   notes: string;
@@ -110,6 +106,16 @@ export interface CampaignPlanApprovals {
   requiresCreativeApproval: true;
   requiresFinanceClearance: true;
   approvedForSpend: false;
+}
+
+export interface AcquisitionMeasurementContract {
+  ownerWorkstream: "measurement_engine";
+  primaryMetric: string;
+  secondaryMetrics: readonly string[];
+  attributionWindowDays: number | null;
+  requiredEventNames: readonly string[];
+  feedSchemaVersion: "acquisition.v1";
+  notes: string;
 }
 
 export interface CampaignPlan {
@@ -134,7 +140,6 @@ export interface CampaignPlan {
   approvals: CampaignPlanApprovals;
   evidenceIds: readonly string[];
   readinessStatus: PaidAcquisitionReadinessStatus;
-  /** Plan ≠ publish. Always false. */
   authorizesSpend: false;
   authorizesPublish: false;
   createdAtIso: string;
@@ -153,7 +158,6 @@ export interface AdCreativeBrief {
   variantsNeeded: number;
   platformConstraints: readonly string[];
   claimConstraints: readonly string[];
-  /** Creative Studio (workstream 3) consumes; we do not produce assets. */
   handoffDepartment: "creative";
   evidenceIds: readonly string[];
   createdAtIso: string;
@@ -167,7 +171,6 @@ export interface LandingPageHandoffRequest {
   reason: string;
   requiredPageType: "landing" | "offer" | "thank_you";
   conversionRequirements: readonly string[];
-  /** Website department owns generation/deploy. */
   handoffDepartment: "website";
   evidenceIds: readonly string[];
   createdAtIso: string;
@@ -185,20 +188,9 @@ export interface ExperimentPlan {
   minimumEvidenceCriterion: string;
   evaluationWindowDays: number;
   stopCondition: string;
-  /** Never claim statistical significance without sufficient data. */
   claimsStatisticalSignificance: false;
   evidenceIds: readonly string[];
   createdAtIso: string;
-}
-
-export interface AcquisitionMeasurementContract {
-  ownerWorkstream: "measurement_engine";
-  primaryMetric: string;
-  secondaryMetrics: readonly string[];
-  attributionWindowDays: number | null;
-  requiredEventNames: readonly string[];
-  feedSchemaVersion: "acquisition.v1";
-  notes: string;
 }
 
 export type AdsPublishGateCode =
@@ -216,7 +208,6 @@ export type AdsPublishGateCode =
 
 export interface AdsPublishGateResult {
   allowed: false;
-  /** Always DENIED in this workstream — no production campaign launch. */
   decision: "DENIED";
   failedGates: readonly AdsPublishGateCode[];
   reasons: readonly string[];
@@ -238,7 +229,6 @@ export interface PaidAdsAuditAssessment {
   growthLevers: GrowthLeverSelection;
   rationale: string;
   evidenceIds: readonly string[];
-  /** Do not upsell ads by default. */
   upsellDefault: false;
   assessedAtIso: string;
 }
