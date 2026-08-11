@@ -50,13 +50,25 @@ function run() {
   const finalArtifact = selectBestCandidate(loop);
   assert.ok(finalArtifact?.provenance);
 
+  // High creativity cannot average away low factuality when hard gates are set.
   const factualityDecision = decideFromScore(defaultQualityPolicy, [
     { dimension: "brand_fit", score: 90 },
     { dimension: "clarity", score: 90 },
     { dimension: "factuality", score: 40 },
     { dimension: "originality", score: 95 },
   ]);
-  assert.equal(factualityDecision, "REVISE");
+  assert.equal(factualityDecision, "REJECT");
+
+  const softOnly = decideFromScore(
+    { ...defaultQualityPolicy, hardGates: undefined },
+    [
+      { dimension: "brand_fit", score: 90 },
+      { dimension: "clarity", score: 90 },
+      { dimension: "factuality", score: 40 },
+      { dimension: "originality", score: 95 },
+    ],
+  );
+  assert.equal(softOnly, "REVISE");
 
   const brandFail = critiqueCandidate({
     candidate: {
