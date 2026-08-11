@@ -110,7 +110,7 @@ function okResult(payload: unknown): CallToolResult {
 }
 
 export type McpAuthorizationResult =
-  | { ok: true; missionId: string; tenantId: string; businessArgs: Record<string, unknown> }
+  | { ok: true; missionId: string; tenantId: string; allowedTools: readonly string[]; businessArgs: Record<string, unknown> }
   | { ok: false; reason: string };
 
 /**
@@ -156,7 +156,13 @@ export function authorizeMcpToolCall(tool: McpCallableName, rawArgs: Record<stri
   // file's own unit tests deliberately do to exercise this layer alone.
   const { tenantId: _ignoredTenantId, missionId: _ignoredMissionId, ...safeBusinessArgs } = businessArgs;
 
-  return { ok: true, missionId: verified.payload.missionId, tenantId: verified.payload.tenantId, businessArgs: safeBusinessArgs };
+  return {
+    ok: true,
+    missionId: verified.payload.missionId,
+    tenantId: verified.payload.tenantId,
+    allowedTools: verified.payload.allowedTools,
+    businessArgs: safeBusinessArgs,
+  };
 }
 
 /**
@@ -169,7 +175,7 @@ async function handleMcpToolCall(tool: McpCallableName, rawArgs: Record<string, 
 
   const authz = authorizeMcpToolCall(tool, rawArgs);
   if (!authz.ok) return errorResult(authz.reason);
-  const { missionId, tenantId, businessArgs } = authz;
+  const { missionId, tenantId, allowedTools, businessArgs } = authz;
 
   const kill = await isKillSwitchActive(getQueueClient(), [
     { scope: "global_hermes" },
@@ -182,7 +188,11 @@ async function handleMcpToolCall(tool: McpCallableName, rawArgs: Record<string, 
   }
 
   try {
-    const result = await invokeTool(tool as ToolName, { missionId, tenantId, correlationId }, businessArgs);
+    const result = await invokeTool(
+      tool as ToolName,
+      { missionId, tenantId, correlationId, allowedTools },
+      businessArgs,
+    );
     return okResult(result);
   } catch (err) {
     if (err instanceof ToolNotAvailableError) return errorResult(err.message);

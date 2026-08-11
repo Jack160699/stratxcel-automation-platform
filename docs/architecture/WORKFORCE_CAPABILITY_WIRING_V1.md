@@ -54,7 +54,10 @@ Trusted tenant only from `authorizationContext.trustedTenantId`. Entitlements fa
 ## Matrix (static vs runtime)
 
 Use `countCapabilitiesByStatus()` for static catalogue counts.
-Use `countCapabilityOperationalMatrix({ tenantId })` for runtime-operational (provider probe ready).
+Use `countCapabilityOperationalMatrix({ tenantId })` for **providerOperational** (IMPLEMENTED provider probe ready — not full tenant runtime).
+
+Use `buildTenantCapabilityRuntimeMatrix({ tenantId })` for:
+STATIC_AVAILABLE / PROVIDER_READY / TENANT_TECHNICALLY_READY / EXECUTION_REQUIRES_APPROVAL / RUNTIME_EXECUTABLE_NOW.
 
 After this PR (analytics.read truthfully downgraded):
 

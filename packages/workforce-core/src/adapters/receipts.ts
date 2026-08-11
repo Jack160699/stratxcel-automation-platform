@@ -4,7 +4,7 @@ import {
 } from "./operation-class.ts";
 
 const SECRET_KEY_PATTERN =
-  /^(?:.*(?:token|secret|password|api[_-]?key|authorization|credential|private[_-]?key).*)$/i;
+  /^(?:.*(?:token|secret|password|api[_-]?key|credential|private[_-]?key).*|authorization|auth[_-]?header)$/i;
 
 /**
  * Scrub receipt detail of secrets, long opaque tokens, and nested credential bags.

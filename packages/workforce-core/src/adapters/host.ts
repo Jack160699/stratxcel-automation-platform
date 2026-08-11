@@ -124,6 +124,28 @@ export type PersistMissionArtifactResult =
   | { ok: true; id: string }
   | { ok: false; errorMessage: string };
 
+export type WhatsAppOutboundHostInput = {
+  tenantId: string;
+  leadId: string;
+  body: string;
+  idempotencyKey: string;
+  templateId?: string | null;
+  templateName?: string | null;
+  templateLanguage?: string | null;
+  templateParams?: string[];
+  isHumanInitiated?: boolean;
+};
+
+export type WhatsAppOutboundHostResult =
+  | {
+      ok: true;
+      messageId: string;
+      alreadySent?: boolean;
+      mode?: string;
+      providerId?: string | null;
+    }
+  | { ok: false; reason: string };
+
 export interface CapabilityHostBindings {
   socialSchedule?: (input: SocialScheduleHostInput) => Promise<SocialScheduleHostResult>;
   socialPublish?: (input: SocialPublishHostInput) => Promise<SocialPublishHostResult>;
@@ -132,6 +154,14 @@ export interface CapabilityHostBindings {
   persistMissionArtifact?: (
     input: PersistMissionArtifactInput,
   ) => Promise<PersistMissionArtifactResult>;
+  /**
+   * Optional wrap of the WhatsApp outbound choke-point (tests / instrumentation).
+   * Production leaves this unbound so adapters call sendOutboundWhatsAppMessage directly.
+   */
+  sendWhatsAppOutbound?: (
+    client: LooseServiceClient,
+    input: WhatsAppOutboundHostInput,
+  ) => Promise<WhatsAppOutboundHostResult>;
 }
 
 let bindings: CapabilityHostBindings = {};

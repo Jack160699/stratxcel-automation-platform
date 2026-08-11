@@ -7,6 +7,7 @@ import { unknownCostUsage } from "../providers/types.ts";
 import { buildCapabilityExecutionReceipt } from "./receipts.ts";
 import { getCapabilityOperationClass } from "./operation-class.ts";
 import { getCapabilityHost, type LooseServiceClient } from "./host.ts";
+import { persistCapabilityArtifact } from "./persist-artifact.ts";
 
 const CRM_WRITE_OPERATIONS = [
   "create_lead",
@@ -147,7 +148,45 @@ async function executeCrmRead(
   }
 
   const safe = rows.filter((r) => r.tenant_id === input.tenantId).map(normalizeLead);
-  const snapshotId = `crm_snapshot_${crypto.randomUUID()}`;
+  // Bounded snapshot: ids/status/source only — no phone, email, or notes PII.
+  const persisted = await persistCapabilityArtifact({
+    tenantId: input.tenantId,
+    missionId: input.missionId,
+    requestId: input.requestId,
+    capability: "crm.read",
+    providerKey: "crm-supabase",
+    kind: "crm_snapshot",
+    metadata: {
+      leadCount: safe.length,
+      boundedLimit: limit,
+      leads: safe.map((l) => ({
+        id: l.id,
+        status: l.status,
+        source: l.source,
+        hasPhone: l.hasPhone,
+        hasContactName: Boolean(l.contactName),
+        tagCount: Array.isArray(l.tags) ? l.tags.length : 0,
+        assignedTo: l.assignedTo ?? null,
+        nextFollowUpAt: l.nextFollowUpAt ?? null,
+        createdAt: l.createdAt ?? null,
+        updatedAt: l.updatedAt ?? null,
+      })),
+      provenance: {
+        provider: "crm-supabase",
+        requestId: input.requestId,
+        capability: "crm.read",
+      },
+    },
+  });
+  if (!persisted.ok) {
+    return {
+      ok: false,
+      providerKey: "crm-supabase",
+      errorCategory: "PROVIDER_FAILURE",
+      errorMessage: persisted.errorMessage,
+      usage: unknownCostUsage({ requests: 0 }),
+    };
+  }
   const receipt = buildCapabilityExecutionReceipt({
     capability: "crm.read",
     tenantId: input.tenantId,
@@ -157,18 +196,36 @@ async function executeCrmRead(
     operationClass: getCapabilityOperationClass("crm.read"),
     externalMutation: false,
     externalMutationOccurred: false,
+    approvalUsed:
+      input.authorization?.approvalGranted === true ||
+      input.authorization?.standingAuthorizationGranted === true,
     inputArtifactIds: input.inputArtifactIds,
-    outputArtifactIds: [snapshotId],
+    outputArtifactIds: [persisted.id],
     detail: { kind: "crm_snapshot", leadCount: safe.length, boundedLimit: limit },
   });
   return {
     ok: true,
     providerKey: "crm-supabase",
-    providerReference: snapshotId,
-    outputArtifactIds: [snapshotId],
+    providerReference: persisted.id,
+    outputArtifactIds: [persisted.id],
     usage: unknownCostUsage({ requests: 1 }),
-    receipt: { ...receipt, leads: safe } as unknown as Record<string, unknown>,
+    receipt: receipt as unknown as Record<string, unknown>,
   };
+}
+
+function authUsed(input: ProviderExecuteInput): boolean {
+  return (
+    input.authorization?.approvalGranted === true ||
+    input.authorization?.standingAuthorizationGranted === true
+  );
+}
+
+function hermesCreateLeadOnlyGrant(input: ProviderExecuteInput): boolean {
+  return (
+    input.authorization?.authorizationKind === "HERMES_MISSION_TOOL_GRANT" &&
+    input.authorization?.authorizationCapability === "crm.write" &&
+    input.authorization?.standingAuthorizationGranted === true
+  );
 }
 
 async function executeCrmWrite(
@@ -187,6 +244,16 @@ async function executeCrmWrite(
     };
   }
   const op = operation as CrmWriteOperation;
+  // HERMES_MISSION_TOOL_GRANT authorizes create_lead only — never arbitrary CRM writes.
+  if (hermesCreateLeadOnlyGrant(input) && op !== "create_lead") {
+    return {
+      ok: false,
+      providerKey: "crm-supabase",
+      errorCategory: "POLICY_BLOCK",
+      errorMessage: "HERMES_MISSION_TOOL_GRANT_CREATE_LEAD_ONLY",
+      usage: unknownCostUsage({ requests: 0 }),
+    };
+  }
   const idempotencyKey =
     typeof input.input?.idempotencyKey === "string" && input.input.idempotencyKey.trim()
       ? input.input.idempotencyKey.trim()
@@ -195,6 +262,7 @@ async function executeCrmWrite(
   if (op === "create_lead") {
     const prior = await findByIdempotency(client, input.tenantId, idempotencyKey);
     if (prior) {
+      // Lead IDs are provider references — never mission artifact IDs.
       const receipt = buildCapabilityExecutionReceipt({
         capability: "crm.write",
         tenantId: input.tenantId,
@@ -204,18 +272,23 @@ async function executeCrmWrite(
         operationClass: getCapabilityOperationClass("crm.write"),
         externalMutation: true,
         externalMutationOccurred: false,
-        approvalUsed: input.authorization?.approvalGranted === true || input.authorization?.standingAuthorizationGranted === true,
+        approvalUsed: authUsed(input),
         idempotencyKey,
         inputArtifactIds: input.inputArtifactIds,
-        outputArtifactIds: [String(prior.id)],
+        outputArtifactIds: [],
         providerExternalId: String(prior.id),
-        detail: { kind: "crm_write_receipt", operation: op, idempotentReplay: true },
+        detail: {
+          kind: "crm_write_receipt",
+          operation: op,
+          idempotentReplay: true,
+          authorizationKind: input.authorization?.authorizationKind ?? null,
+        },
       });
       return {
         ok: true,
         providerKey: "crm-supabase",
         providerReference: String(prior.id),
-        outputArtifactIds: [String(prior.id)],
+        outputArtifactIds: [],
         usage: unknownCostUsage({ requests: 1 }),
         receipt: receipt as unknown as Record<string, unknown>,
       };
@@ -267,18 +340,23 @@ async function executeCrmWrite(
       operationClass: getCapabilityOperationClass("crm.write"),
       externalMutation: true,
       externalMutationOccurred: true,
-      approvalUsed: input.authorization?.approvalGranted === true || input.authorization?.standingAuthorizationGranted === true,
+      approvalUsed: authUsed(input),
       idempotencyKey,
       inputArtifactIds: input.inputArtifactIds,
-      outputArtifactIds: [lead.id],
+      outputArtifactIds: [],
       providerExternalId: lead.id,
-      detail: { kind: "crm_write_receipt", operation: op, idempotentReplay: false },
+      detail: {
+        kind: "crm_write_receipt",
+        operation: op,
+        idempotentReplay: false,
+        authorizationKind: input.authorization?.authorizationKind ?? null,
+      },
     });
     return {
       ok: true,
       providerKey: "crm-supabase",
       providerReference: lead.id,
-      outputArtifactIds: [lead.id],
+      outputArtifactIds: [],
       usage: unknownCostUsage({ requests: 1 }),
       receipt: receipt as unknown as Record<string, unknown>,
     };
@@ -358,18 +436,23 @@ async function executeCrmWrite(
     operationClass: getCapabilityOperationClass("crm.write"),
     externalMutation: true,
     externalMutationOccurred: true,
-    approvalUsed: input.authorization?.approvalGranted === true || input.authorization?.standingAuthorizationGranted === true,
+    approvalUsed: authUsed(input),
     idempotencyKey,
     inputArtifactIds: input.inputArtifactIds,
-    outputArtifactIds: [leadId],
+    outputArtifactIds: [],
     providerExternalId: leadId,
-    detail: { kind: "crm_write_receipt", operation: op, idempotentReplay: false },
+    detail: {
+      kind: "crm_write_receipt",
+      operation: op,
+      idempotentReplay: false,
+      authorizationKind: input.authorization?.authorizationKind ?? null,
+    },
   });
   return {
     ok: true,
     providerKey: "crm-supabase",
     providerReference: leadId,
-    outputArtifactIds: [leadId],
+    outputArtifactIds: [],
     usage: unknownCostUsage({ requests: 1 }),
     receipt: receipt as unknown as Record<string, unknown>,
   };

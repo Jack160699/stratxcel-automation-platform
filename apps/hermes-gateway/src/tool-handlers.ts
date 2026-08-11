@@ -12,6 +12,11 @@ export interface ToolCallContext {
   missionId: string;
   tenantId: string;
   correlationId: string;
+  /**
+   * Verified mission-token allowlist — set only by the Hermes dispatcher
+   * after token verification. Never model-supplied.
+   */
+  allowedTools?: readonly string[];
 }
 
 export class ToolNotAvailableError extends Error {
@@ -129,6 +134,17 @@ export const TOOL_HANDLERS: Partial<Record<ToolName, ToolHandler>> = {
   async create_crm_lead(ctx, input) {
     // Route through canonical Workforce capability executor — never bypass
     // tenant/entitlement/receipt policy with a direct createLead call alone.
+    // Authority is HERMES_MISSION_TOOL_GRANT only when the verified mission
+    // token allowed create_crm_lead — never a manufactured human approval.
+    const missionToolAllowed = (ctx.allowedTools ?? []).includes("create_crm_lead");
+    if (!missionToolAllowed) {
+      return {
+        ok: false,
+        status: "BLOCKED",
+        reasonCode: "POLICY_BLOCK",
+        humanReason: "create_crm_lead not in verified mission allowedTools",
+      };
+    }
     const { executeWorkforceCapabilityServer } = await import(
       "../../../lib/workforce/execute-capability.ts"
     );
@@ -141,11 +157,12 @@ export const TOOL_HANDLERS: Partial<Record<ToolName, ToolHandler>> = {
       role: "crm_writer",
       inputArtifactIds: [],
       authorization: {
-        approvalGranted: true,
-        standingAuthorizationGranted: true,
-        authorizationKind: "HERMES_MISSION_TOOL",
-        authorizationCapability: "crm.write",
-        authorizationScopeId: ctx.missionId,
+        actorKind: "hermes",
+        trustedSystemGrant: {
+          kind: "HERMES_MISSION_TOOL_GRANT",
+          toolName: "create_crm_lead",
+          missionToolAllowed: true,
+        },
       },
       input: {
         operation: "create_lead",
@@ -156,6 +173,7 @@ export const TOOL_HANDLERS: Partial<Record<ToolName, ToolHandler>> = {
         metadata: {
           ...((input.metadata as Record<string, unknown>) ?? {}),
           hermesCorrelationId: ctx.correlationId,
+          authorizationKind: "HERMES_MISSION_TOOL_GRANT",
         },
         idempotencyKey: `hermes-crm-lead:${ctx.missionId}:${ctx.correlationId}`,
       },
@@ -169,8 +187,13 @@ export const TOOL_HANDLERS: Partial<Record<ToolName, ToolHandler>> = {
         humanReason: result.humanReason ?? "crm.write_failed",
       };
     }
-    const leadId = result.providerReference ?? result.outputArtifactIds[0] ?? null;
-    return { leadId, receipt: result.receipt ?? null, capabilityStatus: result.status };
+    const leadId = result.providerReference ?? null;
+    return {
+      leadId,
+      receipt: result.receipt ?? null,
+      capabilityStatus: result.status,
+      authorizationKind: "HERMES_MISSION_TOOL_GRANT",
+    };
   },
 
   async attach_research_evidence(ctx, input) {

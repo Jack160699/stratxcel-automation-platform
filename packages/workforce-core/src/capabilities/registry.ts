@@ -536,19 +536,23 @@ export function countCapabilitiesByStatus(): Record<CapabilityStatus, number> {
 }
 
 /**
- * Static catalogue AVAILABLE count vs runtime-operational count.
- * Runtime requires provider probe ready for the given tenant/env.
+ * Static catalogue AVAILABLE count vs provider-ready count.
+ * Provider-ready = IMPLEMENTED provider probe ready — does NOT evaluate
+ * tenant entitlement, integration, shadow, kill, or authorization.
+ * For tenant runtime matrix use lib/workforce/capability-runtime-matrix.ts.
  */
 export async function countCapabilityOperationalMatrix(args: {
   tenantId: string;
 }): Promise<{
   staticAvailable: number;
+  /** @deprecated Use providerOperational — this is NOT full runtime readiness. */
   runtimeOperational: number;
+  providerOperational: number;
   staticByStatus: Record<CapabilityStatus, number>;
 }> {
   const staticByStatus = countCapabilitiesByStatus();
   const { getProvidersForCapability } = await import("../providers/registry.ts");
-  let runtimeOperational = 0;
+  let providerOperational = 0;
   for (const def of listCapabilities()) {
     if (def.status !== "AVAILABLE") continue;
     const providers = getProvidersForCapability(def.key);
@@ -564,11 +568,12 @@ export async function countCapabilityOperationalMatrix(args: {
         break;
       }
     }
-    if (ready) runtimeOperational += 1;
+    if (ready) providerOperational += 1;
   }
   return {
     staticAvailable: staticByStatus.AVAILABLE,
-    runtimeOperational,
+    providerOperational,
+    runtimeOperational: providerOperational,
     staticByStatus,
   };
 }
