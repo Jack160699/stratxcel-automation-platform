@@ -3,6 +3,7 @@ import { getTenantServiceContext } from "@/lib/tenants/tenant-context";
 import { heartbeatState } from "@/lib/hermes/mission-control";
 import { Card, CardHeading } from "@/components/ui/Card";
 import { StatusChip, type ChipState } from "@/components/ui/StatusChip";
+import { buildAiAdminHealthSnapshot, type AdminProviderStatus } from "@stratxcel/ai-runtime";
 
 type IntegrationStatus = "live" | "test" | "shadow" | "disconnected" | "blocked" | "manual_action_required";
 
@@ -21,6 +22,23 @@ function modeToStatus(mode: string | undefined, disabledIsBlocked = false): Inte
   if (mode === "mock") return "test";
   if (mode === "http") return "live";
   return disabledIsBlocked ? "blocked" : "disconnected";
+}
+
+function aiStatusToIntegration(status: AdminProviderStatus): IntegrationStatus {
+  switch (status) {
+    case "operational":
+      return "live";
+    case "model_available":
+    case "reachable":
+    case "configured":
+      return "test";
+    case "degraded":
+    case "circuit_open":
+      return "manual_action_required";
+    case "not_configured":
+    default:
+      return "disconnected";
+  }
 }
 
 interface IntegrationRow {
@@ -47,26 +65,17 @@ async function currentHermesStatus(): Promise<IntegrationRow> {
   };
 }
 
-/**
- * Reads actual env vars server-side — never a hardcoded "connected".
- * Every row here reflects genuinely current configuration, not an
- * aspirational or cached state. Per explicit instruction: never display a
- * fake connected/healthy state.
- *
- * See layout.tsx: nested pages guard independently of the parent layout —
- * the App Router still renders and serializes this page's RSC output even
- * when the layout discards {children}, so without this guard an
- * unauthenticated request's response would still embed the integration
- * rows below (env-var-derived operational status) even though the visible
- * page shows AdminLogin.
- */
 export default async function SystemHealthPage() {
   const ctx = await requireOwnerContext();
   if (!ctx.ok) return null;
 
   const hermes = await currentHermesStatus();
-  const geminiConfigured = Boolean(process.env.GEMINI_API_KEY);
-  const openaiConfigured = Boolean(process.env.OPENAI_API_KEY);
+  const ai = await buildAiAdminHealthSnapshot({
+    // Storage/durable readiness require separate probes — do not equate key presence with Live.
+    storageReady: false,
+    durableVideoStoreReady: false,
+  });
+
   const rows: IntegrationRow[] = [
     {
       name: "WhatsApp",
@@ -81,24 +90,23 @@ export default async function SystemHealthPage() {
     hermes,
     {
       name: "AI Runtime (Gemini)",
-      status: geminiConfigured ? "live" : "disconnected",
-      detail: geminiConfigured
-        ? "GEMINI_API_KEY configured. Model policy + circuit state via @stratxcel/ai-runtime (no key values exposed)."
-        : "GEMINI_API_KEY not set.",
+      status: aiStatusToIntegration(ai.gemini.status),
+      detail: `Status=${ai.gemini.status}; configured=${ai.gemini.configured}; reachable=${ai.gemini.reachable}; modelAvailable=${ai.gemini.modelAvailable}; circuitOpen=${ai.gemini.circuitOpen}.`,
     },
     {
       name: "AI Runtime (OpenAI)",
-      status: openaiConfigured ? "live" : "disconnected",
-      detail: openaiConfigured
-        ? "OPENAI_API_KEY configured. Used for fallback/escalation and voice routes (server-only)."
-        : "OPENAI_API_KEY not set.",
+      status: aiStatusToIntegration(ai.openai.status),
+      detail: `Status=${ai.openai.status}; configured=${ai.openai.configured}; reachable=${ai.openai.reachable}; modelAvailable=${ai.openai.modelAvailable}; circuitOpen=${ai.openai.circuitOpen}.`,
     },
     {
-      name: "AI Media (Image/Video)",
-      status: geminiConfigured || openaiConfigured ? "test" : "disconnected",
-      detail: geminiConfigured || openaiConfigured
-        ? "Image: Gemini primary / OpenAI fallback. Video: Veo async only (Sora not active)."
-        : "No image/video provider keys configured — remains NOT_CONFIGURED.",
+      name: "AI Media (Image)",
+      status: aiStatusToIntegration(ai.image.status),
+      detail: `Status=${ai.image.status}; storageReady=${ai.image.storageReady}; primary=${ai.image.primaryModel}. Key presence alone is not Live.`,
+    },
+    {
+      name: "AI Media (Video/Veo)",
+      status: aiStatusToIntegration(ai.video.status),
+      detail: `Status=${ai.video.status}; durableStoreReady=${ai.video.durableStoreReady}; Sora active=false; economy=${ai.video.economyModel}.`,
     },
     {
       name: "Google Drive",

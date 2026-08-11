@@ -1,4 +1,5 @@
 import { ImageMediaRuntime, type ImageGenerateRequest, type ImageTier } from "../media/image.ts";
+import type { CanonicalMediaStorage } from "../media/canonical-storage.ts";
 
 /**
  * Creative Studio ImageProvider-compatible adapter.
@@ -17,9 +18,12 @@ export interface CreativeStudioImageBridgeArgs {
     id: string;
   };
   referenceAssetIds: readonly string[];
+  referenceImages?: Array<{ mimeType: string; data: string }>;
   candidateCount: number;
   tier?: ImageTier;
   runtime?: ImageMediaRuntime;
+  storage?: CanonicalMediaStorage;
+  persistCanonical?: boolean;
 }
 
 export async function generateViaAiRuntimeImageProvider(args: CreativeStudioImageBridgeArgs): Promise<{
@@ -41,7 +45,12 @@ export async function generateViaAiRuntimeImageProvider(args: CreativeStudioImag
   }>;
   reason?: string;
 }> {
-  const runtime = args.runtime ?? new ImageMediaRuntime();
+  const runtime =
+    args.runtime ??
+    new ImageMediaRuntime({
+      storage: args.storage,
+      requireStorageForOperational: Boolean(args.storage) || Boolean(args.persistCanonical),
+    });
   if (!runtime.isConfigured()) {
     return {
       outcome: "WAITING_CAPABILITY",
@@ -57,12 +66,18 @@ export async function generateViaAiRuntimeImageProvider(args: CreativeStudioImag
     aspectRatio: args.artDirection.aspectRatio,
     candidateCount: args.candidateCount,
     tier: args.tier ?? "standard",
+    referenceAssetIds: args.referenceAssetIds,
+    referenceImages: args.referenceImages,
+    persistCanonical: args.persistCanonical ?? Boolean(args.storage),
   };
 
   const result = await runtime.generate(request);
-  if (result.outcome !== "OK" || !result.selected) {
+  if (result.outcome !== "OK" || result.candidates.length === 0) {
     return {
-      outcome: result.outcome === "NOT_CONFIGURED" ? "WAITING_CAPABILITY" : "FAILED",
+      outcome:
+        result.outcome === "NOT_CONFIGURED" || result.outcome === "WAITING_CONFIGURATION"
+          ? "WAITING_CAPABILITY"
+          : "FAILED",
       candidates: [],
       reason: result.reason ?? result.outcome,
     };

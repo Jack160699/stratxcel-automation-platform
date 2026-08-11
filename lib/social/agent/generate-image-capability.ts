@@ -15,6 +15,11 @@ import {
   type CreativeBrief,
   type StudioBudget,
 } from "@stratxcel/creative-studio";
+import {
+  InMemoryCanonicalMediaStorage,
+  ImageMediaRuntime,
+  type CanonicalMediaStorage,
+} from "@stratxcel/ai-runtime";
 import { resolveImageGenerationRuntimeStatus, type CapabilityRuntimeStatus } from "./capability-evidence.ts";
 
 export type GenerateImageOutcome =
@@ -34,6 +39,8 @@ export interface GenerateImageRequest {
   referenceMediaAssetIds?: readonly string[];
   candidateCount?: number;
   budget?: StudioBudget;
+  /** Production storage — required for OPERATIONAL persistence. */
+  storage?: CanonicalMediaStorage;
   /** Test-only injected provider — never used in production paths. */
   testProvider?: ImageProvider | null;
 }
@@ -46,6 +53,7 @@ export interface GeneratedImageCandidate {
   width?: number | null;
   height?: number | null;
   format?: string | null;
+  storedAssetId?: string | null;
 }
 
 export interface GenerateImageResult {
@@ -123,7 +131,7 @@ function minimalArt(input: GenerateImageRequest): ArtDirectionArtifact {
 
 /**
  * Request image generation via capability runtime.
- * Without a real/configured provider: NOT_CONFIGURED / WAITING_CONFIGURATION and zero assets.
+ * Without a real/configured provider + storage: NOT_CONFIGURED / WAITING_CONFIGURATION and zero assets.
  */
 export async function requestGenerateImage(input: GenerateImageRequest): Promise<GenerateImageResult> {
   const generatedAtIso = new Date().toISOString();
@@ -149,9 +157,15 @@ export async function requestGenerateImage(input: GenerateImageRequest): Promise
     }
 
     const provider = getImageProvider();
+    const storage = input.storage;
+    const storageReady = storage ? await storage.isWritable() : false;
     const runtimeStatus = resolveImageGenerationRuntimeStatus({
       providerConfigured: Boolean(provider) && !(provider instanceof BlockedImageProvider),
       testProviderInjected: injectedTest,
+      storageReady: injectedTest ? true : storageReady,
+      tenantAuthorized: Boolean(input.tenantId),
+      budgetValid: true,
+      modelAvailable: Boolean(process.env.GEMINI_API_KEY || process.env.OPENAI_API_KEY) || injectedTest,
     });
 
     if (!provider || provider instanceof BlockedImageProvider || runtimeStatus === "NOT_CONFIGURED") {
@@ -162,6 +176,100 @@ export async function requestGenerateImage(input: GenerateImageRequest): Promise
         selectedCandidateId: null,
         reason: "media.image_generation_NOT_CONFIGURED",
         provenance: { ...provenanceBase, provider: null, model: null },
+      };
+    }
+
+    if (!injectedTest && runtimeStatus === "WAITING_CONFIGURATION") {
+      return {
+        outcome: "WAITING_CONFIGURATION",
+        runtimeStatus: "WAITING_CONFIGURATION",
+        candidates: [],
+        selectedCandidateId: null,
+        reason: storageReady ? "image_waiting_configuration" : "image_storage_not_ready",
+        provenance: { ...provenanceBase, provider: provider.name, model: null },
+      };
+    }
+
+    // Prefer direct AI Runtime path when storage is present so reference bytes are resolved.
+    if (storage && !injectedTest) {
+      const runtime = new ImageMediaRuntime({
+        storage,
+        requireStorageForOperational: true,
+      });
+      let referenceImages: Array<{ mimeType: string; data: string }> = [];
+      try {
+        if (input.referenceMediaAssetIds?.length) {
+          const resolved = await storage.resolveReferenceImages({
+            tenantId: input.tenantId,
+            missionId: input.missionId,
+            referenceAssetIds: input.referenceMediaAssetIds,
+          });
+          referenceImages = resolved.map((r) => ({ mimeType: r.mimeType, data: r.data }));
+        }
+      } catch (err) {
+        return {
+          outcome: "FAILED",
+          runtimeStatus: "OPERATIONAL",
+          candidates: [],
+          selectedCandidateId: null,
+          reason: err instanceof Error ? err.message : "reference_resolve_failed",
+          provenance: { ...provenanceBase, provider: provider.name, model: null },
+        };
+      }
+
+      const generated = await runtime.generate({
+        tenantId: input.tenantId,
+        missionId: input.missionId,
+        prompt: input.briefText,
+        referenceImages,
+        referenceAssetIds: [],
+        candidateCount: input.candidateCount ?? 2,
+        persistCanonical: true,
+      });
+
+      if (generated.outcome === "WAITING_CONFIGURATION" || generated.outcome === "NOT_CONFIGURED") {
+        return {
+          outcome: generated.outcome === "NOT_CONFIGURED" ? "NOT_CONFIGURED" : "WAITING_CONFIGURATION",
+          runtimeStatus: generated.outcome === "NOT_CONFIGURED" ? "NOT_CONFIGURED" : "WAITING_CONFIGURATION",
+          candidates: [],
+          selectedCandidateId: null,
+          reason: generated.reason,
+          provenance: { ...provenanceBase, provider: provider.name, model: null },
+        };
+      }
+
+      if (generated.outcome !== "OK" || generated.candidates.length === 0) {
+        return {
+          outcome: "FAILED",
+          runtimeStatus: "OPERATIONAL",
+          candidates: [],
+          selectedCandidateId: null,
+          reason: generated.reason ?? "no_candidates",
+          provenance: { ...provenanceBase, provider: generated.provider, model: generated.model },
+        };
+      }
+
+      const candidates: GeneratedImageCandidate[] = generated.candidates.map((c) => ({
+        candidateId: c.id,
+        uri: c.uri,
+        provider: c.provider,
+        model: c.model,
+        storedAssetId: c.storedAsset?.assetId ?? null,
+        format: c.mimeType,
+      }));
+
+      // Never auto-select candidate[0] as final release.
+      return {
+        outcome: "REVISION_REQUIRED",
+        runtimeStatus: "OPERATIONAL",
+        candidates,
+        selectedCandidateId: null,
+        reason: "candidate_selection_required",
+        provenance: {
+          ...provenanceBase,
+          provider: candidates[0]?.provider ?? provider.name,
+          model: candidates[0]?.model ?? null,
+        },
       };
     }
 
@@ -187,7 +295,7 @@ export async function requestGenerateImage(input: GenerateImageRequest): Promise
     if (result.outcome === "BUDGET_EXCEEDED") {
       return {
         outcome: "BUDGET_EXCEEDED",
-        runtimeStatus: "OPERATIONAL",
+        runtimeStatus: injectedTest ? "OPERATIONAL" : runtimeStatus,
         candidates: [],
         selectedCandidateId: null,
         reason: result.reason,
@@ -205,11 +313,21 @@ export async function requestGenerateImage(input: GenerateImageRequest): Promise
       format: null,
     }));
 
-    // V1: do not auto-select the first candidate as final READY media.
+    if (candidates.some((c) => /^data:/i.test(c.uri)) && !injectedTest) {
+      return {
+        outcome: "FAILED",
+        runtimeStatus: "WAITING_CONFIGURATION",
+        candidates: [],
+        selectedCandidateId: null,
+        reason: "data_uri_not_allowed_as_canonical_asset",
+        provenance: { ...provenanceBase, provider: provider.name, model: null },
+      };
+    }
+
     if (candidates.length === 0) {
       return {
         outcome: "REVISION_REQUIRED",
-        runtimeStatus: "OPERATIONAL",
+        runtimeStatus: injectedTest ? "OPERATIONAL" : runtimeStatus,
         candidates: [],
         selectedCandidateId: null,
         reason: "no_candidates",
@@ -219,7 +337,7 @@ export async function requestGenerateImage(input: GenerateImageRequest): Promise
 
     return {
       outcome: "REVISION_REQUIRED",
-      runtimeStatus: "OPERATIONAL",
+      runtimeStatus: injectedTest ? "OPERATIONAL" : runtimeStatus,
       candidates,
       selectedCandidateId: null,
       reason: "candidate_selection_required",
@@ -253,3 +371,5 @@ export interface GeneratedMediaAssetProvenance {
   format?: string | null;
   source: "generate_image";
 }
+
+export { InMemoryCanonicalMediaStorage };

@@ -401,14 +401,31 @@ const generateImageTool: AgentTool = {
   },
   mutating: true,
   execute: async (ctx, args) => {
+    const { resolveCurrentTenant } = await import("../../tenants/current-tenant.ts");
+    const tenantResolution = await resolveCurrentTenant(ctx.supabase, ctx.ownerId);
+    const tenantId = tenantResolution.active?.tenantId;
+    if (!tenantId) {
+      return {
+        outcome: "FAILED",
+        runtimeStatus: "NOT_CONFIGURED",
+        candidates: [],
+        selectedCandidateId: null,
+        reason: "tenant_required_for_billable_ai",
+        capability: "media.image_generation",
+        persistedMediaAssetIds: [] as string[],
+        uiState: "setup_required",
+      };
+    }
     const provider = getImageProvider();
     const runtime = resolveImageGenerationRuntimeStatus({
       providerConfigured: Boolean(provider) && !(provider instanceof BlockedImageProvider),
+      storageReady: false,
+      tenantAuthorized: true,
     });
     const result = await requestGenerateImage({
-      tenantId: ctx.ownerId,
-      missionId: str(args, "missionId") || `mission_${ctx.ownerId}`,
-      sessionId: str(args, "sessionId") || `session_${ctx.ownerId}`,
+      tenantId,
+      missionId: str(args, "missionId") || `mission_${tenantId}`,
+      sessionId: str(args, "sessionId") || `session_${tenantId}`,
       briefText: str(args, "brief"),
       referenceMediaAssetIds: arr(args, "referenceMediaAssetIds"),
       candidateCount: typeof args.candidateCount === "number" ? args.candidateCount : 2,

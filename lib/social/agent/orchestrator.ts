@@ -287,6 +287,21 @@ export async function runAgentTurn(ctx: OwnerContext, sessionId: string, runId: 
     return { blocked: true as const, reason: "ai_not_configured", message, runId };
   }
 
+  // Resolve real tenants.id for billable AI — never use ownerId or a fake session string.
+  const { resolveCurrentTenant } = await import("../../tenants/current-tenant.ts");
+  const tenantResolution = await resolveCurrentTenant(ctx.supabase, ctx.ownerId);
+  const tenantId = tenantResolution.active?.tenantId;
+  if (!tenantId) {
+    const message =
+      "No active client tenant is selected, so AI processing cannot be attributed safely. " +
+      "Select a client in the admin switcher and try again.";
+    await insertMessage(ctx, sessionId, "AGENT", message);
+    await setSessionStatus(ctx, sessionId, "BLOCKED");
+    await recordRunEvent(ctx, runId, { type: "RUN_FAILED", label: PHASE_LABELS.RUN_FAILED, status: "FAILED", meta: { reason: "tenant_required_for_billable_ai" } });
+    await completeRun(ctx, runId, "FAILED", "tenant_required_for_billable_ai");
+    return { blocked: true as const, reason: "tenant_required", message, runId };
+  }
+
   const settings = await getAutomationSettings(ctx);
   const brandProfile = await getBrandProfile(ctx);
   // Current mission media only: attachments on the latest user message — never old-session fallback.
@@ -396,6 +411,11 @@ export async function runAgentTurn(ctx: OwnerContext, sessionId: string, runId: 
       const result = await provider.complete(messages, toolSchemas(), {
         brandInstructions: selectGeminiBrandInstructions(brandProfile),
         creativeImages,
+        tenantId,
+        missionId: sessionId,
+        sessionId,
+        copilotIntent,
+        supabase: ctx.supabase as never,
       });
       await recordRunEvent(ctx, runId, {
         type: "PROVIDER_RESPONSE_RECEIVED",
@@ -417,8 +437,12 @@ export async function runAgentTurn(ctx: OwnerContext, sessionId: string, runId: 
 
       // Record the model's own turn before appending tool results — without
       // this, a later round replays tool-result messages with no preceding
-      // assistant turn to anchor them to.
-      messages.push({ role: "assistant", content: result.text || "" });
+      // assistant turn to anchor them to. Attach toolCalls for OpenAI Responses linkage.
+      messages.push({
+        role: "assistant",
+        content: result.text || "",
+        toolCalls: result.toolCalls.map((c) => ({ id: c.id, name: c.name, arguments: c.arguments })),
+      });
 
       const { ready: toolCalls, deferredByUpstream } = splitDependentCalls(result.toolCalls);
       for (const call of toolCalls) {

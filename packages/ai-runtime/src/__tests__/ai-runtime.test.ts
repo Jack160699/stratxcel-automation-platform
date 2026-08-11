@@ -439,7 +439,7 @@ async function run() {
         { status: 200 },
       );
     const video2 = new VideoMediaRuntime({ geminiApiKey: "g", fetchImpl: pollFetch, sleepMs: async () => {} });
-    video2.seedOperation(submitted);
+    await video2.seedOperation(submitted);
     const done = await video2.poll(submitted.operationId);
     assert.equal(done.status, "completed");
     assert.ok(done.artifactUri);

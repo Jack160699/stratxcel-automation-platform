@@ -117,6 +117,8 @@ export interface AIMessage {
   content: string;
   toolCallId?: string;
   toolName?: string;
+  /** When role=assistant, optional function_call items for Responses API continuation. */
+  toolCalls?: AIToolCall[];
 }
 
 export interface AIToolSchema {

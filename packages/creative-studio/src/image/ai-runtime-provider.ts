@@ -16,11 +16,18 @@ export class AiRuntimeImageProvider implements ImageProvider {
     candidateCount: number;
     budget: StudioBudget;
     tier?: "fast" | "standard" | "premium";
+    /** Optional pre-resolved reference bytes (tenant-verified). */
+    referenceImages?: Array<{ mimeType: string; data: string }>;
+    storage?: import("@stratxcel/ai-runtime").CanonicalMediaStorage;
+    persistCanonical?: boolean;
   }): Promise<ImageGenerationResult> {
     assertBudgetAllows(args.budget, args.candidateCount);
 
     const mod = await import("@stratxcel/ai-runtime");
-    const runtime = new mod.ImageMediaRuntime();
+    const runtime = new mod.ImageMediaRuntime({
+      storage: args.storage,
+      requireStorageForOperational: Boolean(args.storage) || Boolean(args.persistCanonical),
+    });
     if (!runtime.isConfigured()) {
       return {
         outcome: "WAITING_CAPABILITY",
@@ -30,6 +37,18 @@ export class AiRuntimeImageProvider implements ImageProvider {
       };
     }
 
+    if (args.persistCanonical || args.storage) {
+      const storageReady = await runtime.isStorageReady();
+      if (!storageReady) {
+        return {
+          outcome: "WAITING_CAPABILITY",
+          candidates: [],
+          reason: "image_storage_not_ready",
+          budgetAfter: args.budget,
+        };
+      }
+    }
+
     const result = await runtime.generate({
       tenantId: args.brief.tenantId,
       missionId: args.brief.missionId,
@@ -37,11 +56,17 @@ export class AiRuntimeImageProvider implements ImageProvider {
       aspectRatio: args.artDirection.aspectRatio,
       candidateCount: args.candidateCount,
       tier: args.tier ?? "standard",
+      referenceAssetIds: args.referenceAssetIds,
+      referenceImages: args.referenceImages,
+      persistCanonical: args.persistCanonical ?? Boolean(args.storage),
     });
 
     if (result.outcome !== "OK" || result.candidates.length === 0) {
       return {
-        outcome: result.outcome === "NOT_CONFIGURED" ? "WAITING_CAPABILITY" : "WAITING_CAPABILITY",
+        outcome:
+          result.outcome === "NOT_CONFIGURED" || result.outcome === "WAITING_CONFIGURATION"
+            ? "WAITING_CAPABILITY"
+            : "WAITING_CAPABILITY",
         candidates: [],
         reason: result.reason ?? result.outcome,
         budgetAfter: args.budget,

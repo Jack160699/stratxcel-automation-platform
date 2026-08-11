@@ -62,12 +62,14 @@ export class SupabaseUsageRecorder implements AIUsageRecorder {
   private readonly client: {
     from: (table: string) => {
       insert: (row: Record<string, unknown>) => PromiseLike<{ error: { message: string } | null }>;
+      select?: (cols: string) => unknown;
     };
   };
 
   constructor(client: {
     from: (table: string) => {
       insert: (row: Record<string, unknown>) => PromiseLike<{ error: { message: string } | null }>;
+      select?: (cols: string) => unknown;
     };
   }) {
     this.client = client;
@@ -117,5 +119,22 @@ export class SupabaseUsageRecorder implements AIUsageRecorder {
         },
       });
     }
+  }
+
+  async sumSpendUsdForTenantMonth(tenantId: string, monthKey: string): Promise<number> {
+    const monthStart = `${monthKey}-01T00:00:00.000Z`;
+    const select = this.client.from("ai_execution_usage").select;
+    if (typeof select !== "function") return 0;
+    const chain = select.call(this.client.from("ai_execution_usage"), "estimated_cost_usd") as {
+      eq: (col: string, val: string) => {
+        gte: (col: string, val: string) => PromiseLike<{
+          data: Array<{ estimated_cost_usd?: number | string }> | null;
+          error: unknown;
+        }>;
+      };
+    };
+    const { data, error } = await chain.eq("tenant_id", tenantId).gte("created_at", monthStart);
+    if (error || !data) return 0;
+    return data.reduce((sum, row) => sum + Number(row.estimated_cost_usd ?? 0), 0);
   }
 }

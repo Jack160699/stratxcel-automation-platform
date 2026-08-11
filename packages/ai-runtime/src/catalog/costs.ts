@@ -2,163 +2,244 @@ import type { AICostMetadata, AIProviderId, AIUsage } from "../types.ts";
 import { MODEL_CATALOG, type ModelCatalogKey, resolveModelId } from "./models.ts";
 
 /**
- * Centralized pricing metadata for estimation/accounting only.
+ * Official provider pricing metadata for estimation/accounting only.
  * Provider billing dashboards remain authoritative — these are not invoices.
+ * verifiedAt: 2026-08-11 from ai.google.dev/gemini-api/docs/pricing and OpenAI pricing docs.
  */
-export const COST_CATALOG: Record<string, AICostMetadata> = {
+
+export type ImageResolution = "0.5K" | "1K" | "2K" | "4K";
+export type ImageQuality = "low" | "medium" | "high";
+export type VideoResolution = "720p" | "1080p" | "4k";
+
+export interface AICostMetadataExtended extends AICostMetadata {
+  pricingDimension: "token" | "image_resolution" | "image_token" | "video_resolution_second" | "audio_minute";
+  source: "openai" | "google";
+  /** Resolution → USD for fixed image unit pricing (Google). */
+  imageByResolutionUsd?: Partial<Record<ImageResolution, number>>;
+  /** Quality+size estimates for OpenAI gpt-image-2 (approx from official calculator). */
+  openaiImageApproxUsd?: Partial<Record<ImageQuality, Partial<Record<string, number>>>>;
+  /** OpenAI gpt-image-2 token rates when token counts are known. */
+  textInputUsdPerMillion?: number;
+  imageInputUsdPerMillion?: number;
+  imageOutputUsdPerMillion?: number;
+  cachedTextInputUsdPerMillion?: number;
+  cachedImageInputUsdPerMillion?: number;
+  /** Resolution → USD/sec for Veo. */
+  videoByResolutionUsdPerSecond?: Partial<Record<VideoResolution, number>>;
+}
+
+export const COST_CATALOG: Record<string, AICostMetadataExtended> = {
   [MODEL_CATALOG.GOOGLE_CHEAP.id]: {
     provider: "google",
     model: MODEL_CATALOG.GOOGLE_CHEAP.id,
     unit: "token",
-    inputUsdPerMillion: 0.1,
-    cachedInputUsdPerMillion: 0.025,
-    outputUsdPerMillion: 0.4,
+    pricingDimension: "token",
+    source: "google",
+    inputUsdPerMillion: 0.3,
+    cachedInputUsdPerMillion: 0.03,
+    outputUsdPerMillion: 2.5,
     verifiedAt: "2026-08-11",
-    sourceNote: "Internal COGS estimate for Gemini Flash-Lite class",
+    sourceNote: "Official Gemini Developer API pricing — Gemini 3.5 Flash-Lite paid tier",
   },
   [MODEL_CATALOG.GOOGLE_STANDARD.id]: {
     provider: "google",
     model: MODEL_CATALOG.GOOGLE_STANDARD.id,
     unit: "token",
-    inputUsdPerMillion: 0.3,
-    cachedInputUsdPerMillion: 0.075,
-    outputUsdPerMillion: 2.5,
+    pricingDimension: "token",
+    source: "google",
+    inputUsdPerMillion: 1.5,
+    cachedInputUsdPerMillion: 0.15,
+    outputUsdPerMillion: 7.5,
     verifiedAt: "2026-08-11",
-    sourceNote: "Internal COGS estimate for Gemini Flash class",
+    sourceNote: "Official Gemini Developer API pricing — Gemini 3.6 Flash paid tier",
   },
   [MODEL_CATALOG.OPENAI_CHEAP_FALLBACK.id]: {
     provider: "openai",
     model: MODEL_CATALOG.OPENAI_CHEAP_FALLBACK.id,
     unit: "token",
-    inputUsdPerMillion: 0.1,
-    cachedInputUsdPerMillion: 0.025,
-    outputUsdPerMillion: 0.4,
+    pricingDimension: "token",
+    source: "openai",
+    inputUsdPerMillion: 0.2,
+    cachedInputUsdPerMillion: 0.02,
+    outputUsdPerMillion: 1.25,
     verifiedAt: "2026-08-11",
-    sourceNote: "Internal COGS estimate for GPT nano class",
+    sourceNote: "Official OpenAI pricing — gpt-5.4-nano",
   },
   [MODEL_CATALOG.OPENAI_STANDARD_FALLBACK.id]: {
     provider: "openai",
     model: MODEL_CATALOG.OPENAI_STANDARD_FALLBACK.id,
     unit: "token",
-    inputUsdPerMillion: 0.4,
-    cachedInputUsdPerMillion: 0.1,
-    outputUsdPerMillion: 1.6,
+    pricingDimension: "token",
+    source: "openai",
+    inputUsdPerMillion: 0.75,
+    cachedInputUsdPerMillion: 0.075,
+    outputUsdPerMillion: 4.5,
     verifiedAt: "2026-08-11",
-    sourceNote: "Internal COGS estimate for GPT mini class",
+    sourceNote: "Official OpenAI pricing — gpt-5.4-mini",
   },
   [MODEL_CATALOG.OPENAI_COST_SENSITIVE_STRONG.id]: {
     provider: "openai",
     model: MODEL_CATALOG.OPENAI_COST_SENSITIVE_STRONG.id,
     unit: "token",
+    pricingDimension: "token",
+    source: "openai",
     inputUsdPerMillion: 1.0,
-    cachedInputUsdPerMillion: 0.25,
-    outputUsdPerMillion: 4.0,
+    cachedInputUsdPerMillion: 0.1,
+    outputUsdPerMillion: 6.0,
     verifiedAt: "2026-08-11",
-    sourceNote: "Internal COGS estimate for Luna class",
+    sourceNote: "Official OpenAI pricing — gpt-5.6-luna",
   },
   [MODEL_CATALOG.OPENAI_PREMIUM.id]: {
     provider: "openai",
     model: MODEL_CATALOG.OPENAI_PREMIUM.id,
     unit: "token",
+    pricingDimension: "token",
+    source: "openai",
     inputUsdPerMillion: 2.5,
-    cachedInputUsdPerMillion: 0.625,
-    outputUsdPerMillion: 10.0,
+    cachedInputUsdPerMillion: 0.25,
+    outputUsdPerMillion: 15.0,
     verifiedAt: "2026-08-11",
-    sourceNote: "Internal COGS estimate for Terra class",
+    sourceNote: "Official OpenAI pricing — gpt-5.6-terra",
   },
   [MODEL_CATALOG.OPENAI_FRONTIER.id]: {
     provider: "openai",
     model: MODEL_CATALOG.OPENAI_FRONTIER.id,
     unit: "token",
+    pricingDimension: "token",
+    source: "openai",
     inputUsdPerMillion: 5.0,
-    cachedInputUsdPerMillion: 1.25,
-    outputUsdPerMillion: 20.0,
+    cachedInputUsdPerMillion: 0.5,
+    outputUsdPerMillion: 30.0,
     verifiedAt: "2026-08-11",
-    sourceNote: "Internal COGS estimate for Sol class",
+    sourceNote: "Official OpenAI pricing — gpt-5.6-sol",
   },
   [MODEL_CATALOG.GOOGLE_IMAGE_FAST.id]: {
     provider: "google",
     model: MODEL_CATALOG.GOOGLE_IMAGE_FAST.id,
     unit: "image",
-    imageUnitCostUsd: 0.01,
+    pricingDimension: "image_resolution",
+    source: "google",
+    imageUnitCostUsd: 0.0336,
+    imageByResolutionUsd: { "1K": 0.0336 },
     verifiedAt: "2026-08-11",
-    sourceNote: "Internal image unit estimate (lite)",
+    sourceNote: "Official Gemini 3.1 Flash Lite Image — ~$0.0336 per 1K image",
   },
   [MODEL_CATALOG.GOOGLE_IMAGE_STANDARD.id]: {
     provider: "google",
     model: MODEL_CATALOG.GOOGLE_IMAGE_STANDARD.id,
     unit: "image",
-    imageUnitCostUsd: 0.04,
+    pricingDimension: "image_resolution",
+    source: "google",
+    imageUnitCostUsd: 0.067,
+    imageByResolutionUsd: {
+      "0.5K": 0.045,
+      "1K": 0.067,
+      "2K": 0.101,
+      "4K": 0.151,
+    },
     verifiedAt: "2026-08-11",
-    sourceNote: "Internal image unit estimate (standard)",
+    sourceNote: "Official Gemini 3.1 Flash Image — resolution-aware image output pricing",
   },
   [MODEL_CATALOG.GOOGLE_IMAGE_PREMIUM.id]: {
     provider: "google",
     model: MODEL_CATALOG.GOOGLE_IMAGE_PREMIUM.id,
     unit: "image",
-    imageUnitCostUsd: 0.12,
+    pricingDimension: "image_resolution",
+    source: "google",
+    imageUnitCostUsd: 0.134,
+    imageByResolutionUsd: {
+      "1K": 0.134,
+      "2K": 0.202,
+      "4K": 0.302,
+    },
     verifiedAt: "2026-08-11",
-    sourceNote: "Internal image unit estimate (premium)",
+    sourceNote: "Gemini 3 Pro Image — premium tier estimate anchored to Flash Image token economics",
   },
   [MODEL_CATALOG.OPENAI_IMAGE_FALLBACK.id]: {
     provider: "openai",
     model: MODEL_CATALOG.OPENAI_IMAGE_FALLBACK.id,
     unit: "image",
-    imageUnitCostUsd: 0.08,
+    pricingDimension: "image_token",
+    source: "openai",
+    textInputUsdPerMillion: 5.0,
+    cachedTextInputUsdPerMillion: 1.25,
+    imageInputUsdPerMillion: 8.0,
+    cachedImageInputUsdPerMillion: 2.0,
+    imageOutputUsdPerMillion: 30.0,
+    openaiImageApproxUsd: {
+      low: { "1024x1024": 0.006, "1024x1536": 0.005, "1536x1024": 0.005 },
+      medium: { "1024x1024": 0.053, "1024x1536": 0.041, "1536x1024": 0.041 },
+      high: { "1024x1024": 0.211, "1024x1536": 0.165, "1536x1024": 0.165 },
+    },
     verifiedAt: "2026-08-11",
-    sourceNote: "Internal image unit estimate (OpenAI fallback)",
+    sourceNote: "Official OpenAI gpt-image-2 token pricing + calculator approx per quality/size",
   },
   [MODEL_CATALOG.GOOGLE_VIDEO_ECONOMY.id]: {
     provider: "google",
     model: MODEL_CATALOG.GOOGLE_VIDEO_ECONOMY.id,
     unit: "video_second",
+    pricingDimension: "video_resolution_second",
+    source: "google",
     videoSecondCostUsd: 0.05,
+    videoByResolutionUsdPerSecond: { "720p": 0.05, "1080p": 0.08 },
     verifiedAt: "2026-08-11",
-    sourceNote: "Internal Veo lite estimate",
+    sourceNote: "Official Veo 3.1 Lite — resolution-aware $/sec with audio",
   },
   [MODEL_CATALOG.GOOGLE_VIDEO_FAST.id]: {
     provider: "google",
     model: MODEL_CATALOG.GOOGLE_VIDEO_FAST.id,
     unit: "video_second",
+    pricingDimension: "video_resolution_second",
+    source: "google",
     videoSecondCostUsd: 0.1,
+    videoByResolutionUsdPerSecond: { "720p": 0.1, "1080p": 0.12, "4k": 0.3 },
     verifiedAt: "2026-08-11",
-    sourceNote: "Internal Veo fast estimate",
+    sourceNote: "Official Veo 3.1 Fast — resolution-aware $/sec with audio",
   },
   [MODEL_CATALOG.GOOGLE_VIDEO_PREMIUM.id]: {
     provider: "google",
     model: MODEL_CATALOG.GOOGLE_VIDEO_PREMIUM.id,
     unit: "video_second",
-    videoSecondCostUsd: 0.2,
+    pricingDimension: "video_resolution_second",
+    source: "google",
+    videoSecondCostUsd: 0.4,
+    videoByResolutionUsdPerSecond: { "720p": 0.4, "1080p": 0.4, "4k": 0.6 },
     verifiedAt: "2026-08-11",
-    sourceNote: "Internal Veo standard estimate",
+    sourceNote: "Official Veo 3.1 Standard — 720p/1080p $0.40/sec, 4k $0.60/sec",
   },
   [MODEL_CATALOG.NORMAL_TRANSCRIPTION.id]: {
     provider: "openai",
     model: MODEL_CATALOG.NORMAL_TRANSCRIPTION.id,
     unit: "audio_minute",
+    pricingDimension: "audio_minute",
+    source: "openai",
     audioUnitCostUsd: 0.003,
     verifiedAt: "2026-08-11",
-    sourceNote: "Internal transcription estimate",
+    sourceNote: "OpenAI transcription estimate",
   },
   [MODEL_CATALOG.NORMAL_TTS.id]: {
     provider: "openai",
     model: MODEL_CATALOG.NORMAL_TTS.id,
     unit: "audio_minute",
+    pricingDimension: "audio_minute",
+    source: "openai",
     audioUnitCostUsd: 0.015,
     verifiedAt: "2026-08-11",
-    sourceNote: "Internal TTS estimate",
+    sourceNote: "OpenAI TTS estimate",
   },
   [MODEL_CATALOG.PREMIUM_TTS.id]: {
     provider: "openai",
     model: MODEL_CATALOG.PREMIUM_TTS.id,
     unit: "audio_minute",
+    pricingDimension: "audio_minute",
+    source: "openai",
     audioUnitCostUsd: 0.03,
     verifiedAt: "2026-08-11",
-    sourceNote: "Internal premium TTS estimate",
+    sourceNote: "OpenAI premium TTS estimate",
   },
 };
 
-export function getCostMetadata(model: string): AICostMetadata | undefined {
+export function getCostMetadata(model: string): AICostMetadataExtended | undefined {
   return COST_CATALOG[model];
 }
 
@@ -179,16 +260,64 @@ export function estimateTokenCostUsd(args: {
   return roundUsd(input + output);
 }
 
-export function estimateImageCostUsd(model: string, imageCount: number): number {
+export function estimateImageCostUsd(
+  model: string,
+  imageCount: number,
+  opts?: { resolution?: ImageResolution; quality?: ImageQuality; size?: string },
+): number {
   const meta = getCostMetadata(model);
-  if (!meta?.imageUnitCostUsd) return 0;
+  if (!meta) return 0;
+
+  if (meta.pricingDimension === "image_token" && meta.openaiImageApproxUsd) {
+    const quality = opts?.quality ?? "medium";
+    const size = opts?.size ?? "1024x1024";
+    const per = meta.openaiImageApproxUsd[quality]?.[size] ?? meta.openaiImageApproxUsd.medium?.["1024x1024"] ?? 0.053;
+    return roundUsd(per * imageCount);
+  }
+
+  if (meta.imageByResolutionUsd) {
+    const resolution = opts?.resolution ?? "1K";
+    const per = meta.imageByResolutionUsd[resolution] ?? meta.imageUnitCostUsd ?? 0;
+    return roundUsd(per * imageCount);
+  }
+
+  if (!meta.imageUnitCostUsd) return 0;
   return roundUsd(meta.imageUnitCostUsd * imageCount);
 }
 
-export function estimateVideoCostUsd(model: string, seconds: number): number {
+/** Token-aware OpenAI image estimate when exact token counts are known. */
+export function estimateOpenAIImageTokenCostUsd(args: {
+  textInputTokens?: number;
+  cachedTextInputTokens?: number;
+  imageInputTokens?: number;
+  cachedImageInputTokens?: number;
+  imageOutputTokens?: number;
+}): number {
+  const meta = getCostMetadata(MODEL_CATALOG.OPENAI_IMAGE_FALLBACK.id);
+  if (!meta) return 0;
+  const text =
+    ((args.textInputTokens ?? 0) / 1_000_000) * (meta.textInputUsdPerMillion ?? 0) +
+    ((args.cachedTextInputTokens ?? 0) / 1_000_000) * (meta.cachedTextInputUsdPerMillion ?? 0);
+  const imageIn =
+    ((args.imageInputTokens ?? 0) / 1_000_000) * (meta.imageInputUsdPerMillion ?? 0) +
+    ((args.cachedImageInputTokens ?? 0) / 1_000_000) * (meta.cachedImageInputUsdPerMillion ?? 0);
+  const imageOut = ((args.imageOutputTokens ?? 0) / 1_000_000) * (meta.imageOutputUsdPerMillion ?? 0);
+  return roundUsd(text + imageIn + imageOut);
+}
+
+export function estimateVideoCostUsd(
+  model: string,
+  seconds: number,
+  opts?: { resolution?: VideoResolution },
+): number {
   const meta = getCostMetadata(model);
-  if (!meta?.videoSecondCostUsd) return 0;
-  return roundUsd(meta.videoSecondCostUsd * seconds);
+  if (!meta) return 0;
+  const resolution = opts?.resolution ?? "720p";
+  const perSec =
+    meta.videoByResolutionUsdPerSecond?.[resolution] ??
+    meta.videoSecondCostUsd ??
+    0;
+  return roundUsd(perSec * seconds);
 }
 
 export function buildUsage(args: {
@@ -220,11 +349,11 @@ export function buildUsage(args: {
   };
 }
 
-export function resolveCatalogCostKey(key: ModelCatalogKey): AICostMetadata | undefined {
+export function resolveCatalogCostKey(key: ModelCatalogKey): AICostMetadataExtended | undefined {
   return getCostMetadata(resolveModelId(key));
 }
 
-export function listCostEntriesForProvider(provider: AIProviderId): AICostMetadata[] {
+export function listCostEntriesForProvider(provider: AIProviderId): AICostMetadataExtended[] {
   return Object.values(COST_CATALOG).filter((c) => c.provider === provider);
 }
 

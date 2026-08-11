@@ -32,23 +32,101 @@ function mapReasoningEffort(level: AIReasoningLevel): string | undefined {
   }
 }
 
-function toResponsesInput(messages: readonly AIMessage[]): Array<Record<string, unknown>> {
-  return messages.map((message) => {
+/**
+ * Build Responses API input with correct function_call ↔ function_call_output linkage.
+ * When an assistant turn carries toolCalls, emit function_call items before later tool results.
+ */
+export function toResponsesInput(messages: readonly AIMessage[]): Array<Record<string, unknown>> {
+  const input: Array<Record<string, unknown>> = [];
+
+  for (let i = 0; i < messages.length; i++) {
+    const message = messages[i]!;
+
     if (message.role === "tool") {
-      return {
+      input.push({
         type: "function_call_output",
         call_id: message.toolCallId ?? "unknown",
         output: message.content,
-      };
+      });
+      continue;
     }
+
+    if (message.role === "assistant") {
+      // Prefer explicit function_call replay when toolCalls are attached to the assistant message.
+      const toolCalls = (message as AIMessage & { toolCalls?: AIToolCall[] }).toolCalls;
+      if (toolCalls?.length) {
+        if (message.content) {
+          input.push({
+            type: "message",
+            role: "assistant",
+            content: [{ type: "output_text", text: message.content }],
+          });
+        }
+        for (const call of toolCalls) {
+          input.push({
+            type: "function_call",
+            call_id: call.id,
+            name: call.name,
+            arguments: JSON.stringify(call.arguments ?? {}),
+          });
+        }
+        continue;
+      }
+      // Infer function_call from immediately following tool messages if assistant has empty content
+      // and subsequent tools exist — used when history stores tool results without attached toolCalls.
+      const followingTools: AIMessage[] = [];
+      for (let j = i + 1; j < messages.length; j++) {
+        if (messages[j]!.role === "tool") followingTools.push(messages[j]!);
+        else break;
+      }
+      if (followingTools.length && !message.content) {
+        for (const tool of followingTools) {
+          input.push({
+            type: "function_call",
+            call_id: tool.toolCallId ?? "unknown",
+            name: tool.toolName ?? "unknown_tool",
+            arguments: "{}",
+          });
+        }
+        continue;
+      }
+      if (message.content) {
+        input.push({
+          type: "message",
+          role: "assistant",
+          content: [{ type: "output_text", text: message.content }],
+        });
+      }
+      continue;
+    }
+
     const role =
-      message.role === "developer" ? "developer" : message.role === "system" ? "system" : message.role === "assistant" ? "assistant" : "user";
-    return {
+      message.role === "developer" ? "developer" : message.role === "system" ? "system" : "user";
+    input.push({
       type: "message",
       role,
-      content: [{ type: role === "assistant" ? "output_text" : "input_text", text: message.content }],
-    };
-  });
+      content: [{ type: "input_text", text: message.content }],
+    });
+  }
+
+  return input;
+}
+
+/** Prefer message output parts; avoid duplicating top-level output_text. */
+export function extractOpenAIResponseText(json: {
+  output_text?: string;
+  output?: Array<{ type?: string; content?: Array<{ type?: string; text?: string }> }>;
+}): string {
+  let fromParts = "";
+  for (const item of json.output ?? []) {
+    if (item.type === "message") {
+      for (const part of item.content ?? []) {
+        if (part.type === "output_text" && part.text) fromParts += part.text;
+      }
+    }
+  }
+  if (fromParts) return fromParts;
+  return json.output_text ?? "";
 }
 
 export class OpenAITextProvider implements AITextProviderAdapter {
@@ -92,7 +170,7 @@ export class OpenAITextProvider implements AITextProviderAdapter {
       }
     }
     if (args.enableWebSearch) {
-      tools.push({ type: "web_search_preview" });
+      tools.push({ type: "web_search" });
     }
 
     const body: Record<string, unknown> = {
@@ -114,9 +192,7 @@ export class OpenAITextProvider implements AITextProviderAdapter {
     };
 
     const effort = mapReasoningEffort(args.reasoningLevel);
-    if (effort) {
-      body.reasoning = { effort };
-    }
+    if (effort) body.reasoning = { effort };
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), args.timeoutMs);
@@ -162,14 +238,9 @@ export class OpenAITextProvider implements AITextProviderAdapter {
         throw new AIProviderError("SAFETY_REFUSAL", "OpenAI safety refusal");
       }
 
-      let text = json.output_text ?? "";
+      const text = extractOpenAIResponseText(json);
       const toolCalls: AIToolCall[] = [];
       for (const item of json.output ?? []) {
-        if (item.type === "message") {
-          for (const part of item.content ?? []) {
-            if (part.type === "output_text" && part.text) text += part.text;
-          }
-        }
         if (item.type === "function_call" && item.name) {
           let parsed: Record<string, unknown> = {};
           try {
