@@ -1,6 +1,7 @@
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getTenantServiceContext } from "@/lib/tenants/tenant-context";
 import { listMembershipsForUser } from "@/lib/tenants/repository";
+import { auditIntakeMissingFields } from "@/lib/audit/customer-state";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -54,6 +55,9 @@ export async function PATCH(request: Request) {
   if (!order) return Response.json({ error: "No audit found for this workspace" }, { status: 404 });
   if (order.status === "pending_payment") {
     return Response.json({ error: "Payment has not been confirmed for this audit yet" }, { status: 402 });
+  }
+  if (order.status !== "paid") {
+    return Response.json({ error: "Intake can no longer be edited after review has started" }, { status: 409 });
   }
 
   const d = body.data as Record<string, unknown>;
@@ -114,7 +118,7 @@ export async function POST() {
   const { supabase: service } = getTenantServiceContext();
   const { data: order } = await service
     .from("audit_orders")
-    .select("id, status")
+    .select("id, status, business_name, industry, website_url, deep_dive_answers, goals_answers")
     .eq("tenant_id", tenantId)
     .order("created_at", { ascending: false })
     .limit(1)
@@ -123,6 +127,14 @@ export async function POST() {
   if (!order) return Response.json({ error: "No audit found for this workspace" }, { status: 404 });
   if (order.status !== "paid") {
     return Response.json({ error: `Audit cannot be started from status '${order.status}'` }, { status: 409 });
+  }
+
+  const missingFields = auditIntakeMissingFields(order);
+  if (missingFields.length > 0) {
+    return Response.json(
+      { error: "Complete all required intake fields before starting the audit", code: "INCOMPLETE_AUDIT_INTAKE", missingFields },
+      { status: 422 },
+    );
   }
 
   const { error } = await service

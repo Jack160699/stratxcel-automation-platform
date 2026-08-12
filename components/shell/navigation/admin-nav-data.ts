@@ -38,6 +38,7 @@ export const ADMIN_NAV_GROUPS_DATA: NavGroupData[] = [
       { key: "approvals", label: "Approvals", href: "/admin/approvals", release: "v1" },
       { key: "handoffs", label: "Human Handoffs", href: "/admin/handoffs", release: "v1" },
       { key: "operations", label: "Operations Queue", href: "/admin/operations", release: "v1" },
+      { key: "audit-delivery", label: "Audit Delivery", href: "/admin/audit-requests", release: "v1" },
     ],
   },
   {

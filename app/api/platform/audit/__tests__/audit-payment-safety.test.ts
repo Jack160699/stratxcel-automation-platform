@@ -95,6 +95,21 @@ function run() {
   assert.ok(/status: 402/.test(intakeSource), "unpaid intake attempts must be rejected with 402, not silently accepted");
   assert.equal(/tenantId\s*[:=]\s*body\.|body\.tenantId/.test(intakeSource), false, "intake must never take tenantId from the request body");
   assert.ok(/listMembershipsForUser\(supabase, user\.id\)/.test(intakeSource), "tenant must be re-derived from the caller's own session on every call");
+  assert.ok(/auditIntakeMissingFields\(order\)/.test(intakeSource), "starting review must validate the persisted intake on the server");
+  assert.ok(/order\.status !== "paid"/.test(intakeSource), "intake must become immutable once review has started");
+
+  // --- 6b. Staff delivery requires a valid report in both API and database
+  const completeSource = readCode("app", "api", "platform", "audit", "complete", "route.ts");
+  assert.ok(/normalizeAuditDeliveryReport\(reportData\)/.test(completeSource), "completion must validate the customer deliverable");
+  assert.ok(/order\.status !== "in_review"/.test(completeSource), "staff must not skip the customer-started review state");
+  assert.ok(/report_data: report/.test(completeSource), "the validated report must be saved before completion");
+  const invariantMigration = readCode("supabase", "migrations", "20260812120000_audit_report_delivery_invariant.sql");
+  assert.ok(/audit_report_required_before_completion/.test(invariantMigration), "database must reject completion without a report");
+  assert.ok(/before update of status on public\.audit_orders/.test(invariantMigration), "the delivery invariant must guard audit order state transitions");
+
+  const staffQueue = readCode("app", "admin", "(shell)", "audit-requests", "page.tsx");
+  assert.ok(/\.from\("audit_orders"\)/.test(staffQueue), "staff delivery must operate on canonical paid audit orders");
+  assert.equal(/\.from\("public_audit_requests"\)/.test(staffQueue), false, "legacy lead requests must not power paid Audit delivery");
 
   // --- 7. No service-role key leaks into any client-shipped file -------------
   for (const file of [

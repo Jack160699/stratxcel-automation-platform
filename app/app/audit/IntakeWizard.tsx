@@ -111,8 +111,8 @@ export function IntakeWizard({ order, onIntakeComplete }: { order: IntakeOrder; 
   }
 
   async function continueFromBusiness() {
-    if (!business.businessName.trim()) {
-      setError("Business name is required.");
+    if (!business.businessName.trim() || !business.industry.trim() || !business.websiteUrl.trim()) {
+      setError("Business name, industry, and website are required.");
       return;
     }
     const ok = await save("business", { ...business, ...(wantsGstInvoice ? { gstInvoice } : {}) });
@@ -122,6 +122,10 @@ export function IntakeWizard({ order, onIntakeComplete }: { order: IntakeOrder; 
   }
 
   async function continueFromDeepDive() {
+    if (![deepDive.idealCustomers, deepDive.majorProducts, deepDive.competitors, deepDive.leadSources, deepDive.differentiation].every((value) => value.trim())) {
+      setError("Complete the required customer, offering, competitor, lead source, and differentiation fields.");
+      return;
+    }
     const ok = await save("deep_dive", deepDive);
     if (!ok) return;
     trackFunnel("audit_deep_dive_completed", { surface: "audit_intake" });
@@ -129,6 +133,10 @@ export function IntakeWizard({ order, onIntakeComplete }: { order: IntakeOrder; 
   }
 
   async function continueFromGoals() {
+    if (![goals.successDefinition, goals.biggestObstacle, goals.topPriorities].every((value) => value.trim())) {
+      setError("Success definition, biggest obstacle, and top priorities are required.");
+      return;
+    }
     const ok = await save("goals", goals);
     if (!ok) return;
     trackFunnel("audit_goals_completed", { surface: "audit_intake" });
