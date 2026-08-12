@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono, Instrument_Sans, JetBrains_Mono } from "next/font/google";
+import { Geist, Geist_Mono, Instrument_Sans } from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
 import { GoogleAnalytics } from "@/app/components/GoogleAnalytics";
 import { ScrollRestoration } from "@/app/components/ScrollRestoration";
@@ -33,18 +33,11 @@ const instrumentSans = Instrument_Sans({
   display: "swap",
 });
 
-const jetbrainsMono = JetBrains_Mono({
-  variable: "--font-jetbrains-mono",
-  subsets: ["latin"],
-  weight: ["400", "500", "600"],
-  display: "swap",
-});
-
 export const metadata: Metadata = {
   metadataBase: new URL("https://www.stratxcel.in"),
   title: "Stratxcel — practical growth operations for small businesses",
   description:
-    "Start with a staff-delivered Business Growth Audit, then activate the growth workflows that fit your business.",
+    "Start with an evidence-backed AI Business Growth Audit, then activate the growth workflows that fit your business.",
   icons: {
     icon: [
       { url: "/favicon-32.png", sizes: "32x32", type: "image/png" },
@@ -55,7 +48,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "Stratxcel — practical growth operations for small businesses",
     description:
-      "Start with a staff-delivered Business Growth Audit, then activate the growth workflows that fit your business.",
+      "Start with an evidence-backed AI Business Growth Audit, then activate the growth workflows that fit your business.",
     type: "website",
     images: [{ url: "/logo-v2.png", width: 641, height: 641 }],
   },
@@ -81,7 +74,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} ${instrumentSans.variable} ${jetbrainsMono.variable} h-full antialiased`}
+      className={`${geistSans.variable} ${geistMono.variable} ${instrumentSans.variable} h-full antialiased`}
     >
       <body className="min-h-full bg-[#05070e] text-slate-100">
         <ScrollRestoration />
