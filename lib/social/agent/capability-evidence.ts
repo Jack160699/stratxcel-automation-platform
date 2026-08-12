@@ -41,8 +41,21 @@ export function buildProductCapabilityEvidence(input: {
 export function resolveImageGenerationRuntimeStatus(input?: {
   providerConfigured?: boolean;
   testProviderInjected?: boolean;
+  storageReady?: boolean;
+  modelAvailable?: boolean;
+  budgetValid?: boolean;
+  tenantAuthorized?: boolean;
 }): CapabilityRuntimeStatus {
   if (input?.testProviderInjected) return "OPERATIONAL";
-  if (input?.providerConfigured) return "OPERATIONAL";
-  return "NOT_CONFIGURED";
+  if (!input?.providerConfigured) return "NOT_CONFIGURED";
+  // Key alone is not OPERATIONAL — storage + auth + budget + model readiness required.
+  if (
+    input.storageReady === true &&
+    input.modelAvailable !== false &&
+    input.budgetValid !== false &&
+    input.tenantAuthorized !== false
+  ) {
+    return "OPERATIONAL";
+  }
+  return "WAITING_CONFIGURATION";
 }

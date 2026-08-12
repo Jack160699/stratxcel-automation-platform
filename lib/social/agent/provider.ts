@@ -1,10 +1,32 @@
+/**
+ * Social Copilot provider — routes through @stratxcel/ai-runtime while preserving
+ * a provider-neutral Social outbound boundary for Google AND OpenAI.
+ */
+
+import {
+  createTenantAIRuntime,
+  GeminiTextProvider,
+  OpenAITextProvider,
+  resolveModelId,
+  resolveTenantMonthSpend,
+  resolveTenantPlanTier,
+  type AIExecutionResult,
+  type AIMessage,
+  type PlanTier,
+} from "@stratxcel/ai-runtime";
 import {
   buildGeminiRequest,
   GEMINI_GENERATE_CONTENT_URL,
   GEMINI_MODEL,
+  sanitizeGeminiText,
   type GeminiBoundaryInput,
   type GeminiConversationTurn,
 } from "./gemini-boundary.ts";
+import {
+  assertSocialOutboundSafe,
+  buildSocialOutboundBoundary,
+  mapCopilotIntentToTaskClass,
+} from "./social-outbound-boundary.ts";
 
 export interface ToolSchema {
   name: string;
@@ -12,17 +34,18 @@ export interface ToolSchema {
   parameters: Record<string, unknown>;
 }
 
+export interface ToolCallRequest {
+  id: string;
+  name: string;
+  arguments: Record<string, unknown>;
+}
+
 export interface AgentTurnMessage {
   role: "system" | "user" | "assistant" | "tool";
   content: string;
   toolCallId?: string;
   toolName?: string;
-}
-
-export interface ToolCallRequest {
-  id: string;
-  name: string;
-  arguments: Record<string, unknown>;
+  toolCalls?: ToolCallRequest[];
 }
 
 export interface CompletionResult {
@@ -36,11 +59,30 @@ export interface ProviderSafeContext {
   draftCaptions?: string[];
   businessInformation?: string[];
   creativeImages?: Array<{ mimeType: string; data: string }>;
+  /** Real tenants.id — required for billable AI. */
+  tenantId?: string;
+  missionId?: string | null;
+  sessionId?: string | null;
+  /** Copilot intent → task class mapping. */
+  copilotIntent?: string;
+  /** Optional owner/authorization client for plan reads (RLS-bound). */
+  authorizationClient?: Parameters<typeof createTenantAIRuntime>[0]["supabase"];
+  /** @deprecated Prefer authorizationClient — never pass as ledger writer. */
+  supabase?: Parameters<typeof createTenantAIRuntime>[0]["supabase"];
+  /** Service-role writer for metering — set after owner/tenant authorization. */
+  internalWriteClient?: Parameters<typeof createTenantAIRuntime>[0]["internalWriteClient"];
+  plan?: PlanTier;
+  spentUsdThisMonth?: number;
+  /**
+   * Test/production seam: inject AIRuntime deps (fake providers) without weakening
+   * the Social provider encapsulation for callers that omit this field.
+   */
+  runtimeDeps?: import("@stratxcel/ai-runtime").AIRuntimeDeps;
 }
 
 export interface AIProvider {
-  readonly name: "gemini";
-  readonly envKey: "GEMINI_API_KEY";
+  readonly name: "gemini" | "openai" | "ai-runtime";
+  readonly envKey: "GEMINI_API_KEY" | "OPENAI_API_KEY" | "AI_ROUTER";
   isConfigured(): boolean;
   complete(messages: AgentTurnMessage[], tools: ToolSchema[], context: ProviderSafeContext): Promise<CompletionResult>;
 }
@@ -53,9 +95,25 @@ export interface EffectiveProviderIdentity {
 }
 
 export function resolveEffectiveProviderIdentity(): EffectiveProviderIdentity {
-  return process.env.GEMINI_API_KEY
-    ? { provider: "Google Gemini", protocol: "Gemini Developer API", model: GEMINI_MODEL, configured: true }
-    : { provider: "Not configured", protocol: "—", model: "—", configured: false };
+  const gemini = Boolean(process.env.GEMINI_API_KEY);
+  const openai = Boolean(process.env.OPENAI_API_KEY);
+  if (gemini) {
+    return {
+      provider: "Google Gemini",
+      protocol: "AI Runtime / Gemini Developer API",
+      model: resolveModelId("GOOGLE_CHEAP"),
+      configured: true,
+    };
+  }
+  if (openai) {
+    return {
+      provider: "OpenAI",
+      protocol: "AI Runtime / Responses API",
+      model: resolveModelId("OPENAI_CHEAP_FALLBACK"),
+      configured: true,
+    };
+  }
+  return { provider: "Not configured", protocol: "—", model: "—", configured: false };
 }
 
 export interface GeminiResponseCandidatePart {
@@ -63,14 +121,6 @@ export interface GeminiResponseCandidatePart {
   functionCall?: { name: string; args?: Record<string, unknown> };
 }
 
-/**
- * Pure, network-free parsing of Gemini's response parts into the normalized
- * {text, toolCalls} shape — factored out of GeminiProvider.complete() so
- * this mapping (the actual "Blocker B" fix) is unit-testable without a real
- * HTTP call. Gemini never returns a call id, so one is synthesized per part
- * — it only needs to be unique within this single response, to correlate
- * the pushed tool-result message back to this call within the same round.
- */
 export function parseGeminiCompletionParts(parts: GeminiResponseCandidatePart[]): CompletionResult {
   let text = "";
   const toolCalls: ToolCallRequest[] = [];
@@ -95,47 +145,170 @@ class GeminiProvider implements AIProvider {
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) throw new Error("GEMINI_API_KEY not configured");
 
-    // Real multi-round tool calling needs the full ordered history —
-    // assistant text and prior tool results — not just the user turns a
-    // single-shot caller would send. The system-role message (if any)
-    // becomes the request's system_instruction instead of the fixed
-    // Social-Copilot default, so callers with their own system prompt
-    // (e.g. Agent Core's admin/client prompts) aren't silently overridden.
-    const systemMessage = messages.find((message) => message.role === "system")?.content;
-    const conversation: GeminiConversationTurn[] = messages
-      .filter((message): message is AgentTurnMessage & { role: "user" | "assistant" | "tool" } => message.role !== "system")
+    const envelope = buildSocialOutboundBoundary({ messages, context });
+    assertSocialOutboundSafe(envelope);
+
+    const systemMessage = envelope.messages.find((message) => message.role === "system")?.content;
+    const conversation: GeminiConversationTurn[] = envelope.messages
+      .filter((message): message is SocialMsg => message.role === "user" || message.role === "assistant" || message.role === "tool")
       .map((message) => ({ role: message.role, content: message.content, toolName: message.toolName }));
 
     const boundaryInput: GeminiBoundaryInput = {
       userPrompts: [],
-      brandInstructions: context.brandInstructions,
-      contentIdeas: context.contentIdeas ?? [],
-      draftCaptions: context.draftCaptions ?? [],
-      businessInformation: context.businessInformation ?? [],
+      brandInstructions: envelope.context.brandInstructions,
+      contentIdeas: envelope.context.contentIdeas,
+      draftCaptions: envelope.context.draftCaptions,
+      businessInformation: envelope.context.businessInformation,
       conversation,
       systemInstruction: systemMessage,
       tools: tools.map((tool) => ({ name: tool.name, description: tool.description, parameters: tool.parameters })),
-      creativeImages: context.creativeImages,
+      creativeImages: envelope.context.creativeImages,
     };
     const request = buildGeminiRequest(boundaryInput);
-    const requestFields = Object.keys(request);
+    const model = resolveModelId("GOOGLE_CHEAP");
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
 
-    const response = await fetch(GEMINI_GENERATE_CONTENT_URL, {
+    const response = await fetch(url, {
       method: "POST",
       headers: { "x-goog-api-key": apiKey, "Content-Type": "application/json" },
       body: JSON.stringify(request),
     });
-    console.info("Gemini request", { requestFields, status: response.status });
+    console.info("Gemini request", { requestFields: Object.keys(request), status: response.status, model });
     if (!response.ok) throw new Error(`Gemini request failed: HTTP ${response.status}`);
 
-    const json = await response.json() as {
+    const json = (await response.json()) as {
       candidates?: Array<{ content?: { parts?: GeminiResponseCandidatePart[] } }>;
     };
     return parseGeminiCompletionParts(json.candidates?.[0]?.content?.parts ?? []);
   }
 }
 
-const PROVIDERS: AIProvider[] = [new GeminiProvider()];
+type SocialMsg = AgentTurnMessage & { role: "user" | "assistant" | "tool" };
+
+class AiRuntimeSocialProvider implements AIProvider {
+  readonly name = "ai-runtime" as const;
+  readonly envKey = "AI_ROUTER" as const;
+
+  isConfigured() {
+    return Boolean(process.env.GEMINI_API_KEY || process.env.OPENAI_API_KEY);
+  }
+
+  async complete(messages: AgentTurnMessage[], tools: ToolSchema[], context: ProviderSafeContext): Promise<CompletionResult> {
+    const tenantId = context.tenantId?.trim();
+    if (!tenantId) {
+      throw new Error("tenant_required_for_billable_ai");
+    }
+
+    const envelope = buildSocialOutboundBoundary({ messages, context });
+    assertSocialOutboundSafe(envelope);
+
+    // Also construct Gemini boundary request to keep allowlist regression parity for Google path.
+    const systemMessage = envelope.messages.find((m) => m.role === "system")?.content;
+    const conversation: GeminiConversationTurn[] = envelope.messages
+      .filter((m): m is SocialMsg => m.role === "user" || m.role === "assistant" || m.role === "tool")
+      .map((m) => ({ role: m.role, content: m.content, toolName: m.toolName }));
+    buildGeminiRequest({
+      userPrompts: [],
+      brandInstructions: envelope.context.brandInstructions,
+      contentIdeas: envelope.context.contentIdeas,
+      draftCaptions: envelope.context.draftCaptions,
+      businessInformation: envelope.context.businessInformation,
+      conversation,
+      systemInstruction: systemMessage,
+      tools: tools.map((tool) => ({ name: tool.name, description: tool.description, parameters: tool.parameters })),
+      creativeImages: envelope.context.creativeImages,
+    });
+
+    const runtimeMessages: AIMessage[] = envelope.messages.map((m) => ({
+      role: m.role,
+      content: m.content,
+      toolCallId: m.toolCallId,
+      toolName: m.toolName,
+      toolCalls: m.toolCalls,
+    }));
+
+    let spent = context.spentUsdThisMonth;
+    let plan = context.plan ?? ("starter" as PlanTier);
+    const authClient = context.authorizationClient ?? context.supabase;
+    const { createSupabaseServiceClient } = await import("../../supabase/service.ts");
+    let internalWriteClient = context.internalWriteClient;
+    if (!internalWriteClient) {
+      try {
+        internalWriteClient = createSupabaseServiceClient() as never;
+      } catch {
+        throw new Error("service_metering_writer_unavailable");
+      }
+    }
+
+    if (authClient || internalWriteClient) {
+      if (spent == null) {
+        const resolved = await resolveTenantMonthSpend(
+          (internalWriteClient ?? authClient) as never,
+          tenantId,
+        );
+        if (!resolved.ok) {
+          throw new Error(`tenant_month_spend_${resolved.reason}`);
+        }
+        spent = resolved.spentUsd;
+      }
+      if (authClient) {
+        try {
+          plan = await resolveTenantPlanTier(authClient as never, tenantId);
+        } catch {
+          plan = context.plan ?? "starter";
+        }
+      }
+    } else if (spent == null) {
+      throw new Error("tenant_month_spend_ledger_unavailable");
+    }
+
+    const { runtime, budgetEnvelope } = createTenantAIRuntime({
+      tenantId,
+      missionId: context.missionId ?? null,
+      sessionId: context.sessionId,
+      plan,
+      spentUsdThisMonth: spent ?? 0,
+      productionBillable: true,
+      internalWriteClient,
+      deps: {
+        google: new GeminiTextProvider({ applySocialBoundarySanitize: sanitizeGeminiText }),
+        openai: new OpenAITextProvider(),
+        ...context.runtimeDeps,
+      },
+    });
+
+    const taskClass = mapCopilotIntentToTaskClass(context.copilotIntent ?? "GENERAL_CONVERSATION");
+    const result: AIExecutionResult = await runtime.execute({
+      tenantId,
+      missionId: context.missionId ?? null,
+      department: "social",
+      taskClass,
+      messages: runtimeMessages,
+      tools: tools.map((t) => ({ name: t.name, description: t.description, parameters: t.parameters })),
+      budgetEnvelope,
+      metadata: {
+        sessionId: context.sessionId ?? null,
+      },
+    });
+
+    if (!result.ok) {
+      throw new Error(result.userSafeError ?? result.errorDetailSafe ?? "AI processing failed");
+    }
+
+    return { text: result.text, toolCalls: result.toolCalls };
+  }
+}
+
+/** Testable factory — production listProviders uses the same class. */
+export function createAiRuntimeSocialProvider(): AIProvider {
+  return new AiRuntimeSocialProvider();
+}
+
+const LEGACY_DIRECT = process.env.AI_ROUTER_ENABLED === "0";
+
+const PROVIDERS: AIProvider[] = LEGACY_DIRECT
+  ? [new GeminiProvider()]
+  : [new AiRuntimeSocialProvider(), new GeminiProvider()];
 
 export function listProviders(): AIProvider[] {
   return PROVIDERS;
@@ -144,3 +317,5 @@ export function listProviders(): AIProvider[] {
 export function resolveConfiguredProvider(): AIProvider | null {
   return PROVIDERS.find((provider) => provider.isConfigured()) ?? null;
 }
+
+export { GEMINI_GENERATE_CONTENT_URL, GEMINI_MODEL, mapCopilotIntentToTaskClass, AiRuntimeSocialProvider };
