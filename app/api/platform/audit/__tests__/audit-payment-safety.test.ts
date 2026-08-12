@@ -98,6 +98,10 @@ function run() {
   assert.ok(/listMembershipsForUser\(supabase, user\.id\)/.test(intakeSource), "tenant must be re-derived from the caller's own session on every call");
   assert.ok(/auditIntakeMissingFields\(order\)/.test(intakeSource), "starting review must validate the persisted intake on the server");
   assert.ok(/order\.status !== "paid"/.test(intakeSource), "intake must become immutable once review has started");
+  assert.ok(/MAX_INTAKE_REQUEST_BYTES/.test(intakeSource) && /request\.body\?\.getReader\(\)/.test(intakeSource), "intake request bodies must be read through a bounded stream");
+  assert.ok(/filterAllowedData\(body\.phase/.test(intakeSource), "intake writes must use the phase-specific key allowlist");
+  assert.ok(/\.eq\("status", "paid"\)/.test(intakeSource), "intake writes must remain conditional on paid status at update time");
+  assert.ok(/isBrandBrainCurrentForAudit\(order, existingBrain\.content\)/.test(intakeSource), "Brand Brain finalization retries must reuse the version built from the same intake");
 
   // --- 6b. Staff delivery requires a valid report in both API and database
   const completeSource = readCode("app", "api", "platform", "audit", "complete", "route.ts");

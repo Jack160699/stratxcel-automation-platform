@@ -165,9 +165,9 @@ export default function AuditHubPage() {
       <div className="mx-auto max-w-3xl px-4 py-8 sm:px-6 lg:px-8">
         <div className="mb-6 text-center">
           <span className="font-sx-mono text-xs font-bold uppercase tracking-wider text-emerald-600">Purchase ✓</span>
-          <h1 className="mt-2 font-sx-sans text-2xl font-bold text-sx-text">Your Stratxcel Audit has started.</h1>
+          <h1 className="mt-2 font-sx-sans text-2xl font-bold text-sx-text">Let&rsquo;s build your Brand Brain.</h1>
           <p className="mt-2 text-sm text-sx-text-muted max-w-lg mx-auto">
-            To make the report specific to your business, complete these three short sections.
+            Answer a few simple questions. We&rsquo;ll turn them into your reusable Stratxcel Brand Brain so the Audit understands your business properly.
           </p>
         </div>
         <IntakeWizard order={order} onIntakeComplete={load} />
@@ -178,8 +178,8 @@ export default function AuditHubPage() {
   if (customerState === "READY_FOR_EXECUTION") {
     return (
       <div className="mx-auto max-w-2xl px-4 py-16 text-center">
-        <h1 className="font-sx-sans text-xl font-semibold text-sx-text">Everything&rsquo;s in.</h1>
-        <p className="mt-2 text-sm text-sx-text-muted">You can start your audit whenever you&rsquo;re ready.</p>
+        <h1 className="font-sx-sans text-xl font-semibold text-sx-text">Your Brand Brain is ready.</h1>
+        <p className="mt-2 text-sm text-sx-text-muted">Your business details are saved. Start the Audit when you&rsquo;re ready.</p>
         {error && <div className="mt-4"><ErrorState message={error} /></div>}
         <Button variant="primary" size="touch" className="mt-6" onClick={startAudit} disabled={starting}>
           {starting ? "Starting…" : "Start My Audit →"}
