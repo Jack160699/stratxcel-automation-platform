@@ -20,11 +20,11 @@ function run() {
   const orchestrator = read("lib", "social", "agent", "orchestrator.ts");
   const tools = read("lib", "social", "agent", "tools.ts");
   const actionPreview = read("lib", "social", "agent", "action-preview.ts");
-  const theme = read("app", "admin", "social", "social-theme.css");
-  const resizable = read("app", "admin", "social", "copilot", "ResizableWorkspace.tsx");
-  const execTrace = read("app", "admin", "social", "copilot", "ExecutionTrace.tsx");
-  const copilotFullPage = read("app", "admin", "social", "copilot", "CopilotFullPage.tsx");
-  const executionStages = read("app", "admin", "social", "copilot", "execution-stages.ts");
+  const theme = read("app", "admin", "(shell)", "social", "social-components.css");
+  const resizable = read("app", "admin", "(shell)", "social", "copilot", "ResizableWorkspace.tsx");
+  const execTrace = read("app", "admin", "(shell)", "social", "copilot", "ExecutionTrace.tsx");
+  const copilotFullPage = read("app", "admin", "(shell)", "social", "copilot", "CopilotFullPage.tsx");
+  const executionStages = read("app", "admin", "(shell)", "social", "copilot", "execution-stages.ts");
 
   // --- Section 1: no false "queued" before a publishing job exists. ---
   assert.ok(
@@ -100,7 +100,7 @@ function run() {
   assert.ok(executionStages.includes('"Ready for your approval"'));
 
   // --- Section 15: the one-approval publishing flow from the prior round remains intact. ---
-  const publishCard = read("app", "admin", "social", "agent", "PublishApprovalCard.tsx");
+  const publishCard = read("app", "admin", "(shell)", "social", "agent", "PublishApprovalCard.tsx");
   assert.ok(publishCard.includes("Approve selected &amp; publish"));
   assert.ok(publishCard.includes("Recommended") && publishCard.includes("Optional"));
   assert.ok(publishCard.includes('aria-label="Platform previews"'));

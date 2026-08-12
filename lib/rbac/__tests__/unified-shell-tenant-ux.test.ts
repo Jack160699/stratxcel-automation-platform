@@ -57,14 +57,14 @@ function run() {
     "an unmatched (stale/forged/removed) cookie value must fall back to the first real membership, never be trusted directly"
   );
 
-  // --- 3. The unified shell renders nothing authenticated without owner auth
+  // --- 3. The unified shell renders only after canonical staff identity
   const shellLayout = read("app", "admin", "(shell)", "layout.tsx");
-  const shellGuardIndex = shellLayout.indexOf("requireOwnerContext()");
+  const shellGuardIndex = shellLayout.indexOf("resolveCanonicalIdentity()");
   const shellLoginIndex = shellLayout.indexOf("return <AdminLogin");
   const shellAppShellIndex = shellLayout.indexOf("<AppShell");
   assert.ok(
     shellGuardIndex !== -1 && shellLoginIndex !== -1 && shellAppShellIndex !== -1,
-    "the shell layout must gate on requireOwnerContext(), fall back to AdminLogin, and only then render AppShell"
+    "the shell layout must resolve canonical identity, fall back to AdminLogin, and only then render AppShell"
   );
   assert.ok(
     shellGuardIndex < shellLoginIndex && shellLoginIndex < shellAppShellIndex,
@@ -74,12 +74,15 @@ function run() {
   // --- 4. Platform pages no longer require manually entered tenant IDs ---
   assert.equal(exists("app", "admin", "platform", "TenantIdBar.tsx"), false, "TenantIdBar.tsx must be deleted");
   assert.equal(exists("app", "admin", "platform", "useTenantId.ts"), false, "useTenantId.ts must be deleted");
-  for (const page of ["missions", "approvals", "finance", "operations", "integrations", "clients"]) {
+  for (const page of ["missions", "approvals", "finance", "operations", "integrations"]) {
     const src = read("app", "admin", "(shell)", page, "page.tsx");
     assert.equal(src.includes("useTenantId"), false, `${page}/page.tsx must not import useTenantId`);
     assert.equal(src.includes("TenantIdBar"), false, `${page}/page.tsx must not render TenantIdBar`);
     assert.ok(src.includes("useCurrentTenant"), `${page}/page.tsx must read the tenant from the shared context instead`);
   }
+  const clientsPage = read("app", "admin", "(shell)", "clients", "page.tsx");
+  assert.ok(clientsPage.includes('fetch("/api/platform/tenants")'), "the agency client list must use its staff-authorized all-tenant endpoint");
+  assert.equal(clientsPage.includes("useCurrentTenant"), false, "the agency client list must not be constrained by customer membership context");
 
   // --- 5. Existing RSC information-disclosure guard remains (moved from
   // /admin/platform's integration-status page into /admin/system) --------
@@ -114,7 +117,7 @@ function run() {
   ]) {
     const src = read(...route.split(path.sep));
     assert.ok(
-      /requireTenantContext\(|requireOwnerContext\(|getUser\(\)/.test(src),
+      /requireTenant(?:Read)?Context\(|requireOwnerContext\(|getUser\(\)/.test(src),
       `${route} must still perform server-side authorization — the shared client switcher is UX only, never a replacement for it`
     );
   }
@@ -204,8 +207,8 @@ function run() {
     );
   }
   // /admin/social is untouched — must remain a sibling, not nested inside the new (shell) group.
-  assert.equal(exists("app", "admin", "(shell)", "social"), false, "/admin/social must not have been moved into the shell group");
-  assert.ok(exists("app", "admin", "social", "layout.tsx"), "/admin/social must keep its own independent layout/guard");
+  assert.ok(exists("app", "admin", "(shell)", "social", "layout.tsx"), "/admin/social must live inside the canonical shell route group");
+  assert.equal(exists("app", "admin", "social"), false, "the independent Social application subtree must be retired");
 
   console.log(
     "unified-shell-tenant-ux.test.ts: ALL PASS (membership-verified selection, stale-cookie fallback, shell auth gate, no raw tenant IDs, RSC guards preserved, API auth unchanged, cookie-based persistence, mobile structure, legacy routes intact)"

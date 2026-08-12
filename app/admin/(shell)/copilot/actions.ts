@@ -8,8 +8,9 @@ import { loadCopilotThread, sendCopilotMessage, type CopilotMessageView, type Se
  * SAME General Admin Agent Core/tool registry as the WhatsApp Admin Agent —
  * see lib/agent-core/web-principal.ts's resolveAdminWebPrincipal, which
  * shares its permission mapping (buildStaffPrincipal) with
- * resolveWhatsAppPrincipal. This is deliberately NOT the Social Autopilot
- * copilot (app/admin/social/copilot) and NOT the client mission composer.
+ * resolveWhatsAppPrincipal. The canonical /admin/copilot route also hosts
+ * the Social workflow mode; these actions remain scoped to general admin
+ * operations and never cross into the client mission composer.
  */
 
 export type CopilotAuthResult = { ok: true } | { ok: false; error: string };

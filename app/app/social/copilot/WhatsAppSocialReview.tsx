@@ -1,8 +1,8 @@
 "use client";
 import { useState } from "react";
 import type { PublishActionPreview } from "@/lib/social/agent/action-preview";
-import { PlatformPreviewModal } from "@/app/admin/social/agent/PlatformPreviewModal";
-import { PrivateMedia } from "@/app/admin/social/agent/AttachmentMedia";
+import { PlatformPreviewModal } from "@/app/admin/(shell)/social/agent/PlatformPreviewModal";
+import { PrivateMedia } from "@/app/admin/(shell)/social/agent/AttachmentMedia";
 
 export function WhatsAppSocialReview({ previews: initialPreviews, handoffToken, approveToken, editToken, cancelToken }: { previews: PublishActionPreview[]; handoffToken: string; approveToken: string; editToken: string; cancelToken: string }) {
   const [previews, setPreviews] = useState(initialPreviews);

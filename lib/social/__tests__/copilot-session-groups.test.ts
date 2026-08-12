@@ -4,7 +4,7 @@
 // Run with: node --experimental-strip-types lib/social/__tests__/copilot-session-groups.test.ts
 
 import assert from "node:assert/strict";
-import { groupSessionsByRecency, defaultOpenGroups, DEFAULT_OPEN_GROUPS } from "../../../app/admin/social/copilot/session-groups.ts";
+import { groupSessionsByRecency, defaultOpenGroups, DEFAULT_OPEN_GROUPS } from "../../../app/admin/(shell)/social/copilot/session-groups.ts";
 
 function session(id: string, updatedAt: string) {
   return { id, owner_id: "owner", title: id, status: "READY", context: {}, created_at: updatedAt, updated_at: updatedAt } as const;

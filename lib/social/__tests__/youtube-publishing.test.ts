@@ -13,7 +13,7 @@ function run() {
   assert.equal(normalizeYouTubePrivacyStatus("unlisted"), "unlisted");
   assert.equal(normalizeYouTubePrivacyStatus("public"), "public");
 
-  const actions = read("app", "admin", "social", "actions.ts");
+  const actions = read("app", "admin", "(shell)", "social", "actions.ts");
   const worker = read("lib", "social", "worker.ts");
   const publishing = read("lib", "social", "repositories", "publishing.ts");
   const youtube = read("lib", "social", "providers", "youtube.ts");

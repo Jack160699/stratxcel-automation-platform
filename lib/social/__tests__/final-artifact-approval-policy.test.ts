@@ -24,8 +24,8 @@ for (const prompt of ["bana do", "kar do", "ready kar do", "best use karo", "fin
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const orchestrator = fs.readFileSync(path.join(root, "lib/social/agent/orchestrator.ts"), "utf8");
-const rail = fs.readFileSync(path.join(root, "app/admin/social/copilot/CopilotFullPage.tsx"), "utf8");
-const artifact = fs.readFileSync(path.join(root, "app/admin/social/agent/PublishApprovalCard.tsx"), "utf8");
+const rail = fs.readFileSync(path.join(root, "app/admin/(shell)/social/copilot/CopilotFullPage.tsx"), "utf8");
+const artifact = fs.readFileSync(path.join(root, "app/admin/(shell)/social/agent/PublishApprovalCard.tsx"), "utf8");
 const attachmentRepo = fs.readFileSync(path.join(root, "lib/social/repositories/agent-attachments.ts"), "utf8");
 
 assert.ok(!orchestrator.includes("processingStatus=${attachment.processingStatus}"), "processing enum must not reach the model");

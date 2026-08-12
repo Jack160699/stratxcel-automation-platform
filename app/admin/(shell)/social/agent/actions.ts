@@ -29,7 +29,7 @@ export async function sendAgentMessageAction(sessionId: string | null, text: str
 
   const accepted = await acceptAgentMission(ctx, sessionId, trimmed);
   const result = await runAgentTurn(ctx, accepted.sessionId, accepted.runId);
-  revalidatePath("/admin/social/copilot");
+  revalidatePath("/admin/copilot");
   return { sessionId: accepted.sessionId, ...result };
 }
 
@@ -37,7 +37,7 @@ export async function approveAgentActionAction(actionId: string) {
   try {
     const ctx = await assertOwner();
     const result = await approveAgentAction(ctx, actionId);
-    revalidatePath("/admin/social/copilot");
+    revalidatePath("/admin/copilot");
     return { ok: true as const, result };
   } catch (err) {
     console.error("[social.copilot.approve]", err);
@@ -52,7 +52,7 @@ export async function rejectAgentActionAction(actionId: string) {
   try {
     const ctx = await assertOwner();
     await rejectAgentAction(ctx, actionId);
-    revalidatePath("/admin/social/copilot");
+    revalidatePath("/admin/copilot");
     return { ok: true as const };
   } catch (err) {
     console.error("[social.copilot.reject]", err);

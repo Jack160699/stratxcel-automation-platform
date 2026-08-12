@@ -5,7 +5,7 @@
 // Run with: node --experimental-strip-types lib/social/__tests__/copilot-execution-stages.test.ts
 
 import assert from "node:assert/strict";
-import { groupEventsIntoStages, currentActionLabel, activeStageKey, STAGE_TITLES } from "../../../app/admin/social/copilot/execution-stages.ts";
+import { groupEventsIntoStages, currentActionLabel, activeStageKey, STAGE_TITLES } from "../../../app/admin/(shell)/social/copilot/execution-stages.ts";
 import type { AgentRunEventRow } from "../repositories/agent-runs.ts";
 
 let seq = 0;

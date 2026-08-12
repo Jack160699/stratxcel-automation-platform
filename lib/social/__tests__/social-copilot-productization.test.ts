@@ -229,7 +229,7 @@ async function run() {
   assert.ok(orch.includes("loadImageAttachmentsForModel"));
   assert.ok(!orch.includes("legacyProposed"), "must not supersede all session PROPOSED");
   assert.ok(orch.includes("computeSupersedeIdsForNewRevision"));
-  const ui = fs.readFileSync(path.join(root, "app", "admin", "social", "agent", "PublishApprovalCard.tsx"), "utf8");
+  const ui = fs.readFileSync(path.join(root, "app", "admin", "(shell)", "social", "agent", "PublishApprovalCard.tsx"), "utf8");
   assert.ok(ui.includes("Needs revision"));
   assert.ok(ui.includes("approvalAllowed"));
 

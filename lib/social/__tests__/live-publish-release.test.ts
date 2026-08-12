@@ -30,12 +30,11 @@ function run() {
 
   // 2) Source contracts: claim fallback, safe actions, error boundary, selection persistence
   const agentRepo = read("lib", "social", "repositories", "agent.ts");
-  const actions = read("app", "admin", "social", "agent", "actions.ts");
-  const session = read("app", "admin", "social", "copilot", "useAgentSession.ts");
-  const publishCard = read("app", "admin", "social", "agent", "PublishApprovalCard.tsx");
-  const errorBoundary = read("app", "admin", "social", "copilot", "error.tsx");
-  const shell = read("app", "admin", "social", "SocialShell.tsx");
-  const theme = read("app", "admin", "social", "social-theme.css");
+  const actions = read("app", "admin", "(shell)", "social", "agent", "actions.ts");
+  const session = read("app", "admin", "(shell)", "social", "copilot", "useAgentSession.ts");
+  const publishCard = read("app", "admin", "(shell)", "social", "agent", "PublishApprovalCard.tsx");
+  const errorBoundary = read("app", "admin", "(shell)", "social", "copilot", "error.tsx");
+  const theme = read("app", "admin", "(shell)", "social", "social-components.css");
   const orchestrator = read("lib", "social", "agent", "orchestrator.ts");
   const worker = read("lib", "social", "worker.ts");
   const publishing = read("lib", "social", "repositories", "publishing.ts");
@@ -71,7 +70,7 @@ function run() {
   assert.ok(publishCard.includes("saut:live-publish-confirmed"), "live confirm once per session");
   assert.ok(publishCard.includes("data-review-refresh-error") && publishCard.includes("Try again"));
 
-  assert.ok(shell.includes("LIVE PUBLISHING"));
+  assert.ok(publishCard.includes("LIVE PUBLISHING"));
 
   assert.ok(/minmax\(\s*min\(\s*100%\s*,\s*280px\s*\)\s*,\s*1fr\s*\)/.test(theme), "artifact grid must not force horizontal overflow");
   assert.ok(theme.includes("overflow-x: hidden"));

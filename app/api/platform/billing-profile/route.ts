@@ -1,4 +1,4 @@
-import { requireTenantContext, getTenantServiceContext } from "@/lib/tenants/tenant-context";
+import { requireTenantContext, requireTenantReadContext, requireTenantReadPermission, getTenantServiceContext } from "@/lib/tenants/tenant-context";
 import { getBillingProfile, upsertBillingProfile } from "@stratxcel/payments-and-wallet";
 import { requirePermission, PermissionDeniedError } from "@/lib/rbac/policy";
 
@@ -10,11 +10,11 @@ export async function GET(request: Request) {
   const tenantId = url.searchParams.get("tenantId");
   if (!tenantId) return Response.json({ error: "tenantId is required" }, { status: 400 });
 
-  const ctx = await requireTenantContext(tenantId);
+  const ctx = await requireTenantReadContext(tenantId);
   if (!ctx.ok) return Response.json({ error: ctx.error }, { status: ctx.status });
 
   try {
-    requirePermission(ctx.role, "wallet:view");
+    requireTenantReadPermission(ctx, "wallet:view");
   } catch (err) {
     if (err instanceof PermissionDeniedError) return Response.json({ error: err.message }, { status: 403 });
     throw err;

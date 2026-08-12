@@ -2,6 +2,7 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getTenantServiceContext } from "@/lib/tenants/tenant-context";
 import { createTenant, listMembershipsForUser } from "@/lib/tenants/repository";
 import { createPaymentLink, isPaymentFeatureEnabled } from "@stratxcel/payments-and-wallet";
+import { resolveCanonicalIdentity } from "@/lib/identity/resolve-identity";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -57,6 +58,13 @@ export async function POST(request: Request) {
   const {
     data: { user },
   } = await supabase.auth.getUser();
+
+  if (user) {
+    const identity = await resolveCanonicalIdentity();
+    if (identity.state === "INTERNAL_STAFF" || identity.state === "STAFF_VIEWING_CLIENT") {
+      return Response.json({ error: "Staff accounts cannot start customer checkout" }, { status: 403 });
+    }
+  }
 
   const { supabase: service } = getTenantServiceContext();
 

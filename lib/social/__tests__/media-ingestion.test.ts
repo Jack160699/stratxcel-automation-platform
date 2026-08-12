@@ -63,9 +63,9 @@ function run() {
   const orchestrator = read("lib", "social", "agent", "orchestrator.ts");
   const worker = read("lib", "social", "worker.ts");
   const verification = read("lib", "social", "verification-publish.ts");
-  const approvalUi = read("app", "admin", "social", "agent", "AgentMessage.tsx");
-  const createAction = read("app", "admin", "social", "actions.ts");
-  const createUploader = read("app", "admin", "social", "create", "MediaUploader.tsx");
+  const approvalUi = read("app", "admin", "(shell)", "social", "agent", "AgentMessage.tsx");
+  const createAction = read("app", "admin", "(shell)", "social", "actions.ts");
+  const createUploader = read("app", "admin", "(shell)", "social", "create", "MediaUploader.tsx");
   const approvalRoute = read("app", "api", "social", "copilot", "actions", "[actionId]", "route.ts");
 
   assert.ok(mediaMigration.includes("social_media_assets_owner") && mediaMigration.includes("owner_id = (select auth.uid())"));
@@ -80,7 +80,7 @@ function run() {
   assert.ok(attachmentRepo.includes('Buffer.from(await blob.arrayBuffer()).toString("base64")'), "vision input must be inline rather than a public URL");
   assert.equal(orchestrator.includes("mediaAssetId=${attachment.media_asset_id}"), false, "media identifiers never enter external AI prompts");
   assert.ok(orchestrator.includes("creativeImages"), "the orchestrator must supply image pixels to the creative provider boundary");
-  const copilotFullPage = read("app", "admin", "social", "copilot", "CopilotFullPage.tsx");
+  const copilotFullPage = read("app", "admin", "(shell)", "social", "copilot", "CopilotFullPage.tsx");
   assert.ok(copilotFullPage.includes("imageOnlyMission"), "an image-only submission must start a guided capability mission");
   assert.ok(copilotFullPage.includes('readyAttachments.length === 0'), "Send must allow ready attachments without typed prompt text");
   assert.ok(copilotFullPage.includes('uploadState === "failed"'), "one failed upload must not discard successful files");

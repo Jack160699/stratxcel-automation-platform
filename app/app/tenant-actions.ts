@@ -18,6 +18,7 @@ const COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 365;
 export async function setActiveTenantAction(tenantId: string): Promise<{ ok: boolean; error?: string }> {
   const ctx = await requireClientContext();
   if (!ctx.ok) return { ok: false, error: ctx.error };
+  if (ctx.staffWorkspaceTenantId) return { ok: false, error: "Return to Admin before changing clients" };
 
   const isMember = await isMemberOfTenant(ctx.supabase, ctx.userId, tenantId);
   if (!isMember) return { ok: false, error: "Not a member of this client" };

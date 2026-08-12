@@ -1,4 +1,4 @@
-import "@/app/admin/social/social-theme.css";
+import "@/app/admin/(shell)/social/social-components.css";
 import { Mark } from "@/app/components/Mark";
 import { CommandCenterBrandPanel } from "./CommandCenterBrandPanel";
 
@@ -12,7 +12,7 @@ export function AdminAuthShell({
   children: React.ReactNode;
 }) {
   return (
-    <div className="saut-root">
+    <div className="social-operations min-h-screen bg-[#06080c]">
       <div className="saut-auth-shell">
         <CommandCenterBrandPanel />
         <div className="saut-auth-panel">

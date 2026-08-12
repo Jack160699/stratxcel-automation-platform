@@ -8,6 +8,7 @@ import { Metric } from "@/components/ui/Metric";
 import { Button } from "@/components/ui/Button";
 import { StatusChip } from "@/components/ui/StatusChip";
 import { ErrorState, EmptyState } from "@/components/ui/Feedback";
+import { isActivePaidSubscription } from "@/lib/billing/plan-state";
 
 interface WalletAccount {
   tenant_id: string;
@@ -105,6 +106,7 @@ export default function BillingPage() {
     billing_state: "",
     pin_code: "",
   });
+  const hasActivePaidPlan = isActivePaidSubscription(subscription);
 
   const load = useCallback(async () => {
     if (!tenantId) return;
@@ -236,12 +238,18 @@ export default function BillingPage() {
       <Card className="p-6">
         <h2 className="font-sx-sans text-sm font-semibold text-sx-text">Plan & subscription</h2>
 
-        {!subscription && (
+        {!hasActivePaidPlan && (
           <div className="mt-4 flex flex-col gap-4">
             <EmptyState
-              title="No active plan"
-              subtitle="Monthly plans use staff-assisted activation during closed beta, so availability and scope are confirmed before payment."
+              title="Free"
+              subtitle="No active paid plan. Monthly plans use staff-assisted activation during closed beta, so availability and scope are confirmed before payment."
             />
+            {subscription && subscription.status !== "active" && (
+              <div className="rounded-sx-md border border-sx-border bg-sx-surface-2 p-3">
+                <p className="text-xs font-semibold text-sx-text">Previous payment attempt: {STATUS_CHIP[subscription.status]?.label ?? subscription.status}</p>
+                <p className="mt-1 text-xs text-sx-text-muted">This attempt does not activate a paid plan or paid entitlements.</p>
+              </div>
+            )}
             <div className="grid gap-4 sm:grid-cols-2">
               {SELF_SERVICE_PLANS.map((p) => (
                 <div key={p.tier} className="rounded-sx-md border border-sx-border p-4">
@@ -264,7 +272,7 @@ export default function BillingPage() {
           </div>
         )}
 
-        {subscription && (
+        {subscription && hasActivePaidPlan && (
           <div className="mt-4 flex flex-col gap-4">
             <div className="flex flex-wrap items-center gap-3">
               <span className="font-sx-sans text-base font-bold text-sx-text capitalize">{subscription.plan_tier.replace("_", " ")}</span>

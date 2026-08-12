@@ -145,10 +145,10 @@ function run() {
   // never grant internal admin access — this resolver only ever checks
   // requireOwnerContext(), never tenant_members/resolveCurrentTenant. ---------
   const authAction = read("app", "actions", "auth.ts");
-  assert.ok(/requireOwnerContext\(\)/.test(authAction), "resolvePostLoginRedirect must check requireOwnerContext()");
+  assert.ok(/resolveCanonicalIdentity\(\)/.test(authAction), "resolvePostLoginRedirect must use the canonical identity resolver");
   assert.ok(
-    /return ctx\.ok \? ["']\/admin["'] : ["']\/app["']/.test(authAction),
-    "resolvePostLoginRedirect must return /admin only for a verified owner context, /app otherwise"
+    /defaultDestination\(identity\.state\)/.test(authAction),
+    "resolvePostLoginRedirect must derive its destination from canonical identity state"
   );
   assert.equal(
     /tenant_members|resolveCurrentTenant|requireTenantContext/.test(authAction),

@@ -1,4 +1,4 @@
-import { requireTenantContext } from "@/lib/tenants/tenant-context";
+import { requireTenantReadContext } from "@/lib/tenants/tenant-context";
 import { listFileReferences, getConnection, type FolderCategory, type StorageProviderKey } from "@stratxcel/storage";
 
 export const runtime = "nodejs";
@@ -37,7 +37,7 @@ export async function GET(request: Request) {
     return Response.json({ error: `folderCategory must be one of ${VALID_FOLDER_CATEGORIES.join(", ")}` }, { status: 400 });
   }
 
-  const ctx = await requireTenantContext(tenantId);
+  const ctx = await requireTenantReadContext(tenantId);
   if (!ctx.ok) return Response.json({ error: ctx.error }, { status: ctx.status });
 
   const artifacts = await listFileReferences(ctx.supabase, tenantId, folderCategoryParam as FolderCategory | undefined);

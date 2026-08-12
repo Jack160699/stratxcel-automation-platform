@@ -1,36 +1,67 @@
-import { createSupabaseServerClient } from "../supabase/server";
+import "server-only";
+
+import { resolveCanonicalIdentity } from "@/lib/identity/resolve-identity";
+import { createSupabaseServiceClient } from "@/lib/supabase/service";
+import type { AgencyTenant } from "@/lib/tenants/admin-repository";
+import type { TenantMembership } from "@/lib/tenants/current-tenant";
 
 /**
- * The /app equivalent of lib/social/db-context.ts's requireOwnerContext() —
- * same session-client pattern, but deliberately does NOT check
- * stratxcel_admins. /app is the client workspace; an ordinary tenant member
- * has no admin row and must never be required to have one. This is the
- * literal enforcement point for "clients never see /admin and /admin never
- * silently exposes to a client account" cutting the other way: /app's own
- * gate never grants anything based on staff status either — the two tables
- * (stratxcel_admins, tenant_members) stay two independent checks, per
- * docs/product-design/ROLE_AND_PERMISSION_EXPERIENCE.md §1.
+ * Canonical /app authorization gate. Customer members use their tenant
+ * membership; staff must first establish a short-lived, signed workspace
+ * context for a tenant they can access. Staff status alone never grants
+ * direct client-app access.
  */
-export interface ClientContext {
+export interface CustomerClientContext {
   ok: true;
+  accessMode: "customer";
   userId: string;
   email: string | null;
-  supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>;
+  supabase: Awaited<ReturnType<typeof resolveCanonicalIdentity>>["supabase"];
+  workspaceTenant: TenantMembership;
+  staffWorkspaceTenantId: null;
 }
+
+export interface StaffSupportClientContext {
+  ok: true;
+  accessMode: "staff_support";
+  userId: string;
+  email: string | null;
+  supabase: ReturnType<typeof createSupabaseServiceClient>;
+  workspaceTenant: AgencyTenant;
+  staffWorkspaceTenantId: string;
+}
+
+export type ClientContext = CustomerClientContext | StaffSupportClientContext;
 
 export interface ClientContextError {
   ok: false;
-  status: 401;
+  status: 401 | 403;
   error: string;
 }
 
 export async function requireClientContext(): Promise<ClientContext | ClientContextError> {
-  const supabase = await createSupabaseServerClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) return { ok: false, status: 401, error: "Not authenticated" };
-
-  return { ok: true, userId: user.id, email: user.email ?? null, supabase };
+  const identity = await resolveCanonicalIdentity();
+  if (identity.state === "NO_SESSION") return { ok: false, status: 401, error: "Not authenticated" };
+  if (identity.state === "INTERNAL_STAFF") return { ok: false, status: 403, error: "Staff workspace context required" };
+  if (identity.state === "NEW_CUSTOMER") return { ok: false, status: 403, error: "Customer workspace membership required" };
+  if (identity.state === "STAFF_VIEWING_CLIENT") {
+    return {
+      ok: true,
+      accessMode: "staff_support",
+      userId: identity.userId,
+      email: identity.email,
+      supabase: createSupabaseServiceClient(),
+      workspaceTenant: identity.staffWorkspace,
+      staffWorkspaceTenantId: identity.staffWorkspace.tenantId,
+    };
+  }
+  return {
+    ok: true,
+    accessMode: "customer",
+    userId: identity.userId,
+    email: identity.email,
+    supabase: identity.supabase,
+    workspaceTenant: identity.tenants[0],
+    staffWorkspaceTenantId: null,
+  };
 }

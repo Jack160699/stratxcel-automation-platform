@@ -1,4 +1,6 @@
-import { requireTenantContext, getTenantServiceContext } from "@/lib/tenants/tenant-context";
+import { getTenantServiceContext } from "@/lib/tenants/tenant-context";
+import { requireOwnerContext } from "@/lib/social/db-context";
+import { isMemberOfTenant } from "@/lib/tenants/current-tenant";
 import { requirePermission, PermissionDeniedError } from "@/lib/rbac/policy";
 import { createPhoneBinding, listPhoneBindingsForTenant } from "@stratxcel/whatsapp";
 
@@ -14,11 +16,12 @@ export async function GET(request: Request) {
   const tenantId = new URL(request.url).searchParams.get("tenantId");
   if (!tenantId) return Response.json({ error: "tenantId query param is required" }, { status: 400 });
 
-  const ctx = await requireTenantContext(tenantId);
+  const ctx = await requireOwnerContext();
   if (!ctx.ok) return Response.json({ error: ctx.error }, { status: ctx.status });
+  if (!(await isMemberOfTenant(ctx.supabase, ctx.ownerId, tenantId))) return Response.json({ error: "Not authorized for this client" }, { status: 403 });
 
   try {
-    requirePermission(ctx.role, "integration:configure");
+    requirePermission("owner", "integration:configure");
   } catch (err) {
     if (err instanceof PermissionDeniedError) return Response.json({ error: err.message }, { status: 403 });
     throw err;
@@ -46,11 +49,12 @@ export async function POST(request: Request) {
     return Response.json({ error: "tenantId, wabaId, and phoneNumberId are required" }, { status: 400 });
   }
 
-  const ctx = await requireTenantContext(body.tenantId);
+  const ctx = await requireOwnerContext();
   if (!ctx.ok) return Response.json({ error: ctx.error }, { status: ctx.status });
+  if (!(await isMemberOfTenant(ctx.supabase, ctx.ownerId, body.tenantId))) return Response.json({ error: "Not authorized for this client" }, { status: 403 });
 
   try {
-    requirePermission(ctx.role, "integration:configure");
+    requirePermission("owner", "integration:configure");
   } catch (err) {
     if (err instanceof PermissionDeniedError) return Response.json({ error: err.message }, { status: 403 });
     throw err;
@@ -63,7 +67,7 @@ export async function POST(request: Request) {
     phoneNumberId: body.phoneNumberId,
     displayPhoneNumber: body.displayPhoneNumber ?? null,
     environment: body.environment ?? "test",
-    createdBy: ctx.userId,
+    createdBy: ctx.ownerId,
   });
   return Response.json({ binding }, { status: 201 });
 }

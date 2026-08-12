@@ -2,8 +2,8 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 
 /**
- * Keeps the Supabase auth session fresh for /admin requests.
- * Auth *decisions* (is this user an admin?) live server-side in app/admin.
+ * Keeps the Supabase auth session fresh for protected product requests.
+ * Auth decisions live in the canonical server identity resolver.
  */
 export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request });
@@ -36,5 +36,5 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/admin/:path*", "/admin"],
+  matcher: ["/admin/:path*", "/admin", "/app/:path*", "/app"],
 };

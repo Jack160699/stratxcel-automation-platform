@@ -10,17 +10,17 @@ const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..",
 const read = (...parts: string[]) => fs.readFileSync(path.join(root, ...parts), "utf8");
 
 function run() {
-  const workspace = read("app", "admin", "social", "copilot", "ResizableWorkspace.tsx");
-  const fullPage = read("app", "admin", "social", "copilot", "CopilotFullPage.tsx");
-  const theme = read("app", "admin", "social", "social-theme.css");
-  const publishCard = read("app", "admin", "social", "agent", "PublishApprovalCard.tsx");
-  const previewModal = read("app", "admin", "social", "agent", "PlatformPreviewModal.tsx");
-  const attachment = read("app", "admin", "social", "agent", "AttachmentMedia.tsx");
-  const agentMessage = read("app", "admin", "social", "agent", "AgentMessage.tsx");
+  const workspace = read("app", "admin", "(shell)", "social", "copilot", "ResizableWorkspace.tsx");
+  const fullPage = read("app", "admin", "(shell)", "social", "copilot", "CopilotFullPage.tsx");
+  const theme = read("app", "admin", "(shell)", "social", "social-components.css");
+  const publishCard = read("app", "admin", "(shell)", "social", "agent", "PublishApprovalCard.tsx");
+  const previewModal = read("app", "admin", "(shell)", "social", "agent", "PlatformPreviewModal.tsx");
+  const attachment = read("app", "admin", "(shell)", "social", "agent", "AttachmentMedia.tsx");
+  const agentMessage = read("app", "admin", "(shell)", "social", "agent", "AgentMessage.tsx");
   const premium = read("lib", "social", "__tests__", "copilot-premium-workspace.test.ts");
   const finalArtifact = read("lib", "social", "__tests__", "final-artifact-approval-policy.test.ts");
   const orchestrator = read("lib", "social", "agent", "orchestrator.ts");
-  const sessionHook = read("app", "admin", "social", "copilot", "useAgentSession.ts");
+  const sessionHook = read("app", "admin", "(shell)", "social", "copilot", "useAgentSession.ts");
 
   // Center track + Focus/READY overlay drawers (stable card geometry)
   assert.ok(workspace.includes("minmax(0, 1fr)"));

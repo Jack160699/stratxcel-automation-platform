@@ -1,32 +1,28 @@
-"use client";
+import { requireOwnerContext } from "@/lib/social/db-context";
+import { listSessions } from "@/lib/social/repositories/agent";
+import { listRecentVariants } from "@/lib/social/repositories/content";
+import { resolveEffectiveProviderIdentity } from "@/lib/social/agent/provider";
+import { CopilotProvider } from "../social/copilot/CopilotContext";
+import { CopilotFullPage } from "../social/copilot/CopilotFullPage";
+import { AdminOperationsCopilot } from "./AdminOperationsCopilot";
+import "../social/social-components.css";
 
-import { CopilotChat } from "@/components/agent-core/CopilotChat";
-import { loadAdminCopilotThreadAction, sendAdminCopilotMessageAction } from "./actions";
+export default async function AdminCopilotPage({ searchParams }: { searchParams: Promise<{ context?: string }> }) {
+  const { context } = await searchParams;
+  if (context !== "social") return <AdminOperationsCopilot />;
 
-/**
- * Admin Web Copilot — the SAME General Admin Agent Core/tool registry the
- * WhatsApp Admin Agent uses (see lib/agent-core/web-principal.ts). Not the
- * Social Autopilot copilot (app/admin/social/copilot) and not the client
- * mission composer.
- */
-export default function AdminCopilotPage() {
+  const ctx = await requireOwnerContext();
+  if (!ctx.ok) return null;
+  const [sessions, variants] = await Promise.all([listSessions(ctx, 30), listRecentVariants(ctx, 8)]);
   return (
-    <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="font-sx-sans text-xl font-medium text-sx-text">Admin Copilot</h1>
-        <p className="mt-1 text-sm text-sx-text-muted">
-          Ask about clients, leads, missions, approvals, handoffs, operations, social, finance, integrations, health, or audit — the same agent and tools
-          available to linked staff over WhatsApp.
-        </p>
+    <section className="social-operations">
+      <div className="mb-4">
+        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-sx-text-subtle">Admin Copilot · Social context</p>
+        <h1 className="mt-1 font-sx-sans text-xl font-semibold text-sx-text">Social Operations</h1>
       </div>
-
-      <CopilotChat
-        title="Stratxcel Operations Agent"
-        description="Real tool calls only — no fabricated answers. Mutating actions require confirmation."
-        placeholder="e.g. How many leads came in today? Show open handoffs. What missions are failing?"
-        loadThread={loadAdminCopilotThreadAction}
-        sendMessage={sendAdminCopilotMessageAction}
-      />
-    </div>
+      <CopilotProvider>
+        <CopilotFullPage initialSessions={sessions} initialVariants={variants} provider={resolveEffectiveProviderIdentity()} />
+      </CopilotProvider>
+    </section>
   );
 }

@@ -18,6 +18,7 @@ interface Approval {
 export default function ClientApprovalsPage() {
   const { active } = useCurrentTenant();
   const tenantId = active?.tenantId;
+  const readOnly = active?.accessMode === "staff_support";
   const [approvals, setApprovals] = useState<Approval[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [decidingId, setDecidingId] = useState<string | null>(null);
@@ -79,14 +80,14 @@ export default function ClientApprovalsPage() {
                   <p className="font-medium text-sx-text">{a.kind}</p>
                   <p className="max-w-md truncate text-xs text-sx-text-subtle">{JSON.stringify(a.subject)}</p>
                 </div>
-                <div className="flex gap-2">
+                {readOnly ? <p className="text-xs text-sx-text-subtle">Read-only staff support</p> : <div className="flex gap-2">
                   <Button variant="secondary" size="sm" onClick={() => decide(a.id, "REJECTED")} disabled={decidingId === a.id}>
                     Reject
                   </Button>
                   <Button variant="primary" size="sm" onClick={() => decide(a.id, "APPROVED")} disabled={decidingId === a.id}>
                     Approve
                   </Button>
-                </div>
+                </div>}
               </Card>
             ))}
           </div>

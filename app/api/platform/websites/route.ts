@@ -1,4 +1,4 @@
-import { requireTenantContext, getTenantServiceContext } from "@/lib/tenants/tenant-context";
+import { requireTenantContext, requireTenantReadContext, getTenantServiceContext } from "@/lib/tenants/tenant-context";
 import { generate5PageSite, WEBSITE_ENTITLEMENT_ENFORCED } from "@stratxcel/websites-and-domains";
 import { hasEntitlement } from "@stratxcel/payments-and-wallet";
 import { getCurrentBrandBrain } from "@stratxcel/brand-brain";
@@ -163,7 +163,7 @@ export async function GET(request: Request) {
   const tenantId = new URL(request.url).searchParams.get("tenantId");
   if (!tenantId) return Response.json({ error: "tenantId query param is required" }, { status: 400 });
 
-  const ctx = await requireTenantContext(tenantId);
+  const ctx = await requireTenantReadContext(tenantId);
   if (!ctx.ok) return Response.json({ error: ctx.error }, { status: ctx.status });
 
   const { supabase: serviceDb } = getTenantServiceContext();

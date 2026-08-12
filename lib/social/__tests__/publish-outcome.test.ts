@@ -176,12 +176,12 @@ function run() {
   assert.ok(rejectFn.includes("still available"), "cancelling must make clear the prepared draft was not discarded");
 
   assert.ok(fs.existsSync(path.join(root, "lib", "social", "agent", "action-preview.ts")), "expected a preview builder for the Ready-to-publish card");
-  assert.ok(fs.existsSync(path.join(root, "app", "admin", "social", "agent", "PublishApprovalCard.tsx")), "expected the polished single-approval card component");
+  assert.ok(fs.existsSync(path.join(root, "app", "admin", "(shell)", "social", "agent", "PublishApprovalCard.tsx")), "expected the polished single-approval card component");
   assert.ok(fs.existsSync(path.join(root, "app", "api", "social", "copilot", "media-preview", "route.ts")), "expected an owner-scoped media preview endpoint for the approval card thumbnail");
 
-  const agentMessage = read("app", "admin", "social", "agent", "AgentMessage.tsx");
+  const agentMessage = read("app", "admin", "(shell)", "social", "agent", "AgentMessage.tsx");
   assert.ok(agentMessage.includes("PublishApprovalGroup"), "publish-intent proposed actions must render as the Ready-to-publish card group, not the raw JSON approval card");
-  const publishCard = read("app", "admin", "social", "agent", "PublishApprovalCard.tsx");
+  const publishCard = read("app", "admin", "(shell)", "social", "agent", "PublishApprovalCard.tsx");
   assert.ok(!publishCard.includes("JSON.stringify(action"), "the Ready-to-publish card must never dump raw internal payloads/IDs");
   assert.ok(publishCard.includes("Approve selected &amp; publish"), "a bundled multi-platform request must offer one combined approval affordance");
   assert.ok(publishCard.includes("Recommended") && publishCard.includes("Optional"), "the combined artifact must distinguish recommended and optional destinations");

@@ -102,16 +102,10 @@ function run() {
   // redesign.
   assert.ok(/\{tenantId && \(\s*<Card>\s*<CardHeading>Connect via WhatsApp Embedded Signup/.test(adminIntegrationsPage), "Embedded Signup card must remain tenant-gated, unchanged");
 
-  // Client /app pairing is untouched: still tenant-scoped, still uses
-  // requireTenantContext in its own routes, still gated behind {tenantId && (...)}.
+  // Client Integrations no longer exposes the staff WhatsApp Agent pairing flow.
   const clientCardTagIndex = clientIntegrationsPage.indexOf("<WhatsAppAgentPairingCard");
-  assert.ok(clientCardTagIndex !== -1, "Client Integrations page must still render WhatsAppAgentPairingCard");
-  const clientPrecedingSlice = clientIntegrationsPage.slice(Math.max(0, clientCardTagIndex - 60), clientCardTagIndex);
-  assert.ok(/\{tenantId\s*&&\s*\($/.test(clientPrecedingSlice.trimEnd()), "Client Integrations must still gate WhatsAppAgentPairingCard behind {tenantId && (...)}");
-  assert.ok(
-    /tenantId=\{tenantId\}/.test(clientIntegrationsPage.slice(clientCardTagIndex, clientCardTagIndex + 400)),
-    "Client card must still receive tenantId"
-  );
+  assert.equal(clientCardTagIndex, -1, "Client Integrations must not render the staff pairing card");
+  assert.equal(/linkCommandPrefix|LINK/.test(clientIntegrationsPage), false, "Client Integrations must not expose LINK instructions");
 
   const clientPairingRoute = read("app", "api", "platform", "whatsapp-agent", "pairing", "route.ts");
   assert.ok(/requireTenantContext/.test(clientPairingRoute), "Client pairing route must still require tenant context — unchanged");

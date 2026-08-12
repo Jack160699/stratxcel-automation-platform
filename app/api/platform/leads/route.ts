@@ -1,4 +1,4 @@
-import { requireTenantContext } from "@/lib/tenants/tenant-context";
+import { requireTenantReadContext } from "@/lib/tenants/tenant-context";
 import { listLeads } from "@stratxcel/leads-and-crm";
 
 export const runtime = "nodejs";
@@ -18,7 +18,7 @@ export async function GET(request: Request) {
   const tenantId = new URL(request.url).searchParams.get("tenantId");
   if (!tenantId) return Response.json({ error: "tenantId query param is required" }, { status: 400 });
 
-  const ctx = await requireTenantContext(tenantId);
+  const ctx = await requireTenantReadContext(tenantId);
   if (!ctx.ok) return Response.json({ error: ctx.error }, { status: ctx.status });
 
   const leads = await listLeads(ctx.supabase, tenantId);

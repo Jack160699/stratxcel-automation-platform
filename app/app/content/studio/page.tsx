@@ -1,12 +1,10 @@
 import { requireClientContext } from "@/lib/tenants/client-context";
-import { resolveCurrentTenant } from "@/lib/tenants/current-tenant";
 import { CreativeStudioWorkspace } from "./CreativeStudioWorkspace";
 
 export default async function ContentStudioPage() {
   const ctx = await requireClientContext();
   if (!ctx.ok) return null;
-  const { active } = await resolveCurrentTenant(ctx.supabase, ctx.userId);
-  if (!active) return null;
+  const active = ctx.workspaceTenant;
   const [{ data: brain }, { data: subscription }] = await Promise.all([
     ctx.supabase.from("brand_brains").select("current_version").eq("tenant_id", active.tenantId).maybeSingle(),
     ctx.supabase.from("subscriptions").select("id").eq("tenant_id", active.tenantId).eq("status", "active").limit(1).maybeSingle(),

@@ -24,6 +24,6 @@ export async function GET(request: Request) {
     const destination = `/app/social/copilot?handoff=${encodeURIComponent(token)}`;
     return NextResponse.redirect(new URL(destination, url.origin));
   }
-  const destination = `/admin/social/copilot?session=${encodeURIComponent(claims.session)}&mode=${claims.op}`;
+  const destination = `/admin/copilot?context=social&session=${encodeURIComponent(claims.session)}&mode=${claims.op}`;
   return NextResponse.redirect(new URL(destination, url.origin));
 }

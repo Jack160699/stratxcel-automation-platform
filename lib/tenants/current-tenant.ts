@@ -12,6 +12,14 @@ export interface TenantMembership {
   role: TenantRole;
 }
 
+export interface WorkspaceTenant {
+  tenantId: string;
+  name: string;
+  slug: string;
+  role: TenantRole | null;
+  accessMode: "customer" | "staff_support";
+}
+
 /**
  * Ordinary tenant-membership resolution is a user-initiated read of the
  * caller's own data, fully covered by tenant_members_self_read /
