@@ -12,7 +12,7 @@ export function DisconnectedState({ title, reason, cta }: { title: string; reaso
     <Card variant="alert" className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
       <div>
         <p className="text-sm font-medium text-sx-text">{title}</p>
-        <p className="mt-1 text-xs text-sx-text-muted">{reason ?? "Execution service is not connected in this environment."}</p>
+        <p className="mt-1 text-xs text-sx-text-muted">{reason ?? "This service is not connected for your workspace yet."}</p>
       </div>
       {cta && <div className="shrink-0">{cta}</div>}
     </Card>

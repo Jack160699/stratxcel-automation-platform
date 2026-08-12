@@ -4,9 +4,9 @@ import { StatusChip, type ChipState } from "@/components/ui/StatusChip";
 export type RuntimeConnectionState = "connected" | "disconnected" | "unknown";
 
 const RUNTIME_CHIP: Record<RuntimeConnectionState, { label: string; state: ChipState }> = {
-  connected: { label: "Runtime connected", state: "success" },
-  unknown: { label: "Runtime status unknown", state: "neutral" },
-  disconnected: { label: "Runtime disconnected", state: "dashed" },
+  connected: { label: "Available", state: "success" },
+  unknown: { label: "Status unavailable", state: "neutral" },
+  disconnected: { label: "Unavailable", state: "dashed" },
 };
 
 /**
@@ -21,8 +21,8 @@ export function RuntimeStatus({ state = "disconnected", detail }: { state?: Runt
   return (
     <Card variant="nested" className="flex items-center justify-between gap-3">
       <div>
-        <p className="text-[13px] font-medium text-sx-text">Execution runtime</p>
-        <p className="mt-0.5 text-xs text-sx-text-muted">{detail ?? "Execution service is not connected in this environment."}</p>
+        <p className="text-[13px] font-medium text-sx-text">Work execution</p>
+        <p className="mt-0.5 text-xs text-sx-text-muted">{detail ?? "Automated execution is not available for this workspace yet."}</p>
       </div>
       <StatusChip state={chip.state}>{chip.label}</StatusChip>
     </Card>

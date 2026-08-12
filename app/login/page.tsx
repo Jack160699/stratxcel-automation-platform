@@ -7,7 +7,7 @@ import { LoginForm } from "./LoginForm";
 
 export const metadata: Metadata = {
   title: "Sign in — Stratxcel Workspace",
-  description: "Sign in to your Stratxcel growth workspace.",
+  description: "Sign in to your Stratxcel Business Growth Audit workspace.",
   robots: { index: false, follow: true },
 };
 
@@ -23,10 +23,10 @@ export default function LoginPage() {
               Stratxcel Secure SaaS Sign-In
             </span>
             <h2 className="font-sx-sans text-3xl font-extrabold tracking-tight text-sx-text">
-              Run your growth engine with complete visibility.
+              Return to your Business Growth Audit.
             </h2>
             <p className="font-sx-sans text-sm text-sx-text-muted leading-relaxed">
-              Access your active missions, content approval queue, WhatsApp lead conversations, and real-time CRM performance.
+              Continue your guided intake, follow the team&rsquo;s review status, and open your written roadmap when it is delivered.
             </p>
 
             {/* Security/product messaging — no per-account numbers here; those
@@ -44,21 +44,21 @@ export default function LoginPage() {
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-sx-accent font-bold">✓</span>
-                  <span>Human approval on every post, spend, and outreach action</span>
+                  <span>Human-reviewed Audit delivery with a clear status</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-sx-accent font-bold">✓</span>
-                  <span>Your missions, leads, and inbox — visible the moment you sign in</span>
+                  <span>Your intake and delivered report stay in your workspace</span>
                 </li>
               </ul>
             </div>
 
             <div className="text-xs text-sx-text-subtle flex gap-4">
-              <Link href="/experience" className="text-sx-accent underline hover:text-sx-accent/80">
-                Explore Product Tour →
+              <Link href="/audit" className="text-sx-accent underline hover:text-sx-accent/80">
+                Explore the Audit →
               </Link>
               <Link href="/security" className="hover:text-sx-text">
-                Security Architecture
+                Security
               </Link>
             </div>
           </div>

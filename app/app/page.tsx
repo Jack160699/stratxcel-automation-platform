@@ -88,15 +88,6 @@ async function loadJourneyInput(supabase: SessionClient, tenantId: string) {
   return { account: user, order, consultationRequested: consultation };
 }
 
-const GROWTH_AREAS = [
-  { href: "/app/content", label: "Content & Media", hint: "Create demand" },
-  { href: "/app/website", label: "Website", hint: "Get discovered" },
-  { href: "/app/search", label: "Search & SEO", hint: "Get discovered" },
-  { href: "/app/crm", label: "Leads & CRM", hint: "Capture & convert" },
-  { href: "/app/ads", label: "Ads", hint: "Create demand" },
-  { href: "/app/reports", label: "Reports", hint: "Measure & improve" },
-];
-
 /**
  * V1 Command Center — answers what Stratxcel is doing, what needs attention,
  * what is in progress, recent outcomes, and where to grow next.
@@ -191,7 +182,7 @@ export default async function ClientCommandCenterPage() {
           </Link>
         </div>
         {inProgress.length === 0 ? (
-          <p className="text-sm text-sx-text-subtle">No active work yet. Ask Copilot to start something, or open Work.</p>
+          <p className="text-sm text-sx-text-subtle">No active work requests right now.</p>
         ) : (
           <Card>
             {inProgress.map((m) => {
@@ -234,22 +225,6 @@ export default async function ClientCommandCenterPage() {
         )}
       </section>
 
-      {/* E. Growth areas */}
-      <section className="flex flex-col gap-3">
-        <h2 className="font-sx-sans text-sm font-semibold text-sx-text">Grow</h2>
-        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-          {GROWTH_AREAS.map((area) => (
-            <Link
-              key={area.href}
-              href={area.href}
-              className="rounded-sx-md border border-sx-border bg-sx-surface-1 px-4 py-3 transition-colors hover:border-sx-border-strong"
-            >
-              <p className="text-[13px] font-medium text-sx-text">{area.label}</p>
-              <p className="mt-0.5 text-xs text-sx-text-subtle">{area.hint}</p>
-            </Link>
-          ))}
-        </div>
-      </section>
     </div>
   );
 }

@@ -33,12 +33,14 @@ interface ComposerAttachment extends AgentAttachmentData {
 function humanSessionStatus(status: string): string {
   switch (status) {
     case "READY":
+      return "Ready for review";
     case "IDLE":
-      return "Ready";
+      return "Idle";
     case "RUNNING":
       return "Working";
     case "WAITING_FOR_CHOICE":
       return "Waiting for input";
+    case "ATTENTION_REQUIRED":
     case "FAILED":
       return "Needs attention";
     default:

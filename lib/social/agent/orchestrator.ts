@@ -268,7 +268,7 @@ export async function runAgentTurn(ctx: OwnerContext, sessionId: string, runId: 
     const connectedCount = accounts.filter((account) => account.status === "CONNECTED").length;
     const message = `${summary.text} Connected-account state is handled locally: ${connectedCount} of ${accounts.length} configured accounts are currently connected. No external generative AI received this request or its data.`;
     await insertMessage(ctx, sessionId, "AGENT", message);
-    await setSessionStatus(ctx, sessionId, "READY");
+    await setSessionStatus(ctx, sessionId, "IDLE");
     await recordRunEvent(ctx, runId, { type: "RUN_COMPLETED", label: "Local Platform-data summary", status: "SUCCESS" });
     await completeRun(ctx, runId, "COMPLETED");
     return { blocked: false as const, failed: false as const, text: message, proposedActions: [], runId };
@@ -697,7 +697,12 @@ export async function runAgentTurn(ctx: OwnerContext, sessionId: string, runId: 
       parts.push({ type: "publish_receipt", ...lastPublishOutcome.receipt });
     }
     await insertMessage(ctx, sessionId, "AGENT", responseText, parts);
-    await setSessionStatus(ctx, sessionId, proposedActions.length ? "WAITING_FOR_CHOICE" : "READY");
+    const terminalSessionStatus = lastPublishOutcome && !lastPublishOutcome.succeeded
+      ? "ATTENTION_REQUIRED"
+      : proposedActions.length
+        ? "WAITING_FOR_CHOICE"
+        : "IDLE";
+    await setSessionStatus(ctx, sessionId, terminalSessionStatus);
     // A mission's terminal event reflects whether the user's requested
     // outcome was actually achieved, not just that the run executed without
     // crashing — a failed publish attempt must never look like a clean
@@ -882,7 +887,7 @@ export async function approveAgentAction(ctx: OwnerContext, actionId: string) {
       // awaiting a decision (e.g. a dependent action this approval just
       // created) — never leave it permanently stuck on "Waiting approval".
       if (!(await hasPendingActions(ctx, action.session_id))) {
-        await setSessionStatus(ctx, action.session_id, "READY");
+        await setSessionStatus(ctx, action.session_id, "IDLE");
       }
     }
     return output;
@@ -904,7 +909,7 @@ export async function approveAgentAction(ctx: OwnerContext, actionId: string) {
         : `I couldn't complete "${labelForTool(action.tool_name)}". ${errorMessage}`;
       await insertMessage(ctx, action.session_id, "AGENT", failureNote);
       if (!(await hasPendingActions(ctx, action.session_id))) {
-        await setSessionStatus(ctx, action.session_id, "READY");
+        await setSessionStatus(ctx, action.session_id, "ATTENTION_REQUIRED");
       }
     }
     throw err;
@@ -933,7 +938,7 @@ export async function rejectAgentAction(ctx: OwnerContext, actionId: string) {
       : `Cancelled — "${labelForTool(action.tool_name)}" was not performed.`;
     await insertMessage(ctx, action.session_id, "AGENT", cancelNote);
     if (!(await hasPendingActions(ctx, action.session_id))) {
-      await setSessionStatus(ctx, action.session_id, "READY");
+      await setSessionStatus(ctx, action.session_id, "IDLE");
     }
   }
 }

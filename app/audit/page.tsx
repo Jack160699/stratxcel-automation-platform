@@ -7,13 +7,13 @@ import { splitGstInclusive, formatCentsAsRupees } from "@/lib/payments/gst";
 const gst = splitGstInclusive(99900);
 
 export const metadata: Metadata = {
-  title: "₹999 AI Business Growth Audit — Stratxcel",
+  title: "₹999 Business Growth Audit — Stratxcel",
   description:
     "An evidence-based audit of your brand positioning, website, competitors and lead channels for ₹999, GST-inclusive.",
 };
 
 const INCLUDES = [
-  "AI review of your brand positioning and Brand Brain",
+  "Structured review of your positioning and business context",
   "Website health and discoverability check",
   "Competitor and category landscape",
   "Lead-channel and response-speed review",
@@ -33,14 +33,14 @@ export default function PublicAuditPage() {
       <main className="flex-1">
         <section className="mx-auto max-w-3xl px-4 py-16 text-center sm:px-6 sm:py-24">
           <span className="font-sx-mono text-xs font-bold uppercase tracking-wider text-sx-accent">
-            AI Business Growth Audit
+            Business Growth Audit
           </span>
           <h1 className="mt-3 font-sx-sans text-3xl font-extrabold tracking-tight text-sx-text sm:text-5xl">
             Find out exactly where your growth is leaking.
           </h1>
           <p className="mt-4 font-sx-sans text-base text-sx-text-muted">
             An evidence-based audit of your business, built from what you tell us and what we can find publicly —
-            not a template.
+            reviewed and delivered by the Stratxcel team, not generated from a template.
           </p>
 
           <div className="mt-10 rounded-sx-lg border border-sx-accent/40 bg-sx-surface-1 p-8 shadow-lg sm:p-10">

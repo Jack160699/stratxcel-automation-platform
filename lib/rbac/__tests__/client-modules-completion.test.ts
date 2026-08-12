@@ -157,25 +157,36 @@ function run() {
 
   for (const href of [
     "/app",
-    "/app/copilot",
-    "/app/missions",
-    "/app/approvals",
-    "/app/content",
-    "/app/website",
-    "/app/search",
+    "/app/audit",
     "/app/crm",
-    "/app/ads",
-    "/app/reports",
     "/app/brand",
-    "/app/integrations",
     "/app/billing",
     "/app/team",
     "/app/settings",
   ]) {
     assert.ok(appNavData.includes(`href: "${href}"`), `app-nav-data.ts must include ${href}`);
   }
+  for (const hiddenUntilComplete of [
+    "/app/copilot",
+    "/app/missions",
+    "/app/approvals",
+    "/app/website",
+    "/app/search",
+    "/app/ads",
+    "/app/reports",
+    "/app/integrations",
+  ]) {
+    assert.equal(
+      appNavData.includes(`href: "${hiddenUntilComplete}"`),
+      false,
+      `${hiddenUntilComplete} must stay out of closed-beta navigation until its primary workflow is operational`
+    );
+  }
   // Files stays reachable contextually — not a top-level V1 sidebar item.
   assert.equal(/href:\s*["']\/app\/files["']/.test(appNavData), false, "app-nav-data.ts must not list /app/files as a top-level destination");
+  assert.equal(/href:\s*["']\/app\/content["']/.test(appNavData), false, "staff-scoped Content must not appear in the customer V1 navigation");
+  const contentLayout = read("app", "app", "content", "layout.tsx");
+  assert.ok(/redirect\(["']\/app["']\)/.test(contentLayout), "direct customer Content routes must recover to the tenant-safe command center");
   // Conversations is no longer a separate nav destination — merged into the
   // one CRM item (see app/app/conversations/page.tsx's redirect above).
   assert.equal(/href:\s*["']\/app\/conversations["']/.test(appNavData), false, "app-nav-data.ts must not list /app/conversations as its own destination");
@@ -213,7 +224,7 @@ function run() {
   const mobileNavMatch = appNavData.match(/APP_MOBILE_NAV_KEYS = \[([\s\S]*?)\]/);
   assert.ok(mobileNavMatch, "APP_MOBILE_NAV_KEYS must be defined in app-nav-data.ts");
   const mobileNavItemCount = (mobileNavMatch![1].match(/"/g) ?? []).length / 2;
-  assert.equal(mobileNavItemCount, 4, "Mobile bottom nav must stay at exactly 4 items (Home, Copilot, Work, Approvals) — everything else lives in the More sheet");
+  assert.equal(mobileNavItemCount, 4, "Mobile bottom nav must stay at exactly 4 closed-beta items (Home, Audit, CRM, Billing)");
   assert.ok(/mobileMoreGroups=\{APP_SIDEBAR_GROUPS\.map/.test(shell), "The mobile More sheet must be derived from APP_SIDEBAR_GROUPS, not a separately hand-maintained list");
   assert.ok(/mobileMoreGroups=\{sidebarGroups\.map/.test(adminShell), "Admin's mobile More sheet must be derived from the filtered admin sidebar groups");
 

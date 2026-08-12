@@ -198,7 +198,7 @@ const PLATFORM_READ_ACTION =
 const ACCOUNT_READ_ACTION =
   /\b(?:show|list|read|check|status|health|how\s+many|what\s+is|tell\s+me|dikha|check\s+karo)\b/i;
 const CREATIVE_ACTION =
-  /\b(?:create|make|draft|write|prepare|generate|suggest|recommend|adapt|caption|content|post(?:ing)?|publish|schedule|preview|version|variant|suitable|relevant|ready|bana(?:o|na|do|dena)?|likh(?:o|na|do)?|taiyar|alag|caption\s+bana|post\s+karo)\b/i;
+  /\b(?:create|make|draft|write|prepare|generate|suggest|recommend|adapt|caption|content|posts?|posting|publish|schedule|preview|version|variant|suitable|relevant|ready|bana(?:o|na|do|dena)?|likh(?:o|na|do)?|taiyar|alag|caption\s+bana|post\s+karo)\b/i;
 
 /**
  * Routes by the user's mission, not by isolated nouns. Platform names and

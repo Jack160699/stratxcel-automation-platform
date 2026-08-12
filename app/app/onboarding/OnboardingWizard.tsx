@@ -31,11 +31,22 @@ function loadDraft(): { step: number; draft: OnboardingDraft } {
   }
 }
 
+function mergeDraft(value: Partial<OnboardingDraft> | undefined): OnboardingDraft {
+  return {
+    ...EMPTY_DRAFT,
+    ...value,
+    business: { ...EMPTY_DRAFT.business, ...value?.business },
+    brand: { ...EMPTY_DRAFT.brand, ...value?.brand },
+    plan: { ...EMPTY_DRAFT.plan, ...value?.plan },
+    goals: Array.isArray(value?.goals) ? value.goals : [],
+  };
+}
+
 /**
  * Six-stage onboarding wizard — one URL, step tracked in local state per
- * docs/product-design/AUTH_AND_ONBOARDING_FLOW.md §3. Draft recovery uses
- * sessionStorage only (no passwords/tokens ever enter this state); the
- * final "Create workspace" step is the only step that writes to the server.
+ * docs/product-design/AUTH_AND_ONBOARDING_FLOW.md §3. Non-secret draft fields
+ * are saved through the authenticated onboarding API, with sessionStorage as
+ * an immediate same-tab fallback. The final step creates the workspace.
  */
 export function OnboardingWizard() {
   const router = useRouter();
@@ -44,6 +55,8 @@ export function OnboardingWizard() {
   const [draft, setDraft] = useState<OnboardingDraft>(initial.current.draft);
   const [account, setAccount] = useState<AccountInfo>({ displayName: "", email: null, emailVerified: false });
   const [accountLoading, setAccountLoading] = useState(true);
+  const [draftHydrated, setDraftHydrated] = useState(false);
+  const [draftSaveError, setDraftSaveError] = useState<string | null>(null);
   const [stepError, setStepError] = useState<string | null>(null);
   const [businessErrors, setBusinessErrors] = useState<{ name?: string; slug?: string }>({});
   const [submitting, setSubmitting] = useState(false);
@@ -53,16 +66,26 @@ export function OnboardingWizard() {
     let cancelled = false;
     async function loadAccount() {
       const supabase = createSupabaseBrowserClient();
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+      const [authResult, draftResponse] = await Promise.all([
+        supabase.auth.getUser(),
+        fetch("/api/platform/onboarding", { cache: "no-store" }),
+      ]);
+      const user = authResult.data.user;
       if (cancelled || !user) return;
+      if (draftResponse.ok) {
+        const body = (await draftResponse.json()) as { saved?: { step?: number; draft?: Partial<OnboardingDraft> } | null };
+        if (body.saved?.draft) {
+          setStep(Math.min(Math.max(body.saved.step ?? 1, 1), TOTAL_STEPS));
+          setDraft(mergeDraft(body.saved.draft));
+        }
+      }
       setAccount({
         displayName: (user.user_metadata?.full_name as string | undefined) ?? "",
         email: user.email ?? null,
         emailVerified: Boolean(user.email_confirmed_at),
       });
       setAccountLoading(false);
+      setDraftHydrated(true);
       trackFunnel("onboarding_started", { surface: "app" });
     }
     loadAccount();
@@ -72,9 +95,22 @@ export function OnboardingWizard() {
   }, []);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
+    if (typeof window === "undefined" || !draftHydrated) return;
     window.sessionStorage.setItem(ONBOARDING_DRAFT_KEY, JSON.stringify({ step, draft }));
-  }, [step, draft]);
+    const timeout = window.setTimeout(async () => {
+      try {
+        const response = await fetch("/api/platform/onboarding", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ step, draft }),
+        });
+        setDraftSaveError(response.ok ? null : "Progress could not be saved. Keep this page open and retry.");
+      } catch {
+        setDraftSaveError("Progress could not be saved. Keep this page open and retry.");
+      }
+    }, 500);
+    return () => window.clearTimeout(timeout);
+  }, [step, draft, draftHydrated]);
 
   function updateBusiness(patch: Partial<OnboardingDraft["business"]>) {
     setDraft((d) => ({ ...d, business: { ...d.business, ...patch } }));
@@ -196,6 +232,9 @@ export function OnboardingWizard() {
         <WorkflowRail stages={stages} />
         <p className="sr-only" role="status">
           Step {step} of {TOTAL_STEPS}: {ONBOARDING_STEP_LABELS[step - 1]}
+        </p>
+        <p className="mt-2 text-center text-xs text-sx-text-subtle" role="status">
+          {draftSaveError ?? (draftHydrated ? "Progress saves to your account." : "Loading saved progress…")}
         </p>
       </div>
 

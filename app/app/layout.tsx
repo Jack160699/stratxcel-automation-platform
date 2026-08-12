@@ -7,6 +7,8 @@ import { OnboardingPanel } from "./OnboardingPanel";
 import { CurrentTenantProvider } from "./CurrentTenantContext";
 import { ClientAppShell } from "./ClientAppShell";
 
+export const dynamic = "force-dynamic";
+
 export const metadata: Metadata = {
   title: "Stratxcel",
   robots: { index: false, follow: false },
@@ -22,6 +24,13 @@ export const metadata: Metadata = {
  * resolveCurrentTenant() call /admin already uses, unchanged.
  */
 export default async function ClientLayout({ children }: { children: ReactNode }) {
+  // A missing public auth configuration is an environment/setup state, not a
+  // customer-facing server error. Keep the workspace fail-closed and show the
+  // normal sign-in recovery surface until configuration is available.
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+    return <AppLogin />;
+  }
+
   const ctx = await requireClientContext();
 
   if (!ctx.ok) {

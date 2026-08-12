@@ -11,13 +11,8 @@ import { OFFICIAL_LOGO } from "@/lib/brand";
  */
 export function Logo({ variant = "light", priority = false, showWordmark = true }) {
   const isDark = variant === "dark";
-  const focusRing = isDark
-    ? "focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0B1220]"
-    : "focus-visible:ring-2 focus-visible:ring-blue-500/35 focus-visible:ring-offset-2 focus-visible:ring-offset-[#F8FAFC]";
-
-  const wordmarkClass = isDark
-    ? "text-[15px] font-semibold tracking-[-0.02em] text-white sm:text-[15px]"
-    : "text-[15px] font-semibold tracking-[-0.02em] text-[#0B1220] sm:text-[15px]";
+  const focusRing = "focus-visible:ring-2 focus-visible:ring-sx-accent focus-visible:ring-offset-2 focus-visible:ring-offset-sx-bg";
+  const wordmarkClass = "text-[15px] font-semibold tracking-[-0.02em] text-sx-text sm:text-[15px]";
 
   const iconShell =
     "relative inline-flex h-[28px] w-[28px] shrink-0 items-center justify-center sm:h-8 sm:w-8 " +

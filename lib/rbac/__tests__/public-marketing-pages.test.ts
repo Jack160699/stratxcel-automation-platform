@@ -123,8 +123,27 @@ function run() {
     );
   }
 
+  // --- 7. The public header stays usable on light and mobile canvases. The
+  // mobile dialog must be a sibling of the backdrop-filter header; a fixed
+  // child inside that header is clipped to its containing block on mobile.
+  const logoSource = read("app", "components", "Logo.jsx");
+  assert.ok(/text-sx-text/.test(logoSource), "Logo wordmark must use the active theme token");
+  assert.equal(
+    /wordmarkClass[\s\S]{0,200}text-white|wordmarkClass[\s\S]{0,200}text-\[#0B1220\]/.test(logoSource),
+    false,
+    "Logo wordmark must not hard-code a color that disappears on one public theme"
+  );
+
+  const headerSource = read("app", "components", "PublicHeader.tsx");
+  assert.ok(/<\/header>\s*\{open && \(/.test(headerSource), "Mobile menu overlay must render outside the sticky header");
+  assert.ok(/fixed inset-0 z-\[60\]/.test(headerSource), "Mobile menu overlay must cover the viewport above the header");
+  assert.ok(/event\.key !== "Tab"/.test(headerSource), "Mobile menu must trap keyboard focus while open");
+  assert.ok(/button\[aria-label=["']Close menu["']\][^\n]*[\s\S]*closeButton\?\.focus\(\)/.test(headerSource), "Mobile menu must initially focus its close control");
+  assert.ok(/menuButtonRef\.current\?\.focus\(\)/.test(headerSource), "Mobile menu must restore focus to its trigger");
+  assert.ok(/inert=\{open \|\| undefined\}/.test(headerSource), "The covered header must be inert while the mobile dialog is open");
+
   console.log(
-    "public-marketing-pages.test.ts: ALL PASS (7 routes on PublicHeader/PublicFooter + sx-* tokens, old (marketing) duplicates removed, contact intent wiring preserved, social-autopilot SEO metadata intact, /products + /solutions compatibility routes present, no fabricated proof content)"
+    "public-marketing-pages.test.ts: ALL PASS (7 routes on PublicHeader/PublicFooter + sx-* tokens, old (marketing) duplicates removed, contact intent wiring preserved, social-autopilot SEO metadata intact, /products + /solutions compatibility routes present, no fabricated proof content, public logo and mobile menu guarded)"
   );
 }
 

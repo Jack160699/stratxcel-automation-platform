@@ -95,6 +95,12 @@ function run() {
     /data\.session/.test(signupForm) && /setStage\(["']verify["']\)/.test(signupForm),
     "SignupForm must handle both outcomes: an immediate session (no email confirmation required) and the verify-email screen"
   );
+  const signupPage = read("app", "signup", "page.tsx");
+  assert.equal(/AI-powered business growth operating system|AI Copilot content/.test(signupPage), false, "signup must describe the closed-beta Audit workspace, not unverified autonomous capabilities");
+  assert.ok(/Business Growth Audit/.test(signupPage), "signup must explain the canonical closed-beta starting point");
+  const loginPage = read("app", "login", "page.tsx");
+  assert.equal(/active missions|content approval queue|WhatsApp lead conversations|real-time CRM performance/.test(loginPage), false, "login must not advertise hidden broad-platform capabilities during the Audit-first beta");
+  assert.ok(/Business Growth Audit/.test(loginPage), "login must describe the canonical Audit workspace");
 
   // --- 5. Forgot-password: real recovery method, correct redirect target,
   // and a generic response that never reveals whether the account exists ------
@@ -159,18 +165,18 @@ function run() {
   assert.ok(startMatches.length >= 2, "PublicHeader's \"Start with Stratxcel\" link must point at /signup in both desktop and mobile nav");
   assert.equal(/href="\/app"/.test(publicHeader), false, "PublicHeader must no longer link \"Sign in\" at /app now that /login exists");
 
-  // --- 9. Homepage CTA destinations: "Start with Stratxcel" -> /signup,
-  // "Book a demo" stays on the sales/demo contact path -------------------------
+  // --- 9. Homepage CTA destinations: the certified paid Audit is the hero,
+  // while "Book a demo" stays on the sales/demo contact path ------------------
   const homepage = read("app", "page.tsx");
-  const homepageStartMatches = homepage.match(/href="\/signup"/g) ?? [];
-  assert.ok(homepageStartMatches.length >= 2, "Homepage's \"Start with Stratxcel\" CTAs (hero + final) must point at /signup");
+  const homepageAuditMatches = homepage.match(/href="\/audit"/g) ?? [];
+  assert.ok(homepageAuditMatches.length >= 2, "Homepage's hero and final CTAs must point at the canonical paid Audit entry");
   assert.ok(
     /href="\/contact\?intent=demo"/.test(homepage),
     "Homepage's \"Book a demo\" CTA must stay on /contact?intent=demo — sales/demo intent must not route to signup"
   );
 
   console.log(
-    "public-auth-routes.test.ts: ALL PASS (4 auth routes exist, no service-role dependency, signup uses Supabase Auth with metadata-only name storage + terms gate, forgot-password gives a generic non-enumerating response, reset-password validates recovery state and never logs secrets, post-login routing checks owner status only, Header/homepage CTAs point at the real routes)"
+    "public-auth-routes.test.ts: ALL PASS (4 auth routes exist, no service-role dependency, signup uses Supabase Auth with metadata-only name storage + terms gate, forgot-password gives a generic non-enumerating response, reset-password validates recovery state and never logs secrets, post-login routing checks owner status only, Header and Audit-first homepage CTAs point at the real routes)"
   );
 }
 

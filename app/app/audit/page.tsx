@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/Button";
 import { ErrorState } from "@/components/ui/Feedback";
 import { IntakeWizard, type IntakeOrder } from "./IntakeWizard";
 import { trackFunnel } from "@/lib/analytics/events";
+import { deriveAuditCustomerState, normalizeAuditDeliveryReport } from "@/lib/audit/customer-state";
 
 interface AuditOrder extends IntakeOrder {
   id: string;
@@ -62,19 +63,14 @@ export default function AuditHubPage() {
   const trackedRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     if (!order) return;
-    const dd = order.deep_dive_answers ?? {};
-    const goalsAns = order.goals_answers ?? {};
-    const complete =
-      Boolean(order.business_name && order.business_name !== "Pending — completed in intake" && order.industry && order.website_url) &&
-      Boolean(dd.idealCustomers && dd.majorProducts && dd.competitors && dd.leadSources && dd.differentiation) &&
-      Boolean(goalsAns.successDefinition && goalsAns.biggestObstacle && goalsAns.topPriorities);
+    const customerState = deriveAuditCustomerState(order);
 
     const tracked = trackedRef.current;
-    if (order.status === "paid" && !complete && !tracked.has("intake_started")) {
+    if (customerState === "INTAKE_REQUIRED" && !tracked.has("intake_started")) {
       tracked.add("intake_started");
       trackFunnel("audit_intake_started", { surface: "app_audit" });
     }
-    if (order.status === "completed" && Object.keys(order.report_data ?? {}).length > 0 && !tracked.has("report_ready")) {
+    if (customerState === "DELIVERED" && !tracked.has("report_ready")) {
       tracked.add("report_ready");
       trackFunnel("audit_report_ready", { surface: "app_audit" });
     }
@@ -119,7 +115,7 @@ export default function AuditHubPage() {
     return (
       <div className="mx-auto max-w-2xl px-4 py-16 text-center">
         <h1 className="font-sx-sans text-xl font-semibold text-sx-text">You haven&rsquo;t started an Audit yet</h1>
-        <p className="mt-2 text-sm text-sx-text-muted">Start with the ₹999 AI Business Growth Audit.</p>
+        <p className="mt-2 text-sm text-sx-text-muted">Start with the ₹999 staff-delivered Business Growth Audit.</p>
         <Link
           href="/audit"
           className="mt-6 inline-flex min-h-11 items-center rounded-sx-sm bg-sx-accent px-6 font-sx-sans text-xs font-bold text-sx-accent-on hover:bg-[color:var(--sx-accent-hover)]"
@@ -130,7 +126,9 @@ export default function AuditHubPage() {
     );
   }
 
-  if (order.status === "pending_payment") {
+  const customerState = deriveAuditCustomerState(order);
+
+  if (customerState === "PAYMENT_PENDING") {
     return (
       <div className="mx-auto max-w-2xl px-4 py-16 text-center">
         <h1 className="font-sx-sans text-xl font-semibold text-sx-text">Your payment isn&rsquo;t confirmed yet</h1>
@@ -151,7 +149,7 @@ export default function AuditHubPage() {
     );
   }
 
-  if (order.status === "refunded" || order.status === "cancelled") {
+  if (customerState === "CLOSED") {
     return (
       <div className="mx-auto max-w-2xl px-4 py-16 text-center">
         <h1 className="font-sx-sans text-xl font-semibold text-sx-text">Your audit order was {order.status}</h1>
@@ -162,14 +160,7 @@ export default function AuditHubPage() {
     );
   }
 
-  const dd = order.deep_dive_answers ?? {};
-  const goalsAns = order.goals_answers ?? {};
-  const intakeComplete =
-    Boolean(order.business_name && order.business_name !== "Pending — completed in intake" && order.industry && order.website_url) &&
-    Boolean(dd.idealCustomers && dd.majorProducts && dd.competitors && dd.leadSources && dd.differentiation) &&
-    Boolean(goalsAns.successDefinition && goalsAns.biggestObstacle && goalsAns.topPriorities);
-
-  if (order.status === "paid" && !intakeComplete) {
+  if (customerState === "INTAKE_REQUIRED") {
     return (
       <div className="mx-auto max-w-3xl px-4 py-8 sm:px-6 lg:px-8">
         <div className="mb-6 text-center">
@@ -184,7 +175,7 @@ export default function AuditHubPage() {
     );
   }
 
-  if (order.status === "paid" && intakeComplete) {
+  if (customerState === "READY_FOR_EXECUTION") {
     return (
       <div className="mx-auto max-w-2xl px-4 py-16 text-center">
         <h1 className="font-sx-sans text-xl font-semibold text-sx-text">Everything&rsquo;s in.</h1>
@@ -197,7 +188,7 @@ export default function AuditHubPage() {
     );
   }
 
-  if (order.status === "in_review") {
+  if (customerState === "PROCESSING") {
     return (
       <div className="mx-auto max-w-2xl px-4 py-16">
         <div className="text-center">
@@ -224,9 +215,22 @@ export default function AuditHubPage() {
     );
   }
 
-  // completed
-  const report = order.report_data ?? {};
-  const hasReport = Object.keys(report).length > 0;
+  const report = normalizeAuditDeliveryReport(order.report_data);
+
+  if (customerState === "NEEDS_ATTENTION" || !report) {
+    return (
+      <div className="mx-auto max-w-2xl px-4 py-16 text-center">
+        <h1 className="font-sx-sans text-xl font-semibold text-sx-text">Your report needs final review</h1>
+        <p className="mt-2 text-sm text-sx-text-muted">
+          Your audit record reached its final stage without a complete report attached. The Stratxcel team has been notified;
+          please contact us if you need immediate help.
+        </p>
+        <Link href="/contact?intent=audit-support" className="mt-6 inline-flex min-h-11 items-center rounded-sx-sm border border-sx-border-strong px-6 font-sx-sans text-xs font-semibold text-sx-text hover:bg-sx-surface-2">
+          Contact audit support →
+        </Link>
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
@@ -235,19 +239,32 @@ export default function AuditHubPage() {
         <h1 className="mt-1 font-sx-sans text-2xl font-bold text-sx-text">{order.business_name}</h1>
       </div>
 
-      {hasReport ? (
-        <Card className="mt-6">
-          <pre className="whitespace-pre-wrap text-xs text-sx-text-muted">{JSON.stringify(report, null, 2)}</pre>
+      <div className="mt-6 grid gap-4">
+        <Card>
+          <CardHeading>Executive summary</CardHeading>
+          <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-sx-text-muted">{report.executiveSummary}</p>
         </Card>
-      ) : (
-        <Card className="mt-6 text-center">
-          <CardHeading>Your audit is complete</CardHeading>
-          <p className="mt-2 text-sm text-sx-text-muted">
-            The Stratxcel team has finished reviewing your answers. Your written report is being finalised and will be shared
-            with you directly.
-          </p>
+        {report.strengths.length > 0 && (
+          <Card>
+            <CardHeading>What is working</CardHeading>
+            <ul className="mt-2 list-disc space-y-2 pl-5 text-sm text-sx-text-muted">
+              {report.strengths.map((item) => <li key={item}>{item}</li>)}
+            </ul>
+          </Card>
+        )}
+        <Card>
+          <CardHeading>Priority risks</CardHeading>
+          <ul className="mt-2 list-disc space-y-2 pl-5 text-sm text-sx-text-muted">
+            {report.priorityRisks.map((item) => <li key={item}>{item}</li>)}
+          </ul>
         </Card>
-      )}
+        <Card>
+          <CardHeading>Recommended 90-day plan</CardHeading>
+          <ol className="mt-2 list-decimal space-y-2 pl-5 text-sm text-sx-text-muted">
+            {report.actionPlan.map((item) => <li key={item}>{item}</li>)}
+          </ol>
+        </Card>
+      </div>
 
       <div className="mt-8 flex justify-center">
         <Link

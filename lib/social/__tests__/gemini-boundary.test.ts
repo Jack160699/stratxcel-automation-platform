@@ -62,6 +62,11 @@ function run() {
   assert.equal(classifySocialPromptIntent("Analyze Instagram performance"), "LOCAL_PLATFORM_DATA");
   assert.equal(classifySocialPromptIntent("Based on my recent Instagram performance, create a new post"), "MIXED");
   assert.equal(
+    classifySocialPromptIntent("Review my recent Instagram performance and prepare three posts from this image"),
+    "MIXED",
+    "plural post requests must not be diverted into a local-only metrics response",
+  );
+  assert.equal(
     classifySocialPromptIntent("Ye image dekh ke mere brand ke liye post prepare karo aur connected accounts me jahan relevant lage alag post bana do"),
     "CREATIVE",
     "looking at an image and recommending connected destinations is not account analytics",

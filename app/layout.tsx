@@ -42,9 +42,9 @@ const jetbrainsMono = JetBrains_Mono({
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://www.stratxcel.in"),
-  title: "Stratxcel — the operating system for modern business",
+  title: "Stratxcel — practical growth operations for small businesses",
   description:
-    "Stratxcel engineers businesses: websites that build themselves, automation that connects everything, AI agents that think before they act. Press start.",
+    "Start with a staff-delivered Business Growth Audit, then activate the growth workflows that fit your business.",
   icons: {
     icon: [
       { url: "/favicon-32.png", sizes: "32x32", type: "image/png" },
@@ -53,9 +53,9 @@ export const metadata: Metadata = {
     apple: [{ url: "/favicon-180.png", sizes: "180x180", type: "image/png" }],
   },
   openGraph: {
-    title: "Stratxcel — the operating system for modern business",
+    title: "Stratxcel — practical growth operations for small businesses",
     description:
-      "An interactive journey through websites that build themselves, automation that connects everything, and AI agents that think before they act.",
+      "Start with a staff-delivered Business Growth Audit, then activate the growth workflows that fit your business.",
     type: "website",
     images: [{ url: "/logo-v2.png", width: 641, height: 641 }],
   },

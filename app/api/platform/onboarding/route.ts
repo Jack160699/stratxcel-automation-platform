@@ -6,6 +6,9 @@ import { saveBrandBrainVersion, type BrandBrainContent } from "@stratxcel/brand-
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+const ONBOARDING_METADATA_KEY = "stratxcel_onboarding_draft_v1";
+const MAX_STEP = 6;
+
 interface OnboardingRequestBody {
   business?: { name?: string; slug?: string; industry?: string };
   brand?: {
@@ -25,6 +28,65 @@ interface CreatedTenant {
   name: string;
 }
 
+function text(value: unknown, max = 500): string {
+  return typeof value === "string" ? value.slice(0, max) : "";
+}
+
+function sanitizeDraft(value: unknown) {
+  const source = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+  const business = source.business && typeof source.business === "object" ? (source.business as Record<string, unknown>) : {};
+  const brand = source.brand && typeof source.brand === "object" ? (source.brand as Record<string, unknown>) : {};
+  const plan = source.plan && typeof source.plan === "object" ? (source.plan as Record<string, unknown>) : {};
+  return {
+    business: {
+      name: text(business.name, 120),
+      slug: text(business.slug, 80),
+      slugTouched: business.slugTouched === true,
+      industry: text(business.industry, 120),
+      website: text(business.website, 500),
+      location: text(business.location, 200),
+    },
+    goals: Array.isArray(source.goals) ? source.goals.filter((goal): goal is string => typeof goal === "string").slice(0, 12).map((goal) => goal.slice(0, 100)) : [],
+    brand: {
+      businessName: text(brand.businessName, 120),
+      description: text(brand.description, 2_000),
+      audience: text(brand.audience, 1_000),
+      tone: text(brand.tone, 500),
+      offers: text(brand.offers, 4_000),
+      restrictions: text(brand.restrictions, 4_000),
+    },
+    plan: { tier: text(plan.tier, 40) || null, note: text(plan.note, 1_000) },
+  };
+}
+
+async function authenticatedUser() {
+  const supabase = await createSupabaseServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  return { supabase, user };
+}
+
+/** Cross-device draft recovery without a new table or service-role write. */
+export async function GET() {
+  const { user } = await authenticatedUser();
+  if (!user) return Response.json({ error: "Not authenticated" }, { status: 401 });
+  const saved = user.user_metadata?.[ONBOARDING_METADATA_KEY] ?? null;
+  return Response.json({ saved }, { headers: { "Cache-Control": "no-store" } });
+}
+
+/** Saves only bounded, non-secret setup fields in the authenticated user's metadata. */
+export async function PATCH(request: Request) {
+  const { supabase, user } = await authenticatedUser();
+  if (!user) return Response.json({ error: "Not authenticated" }, { status: 401 });
+  const body = (await request.json().catch(() => ({}))) as { step?: unknown; draft?: unknown };
+  const step = typeof body.step === "number" ? Math.min(Math.max(Math.floor(body.step), 1), MAX_STEP) : 1;
+  const saved = { version: 1, step, draft: sanitizeDraft(body.draft), updatedAt: new Date().toISOString() };
+  const { error } = await supabase.auth.updateUser({ data: { [ONBOARDING_METADATA_KEY]: saved } });
+  if (error) return Response.json({ error: "Could not save onboarding progress." }, { status: 500 });
+  return Response.json({ saved }, { headers: { "Cache-Control": "no-store" } });
+}
+
 /**
  * Structured onboarding wizard's single write step. Lives outside app/app/
  * deliberately — that directory is enforced service-role-free by
@@ -39,16 +101,14 @@ interface CreatedTenant {
  * first call already created.
  */
 export async function POST(request: Request) {
-  const supabase = await createSupabaseServerClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { supabase, user } = await authenticatedUser();
   if (!user) return Response.json({ error: "Not authenticated" }, { status: 401 });
 
   const existing = await listMembershipsForUser(supabase, user.id);
   if (existing.length > 0) {
     const first = existing[0];
     const tenant: CreatedTenant = { id: first.tenant.id, slug: first.tenant.slug, name: first.tenant.name };
+    await supabase.auth.updateUser({ data: { [ONBOARDING_METADATA_KEY]: null } });
     return Response.json({ tenant, created: false, brandBrainSaved: false, auditLogged: false }, { status: 200 });
   }
 
@@ -121,5 +181,6 @@ export async function POST(request: Request) {
     }
   }
 
+  await supabase.auth.updateUser({ data: { [ONBOARDING_METADATA_KEY]: null } });
   return Response.json({ tenant, created: true, brandBrainSaved, auditLogged }, { status: 201 });
 }

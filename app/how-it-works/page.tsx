@@ -6,45 +6,45 @@ import { WorkflowRail } from "@/components/ui/WorkflowRail";
 
 export const metadata: Metadata = {
   title: "How it works — Stratxcel",
-  description: "The mission, approval, execution and measurement loop behind every piece of work Stratxcel does for your business.",
+  description: "How the ₹999 staff-delivered Stratxcel Business Growth Audit moves from checkout to a written roadmap.",
 };
 
 const STAGES: { label: string; title: string; body: string }[] = [
   {
-    label: "Mission",
-    title: "You describe what you need",
-    body: "In plain language, in your workspace: a goal, a request, a problem to fix. No form to fill out, no ticket taxonomy to learn.",
+    label: "Checkout",
+    title: "Purchase the one-time Audit",
+    body: "Pay ₹999, GST included. The purchase creates an Audit order; it does not start a subscription.",
   },
   {
-    label: "Plan",
-    title: "Stratxcel plans the work",
-    body: "The request is broken into concrete steps — content to draft, a page to change, leads to follow up — using what's already known about your business.",
+    label: "Intake",
+    title: "Share the essential business context",
+    body: "Complete three guided sections in your workspace. Your answers are saved to the paid order and can be resumed.",
   },
   {
-    label: "Approval",
-    title: "You approve anything sensitive",
-    body: "Publishing, spend, outreach to your customers — anything with real-world consequence pauses for your explicit yes before it happens. Routine, reversible steps don't need to wait on you.",
+    label: "Review",
+    title: "The Stratxcel team reviews the evidence",
+    body: "A staff member reviews your context, public presence, competitors, and lead path. The order remains in review until a valid report exists.",
   },
   {
-    label: "Execution",
-    title: "The work gets done",
-    body: "Once approved, Stratxcel carries the step through — and leaves a record of exactly what happened, not just that it \"completed.\"",
+    label: "Delivery",
+    title: "Your written roadmap is delivered",
+    body: "The report includes an executive summary, priority risks, and a 30/60/90-day action plan. You can open it from the Audit page.",
   },
   {
-    label: "Measurement",
-    title: "Results land in your workspace",
-    body: "Reporting on what actually happened, not projections — and only what's supported by real data. No invented numbers.",
+    label: "Next step",
+    title: "Decide what to act on",
+    body: "Use the report independently or ask Stratxcel to scope monthly help. Any monthly plan is confirmed separately before activation.",
   },
 ];
 
 const FAQ: { q: string; a: string }[] = [
   {
-    q: "What happens if Stratxcel can't do something yet?",
-    a: "You'll see it plainly in your workspace — a disabled action with a clear reason, never a fabricated result.",
+    q: "Is the Audit generated automatically?",
+    a: "No. It is a staff-delivered review supported by a structured intake and workspace. Stratxcel does not promise an automated report engine for this offer.",
   },
   {
-    q: "Do I have to approve every single action?",
-    a: "No. Routine, reversible work proceeds on its own. Anything with real-world consequence — spend, publishing, outreach — waits for you.",
+    q: "Does the Audit start a subscription?",
+    a: "No. It is a one-time purchase. Monthly plans use a separate staff-assisted activation process during closed beta.",
   },
   {
     q: "Can Stratxcel staff see my data?",
@@ -60,7 +60,7 @@ export default function HowItWorksPage() {
         <section className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20 lg:px-8">
           <p className="font-sx-mono text-[11px] uppercase tracking-[0.3em] text-sx-text-subtle">How it works</p>
           <h1 className="mt-4 max-w-2xl font-sx-sans text-[clamp(1.8rem,4vw,2.6rem)] font-semibold leading-tight tracking-[-0.02em] text-sx-text">
-            One loop: mission, plan, approval, execution, measurement.
+            One clear path from purchase to a useful written roadmap.
           </h1>
           <div className="mt-10 max-w-md">
             <WorkflowRail
@@ -98,10 +98,10 @@ export default function HowItWorksPage() {
         <section className="mx-auto max-w-6xl px-4 py-16 text-center sm:px-6 lg:px-8">
           <div className="flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
             <Link
-              href="/contact?intent=demo"
+              href="/audit"
               className="rounded-sx-sm bg-sx-accent px-6 py-3 text-center font-sx-sans text-sm font-semibold text-sx-accent-on transition-colors duration-150 hover:bg-[color:var(--sx-accent-hover)]"
             >
-              Start with Stratxcel
+              Start the ₹999 Audit
             </Link>
             <Link
               href="/security"

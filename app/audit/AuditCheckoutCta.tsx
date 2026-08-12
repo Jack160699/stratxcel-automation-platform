@@ -5,10 +5,8 @@ import { trackFunnel } from "@/lib/analytics/events";
 
 /**
  * Entry point into payment-first checkout. Always routes through
- * /audit/checkout, which resolves auth (sign in if needed, via the existing
- * ?next= handoff) before ever calling the payment-creation API — a signed-out
- * visitor is never asked to create a full account here, only to authenticate
- * enough to own the payment they're about to make.
+ * /audit/checkout. Signed-out visitors can pay with an email address and
+ * claim the purchase through a verified session after payment.
  */
 export function AuditCheckoutCta() {
   return (
