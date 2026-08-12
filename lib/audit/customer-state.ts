@@ -31,18 +31,53 @@ export interface AuditStateOrder extends AuditIntakeLike {
 }
 
 const PLACEHOLDER_BUSINESS_NAME = "Pending — completed in intake";
+const BRAND_BRAIN_QUESTIONNAIRE_VERSION = "brand_brain_v1";
 
 function isPresent(value: unknown): boolean {
   return typeof value === "string" && value.trim().length > 0;
+}
+
+function hasAnswer(value: unknown): boolean {
+  if (isPresent(value)) return true;
+  if (Array.isArray(value)) return value.some((item) => isPresent(item));
+  return false;
 }
 
 function objectValue(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
 
-export function auditIntakeMissingFields(order: AuditIntakeLike): string[] {
-  const deepDive = objectValue(order.deep_dive_answers);
-  const goals = objectValue(order.goals_answers);
+function isBrandBrainQuestionnaire(deepDive: Record<string, unknown>): boolean {
+  const meta = objectValue(deepDive.intakeMeta);
+  return meta.questionnaireVersion === BRAND_BRAIN_QUESTIONNAIRE_VERSION;
+}
+
+function brandBrainIntakeMissingFields(order: AuditIntakeLike, deepDive: Record<string, unknown>, goals: Record<string, unknown>): string[] {
+  const required: Array<[string, unknown]> = [
+    ["business_name", order.business_name],
+    ["businessDescription", deepDive.businessDescription],
+    ["businessReach", deepDive.businessReach],
+    ["majorProducts", deepDive.majorProducts],
+    ["priorityOffering", deepDive.priorityOffering],
+    ["customerSegments", deepDive.customerSegments],
+    ["reasonsChosen", deepDive.reasonsChosen],
+    ["discoveryChannels", deepDive.discoveryChannels],
+    ["purchaseChannels", deepDive.purchaseChannels],
+    ["biggestProblem", deepDive.biggestProblem],
+    ["primaryGoal", goals.primaryGoal],
+    ["successDefinition", goals.successDefinition],
+  ];
+
+  const missing = required
+    .filter(([key, value]) => !hasAnswer(value) || (key === "business_name" && value === PLACEHOLDER_BUSINESS_NAME))
+    .map(([key]) => key);
+
+  const reach = typeof deepDive.businessReach === "string" ? deepDive.businessReach : "";
+  if (reach && reach !== "online_anywhere" && !hasAnswer(deepDive.location)) missing.push("location");
+  return missing;
+}
+
+function legacyIntakeMissingFields(order: AuditIntakeLike, deepDive: Record<string, unknown>, goals: Record<string, unknown>): string[] {
   const required: Array<[string, unknown]> = [
     ["business_name", order.business_name],
     ["industry", order.industry],
@@ -59,6 +94,14 @@ export function auditIntakeMissingFields(order: AuditIntakeLike): string[] {
   return required
     .filter(([key, value]) => !isPresent(value) || (key === "business_name" && value === PLACEHOLDER_BUSINESS_NAME))
     .map(([key]) => key);
+}
+
+export function auditIntakeMissingFields(order: AuditIntakeLike): string[] {
+  const deepDive = objectValue(order.deep_dive_answers);
+  const goals = objectValue(order.goals_answers);
+  return isBrandBrainQuestionnaire(deepDive)
+    ? brandBrainIntakeMissingFields(order, deepDive, goals)
+    : legacyIntakeMissingFields(order, deepDive, goals);
 }
 
 export function isAuditIntakeComplete(order: AuditIntakeLike): boolean {
