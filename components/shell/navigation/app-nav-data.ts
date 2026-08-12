@@ -23,7 +23,7 @@ export const APP_NAV_GROUPS_DATA: NavGroupData[] = [
   },
   {
     label: "Your audit",
-    items: [{ key: "audit", label: "Business Growth Audit", href: "/app/audit", release: "v1" }],
+    items: [{ key: "customer-audit", label: "Business Growth Audit", href: "/app/audit", release: "v1" }],
   },
   {
     label: "Customers",
@@ -41,4 +41,4 @@ export const APP_NAV_GROUPS_DATA: NavGroupData[] = [
 ];
 
 /** Mobile primary: the closed-beta offer and its essential customer surfaces. */
-export const APP_MOBILE_NAV_KEYS = ["home", "audit", "crm", "billing"];
+export const APP_MOBILE_NAV_KEYS = ["home", "customer-audit", "crm", "billing"];

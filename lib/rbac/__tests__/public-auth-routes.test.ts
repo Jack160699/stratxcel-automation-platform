@@ -159,18 +159,18 @@ function run() {
   assert.ok(startMatches.length >= 2, "PublicHeader's \"Start with Stratxcel\" link must point at /signup in both desktop and mobile nav");
   assert.equal(/href="\/app"/.test(publicHeader), false, "PublicHeader must no longer link \"Sign in\" at /app now that /login exists");
 
-  // --- 9. Homepage CTA destinations: "Start with Stratxcel" -> /signup,
-  // "Book a demo" stays on the sales/demo contact path -------------------------
+  // --- 9. Homepage CTA destinations: the certified paid Audit is the hero,
+  // while "Book a demo" stays on the sales/demo contact path ------------------
   const homepage = read("app", "page.tsx");
-  const homepageStartMatches = homepage.match(/href="\/signup"/g) ?? [];
-  assert.ok(homepageStartMatches.length >= 2, "Homepage's \"Start with Stratxcel\" CTAs (hero + final) must point at /signup");
+  const homepageAuditMatches = homepage.match(/href="\/audit"/g) ?? [];
+  assert.ok(homepageAuditMatches.length >= 2, "Homepage's hero and final CTAs must point at the canonical paid Audit entry");
   assert.ok(
     /href="\/contact\?intent=demo"/.test(homepage),
     "Homepage's \"Book a demo\" CTA must stay on /contact?intent=demo — sales/demo intent must not route to signup"
   );
 
   console.log(
-    "public-auth-routes.test.ts: ALL PASS (4 auth routes exist, no service-role dependency, signup uses Supabase Auth with metadata-only name storage + terms gate, forgot-password gives a generic non-enumerating response, reset-password validates recovery state and never logs secrets, post-login routing checks owner status only, Header/homepage CTAs point at the real routes)"
+    "public-auth-routes.test.ts: ALL PASS (4 auth routes exist, no service-role dependency, signup uses Supabase Auth with metadata-only name storage + terms gate, forgot-password gives a generic non-enumerating response, reset-password validates recovery state and never logs secrets, post-login routing checks owner status only, Header and Audit-first homepage CTAs point at the real routes)"
   );
 }
 
