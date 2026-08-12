@@ -1095,7 +1095,7 @@ async function run() {
   }
 
   const counts = countCapabilitiesByStatus();
-  assert.equal(counts.AVAILABLE, 10);
+  assert.equal(counts.AVAILABLE, 11);
   const matrix = await countCapabilityOperationalMatrix({ tenantId: A });
   assert.ok(matrix.providerOperational <= matrix.staticAvailable);
   assert.ok(matrix.providerOperational >= 3);

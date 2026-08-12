@@ -1,0 +1,19 @@
+{
+  "id": "resp_openai_no_citation",
+  "output": [
+    {
+      "id": "msg_no_cite",
+      "type": "message",
+      "status": "completed",
+      "role": "assistant",
+      "content": [
+        {
+          "type": "output_text",
+          "text": "I recall from training that the company was founded in 1999.",
+          "annotations": []
+        }
+      ]
+    }
+  ],
+  "usage": { "input_tokens": 10, "output_tokens": 20 }
+}

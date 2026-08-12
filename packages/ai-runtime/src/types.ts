@@ -59,6 +59,7 @@ export type AIErrorCategory =
   | "INVALID_INPUT"
   | "NOT_CONFIGURED"
   | "BUDGET_EXHAUSTED"
+  | "INSUFFICIENT_EVIDENCE"
   | "PROVIDER_FAILURE"
   | "INTERNAL_FAILURE";
 
@@ -163,19 +164,66 @@ export interface AIExecutionRequest {
   metadata?: Record<string, string | number | boolean | null>;
 }
 
+export interface AIToolUsage {
+  webSearchCalls?: number;
+  webSearchQueries?: number;
+  estimatedToolCostUsd?: number;
+  /** Conservative accounting label — not an invoice. */
+  costEstimateKind?: "upper_bound" | "exact" | "unknown";
+}
+
 export interface AIUsage {
   inputTokens: number;
   cachedInputTokens: number;
   outputTokens: number;
   totalTokens: number;
   mediaUnits?: number;
+  /** Token/media cost + conservative search-tool cost when present. */
   estimatedCostUsd: number;
+  toolUsage?: AIToolUsage;
 }
 
 export interface AIQualityAssessment {
   score: number;
   decision: AIQualityDecision;
   reasons: readonly string[];
+}
+
+/** Provider-neutral web evidence — adapters parse raw provider JSON into this. */
+export interface AIWebSource {
+  id: string;
+  /** Provider-native source identity (when available). */
+  providerSourceId?: string;
+  url: string;
+  title?: string;
+  domain?: string;
+  provider: AIProviderId;
+  searchQueries?: readonly string[];
+  /** Character offsets into response text when known. */
+  startIndex?: number;
+  endIndex?: number;
+}
+
+export interface AICitationSupport {
+  /** Claim / segment text when provided by the provider. */
+  text?: string;
+  startIndex?: number;
+  endIndex?: number;
+  /** Stable source ids in AIWebEvidence.sources. */
+  sourceIds: readonly string[];
+  /** Backward compatibility; indices into AIWebEvidence.sources. */
+  sourceIndices?: readonly number[];
+}
+
+export interface AIWebEvidence {
+  sources: readonly AIWebSource[];
+  citationSupports: readonly AICitationSupport[];
+  searchQueries: readonly string[];
+  /** Opaque safe attribution metadata only — never render provider HTML blindly. */
+  searchAttribution?: {
+    hasSearchEntryPoint: boolean;
+    renderedContentLength?: number;
+  };
 }
 
 export interface AIModelAttempt {
@@ -212,6 +260,8 @@ export interface AIExecutionResult {
   text: string;
   structuredOutput?: unknown;
   toolCalls: AIToolCall[];
+  /** Normalized web grounding / citation evidence when the provider returned it. */
+  webEvidence?: AIWebEvidence;
   provider: AIProviderId | null;
   model: string | null;
   reasoningLevel: AIReasoningLevel;
@@ -266,6 +316,7 @@ export interface AITextProviderAdapter {
     usage: AIUsage;
     providerRequestId: string | null;
     safetyRefused?: boolean;
+    webEvidence?: AIWebEvidence;
   }>;
   probeReadiness(model?: string): Promise<Omit<AIProviderHealth, "provider" | "circuitOpen">>;
 }

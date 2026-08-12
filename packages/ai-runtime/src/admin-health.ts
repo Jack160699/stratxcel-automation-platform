@@ -34,6 +34,18 @@ export interface AiAdminHealthSnapshot {
     durableStoreReady: boolean;
     economyModelAvailable: boolean;
   };
+  research: {
+    aiRuntimeAvailable: boolean;
+    geminiConfigured: boolean;
+    geminiModelCallable: boolean;
+    googleSearchGrounding: "supported_unverified" | "not_configured";
+    openaiConfigured: boolean;
+    openaiLiveStatus: "deferred_owner_wallet" | "configured" | "not_configured";
+    researchWebImplementation: "AVAILABLE" | "NOT_CONFIGURED" | "FAIL";
+    researchSerpImplementation: "AVAILABLE" | "NOT_CONFIGURED" | "FAIL";
+    searchConsoleNote: string;
+    status: AdminProviderStatus;
+  };
   budgetLedgerReady: boolean;
   serviceMeteringWriterReady: boolean;
   modelPolicySummary: Array<{ taskClass: string; primary: string; fallback: string | null }>;
@@ -219,6 +231,25 @@ export async function buildAiAdminHealthSnapshot(args?: {
     imagePrimaryProbe.modelAvailable ||
     (Boolean(process.env.OPENAI_API_KEY) && imageFallbackProbe.modelAvailable);
   const imageReachable = imagePrimaryProbe.reachable || imageFallbackProbe.reachable;
+  const researchPolicy = policies.RESEARCH;
+  const googleSearchGrounding = researchPolicy?.allowGoogleSearchGrounding
+    ? geminiProbe.configured
+      ? ("supported_unverified" as const)
+      : ("not_configured" as const)
+    : ("not_configured" as const);
+  const researchWebImplementation =
+    geminiProbe.configured || openaiProbe.configured
+      ? ("AVAILABLE" as const)
+      : ("NOT_CONFIGURED" as const);
+  const researchStatus = deriveStatus(
+    {
+      configured: geminiProbe.configured || openaiProbe.configured,
+      reachable: geminiProbe.reachable || openaiProbe.reachable,
+      modelAvailable: geminiProbe.modelAvailable || openaiProbe.modelAvailable,
+    },
+    geminiCircuit && openaiCircuit,
+    false,
+  );
 
   return {
     gemini: {
@@ -266,6 +297,21 @@ export async function buildAiAdminHealthSnapshot(args?: {
         durableVideoStoreReady && storageReady && budgetLedgerReady && serviceMeteringWriterReady,
       ),
     },
+    research: {
+      aiRuntimeAvailable: true,
+      geminiConfigured: geminiProbe.configured,
+      geminiModelCallable: geminiProbe.modelAvailable,
+      googleSearchGrounding,
+      openaiConfigured: openaiProbe.configured,
+      openaiLiveStatus: openaiProbe.configured
+        ? ("deferred_owner_wallet" as const)
+        : ("not_configured" as const),
+      researchWebImplementation,
+      researchSerpImplementation: "NOT_CONFIGURED",
+      searchConsoleNote:
+        "Search Console is owned-property evidence only; research.serp Workforce bind incomplete.",
+      status: researchStatus,
+    },
     budgetLedgerReady,
     serviceMeteringWriterReady,
     modelPolicySummary: Object.values(policies).map((p) => ({
@@ -281,6 +327,6 @@ export async function buildAiAdminHealthSnapshot(args?: {
     estimatedMonthSpendUsd: args?.estimatedMonthSpendUsd ?? null,
     recentFallbackRate: args?.recentFallbackRate ?? null,
     hermesNote:
-      "HERMES_EXTERNAL_MODEL_ROUTING: Hermes CEO/mission reasoning uses HERMES_DEFAULT_MODEL / HERMES_DEFAULT_PROVIDER on the Hermes host. WORKFORCE_DIRECT_AI_RUNTIME: specialist/direct AI calls use @stratxcel/ai-runtime.",
+      "HERMES_EXTERNAL_MODEL_ROUTING: Hermes CEO/mission reasoning uses HERMES_DEFAULT_MODEL / HERMES_DEFAULT_PROVIDER on the Hermes host. WORKFORCE_DIRECT_AI_RUNTIME: specialist/direct AI calls use @stratxcel/ai-runtime. RESEARCH: Hermes attach_research_evidence only; native Hermes web/browser tools remain disabled.",
   };
 }

@@ -1,4 +1,4 @@
-import { buildUsage } from "../catalog/costs.ts";
+import { buildUsage, estimateGeminiSearchToolCostUsd } from "../catalog/costs.ts";
 import { AIProviderError, classifyHttpStatus } from "../errors.ts";
 import { probeGeminiReadiness, ReadinessCache } from "../health/readiness.ts";
 import type {
@@ -9,6 +9,7 @@ import type {
   AIToolSchema,
   FetchLike,
 } from "../types.ts";
+import { parseGeminiGroundingMetadata } from "./gemini-grounding.ts";
 
 export interface GeminiAdapterOptions {
   apiKey?: string;
@@ -110,15 +111,21 @@ export class GeminiTextProvider implements AITextProviderAdapter {
 
     const mapped = mapMessagesToGeminiContents(messages);
     const thinking = thinkingLevelFor(args.reasoningLevel);
+    const generationConfig: Record<string, unknown> = {
+      maxOutputTokens: 8192,
+      ...(thinking ? { thinkingConfig: { thinkingLevel: thinking } } : {}),
+    };
+    if (args.structuredOutputSchema) {
+      generationConfig.responseFormat = {
+        text: {
+          mimeType: "application/json",
+          schema: args.structuredOutputSchema,
+        },
+      };
+    }
     const body: Record<string, unknown> = {
       contents: mapped.contents,
-      generationConfig: {
-        maxOutputTokens: 8192,
-        ...(thinking ? { thinkingConfig: { thinkingLevel: thinking } } : {}),
-        ...(args.structuredOutputSchema
-          ? { responseMimeType: "application/json", responseSchema: args.structuredOutputSchema }
-          : {}),
-      },
+      generationConfig,
     };
     if (mapped.systemInstruction) {
       body.system_instruction = { parts: [{ text: mapped.systemInstruction }] };
@@ -164,6 +171,7 @@ export class GeminiTextProvider implements AITextProviderAdapter {
         candidates?: Array<{
           content?: { parts?: Array<{ text?: string; functionCall?: { name: string; args?: Record<string, unknown> } }> };
           finishReason?: string;
+          groundingMetadata?: unknown;
         }>;
         usageMetadata?: {
           promptTokenCount?: number;
@@ -202,11 +210,21 @@ export class GeminiTextProvider implements AITextProviderAdapter {
         }
       }
 
+      const webEvidence = parseGeminiGroundingMetadata(json.candidates?.[0]?.groundingMetadata);
+      const webSearchQueries = webEvidence.searchQueries.length;
       const usage = buildUsage({
         model: args.model,
         inputTokens: json.usageMetadata?.promptTokenCount ?? 0,
         cachedInputTokens: json.usageMetadata?.cachedContentTokenCount ?? 0,
         outputTokens: json.usageMetadata?.candidatesTokenCount ?? 0,
+        toolUsage:
+          webSearchQueries > 0
+            ? {
+                webSearchQueries,
+                estimatedToolCostUsd: estimateGeminiSearchToolCostUsd(webSearchQueries),
+                costEstimateKind: "upper_bound",
+              }
+            : undefined,
       });
 
       return {
@@ -216,6 +234,7 @@ export class GeminiTextProvider implements AITextProviderAdapter {
         usage,
         providerRequestId: json.responseId ?? null,
         safetyRefused: false,
+        webEvidence,
       };
     } catch (err) {
       if (err instanceof AIProviderError) throw err;

@@ -1,0 +1,24 @@
+{
+  "candidates": [
+    {
+      "content": {
+        "parts": [{ "text": "Malformed grounding still returns text." }],
+        "role": "model"
+      },
+      "groundingMetadata": {
+        "webSearchQueries": "not-an-array",
+        "groundingChunks": [
+          { "web": { "uri": "javascript:alert(1)", "title": "bad" } },
+          { "web": { "uri": "file:///etc/passwd", "title": "bad2" } },
+          { "notWeb": true },
+          "string-chunk"
+        ],
+        "groundingSupports": [
+          { "segment": { "text": "x" }, "groundingChunkIndices": [99, -1, "nope"] }
+        ]
+      }
+    }
+  ],
+  "usageMetadata": { "promptTokenCount": 1, "candidatesTokenCount": 1, "totalTokenCount": 2 },
+  "responseId": "gemini-malformed"
+}

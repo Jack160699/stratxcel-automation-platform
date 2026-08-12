@@ -119,6 +119,11 @@ export default async function SystemHealthPage() {
       detail: `Status=${ai.openai.status}; configured=${ai.openai.configured}; reachable=${ai.openai.reachable}; modelAvailable=${ai.openai.modelAvailable}; circuitOpen=${ai.openai.circuitOpen}.`,
     },
     {
+      name: "Research Engine",
+      status: aiStatusToIntegration(ai.research.status),
+      detail: `Status=${ai.research.status}; runtimeAvailable=${ai.research.aiRuntimeAvailable}; Gemini configured=${ai.research.geminiConfigured}; Gemini callable=${ai.research.geminiModelCallable}; Google grounding=${ai.research.googleSearchGrounding}; OpenAI=${ai.research.openaiLiveStatus}; research.web=${ai.research.researchWebImplementation}; research.serp=${ai.research.researchSerpImplementation}. ${ai.research.searchConsoleNote}`,
+    },
+    {
       name: "AI Media (Image)",
       status: aiStatusToIntegration(ai.image.status),
       detail: `Status=${ai.image.status}; storageReady=${ai.image.storageReady}; budgetLedgerReady=${ai.budgetLedgerReady}; serviceWriter=${ai.serviceMeteringWriterReady}; primaryModelAvailable=${ai.image.primaryModelAvailable}; primary=${ai.image.primaryModel}. Key presence alone is not Live.`,

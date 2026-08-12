@@ -20,7 +20,8 @@ function run() {
   assert.throws(() => assertDepartment("fake_department"), /unknown_department/);
   assert.throws(() => assertRole("research", "fake_role"), /unknown_role/);
 
-  assert.equal(getCapability("research.web")?.status, "PLANNED");
+  assert.equal(getCapability("research.web")?.status, "AVAILABLE");
+  assert.equal(getCapability("research.serp")?.status, "NOT_CONFIGURED");
   assert.equal(getCapability("social.publish")?.status, "AVAILABLE");
   assert.equal(getCapability("social.schedule")?.status, "AVAILABLE");
   assert.equal(getCapability("seo.audit")?.status, "AVAILABLE");

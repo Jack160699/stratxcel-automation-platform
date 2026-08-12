@@ -8,3 +8,4 @@ export * from "./repository.ts";
 export * from "./crawler.ts";
 export * from "./runtime.ts";
 export * from "./google/index.ts";
+export * from "./research/index.ts";
