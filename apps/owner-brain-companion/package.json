@@ -17,7 +17,7 @@
     "remember": "node --experimental-strip-types src/index.ts remember",
     "test": "node --experimental-strip-types src/__tests__/queue.test.ts && node --experimental-strip-types src/__tests__/consent.test.ts"
   },
-  "dependencies": {
+  "devDependencies": {
     "get-windows": "^9.3.0"
   }
 }
