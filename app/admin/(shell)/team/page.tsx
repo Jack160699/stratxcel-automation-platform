@@ -6,15 +6,38 @@ export default async function AdminTeamPage() {
   if (!ctx.ok) return null;
 
   const { supabase } = getServiceContext();
-  const { data: admins } = await supabase.from("stratxcel_admins").select("user_id");
-  const adminIds = (admins ?? []).map((row) => row.user_id);
-  const { data: dualMemberships } = adminIds.length
-    ? await supabase
-        .from("tenant_members")
-        .select("user_id, role, tenant:tenants(id, name, slug)")
-        .in("user_id", adminIds)
-        .order("created_at", { ascending: true })
-    : { data: [] };
+  const [{ data: staffRows }, { data: dualMemberships }] = await Promise.all([
+    supabase.from("platform_staff_users").select("user_id, role, is_active").eq("is_active", true),
+    supabase
+      .from("tenant_members")
+      .select("user_id, role, tenant:tenants(id, name, slug)")
+      .in(
+        "user_id",
+        (
+          await supabase.from("stratxcel_admins").select("user_id")
+        ).data?.map((row) => row.user_id) ?? []
+      )
+      .order("created_at", { ascending: true }),
+  ]);
+
+  const staffById = new Map((staffRows ?? []).map((row) => [row.user_id, row]));
+  const userIds = [...new Set((dualMemberships ?? []).map((row) => row.user_id))];
+  const profiles = await Promise.all(
+    userIds.map(async (userId) => {
+      try {
+        const { data } = await supabase.auth.admin.getUserById(userId);
+        return {
+          userId,
+          email: data.user?.email ?? null,
+          name: (data.user?.user_metadata?.full_name as string | undefined) ?? null,
+          staffRole: staffById.get(userId)?.role ?? null,
+        };
+      } catch {
+        return { userId, email: null, name: null, staffRole: staffById.get(userId)?.role ?? null };
+      }
+    })
+  );
+  const profileById = new Map(profiles.map((profile) => [profile.userId, profile]));
 
   return (
     <div className="flex flex-col gap-6">
@@ -30,14 +53,32 @@ export default async function AdminTeamPage() {
         ) : (
           <div className="mt-4 overflow-x-auto">
             <table className="w-full text-left text-xs">
-              <thead><tr className="text-sx-text-subtle"><th className="pb-2 pr-4">Staff user</th><th className="pb-2 pr-4">Client</th><th className="pb-2">Membership role</th></tr></thead>
+              <thead>
+                <tr className="text-sx-text-subtle">
+                  <th className="pb-2 pr-4">Staff</th>
+                  <th className="pb-2 pr-4">Platform role</th>
+                  <th className="pb-2 pr-4">Client</th>
+                  <th className="pb-2">Membership role</th>
+                </tr>
+              </thead>
               <tbody>
                 {(dualMemberships ?? []).map((membership) => {
                   const tenant = Array.isArray(membership.tenant) ? membership.tenant[0] : membership.tenant;
+                  const profile = profileById.get(membership.user_id);
+                  const displayName = profile?.name || profile?.email || "Unknown staff";
                   return (
                     <tr key={`${membership.user_id}:${tenant?.id ?? "unknown"}`} className="border-t border-sx-border">
-                      <td className="py-2 pr-4 font-mono text-[11px]">{membership.user_id}</td>
-                      <td className="py-2 pr-4">{tenant?.name ?? "Unknown client"} <span className="text-sx-text-subtle">{tenant?.slug}</span></td>
+                      <td className="py-2 pr-4">
+                        <p className="font-medium text-sx-text">{displayName}</p>
+                        {profile?.email && <p className="text-sx-text-subtle">{profile.email}</p>}
+                        <p className="font-mono text-[10px] text-sx-text-subtle" title={membership.user_id}>
+                          ID {membership.user_id.slice(0, 8)}…
+                        </p>
+                      </td>
+                      <td className="py-2 pr-4 capitalize">{profile?.staffRole?.replaceAll("_", " ") ?? "—"}</td>
+                      <td className="py-2 pr-4">
+                        {tenant?.name ?? "Unknown client"} <span className="text-sx-text-subtle">{tenant?.slug}</span>
+                      </td>
                       <td className="py-2 capitalize">{membership.role}</td>
                     </tr>
                   );

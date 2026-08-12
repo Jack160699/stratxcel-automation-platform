@@ -3,7 +3,7 @@ import { requireOwnerContext } from "@/lib/social/db-context";
 import { listAccounts } from "@/lib/social/repositories/accounts";
 import { listDeadLetters, listJobs } from "@/lib/social/repositories/publishing";
 import { listAuditEvents } from "@/lib/social/repositories/system";
-import { getLatestSession } from "@/lib/social/repositories/agent";
+import { getCurrentMissionSession, getRecentMissionSessions } from "@/lib/social/repositories/agent";
 import AskAutopilot from "./AskAutopilot";
 import { MissionCard } from "./components/MissionCard";
 import { EmptyState } from "./components/EmptyState";
@@ -24,12 +24,13 @@ export default async function CommandCenterPage() {
   const ctx = await requireOwnerContext();
   if (!ctx.ok) return null;
 
-  const [accounts, jobs, deadLetters, auditEvents, latestSession] = await Promise.all([
+  const [accounts, jobs, deadLetters, auditEvents, currentMission, recentMissions] = await Promise.all([
     listAccounts(ctx),
     listJobs(ctx, 50),
     listDeadLetters(ctx, 10),
     listAuditEvents(ctx, 10),
-    getLatestSession(ctx),
+    getCurrentMissionSession(ctx),
+    getRecentMissionSessions(ctx, 5),
   ]);
 
   const reauthAccounts = accounts.filter((a) => a.status === "REAUTH_REQUIRED");
@@ -81,17 +82,35 @@ export default async function CommandCenterPage() {
 
       <section className="saut-card p-5">
         <h2 className="saut-section-title mb-3">Current mission</h2>
-        {latestSession ? (
+        {currentMission ? (
           <MissionCard
-            status={latestSession.status}
-            title={latestSession.title ?? "Untitled session"}
-            createdAt={latestSession.created_at}
-            updatedAt={latestSession.updated_at}
+            status={currentMission.status}
+            title={currentMission.title ?? "Untitled session"}
+            createdAt={currentMission.created_at}
+            updatedAt={currentMission.updated_at}
           />
         ) : (
-          <EmptyState hint="Ask Autopilot something above to start one.">No active mission yet.</EmptyState>
+          <EmptyState hint="Ask Autopilot something above to start one.">No mission is running right now.</EmptyState>
         )}
       </section>
+
+      {recentMissions.length > 0 && (
+        <section className="saut-card p-5">
+          <h2 className="saut-section-title mb-3">Recent sessions</h2>
+          <div className="space-y-4">
+            {recentMissions.map((session) => (
+              <div key={session.id} className="border-t pt-4 first:border-t-0 first:pt-0" style={{ borderColor: "var(--saut-border)" }}>
+                <MissionCard
+                  status={session.status}
+                  title={session.title ?? "Untitled session"}
+                  createdAt={session.created_at}
+                  updatedAt={session.updated_at}
+                />
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       <section className="saut-card p-5">
         <h2 className="saut-section-title mb-3">Connected accounts</h2>

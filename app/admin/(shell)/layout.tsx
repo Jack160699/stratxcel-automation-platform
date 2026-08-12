@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { redirect } from "next/navigation";
 import { resolveCanonicalIdentity } from "@/lib/identity/resolve-identity";
+import { ensureAdminStaffWorkspace } from "@/lib/identity/admin-staff-workspace";
 import { resolveCurrentTenant } from "@/lib/tenants/current-tenant";
 import { isBetaModeEnabled } from "@/lib/release/release-mode";
 import AdminLogin from "@/app/admin/AdminLogin";
@@ -27,6 +28,10 @@ export default async function ShellLayout({ children }: { children: ReactNode })
     resolveCurrentTenant(identity.supabase, identity.userId),
     isBetaModeEnabled(),
   ]);
+
+  if (active) {
+    await ensureAdminStaffWorkspace(identity.userId, active.tenantId);
+  }
 
   return (
     <CurrentTenantProvider initialTenants={tenants} initialActive={active}>

@@ -6,6 +6,7 @@ import { NoClientSelected } from "../NoClientSelected";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { ErrorState } from "@/components/ui/Feedback";
+import { platformFetch } from "@/lib/admin/platform-fetch";
 
 interface Approval {
   id: string;
@@ -21,17 +22,24 @@ export default function ApprovalsPage() {
   const [approvals, setApprovals] = useState<Approval[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [decidingId, setDecidingId] = useState<string | null>(null);
+  const [listLoading, setListLoading] = useState(false);
 
   async function load() {
     if (!tenantId) return;
+    setListLoading(true);
     setError(null);
-    const res = await fetch(`/api/platform/approvals?tenantId=${encodeURIComponent(tenantId)}`);
-    const body = await res.json();
-    if (!res.ok) {
-      setError(body.error ?? `Failed to load approvals (HTTP ${res.status})`);
-      return;
+    try {
+      const res = await platformFetch(`/api/platform/approvals?tenantId=${encodeURIComponent(tenantId)}`);
+      const body = await res.json();
+      if (!res.ok) {
+        setApprovals([]);
+        setError(body.error ?? `Failed to load approvals (HTTP ${res.status})`);
+        return;
+      }
+      setApprovals(body.approvals);
+    } finally {
+      setListLoading(false);
     }
-    setApprovals(body.approvals);
   }
 
   useEffect(() => {
@@ -66,13 +74,14 @@ export default function ApprovalsPage() {
         <h1 className="font-sx-sans text-xl font-semibold text-sx-text">Approvals{active ? ` — ${active.name}` : ""}</h1>
       </header>
 
-      {error && <ErrorState message={error} />}
+      {error && <ErrorState message={error} onRetry={load} />}
 
       <section className="flex flex-col gap-3">
         <h2 className="font-sx-sans text-base font-medium text-sx-text">Pending approvals</h2>
         {!tenantId && <NoClientSelected what="approvals" />}
-        {tenantId && approvals === null && <p className="text-sm text-sx-text-subtle">Loading…</p>}
-        {tenantId && approvals?.length === 0 && <p className="text-sm text-sx-text-subtle">No pending approvals.</p>}
+        {tenantId && listLoading && <p className="text-sm text-sx-text-subtle">Loading…</p>}
+        {tenantId && !listLoading && approvals?.length === 0 && !error && <p className="text-sm text-sx-text-subtle">No pending approvals.</p>}
+        {tenantId && !listLoading && error && approvals?.length === 0 && <ErrorState message={error} onRetry={load} />}
         {approvals && approvals.length > 0 && (
           <div className="flex flex-col gap-2">
             {approvals.map((a) => (

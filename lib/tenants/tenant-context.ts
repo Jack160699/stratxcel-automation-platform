@@ -3,6 +3,7 @@ import "server-only";
 import { createSupabaseServerClient } from "../supabase/server";
 import { createSupabaseServiceClient } from "../supabase/service";
 import { readStaffWorkspaceTenantId } from "../identity/staff-workspace";
+import { STAFF_WORKSPACE_CONTEXT_ERROR } from "../identity/staff-workspace-errors";
 import { getAgencyTenant, type AgencyTenant } from "./admin-repository";
 import type { TenantRole } from "./types";
 import type { Permission } from "../rbac/types";
@@ -94,7 +95,7 @@ export async function requireTenantReadContext(
   if (staffRow) {
     const workspaceTenantId = await readStaffWorkspaceTenantId(user.id);
     if (workspaceTenantId !== tenantId) {
-      return { ok: false, status: 403, error: "Valid staff workspace context required" };
+      return { ok: false, status: 403, error: STAFF_WORKSPACE_CONTEXT_ERROR };
     }
     const tenant = await getAgencyTenant(tenantId);
     if (!tenant) return { ok: false, status: 403, error: "Staff workspace tenant does not exist" };

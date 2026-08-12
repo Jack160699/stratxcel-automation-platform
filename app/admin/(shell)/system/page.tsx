@@ -16,12 +16,12 @@ const STATUS_CHIP: Record<IntegrationStatus, { label: string; state: ChipState }
   manual_action_required: { label: "Manual action required", state: "warning" },
 };
 
-function modeToStatus(mode: string | undefined, disabledIsBlocked = false): IntegrationStatus {
+function modeToStatus(mode: string | undefined, optional = false): IntegrationStatus {
   if (mode === "live") return "live";
   if (mode === "shadow") return "shadow";
   if (mode === "mock") return "test";
   if (mode === "http") return "live";
-  return disabledIsBlocked ? "blocked" : "disconnected";
+  return optional ? "disconnected" : "blocked";
 }
 
 function aiStatusToIntegration(status: AdminProviderStatus): IntegrationStatus {
@@ -100,12 +100,12 @@ export default async function SystemHealthPage() {
     {
       name: "WhatsApp",
       status: modeToStatus(process.env.WHATSAPP_INTEGRATION_MODE, true),
-      detail: "Phone-to-tenant routing built; no phone_number_id verified yet (tomorrow's manual action).",
+      detail: "Platform integration mode for tenant phone routing. Owner Agent pairing and tenant bindings are managed separately under Integrations.",
     },
     {
       name: "Razorpay",
-      status: modeToStatus(process.env.RAZORPAY_INTEGRATION_MODE, true),
-      detail: "Live Payment Links, state machine, webhook route (/api/webhook/razorpay), & refunds built.",
+      status: modeToStatus(process.env.RAZORPAY_INTEGRATION_MODE),
+      detail: "Live Payment Links, state machine, webhook route (/api/webhook/razorpay), and refunds.",
     },
     hermes,
     {
@@ -135,8 +135,8 @@ export default async function SystemHealthPage() {
     },
     {
       name: "Google Drive",
-      status: "manual_action_required",
-      detail: "OAuth code path built; no consent flow run — connect tomorrow via /api/platform/storage/drive/connect.",
+      status: "disconnected",
+      detail: "Optional connector — not configured in this environment. Connect via /api/platform/storage/drive/connect when needed.",
     },
     {
       name: "BYOK providers",
@@ -149,6 +149,10 @@ export default async function SystemHealthPage() {
     <div className="flex flex-col gap-6">
       <header>
         <h1 className="font-sx-sans text-xl font-semibold text-sx-text">System Health</h1>
+        <p className="mt-1 text-sm text-sx-text-muted">
+          Platform-wide provider posture. Optional or unconfigured integrations show as Disconnected — not product failure.
+          Verified Live status requires runtime evidence, not key presence alone.
+        </p>
       </header>
       <section className="flex flex-col gap-3">
         <h2 className="font-sx-sans text-base font-medium text-sx-text">Integration status</h2>

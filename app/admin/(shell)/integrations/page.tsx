@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/Input";
 import { Card, CardHeading } from "@/components/ui/Card";
 import { StatusChip, type ChipState } from "@/components/ui/StatusChip";
 import { ErrorState } from "@/components/ui/Feedback";
+import { platformFetch } from "@/lib/admin/platform-fetch";
 import { WhatsAppAgentPairingCard } from "@/components/agent-core/WhatsAppAgentPairingCard";
 import { TeamWhatsAppAccess } from "@/components/agent-core/TeamWhatsAppAccess";
 
@@ -91,14 +92,15 @@ export default function WhatsAppAdminPage() {
     if (!tenantId) return;
     setError(null);
     const [bindingsRes, messagesRes, templatesRes, migrationRes] = await Promise.all([
-      fetch(`/api/platform/whatsapp/bindings?tenantId=${encodeURIComponent(tenantId)}`),
-      fetch(`/api/platform/whatsapp/shadow-messages?tenantId=${encodeURIComponent(tenantId)}`),
-      fetch(`/api/platform/whatsapp/templates?tenantId=${encodeURIComponent(tenantId)}`),
-      fetch(`/api/platform/whatsapp/migration/status?tenantId=${encodeURIComponent(tenantId)}`),
+      platformFetch(`/api/platform/whatsapp/bindings?tenantId=${encodeURIComponent(tenantId)}`),
+      platformFetch(`/api/platform/whatsapp/shadow-messages?tenantId=${encodeURIComponent(tenantId)}`),
+      platformFetch(`/api/platform/whatsapp/templates?tenantId=${encodeURIComponent(tenantId)}`),
+      platformFetch(`/api/platform/whatsapp/migration/status?tenantId=${encodeURIComponent(tenantId)}`),
     ]);
     const bindingsBody = await bindingsRes.json();
     const messagesBody = await messagesRes.json();
     if (!bindingsRes.ok) {
+      setBindings([]);
       setError(bindingsBody.error ?? "Failed to load phone bindings");
       return;
     }
@@ -188,7 +190,17 @@ export default function WhatsAppAdminPage() {
           docs/product-design/CURRENT_TO_FINAL_MIGRATION_PLAN.md §3 folds them in here.
         </p>
       </header>
-      {error && <ErrorState message={error} />}
+      {error && <ErrorState message={error} onRetry={load} />}
+
+      <Card>
+        <CardHeading>Integration layers</CardHeading>
+        <p className="mt-2 text-xs text-sx-text-subtle">
+          <strong className="text-sx-text">Owner WhatsApp Agent</strong> (below) links your authenticated staff account to the
+          Stratxcel business number for command and control. <strong className="text-sx-text">Tenant phone bindings</strong> route
+          customer WhatsApp traffic for the selected client workspace. <strong className="text-sx-text">Legacy / shadow migration</strong>{" "}
+          compares the old verified bot against the new stack — it does not replace either layer above.
+        </p>
+      </Card>
 
       {/* Platform-staff scoped, not tenant-selection scoped — a
           platform_owner/platform_admin with zero client tenants must still
@@ -244,9 +256,11 @@ export default function WhatsAppAdminPage() {
       )}
 
       <section className="flex flex-col gap-3">
-        <h2 className="font-sx-sans text-base font-medium text-sx-text">Phone bindings</h2>
+        <h2 className="font-sx-sans text-base font-medium text-sx-text">Tenant Cloud API phone bindings</h2>
+        <p className="text-xs text-sx-text-subtle">These numbers route inbound/outbound WhatsApp for the selected client — separate from your personal Owner Agent link above.</p>
         {!tenantId && <NoClientSelected what="phone bindings" />}
-        {tenantId && bindings?.length === 0 && <p className="text-sm text-sx-text-subtle">No phone bindings yet.</p>}
+        {tenantId && bindings === null && !error && <p className="text-sm text-sx-text-subtle">Loading…</p>}
+        {tenantId && bindings?.length === 0 && !error && <p className="text-sm text-sx-text-subtle">No phone bindings yet.</p>}
         {bindings && bindings.length > 0 && (
           <div className="flex flex-col gap-2">
             {bindings.map((b) => {

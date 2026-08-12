@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { StatusChip, type ChipState } from "@/components/ui/StatusChip";
 import { ErrorState, EmptyState } from "@/components/ui/Feedback";
+import { platformFetch } from "@/lib/admin/platform-fetch";
 
 interface Handoff {
   id: string;
@@ -37,17 +38,24 @@ export default function AdminHandoffsPage() {
   const [handoffs, setHandoffs] = useState<Handoff[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [resolvingId, setResolvingId] = useState<string | null>(null);
+  const [listLoading, setListLoading] = useState(false);
 
   async function load() {
     if (!tenantId) return;
+    setListLoading(true);
     setError(null);
-    const res = await fetch(`/api/platform/handoffs?tenantId=${encodeURIComponent(tenantId)}`);
-    const body = await res.json();
-    if (!res.ok) {
-      setError(body.error ?? `Failed to load handoffs (HTTP ${res.status})`);
-      return;
+    try {
+      const res = await platformFetch(`/api/platform/handoffs?tenantId=${encodeURIComponent(tenantId)}`);
+      const body = await res.json();
+      if (!res.ok) {
+        setHandoffs([]);
+        setError(body.error ?? `Failed to load handoffs (HTTP ${res.status})`);
+        return;
+      }
+      setHandoffs(body.handoffs);
+    } finally {
+      setListLoading(false);
     }
-    setHandoffs(body.handoffs);
   }
 
   useEffect(() => {
@@ -83,12 +91,12 @@ export default function AdminHandoffsPage() {
         <p className="mt-1 text-sm text-sx-text-muted">Missions that hit a point requiring a human — resolving one returns its mission to RESUMED.</p>
       </header>
 
-      {error && <ErrorState message={error} />}
+      {error && <ErrorState message={error} onRetry={load} />}
       {!tenantId && <NoClientSelected what="handoffs" />}
 
       <section className="flex flex-col gap-3">
-        {tenantId && handoffs === null && <p className="text-sm text-sx-text-subtle">Loading…</p>}
-        {tenantId && handoffs?.length === 0 && <EmptyState title="No open handoffs." />}
+        {tenantId && listLoading && <p className="text-sm text-sx-text-subtle">Loading…</p>}
+        {tenantId && !listLoading && handoffs?.length === 0 && !error && <EmptyState title="No open handoffs." />}
         {handoffs && handoffs.length > 0 && (
           <div className="flex flex-col gap-2">
             {handoffs.map((h) => {

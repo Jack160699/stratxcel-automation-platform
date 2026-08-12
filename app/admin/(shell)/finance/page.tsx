@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useCurrentTenant } from "../CurrentTenantContext";
 import { NoClientSelected } from "../NoClientSelected";
 import { Card } from "@/components/ui/Card";
 import { Metric } from "@/components/ui/Metric";
 import { ErrorState } from "@/components/ui/Feedback";
+import { platformFetch } from "@/lib/admin/platform-fetch";
 
 interface WalletAccount {
   tenant_id: string;
@@ -42,34 +43,36 @@ export default function WalletPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
+  const load = useCallback(async () => {
     if (!tenantId) return;
-    async function load() {
-      setLoading(true);
-      setError(null);
-      try {
-        const [walletRes, subRes] = await Promise.all([
-          fetch(`/api/platform/wallet?tenantId=${encodeURIComponent(tenantId!)}`),
-          fetch(`/api/platform/subscriptions?tenantId=${encodeURIComponent(tenantId!)}`),
-        ]);
-        const walletBody = await walletRes.json();
-        if (!walletRes.ok) {
-          setError(walletBody.error ?? `Failed to load wallet (HTTP ${walletRes.status})`);
-          return;
-        }
-        setAccount(walletBody.account);
-
-        const subBody = await subRes.json();
-        if (subRes.ok) {
-          setSubscription(subBody.subscription);
-          setInvoices(subBody.invoices ?? []);
-        }
-      } finally {
-        setLoading(false);
+    setLoading(true);
+    setError(null);
+    try {
+      const [walletRes, subRes] = await Promise.all([
+        platformFetch(`/api/platform/wallet?tenantId=${encodeURIComponent(tenantId)}`),
+        platformFetch(`/api/platform/subscriptions?tenantId=${encodeURIComponent(tenantId)}`),
+      ]);
+      const walletBody = await walletRes.json();
+      if (!walletRes.ok) {
+        setAccount(null);
+        setError(walletBody.error ?? `Failed to load wallet (HTTP ${walletRes.status})`);
+        return;
       }
+      setAccount(walletBody.account);
+
+      const subBody = await subRes.json();
+      if (subRes.ok) {
+        setSubscription(subBody.subscription);
+        setInvoices(subBody.invoices ?? []);
+      }
+    } finally {
+      setLoading(false);
     }
-    load();
   }, [tenantId]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   return (
     <div className="flex flex-col gap-6">
@@ -78,7 +81,7 @@ export default function WalletPage() {
       </header>
 
       {!tenantId && <NoClientSelected what="the wallet" />}
-      {error && <ErrorState message={error} />}
+      {error && <ErrorState message={error} onRetry={load} />}
       {tenantId && loading && <p className="text-sm text-sx-text-subtle">Loading…</p>}
 
       {account && (

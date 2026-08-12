@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/Input";
 import { StatusChip, type ChipState } from "@/components/ui/StatusChip";
 import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
 import { ErrorState } from "@/components/ui/Feedback";
+import { platformFetch } from "@/lib/admin/platform-fetch";
 
 interface Mission {
   id: string;
@@ -43,17 +44,24 @@ export default function MissionsPage() {
   const [goalText, setGoalText] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [listLoading, setListLoading] = useState(false);
 
   async function load() {
     if (!tenantId) return;
+    setListLoading(true);
     setError(null);
-    const res = await fetch(`/api/platform/missions?tenantId=${encodeURIComponent(tenantId)}`);
-    const body = await res.json();
-    if (!res.ok) {
-      setError(body.error ?? `Failed to load missions (HTTP ${res.status})`);
-      return;
+    try {
+      const res = await platformFetch(`/api/platform/missions?tenantId=${encodeURIComponent(tenantId)}`);
+      const body = await res.json();
+      if (!res.ok) {
+        setMissions([]);
+        setError(body.error ?? `Failed to load missions (HTTP ${res.status})`);
+        return;
+      }
+      setMissions(body.missions);
+    } finally {
+      setListLoading(false);
     }
-    setMissions(body.missions);
   }
 
   useEffect(() => {
@@ -135,8 +143,9 @@ export default function MissionsPage() {
       <section className="flex flex-col gap-3">
         <h2 className="font-sx-sans text-base font-medium text-sx-text">Missions</h2>
         {!tenantId && <NoClientSelected what="missions" />}
-        {tenantId && missions === null && <p className="text-sm text-sx-text-subtle">Loading…</p>}
-        {tenantId && missions?.length === 0 && <p className="text-sm text-sx-text-subtle">No missions yet.</p>}
+        {tenantId && listLoading && <p className="text-sm text-sx-text-subtle">Loading…</p>}
+        {tenantId && !listLoading && missions?.length === 0 && !error && <p className="text-sm text-sx-text-subtle">No missions yet.</p>}
+        {tenantId && !listLoading && error && missions?.length === 0 && <ErrorState message={error} onRetry={load} />}
         {missions && missions.length > 0 && <DataTable columns={columns} rows={missions} />}
       </section>
     </div>

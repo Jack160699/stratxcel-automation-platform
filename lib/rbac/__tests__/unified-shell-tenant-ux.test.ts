@@ -35,8 +35,12 @@ function run() {
   const isMemberIndex = tenantActions.indexOf("await isMemberOfTenant(");
   const cookieSetIndex = tenantActions.indexOf("cookieStore.set(");
   assert.ok(
-    requireOwnerIndex !== -1 && isMemberIndex !== -1 && cookieSetIndex !== -1,
+    isMemberIndex !== -1 && cookieSetIndex !== -1,
     "setActiveTenantAction must re-authenticate and re-verify membership before setting the cookie"
+  );
+  assert.ok(
+    tenantActions.includes("ensureAdminStaffWorkspace"),
+    "setActiveTenantAction must mint the signed staff workspace cookie together with the active tenant selection"
   );
   assert.ok(
     setActionIndex < requireOwnerIndex && requireOwnerIndex < isMemberIndex && isMemberIndex < cookieSetIndex,
