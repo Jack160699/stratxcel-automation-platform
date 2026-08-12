@@ -105,8 +105,16 @@ function run() {
   assert.ok(/aria-invalid/.test(stepBusiness), "form fields must expose aria-invalid on validation errors");
   assert.ok(/aria-describedby/.test(stepBusiness), "form field errors/hints must be associated via aria-describedby");
 
+  // --- 13. Draft progress survives refresh and device changes -----------------
+  assert.ok(/export async function GET\(\)/.test(route), "onboarding API must expose the authenticated saved draft");
+  assert.ok(/export async function PATCH\(request: Request\)/.test(route), "onboarding API must persist draft progress");
+  assert.ok(/supabase\.auth\.updateUser/.test(route), "draft persistence must bind to the authenticated user's account metadata");
+  assert.ok(/sanitizeDraft/.test(route), "server must bound and sanitize every saved draft");
+  assert.ok(/method: "PATCH"/.test(wizard), "wizard must save draft progress to the server");
+  assert.ok(/fetch\("\/api\/platform\/onboarding", \{ cache: "no-store" \}\)/.test(wizard), "wizard must restore server-saved progress");
+
   console.log(
-    "onboarding-wizard.test.ts: ALL PASS (zero-membership gating, no raw UUID input, authenticated identity, no service-role in browser code, real Brand Brain persistence, honest unsupported-field labeling, active-tenant cookie reuse, double-submit guard, no admin-access grant, mobile/a11y structure)"
+    "onboarding-wizard.test.ts: ALL PASS (zero-membership gating, no raw UUID input, authenticated identity, server-resumable bounded draft, real Brand Brain persistence, honest unsupported-field labeling, active-tenant cookie reuse, double-submit guard, no admin-access grant, mobile/a11y structure)"
   );
 }
 
