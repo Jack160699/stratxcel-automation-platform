@@ -24,7 +24,7 @@ function run() {
   );
 
   const appLayout = read("app", "app", "layout.tsx");
-  assert.ok(/requireClientContext/.test(appLayout), "/app's layout must gate on requireClientContext(), not requireOwnerContext()");
+  assert.ok(/resolveCanonicalIdentity/.test(appLayout), "/app's layout must use the canonical identity resolver");
   assert.equal(
     /requireOwnerContext\(/.test(appLayout),
     false,
@@ -32,7 +32,8 @@ function run() {
   );
   assert.ok(/NEXT_PUBLIC_SUPABASE_URL/.test(appLayout) && /NEXT_PUBLIC_SUPABASE_ANON_KEY/.test(appLayout), "/app must fail closed to its sign-in recovery surface when auth configuration is unavailable");
   assert.ok(/dynamic\s*=\s*["']force-dynamic["']/.test(appLayout), "/app auth and tenant state must be resolved per request");
-  assert.ok(/resolveCurrentTenant\(ctx\.supabase, ctx\.userId\)/.test(appLayout), "/app must resolve tenant membership via the same session-client-based resolveCurrentTenant() /admin already uses");
+  assert.ok(appLayout.includes('identity.state === "INTERNAL_STAFF"') && appLayout.includes('redirect("/admin")'), "/app must send staff to Admin by default");
+  assert.ok(appLayout.includes('identity.state === "STAFF_VIEWING_CLIENT"'), "/app must allow only explicit staff workspace context");
 
   // --- 2. No service-role dependency anywhere under app/app/* ---------------
   const appDir = path.join(root, "app", "app");

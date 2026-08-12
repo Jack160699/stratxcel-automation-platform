@@ -1,39 +1,21 @@
-import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { getTenantServiceContext } from "@/lib/tenants/tenant-context";
-import { createTenant, listMembershipsForUser } from "@/lib/tenants/repository";
+import { requireOwnerContext } from "@/lib/social/db-context";
+import { createAgencyTenant, listAgencyTenants } from "@/lib/tenants/admin-repository";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-/**
- * Tenant bootstrap: this is what was missing before any of the other
- * /api/platform/* routes could be exercised by a real user — until now
- * there was no way for an authenticated person to actually create a
- * tenant and become its owner. GET lists the caller's own memberships
- * (used to build a tenant switcher); POST creates a new tenant with the
- * caller as owner.
- */
+/** Internal agency client listing. Customer membership is intentionally irrelevant here. */
 export async function GET() {
-  const supabase = await createSupabaseServerClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return Response.json({ error: "Not authenticated" }, { status: 401 });
-
-  // Listing the caller's own memberships is a plain user-initiated read
-  // covered by tenant_members_self_read RLS — use the authenticated
-  // session client, not the service-role client (no
-  // SUPABASE_SERVICE_ROLE_KEY dependency here).
-  const memberships = await listMembershipsForUser(supabase, user.id);
-  return Response.json({ memberships }, { headers: { "Cache-Control": "no-store" } });
+  const ctx = await requireOwnerContext();
+  if (!ctx.ok) return Response.json({ error: ctx.error }, { status: ctx.status });
+  const tenants = await listAgencyTenants();
+  return Response.json({ tenants }, { headers: { "Cache-Control": "no-store" } });
 }
 
+/** Internal client creation creates the tenant only; staff are never added as fake customer owners. */
 export async function POST(request: Request) {
-  const supabase = await createSupabaseServerClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return Response.json({ error: "Not authenticated" }, { status: 401 });
+  const ctx = await requireOwnerContext();
+  if (!ctx.ok) return Response.json({ error: ctx.error }, { status: ctx.status });
 
   const body = (await request.json()) as { slug?: string; name?: string };
   if (!body.slug || !body.name) return Response.json({ error: "slug and name are required" }, { status: 400 });
@@ -41,11 +23,9 @@ export async function POST(request: Request) {
     return Response.json({ error: "slug must be lowercase letters, numbers, and hyphens only" }, { status: 400 });
   }
 
-  const { supabase: serviceClient } = getTenantServiceContext();
-
   try {
-    const tenant = await createTenant(serviceClient, { slug: body.slug, name: body.name, ownerUserId: user.id });
-    return Response.json({ tenant }, { status: 201 });
+    const tenant = await createAgencyTenant({ slug: body.slug, name: body.name });
+    return Response.json({ tenant: { id: tenant.tenantId, slug: tenant.slug, name: tenant.name } }, { status: 201 });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     if (message.includes("duplicate key")) {

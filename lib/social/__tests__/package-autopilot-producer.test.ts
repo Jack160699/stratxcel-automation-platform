@@ -113,11 +113,11 @@ function run() {
   const dashboard = read("app", "app", "content", "autopilot", "AutopilotDashboard.tsx");
   assert.ok(dashboard.includes("Pause Autopilot") && dashboard.includes("Cancel Autopilot"));
   assert.ok(dashboard.includes("action: \"skip\"") && dashboard.includes("action: \"edit\""), "controls must call the real API, not a fake frontend-only toggle");
-  assert.ok(exists("app", "admin", "social", "packages", "page.tsx"));
-  const adminPage = read("app", "admin", "social", "packages", "page.tsx");
+  assert.ok(exists("app", "admin", "(shell)", "social", "packages", "page.tsx"));
+  const adminPage = read("app", "admin", "(shell)", "social", "packages", "page.tsx");
   assert.ok(adminPage.includes("requireOwnerContext"), "admin visibility must stay staff-gated");
   assert.ok(adminPage.includes("Producer health"));
-  const nav = read("app", "admin", "social", "nav.ts");
+  const nav = read("app", "admin", "(shell)", "social", "nav.ts");
   assert.ok(nav.includes("/admin/social/packages"), "the admin package page must be reachable from real navigation");
 
   console.log("package-autopilot-producer.test.ts: ALL PASS (schema hardening, idempotent producer, quality gate, tenant isolation, cron wiring, Shadow Mode, WhatsApp compliance, real UI)");

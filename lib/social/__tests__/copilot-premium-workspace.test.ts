@@ -12,17 +12,17 @@ const read = (...parts: string[]) => fs.readFileSync(path.join(root, ...parts), 
 
 function run() {
   const actionPreview = read("lib", "social", "agent", "action-preview.ts");
-  const publishCard = read("app", "admin", "social", "agent", "PublishApprovalCard.tsx");
-  const previewModal = read("app", "admin", "social", "agent", "PlatformPreviewModal.tsx");
-  const attachmentMedia = read("app", "admin", "social", "agent", "AttachmentMedia.tsx");
+  const publishCard = read("app", "admin", "(shell)", "social", "agent", "PublishApprovalCard.tsx");
+  const previewModal = read("app", "admin", "(shell)", "social", "agent", "PlatformPreviewModal.tsx");
+  const attachmentMedia = read("app", "admin", "(shell)", "social", "agent", "AttachmentMedia.tsx");
   const mediaRoute = read("app", "api", "social", "copilot", "media-preview", "route.ts");
-  const fullPage = read("app", "admin", "social", "copilot", "CopilotFullPage.tsx");
-  const workspace = read("app", "admin", "social", "copilot", "ResizableWorkspace.tsx");
-  const theme = read("app", "admin", "social", "social-theme.css");
-  const execTrace = read("app", "admin", "social", "copilot", "ExecutionTrace.tsx");
+  const fullPage = read("app", "admin", "(shell)", "social", "copilot", "CopilotFullPage.tsx");
+  const workspace = read("app", "admin", "(shell)", "social", "copilot", "ResizableWorkspace.tsx");
+  const theme = read("app", "admin", "(shell)", "social", "social-components.css");
+  const execTrace = read("app", "admin", "(shell)", "social", "copilot", "ExecutionTrace.tsx");
   const automation = read("lib", "social", "repositories", "automation.ts");
   const orchestrator = read("lib", "social", "agent", "orchestrator.ts");
-  const agentMessage = read("app", "admin", "social", "agent", "AgentMessage.tsx");
+  const agentMessage = read("app", "admin", "(shell)", "social", "agent", "AgentMessage.tsx");
 
   // Connected account labels — never "Not resolved" when a real account exists
   assert.ok(actionPreview.includes("resolveConnectedAccountForPreview"));

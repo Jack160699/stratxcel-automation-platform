@@ -40,6 +40,7 @@ export const MISSION_STATE_CHIP: Record<string, { label: string; state: ChipStat
 export default function ClientMissionsPage() {
   const { active } = useCurrentTenant();
   const tenantId = active?.tenantId;
+  const readOnly = active?.accessMode === "staff_support";
   const [missions, setMissions] = useState<Mission[] | null>(null);
   const [goalText, setGoalText] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -118,7 +119,7 @@ export default function ClientMissionsPage() {
         <h1 className="font-sx-sans text-xl font-semibold text-sx-text">Missions{active ? ` — ${active.name}` : ""}</h1>
       </header>
 
-      {tenantId && (
+      {tenantId && !readOnly && (
         <section className="flex flex-col gap-3 rounded-sx-md border border-sx-border bg-sx-surface-1 p-4">
           <h2 className="font-sx-sans text-base font-medium text-sx-text">New mission</h2>
           <form onSubmit={handleCreate} className="flex flex-col gap-3 sm:flex-row">
@@ -136,6 +137,8 @@ export default function ClientMissionsPage() {
           {error && <ErrorState message={error} />}
         </section>
       )}
+
+      {readOnly && <p className="rounded-sx-md border border-sx-border bg-sx-surface-1 p-3 text-xs text-sx-text-muted">Staff support mode is read-only. Mission creation is unavailable.</p>}
 
       <section className="flex flex-col gap-3">
         <h2 className="font-sx-sans text-base font-medium text-sx-text">Missions</h2>

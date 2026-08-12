@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
-import { requireClientContext } from "@/lib/tenants/client-context";
-import { resolveCurrentTenant } from "@/lib/tenants/current-tenant";
+import { redirect } from "next/navigation";
+import { resolveCanonicalIdentity } from "@/lib/identity/resolve-identity";
 import AppLogin from "./AppLogin";
 import { OnboardingPanel } from "./OnboardingPanel";
 import { CurrentTenantProvider } from "./CurrentTenantContext";
@@ -15,37 +15,33 @@ export const metadata: Metadata = {
 };
 
 /**
- * /app's single auth + tenant-resolution gate — the client-workspace
- * mirror of app/admin/(shell)/layout.tsx. Gated by requireClientContext()
- * (any authenticated user; no stratxcel_admins row required — see
- * lib/tenants/client-context.ts), never the staff-only owner gate, so this
- * route tree can never accidentally require staff status. Zero
- * memberships → OnboardingPanel; otherwise the same membership-verified
- * resolveCurrentTenant() call /admin already uses, unchanged.
+ * Canonical client-workspace identity and tenant gate. Customer membership
+ * selects the tenant context; staff may enter only with an explicit signed
+ * workspace context. Missing auth configuration fails closed to sign-in.
  */
 export default async function ClientLayout({ children }: { children: ReactNode }) {
-  // A missing public auth configuration is an environment/setup state, not a
-  // customer-facing server error. Keep the workspace fail-closed and show the
-  // normal sign-in recovery surface until configuration is available.
   if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
     return <AppLogin />;
   }
 
-  const ctx = await requireClientContext();
+  const identity = await resolveCanonicalIdentity();
+  if (identity.state === "NO_SESSION") return <AppLogin />;
+  if (identity.state === "INTERNAL_STAFF") redirect("/admin");
+  if (identity.state === "NEW_CUSTOMER") return <OnboardingPanel />;
 
-  if (!ctx.ok) {
-    return <AppLogin />;
-  }
-
-  const { tenants, active } = await resolveCurrentTenant(ctx.supabase, ctx.userId);
-
-  if (!active) {
-    return <OnboardingPanel />;
-  }
+  const tenants = identity.state === "STAFF_VIEWING_CLIENT"
+    ? [{ ...identity.staffWorkspace, role: null, accessMode: "staff_support" as const }]
+    : identity.tenants.map((tenant) => ({ ...tenant, accessMode: "customer" as const }));
+  const active = tenants[0];
 
   return (
     <CurrentTenantProvider initialTenants={tenants} initialActive={active}>
-      <ClientAppShell email={ctx.email ?? ""}>{children}</ClientAppShell>
+      <ClientAppShell
+        email={identity.email ?? ""}
+        staffWorkspace={identity.state === "STAFF_VIEWING_CLIENT" ? { tenantName: identity.staffWorkspace.name } : null}
+      >
+        {children}
+      </ClientAppShell>
     </CurrentTenantProvider>
   );
 }

@@ -1,7 +1,6 @@
 import Link from "next/link";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { requireClientContext } from "@/lib/tenants/client-context";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { resolveCurrentTenant } from "@/lib/tenants/current-tenant";
 import { requirePermission, PermissionDeniedError } from "@/lib/rbac/policy";
 import { listMissionsForTenant } from "@stratxcel/missions";
 import { listPendingApprovals } from "@stratxcel/approvals";
@@ -44,9 +43,7 @@ const ACTIVE_MISSION_STATES = new Set([
 
 const DONE_MISSION_STATES = new Set(["COMPLETED", "PARTIALLY_COMPLETED"]);
 
-type SessionClient = Awaited<ReturnType<typeof createSupabaseServerClient>>;
-
-async function loadJourneyInput(supabase: SessionClient, tenantId: string) {
+async function loadJourneyInput(supabase: SupabaseClient, tenantId: string) {
   const [user, order, consultation] = await Promise.all([
     (async () => {
       try {
@@ -97,17 +94,18 @@ export default async function ClientCommandCenterPage() {
   const ctx = await requireClientContext();
   if (!ctx.ok) return null;
 
-  const { active } = await resolveCurrentTenant(ctx.supabase, ctx.userId);
-  if (!active) return <OnboardingPanel />;
+  const active = ctx.workspaceTenant;
 
   const [missions, approvals, journeyInput] = await Promise.all([
     listMissionsForTenant(ctx.supabase, active.tenantId, 8),
     (async () => {
-      try {
-        requirePermission(active.role, "approval:decide");
-      } catch (err) {
-        if (err instanceof PermissionDeniedError) return null;
-        throw err;
+      if (ctx.accessMode === "customer") {
+        try {
+          requirePermission(ctx.workspaceTenant.role, "approval:decide");
+        } catch (err) {
+          if (err instanceof PermissionDeniedError) return null;
+          throw err;
+        }
       }
       return listPendingApprovals(ctx.supabase, active.tenantId);
     })(),

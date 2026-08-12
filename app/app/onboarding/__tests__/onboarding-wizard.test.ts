@@ -25,15 +25,15 @@ function run() {
   const stepReview = read("app", "app", "onboarding", "steps", "StepReview.tsx");
 
   // --- 1. Onboarding only appears for zero-membership users, unchanged gate --
-  assert.ok(/if \(!active\) \{\s*\n\s*return <OnboardingPanel \/>;/.test(layout), "layout.tsx must still gate onboarding on active === null");
-  assert.ok(/if \(!active\) return <OnboardingPanel \/>;/.test(pageTsx), "page.tsx must still independently re-guard on active === null");
+  assert.ok(layout.includes('identity.state === "NEW_CUSTOMER"') && layout.includes("<OnboardingPanel />"), "layout.tsx must gate onboarding on the canonical NEW_CUSTOMER state");
+  assert.ok(/requireClientContext\(\)/.test(pageTsx) && /ctx\.workspaceTenant/.test(pageTsx), "page.tsx must independently use the canonical client context; NEW_CUSTOMER is handled by layout onboarding");
   assert.ok(onboardingPanel.includes('from "./onboarding/OnboardingWizard"'), "OnboardingPanel must render the structured wizard");
 
   // --- 2. Existing tenant members bypass onboarding entirely -----------------
   // Both gates return *before* CurrentTenantProvider/ClientAppShell render,
   // so a user with active !== null never reaches OnboardingPanel — same
   // resolveCurrentTenant() call already exercised by lib/tenants tests.
-  assert.ok(/resolveCurrentTenant\(ctx\.supabase, ctx\.userId\)/.test(layout), "must reuse resolveCurrentTenant, not a second membership check");
+  assert.ok(/resolveCanonicalIdentity/.test(layout), "must reuse the canonical resolver, not a second membership check");
 
   // --- 3. No raw tenant UUID input anywhere in the wizard --------------------
   for (const [name, source] of [

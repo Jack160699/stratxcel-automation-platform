@@ -19,12 +19,14 @@ function run() {
   assert.match(validateAttachment(empty) ?? "", /between 1 byte and 10 MB/);
   assert.equal(MAX_ATTACHMENT_BYTES, 10 * 1024 * 1024);
 
-  const shell = read("app", "admin", "social", "SocialShell.tsx");
-  assert.ok(shell.includes("h-[100dvh]"));
-  assert.ok(shell.includes("saut:shell:sidebar-pinned"));
-  assert.ok(shell.includes("overflow-y-auto"));
+  const socialLayout = read("app", "admin", "(shell)", "social", "layout.tsx");
+  const adminLayout = read("app", "admin", "(shell)", "layout.tsx");
+  assert.ok(socialLayout.includes("Social Operations sections"));
+  assert.ok(socialLayout.includes("Ask Copilot about Social"));
+  assert.ok(adminLayout.includes("<AppShell"), "Social must inherit the canonical Admin shell route group");
+  assert.equal(fs.existsSync(path.join(root, "app", "admin", "(shell)", "social", "SocialShell.tsx")), false);
 
-  const workspace = read("app", "admin", "social", "copilot", "ResizableWorkspace.tsx");
+  const workspace = read("app", "admin", "(shell)", "social", "copilot", "ResizableWorkspace.tsx");
   assert.ok(workspace.includes('role="separator"'));
   assert.ok(workspace.includes("ArrowLeft") && workspace.includes("ArrowRight"));
   assert.ok(workspace.includes("saut:copilot:workspace-layout"));
@@ -42,7 +44,7 @@ function run() {
   assert.ok(orchestrator.includes("selectGeminiBrandInstructions"), "Gemini receives only allowlisted brand fields");
   assert.ok(orchestrator.includes("requiresLocalMetaHandling"), "Platform-data questions stay local");
   const attachments = read("lib", "social", "repositories", "agent-attachments.ts");
-  const copilot = read("app", "admin", "social", "copilot", "CopilotFullPage.tsx");
+  const copilot = read("app", "admin", "(shell)", "social", "copilot", "CopilotFullPage.tsx");
   assert.ok(attachments.includes("createSignedUploadUrl"), "uploads must bypass the Vercel function body-size limit");
   assert.ok(copilot.includes("uploadToSignedUrl"), "browser must upload directly to the private storage source");
   assert.ok(attachments.includes("finalizeAgentAttachment"), "server must verify and finalize uploaded objects");
@@ -53,7 +55,7 @@ function run() {
   const nav = read("lib", "site-nav.js");
   assert.ok(nav.includes('href: "/privacy"') && nav.includes('href: "/terms"') && nav.includes('href: "/data-deletion"'));
 
-  console.log("workspace-safety.test.ts: ALL PASS (shell, resizing, attachments, canonical settings, legal routes)");
+  console.log("workspace-safety.test.ts: ALL PASS (canonical admin shell, resizing, attachments, canonical settings, legal routes)");
 }
 
 run();

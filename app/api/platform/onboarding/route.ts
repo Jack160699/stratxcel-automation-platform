@@ -2,6 +2,7 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getTenantServiceContext } from "@/lib/tenants/tenant-context";
 import { createTenant, listMembershipsForUser } from "@/lib/tenants/repository";
 import { saveBrandBrainVersion, type BrandBrainContent } from "@stratxcel/brand-brain";
+import { resolveCanonicalIdentity } from "@/lib/identity/resolve-identity";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -101,6 +102,13 @@ export async function PATCH(request: Request) {
  * first call already created.
  */
 export async function POST(request: Request) {
+  const identity = await resolveCanonicalIdentity();
+  if (identity.state === "NO_SESSION") {
+    return Response.json({ error: "Not authenticated" }, { status: 401 });
+  }
+  if (identity.state === "INTERNAL_STAFF" || identity.state === "STAFF_VIEWING_CLIENT") {
+    return Response.json({ error: "Staff accounts must create clients from the Admin workspace" }, { status: 403 });
+  }
   const { supabase, user } = await authenticatedUser();
   if (!user) return Response.json({ error: "Not authenticated" }, { status: 401 });
 

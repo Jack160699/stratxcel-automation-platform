@@ -21,7 +21,7 @@ assert.equal(classifyCreativeRequestMode("Is image ke saath kya kya kar sakte ha
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const orchestrator = fs.readFileSync(path.join(root, "lib", "social", "agent", "orchestrator.ts"), "utf8");
-const message = fs.readFileSync(path.join(root, "app", "admin", "social", "agent", "AgentMessage.tsx"), "utf8");
+const message = fs.readFileSync(path.join(root, "app", "admin", "(shell)", "social", "agent", "AgentMessage.tsx"), "utf8");
 const whatsapp = fs.readFileSync(path.join(root, "lib", "social", "whatsapp-bridge.ts"), "utf8");
 
 assert.ok(orchestrator.includes('creativeRequestMode === "EXECUTE"'), "shared orchestrator must enforce execution mode");

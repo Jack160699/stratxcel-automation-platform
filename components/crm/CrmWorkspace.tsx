@@ -44,7 +44,7 @@ export function CrmWorkspace({
   sendDisabledReason,
 }: {
   tenantId: string;
-  role: TenantRole;
+  role: TenantRole | null;
   initialLeadId?: string | null;
   onLeadSelected?: (leadId: string | null) => void;
   /** When set, deep-links leads to `${leadHrefBase}/${leadId}` (used by /app/crm). Omit to keep selection purely in-page (used by /admin/leads). */
@@ -53,8 +53,8 @@ export function CrmWorkspace({
   sendReady?: boolean;
   sendDisabledReason?: string;
 }) {
-  const canManage = can(role, "crm:manage");
-  const canSendMessages = can(role, "whatsapp:send") && sendReady;
+  const canManage = role !== null && can(role, "crm:manage");
+  const canSendMessages = role !== null && can(role, "whatsapp:send") && sendReady;
   const router = useRouter();
 
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);

@@ -21,9 +21,15 @@ import {
 import { packageErrorForClient } from "@/lib/social/package-errors";
 import { recordAudit } from "@/lib/social/repositories/system";
 
-async function authorizeTenant(tenantId: string) {
+async function authorizeTenant(tenantId: string, allowStaffRead = false) {
   const ctx = await requireClientContext();
   if (!ctx.ok) return { ok: false as const, status: 401 as const, error: ctx.error };
+  if (ctx.accessMode === "staff_support") {
+    if (!allowStaffRead || ctx.workspaceTenant.tenantId !== tenantId) {
+      return { ok: false as const, status: 403 as const, error: "Staff support mode is read-only" };
+    }
+    return { ok: true as const, userId: ctx.userId };
+  }
   const isMember = await isMemberOfTenant(ctx.supabase, ctx.userId, tenantId);
   if (!isMember) return { ok: false as const, status: 403 as const, error: "Not a member of this client" };
   return { ok: true as const, userId: ctx.userId };
@@ -66,7 +72,7 @@ function overviewFromAuthorization(authorization: PackageAuthorizationRow, publi
 export async function GET(req: NextRequest) {
   const tenantId = req.nextUrl.searchParams.get("tenantId");
   if (!tenantId) return NextResponse.json({ error: "tenantId is required" }, { status: 400 });
-  const auth = await authorizeTenant(tenantId);
+  const auth = await authorizeTenant(tenantId, true);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   const service = createSupabaseServiceClient();

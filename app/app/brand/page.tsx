@@ -39,6 +39,7 @@ const EMPTY: BrandBrainContent = {};
 export default function BrandPage() {
   const { active } = useCurrentTenant();
   const tenantId = active?.tenantId;
+  const readOnly = active?.accessMode === "staff_support";
   const [content, setContent] = useState<BrandBrainContent | null>(null);
   const [version, setVersion] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -100,7 +101,7 @@ export default function BrandPage() {
             {version != null ? `Version ${version}` : "—"} · the context every mission is compiled against.
           </p>
         </div>
-        <Button variant="primary" size="sm" onClick={save} disabled={saving || !content}>
+        <Button variant="primary" size="sm" onClick={save} disabled={readOnly || saving || !content}>
           {saving ? "Saving…" : saved ? "Saved" : "Save"}
         </Button>
       </header>
@@ -109,7 +110,7 @@ export default function BrandPage() {
       {tenantId && content === null && !error && <p className="text-sm text-sx-text-subtle">Loading…</p>}
 
       {content && (
-        <>
+        <fieldset disabled={readOnly} className="contents">
           <Card>
             <CardHeading>Business</CardHeading>
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
@@ -217,7 +218,7 @@ export default function BrandPage() {
               </div>
             )}
           </section>
-        </>
+        </fieldset>
       )}
     </div>
   );

@@ -1,155 +1,104 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useCurrentTenant } from "../CurrentTenantContext";
-import { Button } from "@/components/ui/Button";
-import { Input } from "@/components/ui/Input";
 import { Card, CardHeading } from "@/components/ui/Card";
-import { StatusChip, type ChipState } from "@/components/ui/StatusChip";
-import { ErrorState, EmptyState } from "@/components/ui/Feedback";
-import { WhatsAppAgentPairingCard } from "@/components/agent-core/WhatsAppAgentPairingCard";
+import { StatusChip } from "@/components/ui/StatusChip";
+import { ErrorState } from "@/components/ui/Feedback";
 
-interface PhoneBinding {
-  id: string;
-  waba_id: string;
-  phone_number_id: string;
-  display_phone_number: string | null;
-  environment: string;
-  status: string;
-  shadow_mode: boolean;
-  inbound_enabled: boolean;
-  outbound_enabled: boolean;
+interface CustomerIntegrationStatus {
+  whatsapp: "connected" | "action_required" | "setup_required";
 }
 
-const BINDING_CHIP: Record<string, { label: string; state: ChipState }> = {
-  pending: { label: "Pending", state: "warning" },
-  active: { label: "Active", state: "success" },
-  disabled: { label: "Disabled", state: "neutral" },
-  revoked: { label: "Revoked", state: "danger" },
-};
+async function requestStatus(tenantId: string): Promise<{ status: CustomerIntegrationStatus | null; error: string | null }> {
+  const response = await fetch(`/api/platform/integrations/status?tenantId=${encodeURIComponent(tenantId)}`);
+  const body = await response.json();
+  return response.ok
+    ? { status: body as CustomerIntegrationStatus, error: null }
+    : { status: null, error: body.error ?? "Could not load connection status." };
+}
 
-/**
- * Client-facing counterpart to app/admin/(shell)/platform/whatsapp/page.tsx
- * — same tenant-scoped /api/platform/whatsapp/bindings API (already gated
- * on the owner/admin-only integration:configure permission), client chrome.
- * Other integration kinds (Meta, Google, YouTube) live under Social
- * Autopilot today; folding them in here is part of the still-pending
- * content-migration decision (CURRENT_TO_FINAL_MIGRATION_PLAN.md §3), not
- * done in this pass.
- */
+const CONNECTIONS = [
+  {
+    key: "social",
+    title: "Facebook, Instagram & Threads",
+    description: "Connect your social channels with help from the Stratxcel team. Self-service account connection is not available in this workspace yet.",
+  },
+  {
+    key: "google",
+    title: "Google Search & Analytics",
+    description: "Google connections are configured from Search & SEO when a supported property is ready.",
+  },
+] as const;
+
+function BusinessStatus({ state }: { state: "checking" | "connected" | "action_required" | "setup_required" }) {
+  if (state === "checking") return <StatusChip state="neutral">Checking</StatusChip>;
+  if (state === "connected") return <StatusChip state="success">Connected</StatusChip>;
+  if (state === "action_required") return <StatusChip state="warning">Action required</StatusChip>;
+  return <StatusChip state="neutral">Setup required</StatusChip>;
+}
+
 export default function IntegrationsPage() {
   const { active } = useCurrentTenant();
   const tenantId = active?.tenantId;
-  const [bindings, setBindings] = useState<PhoneBinding[] | null>(null);
+  const [status, setStatus] = useState<CustomerIntegrationStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [wabaId, setWabaId] = useState("");
-  const [phoneNumberId, setPhoneNumberId] = useState("");
-  const [creating, setCreating] = useState(false);
 
-  async function load() {
+  const load = useCallback(async () => {
     if (!tenantId) return;
-    setError(null);
-    const res = await fetch(`/api/platform/whatsapp/bindings?tenantId=${encodeURIComponent(tenantId)}`);
-    const body = await res.json();
-    if (!res.ok) {
-      setError(body.error ?? `Failed to load integrations (HTTP ${res.status})`);
-      return;
-    }
-    setBindings(body.bindings);
-  }
-
-  useEffect(() => {
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const result = await requestStatus(tenantId);
+    setError(result.error);
+    if (result.status) setStatus(result.status);
   }, [tenantId]);
 
-  async function handleCreateBinding(e: React.FormEvent) {
-    e.preventDefault();
+  useEffect(() => {
     if (!tenantId) return;
-    setCreating(true);
-    setError(null);
-    try {
-      const res = await fetch("/api/platform/whatsapp/bindings", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tenantId, wabaId, phoneNumberId }),
-      });
-      const body = await res.json();
-      if (!res.ok) {
-        setError(body.error ?? `Failed to create binding (HTTP ${res.status})`);
-        return;
-      }
-      setWabaId("");
-      setPhoneNumberId("");
-      await load();
-    } finally {
-      setCreating(false);
-    }
-  }
+    let cancelled = false;
+    void requestStatus(tenantId).then((result) => {
+      if (cancelled) return;
+      setError(result.error);
+      if (result.status) setStatus(result.status);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [tenantId]);
 
   return (
     <div className="flex flex-col gap-6">
       <header>
         <h1 className="font-sx-sans text-xl font-semibold text-sx-text">Integrations{active ? ` — ${active.name}` : ""}</h1>
+        <p className="mt-1 text-sm text-sx-text-muted">See which business channels are ready and where setup help is needed.</p>
       </header>
-      {error && <ErrorState message={error} />}
+      {error && <ErrorState message={error} onRetry={load} />}
 
-      {tenantId && (
-        <WhatsAppAgentPairingCard
-          tenantId={tenantId}
-          pairingUrl="/api/platform/whatsapp-agent/pairing"
-          statusUrl="/api/platform/whatsapp-agent/status"
-          linkUrl="/api/platform/whatsapp-agent/link"
-          linkCommandPrefix="LINK"
-          numberDisplay="+91 77778 12777"
-        />
-      )}
-
-      {tenantId && (
-        <Card>
-          <CardHeading>Connect a WhatsApp Business number</CardHeading>
-          <p className="text-xs text-sx-text-subtle">
-            Add the identifiers from Meta Business Manager. The connection starts inactive while the Stratxcel team verifies
-            ownership and message routing.
-          </p>
-          <form onSubmit={handleCreateBinding} className="flex flex-col gap-3 sm:flex-row">
-            <Input value={wabaId} onChange={(e) => setWabaId(e.target.value)} required placeholder="WABA ID" className="flex-1" />
-            <Input
-              value={phoneNumberId}
-              onChange={(e) => setPhoneNumberId(e.target.value)}
-              required
-              placeholder="Phone number ID"
-              className="flex-1"
-            />
-            <Button type="submit" variant="primary" disabled={creating}>
-              {creating ? "Adding…" : "Add binding"}
-            </Button>
-          </form>
-        </Card>
-      )}
-
-      <section className="flex flex-col gap-3">
-        <h2 className="font-sx-sans text-base font-medium text-sx-text">WhatsApp phone bindings</h2>
-        {tenantId && bindings?.length === 0 && <EmptyState title="No phone bindings yet." />}
-        {bindings && bindings.length > 0 && (
-          <div className="flex flex-col gap-2">
-            {bindings.map((b) => {
-              const chip = BINDING_CHIP[b.status] ?? { label: b.status, state: "neutral" as ChipState };
-              return (
-                <Card key={b.id} variant="nested">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="font-medium text-sx-text">{b.display_phone_number ?? b.phone_number_id}</p>
-                    <StatusChip state={chip.state}>{chip.label}</StatusChip>
-                  </div>
-                  <p className="mt-1 text-xs text-sx-text-subtle">
-                    {b.environment} · receiving messages: {b.inbound_enabled ? "on" : "off"} · sending replies: {b.outbound_enabled ? "on" : "off"}
-                  </p>
-                </Card>
-              );
-            })}
+      <div className="grid gap-4 md:grid-cols-2">
+        <Card className="p-5">
+          <div className="flex items-start justify-between gap-3">
+            <CardHeading>WhatsApp Business</CardHeading>
+            <BusinessStatus state={status?.whatsapp ?? "checking"} />
           </div>
-        )}
-      </section>
+          <p className="mt-2 text-sm text-sx-text-muted">
+            {status === null
+              ? "Checking your WhatsApp Business connection."
+              : status.whatsapp === "connected"
+                ? "Your WhatsApp Business channel is connected."
+                : status.whatsapp === "action_required"
+                  ? "Your WhatsApp connection needs attention from the Stratxcel team."
+                  : "WhatsApp Business setup is staff-assisted. Contact Stratxcel when you are ready to connect it."}
+          </p>
+        </Card>
+
+        {CONNECTIONS.map((connection) => (
+          <Card key={connection.key} className="p-5">
+            <div className="flex items-start justify-between gap-3">
+              <CardHeading>{connection.title}</CardHeading>
+              <BusinessStatus state="setup_required" />
+            </div>
+            <p className="mt-2 text-sm text-sx-text-muted">{connection.description}</p>
+          </Card>
+        ))}
+      </div>
     </div>
   );
 }

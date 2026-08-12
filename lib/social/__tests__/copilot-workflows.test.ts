@@ -22,7 +22,7 @@ function run() {
   assert.equal(orphan.ready[0].arguments.__blockedDependency, "masterId", "missing upstream output blocks the mutation");
 
   const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
-  const hook = fs.readFileSync(path.join(root, "app", "admin", "social", "copilot", "useAgentSession.ts"), "utf8");
+  const hook = fs.readFileSync(path.join(root, "app", "admin", "(shell)", "social", "copilot", "useAgentSession.ts"), "utf8");
   assert.ok(hook.includes('fetch("/api/social/copilot/runs"'), "client accepts a mission before execution");
   assert.ok(hook.includes("/execute"), "execution is a separate request");
   assert.ok(hook.includes("RUN_EVENT_POLL_MS = 1000"), "active polling uses a one-second interval");

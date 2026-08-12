@@ -5,6 +5,7 @@ import { signOutAction } from "./actions";
 import { CoreAppShell } from "@/components/shell/CoreAppShell";
 import { APP_SIDEBAR_GROUPS, APP_MOBILE_NAV, resolveAppActiveKey } from "@/components/shell/navigation/app-navigation";
 import { ClientTenantSwitcher } from "./ClientTenantSwitcher";
+import { returnToAdminAction } from "./staff-workspace-actions";
 
 /**
  * /app's own shell — the client/workspace product's information
@@ -15,7 +16,7 @@ import { ClientTenantSwitcher } from "./ClientTenantSwitcher";
  * Operations Queue, System Health, Audit Log, internal Human Handoffs);
  * those exist only in /admin.
  */
-export function ClientAppShell({ email, children }: { email: string; children: React.ReactNode }) {
+export function ClientAppShell({ email, staffWorkspace, children }: { email: string; staffWorkspace: { tenantName: string } | null; children: React.ReactNode }) {
   const pathname = usePathname();
   const activeKey = resolveAppActiveKey(pathname);
 
@@ -44,6 +45,16 @@ export function ClientAppShell({ email, children }: { email: string; children: R
         </div>
       }
     >
+      {staffWorkspace && (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-sx-md border border-sx-accent/40 bg-sx-accent/10 px-4 py-3" role="status">
+          <p className="text-sm font-medium text-sx-text">Viewing as Stratxcel staff · {staffWorkspace.tenantName}</p>
+          <form action={returnToAdminAction}>
+            <button type="submit" className="rounded-sx-sm border border-sx-border-strong bg-sx-surface-2 px-3 py-2 text-xs font-semibold text-sx-text hover:bg-sx-elevated">
+              Return to Admin
+            </button>
+          </form>
+        </div>
+      )}
       {children}
     </CoreAppShell>
   );

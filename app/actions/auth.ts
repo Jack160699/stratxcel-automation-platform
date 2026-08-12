@@ -1,6 +1,6 @@
 "use server";
 
-import { requireOwnerContext } from "@/lib/social/db-context";
+import { defaultDestination, resolveCanonicalIdentity } from "@/lib/identity/resolve-identity";
 
 /**
  * Where a freshly authenticated user should land. Owner/staff status
@@ -11,6 +11,7 @@ import { requireOwnerContext } from "@/lib/social/db-context";
  * this deliberately checks nothing beyond stratxcel_admins.
  */
 export async function resolvePostLoginRedirect(): Promise<"/admin" | "/app"> {
-  const ctx = await requireOwnerContext();
-  return ctx.ok ? "/admin" : "/app";
+  const identity = await resolveCanonicalIdentity();
+  const destination = defaultDestination(identity.state);
+  return destination === "/admin" ? "/admin" : "/app";
 }

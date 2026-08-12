@@ -71,10 +71,10 @@ function run() {
   );
 
   const formSource = fs.readFileSync(
-    path.join(root, "app", "admin", "social", "create", "CreateContentForm.tsx"),
+    path.join(root, "app", "admin", "(shell)", "social", "create", "CreateContentForm.tsx"),
     "utf8"
   );
-  const actionSource = fs.readFileSync(path.join(root, "app", "admin", "social", "actions.ts"), "utf8");
+  const actionSource = fs.readFileSync(path.join(root, "app", "admin", "(shell)", "social", "actions.ts"), "utf8");
   assert.ok(formSource.includes('name="objective"') && formSource.includes("<select"));
   assert.ok(formSource.includes("useActionState"), "validation results must render in the form");
   assert.ok(actionSource.includes("ContentDraftValidationError"));

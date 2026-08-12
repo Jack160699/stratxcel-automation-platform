@@ -2,12 +2,12 @@
 
 import { createContext, useCallback, useContext, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import type { TenantMembership } from "@/lib/tenants/current-tenant";
+import type { WorkspaceTenant } from "@/lib/tenants/current-tenant";
 import { setActiveTenantAction } from "./tenant-actions";
 
 interface CurrentTenantContextValue {
-  tenants: TenantMembership[];
-  active: TenantMembership | null;
+  tenants: WorkspaceTenant[];
+  active: WorkspaceTenant | null;
   switching: boolean;
   switchTenant: (tenantId: string) => Promise<void>;
 }
@@ -28,8 +28,8 @@ export function CurrentTenantProvider({
   initialActive,
   children,
 }: {
-  initialTenants: TenantMembership[];
-  initialActive: TenantMembership | null;
+  initialTenants: WorkspaceTenant[];
+  initialActive: WorkspaceTenant | null;
   children: ReactNode;
 }) {
   const router = useRouter();

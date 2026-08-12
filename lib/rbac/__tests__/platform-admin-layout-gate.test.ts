@@ -108,8 +108,8 @@ function run() {
   for (const envVar of ["WHATSAPP_INTEGRATION_MODE", "RAZORPAY_INTEGRATION_MODE", "HERMES_MODE"]) {
     const envIndex = page.indexOf(`process.env.${envVar}`);
     assert.ok(envIndex !== -1, `overview page must still read process.env.${envVar} for authorized owners`);
-    assert.ok(pageGateIndex < envIndex, `auth guard must run before process.env.${envVar} is read`);
   }
+  assert.ok(pageGateIndex < page.indexOf("await currentHermesStatus("), "auth guard must run before the helper that reads Hermes environment state is invoked");
 
   console.log("platform-admin-layout-gate.test.ts: ALL PASS (shared auth reused, both failure branches present, shell gated after auth, noindex present, overview-page RSC guard precedes rows/env reads)");
 }

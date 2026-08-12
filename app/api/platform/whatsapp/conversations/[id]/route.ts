@@ -1,4 +1,4 @@
-import { requireTenantContext, getTenantServiceContext } from "@/lib/tenants/tenant-context";
+import { requireTenantContext, requireTenantReadContext, getTenantServiceContext } from "@/lib/tenants/tenant-context";
 import { listMessagesForConversation, markConversationRead, setConversationAutomationMode } from "@stratxcel/whatsapp";
 
 export const runtime = "nodejs";
@@ -9,11 +9,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   const tenantId = new URL(request.url).searchParams.get("tenantId");
   if (!tenantId) return Response.json({ error: "tenantId query param is required" }, { status: 400 });
 
-  const ctx = await requireTenantContext(tenantId);
+  const ctx = await requireTenantReadContext(tenantId);
   if (!ctx.ok) return Response.json({ error: ctx.error }, { status: ctx.status });
 
   const messages = await listMessagesForConversation(ctx.supabase, tenantId, id);
-  await markConversationRead(ctx.supabase, tenantId, id).catch(() => {});
+  if (ctx.accessMode === "customer") await markConversationRead(ctx.supabase, tenantId, id).catch(() => {});
   return Response.json({ messages }, { headers: { "Cache-Control": "no-store" } });
 }
 

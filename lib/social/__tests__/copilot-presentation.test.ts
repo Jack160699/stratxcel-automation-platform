@@ -11,8 +11,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { groupSessionsByRecency } from "../../../app/admin/social/copilot/session-groups.ts";
-import { quickActionsForPath, contextChipForPath } from "../../../app/admin/social/copilot/quick-actions.ts";
+import { groupSessionsByRecency } from "../../../app/admin/(shell)/social/copilot/session-groups.ts";
+import { quickActionsForPath, contextChipForPath } from "../../../app/admin/(shell)/social/copilot/quick-actions.ts";
 import type { AgentSessionRow } from "../repositories/agent.ts";
 
 function session(id: string, updatedAt: string): AgentSessionRow {
@@ -57,21 +57,18 @@ function run() {
   // 6. CopilotContext must only ever persist presentation-mode fields to
   // localStorage — never conversation/message content (checked via source
   // text since it's a "use client" React module not importable standalone).
-  const contextPath = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "app", "admin", "social", "copilot", "CopilotContext.tsx");
+  const contextPath = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "app", "admin", "(shell)", "social", "copilot", "CopilotContext.tsx");
   const source = fs.readFileSync(contextPath, "utf8");
-  const setItemCalls = source.match(/localStorage\.setItem\([^)]*\)/g) ?? [];
-  assert.ok(setItemCalls.length > 0, "expected at least one localStorage.setItem call");
-  for (const call of setItemCalls) {
-    assert.ok(call.includes("JSON.stringify(state)"), `localStorage write must persist only the presentation \`state\` object, got: ${call}`);
-  }
+  assert.equal(source.includes("localStorage"), false, "canonical Social context must not persist a separate dock presentation model");
+  assert.ok(source.includes("sessionId") && source.includes("setSessionId"));
   assert.ok(!source.includes("messages"), "CopilotContext must never reference message content directly — that stays server-side");
 
-  const fullPagePath = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "app", "admin", "social", "copilot", "CopilotFullPage.tsx");
+  const fullPagePath = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "app", "admin", "(shell)", "social", "copilot", "CopilotFullPage.tsx");
   const fullPage = fs.readFileSync(fullPagePath, "utf8");
   for (const behavior of ["saut-unified-composer", "MediaRecorder", "onPaste", "uploadState", "event.shiftKey", "revokeObjectURL"]) {
     assert.ok(fullPage.includes(behavior), `unified composer must preserve ${behavior}`);
   }
-  const previewPath = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "app", "admin", "social", "agent", "PlatformPreviewModal.tsx");
+  const previewPath = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "app", "admin", "(shell)", "social", "agent", "PlatformPreviewModal.tsx");
   const preview = fs.readFileSync(previewPath, "utf8");
   for (const platform of ["instagram", "linkedin", "facebook", "threads", "youtube"]) assert.ok(preview.includes(platform));
   assert.ok(preview.includes('event.key === "Escape"'), "preview must close with Escape");

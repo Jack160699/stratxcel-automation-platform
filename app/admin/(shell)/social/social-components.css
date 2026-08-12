@@ -2,7 +2,7 @@
  * Social Autopilot design tokens — namespaced --saut-* (Social AUTopilot) to
  * avoid colliding with the marketing site's existing --sx-* tokens (which
  * mean something different: --sx-surface is a *light* marketing color,
- * --sx-accent is a slightly different blue). Scoped under .saut-root so it
+ * --sx-accent is a slightly different blue). Scoped under .social-operations so it
  * never leaks outside /admin/social.
  *
  * Values extracted from the attached "Stratxcel Social Autopilot Design
@@ -12,7 +12,7 @@
  * Mono for technical/status text (falls back to ui-monospace).
  */
 
-.saut-root {
+.social-operations {
   --saut-bg: #06080c;
   --saut-surface-1: #0b0e14;
   --saut-surface-2: #11151d;
@@ -50,20 +50,11 @@
 
   --saut-mono: ui-monospace, "JetBrains Mono", "SFMono-Regular", Menlo, monospace;
 
-  background: var(--saut-bg);
   color: var(--saut-text);
-  height: 100dvh;
   min-height: 0;
-  overflow: hidden;
 }
 
-html.saut-document-lock,
-body.saut-document-lock {
-  height: 100%;
-  overflow: hidden;
-}
-
-.saut-root ::selection {
+.social-operations ::selection {
   background: rgb(58 160 255 / 0.28);
 }
 
@@ -216,7 +207,7 @@ body.saut-document-lock {
 }
 
 /* Accessible focus ring everywhere inside the shell, including non-form elements */
-.saut-root :focus-visible {
+.social-operations :focus-visible {
   outline: 2px solid var(--saut-accent);
   outline-offset: 2px;
 }

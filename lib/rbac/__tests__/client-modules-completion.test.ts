@@ -82,7 +82,7 @@ function run() {
 
   // --- 5. CRM: tenant isolation on both the list and the write route ------
   const leadsRoute = read("app", "api", "platform", "leads", "route.ts");
-  assert.ok(/requireTenantContext/.test(leadsRoute), "GET /api/platform/leads must gate on requireTenantContext");
+  assert.ok(/requireTenantReadContext/.test(leadsRoute), "GET /api/platform/leads must gate on the customer-or-explicit-staff read context");
   assert.equal(/getTenantServiceContext/.test(leadsRoute), false, "GET /api/platform/leads is a plain read covered by crm_leads_tenant_read RLS — must use the session client, not service-role");
 
   const leadPatchRoute = read("app", "api", "platform", "leads", "[leadId]", "route.ts");
@@ -125,7 +125,7 @@ function run() {
   assert.ok(/api\/platform\/artifacts/.test(artifactDetail), "Artifact detail page must read through the tenant-scoped artifacts API");
   assert.equal(/fs\.|require\(["']fs["']\)|process\.cwd\(\)/.test(artifactDetail), false, "Artifact detail page must never reference a server filesystem path");
   const artifactsRoute = read("app", "api", "platform", "artifacts", "route.ts");
-  assert.ok(/requireTenantContext/.test(artifactsRoute), "GET /api/platform/artifacts must gate on requireTenantContext");
+  assert.ok(/requireTenantReadContext/.test(artifactsRoute), "GET /api/platform/artifacts must gate on the customer-or-explicit-staff read context");
 
   // --- 8. Reports never fabricate a metric --------------------------------
   const reports = read("app", "app", "reports", "page.tsx");

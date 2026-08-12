@@ -7,6 +7,9 @@ import { createSupabaseServiceClient } from "@/lib/supabase/service";
 export async function requireImageGenerationContext() {
   const auth = await requireClientContext();
   if (!auth.ok) return auth;
+  if (auth.accessMode === "staff_support") {
+    return { ok: false as const, status: 403, error: "Image generation is unavailable in read-only staff support mode" };
+  }
   const resolved = await resolveCurrentTenant(auth.supabase, auth.userId);
   if (!resolved.active) return { ok: false as const, status: 403, error: "Workspace membership is required" };
   return {

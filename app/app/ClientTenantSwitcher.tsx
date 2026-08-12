@@ -55,7 +55,7 @@ export function ClientTenantSwitcher() {
             >
               <span className="min-w-0 truncate">
                 <span className="block truncate font-medium">{t.name}</span>
-                <span className="block truncate text-xs text-sx-text-subtle">{t.role}</span>
+                <span className="block truncate text-xs text-sx-text-subtle">{t.role ?? "Staff support"}</span>
               </span>
               {active?.tenantId === t.tenantId && <span aria-hidden className="shrink-0 text-sx-accent">✓</span>}
             </button>

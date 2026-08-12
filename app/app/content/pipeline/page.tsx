@@ -12,10 +12,11 @@ export default async function ContentPipelinePage({ searchParams }: { searchPara
   const { mediaAssetId, generationJobId } = await searchParams;
   let generated: { jobId: string; candidateId: string; assetId: string } | null = null;
   let variants: Array<{ id: string; label: string }> = [];
-  if (mediaAssetId && generationJobId) {
+  if (ctx.accessMode === "customer" && mediaAssetId && generationJobId) {
     const { data: candidate } = await ctx.supabase
       .from("image_generation_candidates")
       .select("id,asset_id,job_id,status")
+      .eq("tenant_id", ctx.workspaceTenant.tenantId)
       .eq("job_id", generationJobId)
       .eq("asset_id", mediaAssetId)
       .eq("status", "SELECTED")
