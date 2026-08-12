@@ -14,6 +14,8 @@ import { createCrmProvider } from "../adapters/crm.ts";
 import { createWhatsAppSendProvider } from "../adapters/whatsapp.ts";
 import { createSocialScheduleProvider, createSocialPublishProvider } from "../adapters/social.ts";
 import { createAnalyticsReadProvider } from "../adapters/analytics.ts";
+import { createResearchWebProvider } from "../adapters/research-web.ts";
+import { createResearchSerpProvider } from "../adapters/research-serp.ts";
 import { buildCapabilityExecutionReceipt } from "../adapters/receipts.ts";
 import { getCapabilityOperationClass } from "../adapters/operation-class.ts";
 import { assertSafePublicHttpUrl } from "../adapters/url-safety.ts";
@@ -71,6 +73,8 @@ export function bootstrapCapabilityProviders(): void {
   registerProvider(createCrmProvider());
   registerProvider(createWhatsAppSendProvider());
   registerProvider(createAnalyticsReadProvider());
+  registerProvider(createResearchWebProvider());
+  registerProvider(createResearchSerpProvider());
 
   registerProvider({
     key: "website-audit-internal",

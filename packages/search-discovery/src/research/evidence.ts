@@ -1,4 +1,3 @@
-
 import { createHash } from "node:crypto";
 import type { ResearchClaim, ResearchRequest, ResearchSource } from "./types.ts";
 import { RESEARCH_BOUNDS } from "./types.ts";

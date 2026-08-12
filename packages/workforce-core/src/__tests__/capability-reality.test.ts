@@ -60,10 +60,10 @@ function run() {
   }
 
   const counts = countCapabilitiesByStatus();
-  // website.audit + current image runtime + eight newly wired capabilities.
-  assert.equal(counts.AVAILABLE, 10);
+  // website.audit + current image runtime + nine newly wired capabilities.
+  assert.equal(counts.AVAILABLE, 11);
   assert.equal(counts.UNAVAILABLE, 2); // video + carousel
-  assert.equal(counts.NOT_CONFIGURED, 3);
+  assert.equal(counts.NOT_CONFIGURED, 4);
   assert.equal(
     counts.AVAILABLE + counts.NOT_CONFIGURED + counts.PLANNED + counts.UNAVAILABLE,
     CAPABILITY_KEYS.length,
@@ -98,7 +98,8 @@ function run() {
   assert.equal(getCapability("content.longform")?.status, "PLANNED");
   assert.equal(getCapability("website.deploy")?.status, "PLANNED");
   assert.equal(getCapability("ads.publish")?.status, "PLANNED");
-  assert.equal(getCapability("research.web")?.status, "PLANNED");
+  assert.equal(getCapability("research.web")?.status, "AVAILABLE");
+  assert.equal(getCapability("research.serp")?.status, "NOT_CONFIGURED");
 
   assert.equal(getCapability("social.publish")?.requiredEntitlementClass, "social_posts");
   assert.equal(getCapability("ads.plan")?.requiredEntitlementClass, "meta_ad_campaigns");
@@ -116,13 +117,7 @@ function run() {
   assert.ok(isNonExecutableStatus("PLANNED"));
   assert.ok(isBlockedCapability("media.carousel_generation"));
   assert.equal(isBlockedCapability("media.image_generation"), false);
-  assert.throws(
-    () => assertCapabilitiesExecutable(["research.web"]),
-    (err: unknown) =>
-      err instanceof Error &&
-      "code" in err &&
-      (err as { code: string }).code === "capability_unavailable",
-  );
+  assert.doesNotThrow(() => assertCapabilitiesExecutable(["research.web"]));
 
   // --- Tool mapping completeness ---
   assert.equal(listCapabilityToolMappings().length, CAPABILITY_KEYS.length);
@@ -273,7 +268,8 @@ function run() {
 
   // --- Snapshots never authorize ---
   const staticSnap = buildStaticCapabilityPlannerSnapshot();
-  assert.ok(staticSnap.plannedKeys.includes("research.web"));
+  assert.ok(staticSnap.availableKeys.includes("research.web"));
+  assert.ok(staticSnap.setupRequiredKeys.includes("research.serp"));
   assert.ok(!staticSnap.setupRequiredKeys.includes("media.image_generation"));
   assert.ok(staticSnap.unavailableKeys.includes("media.video_generation"));
   assert.ok(staticSnap.unavailableKeys.includes("media.carousel_generation"));
@@ -581,6 +577,7 @@ function run() {
     });
     assert.ok(executable.includes("website.audit"));
     assert.ok(executable.includes("seo.audit"));
+    assert.ok(executable.includes("research.web"));
     assert.ok(executable.includes("crm.read"));
     assert.ok(executable.includes("media.image_generation"));
     assert.ok(!executable.includes("media.video_generation"));

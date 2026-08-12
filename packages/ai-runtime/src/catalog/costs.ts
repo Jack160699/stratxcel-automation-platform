@@ -320,15 +320,10 @@ export function estimateVideoCostUsd(
   return roundUsd(perSec * seconds);
 }
 
-/**
- * Conservative Google Search grounding upper-bound rate.
- * Documented Gemini 3 post-free-quota rate: $14 / 1,000 search queries.
- * Provider-project free allowance is NOT allocated per tenant — do not assume
- * every tenant gets free searches. Prefer upper-bound accounting for budget safety.
- */
+/** Conservative Gemini Google Search upper-bound rate: $14 per 1,000 queries. */
 export const GEMINI_GOOGLE_SEARCH_USD_PER_1000_QUERIES = 14;
 
-/** Conservative OpenAI Responses web-search tool rate for budget accounting. */
+/** Conservative OpenAI Responses web_search estimate per tool call. */
 export const OPENAI_WEB_SEARCH_USD_PER_CALL = 0.01;
 
 export function estimateGeminiSearchToolCostUsd(webSearchQueries: number): number {

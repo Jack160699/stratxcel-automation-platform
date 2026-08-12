@@ -1,4 +1,3 @@
-
 /** Research Engine V1 — typed contracts. No fake confidence percentages. */
 
 export type ResearchTaskClass = "RESEARCH" | "SEO_RESEARCH";

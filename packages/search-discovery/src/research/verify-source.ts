@@ -1,4 +1,3 @@
-
 /**
  * Bounded optional verification fetch for strongest grounded sources.
  * Uses existing SSRF protections; never stores full pages.

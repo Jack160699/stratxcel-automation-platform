@@ -237,16 +237,20 @@ export class AIRuntime {
 
         if (
           request.requireWebEvidence &&
-          (request.taskClass === "RESEARCH" || request.taskClass === "SEO_RESEARCH") &&
-          (completion.webEvidence?.sources.length ?? 0) < 1
+          (completion.webEvidence?.sources?.length ?? 0) < 1
         ) {
+          const assessment = {
+            score: 0,
+            decision: "FAIL" as const,
+            reasons: ["insufficient_web_evidence", "missing_evidence"],
+          };
           result = {
             ...result,
             ok: false,
-            qualityScore: 0,
-            qualityDecision: "FAIL",
+            qualityScore: assessment.score,
+            qualityDecision: assessment.decision,
             errorCategory: "INSUFFICIENT_EVIDENCE",
-            userSafeError: "Needs human review",
+            userSafeError: userSafeErrorMessage("INSUFFICIENT_EVIDENCE"),
             errorDetailSafe: "insufficient_web_evidence",
           };
           lastErrorCategory = "INSUFFICIENT_EVIDENCE";
@@ -344,11 +348,11 @@ export class AIRuntime {
       }
     }
 
-    // Evidence insufficiency tries the configured normal fallback before premium escalation.
+    // Evidence insufficiency tries normal fallback before premium escalation.
     const fallback = normalPool.find((c) => c.role === "fallback");
     const skipNormalFallbackForNonEvidenceQuality =
       qualityPending?.qualityDecision === "FAIL" &&
-      qualityPending.errorCategory !== "INSUFFICIENT_EVIDENCE";
+      qualityPending?.errorCategory !== "INSUFFICIENT_EVIDENCE";
     if (fallback && this.paidFallbackEnabled && !skipNormalFallbackForNonEvidenceQuality) {
       let allowFallback = true;
       if (request.budgetEnvelope) {
@@ -363,7 +367,7 @@ export class AIRuntime {
           },
         );
         budgetStatus = recheck.status;
-        allowFallback = recheck.allowExecution;
+        if (!recheck.allowExecution) allowFallback = false;
       }
       if (allowFallback) {
         attemptNumber += 1;

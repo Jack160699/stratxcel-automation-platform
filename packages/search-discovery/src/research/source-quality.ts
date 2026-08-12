@@ -1,4 +1,3 @@
-
 import type { SourceQualityClass } from "./types.ts";
 
 const GOV_TLDS = [".gov", ".gov.in", ".nic.in", ".mil"];

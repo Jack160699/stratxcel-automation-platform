@@ -1,4 +1,3 @@
-
 // Run with: node --experimental-strip-types packages/search-discovery/src/__tests__/research-engine.test.ts
 import assert from "node:assert/strict";
 import {

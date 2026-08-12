@@ -1,4 +1,3 @@
-
 import { RESEARCH_BOUNDS, type ResearchRequest } from "./types.ts";
 
 export class ResearchRequestValidationError extends Error {

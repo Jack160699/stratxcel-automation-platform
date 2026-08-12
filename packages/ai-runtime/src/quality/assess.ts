@@ -62,14 +62,19 @@ export function assessQuality(input: QualityEvaluateInput): AIQualityAssessment 
     input.requireEvidence === true ||
     ((input.taskClass === "RESEARCH" || input.taskClass === "SEO_RESEARCH") &&
       input.requireEvidence !== false);
+
   if (needsEvidence && input.requireEvidence === true) {
-    if ((input.webEvidence?.sources.length ?? 0) < 1) {
-      return { score: 0, decision: "FAIL", reasons: ["insufficient_web_evidence", "missing_evidence"] };
+    if ((input.webEvidence?.sources?.length ?? 0) < 1) {
+      return {
+        score: 0,
+        decision: "FAIL",
+        reasons: ["insufficient_web_evidence", "missing_evidence"],
+      };
     }
     score += 0.2;
-    if ((input.webEvidence?.citationSupports.length ?? 0) > 0) score += 0.05;
+    if ((input.webEvidence?.citationSupports?.length ?? 0) > 0) score += 0.05;
   } else if (needsEvidence) {
-    const hasStructured = (input.webEvidence?.sources.length ?? 0) > 0;
+    const hasStructured = (input.webEvidence?.sources?.length ?? 0) > 0;
     const hasUrl = /https?:\/\//i.test(text) || /source:/i.test(text) || /citation/i.test(text);
     if (hasStructured || hasUrl) score += 0.15;
     else {

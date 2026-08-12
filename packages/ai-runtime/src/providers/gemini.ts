@@ -117,7 +117,10 @@ export class GeminiTextProvider implements AITextProviderAdapter {
     };
     if (args.structuredOutputSchema) {
       generationConfig.responseFormat = {
-        text: { mimeType: "application/json", schema: args.structuredOutputSchema },
+        text: {
+          mimeType: "application/json",
+          schema: args.structuredOutputSchema,
+        },
       };
     }
     const body: Record<string, unknown> = {
@@ -214,13 +217,14 @@ export class GeminiTextProvider implements AITextProviderAdapter {
         inputTokens: json.usageMetadata?.promptTokenCount ?? 0,
         cachedInputTokens: json.usageMetadata?.cachedContentTokenCount ?? 0,
         outputTokens: json.usageMetadata?.candidatesTokenCount ?? 0,
-        toolUsage: webSearchQueries > 0
-          ? {
-              webSearchQueries,
-              estimatedToolCostUsd: estimateGeminiSearchToolCostUsd(webSearchQueries),
-              costEstimateKind: "upper_bound",
-            }
-          : undefined,
+        toolUsage:
+          webSearchQueries > 0
+            ? {
+                webSearchQueries,
+                estimatedToolCostUsd: estimateGeminiSearchToolCostUsd(webSearchQueries),
+                costEstimateKind: "upper_bound",
+              }
+            : undefined,
       });
 
       return {

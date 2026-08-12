@@ -1,4 +1,3 @@
-
 /**
  * Parse Gemini generateContent groundingMetadata into provider-neutral AIWebEvidence.
  * Based on current Google Gemini Grounding with Google Search docs:

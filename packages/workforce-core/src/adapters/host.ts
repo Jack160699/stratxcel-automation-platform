@@ -2,6 +2,7 @@
  * App-layer host bindings for Social / Reporting / service clients.
  * Adapters never invent clients; the host binds them.
  */
+import type { ResearchAIExecutor } from "@stratxcel/search-discovery";
 
 export type LooseServiceClient = {
   from: (table: string) => unknown;
@@ -124,6 +125,17 @@ export type PersistMissionArtifactResult =
   | { ok: true; id: string }
   | { ok: false; errorMessage: string };
 
+export interface FindResearchArtifactInput {
+  tenantId: string;
+  missionId: string;
+  key: string;
+}
+
+export type FindResearchArtifactResult = {
+  id: string;
+  metadata?: Record<string, unknown>;
+} | null;
+
 export type WhatsAppOutboundHostInput = {
   tenantId: string;
   leadId: string;
@@ -154,6 +166,13 @@ export interface CapabilityHostBindings {
   persistMissionArtifact?: (
     input: PersistMissionArtifactInput,
   ) => Promise<PersistMissionArtifactResult>;
+  getResearchAIExecutor?: (input: {
+    tenantId: string;
+    missionId: string;
+  }) => ResearchAIExecutor | null;
+  findResearchArtifactByIdempotencyKey?: (
+    input: FindResearchArtifactInput,
+  ) => Promise<FindResearchArtifactResult>;
   /**
    * Optional wrap of the WhatsApp outbound choke-point (tests / instrumentation).
    * Production leaves this unbound so adapters call sendOutboundWhatsAppMessage directly.

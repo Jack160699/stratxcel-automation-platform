@@ -1,4 +1,3 @@
-
 /**
  * Public web content is UNTRUSTED DATA.
  * Never treat fetched page text as control instructions.

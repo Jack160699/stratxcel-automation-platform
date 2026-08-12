@@ -14,7 +14,17 @@ let bindPromise: Promise<void> | null = null;
 
 async function bindHosts(): Promise<void> {
   const { createSupabaseServiceClient } = await import("../supabase/service.ts");
-  const { persistMissionArtifact } = await import("./mission-artifacts.ts");
+  const {
+    findResearchArtifactByIdempotencyKey,
+    persistMissionArtifact,
+  } = await import("./mission-artifacts.ts");
+  const {
+    AIRuntime,
+    createTenantAIRuntime,
+    resolveMonthlyBudgetUsd,
+    resolveTenantMonthSpend,
+    resolveTenantPlanTier,
+  } = await import("@stratxcel/ai-runtime");
   const { ensureSocialCapabilityHostBound } = await import(
     "../social/workforce/capability-host.ts"
   );
@@ -24,6 +34,51 @@ async function bindHosts(): Promise<void> {
   bindCapabilityHost({
     getServiceClient: () => createSupabaseServiceClient() as never,
     persistMissionArtifact: (input) => persistMissionArtifact(input),
+    findResearchArtifactByIdempotencyKey: (input) =>
+      findResearchArtifactByIdempotencyKey(input),
+    getResearchAIExecutor: ({ tenantId, missionId }) => {
+      const configurationProbe = new AIRuntime();
+      const isConfigured = () => configurationProbe.isAnyProviderConfigured();
+      if (missionId === "probe") {
+        return {
+          isConfigured,
+          execute: async () => {
+            throw new Error("research_probe_execute_forbidden");
+          },
+        };
+      }
+      return {
+        isConfigured,
+        execute: async (input) => {
+          const service = createSupabaseServiceClient();
+          const [plan, spend] = await Promise.all([
+            resolveTenantPlanTier(service as never, tenantId),
+            resolveTenantMonthSpend(service as never, tenantId),
+          ]);
+          if (!spend.ok) {
+            throw new Error(`research_month_spend_${spend.reason}`);
+          }
+          const { runtime, budgetEnvelope } = createTenantAIRuntime({
+            tenantId,
+            missionId,
+            plan,
+            spentUsdThisMonth: spend.spentUsd,
+            monthlyBudgetUsd: resolveMonthlyBudgetUsd(plan),
+            internalWriteClient: service as never,
+          });
+          return runtime.execute({
+            tenantId,
+            missionId,
+            department: "research",
+            taskClass: input.taskClass,
+            messages: input.messages,
+            requireWebEvidence: input.requireWebEvidence,
+            correlationId: input.correlationId ?? input.requestId,
+            budgetEnvelope,
+          });
+        },
+      };
+    },
   });
   ensureSocialCapabilityHostBound();
   ensureAnalyticsCapabilityHostBound();

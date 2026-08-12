@@ -1,4 +1,3 @@
-
 // Run with: node --experimental-strip-types packages/ai-runtime/src/__tests__/web-evidence.test.ts
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";

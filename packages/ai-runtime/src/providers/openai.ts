@@ -237,8 +237,8 @@ export class OpenAITextProvider implements AITextProviderAdapter {
           status?: string;
           action?: {
             type?: string;
-            query?: string;
             queries?: string[];
+            query?: string;
             sources?: Array<{ type?: string; url?: string }>;
           };
         }>;
@@ -289,14 +289,15 @@ export class OpenAITextProvider implements AITextProviderAdapter {
         inputTokens: json.usage?.input_tokens ?? 0,
         cachedInputTokens: json.usage?.input_tokens_details?.cached_tokens ?? 0,
         outputTokens: json.usage?.output_tokens ?? 0,
-        toolUsage: webSearchCalls > 0
-          ? {
-              webSearchCalls,
-              webSearchQueries: webEvidence.searchQueries.length,
-              estimatedToolCostUsd: estimateOpenAIWebSearchToolCostUsd(webSearchCalls),
-              costEstimateKind: "upper_bound",
-            }
-          : undefined,
+        toolUsage:
+          webSearchCalls > 0
+            ? {
+                webSearchCalls,
+                webSearchQueries: webEvidence.searchQueries.length,
+                estimatedToolCostUsd: estimateOpenAIWebSearchToolCostUsd(webSearchCalls),
+                costEstimateKind: "upper_bound",
+              }
+            : undefined,
       });
 
       return {

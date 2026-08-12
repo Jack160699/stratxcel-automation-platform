@@ -1,4 +1,3 @@
-
 /**
  * Parse OpenAI Responses API web_search output into provider-neutral AIWebEvidence.
  * Based on current OpenAI docs:

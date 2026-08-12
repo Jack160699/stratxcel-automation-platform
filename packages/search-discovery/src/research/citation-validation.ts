@@ -1,4 +1,3 @@
-
 import type { ResearchClaim, ResearchSource, SourceSupportStatus } from "./types.ts";
 
 export function validateClaimSourceMapping(args: {

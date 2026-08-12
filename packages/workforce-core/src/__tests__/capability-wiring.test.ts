@@ -18,8 +18,8 @@ async function run() {
   resetAndBootstrapProvidersForTests();
 
   const counts = countCapabilitiesByStatus();
-  assert.equal(counts.AVAILABLE, 10);
-  assert.equal(counts.NOT_CONFIGURED, 3);
+  assert.equal(counts.AVAILABLE, 11);
+  assert.equal(counts.NOT_CONFIGURED, 4);
   assert.equal(counts.UNAVAILABLE, 2);
   assert.equal(getCapabilityOperationClass("social.publish"), "EXTERNAL_MUTATION");
   assert.throws(() => assertSafePublicHttpUrl("http://127.0.0.1/x"), /private|unsafe_url/);

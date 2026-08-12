@@ -1,4 +1,3 @@
-
 /**
  * Safe research URL normalization + SSRF-oriented rejection of unsafe schemes/hosts.
  * Reuses crawler private-IP checks where DNS resolution is available.

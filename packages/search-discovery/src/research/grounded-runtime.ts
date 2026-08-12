@@ -1,4 +1,3 @@
-
 /**
  * Grounded research orchestrator — AI Runtime only for models.
  * Research business logic never parses raw Gemini/OpenAI JSON.
