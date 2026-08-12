@@ -10,11 +10,65 @@ export type AuditCustomerState =
   | "NEEDS_ATTENTION"
   | "CLOSED";
 
+export const AUDIT_CATEGORY_SCORE_KEYS = [
+  "brandPositioning",
+  "websiteConversion",
+  "discoverabilitySeo",
+  "socialContent",
+  "leadGeneration",
+  "trustReputation",
+  "customerJourney",
+  "automationOperations",
+] as const;
+
+export type AuditCategoryScoreKey = (typeof AUDIT_CATEGORY_SCORE_KEYS)[number];
+
+export interface AuditCategoryScore {
+  score: number | null;
+  explanation: string;
+  evidenceSourceIds: string[];
+}
+
 export interface AuditDeliveryReport {
   executiveSummary: string;
   strengths: string[];
   priorityRisks: string[];
   actionPlan: string[];
+  reportVersion?: string;
+  generatedAt?: string;
+  scores?: {
+    overall: number;
+    digitalPresence: number | null;
+    brandClarity: number | null;
+    growthReadiness: number | null;
+    conversionReadiness: number | null;
+  };
+  overallHealth?: { score: number; explanation: string };
+  categoryScores?: Record<AuditCategoryScoreKey, AuditCategoryScore>;
+  findings?: Array<{
+    id: string;
+    title: string;
+    summary: string;
+    impact: "HIGH" | "MEDIUM" | "LOW";
+    evidenceSourceIds: string[];
+    confidence: "HIGH" | "MEDIUM" | "LOW";
+  }>;
+  growthProblems?: string[];
+  opportunities?: Array<{
+    title: string;
+    rationale: string;
+    nextStep: string;
+    evidenceSourceIds: string[];
+  }>;
+  quickWins30Days?: string[];
+  plan?: { days30: string[]; days60: string[]; days90: string[] };
+  nextActions?: string[];
+  ownerActions?: string[];
+  stratxcelSupport?: Array<{ recommendation: string; capability: string; why: string }>;
+  sources?: Array<{ id: string; url: string; title?: string; provider?: string; retrievedAt?: string }>;
+  limitations?: string[];
+  /** Alias of limitations for the customer-facing researchLimitations contract. */
+  researchLimitations?: string[];
 }
 
 export interface AuditIntakeLike {
@@ -117,6 +171,30 @@ function cleanList(value: unknown): string[] {
     .slice(0, 12);
 }
 
+function scoreOrNull(value: unknown): number | null {
+  if (value == null || value === "") return null;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return null;
+  return Math.max(0, Math.min(100, Math.round(parsed)));
+}
+
+function scoreRequired(value: unknown, fallback = 0): number {
+  return scoreOrNull(value) ?? fallback;
+}
+
+function normalizeCategoryScore(value: unknown): AuditCategoryScore | null {
+  const row = objectValue(value);
+  if (Object.keys(row).length === 0) return null;
+  const explanation = typeof row.explanation === "string"
+    ? row.explanation.trim().slice(0, 2_000)
+    : "";
+  return {
+    score: scoreOrNull(row.score),
+    explanation: explanation || "Not enough data",
+    evidenceSourceIds: cleanList(row.evidenceSourceIds),
+  };
+}
+
 export function normalizeAuditDeliveryReport(value: unknown): AuditDeliveryReport | null {
   const report = objectValue(value);
   const executiveSummary = typeof report.executiveSummary === "string"
@@ -125,11 +203,119 @@ export function normalizeAuditDeliveryReport(value: unknown): AuditDeliveryRepor
   const priorityRisks = cleanList(report.priorityRisks);
   const actionPlan = cleanList(report.actionPlan);
   if (!executiveSummary || priorityRisks.length === 0 || actionPlan.length === 0) return null;
+  const scoresValue = objectValue(report.scores);
+  const overallHealthValue = objectValue(report.overallHealth);
+  const categoryScoresValue = objectValue(report.categoryScores);
+  const findings = Array.isArray(report.findings)
+    ? report.findings.flatMap((item, index) => {
+        const finding = objectValue(item);
+        const title = typeof finding.title === "string" ? finding.title.trim().slice(0, 240) : "";
+        const summary = typeof finding.summary === "string" ? finding.summary.trim().slice(0, 2_000) : "";
+        if (!title || !summary) return [];
+        const impact: "HIGH" | "MEDIUM" | "LOW" =
+          finding.impact === "HIGH" || finding.impact === "LOW" ? finding.impact : "MEDIUM";
+        const confidence: "HIGH" | "MEDIUM" | "LOW" =
+          finding.confidence === "HIGH" || finding.confidence === "LOW" ? finding.confidence : "MEDIUM";
+        return [{
+          id: typeof finding.id === "string" ? finding.id.slice(0, 120) : `finding_${index + 1}`,
+          title,
+          summary,
+          impact,
+          evidenceSourceIds: cleanList(finding.evidenceSourceIds),
+          confidence,
+        }];
+      })
+    : [];
+  const opportunities = Array.isArray(report.opportunities)
+    ? report.opportunities.flatMap((item) => {
+        const opportunity = objectValue(item);
+        const title = typeof opportunity.title === "string" ? opportunity.title.trim().slice(0, 240) : "";
+        const rationale = typeof opportunity.rationale === "string" ? opportunity.rationale.trim().slice(0, 2_000) : "";
+        const nextStep = typeof opportunity.nextStep === "string" ? opportunity.nextStep.trim().slice(0, 1_000) : "";
+        if (!title || !rationale || !nextStep) return [];
+        return [{ title, rationale, nextStep, evidenceSourceIds: cleanList(opportunity.evidenceSourceIds) }];
+      })
+    : [];
+  const planValue = objectValue(report.plan);
+  const sources = Array.isArray(report.sources)
+    ? report.sources.flatMap((item) => {
+        const source = objectValue(item);
+        const id = typeof source.id === "string" ? source.id.slice(0, 160) : "";
+        const url = typeof source.url === "string" ? source.url.trim().slice(0, 2_048) : "";
+        if (!id || !/^https?:\/\//i.test(url)) return [];
+        return [{
+          id,
+          url,
+          title: typeof source.title === "string" ? source.title.trim().slice(0, 500) : undefined,
+          provider: typeof source.provider === "string" ? source.provider.slice(0, 60) : undefined,
+          retrievedAt: typeof source.retrievedAt === "string" ? source.retrievedAt : undefined,
+        }];
+      })
+    : [];
+  const limitations = cleanList(report.researchLimitations ?? report.limitations);
+  const overallHealthScore = scoreOrNull(overallHealthValue.score);
+  const overallHealthExplanation = typeof overallHealthValue.explanation === "string"
+    ? overallHealthValue.explanation.trim().slice(0, 2_000)
+    : "";
+  const hasAnyCategoryScore = AUDIT_CATEGORY_SCORE_KEYS.some((key) =>
+    Object.keys(objectValue(categoryScoresValue[key])).length > 0,
+  );
+  const categoryScores = hasAnyCategoryScore
+    ? Object.fromEntries(
+      AUDIT_CATEGORY_SCORE_KEYS.map((key) => [
+        key,
+        normalizeCategoryScore(categoryScoresValue[key]) ?? {
+          score: null,
+          explanation: "Not enough data",
+          evidenceSourceIds: [],
+        },
+      ]),
+    ) as Record<AuditCategoryScoreKey, AuditCategoryScore>
+    : undefined;
+  const stratxcelSupport = Array.isArray(report.stratxcelSupport)
+    ? report.stratxcelSupport.flatMap((item) => {
+        const row = objectValue(item);
+        const recommendation = typeof row.recommendation === "string" ? row.recommendation.trim().slice(0, 1_000) : "";
+        const capability = typeof row.capability === "string" ? row.capability.trim().slice(0, 240) : "";
+        const why = typeof row.why === "string" ? row.why.trim().slice(0, 1_000) : "";
+        if (!recommendation || !capability || !why) return [];
+        return [{ recommendation, capability, why }];
+      }).slice(0, 8)
+    : [];
+  const days30 = cleanList(planValue.days30 ?? planValue.days1To30);
+  const days60 = cleanList(planValue.days60 ?? planValue.days31To60);
+  const days90 = cleanList(planValue.days90 ?? planValue.days61To90);
+  const hasPlan = days30.length > 0 || days60.length > 0 || days90.length > 0 || Object.keys(planValue).length > 0;
+
   return {
     executiveSummary,
     strengths: cleanList(report.strengths),
     priorityRisks,
     actionPlan,
+    reportVersion: typeof report.reportVersion === "string" ? report.reportVersion.slice(0, 80) : undefined,
+    generatedAt: typeof report.generatedAt === "string" ? report.generatedAt : undefined,
+    scores: Object.keys(scoresValue).length > 0 ? {
+      overall: scoreRequired(scoresValue.overall, overallHealthScore ?? 0),
+      digitalPresence: scoreOrNull(scoresValue.digitalPresence),
+      brandClarity: scoreOrNull(scoresValue.brandClarity),
+      growthReadiness: scoreOrNull(scoresValue.growthReadiness),
+      conversionReadiness: scoreOrNull(scoresValue.conversionReadiness),
+    } : undefined,
+    overallHealth: overallHealthScore != null && overallHealthExplanation
+      ? { score: overallHealthScore, explanation: overallHealthExplanation }
+      : undefined,
+    categoryScores,
+    findings: findings.length ? findings : undefined,
+    growthProblems: cleanList(report.growthProblems),
+    opportunities: opportunities.length ? opportunities : undefined,
+    quickWins30Days: cleanList(report.quickWins30Days),
+    plan: hasPlan ? { days30, days60, days90 } : undefined,
+    nextActions: cleanList(report.nextActions),
+    ownerActions: cleanList(report.ownerActions),
+    stratxcelSupport: stratxcelSupport.length ? stratxcelSupport : undefined,
+    sources: sources.length ? sources : undefined,
+    limitations: limitations.length ? limitations : undefined,
+    researchLimitations: limitations.length ? limitations : undefined,
   };
 }
 

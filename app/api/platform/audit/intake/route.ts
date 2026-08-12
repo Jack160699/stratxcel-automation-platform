@@ -4,6 +4,7 @@ import { listMembershipsForUser } from "@/lib/tenants/repository";
 import { auditIntakeMissingFields } from "@/lib/audit/customer-state";
 import { buildBrandBrainContentFromAuditIntake, isBrandBrainCurrentForAudit } from "@/lib/audit/brand-brain";
 import { getCurrentBrandBrain, saveBrandBrainVersion } from "@stratxcel/brand-brain";
+import { resolveAuditBudgetLimitUsd } from "@stratxcel/audit-engine";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -235,7 +236,8 @@ export async function POST() {
     .maybeSingle();
 
   if (!order) return Response.json({ error: "No audit found for this workspace" }, { status: 404 });
-  if (order.status !== "paid") {
+  const automationEnabled = process.env.AUDIT_AUTOMATION_ENABLED === "true";
+  if (order.status !== "paid" && !(automationEnabled && order.status === "in_review")) {
     return Response.json({ error: `Audit cannot be started from status '${order.status}'` }, { status: 409 });
   }
 
@@ -250,13 +252,62 @@ export async function POST() {
   try {
     const existingBrain = await getCurrentBrandBrain(service, tenantId);
     const content = buildBrandBrainContentFromAuditIntake(order, existingBrain?.content ?? null);
-    const version = existingBrain && isBrandBrainCurrentForAudit(order, existingBrain.content)
-      ? { version: existingBrain.current_version }
+    const currentForAudit = existingBrain && isBrandBrainCurrentForAudit(order, existingBrain.content);
+    if (order.status === "in_review" && !currentForAudit) {
+      return Response.json(
+        { error: "The Audit has already started with a different Business Profile version." },
+        { status: 409 },
+      );
+    }
+    const version = currentForAudit
+      ? { version: existingBrain!.current_version }
       : await saveBrandBrainVersion(service, {
           tenantId,
           content,
           createdBy: user.id,
         });
+
+    if (automationEnabled) {
+      const { data: started, error: startError } = await service.rpc(
+        "start_automatic_audit_generation_v1",
+        {
+          p_audit_order_id: order.id,
+          p_expected_tenant_id: tenantId,
+          p_brand_brain_version: version.version,
+          p_budget_limit_usd: resolveAuditBudgetLimitUsd(),
+        },
+      );
+      const result = started as {
+        success?: boolean;
+        reason?: string;
+        run_id?: string;
+        queue_job_id?: string;
+        reused?: boolean;
+      } | null;
+      if (startError || result?.success !== true) {
+        console.error("audit intake: automatic enqueue failed", startError?.message ?? result?.reason);
+        return Response.json(
+          {
+            error: "Your Business Profile was saved, but automatic Audit processing could not start. The team has been notified.",
+            code: result?.reason ?? "AUTOMATIC_AUDIT_ENQUEUE_FAILED",
+          },
+          { status: 503 },
+        );
+      }
+      return Response.json(
+        {
+          ok: true,
+          brandBrainVersion: version.version,
+          automation: {
+            status: "QUEUED",
+            runId: result.run_id,
+            queueJobId: result.queue_job_id,
+            reused: result.reused === true,
+          },
+        },
+        { status: 200, headers: { "Cache-Control": "no-store" } },
+      );
+    }
 
     const now = new Date().toISOString();
     const deepDive = objectValue(order.deep_dive_answers);

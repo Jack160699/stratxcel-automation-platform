@@ -80,6 +80,54 @@ assert.equal(hasValidAuditReport(report), true);
 assert.equal(hasValidAuditReport({ executiveSummary: "Summary only" }), false);
 assert.deepEqual(normalizeAuditDeliveryReport({ ...report, strengths: ["  Clear positioning  ", ""] })?.strengths, ["Clear positioning"]);
 
+const rich = normalizeAuditDeliveryReport({
+  ...report,
+  overallHealth: { score: 72, explanation: "Solid local trust, weak online conversion." },
+  categoryScores: {
+    brandPositioning: { score: 80, explanation: "Clear niche", evidenceSourceIds: ["src_1"] },
+    websiteConversion: { score: null, explanation: "No website evidence", evidenceSourceIds: [] },
+    discoverabilitySeo: { score: 40, explanation: "Thin local SEO", evidenceSourceIds: ["src_1"] },
+    socialContent: { score: 55, explanation: "Irregular posting", evidenceSourceIds: ["src_2"] },
+    leadGeneration: { score: null, explanation: "Not enough data", evidenceSourceIds: [] },
+    trustReputation: { score: 70, explanation: "Good reviews", evidenceSourceIds: ["src_1"] },
+    customerJourney: { score: 50, explanation: "WhatsApp handoff is manual", evidenceSourceIds: [] },
+    automationOperations: { score: null, explanation: "Not enough data", evidenceSourceIds: [] },
+  },
+  growthProblems: ["Inconsistent follow-up"],
+  quickWins30Days: ["Add a WhatsApp reply template"],
+  ownerActions: ["Track missed calls for one week"],
+  stratxcelSupport: [{
+    recommendation: "Set up a simple enquiry tracker",
+    capability: "Operations automation",
+    why: "Stops leads from falling through after store hours",
+  }],
+  plan: {
+    days1To30: ["Fix reply speed"],
+    days31To60: ["Improve Google profile"],
+    days61To90: ["Add a basic offer funnel"],
+  },
+  researchLimitations: ["No official website to verify"],
+  scores: {
+    overall: 72,
+    digitalPresence: null,
+    brandClarity: 80,
+    growthReadiness: 50,
+    conversionReadiness: null,
+  },
+});
+assert.equal(rich?.overallHealth?.score, 72);
+assert.equal(rich?.categoryScores?.websiteConversion.score, null);
+assert.deepEqual(rich?.plan, {
+  days30: ["Fix reply speed"],
+  days60: ["Improve Google profile"],
+  days90: ["Add a basic offer funnel"],
+});
+assert.deepEqual(rich?.researchLimitations, ["No official website to verify"]);
+assert.deepEqual(rich?.limitations, ["No official website to verify"]);
+assert.equal(rich?.scores?.digitalPresence, null);
+assert.equal(rich?.scores?.conversionReadiness, null);
+assert.equal(rich?.ownerActions?.[0], "Track missed calls for one week");
+
 const order = (status: AuditStateOrder["status"], extra: Partial<AuditStateOrder> = {}): AuditStateOrder => ({
   ...completeBrandBrainIntake,
   status,

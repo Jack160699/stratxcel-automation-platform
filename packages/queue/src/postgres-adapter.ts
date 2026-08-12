@@ -22,7 +22,10 @@ import type { EnqueueJobInput, QueueJobRow } from "./types.ts";
  * below must not filter by status. Every other job type keeps the original
  * active-only lookup, matching queue_jobs_tenant_idempotency_active_idx.
  */
-const TERMINAL_SAFE_IDEMPOTENT_JOB_TYPES = new Set(["whatsapp.process_inbound"]);
+const TERMINAL_SAFE_IDEMPOTENT_JOB_TYPES = new Set([
+  "whatsapp.process_inbound",
+  "audit.generate_v1",
+]);
 
 export function createPostgresQueueAdapter(supabase: ServiceClient): QueueAdapter {
   return {

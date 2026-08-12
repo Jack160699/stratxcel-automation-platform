@@ -56,6 +56,15 @@ function run() {
   assert.ok(/url\s*===\s*"\/health"/.test(source), "mission-worker must expose /health");
   assert.ok(/getWorkerHealth\(/.test(source), "/health must report real persisted worker health, not a hardcoded true");
 
+  // --- 7. Automatic Audit uses this durable worker and the same lease -----
+  assert.ok(/AUDIT_GENERATION_JOB_TYPE/.test(source), "mission-worker must claim automatic Audit jobs");
+  assert.ok(/auditExecutor\.execute\(/.test(source), "automatic Audit jobs must dispatch to the Audit executor");
+  assert.ok(/expectedTenantId:\s*job\.tenant_id/.test(source), "automatic Audit execution must bind the queue tenant to the run");
+  const auditExecuteIdx = source.indexOf("auditExecutor.execute(");
+  const auditHeartbeatIdx = source.lastIndexOf("executeWithLeaseHeartbeat", auditExecuteIdx);
+  assert.ok(auditHeartbeatIdx > -1 && auditHeartbeatIdx < auditExecuteIdx, "Audit execution must renew its queue lease");
+  assert.ok(/outcome\.kind\s*===\s*"RETRY"/.test(source), "retryable Audit failures must use bounded queue retry");
+
   console.log("worker-safety.test.ts (@stratxcel/mission-worker): ALL PASS");
 }
 

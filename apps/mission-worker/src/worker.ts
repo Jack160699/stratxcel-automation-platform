@@ -11,6 +11,11 @@ import {
 } from "@stratxcel/missions";
 import { recordAuditEvent } from "@stratxcel/audit";
 import {
+  AUDIT_GENERATION_JOB_TYPE,
+  createLiveAutomaticAuditExecutor,
+  type AuditWorkerOutcome,
+} from "@stratxcel/audit-engine";
+import {
   createPostgresQueueAdapter,
   isKillSwitchActive,
   recordWorkerHeartbeat,
@@ -45,7 +50,7 @@ const HEARTBEAT_DURING_EXECUTE_MS = Math.max(5000, Math.floor((LEASE_SECONDS * 1
 const WORKER_TYPE = "mission-worker" as const;
 const INSTANCE_ID = `${os.hostname()}-${process.pid}`;
 const LEASE_OWNER = `${WORKER_TYPE}-${INSTANCE_ID}`;
-const JOB_TYPE = "mission.execute";
+const MISSION_JOB_TYPE = "mission.execute";
 const VERSION = process.env.GIT_COMMIT_SHA ?? process.env.VERCEL_GIT_COMMIT_SHA ?? "unknown";
 const PORT = Number(process.env.PORT ?? 8083);
 
@@ -165,7 +170,10 @@ async function executeMission(
 export async function processOnce(
   supabase: ReturnType<typeof createServiceClient>,
   queue: QueueAdapter,
-  hermes: HermesRuntimeAdapter
+  hermes: HermesRuntimeAdapter,
+  auditExecutor?: {
+    execute(input: { runId: string; attemptNumber: number; maxAttempts: number; expectedTenantId?: string }): Promise<AuditWorkerOutcome>;
+  },
 ): Promise<boolean> {
   const globalKill = await isKillSwitchActive(supabase, [
     { scope: "global_hermes" },
@@ -175,12 +183,71 @@ export async function processOnce(
     return false; // Stop claiming new work; already-claimed jobs still finish/fail normally.
   }
 
-  const job = await queue.claimNext({ leaseOwner: LEASE_OWNER, jobTypes: [JOB_TYPE], leaseSeconds: LEASE_SECONDS });
+  const jobTypes = auditExecutor
+    ? [MISSION_JOB_TYPE, AUDIT_GENERATION_JOB_TYPE]
+    : [MISSION_JOB_TYPE];
+  const job = await queue.claimNext({ leaseOwner: LEASE_OWNER, jobTypes, leaseSeconds: LEASE_SECONDS });
   if (!job) return false;
 
   await recordWorkerHeartbeat(supabase, { workerType: WORKER_TYPE, instanceId: INSTANCE_ID, status: "busy", version: VERSION });
 
   try {
+    if (job.job_type === AUDIT_GENERATION_JOB_TYPE) {
+      const runId = typeof job.payload.auditGenerationRunId === "string"
+        ? job.payload.auditGenerationRunId
+        : "";
+      if (!runId || !auditExecutor) {
+        await queue.fail({
+          jobId: job.id,
+          leaseOwner: LEASE_OWNER,
+          error: {
+            message: "audit generation job is missing a valid run or executor",
+            code: "INVALID_AUDIT_GENERATION_JOB",
+            retryable: false,
+          },
+        });
+        return true;
+      }
+
+      const tenantKill = await isKillSwitchActive(supabase, [
+        { scope: "tenant", scopeId: job.tenant_id },
+      ]);
+      if (tenantKill.active) {
+        await queue.fail({
+          jobId: job.id,
+          leaseOwner: LEASE_OWNER,
+          error: {
+            message: `kill switch active (${tenantKill.scope}): ${tenantKill.reason ?? "no reason given"}`,
+            retryable: true,
+          },
+        });
+        return true;
+      }
+
+      const outcome = await executeWithLeaseHeartbeat(queue, job.id, () =>
+        auditExecutor.execute({
+          runId,
+          attemptNumber: job.attempt_count,
+          maxAttempts: job.max_attempts,
+          expectedTenantId: job.tenant_id,
+        }),
+      );
+      if (outcome.kind === "RETRY") {
+        await queue.fail({
+          jobId: job.id,
+          leaseOwner: LEASE_OWNER,
+          error: {
+            message: outcome.message,
+            code: outcome.code,
+            retryable: true,
+          },
+        });
+      } else {
+        await queue.complete({ jobId: job.id, leaseOwner: LEASE_OWNER });
+      }
+      return true;
+    }
+
     const { missionId } = job.payload as { missionId: string };
 
     const missionKill = await isKillSwitchActive(supabase, [
@@ -237,6 +304,7 @@ if (process.env.NODE_ENV !== "test") {
   const supabase = createServiceClient();
   const queue = createPostgresQueueAdapter(supabase);
   const hermes = selectHermesAdapter();
+  const auditExecutor = createLiveAutomaticAuditExecutor(supabase);
 
   startHealthServer(supabase);
   recordWorkerHeartbeat(supabase, { workerType: WORKER_TYPE, instanceId: INSTANCE_ID, status: "idle", version: VERSION }).catch((err) =>
@@ -245,7 +313,7 @@ if (process.env.NODE_ENV !== "test") {
 
   console.log(`[mission-worker] polling every ${POLL_INTERVAL_MS}ms as ${LEASE_OWNER}, Hermes mode: ${hermes.mode}`);
   setInterval(() => {
-    processOnce(supabase, queue, hermes)
+    processOnce(supabase, queue, hermes, auditExecutor)
       .then((claimed) => {
         if (!claimed) {
           recordWorkerHeartbeat(supabase, { workerType: WORKER_TYPE, instanceId: INSTANCE_ID, status: "idle", version: VERSION }).catch(() => {});

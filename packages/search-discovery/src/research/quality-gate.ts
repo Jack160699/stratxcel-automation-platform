@@ -1,3 +1,4 @@
+
 import type { ResearchClaim, ResearchRequest, ResearchResult, ResearchSource } from "./types.ts";
 import { RESEARCH_BOUNDS } from "./types.ts";
 
@@ -26,6 +27,7 @@ export function evaluateResearchQuality(input: QualityGateInput): {
   if (input.request.requireWebEvidence) {
     if (input.sources.length < 1) {
       reasons.push("require_web_evidence_zero_sources");
+      reasons.push("INSUFFICIENT_PUBLIC_PRESENCE");
     }
     if (input.request.requiredDomains?.length) {
       for (const required of input.request.requiredDomains) {
@@ -33,6 +35,12 @@ export function evaluateResearchQuality(input: QualityGateInput): {
         if (!covered) reasons.push(`required_domain_missing:${required}`);
       }
     }
+  }
+
+  const uniqueDomains = new Set(input.sources.map((s) => s.domain.toLowerCase()));
+  if (input.sources.length > 0 && (input.sources.length < 3 || uniqueDomains.size < 2)) {
+    // Sparse presence is informational — not an automatic hard fail.
+    reasons.push("INSUFFICIENT_PUBLIC_PRESENCE");
   }
 
   const uniqueUrls = new Set(input.sources.map((s) => s.canonicalUrl.toLowerCase()));
@@ -51,13 +59,19 @@ export function evaluateResearchQuality(input: QualityGateInput): {
     const unsupported = sourcedFacts.filter(
       (c) => c.sourceSupportStatus === "unsupported" || c.sourceIds.length === 0,
     );
+    const partial = sourcedFacts.filter((c) => c.sourceSupportStatus === "partial");
     if (sourcedFacts.length > 0 && unsupported.length === sourcedFacts.length) {
       reasons.push("all_sourced_facts_unsupported");
     }
     if (unsupported.length > 0) {
       reasons.push(`unsupported_claims:${unsupported.length}`);
+      reasons.push("UNSUPPORTED_MATERIAL_CLAIM");
+      reasons.push("require_claim_citations_failed");
     }
-    if (unsupported.length > 0) {
+    // Partially supported material claims must not silently pass.
+    if (partial.length > 0) {
+      reasons.push(`partially_supported_claims:${partial.length}`);
+      reasons.push("UNSUPPORTED_MATERIAL_CLAIM");
       reasons.push("require_claim_citations_failed");
     }
   }
@@ -76,22 +90,23 @@ export function evaluateResearchQuality(input: QualityGateInput): {
       r === "empty_or_short_summary" ||
       r === "all_sourced_facts_unsupported" ||
       r === "require_claim_citations_failed" ||
+      r === "UNSUPPORTED_MATERIAL_CLAIM" ||
       r.startsWith("required_domain_missing:"),
   );
 
-  if (critical && input.request.requireWebEvidence && input.sources.length < 1) {
+  // Zero public sources with required web evidence → insufficient presence, not a claim-support failure.
+  if (reasons.includes("require_web_evidence_zero_sources")) {
     return { pass: false, status: "INSUFFICIENT_EVIDENCE", reasons };
   }
+
   if (critical || reasons.includes("empty_or_short_summary")) {
     return {
       pass: false,
-      status: input.sources.length < 1 && input.request.requireWebEvidence
-        ? "INSUFFICIENT_EVIDENCE"
-        : "FAILED",
+      status: "FAILED",
       reasons,
     };
   }
 
-  // Unsupported claims flagged but partial evidence still allowed as PASS with flags.
+  // Sparse public presence alone remains PASS so local/low-presence businesses can still audit.
   return { pass: true, status: "PASS", reasons };
 }
