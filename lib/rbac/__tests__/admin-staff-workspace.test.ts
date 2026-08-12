@@ -27,8 +27,10 @@ function run() {
   const cookieIndex = tenantActions.indexOf("cookieStore.set(ACTIVE_TENANT_COOKIE");
   assert.ok(setIndex < memberIndex && memberIndex < ensureIndex && ensureIndex < cookieIndex, "membership must be verified before workspace + active tenant cookies");
 
-  // Admin shell proactively syncs workspace on navigation.
-  assert.ok(layout.includes("ensureAdminStaffWorkspace(identity.userId, active.tenantId)"), "admin layout must sync staff workspace for active tenant");
+  // Admin shell must never mutate cookies during Server Component render.
+  assert.equal(layout.includes("ensureAdminStaffWorkspace"), false, "admin layout must not import or call cookie-mutating workspace helpers");
+  assert.equal(layout.includes("setStaffWorkspaceCookie"), false, "admin layout must not write staff workspace cookies during render");
+  assert.equal(layout.includes("cookieStore.set("), false, "admin layout must not set cookies during render");
 
   // Expired tokens can be re-established through the guarded sync route.
   assert.ok(syncRoute.includes("requireOwnerContext") && syncRoute.includes("authorizeAdminStaffWorkspaceTarget"));
