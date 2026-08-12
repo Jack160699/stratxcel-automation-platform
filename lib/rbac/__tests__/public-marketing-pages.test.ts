@@ -138,6 +138,7 @@ function run() {
   assert.ok(/<\/header>\s*\{open && \(/.test(headerSource), "Mobile menu overlay must render outside the sticky header");
   assert.ok(/fixed inset-0 z-\[60\]/.test(headerSource), "Mobile menu overlay must cover the viewport above the header");
   assert.ok(/event\.key !== "Tab"/.test(headerSource), "Mobile menu must trap keyboard focus while open");
+  assert.ok(/button\[aria-label=["']Close menu["']\][^\n]*[\s\S]*closeButton\?\.focus\(\)/.test(headerSource), "Mobile menu must initially focus its close control");
   assert.ok(/menuButtonRef\.current\?\.focus\(\)/.test(headerSource), "Mobile menu must restore focus to its trigger");
   assert.ok(/inert=\{open \|\| undefined\}/.test(headerSource), "The covered header must be inert while the mobile dialog is open");
 

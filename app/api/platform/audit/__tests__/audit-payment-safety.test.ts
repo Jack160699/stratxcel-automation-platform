@@ -72,6 +72,7 @@ function run() {
   // The audit page itself must no longer gate on auth before payment.
   const auditCheckoutPageSource = readCode("app", "audit", "checkout", "page.tsx");
   assert.equal(/redirect\(["']\/login/.test(auditCheckoutPageSource), false, "/audit/checkout must not redirect a signed-out visitor to /login");
+  assert.ok(/NEXT_PUBLIC_SUPABASE_URL/.test(auditCheckoutPageSource) && /NEXT_PUBLIC_SUPABASE_ANON_KEY/.test(auditCheckoutPageSource), "/audit/checkout must render a recoverable guest entry when auth configuration is unavailable");
 
   // --- 4b. Claim: only a genuinely paid, email-matched, single-use purchase
   //         can ever be attached to an account -------------------------------

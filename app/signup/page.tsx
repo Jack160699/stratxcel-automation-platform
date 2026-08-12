@@ -23,10 +23,10 @@ export default function SignupPage() {
               Get Started with Stratxcel
             </span>
             <h2 className="font-sx-sans text-3xl font-extrabold tracking-tight text-sx-text">
-              Your AI-powered business growth operating system.
+              A secure workspace for your Business Growth Audit.
             </h2>
             <p className="font-sx-sans text-sm text-sx-text-muted leading-relaxed">
-              Create your organization&rsquo;s isolated workspace in under a minute. Configure your Brand Brain and launch your first AI Copilot content & lead mission.
+              Create your organization&rsquo;s isolated workspace to claim a paid Audit, complete the guided intake, and receive the team&rsquo;s written roadmap.
             </p>
 
             <ul className="space-y-3 text-xs text-sx-text-muted">
@@ -36,7 +36,7 @@ export default function SignupPage() {
               </li>
               <li className="flex items-center gap-2">
                 <span className="text-sx-accent font-bold">✓</span>
-                <span>Human Approval Model for all posts, spend & outreach</span>
+                <span>Human-reviewed Audit delivery with a clear status</span>
               </li>
               <li className="flex items-center gap-2">
                 <span className="text-sx-accent font-bold">✓</span>
@@ -46,7 +46,7 @@ export default function SignupPage() {
 
             <div className="text-xs text-sx-text-subtle flex gap-4 border-t border-sx-border pt-4">
               <Link href="/audit" className="text-sx-accent font-semibold underline hover:text-sx-accent/80">
-                Prefer a Growth Audit first? ₹999 Audit Form →
+                Learn about the ₹999 Business Growth Audit →
               </Link>
             </div>
           </div>
@@ -58,7 +58,7 @@ export default function SignupPage() {
               Start with Stratxcel
             </h1>
             <p className="mt-1 font-sx-sans text-xs text-sx-text-muted">
-              Create your account to launch your organization&rsquo;s workspace.
+              Create your account to access your organization&rsquo;s secure workspace.
             </p>
 
             <Card variant="panel" className="mt-6 p-6 sm:p-8 border-sx-border shadow-2xl">

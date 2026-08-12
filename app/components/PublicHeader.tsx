@@ -31,9 +31,10 @@ export function PublicHeader() {
     );
     const first = focusable?.[0];
     const last = focusable?.[focusable.length - 1];
+    const closeButton = dialog?.querySelector<HTMLElement>('button[aria-label="Close menu"]');
 
     document.body.style.overflow = "hidden";
-    first?.focus();
+    closeButton?.focus();
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {

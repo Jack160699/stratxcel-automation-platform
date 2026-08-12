@@ -95,6 +95,9 @@ function run() {
     /data\.session/.test(signupForm) && /setStage\(["']verify["']\)/.test(signupForm),
     "SignupForm must handle both outcomes: an immediate session (no email confirmation required) and the verify-email screen"
   );
+  const signupPage = read("app", "signup", "page.tsx");
+  assert.equal(/AI-powered business growth operating system|AI Copilot content/.test(signupPage), false, "signup must describe the closed-beta Audit workspace, not unverified autonomous capabilities");
+  assert.ok(/Business Growth Audit/.test(signupPage), "signup must explain the canonical closed-beta starting point");
 
   // --- 5. Forgot-password: real recovery method, correct redirect target,
   // and a generic response that never reveals whether the account exists ------

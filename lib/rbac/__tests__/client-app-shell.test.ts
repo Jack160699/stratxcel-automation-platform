@@ -30,6 +30,8 @@ function run() {
     false,
     "/app's layout must never call requireOwnerContext() — that would require staff status to use the client workspace"
   );
+  assert.ok(/NEXT_PUBLIC_SUPABASE_URL/.test(appLayout) && /NEXT_PUBLIC_SUPABASE_ANON_KEY/.test(appLayout), "/app must fail closed to its sign-in recovery surface when auth configuration is unavailable");
+  assert.ok(/dynamic\s*=\s*["']force-dynamic["']/.test(appLayout), "/app auth and tenant state must be resolved per request");
   assert.ok(/resolveCurrentTenant\(ctx\.supabase, ctx\.userId\)/.test(appLayout), "/app must resolve tenant membership via the same session-client-based resolveCurrentTenant() /admin already uses");
 
   // --- 2. No service-role dependency anywhere under app/app/* ---------------
