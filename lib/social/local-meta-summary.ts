@@ -36,7 +36,7 @@ export function calculateLocalMetricsSummary(metrics: MetricsRow[]): LocalMetric
     previousReach,
     reachTrendPercent,
     text: metrics.length === 0
-      ? "No locally captured performance metrics are available yet. External AI is disabled for Platform-data analysis."
-      : `Local metrics summary: reach ${totalReach.toLocaleString()}, impressions ${totalImpressions.toLocaleString()}, engagements ${totalEngagements.toLocaleString()}, engagement rate ${engagementRatePercent.toFixed(2)}%. ${trendText} External AI was not used.`,
+      ? "No performance data has been collected for this workspace yet. Connect an account and allow the first analytics sync to finish, then try again."
+      : `Workspace metrics summary: reach ${totalReach.toLocaleString()}, impressions ${totalImpressions.toLocaleString()}, engagements ${totalEngagements.toLocaleString()}, engagement rate ${engagementRatePercent.toFixed(2)}%. ${trendText}`,
   };
 }

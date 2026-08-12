@@ -20,6 +20,7 @@ function run() {
   const premium = read("lib", "social", "__tests__", "copilot-premium-workspace.test.ts");
   const finalArtifact = read("lib", "social", "__tests__", "final-artifact-approval-policy.test.ts");
   const orchestrator = read("lib", "social", "agent", "orchestrator.ts");
+  const sessionHook = read("app", "admin", "social", "copilot", "useAgentSession.ts");
 
   // Center track + Focus/READY overlay drawers (stable card geometry)
   assert.ok(workspace.includes("minmax(0, 1fr)"));
@@ -71,6 +72,14 @@ function run() {
   assert.ok(orchestrator.includes("approveAgentAction"));
   assert.ok(publishCard.includes("SHADOW MODE"));
   assert.ok(premium.includes("setPreviewOpen(true)"));
+
+  // Completion truth: neutral or failed runs must never masquerade as READY,
+  // and history loading must converge to a visible recovery state.
+  assert.ok(orchestrator.includes('await setSessionStatus(ctx, sessionId, "IDLE")'));
+  assert.ok(orchestrator.includes('lastPublishOutcome && !lastPublishOutcome.succeeded'));
+  assert.ok(orchestrator.includes('"ATTENTION_REQUIRED"'));
+  assert.ok(sessionHook.includes("SESSION_HISTORY_TIMEOUT_MS"));
+  assert.ok(sessionHook.includes("This session could not be loaded. Select it again to retry."));
 
   // Scroll ownership markers
   assert.ok(workspace.includes('data-center-scroll-owner="true"') || theme.includes("saut-history-compact"));

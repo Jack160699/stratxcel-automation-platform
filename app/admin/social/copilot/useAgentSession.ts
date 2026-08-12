@@ -13,6 +13,7 @@ import type { AgentRunEventRow, AgentRunRow } from "@/lib/social/repositories/ag
 import type { AgentSessionRow } from "@/lib/social/repositories/agent";
 
 const RUN_EVENT_POLL_MS = 1000;
+const SESSION_HISTORY_TIMEOUT_MS = 12_000;
 
 interface UseAgentSessionResult {
   messages: AgentMessageData[];
@@ -76,39 +77,52 @@ export function useAgentSession(sessionId: string | null, onSessionCreated: (id:
 
     async function hydrate(sid: string) {
       setLoadingHistory(true);
+      setFailedReason(null);
       setRun(null);
       setRunEvents([]);
       setSession(null);
-      const [{ messages: rows, actions }, { run: latestRun, events }, sessionRow] = await Promise.all([
-        getAgentSessionAction(sid),
-        getRunEventsAction(sid),
-        getSessionAction(sid),
-      ]);
-      const stillProposed = new Set(actions.filter((a) => a.status === "PROPOSED").map((a) => a.id));
-      const mapped: AgentMessageData[] = rows.map((m) => ({
-        id: m.id,
-        role: m.role === "USER" ? "user" : m.role === "AGENT" ? "agent" : "system",
-        content: m.content,
-        parts: (m.parts as AgentMessageData["parts"]).map((p) =>
-          p.type === "proposed_actions" ? { ...p, actions: p.actions?.filter((a) => stillProposed.has(a.id)) } : p
-        ),
-      }));
-      const referenced = new Set(mapped.flatMap((message) => message.parts.flatMap((part) => part.actions?.map((action) => action.id) ?? [])));
-      const unreferenced = actions.filter((action) => action.status === "PROPOSED" && !referenced.has(action.id));
-      if (unreferenced.length) {
-        mapped.push({
-          id: `pending-actions-${sid}`,
-          role: "system",
-          content: "Dependent work is ready for review.",
-          parts: [{ type: "proposed_actions", actions: unreferenced.map((action) => ({ id: action.id, tool: action.tool_name, input: action.input })) }],
+      let timeoutId: ReturnType<typeof setTimeout> | null = null;
+      try {
+        const history = Promise.all([
+          getAgentSessionAction(sid),
+          getRunEventsAction(sid),
+          getSessionAction(sid),
+        ]);
+        const timeout = new Promise<never>((_, reject) => {
+          timeoutId = setTimeout(() => reject(new Error("SESSION_HISTORY_TIMEOUT")), SESSION_HISTORY_TIMEOUT_MS);
         });
+        const [{ messages: rows, actions }, { run: latestRun, events }, sessionRow] = await Promise.race([history, timeout]);
+        const stillProposed = new Set(actions.filter((a) => a.status === "PROPOSED").map((a) => a.id));
+        const mapped: AgentMessageData[] = rows.map((m) => ({
+          id: m.id,
+          role: m.role === "USER" ? "user" : m.role === "AGENT" ? "agent" : "system",
+          content: m.content,
+          parts: (m.parts as AgentMessageData["parts"]).map((p) =>
+            p.type === "proposed_actions" ? { ...p, actions: p.actions?.filter((a) => stillProposed.has(a.id)) } : p
+          ),
+        }));
+        const referenced = new Set(mapped.flatMap((message) => message.parts.flatMap((part) => part.actions?.map((action) => action.id) ?? [])));
+        const unreferenced = actions.filter((action) => action.status === "PROPOSED" && !referenced.has(action.id));
+        if (unreferenced.length) {
+          mapped.push({
+            id: `pending-actions-${sid}`,
+            role: "system",
+            content: "Dependent work is ready for review.",
+            parts: [{ type: "proposed_actions", actions: unreferenced.map((action) => ({ id: action.id, tool: action.tool_name, input: action.input })) }],
+          });
+        }
+        setMessages(mapped);
+        setRun(latestRun);
+        setRunEvents(events);
+        setSession(sessionRow);
+        if (latestRun?.status === "RUNNING") pollRunEvents(latestRun.id);
+      } catch {
+        hydratedSessionRef.current = null;
+        setFailedReason("This session could not be loaded. Select it again to retry.");
+      } finally {
+        if (timeoutId) clearTimeout(timeoutId);
+        setLoadingHistory(false);
       }
-      setMessages(mapped);
-      setRun(latestRun);
-      setRunEvents(events);
-      setSession(sessionRow);
-      if (latestRun?.status === "RUNNING") pollRunEvents(latestRun.id);
-      setLoadingHistory(false);
     }
 
     hydrate(sessionId);
