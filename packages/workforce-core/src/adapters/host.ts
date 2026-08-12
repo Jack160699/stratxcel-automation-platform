@@ -95,7 +95,7 @@ export interface AnalyticsSourceSnapshot {
   status: string;
   reason: string | null;
   /** Real metrics only — never invent zeros for unavailable sources. */
-  metrics: Record<string, number> | null;
+  metrics: Record<string, unknown> | null;
 }
 
 export interface AnalyticsReadHostInput {

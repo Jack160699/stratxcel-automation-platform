@@ -363,6 +363,21 @@ async function run() {
           platform: "instagram",
         };
       },
+      analyticsRead: async () => ({
+        ok: true,
+        sources: [
+          {
+            source: "ga4",
+            status: "connected",
+            reason: null,
+            metrics: {
+              periodStart: "2026-07-13",
+              periodEnd: "2026-08-11",
+              landingPages: [],
+            },
+          },
+        ],
+      }),
     });
   };
 
@@ -396,7 +411,7 @@ async function run() {
     }),
     loadIntegrationSnapshot: async (tenantId: string) => ({
       tenantId,
-      connected: ["social_account", "whatsapp_binding"],
+      connected: ["social_account", "whatsapp_binding", "analytics_property"],
     }),
     loadEnvironment: () => ({
       featureFlags: {
@@ -786,6 +801,30 @@ async function run() {
   successResults.push({ capability: "seo.audit", outputArtifactIds: seo.outputArtifactIds });
   assert.equal(artifacts.get(seo.outputArtifactIds[0]!)?.kind, "seo_audit_report");
 
+  // analytics.read — a real provider may truthfully return an empty result set.
+  const analytics = await executeWorkforceCapabilityServer(
+    {
+      requestId: "analytics-1",
+      missionId: "mission-a",
+      capability: "analytics.read",
+      department: "analytics",
+      role: "analyst",
+      input: { sources: ["ga4"] },
+    },
+    baseDeps,
+  );
+  assert.equal(analytics.status, "SUCCEEDED", String(analytics.humanReason ?? analytics.status));
+  assert.equal(analytics.outputArtifactIds.length, 1);
+  successResults.push({
+    capability: "analytics.read",
+    outputArtifactIds: analytics.outputArtifactIds,
+  });
+  assert.equal(artifacts.get(analytics.outputArtifactIds[0]!)?.kind, "analytics_evidence");
+  assert.equal(
+    (analytics.receipt as { detail?: { metricsInvented?: boolean } })?.detail?.metricsInvented,
+    false,
+  );
+
   // --- REAL CRM server integration ---
   const crmRead = await executeWorkforceCapabilityServer(
     {
@@ -1056,7 +1095,7 @@ async function run() {
   }
 
   const counts = countCapabilitiesByStatus();
-  assert.equal(counts.AVAILABLE, 8);
+  assert.equal(counts.AVAILABLE, 10);
   const matrix = await countCapabilityOperationalMatrix({ tenantId: A });
   assert.ok(matrix.providerOperational <= matrix.staticAvailable);
   assert.ok(matrix.providerOperational >= 3);

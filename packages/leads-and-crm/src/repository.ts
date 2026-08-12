@@ -55,6 +55,7 @@ export async function updateLead(
     nextFollowUpAt?: string | null;
     contactName?: string | null;
     contactEmail?: string | null;
+    metadata?: Record<string, unknown>;
   }
 ): Promise<LeadRow> {
   const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
@@ -64,6 +65,7 @@ export async function updateLead(
   if (input.nextFollowUpAt !== undefined) patch.next_follow_up_at = input.nextFollowUpAt;
   if (input.contactName !== undefined) patch.contact_name = input.contactName;
   if (input.contactEmail !== undefined) patch.contact_email = input.contactEmail;
+  if (input.metadata !== undefined) patch.metadata = input.metadata;
 
   const { data, error } = await supabase.from("crm_leads").update(patch).eq("id", input.leadId).eq("tenant_id", input.tenantId).select("*").single();
   if (error) throw new Error(`updateLead: ${error.message}`);

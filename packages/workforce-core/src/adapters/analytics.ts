@@ -4,7 +4,7 @@ import {
   type ProviderExecuteResult,
   type ProviderReadinessProbeResult,
 } from "../providers/types.ts";
-import { getCapabilityHost } from "./host.ts";
+import { getCapabilityHost, isAnalyticsReadHostBound } from "./host.ts";
 import { buildCapabilityExecutionReceipt } from "./receipts.ts";
 import { getCapabilityOperationClass } from "./operation-class.ts";
 
@@ -22,15 +22,22 @@ export function createAnalyticsReadProvider(): CapabilityProvider {
   return {
     key: PROVIDER_KEY,
     capabilityKeys: ["analytics.read"],
-    status: "NOT_CONFIGURED",
+    status: "IMPLEMENTED",
     probeReadiness: (): ProviderReadinessProbeResult => {
-      return {
-        ready: false,
-        status: "NOT_CONFIGURED",
-        reasonCode: "PROVIDER_NOT_CONFIGURED",
-        details:
-          "analytics.read is diagnostics/status only until real metric readers are wired",
-      };
+      const ready = isAnalyticsReadHostBound();
+      return ready
+        ? {
+            ready: true,
+            status: "IMPLEMENTED",
+            reasonCode: "READY",
+            details: "Canonical tenant-scoped GA4 reader is host-bound",
+          }
+        : {
+            ready: false,
+            status: "NOT_CONFIGURED",
+            reasonCode: "PROVIDER_NOT_CONFIGURED",
+            details: "analyticsRead host binding missing",
+          };
     },
     execute: async (input): Promise<ProviderExecuteResult> => {
       const host = getCapabilityHost();
@@ -73,6 +80,38 @@ export function createAnalyticsReadProvider(): CapabilityProvider {
         };
       });
 
+      let artifactId: string | null = null;
+      if (host.persistMissionArtifact) {
+        const persisted = await host.persistMissionArtifact({
+          tenantId: input.tenantId,
+          missionId: input.missionId,
+          kind: "analytics_evidence",
+          storageRef: `workforce://analytics.read/${input.requestId}`,
+          providerKey: PROVIDER_KEY,
+          capability: "analytics.read",
+          requestId: input.requestId,
+          metadata: {
+            sources,
+            metricsInvented: false,
+            provenance: {
+              provider: PROVIDER_KEY,
+              requestId: input.requestId,
+              capability: "analytics.read",
+            },
+          },
+        });
+        if (!persisted.ok) {
+          return {
+            ok: false,
+            providerKey: PROVIDER_KEY,
+            errorCategory: "PROVIDER_FAILURE",
+            errorMessage: persisted.errorMessage,
+            usage: unknownCostUsage({ requests: 1 }),
+          };
+        }
+        artifactId = persisted.id;
+      }
+
       const receipt = buildCapabilityExecutionReceipt({
         capability: "analytics.read",
         providerKey: PROVIDER_KEY,
@@ -83,19 +122,24 @@ export function createAnalyticsReadProvider(): CapabilityProvider {
         externalMutation: false,
         externalMutationOccurred: false,
         inputArtifactIds: input.inputArtifactIds,
-        outputArtifactIds: [],
+        outputArtifactIds: artifactId ? [artifactId] : [],
         detail: {
-          kind: "analytics_status_diagnostics",
+          kind: "analytics_read_receipt",
           metricsInvented: false,
-          note: "status/connectivity only — not metric evidence",
+          artifactPersisted: Boolean(artifactId),
+          sources: sources.map((source) => ({
+            source: source.source,
+            status: source.status,
+            available: source.available,
+          })),
         },
       });
 
       return {
         ok: true,
         providerKey: PROVIDER_KEY,
-        providerReference: `analytics_status_${input.requestId}`,
-        outputArtifactIds: [],
+        providerReference: artifactId ?? `analytics_read_${input.requestId}`,
+        outputArtifactIds: artifactId ? [artifactId] : [],
         usage: unknownCostUsage({ requests: 1 }),
         receipt: { ...receipt, sources } as unknown as Record<string, unknown>,
       };

@@ -55,7 +55,7 @@ export const CAPABILITY_REGISTRY: Record<CapabilityKey, CapabilityDefinition> = 
     integrationRequirements: [],
     tenantScoped: true,
     implementationPath:
-      "PENDING_AI_RUNTIME_PR_45 — Hermes/AI runtime shortform path not merged; workforce provider remains placeholder",
+      "AI runtime exists; Workforce short-form provider is not wired to a canonical content-generation executor",
     requiredFeatureFlags: ["content_shortform"],
   }),
   "content.longform": cap("content.longform", {
@@ -357,7 +357,7 @@ export const CAPABILITY_REGISTRY: Record<CapabilityKey, CapabilityDefinition> = 
     label: "Analytics read",
     riskLevel: "low",
     externalMutation: false,
-    status: "NOT_CONFIGURED",
+    status: "AVAILABLE",
     requiredEntitlementClass: null,
     approvalRequired: false,
     supportedInputArtifacts: [],
@@ -366,7 +366,7 @@ export const CAPABILITY_REGISTRY: Record<CapabilityKey, CapabilityDefinition> = 
     integrationRequirements: ["analytics_property"],
     tenantScoped: true,
     implementationPath:
-      "status/diagnostics only today — real metric readers not wired (GA4/social_metrics exist but not through this capability)",
+      "packages/workforce-core/src/adapters/analytics.ts → canonical tenant-scoped Search/Google GA4 provider",
   }),
   "analytics.attribution": cap("analytics.attribution", {
     label: "Analytics attribution",

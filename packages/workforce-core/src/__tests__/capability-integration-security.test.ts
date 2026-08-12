@@ -696,7 +696,7 @@ async function run() {
   // Prove revenue eligibility still fails when capabilityExecutable is forced false,
   // and that unbound host still blocks requestCapability.
   const notConfiguredCapReady = resolveCapabilityReadiness({
-    capabilityKey: "media.image_generation",
+    capabilityKey: "content.shortform",
     trustedTenantId: "tenant-a",
     requiredInputArtifactsPresent: true,
   });

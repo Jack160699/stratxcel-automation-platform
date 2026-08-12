@@ -60,11 +60,10 @@ function run() {
   }
 
   const counts = countCapabilitiesByStatus();
-  // website.audit + current image runtime + seven newly wired capabilities.
-  // analytics.read is truthfully downgraded because its real metric readers are not wired yet.
-  assert.equal(counts.AVAILABLE, 9);
+  // website.audit + current image runtime + eight newly wired capabilities.
+  assert.equal(counts.AVAILABLE, 10);
   assert.equal(counts.UNAVAILABLE, 2); // video + carousel
-  assert.equal(counts.NOT_CONFIGURED, 4);
+  assert.equal(counts.NOT_CONFIGURED, 3);
   assert.equal(
     counts.AVAILABLE + counts.NOT_CONFIGURED + counts.PLANNED + counts.UNAVAILABLE,
     CAPABILITY_KEYS.length,
@@ -73,7 +72,7 @@ function run() {
   assert.equal(getCapability("content.shortform")?.status, "NOT_CONFIGURED");
   assert.ok(
     (getCapability("content.shortform")?.implementationPath ?? "").includes(
-      "PENDING_AI_RUNTIME_PR_45",
+      "AI runtime exists; Workforce short-form provider is not wired",
     ),
   );
   assert.equal(getCapability("social.schedule")?.status, "AVAILABLE");
@@ -83,7 +82,7 @@ function run() {
   assert.equal(getCapability("crm.read")?.status, "AVAILABLE");
   assert.equal(getCapability("crm.write")?.status, "AVAILABLE");
   assert.equal(getCapability("whatsapp.send")?.status, "AVAILABLE");
-  assert.equal(getCapability("analytics.read")?.status, "NOT_CONFIGURED");
+  assert.equal(getCapability("analytics.read")?.status, "AVAILABLE");
   assert.deepEqual(getCapability("analytics.read")?.providerKeys, ["analytics-read-reporting"]);
   assert.equal(getCapability("social.schedule")?.approvalRequired, true);
   assert.equal(getCapability("website.audit")?.status, "AVAILABLE");

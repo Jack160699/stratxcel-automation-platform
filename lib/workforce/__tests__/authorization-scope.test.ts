@@ -495,7 +495,7 @@ async function run() {
       },
       authorizationForCapability: async () => null,
     });
-    assert.equal(matrixMissingEnt.STATIC_AVAILABLE_COUNT, 8);
+    assert.equal(matrixMissingEnt.STATIC_AVAILABLE_COUNT, 10);
     // website.generate / social require entitlements → not technically ready without them
     const websiteRow = matrixMissingEnt.rows.find((r) => r.capability === "website.generate");
     if (websiteRow?.providerReady) {

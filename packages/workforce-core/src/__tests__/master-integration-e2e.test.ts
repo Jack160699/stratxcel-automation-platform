@@ -831,7 +831,7 @@ async function run() {
       }),
     );
     assert.equal(getCapability("social.publish")?.status, "AVAILABLE");
-    assert.equal(getCapability("media.image_generation")?.status, "NOT_CONFIGURED");
+    assert.equal(getCapability("media.image_generation")?.status, "AVAILABLE");
     resetAndBootstrapProvidersForTests();
   }
 

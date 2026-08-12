@@ -228,6 +228,44 @@ function hermesCreateLeadOnlyGrant(input: ProviderExecuteInput): boolean {
   );
 }
 
+function crmUpdateResult(args: {
+  input: ProviderExecuteInput;
+  leadId: string;
+  operation: CrmWriteOperation;
+  idempotencyKey: string;
+  idempotentReplay: boolean;
+}): ProviderExecuteResult {
+  const receipt = buildCapabilityExecutionReceipt({
+    capability: "crm.write",
+    tenantId: args.input.tenantId,
+    missionId: args.input.missionId,
+    requestId: args.input.requestId,
+    providerKey: "crm-supabase",
+    operationClass: getCapabilityOperationClass("crm.write"),
+    externalMutation: true,
+    externalMutationOccurred: !args.idempotentReplay,
+    approvalUsed: authUsed(args.input),
+    idempotencyKey: args.idempotencyKey,
+    inputArtifactIds: args.input.inputArtifactIds,
+    outputArtifactIds: [],
+    providerExternalId: args.leadId,
+    detail: {
+      kind: "crm_write_receipt",
+      operation: args.operation,
+      idempotentReplay: args.idempotentReplay,
+      authorizationKind: args.input.authorization?.authorizationKind ?? null,
+    },
+  });
+  return {
+    ok: true,
+    providerKey: "crm-supabase",
+    providerReference: args.leadId,
+    outputArtifactIds: [],
+    usage: unknownCostUsage({ requests: args.idempotentReplay ? 0 : 1 }),
+    receipt: receipt as unknown as Record<string, unknown>,
+  };
+}
+
 async function executeCrmWrite(
   client: LooseServiceClient,
   input: ProviderExecuteInput,
@@ -384,6 +422,31 @@ async function executeCrmWrite(
     };
   }
 
+  const ownedMetadata = asRecord(owned.metadata) ?? {};
+  const priorMutationKeys = Array.isArray(ownedMetadata.workforce_mutation_idempotency_keys)
+    ? ownedMetadata.workforce_mutation_idempotency_keys.filter(
+        (key): key is string => typeof key === "string",
+      )
+    : [];
+  if (op !== "update_lead_status" && priorMutationKeys.includes(idempotencyKey)) {
+    return crmUpdateResult({
+      input,
+      leadId,
+      operation: op,
+      idempotencyKey,
+      idempotentReplay: true,
+    });
+  }
+  const nextMetadata = {
+    ...ownedMetadata,
+    workforce_mutation_idempotency_keys: [
+      ...priorMutationKeys.filter((key) => key !== idempotencyKey).slice(-49),
+      idempotencyKey,
+    ],
+    workforce_last_mission_id: input.missionId,
+    workforce_last_request_id: input.requestId,
+  };
+
   if (op === "update_lead_status") {
     const status = typeof input.input?.status === "string" ? input.input.status.toUpperCase() : "";
     if (!ALLOWED_LEAD_STATUSES.has(status)) {
@@ -394,6 +457,15 @@ async function executeCrmWrite(
         errorMessage: "crm.write status not in allowlist",
         usage: unknownCostUsage({ requests: 0 }),
       };
+    }
+    if (owned.status === status) {
+      return crmUpdateResult({
+        input,
+        leadId,
+        operation: op,
+        idempotencyKey,
+        idempotentReplay: true,
+      });
     }
     await updateLeadStatus(client as never, { leadId, status: status as never });
   } else if (op === "append_note") {
@@ -412,6 +484,7 @@ async function executeCrmWrite(
       leadId,
       tenantId: input.tenantId,
       notes: existingNotes ? `${existingNotes}\n${note.slice(0, 1000)}` : note.slice(0, 1000),
+      metadata: nextMetadata,
     });
   } else {
     await updateLead(client as never, {
@@ -424,38 +497,16 @@ async function executeCrmWrite(
         typeof input.input?.contactEmail === "string" ? input.input.contactEmail : undefined,
       nextFollowUpAt:
         typeof input.input?.nextFollowUpAt === "string" ? input.input.nextFollowUpAt : undefined,
+      metadata: nextMetadata,
     });
   }
-
-  const receipt = buildCapabilityExecutionReceipt({
-    capability: "crm.write",
-    tenantId: input.tenantId,
-    missionId: input.missionId,
-    requestId: input.requestId,
-    providerKey: "crm-supabase",
-    operationClass: getCapabilityOperationClass("crm.write"),
-    externalMutation: true,
-    externalMutationOccurred: true,
-    approvalUsed: authUsed(input),
+  return crmUpdateResult({
+    input,
+    leadId,
+    operation: op,
     idempotencyKey,
-    inputArtifactIds: input.inputArtifactIds,
-    outputArtifactIds: [],
-    providerExternalId: leadId,
-    detail: {
-      kind: "crm_write_receipt",
-      operation: op,
-      idempotentReplay: false,
-      authorizationKind: input.authorization?.authorizationKind ?? null,
-    },
+    idempotentReplay: false,
   });
-  return {
-    ok: true,
-    providerKey: "crm-supabase",
-    providerReference: leadId,
-    outputArtifactIds: [],
-    usage: unknownCostUsage({ requests: 1 }),
-    receipt: receipt as unknown as Record<string, unknown>,
-  };
 }
 
 export function createCrmProvider(): CapabilityProvider {

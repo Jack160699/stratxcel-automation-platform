@@ -79,6 +79,27 @@ export function createSocialScheduleProvider(): CapabilityProvider {
         // Strip/ignore — do not escalate. Continue with trusted auth.
       }
 
+      // Scheduling is a reversible queue mutation, but it authorizes a future
+      // external publish. Shadow and kill switches must therefore block it too.
+      if (auth.killSwitchActive) {
+        return {
+          ok: false,
+          providerKey: "social-schedule-queue",
+          errorCategory: "POLICY_BLOCK",
+          errorMessage: "KILL_SWITCH_ACTIVE",
+          usage: unknownCostUsage({ requests: 0 }),
+        };
+      }
+      if (auth.shadowMode) {
+        return {
+          ok: false,
+          providerKey: "social-schedule-queue",
+          errorCategory: "POLICY_BLOCK",
+          errorMessage: "SHADOW_BLOCKED",
+          usage: unknownCostUsage({ requests: 0 }),
+        };
+      }
+
       const accountId = typeof input.input?.accountId === "string" ? input.input.accountId : null;
       const variantId = typeof input.input?.variantId === "string" ? input.input.variantId : null;
       const scheduledAtIso =

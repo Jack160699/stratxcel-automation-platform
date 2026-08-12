@@ -18,13 +18,16 @@ async function run() {
   resetAndBootstrapProvidersForTests();
 
   const counts = countCapabilitiesByStatus();
-  assert.equal(counts.AVAILABLE, 8);
-  assert.equal(counts.NOT_CONFIGURED, 5);
+  assert.equal(counts.AVAILABLE, 10);
+  assert.equal(counts.NOT_CONFIGURED, 3);
   assert.equal(counts.UNAVAILABLE, 2);
   assert.equal(getCapabilityOperationClass("social.publish"), "EXTERNAL_MUTATION");
   assert.throws(() => assertSafePublicHttpUrl("http://127.0.0.1/x"), /private|unsafe_url/);
   assert.equal(scrubReceiptDetail({ access_token: "x", ok: true }).access_token, undefined);
-  assert.match(getCapability("content.shortform")?.implementationPath ?? "", /PENDING_AI_RUNTIME_PR_45/);
+  assert.match(
+    getCapability("content.shortform")?.implementationPath ?? "",
+    /AI runtime exists; Workforce short-form provider is not wired/,
+  );
 
   // seo.audit
   const seo = await requestCapability(
@@ -271,6 +274,48 @@ async function run() {
   assert.equal((w2.receipt as { detail?: { idempotentReplay?: boolean } })?.detail?.idempotentReplay, true);
   assert.equal(store.filter((x) => x.tenant_id === A).length, 1);
 
+  const createdLeadId = String(w1.providerReference);
+  const append1 = await requestCapability(
+    {
+      ...crmWriteBase,
+      requestId: "crm-note-1",
+      authorizationContext: { trustedTenantId: A, approvalGranted: true, shadowMode: false },
+      input: {
+        operation: "append_note",
+        leadId: createdLeadId,
+        note: "Followed up",
+        idempotencyKey: "note-idem-1",
+      },
+    },
+    crmWriteDeps,
+  );
+  assert.equal(append1.status, "SUCCEEDED");
+  const appendReplay = await requestCapability(
+    {
+      ...crmWriteBase,
+      requestId: "crm-note-2",
+      authorizationContext: { trustedTenantId: A, approvalGranted: true, shadowMode: false },
+      input: {
+        operation: "append_note",
+        leadId: createdLeadId,
+        note: "Followed up",
+        idempotencyKey: "note-idem-1",
+      },
+    },
+    crmWriteDeps,
+  );
+  assert.equal(appendReplay.status, "SUCCEEDED");
+  assert.equal(
+    (appendReplay.receipt as { detail?: { idempotentReplay?: boolean } })?.detail
+      ?.idempotentReplay,
+    true,
+  );
+  assert.equal(
+    String(store.find((row) => row.id === createdLeadId)?.notes).split("Followed up").length - 1,
+    1,
+    "CRM append_note replay must not duplicate the note",
+  );
+
   const cross = await requestCapability(
     {
       requestId: "crm-x",
@@ -300,9 +345,11 @@ async function run() {
   assert.equal(noAppr.status, "WAITING_APPROVAL");
 
   // Social hosts
+  let scheduleCalls = 0;
   let publishCalls = 0;
   bindCapabilityHost({
     socialSchedule: async (input) => {
+      scheduleCalls += 1;
       if (input.accountId === "acct-b") {
         return { ok: false, errorCategory: "POLICY_BLOCK", errorMessage: "TENANT_FORBIDDEN" };
       }
@@ -433,6 +480,34 @@ async function run() {
     socialDeps,
   );
   assert.equal(schedStanding.status, "SUCCEEDED");
+
+  const schedShadow = await requestCapability(
+    {
+      requestId: "s-shadow",
+      missionId: "m-a",
+      tenantId: A,
+      department: "social",
+      role: "scheduler",
+      capability: "social.schedule",
+      inputArtifactIds: ["final-1"],
+      requestedAt: new Date().toISOString(),
+      authorizationContext: {
+        trustedTenantId: A,
+        approvalGranted: true,
+        shadowMode: true,
+      },
+      input: {
+        accountId: "acct-a",
+        variantId: "v1",
+        scheduledAtIso: future(),
+        timeZone: "Asia/Kolkata",
+        idempotencyKey: "s-shadow",
+      },
+    },
+    socialDeps,
+  );
+  assert.notEqual(schedShadow.status, "SUCCEEDED");
+  assert.equal(scheduleCalls, 2, "Shadow must prevent creation of a scheduling job");
 
   const pubNo = await requestCapability(
     {
@@ -610,10 +685,20 @@ async function run() {
     },
     { integrationSnapshot: { tenantId: A, connected: ["analytics_property"] } },
   );
-  assert.notEqual(an.status, "SUCCEEDED");
-  assert.ok(
-    an.status === "WAITING_CONFIGURATION" || an.status === "BLOCKED",
-    "analytics.read truthfully not operational without real metric readers",
+  assert.equal(an.status, "SUCCEEDED");
+  const analyticsSources = (an.receipt as { sources?: Array<{
+    source: string;
+    available: boolean;
+    metrics: Record<string, unknown> | null;
+  }> } | undefined)?.sources ?? [];
+  assert.deepEqual(
+    analyticsSources.find((source) => source.source === "instagram")?.metrics,
+    { impressions: 3 },
+  );
+  assert.equal(
+    analyticsSources.find((source) => source.source === "google_analytics")?.metrics,
+    null,
+    "an unavailable source must not expose invented zero metrics",
   );
 
   // WhatsApp unbound → waiting configuration

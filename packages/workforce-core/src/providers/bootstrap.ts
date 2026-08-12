@@ -60,7 +60,7 @@ export function bootstrapCapabilityProviders(): void {
       capabilityKeys: ["content.shortform"],
       status: "NOT_CONFIGURED",
       reason:
-        "PENDING_AI_RUNTIME_PR_45: short-form content workforce provider awaits AI runtime merge",
+        "AI runtime is present, but no canonical Workforce short-form content provider is wired",
     }),
   );
 

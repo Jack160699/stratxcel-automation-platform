@@ -79,19 +79,22 @@ export async function loadCapabilityIntegrationSnapshot(
     connected.push("whatsapp_binding");
   }
 
-  // analytics_property: only when a real tenant analytics connection exists.
-  // Env keys alone do not count. Table may not exist yet — fail closed (omit).
+  // analytics_property: only when the canonical tenant Google connection is
+  // connected and has a selected GA4 property. Environment keys alone do not count.
   try {
     const { data: analyticsLinks, error: analyticsError } = await service
-      .from("tenant_analytics_connections")
-      .select("id, status")
+      .from("search_google_connections")
+      .select("id, status, ga4_property_id")
       .eq("tenant_id", tenantId)
       .limit(5);
     if (
       !analyticsError &&
       analyticsLinks &&
-      analyticsLinks.some((r) =>
-        ["connected", "active", "ready"].includes(String(r.status).toLowerCase()),
+      analyticsLinks.some(
+        (r) =>
+          String(r.status).toLowerCase() === "connected" &&
+          typeof r.ga4_property_id === "string" &&
+          r.ga4_property_id.trim().length > 0,
       )
     ) {
       connected.push("analytics_property");

@@ -1,14 +1,16 @@
 # Workforce Capability Wiring V1
 
-**Branch:** `feat/v1-workforce-capability-wiring`  
+**Branch:** `feat/v1-workforce-capability-wiring`
 **Status:** Wiring existing real implementations into Workforce capability contracts — no fake success.
 
-## Parallel workstreams
+## Preserved architecture and excluded workstreams
 
 | Workstream | Relationship |
 |------------|--------------|
-| **PR #45 / `feat/v1-ai-provider-router`** | Separate unmerged dependency for production LLM / AI runtime. Content shortform marked `PENDING_AI_RUNTIME_PR_45`. |
-| **`feat/v1-transactional-email-system`** | Parallel independent workstream — do not modify email subsystem here. |
+| **AI runtime / image generation (PRs #45 and #49)** | Already merged on `main` and preserved. `media.image_generation` remains backed by the real AI runtime and canonical generation records. The separate Workforce `content.shortform` adapter is still not wired and therefore remains `NOT_CONFIGURED`. |
+| **Creative Studio / Brand Brain / Social asset accounting** | Already merged on `main` and preserved without replacement or downgrade. |
+| **PR #48 research** | Explicitly excluded from this PR. Research capabilities retain the truthful state inherited from `main`. |
+| **PR #46 transactional email** | Explicitly excluded from this PR; the email subsystem is not modified. |
 
 ## Contract
 
@@ -36,8 +38,9 @@ Do not re-export Social `capability-host` from the Social workforce barrel — t
 | whatsapp.send | whatsapp-meta | sendOutboundWhatsAppMessage |
 | social.schedule | social-schedule-queue | host → scheduleJob |
 | social.publish | social-publish-meta | host → publish/worker |
-| analytics.read | analytics-read-reporting | host → reporting status |
-| content.shortform | placeholder | PENDING_AI_RUNTIME_PR_45 |
+| analytics.read | analytics-read-reporting | host → canonical tenant-scoped Search/Google GA4 reader |
+| media.image_generation | media-image-ai-runtime | real AI runtime + canonical image generation records |
+| content.shortform | placeholder | AI runtime exists, but no canonical Workforce short-form provider is wired |
 
 ## Status semantics
 
@@ -59,11 +62,28 @@ Use `countCapabilityOperationalMatrix({ tenantId })` for **providerOperational**
 Use `buildTenantCapabilityRuntimeMatrix({ tenantId })` for:
 STATIC_AVAILABLE / PROVIDER_READY / TENANT_TECHNICALLY_READY / EXECUTION_REQUIRES_APPROVAL / RUNTIME_EXECUTABLE_NOW.
 
-After this PR (analytics.read truthfully downgraded):
+After this PR (real GA4 reads and real image generation preserved):
 
-- static AVAILABLE ≈ 8
-- NOT_CONFIGURED includes analytics.read + content.shortform (+ media/seo.publish/content.publish)
+- static AVAILABLE = 10
+- NOT_CONFIGURED = 3 (`content.shortform`, `seo.publish`, `content.publish`)
 - Runtime operational ≤ static AVAILABLE and depends on host binding + integrations.
+
+## Final V1 capability matrix
+
+| Capability | State | Real executor | Gates | Receipt / evidence |
+|------------|-------|---------------|-------|--------------------|
+| `social.schedule` | AVAILABLE | Canonical Social package queue | tenant, entitlement, integration, exact approval/standing authorization, Shadow/kill switch, idempotency | queue job receipt |
+| `social.publish` | AVAILABLE | Canonical Social publish/worker path | tenant/account ownership, entitlement, integration, exact approval/standing authorization, Shadow/kill switch, artifact version/fingerprint, idempotency | authoritative publish/queue receipt |
+| `crm.read` | AVAILABLE | `@stratxcel/leads-and-crm` repository | mission tenant, closed operation allowlist | tenant-scoped CRM snapshot |
+| `crm.write` | AVAILABLE | `@stratxcel/leads-and-crm` repository | mission tenant, closed operation allowlist, exact approval or verified Hermes mission-tool grant, idempotency | CRM mutation receipt + lead reference |
+| `whatsapp.send` | AVAILABLE | Canonical WhatsApp outbound choke point | tenant, plan entitlement, active outbound binding, consent/session rules, approval, Shadow/kill switch, idempotency | message/provider receipt |
+| `seo.audit` | AVAILABLE | Search/SEO audit builder | tenant, safe public URL, feature flag | `seo_audit_report` artifact + receipt |
+| `website.audit` | AVAILABLE | Internal search-web audit | tenant, safe public URL, feature flag | website audit receipt |
+| `website.generate` | AVAILABLE | Websites-and-domains draft generator | tenant, website entitlement, feature flag | `website_draft` artifact; never a deploy claim |
+| `analytics.read` | AVAILABLE | Canonical Search/Google GA4 reader | tenant, connected Google integration, selected GA4 property | `analytics_evidence` artifact + truthful read receipt; empty GA4 rows are valid |
+| `media.image_generation` | AVAILABLE | Canonical AI Runtime image provider | tenant, mission, provider/storage configuration, plan budget, idempotency | canonical image-generation record, assets, usage/cost receipt |
+| `content.shortform` | NOT_CONFIGURED | No canonical Workforce content executor yet | provider wiring absent | no success artifact |
+| `research.web` / `research.serp` | PLANNED | PR #48 intentionally not imported | implementation absent | no success artifact |
 
 ## Canonical server executor
 
