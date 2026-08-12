@@ -29,7 +29,7 @@ interface IntegrationRow {
   detail: string;
 }
 
-async function currentHermesStatus(): Promise<IntegrationRow> {
+async function currentHermesStatus(hermesMode: string | undefined): Promise<IntegrationRow> {
   const service = getTenantServiceContext().supabase;
   const [heartbeat, killSwitch] = await Promise.all([
     service.from("worker_heartbeats").select("status,last_heartbeat_at").eq("worker_type", "hermes-gateway").order("last_heartbeat_at", { ascending: false }).limit(1).maybeSingle(),
@@ -42,8 +42,8 @@ async function currentHermesStatus(): Promise<IntegrationRow> {
   if (signal === "offline") return { name: "Hermes", status: "blocked", detail: "Hermes gateway heartbeat is stale or stopped; inspect Mission Control." };
   return {
     name: "Hermes",
-    status: process.env.HERMES_MODE === "http" ? "manual_action_required" : "disconnected",
-    detail: process.env.HERMES_MODE === "http" ? "HTTP runtime is configured, but gateway heartbeat telemetry is unavailable." : "Hermes gateway heartbeat and runtime configuration are unavailable.",
+    status: hermesMode === "http" ? "manual_action_required" : "disconnected",
+    detail: hermesMode === "http" ? "HTTP runtime is configured, but gateway heartbeat telemetry is unavailable." : "Hermes gateway heartbeat and runtime configuration are unavailable.",
   };
 }
 
@@ -64,7 +64,7 @@ export default async function SystemHealthPage() {
   const ctx = await requireOwnerContext();
   if (!ctx.ok) return null;
 
-  const hermes = await currentHermesStatus();
+  const hermes = await currentHermesStatus(process.env.HERMES_MODE);
   const rows: IntegrationRow[] = [
     {
       name: "WhatsApp",
