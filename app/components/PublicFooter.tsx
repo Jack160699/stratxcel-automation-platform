@@ -15,10 +15,11 @@ const COLUMNS: { title: string; links: { label: string; href: string }[] }[] = [
   {
     title: "Solutions",
     links: [
-      { label: "Lead Generation", href: "/use-cases" },
-      { label: "Content Consistency", href: "/use-cases" },
-      { label: "WhatsApp Follow-up", href: "/use-cases" },
-      { label: "Website & Discovery", href: "/use-cases" },
+      { label: "All solutions", href: "/solutions" },
+      { label: "Lead generation", href: "/solutions#more-leads" },
+      { label: "Content consistency", href: "/solutions#grow-social" },
+      { label: "WhatsApp follow-up", href: "/solutions#automate-whatsapp" },
+      { label: "Website & discovery", href: "/solutions#improve-website" },
     ],
   },
   {

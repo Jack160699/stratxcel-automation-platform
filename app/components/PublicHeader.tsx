@@ -6,7 +6,7 @@ import { Logo } from "./Logo";
 
 const PRIMARY_LINKS: { label: string; href: string }[] = [
   { label: "What Stratxcel does", href: "/modules" },
-  { label: "Solutions", href: "/use-cases" },
+  { label: "Solutions", href: "/solutions" },
   { label: "How it works", href: "/how-it-works" },
   { label: "Pricing", href: "/pricing" },
   { label: "Security", href: "/security" },
