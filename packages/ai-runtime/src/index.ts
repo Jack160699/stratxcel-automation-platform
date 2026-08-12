@@ -14,6 +14,7 @@ export * from "./providers/gemini.ts";
 export * from "./providers/openai.ts";
 export * from "./usage/recorder.ts";
 export * from "./media/image.ts";
+export * from "./media/image-prompt.ts";
 export * from "./media/video.ts";
 export * from "./media/canonical-storage.ts";
 export * from "./voice/routing.ts";

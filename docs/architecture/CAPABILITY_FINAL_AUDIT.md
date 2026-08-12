@@ -10,7 +10,7 @@ Legend for **Expected executability**: what `requestCapability` should do in pro
 | research.serp | PLANNED | Partial search-discovery; workforce path planned | placeholder | — | search_console | — | no | no | NOT_READY |
 | content.shortform | NOT_CONFIGURED | Existing Social/Hermes draft path; workforce provider not wired | content-shortform-hermes (placeholder) | yes | — | — | no | no | WAITING_CONFIGURATION |
 | content.longform | PLANNED | No | placeholder | — | — | — | no | no | NOT_READY |
-| media.image_generation | NOT_CONFIGURED | Creative Studio boundary only | media-image-placeholder | yes | media_generator | — | no | no | WAITING_CONFIGURATION |
+| media.image_generation | AVAILABLE | Canonical AI Runtime provider shared by Creative Studio, Social, and Workforce | media-image-ai-runtime | provider + Supabase storage | — | active subscription + plan budget | no | no; downstream external publish still requires approval | READY only when dynamic readiness, tenant, mission, usage, and budget gates pass |
 | media.carousel_generation | UNAVAILABLE | No real carousel without fake images | media-carousel-placeholder | — | media_generator | — | no | no | BLOCKED |
 | media.video_generation | UNAVAILABLE | None | media-video-placeholder | — | — | — | no | no | BLOCKED |
 | social.schedule | NOT_CONFIGURED | Existing package queue; workforce provider not wired | social-schedule-queue | yes | social_account | social_posts | no | no | WAITING_CONFIGURATION |
@@ -41,8 +41,8 @@ Legend for **Expected executability**: what `requestCapability` should do in pro
 
 | Status | Count |
 |--------|------:|
-| AVAILABLE | 1 |
-| NOT_CONFIGURED | 12 |
+| AVAILABLE | 2 |
+| NOT_CONFIGURED | 11 |
 | PLANNED | 15 |
 | UNAVAILABLE | 2 |
 

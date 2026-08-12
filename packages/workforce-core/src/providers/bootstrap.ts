@@ -7,6 +7,7 @@ import {
   type ProviderImplementationStatus,
   type ProviderReadinessProbeResult,
 } from "./types.ts";
+import { createWorkforceImageGenerationProvider } from "./image-generation.ts";
 
 let bootstrapped = false;
 
@@ -153,14 +154,7 @@ export function bootstrapCapabilityProviders(): void {
   });
 
   // Placeholders — registered but NOT_CONFIGURED / UNAVAILABLE
-  registerProvider(
-    placeholderProvider({
-      key: "media-image-placeholder",
-      capabilityKeys: ["media.image_generation"],
-      status: "NOT_CONFIGURED",
-      reason: "Controlled image generation provider not configured",
-    }),
-  );
+  registerProvider(createWorkforceImageGenerationProvider());
   registerProvider(
     placeholderProvider({
       key: "media-carousel-placeholder",

@@ -393,6 +393,7 @@ const generateImageTool: AgentTool = {
         sessionId: { type: "string" },
         referenceMediaAssetIds: { type: "array", items: { type: "string" } },
         candidateCount: { type: "number" },
+        generationRequestId: { type: "string", description: "Stable identity reused for the same logical generation retry." },
       },
       required: ["brief"],
     },
