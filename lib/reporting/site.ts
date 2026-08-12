@@ -13,9 +13,10 @@
  *    redirects to /login?next=/app/audit, so advertising it would publish an
  *    authenticated destination and earn a "Page with redirect" exclusion in
  *    Search Console.
- *  - /products and /solutions — compatibility routes that redirect to
- *    /modules and /use-cases (see lib/rbac/__tests__/public-marketing-pages.test.ts).
+ *  - /use-cases — compatibility route that redirects to /solutions
+ *    (see lib/rbac/__tests__/public-marketing-pages.test.ts).
  *    Sitemaps must list the redirect target, never the redirect.
+ *  - /modules — compatibility route that redirects to /products.
  *  - /login, /signup, /forgot-password, /reset-password — auth entry points
  *    with no indexable content.
  *  - /agents and /system — internal architecture pages; not part of the V1
@@ -33,8 +34,8 @@ export interface PublicRoute {
 
 export const PUBLIC_ROUTES: PublicRoute[] = [
   { path: "", changeFrequency: "weekly", priority: 1.0 },
-  { path: "/modules", changeFrequency: "weekly", priority: 0.9 },
-  { path: "/use-cases", changeFrequency: "weekly", priority: 0.9 },
+  { path: "/products", changeFrequency: "weekly", priority: 0.9 },
+  { path: "/solutions", changeFrequency: "weekly", priority: 0.9 },
   { path: "/social-autopilot", changeFrequency: "weekly", priority: 0.9 },
   { path: "/pricing", changeFrequency: "weekly", priority: 0.8 },
   { path: "/how-it-works", changeFrequency: "monthly", priority: 0.7 },

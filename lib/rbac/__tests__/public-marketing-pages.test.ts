@@ -19,8 +19,8 @@ const read = (...parts: string[]) => fs.readFileSync(path.join(root, ...parts), 
 const exists = (...parts: string[]) => fs.existsSync(path.join(root, ...parts));
 
 const MIGRATED_ROUTES: { dir: string; file: string }[] = [
-  { dir: "modules", file: "page.tsx" },
-  { dir: "use-cases", file: "page.tsx" },
+  { dir: "products", file: "page.tsx" },
+  { dir: "solutions", file: "page.tsx" },
   { dir: "pricing", file: "page.tsx" },
   { dir: "contact", file: "page.tsx" },
   { dir: "agents", file: "page.tsx" },
@@ -94,22 +94,26 @@ function run() {
 
   // --- 4. /modules, /use-cases, /pricing keep their export const metadata
   // (title/description) rather than losing SEO on migration ---------------
-  for (const dir of ["modules", "use-cases", "pricing", "agents", "system"]) {
+  for (const dir of ["products", "solutions", "pricing", "agents", "system"]) {
     const source = read("app", dir, "page.tsx");
     assert.ok(/export const metadata:\s*Metadata\s*=\s*\{/.test(source), `app/${dir}/page.tsx must keep export const metadata`);
     assert.ok(/title:/.test(source), `app/${dir}/page.tsx metadata must keep a title`);
   }
 
-  // --- 5. /products and /solutions are real compatibility routes, and
-  // /modules + /use-cases keep working unchanged for existing bookmarks ---
-  assert.ok(exists("app", "products", "page.tsx"), "app/products/page.tsx must exist as a compatibility route");
-  assert.ok(exists("app", "solutions", "page.tsx"), "app/solutions/page.tsx must exist as a compatibility route");
+  // --- 5. /products is canonical; /modules redirects for bookmarks.
+  // /solutions is canonical; /use-cases redirects for bookmarks -----------
+  assert.ok(exists("app", "products", "page.tsx"), "app/products/page.tsx must exist as the canonical product route");
+  assert.ok(exists("app", "solutions", "page.tsx"), "app/solutions/page.tsx must exist as the canonical solutions route");
   const productsSource = read("app", "products", "page.tsx");
   const solutionsSource = read("app", "solutions", "page.tsx");
-  assert.ok(/redirect\(["']\/modules["']\)/.test(productsSource), "app/products must redirect to /modules");
-  assert.ok(/redirect\(["']\/use-cases["']\)/.test(solutionsSource), "app/solutions must redirect to /use-cases");
+  const modulesSource = read("app", "modules", "page.tsx");
+  const useCasesSource = read("app", "use-cases", "page.tsx");
+  assert.equal(/redirect\(["']\/modules["']\)/.test(productsSource), false, "app/products must be the canonical product landing");
+  assert.ok(/ProductOverview/.test(productsSource), "app/products must render ProductOverview");
+  assert.ok(/redirect\(["']\/products["']\)/.test(modulesSource), "app/modules must redirect to /products");
+  assert.ok(/SolutionsHero/.test(solutionsSource), "app/solutions must render the solutions experience");
+  assert.ok(/redirect\(["']\/solutions["']\)/.test(useCasesSource), "app/use-cases must redirect to /solutions");
   assert.ok(exists("app", "modules", "page.tsx"), "/modules must keep working for existing bookmarks");
-  assert.ok(exists("app", "use-cases", "page.tsx"), "/use-cases must keep working for existing bookmarks");
 
   // --- 6. No fabricated proof content introduced by this pass -------------
   assert.equal(exists("app", "results"), false, "app/results must not be created without real sourced proof");
@@ -141,9 +145,12 @@ function run() {
   assert.ok(/button\[aria-label=["']Close menu["']\][^\n]*[\s\S]*closeButton\?\.focus\(\)/.test(headerSource), "Mobile menu must initially focus its close control");
   assert.ok(/menuButtonRef\.current\?\.focus\(\)/.test(headerSource), "Mobile menu must restore focus to its trigger");
   assert.ok(/inert=\{open \|\| undefined\}/.test(headerSource), "The covered header must be inert while the mobile dialog is open");
+  assert.ok(/ProductMegaMenu/.test(headerSource), "PublicHeader must mount the Products mega menu");
+  assert.ok(/MobileProductsAccordion/.test(headerSource), "PublicHeader must mount the mobile Products accordion");
+  assert.ok(/aria-haspopup="true"/.test(read("app", "components", "public", "product-suite", "ProductMegaMenu.tsx")), "Products mega menu trigger must declare aria-haspopup");
 
   console.log(
-    "public-marketing-pages.test.ts: ALL PASS (7 routes on PublicHeader/PublicFooter + sx-* tokens, old (marketing) duplicates removed, contact intent wiring preserved, social-autopilot SEO metadata intact, /products + /solutions compatibility routes present, no fabricated proof content, public logo and mobile menu guarded)"
+    "public-marketing-pages.test.ts: ALL PASS (7 routes on PublicHeader/PublicFooter + sx-* tokens, old (marketing) duplicates removed, contact intent wiring preserved, social-autopilot SEO metadata intact, /products canonical + /modules compatibility redirect, Products mega menu guarded, no fabricated proof content, public logo and mobile menu guarded)"
   );
 }
 
