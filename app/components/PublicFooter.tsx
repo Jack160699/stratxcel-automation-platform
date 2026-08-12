@@ -3,7 +3,7 @@ import { Logo } from "./Logo";
 import { CONTACT_EMAIL } from "@/lib/constants";
 
 const COLUMNS = [
-  { title: "Product", links: [{ label: "What Stratxcel does", href: "/modules" }, { label: "Social Autopilot", href: "/social-autopilot" }, { label: "Integrations", href: "/integrations" }, { label: "Pricing & Plans", href: "/pricing" }] },
+  { title: "Product", links: [{ label: "All products", href: "/products" }, { label: "Social Autopilot", href: "/social-autopilot" }, { label: "Integrations", href: "/integrations" }, { label: "Pricing & Plans", href: "/pricing" }] },
   { title: "Solutions", links: [{ label: "Use cases overview", href: "/use-cases" }, { label: "Lead generation", href: "/use-cases" }, { label: "Content consistency", href: "/use-cases" }, { label: "WhatsApp follow-up", href: "/use-cases" }] },
   { title: "Resources", links: [{ label: "How it works", href: "/how-it-works" }, { label: "Security", href: "/security" }, { label: "Business Growth Audit", href: "/audit" }, { label: "Contact", href: "/contact" }] },
   { title: "Company", links: [{ label: "About", href: "/about" }, { label: "Contact sales", href: "/contact" }, { label: "Book a demo", href: "/contact?intent=demo" }] },

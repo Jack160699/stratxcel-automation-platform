@@ -70,7 +70,7 @@ function run() {
   for (const forbidden of ["/agents", "/system", "/app", "/admin", "/audit", "/work"]) {
     assert.equal(publicPaths.includes(forbidden), false, `${forbidden} must not be in PUBLIC_ROUTES`);
   }
-  for (const required of ["", "/modules", "/use-cases", "/social-autopilot", "/integrations", "/pricing", "/how-it-works", "/about", "/security", "/contact", "/terms", "/privacy", "/data-deletion"]) {
+  for (const required of ["", "/products", "/solutions", "/social-autopilot", "/integrations", "/pricing", "/how-it-works", "/about", "/security", "/contact", "/terms", "/privacy", "/data-deletion"]) {
     assert.ok(publicPaths.includes(required), `sitemap must include ${required || "/"}`);
   }
   assert.ok(DISALLOWED_PATHS.includes("/agents"));

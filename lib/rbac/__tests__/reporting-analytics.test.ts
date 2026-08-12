@@ -49,12 +49,13 @@ async function run() {
   const paths = PUBLIC_ROUTES.map((r) => r.path);
   assert.ok(paths.includes(""), "sitemap must include the home route");
 
-  // /products and /solutions 307 to /modules and /use-cases. A sitemap must
+  // /modules and /use-cases redirect to /products and /solutions. A sitemap must
   // list the destination, never the redirect, or Search Console excludes them.
-  for (const redirectRoute of ["/products", "/use-cases"]) {
+  for (const redirectRoute of ["/modules", "/use-cases"]) {
     assert.equal(paths.includes(redirectRoute), false, `${redirectRoute} redirects — list its target instead`);
   }
-  assert.ok(paths.includes("/modules"), "/modules is the real destination of /products");
+  assert.ok(paths.includes("/products"), "/products is the canonical product discovery route");
+  assert.ok(paths.includes("/solutions"), "/solutions is the canonical Solutions route");
   assert.ok(paths.includes("/solutions"), "/solutions is the canonical Solutions route");
 
   // /audit redirects to /login?next=/app/audit — advertising it would publish
