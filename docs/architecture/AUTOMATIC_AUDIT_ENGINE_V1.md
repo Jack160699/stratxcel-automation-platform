@@ -49,11 +49,15 @@ Planning ranges, not invoices:
 
 Actual provider billing remains authoritative. The ranges assume bounded source verification, at most eight retained sources, at most six direct verification fetches, and one research plus one report result. Retries reuse persisted passing research.
 
+## Stacking / main reconciliation
+
+This branch is merged with current `main`, including the landed Research Engine V1 (PR #48 / `fec0ae3`). Shared research and AI Runtime web-evidence code prefers the main research engine implementation. Automatic Audit keeps its additive audit package, completion RPC, and research quality-gate hardening for sparse public presence and unsupported material claims.
+
 ## Migration history decision
 
 Production already records `20260812120051_audit_report_delivery_invariant`, followed by the AI execution migrations through `20260812150000_ai_usage_attempt_idempotency`. The earlier repository delivery-invariant filename is not rewritten or reapplied.
 
-Automatic Audit V1 uses the new, unique version `20260812170000_automatic_audit_engine_v1.sql`. This intentionally sorts after current production and after the stale PR #48 research migration version. No production migration was run while building this branch.
+Automatic Audit V1 uses the new, unique version `20260812170000_automatic_audit_engine_v1.sql`. This intentionally sorts after current production and after the research artifact idempotency migration `20260812162000_research_artifact_idempotency`. No production migration was run while building this branch.
 
 ## Activation runbook (documentation only)
 
