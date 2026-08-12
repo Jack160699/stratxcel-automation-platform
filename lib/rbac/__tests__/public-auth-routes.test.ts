@@ -162,7 +162,7 @@ function run() {
   const signInMatches = publicHeader.match(/href="\/login"/g) ?? [];
   const startMatches = publicHeader.match(/href="\/signup"/g) ?? [];
   assert.ok(signInMatches.length >= 2, "PublicHeader's \"Sign in\" link must point at /login in both desktop and mobile nav");
-  assert.ok(startMatches.length >= 2, "PublicHeader's \"Start with Stratxcel\" link must point at /signup in both desktop and mobile nav");
+  assert.ok(startMatches.length >= 2, "PublicHeader's \"Get Started\" link must point at /signup in both desktop and mobile nav");
   assert.equal(/href="\/app"/.test(publicHeader), false, "PublicHeader must no longer link \"Sign in\" at /app now that /login exists");
 
   // --- 9. Homepage CTA destinations: platform-first hero; Audit stays a lower-funnel

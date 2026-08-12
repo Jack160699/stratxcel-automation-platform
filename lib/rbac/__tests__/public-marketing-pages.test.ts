@@ -20,7 +20,8 @@ const exists = (...parts: string[]) => fs.existsSync(path.join(root, ...parts));
 
 const MIGRATED_ROUTES: { dir: string; file: string }[] = [
   { dir: "modules", file: "page.tsx" },
-  { dir: "use-cases", file: "page.tsx" },
+  { dir: "solutions", file: "page.tsx" },
+  { dir: "integrations", file: "page.tsx" },
   { dir: "pricing", file: "page.tsx" },
   { dir: "contact", file: "page.tsx" },
   { dir: "agents", file: "page.tsx" },
@@ -94,7 +95,7 @@ function run() {
 
   // --- 4. /modules, /use-cases, /pricing keep their export const metadata
   // (title/description) rather than losing SEO on migration ---------------
-  for (const dir of ["modules", "use-cases", "pricing", "agents", "system"]) {
+  for (const dir of ["modules", "solutions", "pricing", "agents", "system"]) {
     const source = read("app", dir, "page.tsx");
     assert.ok(/export const metadata:\s*Metadata\s*=\s*\{/.test(source), `app/${dir}/page.tsx must keep export const metadata`);
     assert.ok(/title:/.test(source), `app/${dir}/page.tsx metadata must keep a title`);
@@ -103,13 +104,14 @@ function run() {
   // --- 5. /products and /solutions are real compatibility routes, and
   // /modules + /use-cases keep working unchanged for existing bookmarks ---
   assert.ok(exists("app", "products", "page.tsx"), "app/products/page.tsx must exist as a compatibility route");
-  assert.ok(exists("app", "solutions", "page.tsx"), "app/solutions/page.tsx must exist as a compatibility route");
+  assert.ok(exists("app", "use-cases", "page.tsx"), "app/use-cases/page.tsx must exist as a compatibility route");
   const productsSource = read("app", "products", "page.tsx");
   const solutionsSource = read("app", "solutions", "page.tsx");
+  const useCasesSource = read("app", "use-cases", "page.tsx");
   assert.ok(/redirect\(["']\/modules["']\)/.test(productsSource), "app/products must redirect to /modules");
-  assert.ok(/redirect\(["']\/use-cases["']\)/.test(solutionsSource), "app/solutions must redirect to /use-cases");
+  assert.ok(/SolutionsHero/.test(solutionsSource), "app/solutions must render the solutions experience");
+  assert.ok(/redirect\(["']\/solutions["']\)/.test(useCasesSource), "app/use-cases must redirect to /solutions");
   assert.ok(exists("app", "modules", "page.tsx"), "/modules must keep working for existing bookmarks");
-  assert.ok(exists("app", "use-cases", "page.tsx"), "/use-cases must keep working for existing bookmarks");
 
   // --- 6. No fabricated proof content introduced by this pass -------------
   assert.equal(exists("app", "results"), false, "app/results must not be created without real sourced proof");

@@ -30,7 +30,12 @@ export type FunnelEvent =
   | "onboarding_started"
   | "business_profile_completed"
   | "brand_brain_completed"
-  | "consultation_requested";
+  | "consultation_requested"
+  | "homepage_primary_cta"
+  | "explore_product"
+  | "view_pricing"
+  | "start_audit"
+  | "signup_intent";
 
 /**
  * Properties an event may carry. Every one is a low-cardinality, non-personal
