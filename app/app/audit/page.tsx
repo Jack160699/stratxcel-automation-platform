@@ -1,12 +1,56 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { Card, CardHeading } from "@/components/ui/Card";
 import { ErrorState } from "@/components/ui/Feedback";
 import { IntakeWizard, type IntakeOrder } from "./IntakeWizard";
 import { trackFunnel } from "@/lib/analytics/events";
-import { deriveAuditCustomerState, normalizeAuditDeliveryReport } from "@/lib/audit/customer-state";
+import {
+  AUDIT_CATEGORY_SCORE_KEYS,
+  deriveAuditCustomerState,
+  normalizeAuditDeliveryReport,
+  type AuditCategoryScoreKey,
+} from "@/lib/audit/customer-state";
+
+const CATEGORY_LABELS: Record<AuditCategoryScoreKey, string> = {
+  brandPositioning: "Brand positioning",
+  websiteConversion: "Website & conversion",
+  discoverabilitySeo: "Discoverability & SEO",
+  socialContent: "Social & content",
+  leadGeneration: "Lead generation",
+  trustReputation: "Trust & reputation",
+  customerJourney: "Customer journey",
+  automationOperations: "Automation & operations",
+};
+
+function SectionFrame({
+  means,
+  matters,
+  todo,
+  children,
+}: {
+  means?: string;
+  matters?: string;
+  todo?: string;
+  children?: ReactNode;
+}) {
+  if (!means && !matters && !todo && !children) return null;
+  return (
+    <div className="mt-3 space-y-2 border-t border-sx-border pt-3 text-xs leading-5 text-sx-text-subtle">
+      {means && (
+        <p><span className="font-medium text-sx-text">What this means:</span> {means}</p>
+      )}
+      {matters && (
+        <p><span className="font-medium text-sx-text">Why this matters:</span> {matters}</p>
+      )}
+      {todo && (
+        <p><span className="font-medium text-sx-text">What to do:</span> {todo}</p>
+      )}
+      {children}
+    </div>
+  );
+}
 
 interface AuditOrder extends IntakeOrder {
   id: string;
@@ -277,6 +321,10 @@ export default function AuditHubPage() {
     );
   }
 
+  const researchLimits = report.researchLimitations ?? report.limitations ?? [];
+  const sourceList = report.sources ?? [];
+  const showCollapsedSources = sourceList.length > 3;
+
   return (
     <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
       <div className="border-b border-sx-border pb-6">
@@ -285,13 +333,58 @@ export default function AuditHubPage() {
       </div>
 
       <div className="mt-6 grid gap-4">
-        {report.scores && (
+        {report.overallHealth && (
+          <Card>
+            <CardHeading>Overall business health</CardHeading>
+            <div className="mt-4 flex flex-wrap items-end gap-4">
+              <div className="rounded-sx-sm bg-sx-surface-2 px-5 py-4 text-center">
+                <p className="font-sx-sans text-3xl font-bold text-sx-text">{report.overallHealth.score}</p>
+                <p className="mt-1 text-[10px] uppercase tracking-wide text-sx-text-subtle">Score out of 100</p>
+              </div>
+              <p className="min-w-[16rem] flex-1 text-sm leading-6 text-sx-text-muted">{report.overallHealth.explanation}</p>
+            </div>
+            <SectionFrame
+              means="This is a readiness snapshot from your Brand Brain and the public evidence we could verify."
+              matters="It helps you see where the business is strong versus where growth is blocked."
+              todo="Use the category scores and plan below to decide what to fix first."
+            />
+          </Card>
+        )}
+
+        {report.categoryScores && (
+          <Card>
+            <CardHeading>Category scores</CardHeading>
+            <dl className="mt-4 grid gap-3 sm:grid-cols-2">
+              {AUDIT_CATEGORY_SCORE_KEYS.map((key) => {
+                const dimension = report.categoryScores![key];
+                return (
+                  <div key={key} className="rounded-sx-sm border border-sx-border p-3">
+                    <dt className="text-xs font-medium text-sx-text">{CATEGORY_LABELS[key]}</dt>
+                    <dd className="mt-2 font-sx-sans text-lg font-bold text-sx-text">
+                      {dimension.score == null ? "Not enough data" : dimension.score}
+                    </dd>
+                    <p className="mt-2 text-xs leading-5 text-sx-text-muted">{dimension.explanation}</p>
+                  </div>
+                );
+              })}
+            </dl>
+            <SectionFrame
+              means="Each score is based only on evidence we could ground, or marked when evidence was missing."
+              matters="Sparse public presence is treated as a real growth signal, not padded with invented numbers."
+              todo="Prioritize categories marked “Not enough data” or with low scores that block customer acquisition."
+            />
+          </Card>
+        )}
+
+        {!report.overallHealth && report.scores && (
           <Card>
             <CardHeading>Business readiness scores</CardHeading>
             <dl className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-5">
               {Object.entries(report.scores).map(([key, value]) => (
                 <div key={key} className="rounded-sx-sm bg-sx-surface-2 p-3 text-center">
-                  <dd className="font-sx-sans text-xl font-bold text-sx-text">{value}</dd>
+                  <dd className="font-sx-sans text-xl font-bold text-sx-text">
+                    {value == null ? "—" : value}
+                  </dd>
                   <dt className="mt-1 text-[10px] uppercase tracking-wide text-sx-text-subtle">
                     {key.replace(/([A-Z])/g, " $1")}
                   </dt>
@@ -312,6 +405,25 @@ export default function AuditHubPage() {
             <ul className="mt-2 list-disc space-y-2 pl-5 text-sm text-sx-text-muted">
               {report.strengths.map((item) => <li key={item}>{item}</li>)}
             </ul>
+            <SectionFrame
+              means="These are strengths already helping the business win customers or trust."
+              matters="Protecting what works is cheaper than rebuilding it later."
+              todo="Keep doing these consistently while you fix the higher-priority gaps."
+            />
+          </Card>
+        )}
+
+        {(report.growthProblems?.length ?? 0) > 0 && (
+          <Card>
+            <CardHeading>Growth problems</CardHeading>
+            <ul className="mt-2 list-disc space-y-2 pl-5 text-sm text-sx-text-muted">
+              {report.growthProblems!.map((item) => <li key={item}>{item}</li>)}
+            </ul>
+            <SectionFrame
+              means="These are the patterns most likely to slow growth right now."
+              matters="Fixing growth problems usually unlocks more demand than polishing already-strong areas."
+              todo="Pair each problem with an owner action or a 30-day plan item below."
+            />
           </Card>
         )}
 
@@ -320,6 +432,11 @@ export default function AuditHubPage() {
           <ul className="mt-2 list-disc space-y-2 pl-5 text-sm text-sx-text-muted">
             {report.priorityRisks.map((item) => <li key={item}>{item}</li>)}
           </ul>
+          <SectionFrame
+            means="These risks can quietly leak sales, trust, or time if left alone."
+            matters="Small retailers feel these first in missed enquiries and uneven follow-up."
+            todo="Treat the top one or two as this month’s non-negotiable fixes."
+          />
         </Card>
 
         {report.findings && report.findings.length > 0 && (
@@ -335,9 +452,11 @@ export default function AuditHubPage() {
                     </span>
                   </div>
                   <p className="mt-2 text-sm leading-6 text-sx-text-muted">{finding.summary}</p>
-                  <p className="mt-2 font-sx-mono text-[10px] text-sx-text-subtle">
-                    Evidence: {finding.evidenceSourceIds.join(", ")}
-                  </p>
+                  {finding.evidenceSourceIds.length > 0 && (
+                    <p className="mt-2 font-sx-mono text-[10px] text-sx-text-subtle">
+                      Evidence: {finding.evidenceSourceIds.join(", ")}
+                    </p>
+                  )}
                 </article>
               ))}
             </div>
@@ -356,6 +475,25 @@ export default function AuditHubPage() {
                 </article>
               ))}
             </div>
+            <SectionFrame
+              means="These are practical upside moves grounded in your evidence packet."
+              matters="Opportunities turn the Audit from diagnosis into a growth agenda."
+              todo="Pick one opportunity you can start without new software this week."
+            />
+          </Card>
+        )}
+
+        {(report.quickWins30Days?.length ?? 0) > 0 && (
+          <Card>
+            <CardHeading>Quick wins for the next 30 days</CardHeading>
+            <ul className="mt-2 list-disc space-y-2 pl-5 text-sm text-sx-text-muted">
+              {report.quickWins30Days!.map((item) => <li key={item}>{item}</li>)}
+            </ul>
+            <SectionFrame
+              means="These are smaller moves that should create momentum quickly."
+              matters="Early wins free time and confidence for the longer 60/90-day work."
+              todo="Schedule the first quick win on your calendar this week."
+            />
           </Card>
         )}
 
@@ -372,8 +510,8 @@ export default function AuditHubPage() {
             <div className="mt-3 grid gap-4 md:grid-cols-3">
               {([
                 ["First 30 days", report.plan.days30],
-                ["Days 31-60", report.plan.days60],
-                ["Days 61-90", report.plan.days90],
+                ["Days 31–60", report.plan.days60],
+                ["Days 61–90", report.plan.days90],
               ] as const).map(([label, items]) => (
                 <section key={label} className="rounded-sx-sm border border-sx-border p-4">
                   <h3 className="font-sx-sans text-xs font-bold uppercase tracking-wide text-sx-text">{label}</h3>
@@ -383,6 +521,25 @@ export default function AuditHubPage() {
                 </section>
               ))}
             </div>
+            <SectionFrame
+              means="The plan sequences work so you are not trying to fix everything at once."
+              matters="A staged plan keeps a small team focused while still moving toward growth."
+              todo="Own the first 30 days personally, then decide what needs help later."
+            />
+          </Card>
+        )}
+
+        {(report.ownerActions?.length ?? 0) > 0 && (
+          <Card>
+            <CardHeading>Owner actions</CardHeading>
+            <ul className="mt-2 list-disc space-y-2 pl-5 text-sm text-sx-text-muted">
+              {report.ownerActions!.map((item) => <li key={item}>{item}</li>)}
+            </ul>
+            <SectionFrame
+              means="These are realistic DIY steps the business owner can take without waiting on a full agency build."
+              matters="Owner-led follow-through is usually what turns an Audit into results."
+              todo="Check off one owner action every few days until the first 30-day block is done."
+            />
           </Card>
         )}
 
@@ -395,28 +552,71 @@ export default function AuditHubPage() {
           </Card>
         )}
 
-        {report.sources && report.sources.length > 0 && (
+        {(report.stratxcelSupport?.length ?? 0) > 0 && (
           <Card>
-            <CardHeading>Sources</CardHeading>
-            <ol className="mt-3 space-y-3 text-sm">
-              {report.sources.map((source) => (
-                <li key={source.id} className="break-words">
-                  <a href={source.url} target="_blank" rel="noreferrer" className="font-medium text-sx-accent hover:underline">
-                    {source.title || source.url}
-                  </a>
-                  <span className="ml-2 font-sx-mono text-[10px] text-sx-text-subtle">{source.id}</span>
-                </li>
+            <CardHeading>Where Stratxcel can help</CardHeading>
+            <div className="mt-3 grid gap-3">
+              {report.stratxcelSupport!.map((item) => (
+                <article key={`${item.capability}-${item.recommendation}`} className="rounded-sx-sm border border-sx-border p-4">
+                  <h3 className="font-sx-sans text-sm font-semibold text-sx-text">{item.capability}</h3>
+                  <p className="mt-2 text-sm text-sx-text-muted">{item.recommendation}</p>
+                  <p className="mt-2 text-xs leading-5 text-sx-text-subtle">{item.why}</p>
+                </article>
               ))}
-            </ol>
+            </div>
+            <SectionFrame
+              means="These are optional support areas only where the Audit found a clear fit."
+              matters="You can ignore this section and still execute the owner actions yourself."
+              todo="If you want help, start with the complimentary review call — no pressure."
+            />
           </Card>
         )}
 
-        {report.limitations && report.limitations.length > 0 && (
+        {sourceList.length > 0 && (
           <Card>
-            <CardHeading>Evidence limits</CardHeading>
+            <CardHeading>Sources</CardHeading>
+            {showCollapsedSources ? (
+              <details className="mt-3">
+                <summary className="cursor-pointer text-sm font-medium text-sx-text">
+                  Show {sourceList.length} sources
+                </summary>
+                <ol className="mt-3 space-y-3 text-sm">
+                  {sourceList.map((source) => (
+                    <li key={source.id} className="break-words">
+                      <a href={source.url} target="_blank" rel="noreferrer" className="font-medium text-sx-accent hover:underline">
+                        {source.title || source.url}
+                      </a>
+                      <span className="ml-2 font-sx-mono text-[10px] text-sx-text-subtle">{source.id}</span>
+                    </li>
+                  ))}
+                </ol>
+              </details>
+            ) : (
+              <ol className="mt-3 space-y-3 text-sm">
+                {sourceList.map((source) => (
+                  <li key={source.id} className="break-words">
+                    <a href={source.url} target="_blank" rel="noreferrer" className="font-medium text-sx-accent hover:underline">
+                      {source.title || source.url}
+                    </a>
+                    <span className="ml-2 font-sx-mono text-[10px] text-sx-text-subtle">{source.id}</span>
+                  </li>
+                ))}
+              </ol>
+            )}
+          </Card>
+        )}
+
+        {researchLimits.length > 0 && (
+          <Card>
+            <CardHeading>What we could not fully verify</CardHeading>
             <ul className="mt-2 list-disc space-y-2 pl-5 text-sm text-sx-text-muted">
-              {report.limitations.map((item) => <li key={item}>{item}</li>)}
+              {researchLimits.map((item) => <li key={item}>{item}</li>)}
             </ul>
+            <SectionFrame
+              means="These are honest limits of the public research available for this Audit."
+              matters="Knowing the gaps prevents overconfidence in thin evidence."
+              todo="Treat recommendations tied to these limits as provisional until you confirm them yourself."
+            />
           </Card>
         )}
       </div>
@@ -433,4 +633,3 @@ export default function AuditHubPage() {
     </div>
   );
 }
-

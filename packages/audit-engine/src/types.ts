@@ -105,6 +105,7 @@ export interface AuditReportV1 {
   generatedAt: string;
   businessName: string;
   executiveSummary: string;
+  /** Backward-compatible flat scores. Prefer overallHealth for explanation. */
   scores: {
     overall: number;
     digitalPresence: number | null;
@@ -112,6 +113,7 @@ export interface AuditReportV1 {
     growthReadiness: number | null;
     conversionReadiness: number | null;
   };
+  /** overallScore contract: 0–100 plus explanation. */
   overallHealth: { score: number; explanation: string };
   categoryScores: {
     brandPositioning: AuditScoreDimension;
@@ -124,6 +126,7 @@ export interface AuditReportV1 {
     automationOperations: AuditScoreDimension;
   };
   strengths: string[];
+  growthProblems: string[];
   priorityRisks: string[];
   findings: AuditReportFinding[];
   opportunities: AuditReportOpportunity[];
@@ -145,6 +148,8 @@ export interface AuditReportV1 {
     retrievedAt: string;
   }>;
   limitations: string[];
+  /** Alias of limitations for the customer-facing researchLimitations contract. */
+  researchLimitations: string[];
   generation: {
     method: "automatic_audit_v1";
     brandBrainVersion: number;
@@ -181,6 +186,8 @@ export interface AuditRunPatch {
   stage_updated_at?: string;
   review_required_at?: string;
   stopped_at?: string;
+  heartbeat_at?: string;
+  idempotency_key?: string | null;
 }
 
 export interface AuditGenerationStore {
@@ -189,6 +196,7 @@ export interface AuditGenerationStore {
   complete(input: {
     runId: string;
     tenantId: string;
+    auditOrderId: string;
     report: AuditReportV1;
     research: ResearchResult;
     evidenceArtifactRefs: string[];

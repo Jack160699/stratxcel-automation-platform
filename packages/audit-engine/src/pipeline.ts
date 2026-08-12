@@ -88,6 +88,7 @@ export async function runAutomaticAuditGeneration(
     attempt_count: input.attemptNumber,
     started_at: startedAt,
     stage_updated_at: startedAt,
+    heartbeat_at: startedAt,
     failure_code: null,
     failure_message_safe: null,
   });
@@ -105,9 +106,10 @@ export async function runAutomaticAuditGeneration(
     try {
       researched = await deps.research.research(context, input.attemptNumber);
     } catch (error) {
-      const code = "RESEARCH_PROVIDER_ERROR";
       const message = error instanceof Error ? error.message : "Research provider failed";
-      if (input.attemptNumber < input.maxAttempts) {
+      const budgetExhausted = message.includes("AUDIT_BUDGET_EXHAUSTED");
+      const code = budgetExhausted ? "AUDIT_BUDGET_EXHAUSTED" : "RESEARCH_PROVIDER_ERROR";
+      if (!budgetExhausted && input.attemptNumber < input.maxAttempts) {
         await deps.store.updateRun(input.runId, {
           failure_code: code,
           failure_message_safe: "Grounded research could not be completed yet.",
@@ -118,9 +120,11 @@ export async function runAutomaticAuditGeneration(
       await deps.store.updateRun(input.runId, {
         status: "NEEDS_REVIEW",
         stage: "REVIEW",
-        quality_outcome: "RESEARCH_FAILED",
+        quality_outcome: budgetExhausted ? "GENERATION_FAILED" : "RESEARCH_FAILED",
         failure_code: code,
-        failure_message_safe: "Grounded research needs staff review.",
+        failure_message_safe: budgetExhausted
+          ? "The automatic Audit reached its protected AI cost limit before research could continue."
+          : "Grounded research needs staff review.",
         review_required_at: nowIso(),
         stage_updated_at: nowIso(),
       });
@@ -131,17 +135,21 @@ export async function runAutomaticAuditGeneration(
       allReceipts.push(researched.receipt);
       estimatedCostUsd += researched.receipt.estimatedCostUsd;
     }
+    const evidenceRefs = research.sources.length > 0
+      ? research.sources.map((source) => source.id)
+      : ["brand_brain_first_party"];
     await deps.store.updateRun(input.runId, {
       research_data: research,
-      evidence_artifact_refs: [...research.evidenceArtifactIds, ...(research.summaryArtifactId ? [research.summaryArtifactId] : [])],
+      evidence_artifact_refs: evidenceRefs,
       ai_receipts: allReceipts,
       estimated_cost_usd: estimatedCostUsd,
       stage_updated_at: nowIso(),
     });
   }
 
-  if (research.status !== "PASS") {
-    const insufficient = research.status === "INSUFFICIENT_EVIDENCE";
+  // Sparse public presence (INSUFFICIENT_EVIDENCE) can still proceed to a Brand Brain
+  // grounded Audit. Hard research failures still stop for review.
+  if (research.status !== "PASS" && research.status !== "INSUFFICIENT_EVIDENCE") {
     const retryable = research.status === "FAILED" && input.attemptNumber < input.maxAttempts;
     if (retryable) {
       await deps.store.updateRun(input.runId, {
@@ -158,12 +166,10 @@ export async function runAutomaticAuditGeneration(
     await deps.store.updateRun(input.runId, {
       status: "NEEDS_REVIEW",
       stage: "REVIEW",
-      quality_outcome: insufficient ? "INSUFFICIENT_EVIDENCE" : "RESEARCH_FAILED",
+      quality_outcome: "RESEARCH_FAILED",
       confidence_band: "UNKNOWN",
       failure_code: research.reasonCode ?? research.status,
-      failure_message_safe: insufficient
-        ? "We could not verify enough public evidence for an automatic report."
-        : "Grounded research needs staff review.",
+      failure_message_safe: "Grounded research needs staff review.",
       review_required_at: nowIso(),
       stage_updated_at: nowIso(),
     });
@@ -226,6 +232,20 @@ export async function runAutomaticAuditGeneration(
 
   allReceipts = [...allReceipts, generated.receipt];
   estimatedCostUsd += generated.receipt.estimatedCostUsd;
+  if (generated.errorCode === "AUDIT_BUDGET_EXHAUSTED") {
+    await deps.store.updateRun(input.runId, {
+      status: "NEEDS_REVIEW",
+      stage: "REVIEW",
+      quality_outcome: "GENERATION_FAILED",
+      failure_code: "AUDIT_BUDGET_EXHAUSTED",
+      failure_message_safe: "The automatic Audit reached its protected AI cost limit before report generation could continue.",
+      ai_receipts: allReceipts,
+      estimated_cost_usd: estimatedCostUsd,
+      review_required_at: nowIso(),
+      stage_updated_at: nowIso(),
+    });
+    return { kind: "NEEDS_REVIEW" };
+  }
   await deps.store.updateRun(input.runId, {
     stage: "QUALITY_GATE",
     report_data: generated.report,
@@ -281,13 +301,13 @@ export async function runAutomaticAuditGeneration(
   context = await stopIfClosed(input.runId, deps.store, input.expectedTenantId);
   if (!context) return { kind: "STOPPED" };
 
-  const evidenceRefs = [
-    ...research.evidenceArtifactIds,
-    ...(research.summaryArtifactId ? [research.summaryArtifactId] : []),
-  ];
+  const evidenceRefs = research.sources.length > 0
+    ? research.sources.map((source) => source.id)
+    : ["brand_brain_first_party"];
   const completion = await deps.store.complete({
     runId: input.runId,
     tenantId: context.run.tenant_id,
+    auditOrderId: context.order.id,
     report: generated.report,
     research,
     evidenceArtifactRefs: evidenceRefs,

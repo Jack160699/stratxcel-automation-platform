@@ -74,6 +74,11 @@ function researchResult(overrides: Partial<ResearchResult> = {}): ResearchResult
 }
 
 function validReport(research = researchResult()): AuditReportV1 {
+  const dimension = (
+    score: number | null,
+    explanation: string,
+    evidenceSourceIds: string[],
+  ) => ({ score, explanation, evidenceSourceIds });
   return {
     reportVersion: "automatic_audit_v1",
     generatedAt: "2026-08-12T10:05:00.000Z",
@@ -87,27 +92,93 @@ function validReport(research = researchResult()): AuditReportV1 {
       growthReadiness: 72,
       conversionReadiness: 66,
     },
+    overallHealth: {
+      score: 74,
+      explanation: "Credible offer and demand, with conversion and discoverability still holding growth back.",
+    },
+    categoryScores: {
+      brandPositioning: dimension(
+        research.sources[0] ? 78 : null,
+        research.sources[0] ? "Priority offer is clear in public materials." : "Not enough data",
+        research.sources[0] ? [research.sources[0].id] : [],
+      ),
+      websiteConversion: dimension(
+        research.sources[0] ? 66 : null,
+        research.sources[0] ? "High-intent pages do not convert consistently." : "Not enough data",
+        research.sources[0] ? [research.sources[0].id] : [],
+      ),
+      discoverabilitySeo: dimension(
+        research.sources[1] ? 70 : null,
+        research.sources[1] ? "Local and category discoverability is uneven." : "Not enough data",
+        research.sources[1] ? [research.sources[1].id] : [],
+      ),
+      socialContent: dimension(null, "Not enough data", []),
+      leadGeneration: dimension(
+        research.sources[0] ? 72 : null,
+        research.sources[0] ? "Demand exists but capture is incomplete." : "Not enough data",
+        research.sources[0]
+          ? [research.sources[0].id, ...(research.sources[2] ? [research.sources[2].id] : [])]
+          : [],
+      ),
+      trustReputation: dimension(
+        research.sources[2] ? 75 : null,
+        research.sources[2] ? "Directory and proof signals are present." : "Not enough data",
+        research.sources[2] ? [research.sources[2].id] : [],
+      ),
+      customerJourney: dimension(
+        research.sources[0] ? 68 : null,
+        research.sources[0] ? "Journey from discovery to enquiry has gaps." : "Not enough data",
+        research.sources[0] ? [research.sources[0].id] : [],
+      ),
+      automationOperations: dimension(null, "Not enough data", []),
+    },
     strengths: ["Clear priority service", "Evidence of customer demand"],
+    growthProblems: ["Weak conversion path", "Inconsistent local discoverability"],
     priorityRisks: ["Weak conversion path", "Inconsistent local discoverability"],
     findings: [1, 2, 3].map((index) => ({
       id: `finding_${index}`,
       title: `Evidence-backed finding ${index}`,
       summary: `The public evidence supports a concrete, business-specific finding number ${index}.`,
       impact: index === 1 ? "HIGH" : "MEDIUM",
-      evidenceSourceIds: [research.sources[index - 1]!.id],
+      evidenceSourceIds: research.sources[index - 1]
+        ? [research.sources[index - 1]!.id]
+        : research.sources[0]
+          ? [research.sources[0]!.id]
+          : [],
       confidence: "HIGH",
     })),
     opportunities: [
-      { title: "Offer page", rationale: "High-intent demand is not concentrated.", nextStep: "Publish one focused page.", evidenceSourceIds: ["source_1"] },
-      { title: "Local proof", rationale: "Third-party visibility can be strengthened.", nextStep: "Standardize listings.", evidenceSourceIds: ["source_3"] },
+      {
+        title: "Offer page",
+        rationale: "High-intent demand is not concentrated.",
+        nextStep: "Publish one focused page.",
+        evidenceSourceIds: research.sources[0] ? [research.sources[0].id] : [],
+      },
+      {
+        title: "Local proof",
+        rationale: "Third-party visibility can be strengthened.",
+        nextStep: "Standardize listings.",
+        evidenceSourceIds: research.sources[2]
+          ? [research.sources[2].id]
+          : research.sources[0]
+            ? [research.sources[0].id]
+            : [],
+      },
     ],
     actionPlan: ["Clarify the offer", "Repair the conversion path", "Measure qualified leads"],
+    quickWins30Days: ["Fix the primary offer page CTA", "Reply to every enquiry within one business day"],
     plan: {
       days30: ["Confirm baseline and fix the primary offer page"],
       days60: ["Publish proof and build repeatable acquisition"],
       days90: ["Review conversion data and scale the strongest channel"],
     },
     nextActions: ["Assign an owner", "Book the 30-day checkpoint"],
+    ownerActions: ["Own the offer page rewrite", "Track weekly enquiry sources in a simple sheet"],
+    stratxcelSupport: [{
+      recommendation: "Help design a simple enquiry tracking workflow",
+      capability: "Operations automation",
+      why: "Makes the 30/60/90 plan measurable without adding complexity",
+    }],
     sources: research.sources.map((source) => ({
       id: source.id,
       url: source.url,
@@ -116,6 +187,7 @@ function validReport(research = researchResult()): AuditReportV1 {
       retrievedAt: source.retrievedAt,
     })),
     limitations: ["Only public evidence available at the time of research was assessed."],
+    researchLimitations: ["Only public evidence available at the time of research was assessed."],
     generation: { method: "automatic_audit_v1", brandBrainVersion: 2 },
   };
 }
@@ -317,10 +389,12 @@ async function execute(store: MemoryStore, configured = providers(), attemptNumb
     }),
   });
   const outcome = await execute(store, configured);
+  // Sparse public presence is allowed to continue into Brand Brain-grounded report
+  // generation; delivery still fails closed when the report cannot cite real sources.
   assert.equal(outcome.kind, "NEEDS_REVIEW");
   assert.equal(store.completions, 0);
-  assert.equal(configured.reportCalls(), 0);
-  assert.equal(store.current.run.quality_outcome, "INSUFFICIENT_EVIDENCE");
+  assert.equal(configured.reportCalls(), 1);
+  assert.equal(store.current.run.quality_outcome, "LOW_CONFIDENCE");
 }
 
 {
@@ -328,7 +402,11 @@ async function execute(store: MemoryStore, configured = providers(), attemptNumb
   const weak = validReport();
   weak.findings = [];
   weak.opportunities = [];
+  weak.growthProblems = [];
+  weak.quickWins30Days = [];
+  weak.ownerActions = [];
   weak.plan.days60 = [];
+  weak.executiveSummary = "Too short for Example Business.";
   const outcome = await execute(store, providers({ report: weak }));
   assert.equal(outcome.kind, "NEEDS_REVIEW");
   assert.equal(store.completions, 0);
@@ -445,6 +523,196 @@ async function execute(store: MemoryStore, configured = providers(), attemptNumb
   const outcome = await execute(store);
   assert.equal(outcome.kind, "NEEDS_REVIEW");
   assert.equal(store.current.run.status, "NEEDS_REVIEW");
+}
+
+{
+  const {
+    assertAuditProviderContextPrivacy,
+    buildAuditProviderBusinessContext,
+  } = await import("../provider-context.ts");
+  const contextPacket = buildAuditProviderBusinessContext({
+    businessName: "Local Cloth House",
+    industry: "Retail",
+    websiteUrl: null,
+    brandBrainVersion: 3,
+    brandBrain: {
+      business_name: "Local Cloth House",
+      business_description: "Neighborhood clothing store",
+      competitors: ["Nearby Boutique"],
+      gstin: "22AAAAA0000A1Z5",
+      gstInvoice: { gstin: "22AAAAA0000A1Z5", amount: 999 },
+      billingAddress: "Secret Lane",
+      razorpay_customer_id: "cust_secret",
+      apiKey: "sk-leak",
+      oauth: { accessToken: "tok" },
+      meta_token: "meta-secret",
+      credentials: { password: "nope" },
+      rules: ["internal rule"],
+      audit_intake: { gstInvoice: { gstin: "leak" } },
+      biggest_business_problem: "Footfall is down",
+      growth_priority: "More local customers",
+    },
+  });
+  const serialized = JSON.stringify(contextPacket);
+  assert.equal(serialized.includes("gstin"), false);
+  assert.equal(serialized.includes("razorpay"), false);
+  assert.equal(serialized.includes("sk-leak"), false);
+  assert.equal(serialized.includes("meta-secret"), false);
+  assert.equal(serialized.includes("billingAddress"), false);
+  assert.equal(serialized.includes("credentials"), false);
+  assert.equal(contextPacket.businessProblem, "Footfall is down");
+  assert.deepEqual(contextPacket.knownCompetitors, ["Nearby Boutique"]);
+  const privacy = assertAuditProviderContextPrivacy(contextPacket);
+  assert.equal(privacy.ok, true);
+  const poisoned = assertAuditProviderContextPrivacy({
+    ...contextPacket,
+    gstInvoice: { gstin: "22AAAAA0000A1Z5" },
+  });
+  assert.equal(poisoned.ok, false);
+}
+
+{
+  const sparseResearch = researchResult({
+    sources: [{
+      id: "source_ig",
+      url: "https://instagram.com/localclothhouse",
+      canonicalUrl: "https://instagram.com/localclothhouse",
+      title: "Instagram profile",
+      domain: "instagram.com",
+      provider: "google",
+      retrievedAt: "2026-08-12T10:00:00.000Z",
+      searchQueries: ["Local Cloth House"],
+      sourceType: "USER_GENERATED",
+      verification: "verified",
+    }],
+    claims: [{
+      id: "claim_1",
+      text: "The business has a public Instagram profile.",
+      sourceIds: ["source_ig"],
+      confidence: null,
+      sourceSupportStatus: "supported",
+      statementKind: "sourced_fact",
+    }],
+    evidenceArtifactIds: ["source_ig"],
+    summaryArtifactId: "summary_research",
+  });
+  const report = validReport(sparseResearch);
+  report.findings = [{
+    id: "finding_sparse",
+    title: "Very limited public presence",
+    summary: "Local Cloth House has no website and only one Instagram profile with few indexed reviews, so online discoverability is sparse.",
+    impact: "HIGH",
+    evidenceSourceIds: ["source_ig"],
+    confidence: "MEDIUM",
+  }];
+  report.opportunities = [{
+    title: "Basic online storefront",
+    rationale: "Customers cannot evaluate stock or hours without a website.",
+    nextStep: "Publish a simple one-page site with WhatsApp enquiry.",
+    evidenceSourceIds: ["source_ig"],
+  }];
+  report.categoryScores = {
+    brandPositioning: { score: 60, explanation: "Instagram shows a clear clothing offer.", evidenceSourceIds: ["source_ig"] },
+    websiteConversion: { score: null, explanation: "Not enough data", evidenceSourceIds: [] },
+    discoverabilitySeo: { score: null, explanation: "Not enough data", evidenceSourceIds: [] },
+    socialContent: { score: 55, explanation: "One social profile exists but proof is thin.", evidenceSourceIds: ["source_ig"] },
+    leadGeneration: { score: null, explanation: "Not enough data", evidenceSourceIds: [] },
+    trustReputation: { score: null, explanation: "Not enough data", evidenceSourceIds: [] },
+    customerJourney: { score: null, explanation: "Not enough data", evidenceSourceIds: [] },
+    automationOperations: { score: null, explanation: "Not enough data", evidenceSourceIds: [] },
+  };
+  report.limitations = ["Public presence is sparse: no website and few indexed reviews were available."];
+  report.researchLimitations = report.limitations;
+  const quality = evaluateAuditReportQuality({
+    report,
+    research: sparseResearch,
+    businessName: "Example Business",
+  });
+  assert.equal(quality.publicPresence, "INSUFFICIENT_PUBLIC_PRESENCE");
+  assert.equal(quality.outcome, "PASS");
+}
+
+{
+  const { evaluateResearchQuality } = await import("@stratxcel/search-discovery");
+  const partial = evaluateResearchQuality({
+    request: {
+      tenantId: "t1",
+      missionId: "m1",
+      requestId: "r1",
+      question: "Research a local clothing store public presence and market position",
+      taskClass: "RESEARCH",
+      maxSources: 8,
+      primarySourcesPreferred: true,
+      requireWebEvidence: true,
+      requireClaimCitations: true,
+    },
+    summary: "The store appears local with limited public digital evidence available online today.",
+    claims: [{
+      id: "c1",
+      text: "The store has 500 Google reviews.",
+      sourceIds: ["s1"],
+      sourceSupportStatus: "partial",
+      statementKind: "sourced_fact",
+    }],
+    sources: [{
+      id: "s1",
+      url: "https://instagram.com/local",
+      canonicalUrl: "https://instagram.com/local",
+      domain: "instagram.com",
+      provider: "google",
+      retrievedAt: "2026-08-12T10:00:00.000Z",
+      searchQueries: ["local"],
+      sourceType: "USER_GENERATED",
+      verification: "verified",
+    }],
+  });
+  assert.equal(partial.pass, false);
+  assert.equal(partial.status, "FAILED");
+  assert.ok(partial.reasons.includes("UNSUPPORTED_MATERIAL_CLAIM"));
+}
+
+{
+  const store = new MemoryStore();
+  const configured = providers();
+  const first = await execute(store, configured);
+  assert.equal(first.kind, "COMPLETED");
+  assert.equal(store.completions, 1);
+  // Second worker delivery against an already completed order must be idempotent.
+  const second = await execute(store, configured);
+  assert.equal(second.kind, "COMPLETED");
+  assert.equal(store.completions, 1);
+  assert.equal(store.current.order.status, "completed");
+}
+
+{
+  const rich = normalizeAuditReport({
+    executiveSummary: validReport().executiveSummary,
+    overallScore: { score: 71, explanation: "Solid fundamentals with sparse digital proof." },
+    scores: { overall: 71, digitalPresence: null, brandClarity: 70, growthReadiness: 68, conversionReadiness: null },
+    categoryScores: validReport().categoryScores,
+    strengths: ["Owner knows the local customers"],
+    growthProblems: ["No website"],
+    priorityRisks: ["Customers cannot verify stock online"],
+    findings: validReport().findings,
+    opportunities: validReport().opportunities,
+    actionPlan: ["Create a one-page site", "Post weekly offers", "Track walk-ins"],
+    quickWins30Days: ["Add WhatsApp link to Instagram bio"],
+    plan: { days1To30: ["Publish one-page site"], days31To60: ["Collect reviews"], days61To90: ["Measure walk-in lift"] },
+    nextActions: ["Assign owner"],
+    ownerActions: ["Update Instagram hours"],
+    stratxcelSupport: validReport().stratxcelSupport,
+    researchLimitations: ["Few public sources were available."],
+  }, {
+    businessName: "Example Business",
+    brandBrainVersion: 2,
+    generatedAt: "2026-08-12T10:05:00.000Z",
+    research: researchResult(),
+  });
+  assert.ok(rich);
+  assert.equal(rich?.overallHealth.score, 71);
+  assert.equal(rich?.plan.days30[0], "Publish one-page site");
+  assert.equal(rich?.researchLimitations[0], "Few public sources were available.");
+  assert.equal(rich?.categoryScores.websiteConversion.score, 66);
 }
 
 console.log("automatic-audit-engine.test.ts: PASS");

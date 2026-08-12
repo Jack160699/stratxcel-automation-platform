@@ -35,6 +35,8 @@ create table public.audit_generation_runs (
   generation_method text not null default 'automatic_audit_v1',
   failure_code text,
   failure_message_safe text,
+  idempotency_key text,
+  heartbeat_at timestamptz,
   started_at timestamptz,
   stage_updated_at timestamptz not null default now(),
   review_required_at timestamptz,
@@ -256,6 +258,7 @@ grant execute on function public.start_automatic_audit_generation_v1(uuid, uuid,
 create or replace function public.complete_automatic_audit_generation_v1(
   p_run_id uuid,
   p_expected_tenant_id uuid,
+  p_audit_order_id uuid,
   p_report_data jsonb,
   p_research_data jsonb,
   p_evidence_artifact_refs jsonb,
@@ -270,7 +273,13 @@ as $$
 declare
   v_run public.audit_generation_runs;
   v_order public.audit_orders;
+  v_source_ids text[] := '{}';
+  v_unknown_citation text;
 begin
+  if p_run_id is null or p_expected_tenant_id is null or p_audit_order_id is null then
+    return jsonb_build_object('success', false, 'reason', 'missing_run_order_or_tenant');
+  end if;
+
   select *
   into v_run
   from public.audit_generation_runs
@@ -283,14 +292,22 @@ begin
   if v_run.tenant_id <> p_expected_tenant_id then
     return jsonb_build_object('success', false, 'reason', 'tenant_mismatch');
   end if;
+  if v_run.audit_order_id <> p_audit_order_id then
+    return jsonb_build_object('success', false, 'reason', 'audit_order_mismatch');
+  end if;
 
   select *
   into v_order
   from public.audit_orders
-  where id = v_run.audit_order_id
+  where id = p_audit_order_id
   for update;
 
-  if not found or v_order.tenant_id <> p_expected_tenant_id then
+  if not found then
+    return jsonb_build_object('success', false, 'reason', 'audit_order_not_found');
+  end if;
+  if v_order.tenant_id <> p_expected_tenant_id
+    or v_order.tenant_id <> v_run.tenant_id
+    or v_order.id <> v_run.audit_order_id then
     return jsonb_build_object('success', false, 'reason', 'audit_order_not_found_or_tenant_mismatch');
   end if;
   if v_run.status = 'COMPLETED' and v_order.status = 'completed' then
@@ -330,6 +347,12 @@ begin
   ) then
     return jsonb_build_object('success', false, 'reason', 'brand_brain_version_not_found');
   end if;
+  if v_run.quality_outcome is not null and v_run.quality_outcome <> 'PASS' then
+    return jsonb_build_object('success', false, 'reason', 'quality_pass_required');
+  end if;
+  if p_quality_score is null or p_quality_score < 0.80 or p_quality_score > 1 then
+    return jsonb_build_object('success', false, 'reason', 'quality_pass_required');
+  end if;
   if p_report_data is null
     or jsonb_typeof(p_report_data) <> 'object'
     or length(trim(coalesce(p_report_data->>'executiveSummary', ''))) = 0
@@ -342,20 +365,48 @@ begin
   if p_research_data is null or jsonb_typeof(p_research_data) <> 'object' then
     return jsonb_build_object('success', false, 'reason', 'research_data_required');
   end if;
-  if p_evidence_artifact_refs is null
-    or jsonb_typeof(p_evidence_artifact_refs) <> 'array'
-    or jsonb_array_length(p_evidence_artifact_refs) = 0 then
+  if jsonb_typeof(p_research_data->'sources') <> 'array' then
+    return jsonb_build_object('success', false, 'reason', 'research_sources_required');
+  end if;
+  if p_evidence_artifact_refs is null or jsonb_typeof(p_evidence_artifact_refs) <> 'array' then
     return jsonb_build_object('success', false, 'reason', 'evidence_required');
   end if;
   if p_ai_receipts is null or jsonb_typeof(p_ai_receipts) <> 'array' then
     return jsonb_build_object('success', false, 'reason', 'ai_receipts_required');
   end if;
-  if p_quality_score is null or p_quality_score < 0.80 or p_quality_score > 1 then
-    return jsonb_build_object('success', false, 'reason', 'quality_pass_required');
+
+  select coalesce(array_agg(distinct src->>'id'), '{}')
+  into v_source_ids
+  from jsonb_array_elements(p_research_data->'sources') src
+  where nullif(trim(coalesce(src->>'id', '')), '') is not null;
+
+  select eid
+  into v_unknown_citation
+  from (
+    select jsonb_array_elements_text(coalesce(finding->'evidenceSourceIds', '[]'::jsonb)) as eid
+    from jsonb_array_elements(coalesce(p_report_data->'findings', '[]'::jsonb)) finding
+    union all
+    select jsonb_array_elements_text(coalesce(opportunity->'evidenceSourceIds', '[]'::jsonb)) as eid
+    from jsonb_array_elements(coalesce(p_report_data->'opportunities', '[]'::jsonb)) opportunity
+    union all
+    select jsonb_array_elements_text(coalesce(category.value->'evidenceSourceIds', '[]'::jsonb)) as eid
+    from jsonb_each(coalesce(p_report_data->'categoryScores', '{}'::jsonb)) category
+  ) citations
+  where nullif(trim(eid), '') is not null
+    and not (eid = any (v_source_ids))
+  limit 1;
+
+  if v_unknown_citation is not null then
+    return jsonb_build_object(
+      'success', false,
+      'reason', 'unknown_report_citation',
+      'citation_id', v_unknown_citation
+    );
   end if;
 
   -- The pre-existing report-delivery trigger is deliberately left in place;
   -- this update must pass it just like staff completion does.
+  -- Persist the exact submitted report payload (no rewrite).
   update public.audit_orders
   set report_data = p_report_data,
       status = 'completed',
@@ -396,7 +447,7 @@ begin
     v_order.user_id,
     null,
     'system',
-    'complete_audit_automatic',
+    'complete_automated_audit',
     jsonb_build_object(
       'audit_order_id', v_order.id,
       'tenant_id', v_order.tenant_id,
@@ -422,10 +473,10 @@ end;
 $$;
 
 revoke all on function public.complete_automatic_audit_generation_v1(
-  uuid, uuid, jsonb, jsonb, jsonb, jsonb, numeric
+  uuid, uuid, uuid, jsonb, jsonb, jsonb, jsonb, numeric
 ) from public, anon, authenticated;
 grant execute on function public.complete_automatic_audit_generation_v1(
-  uuid, uuid, jsonb, jsonb, jsonb, jsonb, numeric
+  uuid, uuid, uuid, jsonb, jsonb, jsonb, jsonb, numeric
 ) to service_role;
 
 create or replace function public.retry_automatic_audit_generation_v1(

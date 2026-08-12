@@ -36,12 +36,16 @@ interface AuditGenerationItem {
   audit_order_id: string;
   status: "QUEUED" | "RUNNING" | "NEEDS_REVIEW" | "COMPLETED" | "STOPPED" | "FAILED";
   stage: string;
+  brand_brain_version: number;
   attempt_count: number;
   recovery_count: number;
   quality_outcome: string | null;
   quality_score: number | null;
   failure_code: string | null;
   failure_message_safe: string | null;
+  research_data: unknown;
+  evidence_artifact_refs: unknown;
+  ai_receipts: unknown;
   stage_updated_at: string;
 }
 
@@ -56,6 +60,59 @@ const STATUS_CHIP: Record<AuditOrderStatus, { label: string; state: ChipState }>
 
 function ageInDays(createdAt: string): number {
   return Math.max(0, Math.floor((Date.now() - new Date(createdAt).getTime()) / 86_400_000));
+}
+
+function autoLabel(generation: AuditGenerationItem): { label: string; state: ChipState } | null {
+  if (generation.status === "QUEUED" || generation.status === "RUNNING") {
+    if (generation.attempt_count > 1) {
+      return { label: "AUTO — RETRYING", state: "warning" };
+    }
+    return { label: "AUTO — PROCESSING", state: "accent" };
+  }
+  if (generation.status === "NEEDS_REVIEW") {
+    return { label: "AUTO — NEEDS REVIEW", state: "warning" };
+  }
+  if (generation.status === "COMPLETED") {
+    return { label: "AUTO — COMPLETE", state: "success" };
+  }
+  return null;
+}
+
+function evidenceCount(generation: AuditGenerationItem): number | null {
+  const research = generation.research_data;
+  if (research && typeof research === "object" && !Array.isArray(research)) {
+    const sources = (research as Record<string, unknown>).sources;
+    if (Array.isArray(sources)) return sources.length;
+  }
+  if (Array.isArray(generation.evidence_artifact_refs)) {
+    return generation.evidence_artifact_refs.length;
+  }
+  return null;
+}
+
+function researchSummarySnippet(generation: AuditGenerationItem): string | null {
+  const research = generation.research_data;
+  if (!research || typeof research !== "object" || Array.isArray(research)) return null;
+  const summary = (research as Record<string, unknown>).summary;
+  if (typeof summary !== "string") return null;
+  const trimmed = summary.trim().replace(/\s+/g, " ");
+  if (!trimmed) return null;
+  return trimmed.length > 180 ? `${trimmed.slice(0, 177)}…` : trimmed;
+}
+
+function safeProviderModels(generation: AuditGenerationItem): string[] {
+  if (!Array.isArray(generation.ai_receipts)) return [];
+  const labels: string[] = [];
+  for (const item of generation.ai_receipts) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+    const receipt = item as Record<string, unknown>;
+    const provider = typeof receipt.provider === "string" ? receipt.provider.trim() : "";
+    const model = typeof receipt.model === "string" ? receipt.model.trim() : "";
+    if (!provider && !model) continue;
+    const label = [provider, model].filter(Boolean).join(" / ");
+    if (label && !labels.includes(label)) labels.push(label);
+  }
+  return labels.slice(0, 6);
 }
 
 function nextAction(order: AuditOrderItem, generation?: AuditGenerationItem): string {
@@ -96,7 +153,7 @@ export default async function AdminAuditRequestsPage() {
   const { data: generationRows } = orderIds.length
     ? await service
         .from("audit_generation_runs")
-        .select("id, audit_order_id, status, stage, attempt_count, recovery_count, quality_outcome, quality_score, failure_code, failure_message_safe, stage_updated_at")
+        .select("id, audit_order_id, status, stage, brand_brain_version, attempt_count, recovery_count, quality_outcome, quality_score, failure_code, failure_message_safe, research_data, evidence_artifact_refs, ai_receipts, stage_updated_at")
         .in("audit_order_id", orderIds)
         .order("created_at", { ascending: false })
     : { data: [] as AuditGenerationItem[] };
@@ -133,6 +190,10 @@ export default async function AdminAuditRequestsPage() {
             const chip = STATUS_CHIP[order.status];
             const intakeComplete = isAuditIntakeComplete(order);
             const generation = generationByOrder.get(order.id);
+            const auto = generation ? autoLabel(generation) : null;
+            const sources = generation ? evidenceCount(generation) : null;
+            const summary = generation ? researchSummarySnippet(generation) : null;
+            const providers = generation ? safeProviderModels(generation) : [];
             return (
               <Card key={order.id}>
                 <div className="flex flex-wrap items-start justify-between gap-3 border-b border-sx-border pb-3">
@@ -142,7 +203,10 @@ export default async function AdminAuditRequestsPage() {
                       {tenantNames.get(order.tenant_id) ?? "Workspace"}{order.guest_email ? ` · ${order.guest_email}` : ""}
                     </p>
                   </div>
-                  <StatusChip state={chip.state}>{chip.label}</StatusChip>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {auto && <StatusChip state={auto.state}>{auto.label}</StatusChip>}
+                    <StatusChip state={chip.state}>{chip.label}</StatusChip>
+                  </div>
                 </div>
 
                 <dl className="mt-3 grid gap-3 text-xs sm:grid-cols-2 lg:grid-cols-4">
@@ -161,6 +225,15 @@ export default async function AdminAuditRequestsPage() {
                     <div><dt className="text-sx-text-subtle">Automatic run</dt><dd className="mt-1 text-sx-text">{generation.status} · {generation.stage}</dd></div>
                     <div><dt className="text-sx-text-subtle">Attempts</dt><dd className="mt-1 text-sx-text">{generation.attempt_count} · recoveries {generation.recovery_count}</dd></div>
                     <div><dt className="text-sx-text-subtle">Quality</dt><dd className="mt-1 text-sx-text">{generation.quality_outcome ?? "Pending"}{generation.quality_score != null ? ` · ${Math.round(Number(generation.quality_score) * 100)}` : ""}</dd></div>
+                    <div><dt className="text-sx-text-subtle">Brand Brain</dt><dd className="mt-1 text-sx-text">v{generation.brand_brain_version}</dd></div>
+                    <div><dt className="text-sx-text-subtle">Evidence / sources</dt><dd className="mt-1 text-sx-text">{sources == null ? "Unavailable" : sources}</dd></div>
+                    <div><dt className="text-sx-text-subtle">Provider / model</dt><dd className="mt-1 text-sx-text">{providers.length ? providers.join(" · ") : "Not recorded"}</dd></div>
+                    {summary && (
+                      <div className="sm:col-span-3">
+                        <dt className="text-sx-text-subtle">Research summary</dt>
+                        <dd className="mt-1 text-sx-text">{summary}</dd>
+                      </div>
+                    )}
                     {(generation.failure_message_safe || generation.failure_code) && (
                       <div className="sm:col-span-3">
                         <dt className="text-sx-text-subtle">Exception</dt>

@@ -29,7 +29,14 @@ The generation table is service-role-only. It contains draft research, failed ou
 
 Gemini standard is primary. OpenAI mini is the normal cross-provider fallback. OpenAI Terra is considered only when `AUDIT_PREMIUM_FALLBACK_ENABLED=true`, after a justified quality failure, and while the per-Audit budget remains available. Sol is not in the Audit V1 route.
 
-The default hard envelope is USD 1.50 per Audit and is server-authoritative; accepted configuration is clamped to USD 0.25–5.00. Provider receipts and estimated token/tool costs accumulate on the run.
+### Budget
+
+- Expected normal Audit AI cost is about **USD 0.45**.
+- Hard max default is **USD 1.50** via `AUDIT_AI_HARD_BUDGET_USD` (server-authoritative; accepted configuration is clamped to USD 0.25–5.00).
+- The pre-call affordability envelope rejects unaffordable candidates and routes the run to `NEEDS_REVIEW` with `AUDIT_BUDGET_EXHAUSTED`.
+- When multiple candidates remain affordable, the cheaper configured fallback is preferred.
+
+Provider receipts and estimated token/tool costs accumulate on the run.
 
 Planning ranges, not invoices:
 
