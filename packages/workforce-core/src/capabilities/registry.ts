@@ -54,7 +54,8 @@ export const CAPABILITY_REGISTRY: Record<CapabilityKey, CapabilityDefinition> = 
     providerKeys: ["content-shortform-hermes"],
     integrationRequirements: [],
     tenantScoped: true,
-    implementationPath: "lib/social/agent + Hermes create_draft_artifact (workforce provider not wired)",
+    implementationPath:
+      "AI runtime exists; Workforce short-form provider is not wired to a canonical content-generation executor",
     requiredFeatureFlags: ["content_shortform"],
   }),
   "content.longform": cap("content.longform", {
@@ -117,45 +118,48 @@ export const CAPABILITY_REGISTRY: Record<CapabilityKey, CapabilityDefinition> = 
     label: "Social scheduling",
     riskLevel: "high",
     externalMutation: false,
-    status: "NOT_CONFIGURED",
+    status: "AVAILABLE",
     requiredEntitlementClass: "social_posts",
-    approvalRequired: false,
+    approvalRequired: true,
     supportedInputArtifacts: ["social_final"],
     supportedOutputArtifacts: ["schedule_receipt"],
     providerKeys: ["social-schedule-queue"],
     integrationRequirements: ["social_account"],
     tenantScoped: true,
-    implementationPath: "lib/social/package-autopilot + publishing queue (workforce provider not wired)",
+    implementationPath:
+      "packages/workforce-core/src/adapters/social.ts + lib/social/workforce/capability-host.ts",
     requiredFeatureFlags: ["social_scheduling"],
   }),
   "social.publish": cap("social.publish", {
     label: "Social publishing",
     riskLevel: "critical",
     externalMutation: true,
-    status: "NOT_CONFIGURED",
+    status: "AVAILABLE",
     requiredEntitlementClass: "social_posts",
     approvalRequired: true,
     supportedInputArtifacts: ["social_final"],
     supportedOutputArtifacts: ["publish_receipt"],
-    providerKeys: ["social-publish-meta", "social-publish-youtube"],
+    providerKeys: ["social-publish-meta"],
     integrationRequirements: ["social_account"],
     tenantScoped: true,
-    implementationPath: "lib/social/worker.ts + provider adapters (workforce provider not wired)",
+    implementationPath:
+      "packages/workforce-core/src/adapters/social.ts + lib/social/workforce/capability-host.ts",
     requiredFeatureFlags: ["social_publishing"],
   }),
   "seo.audit": cap("seo.audit", {
     label: "SEO audit",
     riskLevel: "low",
     externalMutation: false,
-    status: "NOT_CONFIGURED",
+    status: "AVAILABLE",
     requiredEntitlementClass: null,
     approvalRequired: false,
-    supportedInputArtifacts: ["website_snapshot"],
+    supportedInputArtifacts: [],
     supportedOutputArtifacts: ["seo_audit_report"],
     providerKeys: ["seo-audit-search-discovery"],
     integrationRequirements: [],
     tenantScoped: true,
-    implementationPath: "search-web/seo-audit engine exists; capability provider path not wired",
+    implementationPath:
+      "packages/workforce-core/src/adapters/seo-audit.ts → search-web/seo-audit buildSeoAuditReport",
     requiredFeatureFlags: ["search_web"],
   }),
   "seo.article": cap("seo.article", {
@@ -190,15 +194,16 @@ export const CAPABILITY_REGISTRY: Record<CapabilityKey, CapabilityDefinition> = 
     label: "Website generation",
     riskLevel: "high",
     externalMutation: false,
-    status: "NOT_CONFIGURED",
+    status: "AVAILABLE",
     requiredEntitlementClass: "website_maintenance",
     approvalRequired: false,
-    supportedInputArtifacts: ["page_brief"],
+    supportedInputArtifacts: [],
     supportedOutputArtifacts: ["website_draft"],
     providerKeys: ["website-generate-domains"],
     integrationRequirements: [],
     tenantScoped: true,
-    implementationPath: "packages/websites-and-domains (workforce capability provider not wired)",
+    implementationPath:
+      "packages/workforce-core/src/adapters/website-generate.ts → generate5PageSite (draft only)",
     requiredFeatureFlags: ["website_generate"],
   }),
   "website.deploy": cap("website.deploy", {
@@ -277,7 +282,7 @@ export const CAPABILITY_REGISTRY: Record<CapabilityKey, CapabilityDefinition> = 
     label: "CRM read",
     riskLevel: "medium",
     externalMutation: false,
-    status: "NOT_CONFIGURED",
+    status: "AVAILABLE",
     requiredEntitlementClass: null,
     approvalRequired: false,
     supportedInputArtifacts: [],
@@ -285,22 +290,24 @@ export const CAPABILITY_REGISTRY: Record<CapabilityKey, CapabilityDefinition> = 
     providerKeys: ["crm-supabase"],
     integrationRequirements: [],
     tenantScoped: true,
-    implementationPath: "packages/leads-and-crm/src/repository.ts (workforce capability provider not wired)",
+    implementationPath:
+      "packages/workforce-core/src/adapters/crm.ts → @stratxcel/leads-and-crm repository",
     requiredFeatureFlags: ["crm"],
   }),
   "crm.write": cap("crm.write", {
     label: "CRM write",
     riskLevel: "high",
     externalMutation: true,
-    status: "NOT_CONFIGURED",
+    status: "AVAILABLE",
     requiredEntitlementClass: null,
     approvalRequired: true,
-    supportedInputArtifacts: ["crm_mutation_request"],
+    supportedInputArtifacts: [],
     supportedOutputArtifacts: ["crm_write_receipt"],
     providerKeys: ["crm-supabase"],
     integrationRequirements: [],
     tenantScoped: true,
-    implementationPath: "packages/leads-and-crm/src/repository.ts (workforce capability provider not wired)",
+    implementationPath:
+      "packages/workforce-core/src/adapters/crm.ts → @stratxcel/leads-and-crm repository",
     requiredFeatureFlags: ["crm"],
   }),
   "crm.followup_plan": cap("crm.followup_plan", {
@@ -321,7 +328,7 @@ export const CAPABILITY_REGISTRY: Record<CapabilityKey, CapabilityDefinition> = 
     label: "WhatsApp send",
     riskLevel: "critical",
     externalMutation: true,
-    status: "NOT_CONFIGURED",
+    status: "AVAILABLE",
     requiredEntitlementClass: "whatsapp_contacts",
     approvalRequired: true,
     supportedInputArtifacts: ["whatsapp_message_draft", "consent_record"],
@@ -329,7 +336,8 @@ export const CAPABILITY_REGISTRY: Record<CapabilityKey, CapabilityDefinition> = 
     providerKeys: ["whatsapp-meta"],
     integrationRequirements: ["whatsapp_binding"],
     tenantScoped: true,
-    implementationPath: "packages/whatsapp/src/outbound.ts (integration mode often disabled)",
+    implementationPath:
+      "packages/workforce-core/src/adapters/whatsapp.ts → sendOutboundWhatsAppMessage",
   }),
   "whatsapp.followup_plan": cap("whatsapp.followup_plan", {
     label: "WhatsApp follow-up plan",
@@ -349,15 +357,16 @@ export const CAPABILITY_REGISTRY: Record<CapabilityKey, CapabilityDefinition> = 
     label: "Analytics read",
     riskLevel: "low",
     externalMutation: false,
-    status: "NOT_CONFIGURED",
+    status: "AVAILABLE",
     requiredEntitlementClass: null,
     approvalRequired: false,
     supportedInputArtifacts: [],
     supportedOutputArtifacts: ["analytics_evidence", "metric_snapshot"],
-    providerKeys: ["analytics-read-placeholder"],
+    providerKeys: ["analytics-read-reporting"],
     integrationRequirements: ["analytics_property"],
     tenantScoped: true,
-    implementationPath: "lib/reporting / GA4 bridge incomplete for workforce path",
+    implementationPath:
+      "packages/workforce-core/src/adapters/analytics.ts → canonical tenant-scoped Search/Google GA4 provider",
   }),
   "analytics.attribution": cap("analytics.attribution", {
     label: "Analytics attribution",
@@ -524,4 +533,47 @@ export function countCapabilitiesByStatus(): Record<CapabilityStatus, number> {
     counts[def.status] += 1;
   }
   return counts;
+}
+
+/**
+ * Static catalogue AVAILABLE count vs provider-ready count.
+ * Provider-ready = IMPLEMENTED provider probe ready — does NOT evaluate
+ * tenant entitlement, integration, shadow, kill, or authorization.
+ * For tenant runtime matrix use lib/workforce/capability-runtime-matrix.ts.
+ */
+export async function countCapabilityOperationalMatrix(args: {
+  tenantId: string;
+}): Promise<{
+  staticAvailable: number;
+  /** @deprecated Use providerOperational — this is NOT full runtime readiness. */
+  runtimeOperational: number;
+  providerOperational: number;
+  staticByStatus: Record<CapabilityStatus, number>;
+}> {
+  const staticByStatus = countCapabilitiesByStatus();
+  const { getProvidersForCapability } = await import("../providers/registry.ts");
+  let providerOperational = 0;
+  for (const def of listCapabilities()) {
+    if (def.status !== "AVAILABLE") continue;
+    const providers = getProvidersForCapability(def.key);
+    let ready = false;
+    for (const provider of providers) {
+      if (provider.status !== "IMPLEMENTED") continue;
+      const probe = await provider.probeReadiness({
+        tenantId: args.tenantId,
+        capability: def.key,
+      });
+      if (probe.ready && probe.status === "IMPLEMENTED") {
+        ready = true;
+        break;
+      }
+    }
+    if (ready) providerOperational += 1;
+  }
+  return {
+    staticAvailable: staticByStatus.AVAILABLE,
+    providerOperational,
+    runtimeOperational: providerOperational,
+    staticByStatus,
+  };
 }

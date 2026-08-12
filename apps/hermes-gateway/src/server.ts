@@ -129,7 +129,12 @@ async function handleToolCall(toolName: string, req: http.IncomingMessage, res: 
       toolName as ToolName,
       // tenantId/missionId come only from the verified, signed token — never
       // from the request body, so no caller can ever name an arbitrary tenant.
-      { missionId: verified.payload.missionId, tenantId: verified.payload.tenantId, correlationId },
+      {
+        missionId: verified.payload.missionId,
+        tenantId: verified.payload.tenantId,
+        correlationId,
+        allowedTools: verified.payload.allowedTools,
+      },
       input as Record<string, unknown>
     );
     res.writeHead(200, { "Content-Type": "application/json" });

@@ -2,7 +2,6 @@ import { createServiceClient as createBrandBrainClient, getCurrentBrandBrain } f
 import { createServiceClient as createMissionsClient, appendMissionEvent, getServiceCatalogueEntry } from "@stratxcel/missions";
 import { createServiceClient as createApprovalsClient, requestApproval, listPendingApprovals } from "@stratxcel/approvals";
 import { createServiceClient as createHandoffClient, createHumanHandoff } from "@stratxcel/human-handoff";
-import { createServiceClient as createCrmClient, createLead } from "@stratxcel/leads-and-crm";
 import { recordAuditEvent, createServiceClient as createAuditClient } from "@stratxcel/audit";
 import type { ToolName } from "@stratxcel/hermes";
 import { STRATXCEL_CONTROLLED_TOOLS } from "@stratxcel/hermes";
@@ -13,6 +12,11 @@ export interface ToolCallContext {
   missionId: string;
   tenantId: string;
   correlationId: string;
+  /**
+   * Verified mission-token allowlist — set only by the Hermes dispatcher
+   * after token verification. Never model-supplied.
+   */
+  allowedTools?: readonly string[];
 }
 
 export class ToolNotAvailableError extends Error {
@@ -128,16 +132,68 @@ export const TOOL_HANDLERS: Partial<Record<ToolName, ToolHandler>> = {
   },
 
   async create_crm_lead(ctx, input) {
-    const supabase = createCrmClient();
-    const lead = await createLead(supabase, {
-      tenantId: ctx.tenantId,
-      source: "manual",
-      contactName: input.contactName as string | undefined,
-      contactPhone: input.contactPhone as string | undefined,
-      contactEmail: input.contactEmail as string | undefined,
-      metadata: (input.metadata as Record<string, unknown>) ?? {},
+    // Route through canonical Workforce capability executor — never bypass
+    // tenant/entitlement/receipt policy with a direct createLead call alone.
+    // Authority is HERMES_MISSION_TOOL_GRANT only when the verified mission
+    // token allowed create_crm_lead — never a manufactured human approval.
+    const missionToolAllowed = (ctx.allowedTools ?? []).includes("create_crm_lead");
+    if (!missionToolAllowed) {
+      return {
+        ok: false,
+        status: "BLOCKED",
+        reasonCode: "POLICY_BLOCK",
+        humanReason: "create_crm_lead not in verified mission allowedTools",
+      };
+    }
+    const { executeWorkforceCapabilityServer } = await import(
+      "../../../lib/workforce/execute-capability.ts"
+    );
+    const result = await executeWorkforceCapabilityServer({
+      requestId: `hermes-crm-${ctx.correlationId}`,
+      missionId: ctx.missionId,
+      claimedTenantId: ctx.tenantId,
+      capability: "crm.write",
+      department: "crm",
+      role: "crm_writer",
+      inputArtifactIds: [],
+      authorization: {
+        actorKind: "hermes",
+        trustedSystemGrant: {
+          kind: "HERMES_MISSION_TOOL_GRANT",
+          toolName: "create_crm_lead",
+          missionToolAllowed: true,
+        },
+      },
+      input: {
+        operation: "create_lead",
+        contactName: input.contactName,
+        contactPhone: input.contactPhone,
+        contactEmail: input.contactEmail,
+        source: "manual",
+        metadata: {
+          ...((input.metadata as Record<string, unknown>) ?? {}),
+          hermesCorrelationId: ctx.correlationId,
+          authorizationKind: "HERMES_MISSION_TOOL_GRANT",
+        },
+        idempotencyKey: `hermes-crm-lead:${ctx.missionId}:${ctx.correlationId}`,
+      },
     });
-    return { leadId: lead.id };
+
+    if (result.status !== "SUCCEEDED") {
+      return {
+        ok: false,
+        status: result.status,
+        reasonCode: result.reasonCode ?? null,
+        humanReason: result.humanReason ?? "crm.write_failed",
+      };
+    }
+    const leadId = result.providerReference ?? null;
+    return {
+      leadId,
+      receipt: result.receipt ?? null,
+      capabilityStatus: result.status,
+      authorizationKind: "HERMES_MISSION_TOOL_GRANT",
+    };
   },
 
   async attach_research_evidence(ctx, input) {

@@ -29,7 +29,7 @@ export class MemorySocialDb {
       const spec = (withId.creative_spec ?? {}) as Record<string, unknown>;
       const key = typeof spec.generationKey === "string" ? spec.generationKey : "";
       if (key) {
-        const indexKey = `${withId.master_id}|${withId.platform}|${key}`;
+        const indexKey = `${String(withId.master_id)}|${String(withId.platform)}|${key}`;
         if (this.generationKeyIndex.has(indexKey)) {
           const err = new Error("duplicate key value violates unique constraint content_variants_generation_key_uidx");
           (err as { code?: string }).code = "23505";
