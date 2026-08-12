@@ -49,6 +49,9 @@ export async function POST(request: Request) {
     return Response.json({ error: "This purchase has not been paid for yet." }, { status: 402 });
   }
 
+  // Claimable means verified Razorpay payment OR verified immutable Go Free redemption.
+  // Both paths set status to paid/in_review/completed; pending_payment is never claimable.
+
   const verifiedEmail = user.email.trim().toLowerCase();
   if (!order.guest_email || order.guest_email.trim().toLowerCase() !== verifiedEmail) {
     return Response.json({ error: "This purchase is registered to a different email address." }, { status: 403 });
