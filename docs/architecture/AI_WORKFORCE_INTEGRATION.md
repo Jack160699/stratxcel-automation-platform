@@ -71,7 +71,7 @@ Natural language (`yes`, `haan`, `kar do`, …) never authorizes manual publish.
 
 ## Creative Studio
 
-Provider boundaries, briefs, art direction, candidate/revision model, and provenance are integrated. Real image/video generation remains `NOT_CONFIGURED` / `UNAVAILABLE`. `MockImageProvider` is never selected in production bootstrap.
+Provider boundaries, Brand Brain-aware briefs, references, candidate/revision records, canonical storage, and provenance are integrated. `media.image_generation` has a real `ImageMediaRuntime` Workforce provider and becomes executable only when provider, Supabase storage, entitlement, usage ledger, budget, tenant, and mission checks pass. Video generation remains unavailable. `MockImageProvider` is never selected in production bootstrap.
 
 ## Acquisition
 

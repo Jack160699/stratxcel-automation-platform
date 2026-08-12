@@ -72,7 +72,6 @@ async function run() {
         `no simulated receipt: ${provider.key}`,
       );
     } else {
-      assert.equal(probe.ready, true, `implemented should probe ready: ${provider.key}`);
       const result = await provider.execute({
         requestId: "probe-impl",
         tenantId: "tenant-a",
@@ -80,6 +79,9 @@ async function run() {
         capability: provider.capabilityKeys[0]!,
         inputArtifactIds: [],
       });
+      if (!probe.ready) {
+        assert.equal(result.ok, false, `configured-at-runtime provider must fail closed: ${provider.key}`);
+      }
       assert.notEqual(
         (result.receipt as { simulated?: boolean } | undefined)?.simulated,
         true,

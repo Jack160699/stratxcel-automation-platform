@@ -23,7 +23,7 @@ function run() {
   assert.equal(getCapability("research.web")?.status, "PLANNED");
   assert.equal(getCapability("social.publish")?.status, "NOT_CONFIGURED");
   assert.equal(getCapability("website.audit")?.status, "AVAILABLE");
-  assert.equal(getCapability("media.image_generation")?.status, "NOT_CONFIGURED");
+  assert.equal(getCapability("media.image_generation")?.status, "AVAILABLE");
   assert.equal(getCapability("media.carousel_generation")?.status, "UNAVAILABLE");
   assert.equal(getCapability("media.video_generation")?.status, "UNAVAILABLE");
 

@@ -14,6 +14,9 @@ const nextConfig = {
     "@stratxcel/websites-and-domains",
     "@stratxcel/human-handoff",
     "@stratxcel/brand-brain",
+    "@stratxcel/creative-studio",
+    "@stratxcel/ai-runtime",
+    "@stratxcel/workforce-core",
   ],
 };
 

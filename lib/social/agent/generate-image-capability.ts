@@ -42,6 +42,8 @@ export interface GenerateImageRequest {
   brandBrainVersion?: number | null;
   referenceMediaAssetIds?: readonly string[];
   candidateCount?: number;
+  /** Stable paid-request identity; retries must reuse this. */
+  generationRequestId?: string;
   budget?: StudioBudget;
   /** Production storage — required for OPERATIONAL persistence. */
   storage?: CanonicalMediaStorage;
@@ -245,6 +247,7 @@ export async function requestGenerateImage(input: GenerateImageRequest): Promise
         tenantId: input.tenantId,
         missionId: input.missionId ?? null,
         prompt: input.briefText,
+        generationRequestId: input.generationRequestId,
         referenceAssetIds: [...(input.referenceMediaAssetIds ?? [])],
         candidateCount: input.candidateCount ?? 2,
         persistCanonical: true,

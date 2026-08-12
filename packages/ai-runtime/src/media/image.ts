@@ -75,6 +75,8 @@ export interface ImageMediaDeps {
   budgetEnvelope?: AIBudgetEnvelope;
   sessionId?: string | null;
   missionId?: string | null;
+  /** Bound each provider request; an abort is treated as outcome-unknown. */
+  timeoutMs?: number;
 }
 
 function modelForTier(tier: ImageTier, env = process.env): string {
@@ -94,6 +96,7 @@ export class ImageMediaRuntime {
   private readonly budgetEnvelope?: AIBudgetEnvelope;
   private readonly sessionId: string | null;
   private readonly defaultMissionId: string | null;
+  private readonly timeoutMs: number;
 
   constructor(deps: ImageMediaDeps = {}) {
     this.geminiKey = Object.prototype.hasOwnProperty.call(deps, "geminiApiKey")
@@ -110,6 +113,7 @@ export class ImageMediaRuntime {
     this.budgetEnvelope = deps.budgetEnvelope;
     this.sessionId = deps.sessionId ?? null;
     this.defaultMissionId = deps.missionId ?? null;
+    this.timeoutMs = Math.max(10_000, Math.min(deps.timeoutMs ?? 90_000, 180_000));
   }
 
   isConfigured(): boolean {
@@ -282,6 +286,21 @@ export class ImageMediaRuntime {
       }
       const category = classifyProviderError(err);
       this.circuit.recordFailure("google", primaryModel);
+      // A synchronous image request may have completed provider-side before our
+      // connection timed out. Do not issue a second paid request automatically.
+      if (category === "TIMEOUT") {
+        return {
+          outcome: "FAILED",
+          candidates: [],
+          selected: null,
+          reason: "provider_timeout_outcome_unknown",
+          provider: "google",
+          model: primaryModel,
+          storageReady,
+          recordedProviderCostUsd: requestAccumulatedCostUsd,
+          usageAccountingStatus,
+        };
+      }
       if (isNonHopError(category) || category === "SAFETY_REFUSAL") {
         return {
           outcome: "SAFETY_REFUSAL",
@@ -321,6 +340,23 @@ export class ImageMediaRuntime {
         reason: geminiAttempted ? "google_failed_openai_not_configured" : "openai_not_configured",
         provider: null,
         model: null,
+        storageReady,
+        recordedProviderCostUsd: requestAccumulatedCostUsd,
+        usageAccountingStatus,
+      };
+    }
+
+    // The implemented OpenAI fallback uses /images/generations and does not
+    // implement reference/edit multipart input. Never silently discard a logo,
+    // product photo, or other authorized reference when Gemini is unavailable.
+    if (referenceImages.length > 0) {
+      return {
+        outcome: "FAILED",
+        candidates: [],
+        selected: null,
+        reason: "reference_mode_unsupported_by_openai_fallback",
+        provider: "openai",
+        model: fallbackModel,
         storageReady,
         recordedProviderCostUsd: requestAccumulatedCostUsd,
         usageAccountingStatus,
@@ -512,36 +548,47 @@ export class ImageMediaRuntime {
           ...(request.aspectRatio ? { imageConfig: { aspectRatio: request.aspectRatio } } : {}),
         },
       };
-      const response = await this.fetchImpl(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
-        {
-          method: "POST",
-          headers: { "x-goog-api-key": this.geminiKey!, "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        },
-      );
-      if (!response.ok) {
-        throw new AIProviderError(classifyHttpStatus(response.status), `Gemini image HTTP ${response.status}`, response.status);
-      }
-      const json = (await response.json()) as {
-        candidates?: Array<{ content?: { parts?: Array<{ inlineData?: { mimeType?: string; data?: string }; text?: string }> } }>;
-      };
-      for (const cand of json.candidates ?? []) {
-        for (const part of cand.content?.parts ?? []) {
-          if (part.inlineData?.data) {
-            const mime = part.inlineData.mimeType ?? "image/png";
-            out.push({
-              id: crypto.randomUUID(),
-              uri: `data:${mime};base64,${part.inlineData.data}`,
-              mimeType: mime,
-              provider: "google",
-              model,
-              estimatedCostUsd: estimateImageCostUsd(model, 1, {
-                resolution: request.resolution ?? "1K",
-              }),
-            });
+      try {
+        const response = await this.fetchBounded(
+          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+            method: "POST",
+            headers: { "x-goog-api-key": this.geminiKey!, "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          });
+        if (!response.ok) {
+          throw new AIProviderError(classifyHttpStatus(response.status), `Gemini image HTTP ${response.status}`, response.status);
+        }
+        const json = (await response.json()) as {
+          candidates?: Array<{ content?: { parts?: Array<{ inlineData?: { mimeType?: string; data?: string }; text?: string }> } }>;
+        };
+        for (const cand of json.candidates ?? []) {
+          for (const part of cand.content?.parts ?? []) {
+            if (part.inlineData?.data) {
+              const mime = part.inlineData.mimeType ?? "image/png";
+              out.push({
+                id: crypto.randomUUID(),
+                uri: `data:${mime};base64,${part.inlineData.data}`,
+                mimeType: mime,
+                provider: "google",
+                model,
+                estimatedCostUsd: estimateImageCostUsd(model, 1, {
+                  resolution: request.resolution ?? "1K",
+                }),
+              });
+            }
           }
         }
+      } catch (error) {
+        if (!out.length) throw error;
+        safeAiLog({
+          event: "ai_image_partial_candidates",
+          provider: "google",
+          model,
+          taskClass: "IMAGE",
+          safeErrorCategory: classifyProviderError(error),
+          detail: `completed=${out.length};requested=${count}`,
+        });
+        break;
       }
     }
     return out.slice(0, count);
@@ -558,7 +605,7 @@ export class ImageMediaRuntime {
       size,
       quality,
     };
-    const response = await this.fetchImpl("https://api.openai.com/v1/images/generations", {
+    const response = await this.fetchBounded("https://api.openai.com/v1/images/generations", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${this.openaiKey!}`,
@@ -585,5 +632,20 @@ export class ImageMediaRuntime {
         };
       })
       .filter((c) => Boolean(c.uri));
+  }
+
+  private async fetchBounded(input: string | URL, init: RequestInit): Promise<Response> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort("image_provider_timeout"), this.timeoutMs);
+    try {
+      return await this.fetchImpl(input, { ...init, signal: controller.signal });
+    } catch (error) {
+      if (controller.signal.aborted) {
+        throw new AIProviderError("TIMEOUT", "image_provider_timeout");
+      }
+      throw error;
+    } finally {
+      clearTimeout(timer);
+    }
   }
 }

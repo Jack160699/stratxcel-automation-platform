@@ -17,6 +17,7 @@ const SOCIAL_PLATFORMS = ["instagram", "facebook", "threads", "linkedin", "youtu
 
 const AI_ENV_KEYS: Record<string, string> = {
   gemini: "GEMINI_API_KEY",
+  openai: "OPENAI_API_KEY",
 };
 
 /**
@@ -74,12 +75,18 @@ export async function runHealthChecks(ctx: OwnerContext): Promise<HealthRecord[]
     });
   }
 
-  // --- Media providers: same honesty rule, none wired yet ---
+  // --- Media provider: configuration is necessary but not sufficient. The
+  // execution path performs tenant, subscription, ledger, budget and writable
+  // storage probes before it can report OPERATIONAL.
+  const imageProviderConfigured = Boolean(process.env.GEMINI_API_KEY || process.env.OPENAI_API_KEY);
+  const imageStorageConfigured = Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
   records.push({
     component: "media:image_generation",
     group: "media",
-    status: "NOT_CONFIGURED",
-    message: "No image generation provider configured",
+    status: imageProviderConfigured && imageStorageConfigured ? "DEGRADED" : "NOT_CONFIGURED",
+    message: imageProviderConfigured && imageStorageConfigured
+      ? "Provider and canonical storage configured; per-tenant readiness is checked at execution"
+      : "Image provider or canonical storage configuration is missing",
   });
 
   // --- Workers / queue ---

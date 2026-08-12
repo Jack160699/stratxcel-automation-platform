@@ -324,9 +324,9 @@ export class SupabaseCanonicalMediaStorage implements CanonicalMediaStorage {
       if (String(row.tenant_id) !== args.tenantId) {
         throw new Error(`cross_tenant_reference_forbidden:${id}`);
       }
-      if (String(row.owner_id) !== this.ownerId) {
-        throw new Error(`cross_owner_reference_forbidden:${id}`);
-      }
+      // The factory is created only after actor membership for this tenant is
+      // established. Tenant media is collaborative, so a teammate may reuse an
+      // authorized tenant asset even when another member originally uploaded it.
       const bucket = String(row.storage_bucket ?? this.bucket);
       const path = String(row.storage_path);
       const downloaded = await this.client.storage.from(bucket).download(path);
