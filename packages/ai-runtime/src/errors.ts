@@ -62,6 +62,8 @@ export function userSafeErrorMessage(category: AIErrorCategory | undefined): str
       return "AI service temporarily unavailable";
     case "BUDGET_EXHAUSTED":
       return "Usage limit reached";
+    case "INSUFFICIENT_EVIDENCE":
+      return "Needs human review";
     case "SAFETY_REFUSAL":
     case "COMPLIANCE":
       return "Needs human review";

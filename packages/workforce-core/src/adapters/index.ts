@@ -8,3 +8,5 @@ export * from "./crm.ts";
 export * from "./whatsapp.ts";
 export * from "./social.ts";
 export * from "./analytics.ts";
+export * from "./research-web.ts";
+export * from "./research-serp.ts";

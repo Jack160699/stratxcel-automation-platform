@@ -21,16 +21,13 @@ export function resolveSerpCapabilityGate(): CapabilityGateResolution {
     };
   }
   if (BLOCKING_STATUSES.has(cap.status)) {
-    const status = cap.status === "PLANNED" || cap.status === "UNAVAILABLE" || cap.status === "NOT_CONFIGURED"
-      ? ("WAITING_CAPABILITY" as const)
-      : ("WAITING_CAPABILITY" as const);
     return {
-      status: cap.status === "PLANNED" ? "WAITING_CAPABILITY" : status,
+      status: "WAITING_CAPABILITY",
       blockedCapability: "research.serp",
       reason:
-        cap.status === "PLANNED"
-          ? "RESEARCH_REQUIRED: research.serp is PLANNED and unavailable for live SERP pulls"
-          : `research.serp status is ${cap.status}`,
+        cap.status === "NOT_CONFIGURED"
+          ? "RESEARCH_REQUIRED: research.serp is NOT_CONFIGURED; Search Console covers authorized owned properties, not public SERP rankings"
+          : `RESEARCH_REQUIRED: research.serp status is ${cap.status}`,
       executable: false,
     };
   }

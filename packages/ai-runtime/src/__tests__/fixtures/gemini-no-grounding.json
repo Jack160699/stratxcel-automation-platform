@@ -1,0 +1,17 @@
+{
+  "candidates": [
+    {
+      "content": {
+        "parts": [{ "text": "Based on training data alone, Company X was founded in 1999 and has 500 employees." }],
+        "role": "model"
+      },
+      "finishReason": "STOP"
+    }
+  ],
+  "usageMetadata": {
+    "promptTokenCount": 20,
+    "candidatesTokenCount": 30,
+    "totalTokenCount": 50
+  },
+  "responseId": "gemini-no-grounding-fixture"
+}

@@ -198,10 +198,35 @@ export const TOOL_HANDLERS: Partial<Record<ToolName, ToolHandler>> = {
 
   async attach_research_evidence(ctx, input) {
     const supabase = createMissionsClient();
+    const artifactId = typeof input.artifactId === "string" ? input.artifactId : "";
+    if (!artifactId) throw new Error("attach_research_evidence: artifact_required");
+    const [{ data: artifact, error: artifactError }, { data: mission, error: missionError }] =
+      await Promise.all([
+        supabase
+          .from("mission_artifacts")
+          .select("id, mission_id")
+          .eq("id", artifactId)
+          .maybeSingle(),
+        supabase
+          .from("missions")
+          .select("id, tenant_id")
+          .eq("id", ctx.missionId)
+          .maybeSingle(),
+      ]);
+    if (
+      artifactError ||
+      missionError ||
+      !artifact ||
+      artifact.mission_id !== ctx.missionId ||
+      !mission ||
+      mission.tenant_id !== ctx.tenantId
+    ) {
+      throw new Error("attach_research_evidence: artifact_scope_rejected");
+    }
     await appendMissionEvent(supabase, {
       missionId: ctx.missionId,
       eventType: "research_evidence",
-      payload: { artifactId: input.artifactId, sourceUrl: input.sourceUrl ?? null, summary: input.summary },
+      payload: { artifactId, sourceUrl: input.sourceUrl ?? null, summary: input.summary },
     });
     return { recorded: true };
   },

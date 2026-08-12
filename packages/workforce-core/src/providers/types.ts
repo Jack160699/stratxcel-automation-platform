@@ -101,6 +101,18 @@ export function unknownCostUsage(partial: Omit<ProviderUsageMetadata, "costKnown
   };
 }
 
+export function knownCostUsage(
+  partial: Omit<ProviderUsageMetadata, "costKnown"> & {
+    providerReportedCost: number;
+    currency: string;
+  },
+): ProviderUsageMetadata {
+  return {
+    ...partial,
+    costKnown: true,
+  };
+}
+
 export function isRetryableProviderError(category: ProviderErrorCategory | undefined): boolean {
   return category === "TRANSIENT" || category === "TIMEOUT" || category === "RATE_LIMIT";
 }
