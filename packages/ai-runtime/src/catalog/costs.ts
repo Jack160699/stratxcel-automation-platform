@@ -320,6 +320,27 @@ export function estimateVideoCostUsd(
   return roundUsd(perSec * seconds);
 }
 
+/**
+ * Conservative Google Search grounding upper-bound rate.
+ * Documented Gemini 3 post-free-quota rate: $14 / 1,000 search queries.
+ * Provider-project free allowance is NOT allocated per tenant — do not assume
+ * every tenant gets free searches. Prefer upper-bound accounting for budget safety.
+ */
+export const GEMINI_GOOGLE_SEARCH_USD_PER_1000_QUERIES = 14;
+
+/** Conservative OpenAI Responses web-search tool rate for budget accounting. */
+export const OPENAI_WEB_SEARCH_USD_PER_CALL = 0.01;
+
+export function estimateGeminiSearchToolCostUsd(webSearchQueries: number): number {
+  const queries = Math.max(0, Math.floor(webSearchQueries));
+  return roundUsd((queries / 1000) * GEMINI_GOOGLE_SEARCH_USD_PER_1000_QUERIES);
+}
+
+export function estimateOpenAIWebSearchToolCostUsd(webSearchCalls: number): number {
+  const calls = Math.max(0, Math.floor(webSearchCalls));
+  return roundUsd(calls * OPENAI_WEB_SEARCH_USD_PER_CALL);
+}
+
 export function buildUsage(args: {
   model: string;
   inputTokens?: number;
@@ -327,11 +348,12 @@ export function buildUsage(args: {
   outputTokens?: number;
   mediaUnits?: number;
   estimatedCostUsd?: number;
+  toolUsage?: AIUsage["toolUsage"];
 }): AIUsage {
   const inputTokens = args.inputTokens ?? 0;
   const cachedInputTokens = args.cachedInputTokens ?? 0;
   const outputTokens = args.outputTokens ?? 0;
-  const estimatedCostUsd =
+  const tokenCost =
     args.estimatedCostUsd ??
     estimateTokenCostUsd({
       model: args.model,
@@ -339,13 +361,15 @@ export function buildUsage(args: {
       cachedInputTokens,
       outputTokens,
     });
+  const toolCost = args.toolUsage?.estimatedToolCostUsd ?? 0;
   return {
     inputTokens,
     cachedInputTokens,
     outputTokens,
     totalTokens: inputTokens + outputTokens,
     mediaUnits: args.mediaUnits,
-    estimatedCostUsd,
+    estimatedCostUsd: roundUsd(tokenCost + toolCost),
+    toolUsage: args.toolUsage,
   };
 }
 

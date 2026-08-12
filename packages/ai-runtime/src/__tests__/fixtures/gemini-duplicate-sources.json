@@ -1,0 +1,24 @@
+
+{
+  "candidates": [
+    {
+      "content": {
+        "parts": [{ "text": "Duplicate source test." }],
+        "role": "model"
+      },
+      "groundingMetadata": {
+        "webSearchQueries": ["duplicate urls"],
+        "groundingChunks": [
+          { "web": { "uri": "https://example.com/a?utm_source=x", "title": "Example A" } },
+          { "web": { "uri": "https://example.com/a", "title": "Example A again" } },
+          { "web": { "uri": "https://example.com/b", "title": "Example B" } }
+        ],
+        "groundingSupports": [
+          { "segment": { "text": "Duplicate source test." }, "groundingChunkIndices": [0, 1, 2] }
+        ]
+      }
+    }
+  ],
+  "usageMetadata": { "promptTokenCount": 5, "candidatesTokenCount": 5, "totalTokenCount": 10 },
+  "responseId": "gemini-dup-sources"
+}

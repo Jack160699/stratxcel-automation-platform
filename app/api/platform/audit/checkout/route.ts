@@ -209,6 +209,7 @@ export async function GET() {
   if (memberships.length === 0) return Response.json({ order: null }, { headers: { "Cache-Control": "no-store" } });
 
   const tenantId = memberships[0].tenant.id;
+  const { supabase: service } = getTenantServiceContext();
   const { data: order } = await supabase
     .from("audit_orders")
     .select(
@@ -225,5 +226,21 @@ export async function GET() {
     if (link?.status === "created") paymentUrl = link.short_url;
   }
 
-  return Response.json({ order: order ?? null, tenantId, paymentUrl }, { headers: { "Cache-Control": "no-store" } });
+  let generation = null;
+  if (order) {
+    const { data } = await service
+      .from("audit_generation_runs")
+      .select("id, status, stage, quality_outcome, confidence_band, failure_message_safe, stage_updated_at, created_at, completed_at")
+      .eq("audit_order_id", order.id)
+      .eq("tenant_id", tenantId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    generation = data ?? null;
+  }
+
+  return Response.json(
+    { order: order ?? null, generation, tenantId, paymentUrl },
+    { headers: { "Cache-Control": "no-store" } },
+  );
 }

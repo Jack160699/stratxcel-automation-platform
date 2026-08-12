@@ -59,6 +59,7 @@ export type AIErrorCategory =
   | "INVALID_INPUT"
   | "NOT_CONFIGURED"
   | "BUDGET_EXHAUSTED"
+  | "INSUFFICIENT_EVIDENCE"
   | "PROVIDER_FAILURE"
   | "INTERNAL_FAILURE";
 
@@ -163,6 +164,13 @@ export interface AIExecutionRequest {
   metadata?: Record<string, string | number | boolean | null>;
 }
 
+export interface AIToolUsage {
+  webSearchCalls?: number;
+  webSearchQueries?: number;
+  estimatedToolCostUsd?: number;
+  costEstimateKind?: "upper_bound" | "exact" | "unknown";
+}
+
 export interface AIUsage {
   inputTokens: number;
   cachedInputTokens: number;
@@ -170,12 +178,44 @@ export interface AIUsage {
   totalTokens: number;
   mediaUnits?: number;
   estimatedCostUsd: number;
+  toolUsage?: AIToolUsage;
 }
 
 export interface AIQualityAssessment {
   score: number;
   decision: AIQualityDecision;
   reasons: readonly string[];
+}
+
+/** Provider-neutral web evidence parsed at the provider boundary. */
+export interface AIWebSource {
+  id: string;
+  providerSourceId?: string;
+  url: string;
+  title?: string;
+  domain?: string;
+  provider: AIProviderId;
+  searchQueries?: readonly string[];
+  startIndex?: number;
+  endIndex?: number;
+}
+
+export interface AICitationSupport {
+  text?: string;
+  startIndex?: number;
+  endIndex?: number;
+  sourceIds: readonly string[];
+  sourceIndices?: readonly number[];
+}
+
+export interface AIWebEvidence {
+  sources: readonly AIWebSource[];
+  citationSupports: readonly AICitationSupport[];
+  searchQueries: readonly string[];
+  searchAttribution?: {
+    hasSearchEntryPoint: boolean;
+    renderedContentLength?: number;
+  };
 }
 
 export interface AIModelAttempt {
@@ -212,6 +252,7 @@ export interface AIExecutionResult {
   text: string;
   structuredOutput?: unknown;
   toolCalls: AIToolCall[];
+  webEvidence?: AIWebEvidence;
   provider: AIProviderId | null;
   model: string | null;
   reasoningLevel: AIReasoningLevel;
@@ -266,6 +307,7 @@ export interface AITextProviderAdapter {
     usage: AIUsage;
     providerRequestId: string | null;
     safetyRefused?: boolean;
+    webEvidence?: AIWebEvidence;
   }>;
   probeReadiness(model?: string): Promise<Omit<AIProviderHealth, "provider" | "circuitOpen">>;
 }

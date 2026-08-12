@@ -1,4 +1,4 @@
-import { buildUsage } from "../catalog/costs.ts";
+import { buildUsage, estimateOpenAIWebSearchToolCostUsd } from "../catalog/costs.ts";
 import { AIProviderError, classifyHttpStatus } from "../errors.ts";
 import { probeOpenAIReadiness, ReadinessCache } from "../health/readiness.ts";
 import type {
@@ -9,6 +9,7 @@ import type {
   AIToolSchema,
   FetchLike,
 } from "../types.ts";
+import { parseOpenAIWebEvidence } from "./openai-web-evidence.ts";
 
 export interface OpenAIAdapterOptions {
   apiKey?: string;
@@ -219,11 +220,27 @@ export class OpenAITextProvider implements AITextProviderAdapter {
         output_text?: string;
         output?: Array<{
           type?: string;
-          content?: Array<{ type?: string; text?: string }>;
+          content?: Array<{
+            type?: string;
+            text?: string;
+            annotations?: Array<{
+              type?: string;
+              url?: string;
+              title?: string;
+              start_index?: number;
+              end_index?: number;
+            }>;
+          }>;
           name?: string;
           arguments?: string;
           call_id?: string;
           status?: string;
+          action?: {
+            type?: string;
+            query?: string;
+            queries?: string[];
+            sources?: Array<{ type?: string; url?: string }>;
+          };
         }>;
         usage?: {
           input_tokens?: number;
@@ -265,11 +282,21 @@ export class OpenAITextProvider implements AITextProviderAdapter {
         }
       }
 
+      const webEvidence = parseOpenAIWebEvidence(json);
+      const webSearchCalls = (json.output ?? []).filter((item) => item.type === "web_search_call").length;
       const usage = buildUsage({
         model: args.model,
         inputTokens: json.usage?.input_tokens ?? 0,
         cachedInputTokens: json.usage?.input_tokens_details?.cached_tokens ?? 0,
         outputTokens: json.usage?.output_tokens ?? 0,
+        toolUsage: webSearchCalls > 0
+          ? {
+              webSearchCalls,
+              webSearchQueries: webEvidence.searchQueries.length,
+              estimatedToolCostUsd: estimateOpenAIWebSearchToolCostUsd(webSearchCalls),
+              costEstimateKind: "upper_bound",
+            }
+          : undefined,
       });
 
       return {
@@ -279,6 +306,7 @@ export class OpenAITextProvider implements AITextProviderAdapter {
         usage,
         providerRequestId: json.id ?? null,
         safetyRefused: false,
+        webEvidence,
       };
     } catch (err) {
       if (err instanceof AIProviderError) throw err;

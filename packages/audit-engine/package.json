@@ -1,0 +1,20 @@
+{
+  "name": "@stratxcel/audit-engine",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "node --experimental-strip-types src/__tests__/automatic-audit-engine.test.ts"
+  },
+  "dependencies": {
+    "@stratxcel/ai-runtime": "*",
+    "@stratxcel/brand-brain": "*",
+    "@stratxcel/search-discovery": "*",
+    "@supabase/supabase-js": "^2.110.7"
+  }
+}

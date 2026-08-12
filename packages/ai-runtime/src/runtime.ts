@@ -205,6 +205,7 @@ export class AIRuntime {
           text: completion.text,
           structuredOutput: completion.structuredOutput,
           toolCalls: completion.toolCalls,
+          webEvidence: completion.webEvidence,
           provider: candidate.provider,
           model: candidate.model,
           reasoningLevel: candidate.reasoningLevel,
@@ -234,12 +235,31 @@ export class AIRuntime {
         });
         accumulatedCostUsd += completion.usage.estimatedCostUsd;
 
+        if (
+          request.requireWebEvidence &&
+          (request.taskClass === "RESEARCH" || request.taskClass === "SEO_RESEARCH") &&
+          (completion.webEvidence?.sources.length ?? 0) < 1
+        ) {
+          result = {
+            ...result,
+            ok: false,
+            qualityScore: 0,
+            qualityDecision: "FAIL",
+            errorCategory: "INSUFFICIENT_EVIDENCE",
+            userSafeError: "Needs human review",
+            errorDetailSafe: "insufficient_web_evidence",
+          };
+          lastErrorCategory = "INSUFFICIENT_EVIDENCE";
+          return result;
+        }
+
         if (request.qualityTarget != null || shouldQualityCheck(request.taskClass)) {
           const assessment = this.qualityAssessor({
             taskClass: request.taskClass,
             text: completion.text,
             qualityTarget: request.qualityTarget,
             requireEvidence: request.requireWebEvidence,
+            webEvidence: completion.webEvidence,
           });
           result = {
             ...result,
@@ -315,30 +335,58 @@ export class AIRuntime {
       attemptNumber += 1;
       const result = await runCandidate(primary, attemptNumber, "none");
       if (result?.ok) return result;
-      if (result && !result.ok && result.qualityDecision === "FAIL") {
+      if (result && !result.ok && result.errorCategory === "INSUFFICIENT_EVIDENCE") {
+        qualityPending = result;
+      } else if (result && !result.ok && result.qualityDecision === "FAIL") {
         qualityPending = result;
       } else if (result && !result.ok && result.errorCategory && isNonHopError(result.errorCategory)) {
         return result;
       }
     }
 
-    // Attempt 2: fallback (if paid fallback enabled and configured)
+    // Evidence insufficiency tries the configured normal fallback before premium escalation.
     const fallback = normalPool.find((c) => c.role === "fallback");
-    if (fallback && this.paidFallbackEnabled && (!qualityPending || qualityPending.qualityDecision !== "FAIL")) {
-      attemptNumber += 1;
-      fallbackUsed = true;
-      if (fallbackReason === "none") fallbackReason = "model_unavailable";
-      const result = await runCandidate(fallback, attemptNumber, fallbackReason);
-      if (result?.ok) return result;
-      if (result && !result.ok && result.qualityDecision === "FAIL") {
-        qualityPending = result;
-      } else if (result && !result.ok && result.errorCategory && isNonHopError(result.errorCategory)) {
-        return result;
+    const skipNormalFallbackForNonEvidenceQuality =
+      qualityPending?.qualityDecision === "FAIL" &&
+      qualityPending.errorCategory !== "INSUFFICIENT_EVIDENCE";
+    if (fallback && this.paidFallbackEnabled && !skipNormalFallbackForNonEvidenceQuality) {
+      let allowFallback = true;
+      if (request.budgetEnvelope) {
+        const recheck = evaluateBudgetGate(
+          {
+            ...request.budgetEnvelope,
+            spentUsdThisMonth: request.budgetEnvelope.spentUsdThisMonth + accumulatedCostUsd,
+          },
+          {
+            isCriticalWorkflow: Boolean(request.metadata?.critical),
+            isDiscretionaryPremium: false,
+          },
+        );
+        budgetStatus = recheck.status;
+        allowFallback = recheck.allowExecution;
+      }
+      if (allowFallback) {
+        attemptNumber += 1;
+        fallbackUsed = true;
+        if (fallbackReason === "none") fallbackReason = "model_unavailable";
+        const result = await runCandidate(fallback, attemptNumber, fallbackReason);
+        if (result?.ok) return result;
+        if (result && !result.ok && result.errorCategory === "INSUFFICIENT_EVIDENCE") {
+          qualityPending = result;
+        } else if (result && !result.ok && result.qualityDecision === "FAIL") {
+          qualityPending = result;
+        } else if (result && !result.ok && result.errorCategory && isNonHopError(result.errorCategory)) {
+          return result;
+        }
       }
     }
 
     // Quality escalations (separate from transient fallback)
-    if (qualityPending?.qualityDecision === "FAIL" || (lastErrorCategory == null && qualityPending)) {
+    if (
+      qualityPending?.qualityDecision === "FAIL" ||
+      qualityPending?.errorCategory === "INSUFFICIENT_EVIDENCE" ||
+      (lastErrorCategory == null && qualityPending)
+    ) {
       for (const esc of escalationPool) {
         if (escalationLevel >= policy.maxQualityEscalations) break;
         // Sol / frontier only for allowed high-value classes.
@@ -390,12 +438,13 @@ export class AIRuntime {
       }
       if (qualityPending) {
         // Exhausted escalations — fail closed for quality (attempts already accounted).
+        const insufficient = qualityPending.errorCategory === "INSUFFICIENT_EVIDENCE";
         const failed = {
           ...qualityPending,
           ok: false,
-          errorCategory: undefined,
+          errorCategory: insufficient ? "INSUFFICIENT_EVIDENCE" : undefined,
           userSafeError: "Needs human review",
-          errorDetailSafe: "quality_gate_failed",
+          errorDetailSafe: insufficient ? "insufficient_web_evidence" : "quality_gate_failed",
         } satisfies AIExecutionResult;
         return failed;
       }

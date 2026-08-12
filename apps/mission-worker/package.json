@@ -9,6 +9,7 @@
   "dependencies": {
     "@stratxcel/approvals": "*",
     "@stratxcel/audit": "*",
+    "@stratxcel/audit-engine": "*",
     "@stratxcel/brand-brain": "*",
     "@stratxcel/hermes": "*",
     "@stratxcel/missions": "*",

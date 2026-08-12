@@ -1,0 +1,38 @@
+
+{
+  "candidates": [
+    {
+      "content": {
+        "parts": [{ "text": "Spain won Euro 2024, defeating England 2-1 in the final. This victory marks Spain's record fourth European Championship title." }],
+        "role": "model"
+      },
+      "finishReason": "STOP",
+      "groundingMetadata": {
+        "webSearchQueries": ["UEFA Euro 2024 winner", "who won euro 2024"],
+        "searchEntryPoint": {
+          "renderedContent": "<!-- sanitized attribution widget omitted in fixtures -->"
+        },
+        "groundingChunks": [
+          { "web": { "uri": "https://www.uefa.com/euro2024/news/spain-win", "title": "uefa.com" } },
+          { "web": { "uri": "https://www.bbc.com/sport/football/euro-2024", "title": "bbc.com" } }
+        ],
+        "groundingSupports": [
+          {
+            "segment": { "startIndex": 0, "endIndex": 70, "text": "Spain won Euro 2024, defeating England 2-1 in the final." },
+            "groundingChunkIndices": [0]
+          },
+          {
+            "segment": { "startIndex": 71, "endIndex": 140, "text": "This victory marks Spain's record fourth European Championship title." },
+            "groundingChunkIndices": [0, 1]
+          }
+        ]
+      }
+    }
+  ],
+  "usageMetadata": {
+    "promptTokenCount": 40,
+    "candidatesTokenCount": 60,
+    "totalTokenCount": 100
+  },
+  "responseId": "gemini-grounded-fixture-1"
+}

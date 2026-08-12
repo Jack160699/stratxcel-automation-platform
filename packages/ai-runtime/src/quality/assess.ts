@@ -1,10 +1,11 @@
-import type { AIExecutionResult, AIQualityAssessment, AITaskClass } from "../types.ts";
+import type { AIExecutionResult, AIQualityAssessment, AITaskClass, AIWebEvidence } from "../types.ts";
 
 export interface QualityEvaluateInput {
   taskClass: AITaskClass;
   text: string;
   qualityTarget?: number;
   requireEvidence?: boolean;
+  webEvidence?: AIWebEvidence;
   blockedPhrases?: readonly string[];
   factsChecksum?: string;
 }
@@ -57,9 +58,20 @@ export function assessQuality(input: QualityEvaluateInput): AIQualityAssessment 
     return { score: 0, decision: "FAIL", reasons: ["blocked_phrase"] };
   }
 
-  if (input.requireEvidence || input.taskClass === "RESEARCH" || input.taskClass === "SEO_RESEARCH") {
+  const needsEvidence =
+    input.requireEvidence === true ||
+    ((input.taskClass === "RESEARCH" || input.taskClass === "SEO_RESEARCH") &&
+      input.requireEvidence !== false);
+  if (needsEvidence && input.requireEvidence === true) {
+    if ((input.webEvidence?.sources.length ?? 0) < 1) {
+      return { score: 0, decision: "FAIL", reasons: ["insufficient_web_evidence", "missing_evidence"] };
+    }
+    score += 0.2;
+    if ((input.webEvidence?.citationSupports.length ?? 0) > 0) score += 0.05;
+  } else if (needsEvidence) {
+    const hasStructured = (input.webEvidence?.sources.length ?? 0) > 0;
     const hasUrl = /https?:\/\//i.test(text) || /source:/i.test(text) || /citation/i.test(text);
-    if (hasUrl) score += 0.15;
+    if (hasStructured || hasUrl) score += 0.15;
     else {
       reasons.push("missing_evidence");
       score -= 0.2;

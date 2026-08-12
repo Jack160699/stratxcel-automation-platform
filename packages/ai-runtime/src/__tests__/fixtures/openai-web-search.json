@@ -1,0 +1,52 @@
+
+{
+  "id": "resp_openai_web_search_fixture",
+  "output": [
+    {
+      "id": "ws_fixture_1",
+      "type": "web_search_call",
+      "status": "completed",
+      "action": {
+        "type": "search",
+        "query": "latest news about AI",
+        "sources": [
+          { "type": "url", "url": "https://www.reuters.com/technology/ai-news" },
+          { "type": "url", "url": "https://www.ft.com/content/ai-example" }
+        ]
+      }
+    },
+    {
+      "id": "msg_fixture_1",
+      "type": "message",
+      "status": "completed",
+      "role": "assistant",
+      "content": [
+        {
+          "type": "output_text",
+          "text": "Several outlets reported AI developments this week.",
+          "annotations": [
+            {
+              "type": "url_citation",
+              "start_index": 0,
+              "end_index": 40,
+              "url": "https://www.reuters.com/technology/ai-news",
+              "title": "Reuters AI"
+            },
+            {
+              "type": "url_citation",
+              "start_index": 41,
+              "end_index": 60,
+              "url": "https://www.ft.com/content/ai-example",
+              "title": "FT AI"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "usage": {
+    "input_tokens": 30,
+    "output_tokens": 40,
+    "input_tokens_details": { "cached_tokens": 0 }
+  }
+}
