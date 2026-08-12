@@ -160,7 +160,6 @@ function run() {
     "/app/copilot",
     "/app/missions",
     "/app/approvals",
-    "/app/content",
     "/app/website",
     "/app/search",
     "/app/crm",
@@ -176,6 +175,9 @@ function run() {
   }
   // Files stays reachable contextually — not a top-level V1 sidebar item.
   assert.equal(/href:\s*["']\/app\/files["']/.test(appNavData), false, "app-nav-data.ts must not list /app/files as a top-level destination");
+  assert.equal(/href:\s*["']\/app\/content["']/.test(appNavData), false, "staff-scoped Content must not appear in the customer V1 navigation");
+  const contentLayout = read("app", "app", "content", "layout.tsx");
+  assert.ok(/redirect\(["']\/app["']\)/.test(contentLayout), "direct customer Content routes must recover to the tenant-safe command center");
   // Conversations is no longer a separate nav destination — merged into the
   // one CRM item (see app/app/conversations/page.tsx's redirect above).
   assert.equal(/href:\s*["']\/app\/conversations["']/.test(appNavData), false, "app-nav-data.ts must not list /app/conversations as its own destination");

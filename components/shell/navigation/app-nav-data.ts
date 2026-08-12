@@ -12,8 +12,9 @@ import type { NavGroupData } from "./nav-types";
  * list itself.
  *
  * Customer /app is V1 only — no Beta toggle, and no V2 release classification on items.
- * Secondary surfaces (studio, calendar, pipeline, files, etc.) remain
- * reachable contextually from hubs like Content & Media.
+ * Only tenant-safe, customer-ready destinations belong here. Staff-scoped
+ * Social surfaces stay out of the customer shell until tenant ownership is
+ * enforced by their storage and APIs.
  */
 export const APP_NAV_GROUPS_DATA: NavGroupData[] = [
   {
@@ -31,7 +32,6 @@ export const APP_NAV_GROUPS_DATA: NavGroupData[] = [
   {
     label: "Grow",
     items: [
-      { key: "content", label: "Content & Media", href: "/app/content", release: "v1" },
       { key: "website", label: "Website", href: "/app/website", release: "v1" },
       { key: "search", label: "Search & SEO", href: "/app/search", release: "v1" },
       { key: "crm", label: "Leads & CRM", href: "/app/crm", release: "v1" },

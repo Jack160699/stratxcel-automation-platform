@@ -89,7 +89,6 @@ async function loadJourneyInput(supabase: SessionClient, tenantId: string) {
 }
 
 const GROWTH_AREAS = [
-  { href: "/app/content", label: "Content & Media", hint: "Create demand" },
   { href: "/app/website", label: "Website", hint: "Get discovered" },
   { href: "/app/search", label: "Search & SEO", hint: "Get discovered" },
   { href: "/app/crm", label: "Leads & CRM", hint: "Capture & convert" },
