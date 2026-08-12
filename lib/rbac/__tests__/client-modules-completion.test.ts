@@ -200,7 +200,7 @@ function run() {
     assert.equal(appNavData.includes(`href: "${forbidden}"`), false, `app-nav-data.ts must never include the agency-only route ${forbidden}`);
   }
 
-  for (const href of ["/admin", "/admin/clients", "/admin/leads", "/admin/missions", "/admin/approvals", "/admin/handoffs", "/admin/operations", "/admin/social", "/admin/finance", "/admin/team", "/admin/integrations", "/admin/system", "/admin/audit"]) {
+  for (const href of ["/admin", "/admin/clients", "/admin/leads", "/admin/missions", "/admin/approvals", "/admin/handoffs", "/admin/operations", "/admin/social", "/admin/finance", "/admin/go-free-codes", "/admin/team", "/admin/integrations", "/admin/system", "/admin/audit"]) {
     assert.ok(adminNavData.includes(`href: "${href}"`), `admin-nav-data.ts must include ${href}`);
   }
   // V2 surfaces exist in admin-nav-data but are release:"v2" — Stable filter hides them.

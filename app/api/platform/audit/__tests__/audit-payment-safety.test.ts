@@ -36,7 +36,11 @@ function run() {
 
   // --- 2. Checkout route: the ₹999 amount is hardcoded, never client-supplied
   const checkoutSource = readCode("app", "api", "platform", "audit", "checkout", "route.ts");
-  assert.ok(/AUDIT_FEE_CENTS\s*=\s*99900/.test(checkoutSource), "audit fee must be the literal 99900 paise (₹999)");
+  const ensurePendingSource = readCode("lib", "audit", "ensure-pending-order.ts");
+  assert.ok(
+    /AUDIT_FEE_CENTS\s*=\s*99900/.test(checkoutSource) || /AUDIT_FEE_CENTS\s*=\s*99900/.test(ensurePendingSource),
+    "audit fee must be the literal 99900 paise (₹999)"
+  );
   // The guest path legitimately reads a body (email, optional GST-invoice
   // fields) — what must never happen is an amount coming from it.
   assert.equal(
@@ -46,6 +50,8 @@ function run() {
   );
   assert.ok(/amountCents:\s*AUDIT_FEE_CENTS/.test(checkoutSource), "createPaymentLink must be called with the fixed fee constant");
   assert.ok(/paymentPurpose:\s*"audit_fee"/.test(checkoutSource), "purpose must be hardcoded to audit_fee, never derived from input");
+  assert.ok(!/redeem_audit_go_free_code_v1/.test(checkoutSource), "paid checkout must not redeem Go Free codes — that is a separate path");
+  assert.ok(/createPaymentLink/.test(checkoutSource), "paid checkout still creates a Razorpay payment link");
 
   // --- 3. Gated by PAYMENTS_AUDIT_ENABLED only, and fails closed --------------
   assert.ok(/isPaymentFeatureEnabled\("PAYMENTS_AUDIT_ENABLED"\)/.test(checkoutSource), "checkout must check PAYMENTS_AUDIT_ENABLED");
