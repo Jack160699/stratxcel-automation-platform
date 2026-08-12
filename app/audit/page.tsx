@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { PublicHeader } from "@/app/components/PublicHeader";
 import { PublicFooter } from "@/app/components/PublicFooter";
 import { AuditCheckoutCta } from "./AuditCheckoutCta";
@@ -31,7 +32,8 @@ export default function PublicAuditPage() {
     <div className="flex min-h-screen flex-col bg-sx-bg text-sx-text">
       <PublicHeader />
       <main className="flex-1">
-        <section className="mx-auto max-w-3xl px-4 py-16 text-center sm:px-6 sm:py-24">
+        <section className="mx-auto max-w-3xl px-4 py-10 text-center sm:px-6"><p className="text-sm text-sx-text-muted">New to Stratxcel? <Link href="/solutions" className="font-semibold text-sx-accent hover:underline">See how outcomes connect across the platform</Link> before you purchase.</p></section>
+        <section className="mx-auto max-w-3xl px-4 pb-16 text-center sm:px-6 sm:pb-24">
           <span className="font-sx-mono text-xs font-bold uppercase tracking-wider text-sx-accent">
             Business Growth Audit
           </span>

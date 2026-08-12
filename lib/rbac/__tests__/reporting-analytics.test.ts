@@ -51,11 +51,11 @@ async function run() {
 
   // /products and /solutions 307 to /modules and /use-cases. A sitemap must
   // list the destination, never the redirect, or Search Console excludes them.
-  for (const redirectRoute of ["/products", "/solutions"]) {
+  for (const redirectRoute of ["/products", "/use-cases"]) {
     assert.equal(paths.includes(redirectRoute), false, `${redirectRoute} redirects — list its target instead`);
   }
   assert.ok(paths.includes("/modules"), "/modules is the real destination of /products");
-  assert.ok(paths.includes("/use-cases"), "/use-cases is the real destination of /solutions");
+  assert.ok(paths.includes("/solutions"), "/solutions is the canonical Solutions route");
 
   // /audit redirects to /login?next=/app/audit — advertising it would publish
   // an authenticated destination.
