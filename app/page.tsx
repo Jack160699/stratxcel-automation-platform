@@ -4,35 +4,35 @@ import { PublicHeader } from "@/app/components/PublicHeader";
 import { PublicFooter } from "@/app/components/PublicFooter";
 
 export const metadata: Metadata = {
-  title: "Stratxcel — Growth work that turns attention into customers",
+  title: "Stratxcel — Start with a clear growth plan",
   description:
-    "Create demand, capture inquiries, follow up leads, improve your digital presence, and see what is driving growth — from one operating system.",
+    "A staff-delivered Business Growth Audit with a practical 30/60/90-day roadmap for ₹999, GST included.",
 };
 
 const GROWTH_STEPS = [
   {
-    title: "Create demand",
-    body: "Consistent social content, media, and campaigns that keep your business visible — with human approval before anything publishes.",
+    title: "Share your context",
+    body: "Complete three guided sections about your business, customers, current channels, and goals.",
   },
   {
-    title: "Get discovered",
-    body: "Website, search, and local presence work that helps the right people find you when they are looking.",
+    title: "We review the evidence",
+    body: "The Stratxcel team reviews your positioning, website, public presence, competitors, and lead path.",
   },
   {
-    title: "Capture & convert",
-    body: "Landing pages, forms, WhatsApp, and CRM follow-up so inquiries do not go cold.",
+    title: "Receive your roadmap",
+    body: "Your workspace receives a written report with priority risks and a practical 30/60/90-day action plan.",
   },
   {
-    title: "Measure & improve",
-    body: "Clear reporting on what ran, what needs approval, and what to do next — without inventing vanity numbers.",
+    title: "Choose the next step",
+    body: "Use the report yourself or ask Stratxcel to scope staff-assisted monthly execution. No subscription starts automatically.",
   },
 ];
 
 const EXECUTES = [
-  { title: "Content & media", href: "/social-autopilot", body: "Plan, draft, and publish social work with approval control." },
-  { title: "Website & discovery", href: "/modules", body: "Keep your digital presence current and findable." },
-  { title: "Leads & follow-up", href: "/use-cases", body: "Capture inquiries and keep conversations moving." },
-  { title: "Reports", href: "/how-it-works", body: "See progress and decide what happens next." },
+  { title: "Positioning", href: "/audit", body: "Clarify who the business is for, what it promises, and where the message is unclear." },
+  { title: "Website & discovery", href: "/audit", body: "Review the public website and findability signals available to the team." },
+  { title: "Leads & follow-up", href: "/audit", body: "Find practical gaps in inquiry capture, response, ownership, and follow-up." },
+  { title: "Priority roadmap", href: "/audit", body: "Turn findings into a written sequence of actions for the next 30, 60, and 90 days." },
 ];
 
 const PLANS = [
@@ -83,17 +83,17 @@ export default function HomePage() {
           <div className="mx-auto max-w-3xl text-center">
             <p className="font-sx-mono text-xs font-bold uppercase tracking-[0.18em] text-sx-accent">Stratxcel</p>
             <h1 className="mt-4 font-sx-sans text-[clamp(2.2rem,5vw,3.6rem)] font-extrabold leading-[1.1] tracking-tight text-sx-text">
-              Stratxcel runs the growth work that turns attention into opportunities and helps turn more opportunities into customers.
+              Find the growth gaps worth fixing first.
             </h1>
             <p className="mx-auto mt-5 max-w-2xl font-sx-sans text-base leading-relaxed text-sx-text-muted sm:text-lg">
-              Create demand, capture inquiries, follow up leads, improve your digital presence, and see what is driving growth — from one operating system.
+              Start with a staff-delivered Business Growth Audit and receive an evidence-based 30/60/90-day roadmap for ₹999, GST included.
             </p>
             <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
               <Link
-                href="/signup"
+                href="/audit"
                 className="rounded-sx-sm bg-sx-accent px-7 py-3.5 font-sx-sans text-sm font-bold text-sx-accent-on shadow-md transition-colors hover:bg-[color:var(--sx-accent-hover)]"
               >
-                Start with Stratxcel
+                Start the ₹999 Audit
               </Link>
               <Link
                 href="/how-it-works"
@@ -109,9 +109,9 @@ export default function HomePage() {
         <section className="border-y border-sx-border bg-sx-surface-2">
           <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
             <div className="mx-auto max-w-2xl text-center">
-              <h2 className="font-sx-sans text-2xl font-bold text-sx-text sm:text-3xl">How Stratxcel grows the business</h2>
+              <h2 className="font-sx-sans text-2xl font-bold text-sx-text sm:text-3xl">How the Audit works</h2>
               <p className="mt-3 text-sm text-sx-text-muted sm:text-base">
-                Outcomes first — find opportunity, create demand, capture leads, follow up, convert, measure, improve.
+                One paid starting point, three guided intake sections, a staff review, and a written deliverable.
               </p>
             </div>
             <div className="mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
@@ -131,9 +131,9 @@ export default function HomePage() {
         {/* 3. WHAT IT EXECUTES */}
         <section className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
           <div className="mx-auto max-w-2xl text-center">
-            <h2 className="font-sx-sans text-2xl font-bold text-sx-text sm:text-3xl">What Stratxcel executes</h2>
+            <h2 className="font-sx-sans text-2xl font-bold text-sx-text sm:text-3xl">What the Audit covers</h2>
             <p className="mt-3 text-sm text-sx-text-muted sm:text-base">
-              The work behind growth — presented as outcomes, not internal machinery.
+              The review stays focused on evidence the team can inspect and actions a business can use.
             </p>
           </div>
           <div className="mt-10 grid gap-4 sm:grid-cols-2">
@@ -168,15 +168,15 @@ export default function HomePage() {
           <div className="mx-auto max-w-2xl text-center">
             <h2 className="font-sx-sans text-2xl font-bold text-sx-text sm:text-3xl">How it works</h2>
             <p className="mt-3 text-sm text-sx-text-muted sm:text-base">
-              AI prepares the work. You approve what matters. Stratxcel executes and reports back.
+              The paid Audit has one clear path from checkout to a delivered report.
             </p>
           </div>
           <ol className="mx-auto mt-10 max-w-2xl space-y-6">
             {[
-              "Tell Stratxcel what growth outcome you want.",
-              "Review prepared content, follow-ups, and missions in Approvals.",
-              "Approve what should go live — nothing sensitive publishes without you.",
-              "Track results and decide the next improvement.",
+              "Pay securely and claim the order in your workspace.",
+              "Complete the guided business intake.",
+              "The Stratxcel team reviews the available evidence and prepares the report.",
+              "Open the delivered roadmap in your workspace and choose what to do next.",
             ].map((line, i) => (
               <li key={line} className="flex gap-4">
                 <span className="font-sx-mono text-sm font-bold text-sx-accent">{i + 1}</span>
@@ -196,7 +196,7 @@ export default function HomePage() {
           <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
             <div className="mx-auto max-w-2xl text-center">
               <h2 className="font-sx-sans text-2xl font-bold text-sx-text sm:text-3xl">Plans</h2>
-              <p className="mt-3 text-sm text-sx-text-muted">Commercial tiers unchanged — framed by the outcome each plan supports.</p>
+              <p className="mt-3 text-sm text-sx-text-muted">Monthly plans are staff-activated during closed beta after scope and availability are confirmed.</p>
             </div>
             <div className="mt-10 grid gap-6 md:grid-cols-3">
               {PLANS.map((plan) => (
@@ -252,14 +252,14 @@ export default function HomePage() {
         {/* 8. FINAL CTA */}
         <section className="border-t border-sx-border bg-sx-surface-2">
           <div className="mx-auto max-w-3xl px-4 py-16 text-center sm:px-6 lg:px-8">
-            <h2 className="font-sx-sans text-2xl font-extrabold text-sx-text sm:text-3xl">Ready to run growth as a system?</h2>
-            <p className="mt-3 text-sm text-sx-text-muted">Create your workspace and start with the outcomes that matter.</p>
+            <h2 className="font-sx-sans text-2xl font-extrabold text-sx-text sm:text-3xl">Ready for a clearer growth plan?</h2>
+            <p className="mt-3 text-sm text-sx-text-muted">Start with the ₹999 Business Growth Audit. No subscription is added.</p>
             <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
               <Link
-                href="/signup"
+                href="/audit"
                 className="rounded-sx-sm bg-sx-accent px-8 py-3.5 font-sx-sans text-sm font-bold text-sx-accent-on shadow-md hover:bg-[color:var(--sx-accent-hover)]"
               >
-                Start with Stratxcel
+                Start the Audit
               </Link>
               <Link
                 href="/contact?intent=demo"

@@ -7,32 +7,32 @@ import { Card } from "@/components/ui/Card";
 import { whatsappHref } from "@/lib/constants";
 
 export const metadata: Metadata = {
-  title: "Use cases — Stratxcel AI OS",
+  title: "Who Stratxcel helps — Stratxcel",
   description:
-    "How founders, agencies, and local businesses deploy the Stratxcel AI operating system — same substrate, different topologies.",
+    "How founders, agencies, and local businesses can use a Stratxcel Business Growth Audit and scoped follow-on support.",
 };
 
 const cases: { id: string; title: string; lead: string; body: string; stages: string[] }[] = [
   {
     id: "founders",
     title: "Founders",
-    lead: "Ship a credible operating system before the team scales.",
-    body: "You need pipelines that survive the next hire — lead routing, investor reporting, and product feedback all flowing through one graph. We bias toward thin vertical slices that earn their place in production weekly.",
-    stages: ["Signal chaos", "Single pipeline", "Module expansion", "Board-ready metrics"],
+    lead: "Choose the few growth priorities worth acting on before adding more tools.",
+    body: "The Audit clarifies positioning, discovery, and lead-path gaps. Follow-on work can then be scoped around the highest-value constraint.",
+    stages: ["Business context", "Evidence review", "Priority roadmap", "Scoped next step"],
   },
   {
     id: "agencies",
     title: "Agencies",
-    lead: "Isolate client graphs without duplicating your own ops.",
-    body: "Each client system gets boundaries: data planes, rate limits, and agent permissions. Your internal OS stays shared; client surfaces stay separate — so you scale delivery without scaling incidents.",
-    stages: ["Tenant template", "Per-client graph", "Shared playbooks", "Cross-client learnings"],
+    lead: "Create a clearer, repeatable review and delivery path for client growth work.",
+    body: "Use the Audit to structure discovery and recommendations. Any recurring delivery support is scoped with explicit client ownership and approvals.",
+    stages: ["Client intake", "Evidence review", "Recommendation", "Approved delivery"],
   },
   {
     id: "local",
     title: "Local businesses",
-    lead: "High-touch service with machine-grade follow-through.",
-    body: "Missed calls and sticky notes are not a CRM. We wire SMS, booking, and inventory into workflows that feel human on the outside and disciplined on the inside — with escalation paths your staff already understands.",
-    stages: ["Front desk signals", "Auto triage", "Human confirm", "Job completion"],
+    lead: "Find where local discovery and inquiry follow-up are losing opportunities.",
+    body: "The Audit reviews the public presence and current lead path, then turns gaps into a practical sequence your team can follow.",
+    stages: ["Local presence", "Inquiry path", "Follow-up gaps", "Action roadmap"],
   },
 ];
 
@@ -44,19 +44,18 @@ export default function UseCasesPage() {
         <section className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20 lg:px-8">
           <p className="font-sx-mono text-[11px] uppercase tracking-[0.3em] text-sx-text-subtle">Solutions</p>
           <h1 className="mt-4 max-w-2xl font-sx-sans text-[clamp(1.8rem,4vw,2.6rem)] font-semibold leading-tight tracking-[-0.02em] text-sx-text">
-            Same OS — tuned to how you operate
+            One starting point, adapted to how you operate
           </h1>
           <p className="mt-5 max-w-2xl font-sx-sans text-[15px] leading-relaxed text-sx-text-muted">
-            We do not reskin a generic SaaS template. We map your topology — channels, teams, compliance — then attach
-            modules where they reduce entropy.
+            The same structured Audit is grounded in your business context, public evidence, channels, and goals.
           </p>
 
           <div className="mt-10 border-t border-sx-border pt-8">
             <TrustChips
               items={[
-                "We've shipped systems across founders, agencies, and local ops",
-                "Playbooks grounded in real integrations — not generic AI hype",
-                "You keep your stack — we don't force a rip-and-replace CRM",
+                "No fabricated benchmarks or results",
+                "Recommendations grounded in available evidence",
+                "No forced replacement of your current tools",
               ]}
             />
           </div>
@@ -64,7 +63,7 @@ export default function UseCasesPage() {
           <div className="mt-12 space-y-6">
             {cases.map((c) => (
               <Card key={c.id} variant="panel" id={c.id} className="scroll-mt-24 p-6 sm:p-7">
-                <p className="font-sx-mono text-[10.5px] uppercase tracking-[0.16em] text-sx-text-subtle">Topology</p>
+                <p className="font-sx-mono text-[10.5px] uppercase tracking-[0.16em] text-sx-text-subtle">Business fit</p>
                 <h2 className="mt-2 font-sx-sans text-lg font-semibold tracking-[-0.02em] text-sx-text sm:text-xl">
                   {c.title}
                 </h2>
@@ -72,7 +71,7 @@ export default function UseCasesPage() {
                 <p className="mt-3 max-w-3xl font-sx-sans text-[14px] leading-relaxed text-sx-text-muted">{c.body}</p>
                 <div className="mt-6 rounded-sx-sm border border-sx-border bg-sx-surface-2 p-5">
                   <p className="font-sx-mono text-[10.5px] uppercase tracking-[0.16em] text-sx-text-subtle">
-                    Typical rollout spine
+                    Common starting path
                   </p>
                   <StageRail stages={c.stages} className="mt-4" />
                 </div>
@@ -84,8 +83,7 @@ export default function UseCasesPage() {
         <section className="border-t border-sx-border bg-sx-surface-1">
           <div className="mx-auto max-w-2xl px-4 py-14 text-center sm:px-6 lg:px-8">
             <p className="font-sx-sans text-[15px] leading-relaxed text-sx-text-muted">
-              Tell us which topology you are closest to — we will respond with a concrete system map, not a capabilities
-              PDF.
+              Not sure whether the Audit fits? Tell us what you are trying to improve and we will answer before you purchase.
             </p>
             <div className="mt-7 flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
               <a
@@ -94,7 +92,7 @@ export default function UseCasesPage() {
                 rel="noreferrer"
                 className="rounded-sx-sm bg-sx-accent px-6 py-3 text-center font-sx-sans text-sm font-semibold text-sx-accent-on transition-colors duration-150 hover:bg-[color:var(--sx-accent-hover)]"
               >
-                Get started
+                Ask a question
               </a>
               <a
                 href="/pricing"

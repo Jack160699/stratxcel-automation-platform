@@ -6,15 +6,16 @@ import { whatsappHref } from "@/lib/constants";
 import Link from "next/link";
 
 export const metadata: Metadata = {
-  title: "Pricing & Plans — Stratxcel Business AI Operating System",
+  title: "Pricing & Plans — Stratxcel Growth Operations",
   description:
-    "Transparent monthly pricing and AI Business Growth Audit for Stratxcel. Growth systems, WhatsApp CRM, Meta campaign workflows, and controlled websites.",
+    "Transparent monthly pricing and a staff-delivered Business Growth Audit from Stratxcel.",
 };
 
 /**
  * The customer-facing plans (one-time Audit plus the Notion v1 subscription
- * catalog: Free, Starter, Growth, Business, Scale/Custom). Only
- * Starter/Growth/Business are self-service checkout; Free and Scale are not.
+ * catalog: Free, Starter, Growth, Business, Scale/Custom). Monthly plans use
+ * staff-assisted activation during closed beta; the Audit retains its own
+ * payment-first checkout.
  * app/app/onboarding/types.ts mirrors these keys and names so the wizard's
  * plan step and this page can never present two different vocabularies.
  */
@@ -25,9 +26,9 @@ const tiers = [
     badge: "Start Here",
     price: "₹999",
     period: "one-time (GST included)",
-    pitch: "An evidence-based read on where your growth is actually leaking.",
+    pitch: "A staff-delivered, evidence-based read on where your growth is leaking.",
     scope: [
-      "AI review of your brand positioning and Brand Brain",
+      "Structured review of your positioning and business context",
       "Website health and discoverability check",
       "Competitor and category landscape",
       "Lead-channel and response-speed review",
@@ -47,7 +48,7 @@ const tiers = [
     pitch: "Explore the workspace and prepare your growth system.",
     scope: [
       "1 workspace, 1 user",
-      "AI drafts to explore Brand Brain",
+      "Guided Brand Brain drafts",
       "1 Search & Discovery task (preview only)",
       "No published posts or campaigns yet",
     ],
@@ -64,16 +65,16 @@ const tiers = [
     period: "per month (GST included)",
     pitch: "Build a consistent growth engine.",
     scope: [
-      "Social media content creation & posting (12 posts/mo)",
-      "1 Meta ad campaign workflow & ad creative",
-      "WhatsApp connection & inbox dashboard",
-      "Basic CRM lead capture & follow-up (up to 100 AI-handled leads)",
-      "Monthly performance reporting",
+      "Social content workflow for up to 12 posts/mo",
+      "1 Meta ad campaign planning workflow & ad creative",
+      "WhatsApp and CRM setup assistance",
+      "Lead workflow for up to 100 captured leads",
+      "Monthly summary from connected sources",
     ],
     note: "Prices include GST. Ad spend & third-party software separate.",
     popular: false,
-    cta: "Start Starter Plan",
-    href: "/signup",
+    cta: "Request Starter Activation",
+    href: "/contact?intent=starter",
   },
   {
     id: "growth",
@@ -83,16 +84,16 @@ const tiers = [
     period: "per month (GST included)",
     pitch: "Generate and follow up more opportunities.",
     scope: [
-      "Everything in Starter + higher volume content (25 posts/mo)",
-      "Complete WhatsApp + CRM automated follow-up flows (up to 500 AI-handled leads)",
-      "1st Website included (controlled template scope)",
-      "Website hosting & maintenance included",
-      "Search & Discovery + monthly growth reporting",
+      "Everything in Starter + higher volume content workflow (25 posts/mo)",
+      "WhatsApp and CRM follow-up workflow for up to 500 captured leads",
+      "One controlled-scope website, confirmed during activation",
+      "Website hosting and maintenance",
+      "Search review and monthly reporting from connected sources",
     ],
     note: "Prices include GST. Domain registration & ad spend separate.",
     popular: true,
-    cta: "Get Started with Growth",
-    href: "/signup",
+    cta: "Request Growth Activation",
+    href: "/contact?intent=growth",
   },
   {
     id: "business",
@@ -102,15 +103,15 @@ const tiers = [
     period: "per month (GST included)",
     pitch: "Run higher-volume growth execution.",
     scope: [
-      "Higher volume content (50 posts/mo) & 3 Meta ad campaign workflows",
-      "Advanced WhatsApp + CRM automation (up to 1,500 AI-handled leads)",
-      "Website hosting & maintenance included",
-      "Advanced Search & Discovery, priority execution & reporting",
+      "Higher volume content workflow (50 posts/mo) & 3 Meta ad campaign workflows",
+      "WhatsApp and CRM workflow for up to 1,500 captured leads",
+      "Website hosting and maintenance",
+      "Priority search review, execution, and reporting",
     ],
     note: "Prices include GST. Domain registration & ad spend separate.",
     popular: false,
-    cta: "Get Started with Business",
-    href: "/signup",
+    cta: "Request Business Activation",
+    href: "/contact?intent=business",
   },
   {
     id: "scale",
@@ -126,7 +127,7 @@ const tiers = [
       "Advanced WhatsApp & custom CRM workflows",
       "Dedicated account owner & human assistance",
     ],
-    note: "Custom quoted to fit complex business needs. Not available through self-service checkout.",
+    note: "Custom quoted to fit complex business needs after a scope review.",
     popular: false,
     cta: "Request Custom Quote",
     href: "/contact?intent=custom",
@@ -135,8 +136,8 @@ const tiers = [
 
 const faq = [
   {
-    q: "How does the AI Business Audit work?",
-    a: "When you sign in and start your audit, our AI engine indexes your Brand Brain, analyzes your public channels, reviews lead response speeds, and builds a customized 30/60/90-day roadmap.",
+    q: "How does the Business Growth Audit work?",
+    a: "You pay once, complete a guided intake, and the Stratxcel team reviews your business context and available public evidence before delivering a written 30/60/90-day roadmap.",
   },
   {
     q: "Are ad spend and domain names included in the monthly price?",
@@ -176,21 +177,20 @@ export default function PricingPage() {
               Initial Step
             </span>
             <h2 className="mt-3 font-sx-sans text-2xl font-bold tracking-tight text-sx-text sm:text-3xl">
-              Start with a ₹999 AI Business Growth Audit
+              Start with a ₹999 Business Growth Audit
             </h2>
             <p className="mt-2 text-sm text-sx-text-muted max-w-xl mx-auto">
-              Receive a complete AI audit of your brand positioning, website health, competitor landscape, and lead channels.
+              Receive a structured review of your positioning, website health, competitor landscape, and lead channels.
             </p>
             <p className="mt-3 text-xs text-sx-text-subtle max-w-xl mx-auto">
-              Online checkout is being activated. Submit your audit and the Stratxcel team will confirm payment and next
-              steps with you directly.
+              Pay once, complete three guided intake sections, and receive a written report from the Stratxcel team.
             </p>
             <div className="mt-6 flex justify-center">
               <Link
                 href="/audit"
                 className="rounded-sx-sm bg-sx-accent px-8 py-3 font-sx-sans text-xs font-bold text-sx-accent-on shadow-md hover:bg-[color:var(--sx-accent-hover)]"
               >
-                Sign In & Start Audit →
+                Start Audit →
               </Link>
             </div>
           </div>
@@ -272,7 +272,7 @@ export default function PricingPage() {
         <section className="mx-auto max-w-2xl px-4 py-16 text-center">
           <h3 className="font-sx-sans text-xl font-bold text-sx-text">Need a custom enterprise growth setup?</h3>
           <p className="mt-2 font-sx-sans text-sm text-sx-text-muted">
-            Talk directly to our operations engineering team on WhatsApp to scope your custom requirements.
+            Talk directly to a Stratxcel growth specialist on WhatsApp to scope your custom requirements.
           </p>
           <div className="mt-6 flex justify-center gap-4">
             <a
