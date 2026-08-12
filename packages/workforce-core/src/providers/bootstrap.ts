@@ -8,6 +8,15 @@ import {
   type ProviderReadinessProbeResult,
 } from "./types.ts";
 import { createWorkforceImageGenerationProvider } from "./image-generation.ts";
+import { createSeoAuditProvider } from "../adapters/seo-audit.ts";
+import { createWebsiteGenerateProvider } from "../adapters/website-generate.ts";
+import { createCrmProvider } from "../adapters/crm.ts";
+import { createWhatsAppSendProvider } from "../adapters/whatsapp.ts";
+import { createSocialScheduleProvider, createSocialPublishProvider } from "../adapters/social.ts";
+import { createAnalyticsReadProvider } from "../adapters/analytics.ts";
+import { buildCapabilityExecutionReceipt } from "../adapters/receipts.ts";
+import { getCapabilityOperationClass } from "../adapters/operation-class.ts";
+import { assertSafePublicHttpUrl } from "../adapters/url-safety.ts";
 
 let bootstrapped = false;
 
@@ -39,64 +48,30 @@ function placeholderProvider(args: {
 
 /**
  * Register real/placeholder providers. Idempotent.
- * Registration does not imply runtime readiness.
  * Never registers simulated ok:true providers.
  */
 export function bootstrapCapabilityProviders(): void {
   if (bootstrapped) return;
   bootstrapped = true;
 
-  // Formerly stubbed capabilities — truthful NOT_CONFIGURED placeholders only.
   registerProvider(
     placeholderProvider({
       key: "content-shortform-hermes",
       capabilityKeys: ["content.shortform"],
       status: "NOT_CONFIGURED",
-      reason: "Short-form content provider not configured for workforce execution",
-    }),
-  );
-  registerProvider(
-    placeholderProvider({
-      key: "social-schedule-queue",
-      capabilityKeys: ["social.schedule"],
-      status: "NOT_CONFIGURED",
-      reason: "Social schedule queue provider not configured for workforce execution",
-    }),
-  );
-  registerProvider(
-    placeholderProvider({
-      key: "social-publish-meta",
-      capabilityKeys: ["social.publish"],
-      status: "NOT_CONFIGURED",
-      reason: "Social publish provider not configured for workforce execution",
-    }),
-  );
-  registerProvider(
-    placeholderProvider({
-      key: "seo-audit-search-discovery",
-      capabilityKeys: ["seo.audit"],
-      status: "NOT_CONFIGURED",
-      reason: "SEO audit capability provider not wired; use search-web department engine separately",
-    }),
-  );
-  registerProvider(
-    placeholderProvider({
-      key: "website-generate-domains",
-      capabilityKeys: ["website.generate"],
-      status: "NOT_CONFIGURED",
-      reason: "Website generate provider not configured for workforce capability path",
-    }),
-  );
-  registerProvider(
-    placeholderProvider({
-      key: "crm-supabase",
-      capabilityKeys: ["crm.read", "crm.write"],
-      status: "NOT_CONFIGURED",
-      reason: "CRM provider not configured for workforce capability path",
+      reason:
+        "AI runtime is present, but no canonical Workforce short-form content provider is wired",
     }),
   );
 
-  // Internal website audit — calls real search-web engine; no simulated receipts.
+  registerProvider(createSocialScheduleProvider());
+  registerProvider(createSocialPublishProvider());
+  registerProvider(createSeoAuditProvider());
+  registerProvider(createWebsiteGenerateProvider());
+  registerProvider(createCrmProvider());
+  registerProvider(createWhatsAppSendProvider());
+  registerProvider(createAnalyticsReadProvider());
+
   registerProvider({
     key: "website-audit-internal",
     capabilityKeys: ["website.audit"],
@@ -122,34 +97,86 @@ export function bootstrapCapabilityProviders(): void {
         return {
           ok: false,
           providerKey: "website-audit-internal",
-          errorCategory: "UNSUPPORTED",
+          errorCategory: "INVALID_INPUT",
           errorMessage: "website.audit requires propertyUrl and pages inventory input",
           usage: unknownCostUsage({ requests: 0 }),
         };
       }
-      const audit = buildWebsiteAudit({
-        trustedTenantId: input.tenantId,
-        siteTenantId: input.tenantId,
-        propertyUrl,
-        pages,
-        conversionFindings: Array.isArray(input.input?.conversionFindings)
-          ? (input.input.conversionFindings as never[])
-          : undefined,
-      });
-      return {
-        ok: true,
-        providerKey: "website-audit-internal",
-        providerReference: audit.id,
-        outputArtifactIds: [audit.id],
-        usage: unknownCostUsage({ requests: 1 }),
-        receipt: {
-          kind: "website_audit_report",
-          engine: "search-web/website-audit",
-          propertyUrl: audit.propertyUrl,
-          strongPageCount: audit.strongPages.length,
-          weakPageCount: audit.weakPages.length,
-        },
-      };
+
+      let safePropertyUrl: string;
+      try {
+        safePropertyUrl = assertSafePublicHttpUrl(propertyUrl, "propertyUrl");
+        for (const page of pages) assertSafePublicHttpUrl(page.url, "page.url");
+      } catch (err) {
+        return {
+          ok: false,
+          providerKey: "website-audit-internal",
+          errorCategory: "INVALID_INPUT",
+          errorMessage: err instanceof Error ? err.message : "invalid_url",
+          usage: unknownCostUsage({ requests: 0 }),
+        };
+      }
+
+      const siteTenantId =
+        typeof input.input?.siteTenantId === "string" ? input.input.siteTenantId : input.tenantId;
+      if (siteTenantId !== input.tenantId) {
+        return {
+          ok: false,
+          providerKey: "website-audit-internal",
+          errorCategory: "POLICY_BLOCK",
+          errorMessage: "TENANT_FORBIDDEN",
+          usage: unknownCostUsage({ requests: 0 }),
+        };
+      }
+
+      try {
+        const audit = buildWebsiteAudit({
+          trustedTenantId: input.tenantId,
+          siteTenantId: input.tenantId,
+          propertyUrl: safePropertyUrl,
+          pages,
+          conversionFindings: Array.isArray(input.input?.conversionFindings)
+            ? (input.input.conversionFindings as never[])
+            : undefined,
+        });
+        const receipt = buildCapabilityExecutionReceipt({
+          capability: "website.audit",
+          tenantId: input.tenantId,
+          missionId: input.missionId,
+          requestId: input.requestId,
+          providerKey: "website-audit-internal",
+          operationClass: getCapabilityOperationClass("website.audit"),
+          externalMutation: false,
+          externalMutationOccurred: false,
+          inputArtifactIds: input.inputArtifactIds,
+          outputArtifactIds: [audit.id],
+          detail: {
+            kind: "website_audit_report",
+            engine: "search-web/website-audit",
+            propertyUrl: audit.propertyUrl,
+            strongPageCount: audit.strongPages.length,
+            weakPageCount: audit.weakPages.length,
+            missionId: input.missionId,
+          },
+        });
+        return {
+          ok: true,
+          providerKey: "website-audit-internal",
+          providerReference: audit.id,
+          outputArtifactIds: [audit.id],
+          usage: unknownCostUsage({ requests: 1 }),
+          receipt: receipt as unknown as Record<string, unknown>,
+        };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return {
+          ok: false,
+          providerKey: "website-audit-internal",
+          errorCategory: /tenant|scope/i.test(message) ? "POLICY_BLOCK" : "PROVIDER_FAILURE",
+          errorMessage: /tenant|scope/i.test(message) ? "TENANT_FORBIDDEN" : message.slice(0, 500),
+          usage: unknownCostUsage({ requests: 0 }),
+        };
+      }
     },
   });
 
@@ -173,14 +200,6 @@ export function bootstrapCapabilityProviders(): void {
   );
   registerProvider(
     placeholderProvider({
-      key: "whatsapp-meta",
-      capabilityKeys: ["whatsapp.send"],
-      status: "NOT_CONFIGURED",
-      reason: "WhatsApp integration mode / binding not configured for workforce execution",
-    }),
-  );
-  registerProvider(
-    placeholderProvider({
       key: "seo-publish-placeholder",
       capabilityKeys: ["seo.publish"],
       status: "NOT_CONFIGURED",
@@ -197,14 +216,6 @@ export function bootstrapCapabilityProviders(): void {
   );
   registerProvider(
     placeholderProvider({
-      key: "analytics-read-placeholder",
-      capabilityKeys: ["analytics.read"],
-      status: "NOT_CONFIGURED",
-      reason: "Analytics property bridge not configured for workforce path",
-    }),
-  );
-  registerProvider(
-    placeholderProvider({
       key: "ads-publish-placeholder",
       capabilityKeys: ["ads.publish"],
       status: "UNAVAILABLE",
@@ -213,7 +224,6 @@ export function bootstrapCapabilityProviders(): void {
   );
 }
 
-/** Test helper: clear and re-bootstrap. */
 export function resetAndBootstrapProvidersForTests(): void {
   resetProviderRegistryForTests();
   bootstrapped = false;
@@ -225,5 +235,4 @@ export function ensureProviderBootstrapped(key: string): boolean {
   return !!getProvider(key);
 }
 
-// Eager bootstrap on import so department workstreams can request capabilities immediately.
 bootstrapCapabilityProviders();

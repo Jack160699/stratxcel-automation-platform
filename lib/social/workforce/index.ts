@@ -22,3 +22,5 @@ export * from "./handoffs.ts";
 export * from "./retry.ts";
 export * from "./calendar.ts";
 export * from "./whatsapp-bridge-contract.ts";
+// capability-host is intentionally NOT re-exported from this barrel:
+// importing it pulls Supabase service deps and breaks pure Node ESM tests.
