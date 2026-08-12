@@ -2,6 +2,7 @@
 
 import { cookies } from "next/headers";
 import { requireOwnerContext } from "@/lib/social/db-context";
+import { ensureAdminStaffWorkspace } from "@/lib/identity/admin-staff-workspace";
 import { ACTIVE_TENANT_COOKIE, isMemberOfTenant } from "@/lib/tenants/current-tenant";
 
 const COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 365;
@@ -19,6 +20,9 @@ export async function setActiveTenantAction(tenantId: string): Promise<{ ok: boo
 
   const isMember = await isMemberOfTenant(ctx.supabase, ctx.ownerId, tenantId);
   if (!isMember) return { ok: false, error: "Not a member of this client" };
+
+  const ensured = await ensureAdminStaffWorkspace(ctx.ownerId, tenantId);
+  if (!ensured.ok) return { ok: false, error: ensured.error };
 
   const cookieStore = await cookies();
   cookieStore.set(ACTIVE_TENANT_COOKIE, tenantId, {

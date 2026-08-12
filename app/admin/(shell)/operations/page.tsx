@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/Button";
 import { Card, CardHeading } from "@/components/ui/Card";
 import { StatusChip } from "@/components/ui/StatusChip";
 import { ErrorState, EmptyState } from "@/components/ui/Feedback";
+import { platformFetch } from "@/lib/admin/platform-fetch";
 
 interface QueueJob {
   id: string;
@@ -74,9 +75,9 @@ export default function OperationsPage() {
       const encoded = encodeURIComponent(tenantId);
       const [queueRes, missionsRes, handoffsRes, approvalsRes] = await Promise.all([
         fetch(`/api/platform/queue?tenantId=${encoded}`),
-        fetch(`/api/platform/missions?tenantId=${encoded}`),
+        platformFetch(`/api/platform/missions?tenantId=${encoded}`),
         fetch(`/api/platform/handoffs?tenantId=${encoded}`),
-        fetch(`/api/platform/approvals?tenantId=${encoded}`),
+        platformFetch(`/api/platform/approvals?tenantId=${encoded}`),
       ]);
       const [queue, missions, handoffs, approvals] = await Promise.all([
         queueRes.json(),
@@ -94,6 +95,7 @@ export default function OperationsPage() {
         approvals: approvals.approvals ?? [],
       });
     } catch (loadError) {
+      setSnapshot({ jobs: [], deadLetter: [], missions: [], handoffs: [], approvals: [] });
       setError(loadError instanceof Error ? loadError.message : "Could not load operations.");
     }
   }, [tenantId]);

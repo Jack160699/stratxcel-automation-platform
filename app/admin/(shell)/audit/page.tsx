@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useCurrentTenant } from "../CurrentTenantContext";
 import { NoClientSelected } from "../NoClientSelected";
 import { Card, CardRow } from "@/components/ui/Card";
 import { ErrorState, EmptyState } from "@/components/ui/Feedback";
+import { platformFetch } from "@/lib/admin/platform-fetch";
 
 interface AuditEvent {
   id: string;
@@ -26,21 +27,29 @@ export default function AdminAuditPage() {
   const tenantId = active?.tenantId;
   const [events, setEvents] = useState<AuditEvent[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [listLoading, setListLoading] = useState(false);
 
-  useEffect(() => {
+  const load = useCallback(async () => {
     if (!tenantId) return;
-    async function load() {
-      setError(null);
-      const res = await fetch(`/api/platform/audit?tenantId=${encodeURIComponent(tenantId!)}`);
+    setListLoading(true);
+    setError(null);
+    try {
+      const res = await platformFetch(`/api/platform/audit?tenantId=${encodeURIComponent(tenantId)}`);
       const body = await res.json();
       if (!res.ok) {
+        setEvents([]);
         setError(body.error ?? `Failed to load audit log (HTTP ${res.status})`);
         return;
       }
       setEvents(body.events);
+    } finally {
+      setListLoading(false);
     }
-    load();
   }, [tenantId]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   return (
     <div className="flex flex-col gap-6">
@@ -49,11 +58,11 @@ export default function AdminAuditPage() {
         <p className="mt-1 text-sm text-sx-text-muted">Most recent 100 events for this client.</p>
       </header>
 
-      {error && <ErrorState message={error} />}
+      {error && <ErrorState message={error} onRetry={load} />}
       {!tenantId && <NoClientSelected what="the audit log" />}
 
-      {tenantId && events === null && !error && <p className="text-sm text-sx-text-subtle">Loading…</p>}
-      {events?.length === 0 && <EmptyState title="No audit events yet." />}
+      {tenantId && listLoading && <p className="text-sm text-sx-text-subtle">Loading…</p>}
+      {!listLoading && events?.length === 0 && !error && <EmptyState title="No audit events yet." />}
       {events && events.length > 0 && (
         <Card>
           {events.map((e) => (

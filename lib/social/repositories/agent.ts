@@ -46,6 +46,8 @@ export async function setSessionStatus(ctx: OwnerContext, sessionId: string, sta
   await ctx.supabase.from("social_agent_sessions").update({ status, updated_at: new Date().toISOString() }).eq("id", sessionId);
 }
 
+const ACTIVE_SESSION_STATUSES = new Set(["GENERATING", "RUNNING", "IN_PROGRESS", "ATTENTION_REQUIRED"]);
+
 export async function getLatestSession(ctx: OwnerContext): Promise<AgentSessionRow | null> {
   const { data } = await ctx.supabase
     .from("social_agent_sessions")
@@ -54,6 +56,27 @@ export async function getLatestSession(ctx: OwnerContext): Promise<AgentSessionR
     .limit(1)
     .maybeSingle();
   return data as AgentSessionRow | null;
+}
+
+/** Returns only a genuinely active mission session — never a terminal FAILED/IDLE row. */
+export async function getCurrentMissionSession(ctx: OwnerContext): Promise<AgentSessionRow | null> {
+  const { data } = await ctx.supabase
+    .from("social_agent_sessions")
+    .select("*")
+    .in("status", Array.from(ACTIVE_SESSION_STATUSES))
+    .order("updated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return (data as AgentSessionRow | null) ?? null;
+}
+
+export async function getRecentMissionSessions(ctx: OwnerContext, limit = 5): Promise<AgentSessionRow[]> {
+  const { data } = await ctx.supabase
+    .from("social_agent_sessions")
+    .select("*")
+    .order("updated_at", { ascending: false })
+    .limit(limit);
+  return (data ?? []) as AgentSessionRow[];
 }
 
 export async function getSession(ctx: OwnerContext, sessionId: string): Promise<AgentSessionRow | null> {

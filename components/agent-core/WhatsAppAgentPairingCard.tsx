@@ -85,7 +85,7 @@ export function WhatsAppAgentPairingCard(props: WhatsAppAgentPairingCardProps) {
     {notice && <div role="status" aria-live="polite" className="mb-4 rounded-sx-sm border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-300">{notice}</div>}
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div><p className="text-[11px] font-medium uppercase tracking-[0.16em] text-sx-text-subtle">My WhatsApp Agent</p><CardHeading>{status?.linked ? "Connected" : "Secure account link"}</CardHeading><p className="mt-1 text-xs text-sx-text-subtle">Business number: {props.numberDisplay}</p></div>
-      <StatusChip state={status?.linked ? "success" : "neutral"}>{status?.linked ? "Connected · Live" : "Not connected"}</StatusChip>
+      <StatusChip state={status?.linked ? "success" : "neutral"}>{status?.linked ? "Owner agent connected" : "Not connected"}</StatusChip>
     </div>
     {error && <div className="mt-3"><ErrorState message={error} /></div>}
     {!status && !error && <p className="mt-3 text-xs text-sx-text-subtle">Loading…</p>}

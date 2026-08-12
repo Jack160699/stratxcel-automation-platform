@@ -82,7 +82,10 @@ function run() {
   const clientMissions = read("app", "app", "missions", "page.tsx");
   const adminMissions = read("app", "admin", "(shell)", "missions", "page.tsx");
   assert.ok(clientMissions.includes('fetch(`/api/platform/missions'), "/app/missions must call the same /api/platform/missions route");
-  assert.ok(adminMissions.includes('fetch(`/api/platform/missions'), "/admin's missions page must still call the same route (unchanged)");
+  assert.ok(
+    adminMissions.includes('fetch(`/api/platform/missions') || adminMissions.includes("platformFetch(`/api/platform/missions"),
+    "/admin's missions page must still call the same route (directly or via platformFetch recovery wrapper)"
+  );
 
   // --- 6. CreateClientForm is shared, not duplicated (still true for /admin;
   // /app now has the full structured onboarding wizard, superseding the
