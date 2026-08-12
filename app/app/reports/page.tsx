@@ -5,7 +5,6 @@ import { useCurrentTenant } from "../CurrentTenantContext";
 import { ModulePageHeader, ModuleStatusSummary } from "../components/ModulePageHeader";
 import { MetricUnavailable } from "../components/MetricUnavailable";
 import { ActionUnavailableNotice } from "../components/DisconnectedState";
-import { StaffScopedNotice } from "../content/StaffScopedNotice";
 import { Metric } from "@/components/ui/Metric";
 import { Card, CardHeading, CardRow } from "@/components/ui/Card";
 import { Select } from "@/components/ui/Input";
@@ -140,7 +139,7 @@ export default function ReportsPage() {
 
       <section className="flex flex-col gap-3">
         <h2 className="font-sx-sans text-base font-medium text-sx-text">Content and social</h2>
-        <StaffScopedNotice what="Content and social performance reporting" />
+        <MetricUnavailable label="Content and social performance" reason="No customer-owned social reporting source is connected." />
       </section>
 
       <section className="flex flex-col gap-3">
@@ -165,7 +164,7 @@ export default function ReportsPage() {
         <h2 className="font-sx-sans text-base font-medium text-sx-text">Usage and cost</h2>
         <ModuleStatusSummary>
           <Metric label="Wallet balance" value={walletBalance ? `${walletBalance.currency} ${(walletBalance.cents / 100).toFixed(2)}` : "—"} deltaLabel="current" />
-          <MetricUnavailable label="Spend over range" reason="No usage-history endpoint exists yet — only the current wallet balance is available." />
+          <MetricUnavailable label="Spend over range" reason="Historical spend reporting is not available yet." />
         </ModuleStatusSummary>
       </section>
 
@@ -178,7 +177,7 @@ export default function ReportsPage() {
           <Button variant="secondary" size="sm" disabled>
             Schedule report
           </Button>
-          <ActionUnavailableNotice reason="Export and scheduled reports aren't implemented yet." />
+          <ActionUnavailableNotice reason="Export and scheduled delivery are not available yet." />
         </div>
       </Card>
     </div>

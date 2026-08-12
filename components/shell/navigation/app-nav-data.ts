@@ -22,31 +22,17 @@ export const APP_NAV_GROUPS_DATA: NavGroupData[] = [
     items: [{ key: "home", label: "Command Center", href: "/app", release: "v1" }],
   },
   {
-    label: "Get things done",
-    items: [
-      { key: "copilot", label: "Copilot", href: "/app/copilot", release: "v1" },
-      { key: "missions", label: "Work", href: "/app/missions", release: "v1" },
-      { key: "approvals", label: "Approvals", href: "/app/approvals", release: "v1" },
-    ],
+    label: "Your audit",
+    items: [{ key: "audit", label: "Business Growth Audit", href: "/app/audit", release: "v1" }],
   },
   {
-    label: "Grow",
-    items: [
-      { key: "website", label: "Website", href: "/app/website", release: "v1" },
-      { key: "search", label: "Search & SEO", href: "/app/search", release: "v1" },
-      { key: "crm", label: "Leads & CRM", href: "/app/crm", release: "v1" },
-      { key: "ads", label: "Ads", href: "/app/ads", release: "v1" },
-    ],
-  },
-  {
-    label: "Results",
-    items: [{ key: "reports", label: "Reports", href: "/app/reports", release: "v1" }],
+    label: "Customers",
+    items: [{ key: "crm", label: "Leads & CRM", href: "/app/crm", release: "v1" }],
   },
   {
     label: "Business",
     items: [
       { key: "brand", label: "Brand Brain", href: "/app/brand", release: "v1" },
-      { key: "integrations", label: "Integrations", href: "/app/integrations", release: "v1" },
       { key: "billing", label: "Billing", href: "/app/billing", release: "v1" },
       { key: "team", label: "Team", href: "/app/team", release: "v1" },
       { key: "settings", label: "Settings", href: "/app/settings", release: "v1" },
@@ -54,5 +40,5 @@ export const APP_NAV_GROUPS_DATA: NavGroupData[] = [
   },
 ];
 
-/** Mobile primary: Home, Copilot, Work, Approvals — remaining modules in More. */
-export const APP_MOBILE_NAV_KEYS = ["home", "copilot", "missions", "approvals"];
+/** Mobile primary: the closed-beta offer and its essential customer surfaces. */
+export const APP_MOBILE_NAV_KEYS = ["home", "audit", "crm", "billing"];

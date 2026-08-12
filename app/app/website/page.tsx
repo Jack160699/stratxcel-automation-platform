@@ -124,19 +124,19 @@ export default function WebsitePage() {
 
       <section className="grid gap-3 sm:grid-cols-2">
         <IntegrationStatus name="Domain" state="disconnected" detail="No domain connected yet." />
-        <IntegrationStatus name="Deployment (Vercel)" state="not_supported" detail="Deployment connection not built in this environment." />
+        <IntegrationStatus name="Website publishing" state="not_supported" detail="Publishing is not connected for this workspace yet." />
       </section>
 
       <DisconnectedState
         title="Preview deployments"
-        reason="Execution service is not connected in this environment. Preview creation requires the deployment integration."
-        cta={<ActionUnavailableNotice reason="Preview creation is disabled until the integration exists." />}
+        reason="A live preview will appear after website publishing is connected."
+        cta={<ActionUnavailableNotice reason="Preview creation is not available for this workspace yet." />}
       />
 
       <Card variant="alert">
         <CardHeading>Production promotion requires approval</CardHeading>
         <p className="mt-1 text-xs text-sx-text-muted">
-          Production deployment is never automatic — it always requires an explicit approval, and is not available in this environment yet regardless.
+          Publishing a website always requires your explicit approval and is not available for this workspace yet.
         </p>
       </Card>
 

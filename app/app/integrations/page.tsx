@@ -107,10 +107,10 @@ export default function IntegrationsPage() {
 
       {tenantId && (
         <Card>
-          <CardHeading>Add a WhatsApp phone binding (pending, shadow mode)</CardHeading>
+          <CardHeading>Connect a WhatsApp Business number</CardHeading>
           <p className="text-xs text-sx-text-subtle">
-            Created as pending/shadow with inbound and outbound disabled — activating it with the real, verified
-            phone number ID is a separate manual action, not something this form does.
+            Add the identifiers from Meta Business Manager. The connection starts inactive while the Stratxcel team verifies
+            ownership and message routing.
           </p>
           <form onSubmit={handleCreateBinding} className="flex flex-col gap-3 sm:flex-row">
             <Input value={wabaId} onChange={(e) => setWabaId(e.target.value)} required placeholder="WABA ID" className="flex-1" />
@@ -142,8 +142,7 @@ export default function IntegrationsPage() {
                     <StatusChip state={chip.state}>{chip.label}</StatusChip>
                   </div>
                   <p className="mt-1 text-xs text-sx-text-subtle">
-                    {b.environment} · shadow: {b.shadow_mode ? "on" : "off"} · inbound: {b.inbound_enabled ? "on" : "off"} · outbound:{" "}
-                    {b.outbound_enabled ? "on" : "off"}
+                    {b.environment} · receiving messages: {b.inbound_enabled ? "on" : "off"} · sending replies: {b.outbound_enabled ? "on" : "off"}
                   </p>
                 </Card>
               );

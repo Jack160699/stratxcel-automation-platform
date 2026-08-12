@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import Link from "next/link";
 import { useCurrentTenant } from "../CurrentTenantContext";
 import { Card } from "@/components/ui/Card";
 import { Metric } from "@/components/ui/Metric";
@@ -145,33 +146,6 @@ export default function BillingPage() {
     load();
   }, [load]);
 
-  async function startCheckout(planTier: "starter" | "growth" | "business") {
-    if (!tenantId) return;
-    setBusy(true);
-    setError(null);
-    setNotice(null);
-    try {
-      const res = await fetch("/api/platform/subscriptions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tenantId, planTier }),
-      });
-      const body = await res.json();
-      if (!res.ok) {
-        if (res.status === 503) {
-          setNotice("Subscription checkout is opening soon. Contact us and we'll get you started manually in the meantime.");
-        } else {
-          setError(body.error ?? "Could not start checkout.");
-        }
-        return;
-      }
-      if (body.paymentUrl) window.location.href = body.paymentUrl;
-      else await load();
-    } finally {
-      setBusy(false);
-    }
-  }
-
   async function setCancellation(cancel: boolean) {
     if (!tenantId || !subscription) return;
     setBusy(true);
@@ -264,7 +238,10 @@ export default function BillingPage() {
 
         {!subscription && (
           <div className="mt-4 flex flex-col gap-4">
-            <EmptyState title="No active plan" subtitle="Choose Starter, Growth, or Business to get started. Scale / Custom is quote-led — contact us." />
+            <EmptyState
+              title="No active plan"
+              subtitle="Monthly plans use staff-assisted activation during closed beta, so availability and scope are confirmed before payment."
+            />
             <div className="grid gap-4 sm:grid-cols-2">
               {SELF_SERVICE_PLANS.map((p) => (
                 <div key={p.tier} className="rounded-sx-md border border-sx-border p-4">
@@ -272,15 +249,17 @@ export default function BillingPage() {
                   <p className="mt-1 font-sx-sans text-lg font-extrabold text-sx-text">{money(p.priceCents)}/mo</p>
                   <p className="text-[11px] text-sx-text-subtle">GST included</p>
                   <p className="mt-2 text-xs text-sx-text-muted">{p.blurb}</p>
-                  <Button className="mt-3 w-full" variant="primary" disabled={busy} onClick={() => startCheckout(p.tier)}>
-                    Start {p.name} Plan
-                  </Button>
+                  <Link
+                    href={`/contact?intent=${p.tier}`}
+                    className="mt-3 block rounded-sx-sm bg-sx-accent px-4 py-2.5 text-center text-xs font-bold text-sx-accent-on hover:bg-[color:var(--sx-accent-hover)]"
+                  >
+                    Request {p.name} activation
+                  </Link>
                 </div>
               ))}
             </div>
             <p className="text-xs text-sx-text-subtle">
-              Need something larger or tailored? Scale / Custom starts at {money(3_499_900)}/mo and is scoped with our team — request a quote
-              instead of self-service checkout.
+              Scale / Custom starts at {money(3_499_900)}/mo and is scoped with our team. No monthly plan is charged before activation is confirmed.
             </p>
           </div>
         )}

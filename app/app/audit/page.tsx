@@ -115,7 +115,7 @@ export default function AuditHubPage() {
     return (
       <div className="mx-auto max-w-2xl px-4 py-16 text-center">
         <h1 className="font-sx-sans text-xl font-semibold text-sx-text">You haven&rsquo;t started an Audit yet</h1>
-        <p className="mt-2 text-sm text-sx-text-muted">Start with the ₹999 AI Business Growth Audit.</p>
+        <p className="mt-2 text-sm text-sx-text-muted">Start with the ₹999 staff-delivered Business Growth Audit.</p>
         <Link
           href="/audit"
           className="mt-6 inline-flex min-h-11 items-center rounded-sx-sm bg-sx-accent px-6 font-sx-sans text-xs font-bold text-sx-accent-on hover:bg-[color:var(--sx-accent-hover)]"
