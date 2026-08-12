@@ -104,7 +104,7 @@ function run() {
   assert.ok(/normalizeAuditDeliveryReport\(reportData\)/.test(completeSource), "completion must validate the customer deliverable");
   assert.ok(/order\.status !== "in_review"/.test(completeSource), "staff must not skip the customer-started review state");
   assert.ok(/report_data: report/.test(completeSource), "the validated report must be saved before completion");
-  const invariantMigration = readCode("supabase", "migrations", "20260812120000_audit_report_delivery_invariant.sql");
+  const invariantMigration = readCode("supabase", "migrations", "20260812120051_audit_report_delivery_invariant.sql");
   assert.ok(/audit_report_required_before_completion/.test(invariantMigration), "database must reject completion without a report");
   assert.ok(/before update of status on public\.audit_orders/.test(invariantMigration), "the delivery invariant must guard audit order state transitions");
 

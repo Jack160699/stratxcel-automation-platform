@@ -344,11 +344,11 @@ async function run() {
         connected: ["media_generator"],
       },
     });
-    assert.equal(mediaReady.executable, false);
-    assert.ok(
-      mediaReady.readiness === "WAITING_CONFIGURATION" ||
-        mediaReady.reasonCode === "PROVIDER_NOT_CONFIGURED",
-    );
+    // PR #49 replaced the placeholder with the real AI Runtime image
+    // capability. Policy readiness is now READY; provider/storage/budget
+    // probes still fail closed later at request execution when unconfigured.
+    assert.equal(mediaReady.executable, true);
+    assert.equal(mediaReady.reasonCode, "READY");
 
     const gatePass = decideManualPublishGate({
       explicitApprovalControl: true,

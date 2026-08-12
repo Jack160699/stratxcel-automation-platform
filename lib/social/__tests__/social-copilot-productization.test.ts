@@ -472,7 +472,12 @@ async function run() {
     sessionId: "s1",
     briefText: "Brand product hero",
   });
-  assert.equal(unconfigured.outcome, "NOT_CONFIGURED");
+  // Key presence alone is not OPERATIONAL — without storage expect NOT_CONFIGURED or WAITING_CONFIGURATION.
+  assert.ok(
+    unconfigured.outcome === "NOT_CONFIGURED" || unconfigured.outcome === "WAITING_CONFIGURATION",
+    `expected NOT_CONFIGURED/WAITING_CONFIGURATION, got ${unconfigured.outcome}`,
+  );
+  assert.equal(unconfigured.candidates.length, 0);
   const withTest = await requestGenerateImage({
     tenantId: "t1",
     missionId: "m1",
@@ -485,6 +490,7 @@ async function run() {
   assert.equal(withTest.selectedCandidateId, null);
   resetImageProvider();
   assert.equal(resolveImageGenerationRuntimeStatus({}), "NOT_CONFIGURED");
+  assert.equal(resolveImageGenerationRuntimeStatus({ providerConfigured: true }), "WAITING_CONFIGURATION");
 
   // Shadow claims
   const shadowEv = buildProductCapabilityEvidence({

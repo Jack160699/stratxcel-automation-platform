@@ -56,10 +56,10 @@ function run() {
   }
 
   const counts = countCapabilitiesByStatus();
-  // website.audit is the only truthfully AVAILABLE capability after stub removal
-  assert.equal(counts.AVAILABLE, 1);
+  // website.audit + implemented image runtime; provider readiness remains dynamic.
+  assert.equal(counts.AVAILABLE, 2);
   assert.equal(counts.UNAVAILABLE, 2); // video + carousel
-  assert.ok(counts.NOT_CONFIGURED >= 12);
+  assert.ok(counts.NOT_CONFIGURED >= 11);
   assert.equal(
     counts.AVAILABLE + counts.NOT_CONFIGURED + counts.PLANNED + counts.UNAVAILABLE,
     CAPABILITY_KEYS.length,
@@ -76,7 +76,7 @@ function run() {
   assert.equal(getCapability("website.audit")?.requiredEntitlementClass, null);
   assert.equal(getCapability("website.generate")?.requiredEntitlementClass, "website_maintenance");
 
-  assert.equal(getCapability("media.image_generation")?.status, "NOT_CONFIGURED");
+  assert.equal(getCapability("media.image_generation")?.status, "AVAILABLE");
   assert.equal(getCapability("seo.publish")?.status, "NOT_CONFIGURED");
   assert.equal(getCapability("whatsapp.send")?.status, "NOT_CONFIGURED");
   assert.equal(getCapability("analytics.read")?.status, "NOT_CONFIGURED");
@@ -98,12 +98,12 @@ function run() {
   assert.throws(() => assertCapability("not.a.capability"), /unknown_capability/);
   assert.equal(isCapabilityAvailable("website.audit"), true);
   assert.equal(isCapabilityAvailable("content.shortform"), false);
-  assert.equal(isCapabilityUnavailable("media.image_generation"), true);
+  assert.equal(isCapabilityUnavailable("media.image_generation"), false);
   assert.equal(isCapabilityUnavailable("media.carousel_generation"), true);
   assert.equal(isCapabilityUnavailable("media.video_generation"), true);
   assert.ok(isNonExecutableStatus("PLANNED"));
   assert.ok(isBlockedCapability("media.carousel_generation"));
-  assert.ok(isBlockedCapability("media.image_generation"));
+  assert.equal(isBlockedCapability("media.image_generation"), false);
   assert.throws(
     () => assertCapabilitiesExecutable(["research.web"]),
     (err: unknown) =>
@@ -115,14 +115,14 @@ function run() {
   // --- Tool mapping completeness ---
   assert.equal(listCapabilityToolMappings().length, CAPABILITY_KEYS.length);
 
-  // --- Media truth: never executable without real provider ---
+  // --- Media implementation is executable in policy; provider probe still fails closed at request time. ---
   const imageReady = resolveCapabilityReadiness({
     capabilityKey: "media.image_generation",
     trustedTenantId: "tenant-a",
     requestedOperation: "execute",
   });
-  assert.equal(imageReady.executable, false);
-  assert.equal(imageReady.reasonCode, "PROVIDER_NOT_CONFIGURED");
+  assert.equal(imageReady.executable, true);
+  assert.equal(imageReady.reasonCode, "READY");
 
   const carouselReady = resolveCapabilityReadiness({
     capabilityKey: "media.carousel_generation",
@@ -239,10 +239,10 @@ function run() {
   // --- Snapshots never authorize ---
   const staticSnap = buildStaticCapabilityPlannerSnapshot();
   assert.ok(staticSnap.plannedKeys.includes("research.web"));
-  assert.ok(staticSnap.setupRequiredKeys.includes("media.image_generation"));
+  assert.ok(!staticSnap.setupRequiredKeys.includes("media.image_generation"));
   assert.ok(staticSnap.unavailableKeys.includes("media.video_generation"));
   assert.ok(staticSnap.unavailableKeys.includes("media.carousel_generation"));
-  assert.ok(!staticSnap.availableKeys.includes("media.image_generation"));
+  assert.ok(staticSnap.availableKeys.includes("media.image_generation"));
   assert.ok(staticSnap.availableKeys.includes("website.audit"));
 
   const tenantSnap = buildCapabilityPlannerSnapshot({
@@ -542,7 +542,7 @@ function run() {
     });
     assert.ok(executable.includes("website.audit"));
     assert.ok(!executable.includes("crm.read"));
-    assert.ok(!executable.includes("media.image_generation"));
+    assert.ok(executable.includes("media.image_generation"));
     assert.ok(!executable.includes("media.video_generation"));
 
     const prov = createCapabilityProvenance({

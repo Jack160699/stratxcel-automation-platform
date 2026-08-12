@@ -24,10 +24,8 @@ import { requireUuid, optionalUuid } from "./id-validation";
 import { assertAttachmentSlot, asMediaAssetId } from "./media-identity";
 import { buildVariantGenerationKey } from "./variant-idempotency";
 import { validateProposedScheduleAction } from "../workforce/schedule.ts";
-import { requestGenerateImage } from "./generate-image-capability";
+import { executeGenerateImageTool } from "./generate-image-tool";
 import { runPublishNow } from "./publish-outcome";
-import { getImageProvider, BlockedImageProvider } from "@stratxcel/creative-studio";
-import { resolveImageGenerationRuntimeStatus } from "./capability-evidence";
 import { evaluateBrandTrustHardGate } from "./trust-hard-gate";
 
 export interface AgentTool {
@@ -395,33 +393,13 @@ const generateImageTool: AgentTool = {
         sessionId: { type: "string" },
         referenceMediaAssetIds: { type: "array", items: { type: "string" } },
         candidateCount: { type: "number" },
+        generationRequestId: { type: "string", description: "Stable identity reused for the same logical generation retry." },
       },
       required: ["brief"],
     },
   },
   mutating: true,
-  execute: async (ctx, args) => {
-    const provider = getImageProvider();
-    const runtime = resolveImageGenerationRuntimeStatus({
-      providerConfigured: Boolean(provider) && !(provider instanceof BlockedImageProvider),
-    });
-    const result = await requestGenerateImage({
-      tenantId: ctx.ownerId,
-      missionId: str(args, "missionId") || `mission_${ctx.ownerId}`,
-      sessionId: str(args, "sessionId") || `session_${ctx.ownerId}`,
-      briefText: str(args, "brief"),
-      referenceMediaAssetIds: arr(args, "referenceMediaAssetIds"),
-      candidateCount: typeof args.candidateCount === "number" ? args.candidateCount : 2,
-    });
-    return {
-      ...result,
-      capability: "media.image_generation",
-      runtimeStatus: result.runtimeStatus || runtime,
-      // Explicit: no social_media_assets row is created until a real selected candidate is persisted.
-      persistedMediaAssetIds: [] as string[],
-      uiState: result.outcome === "NOT_CONFIGURED" || result.outcome === "WAITING_CONFIGURATION" ? "setup_required" : "candidates_ready",
-    };
-  },
+  execute: (ctx, args) => executeGenerateImageTool(ctx, args),
 };
 
 const inspectContentMediaTool: AgentTool = {

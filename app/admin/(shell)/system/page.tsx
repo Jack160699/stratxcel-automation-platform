@@ -3,6 +3,7 @@ import { getTenantServiceContext } from "@/lib/tenants/tenant-context";
 import { heartbeatState } from "@/lib/hermes/mission-control";
 import { Card, CardHeading } from "@/components/ui/Card";
 import { StatusChip, type ChipState } from "@/components/ui/StatusChip";
+import type { AdminProviderStatus } from "@stratxcel/ai-runtime";
 
 type IntegrationStatus = "live" | "test" | "shadow" | "disconnected" | "blocked" | "manual_action_required";
 
@@ -21,6 +22,23 @@ function modeToStatus(mode: string | undefined, disabledIsBlocked = false): Inte
   if (mode === "mock") return "test";
   if (mode === "http") return "live";
   return disabledIsBlocked ? "blocked" : "disconnected";
+}
+
+function aiStatusToIntegration(status: AdminProviderStatus): IntegrationStatus {
+  switch (status) {
+    case "operational":
+      return "live";
+    case "model_available":
+    case "reachable":
+    case "configured":
+      return "test";
+    case "degraded":
+    case "circuit_open":
+      return "manual_action_required";
+    case "not_configured":
+    default:
+      return "disconnected";
+  }
 }
 
 interface IntegrationRow {
@@ -47,24 +65,37 @@ async function currentHermesStatus(hermesMode: string | undefined): Promise<Inte
   };
 }
 
-/**
- * Reads actual env vars server-side — never a hardcoded "connected".
- * Every row here reflects genuinely current configuration, not an
- * aspirational or cached state. Per explicit instruction: never display a
- * fake connected/healthy state.
- *
- * See layout.tsx: nested pages guard independently of the parent layout —
- * the App Router still renders and serializes this page's RSC output even
- * when the layout discards {children}, so without this guard an
- * unauthenticated request's response would still embed the integration
- * rows below (env-var-derived operational status) even though the visible
- * page shows AdminLogin.
- */
 export default async function SystemHealthPage() {
   const ctx = await requireOwnerContext();
   if (!ctx.ok) return null;
 
   const hermes = await currentHermesStatus(process.env.HERMES_MODE);
+  const service = getTenantServiceContext().supabase;
+  const { buildAiAdminHealthSnapshot, SupabaseCanonicalMediaStorage, resolveTenantMonthSpend } = await import("@stratxcel/ai-runtime");
+  let estimatedMonthSpendUsd: number | null = null;
+  let storage: InstanceType<typeof SupabaseCanonicalMediaStorage> | undefined;
+  try {
+    const tenant = await import("@/lib/tenants/current-tenant").then((m) =>
+      m.resolveCurrentTenant(ctx.supabase, ctx.ownerId),
+    );
+    if (tenant.active?.tenantId) {
+      const spend = await resolveTenantMonthSpend(service as never, tenant.active.tenantId);
+      estimatedMonthSpendUsd = spend.ok ? spend.spentUsd : null;
+      storage = new SupabaseCanonicalMediaStorage({
+        client: service as never,
+        ownerId: ctx.ownerId,
+        tenantId: tenant.active.tenantId,
+      });
+    }
+  } catch {
+    estimatedMonthSpendUsd = null;
+  }
+  const ai = await buildAiAdminHealthSnapshot({
+    supabase: service as never,
+    storage,
+    estimatedMonthSpendUsd,
+    serviceMeteringWriterReady: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
+  });
   const rows: IntegrationRow[] = [
     {
       name: "WhatsApp",
@@ -77,6 +108,26 @@ export default async function SystemHealthPage() {
       detail: "Live Payment Links, state machine, webhook route (/api/webhook/razorpay), & refunds built.",
     },
     hermes,
+    {
+      name: "AI Runtime (Gemini)",
+      status: aiStatusToIntegration(ai.gemini.status),
+      detail: `Status=${ai.gemini.status}; configured=${ai.gemini.configured}; reachable=${ai.gemini.reachable}; modelAvailable=${ai.gemini.modelAvailable}; circuitOpen=${ai.gemini.circuitOpen}.`,
+    },
+    {
+      name: "AI Runtime (OpenAI)",
+      status: aiStatusToIntegration(ai.openai.status),
+      detail: `Status=${ai.openai.status}; configured=${ai.openai.configured}; reachable=${ai.openai.reachable}; modelAvailable=${ai.openai.modelAvailable}; circuitOpen=${ai.openai.circuitOpen}.`,
+    },
+    {
+      name: "AI Media (Image)",
+      status: aiStatusToIntegration(ai.image.status),
+      detail: `Status=${ai.image.status}; storageReady=${ai.image.storageReady}; budgetLedgerReady=${ai.budgetLedgerReady}; serviceWriter=${ai.serviceMeteringWriterReady}; primaryModelAvailable=${ai.image.primaryModelAvailable}; primary=${ai.image.primaryModel}. Key presence alone is not Live.`,
+    },
+    {
+      name: "AI Media (Video/Veo)",
+      status: aiStatusToIntegration(ai.video.status),
+      detail: `Status=${ai.video.status}; durableStoreReady=${ai.video.durableStoreReady}; economyModelAvailable=${ai.video.economyModelAvailable}; storageReady=${ai.image.storageReady}; budgetLedgerReady=${ai.budgetLedgerReady}; serviceWriter=${ai.serviceMeteringWriterReady}; Sora active=false; economy=${ai.video.economyModel}.`,
+    },
     {
       name: "Google Drive",
       status: "manual_action_required",

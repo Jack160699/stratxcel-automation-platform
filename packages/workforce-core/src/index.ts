@@ -15,6 +15,7 @@ export * from "./providers/types.ts";
 export * from "./providers/registry.ts";
 export * from "./providers/failover.ts";
 export * from "./providers/bootstrap.ts";
+export * from "./providers/image-generation.ts";
 export * from "./planning/types.ts";
 export * from "./planning/allocation.ts";
 export * from "./planning/validator.ts";
