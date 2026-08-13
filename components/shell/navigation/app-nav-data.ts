@@ -33,6 +33,8 @@ export const APP_NAV_GROUPS_DATA: NavGroupData[] = [
     label: "Business",
     items: [
       { key: "brand", label: "Brand Brain", href: "/app/brand", release: "v1" },
+      { key: "copilot", label: "Copilot", href: "/app/social/copilot", release: "v1" },
+      { key: "integrations", label: "Connectors", href: "/app/integrations", release: "v1" },
       { key: "billing", label: "Billing", href: "/app/billing", release: "v1" },
       { key: "team", label: "Team", href: "/app/team", release: "v1" },
       { key: "settings", label: "Settings", href: "/app/settings", release: "v1" },

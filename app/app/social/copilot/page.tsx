@@ -6,9 +6,11 @@ import { getSessionDetail } from "@/lib/social/repositories/agent";
 import type { OwnerContext } from "@/lib/social/db-context";
 import { signWhatsAppSocialHandoff, verifyWhatsAppSocialHandoff } from "@/lib/social/whatsapp-bridge";
 import { WhatsAppSocialReview } from "./WhatsAppSocialReview";
+import CopilotPage from "../../copilot/page";
 
 export default async function ClientSocialCopilotPage({ searchParams }: { searchParams: Promise<{ handoff?: string }> }) {
   const { handoff = "" } = await searchParams;
+  if (!handoff) return <CopilotPage />;
   const claims = verifyWhatsAppSocialHandoff(handoff);
   if (!claims || (claims.op !== "preview" && claims.op !== "edit")) return <p className="p-8">This mission link is invalid or expired.</p>;
   const auth = await createSupabaseServerClient();

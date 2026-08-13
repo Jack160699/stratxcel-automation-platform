@@ -163,6 +163,8 @@ function run() {
     "/app/billing",
     "/app/team",
     "/app/settings",
+    "/app/social/copilot",
+    "/app/integrations",
   ]) {
     assert.ok(appNavData.includes(`href: "${href}"`), `app-nav-data.ts must include ${href}`);
   }
@@ -174,7 +176,6 @@ function run() {
     "/app/search",
     "/app/ads",
     "/app/reports",
-    "/app/integrations",
   ]) {
     assert.equal(
       appNavData.includes(`href: "${hiddenUntilComplete}"`),

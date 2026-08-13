@@ -31,6 +31,7 @@ export const NAV_ICONS: Record<string, ReactNode> = {
   operations: <QueueIcon />,
   system: <PulseIcon />,
   audit: <DocIcon />,
+  "customer-audit": <DocIcon />,
   social: <MegaphoneIcon />,
   "admin-copilot": <CopilotIcon />,
   "operating-brain": <SparkIcon />,

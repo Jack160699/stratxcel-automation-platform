@@ -18,6 +18,7 @@ export interface DiscoveredBusinessProfile {
   email?: ProvenanceField<string>;
   positioning?: ProvenanceField<string>;
   differentiators?: ProvenanceField<string[]>;
+  reviews?: ProvenanceField<{ rating: number; count: number | null }>;
   websiteUrl?: string;
 }
 

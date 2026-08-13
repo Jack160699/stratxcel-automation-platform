@@ -17,6 +17,9 @@ import {
 import { normalizeBusinessWebsiteInput, normalizeChannelValue, UnsafeBusinessUrlError } from "@/lib/audit/v1/url";
 import { field } from "@/lib/audit/v1/provenance";
 import { resolveCurrentAuditOrderId } from "@/lib/audit/current-pointer";
+import { normalizeWhatsAppDestination } from "@/lib/audit/v1/e164";
+import { upsertAuditWhatsAppDestination } from "@/lib/audit/v1/whatsapp-destination";
+import type { AuditWhatsAppOnboardingDraft } from "@/lib/audit/v1/onboarding-state";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -39,6 +42,34 @@ async function loadCurrentOrder(service: ReturnType<typeof getTenantServiceConte
   }
   const { data } = await service.from("audit_orders").select("*").eq("tenant_id", tenantId).order("created_at", { ascending: false }).limit(1).maybeSingle();
   return data;
+}
+
+async function persistWhatsAppDraft(
+  service: ReturnType<typeof getTenantServiceContext>["supabase"],
+  tenantId: string,
+  userId: string,
+  draft: unknown,
+): Promise<AuditWhatsAppOnboardingDraft | undefined> {
+  if (!draft || typeof draft !== "object" || Array.isArray(draft)) return undefined;
+  const row = draft as Record<string, unknown>;
+  const countryIso = typeof row.countryIso === "string" ? row.countryIso : "";
+  const nationalNumber = typeof row.nationalNumber === "string" ? row.nationalNumber : "";
+  const consent = row.consent === true;
+  if (!nationalNumber.trim()) {
+    return { countryIso: countryIso || "IN", nationalNumber: "", consent: false };
+  }
+  const normalized = normalizeWhatsAppDestination(countryIso || "IN", nationalNumber);
+  if (!normalized) {
+    throw Object.assign(new Error("Enter a valid WhatsApp number including the correct country code."), { code: "INVALID_WHATSAPP" });
+  }
+  await upsertAuditWhatsAppDestination(service, {
+    tenantId,
+    userId,
+    destination: normalized,
+    consent,
+    source: "audit_onboarding",
+  });
+  return { countryIso: normalized.countryIso, nationalNumber: normalized.nationalNumber, consent };
 }
 
 function mergeState(order: Record<string, unknown>, patch: Partial<AuditOnboardingState>): AuditOnboardingState {
@@ -153,8 +184,19 @@ export async function POST(request: Request) {
       };
       const questions = selectAdaptiveQuestions(existing.profile ?? {});
       const complete = adaptiveAnswersComplete(questions, adaptiveAnswers);
+      let whatsappDelivery = existing.whatsappDelivery;
+      try {
+        const saved = await persistWhatsAppDraft(ctx.service, ctx.tenantId, ctx.user.id, body.whatsappDelivery ?? existing.whatsappDelivery);
+        if (saved) whatsappDelivery = saved.nationalNumber ? saved : undefined;
+      } catch (error) {
+        if (error && typeof error === "object" && "code" in error && (error as { code?: string }).code === "INVALID_WHATSAPP") {
+          return Response.json({ error: error instanceof Error ? error.message : "Enter a valid WhatsApp number." }, { status: 400 });
+        }
+        throw error;
+      }
       const state = mergeState(current, {
         adaptiveAnswers,
+        whatsappDelivery,
         step: complete ? "brain" : "questions",
       });
       await persist(ctx.service, current, state, {
@@ -226,6 +268,9 @@ export async function POST(request: Request) {
   } catch (error) {
     if (error instanceof UnsafeBusinessUrlError) {
       return Response.json({ error: error.message, code: error.code }, { status: 400 });
+    }
+    if (error && typeof error === "object" && "code" in error && (error as { code?: string }).code === "INVALID_WHATSAPP") {
+      return Response.json({ error: error instanceof Error ? error.message : "Enter a valid WhatsApp number." }, { status: 400 });
     }
     console.error("audit onboarding failed", error instanceof Error ? error.message : error);
     return Response.json({ error: "Could not save this step. Please try again." }, { status: 500 });

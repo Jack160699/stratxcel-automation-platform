@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useId, useRef, type ReactNode } from "react";
+
+const FOCUSABLE = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
 
 /**
  * Modal on desktop, bottom sheet <768px — one component, CSS handles the
@@ -19,31 +21,66 @@ export function Modal({
   title: string;
   children: ReactNode;
 }) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const titleId = useId();
+
   useEffect(() => {
     if (!open) return;
+    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const root = dialogRef.current;
+    const focusables = () =>
+      root
+        ? [...root.querySelectorAll<HTMLElement>(FOCUSABLE)].filter((el) => !el.hasAttribute("disabled") && el.getAttribute("aria-hidden") !== "true")
+        : [];
+    focusables()[0]?.focus();
+
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onClose();
+        return;
+      }
+      if (e.key !== "Tab" || !root) return;
+      const items = focusables();
+      if (items.length === 0) return;
+      const first = items[0]!;
+      const last = items[items.length - 1]!;
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
     }
     document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      previous?.focus();
+    };
   }, [open, onClose]);
 
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[var(--sx-z-modal,60)] flex items-end justify-center bg-[rgb(4_6_10_/_0.72)] backdrop-blur-[2px] sm:items-center">
+    <div
+      className="fixed inset-0 z-[var(--sx-z-modal,60)] flex items-end justify-center bg-[rgb(4_6_10_/_0.72)] backdrop-blur-[2px] sm:items-center"
+      onClick={onClose}
+    >
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
-        aria-label={title}
+        aria-labelledby={titleId}
+        onClick={(event) => event.stopPropagation()}
         className="w-full max-w-md rounded-t-sx-lg border border-sx-border-strong bg-sx-elevated p-5 shadow-[var(--sx-shadow-xl)] transition-transform duration-200 ease-[cubic-bezier(0.2,0.8,0.2,1)] sm:rounded-sx-lg"
       >
         <div className="mb-2 flex justify-center sm:hidden">
           <span className="h-1 w-10 rounded-full bg-sx-border-strong" />
         </div>
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="font-sx-sans text-base font-semibold text-sx-text">{title}</h2>
-          <button onClick={onClose} aria-label="Close" className="text-sx-text-subtle hover:text-sx-text">
+          <h2 id={titleId} className="font-sx-sans text-base font-semibold text-sx-text">{title}</h2>
+          <button type="button" onClick={onClose} aria-label="Close" className="min-h-11 min-w-11 text-sx-text-subtle hover:text-sx-text">
             ✕
           </button>
         </div>

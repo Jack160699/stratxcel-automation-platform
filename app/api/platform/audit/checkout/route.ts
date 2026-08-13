@@ -5,6 +5,7 @@ import { createPaymentLink, isPaymentFeatureEnabled } from "@stratxcel/payments-
 import { resolveCanonicalIdentity } from "@/lib/identity/resolve-identity";
 import { ensurePendingAuditOrder, AUDIT_FEE_CENTS } from "@/lib/audit/ensure-pending-order";
 import { isMissingRelation, resolveCurrentAuditOrderId } from "@/lib/audit/current-pointer";
+import { loadAuditWhatsAppDestination, toPublicDestination } from "@/lib/audit/v1/whatsapp-destination";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -209,6 +210,7 @@ export async function GET() {
 
   const eligibility = await service.rpc("tenant_has_fresh_audit_grant", { p_tenant_id: tenantId });
   const eligible = isMissingRelation(eligibility.error) ? false : eligibility.data === true;
+  const destination = await loadAuditWhatsAppDestination(service, tenantId);
 
   return Response.json({
     order: visibleOrder ?? null,
@@ -216,5 +218,6 @@ export async function GET() {
     paymentUrl,
     generation,
     freshAuditEligible: eligible === true,
+    whatsappDestination: destination ? toPublicDestination(destination) : null,
   }, { headers: { "Cache-Control": "no-store" } });
 }

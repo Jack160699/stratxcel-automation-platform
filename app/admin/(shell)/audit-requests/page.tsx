@@ -165,15 +165,19 @@ export default async function AdminAuditRequestsPage() {
   const deliveryResult = orderIds.length
     ? await service
         .from("audit_delivery_events")
-        .select("audit_order_id, channel, status, created_at")
+        .select("audit_order_id, channel, status, destination_masked, created_at")
         .in("audit_order_id", orderIds)
         .order("created_at", { ascending: false })
-    : { data: [] as Array<{ audit_order_id: string; channel: string; status: string }>, error: null };
+    : { data: [] as Array<{ audit_order_id: string; channel: string; status: string; destination_masked?: string | null }>, error: null };
   const deliveryRows = deliveryResult.error ? [] : deliveryResult.data;
   const latestDelivery = new Map<string, string>();
+  const latestWhatsAppMask = new Map<string, string>();
   for (const row of deliveryRows ?? []) {
     const key = `${row.audit_order_id}:${row.channel}`;
     if (!latestDelivery.has(key)) latestDelivery.set(key, row.status);
+    if (row.channel === "whatsapp" && row.destination_masked && !latestWhatsAppMask.has(row.audit_order_id)) {
+      latestWhatsAppMask.set(row.audit_order_id, row.destination_masked);
+    }
   }
   const tenantIds = [...new Set(list.map((order) => order.tenant_id))];
   const { data: tenants } = tenantIds.length
@@ -211,8 +215,8 @@ export default async function AdminAuditRequestsPage() {
             const v1 = order.deep_dive_answers && typeof order.deep_dive_answers === "object"
               ? (order.deep_dive_answers as { v1Experience?: { step?: string; verified?: boolean; websiteUrl?: string } }).v1Experience
               : undefined;
-            const emailStatus = latestDelivery.get(`${order.id}:email`) ?? "—";
             const whatsappStatus = latestDelivery.get(`${order.id}:whatsapp`) ?? "—";
+            const whatsappMasked = latestWhatsAppMask.get(order.id);
             return (
               <Card key={order.id}>
                 <div className="flex flex-wrap items-start justify-between gap-3 border-b border-sx-border pb-3">
@@ -247,8 +251,7 @@ export default async function AdminAuditRequestsPage() {
                     <div><dt className="text-sx-text-subtle">Brand Brain</dt><dd className="mt-1 text-sx-text">v{generation.brand_brain_version}</dd></div>
                     <div><dt className="text-sx-text-subtle">Evidence / sources</dt><dd className="mt-1 text-sx-text">{sources == null ? "Unavailable" : sources}</dd></div>
                     <div><dt className="text-sx-text-subtle">Discovery</dt><dd className="mt-1 text-sx-text">{v1?.verified ? "Verified" : v1?.step ?? "Not started"}</dd></div>
-                    <div><dt className="text-sx-text-subtle">Email</dt><dd className="mt-1 text-sx-text">{emailStatus}</dd></div>
-                    <div><dt className="text-sx-text-subtle">WhatsApp</dt><dd className="mt-1 text-sx-text">{whatsappStatus}</dd></div>
+                    <div><dt className="text-sx-text-subtle">WhatsApp</dt><dd className="mt-1 text-sx-text">{whatsappMasked ? `${whatsappMasked} · ${whatsappStatus}` : whatsappStatus}</dd></div>
                     {summary && (
                       <div className="sm:col-span-3">
                         <dt className="text-sx-text-subtle">Research summary</dt>

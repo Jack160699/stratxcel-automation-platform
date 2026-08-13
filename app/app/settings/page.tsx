@@ -8,6 +8,7 @@ import { ModulePageHeader } from "../components/ModulePageHeader";
 import { Card, CardHeading, CardRow } from "@/components/ui/Card";
 import { Field, Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
+import { ThemeToggle } from "@/components/theme/ThemeProvider";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 type EmailState =
@@ -72,16 +73,6 @@ export default function SettingsPage() {
       </Card>
 
       <Card>
-        <CardHeading>Brand Brain</CardHeading>
-        <p className="mt-1 text-xs text-sx-text-muted">
-          Your persisted business profile, positioning, audience, voice, and goals are managed in Brand Brain.
-        </p>
-        <Link href="/app/brand" className="mt-3 inline-flex min-h-10 items-center text-xs font-semibold text-sx-accent hover:underline">
-          Open Brand Brain →
-        </Link>
-      </Card>
-
-      <Card>
         <CardHeading>Account security</CardHeading>
         <CardRow>
           <span className="text-sx-text-muted">Email</span>
@@ -103,6 +94,14 @@ export default function SettingsPage() {
             </Button>
           </form>
         </div>
+      </Card>
+
+      <Card>
+        <CardHeading>Appearance</CardHeading>
+        <CardRow>
+          <span className="text-sx-text-muted">Theme</span>
+          <ThemeToggle />
+        </CardRow>
       </Card>
     </div>
   );

@@ -2,6 +2,7 @@ import { lookup } from "node:dns/promises";
 import { crawlWebsite, DEFAULT_CRAWL_LIMITS } from "@stratxcel/search-discovery";
 import { field, pickHighestTruth, type ProvenanceField, type SourceClass } from "./provenance.ts";
 import type { DiscoveredBusinessProfile } from "./adaptive-questions.ts";
+import { parseAggregateRating } from "./reviews.ts";
 import { assertSafePublicHttpUrl } from "./url.ts";
 
 const DISCOVERY_PATHS = [
@@ -158,7 +159,7 @@ export async function discoverPublicBusiness(input: {
     google: false,
     instagram: Boolean(evidence.some((item) => /instagram/i.test(item.value))),
     facebook: Boolean(evidence.some((item) => /facebook/i.test(item.value))),
-    reviews: false,
+    reviews: Boolean(profile.reviews?.sourceClass === "VERIFIED_PUBLIC" && profile.reviews.value),
     analytics: false,
   };
 
@@ -202,6 +203,18 @@ function extractFromHtml(
         id: `disc_${evidence.length + 1}`,
         field: "sameAs",
         value: sameAs.slice(0, 8).join(", "),
+        sourceClass: "VERIFIED_PUBLIC",
+        sourceUrl,
+      });
+    }
+    const rating = parseAggregateRating(node);
+    if (rating) {
+      const incoming = field(rating, "VERIFIED_PUBLIC", sourceUrl);
+      profile.reviews = pickHighestTruth(profile.reviews, incoming);
+      evidence.push({
+        id: `disc_${evidence.length + 1}`,
+        field: "reviews",
+        value: rating.count != null ? `${rating.rating} (${rating.count} reviews)` : String(rating.rating),
         sourceClass: "VERIFIED_PUBLIC",
         sourceUrl,
       });

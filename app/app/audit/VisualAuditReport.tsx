@@ -1,6 +1,8 @@
 import type { AuditDeliveryReport } from "@/lib/audit/customer-state";
 import { AUDIT_CATEGORY_SCORE_KEYS } from "@/lib/audit/customer-state";
 import { countEvidenceCoverage, type EvidenceCoverage } from "@/lib/audit/v1/scoring";
+import type { VerifiedReviewSummary } from "@/lib/audit/v1/reviews";
+import { PlatformIcon, PLATFORM_LABELS, type PlatformIconKey } from "@/components/audit/PlatformIcon";
 
 const LABELS: Record<string, string> = {
   brandPositioning: "Brand positioning",
@@ -13,25 +15,76 @@ const LABELS: Record<string, string> = {
   automationOperations: "Automation & operations",
 };
 
+const COVERAGE_KEYS: Array<{ key: keyof EvidenceCoverage; icon: PlatformIconKey }> = [
+  { key: "website", icon: "website" },
+  { key: "google", icon: "google_business" },
+  { key: "instagram", icon: "instagram" },
+  { key: "facebook", icon: "facebook" },
+  { key: "reviews", icon: "reviews" },
+  { key: "analytics", icon: "analytics" },
+];
+
+function coverageStatus(key: keyof EvidenceCoverage, present: boolean, reviews: VerifiedReviewSummary | null): string {
+  if (key === "reviews") {
+    if (reviews) return "Verified";
+    return present ? "Verified" : "Not enough verified data";
+  }
+  return present ? "Verified" : "Not connected";
+}
+
+function StarRating({ rating }: { rating: number }) {
+  const filled = Math.round(rating);
+  return (
+    <span className="inline-flex items-center gap-0.5" aria-label={`${rating} out of 5`}>
+      {Array.from({ length: 5 }, (_, index) => (
+        <svg
+          key={index}
+          width="14"
+          height="14"
+          viewBox="0 0 18 18"
+          aria-hidden="true"
+          className={index < filled ? "text-amber-500" : "text-sx-border-strong"}
+          fill="currentColor"
+        >
+          <path d="M9 2.4l1.7 3.46 3.82.56-2.76 2.7.65 3.8L9 11.12 5.59 12.92l.65-3.8-2.76-2.7 3.82-.56L9 2.4z" />
+        </svg>
+      ))}
+    </span>
+  );
+}
+
 export function VisualAuditReport({
   report,
   coverage,
+  reviews,
   onDownload,
   onShare,
-  onEmail,
   onWhatsApp,
   whatsAppState,
+  whatsAppMasked,
+  whatsAppSent,
 }: {
   report: AuditDeliveryReport;
   coverage?: EvidenceCoverage;
+  reviews?: VerifiedReviewSummary | null;
   onDownload: () => void;
   onShare: () => void;
-  onEmail: () => void;
   onWhatsApp: () => void;
   whatsAppState?: string;
+  whatsAppMasked?: string | null;
+  whatsAppSent?: boolean;
 }) {
   const evidence = coverage ? countEvidenceCoverage(coverage) : null;
   const score = report.overallHealth?.score ?? report.scores?.overall ?? null;
+  const coverageMap = coverage ?? {
+    website: Boolean(report.sources?.length),
+    google: false,
+    instagram: false,
+    facebook: false,
+    reviews: Boolean(reviews),
+    analytics: false,
+  };
+
   return (
     <div className="mx-auto max-w-4xl space-y-5 px-4 py-8">
       <header className="flex flex-wrap items-end justify-between gap-4 border-b border-sx-border pb-5">
@@ -40,13 +93,19 @@ export function VisualAuditReport({
           <h1 className="mt-1 font-sx-sans text-2xl font-bold text-sx-text">Your Audit is ready</h1>
         </div>
         <div className="flex flex-wrap gap-2">
-          <button onClick={onDownload} className="rounded-sx-sm border border-sx-border-strong px-3 py-2 text-xs font-semibold">Download PDF</button>
-          <button onClick={onShare} className="rounded-sx-sm border border-sx-border-strong px-3 py-2 text-xs font-semibold">Share</button>
-          <button onClick={onEmail} className="rounded-sx-sm border border-sx-border-strong px-3 py-2 text-xs font-semibold">Email report</button>
-          <button onClick={onWhatsApp} className="rounded-sx-sm bg-sx-accent px-3 py-2 text-xs font-semibold text-sx-accent-on">Send to WhatsApp</button>
+          <button type="button" onClick={onDownload} className="rounded-sx-sm border border-sx-border-strong px-3 py-2 text-xs font-semibold">Download PDF</button>
+          <button type="button" onClick={onShare} className="rounded-sx-sm border border-sx-border-strong px-3 py-2 text-xs font-semibold">Share</button>
+          <button type="button" onClick={onWhatsApp} className="inline-flex items-center gap-2 rounded-sx-sm bg-sx-accent px-3 py-2 text-xs font-semibold text-sx-accent-on">
+            <PlatformIcon name="whatsapp" />
+            {whatsAppSent
+              ? "Sent to WhatsApp"
+              : whatsAppMasked
+                ? `Send to ${whatsAppMasked}`
+                : "Send to WhatsApp"}
+          </button>
         </div>
       </header>
-      {whatsAppState && <p className="text-xs text-sx-text-subtle">{whatsAppState}</p>}
+      {whatsAppState && <p className="text-xs text-sx-text-subtle">{whatsAppSent ? `✓ ${whatsAppState}` : whatsAppState}</p>}
 
       <section className="grid gap-4 sm:grid-cols-3">
         <div className="rounded-sx-md border border-sx-border bg-sx-surface-1 p-4">
@@ -56,14 +115,27 @@ export function VisualAuditReport({
         </div>
         <div className="rounded-sx-md border border-sx-border bg-sx-surface-1 p-4 sm:col-span-2">
           <p className="text-xs text-sx-text-subtle">Evidence coverage</p>
-          <dl className="mt-3 grid grid-cols-2 gap-2 text-sm sm:grid-cols-3">
-            {Object.entries(coverage ?? { website: Boolean(report.sources?.length), google: false, instagram: false, facebook: false, reviews: false, analytics: false }).map(([key, present]) => (
-              <div key={key} className="flex items-center justify-between rounded-sx-sm bg-sx-surface-2 px-2 py-1">
-                <dt className="capitalize">{key}</dt>
-                <dd>{present ? "✓" : "—"}</dd>
+          <dl className="mt-3 grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
+            {COVERAGE_KEYS.map(({ key, icon }) => (
+              <div key={key} className="flex items-center justify-between gap-2 rounded-sx-sm bg-sx-surface-2 px-2 py-1.5">
+                <dt className="flex items-center gap-2">
+                  <PlatformIcon name={icon} />
+                  <span>{PLATFORM_LABELS[icon]}</span>
+                </dt>
+                <dd className="text-xs text-sx-text-subtle">{coverageStatus(key, coverageMap[key], reviews ?? null)}</dd>
               </div>
             ))}
           </dl>
+          {reviews && (
+            <div className="mt-3 flex flex-wrap items-center gap-2 rounded-sx-sm border border-sx-border px-3 py-2">
+              <PlatformIcon name="reviews" />
+              <span className="text-sm font-medium">Reviews</span>
+              <StarRating rating={reviews.rating} />
+              <span className="text-sm font-semibold">{reviews.rating.toFixed(1)}</span>
+              {reviews.count != null && <span className="text-xs text-sx-text-muted">{reviews.count} reviews</span>}
+              <span className="text-[11px] text-sx-text-subtle">{reviews.sourceLabel} · Verified</span>
+            </div>
+          )}
           {evidence && evidence.ratio < 0.34 && (
             <p className="mt-3 text-xs text-sx-warning">This is a preliminary readiness view because verified public coverage is still thin.</p>
           )}

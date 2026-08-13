@@ -33,7 +33,6 @@ import {
 import {
   createPostgresEmailOutboxStore,
   createEmailProvider,
-  enqueueAuditDeliveredEmailBestEffort,
   enqueueAuditNeedsSupportEmailBestEffort,
   enqueueMissionTerminalEmailBestEffort,
   processEmailOutboxBatch,
@@ -291,8 +290,8 @@ export async function processOnce(
       } else {
         await queue.complete({ jobId: job.id, leaseOwner: LEASE_OWNER });
         // Best-effort transactional email — never undoes Audit completion or queue completion.
-        if (outcome.kind === "COMPLETED" || outcome.kind === "NEEDS_REVIEW") {
-          await notifyAutomaticAuditEmailBestEffort(supabase, runId, job.tenant_id, outcome.kind);
+        if (outcome.kind === "NEEDS_REVIEW") {
+          await notifyAutomaticAuditEmailBestEffort(supabase, runId, job.tenant_id);
         }
       }
       return true;
@@ -332,7 +331,6 @@ async function notifyAutomaticAuditEmailBestEffort(
   supabase: ReturnType<typeof createServiceClient>,
   runId: string,
   tenantId: string,
-  kind: "COMPLETED" | "NEEDS_REVIEW"
 ): Promise<void> {
   try {
     const store = createPostgresEmailOutboxStore(supabase);
@@ -349,17 +347,6 @@ async function notifyAutomaticAuditEmailBestEffort(
       .eq("id", auditOrderId)
       .maybeSingle();
     if (!order) return;
-    if (kind === "COMPLETED") {
-      await enqueueAuditDeliveredEmailBestEffort(supabase, store, {
-        id: String(order.id),
-        tenant_id: (order.tenant_id as string | null) ?? tenantId,
-        guest_email: (order.guest_email as string | null) ?? null,
-        claimed_by: (order.claimed_by as string | null) ?? null,
-        business_name: (order.business_name as string | null) ?? null,
-        status: (order.status as string | null) ?? null,
-      });
-      return;
-    }
     await enqueueAuditNeedsSupportEmailBestEffort(store, {
       auditOrderId,
       tenantId: (run?.tenant_id as string | null) ?? tenantId,

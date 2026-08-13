@@ -9,6 +9,10 @@ import { VisualAuditReport } from "./VisualAuditReport";
 import { trackFunnel } from "@/lib/analytics/events";
 import { loadCustomerJson } from "@/lib/customer-app/load-result";
 import { parseOnboardingState } from "@/lib/audit/v1/onboarding-state";
+import { verifiedReviewsFromProfile } from "@/lib/audit/v1/reviews";
+import { AuditShareDialog } from "@/components/audit/AuditShareDialog";
+import { WhatsAppDestinationField } from "@/components/audit/WhatsAppDestinationField";
+import { Modal } from "@/components/ui/Overlay";
 import type { EvidenceCoverage } from "@/lib/audit/v1/scoring";
 import {
   deriveAuditCustomerState,
@@ -45,12 +49,13 @@ function coverageFromOrder(order: AuditOrder, report: { sources?: unknown[] }): 
     return Boolean(item && typeof item === "object" && "sourceClass" in item && (item as { sourceClass?: string }).sourceClass === "VERIFIED_PUBLIC");
   });
   const hasChannel = (type: string) => Boolean(state?.channels?.some((channel) => channel.type === type && channel.value && !channel.notAvailable));
+  const reviews = verifiedReviewsFromProfile(state?.profile);
   return {
     website: verifiedPublic || Boolean(report.sources?.length),
     google: hasChannel("google_business"),
     instagram: hasChannel("instagram"),
     facebook: hasChannel("facebook"),
-    reviews: false,
+    reviews: Boolean(reviews),
     analytics: false,
   };
 }
@@ -75,6 +80,14 @@ export default function AuditHubPage() {
 
   const [freshAuditEligible, setFreshAuditEligible] = useState(false);
   const [shareMessage, setShareMessage] = useState<string | null>(null);
+  const [shareOpen, setShareOpen] = useState(false);
+  const [shareUrl, setShareUrl] = useState<string | null>(null);
+  const [waDialog, setWaDialog] = useState<"number" | "consent" | null>(null);
+  const [waCountry, setWaCountry] = useState("IN");
+  const [waNational, setWaNational] = useState("");
+  const [waConsent, setWaConsent] = useState(true);
+  const [waMasked, setWaMasked] = useState<string | null>(null);
+  const [waSent, setWaSent] = useState(false);
 
   const load = useCallback(async () => {
     setError(null);
@@ -83,6 +96,7 @@ export default function AuditHubPage() {
       generation?: AuditGeneration | null;
       paymentUrl?: string | null;
       freshAuditEligible?: boolean;
+      whatsappDestination?: { masked: string; countryIso: string; nationalNumber: string; consent: boolean } | null;
     }>(() => fetch("/api/platform/audit/checkout"), "We couldn't load your Audit. Please try again.");
     if (result.status === "error") {
       setOrder(null);
@@ -95,6 +109,13 @@ export default function AuditHubPage() {
     setGeneration(result.data.generation ?? null);
     setPaymentUrl(result.data.paymentUrl ?? null);
     setFreshAuditEligible(result.data.freshAuditEligible === true);
+    const destination = result.data.whatsappDestination;
+    if (destination) {
+      setWaMasked(destination.masked);
+      setWaCountry(destination.countryIso || "IN");
+      setWaNational(destination.nationalNumber || "");
+      setWaConsent(destination.consent);
+    }
   }, []);
 
   const startAudit = useCallback(async () => {
@@ -338,30 +359,96 @@ export default function AuditHubPage() {
     );
   }
 
+  async function openShare() {
+    setShareMessage(null);
+    const response = await fetch("/api/platform/audit/report/share", { method: "POST" });
+    const json = await response.json() as { url?: string; error?: string };
+    if (json.url) {
+      setShareUrl(json.url);
+      setShareOpen(true);
+      return;
+    }
+    setShareMessage(json.error ?? "Could not create a share link.");
+  }
+
+  async function sendWhatsApp(payload: Record<string, unknown> = {}) {
+    setShareMessage(null);
+    const response = await fetch("/api/platform/audit/report/whatsapp", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const json = await response.json() as {
+      status?: string;
+      message?: string;
+      destinationMasked?: string;
+      error?: string;
+    };
+    if (json.status === "NO_DESTINATION") {
+      setWaDialog("number");
+      return;
+    }
+    if (json.status === "NO_CONSENT") {
+      setWaDialog("consent");
+      if (json.destinationMasked) setWaMasked(json.destinationMasked);
+      return;
+    }
+    if (json.destinationMasked) setWaMasked(json.destinationMasked);
+    if (json.status === "SENT" || json.status === "DELIVERED") {
+      setWaSent(true);
+      setShareMessage(json.message ?? "Sent to WhatsApp");
+      setWaDialog(null);
+      return;
+    }
+    setShareMessage(json.message ?? json.error ?? "WhatsApp delivery checked.");
+  }
+
   return (
-    <VisualAuditReport
-      report={report}
-      coverage={coverageFromOrder(order, report)}
-      onDownload={() => { window.open(`/api/platform/audit/report/pdf?order=${order.id}`, "_blank"); }}
-      onShare={() => {
-        void fetch("/api/platform/audit/report/share", { method: "POST" }).then(async (response) => {
-          const json = await response.json() as { url?: string; error?: string };
-          if (json.url) {
-            await navigator.clipboard.writeText(json.url);
-            setShareMessage("Secure share link copied.");
-          } else setShareMessage(json.error ?? "Could not create a share link.");
-        });
-      }}
-      onEmail={() => {
-        void fetch("/api/platform/audit/report/email", { method: "POST" }).then(() => setShareMessage("Report email queued."));
-      }}
-      onWhatsApp={() => {
-        void fetch("/api/platform/audit/report/whatsapp", { method: "POST" }).then(async (response) => {
-          const json = await response.json() as { message?: string };
-          setShareMessage(json.message ?? "WhatsApp delivery checked.");
-        });
-      }}
-      whatsAppState={shareMessage ?? undefined}
-    />
+    <>
+      <VisualAuditReport
+        report={report}
+        coverage={coverageFromOrder(order, report)}
+        reviews={verifiedReviewsFromProfile(parseOnboardingState(order.deep_dive_answers)?.profile)}
+        onDownload={() => { window.open(`/api/platform/audit/report/pdf?order=${order.id}`, "_blank"); }}
+        onShare={() => { void openShare(); }}
+        onWhatsApp={() => { void sendWhatsApp(); }}
+        whatsAppState={shareMessage ?? undefined}
+        whatsAppMasked={waMasked}
+        whatsAppSent={waSent}
+      />
+      <AuditShareDialog open={shareOpen} url={shareUrl} onClose={() => setShareOpen(false)} />
+      <Modal open={waDialog === "number"} onClose={() => setWaDialog(null)} title="Add your WhatsApp number">
+        <WhatsAppDestinationField
+          countryIso={waCountry}
+          nationalNumber={waNational}
+          consent={waConsent}
+          onCountry={setWaCountry}
+          onNational={setWaNational}
+          onConsent={setWaConsent}
+        />
+        <button
+          type="button"
+          className="mt-4 min-h-11 w-full rounded-sx-sm bg-sx-accent px-4 text-sm font-semibold text-sx-accent-on"
+          onClick={() => void sendWhatsApp({
+            destination: { countryIso: waCountry, nationalNumber: waNational },
+            consent: waConsent,
+          })}
+        >
+          Save and send
+        </button>
+      </Modal>
+      <Modal open={waDialog === "consent"} onClose={() => setWaDialog(null)} title="Allow WhatsApp delivery">
+        <p className="text-sm text-sx-text-muted">
+          Send my completed Audit and Audit-related updates to {waMasked ?? "this WhatsApp number"}.
+        </p>
+        <button
+          type="button"
+          className="mt-4 min-h-11 w-full rounded-sx-sm bg-sx-accent px-4 text-sm font-semibold text-sx-accent-on"
+          onClick={() => void sendWhatsApp({ consent: true })}
+        >
+          Enable consent and send
+        </button>
+      </Modal>
+    </>
   );
 }
