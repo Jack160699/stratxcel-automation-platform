@@ -180,8 +180,8 @@ function run() {
     "Homepage must keep at least two canonical /audit links (audit-offer section + final CTA tertiary path)"
   );
   assert.ok(
-    /href="\/modules"/.test(read("app", "components", "public", "home", "PlatformHero.tsx")),
-    "Homepage hero primary CTA must point at the platform (/modules), not the Audit"
+    /href="\/products"/.test(read("app", "components", "public", "home", "PlatformHero.tsx")),
+    "Homepage hero primary CTA must point at the platform (/products), not the Audit"
   );
   assert.equal(
     /Start the ₹999 Audit|Start the Audit/.test(read("app", "components", "public", "home", "PlatformHero.tsx")),

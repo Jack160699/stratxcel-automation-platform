@@ -39,7 +39,7 @@ export function PlatformHero() {
 
             <div className="mt-7 flex flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-center lg:justify-start">
               <Link
-                href="/modules"
+                href="/products"
                 className="inline-flex min-h-11 items-center justify-center rounded-sx-sm bg-sx-accent px-7 py-3 font-sx-sans text-sm font-bold text-sx-accent-on shadow-md transition-colors hover:bg-[color:var(--sx-accent-hover)]"
               >
                 Explore the Platform
