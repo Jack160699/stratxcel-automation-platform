@@ -12,6 +12,12 @@ export type AuditOnboardingStep =
   | "generating"
   | "complete";
 
+export interface AuditWhatsAppOnboardingDraft {
+  countryIso: string;
+  nationalNumber: string;
+  consent: boolean;
+}
+
 export interface AuditOnboardingState {
   flowVersion: typeof CONNECT_DISCOVER_VERSION;
   step: AuditOnboardingStep;
@@ -20,6 +26,7 @@ export interface AuditOnboardingState {
   profile?: DiscoveredBusinessProfile;
   verified?: boolean;
   adaptiveAnswers: Record<string, string>;
+  whatsappDelivery?: AuditWhatsAppOnboardingDraft;
   updatedAt: string;
 }
 
@@ -51,6 +58,7 @@ export function parseOnboardingState(deepDive: unknown): AuditOnboardingState | 
     profile: row.profile && typeof row.profile === "object" ? row.profile as DiscoveredBusinessProfile : undefined,
     verified: row.verified === true,
     adaptiveAnswers: recordStrings(row.adaptiveAnswers),
+    whatsappDelivery: parseWhatsAppDraft(row.whatsappDelivery),
     updatedAt: typeof row.updatedAt === "string" ? row.updatedAt : new Date().toISOString(),
   };
 }
@@ -69,6 +77,15 @@ export function resumeStep(state: AuditOnboardingState | null): AuditOnboardingS
   if (!isV1OnboardingComplete(state)) return "questions";
   if (state.step === "generating" || state.step === "complete") return state.step;
   return "brain";
+}
+
+function parseWhatsAppDraft(value: unknown): AuditWhatsAppOnboardingDraft | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const row = value as Record<string, unknown>;
+  const countryIso = typeof row.countryIso === "string" ? row.countryIso.trim().toUpperCase().slice(0, 2) : "";
+  const nationalNumber = typeof row.nationalNumber === "string" ? row.nationalNumber.replace(/[^0-9]/g, "").slice(0, 15) : "";
+  if (!countryIso || !nationalNumber) return undefined;
+  return { countryIso, nationalNumber, consent: row.consent === true };
 }
 
 function recordStrings(value: unknown): Record<string, string> {

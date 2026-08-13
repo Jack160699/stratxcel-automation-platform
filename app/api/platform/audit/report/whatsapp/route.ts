@@ -1,52 +1,81 @@
 import { ownedCompletedAudit } from "../_owned";
+import { normalizeWhatsAppDestination } from "@/lib/audit/v1/e164";
+import {
+  loadAuditWhatsAppDestination,
+  setAuditWhatsAppConsent,
+  upsertAuditWhatsAppDestination,
+} from "@/lib/audit/v1/whatsapp-destination";
+import { createAuditShareUrl, sendAuditReportWhatsApp } from "@/lib/audit/v1/whatsapp-send";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function POST() {
+export async function POST(request: Request) {
   const ctx = await ownedCompletedAudit();
   if ("error" in ctx) return ctx.error;
-  const deepDive = ctx.order.deep_dive_answers as Record<string, unknown> | null;
-  const experience = deepDive?.v1Experience as { channels?: Array<{ type: string; value: string; notAvailable?: boolean }> } | undefined;
-  const whatsapp = experience?.channels?.find((channel) => channel.type === "whatsapp" && channel.value && !channel.notAvailable);
-  if (!whatsapp) {
-    await ctx.service.from("audit_delivery_events").insert({
-      audit_order_id: ctx.order.id,
-      tenant_id: ctx.tenantId,
-      channel: "whatsapp",
-      status: "skipped",
-      detail: "no_permitted_destination",
+  const body = await request.json().catch(() => ({})) as {
+    destination?: { countryIso?: string; nationalNumber?: string };
+    consent?: boolean;
+  };
+
+  if (body.destination?.nationalNumber) {
+    const normalized = normalizeWhatsAppDestination(body.destination.countryIso || "IN", body.destination.nationalNumber);
+    if (!normalized) {
+      return Response.json({ status: "NO_DESTINATION", message: "Enter a valid WhatsApp number." }, { status: 400 });
+    }
+    await upsertAuditWhatsAppDestination(ctx.service, {
+      tenantId: ctx.tenantId,
+      userId: ctx.user.id,
+      destination: normalized,
+      consent: body.consent === true,
+      source: "audit_report_send",
     });
-    return Response.json({ message: "WhatsApp was not sent because no permitted destination is connected." });
+  } else if (body.consent === true) {
+    const updated = await setAuditWhatsAppConsent(ctx.service, {
+      tenantId: ctx.tenantId,
+      consent: true,
+      source: "audit_report_send",
+    });
+    if (!updated) {
+      return Response.json({ status: "NO_DESTINATION", message: "Add your WhatsApp number to receive this Audit." });
+    }
+  } else {
+    const existing = await loadAuditWhatsAppDestination(ctx.service, ctx.tenantId);
+    if (!existing) {
+      return Response.json({ status: "NO_DESTINATION", message: "Add your WhatsApp number to receive this Audit." });
+    }
   }
 
-  const { data: consent } = await ctx.service
-    .from("contact_consent")
-    .select("id")
+  const { data: generation } = await ctx.service
+    .from("audit_generation_runs")
+    .select("quality_outcome, status")
+    .eq("audit_order_id", ctx.order.id)
     .eq("tenant_id", ctx.tenantId)
-    .eq("channel", "whatsapp")
-    .eq("opted_in", true)
-    .is("opted_out_at", null)
+    .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
 
-  if (!consent) {
-    await ctx.service.from("audit_delivery_events").insert({
-      audit_order_id: ctx.order.id,
-      tenant_id: ctx.tenantId,
-      channel: "whatsapp",
-      status: "skipped",
-      detail: "no_consent",
-    });
-    return Response.json({ message: "WhatsApp was not sent because marketing permission is not on file." });
-  }
-
-  await ctx.service.from("audit_delivery_events").insert({
-    audit_order_id: ctx.order.id,
-    tenant_id: ctx.tenantId,
-    channel: "whatsapp",
-    status: "queued",
-    detail: "consent_destination_present",
+  const reportUrl = await createAuditShareUrl(ctx.service, {
+    tenantId: ctx.tenantId,
+    orderId: ctx.order.id as string,
+    userId: ctx.user.id,
   });
-  return Response.json({ message: "WhatsApp completion message is queued for your connected number." });
+
+  const result = await sendAuditReportWhatsApp(ctx.service, {
+    tenantId: ctx.tenantId,
+    orderId: ctx.order.id as string,
+    businessName: (ctx.order.business_name as string | null) ?? null,
+    reportUrl,
+    qualityOutcome: typeof generation?.quality_outcome === "string" ? generation.quality_outcome : null,
+  });
+
+  const http =
+    result.status === "SENT" || result.status === "DELIVERED"
+      ? 200
+      : result.status === "NO_DESTINATION" || result.status === "NO_CONSENT"
+        ? 200
+        : result.status === "NOT_CONFIGURED"
+          ? 409
+          : 400;
+  return Response.json(result, { status: http, headers: { "Cache-Control": "no-store" } });
 }

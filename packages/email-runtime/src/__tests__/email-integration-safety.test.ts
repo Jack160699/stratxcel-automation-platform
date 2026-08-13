@@ -47,10 +47,8 @@ function run() {
   assert.ok(missionWorker.includes("retryableFailure"), "mission worker must distinguish retryable failures");
   assert.ok(missionWorker.includes("AUDIT_GENERATION_JOB_TYPE"), "must keep automatic Audit worker path");
   assert.ok(missionWorker.includes("processEmailOutboxBatch"), "must host independent email processor loop");
-  assert.ok(complete.includes("enqueueAuditDeliveredEmailBestEffort"), "staff Audit delivery must notify");
-  const rpcIdx = complete.indexOf("complete_audit_and_issue_subscription_credit_v5");
-  const auditEmailIdx = complete.indexOf("await enqueueAuditDeliveredEmailBestEffort");
-  assert.ok(rpcIdx > 0 && auditEmailIdx > rpcIdx, "Audit email must run only after completion RPC");
+  assert.equal(complete.includes("enqueueAuditDeliveredEmailBestEffort"), false, "staff Audit delivery must not enqueue customer Audit email");
+  assert.equal(missionWorker.includes("enqueueAuditDeliveredEmailBestEffort"), false, "mission worker must not enqueue customer Audit email");
 
   // System health: not key-only LIVE
   assert.ok(systemHealth.includes("probeEmailSystemHealth"), "System Health must probe email honestly");

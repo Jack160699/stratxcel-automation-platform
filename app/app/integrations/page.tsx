@@ -5,6 +5,7 @@ import { useCurrentTenant } from "../CurrentTenantContext";
 import { Card, CardHeading } from "@/components/ui/Card";
 import { StatusChip } from "@/components/ui/StatusChip";
 import { ErrorState } from "@/components/ui/Feedback";
+import { PlatformIcon } from "@/components/audit/PlatformIcon";
 
 interface CustomerIntegrationStatus {
   whatsapp: "connected" | "action_required" | "setup_required";
@@ -67,7 +68,7 @@ export default function IntegrationsPage() {
   return (
     <div className="flex flex-col gap-6">
       <header>
-        <h1 className="font-sx-sans text-xl font-semibold text-sx-text">Integrations{active ? ` — ${active.name}` : ""}</h1>
+        <h1 className="font-sx-sans text-xl font-semibold text-sx-text">Connectors{active ? ` — ${active.name}` : ""}</h1>
         <p className="mt-1 text-sm text-sx-text-muted">See which business channels are ready and where setup help is needed.</p>
       </header>
       {error && <ErrorState message={error} onRetry={load} />}
@@ -75,7 +76,9 @@ export default function IntegrationsPage() {
       <div className="grid gap-4 md:grid-cols-2">
         <Card className="p-5">
           <div className="flex items-start justify-between gap-3">
-            <CardHeading>WhatsApp Business</CardHeading>
+            <CardHeading>
+              <span className="inline-flex items-center gap-2"><PlatformIcon name="whatsapp" /> WhatsApp Business</span>
+            </CardHeading>
             <BusinessStatus state={status?.whatsapp ?? "checking"} />
           </div>
           <p className="mt-2 text-sm text-sx-text-muted">
@@ -92,7 +95,23 @@ export default function IntegrationsPage() {
         {CONNECTIONS.map((connection) => (
           <Card key={connection.key} className="p-5">
             <div className="flex items-start justify-between gap-3">
-              <CardHeading>{connection.title}</CardHeading>
+              <CardHeading>
+              <span className="inline-flex items-center gap-2">
+                {connection.key === "social" ? (
+                  <>
+                    <PlatformIcon name="facebook" />
+                    <PlatformIcon name="instagram" />
+                    <PlatformIcon name="threads" />
+                  </>
+                ) : (
+                  <>
+                    <PlatformIcon name="google" />
+                    <PlatformIcon name="analytics" />
+                  </>
+                )}
+                {connection.title}
+              </span>
+            </CardHeading>
               <BusinessStatus state="setup_required" />
             </div>
             <p className="mt-2 text-sm text-sx-text-muted">{connection.description}</p>

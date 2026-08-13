@@ -120,18 +120,21 @@ async function run() {
   assert.equal(/\/app\/(missions|approvals)/.test(commandCenter), false);
 
   const nav = read("components", "shell", "navigation", "app-nav-data.ts");
-  for (const href of ["/app", "/app/audit", "/app/crm", "/app/brand", "/app/billing", "/app/team", "/app/settings"]) {
+  for (const href of ["/app", "/app/audit", "/app/crm", "/app/brand", "/app/billing", "/app/team", "/app/settings", "/app/social/copilot", "/app/integrations"]) {
     assert.ok(nav.includes(`href: "${href}"`), `${href} must remain a V1 destination`);
   }
-  for (const segment of ["missions", "approvals", "copilot", "website", "ads", "search", "files", "reports", "integrations", "social"]) {
+  for (const segment of ["missions", "approvals", "copilot", "website", "ads", "search", "files", "reports"]) {
     assert.ok(
       read("app", "app", segment, "layout.tsx").includes("NotV1CustomerRoute"),
       `/app/${segment} must terminate at the V1 route boundary`
     );
   }
+  assert.equal(read("app", "app", "social", "layout.tsx").includes("NotV1CustomerRoute"), false, "Copilot at /app/social/copilot must be reachable");
+  assert.equal(read("app", "app", "integrations", "layout.tsx").includes("NotV1CustomerRoute"), false, "Connectors at /app/integrations must be reachable");
 
   const settings = read("app", "app", "settings", "page.tsx");
   assert.equal(settings.includes("/app/integrations"), false);
+  assert.equal(settings.includes("/app/brand"), false);
   assert.equal(settings.includes("draft only"), false);
 
   const brand = read("app", "app", "brand", "page.tsx");
