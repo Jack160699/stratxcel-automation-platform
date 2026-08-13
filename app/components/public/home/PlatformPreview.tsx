@@ -30,7 +30,7 @@ export function PlatformPreview() {
         </span>
       </div>
 
-      <div className="flex min-h-[220px] sm:min-h-[260px]">
+      <div className="flex min-h-[180px] sm:min-h-[240px]">
         <aside className="hidden w-[34%] shrink-0 border-r border-sx-border bg-sx-surface-2/60 p-3 sm:block sm:p-4">
           <p className="font-sx-mono text-[9px] font-semibold uppercase tracking-[0.16em] text-sx-text-subtle">
             Modules
@@ -67,11 +67,11 @@ export function PlatformPreview() {
             ))}
           </div>
 
-          <div className="mt-3 space-y-2 sm:mt-0">
-            {PANELS.map((panel) => (
+          <div className="mt-2 space-y-2 sm:mt-0">
+            {PANELS.map((panel, index) => (
               <div
                 key={panel.title}
-                className="rounded-sx-sm border border-sx-border bg-sx-bg/40 px-3 py-2.5"
+                className={`rounded-sx-sm border border-sx-border bg-sx-bg/40 px-3 py-2.5 ${index === 2 ? "hidden sm:block" : ""}`}
               >
                 <div className="flex items-start justify-between gap-3">
                   <p className="font-sx-sans text-[12px] font-semibold text-sx-text">{panel.title}</p>

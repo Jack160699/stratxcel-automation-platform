@@ -56,8 +56,8 @@ export function ProductShowcase({ standalone = true, className = "" }: { standal
       )}
       <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:gap-10">
         <div className="lg:w-[min(100%,18rem)] lg:shrink-0">
-          <FeatureSpotlight title={activeTab.headline} />
-          <nav className="mt-4 flex gap-2 overflow-x-auto pb-1 lg:mt-6 lg:flex-col lg:overflow-visible lg:pb-0" aria-label="Product areas" role="tablist">
+          <FeatureSpotlight title={activeTab.headline} className="hidden lg:flex" />
+          <nav className="mt-0 flex snap-x snap-mandatory gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] lg:mt-6 lg:snap-none lg:flex-col lg:overflow-visible lg:pb-0 [&::-webkit-scrollbar]:hidden" aria-label="Product areas" role="tablist">
             {SHOWCASE_TABS.map((tab, index) => {
               const selected = tab.id === active;
               return (
@@ -71,7 +71,7 @@ export function ProductShowcase({ standalone = true, className = "" }: { standal
                   tabIndex={selected ? 0 : -1}
                   onClick={() => setActive(tab.id)}
                   onKeyDown={(e) => onKeyDown(e, index)}
-                  className={`shrink-0 rounded-sx-sm border px-3 py-2 text-left font-sx-sans text-xs font-medium transition-colors motion-reduce:transition-none lg:w-full ${selected ? "border-sx-accent bg-sx-accent-muted text-sx-text" : "border-sx-border text-sx-text-muted hover:border-sx-border-strong hover:text-sx-text"}`}
+                  className={`min-h-10 shrink-0 snap-start rounded-sx-sm border px-3 py-2.5 text-left font-sx-sans text-xs font-medium transition-colors motion-reduce:transition-none lg:w-full ${selected ? "border-sx-accent bg-sx-accent-muted text-sx-text" : "border-sx-border text-sx-text-muted hover:border-sx-border-strong hover:text-sx-text"}`}
                 >
                   {tab.label}
                 </button>

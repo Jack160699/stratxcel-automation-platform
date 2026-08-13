@@ -32,7 +32,6 @@ export function Logo({ variant = "light", priority = false, showWordmark = true 
           width={OFFICIAL_LOGO.width}
           height={OFFICIAL_LOGO.height}
           priority={priority}
-          quality={100}
           sizes="(max-width: 639px) 28px, 32px"
           unoptimized
           className="max-h-full max-w-full object-contain"

@@ -85,7 +85,7 @@ export function ProductMegaMenu() {
   }, [open]);
 
   return (
-    <div ref={containerRef} className="relative hidden md:block">
+    <div ref={containerRef} className="relative hidden lg:block">
       <button
         ref={buttonRef}
         type="button"

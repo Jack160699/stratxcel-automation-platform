@@ -24,7 +24,7 @@ export function ProductCard({
         <div className="flex items-start gap-3">
           <ProductIcon product={product} />
           <div>
-            <h3 className="font-sx-sans text-[15px] font-semibold text-sx-text">{product.name}</h3>
+            <h3 className="font-sx-sans text-[15px] font-semibold leading-snug text-sx-text">{product.name}</h3>
             {!compact && (
               <p className="mt-1 font-sx-sans text-[13px] leading-relaxed text-sx-text-muted">{product.outcome}</p>
             )}

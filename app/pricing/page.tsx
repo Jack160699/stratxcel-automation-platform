@@ -72,7 +72,7 @@ export default function PricingPage() {
                       <Card key={t.id} variant={t.popular ? "elevated" : "panel"} className={`flex h-full flex-col p-8 border ${t.popular ? "border-sx-accent/60 ring-2 ring-sx-accent/30" : ""}`}>
                         <span className="font-sx-mono text-[10px] font-bold uppercase text-sx-text-subtle">{t.badge}</span>
                         <h3 className="mt-2 text-2xl font-bold">{t.name}</h3>
-                        <p className="mt-4 text-4xl font-extrabold">{t.price}</p>
+                        <p className="mt-4 text-3xl font-extrabold sm:text-4xl">{t.price}</p>
                         <p className="text-xs text-sx-text-subtle">{t.period}</p>
                         <p className="mt-3 text-xs text-sx-text-muted">{t.pitch}</p>
                         <ul className="mt-6 flex-1 space-y-3 text-xs text-sx-text-muted">
