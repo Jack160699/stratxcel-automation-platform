@@ -33,8 +33,8 @@ export function PlatformHero() {
               Your AI Growth Operating System.
             </h1>
             <p className="mx-auto mt-4 max-w-lg font-sx-sans text-[15px] leading-relaxed text-sx-text-muted sm:text-[17px] lg:mx-0">
-              Research your market, create content, grow on search, manage leads, and run campaigns — with human
-              approval where it matters, from one connected platform.
+              Research your market, create content, grow on search, manage leads, and run campaigns — with
+              human approval where it matters, from one connected platform.
             </p>
 
             <div className="mt-7 flex flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-center lg:justify-start">
@@ -65,9 +65,7 @@ export function PlatformHero() {
           </div>
 
           <div className="relative mx-auto w-full max-w-xl lg:max-w-none">
-            <div className="motion-safe:animate-sx-float">
-              <PlatformPreview />
-            </div>
+            <PlatformPreview />
           </div>
         </div>
       </div>

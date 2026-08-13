@@ -4,14 +4,20 @@ export function DemoBrowserFrame({
   children,
   url = "app.stratxcel.in/workspace",
   className = "",
+  active = false,
 }: {
   children: ReactNode;
   url?: string;
   className?: string;
+  active?: boolean;
 }) {
   return (
     <div
-      className={`overflow-hidden rounded-sx-lg border border-sx-border bg-sx-surface-1 shadow-[0_24px_80px_-32px_rgba(10,16,32,0.22)] ${className}`}
+      className={`overflow-hidden rounded-sx-lg border bg-sx-surface-1 transition-all duration-500 motion-reduce:transition-none ${
+        active
+          ? "border-sx-border shadow-[0_28px_88px_-36px_rgba(10,16,32,0.28)] motion-safe:animate-sx-frame-settle"
+          : "border-sx-border shadow-[0_24px_80px_-32px_rgba(10,16,32,0.22)]"
+      } ${className}`}
       aria-hidden
     >
       <div className="flex items-center gap-2 border-b border-sx-border bg-sx-surface-2 px-3 py-2.5 sm:px-4">

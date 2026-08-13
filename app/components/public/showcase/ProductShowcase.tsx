@@ -5,6 +5,7 @@ import dynamic from "next/dynamic";
 import { DemoBrowserFrame } from "./DemoBrowserFrame";
 import { FeatureSpotlight } from "./FeatureSpotlight";
 import { WorkflowDemo } from "./WorkflowDemo";
+import { ScrollReveal } from "@/app/components/public/motion/ScrollReveal";
 import { SHOWCASE_TABS, type ShowcaseTabId } from "./fixtures/showcase-data";
 
 const DashboardDemo = dynamic(() => import("./demos/DashboardDemo").then((m) => m.DashboardDemo), { loading: () => <DemoSkeleton /> });
@@ -24,13 +25,27 @@ const DEMO_MAP: Record<ShowcaseTabId, ComponentType> = {
 };
 
 function DemoSkeleton() {
-  return <div className="flex min-h-[280px] items-center justify-center bg-sx-surface-1"><p className="font-sx-mono text-[10px] uppercase tracking-wider text-sx-text-subtle">Loading preview…</p></div>;
+  return (
+    <div className="flex min-h-[280px] items-center justify-center bg-sx-surface-1">
+      <p className="font-sx-mono text-[10px] uppercase tracking-wider text-sx-text-subtle">Loading preview…</p>
+    </div>
+  );
 }
 
 export function ProductShowcase({ standalone = true, className = "" }: { standalone?: boolean; className?: string }) {
   const [active, setActive] = useState<ShowcaseTabId>("dashboard");
+  const [transitioning, setTransitioning] = useState(false);
   const activeTab = SHOWCASE_TABS.find((t) => t.id === active) ?? SHOWCASE_TABS[0];
   const ActiveDemo = DEMO_MAP[active];
+
+  const selectTab = useCallback((id: ShowcaseTabId) => {
+    if (id === active) return;
+    setTransitioning(true);
+    window.setTimeout(() => {
+      setActive(id);
+      setTransitioning(false);
+    }, 150);
+  }, [active]);
 
   const onKeyDown = useCallback((e: KeyboardEvent<HTMLButtonElement>, index: number) => {
     const count = SHOWCASE_TABS.length;
@@ -41,8 +56,8 @@ export function ProductShowcase({ standalone = true, className = "" }: { standal
     else if (e.key === "End") next = count - 1;
     else return;
     e.preventDefault();
-    setActive(SHOWCASE_TABS[next]!.id);
-  }, []);
+    selectTab(SHOWCASE_TABS[next]!.id);
+  }, [selectTab]);
 
   const content = (
     <div className={`flex flex-col gap-8 ${className}`}>
@@ -57,7 +72,11 @@ export function ProductShowcase({ standalone = true, className = "" }: { standal
       <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:gap-10">
         <div className="lg:w-[min(100%,18rem)] lg:shrink-0">
           <FeatureSpotlight title={activeTab.headline} />
-          <nav className="mt-4 flex gap-2 overflow-x-auto pb-1 lg:mt-6 lg:flex-col lg:overflow-visible lg:pb-0" aria-label="Product areas" role="tablist">
+          <nav
+            className="mt-4 flex gap-2 overflow-x-auto pb-1 lg:mt-6 lg:flex-col lg:overflow-visible lg:pb-0"
+            aria-label="Product areas"
+            role="tablist"
+          >
             {SHOWCASE_TABS.map((tab, index) => {
               const selected = tab.id === active;
               return (
@@ -69,20 +88,44 @@ export function ProductShowcase({ standalone = true, className = "" }: { standal
                   aria-selected={selected}
                   aria-controls="showcase-panel"
                   tabIndex={selected ? 0 : -1}
-                  onClick={() => setActive(tab.id)}
+                  onClick={() => selectTab(tab.id)}
                   onKeyDown={(e) => onKeyDown(e, index)}
-                  className={`shrink-0 rounded-sx-sm border px-3 py-2 text-left font-sx-sans text-xs font-medium transition-colors motion-reduce:transition-none lg:w-full ${selected ? "border-sx-accent bg-sx-accent-muted text-sx-text" : "border-sx-border text-sx-text-muted hover:border-sx-border-strong hover:text-sx-text"}`}
+                  className={`relative shrink-0 rounded-sx-sm border px-3 py-2 text-left font-sx-sans text-xs font-medium transition-all duration-300 motion-reduce:transition-none lg:w-full ${
+                    selected
+                      ? "border-sx-accent bg-sx-accent-muted text-sx-text shadow-[0_0_20px_-6px_rgb(37_99_235/0.25)]"
+                      : "border-sx-border text-sx-text-muted hover:border-sx-border-strong hover:text-sx-text"
+                  }`}
                 >
+                  {selected && (
+                    <span
+                      className="absolute inset-y-1 left-0 w-0.5 rounded-full bg-sx-accent motion-reduce:hidden"
+                      aria-hidden
+                    />
+                  )}
                   {tab.label}
                 </button>
               );
             })}
           </nav>
         </div>
-        <div className="min-w-0 flex-1">
+        <div className="relative min-w-0 flex-1">
+          {/* Subtle spotlight behind active demo */}
+          <div
+            className="pointer-events-none absolute -inset-4 -z-10 rounded-sx-xl bg-[radial-gradient(ellipse_60%_50%_at_50%_40%,rgb(37_99_235/0.06),transparent)] motion-reduce:hidden"
+            aria-hidden
+          />
           <WorkflowDemo>
-            <div id="showcase-panel" role="tabpanel" aria-labelledby={`showcase-tab-${active}`}>
-              <DemoBrowserFrame><ActiveDemo /></DemoBrowserFrame>
+            <div
+              id="showcase-panel"
+              role="tabpanel"
+              aria-labelledby={`showcase-tab-${active}`}
+              className={`transition-all duration-300 motion-reduce:transition-none ${
+                transitioning ? "translate-y-1 opacity-0" : "translate-y-0 opacity-100"
+              }`}
+            >
+              <DemoBrowserFrame active>
+                <ActiveDemo />
+              </DemoBrowserFrame>
             </div>
           </WorkflowDemo>
         </div>
@@ -92,8 +135,15 @@ export function ProductShowcase({ standalone = true, className = "" }: { standal
 
   if (!standalone) return content;
   return (
-    <section id="product-proof" data-marketing-section="product-proof" aria-label="Product proof showcase" className="border-b border-sx-border bg-sx-bg">
-      <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 sm:py-20 lg:px-8">{content}</div>
+    <section
+      id="product-proof"
+      data-marketing-section="product-proof"
+      aria-label="Product proof showcase"
+      className="border-b border-sx-border bg-sx-bg"
+    >
+      <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 sm:py-20 lg:px-8">
+        <ScrollReveal>{content}</ScrollReveal>
+      </div>
     </section>
   );
 }
