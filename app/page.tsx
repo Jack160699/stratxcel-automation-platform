@@ -3,7 +3,7 @@ import { PublicHeader } from "@/app/components/PublicHeader";
 import { PublicFooter } from "@/app/components/PublicFooter";
 import { CommercialTrustSection } from "@/app/components/public/commercial/CommercialTrustGrid";
 import { PlatformHero } from "@/app/components/public/home/PlatformHero";
-import { GrowthLoopSection } from "@/app/components/public/home/GrowthLoopSection";
+import { HomeBusinessWorkSection } from "@/app/components/public/home/HomeBusinessWorkSection";
 import { HomeSectionSlot } from "@/app/components/public/home/HomeSectionSlot";
 import { HomeAuditOffer } from "@/app/components/public/home/HomeAuditOffer";
 import { HomeFinalCta } from "@/app/components/public/home/HomeFinalCta";
@@ -15,9 +15,9 @@ import { HomeProductsPreview } from "@/app/components/public/product-suite/HomeP
 import { ProductShowcase } from "@/app/components/public/showcase/ProductShowcase";
 
 export const metadata: Metadata = {
-  title: "Stratxcel — Your AI Growth Operating System",
+  title: "Stratxcel — Marketing, Customers & Daily Work in One Place",
   description:
-    "Research your market, create content, grow on search, manage leads, and run campaigns from one connected AI growth platform.",
+    "Stratxcel helps local and growing businesses get found, follow up faster, and get more done — with AI in one connected workspace.",
 };
 
 export default function HomePage() {
@@ -26,7 +26,7 @@ export default function HomePage() {
       <PublicHeader />
       <main className="flex-1">
         <PlatformHero />
-        <GrowthLoopSection />
+        <HomeBusinessWorkSection />
 
         <HomeSectionSlot id="products" sectionKey="products" label="Products" bordered={false}>
           <HomeProductsPreview />
