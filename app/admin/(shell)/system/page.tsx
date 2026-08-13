@@ -53,6 +53,7 @@ function emailHealthToIntegration(status: EmailHealthStatus): IntegrationStatus 
     case "OPERATIONAL":
       return "live";
     case "REACHABLE":
+    case "REACHABLE_UNPROVEN":
     case "CONFIGURED":
       return "test";
     case "SENDER_UNVERIFIED":
@@ -114,10 +115,18 @@ async function currentEmailStatus(): Promise<IntegrationRow> {
     processorMode,
   });
 
+  let providerEvidence = null;
+  try {
+    providerEvidence = (await store.getLatestProviderEvidence?.()) ?? null;
+  } catch {
+    providerEvidence = null;
+  }
+
   const health = await probeEmailSystemHealth({
     provider,
     outboxAccessible,
     workerPathAvailable,
+    providerEvidence,
   });
   return {
     name: "Email",

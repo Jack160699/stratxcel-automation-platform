@@ -78,6 +78,9 @@ function run() {
   const resend = read("packages", "email-runtime", "src", "providers", "resend.ts");
   assert.ok(resend.includes("MISSING_PROVIDER_MESSAGE_ID"), "must refuse success without provider id");
   assert.ok(resend.includes("NOT_CONFIGURED"), "must expose not-configured truthfully");
+  assert.equal(/api\.resend\.com\/domains|RESEND_API\}\/domains/.test(resend), false, "sending-only runtime must not call domain-list APIs");
+  assert.equal(/api\.resend\.com\/api-keys|RESEND_API\}\/api-keys/.test(resend), false, "must not call Resend API-key admin");
+  assert.equal(/method:\s*"GET"/.test(resend), false, "Resend adapter must not issue GET account/domain probes");
 
   console.log("email-integration-safety.test.ts (@stratxcel/email-runtime): ALL PASS");
 }

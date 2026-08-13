@@ -1,3 +1,4 @@
+import type { EmailProviderEvidence } from "../provider-evidence.ts";
 import type { EmailOutboxRow, EmailOutboxStatus, EmailEventType } from "../types.ts";
 
 export interface InsertOutboxInput {
@@ -57,6 +58,11 @@ export interface EmailOutboxStore {
   listByTenant(tenantId: string): Promise<EmailOutboxRow[]>;
   /** Optional connectivity probe for System Health. */
   ping?(): Promise<boolean>;
+  /**
+   * Latest meaningful provider evidence (SENT + message id, or auth/sender rejection).
+   * Must not return recipient PII or secrets.
+   */
+  getLatestProviderEvidence?(): Promise<EmailProviderEvidence>;
 }
 
 export function nowIso(d = new Date()): string {

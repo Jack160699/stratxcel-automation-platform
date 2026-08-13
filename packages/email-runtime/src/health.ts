@@ -1,4 +1,9 @@
 import { isEmailProcessorPathConfigured, loadEmailRuntimeConfig } from "./config.ts";
+import {
+  emptyProviderEvidence,
+  sanitizeEmailHealthDetail,
+  type EmailProviderEvidence,
+} from "./provider-evidence.ts";
 import type { EmailHealthStatus, EmailProvider } from "./types.ts";
 import { createEmailProvider } from "./providers/factory.ts";
 
@@ -7,24 +12,32 @@ export interface EmailHealthSnapshot {
   detail: string;
   checks: {
     keyConfigured: boolean;
-    providerReachable: boolean | null;
     senderConfigured: boolean;
-    senderVerified: boolean | null;
     outboxAccessible: boolean | null;
     workerPathAvailable: boolean;
     processorMode: string;
+    deliveryProven: boolean;
+    latestEvidenceKind: EmailProviderEvidence["kind"];
+    providerReachable: boolean | null;
+    senderVerified: boolean | null;
   };
 }
 
 /**
- * System Health for email. Boolean(RESEND_API_KEY) alone is never OPERATIONAL.
- * workerPathAvailable must be proven (heartbeat / configured processor mode) —
- * never hard-coded true.
+ * System Health for email.
+ *
+ * Configuration knowledge (key, EMAIL_FROM, processor, outbox, heartbeat) is
+ * separate from runtime delivery proof (SENT + provider_message_id).
+ *
+ * Boolean(RESEND_API_KEY) is never OPERATIONAL.
+ * A sending-only key must not call Resend domain/account-admin APIs.
+ * Historical success does not stay OPERATIONAL if later evidence is auth/sender failure.
  */
 export async function probeEmailSystemHealth(options?: {
   provider?: EmailProvider;
   outboxAccessible?: boolean | null;
   workerPathAvailable?: boolean;
+  providerEvidence?: EmailProviderEvidence | null;
 }): Promise<EmailHealthSnapshot> {
   const config = loadEmailRuntimeConfig();
   const provider = options?.provider ?? createEmailProvider();
@@ -36,68 +49,81 @@ export async function probeEmailSystemHealth(options?: {
       ? options.workerPathAvailable
       : processorConfigured;
   const outboxAccessible = options?.outboxAccessible ?? null;
+  const evidence = options?.providerEvidence ?? emptyProviderEvidence();
+
+  const probe = await provider.probeReadiness();
+  const deliveryProven = evidence.kind === "delivery_proof" && evidence.hasProviderMessageId === true;
+  const senderRejected = evidence.kind === "sender_unverified" || probe.senderVerified === false;
+  const authRejected = evidence.kind === "auth_config";
+
+  const senderVerified: boolean | null = senderRejected ? false : deliveryProven ? true : probe.senderVerified;
+  const providerReachable = probe.reachable;
 
   const baseChecks = {
     keyConfigured,
-    providerReachable: null as boolean | null,
     senderConfigured,
-    senderVerified: null as boolean | null,
     outboxAccessible,
     workerPathAvailable,
     processorMode: config.processorMode || "unset",
+    deliveryProven,
+    latestEvidenceKind: evidence.kind,
+    providerReachable,
+    senderVerified,
   };
 
+  const snapshot = (status: EmailHealthStatus, detail: string): EmailHealthSnapshot => ({
+    status,
+    detail: sanitizeEmailHealthDetail(detail),
+    checks: baseChecks,
+  });
+
   if (!keyConfigured) {
-    return {
-      status: "NOT_CONFIGURED",
-      detail: "Email provider API key is not configured.",
-      checks: baseChecks,
-    };
+    return snapshot("NOT_CONFIGURED", "Email provider API key is not configured.");
   }
 
-  const probe = await provider.probeReadiness();
-  baseChecks.providerReachable = probe.reachable;
-  baseChecks.senderVerified = probe.senderVerified;
-
-  if (!probe.reachable) {
-    return {
-      status: "CONFIGURED",
-      detail: probe.detail || "Provider key is present but provider is not reachable.",
-      checks: baseChecks,
-    };
+  if (!senderConfigured) {
+    return snapshot("SENDER_UNVERIFIED", "EMAIL_FROM is missing or invalid.");
   }
 
-  if (probe.senderVerified === false || !senderConfigured) {
-    return {
-      status: "SENDER_UNVERIFIED",
-      detail: !senderConfigured
-        ? "EMAIL_FROM is missing or invalid."
-        : probe.detail || "Sender/domain is not verified with the provider.",
-      checks: baseChecks,
-    };
+  if (senderRejected) {
+    return snapshot(
+      "SENDER_UNVERIFIED",
+      "Latest provider evidence is a sender/domain verification rejection. Sending-only keys do not enumerate domains."
+    );
+  }
+
+  if (authRejected) {
+    return snapshot(
+      "DEGRADED",
+      "Latest provider evidence is an API key auth/config rejection (HTTP 401/403)."
+    );
   }
 
   if (outboxAccessible === false || !workerPathAvailable) {
-    return {
-      status: "DEGRADED",
-      detail: !workerPathAvailable
-        ? `Provider reachable but processor path is not configured (EMAIL_PROCESSOR_MODE=${config.processorMode || "unset"}; Vercel sub-daily cron is not used).`
-        : "Provider is reachable but outbox is inaccessible.",
-      checks: baseChecks,
-    };
+    return snapshot(
+      "DEGRADED",
+      !workerPathAvailable
+        ? `Provider key is configured but processor path is not healthy (EMAIL_PROCESSOR_MODE=${config.processorMode || "unset"}; Vercel sub-daily cron is not used).`
+        : "Provider key is configured but outbox is inaccessible."
+    );
   }
 
-  if (probe.senderVerified === true && senderConfigured && keyConfigured && probe.reachable && workerPathAvailable) {
-    return {
-      status: "OPERATIONAL",
-      detail: "Email provider configured, reachable, sender verified, and processor path available.",
-      checks: baseChecks,
-    };
+  if (deliveryProven && outboxAccessible === true && workerPathAvailable && senderConfigured) {
+    return snapshot(
+      "OPERATIONAL",
+      "Email is operational: sending key configured, outbox and processor healthy, and a real provider message id is persisted."
+    );
   }
 
-  return {
-    status: "REACHABLE",
-    detail: probe.detail || "Provider is reachable; sender verification not confirmed.",
-    checks: baseChecks,
-  };
+  if (workerPathAvailable && outboxAccessible === true && senderConfigured) {
+    return snapshot(
+      "REACHABLE_UNPROVEN",
+      "Email is configured and the processor/outbox path is healthy, but delivery is unproven until a real provider send persists a message id."
+    );
+  }
+
+  return snapshot(
+    "CONFIGURED",
+    probe.detail || "Email provider key is configured; delivery proof has not been established."
+  );
 }

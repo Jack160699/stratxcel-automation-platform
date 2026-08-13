@@ -1,4 +1,4 @@
-import { extractEmailAddress, loadEmailRuntimeConfig } from "../config.ts";
+import { loadEmailRuntimeConfig } from "../config.ts";
 import type {
   EmailErrorCategory,
   EmailProvider,
@@ -7,6 +7,7 @@ import type {
 } from "../types.ts";
 
 const RESEND_API = "https://api.resend.com";
+/** Sending-access runtime: POST /emails is the only Resend HTTP call. */
 
 function categorizeHttpFailure(status: number, message: string): {
   retryable: boolean;
@@ -68,19 +69,18 @@ export class ResendEmailProvider implements EmailProvider {
   private readonly apiKey: string | null;
   private readonly fetchImpl: typeof fetch;
   private readonly sendTimeoutMs: number;
-  private readonly probeTimeoutMs: number;
 
   constructor(options: {
     apiKey?: string | null;
     fetchImpl?: typeof fetch;
     sendTimeoutMs?: number;
+    /** Accepted for compatibility; readiness is configuration-only and does not probe Resend admin APIs. */
     probeTimeoutMs?: number;
   } = {}) {
     const config = loadEmailRuntimeConfig();
     this.apiKey = options.apiKey ?? process.env.RESEND_API_KEY?.trim() ?? null;
     this.fetchImpl = options.fetchImpl ?? fetch;
     this.sendTimeoutMs = options.sendTimeoutMs ?? config.providerTimeoutMs;
-    this.probeTimeoutMs = options.probeTimeoutMs ?? config.probeTimeoutMs;
   }
 
   isConfigured(): boolean {
@@ -190,6 +190,11 @@ export class ResendEmailProvider implements EmailProvider {
     }
   }
 
+  /**
+   * Configuration knowledge only. A sending-access key must not call
+   * Resend domain-list, API-key admin, or account-admin endpoints.
+   * Delivery proof is a persisted SENT row with provider_message_id.
+   */
   async probeReadiness() {
     const config = loadEmailRuntimeConfig();
     if (!this.isConfigured()) {
@@ -201,67 +206,14 @@ export class ResendEmailProvider implements EmailProvider {
       };
     }
 
-    try {
-      const response = await fetchWithTimeout(
-        this.fetchImpl,
-        `${RESEND_API}/domains`,
-        {
-          method: "GET",
-          headers: { Authorization: `Bearer ${this.apiKey}` },
-        },
-        this.probeTimeoutMs
-      );
-
-      if (response.status === 401 || response.status === 403) {
-        return {
-          configured: true,
-          reachable: true,
-          senderVerified: false,
-          detail: "Resend API key rejected (auth/config)",
-        };
-      }
-
-      if (!response.ok) {
-        return {
-          configured: true,
-          reachable: response.status < 500,
-          senderVerified: null,
-          detail: `Resend probe returned HTTP ${response.status}`,
-        };
-      }
-
-      const payload = (await response.json()) as { data?: Array<{ name?: string; status?: string }> };
-      const fromAddress = extractEmailAddress(config.from);
-      const fromDomain = fromAddress.includes("@") ? fromAddress.split("@")[1] : "";
-      const domains = Array.isArray(payload.data) ? payload.data : [];
-      const match = domains.find((d) => typeof d.name === "string" && d.name.toLowerCase() === fromDomain);
-      const verified =
-        match != null && typeof match.status === "string"
-          ? ["verified", "success", "active"].includes(match.status.toLowerCase())
-          : null;
-
-      return {
-        configured: true,
-        reachable: true,
-        senderVerified: verified,
-        detail:
-          verified === true
-            ? "Resend reachable; sender domain appears verified"
-            : verified === false
-              ? "Resend reachable; sender domain not verified"
-              : "Resend reachable; sender domain verification unknown",
-      };
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      const isTimeout = /timeout|aborted|AbortError/i.test(message);
-      return {
-        configured: true,
-        reachable: false,
-        senderVerified: null,
-        detail: isTimeout
-          ? `Resend probe timed out after ${this.probeTimeoutMs}ms`
-          : safeErrorMessage(message),
-      };
-    }
+    const senderConfigured = Boolean(config.from && config.from.includes("@"));
+    return {
+      configured: true,
+      reachable: null,
+      senderVerified: null,
+      detail: senderConfigured
+        ? "Resend sending key is configured; domain and account APIs are not probed. Delivery proof requires a real provider send."
+        : "RESEND_API_KEY is set but EMAIL_FROM is missing or invalid",
+    };
   }
 }

@@ -106,7 +106,7 @@ async function run() {
     workerPathAvailable: true,
   });
   assert.notEqual(healthReachable.status, "OPERATIONAL");
-  assert.equal(healthReachable.status, "REACHABLE");
+  assert.equal(healthReachable.status, "REACHABLE_UNPROVEN");
 
   // --- Successful send → SENT + receipt persisted ---
   const store = new InMemoryEmailOutboxStore();

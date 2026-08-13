@@ -1,3 +1,4 @@
+import { emptyProviderEvidence, type EmailProviderEvidence } from "../provider-evidence.ts";
 import { loadEmailRuntimeConfig } from "../config.ts";
 import { getEmailEventContract } from "../events.ts";
 import { emitEmailOperationalEvent } from "../observability.ts";
@@ -206,16 +207,30 @@ async function processOne(
 
 /**
  * Claim pending/retry emails atomically and send via the provider adapter.
- * Recovers WAITING_CONFIGURATION only after a real readiness probe proves
- * configured + reachable + senderVerified (never from isConfigured()/key presence alone).
+ * Recovers WAITING_CONFIGURATION from configuration knowledge plus latest
+ * provider evidence — never from isConfigured()/key presence alone, and never
+ * via privileged domain/account APIs.
  * Probe runs at most once per batch. Never marks SENT without a real provider message id.
  */
-export function isProviderReadyForWaitingConfigRecovery(probe: {
-  configured: boolean;
-  reachable: boolean;
-  senderVerified: boolean | null;
-}): boolean {
-  return probe.configured === true && probe.reachable === true && probe.senderVerified === true;
+export function isProviderReadyForWaitingConfigRecovery(
+  probe: {
+    configured: boolean;
+    reachable: boolean | null;
+    senderVerified: boolean | null;
+  },
+  evidence?: EmailProviderEvidence | null
+): boolean {
+  if (probe.configured !== true) return false;
+  if (probe.reachable === false) return false;
+  if (probe.senderVerified === false) return false;
+  // Explicit verified probe (in-memory tests) may recover after operator fix.
+  if (probe.senderVerified === true) return true;
+
+  const latest = evidence ?? emptyProviderEvidence();
+  if (latest.kind === "auth_config" || latest.kind === "sender_unverified") return false;
+  if (latest.kind === "delivery_proof" && latest.hasProviderMessageId) return true;
+  // Sending-only path: key present, no blocking provider evidence (e.g. was NOT_CONFIGURED).
+  return true;
 }
 
 export async function processEmailOutboxBatch(
@@ -227,7 +242,11 @@ export async function processEmailOutboxBatch(
   if (provider.isConfigured() && typeof store.recoverWaitingConfiguration === "function") {
     // One readiness probe per batch — never per queued row, never on key presence alone.
     const probe = await provider.probeReadiness();
-    if (isProviderReadyForWaitingConfigRecovery(probe)) {
+    const evidence =
+      typeof store.getLatestProviderEvidence === "function"
+        ? await store.getLatestProviderEvidence()
+        : emptyProviderEvidence();
+    if (isProviderReadyForWaitingConfigRecovery(probe, evidence)) {
       const rows = await store.recoverWaitingConfiguration(options.limit ?? 100);
       recovered = rows.length;
     }

@@ -41,6 +41,15 @@ export {
 export { emitEmailOperationalEvent } from "./observability.ts";
 export { probeEmailSystemHealth, type EmailHealthSnapshot } from "./health.ts";
 export {
+  selectLatestProviderEvidence,
+  classifyProviderEvidenceRow,
+  emptyProviderEvidence,
+  sanitizeEmailHealthDetail,
+  type EmailProviderEvidence,
+  type EmailProviderEvidenceKind,
+  type ProviderEvidenceRow,
+} from "./provider-evidence.ts";
+export {
   computeEmailBackoffSeconds,
   nextEmailAttemptAt,
   isRetryExhausted,

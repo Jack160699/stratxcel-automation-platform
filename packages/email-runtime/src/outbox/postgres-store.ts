@@ -1,4 +1,5 @@
 import type { ServiceClient } from "../db.ts";
+import { emptyProviderEvidence, selectLatestProviderEvidence, type EmailProviderEvidence } from "../provider-evidence.ts";
 import type { EmailOutboxRow } from "../types.ts";
 import type { ClaimOutboxOptions, EmailOutboxStore, InsertOutboxInput } from "./store.ts";
 
@@ -183,6 +184,39 @@ export class PostgresEmailOutboxStore implements EmailOutboxStore {
   async ping(): Promise<boolean> {
     const { error } = await this.supabase.from("email_outbox").select("id").limit(1);
     return !error;
+  }
+
+  async getLatestProviderEvidence(): Promise<EmailProviderEvidence> {
+    const columns = "status, provider_message_id, last_error_code, sent_at, last_attempt_at, updated_at";
+    const [sent, failures] = await Promise.all([
+      this.supabase
+        .from("email_outbox")
+        .select(columns)
+        .eq("status", "SENT")
+        .not("provider_message_id", "is", null)
+        .order("sent_at", { ascending: false })
+        .limit(1),
+      this.supabase
+        .from("email_outbox")
+        .select(columns)
+        .in("last_error_code", ["HTTP_401", "HTTP_403", "SENDER_UNVERIFIED"])
+        .order("last_attempt_at", { ascending: false })
+        .limit(5),
+    ]);
+    if (sent.error) throw new Error(`email_outbox getLatestProviderEvidence failed: ${sent.error.message}`);
+    if (failures.error) throw new Error(`email_outbox getLatestProviderEvidence failed: ${failures.error.message}`);
+    const rows = [...(sent.data ?? []), ...(failures.data ?? [])];
+    if (rows.length === 0) return emptyProviderEvidence();
+    return selectLatestProviderEvidence(
+      rows as Array<{
+        status: string;
+        provider_message_id: string | null;
+        last_error_code: string | null;
+        sent_at: string | null;
+        last_attempt_at: string | null;
+        updated_at: string;
+      }>
+    );
   }
 }
 

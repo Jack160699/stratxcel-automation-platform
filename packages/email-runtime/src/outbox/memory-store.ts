@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { selectLatestProviderEvidence, type EmailProviderEvidence } from "../provider-evidence.ts";
 import type { EmailOutboxRow } from "../types.ts";
 import type { ClaimOutboxOptions, EmailOutboxStore, InsertOutboxInput } from "./store.ts";
 import { nowIso } from "./store.ts";
@@ -210,5 +211,18 @@ export class InMemoryEmailOutboxStore implements EmailOutboxStore {
 
   async ping(): Promise<boolean> {
     return true;
+  }
+
+  async getLatestProviderEvidence(): Promise<EmailProviderEvidence> {
+    return selectLatestProviderEvidence(
+      [...this.rows.values()].map((row) => ({
+        status: row.status,
+        provider_message_id: row.provider_message_id,
+        last_error_code: row.last_error_code,
+        sent_at: row.sent_at,
+        last_attempt_at: row.last_attempt_at,
+        updated_at: row.updated_at,
+      }))
+    );
   }
 }

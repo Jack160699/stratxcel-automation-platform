@@ -6,7 +6,7 @@ import type {
 
 export type InMemoryProbeState = {
   configured: boolean;
-  reachable: boolean;
+  reachable: boolean | null;
   senderVerified: boolean | null;
   detail: string;
 };

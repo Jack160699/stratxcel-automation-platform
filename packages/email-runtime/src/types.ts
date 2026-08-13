@@ -31,6 +31,7 @@ export type EmailHealthStatus =
   | "NOT_CONFIGURED"
   | "CONFIGURED"
   | "REACHABLE"
+  | "REACHABLE_UNPROVEN"
   | "SENDER_UNVERIFIED"
   | "OPERATIONAL"
   | "DEGRADED";
@@ -84,9 +85,14 @@ export interface EmailProvider {
   readonly name: string;
   isConfigured(): boolean;
   send(request: EmailSendRequest): Promise<EmailProviderSendOutcome>;
+  /**
+   * Configuration knowledge only. Must not call privileged provider APIs
+   * (domain list, API-key admin, account admin). `reachable`/`senderVerified`
+   * may be null when unproven. Delivery proof comes from persisted sends.
+   */
   probeReadiness(): Promise<{
     configured: boolean;
-    reachable: boolean;
+    reachable: boolean | null;
     senderVerified: boolean | null;
     detail: string;
   }>;

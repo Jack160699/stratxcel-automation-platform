@@ -330,8 +330,11 @@ async function run() {
     assert.equal(timeoutOutcome.errorCode, "TIMEOUT");
   }
   const probe = await timeoutProvider.probeReadiness();
-  assert.equal(probe.reachable, false);
-  assert.ok(/timed out/i.test(probe.detail));
+  assert.equal(probe.configured, true);
+  assert.equal(probe.reachable, null);
+  assert.equal(probe.senderVerified, null);
+  assert.equal(/timed out/i.test(probe.detail), false);
+  assert.ok(/sending key is configured|not probed/i.test(probe.detail));
 
   // --- Processor path unavailable => NOT OPERATIONAL ---
   delete process.env.EMAIL_PROCESSOR_MODE;
