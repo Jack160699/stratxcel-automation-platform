@@ -64,6 +64,9 @@ function run() {
   const auditHeartbeatIdx = source.lastIndexOf("executeWithLeaseHeartbeat", auditExecuteIdx);
   assert.ok(auditHeartbeatIdx > -1 && auditHeartbeatIdx < auditExecuteIdx, "Audit execution must renew its queue lease");
   assert.ok(/outcome\.kind\s*===\s*"RETRY"/.test(source), "retryable Audit failures must use bounded queue retry");
+  assert.ok(/enqueueMissionTerminalEmailBestEffort/.test(source), "terminal missions must enqueue email best-effort");
+  assert.ok(/processEmailOutboxBatch/.test(source), "mission-worker must host the independent email processor loop");
+  assert.ok(/email-processor/.test(source), "email processor heartbeats must use worker_type email-processor");
 
   console.log("worker-safety.test.ts (@stratxcel/mission-worker): ALL PASS");
 }

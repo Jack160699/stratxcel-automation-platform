@@ -1,14 +1,11 @@
 {
-  "name": "@stratxcel/human-handoff",
+  "name": "@stratxcel/email-runtime",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "main": "src/index.ts",
   "types": "src/index.ts",
   "dependencies": {
-    "@stratxcel/audit": "*",
-    "@stratxcel/email-runtime": "*",
-    "@stratxcel/missions": "*",
     "@supabase/supabase-js": "^2.110.7"
   }
 }

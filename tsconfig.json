@@ -27,6 +27,9 @@
       "@/*": [
         "./*"
       ],
+      "@stratxcel/email-runtime": [
+        "./packages/email-runtime/src/index.ts"
+      ],
       "@stratxcel/websites-and-domains": [
         "./packages/websites-and-domains/src/index.ts"
       ],

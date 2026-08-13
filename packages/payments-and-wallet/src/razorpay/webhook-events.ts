@@ -108,6 +108,10 @@ export interface WebhookProcessResult {
   /** Present on a processed refund.processed event — used by the webhook route to
    *  best-effort issue a credit note against the original invoice. */
   refundId?: string;
+  /** Present on subscription charge/lifecycle events — used for best-effort emails. */
+  subscriptionId?: string | null;
+  /** Present on subscription.cancelled — distinguishes scheduled vs immediate cancel. */
+  cancelAtCycleEnd?: boolean | null;
 }
 
 export async function writeReconciliationIssue(
@@ -604,6 +608,7 @@ async function processSubscriptionChargedEvent(
     actionTaken: already ? "subscription_charge_already_fulfilled" : "subscription_charge_fulfilled",
     orderId: (rpcData as { order_id?: string }).order_id ?? null,
     purpose: "subscription_payment",
+    subscriptionId: localSub.id,
   };
 }
 
@@ -710,10 +715,19 @@ async function processSubscriptionLifecycleEvent(
     return { eventType, handled: false, actionTaken: `subscription_lifecycle_failed_${reason}` };
   }
 
+  const { data: resolvedSub } = await supabase
+    .from("subscriptions")
+    .select("id")
+    .eq("billing_provider", "razorpay_subscription")
+    .eq("provider_subscription_id", providerSubscriptionId)
+    .maybeSingle();
+
   return {
     eventType,
     handled: true,
     actionTaken:
       eventType === "subscription.updated" ? "subscription_updated_synced" : `subscription_lifecycle_${providerStatus}`,
+    subscriptionId: resolvedSub?.id ?? null,
+    cancelAtCycleEnd,
   };
 }

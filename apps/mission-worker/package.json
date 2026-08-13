@@ -11,6 +11,7 @@
     "@stratxcel/audit": "*",
     "@stratxcel/audit-engine": "*",
     "@stratxcel/brand-brain": "*",
+    "@stratxcel/email-runtime": "*",
     "@stratxcel/hermes": "*",
     "@stratxcel/missions": "*",
     "@stratxcel/payments-and-wallet": "*",

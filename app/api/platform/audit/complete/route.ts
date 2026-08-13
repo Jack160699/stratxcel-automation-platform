@@ -1,6 +1,10 @@
 import { requireTenantContext, getTenantServiceContext } from "@/lib/tenants/tenant-context";
 import { requirePlatformStaff } from "@/lib/platform-staff/auth";
 import { normalizeAuditDeliveryReport } from "@/lib/audit/customer-state";
+import {
+  createPostgresEmailOutboxStore,
+  enqueueAuditDeliveredEmailBestEffort,
+} from "@stratxcel/email-runtime";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -35,7 +39,7 @@ export async function POST(request: Request) {
 
     const { data: order, error: orderError } = await serviceDb
       .from("audit_orders")
-      .select("id, tenant_id, status")
+      .select("id, tenant_id, status, guest_email, claimed_by, business_name")
       .eq("id", auditOrderId)
       .eq("tenant_id", tenantId)
       .maybeSingle();
@@ -70,6 +74,21 @@ export async function POST(request: Request) {
     const completion = rpcRes as { success?: boolean; reason?: string; credit_expires_at?: string; credit_amount_cents?: number } | null;
     if (!completion || completion.success !== true) {
       return Response.json({ error: `Audit completion rejected: ${completion?.reason ?? "unknown_reason"}` }, { status: 400 });
+    }
+
+    // Best-effort customer notification — never undoes the completed Audit state.
+    try {
+      const store = createPostgresEmailOutboxStore(serviceDb);
+      await enqueueAuditDeliveredEmailBestEffort(serviceDb, store, {
+        id: auditOrderId,
+        tenant_id: tenantId,
+        guest_email: (order.guest_email as string | null) ?? null,
+        claimed_by: (order.claimed_by as string | null) ?? null,
+        business_name: (order.business_name as string | null) ?? null,
+        status: "completed",
+      });
+    } catch (err) {
+      console.error("[audit-complete] email notify failed", err instanceof Error ? err.message : err);
     }
 
     return Response.json({
