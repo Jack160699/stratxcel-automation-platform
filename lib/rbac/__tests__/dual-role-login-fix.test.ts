@@ -44,8 +44,8 @@ function run() {
   const oneTap = read("app", "components", "auth", "GoogleOneTap.tsx");
   const guestCheckout = read("app", "audit", "checkout", "GuestCheckoutForm.tsx");
 
-  assert.ok(/establishPendingWorkspaceIntent\("customer"\)/.test(loginPage));
   assert.ok(/finalizeAuthWorkspaceIntent\("customer"\)/.test(loginForm));
+  assert.equal(/establishPendingWorkspaceIntent/.test(loginPage), false, "/login page must not write cookies during render");
   assert.equal(/finalizeAuthWorkspaceIntent\(authMode/.test(loginForm), false, "/login must not honor mode=admin from URL");
   assert.ok(/finalizeAuthWorkspaceIntent\("admin"\)/.test(adminLogin));
   assert.ok(/finalizeAuthWorkspaceIntent/.test(callback));

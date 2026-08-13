@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { redirect } from "next/navigation";
 import { resolveCanonicalIdentity } from "@/lib/identity/resolve-identity";
-import { ensureCustomerWorkspaceForAppEntry } from "@/app/actions/auth";
 import AppLogin from "./AppLogin";
 import { OnboardingPanel } from "./OnboardingPanel";
 import { CurrentTenantProvider } from "./CurrentTenantContext";
@@ -25,22 +24,7 @@ export default async function ClientLayout({ children }: { children: ReactNode }
     return <AppLogin />;
   }
 
-  const initial = await resolveCanonicalIdentity();
-  if (initial.state === "NO_SESSION") return <AppLogin />;
-
-  if (initial.state === "INTERNAL_STAFF") {
-    if (initial.tenants.length > 0) {
-      await ensureCustomerWorkspaceForAppEntry(initial.userId, true);
-    } else {
-      redirect("/admin");
-    }
-  }
-
-  const identity =
-    initial.state === "INTERNAL_STAFF" && initial.tenants.length > 0
-      ? await resolveCanonicalIdentity()
-      : initial;
-
+  const identity = await resolveCanonicalIdentity({ routeSurface: "app" });
   if (identity.state === "NO_SESSION") return <AppLogin />;
   if (identity.state === "INTERNAL_STAFF") redirect("/admin");
   if (identity.state === "NEW_CUSTOMER") return <OnboardingPanel />;
