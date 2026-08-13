@@ -57,7 +57,7 @@ export async function POST(request: Request) {
   } = await supabase.auth.getUser();
 
   if (user) {
-    const identity = await resolveCanonicalIdentity();
+    const identity = await resolveCanonicalIdentity({ routeSurface: "app" });
     if (identity.state === "INTERNAL_STAFF" || identity.state === "STAFF_VIEWING_CLIENT") {
       return Response.json({ error: "Staff accounts cannot redeem customer promo codes" }, { status: 403 });
     }
