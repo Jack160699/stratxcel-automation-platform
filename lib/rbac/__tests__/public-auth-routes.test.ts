@@ -159,8 +159,8 @@ function run() {
   // --- 8. Public Header CTA destinations: real /login and /signup routes,
   // in both the desktop nav and the mobile drawer -----------------------------
   const publicHeader = read("app", "components", "PublicHeader.tsx");
-  const signInMatches = publicHeader.match(/href="\/login"/g) ?? [];
-  const startMatches = publicHeader.match(/href="\/signup"/g) ?? [];
+  const signInMatches = publicHeader.match(/href="\/login"|href=\{PUBLIC_CTAS\.signIn\.href\}/g) ?? [];
+  const startMatches = publicHeader.match(/href="\/signup"|href=\{PUBLIC_CTAS\.primary\.href\}/g) ?? [];
   assert.ok(signInMatches.length >= 2, "PublicHeader's \"Sign in\" link must point at /login in both desktop and mobile nav");
   assert.ok(startMatches.length >= 2, "PublicHeader's \"Get Started\" link must point at /signup in both desktop and mobile nav");
   assert.equal(/href="\/app"/.test(publicHeader), false, "PublicHeader must no longer link \"Sign in\" at /app now that /login exists");
