@@ -16,8 +16,7 @@
  * #45c4ff→#3AA0FF) that the journey experience's look is unaffected while
  * the whole product now shares one literal canvas colour.
  */
-:root,
-.sx-theme-light {
+:root {
   --sx-bg: #fafbfc;
   --sx-surface-1: #ffffff;
   --sx-surface-2: #f4f6f9;
@@ -57,38 +56,6 @@
   --sx-shadow-xl: 0 32px 64px -24px rgb(10 16 32 / 0.1);
   --sx-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
 
-  --background: var(--sx-bg);
-  --foreground: var(--sx-text);
-}
-
-.sx-theme-dark {
-  --sx-bg: #06080c;
-  --sx-surface-1: #0b0e14;
-  --sx-surface-2: #11151d;
-  --sx-surface-3: #171c26;
-  --sx-elevated: #1f2632;
-  --sx-border: #1d2431;
-  --sx-border-strong: #2c3543;
-
-  --sx-text: #e9edf3;
-  --sx-text-muted: #98a4b7;
-  --sx-text-subtle: #667384;
-
-  --sx-accent: #3aa0ff;
-  --sx-accent-hover: #6bbbff;
-  --sx-accent-muted: rgb(58 160 255 / 0.14);
-  --sx-accent-on: #0a0d12;
-  --sx-royal: #3b5bf5;
-  --sx-ai: #4fdce5;
-
-  --sx-success: #35c98c;
-  --sx-warning: #f0b429;
-  --sx-danger: #f2565f;
-  --sx-learning: #a78bfa;
-  --sx-offline: #6b7684;
-
-  --sx-shadow-lg: 0 12px 32px -12px rgb(0 0 0 / 0.85);
-  --sx-shadow-xl: 0 32px 64px -24px rgb(0 0 0 / 0.9);
   --background: var(--sx-bg);
   --foreground: var(--sx-text);
 }
@@ -213,6 +180,48 @@
   --radius-sx-md: var(--sx-radius-md);
   --radius-sx-lg: var(--sx-radius-lg);
   --radius-sx-pill: var(--sx-radius-pill);
+}
+
+/*
+ * Theme class overrides MUST sit after @theme. Tailwind v4 copies the last
+ * --sx-* assignments onto :root; putting .sx-theme-dark before @theme made
+ * production :root dark and dropped the class selectors entirely.
+ */
+html.sx-theme-light {
+  color-scheme: light;
+}
+
+html.sx-theme-dark {
+  color-scheme: dark;
+  --sx-bg: #06080c;
+  --sx-surface-1: #0b0e14;
+  --sx-surface-2: #11151d;
+  --sx-surface-3: #171c26;
+  --sx-elevated: #1f2632;
+  --sx-border: #1d2431;
+  --sx-border-strong: #2c3543;
+
+  --sx-text: #e9edf3;
+  --sx-text-muted: #98a4b7;
+  --sx-text-subtle: #667384;
+
+  --sx-accent: #3aa0ff;
+  --sx-accent-hover: #6bbbff;
+  --sx-accent-muted: rgb(58 160 255 / 0.14);
+  --sx-accent-on: #0a0d12;
+  --sx-royal: #3b5bf5;
+  --sx-ai: #4fdce5;
+
+  --sx-success: #35c98c;
+  --sx-warning: #f0b429;
+  --sx-danger: #f2565f;
+  --sx-learning: #a78bfa;
+  --sx-offline: #6b7684;
+
+  --sx-shadow-lg: 0 12px 32px -12px rgb(0 0 0 / 0.85);
+  --sx-shadow-xl: 0 32px 64px -24px rgb(0 0 0 / 0.9);
+  --background: var(--sx-bg);
+  --foreground: var(--sx-text);
 }
 
 body {

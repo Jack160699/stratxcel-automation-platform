@@ -4,6 +4,7 @@ import { Analytics } from "@vercel/analytics/next";
 import { GoogleAnalytics } from "@/app/components/GoogleAnalytics";
 import { ScrollRestoration } from "@/app/components/ScrollRestoration";
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
+import Script from "next/script";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -75,9 +76,14 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} ${instrumentSans.variable} h-full antialiased`}
+      className={`${geistSans.variable} ${geistMono.variable} ${instrumentSans.variable} h-full antialiased sx-theme-light`}
+      suppressHydrationWarning
     >
       <body className="min-h-full bg-sx-bg text-sx-text">
+        <Script
+          id="sx-theme-boot"
+          strategy="beforeInteractive"
+        >{`(function(){try{var t=localStorage.getItem("sx-theme");if(t==="dark"){document.documentElement.classList.remove("sx-theme-light");document.documentElement.classList.add("sx-theme-dark");}}catch(e){}})();`}</Script>
         <ThemeProvider>
         <ScrollRestoration />
         {children}

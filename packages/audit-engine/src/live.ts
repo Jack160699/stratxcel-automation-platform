@@ -19,6 +19,7 @@ import {
   assertAuditProviderContextPrivacy,
   buildAuditProviderBusinessContext,
 } from "./provider-context.ts";
+import { mergeFirstPartyDiscoverySources } from "./first-party-evidence.ts";
 import { canonicalizeResearchSources, normalizeAuditReport } from "./quality.ts";
 import { runAutomaticAuditGeneration } from "./pipeline.ts";
 import type {
@@ -465,34 +466,22 @@ export class LiveAuditResearchProvider implements AuditResearchProvider {
       },
     );
     const canonical = canonicalizeResearchSources(result);
-    if (website) {
-      const already = canonical.sources.some((source) => source.url.replace(/\/$/, "") === website.replace(/\/$/, ""));
-      if (!already) {
-        return {
-          result: {
-            ...canonical,
-            sources: [
-              {
-                id: "first_party_website",
-                url: website,
-                canonicalUrl: website,
-                title: `${context.order.business_name} website`,
-                domain: websiteDomain ?? "website",
-                provider: "crawler" as const,
-                retrievedAt: new Date().toISOString(),
-                searchQueries: [website],
-                sourceType: "PRIMARY" as const,
-                verification: "verified" as const,
-              },
-              ...canonical.sources,
-            ],
-          },
-          receipt: execution ? receipt("research", execution) : null,
-        };
-      }
-    }
+    const { data: snapshot } = await this.client
+      .from("audit_discovery_snapshots")
+      .select("packet")
+      .eq("audit_order_id", context.order.id)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const packet = snapshot?.packet && typeof snapshot.packet === "object" && !Array.isArray(snapshot.packet)
+      ? snapshot.packet as { pagesFetched?: Array<{ url?: string; title?: string; status?: number }> }
+      : null;
     return {
-      result: canonical,
+      result: mergeFirstPartyDiscoverySources(canonical, {
+        websiteUrl: website,
+        businessName: context.order.business_name,
+        pages: packet?.pagesFetched,
+      }),
       receipt: execution ? receipt("research", execution) : null,
     };
   }
