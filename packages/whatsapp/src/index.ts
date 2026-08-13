@@ -19,3 +19,4 @@ export * from "./templates/sync.ts";
 export * from "./embedded-signup/state.ts";
 export * from "./legacy-bridge/index.ts";
 export * from "./outbound.ts";
+export * from "./platform-sender.ts";

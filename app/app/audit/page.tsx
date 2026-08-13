@@ -11,8 +11,9 @@ import { loadCustomerJson } from "@/lib/customer-app/load-result";
 import { parseOnboardingState } from "@/lib/audit/v1/onboarding-state";
 import { verifiedReviewsFromProfile } from "@/lib/audit/v1/reviews";
 import { AuditShareDialog } from "@/components/audit/AuditShareDialog";
-import { WhatsAppDestinationField } from "@/components/audit/WhatsAppDestinationField";
+import { AuditWhatsAppPanel } from "@/components/audit/AuditWhatsAppPanel";
 import { Modal } from "@/components/ui/Overlay";
+import { buildPresenceLinks } from "@/lib/audit/v1/presence";
 import type { EvidenceCoverage } from "@/lib/audit/v1/scoring";
 import {
   deriveAuditCustomerState,
@@ -88,6 +89,8 @@ export default function AuditHubPage() {
   const [waConsent, setWaConsent] = useState(true);
   const [waMasked, setWaMasked] = useState<string | null>(null);
   const [waSent, setWaSent] = useState(false);
+  const [waSending, setWaSending] = useState(false);
+  const closeWaDialog = useCallback(() => setWaDialog(null), []);
 
   const load = useCallback(async () => {
     setError(null);
@@ -372,7 +375,10 @@ export default function AuditHubPage() {
   }
 
   async function sendWhatsApp(payload: Record<string, unknown> = {}) {
+    if (waSending || waSent) return;
+    setWaSending(true);
     setShareMessage(null);
+    try {
     const response = await fetch("/api/platform/audit/report/whatsapp", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -401,6 +407,9 @@ export default function AuditHubPage() {
       return;
     }
     setShareMessage(json.message ?? json.error ?? "WhatsApp delivery checked.");
+    } finally {
+      setWaSending(false);
+    }
   }
 
   return (
@@ -409,6 +418,16 @@ export default function AuditHubPage() {
         report={report}
         coverage={coverageFromOrder(order, report)}
         reviews={verifiedReviewsFromProfile(parseOnboardingState(order.deep_dive_answers)?.profile)}
+        presence={buildPresenceLinks({
+          websiteUrl: order.website_url,
+          channels: parseOnboardingState(order.deep_dive_answers)?.channels,
+          verifiedPublicTypes: Object.entries(parseOnboardingState(order.deep_dive_answers)?.profile ?? {}).flatMap(([key, item]) =>
+            item && typeof item === "object" && "sourceClass" in item && (item as { sourceClass?: string }).sourceClass === "VERIFIED_PUBLIC"
+              ? [key === "websiteUrl" ? "website" : key]
+              : [],
+          ),
+          whatsappDeliveryMasked: waMasked,
+        })}
         onDownload={() => { window.open(`/api/platform/audit/report/pdf?order=${order.id}`, "_blank"); }}
         onShare={() => { void openShare(); }}
         onWhatsApp={() => { void sendWhatsApp(); }}
@@ -417,36 +436,37 @@ export default function AuditHubPage() {
         whatsAppSent={waSent}
       />
       <AuditShareDialog open={shareOpen} url={shareUrl} onClose={() => setShareOpen(false)} />
-      <Modal open={waDialog === "number"} onClose={() => setWaDialog(null)} title="Add your WhatsApp number">
-        <WhatsAppDestinationField
+      <Modal open={waDialog === "number"} onClose={closeWaDialog} title="Add your WhatsApp number">
+        <AuditWhatsAppPanel
+          masked={null}
+          consent={waConsent}
+          sending={waSending}
+          sent={waSent}
+          statusMessage={shareMessage}
           countryIso={waCountry}
           nationalNumber={waNational}
-          consent={waConsent}
+          draftConsent={waConsent}
           onCountry={setWaCountry}
           onNational={setWaNational}
           onConsent={setWaConsent}
-        />
-        <button
-          type="button"
-          className="mt-4 min-h-11 w-full rounded-sx-sm bg-sx-accent px-4 text-sm font-semibold text-sx-accent-on"
-          onClick={() => void sendWhatsApp({
+          onSend={() => void sendWhatsApp({
             destination: { countryIso: waCountry, nationalNumber: waNational },
             consent: waConsent,
           })}
-        >
-          Save and send
-        </button>
+          onChangeDestination={() => undefined}
+        />
       </Modal>
-      <Modal open={waDialog === "consent"} onClose={() => setWaDialog(null)} title="Allow WhatsApp delivery">
+      <Modal open={waDialog === "consent"} onClose={closeWaDialog} title="Allow WhatsApp delivery">
         <p className="text-sm text-sx-text-muted">
           Send my completed Audit and Audit-related updates to {waMasked ?? "this WhatsApp number"}.
         </p>
         <button
           type="button"
-          className="mt-4 min-h-11 w-full rounded-sx-sm bg-sx-accent px-4 text-sm font-semibold text-sx-accent-on"
+          disabled={waSending}
+          className="mt-4 min-h-11 w-full rounded-sx-sm bg-sx-accent px-4 text-sm font-semibold text-sx-accent-on disabled:opacity-60"
           onClick={() => void sendWhatsApp({ consent: true })}
         >
-          Enable consent and send
+          {waSending ? "Sending your Audit…" : "Enable consent and send"}
         </button>
       </Modal>
     </>

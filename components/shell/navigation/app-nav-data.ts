@@ -42,5 +42,5 @@ export const APP_NAV_GROUPS_DATA: NavGroupData[] = [
   },
 ];
 
-/** Mobile primary: the closed-beta offer and its essential customer surfaces. */
-export const APP_MOBILE_NAV_KEYS = ["home", "customer-audit", "crm", "billing"];
+/** Mobile primary: Home, Audit, Copilot, CRM — More holds the rest. */
+export const APP_MOBILE_NAV_KEYS = ["home", "customer-audit", "copilot", "crm"];

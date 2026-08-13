@@ -92,6 +92,20 @@ export function buildBrandBrainContentFromAuditIntake(
   ]);
   const products = productList(deepDive.majorProducts);
 
+  const existingWebsite = existingText(base, "website_url");
+  const auditWebsite = text(order.website_url);
+  const lastSyncedWebsite = text(base.audit_synced_website_url);
+  const customerOwnsWebsite = Boolean(existingWebsite && lastSyncedWebsite && existingWebsite !== lastSyncedWebsite);
+  const existingProfiles = Array.isArray(base.online_profiles)
+    ? unique(list(base.online_profiles))
+    : [];
+  const lastSyncedProfiles = Array.isArray(base.audit_synced_online_profiles)
+    ? unique(list(base.audit_synced_online_profiles))
+    : [];
+  const customerOwnsProfiles = existingProfiles.length > 0
+    && lastSyncedProfiles.length > 0
+    && JSON.stringify(existingProfiles) !== JSON.stringify(lastSyncedProfiles);
+
   const businessName = text(order.business_name) || existingText(base, "business_name");
   const industry = text(order.industry) || existingText(base, "industry");
   const businessDescription = text(deepDive.businessDescription) || existingText(base, "business_description");
@@ -110,8 +124,10 @@ export function buildBrandBrainContentFromAuditIntake(
     business_description: businessDescription || undefined,
     business_reach: businessReach || undefined,
     location: businessReach === "online_anywhere" ? undefined : text(deepDive.location) || undefined,
-    website_url: text(order.website_url) || existingText(base, "website_url") || undefined,
-    online_profiles: onlineProfiles,
+    website_url: customerOwnsWebsite ? existingWebsite : (auditWebsite || existingWebsite) || undefined,
+    audit_synced_website_url: auditWebsite || lastSyncedWebsite || undefined,
+    online_profiles: customerOwnsProfiles ? existingProfiles : unique([...onlineProfiles, ...existingProfiles]),
+    audit_synced_online_profiles: onlineProfiles,
     products: products.length > 0 ? products : base.products,
     priority_offering: text(deepDive.priorityOffering) || undefined,
     target_audience: targetAudience || undefined,
@@ -174,4 +190,14 @@ export function isBrandBrainCurrentForAudit(
     && content.audit_order_id === orderId
     && content.audit_intake_updated_at === intakeUpdatedAt,
   );
+}
+
+export function brandBrainPresenceChanged(
+  existing: BrandBrainContent | null,
+  next: BrandBrainContent,
+): boolean {
+  const current = existing ?? {};
+  return text(current.website_url) !== text(next.website_url)
+    || JSON.stringify(current.online_profiles ?? []) !== JSON.stringify(next.online_profiles ?? [])
+    || text(current.business_name) !== text(next.business_name);
 }

@@ -290,7 +290,7 @@ export default function BillingPage() {
               ))}
             </div>
             <p className="text-xs text-sx-text-subtle">
-              Scale / Custom starts at {money(3_499_900)}/mo and is scoped with our team. No monthly plan is charged before activation is confirmed.
+              Scale / Custom starts at {money(3_499_900)}/mo and is scoped with our team. Recurring production subscriptions are not enabled in this environment — request activation rather than charging a live monthly plan here.
             </p>
           </div>
         )}

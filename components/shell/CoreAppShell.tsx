@@ -58,7 +58,7 @@ export function CoreAppShell({
   staffBadge?: ReactNode;
   userMenu?: ReactNode;
   mobileNavItems: BottomNavItem[];
-  mobileMoreGroups: { label: string; items: { key: string; label: string; href: string }[] }[];
+  mobileMoreGroups: { label: string; items: { key: string; label: string; href: string; icon?: ReactNode }[] }[];
   children: ReactNode;
 }) {
   return (
@@ -66,7 +66,7 @@ export function CoreAppShell({
       <div className="hidden md:block">
         <Sidebar groups={sidebarGroups} activeKey={activeKey} brand={(collapsed) => <BrandMark expanded={!collapsed} product={product} />} />
       </div>
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col pb-14 md:pb-0">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col pb-24 md:pb-0">
         <TopCommandBar
           brand={<BrandMark product={product} />}
           context={topBarContext}

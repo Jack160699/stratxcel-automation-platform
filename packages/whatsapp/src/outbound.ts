@@ -17,6 +17,14 @@ export interface SendOutboundInput {
   templateName?: string | null;
   templateLanguage?: string | null;
   templateParams?: string[];
+  /**
+   * Optional server-resolved PLATFORM sender binding. When set, outbound
+   * preflight uses this WABA instead of the customer tenant's binding.
+   * Never accept this from the browser.
+   */
+  senderPhoneBindingId?: string;
+  /** Tenant that owns the template catalog when sending from a platform WABA. */
+  templateTenantId?: string;
   /** Explicit staff-initiated sends bypass the 24h free-form window rule the same way a template does — Meta's actual rule is template-OR-window, not staff-vs-automation, but a human sending from the inbox after reading the thread is exactly the case that window exists for. */
   isHumanInitiated?: boolean;
 }
@@ -229,9 +237,14 @@ export async function sendOutboundWhatsAppMessage(supabase: ServiceClient, input
   const { data: lead } = await supabase.from("crm_leads").select("*").eq("id", input.leadId).eq("tenant_id", input.tenantId).maybeSingle();
   if (!lead) return { ok: false, reason: "lead_not_found" };
 
-  const preflight = await resolveOutboundPreflight(supabase, { tenantId: input.tenantId }, input.tenantId);
+  const preflight = await resolveOutboundPreflight(
+    supabase,
+    input.senderPhoneBindingId ? { phoneBindingId: input.senderPhoneBindingId } : { tenantId: input.tenantId },
+    input.tenantId,
+  );
   if (!preflight.ok) return preflight;
   const binding = preflight.binding;
+  const templateTenantId = input.templateTenantId ?? input.tenantId;
 
   // Soft entitlement check — real, but not yet enforced (see
   // packages/missions/src/entitlement-map.ts's identical reasoning: no
@@ -249,7 +262,7 @@ export async function sendOutboundWhatsAppMessage(supabase: ServiceClient, input
     if (!input.templateId || !input.templateName || !input.templateLanguage) {
       return { ok: false, reason: "template_required_outside_service_window" };
     }
-    const usable = await isTemplateUsable(supabase, input.tenantId, input.templateId);
+    const usable = await isTemplateUsable(supabase, templateTenantId, input.templateId);
     if (!usable) return { ok: false, reason: "template_not_approved" };
   }
 

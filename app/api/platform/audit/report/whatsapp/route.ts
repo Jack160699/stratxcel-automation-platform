@@ -5,7 +5,7 @@ import {
   setAuditWhatsAppConsent,
   upsertAuditWhatsAppDestination,
 } from "@/lib/audit/v1/whatsapp-destination";
-import { createAuditShareUrl, sendAuditReportWhatsApp } from "@/lib/audit/v1/whatsapp-send";
+import { getOrCreateAuditShareUrl, sendAuditReportWhatsApp } from "@/lib/audit/v1/whatsapp-send";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -55,7 +55,7 @@ export async function POST(request: Request) {
     .limit(1)
     .maybeSingle();
 
-  const reportUrl = await createAuditShareUrl(ctx.service, {
+  const reportUrl = await getOrCreateAuditShareUrl(ctx.service, {
     tenantId: ctx.tenantId,
     orderId: ctx.order.id as string,
     userId: ctx.user.id,
@@ -74,7 +74,7 @@ export async function POST(request: Request) {
       ? 200
       : result.status === "NO_DESTINATION" || result.status === "NO_CONSENT"
         ? 200
-        : result.status === "NOT_CONFIGURED"
+        : result.status === "SENDER_NOT_CONFIGURED" || result.status === "TEMPLATE_REQUIRED"
           ? 409
           : 400;
   return Response.json(result, { status: http, headers: { "Cache-Control": "no-store" } });

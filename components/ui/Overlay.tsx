@@ -3,6 +3,7 @@
 import { useEffect, useId, useRef, type ReactNode } from "react";
 
 const FOCUSABLE = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
+const FIELD_FOCUSABLE = "input, select, textarea";
 
 /**
  * Modal on desktop, bottom sheet <768px — one component, CSS handles the
@@ -22,7 +23,12 @@ export function Modal({
   children: ReactNode;
 }) {
   const dialogRef = useRef<HTMLDivElement>(null);
+  const onCloseRef = useRef(onClose);
   const titleId = useId();
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
 
   useEffect(() => {
     if (!open) return;
@@ -32,12 +38,17 @@ export function Modal({
       root
         ? [...root.querySelectorAll<HTMLElement>(FOCUSABLE)].filter((el) => !el.hasAttribute("disabled") && el.getAttribute("aria-hidden") !== "true")
         : [];
-    focusables()[0]?.focus();
+    const firstField = root?.querySelector<HTMLElement>(FIELD_FOCUSABLE);
+    const initial = firstField && !firstField.hasAttribute("disabled") ? firstField : focusables()[0];
+    // Focus once when `open` becomes true. Do not depend on `onClose` identity
+    // or re-trap when the dialog already contains the active field — that was
+    // stealing input focus during typing.
+    if (initial) initial.focus();
 
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") {
         e.preventDefault();
-        onClose();
+        onCloseRef.current();
         return;
       }
       if (e.key !== "Tab" || !root) return;
@@ -58,7 +69,7 @@ export function Modal({
       document.removeEventListener("keydown", onKey);
       previous?.focus();
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
 

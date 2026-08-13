@@ -54,11 +54,30 @@ export async function POST(request: Request) {
   }
 
   const { supabase } = getTenantServiceContext();
+  const { retrieveHermesMissionContext, createEngineeringBrief, isCorePlatformCodingDenied } = await import("@/lib/hermes/operating-brain");
+  const { delegateHermesSpecialist } = await import("@/lib/hermes/specialists");
+  const { requiresOwnerApproval } = await import("@/lib/hermes/coding-boundary");
+  const hermesContext = await retrieveHermesMissionContext(supabase as never, body.tenantId).catch(() => null);
+  if (isCorePlatformCodingDenied(body.goalText)) {
+    return Response.json({
+      status: "ENGINEERING_REQUIRED",
+      brief: createEngineeringBrief({ missingCapability: "core platform coding", goal: body.goalText }),
+    }, { status: 409 });
+  }
+  if (requiresOwnerApproval(body.goalText)) {
+    return Response.json({
+      status: "APPROVAL_REQUIRED",
+      blocker: "OWNER_APPROVAL",
+      message: "This action is high-risk and needs explicit owner approval before Hermes can proceed.",
+      hermesContext,
+    }, { status: 409 });
+  }
+  const specialist = delegateHermesSpecialist(body.goalText);
   const mission = await createAndEstimateMission(supabase, {
     tenantId: body.tenantId,
     createdBy: ctx.userId,
     goalText: body.goalText,
   });
 
-  return Response.json({ mission }, { status: 201 });
+  return Response.json({ mission, hermesContext, specialist }, { status: 201 });
 }

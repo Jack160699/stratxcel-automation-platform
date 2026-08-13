@@ -1,7 +1,7 @@
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getTenantServiceContext } from "@/lib/tenants/tenant-context";
 import { listMembershipsForUser } from "@/lib/tenants/repository";
-import { buildBrandBrainContentFromAuditIntake, isBrandBrainCurrentForAudit } from "@/lib/audit/brand-brain";
+import { brandBrainPresenceChanged, buildBrandBrainContentFromAuditIntake, isBrandBrainCurrentForAudit } from "@/lib/audit/brand-brain";
 import { getCurrentBrandBrain, saveBrandBrainVersion } from "@stratxcel/brand-brain";
 import { resolveAuditBudgetLimitUsd } from "@stratxcel/audit-engine";
 import { AUDIT_CHANNEL_TYPES, sanitizeChannels } from "@/lib/audit/v1/channels";
@@ -77,6 +77,32 @@ function mergeState(order: Record<string, unknown>, patch: Partial<AuditOnboardi
   return { ...current, ...patch, updatedAt: new Date().toISOString() };
 }
 
+async function syncBrandBrainPresence(
+  service: ReturnType<typeof getTenantServiceContext>["supabase"],
+  input: { tenantId: string; userId: string; order: Record<string, unknown>; state: AuditOnboardingState },
+): Promise<void> {
+  if (!input.state.websiteUrl && input.state.channels.every((channel) => !channel.value)) return;
+  const existingBrain = await getCurrentBrandBrain(service, input.tenantId);
+  const mapped = {
+    id: input.order.id,
+    business_name: input.state.profile?.name?.value ?? input.order.business_name,
+    industry: input.state.profile?.category?.value ?? input.order.industry,
+    website_url: input.state.websiteUrl,
+    social_links: input.state.channels.filter((channel) => channel.value).map((channel) => channel.value),
+    deep_dive_answers: {
+      intakeMeta: { questionnaireVersion: CONNECT_DISCOVER_VERSION, updatedAt: input.state.updatedAt },
+      v1Experience: input.state,
+    },
+  };
+  const next = buildBrandBrainContentFromAuditIntake(mapped, existingBrain?.content ?? null);
+  if (!brandBrainPresenceChanged(existingBrain?.content ?? null, next)) return;
+  await saveBrandBrainVersion(service, {
+    tenantId: input.tenantId,
+    content: next,
+    createdBy: input.userId,
+  });
+}
+
 async function persist(service: ReturnType<typeof getTenantServiceContext>["supabase"], order: Record<string, unknown>, state: AuditOnboardingState, extras: Record<string, unknown> = {}) {
   const deepDive = {
     ...(typeof order.deep_dive_answers === "object" && order.deep_dive_answers ? order.deep_dive_answers as Record<string, unknown> : {}),
@@ -130,6 +156,7 @@ export async function POST(request: Request) {
       }));
       const state = mergeState(current, { step: "connect", websiteUrl, channels });
       await persist(ctx.service, current, state);
+      await syncBrandBrainPresence(ctx.service, { tenantId: ctx.tenantId, userId: ctx.user.id, order: current, state });
       return Response.json({ ok: true, state: { ...state, step: resumeStep(state) } });
     }
 
@@ -150,6 +177,7 @@ export async function POST(request: Request) {
         profile: packet.profile,
       });
       await persist(ctx.service, current, state, { website_url: packet.websiteUrl });
+      await syncBrandBrainPresence(ctx.service, { tenantId: ctx.tenantId, userId: ctx.user.id, order: current, state });
       return Response.json({
         ok: true,
         state,

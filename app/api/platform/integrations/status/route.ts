@@ -21,5 +21,44 @@ export async function GET(request: Request) {
     : statuses.some((value) => value === "disabled" || value === "revoked")
       ? "action_required"
       : "setup_required";
-  return Response.json({ whatsapp }, { headers: { "Cache-Control": "private, no-store" } });
+
+  const social = await ctx.supabase
+    .from("social_accounts")
+    .select("platform, status")
+    .eq("tenant_id", tenantId);
+  const socialRows = social.error ? [] : (social.data ?? []);
+  const platformStatus = (name: string) => {
+    const row = socialRows.find((item) => String(item.platform).toLowerCase() === name);
+    if (!row) return "setup_required" as const;
+    const status = String(row.status).toUpperCase();
+    if (status === "CONNECTED") return "connected" as const;
+    if (status.includes("REAUTH") || status === "ERROR") return "action_required" as const;
+    return "setup_required" as const;
+  };
+
+  const googleRow = await ctx.supabase
+    .from("search_google_connections")
+    .select("status")
+    .eq("tenant_id", tenantId)
+    .maybeSingle();
+  const googleStatus = googleRow.data?.status === "connected"
+    ? "connected"
+    : googleRow.data?.status === "error" || googleRow.data?.status === "revoked"
+      ? "action_required"
+      : "setup_required";
+
+  return Response.json({
+    whatsapp,
+    facebook: platformStatus("facebook"),
+    instagram: platformStatus("instagram"),
+    threads: platformStatus("threads"),
+    youtube: platformStatus("youtube"),
+    linkedin: platformStatus("linkedin"),
+    google: googleStatus,
+    selfService: {
+      google: true,
+      social: false,
+      whatsapp: false,
+    },
+  }, { headers: { "Cache-Control": "private, no-store" } });
 }

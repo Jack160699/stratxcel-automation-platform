@@ -135,6 +135,9 @@ export function createFakeSupabase(seed: Tables = {}, options: FakeSupabaseOptio
     not() {
       return chain;
     },
+    gt() {
+      return chain;
+    },
     order() {
       return chain;
     },

@@ -43,7 +43,7 @@ export function AppShell({
       mobileNavItems={mobileNavItems}
       mobileMoreGroups={sidebarGroups.map((g) => ({
         label: g.label ?? "Overview",
-        items: g.items.map((i) => ({ key: i.key, label: i.label, href: i.href })),
+        items: g.items.map((i) => ({ key: i.key, label: i.label, href: i.href, icon: i.icon })),
       }))}
       topBarContext={<ClientSwitcher />}
       staffBadge={<AdminBetaModeToggle enabled={betaEnabled} />}

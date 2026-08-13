@@ -8,6 +8,8 @@ import { Field, Input, Textarea } from "@/components/ui/Input";
 import { ErrorState, EmptyState } from "@/components/ui/Feedback";
 import { trackFunnel } from "@/lib/analytics/events";
 import { loadCustomerJson } from "@/lib/customer-app/load-result";
+import { PresenceCards } from "@/components/audit/PresenceCards";
+import { buildPresenceLinks } from "@/lib/audit/v1/presence";
 
 interface BrandBrainContent {
   business_name?: string;
@@ -23,6 +25,7 @@ interface BrandBrainContent {
   pillars?: string[];
   rules?: string[];
   products?: { name: string; description: string }[];
+  biggest_business_problem?: string;
   [key: string]: unknown;
 }
 
@@ -126,7 +129,7 @@ export default function BrandPage() {
       {content && (
         <fieldset disabled={readOnly} className="contents">
           <Card>
-            <CardHeading>Business</CardHeading>
+            <CardHeading>Business identity</CardHeading>
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
               <Field label="Business name">
                 <Input value={content.business_name ?? ""} onChange={(e) => field("business_name", e.target.value)} />
@@ -134,6 +137,28 @@ export default function BrandPage() {
               <Field label="Industry">
                 <Input value={content.industry ?? ""} onChange={(e) => field("industry", e.target.value)} />
               </Field>
+              <Field label="Location / market">
+                <Input
+                  value={content.location ?? ""}
+                  placeholder="Raipur, Chhattisgarh"
+                  onChange={(e) => field("location", e.target.value)}
+                />
+              </Field>
+            </div>
+          </Card>
+
+          <Card>
+            <CardHeading>Digital presence</CardHeading>
+            <p className="mt-1 text-xs text-sx-text-muted">Website and social profiles collected during Audit appear here. Your edits stay the highest truth.</p>
+            <PresenceCards
+              links={buildPresenceLinks({
+                websiteUrl: content.website_url,
+                onlineProfiles: Array.isArray(content.online_profiles)
+                  ? content.online_profiles.filter((item): item is string => typeof item === "string")
+                  : content.channels,
+              })}
+            />
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
               <Field label="Website">
                 <Input
                   value={content.website_url ?? ""}
@@ -141,11 +166,10 @@ export default function BrandPage() {
                   onChange={(e) => field("website_url", e.target.value)}
                 />
               </Field>
-              <Field label="Location / market">
-                <Input
-                  value={content.location ?? ""}
-                  placeholder="Raipur, Chhattisgarh"
-                  onChange={(e) => field("location", e.target.value)}
+              <Field label="Channels / profiles (one per line)">
+                <Textarea
+                  value={(content.channels ?? []).join("\n")}
+                  onChange={(e) => field("channels", e.target.value.split("\n").filter(Boolean))}
                 />
               </Field>
             </div>
@@ -159,15 +183,17 @@ export default function BrandPage() {
           </Card>
 
           <Card>
-            <CardHeading>Voice</CardHeading>
-            <div className="mt-3 grid gap-3 sm:grid-cols-2">
-              <Field label="Tone of voice">
-                <Textarea value={content.tone_of_voice ?? ""} onChange={(e) => field("tone_of_voice", e.target.value)} />
-              </Field>
-              <Field label="Target audience">
-                <Textarea value={content.target_audience ?? ""} onChange={(e) => field("target_audience", e.target.value)} />
-              </Field>
-            </div>
+            <CardHeading>Audience</CardHeading>
+            <Field label="Who you serve">
+              <Textarea value={content.target_audience ?? ""} onChange={(e) => field("target_audience", e.target.value)} />
+            </Field>
+          </Card>
+
+          <Card>
+            <CardHeading>Brand voice</CardHeading>
+            <Field label="Tone of voice">
+              <Textarea value={content.tone_of_voice ?? ""} onChange={(e) => field("tone_of_voice", e.target.value)} />
+            </Field>
           </Card>
 
           <Card>
@@ -191,11 +217,11 @@ export default function BrandPage() {
           </Card>
 
           <Card>
-            <CardHeading>Channels</CardHeading>
-            <Field label="One per line — where you reach customers today (Instagram, WhatsApp, Google, referrals…)">
+            <CardHeading>Growth constraints</CardHeading>
+            <Field label="Biggest constraint, previous attempts, or limits missions must respect">
               <Textarea
-                value={(content.channels ?? []).join("\n")}
-                onChange={(e) => field("channels", e.target.value.split("\n").filter(Boolean))}
+                value={typeof content.biggest_business_problem === "string" ? content.biggest_business_problem : ""}
+                onChange={(e) => field("biggest_business_problem", e.target.value)}
               />
             </Field>
           </Card>
@@ -218,7 +244,7 @@ export default function BrandPage() {
           </Card>
 
           <section className="flex flex-col gap-3">
-            <h2 className="font-sx-sans text-base font-medium text-sx-text">Products</h2>
+            <h2 className="font-sx-sans text-base font-medium text-sx-text">Products / services</h2>
             {(content.products ?? []).length === 0 ? (
               <EmptyState title="No products listed." subtitle="Product/service editing is a follow-up to this pass." />
             ) : (
@@ -232,6 +258,13 @@ export default function BrandPage() {
               </div>
             )}
           </section>
+
+          <Card>
+            <CardHeading>Verified sources</CardHeading>
+            <p className="mt-1 text-xs text-sx-text-muted">
+              Provenance is preserved from Audit discovery and customer edits. Brand Brain versions stay append-only — saving creates a new version rather than rewriting history.
+            </p>
+          </Card>
         </fieldset>
       )}
     </div>

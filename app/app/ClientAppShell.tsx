@@ -29,7 +29,7 @@ export function ClientAppShell({ email, staffWorkspace, children }: { email: str
       mobileNavItems={APP_MOBILE_NAV}
       mobileMoreGroups={APP_SIDEBAR_GROUPS.map((g) => ({
         label: g.label ?? "Overview",
-        items: g.items.map((i) => ({ key: i.key, label: i.label, href: i.href })),
+        items: g.items.map((i) => ({ key: i.key, label: i.label, href: i.href, icon: i.icon })),
       }))}
       topBarContext={<ClientTenantSwitcher />}
       userMenu={
