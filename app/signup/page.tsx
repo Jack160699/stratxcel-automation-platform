@@ -4,7 +4,6 @@ import { PublicHeader } from "@/app/components/PublicHeader";
 import { PublicFooter } from "@/app/components/PublicFooter";
 import { Card } from "@/components/ui/Card";
 import { SignupForm } from "./SignupForm";
-import { establishPendingWorkspaceIntent } from "@/app/actions/auth";
 
 export const metadata: Metadata = {
   title: "Create Account — Stratxcel Workspace",
@@ -13,7 +12,6 @@ export const metadata: Metadata = {
 };
 
 export default async function SignupPage() {
-  await establishPendingWorkspaceIntent("customer");
   return (
     <div className="flex min-h-screen flex-col bg-sx-bg text-sx-text">
       <PublicHeader />

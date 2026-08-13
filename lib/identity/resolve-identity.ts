@@ -24,7 +24,16 @@ export type CanonicalIdentity =
   | (BaseIdentity & { state: "NEW_CUSTOMER" })
   | (BaseIdentity & { state: "STAFF_VIEWING_CLIENT"; staffWorkspace: AgencyTenant });
 
-export async function resolveCanonicalIdentity(): Promise<CanonicalIdentity> {
+/** Read-only route surface hint for workspace mode during Server Component render. */
+export type RouteSurface = "admin" | "app";
+
+function workspaceModeForRoute(surface: RouteSurface | undefined, cookieMode: "customer" | "admin" | null): "customer" | "admin" | null {
+  if (surface === "admin") return "admin";
+  if (surface === "app") return "customer";
+  return cookieMode;
+}
+
+export async function resolveCanonicalIdentity(options?: { routeSurface?: RouteSurface }): Promise<CanonicalIdentity> {
   const supabase = await createSupabaseServerClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { state: "NO_SESSION", supabase };
@@ -34,7 +43,8 @@ export async function resolveCanonicalIdentity(): Promise<CanonicalIdentity> {
     listMyTenants(supabase, user.id),
   ]);
   const isStaff = Boolean(adminRow);
-  const workspaceMode = await readWorkspaceMode(user.id);
+  const cookieWorkspaceMode = await readWorkspaceMode(user.id);
+  const workspaceMode = workspaceModeForRoute(options?.routeSurface, cookieWorkspaceMode);
   const requestedTenantId = isStaff ? await readStaffWorkspaceTenantId(user.id) : null;
   const staffWorkspace = requestedTenantId ? await getAgencyTenant(requestedTenantId) : null;
   const state = decideIdentityState({

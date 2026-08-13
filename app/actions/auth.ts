@@ -11,6 +11,7 @@ import {
 import { parseWorkspaceModeParam } from "@/lib/auth/redirect";
 
 export async function establishPendingWorkspaceIntent(mode: WorkspaceMode): Promise<void> {
+  // Mutation context only — never call from Server Component render.
   await setPendingWorkspaceMode(mode);
 }
 
@@ -34,13 +35,13 @@ export async function finalizeAuthWorkspaceIntent(explicitMode?: string | null):
   });
 }
 
-/** Direct /app entry: dual-role staff with membership may use customer workspace. */
+/** Mutation context only — persists customer workspace mode after explicit /app entry auth. */
 export async function ensureCustomerWorkspaceForAppEntry(userId: string, hasMembership: boolean): Promise<void> {
   if (!hasMembership) return;
   await setWorkspaceModeCookie(userId, "customer");
 }
 
-/** Direct /admin entry: staff surface always uses admin workspace mode. */
+/** Mutation context only — persists admin workspace mode after explicit /admin entry auth. */
 export async function ensureAdminWorkspaceForAdminEntry(userId: string): Promise<void> {
   await setWorkspaceModeCookie(userId, "admin");
 }
