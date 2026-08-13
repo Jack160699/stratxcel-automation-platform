@@ -10,6 +10,7 @@ import {
 } from "@/components/shell/navigation/admin-navigation";
 import { AdminBetaModeToggle } from "@/components/shell/AdminBetaModeToggle";
 import { ClientSwitcher } from "./ClientSwitcher";
+import { ThemeToggle } from "@/components/theme/ThemeProvider";
 
 /**
  * /admin's own shell — Stratxcel staff/agency information architecture
@@ -49,6 +50,7 @@ export function AppShell({
       userMenu={
         <div className="flex items-center gap-2.5">
           <span className="hidden truncate text-xs text-sx-text-subtle sm:inline">{email}</span>
+          <ThemeToggle />
           <form action={signOutAction}>
             <button
               type="submit"

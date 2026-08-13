@@ -2,10 +2,11 @@
 
 import { usePathname } from "next/navigation";
 import { signOutAction } from "./actions";
+import { returnToAdminAction } from "./staff-workspace-actions";
 import { CoreAppShell } from "@/components/shell/CoreAppShell";
 import { APP_SIDEBAR_GROUPS, APP_MOBILE_NAV, resolveAppActiveKey } from "@/components/shell/navigation/app-navigation";
 import { ClientTenantSwitcher } from "./ClientTenantSwitcher";
-import { returnToAdminAction } from "./staff-workspace-actions";
+import { ThemeToggle } from "@/components/theme/ThemeProvider";
 
 /**
  * /app's own shell — the client/workspace product's information
@@ -34,6 +35,7 @@ export function ClientAppShell({ email, staffWorkspace, children }: { email: str
       userMenu={
         <div className="flex items-center gap-2.5">
           <span className="hidden truncate text-xs text-sx-text-subtle sm:inline">{email}</span>
+          <ThemeToggle />
           <form action={signOutAction}>
             <button
               type="submit"

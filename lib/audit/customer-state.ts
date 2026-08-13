@@ -103,10 +103,23 @@ function objectValue(value: unknown): Record<string, unknown> {
 
 function isBrandBrainQuestionnaire(deepDive: Record<string, unknown>): boolean {
   const meta = objectValue(deepDive.intakeMeta);
-  return meta.questionnaireVersion === BRAND_BRAIN_QUESTIONNAIRE_VERSION;
+  return meta.questionnaireVersion === BRAND_BRAIN_QUESTIONNAIRE_VERSION
+    || meta.questionnaireVersion === "connect_discover_v1"
+    || Boolean(deepDive.v1Experience);
 }
 
 function brandBrainIntakeMissingFields(order: AuditIntakeLike, deepDive: Record<string, unknown>, goals: Record<string, unknown>): string[] {
+  const v1 = objectValue(deepDive.v1Experience);
+  if (v1.flowVersion === "connect_discover_v1") {
+    const missing: string[] = [];
+    if (!isPresent(v1.websiteUrl) && !isPresent(order.website_url)) missing.push("websiteUrl");
+    if (v1.verified !== true) missing.push("verified");
+    const answers = objectValue(v1.adaptiveAnswers);
+    if (!hasAnswer(answers.biggestGrowthProblem) && answers.biggestGrowthProblem !== "not_sure") missing.push("biggestGrowthProblem");
+    if (!hasAnswer(answers.ninetyDayResult) && answers.ninetyDayResult !== "not_sure") missing.push("ninetyDayResult");
+    if (order.business_name === PLACEHOLDER_BUSINESS_NAME && !hasAnswer(objectValue(v1.profile).name)) missing.push("business_name");
+    return missing;
+  }
   const required: Array<[string, unknown]> = [
     ["business_name", order.business_name],
     ["businessDescription", deepDive.businessDescription],
