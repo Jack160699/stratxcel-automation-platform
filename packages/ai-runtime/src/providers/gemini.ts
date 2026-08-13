@@ -116,12 +116,8 @@ export class GeminiTextProvider implements AITextProviderAdapter {
       ...(thinking ? { thinkingConfig: { thinkingLevel: thinking } } : {}),
     };
     if (args.structuredOutputSchema) {
-      generationConfig.responseFormat = {
-        text: {
-          mimeType: "application/json",
-          schema: args.structuredOutputSchema,
-        },
-      };
+      generationConfig.responseMimeType = "application/json";
+      generationConfig.responseJsonSchema = args.structuredOutputSchema;
     }
     const body: Record<string, unknown> = {
       contents: mapped.contents,
