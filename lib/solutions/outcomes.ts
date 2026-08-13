@@ -1,4 +1,4 @@
-﻿export const SOLUTION_OUTCOMES = [
+export const SOLUTION_OUTCOMES = [
   { id: "more-leads", title: "Get more leads", tagline: "Turn more enquiries into customers.", description: "Capture inquiries from your website, campaigns, and WhatsApp in one place.", capabilities: ["Lead capture", "CRM pipeline", "WhatsApp follow-up"], lifecycleId: "convert" },
   { id: "grow-social", title: "Grow on social media", tagline: "Show up consistently where your customers scroll.", description: "Plan social content around your Brand Brain with approval before publish.", capabilities: ["Content planning", "Social Autopilot", "Brand Brain"], lifecycleId: "attention" },
   { id: "rank-google", title: "Rank on Google", tagline: "Help the right people find you when they search.", description: "Review search visibility and prioritize improvements you can measure.", capabilities: ["Search & discovery", "Website", "Performance reports"], lifecycleId: "discovered" },

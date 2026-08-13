@@ -1,4 +1,4 @@
-﻿import { LOCAL_BUSINESS_JOURNEY_STAGES } from "@/lib/solutions/journey-model";
+import { LOCAL_BUSINESS_JOURNEY_STAGES } from "@/lib/solutions/journey-model";
 import type { LocalBusinessVerticalJourneyStep } from "@/lib/solutions/local-business-verticals";
 
 type BusinessJourneyVisualProps = {

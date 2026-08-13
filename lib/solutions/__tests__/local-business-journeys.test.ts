@@ -1,4 +1,4 @@
-﻿import assert from "node:assert/strict";
+import assert from "node:assert/strict";
 import { LOCAL_BUSINESS_JOURNEY_STAGES } from "../journey-model.ts";
 import { LOCAL_BUSINESS_VERTICALS, PUBLISHED_LOCAL_BUSINESS_VERTICALS } from "../local-business-verticals.ts";
 import { CUSTOMER_INTENTS } from "../customer-intents.ts";

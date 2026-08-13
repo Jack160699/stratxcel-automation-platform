@@ -1,4 +1,4 @@
-﻿import { getCustomerTypeBySlug, PUBLISHED_CUSTOMER_TYPES } from "./customer-types.ts";
+import { getCustomerTypeBySlug, PUBLISHED_CUSTOMER_TYPES } from "./customer-types.ts";
 import { getLocalBusinessVerticalBySlug, PUBLISHED_LOCAL_BUSINESS_VERTICALS } from "./local-business-verticals.ts";
 
 export type SolutionPage =

@@ -11,8 +11,10 @@ import { ProductStateBadge } from "./ProductStateBadge";
 
 function DesktopMegaPanel({ onNavigate }: { onNavigate?: () => void }) {
   return (
-    <div className="absolute left-0 top-full z-50 w-[min(100vw-2rem,72rem)] pt-3">
-      <div className="rounded-sx-md border border-sx-border bg-sx-bg p-5 shadow-lg">
+    // sx-public-theme is re-asserted so the panel stays light even when the
+    // header itself is running the over-hero (dark) token scope.
+    <div className="sx-public-theme absolute left-0 top-full z-50 w-[min(100vw-2rem,72rem)] pt-3">
+      <div className="rounded-sx-md border border-sx-border bg-sx-bg p-5 text-sx-text shadow-lg">
         <div className="grid gap-5 lg:grid-cols-3 xl:grid-cols-6">
           {CUSTOMER_OUTCOME_GROUPS.map((group) => (
             <div key={group.id}>

@@ -96,6 +96,24 @@
   --foreground: var(--sx-text);
 }
 
+/* Header sitting on top of the cinematic hero. Re-points the shared tokens so
+   the logo wordmark, nav links, and controls read on dark without any of them
+   hard-coding a colour. Nested light surfaces (the products panel) re-assert
+   .sx-public-theme to restore the light values. */
+.sx-header-over-hero {
+  --sx-text: #ffffff;
+  --sx-text-muted: rgb(255 255 255 / 0.72);
+  --sx-text-subtle: rgb(255 255 255 / 0.55);
+  --sx-border: rgb(255 255 255 / 0.12);
+  --sx-border-strong: rgb(255 255 255 / 0.24);
+  --sx-surface-1: rgb(255 255 255 / 0.06);
+  --sx-surface-2: rgb(255 255 255 / 0.1);
+  --sx-bg: transparent;
+  --sx-accent: #6ea2ff;
+  --sx-accent-hover: #8ab5ff;
+  --sx-accent-on: #06080c;
+}
+
 .sx-public-theme ::selection {
   background: color-mix(in srgb, var(--sx-accent) 22%, transparent);
   color: var(--sx-text);
@@ -361,13 +379,9 @@ body {
   0%, 100% { transform: translate(0, 0) scale(1); opacity: 0.7; }
   50% { transform: translate(-3%, 4%) scale(1.03); opacity: 0.95; }
 }
-@keyframes sx-hero-orbit-slow {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-@keyframes sx-hero-float-chip {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-5px); }
+@keyframes sx-hero-card-resolve {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .sx-hero-alive .sx-hero-light-drift {
@@ -376,15 +390,8 @@ body {
 .sx-hero-alive .sx-hero-light-drift-reverse {
   animation: sx-hero-light-drift-reverse 22s ease-in-out infinite;
 }
-.sx-hero-orbit-slow {
-  animation: sx-hero-orbit-slow 90s linear infinite;
-  transform-origin: center;
-}
-.sx-hero-float-chip {
-  animation: sx-hero-float-chip 7s ease-in-out infinite;
-}
-.sx-hero-float-chip-delayed {
-  animation: sx-hero-float-chip 7s ease-in-out 1.5s infinite;
+.sx-hero-card-resolve {
+  animation: sx-hero-card-resolve 480ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 .sx-hero-vignette {
@@ -421,10 +428,7 @@ body {
 }
 
 .sx-hero-paused .sx-hero-light-drift,
-.sx-hero-paused .sx-hero-light-drift-reverse,
-.sx-hero-paused .sx-hero-orbit-slow,
-.sx-hero-paused .sx-hero-float-chip,
-.sx-hero-paused .sx-hero-float-chip-delayed {
+.sx-hero-paused .sx-hero-light-drift-reverse {
   animation-play-state: paused;
 }
 
@@ -490,9 +494,7 @@ body::-webkit-scrollbar-thumb {
   }
   .sx-hero-alive .sx-hero-light-drift,
   .sx-hero-alive .sx-hero-light-drift-reverse,
-  .sx-hero-orbit-slow,
-  .sx-hero-float-chip,
-  .sx-hero-float-chip-delayed,
+  .sx-hero-card-resolve,
   .sx-hero-grain {
     animation: none !important;
   }

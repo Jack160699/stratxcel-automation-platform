@@ -1,4 +1,4 @@
-﻿import { GROWTH_LIFECYCLE } from "./lifecycle.ts";
+import { GROWTH_LIFECYCLE } from "./lifecycle.ts";
 
 export const LOCAL_BUSINESS_JOURNEY_STAGES = [
   {

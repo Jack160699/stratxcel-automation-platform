@@ -9,69 +9,75 @@ import {
   type HeroSceneKey,
 } from "./hero-phrases";
 
+const EXIT_MS = 420;
+const ENTER_MS = 520;
+
 type KineticHeadlineProps = {
-  onSceneChange?: (scene: HeroSceneKey, index: number) => void;
+  onSceneChange?: (scene: HeroSceneKey) => void;
   paused?: boolean;
 };
 
+/**
+ * Outcome phrases resolve in place — a small vertical settle plus a focus
+ * transition. Deliberately not a typewriter, letter reveal, or slot machine.
+ */
 export function KineticHeadline({ onSceneChange, paused = false }: KineticHeadlineProps) {
-  const reduced = useReducedMotion();
-  const staticMode = reduced;
+  const staticMode = useReducedMotion();
   const [index, setIndex] = useState(0);
   const [phase, setPhase] = useState<"idle" | "exit" | "enter">("idle");
-  const initialSync = useRef(false);
+  const timers = useRef<number[]>([]);
 
-  const activeIndex = staticMode
-    ? HERO_PHRASES.findIndex((p) => p.scene === HERO_PHRASE_REDUCED_MOTION.scene)
-    : index;
+  const activeIndex = staticMode ? HERO_PHRASES.indexOf(HERO_PHRASE_REDUCED_MOTION) : index;
   const phrase = HERO_PHRASES[activeIndex >= 0 ? activeIndex : 0]!;
 
-  const advance = useCallback(() => {
-    if (staticMode) return;
-    setPhase("exit");
-    window.setTimeout(() => {
-      setIndex((i) => {
-        const next = (i + 1) % HERO_PHRASES.length;
-        onSceneChange?.(HERO_PHRASES[next]!.scene, next);
-        return next;
-      });
-      setPhase("enter");
-      window.setTimeout(() => setPhase("idle"), 480);
-    }, 420);
-  }, [staticMode, onSceneChange]);
+  const clearTimers = useCallback(() => {
+    for (const id of timers.current) window.clearTimeout(id);
+    timers.current = [];
+  }, []);
 
+  // Keeps the workspace in step with the phrase, including the reduced-motion
+  // resolve where prefers-reduced-motion only becomes known after hydration.
   useEffect(() => {
-    if (initialSync.current) return;
-    initialSync.current = true;
-    onSceneChange?.(phrase.scene, activeIndex);
-  }, [activeIndex, onSceneChange, phrase.scene]);
+    onSceneChange?.(phrase.scene);
+  }, [onSceneChange, phrase.scene]);
 
   useEffect(() => {
     if (staticMode || paused) return;
-    const id = window.setInterval(advance, HERO_PHRASE_INTERVAL_MS);
-    return () => window.clearInterval(id);
-  }, [staticMode, paused, advance]);
 
-  const motionClass =
-    phase === "exit"
-      ? "sx-kinetic-exit"
-      : phase === "enter"
-        ? "sx-kinetic-enter"
-        : "sx-kinetic-idle";
+    const advance = () => {
+      setPhase("exit");
+      timers.current.push(
+        window.setTimeout(() => {
+          setIndex((i) => {
+            const next = (i + 1) % HERO_PHRASES.length;
+            onSceneChange?.(HERO_PHRASES[next]!.scene);
+            return next;
+          });
+          setPhase("enter");
+          timers.current.push(window.setTimeout(() => setPhase("idle"), ENTER_MS));
+        }, EXIT_MS),
+      );
+    };
+
+    const interval = window.setInterval(advance, HERO_PHRASE_INTERVAL_MS);
+    return () => {
+      window.clearInterval(interval);
+      clearTimers();
+    };
+  }, [staticMode, paused, onSceneChange, clearTimers]);
+
+  const motionClass = phase === "exit" ? "sx-kinetic-exit" : phase === "enter" ? "sx-kinetic-enter" : "sx-kinetic-idle";
 
   return (
     <span className="relative block">
-      <span className="sr-only">
-        Stratxcel helps you {phrase.text}
-      </span>
-      <span
-        aria-hidden
-        className="relative block overflow-hidden"
-        style={{ minHeight: "1.15em" }}
-      >
+      {/* The lead-in already sits in the h1, so only the outcome is announced. */}
+      <span className="sr-only">{phrase.text}</span>
+      <span aria-hidden className="relative block" style={{ minHeight: "1.15em" }}>
         <span
           key={`${phrase.text}-${activeIndex}`}
-          className={`block bg-gradient-to-r from-white via-white to-sx-accent/90 bg-clip-text text-transparent ${staticMode ? "" : motionClass}`}
+          className={`block bg-gradient-to-br from-white via-white to-[#a8c7ff] bg-clip-text text-transparent ${
+            staticMode ? "" : motionClass
+          }`}
         >
           {phrase.text}
         </span>

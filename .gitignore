@@ -14,6 +14,9 @@
 # testing
 /coverage
 
+# local visual-QA output from scripts/public-site-screenshots.mjs
+/.screenshots/
+
 # next.js
 /.next/
 /out/

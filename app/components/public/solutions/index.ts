@@ -1,4 +1,4 @@
-﻿export { SolutionsHero } from "./SolutionsHero";
+export { SolutionsHero } from "./SolutionsHero";
 export { OutcomesGrid } from "./OutcomesGrid";
 export { GrowthLifecycle } from "./GrowthLifecycle";
 export { HowStratxcelWorks } from "./HowStratxcelWorks";

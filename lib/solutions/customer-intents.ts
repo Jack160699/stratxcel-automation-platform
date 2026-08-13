@@ -1,4 +1,4 @@
-﻿import { PRODUCTS } from "../product-suite/taxonomy.ts";
+import { PRODUCTS } from "../product-suite/taxonomy.ts";
 import type { SolutionOutcomeId } from "./outcomes.ts";
 
 export type CustomerIntentId =

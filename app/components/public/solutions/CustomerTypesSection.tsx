@@ -1,4 +1,4 @@
-﻿import Link from "next/link";
+import Link from "next/link";
 import { PUBLISHED_CUSTOMER_TYPES } from "@/lib/solutions/customer-types";
 import { Card } from "@/components/ui/Card";
 
