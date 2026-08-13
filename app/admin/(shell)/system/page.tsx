@@ -1,9 +1,16 @@
 import { requireOwnerContext } from "@/lib/social/db-context";
 import { getTenantServiceContext } from "@/lib/tenants/tenant-context";
 import { heartbeatState } from "@/lib/hermes/mission-control";
+import { resolveEmailProcessorPathAvailable } from "@/lib/email/processor-path";
 import { Card, CardHeading } from "@/components/ui/Card";
 import { StatusChip, type ChipState } from "@/components/ui/StatusChip";
 import type { AdminProviderStatus } from "@stratxcel/ai-runtime";
+import {
+  createEmailProvider,
+  createPostgresEmailOutboxStore,
+  probeEmailSystemHealth,
+  type EmailHealthStatus,
+} from "@stratxcel/email-runtime";
 
 type IntegrationStatus = "live" | "test" | "shadow" | "disconnected" | "blocked" | "manual_action_required";
 
@@ -41,6 +48,23 @@ function aiStatusToIntegration(status: AdminProviderStatus): IntegrationStatus {
   }
 }
 
+function emailHealthToIntegration(status: EmailHealthStatus): IntegrationStatus {
+  switch (status) {
+    case "OPERATIONAL":
+      return "live";
+    case "REACHABLE":
+    case "REACHABLE_UNPROVEN":
+    case "CONFIGURED":
+      return "test";
+    case "SENDER_UNVERIFIED":
+    case "DEGRADED":
+      return "manual_action_required";
+    case "NOT_CONFIGURED":
+    default:
+      return "disconnected";
+  }
+}
+
 interface IntegrationRow {
   name: string;
   status: IntegrationStatus;
@@ -65,11 +89,58 @@ async function currentHermesStatus(hermesMode: string | undefined): Promise<Inte
   };
 }
 
+async function currentEmailStatus(): Promise<IntegrationRow> {
+  const service = getTenantServiceContext().supabase;
+  const store = createPostgresEmailOutboxStore(service);
+  const provider = createEmailProvider();
+  let outboxAccessible: boolean | null = null;
+  try {
+    outboxAccessible = (await store.ping?.()) ?? null;
+  } catch {
+    outboxAccessible = false;
+  }
+
+  const processorMode = (process.env.EMAIL_PROCESSOR_MODE ?? "").trim().toLowerCase();
+  const heartbeat = await service
+    .from("worker_heartbeats")
+    .select("status,last_heartbeat_at")
+    .eq("worker_type", "email-processor")
+    .order("last_heartbeat_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const workerPathAvailable = resolveEmailProcessorPathAvailable({
+    lastHeartbeatAt: heartbeat.data?.last_heartbeat_at ?? null,
+    heartbeatStatus: heartbeat.data?.status ?? null,
+    heartbeatQueryFailed: Boolean(heartbeat.error),
+    processorMode,
+  });
+
+  let providerEvidence = null;
+  try {
+    providerEvidence = (await store.getLatestProviderEvidence?.()) ?? null;
+  } catch {
+    providerEvidence = null;
+  }
+
+  const health = await probeEmailSystemHealth({
+    provider,
+    outboxAccessible,
+    workerPathAvailable,
+    providerEvidence,
+  });
+  return {
+    name: "Email",
+    status: emailHealthToIntegration(health.status),
+    detail: `${health.status}: ${health.detail}`,
+  };
+}
+
 export default async function SystemHealthPage() {
   const ctx = await requireOwnerContext();
   if (!ctx.ok) return null;
 
   const hermes = await currentHermesStatus(process.env.HERMES_MODE);
+  const email = await currentEmailStatus();
   const service = getTenantServiceContext().supabase;
   const { buildAiAdminHealthSnapshot, SupabaseCanonicalMediaStorage, resolveTenantMonthSpend } = await import("@stratxcel/ai-runtime");
   let estimatedMonthSpendUsd: number | null = null;
@@ -108,6 +179,7 @@ export default async function SystemHealthPage() {
       detail: "Live Payment Links, state machine, webhook route (/api/webhook/razorpay), and refunds.",
     },
     hermes,
+    email,
     {
       name: "AI Runtime (Gemini)",
       status: aiStatusToIntegration(ai.gemini.status),

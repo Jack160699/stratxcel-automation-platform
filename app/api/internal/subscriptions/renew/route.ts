@@ -6,6 +6,11 @@ import {
   isProviderManagedSubscription,
   type PlanTier,
 } from "@stratxcel/payments-and-wallet";
+import {
+  createPostgresEmailOutboxStore,
+  enqueueSubscriptionRenewalUpcomingEmailsBestEffort,
+  filterSubscriptionRenewalUpcomingEmailCandidates,
+} from "@stratxcel/email-runtime";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -55,7 +60,16 @@ export async function POST(request: Request) {
   let skippedProviderManaged = 0;
   const failures: Array<{ subscriptionId: string; error: string }> = [];
 
-  for (const sub of candidates ?? []) {
+  const processingCandidates = candidates ?? [];
+  const upcomingEmailCandidates = filterSubscriptionRenewalUpcomingEmailCandidates(processingCandidates);
+  try {
+    const emailStore = createPostgresEmailOutboxStore(serviceDb);
+    await enqueueSubscriptionRenewalUpcomingEmailsBestEffort(serviceDb, emailStore, upcomingEmailCandidates);
+  } catch (err) {
+    console.error("[Subscription Renewal Cron] renewal-upcoming email failed", err);
+  }
+
+  for (const sub of processingCandidates) {
     try {
       // Provider-managed AutoPay: Razorpay charges — never mint a renewal Payment Link.
       if (isProviderManagedSubscription(sub)) {

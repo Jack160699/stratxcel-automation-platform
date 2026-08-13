@@ -30,6 +30,15 @@ import {
   isRetryableHermesFailure,
   type HermesRuntimeAdapter,
 } from "@stratxcel/hermes";
+import {
+  createPostgresEmailOutboxStore,
+  createEmailProvider,
+  enqueueAuditDeliveredEmailBestEffort,
+  enqueueAuditNeedsSupportEmailBestEffort,
+  enqueueMissionTerminalEmailBestEffort,
+  processEmailOutboxBatch,
+  resolveTenantOwnerEmailForNotify,
+} from "@stratxcel/email-runtime";
 
 /**
  * Standalone async mission executor — separated from the Next.js dashboard
@@ -45,14 +54,22 @@ import {
  */
 
 const POLL_INTERVAL_MS = Number(process.env.MISSION_WORKER_POLL_INTERVAL_MS ?? 5000);
+const EMAIL_POLL_INTERVAL_MS = Number(process.env.EMAIL_OUTBOX_POLL_INTERVAL_MS ?? 15000);
 const LEASE_SECONDS = Number(process.env.MISSION_WORKER_LEASE_SECONDS ?? 300);
 const HEARTBEAT_DURING_EXECUTE_MS = Math.max(5000, Math.floor((LEASE_SECONDS * 1000) / 3));
 const WORKER_TYPE = "mission-worker" as const;
+const EMAIL_WORKER_TYPE = "email-processor" as const;
 const INSTANCE_ID = `${os.hostname()}-${process.pid}`;
 const LEASE_OWNER = `${WORKER_TYPE}-${INSTANCE_ID}`;
+const EMAIL_LEASE_OWNER = `${EMAIL_WORKER_TYPE}-${INSTANCE_ID}`;
 const MISSION_JOB_TYPE = "mission.execute";
 const VERSION = process.env.GIT_COMMIT_SHA ?? process.env.VERCEL_GIT_COMMIT_SHA ?? "unknown";
 const PORT = Number(process.env.PORT ?? 8083);
+
+// Hosted email outbox processor — independent of mission claims / Hermes / Audit jobs.
+if (!process.env.EMAIL_PROCESSOR_MODE) {
+  process.env.EMAIL_PROCESSOR_MODE = "mission-worker";
+}
 
 const OUTCOME_TO_STATE = {
   COMPLETED: "COMPLETED",
@@ -122,6 +139,10 @@ async function executeMission(
 
   const running = await transitionMission(supabase, { missionId: mission.id, nextState: "RUNNING" });
 
+  let terminalState: string | null = null;
+  let terminalSummary: string | null = null;
+  let retryableFailure = false;
+
   try {
     const context = await compileMissionContext(supabase, running);
     const missionToken = issueMissionToken({
@@ -140,22 +161,27 @@ async function executeMission(
       });
     }
 
+    const nextState = OUTCOME_TO_STATE[result.outcome];
     await transitionMission(supabase, {
       missionId: mission.id,
-      nextState: OUTCOME_TO_STATE[result.outcome],
+      nextState,
       payload: { summary: result.summary },
     });
+    terminalState = nextState;
+    terminalSummary = result.summary ?? null;
 
     for (const event of result.progressEvents ?? []) {
       await appendMissionEvent(supabase, { missionId: mission.id, eventType: "hermes_progress", payload: { ...event } });
     }
   } catch (err) {
+    retryableFailure = isRetryableHermesFailure(err);
     await appendMissionEvent(supabase, {
       missionId: mission.id,
       eventType: "execution_error",
-      payload: { message: err instanceof Error ? err.message : String(err), retryable: isRetryableHermesFailure(err) },
+      payload: { message: err instanceof Error ? err.message : String(err), retryable: retryableFailure },
     });
     await transitionMission(supabase, { missionId: mission.id, nextState: "FAILED" });
+    terminalState = "FAILED";
   }
 
   await recordAuditEvent(supabase, {
@@ -165,6 +191,26 @@ async function executeMission(
     targetType: "mission",
     targetId: mission.id,
   });
+
+  // Best-effort email — never rolls back mission terminal state.
+  if (terminalState === "COMPLETED" || terminalState === "PARTIALLY_COMPLETED" || terminalState === "FAILED") {
+    try {
+      const store = createPostgresEmailOutboxStore(supabase);
+      const { email, ownerId } = await resolveTenantOwnerEmailForNotify(supabase, mission.tenant_id);
+      await enqueueMissionTerminalEmailBestEffort(store, {
+        state: terminalState,
+        missionId: mission.id,
+        tenantId: mission.tenant_id,
+        recipient: email,
+        missionTitle: mission.goal_text?.slice(0, 120) || mission.service_key || `Mission ${mission.id.slice(0, 8)}`,
+        summary: terminalSummary,
+        ownerId,
+        retryableFailure,
+      });
+    } catch (err) {
+      console.error(`[mission-worker] email notify failed for mission ${mission.id}:`, err);
+    }
+  }
 }
 
 export async function processOnce(
@@ -244,6 +290,10 @@ export async function processOnce(
         });
       } else {
         await queue.complete({ jobId: job.id, leaseOwner: LEASE_OWNER });
+        // Best-effort transactional email — never undoes Audit completion or queue completion.
+        if (outcome.kind === "COMPLETED" || outcome.kind === "NEEDS_REVIEW") {
+          await notifyAutomaticAuditEmailBestEffort(supabase, runId, job.tenant_id, outcome.kind);
+        }
       }
       return true;
     }
@@ -278,6 +328,49 @@ export async function processOnce(
   return true;
 }
 
+async function notifyAutomaticAuditEmailBestEffort(
+  supabase: ReturnType<typeof createServiceClient>,
+  runId: string,
+  tenantId: string,
+  kind: "COMPLETED" | "NEEDS_REVIEW"
+): Promise<void> {
+  try {
+    const store = createPostgresEmailOutboxStore(supabase);
+    const { data: run } = await supabase
+      .from("audit_generation_runs")
+      .select("audit_order_id, tenant_id, failure_message_safe")
+      .eq("id", runId)
+      .maybeSingle();
+    const auditOrderId = typeof run?.audit_order_id === "string" ? run.audit_order_id : "";
+    if (!auditOrderId) return;
+    const { data: order } = await supabase
+      .from("audit_orders")
+      .select("id, tenant_id, guest_email, claimed_by, business_name, status")
+      .eq("id", auditOrderId)
+      .maybeSingle();
+    if (!order) return;
+    if (kind === "COMPLETED") {
+      await enqueueAuditDeliveredEmailBestEffort(supabase, store, {
+        id: String(order.id),
+        tenant_id: (order.tenant_id as string | null) ?? tenantId,
+        guest_email: (order.guest_email as string | null) ?? null,
+        claimed_by: (order.claimed_by as string | null) ?? null,
+        business_name: (order.business_name as string | null) ?? null,
+        status: (order.status as string | null) ?? null,
+      });
+      return;
+    }
+    await enqueueAuditNeedsSupportEmailBestEffort(store, {
+      auditOrderId,
+      tenantId: (run?.tenant_id as string | null) ?? tenantId,
+      businessName: (order.business_name as string | null) ?? null,
+      reason: (run?.failure_message_safe as string | null) ?? "Automatic Audit needs staff review.",
+    });
+  } catch (err) {
+    console.error(`[mission-worker] audit email notify failed for run ${runId}:`, err);
+  }
+}
+
 function startHealthServer(supabase: ReturnType<typeof createServiceClient>) {
   const server = http.createServer((req, res) => {
     if (req.url === "/health" && req.method === "GET") {
@@ -305,13 +398,24 @@ if (process.env.NODE_ENV !== "test") {
   const queue = createPostgresQueueAdapter(supabase);
   const hermes = selectHermesAdapter();
   const auditExecutor = createLiveAutomaticAuditExecutor(supabase);
+  const emailStore = createPostgresEmailOutboxStore(supabase);
+  const emailProvider = createEmailProvider();
 
   startHealthServer(supabase);
   recordWorkerHeartbeat(supabase, { workerType: WORKER_TYPE, instanceId: INSTANCE_ID, status: "idle", version: VERSION }).catch((err) =>
     console.error("[mission-worker] initial heartbeat failed:", err)
   );
+  recordWorkerHeartbeat(supabase, {
+    workerType: EMAIL_WORKER_TYPE,
+    instanceId: INSTANCE_ID,
+    status: "idle",
+    version: VERSION,
+  }).catch((err) => console.error("[mission-worker] email-processor initial heartbeat failed:", err));
 
   console.log(`[mission-worker] polling every ${POLL_INTERVAL_MS}ms as ${LEASE_OWNER}, Hermes mode: ${hermes.mode}`);
+  console.log(
+    `[mission-worker] email outbox polling every ${EMAIL_POLL_INTERVAL_MS}ms as ${EMAIL_LEASE_OWNER} (independent of mission jobs)`
+  );
   setInterval(() => {
     processOnce(supabase, queue, hermes, auditExecutor)
       .then((claimed) => {
@@ -333,4 +437,31 @@ if (process.env.NODE_ENV !== "test") {
       console.error("[mission-worker] lease recovery failed:", err);
     });
   }, POLL_INTERVAL_MS);
+
+  // Independent email outbox loop — continues even when no missions / Hermes disabled.
+  setInterval(() => {
+    processEmailOutboxBatch(emailStore, emailProvider, {
+      limit: 20,
+      leaseOwner: EMAIL_LEASE_OWNER,
+    })
+      .then((result) => {
+        recordWorkerHeartbeat(supabase, {
+          workerType: EMAIL_WORKER_TYPE,
+          instanceId: INSTANCE_ID,
+          status: result.claimed > 0 ? "busy" : "idle",
+          version: VERSION,
+          queueBacklogHint: result.claimed,
+        }).catch(() => {});
+      })
+      .catch((err) => {
+        console.error("[mission-worker] email outbox poll failed:", err);
+        recordWorkerHeartbeat(supabase, {
+          workerType: EMAIL_WORKER_TYPE,
+          instanceId: INSTANCE_ID,
+          status: "degraded",
+          version: VERSION,
+          lastError: { message: err instanceof Error ? err.message : String(err) },
+        }).catch(() => {});
+      });
+  }, EMAIL_POLL_INTERVAL_MS);
 }
