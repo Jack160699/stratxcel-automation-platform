@@ -39,7 +39,7 @@ function run() {
 
   // 5. Direct /app navigation by staff without explicit context redirects to /admin.
   assert.ok(appLayout.includes('identity.state === "INTERNAL_STAFF"') && appLayout.includes('redirect("/admin")'));
-  assert.equal(decideIdentityState({ hasSession: true, isStaff: true, membershipCount: 0, hasValidStaffWorkspace: false }), "INTERNAL_STAFF");
+  assert.equal(decideIdentityState({ hasSession: true, isStaff: true, membershipCount: 0, hasValidStaffWorkspace: false, workspaceMode: null }), "INTERNAL_STAFF");
 
   // 6. Ordinary customer access still requires the exact tenant_members row.
   assert.ok(tenantContext.includes('.from("tenant_members")'));
@@ -62,9 +62,10 @@ function run() {
   assert.ok(staffLookup !== -1 && tokenRead > staffLookup && tenantContext.includes("if (staffRow)"));
   assert.ok(enter.includes("requireOwnerContext"));
 
-  // 10. Existing admin + tenant dual identity still defaults to /admin.
-  assert.equal(decideIdentityState({ hasSession: true, isStaff: true, membershipCount: 1, hasValidStaffWorkspace: false }), "INTERNAL_STAFF");
-  assert.equal(decideIdentityState({ hasSession: true, isStaff: true, membershipCount: 1, hasValidStaffWorkspace: true }), "STAFF_VIEWING_CLIENT");
+  // 10. Dual-role staff + membership: customer intent → customer; admin intent → admin.
+  assert.equal(decideIdentityState({ hasSession: true, isStaff: true, membershipCount: 1, hasValidStaffWorkspace: false, workspaceMode: "customer" }), "CUSTOMER_MEMBER");
+  assert.equal(decideIdentityState({ hasSession: true, isStaff: true, membershipCount: 1, hasValidStaffWorkspace: false, workspaceMode: "admin" }), "INTERNAL_STAFF");
+  assert.equal(decideIdentityState({ hasSession: true, isStaff: true, membershipCount: 1, hasValidStaffWorkspace: true, workspaceMode: "customer" }), "STAFF_VIEWING_CLIENT");
 
   // Explicit support posture: no fake TenantRole and unsafe writes unavailable.
   assert.ok(clientContext.includes('accessMode: "staff_support"') && clientContext.includes("workspaceTenant: identity.staffWorkspace"));
@@ -75,6 +76,11 @@ function run() {
   assert.ok(socialAutopilot.includes("allowStaffRead = false") && socialAutopilot.includes("Staff support mode is read-only"));
   assert.ok(imageGeneration.includes('auth.accessMode === "staff_support"') && imageGeneration.includes("read-only staff support mode"));
   assert.ok(contentPipeline.includes('ctx.accessMode === "customer"') && contentPipeline.includes('.eq("tenant_id", ctx.workspaceTenant.tenantId)'));
+
+  const loginForm = read("app", "login", "LoginForm.tsx");
+  const callback = read("app", "auth", "callback", "route.ts");
+  assert.ok(/finalizeAuthWorkspaceIntent/.test(loginForm) && /finalizeAuthWorkspaceIntent/.test(callback));
+  assert.ok(/mode=customer&next=\/audit\/checkout/.test(read("app", "audit", "checkout", "GuestCheckoutForm.tsx")));
 
   console.log("staff-membership-independence.test.ts: ALL PASS (10 required staff/customer separation regressions)");
 }

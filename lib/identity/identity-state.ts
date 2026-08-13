@@ -5,9 +5,14 @@ export function decideIdentityState(input: {
   isStaff: boolean;
   membershipCount: number;
   hasValidStaffWorkspace: boolean;
+  workspaceMode: "customer" | "admin" | null;
 }): IdentityState {
   if (!input.hasSession) return "NO_SESSION";
-  if (input.isStaff) return input.hasValidStaffWorkspace ? "STAFF_VIEWING_CLIENT" : "INTERNAL_STAFF";
+  if (input.isStaff && input.hasValidStaffWorkspace) return "STAFF_VIEWING_CLIENT";
+  if (input.isStaff && input.workspaceMode === "customer" && input.membershipCount > 0) {
+    return "CUSTOMER_MEMBER";
+  }
+  if (input.isStaff) return "INTERNAL_STAFF";
   return input.membershipCount > 0 ? "CUSTOMER_MEMBER" : "NEW_CUSTOMER";
 }
 

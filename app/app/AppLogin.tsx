@@ -2,8 +2,9 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { finalizeAuthWorkspaceIntent } from "@/app/actions/auth";
 import { AdminAuthShell } from "@/app/admin/auth/AdminAuthShell";
-import { PasswordLoginForm } from "@/app/admin/auth/PasswordLoginForm";
+import { LoginForm } from "@/app/login/LoginForm";
 import { EmailOtpForm } from "@/app/admin/auth/EmailOtpForm";
 import { ForgotPasswordForm } from "@/app/admin/auth/ForgotPasswordForm";
 
@@ -11,7 +12,7 @@ type Mode = "password" | "otp" | "forgot";
 
 /**
  * /app's sign-in — reuses the exact same auth primitives as
- * app/admin/AdminLogin.tsx (PasswordLoginForm/EmailOtpForm/ForgotPasswordForm
+ * app/admin/AdminLogin.tsx (EmailOtpForm/ForgotPasswordForm
  * all just call Supabase auth; neither is admin-specific), with client-facing
  * copy instead of "Admin Command Center". One login mechanism, two shells —
  * the post-auth gate (requireClientContext here vs. requireOwnerContext in
@@ -21,7 +22,8 @@ export default function AppLogin() {
   const router = useRouter();
   const [mode, setMode] = useState<Mode>("password");
 
-  function handleAuthenticated() {
+  async function handleAuthenticated() {
+    await finalizeAuthWorkspaceIntent("customer");
     router.refresh();
   }
 
@@ -59,7 +61,7 @@ export default function AppLogin() {
       </div>
 
       {mode === "password" ? (
-        <PasswordLoginForm onAuthenticated={handleAuthenticated} onForgotPassword={() => setMode("forgot")} />
+        <LoginForm />
       ) : (
         <EmailOtpForm onAuthenticated={handleAuthenticated} />
       )}

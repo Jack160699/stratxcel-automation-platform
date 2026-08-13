@@ -3,7 +3,7 @@ import "server-only";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { listMyTenants, type TenantMembership } from "@/lib/tenants/current-tenant";
 import { getAgencyTenant, type AgencyTenant } from "@/lib/tenants/admin-repository";
-import { readStaffWorkspaceTenantId } from "./staff-workspace";
+import { readStaffWorkspaceTenantId, readWorkspaceMode } from "./staff-workspace";
 import { decideIdentityState, type IdentityState } from "./identity-state";
 export { defaultDestination } from "./identity-state";
 
@@ -11,6 +11,8 @@ interface BaseIdentity {
   state: Exclude<IdentityState, "NO_SESSION">;
   userId: string;
   email: string | null;
+  isStaff: boolean;
+  workspaceMode: "customer" | "admin" | null;
   tenants: TenantMembership[];
   supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>;
 }
@@ -32,6 +34,7 @@ export async function resolveCanonicalIdentity(): Promise<CanonicalIdentity> {
     listMyTenants(supabase, user.id),
   ]);
   const isStaff = Boolean(adminRow);
+  const workspaceMode = await readWorkspaceMode(user.id);
   const requestedTenantId = isStaff ? await readStaffWorkspaceTenantId(user.id) : null;
   const staffWorkspace = requestedTenantId ? await getAgencyTenant(requestedTenantId) : null;
   const state = decideIdentityState({
@@ -39,8 +42,9 @@ export async function resolveCanonicalIdentity(): Promise<CanonicalIdentity> {
     isStaff,
     membershipCount: tenants.length,
     hasValidStaffWorkspace: Boolean(staffWorkspace),
+    workspaceMode,
   });
-  const base = { userId: user.id, email: user.email ?? null, tenants, supabase };
+  const base = { userId: user.id, email: user.email ?? null, isStaff, workspaceMode, tenants, supabase };
   if (state === "STAFF_VIEWING_CLIENT") return { ...base, state, staffWorkspace: staffWorkspace! };
   return { ...base, state } as CanonicalIdentity;
 }

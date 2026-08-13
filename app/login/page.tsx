@@ -1,9 +1,10 @@
-import Link from "next/link";
 import type { Metadata } from "next";
+import Link from "next/link";
 import { PublicHeader } from "@/app/components/PublicHeader";
 import { PublicFooter } from "@/app/components/PublicFooter";
 import { Card } from "@/components/ui/Card";
 import { LoginForm } from "./LoginForm";
+import { establishPendingWorkspaceIntent } from "@/app/actions/auth";
 
 export const metadata: Metadata = {
   title: "Sign in — Stratxcel Workspace",
@@ -11,7 +12,8 @@ export const metadata: Metadata = {
   robots: { index: false, follow: true },
 };
 
-export default function LoginPage() {
+export default async function LoginPage() {
+  await establishPendingWorkspaceIntent("customer");
   return (
     <div className="flex min-h-screen flex-col bg-sx-bg text-sx-text">
       <PublicHeader />
@@ -26,7 +28,7 @@ export default function LoginPage() {
               Return to your Business Growth Audit.
             </h2>
             <p className="font-sx-sans text-sm text-sx-text-muted leading-relaxed">
-              Continue your guided intake, follow the team&rsquo;s review status, and open your written roadmap when it is delivered.
+              Continue your guided intake, track automatic analysis progress, and open your written roadmap when it is ready.
             </p>
 
             {/* Security/product messaging — no per-account numbers here; those
@@ -44,7 +46,7 @@ export default function LoginPage() {
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-sx-accent font-bold">✓</span>
-                  <span>Human-reviewed Audit delivery with a clear status</span>
+                  <span>Automatic Audit analysis with a clear delivery status</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-sx-accent font-bold">✓</span>

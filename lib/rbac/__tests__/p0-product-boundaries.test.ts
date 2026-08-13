@@ -11,11 +11,12 @@ const exists = (...parts: string[]) => fs.existsSync(path.join(root, ...parts));
 
 function run() {
   // AUTH / ROUTING
-  assert.equal(defaultDestination(decideIdentityState({ hasSession: true, isStaff: true, membershipCount: 0, hasValidStaffWorkspace: false })), "/admin");
-  assert.equal(defaultDestination(decideIdentityState({ hasSession: true, isStaff: true, membershipCount: 2, hasValidStaffWorkspace: false })), "/admin");
-  assert.equal(defaultDestination(decideIdentityState({ hasSession: true, isStaff: false, membershipCount: 1, hasValidStaffWorkspace: false })), "/app");
-  assert.equal(decideIdentityState({ hasSession: true, isStaff: false, membershipCount: 0, hasValidStaffWorkspace: false }), "NEW_CUSTOMER");
-  assert.equal(decideIdentityState({ hasSession: false, isStaff: false, membershipCount: 0, hasValidStaffWorkspace: false }), "NO_SESSION");
+  assert.equal(defaultDestination(decideIdentityState({ hasSession: true, isStaff: true, membershipCount: 0, hasValidStaffWorkspace: false, workspaceMode: null })), "/admin");
+  assert.equal(defaultDestination(decideIdentityState({ hasSession: true, isStaff: true, membershipCount: 2, hasValidStaffWorkspace: false, workspaceMode: "admin" })), "/admin");
+  assert.equal(defaultDestination(decideIdentityState({ hasSession: true, isStaff: true, membershipCount: 2, hasValidStaffWorkspace: false, workspaceMode: "customer" })), "/app");
+  assert.equal(defaultDestination(decideIdentityState({ hasSession: true, isStaff: false, membershipCount: 1, hasValidStaffWorkspace: false, workspaceMode: null })), "/app");
+  assert.equal(decideIdentityState({ hasSession: true, isStaff: false, membershipCount: 0, hasValidStaffWorkspace: false, workspaceMode: null }), "NEW_CUSTOMER");
+  assert.equal(decideIdentityState({ hasSession: false, isStaff: false, membershipCount: 0, hasValidStaffWorkspace: false, workspaceMode: null }), "NO_SESSION");
 
   const appLayout = read("app", "app", "layout.tsx");
   const adminLayout = read("app", "admin", "(shell)", "layout.tsx");

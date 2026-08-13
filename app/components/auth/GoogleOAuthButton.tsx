@@ -29,10 +29,11 @@ export function GoogleIcon() {
 
 interface GoogleOAuthButtonProps {
   next?: string;
+  mode?: "customer" | "admin";
   onError?: (error: string) => void;
 }
 
-export function GoogleOAuthButton({ next, onError }: GoogleOAuthButtonProps) {
+export function GoogleOAuthButton({ next, mode, onError }: GoogleOAuthButtonProps) {
   const [pending, setPending] = useState(false);
 
   async function handleGoogleSignIn() {
@@ -44,6 +45,9 @@ export function GoogleOAuthButton({ next, onError }: GoogleOAuthButtonProps) {
       const callbackUrl = new URL("/auth/callback", origin);
       if (next) {
         callbackUrl.searchParams.set("next", next);
+      }
+      if (mode) {
+        callbackUrl.searchParams.set("mode", mode);
       }
 
       const { error } = await supabase.auth.signInWithOAuth({

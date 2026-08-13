@@ -46,3 +46,17 @@ export function sanitizeRedirectUrl(
     return defaultFallback;
   }
 }
+
+export type WorkspaceMode = "customer" | "admin";
+
+export function parseWorkspaceModeParam(value: string | null | undefined): WorkspaceMode | null {
+  if (value === "customer" || value === "admin") return value;
+  return null;
+}
+
+export function sanitizeAuthIntent(
+  value: string | null | undefined,
+  entryDefault: WorkspaceMode
+): WorkspaceMode {
+  return parseWorkspaceModeParam(value) ?? entryDefault;
+}
