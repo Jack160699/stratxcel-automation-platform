@@ -11,3 +11,5 @@ export const SOLUTION_OUTCOMES = [
   { id: "launch-grow", title: "Launch or grow a business", tagline: "Start with clarity, then build momentum.", description: "Begin with research and a prioritized roadmap.", capabilities: ["Business Growth Audit", "Strategy", "Connected execution"], lifecycleId: "discovered" },
 ] as const;
 export function getOutcomeById(id: string) { return SOLUTION_OUTCOMES.find((o) => o.id === id); }
+
+export type SolutionOutcomeId = (typeof SOLUTION_OUTCOMES)[number]["id"];

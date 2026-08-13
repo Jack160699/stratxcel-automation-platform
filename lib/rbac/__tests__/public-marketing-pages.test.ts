@@ -24,16 +24,26 @@ function run() {
     assert.ok(exists("app", dir, file), `app/${dir}/${file} must exist as a top-level Core-token route`);
     assert.equal(exists("app", "(marketing)", dir), false, `app/(marketing)/${dir} must no longer exist`);
     const source = read("app", dir, file);
-    assert.ok(/from ["']@\/app\/components\/PublicHeader["']/.test(source), `app/${dir}/${file} must render PublicHeader`);
-    assert.ok(/from ["']@\/app\/components\/PublicFooter["']/.test(source), `app/${dir}/${file} must render PublicFooter`);
-    assert.ok(/<PublicHeader\s*\/>/.test(source), `app/${dir}/${file} must mount <PublicHeader />`);
-    assert.ok(/<PublicFooter\s*\/>/.test(source), `app/${dir}/${file} must mount <PublicFooter />`);
-    assert.ok(/bg-sx-bg/.test(source), `app/${dir}/${file} must use bg-sx-bg`);
+    const usesPublicShell =
+      /from ["']@\/app\/components\/public\/PublicPageShell["']/.test(source) &&
+      /<PublicPageShell[\s>]/.test(source);
+    assert.ok(
+      usesPublicShell ||
+        (/from ["']@\/app\/components\/PublicHeader["']/.test(source) &&
+          /from ["']@\/app\/components\/PublicFooter["']/.test(source) &&
+          /<PublicHeader\s*\/>/.test(source) &&
+          /<PublicFooter\s*\/>/.test(source)),
+      `app/${dir}/${file} must render PublicPageShell or PublicHeader/PublicFooter`
+    );
+    assert.ok(
+      usesPublicShell || /bg-sx-bg/.test(source),
+      `app/${dir}/${file} must use bg-sx-bg or PublicPageShell`
+    );
   }
 
   const contactPage = read("app", "contact", "page.tsx");
   assert.ok(/searchParams:\s*Promise<\{\s*intent\?:\s*string\s*\}>/.test(contactPage));
-  assert.ok(/<ContactForm\s+source="contact-page"\s+tone="dark"\s+intent=\{intent\}\s*\/>/.test(contactPage));
+  assert.ok(/<ContactForm\s+source="contact-page"\s+tone="light"\s+intent=\{intent\}\s*\/>/.test(contactPage));
 
   const socialPage = read("app", "social-autopilot", "page.tsx");
   assert.ok(/alternates:\s*\{\s*canonical:\s*canonicalUrl\s*,?\s*\}/.test(socialPage));

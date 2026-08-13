@@ -2,36 +2,53 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { PRODUCT_GROUPS, getProductHref, PRODUCTS } from "@/lib/product-suite/taxonomy";
+import {
+  CUSTOMER_OUTCOME_GROUPS,
+  getCustomerPresentationForProduct,
+} from "@/lib/product-suite/customer-language";
+import { getProductHref, PRODUCTS } from "@/lib/product-suite/taxonomy";
 import { ProductStateBadge } from "./ProductStateBadge";
 
 function DesktopMegaPanel({ onNavigate }: { onNavigate?: () => void }) {
   return (
-    <div className="absolute left-0 top-full z-50 w-[min(100vw-2rem,72rem)] pt-3">
-      <div className="rounded-sx-md border border-sx-border bg-sx-bg p-5 shadow-lg">
-        <div className="grid gap-5 lg:grid-cols-5">
-          {PRODUCT_GROUPS.map((group) => (
+    // sx-public-theme is re-asserted so the panel stays light even when the
+    // header itself is running the over-hero (dark) token scope.
+    <div className="sx-public-theme absolute left-0 top-full z-50 w-[min(100vw-2rem,72rem)] pt-3">
+      <div className="rounded-sx-md border border-sx-border bg-sx-bg p-5 text-sx-text shadow-lg">
+        <div className="grid gap-5 lg:grid-cols-3 xl:grid-cols-6">
+          {CUSTOMER_OUTCOME_GROUPS.map((group) => (
             <div key={group.id}>
               <p className="font-sx-mono text-[10px] font-bold uppercase tracking-[0.14em] text-sx-accent">{group.label}</p>
               <ul className="mt-3 space-y-2">
                 {group.productIds.map((id) => {
                   const product = PRODUCTS[id];
                   if (!product) return null;
+                  const presentation = getCustomerPresentationForProduct(product);
                   const href = getProductHref(product);
                   const disabled = product.availability === "coming-later";
                   return (
                     <li key={id}>
                       {disabled ? (
-                        <span className="block rounded-sx-sm px-2 py-1.5 font-sx-sans text-[13px] text-sx-text-subtle">
-                          {product.name}
+                        <span className="block rounded-sx-sm px-2 py-1.5">
+                          <span className="block font-sx-sans text-[13px] font-medium text-sx-text-subtle">
+                            {presentation.headline}
+                          </span>
+                          <span className="mt-0.5 block font-sx-mono text-[9.5px] uppercase tracking-[0.1em] text-sx-text-subtle">
+                            {product.name}
+                          </span>
                         </span>
                       ) : (
                         <Link
                           href={href}
                           onClick={onNavigate}
-                          className="block rounded-sx-sm px-2 py-1.5 font-sx-sans text-[13px] font-medium text-sx-text-muted transition-colors hover:bg-sx-surface-2 hover:text-sx-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sx-accent"
+                          className="block rounded-sx-sm px-2 py-1.5 transition-colors hover:bg-sx-surface-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sx-accent"
                         >
-                          {product.name}
+                          <span className="block font-sx-sans text-[13px] font-medium text-sx-text-muted hover:text-sx-text">
+                            {presentation.headline}
+                          </span>
+                          <span className="mt-0.5 block font-sx-mono text-[9.5px] uppercase tracking-[0.1em] text-sx-text-subtle">
+                            {product.name}
+                          </span>
                         </Link>
                       )}
                     </li>
@@ -42,7 +59,7 @@ function DesktopMegaPanel({ onNavigate }: { onNavigate?: () => void }) {
           ))}
         </div>
         <div className="mt-5 flex items-center justify-between border-t border-sx-border pt-4">
-          <p className="font-sx-sans text-[12px] text-sx-text-subtle">Connected capabilities inside one Stratxcel workspace.</p>
+          <p className="font-sx-sans text-[12px] text-sx-text-subtle">Pick an outcome first — product names are underneath.</p>
           <Link
             href="/products"
             onClick={onNavigate}
@@ -119,7 +136,7 @@ export function MobileProductsAccordion({ onNavigate }: { onNavigate?: () => voi
       </button>
       {expanded && (
         <div className="border-t border-sx-border px-3 pb-3">
-          {PRODUCT_GROUPS.map((group) => {
+          {CUSTOMER_OUTCOME_GROUPS.map((group) => {
             const isOpen = openGroup === group.id;
             return (
               <div key={group.id} className="border-b border-sx-border last:border-b-0">
@@ -137,22 +154,33 @@ export function MobileProductsAccordion({ onNavigate }: { onNavigate?: () => voi
                     {group.productIds.map((id) => {
                       const product = PRODUCTS[id];
                       if (!product) return null;
+                      const presentation = getCustomerPresentationForProduct(product);
                       const href = getProductHref(product);
                       const disabled = product.availability === "coming-later";
                       return (
                         <li key={id}>
                           {disabled ? (
                             <div className="flex items-center justify-between rounded-sx-sm px-2 py-2">
-                              <span className="font-sx-sans text-[12.5px] text-sx-text-subtle">{product.name}</span>
+                              <div>
+                                <span className="block font-sx-sans text-[12.5px] text-sx-text-subtle">{presentation.headline}</span>
+                                <span className="mt-0.5 block font-sx-mono text-[9px] uppercase tracking-[0.1em] text-sx-text-subtle">
+                                  {product.name}
+                                </span>
+                              </div>
                               <ProductStateBadge availability={product.availability} />
                             </div>
                           ) : (
                             <Link
                               href={href}
                               onClick={onNavigate}
-                              className="flex items-center justify-between rounded-sx-sm px-2 py-2 font-sx-sans text-[12.5px] font-medium text-sx-text transition-colors hover:bg-sx-surface-2"
+                              className="flex items-center justify-between rounded-sx-sm px-2 py-2 transition-colors hover:bg-sx-surface-2"
                             >
-                              <span>{product.name}</span>
+                              <div>
+                                <span className="block font-sx-sans text-[12.5px] font-medium text-sx-text">{presentation.headline}</span>
+                                <span className="mt-0.5 block font-sx-mono text-[9px] uppercase tracking-[0.1em] text-sx-text-subtle">
+                                  {product.name}
+                                </span>
+                              </div>
                               <ProductStateBadge availability={product.availability} />
                             </Link>
                           )}

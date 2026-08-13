@@ -14,10 +14,44 @@ const PRIMARY_LINKS: { label: string; href: string }[] = [
   { label: "Resources", href: "/resources" },
 ];
 
-export function PublicHeader() {
+type PublicHeaderProps = {
+  logoVariant?: "light" | "dark";
+  /**
+   * Id of a cinematic hero section this header sits on top of. While the hero
+   * is still under the header the bar stays transparent; once it scrolls past,
+   * the premium light header resolves in.
+   */
+  overHeroId?: string;
+};
+
+export function PublicHeader({ logoVariant = "dark", overHeroId }: PublicHeaderProps) {
   const [open, setOpen] = useState(false);
+  const [overHero, setOverHero] = useState(Boolean(overHeroId));
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!overHeroId) return;
+
+    let frame = 0;
+    const update = () => {
+      frame = 0;
+      const hero = document.getElementById(overHeroId);
+      setOverHero(hero ? hero.getBoundingClientRect().bottom > 72 : false);
+    };
+    const schedule = () => {
+      if (!frame) frame = window.requestAnimationFrame(update);
+    };
+
+    schedule();
+    window.addEventListener("scroll", schedule, { passive: true });
+    window.addEventListener("resize", schedule);
+    return () => {
+      if (frame) window.cancelAnimationFrame(frame);
+      window.removeEventListener("scroll", schedule);
+      window.removeEventListener("resize", schedule);
+    };
+  }, [overHeroId]);
 
   useEffect(() => {
     if (!open) return;
@@ -67,12 +101,16 @@ export function PublicHeader() {
   return (
     <>
       <header
-        className="sticky top-0 z-50 border-b border-sx-border bg-sx-bg/90 shadow-sm backdrop-blur-lg"
+        className={`${overHeroId ? "fixed inset-x-0 top-0" : "sticky top-0"} z-50 border-b transition-colors duration-500 motion-reduce:transition-none ${
+          overHero
+            ? "sx-header-over-hero border-transparent bg-transparent"
+            : "border-sx-border bg-sx-bg/90 shadow-sm backdrop-blur-lg"
+        }`}
         aria-hidden={open || undefined}
         inert={open || undefined}
       >
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
-          <Logo variant="dark" priority />
+          <Logo variant={overHero ? "dark" : logoVariant} priority />
 
           <nav className="hidden items-center gap-7 lg:flex" aria-label="Primary">
             <ProductMegaMenu />
@@ -134,7 +172,7 @@ export function PublicHeader() {
           aria-label="Main navigation"
         >
           <div className="flex h-16 items-center justify-between border-b border-sx-border px-4 sm:px-6">
-            <Logo variant="dark" />
+            <Logo variant={logoVariant} />
             <button
               type="button"
               className="inline-flex h-11 w-11 items-center justify-center rounded-sx-sm border border-sx-border-strong text-sx-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sx-accent"

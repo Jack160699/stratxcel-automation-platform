@@ -35,7 +35,10 @@ export type FunnelEvent =
   | "explore_product"
   | "view_pricing"
   | "start_audit"
-  | "signup_intent";
+  | "signup_intent"
+  | "intent_selected"
+  | "product_story_selected"
+  | "business_type_selected";
 
 /**
  * Properties an event may carry. Every one is a low-cardinality, non-personal
@@ -49,9 +52,14 @@ export interface FunnelProps {
   plan?: string;
   /** Auth method label: "google" | "password". Never an identifier. */
   method?: string;
+  /**
+   * Enumerable catalogue slug the visitor picked on a public page — a customer
+   * intent id, product id, or business-vertical slug. Never free-form input.
+   */
+  choice?: string;
 }
 
-const ALLOWED_KEYS = ["surface", "plan", "method"] as const;
+const ALLOWED_KEYS = ["surface", "plan", "method", "choice"] as const;
 
 /** Short, enumerable values only — a stray identifier cannot pass this. */
 const SAFE_VALUE = /^[a-z0-9_-]{1,32}$/;

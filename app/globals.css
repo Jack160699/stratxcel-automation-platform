@@ -61,13 +61,13 @@
 }
 
 .sx-public-theme {
-  --sx-bg: #f7f8fc;
+  --sx-bg: #fafbfc;
   --sx-surface-1: #ffffff;
-  --sx-surface-2: #eef3fa;
-  --sx-surface-3: #e5ebf4;
+  --sx-surface-2: #f4f6f9;
+  --sx-surface-3: #e9edf3;
   --sx-elevated: #ffffff;
-  --sx-border: #dce3ee;
-  --sx-border-strong: #c7d2e0;
+  --sx-border: #e2e8f0;
+  --sx-border-strong: #cbd5e1;
 
   --sx-text: #0a1020;
   --sx-text-muted: #475569;
@@ -75,10 +75,71 @@
 
   --sx-accent: #2563eb;
   --sx-accent-hover: #1d4ed8;
+  --sx-accent-muted: rgb(37 99 235 / 0.08);
   --sx-accent-on: #ffffff;
+
+  --sx-shadow-lg: 0 12px 32px -12px rgb(10 16 32 / 0.08);
+  --sx-shadow-xl: 0 32px 64px -24px rgb(10 16 32 / 0.1);
+
+  /* Premium public marketing rhythm — opt-in via sx-public-* utilities */
+  --sx-public-bg-warm: #faf9f7;
+  --sx-public-max-width: 80rem;
+  --sx-public-section-y: clamp(3rem, 6vw, 5rem);
+  --sx-public-headline-xl: clamp(1.75rem, 3.5vw + 0.5rem, 3.25rem);
+  --sx-public-headline-lg: clamp(1.5rem, 2.5vw + 0.4rem, 2.25rem);
+  --sx-public-body: clamp(0.9375rem, 0.2vw + 0.88rem, 1.0625rem);
+  --sx-public-shadow-sm: 0 1px 2px rgb(10 16 32 / 0.04), 0 4px 16px -4px rgb(10 16 32 / 0.06);
+  --sx-public-shadow-md: 0 8px 32px -12px rgb(10 16 32 / 0.1);
+  --sx-public-shadow-product: 0 24px 64px -24px rgb(10 16 32 / 0.18);
 
   --background: var(--sx-bg);
   --foreground: var(--sx-text);
+}
+
+/* Header sitting on top of the cinematic hero. Re-points the shared tokens so
+   the logo wordmark, nav links, and controls read on dark without any of them
+   hard-coding a colour. Nested light surfaces (the products panel) re-assert
+   .sx-public-theme to restore the light values. */
+.sx-header-over-hero {
+  --sx-text: #ffffff;
+  --sx-text-muted: rgb(255 255 255 / 0.72);
+  --sx-text-subtle: rgb(255 255 255 / 0.55);
+  --sx-border: rgb(255 255 255 / 0.12);
+  --sx-border-strong: rgb(255 255 255 / 0.24);
+  --sx-surface-1: rgb(255 255 255 / 0.06);
+  --sx-surface-2: rgb(255 255 255 / 0.1);
+  --sx-bg: transparent;
+  --sx-accent: #6ea2ff;
+  --sx-accent-hover: #8ab5ff;
+  --sx-accent-on: #06080c;
+}
+
+.sx-public-theme ::selection {
+  background: color-mix(in srgb, var(--sx-accent) 22%, transparent);
+  color: var(--sx-text);
+}
+
+.sx-public-kicker {
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--sx-accent);
+}
+
+.sx-public-display {
+  font-family: var(--font-instrument-sans), ui-sans-serif, system-ui, sans-serif;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  color: var(--sx-text);
+}
+
+.sx-public-lead {
+  font-size: 15px;
+  line-height: 1.65;
+  color: var(--sx-text-muted);
 }
 
 @theme inline {
@@ -309,6 +370,68 @@ body {
   animation: sx-frame-settle 0.5s ease-out;
 }
 
+/* Premium cinematic hero — wave 3 public redesign */
+@keyframes sx-hero-light-drift {
+  0%, 100% { transform: translate(0, 0) scale(1); opacity: 0.85; }
+  50% { transform: translate(4%, -3%) scale(1.04); opacity: 1; }
+}
+@keyframes sx-hero-light-drift-reverse {
+  0%, 100% { transform: translate(0, 0) scale(1); opacity: 0.7; }
+  50% { transform: translate(-3%, 4%) scale(1.03); opacity: 0.95; }
+}
+@keyframes sx-hero-card-resolve {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.sx-hero-alive .sx-hero-light-drift {
+  animation: sx-hero-light-drift 18s ease-in-out infinite;
+}
+.sx-hero-alive .sx-hero-light-drift-reverse {
+  animation: sx-hero-light-drift-reverse 22s ease-in-out infinite;
+}
+.sx-hero-card-resolve {
+  animation: sx-hero-card-resolve 480ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.sx-hero-vignette {
+  background: radial-gradient(ellipse 90% 80% at 50% 40%, transparent 40%, rgb(6 8 12 / 0.55) 100%);
+}
+.sx-hero-grain {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  mix-blend-mode: overlay;
+}
+
+.sx-kinetic-idle {
+  transform: translateY(0);
+  filter: blur(0);
+  opacity: 1;
+}
+.sx-kinetic-exit {
+  transform: translateY(-0.35em);
+  filter: blur(4px);
+  opacity: 0;
+  transition: transform 420ms cubic-bezier(0.4, 0, 0.2, 1), filter 420ms ease, opacity 320ms ease;
+}
+.sx-kinetic-enter {
+  transform: translateY(0.2em);
+  filter: blur(6px);
+  opacity: 0;
+  animation: sx-kinetic-resolve 480ms cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}
+@keyframes sx-kinetic-resolve {
+  to {
+    transform: translateY(0);
+    filter: blur(0);
+    opacity: 1;
+  }
+}
+
+.sx-hero-paused .sx-hero-light-drift,
+.sx-hero-paused .sx-hero-light-drift-reverse {
+  animation-play-state: paused;
+}
+
 .sx-reveal {
   opacity: 0;
   transform: translateY(16px);
@@ -368,6 +491,20 @@ body::-webkit-scrollbar-thumb {
   .sx-blink,
   .sx-grain::after {
     animation: none !important;
+  }
+  .sx-hero-alive .sx-hero-light-drift,
+  .sx-hero-alive .sx-hero-light-drift-reverse,
+  .sx-hero-card-resolve,
+  .sx-hero-grain {
+    animation: none !important;
+  }
+  .sx-kinetic-exit,
+  .sx-kinetic-enter {
+    animation: none !important;
+    transition: none !important;
+    transform: none !important;
+    filter: none !important;
+    opacity: 1 !important;
   }
   .sx-reveal {
     opacity: 1;

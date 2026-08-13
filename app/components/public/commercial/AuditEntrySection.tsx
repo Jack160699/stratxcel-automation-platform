@@ -3,14 +3,14 @@ import { TrackedCtaLink } from "@/app/components/public/commercial/TrackedCtaLin
 import { AUDIT_INCLUDES, AUDIT_POSITIONING } from "@/lib/commercial/audit-positioning";
 import { PUBLIC_CTAS } from "@/lib/commercial/ctas";
 
-export function AuditEntrySection({ surface = "audit_entry", variant = "card", className = "" }: { surface?: string; variant?: "card" | "compact"; className?: string }) {
+export function AuditEntrySection({ surface = "audit_entry", variant = "card", className = "", heading }: { surface?: string; variant?: "card" | "compact"; className?: string; heading?: string }) {
   const copy = AUDIT_POSITIONING;
   if (variant === "compact") {
     return (
       <section className={`border-b border-sx-border ${className}`.trim()}>
         <div className="mx-auto max-w-3xl px-4 py-14 text-center sm:px-6">
           <p className="font-sx-mono text-[11px] font-bold uppercase tracking-wider text-sx-text-subtle">{copy.eyebrow}</p>
-          <h2 className="mt-3 text-2xl font-bold">{copy.headline}</h2>
+          <h2 className="mt-3 text-2xl font-bold">{heading ?? copy.headline}</h2>
           <p className="mt-3 text-sm text-sx-text-muted">{copy.subhead}</p>
           <p className="mt-2 text-xs text-sx-text-subtle">{copy.reassurance}</p>
           <div className="mt-6 flex flex-col items-center justify-center gap-3 sm:flex-row">
@@ -26,7 +26,7 @@ export function AuditEntrySection({ surface = "audit_entry", variant = "card", c
       <div className="mx-auto max-w-7xl px-4 py-14 sm:px-6 sm:py-16 lg:px-8">
         <div className="mx-auto max-w-3xl text-center">
           <p className="font-sx-mono text-[11px] font-bold uppercase tracking-[0.18em] text-sx-text-subtle">{copy.eyebrow}</p>
-          <h2 className="mt-3 text-2xl font-bold sm:text-3xl">{copy.headline}</h2>
+          <h2 className="mt-3 text-2xl font-bold sm:text-3xl">{heading ?? copy.headline}</h2>
           <p className="mt-3 text-sm text-sx-text-muted sm:text-base">{copy.subhead}</p>
           <p className="mt-2 text-xs text-sx-text-subtle">{copy.reassurance}</p>
         </div>

@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { PublicHeader } from "@/app/components/PublicHeader";
-import { PublicFooter } from "@/app/components/PublicFooter";
+import { PublicPageShell } from "@/app/components/public/PublicPageShell";
 import { IntegrationsShowcase } from "@/app/components/public/commercial/IntegrationsShowcase";
 import { TrackedCtaLink } from "@/app/components/public/commercial/TrackedCtaLink";
 import { PUBLIC_CTAS } from "@/lib/commercial/ctas";
@@ -13,9 +12,7 @@ export const metadata: Metadata = {
 
 export default function IntegrationsPage() {
   return (
-    <div className="flex min-h-screen flex-col bg-sx-bg text-sx-text">
-      <PublicHeader />
-      <main className="flex-1">
+    <PublicPageShell>
         <section className="mx-auto max-w-6xl px-4 py-16 sm:px-6 lg:px-8">
           <p className="font-sx-mono text-[11px] uppercase tracking-[0.3em] text-sx-text-subtle">Integrations</p>
           <h1 className="mt-4 font-sx-sans text-3xl font-semibold text-sx-text">Connect what your team authorizes</h1>
@@ -31,8 +28,6 @@ export default function IntegrationsPage() {
         <section className="border-t border-sx-border py-14 text-center">
           <Link href="/social-autopilot" className="text-sm font-semibold text-sx-accent hover:underline">View Social Autopilot →</Link>
         </section>
-      </main>
-      <PublicFooter />
-    </div>
+    </PublicPageShell>
   );
 }
