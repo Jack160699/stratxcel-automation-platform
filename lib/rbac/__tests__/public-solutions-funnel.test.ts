@@ -1,4 +1,4 @@
-import assert from "node:assert/strict";
+﻿import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -11,6 +11,10 @@ assert.equal(SOLUTION_OUTCOMES.length, 10);
 assert.equal(GROWTH_LIFECYCLE.length, 6);
 assert.equal(PLATFORM_WORK_STAGES.length, 4);
 assert.ok(/SolutionsHero/.test(read("app", "solutions", "page.tsx")));
+assert.ok(/BuiltAroundYourBusinessSection/.test(read("app", "solutions", "page.tsx")));
+assert.ok(/ImprovementIntentSection/.test(read("app", "solutions", "page.tsx")));
 assert.ok(/Not sure where to start\?/.test(read("app", "components", "public", "solutions", "AuditFunnelCta.tsx")));
 assert.ok(/redirect\(["']\/solutions["']\)/.test(read("app", "use-cases", "page.tsx")));
+assert.ok(/getPublishedSolutionSlugs/.test(read("app", "solutions", "[slug]", "page.tsx")));
+assert.ok(/HomeLocalBusinessJourneys/.test(read("app", "page.tsx")));
 console.log("public-solutions-funnel.test.ts: ALL PASS");

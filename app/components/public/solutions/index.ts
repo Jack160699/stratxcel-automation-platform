@@ -1,7 +1,10 @@
-export { SolutionsHero } from "./SolutionsHero";
+﻿export { SolutionsHero } from "./SolutionsHero";
 export { OutcomesGrid } from "./OutcomesGrid";
 export { GrowthLifecycle } from "./GrowthLifecycle";
 export { HowStratxcelWorks } from "./HowStratxcelWorks";
 export { AuditFunnelCta } from "./AuditFunnelCta";
 export { CustomerTypesSection } from "./CustomerTypesSection";
 export { SolutionConversionCta } from "./SolutionConversionCta";
+export { BuiltAroundYourBusinessSection } from "./BuiltAroundYourBusinessSection";
+export { ImprovementIntentSection } from "./ImprovementIntentSection";
+export { BusinessJourneyVisual } from "./BusinessJourneyVisual";

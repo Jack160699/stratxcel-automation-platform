@@ -13,12 +13,13 @@ import { HomeAiWorkforce } from "@/app/components/public/home/HomeAiWorkforce";
 import { HomeIntegrationsPreview } from "@/app/components/public/home/HomeIntegrationsPreview";
 import { HomePricingBridge } from "@/app/components/public/home/HomePricingBridge";
 import { HomeSolutionsPreview } from "@/app/components/public/home/HomeSolutionsPreview";
+import { HomeLocalBusinessJourneys } from "@/app/components/public/home/HomeLocalBusinessJourneys";
 import { HomeProductsPreview } from "@/app/components/public/product-suite/HomeProductsPreview";
 import { ProductShowcase } from "@/app/components/public/showcase/ProductShowcase";
 import { JOURNEY_OBJECTIONS } from "@/lib/commercial/objections";
 
 export const metadata: Metadata = {
-  title: "Stratxcel — Your AI Growth Operating System",
+  title: "Stratxcel Ã¢â‚¬â€ Your AI Growth Operating System",
   description:
     "Research your market, create content, grow on search, manage leads, and run campaigns from one connected AI growth platform.",
 };
@@ -42,6 +43,7 @@ export default function HomePage() {
         </HomeSectionSlot>
 
         <HomeSectionSlot id="solutions" sectionKey="solutions" label="Outcomes and Solutions">
+          <HomeLocalBusinessJourneys />
           <HomeSolutionsPreview />
         </HomeSectionSlot>
 
