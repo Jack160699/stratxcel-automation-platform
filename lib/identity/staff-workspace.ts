@@ -168,6 +168,7 @@ export async function commitWorkspaceIntent(input: {
   else if (pending === "customer") mode = "customer";
   else if (input.isStaff) mode = "admin";
   await setWorkspaceModeCookie(input.subject, mode);
+  if (mode === "customer") await clearStaffWorkspaceCookie();
   await clearPendingWorkspaceMode();
   return mode;
 }

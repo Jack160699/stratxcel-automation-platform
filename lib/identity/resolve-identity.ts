@@ -29,7 +29,10 @@ export type RouteSurface = "admin" | "app";
 
 function workspaceModeForRoute(surface: RouteSurface | undefined, cookieMode: "customer" | "admin" | null): "customer" | "admin" | null {
   if (surface === "admin") return "admin";
-  if (surface === "app") return "customer";
+  // `/app` is both the customer workspace and the destination for an
+  // explicitly signed "view client" handoff from `/admin`. Preserve that
+  // signed admin intent; otherwise an app visit is customer intent.
+  if (surface === "app") return cookieMode ?? "customer";
   return cookieMode;
 }
 

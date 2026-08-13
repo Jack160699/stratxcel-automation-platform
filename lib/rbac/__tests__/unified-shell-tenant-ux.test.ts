@@ -63,7 +63,7 @@ function run() {
 
   // --- 3. The unified shell renders only after canonical staff identity
   const shellLayout = read("app", "admin", "(shell)", "layout.tsx");
-  const shellGuardIndex = shellLayout.indexOf("resolveCanonicalIdentity()");
+  const shellGuardIndex = shellLayout.indexOf('resolveCanonicalIdentity({ routeSurface: "admin" })');
   const shellLoginIndex = shellLayout.indexOf("return <AdminLogin");
   const shellAppShellIndex = shellLayout.indexOf("<AppShell");
   assert.ok(

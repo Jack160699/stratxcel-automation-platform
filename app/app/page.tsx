@@ -1,47 +1,7 @@
-import Link from "next/link";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { requireClientContext } from "@/lib/tenants/client-context";
-import { requirePermission, PermissionDeniedError } from "@/lib/rbac/policy";
-import { listMissionsForTenant } from "@stratxcel/missions";
-import { listPendingApprovals } from "@stratxcel/approvals";
-import { Card, CardHeading, CardRow } from "@/components/ui/Card";
-import { StatusChip, type ChipState } from "@/components/ui/StatusChip";
-import { OnboardingPanel } from "./OnboardingPanel";
 import { JourneyPanel } from "./JourneyPanel";
 import { deriveJourney, nextAction } from "@/lib/journey/progress";
-
-const MISSION_STATE_CHIP: Record<string, { label: string; state: ChipState }> = {
-  DRAFT: { label: "Draft", state: "neutral" },
-  ESTIMATING: { label: "Estimating", state: "neutral" },
-  AWAITING_FUNDS: { label: "Awaiting funds", state: "warning" },
-  READY: { label: "Ready", state: "accent" },
-  QUEUED: { label: "Queued", state: "accent" },
-  RUNNING: { label: "Running", state: "ai" },
-  AWAITING_INPUT: { label: "Awaiting input", state: "warning" },
-  AWAITING_APPROVAL: { label: "Awaiting approval", state: "warning" },
-  HUMAN_HANDOFF: { label: "Human handoff", state: "warning" },
-  RESUMED: { label: "Resumed", state: "accent" },
-  COMPLETED: { label: "Completed", state: "success" },
-  PARTIALLY_COMPLETED: { label: "Partially completed", state: "success" },
-  FAILED: { label: "Failed", state: "danger" },
-  CANCELLED: { label: "Cancelled", state: "neutral" },
-  BLOCKED: { label: "Blocked", state: "danger" },
-};
-
-const ACTIVE_MISSION_STATES = new Set([
-  "QUEUED",
-  "RUNNING",
-  "READY",
-  "RESUMED",
-  "ESTIMATING",
-  "AWAITING_INPUT",
-  "AWAITING_APPROVAL",
-  "HUMAN_HANDOFF",
-  "AWAITING_FUNDS",
-  "BLOCKED",
-]);
-
-const DONE_MISSION_STATES = new Set(["COMPLETED", "PARTIALLY_COMPLETED"]);
 
 async function loadJourneyInput(supabase: SupabaseClient, tenantId: string) {
   const [user, order, consultation] = await Promise.all([
@@ -86,9 +46,10 @@ async function loadJourneyInput(supabase: SupabaseClient, tenantId: string) {
 }
 
 /**
- * V1 Command Center — answers what Stratxcel is doing, what needs attention,
- * what is in progress, recent outcomes, and where to grow next.
- * Uses real available data only; never fabricates inbox/AI metric cards.
+ * V1 customer Command Center. The generic mission store also contains
+ * internal platform operations and has no customer-audience discriminator,
+ * so it is deliberately excluded until that provenance boundary exists.
+ * The Audit journey is tenant-scoped and is the production customer flow.
  */
 export default async function ClientCommandCenterPage() {
   const ctx = await requireClientContext();
@@ -96,44 +57,10 @@ export default async function ClientCommandCenterPage() {
 
   const active = ctx.workspaceTenant;
 
-  const [missions, approvals, journeyInput] = await Promise.all([
-    listMissionsForTenant(ctx.supabase, active.tenantId, 8),
-    (async () => {
-      if (ctx.accessMode === "customer") {
-        try {
-          requirePermission(ctx.workspaceTenant.role, "approval:decide");
-        } catch (err) {
-          if (err instanceof PermissionDeniedError) return null;
-          throw err;
-        }
-      }
-      return listPendingApprovals(ctx.supabase, active.tenantId);
-    })(),
-    loadJourneyInput(ctx.supabase, active.tenantId),
-  ]);
+  const journeyInput = await loadJourneyInput(ctx.supabase, active.tenantId);
 
   const stages = deriveJourney(journeyInput);
   const next = nextAction(stages);
-  const pendingApprovals = approvals ?? [];
-  const inProgress = missions.filter((m) => ACTIVE_MISSION_STATES.has(m.state));
-  const blocked = missions.filter((m) => m.state === "BLOCKED" || m.state === "FAILED" || m.state === "HUMAN_HANDOFF");
-  const recentDone = missions.filter((m) => DONE_MISSION_STATES.has(m.state)).slice(0, 4);
-
-  const attentionItems: { label: string; href: string; detail: string }[] = [];
-  if (approvals !== null && pendingApprovals.length > 0) {
-    attentionItems.push({
-      label: `${pendingApprovals.length} approval${pendingApprovals.length === 1 ? "" : "s"} waiting`,
-      href: "/app/approvals",
-      detail: "Needs your decision before work can continue.",
-    });
-  }
-  for (const m of blocked.slice(0, 3)) {
-    attentionItems.push({
-      label: m.goal_text,
-      href: `/app/missions/${m.id}`,
-      detail: MISSION_STATE_CHIP[m.state]?.label ?? m.state,
-    });
-  }
 
   return (
     <div className="flex flex-col gap-8">
@@ -144,85 +71,8 @@ export default async function ClientCommandCenterPage() {
         </p>
       </header>
 
-      {/* A. Growth status / next best action */}
+      {/* Audit purchase, Brand Brain intake, generation, report, and next action. */}
       <JourneyPanel stages={stages} next={next} tenantId={active.tenantId} />
-
-      {/* B. Needs your attention */}
-      <section className="flex flex-col gap-3">
-        <h2 className="font-sx-sans text-sm font-semibold text-sx-text">Needs your attention</h2>
-        {attentionItems.length === 0 ? (
-          <p className="text-sm text-sx-text-subtle">
-            Nothing needs a decision right now.
-            {approvals === null ? " Your role cannot decide approvals." : ""}
-          </p>
-        ) : (
-          <div className="flex flex-col gap-2">
-            {attentionItems.map((item) => (
-              <Link
-                key={item.href + item.label}
-                href={item.href}
-                className="rounded-sx-md border border-sx-border bg-sx-surface-1 px-4 py-3 transition-colors hover:border-sx-border-strong"
-              >
-                <p className="text-sm font-medium text-sx-text">{item.label}</p>
-                <p className="mt-0.5 text-xs text-sx-text-subtle">{item.detail}</p>
-              </Link>
-            ))}
-          </div>
-        )}
-      </section>
-
-      {/* C. Work in progress */}
-      <section className="flex flex-col gap-3">
-        <div className="flex items-baseline justify-between gap-3">
-          <h2 className="font-sx-sans text-sm font-semibold text-sx-text">Work in progress</h2>
-          <Link href="/app/missions" className="text-xs font-medium text-sx-accent hover:underline">
-            All work
-          </Link>
-        </div>
-        {inProgress.length === 0 ? (
-          <p className="text-sm text-sx-text-subtle">No active work requests right now.</p>
-        ) : (
-          <Card>
-            {inProgress.map((m) => {
-              const chip = MISSION_STATE_CHIP[m.state] ?? { label: m.state, state: "neutral" as ChipState };
-              return (
-                <CardRow key={m.id}>
-                  <Link href={`/app/missions/${m.id}`} className="min-w-0 flex-1 truncate text-sx-text-muted hover:text-sx-text" title={m.goal_text}>
-                    {m.goal_text}
-                  </Link>
-                  <StatusChip state={chip.state} pulse={chip.state === "ai"}>
-                    {chip.label}
-                  </StatusChip>
-                </CardRow>
-              );
-            })}
-          </Card>
-        )}
-      </section>
-
-      {/* D. Recent outcomes */}
-      <section className="flex flex-col gap-3">
-        <h2 className="font-sx-sans text-sm font-semibold text-sx-text">Recent outcomes</h2>
-        {recentDone.length === 0 ? (
-          <p className="text-sm text-sx-text-subtle">Completed work will show up here.</p>
-        ) : (
-          <Card>
-            <CardHeading>Finished recently</CardHeading>
-            {recentDone.map((m) => {
-              const chip = MISSION_STATE_CHIP[m.state] ?? { label: m.state, state: "success" as ChipState };
-              return (
-                <CardRow key={m.id}>
-                  <span className="min-w-0 flex-1 truncate text-sx-text-muted" title={m.goal_text}>
-                    {m.goal_text}
-                  </span>
-                  <StatusChip state={chip.state}>{chip.label}</StatusChip>
-                </CardRow>
-              );
-            })}
-          </Card>
-        )}
-      </section>
-
     </div>
   );
 }

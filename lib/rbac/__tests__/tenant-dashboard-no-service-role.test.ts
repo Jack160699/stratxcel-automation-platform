@@ -45,11 +45,12 @@ function run() {
   // Customer reads retain membership/RLS; explicit staff support reads use
   // the exact signed tenant context and a server-only read client.
   const tenantContext = read("lib", "tenants", "tenant-context.ts");
+  const readDecision = read("lib", "tenants", "read-access-decision.ts");
   assert.ok(/export async function requireTenantContext/.test(tenantContext));
   assert.ok(/\.from\("tenant_members"\)/.test(tenantContext));
   assert.ok(/export async function requireTenantReadContext/.test(tenantContext));
   assert.ok(/\.from\("stratxcel_admins"\)/.test(tenantContext));
-  assert.ok(/workspaceTenantId !== tenantId/.test(tenantContext));
+  assert.ok(/staffWorkspaceTenantId === input\.requestedTenantId/.test(readDecision));
 
   for (const parts of [
     ["app", "api", "platform", "missions", "route.ts"],

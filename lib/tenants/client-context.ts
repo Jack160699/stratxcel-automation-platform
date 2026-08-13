@@ -40,7 +40,7 @@ export interface ClientContextError {
 }
 
 export async function requireClientContext(): Promise<ClientContext | ClientContextError> {
-  const identity = await resolveCanonicalIdentity();
+  const identity = await resolveCanonicalIdentity({ routeSurface: "app" });
   if (identity.state === "NO_SESSION") return { ok: false, status: 401, error: "Not authenticated" };
   if (identity.state === "INTERNAL_STAFF") return { ok: false, status: 403, error: "Staff workspace context required" };
   if (identity.state === "NEW_CUSTOMER") return { ok: false, status: 403, error: "Customer workspace membership required" };

@@ -59,7 +59,7 @@ function run() {
       isStaff: true,
       membershipCount: 1,
       hasValidStaffWorkspace: true,
-      workspaceMode: "customer",
+      workspaceMode: "admin",
     }),
     "STAFF_VIEWING_CLIENT"
   );
