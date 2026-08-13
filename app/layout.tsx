@@ -3,6 +3,7 @@ import { Geist, Geist_Mono, Instrument_Sans } from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
 import { GoogleAnalytics } from "@/app/components/GoogleAnalytics";
 import { ScrollRestoration } from "@/app/components/ScrollRestoration";
+import { ThemeProvider } from "@/components/theme/ThemeProvider";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -61,7 +62,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#05070e",
+  themeColor: "#fafbfc",
   width: "device-width",
   initialScale: 1,
 };
@@ -76,11 +77,13 @@ export default function RootLayout({
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} ${instrumentSans.variable} h-full antialiased`}
     >
-      <body className="min-h-full bg-[#05070e] text-slate-100">
+      <body className="min-h-full bg-sx-bg text-sx-text">
+        <ThemeProvider>
         <ScrollRestoration />
         {children}
         <Analytics />
         <GoogleAnalytics />
+        </ThemeProvider>
       </body>
     </html>
   );

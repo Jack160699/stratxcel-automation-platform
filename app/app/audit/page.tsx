@@ -1,56 +1,24 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { Card, CardHeading } from "@/components/ui/Card";
+import { Card } from "@/components/ui/Card";
 import { ErrorState } from "@/components/ui/Feedback";
-import { IntakeWizard, type IntakeOrder } from "./IntakeWizard";
+import { ConnectExperience } from "./ConnectExperience";
+import { VisualAuditReport } from "./VisualAuditReport";
 import { trackFunnel } from "@/lib/analytics/events";
 import { loadCustomerJson } from "@/lib/customer-app/load-result";
 import {
-  AUDIT_CATEGORY_SCORE_KEYS,
   deriveAuditCustomerState,
   normalizeAuditDeliveryReport,
-  type AuditCategoryScoreKey,
 } from "@/lib/audit/customer-state";
 
-const CATEGORY_LABELS: Record<AuditCategoryScoreKey, string> = {
-  brandPositioning: "Brand positioning",
-  websiteConversion: "Website & conversion",
-  discoverabilitySeo: "Discoverability & SEO",
-  socialContent: "Social & content",
-  leadGeneration: "Lead generation",
-  trustReputation: "Trust & reputation",
-  customerJourney: "Customer journey",
-  automationOperations: "Automation & operations",
-};
-
-function SectionFrame({
-  means,
-  matters,
-  todo,
-  children,
-}: {
-  means?: string;
-  matters?: string;
-  todo?: string;
-  children?: ReactNode;
-}) {
-  if (!means && !matters && !todo && !children) return null;
-  return (
-    <div className="mt-3 space-y-2 border-t border-sx-border pt-3 text-xs leading-5 text-sx-text-subtle">
-      {means && (
-        <p><span className="font-medium text-sx-text">What this means:</span> {means}</p>
-      )}
-      {matters && (
-        <p><span className="font-medium text-sx-text">Why this matters:</span> {matters}</p>
-      )}
-      {todo && (
-        <p><span className="font-medium text-sx-text">What to do:</span> {todo}</p>
-      )}
-      {children}
-    </div>
-  );
+interface IntakeOrder {
+  business_name?: string | null;
+  industry?: string | null;
+  website_url?: string | null;
+  deep_dive_answers?: Record<string, unknown> | null;
+  goals_answers?: Record<string, unknown> | null;
 }
 
 interface AuditOrder extends IntakeOrder {
@@ -71,11 +39,11 @@ interface AuditGeneration {
 
 const PROCESSING_STAGES = [
   { key: "QUEUED", label: "Information received" },
-  { key: "RESEARCH", label: "Grounded business research" },
-  { key: "ANALYSIS", label: "Business and growth analysis" },
-  { key: "QUALITY_GATE", label: "Evidence and quality checks" },
-  { key: "DELIVERY", label: "Secure report delivery" },
-  { key: "COMPLETE", label: "Report ready" },
+  { key: "RESEARCH", label: "Reading your website" },
+  { key: "ANALYSIS", label: "Checking your public presence" },
+  { key: "QUALITY_GATE", label: "Building your growth plan" },
+  { key: "DELIVERY", label: "Preparing your report" },
+  { key: "COMPLETE", label: "Your growth plan is ready" },
 ] as const;
 
 /** Payment-first Audit hub driven only by persisted order and generation state. */
@@ -87,12 +55,16 @@ export default function AuditHubPage() {
   const [starting, setStarting] = useState(false);
   const autoStartAttempted = useRef(false);
 
+  const [freshAuditEligible, setFreshAuditEligible] = useState(false);
+  const [shareMessage, setShareMessage] = useState<string | null>(null);
+
   const load = useCallback(async () => {
     setError(null);
     const result = await loadCustomerJson<{
       order?: AuditOrder | null;
       generation?: AuditGeneration | null;
       paymentUrl?: string | null;
+      freshAuditEligible?: boolean;
     }>(() => fetch("/api/platform/audit/checkout"), "We couldn't load your Audit. Please try again.");
     if (result.status === "error") {
       setOrder(null);
@@ -104,6 +76,7 @@ export default function AuditHubPage() {
     setOrder(result.data.order ?? null);
     setGeneration(result.data.generation ?? null);
     setPaymentUrl(result.data.paymentUrl ?? null);
+    setFreshAuditEligible(result.data.freshAuditEligible === true);
   }, []);
 
   const startAudit = useCallback(async () => {
@@ -111,7 +84,11 @@ export default function AuditHubPage() {
     setError(null);
     try {
       const result = await loadCustomerJson<Record<string, unknown>>(
-        () => fetch("/api/platform/audit/intake", { method: "POST" }),
+        () => fetch("/api/platform/audit/onboarding", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "finalize" }),
+        }),
         "We couldn't start your Audit. Please try again."
       );
       if (result.status === "error") {
@@ -182,14 +159,45 @@ export default function AuditHubPage() {
   if (!order) {
     return (
       <div className="mx-auto max-w-2xl px-4 py-16 text-center">
-        <h1 className="font-sx-sans text-xl font-semibold text-sx-text">You haven&apos;t started an Audit yet</h1>
-        <p className="mt-2 text-sm text-sx-text-muted">Start with the ₹999 AI Business Growth Audit.</p>
-        <Link
-          href="/audit"
-          className="mt-6 inline-flex min-h-11 items-center rounded-sx-sm bg-sx-accent px-6 font-sx-sans text-xs font-bold text-sx-accent-on hover:bg-[color:var(--sx-accent-hover)]"
-        >
-          Start My Audit &rarr;
-        </Link>
+        <h1 className="font-sx-sans text-xl font-semibold text-sx-text">
+          {freshAuditEligible ? "Your fresh Audit is ready to start" : "You haven't started an Audit yet"}
+        </h1>
+        <p className="mt-2 text-sm text-sx-text-muted">
+          {freshAuditEligible
+            ? "Connect your business. We will read public pages and ask only a few questions."
+            : "Start with the ₹999 AI Business Growth Audit."}
+        </p>
+        {freshAuditEligible ? (
+          <button
+            type="button"
+            disabled={starting}
+            onClick={() => {
+              setStarting(true);
+              void fetch("/api/platform/audit/onboarding", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ action: "start_fresh" }),
+              }).then(async (response) => {
+                if (!response.ok) {
+                  const json = await response.json().catch(() => ({})) as { error?: string };
+                  setError(json.error ?? "Could not start a new Audit.");
+                  return;
+                }
+                await load();
+              }).finally(() => setStarting(false));
+            }}
+            className="mt-6 inline-flex min-h-11 items-center rounded-sx-sm bg-sx-accent px-6 font-sx-sans text-xs font-bold text-sx-accent-on"
+          >
+            {starting ? "Starting…" : "Connect your business →"}
+          </button>
+        ) : (
+          <Link
+            href="/audit"
+            className="mt-6 inline-flex min-h-11 items-center rounded-sx-sm bg-sx-accent px-6 font-sx-sans text-xs font-bold text-sx-accent-on hover:bg-[color:var(--sx-accent-hover)]"
+          >
+            Start My Audit &rarr;
+          </Link>
+        )}
       </div>
     );
   }
@@ -229,18 +237,7 @@ export default function AuditHubPage() {
   }
 
   if (customerState === "INTAKE_REQUIRED") {
-    return (
-      <div className="mx-auto max-w-3xl px-4 py-8 sm:px-6 lg:px-8">
-        <div className="mb-6 text-center">
-          <span className="font-sx-mono text-xs font-bold uppercase tracking-wider text-emerald-600">Purchase ✓</span>
-          <h1 className="mt-2 font-sx-sans text-2xl font-bold text-sx-text">Let&apos;s build your Brand Brain.</h1>
-          <p className="mx-auto mt-2 max-w-lg text-sm text-sx-text-muted">
-            Answer a few simple questions. We&apos;ll turn them into your reusable Stratxcel Brand Brain so the Audit understands your business properly.
-          </p>
-        </div>
-        <IntakeWizard order={order} onIntakeComplete={load} />
-      </div>
-    );
+    return <ConnectExperience order={order} onChanged={load} />;
   }
 
   if (customerState === "READY_FOR_EXECUTION") {
@@ -282,12 +279,10 @@ export default function AuditHubPage() {
       <div className="mx-auto max-w-2xl px-4 py-16">
         <div className="text-center">
           <h1 className="font-sx-sans text-xl font-semibold text-sx-text">
-            {generation ? "Your Audit is being prepared" : "Your Audit is being reviewed"}
+            {generation ? "Creating your Audit" : "Creating your Audit"}
           </h1>
           <p className="mt-2 text-sm text-sx-text-muted">
-            {generation
-              ? "Grounded research, analysis, and delivery checks are running in the background. You can safely leave this page."
-              : "The Stratxcel team is working through your answers. We will let you know when it is ready."}
+            Finding your business, reading your website, and building your growth plan. You can safely leave this page.
           </p>
         </div>
         <Card className="mt-8">
@@ -302,8 +297,8 @@ export default function AuditHubPage() {
         </Card>
         <p className="mt-4 text-center text-xs text-sx-text-subtle">
           {generation
-            ? `Last confirmed stage update: ${new Date(generation.stage_updated_at).toLocaleString()}`
-            : "Only the persisted review state above is confirmed."}
+            ? `Last update: ${new Date(generation.stage_updated_at).toLocaleString()}`
+            : "Your growth plan is being created."}
         </p>
       </div>
     );
@@ -325,315 +320,29 @@ export default function AuditHubPage() {
     );
   }
 
-  const researchLimits = report.researchLimitations ?? report.limitations ?? [];
-  const sourceList = report.sources ?? [];
-  const showCollapsedSources = sourceList.length > 3;
-
   return (
-    <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
-      <div className="border-b border-sx-border pb-6">
-        <span className="font-sx-mono text-xs font-bold uppercase tracking-wider text-sx-accent">Audit Report</span>
-        <h1 className="mt-1 font-sx-sans text-2xl font-bold text-sx-text">{order.business_name}</h1>
-      </div>
-
-      <div className="mt-6 grid gap-4">
-        {report.overallHealth && (
-          <Card>
-            <CardHeading>Overall business health</CardHeading>
-            <div className="mt-4 flex flex-wrap items-end gap-4">
-              <div className="rounded-sx-sm bg-sx-surface-2 px-5 py-4 text-center">
-                <p className="font-sx-sans text-3xl font-bold text-sx-text">{report.overallHealth.score}</p>
-                <p className="mt-1 text-[10px] uppercase tracking-wide text-sx-text-subtle">Score out of 100</p>
-              </div>
-              <p className="min-w-[16rem] flex-1 text-sm leading-6 text-sx-text-muted">{report.overallHealth.explanation}</p>
-            </div>
-            <SectionFrame
-              means="This is a readiness snapshot from your Brand Brain and the public evidence we could verify."
-              matters="It helps you see where the business is strong versus where growth is blocked."
-              todo="Use the category scores and plan below to decide what to fix first."
-            />
-          </Card>
-        )}
-
-        {report.categoryScores && (
-          <Card>
-            <CardHeading>Category scores</CardHeading>
-            <dl className="mt-4 grid gap-3 sm:grid-cols-2">
-              {AUDIT_CATEGORY_SCORE_KEYS.map((key) => {
-                const dimension = report.categoryScores![key];
-                return (
-                  <div key={key} className="rounded-sx-sm border border-sx-border p-3">
-                    <dt className="text-xs font-medium text-sx-text">{CATEGORY_LABELS[key]}</dt>
-                    <dd className="mt-2 font-sx-sans text-lg font-bold text-sx-text">
-                      {dimension.score == null ? "Not enough data" : dimension.score}
-                    </dd>
-                    <p className="mt-2 text-xs leading-5 text-sx-text-muted">{dimension.explanation}</p>
-                  </div>
-                );
-              })}
-            </dl>
-            <SectionFrame
-              means="Each score is based only on evidence we could ground, or marked when evidence was missing."
-              matters="Sparse public presence is treated as a real growth signal, not padded with invented numbers."
-              todo="Prioritize categories marked “Not enough data” or with low scores that block customer acquisition."
-            />
-          </Card>
-        )}
-
-        {!report.overallHealth && report.scores && (
-          <Card>
-            <CardHeading>Business readiness scores</CardHeading>
-            <dl className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-5">
-              {Object.entries(report.scores).map(([key, value]) => (
-                <div key={key} className="rounded-sx-sm bg-sx-surface-2 p-3 text-center">
-                  <dd className="font-sx-sans text-xl font-bold text-sx-text">
-                    {value == null ? "—" : value}
-                  </dd>
-                  <dt className="mt-1 text-[10px] uppercase tracking-wide text-sx-text-subtle">
-                    {key.replace(/([A-Z])/g, " $1")}
-                  </dt>
-                </div>
-              ))}
-            </dl>
-          </Card>
-        )}
-
-        <Card>
-          <CardHeading>Executive summary</CardHeading>
-          <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-sx-text-muted">{report.executiveSummary}</p>
-        </Card>
-
-        {report.strengths.length > 0 && (
-          <Card>
-            <CardHeading>What is working</CardHeading>
-            <ul className="mt-2 list-disc space-y-2 pl-5 text-sm text-sx-text-muted">
-              {report.strengths.map((item) => <li key={item}>{item}</li>)}
-            </ul>
-            <SectionFrame
-              means="These are strengths already helping the business win customers or trust."
-              matters="Protecting what works is cheaper than rebuilding it later."
-              todo="Keep doing these consistently while you fix the higher-priority gaps."
-            />
-          </Card>
-        )}
-
-        {(report.growthProblems?.length ?? 0) > 0 && (
-          <Card>
-            <CardHeading>Growth problems</CardHeading>
-            <ul className="mt-2 list-disc space-y-2 pl-5 text-sm text-sx-text-muted">
-              {report.growthProblems!.map((item) => <li key={item}>{item}</li>)}
-            </ul>
-            <SectionFrame
-              means="These are the patterns most likely to slow growth right now."
-              matters="Fixing growth problems usually unlocks more demand than polishing already-strong areas."
-              todo="Pair each problem with an owner action or a 30-day plan item below."
-            />
-          </Card>
-        )}
-
-        <Card>
-          <CardHeading>Priority risks</CardHeading>
-          <ul className="mt-2 list-disc space-y-2 pl-5 text-sm text-sx-text-muted">
-            {report.priorityRisks.map((item) => <li key={item}>{item}</li>)}
-          </ul>
-          <SectionFrame
-            means="These risks can quietly leak sales, trust, or time if left alone."
-            matters="Small retailers feel these first in missed enquiries and uneven follow-up."
-            todo="Treat the top one or two as this month’s non-negotiable fixes."
-          />
-        </Card>
-
-        {report.findings && report.findings.length > 0 && (
-          <Card>
-            <CardHeading>Evidence-backed findings</CardHeading>
-            <div className="mt-3 grid gap-4">
-              {report.findings.map((finding) => (
-                <article key={finding.id} className="rounded-sx-sm border border-sx-border p-4">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <h3 className="font-sx-sans text-sm font-semibold text-sx-text">{finding.title}</h3>
-                    <span className="font-sx-mono text-[10px] text-sx-text-subtle">
-                      {finding.impact} impact · {finding.confidence} confidence
-                    </span>
-                  </div>
-                  <p className="mt-2 text-sm leading-6 text-sx-text-muted">{finding.summary}</p>
-                  {finding.evidenceSourceIds.length > 0 && (
-                    <p className="mt-2 font-sx-mono text-[10px] text-sx-text-subtle">
-                      Evidence: {finding.evidenceSourceIds.join(", ")}
-                    </p>
-                  )}
-                </article>
-              ))}
-            </div>
-          </Card>
-        )}
-
-        {report.opportunities && report.opportunities.length > 0 && (
-          <Card>
-            <CardHeading>Growth opportunities</CardHeading>
-            <div className="mt-3 grid gap-3 sm:grid-cols-2">
-              {report.opportunities.map((opportunity) => (
-                <article key={opportunity.title} className="rounded-sx-sm bg-sx-surface-2 p-4">
-                  <h3 className="font-sx-sans text-sm font-semibold text-sx-text">{opportunity.title}</h3>
-                  <p className="mt-2 text-sm text-sx-text-muted">{opportunity.rationale}</p>
-                  <p className="mt-3 text-xs font-medium text-sx-text">Next: {opportunity.nextStep}</p>
-                </article>
-              ))}
-            </div>
-            <SectionFrame
-              means="These are practical upside moves grounded in your evidence packet."
-              matters="Opportunities turn the Audit from diagnosis into a growth agenda."
-              todo="Pick one opportunity you can start without new software this week."
-            />
-          </Card>
-        )}
-
-        {(report.quickWins30Days?.length ?? 0) > 0 && (
-          <Card>
-            <CardHeading>Quick wins for the next 30 days</CardHeading>
-            <ul className="mt-2 list-disc space-y-2 pl-5 text-sm text-sx-text-muted">
-              {report.quickWins30Days!.map((item) => <li key={item}>{item}</li>)}
-            </ul>
-            <SectionFrame
-              means="These are smaller moves that should create momentum quickly."
-              matters="Early wins free time and confidence for the longer 60/90-day work."
-              todo="Schedule the first quick win on your calendar this week."
-            />
-          </Card>
-        )}
-
-        <Card>
-          <CardHeading>Recommended 90-day plan</CardHeading>
-          <ol className="mt-2 list-decimal space-y-2 pl-5 text-sm text-sx-text-muted">
-            {report.actionPlan.map((item) => <li key={item}>{item}</li>)}
-          </ol>
-        </Card>
-
-        {report.plan && (
-          <Card>
-            <CardHeading>Your 30 / 60 / 90-day plan</CardHeading>
-            <div className="mt-3 grid gap-4 md:grid-cols-3">
-              {([
-                ["First 30 days", report.plan.days30],
-                ["Days 31–60", report.plan.days60],
-                ["Days 61–90", report.plan.days90],
-              ] as const).map(([label, items]) => (
-                <section key={label} className="rounded-sx-sm border border-sx-border p-4">
-                  <h3 className="font-sx-sans text-xs font-bold uppercase tracking-wide text-sx-text">{label}</h3>
-                  <ul className="mt-3 list-disc space-y-2 pl-4 text-sm text-sx-text-muted">
-                    {items.map((item) => <li key={item}>{item}</li>)}
-                  </ul>
-                </section>
-              ))}
-            </div>
-            <SectionFrame
-              means="The plan sequences work so you are not trying to fix everything at once."
-              matters="A staged plan keeps a small team focused while still moving toward growth."
-              todo="Own the first 30 days personally, then decide what needs help later."
-            />
-          </Card>
-        )}
-
-        {(report.ownerActions?.length ?? 0) > 0 && (
-          <Card>
-            <CardHeading>Owner actions</CardHeading>
-            <ul className="mt-2 list-disc space-y-2 pl-5 text-sm text-sx-text-muted">
-              {report.ownerActions!.map((item) => <li key={item}>{item}</li>)}
-            </ul>
-            <SectionFrame
-              means="These are realistic DIY steps the business owner can take without waiting on a full agency build."
-              matters="Owner-led follow-through is usually what turns an Audit into results."
-              todo="Check off one owner action every few days until the first 30-day block is done."
-            />
-          </Card>
-        )}
-
-        {report.nextActions && report.nextActions.length > 0 && (
-          <Card>
-            <CardHeading>Next actions</CardHeading>
-            <ul className="mt-2 list-disc space-y-2 pl-5 text-sm text-sx-text-muted">
-              {report.nextActions.map((item) => <li key={item}>{item}</li>)}
-            </ul>
-          </Card>
-        )}
-
-        {(report.stratxcelSupport?.length ?? 0) > 0 && (
-          <Card>
-            <CardHeading>Where Stratxcel can help</CardHeading>
-            <div className="mt-3 grid gap-3">
-              {report.stratxcelSupport!.map((item) => (
-                <article key={`${item.capability}-${item.recommendation}`} className="rounded-sx-sm border border-sx-border p-4">
-                  <h3 className="font-sx-sans text-sm font-semibold text-sx-text">{item.capability}</h3>
-                  <p className="mt-2 text-sm text-sx-text-muted">{item.recommendation}</p>
-                  <p className="mt-2 text-xs leading-5 text-sx-text-subtle">{item.why}</p>
-                </article>
-              ))}
-            </div>
-            <SectionFrame
-              means="These are optional support areas only where the Audit found a clear fit."
-              matters="You can ignore this section and still execute the owner actions yourself."
-              todo="If you want help, start with the complimentary review call — no pressure."
-            />
-          </Card>
-        )}
-
-        {sourceList.length > 0 && (
-          <Card>
-            <CardHeading>Sources</CardHeading>
-            {showCollapsedSources ? (
-              <details className="mt-3">
-                <summary className="cursor-pointer text-sm font-medium text-sx-text">
-                  Show {sourceList.length} sources
-                </summary>
-                <ol className="mt-3 space-y-3 text-sm">
-                  {sourceList.map((source) => (
-                    <li key={source.id} className="break-words">
-                      <a href={source.url} target="_blank" rel="noreferrer" className="font-medium text-sx-accent hover:underline">
-                        {source.title || source.url}
-                      </a>
-                      <span className="ml-2 font-sx-mono text-[10px] text-sx-text-subtle">{source.id}</span>
-                    </li>
-                  ))}
-                </ol>
-              </details>
-            ) : (
-              <ol className="mt-3 space-y-3 text-sm">
-                {sourceList.map((source) => (
-                  <li key={source.id} className="break-words">
-                    <a href={source.url} target="_blank" rel="noreferrer" className="font-medium text-sx-accent hover:underline">
-                      {source.title || source.url}
-                    </a>
-                    <span className="ml-2 font-sx-mono text-[10px] text-sx-text-subtle">{source.id}</span>
-                  </li>
-                ))}
-              </ol>
-            )}
-          </Card>
-        )}
-
-        {researchLimits.length > 0 && (
-          <Card>
-            <CardHeading>What we could not fully verify</CardHeading>
-            <ul className="mt-2 list-disc space-y-2 pl-5 text-sm text-sx-text-muted">
-              {researchLimits.map((item) => <li key={item}>{item}</li>)}
-            </ul>
-            <SectionFrame
-              means="These are honest limits of the public research available for this Audit."
-              matters="Knowing the gaps prevents overconfidence in thin evidence."
-              todo="Treat recommendations tied to these limits as provisional until you confirm them yourself."
-            />
-          </Card>
-        )}
-      </div>
-
-      <div className="mt-8 flex justify-center">
-        <Link
-          href="/contact?intent=consultation"
-          onClick={() => trackFunnel("consultation_requested", { surface: "app_audit_report" })}
-          className="rounded-sx-sm bg-sx-accent px-8 py-3 font-sx-sans text-xs font-bold text-sx-accent-on shadow-md hover:bg-[color:var(--sx-accent-hover)]"
-        >
-          Book your complimentary Audit Review &rarr;
-        </Link>
-      </div>
-    </div>
+    <VisualAuditReport
+      report={report}
+      onDownload={() => { window.open(`/api/platform/audit/report/pdf?order=${order.id}`, "_blank"); }}
+      onShare={() => {
+        void fetch("/api/platform/audit/report/share", { method: "POST" }).then(async (response) => {
+          const json = await response.json() as { url?: string; error?: string };
+          if (json.url) {
+            await navigator.clipboard.writeText(json.url);
+            setShareMessage("Secure share link copied.");
+          } else setShareMessage(json.error ?? "Could not create a share link.");
+        });
+      }}
+      onEmail={() => {
+        void fetch("/api/platform/audit/report/email", { method: "POST" }).then(() => setShareMessage("Report email queued."));
+      }}
+      onWhatsApp={() => {
+        void fetch("/api/platform/audit/report/whatsapp", { method: "POST" }).then(async (response) => {
+          const json = await response.json() as { message?: string };
+          setShareMessage(json.message ?? "WhatsApp delivery checked.");
+        });
+      }}
+      whatsAppState={shareMessage ?? undefined}
+    />
   );
 }

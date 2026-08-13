@@ -40,7 +40,8 @@ export async function resolveAuditCustomerRecipient(
 export async function enqueueAuditDeliveredEmail(
   supabase: ServiceClient,
   store: EmailOutboxStore,
-  order: AuditNotifyOrder
+  order: AuditNotifyOrder,
+  options: { idempotencyKey?: string } = {},
 ): Promise<EnqueueEmailResult | null> {
   const { email, ownerId } = await resolveAuditCustomerRecipient(supabase, order);
   if (!email) return null;
@@ -48,7 +49,7 @@ export async function enqueueAuditDeliveredEmail(
   return enqueueTransactionalEmail(store, {
     eventType: "AUDIT_DELIVERED",
     recipient: email,
-    idempotencyKey: `audit_delivered:${order.id}`,
+    idempotencyKey: options.idempotencyKey ?? `audit_delivered:${order.id}`,
     tenantId: order.tenant_id,
     ownerId,
     correlationId: order.id,

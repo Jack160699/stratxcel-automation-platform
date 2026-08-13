@@ -1,10 +1,13 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { requireClientContext } from "@/lib/tenants/client-context";
+import { getTenantServiceContext } from "@/lib/tenants/tenant-context";
 import { JourneyPanel } from "./JourneyPanel";
 import { deriveJourney, nextAction } from "@/lib/journey/progress";
+import { resolveCurrentAuditOrderId } from "@/lib/audit/current-pointer";
 
 async function loadJourneyInput(supabase: SupabaseClient, tenantId: string) {
-  const [user, order, consultation] = await Promise.all([
+  const service = getTenantServiceContext().supabase;
+  const [user, order, consultation, eligibility] = await Promise.all([
     (async () => {
       try {
         const { data } = await supabase.auth.getUser();
@@ -15,13 +18,15 @@ async function loadJourneyInput(supabase: SupabaseClient, tenantId: string) {
     })(),
     (async () => {
       try {
-        const { data } = await supabase
+        const currentOrderId = await resolveCurrentAuditOrderId(service, tenantId);
+        if (currentOrderId === null) return null;
+        let query = service
           .from("audit_orders")
           .select("status, business_name, industry, website_url, deep_dive_answers, goals_answers, report_data")
-          .eq("tenant_id", tenantId)
-          .order("created_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
+          .eq("tenant_id", tenantId);
+        if (typeof currentOrderId === "string") query = query.eq("id", currentOrderId);
+        else query = query.order("created_at", { ascending: false }).limit(1);
+        const { data } = await query.maybeSingle();
         return data;
       } catch {
         return null;
@@ -40,9 +45,13 @@ async function loadJourneyInput(supabase: SupabaseClient, tenantId: string) {
         return false;
       }
     })(),
+    (async () => {
+      const result = await service.rpc("tenant_has_fresh_audit_grant", { p_tenant_id: tenantId });
+      return result.data === true;
+    })(),
   ]);
 
-  return { account: user, order, consultationRequested: consultation };
+  return { account: user, order, consultationRequested: consultation, freshAuditEligible: eligibility };
 }
 
 /**

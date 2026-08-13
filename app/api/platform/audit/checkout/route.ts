@@ -4,11 +4,19 @@ import { createTenant, listMembershipsForUser } from "@/lib/tenants/repository";
 import { createPaymentLink, isPaymentFeatureEnabled } from "@stratxcel/payments-and-wallet";
 import { resolveCanonicalIdentity } from "@/lib/identity/resolve-identity";
 import { ensurePendingAuditOrder, AUDIT_FEE_CENTS } from "@/lib/audit/ensure-pending-order";
+import { isMissingRelation, resolveCurrentAuditOrderId } from "@/lib/audit/current-pointer";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+interface CheckoutOrder {
+  id: string;
+  status: string;
+  payment_link_id: string | null;
+  business_name?: string | null;
+}
 
 interface GstInvoiceDetails {
   legalBusinessName?: string;
@@ -161,21 +169,52 @@ export async function GET() {
   if (memberships.length === 0) return Response.json({ order: null }, { headers: { "Cache-Control": "no-store" } });
 
   const tenantId = memberships[0]!.tenant.id;
-  const { data: order } = await supabase
-    .from("audit_orders")
-    .select(
-      "id, status, business_name, industry, website_url, social_links, goals, deep_dive_answers, goals_answers, report_data, audit_completed_at, payment_link_id, fulfilment_source, actual_paid_cents, discount_cents"
-    )
-    .eq("tenant_id", tenantId)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  const { supabase: service } = getTenantServiceContext();
+  const currentOrderId = await resolveCurrentAuditOrderId(service, tenantId);
+
+  let visibleOrder: CheckoutOrder | null = null;
+  if (currentOrderId !== null) {
+    let orderQuery = service
+      .from("audit_orders")
+      .select(
+        "id, status, business_name, industry, website_url, social_links, goals, deep_dive_answers, goals_answers, report_data, audit_completed_at, payment_link_id, fulfilment_source, actual_paid_cents, discount_cents"
+      )
+      .eq("tenant_id", tenantId);
+    if (typeof currentOrderId === "string") {
+      orderQuery = orderQuery.eq("id", currentOrderId);
+    } else {
+      orderQuery = orderQuery.order("created_at", { ascending: false }).limit(1);
+    }
+    const { data: order } = await orderQuery.maybeSingle();
+    visibleOrder = (order as CheckoutOrder | null) ?? null;
+  }
 
   let paymentUrl: string | null = null;
-  if (order?.status === "pending_payment" && order.payment_link_id) {
-    const { data: link } = await supabase.from("payment_links").select("short_url, status").eq("id", order.payment_link_id).maybeSingle();
+  if (visibleOrder?.status === "pending_payment" && visibleOrder.payment_link_id) {
+    const { data: link } = await supabase.from("payment_links").select("short_url, status").eq("id", visibleOrder.payment_link_id).maybeSingle();
     if (link?.status === "created") paymentUrl = link.short_url;
   }
 
-  return Response.json({ order: order ?? null, tenantId, paymentUrl }, { headers: { "Cache-Control": "no-store" } });
+  let generation: Record<string, unknown> | null = null;
+  if (visibleOrder?.id) {
+    const { data: run } = await service
+      .from("audit_generation_runs")
+      .select("id, status, stage, quality_outcome, confidence_band, failure_message_safe, stage_updated_at")
+      .eq("audit_order_id", visibleOrder.id)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    generation = run ?? null;
+  }
+
+  const eligibility = await service.rpc("tenant_has_fresh_audit_grant", { p_tenant_id: tenantId });
+  const eligible = isMissingRelation(eligibility.error) ? false : eligibility.data === true;
+
+  return Response.json({
+    order: visibleOrder ?? null,
+    tenantId,
+    paymentUrl,
+    generation,
+    freshAuditEligible: eligible === true,
+  }, { headers: { "Cache-Control": "no-store" } });
 }

@@ -16,7 +16,52 @@
  * #45c4ff→#3AA0FF) that the journey experience's look is unaffected while
  * the whole product now shares one literal canvas colour.
  */
-:root {
+:root,
+.sx-theme-light {
+  --sx-bg: #fafbfc;
+  --sx-surface-1: #ffffff;
+  --sx-surface-2: #f4f6f9;
+  --sx-surface-3: #e9edf3;
+  --sx-elevated: #ffffff;
+  --sx-border: #e2e8f0;
+  --sx-border-strong: #cbd5e1;
+
+  --sx-text: #0a1020;
+  --sx-text-muted: #475569;
+  --sx-text-subtle: #64748b;
+
+  --sx-accent: #2563eb;
+  --sx-accent-hover: #1d4ed8;
+  --sx-accent-muted: rgb(37 99 235 / 0.08);
+  --sx-accent-on: #ffffff;
+  --sx-royal: #3b5bf5;
+  --sx-ai: #0f766e;
+
+  --sx-success: #15803d;
+  --sx-warning: #b45309;
+  --sx-danger: #b91c1c;
+  --sx-learning: #6d28d9;
+  --sx-offline: #64748b;
+
+  --sx-radius-xs: 6px;
+  --sx-radius-sm: 8px;
+  --sx-radius-md: 10px;
+  --sx-radius-lg: 14px;
+  --sx-radius-pill: 999px;
+
+  --sx-control-h: 32px;
+  --sx-input-h: 36px;
+  --sx-row-h: 40px;
+
+  --sx-shadow-lg: 0 12px 32px -12px rgb(10 16 32 / 0.08);
+  --sx-shadow-xl: 0 32px 64px -24px rgb(10 16 32 / 0.1);
+  --sx-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  --background: var(--sx-bg);
+  --foreground: var(--sx-text);
+}
+
+.sx-theme-dark {
   --sx-bg: #06080c;
   --sx-surface-1: #0b0e14;
   --sx-surface-2: #11151d;
@@ -42,20 +87,8 @@
   --sx-learning: #a78bfa;
   --sx-offline: #6b7684;
 
-  --sx-radius-xs: 6px;
-  --sx-radius-sm: 8px;
-  --sx-radius-md: 10px;
-  --sx-radius-lg: 14px;
-  --sx-radius-pill: 999px;
-
-  --sx-control-h: 32px;
-  --sx-input-h: 36px;
-  --sx-row-h: 40px;
-
   --sx-shadow-lg: 0 12px 32px -12px rgb(0 0 0 / 0.85);
   --sx-shadow-xl: 0 32px 64px -24px rgb(0 0 0 / 0.9);
-  --sx-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
-
   --background: var(--sx-bg);
   --foreground: var(--sx-text);
 }

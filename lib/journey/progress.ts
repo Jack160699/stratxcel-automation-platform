@@ -43,6 +43,7 @@ export interface JourneyInput {
   account: { emailVerified: boolean } | null;
   order: AuditOrderInput | null;
   consultationRequested: boolean;
+  freshAuditEligible?: boolean;
 }
 
 /** Fields that are always asked (unlike the conditional extras), so completion means these are answered. */
@@ -70,13 +71,21 @@ export function deriveJourney(input: JourneyInput): JourneyStage[] {
 
   // --- Purchase --------------------------------------------------------------
   const purchase: JourneyStage = !order
-    ? {
-        key: "purchase",
-        label: "Purchase",
-        status: "Not started",
-        detail: "Start with the ₹999 AI Business Growth Audit.",
-        action: { label: "Pay ₹999 & start", href: "/audit" },
-      }
+    ? input.freshAuditEligible
+      ? {
+          key: "purchase",
+          label: "Purchase",
+          status: "Complete",
+          detail: "A complimentary Audit is ready to start.",
+          action: { label: "Connect your business", href: "/app/audit" },
+        }
+      : {
+          key: "purchase",
+          label: "Purchase",
+          status: "Not started",
+          detail: "Start with the ₹999 AI Business Growth Audit.",
+          action: { label: "Pay ₹999 & start", href: "/audit" },
+        }
     : order.status === "pending_payment"
       ? {
           key: "purchase",
@@ -103,11 +112,16 @@ export function deriveJourney(input: JourneyInput): JourneyStage[] {
 
   const paidOrLater = Boolean(order && PAID_OR_LATER.includes(order.status));
 
+  const v1 = order?.deep_dive_answers && typeof order.deep_dive_answers === "object"
+    ? (order.deep_dive_answers as { v1Experience?: { verified?: boolean; websiteUrl?: string } }).v1Experience
+    : undefined;
+  const v1Complete = Boolean(v1?.verified && v1?.websiteUrl);
+
   // --- Your Business -----------------------------------------------------
   const businessAnswered =
+    v1Complete || (
     Boolean(order?.business_name && order.business_name !== BUSINESS_NAME_PLACEHOLDER) &&
-    Boolean(order?.industry) &&
-    Boolean(order?.website_url);
+    (Boolean(order?.industry) || Boolean(order?.website_url)));
   const businessStarted = Boolean(order?.business_name && order.business_name !== BUSINESS_NAME_PLACEHOLDER);
   const business: JourneyStage = !paidOrLater
     ? { key: "business", label: "Your Business", status: "Not started", detail: "Unlocks once your ₹999 Audit is paid for.", action: null }
@@ -122,7 +136,7 @@ export function deriveJourney(input: JourneyInput): JourneyStage[] {
         };
 
   // --- Business Deep Dive --------------------------------------------------
-  const deepDiveFilled = filledCount(order?.deep_dive_answers, DEEP_DIVE_CORE_FIELDS);
+  const deepDiveFilled = v1Complete ? DEEP_DIVE_CORE_FIELDS.length : filledCount(order?.deep_dive_answers, DEEP_DIVE_CORE_FIELDS);
   const deepDive: JourneyStage = !businessAnswered
     ? { key: "deep_dive", label: "Business Deep Dive", status: "Not started", detail: "Unlocks after Your Business.", action: null }
     : deepDiveFilled === DEEP_DIVE_CORE_FIELDS.length
@@ -137,7 +151,7 @@ export function deriveJourney(input: JourneyInput): JourneyStage[] {
   const deepDiveComplete = deepDiveFilled === DEEP_DIVE_CORE_FIELDS.length;
 
   // --- Goals -----------------------------------------------------------------
-  const goalsFilled = filledCount(order?.goals_answers, GOALS_CORE_FIELDS);
+  const goalsFilled = v1Complete ? GOALS_CORE_FIELDS.length : filledCount(order?.goals_answers, GOALS_CORE_FIELDS);
   const goals: JourneyStage = !deepDiveComplete
     ? { key: "goals", label: "Goals", status: "Not started", detail: "Unlocks after Business Deep Dive.", action: null }
     : goalsFilled === GOALS_CORE_FIELDS.length
@@ -158,7 +172,7 @@ export function deriveJourney(input: JourneyInput): JourneyStage[] {
     : order.status === "completed"
       ? { key: "audit", label: "Audit", status: "Complete", detail: "Your audit is finished.", action: null }
       : order.status === "in_review"
-        ? { key: "audit", label: "Audit", status: "In progress", detail: "Your audit is being reviewed by the Stratxcel team.", action: null }
+        ? { key: "audit", label: "Audit", status: "In progress", detail: "Your growth plan is being created.", action: null }
         : intakeComplete
           ? { key: "audit", label: "Audit", status: "Ready", detail: "Everything's in — you can start your audit.", action: { label: "Start My Audit", href: "/app/audit" } }
           : { key: "audit", label: "Audit", status: "Not started", detail: "Finish the three sections above first.", action: null };

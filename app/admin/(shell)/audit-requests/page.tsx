@@ -8,6 +8,7 @@ import { ErrorState, EmptyState } from "@/components/ui/Feedback";
 import { Card } from "@/components/ui/Card";
 import { AuditDeliveryForm } from "./AuditDeliveryForm";
 import { AuditRecoveryActions } from "./AuditRecoveryActions";
+import { AuditResetActions } from "./AuditResetActions";
 
 export const metadata: Metadata = {
   title: "Audit Delivery — Stratxcel Admin",
@@ -161,6 +162,19 @@ export default async function AdminAuditRequestsPage() {
   for (const row of (generationRows ?? []) as AuditGenerationItem[]) {
     if (!generationByOrder.has(row.audit_order_id)) generationByOrder.set(row.audit_order_id, row);
   }
+  const deliveryResult = orderIds.length
+    ? await service
+        .from("audit_delivery_events")
+        .select("audit_order_id, channel, status, created_at")
+        .in("audit_order_id", orderIds)
+        .order("created_at", { ascending: false })
+    : { data: [] as Array<{ audit_order_id: string; channel: string; status: string }>, error: null };
+  const deliveryRows = deliveryResult.error ? [] : deliveryResult.data;
+  const latestDelivery = new Map<string, string>();
+  for (const row of deliveryRows ?? []) {
+    const key = `${row.audit_order_id}:${row.channel}`;
+    if (!latestDelivery.has(key)) latestDelivery.set(key, row.status);
+  }
   const tenantIds = [...new Set(list.map((order) => order.tenant_id))];
   const { data: tenants } = tenantIds.length
     ? await service.from("tenants").select("id, name").in("id", tenantIds)
@@ -179,6 +193,7 @@ export default async function AdminAuditRequestsPage() {
         <p className="mt-1 text-sm text-sx-text-muted">
           {list.length} paid-flow order{list.length === 1 ? "" : "s"} · {actionable} requiring action
         </p>
+        <div className="mt-4"><AuditResetActions /></div>
       </header>
 
       {error && <ErrorState message="Could not load paid audit orders." />}
@@ -193,7 +208,11 @@ export default async function AdminAuditRequestsPage() {
             const auto = generation ? autoLabel(generation) : null;
             const sources = generation ? evidenceCount(generation) : null;
             const summary = generation ? researchSummarySnippet(generation) : null;
-            const providers = generation ? safeProviderModels(generation) : [];
+            const v1 = order.deep_dive_answers && typeof order.deep_dive_answers === "object"
+              ? (order.deep_dive_answers as { v1Experience?: { step?: string; verified?: boolean; websiteUrl?: string } }).v1Experience
+              : undefined;
+            const emailStatus = latestDelivery.get(`${order.id}:email`) ?? "—";
+            const whatsappStatus = latestDelivery.get(`${order.id}:whatsapp`) ?? "—";
             return (
               <Card key={order.id}>
                 <div className="flex flex-wrap items-start justify-between gap-3 border-b border-sx-border pb-3">
@@ -227,7 +246,9 @@ export default async function AdminAuditRequestsPage() {
                     <div><dt className="text-sx-text-subtle">Quality</dt><dd className="mt-1 text-sx-text">{generation.quality_outcome ?? "Pending"}{generation.quality_score != null ? ` · ${Math.round(Number(generation.quality_score) * 100)}` : ""}</dd></div>
                     <div><dt className="text-sx-text-subtle">Brand Brain</dt><dd className="mt-1 text-sx-text">v{generation.brand_brain_version}</dd></div>
                     <div><dt className="text-sx-text-subtle">Evidence / sources</dt><dd className="mt-1 text-sx-text">{sources == null ? "Unavailable" : sources}</dd></div>
-                    <div><dt className="text-sx-text-subtle">Provider / model</dt><dd className="mt-1 text-sx-text">{providers.length ? providers.join(" · ") : "Not recorded"}</dd></div>
+                    <div><dt className="text-sx-text-subtle">Discovery</dt><dd className="mt-1 text-sx-text">{v1?.verified ? "Verified" : v1?.step ?? "Not started"}</dd></div>
+                    <div><dt className="text-sx-text-subtle">Email</dt><dd className="mt-1 text-sx-text">{emailStatus}</dd></div>
+                    <div><dt className="text-sx-text-subtle">WhatsApp</dt><dd className="mt-1 text-sx-text">{whatsappStatus}</dd></div>
                     {summary && (
                       <div className="sm:col-span-3">
                         <dt className="text-sx-text-subtle">Research summary</dt>

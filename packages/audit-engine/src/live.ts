@@ -465,6 +465,32 @@ export class LiveAuditResearchProvider implements AuditResearchProvider {
       },
     );
     const canonical = canonicalizeResearchSources(result);
+    if (website) {
+      const already = canonical.sources.some((source) => source.url.replace(/\/$/, "") === website.replace(/\/$/, ""));
+      if (!already) {
+        return {
+          result: {
+            ...canonical,
+            sources: [
+              {
+                id: "first_party_website",
+                url: website,
+                canonicalUrl: website,
+                title: `${context.order.business_name} website`,
+                domain: websiteDomain ?? "website",
+                provider: "crawler" as const,
+                retrievedAt: new Date().toISOString(),
+                searchQueries: [website],
+                sourceType: "PRIMARY" as const,
+                verification: "verified" as const,
+              },
+              ...canonical.sources,
+            ],
+          },
+          receipt: execution ? receipt("research", execution) : null,
+        };
+      }
+    }
     return {
       result: canonical,
       receipt: execution ? receipt("research", execution) : null,
