@@ -1,3 +1,4 @@
+import { resolveAccessOrderParam } from "@/lib/audit/resolve-access-order-param";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { ClaimAndContinue } from "./ClaimAndContinue";
 import { ClaimEmailOtpForm } from "./ClaimEmailOtpForm";
@@ -13,9 +14,9 @@ export const dynamic = "force-dynamic";
 export default async function AuditAccessPage({
   searchParams,
 }: {
-  searchParams: Promise<{ order?: string }>;
+  searchParams: Promise<{ order?: string; auditOrderId?: string }>;
 }) {
-  const { order } = await searchParams;
+  const order = resolveAccessOrderParam(await searchParams);
   const supabase = await createSupabaseServerClient();
   const {
     data: { user },
