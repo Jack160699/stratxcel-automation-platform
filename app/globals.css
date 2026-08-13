@@ -375,3 +375,23 @@ body::-webkit-scrollbar-thumb {
     transition: none;
   }
 }
+
+/* Public marketing layout rhythm — opt-in via class on section wrappers */
+.sx-public-section {
+  margin-inline: auto;
+  max-width: 80rem;
+  padding-inline: 1rem;
+  padding-block: 3rem;
+}
+@media (min-width: 640px) {
+  .sx-public-section {
+    padding-inline: 1.5rem;
+    padding-block: 3.5rem;
+  }
+}
+@media (min-width: 1024px) {
+  .sx-public-section {
+    padding-inline: 2rem;
+    padding-block: 4rem;
+  }
+}

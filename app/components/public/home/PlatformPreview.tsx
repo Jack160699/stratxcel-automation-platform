@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { useInView } from "@/lib/motion/useInView";
 import { useReducedMotion } from "@/lib/motion/useReducedMotion";
 import { useTilt } from "@/lib/motion/useTilt";
@@ -38,10 +38,29 @@ function satellitePosition(angle: number, radius: number) {
   };
 }
 
+function subscribeDesktopTilt(callback: () => void) {
+  const mq = window.matchMedia("(min-width: 640px)");
+  mq.addEventListener("change", callback);
+  return () => mq.removeEventListener("change", callback);
+}
+
+function getDesktopTiltSnapshot() {
+  return window.matchMedia("(min-width: 640px)").matches;
+}
+
+function getDesktopTiltServerSnapshot() {
+  return false;
+}
+
 export function PlatformPreview() {
   const [containerRef, inView] = useInView<HTMLDivElement>({ threshold: 0.15 });
   const reduced = useReducedMotion();
-  const { ref: tiltRef, style: tiltStyle, onPointerMove, onPointerLeave } = useTilt(true);
+  const desktopTilt = useSyncExternalStore(
+    subscribeDesktopTilt,
+    getDesktopTiltSnapshot,
+    getDesktopTiltServerSnapshot,
+  );
+  const { ref: tiltRef, style: tiltStyle, onPointerMove, onPointerLeave } = useTilt(desktopTilt);
   const [activeSatellite, setActiveSatellite] = useState(0);
   const [activeCard, setActiveCard] = useState(0);
 
@@ -64,10 +83,9 @@ export function PlatformPreview() {
   return (
     <div
       ref={containerRef}
-      className="relative mx-auto w-full max-w-[min(100%,44rem)] px-2 sm:px-0"
+      className="relative mx-auto w-full max-w-[min(100%,44rem)] overflow-hidden px-2 sm:px-0"
       aria-hidden
     >
-      {/* Ambient depth glow */}
       <div
         className="pointer-events-none absolute inset-0 -z-10 motion-safe:animate-sx-glow-pulse rounded-[2rem] bg-[radial-gradient(ellipse_70%_50%_at_50%_50%,rgb(37_99_235/0.08),transparent)]"
         aria-hidden
@@ -78,9 +96,8 @@ export function PlatformPreview() {
         style={tiltStyle}
         onPointerMove={onPointerMove}
         onPointerLeave={onPointerLeave}
-        className="relative aspect-[4/3.2] w-full sm:aspect-[16/12]"
+        className="relative aspect-[5/3.8] w-full max-h-[min(52vh,14rem)] sm:max-h-none sm:aspect-[16/12]"
       >
-        {/* Signal paths — desktop only */}
         <svg
           className="pointer-events-none absolute inset-0 hidden h-full w-full sm:block"
           viewBox="0 0 400 300"
@@ -112,7 +129,6 @@ export function PlatformPreview() {
           })}
         </svg>
 
-        {/* Satellite modules — simplified on small screens */}
         {SATELLITES.map((sat, i) => {
           const pos = satellitePosition(sat.angle, 42);
           const active = i === activeSatellite;
@@ -137,7 +153,6 @@ export function PlatformPreview() {
           );
         })}
 
-        {/* Central workspace plane */}
         <div
           className={`absolute left-1/2 top-1/2 z-20 w-[min(88%,20rem)] -translate-x-1/2 -translate-y-1/2 motion-safe:animate-sx-float-slow ${
             inView ? "" : "opacity-0"
@@ -153,8 +168,8 @@ export function PlatformPreview() {
               </span>
             </div>
 
-            <div className="flex min-h-[160px] sm:min-h-[200px]">
-              <aside className="hidden w-[32%] shrink-0 border-r border-sx-border bg-sx-surface-2/60 p-2.5 sm:block sm:p-3">
+            <div className="flex min-h-[180px] sm:min-h-[200px]">
+              <aside className="hidden w-[34%] shrink-0 border-r border-sx-border bg-sx-surface-2/60 p-2.5 sm:block sm:p-3">
                 <p className="font-sx-mono text-[8px] font-semibold uppercase tracking-[0.16em] text-sx-text-subtle">
                   Modules
                 </p>
@@ -162,7 +177,7 @@ export function PlatformPreview() {
                   {MODULES.map((mod) => (
                     <li
                       key={mod.label}
-                      className={`rounded-sx-sm px-2 py-1 font-sx-sans text-[10px] font-medium ${
+                      className={`rounded-sx-sm px-2 py-1 font-sx-sans text-[10px] font-medium sm:px-2.5 sm:py-1.5 sm:text-[11px] ${
                         mod.active
                           ? "bg-sx-accent-muted text-sx-accent"
                           : "text-sx-text-muted"
@@ -175,11 +190,11 @@ export function PlatformPreview() {
               </aside>
 
               <div className="flex min-w-0 flex-1 flex-col p-2.5 sm:p-3">
-                <div className="flex flex-wrap gap-1.5 sm:hidden">
-                  {MODULES.slice(0, 3).map((mod) => (
+                <div className="flex flex-wrap items-center gap-1.5 sm:hidden">
+                  {MODULES.map((mod) => (
                     <span
                       key={`m-${mod.label}`}
-                      className={`rounded-sx-pill px-2 py-0.5 font-sx-sans text-[9px] font-semibold ${
+                      className={`rounded-sx-pill px-2 py-0.5 font-sx-sans text-[9px] font-semibold sm:px-2.5 sm:py-1 ${
                         mod.active
                           ? "bg-sx-accent-muted text-sx-accent"
                           : "border border-sx-border text-sx-text-muted"
@@ -190,19 +205,21 @@ export function PlatformPreview() {
                   ))}
                 </div>
 
-                <div className="mt-2 space-y-1.5 sm:mt-0">
+                <div className="mt-2 space-y-1.5 sm:mt-0 sm:space-y-2">
                   {STATE_CARDS.map((panel, i) => {
                     const highlighted = i === activeCard;
                     return (
                       <div
                         key={panel.title}
-                        className={`rounded-sx-sm border px-2.5 py-2 transition-all duration-500 motion-reduce:transition-none ${
+                        className={`rounded-sx-sm border px-2.5 py-2 transition-all duration-500 motion-reduce:transition-none sm:px-3 sm:py-2.5 ${
+                          i === 2 ? "hidden sm:block" : ""
+                        } ${
                           highlighted
                             ? "border-sx-accent/30 bg-sx-accent-muted/30"
                             : "border-sx-border bg-sx-bg/40 opacity-80"
                         }`}
                       >
-                        <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-start justify-between gap-2 sm:gap-3">
                           <p className="font-sx-sans text-[11px] font-semibold text-sx-text sm:text-[12px]">
                             {panel.title}
                           </p>
@@ -216,7 +233,7 @@ export function PlatformPreview() {
                             {panel.tone === "accent" ? "Review" : "Update"}
                           </span>
                         </div>
-                        <p className="mt-0.5 font-sx-sans text-[10px] text-sx-text-muted sm:text-[11px]">
+                        <p className="mt-0.5 font-sx-sans text-[10px] text-sx-text-muted sm:mt-1 sm:text-[11px]">
                           {panel.status}
                         </p>
                       </div>
@@ -224,14 +241,14 @@ export function PlatformPreview() {
                   })}
                 </div>
 
-                <div className="mt-auto hidden pt-3 sm:block">
-                  <div className="h-1 w-full overflow-hidden rounded-sx-pill bg-sx-surface-3">
+                <div className="mt-auto hidden pt-3 sm:block sm:pt-4">
+                  <div className="h-1 w-full overflow-hidden rounded-sx-pill bg-sx-surface-3 sm:h-1.5">
                     <div
                       className="h-full rounded-sx-pill bg-gradient-to-r from-sx-accent to-sx-royal motion-safe:animate-sx-progress"
                       style={{ width: "62%" }}
                     />
                   </div>
-                  <p className="mt-1.5 font-sx-mono text-[8px] uppercase tracking-[0.14em] text-sx-text-subtle">
+                  <p className="mt-1.5 font-sx-mono text-[8px] uppercase tracking-[0.14em] text-sx-text-subtle sm:mt-2 sm:text-[9px]">
                     Growth workflow in progress
                   </p>
                 </div>

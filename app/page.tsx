@@ -22,7 +22,7 @@ export const metadata: Metadata = {
 
 export default function HomePage() {
   return (
-    <div className="sx-public-theme flex min-h-screen flex-col bg-sx-bg text-sx-text">
+    <div className="sx-public-theme flex min-h-screen flex-col overflow-x-hidden bg-sx-bg text-sx-text">
       <PublicHeader />
       <main className="flex-1">
         <PlatformHero />
@@ -33,7 +33,7 @@ export default function HomePage() {
         </HomeSectionSlot>
 
         <HomeSectionSlot id="product-proof" sectionKey="product-proof" label="Real Product Proof">
-          <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 sm:py-20 lg:px-8">
+          <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 sm:py-16 lg:px-8">
             <ProductShowcase standalone={false} />
           </div>
         </HomeSectionSlot>

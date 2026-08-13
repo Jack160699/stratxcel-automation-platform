@@ -11,7 +11,7 @@ const PRIMARY_LINKS: { label: string; href: string }[] = [
   { label: "Solutions", href: "/solutions" },
   { label: "How it works", href: "/how-it-works" },
   { label: "Pricing", href: "/pricing" },
-  { label: "Resources", href: "/integrations" },
+  { label: "Resources", href: "/resources" },
 ];
 
 export function PublicHeader() {
@@ -87,15 +87,18 @@ export function PublicHeader() {
             ))}
           </nav>
 
-          <div className="hidden items-center gap-3 md:flex">
-            <Link href={PUBLIC_CTAS.signIn.href} className="px-3 py-2 text-[13px] font-medium text-sx-text-subtle hover:text-sx-text">
+          <div className="hidden items-center gap-3 lg:flex">
+            <Link
+              href={PUBLIC_CTAS.signIn.href}
+              className="rounded-sx-sm px-3 py-2.5 text-[13px] font-medium text-sx-text-subtle transition-colors hover:text-sx-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sx-accent"
+            >
               {PUBLIC_CTAS.signIn.label}
             </Link>
             <TrackedCtaLink
               href={PUBLIC_CTAS.primary.href}
               event={PUBLIC_CTAS.primary.event}
               surface={PUBLIC_CTAS.primary.surface}
-              className="rounded-sx-sm bg-sx-accent px-5 py-2.5 text-[13px] font-bold text-sx-accent-on shadow-md"
+              className="rounded-sx-sm bg-sx-accent px-5 py-2.5 text-[13px] font-bold text-sx-accent-on shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sx-accent"
             >
               {PUBLIC_CTAS.primary.label}
             </TrackedCtaLink>
@@ -104,7 +107,7 @@ export function PublicHeader() {
           <button
             ref={menuButtonRef}
             type="button"
-            className="inline-flex h-10 w-10 items-center justify-center rounded-sx-sm border border-sx-border-strong md:hidden"
+            className="inline-flex h-11 w-11 items-center justify-center rounded-sx-sm border border-sx-border-strong lg:hidden focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sx-accent"
             aria-expanded={open}
             aria-label={open ? "Close menu" : "Open menu"}
             onClick={() => (open ? closeMenu() : setOpen(true))}
@@ -125,7 +128,7 @@ export function PublicHeader() {
       {open && (
         <div
           ref={dialogRef}
-          className="fixed inset-0 z-[60] flex flex-col bg-sx-bg md:hidden"
+          className="fixed inset-0 z-[60] flex flex-col bg-sx-bg lg:hidden"
           role="dialog"
           aria-modal="true"
           aria-label="Main navigation"
@@ -134,7 +137,7 @@ export function PublicHeader() {
             <Logo variant="dark" />
             <button
               type="button"
-              className="inline-flex h-10 w-10 items-center justify-center rounded-sx-sm border border-sx-border-strong text-sx-text"
+              className="inline-flex h-11 w-11 items-center justify-center rounded-sx-sm border border-sx-border-strong text-sx-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sx-accent"
               aria-label="Close menu"
               onClick={closeMenu}
             >
@@ -149,7 +152,7 @@ export function PublicHeader() {
                 key={link.href}
                 href={link.href}
                 onClick={closeMenu}
-                className="rounded-sx-sm border border-sx-border p-3.5 font-sx-sans text-sm font-semibold text-sx-text"
+                className="rounded-sx-sm border border-sx-border p-4 font-sx-sans text-sm font-semibold text-sx-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sx-accent"
               >
                 {link.label}
               </Link>

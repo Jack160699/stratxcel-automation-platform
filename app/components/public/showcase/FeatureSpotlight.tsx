@@ -6,15 +6,17 @@ export function FeatureSpotlight({
   description,
   children,
   align = "left",
+  className = "",
 }: {
   eyebrow?: string;
   title: string;
   description?: string;
   children?: ReactNode;
   align?: "left" | "center";
+  className?: string;
 }) {
   return (
-    <header className={`flex flex-col gap-2 ${align === "center" ? "items-center text-center" : ""}`}>
+    <header className={`flex flex-col gap-2 ${align === "center" ? "items-center text-center" : ""} ${className}`.trim()}>
       <p className="font-sx-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-sx-accent">{eyebrow}</p>
       <h3 className="font-sx-sans text-xl font-semibold tracking-tight text-sx-text sm:text-2xl">{title}</h3>
       {description && <p className="max-w-2xl text-sm leading-relaxed text-sx-text-muted">{description}</p>}

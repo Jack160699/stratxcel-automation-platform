@@ -71,9 +71,9 @@ export function ProductShowcase({ standalone = true, className = "" }: { standal
       )}
       <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:gap-10">
         <div className="lg:w-[min(100%,18rem)] lg:shrink-0">
-          <FeatureSpotlight title={activeTab.headline} />
+          <FeatureSpotlight title={activeTab.headline} className="hidden lg:flex" />
           <nav
-            className="mt-4 flex gap-2 overflow-x-auto pb-1 lg:mt-6 lg:flex-col lg:overflow-visible lg:pb-0"
+            className="mt-0 flex snap-x snap-mandatory gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] lg:mt-6 lg:snap-none lg:flex-col lg:overflow-visible lg:pb-0 [&::-webkit-scrollbar]:hidden"
             aria-label="Product areas"
             role="tablist"
           >
@@ -90,7 +90,7 @@ export function ProductShowcase({ standalone = true, className = "" }: { standal
                   tabIndex={selected ? 0 : -1}
                   onClick={() => selectTab(tab.id)}
                   onKeyDown={(e) => onKeyDown(e, index)}
-                  className={`relative shrink-0 rounded-sx-sm border px-3 py-2 text-left font-sx-sans text-xs font-medium transition-all duration-300 motion-reduce:transition-none lg:w-full ${
+                  className={`relative min-h-10 shrink-0 snap-start rounded-sx-sm border px-3 py-2.5 text-left font-sx-sans text-xs font-medium transition-all duration-300 motion-reduce:transition-none lg:w-full ${
                     selected
                       ? "border-sx-accent bg-sx-accent-muted text-sx-text shadow-[0_0_20px_-6px_rgb(37_99_235/0.25)]"
                       : "border-sx-border text-sx-text-muted hover:border-sx-border-strong hover:text-sx-text"
@@ -109,7 +109,6 @@ export function ProductShowcase({ standalone = true, className = "" }: { standal
           </nav>
         </div>
         <div className="relative min-w-0 flex-1">
-          {/* Subtle spotlight behind active demo */}
           <div
             className="pointer-events-none absolute -inset-4 -z-10 rounded-sx-xl bg-[radial-gradient(ellipse_60%_50%_at_50%_40%,rgb(37_99_235/0.06),transparent)] motion-reduce:hidden"
             aria-hidden

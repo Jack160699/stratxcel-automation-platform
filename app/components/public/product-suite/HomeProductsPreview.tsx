@@ -9,7 +9,7 @@ export function HomeProductsPreview() {
 
   return (
     <section className="border-y border-sx-border bg-sx-surface-2">
-      <div className="mx-auto max-w-6xl px-4 py-14 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 sm:py-14 lg:px-8">
         <div className="max-w-2xl">
           <p className="font-sx-mono text-[10.5px] font-bold uppercase tracking-[0.16em] text-sx-accent">Product suite</p>
           <h2 className="mt-2 font-sx-sans text-[clamp(1.4rem,3vw,2rem)] font-semibold tracking-[-0.02em] text-sx-text">

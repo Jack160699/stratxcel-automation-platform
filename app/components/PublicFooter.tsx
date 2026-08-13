@@ -25,6 +25,7 @@ const COLUMNS = [
   {
     title: "Resources",
     links: [
+      { label: "Resources hub", href: "/resources" },
       { label: "How it works", href: "/how-it-works" },
       { label: "Security", href: "/security" },
       { label: "Business Growth Audit", href: "/audit" },
@@ -53,8 +54,8 @@ export function PublicFooter() {
   return (
     <footer className="border-t border-sx-border bg-sx-bg text-sx-text">
       <div className="mx-auto max-w-7xl px-4 py-14 sm:px-6 lg:px-8">
-        <div className="grid gap-10 sm:grid-cols-2 lg:grid-cols-6">
-          <div className="lg:col-span-1">
+        <div className="grid gap-8 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6">
+          <div className="sm:col-span-2 md:col-span-3 lg:col-span-1">
             <Logo variant="dark" />
             <p className="mt-3 text-xs text-sx-text-muted">
               Stratxcel runs growth work that turns attention into opportunities.
