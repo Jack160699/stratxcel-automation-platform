@@ -42,7 +42,7 @@ export default function PublicAuditPage() {
           </h1>
           <p className="mt-4 font-sx-sans text-base text-sx-text-muted">
             An evidence-based audit of your business, built from what you tell us and what we can find publicly —
-            reviewed and delivered by the Stratxcel team, not generated from a template.
+            analyzed automatically and delivered in your workspace, not generated from a generic template.
           </p>
 
           <div className="mt-10 rounded-sx-lg border border-sx-accent/40 bg-sx-surface-1 p-8 shadow-lg sm:p-10">
