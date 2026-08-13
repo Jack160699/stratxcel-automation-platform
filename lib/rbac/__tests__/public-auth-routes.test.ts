@@ -165,18 +165,36 @@ function run() {
   assert.ok(startMatches.length >= 2, "PublicHeader's \"Get Started\" link must point at /signup in both desktop and mobile nav");
   assert.equal(/href="\/app"/.test(publicHeader), false, "PublicHeader must no longer link \"Sign in\" at /app now that /login exists");
 
-  // --- 9. Homepage CTA destinations: the certified paid Audit is the hero,
-  // while "Book a demo" stays on the sales/demo contact path ------------------
-  const homepage = read("app", "page.tsx");
+  // --- 9. Homepage CTA destinations: platform-first hero; Audit stays a lower-funnel
+  // entry (audit-offer + final CTA), not the dominant first-screen proposition ----
+  const homepageParts = [
+    read("app", "page.tsx"),
+    read("app", "components", "public", "home", "PlatformHero.tsx"),
+    read("app", "components", "public", "home", "HomeAuditOffer.tsx"),
+    read("app", "components", "public", "home", "HomeFinalCta.tsx"),
+  ];
+  const homepage = homepageParts.join("\n");
   const homepageAuditMatches = homepage.match(/href="\/audit"/g) ?? [];
-  assert.ok(homepageAuditMatches.length >= 2, "Homepage's hero and final CTAs must point at the canonical paid Audit entry");
+  assert.ok(
+    homepageAuditMatches.length >= 2,
+    "Homepage must keep at least two canonical /audit links (audit-offer section + final CTA tertiary path)"
+  );
+  assert.ok(
+    /href="\/modules"/.test(read("app", "components", "public", "home", "PlatformHero.tsx")),
+    "Homepage hero primary CTA must point at the platform (/modules), not the Audit"
+  );
+  assert.equal(
+    /Start the ₹999 Audit|Start the Audit/.test(read("app", "components", "public", "home", "PlatformHero.tsx")),
+    false,
+    "Homepage hero must not lead with Audit pricing copy"
+  );
   assert.ok(
     /href="\/contact\?intent=demo"/.test(homepage),
     "Homepage's \"Book a demo\" CTA must stay on /contact?intent=demo — sales/demo intent must not route to signup"
   );
 
   console.log(
-    "public-auth-routes.test.ts: ALL PASS (4 auth routes exist, no service-role dependency, signup uses Supabase Auth with metadata-only name storage + terms gate, forgot-password gives a generic non-enumerating response, reset-password validates recovery state and never logs secrets, post-login routing checks owner status only, Header and Audit-first homepage CTAs point at the real routes)"
+    "public-auth-routes.test.ts: ALL PASS (4 auth routes exist, no service-role dependency, signup uses Supabase Auth with metadata-only name storage + terms gate, forgot-password gives a generic non-enumerating response, reset-password validates recovery state and never logs secrets, post-login routing checks owner status only, Header and platform-first homepage CTAs point at the real routes)"
   );
 }
 
