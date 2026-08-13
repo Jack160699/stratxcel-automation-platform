@@ -1,14 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useCurrentTenant } from "../CurrentTenantContext";
 import { ModulePageHeader } from "../components/ModulePageHeader";
 import { ActionUnavailableNotice } from "../components/DisconnectedState";
-import { Card, CardHeading, CardRow } from "@/components/ui/Card";
+import { Card, CardHeading } from "@/components/ui/Card";
 import { StatusChip, type ChipState } from "@/components/ui/StatusChip";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
-import { ErrorState } from "@/components/ui/Feedback";
+import { EmptyState, ErrorState } from "@/components/ui/Feedback";
+import { loadCustomerJson } from "@/lib/customer-app/load-result";
 
 interface TeamMember {
   userId: string;
@@ -44,19 +45,29 @@ export default function TeamPage() {
   const [members, setMembers] = useState<TeamMember[] | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
+  const loadSequence = useRef(0);
 
   async function load() {
     if (!tenantId) return;
+    const requestId = ++loadSequence.current;
+    setLoading(true);
     setError(null);
-    const res = await fetch(`/api/platform/team?tenantId=${encodeURIComponent(tenantId)}`);
-    const body = await res.json();
-    if (!res.ok) {
-      setError(body.error ?? `Failed to load team (HTTP ${res.status})`);
+    setMembers(null);
+    setCurrentUserId(null);
+    const result = await loadCustomerJson<{ members?: TeamMember[]; currentUserId?: string | null }>(
+      () => fetch(`/api/platform/team?tenantId=${encodeURIComponent(tenantId)}`),
+      "We couldn't load your team. Please try again."
+    );
+    if (requestId !== loadSequence.current) return;
+    setLoading(false);
+    if (result.status === "error") {
+      setError(result.message);
       return;
     }
-    setMembers(body.members);
-    setCurrentUserId(body.currentUserId);
+    setMembers(result.data.members ?? []);
+    setCurrentUserId(result.data.currentUserId ?? null);
   }
 
   useEffect(() => {
@@ -71,7 +82,10 @@ export default function TeamPage() {
       {error && <ErrorState message={error} onRetry={load} />}
 
       <section className="flex flex-col gap-3">
-        {tenantId && members === null && !error && <p className="text-sm text-sx-text-subtle">Loading…</p>}
+        {tenantId && loading && <p className="text-sm text-sx-text-subtle">Loading…</p>}
+        {!loading && !error && members?.length === 0 && (
+          <EmptyState title="No team members found." subtitle="Your workspace membership is active, but no member directory entries were returned." />
+        )}
         {members && members.length > 0 && (
           <div className="flex flex-col gap-2">
             {members.map((m) => {

@@ -29,7 +29,7 @@ function run() {
   const staffCookie = read("lib", "identity", "staff-workspace.ts");
   assert.ok(enter.includes("requireOwnerContext") && enter.includes("getAgencyTenant"));
   assert.equal(enter.includes("isMemberOfTenant"), false, "staff workspace entry must not depend on customer membership");
-  assert.ok(enter.includes("setStaffWorkspaceCookie") && enter.includes('redirect("/app")'));
+  assert.ok(enter.includes("setStaffWorkspaceCookie") && enter.includes('setWorkspaceModeCookie') && enter.includes('redirect("/app")'));
   assert.ok(exit.includes("clearStaffWorkspaceCookie") && exit.includes('redirect("/admin")'));
   assert.ok(staffCookie.includes("createHmac") && staffCookie.includes("timingSafeEqual"));
   assert.ok(staffCookie.includes("15 * 60") && staffCookie.includes("expiresAt"));

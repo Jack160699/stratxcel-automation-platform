@@ -140,9 +140,9 @@ function run() {
   const teamPage = read("app", "app", "team", "page.tsx");
   assert.equal(/stratxcel_admins/.test(teamPage), false, "/app/team page must never reference stratxcel_admins");
 
-  // --- 10. Unsupported Settings fields are never claimed as saved --------
+  // --- 10. Unsupported Settings fields are not advertised as controls -----
   const settings = read("app", "app", "settings", "page.tsx");
-  assert.ok(/not saved/.test(settings), "Settings must explicitly label unsupported fields as not saved");
+  assert.equal(/draft only|\/app\/integrations/.test(settings), false, "Settings must not advertise unsupported draft or hidden integration surfaces");
   assert.equal(/method:\s*["'](PATCH|POST)["']/.test(settings), false, "Settings must not issue any write request for fields with no backing schema");
 
   // --- 11. Navigation: /app and /admin have deliberately SEPARATE information

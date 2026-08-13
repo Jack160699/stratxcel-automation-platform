@@ -15,6 +15,7 @@ function run() {
   const syncRoute = read("app", "api", "admin", "staff-workspace", "sync", "route.ts");
   const platformFetch = read("lib", "admin", "platform-fetch.ts");
   const tenantContext = read("lib", "tenants", "tenant-context.ts");
+  const readDecision = read("lib", "tenants", "read-access-decision.ts");
   const missions = read("app", "admin", "(shell)", "missions", "page.tsx");
   const approvals = read("app", "admin", "(shell)", "approvals", "page.tsx");
   const proxy = read("proxy.ts");
@@ -43,7 +44,7 @@ function run() {
   // Forged / cross-tenant workspace still fails closed server-side.
   assert.ok(staffToken.includes("createHmac") && staffToken.includes("timingSafeEqual"));
   assert.ok(staffToken.includes("claims.subject !== subject") && staffToken.includes("claims.expiresAt <= currentTime"));
-  assert.ok(tenantContext.includes("workspaceTenantId !== tenantId"), "cross-tenant read must still fail");
+  assert.ok(readDecision.includes("staffWorkspaceTenantId === input.requestedTenantId"), "cross-tenant read must still fail");
   assert.ok(adminWorkspace.includes("authorizeAdminStaffWorkspaceTarget"), "recovery must re-validate tenant authority");
 
   // Non-staff cannot mint staff context through tenant actions.
@@ -54,10 +55,11 @@ function run() {
   assert.ok(approvals.includes("setListLoading(false)") && approvals.includes("setApprovals([])"));
   assert.ok(!/missions === null &&/.test(missions), "missions must not gate forever on null after failure");
 
-  // Staff identity never silently becomes customer identity on read gate.
+  // Customer intent + real membership wins for dual-role users; explicit
+  // admin intent + exact signed workspace remains staff support.
   const readContext = tenantContext.slice(tenantContext.indexOf("export async function requireTenantReadContext"));
-  assert.ok(readContext.includes('if (staffRow)') && readContext.includes('accessMode: "staff_support"'));
-  assert.ok(!readContext.slice(0, readContext.indexOf("const { data: memberRow }")).includes('accessMode: "customer"'));
+  assert.ok(readContext.includes("decideTenantReadAccess") && readContext.includes('access === "customer"'));
+  assert.ok(readContext.includes('access === "staff_support"') && readContext.includes('accessMode: "staff_support"'));
 
   // Multi-tab stale refresh must not crash proxy/middleware.
   assert.ok(proxy.includes("refresh_token_already_used") && proxy.includes("signOut"));

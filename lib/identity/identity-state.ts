@@ -8,9 +8,11 @@ export function decideIdentityState(input: {
   workspaceMode: "customer" | "admin" | null;
 }): IdentityState {
   if (!input.hasSession) return "NO_SESSION";
-  if (input.isStaff && input.hasValidStaffWorkspace) return "STAFF_VIEWING_CLIENT";
   if (input.isStaff && input.workspaceMode === "customer" && input.membershipCount > 0) {
     return "CUSTOMER_MEMBER";
+  }
+  if (input.isStaff && input.workspaceMode === "admin" && input.hasValidStaffWorkspace) {
+    return "STAFF_VIEWING_CLIENT";
   }
   if (input.isStaff) return "INTERNAL_STAFF";
   return input.membershipCount > 0 ? "CUSTOMER_MEMBER" : "NEW_CUSTOMER";

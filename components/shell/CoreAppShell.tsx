@@ -1,16 +1,26 @@
 import type { ReactNode } from "react";
-import { Mark } from "@/app/components/Mark";
+import Image from "next/image";
 import { Sidebar, type SidebarNavGroup } from "@/components/shell/Sidebar";
 import { MobileBottomNav, type BottomNavItem } from "@/components/shell/MobileBottomNav";
 import { TopCommandBar } from "@/components/shell/TopCommandBar";
+import { OFFICIAL_LOGO } from "@/lib/brand";
 
 export function BrandMark({ expanded = false, product }: { expanded?: boolean; product?: string }) {
   return (
     <div className="flex items-center gap-2.5">
-      <Mark className="h-6 w-6 shrink-0" />
+      <Image
+        src="/logo-v2.png"
+        alt=""
+        role="presentation"
+        width={OFFICIAL_LOGO.width}
+        height={OFFICIAL_LOGO.height}
+        sizes="24px"
+        unoptimized
+        className="h-6 w-6 shrink-0 object-contain"
+      />
       {expanded && (
         <span className="flex items-baseline gap-2 truncate">
-          <span className="font-sx-sans text-[13.5px] font-semibold uppercase tracking-[0.09em] text-sx-text">Stratxcel</span>
+          <span className="font-sx-sans text-[15px] font-semibold tracking-[-0.02em] text-sx-text">Stratxcel</span>
           {product && (
             <span className="rounded-[5px] border border-[rgb(79_220_229_/_0.24)] bg-[rgb(79_220_229_/_0.1)] px-1.5 py-0.5 font-sx-mono text-[9px] uppercase tracking-[0.08em] text-sx-ai">
               {product}
@@ -57,7 +67,14 @@ export function CoreAppShell({
         <Sidebar groups={sidebarGroups} activeKey={activeKey} brand={(collapsed) => <BrandMark expanded={!collapsed} product={product} />} />
       </div>
       <div className="flex min-h-0 min-w-0 flex-1 flex-col pb-14 md:pb-0">
-        <TopCommandBar context={topBarContext} agentStatus={agentStatus} staffBadge={staffBadge} userMenu={userMenu} />
+        <TopCommandBar
+          brand={<BrandMark product={product} />}
+          context={topBarContext}
+          agentStatus={agentStatus}
+          staffBadge={staffBadge}
+          userMenu={userMenu}
+          showSearch={product !== "App"}
+        />
         <main className="min-h-0 min-w-0 flex-1 overflow-y-auto p-5">{children}</main>
       </div>
       <MobileBottomNav items={mobileNavItems} activeKey={activeKey} moreGroups={mobileMoreGroups} />

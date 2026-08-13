@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useCurrentTenant } from "../CurrentTenantContext";
 import { Card, CardHeading } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Field, Input, Textarea } from "@/components/ui/Input";
 import { ErrorState, EmptyState } from "@/components/ui/Feedback";
 import { trackFunnel } from "@/lib/analytics/events";
+import { loadCustomerJson } from "@/lib/customer-app/load-result";
 
 interface BrandBrainContent {
   business_name?: string;
@@ -43,20 +44,30 @@ export default function BrandPage() {
   const [content, setContent] = useState<BrandBrainContent | null>(null);
   const [version, setVersion] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const loadSequence = useRef(0);
 
   async function load() {
     if (!tenantId) return;
+    const requestId = ++loadSequence.current;
+    setLoading(true);
     setError(null);
-    const res = await fetch(`/api/platform/brand?tenantId=${encodeURIComponent(tenantId)}`);
-    const body = await res.json();
-    if (!res.ok) {
-      setError(body.error ?? `Failed to load Brand Brain (HTTP ${res.status})`);
+    setContent(null);
+    setVersion(null);
+    const result = await loadCustomerJson<{ brandBrain?: { content?: BrandBrainContent; current_version?: number } | null }>(
+      () => fetch(`/api/platform/brand?tenantId=${encodeURIComponent(tenantId)}`),
+      "We couldn't load your Brand Brain. Please try again."
+    );
+    if (requestId !== loadSequence.current) return;
+    setLoading(false);
+    if (result.status === "error") {
+      setError(result.message);
       return;
     }
-    setContent(body.brandBrain?.content ?? EMPTY);
-    setVersion(body.brandBrain?.current_version ?? 0);
+    setContent(result.data.brandBrain?.content ?? EMPTY);
+    setVersion(result.data.brandBrain?.current_version ?? 0);
   }
 
   useEffect(() => {
@@ -74,17 +85,20 @@ export default function BrandPage() {
     setSaving(true);
     setError(null);
     try {
-      const res = await fetch("/api/platform/brand", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tenantId, content }),
-      });
-      const body = await res.json();
-      if (!res.ok) {
-        setError(body.error ?? `Failed to save (HTTP ${res.status})`);
+      const result = await loadCustomerJson<{ version: { version: number } }>(
+        () =>
+          fetch("/api/platform/brand", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ tenantId, content }),
+          }),
+        "We couldn't save your Brand Brain. Please try again."
+      );
+      if (result.status === "error") {
+        setError(result.message);
         return;
       }
-      setVersion(body.version.version);
+      setVersion(result.data.version.version);
       setSaved(true);
       trackFunnel("brand_brain_completed", { surface: "app_brand" });
     } finally {
@@ -106,8 +120,8 @@ export default function BrandPage() {
         </Button>
       </header>
 
-      {error && <ErrorState message={error} />}
-      {tenantId && content === null && !error && <p className="text-sm text-sx-text-subtle">Loading…</p>}
+      {error && <ErrorState message={error} onRetry={load} />}
+      {tenantId && loading && <p className="text-sm text-sx-text-subtle">Loading…</p>}
 
       {content && (
         <fieldset disabled={readOnly} className="contents">

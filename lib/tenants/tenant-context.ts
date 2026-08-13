@@ -2,9 +2,10 @@ import "server-only";
 
 import { createSupabaseServerClient } from "../supabase/server";
 import { createSupabaseServiceClient } from "../supabase/service";
-import { readStaffWorkspaceTenantId } from "../identity/staff-workspace";
+import { readStaffWorkspaceTenantId, readWorkspaceMode } from "../identity/staff-workspace";
 import { STAFF_WORKSPACE_CONTEXT_ERROR } from "../identity/staff-workspace-errors";
 import { getAgencyTenant, type AgencyTenant } from "./admin-repository";
+import { decideTenantReadAccess } from "./read-access-decision";
 import type { TenantRole } from "./types";
 import type { Permission } from "../rbac/types";
 import { requirePermission } from "../rbac/policy";
@@ -86,17 +87,42 @@ export async function requireTenantReadContext(
   } = await supabase.auth.getUser();
   if (!user) return { ok: false, status: 401, error: "Not authenticated" };
 
-  const { data: staffRow } = await supabase
-    .from("stratxcel_admins")
-    .select("user_id")
-    .eq("user_id", user.id)
-    .maybeSingle();
+  const [{ data: staffRow }, { data: memberRow }, workspaceMode, workspaceTenantId] = await Promise.all([
+    supabase
+      .from("stratxcel_admins")
+      .select("user_id")
+      .eq("user_id", user.id)
+      .maybeSingle(),
+    supabase
+      .from("tenant_members")
+      .select("role")
+      .eq("tenant_id", tenantId)
+      .eq("user_id", user.id)
+      .maybeSingle(),
+    readWorkspaceMode(user.id),
+    readStaffWorkspaceTenantId(user.id),
+  ]);
 
-  if (staffRow) {
-    const workspaceTenantId = await readStaffWorkspaceTenantId(user.id);
-    if (workspaceTenantId !== tenantId) {
-      return { ok: false, status: 403, error: STAFF_WORKSPACE_CONTEXT_ERROR };
-    }
+  const access = decideTenantReadAccess({
+    isStaff: Boolean(staffRow),
+    hasMembership: Boolean(memberRow),
+    workspaceMode,
+    staffWorkspaceTenantId: workspaceTenantId,
+    requestedTenantId: tenantId,
+  });
+
+  if (access === "customer" && memberRow) {
+    return {
+      ok: true,
+      accessMode: "customer",
+      tenantId,
+      userId: user.id,
+      role: memberRow.role as TenantRole,
+      supabase,
+    };
+  }
+
+  if (access === "staff_support") {
     const tenant = await getAgencyTenant(tenantId);
     if (!tenant) return { ok: false, status: 403, error: "Staff workspace tenant does not exist" };
     return {
@@ -110,22 +136,8 @@ export async function requireTenantReadContext(
     };
   }
 
-  const { data: memberRow } = await supabase
-    .from("tenant_members")
-    .select("role")
-    .eq("tenant_id", tenantId)
-    .eq("user_id", user.id)
-    .maybeSingle();
-  if (!memberRow) return { ok: false, status: 403, error: "Not a member of this tenant" };
-
-  return {
-    ok: true,
-    accessMode: "customer",
-    tenantId,
-    userId: user.id,
-    role: memberRow.role as TenantRole,
-    supabase,
-  };
+  if (staffRow) return { ok: false, status: 403, error: STAFF_WORKSPACE_CONTEXT_ERROR };
+  return { ok: false, status: 403, error: "Not a member of this tenant" };
 }
 
 export function getTenantServiceContext() {

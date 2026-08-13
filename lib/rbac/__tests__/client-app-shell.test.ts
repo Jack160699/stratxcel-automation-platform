@@ -65,8 +65,9 @@ function run() {
     /const ctx = await requireClientContext\(\);\s*\n\s*if \(!ctx\.ok\) return null;/.test(commandCenter),
     "the client Command Center must independently re-guard with requireClientContext(), matching the RSC-disclosure discipline used everywhere else in this build"
   );
-  assert.ok(/listMissionsForTenant\(ctx\.supabase, active\.tenantId, \d+\)/.test(commandCenter), "must reuse the exact same listMissionsForTenant call /admin's Command Center uses");
-  assert.ok(/listPendingApprovals\(ctx\.supabase, active\.tenantId\)/.test(commandCenter), "must reuse the exact same listPendingApprovals call /admin's Command Center uses");
+  assert.equal(/listMissionsForTenant|listPendingApprovals/.test(commandCenter), false, "customer Command Center must not read the mixed internal mission/approval stores");
+  assert.equal(/\/app\/(missions|approvals)/.test(commandCenter), false, "customer Command Center must not link hidden engineering routes");
+  assert.ok(/loadJourneyInput\(ctx\.supabase, active\.tenantId\)/.test(commandCenter), "customer Command Center must use the tenant-scoped Audit journey");
   assert.equal(/Unread inbox|AI actions/.test(commandCenter), false, "Command Center must not show fabricated disconnected metric cards");
 
   // --- 4. /app and /admin share one shell component, not two ----------------

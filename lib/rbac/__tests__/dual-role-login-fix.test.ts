@@ -33,7 +33,7 @@ function run() {
   );
   assert.equal(
     decideIdentityState({ hasSession: true, isStaff: true, membershipCount: 1, hasValidStaffWorkspace: true, workspaceMode: "customer" }),
-    "STAFF_VIEWING_CLIENT"
+    "CUSTOMER_MEMBER"
   );
 
   const loginForm = read("app", "login", "LoginForm.tsx");
