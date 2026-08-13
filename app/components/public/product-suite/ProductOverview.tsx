@@ -1,54 +1,35 @@
 import Link from "next/link";
-import { PRODUCT_GROUPS } from "@/lib/product-suite/taxonomy";
-import { TrustChips } from "@/app/components/public/TrustChips";
-import { ProductGroupSection } from "./ProductGroupSection";
+import { CUSTOMER_OUTCOME_GROUPS } from "@/lib/product-suite/customer-language";
+import { CustomerOutcomeGroupSection } from "./CustomerOutcomeGroupSection";
+import { CustomerOutcomePills } from "./CustomerOutcomePills";
+import { CustomerValueProps } from "./CustomerValueProps";
 
 export function ProductOverview() {
   return (
     <div>
       <section className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20 lg:px-8">
-        <p className="font-sx-mono text-[11px] uppercase tracking-[0.3em] text-sx-text-subtle">Products</p>
+        <p className="font-sx-mono text-[11px] uppercase tracking-[0.3em] text-sx-text-subtle">What Stratxcel helps you do</p>
         <h1 className="mt-4 max-w-3xl font-sx-sans text-[clamp(1.8rem,4vw,2.6rem)] font-semibold leading-tight tracking-[-0.02em] text-sx-text">
-          One Stratxcel platform composed of connected growth capabilities
+          Get more customers, market your business, and stay on top of follow-up
         </h1>
         <p className="mt-5 max-w-2xl font-sx-sans text-[15px] leading-relaxed text-sx-text-muted">
-          Explore what Stratxcel can help you understand, improve, and run — with clear availability labels and no
-          overstated promises.
+          Start with the outcome you care about. Each capability shows what it helps you achieve, what Stratxcel does,
+          and what you do next — with honest availability labels and no overstated promises.
         </p>
 
         <div className="mt-10 border-t border-sx-border pt-8">
-          <TrustChips
-            items={[
-              "Live, Beta, Staff-assisted, and Coming later labels",
-              "Human approval for consequential actions",
-              "Scope confirmed before activation",
-            ]}
-          />
+          <CustomerValueProps />
         </div>
 
-        <div className="mt-8 flex flex-wrap gap-2">
-          {PRODUCT_GROUPS.map((group) => (
-            <a
-              key={group.id}
-              href={`#${group.id}`}
-              className="rounded-sx-pill border border-sx-border bg-sx-surface-1 px-3 py-1.5 font-sx-sans text-[12px] font-medium text-sx-text-muted transition-colors hover:border-sx-border-strong hover:text-sx-text"
-            >
-              {group.label}
-            </a>
-          ))}
-          <Link
-            href="/pricing"
-            className="rounded-sx-pill border border-sx-border bg-sx-surface-1 px-3 py-1.5 font-sx-sans text-[12px] font-medium text-sx-text-muted transition-colors hover:border-sx-border-strong hover:text-sx-text"
-          >
-            View pricing
-          </Link>
+        <div className="mt-8">
+          <CustomerOutcomePills />
         </div>
       </section>
 
       <section className="border-t border-sx-border bg-sx-surface-2">
         <div className="mx-auto max-w-6xl space-y-14 px-4 py-14 sm:px-6 sm:py-16 lg:px-8">
-          {PRODUCT_GROUPS.map((group) => (
-            <ProductGroupSection key={group.id} group={group} />
+          {CUSTOMER_OUTCOME_GROUPS.map((group) => (
+            <CustomerOutcomeGroupSection key={group.id} group={group} />
           ))}
         </div>
       </section>

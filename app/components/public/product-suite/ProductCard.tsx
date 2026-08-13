@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ProductDefinition } from "@/lib/product-suite/types";
 import { getProductHref } from "@/lib/product-suite/taxonomy";
+import { getCustomerPresentationForProduct } from "@/lib/product-suite/customer-language";
 import { ProductIcon } from "./ProductIcon";
 import { ProductStateBadge } from "./ProductStateBadge";
 
@@ -15,6 +16,7 @@ export function ProductCard({
 }) {
   const href = getProductHref(product);
   const isAnchor = product.availability !== "coming-later";
+  const presentation = getCustomerPresentationForProduct(product);
 
   const body = (
     <article
@@ -24,9 +26,12 @@ export function ProductCard({
         <div className="flex items-start gap-3">
           <ProductIcon product={product} />
           <div>
-            <h3 className="font-sx-sans text-[15px] font-semibold leading-snug text-sx-text">{product.name}</h3>
+            <h3 className="font-sx-sans text-[15px] font-semibold leading-snug text-sx-text">{presentation.headline}</h3>
+            <p className="mt-1 font-sx-mono text-[10.5px] font-bold uppercase tracking-[0.12em] text-sx-text-subtle">
+              {product.name}
+            </p>
             {!compact && (
-              <p className="mt-1 font-sx-sans text-[13px] leading-relaxed text-sx-text-muted">{product.outcome}</p>
+              <p className="mt-2 font-sx-sans text-[13px] leading-relaxed text-sx-text-muted">{presentation.capability}</p>
             )}
           </div>
         </div>
@@ -34,13 +39,13 @@ export function ProductCard({
       </div>
       {!compact && (
         <p className="mt-4 font-sx-sans text-[12.5px] leading-relaxed text-sx-text-subtle">
-          <span className="font-semibold text-sx-text-muted">You do: </span>
-          {product.userAction}
+          <span className="font-semibold text-sx-text-muted">The problem: </span>
+          {presentation.problem}
         </p>
       )}
       {isAnchor && (
         <p className="mt-4 font-sx-sans text-[12px] font-semibold text-sx-accent transition-colors group-hover:text-[color:var(--sx-accent-hover)]">
-          Explore {product.name} →
+          {presentation.ctaLabel} →
         </p>
       )}
     </article>
