@@ -4,9 +4,9 @@ import { PublicFooter } from "@/app/components/PublicFooter";
 import { ProductOverview } from "@/app/components/public/product-suite/ProductOverview";
 
 export const metadata: Metadata = {
-  title: "Products — Stratxcel Growth Platform",
+  title: "What Stratxcel Helps You Do — Growth Platform",
   description:
-    "Explore Stratxcel's connected growth capabilities — intelligence, content, CRM, website, automations, and AI operations with truthful availability labels.",
+    "Get more customers, market your business, manage enquiries, and save time — with honest availability labels and human approval before consequential actions.",
 };
 
 export default function ProductsPage() {

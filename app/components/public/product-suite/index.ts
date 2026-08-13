@@ -6,3 +6,6 @@ export { ProductGroupSection } from "./ProductGroupSection";
 export { ProductOverview } from "./ProductOverview";
 export { ProductMegaMenu, MobileProductsAccordion } from "./ProductMegaMenu";
 export { HomeProductsPreview } from "./HomeProductsPreview";
+export { CustomerOutcomeGroupSection } from "./CustomerOutcomeGroupSection";
+export { CustomerOutcomePills } from "./CustomerOutcomePills";
+export { CustomerValueProps } from "./CustomerValueProps";
