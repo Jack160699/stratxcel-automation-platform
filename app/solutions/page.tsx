@@ -1,6 +1,5 @@
-﻿import type { Metadata } from "next";
-import { PublicHeader } from "@/app/components/PublicHeader";
-import { PublicFooter } from "@/app/components/PublicFooter";
+import type { Metadata } from "next";
+import { PublicPageShell } from "@/app/components/public/PublicPageShell";
 import {
   SolutionsHero,
   BuiltAroundYourBusinessSection,
@@ -20,20 +19,16 @@ export const metadata: Metadata = {
 
 export default function SolutionsPage() {
   return (
-    <div className="flex min-h-screen flex-col bg-sx-bg text-sx-text">
-      <PublicHeader />
-      <main className="flex-1">
-        <SolutionsHero />
-        <BuiltAroundYourBusinessSection />
-        <ImprovementIntentSection />
-        <GrowthLifecycle />
-        <OutcomesGrid />
-        <HowStratxcelWorks />
-        <CustomerTypesSection />
-        <AuditFunnelCta />
-        <SolutionConversionCta />
-      </main>
-      <PublicFooter />
-    </div>
+    <PublicPageShell>
+      <SolutionsHero />
+      <BuiltAroundYourBusinessSection />
+      <ImprovementIntentSection />
+      <GrowthLifecycle />
+      <OutcomesGrid />
+      <HowStratxcelWorks />
+      <CustomerTypesSection />
+      <AuditFunnelCta />
+      <SolutionConversionCta />
+    </PublicPageShell>
   );
 }

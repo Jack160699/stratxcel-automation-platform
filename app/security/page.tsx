@@ -1,7 +1,6 @@
 import Link from "next/link";
 import type { Metadata } from "next";
-import { PublicHeader } from "@/app/components/PublicHeader";
-import { PublicFooter } from "@/app/components/PublicFooter";
+import { PublicPageShell } from "@/app/components/public/PublicPageShell";
 import { CommercialTrustGrid } from "@/app/components/public/commercial/CommercialTrustGrid";
 import { Card, CardHeading } from "@/components/ui/Card";
 import { TRUST_CLAIMS } from "@/lib/commercial/catalog";
@@ -14,9 +13,7 @@ export const metadata: Metadata = {
 export default function SecurityPage() {
   const principles = TRUST_CLAIMS.slice(0, 4);
   return (
-    <div className="flex min-h-screen flex-col bg-sx-bg">
-      <PublicHeader />
-      <main className="flex-1">
+    <PublicPageShell>
         <section className="mx-auto max-w-6xl px-4 py-16 sm:px-6 lg:px-8">
           <p className="font-sx-mono text-[11px] uppercase tracking-[0.3em] text-sx-text-subtle">Security &amp; trust</p>
           <h1 className="mt-4 max-w-2xl text-3xl font-semibold">Your data stays yours, and stays separated.</h1>
@@ -50,8 +47,6 @@ export default function SecurityPage() {
         <section className="py-16 text-center">
           <Link href="/contact?intent=security" className="rounded-sx-sm bg-sx-accent px-6 py-3 text-sm font-semibold text-sx-accent-on">Contact security team</Link>
         </section>
-      </main>
-      <PublicFooter />
-    </div>
+    </PublicPageShell>
   );
 }

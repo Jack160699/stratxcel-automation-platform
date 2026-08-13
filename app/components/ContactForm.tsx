@@ -59,7 +59,7 @@ export function ContactForm({
     <form action={action} className="space-y-3">
       <input type="hidden" name="source" value={fullSource} />
       {intent && INTENT_LABELS[intent] ? (
-        <p className={`text-xs ${tone === "dark" ? "text-sx-text-subtle" : "text-slate-500"}`}>
+        <p className="text-xs text-sx-text-subtle">
           Reason: {INTENT_LABELS[intent]}
         </p>
       ) : null}

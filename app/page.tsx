@@ -23,7 +23,7 @@ export const metadata: Metadata = {
 export default function HomePage() {
   return (
     <div className="sx-public-theme flex min-h-screen flex-col overflow-x-hidden bg-sx-bg text-sx-text">
-      <PublicHeader />
+      <PublicHeader logoVariant="light" />
       <main className="flex-1">
         <PlatformHero />
         <HomeBusinessWorkSection />
@@ -59,7 +59,7 @@ export default function HomePage() {
 
         <HomeFinalCta />
       </main>
-      <PublicFooter />
+      <PublicFooter logoVariant="light" />
     </div>
   );
 }
