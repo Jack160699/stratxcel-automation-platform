@@ -193,13 +193,9 @@ async function run() {
     assert.ok((result.usage.toolUsage?.estimatedToolCostUsd ?? 0) > 0);
     assert.ok(result.usage.estimatedCostUsd >= (result.usage.toolUsage?.estimatedToolCostUsd ?? 0));
     const generationConfig = capturedBody.generationConfig as Record<string, unknown>;
-    const responseFormat = generationConfig?.responseFormat as {
-      text?: { mimeType?: string; schema?: unknown };
-    };
-    assert.equal(responseFormat?.text?.mimeType, "application/json");
-    assert.ok(responseFormat?.text?.schema);
-    assert.ok(!("responseMimeType" in (generationConfig ?? {})));
-    assert.ok(!("responseSchema" in (generationConfig ?? {})));
+    assert.equal(generationConfig?.responseMimeType, "application/json");
+    assert.ok(generationConfig?.responseJsonSchema);
+    assert.ok(!("responseFormat" in (generationConfig ?? {})));
     const tools = capturedBody.tools as Array<Record<string, unknown>>;
     assert.ok(tools?.some((t) => Boolean(t.google_search)));
   }
