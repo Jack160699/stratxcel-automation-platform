@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { PublicHeader } from "@/app/components/PublicHeader";
 import { PublicFooter } from "@/app/components/PublicFooter";
 import { CommercialTrustSection } from "@/app/components/public/commercial/CommercialTrustGrid";
+import { ConversionFaqSection } from "@/app/components/public/commercial/ConversionFaqSection";
+import { ConversionTrustQuestions } from "@/app/components/public/commercial/ConversionTrustQuestions";
 import { PlatformHero } from "@/app/components/public/home/PlatformHero";
 import { GrowthLoopSection } from "@/app/components/public/home/GrowthLoopSection";
 import { HomeSectionSlot } from "@/app/components/public/home/HomeSectionSlot";
@@ -13,6 +15,7 @@ import { HomePricingBridge } from "@/app/components/public/home/HomePricingBridg
 import { HomeSolutionsPreview } from "@/app/components/public/home/HomeSolutionsPreview";
 import { HomeProductsPreview } from "@/app/components/public/product-suite/HomeProductsPreview";
 import { ProductShowcase } from "@/app/components/public/showcase/ProductShowcase";
+import { JOURNEY_OBJECTIONS } from "@/lib/commercial/objections";
 
 export const metadata: Metadata = {
   title: "Stratxcel — Your AI Growth Operating System",
@@ -51,7 +54,11 @@ export default function HomePage() {
         </HomeSectionSlot>
 
         <HomeAuditOffer />
+        <ConversionTrustQuestions />
         <CommercialTrustSection />
+        <HomeSectionSlot id="objections" sectionKey="objections" label="Common Questions" bordered={false}>
+          <ConversionFaqSection title="Straight answers for small-business owners" subtitle="No AI jargon, no fake urgency." items={JOURNEY_OBJECTIONS} className="py-14" />
+        </HomeSectionSlot>
 
         <HomeSectionSlot id="pricing" sectionKey="pricing" label="Pricing" bordered={false}>
           <HomePricingBridge />
