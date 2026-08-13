@@ -8,6 +8,8 @@ import { ConnectExperience } from "./ConnectExperience";
 import { VisualAuditReport } from "./VisualAuditReport";
 import { trackFunnel } from "@/lib/analytics/events";
 import { loadCustomerJson } from "@/lib/customer-app/load-result";
+import { parseOnboardingState } from "@/lib/audit/v1/onboarding-state";
+import type { EvidenceCoverage } from "@/lib/audit/v1/scoring";
 import {
   deriveAuditCustomerState,
   normalizeAuditDeliveryReport,
@@ -35,6 +37,22 @@ interface AuditGeneration {
   confidence_band: string | null;
   failure_message_safe: string | null;
   stage_updated_at: string;
+}
+
+function coverageFromOrder(order: AuditOrder, report: { sources?: unknown[] }): EvidenceCoverage {
+  const state = parseOnboardingState(order.deep_dive_answers);
+  const verifiedPublic = Object.values(state?.profile ?? {}).some((item) => {
+    return Boolean(item && typeof item === "object" && "sourceClass" in item && (item as { sourceClass?: string }).sourceClass === "VERIFIED_PUBLIC");
+  });
+  const hasChannel = (type: string) => Boolean(state?.channels?.some((channel) => channel.type === type && channel.value && !channel.notAvailable));
+  return {
+    website: verifiedPublic || Boolean(report.sources?.length),
+    google: hasChannel("google_business"),
+    instagram: hasChannel("instagram"),
+    facebook: hasChannel("facebook"),
+    reviews: false,
+    analytics: false,
+  };
 }
 
 const PROCESSING_STAGES = [
@@ -323,6 +341,7 @@ export default function AuditHubPage() {
   return (
     <VisualAuditReport
       report={report}
+      coverage={coverageFromOrder(order, report)}
       onDownload={() => { window.open(`/api/platform/audit/report/pdf?order=${order.id}`, "_blank"); }}
       onShare={() => {
         void fetch("/api/platform/audit/report/share", { method: "POST" }).then(async (response) => {

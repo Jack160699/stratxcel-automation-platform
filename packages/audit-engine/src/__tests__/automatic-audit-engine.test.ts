@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import {
   evaluateAuditReportQuality,
+  mergeFirstPartyDiscoverySources,
   normalizeAuditReport,
   runAutomaticAuditGeneration,
   type AuditGenerationContext,
@@ -713,6 +714,25 @@ async function execute(store: MemoryStore, configured = providers(), attemptNumb
   assert.equal(rich?.plan.days30[0], "Publish one-page site");
   assert.equal(rich?.researchLimitations[0], "Few public sources were available.");
   assert.equal(rich?.categoryScores.websiteConversion.score, 66);
+}
+
+{
+  const empty = researchResult({ sources: [], claims: [], evidenceArtifactIds: [], summaryArtifactId: null });
+  const merged = mergeFirstPartyDiscoverySources(empty, {
+    websiteUrl: "https://www.stratxcel.in/",
+    businessName: "Stratxcel",
+    retrievedAt: "2026-08-13T12:00:00.000Z",
+    pages: [
+      { url: "https://www.stratxcel.in/", title: "Stratxcel", status: 200 },
+      { url: "https://www.stratxcel.in/about", title: "About", status: 200 },
+      { url: "https://www.stratxcel.in/missing", status: 404 },
+    ],
+  });
+  assert.equal(merged.sources.length, 2);
+  assert.equal(merged.sources[0]?.provider, "crawler");
+  assert.equal(merged.sources[0]?.sourceType, "PRIMARY");
+  assert.equal(merged.sources[0]?.verification, "verified");
+  assert.ok(merged.sources.some((source) => source.url.includes("/about")));
 }
 
 console.log("automatic-audit-engine.test.ts: PASS");
