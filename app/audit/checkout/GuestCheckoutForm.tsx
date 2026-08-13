@@ -104,7 +104,7 @@ export function GuestCheckoutForm() {
           setSubmitting(false);
           return;
         }
-        window.location.href = body.accessPath ?? `/audit/access?auditOrderId=${encodeURIComponent(body.auditOrderId)}`;
+        window.location.href = body.accessPath ?? `/audit/access?order=${encodeURIComponent(body.auditOrderId)}`;
         return;
       }
 

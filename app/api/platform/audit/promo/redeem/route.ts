@@ -194,7 +194,7 @@ export async function POST(request: Request) {
       auditOrderId: result.audit_order_id ?? auditOrderId,
       redemptionId: result.redemption_id,
       alreadyRedeemed: Boolean(result.already_redeemed),
-      accessPath: `/audit/access?auditOrderId=${encodeURIComponent(result.audit_order_id ?? auditOrderId!)}`,
+      accessPath: `/audit/access?order=${encodeURIComponent(result.audit_order_id ?? auditOrderId!)}`,
       requestId: randomUUID(),
     },
     { status: 201, headers: { "Cache-Control": "no-store" } }
