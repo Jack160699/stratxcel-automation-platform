@@ -33,7 +33,7 @@ function run() {
 
   const contactPage = read("app", "contact", "page.tsx");
   assert.ok(/searchParams:\s*Promise<\{\s*intent\?:\s*string\s*\}>/.test(contactPage));
-  assert.ok(/<ContactForm\s+source="contact-page"\s+tone="dark"\s+intent=\{intent\}\s*\/>/.test(contactPage));
+  assert.ok(/<ContactForm\s+source="contact-page"\s+tone="light"\s+intent=\{intent\}\s*\/>/.test(contactPage));
 
   const socialPage = read("app", "social-autopilot", "page.tsx");
   assert.ok(/alternates:\s*\{\s*canonical:\s*canonicalUrl\s*,?\s*\}/.test(socialPage));

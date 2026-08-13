@@ -1,7 +1,6 @@
 import Link from "next/link";
 import type { Metadata } from "next";
-import { PublicHeader } from "@/app/components/PublicHeader";
-import { PublicFooter } from "@/app/components/PublicFooter";
+import { PublicPageShell } from "@/app/components/public/PublicPageShell";
 import { CONTACT_EMAIL } from "@/lib/constants";
 
 export const metadata: Metadata = {
@@ -11,9 +10,7 @@ export const metadata: Metadata = {
 
 export default function AboutPage() {
   return (
-    <div className="flex min-h-screen flex-col bg-sx-bg">
-      <PublicHeader />
-      <main className="flex-1">
+    <PublicPageShell>
         <section className="mx-auto max-w-3xl px-4 py-16 sm:px-6 sm:py-20 lg:px-8">
           <p className="font-sx-mono text-[11px] uppercase tracking-[0.3em] text-sx-text-subtle">About</p>
           <h1 className="mt-4 font-sx-sans text-[clamp(1.8rem,4vw,2.6rem)] font-semibold leading-tight tracking-[-0.02em] text-sx-text">
@@ -45,8 +42,6 @@ export default function AboutPage() {
             </Link>
           </div>
         </section>
-      </main>
-      <PublicFooter />
-    </div>
+    </PublicPageShell>
   );
 }

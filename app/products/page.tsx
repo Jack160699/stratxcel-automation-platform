@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
-import { PublicHeader } from "@/app/components/PublicHeader";
-import { PublicFooter } from "@/app/components/PublicFooter";
+import { PublicPageShell } from "@/app/components/public/PublicPageShell";
 import { ProductOverview } from "@/app/components/public/product-suite/ProductOverview";
 
 export const metadata: Metadata = {
@@ -11,12 +10,8 @@ export const metadata: Metadata = {
 
 export default function ProductsPage() {
   return (
-    <div className="flex min-h-screen flex-col bg-sx-bg">
-      <PublicHeader />
-      <main className="flex-1">
+    <PublicPageShell>
         <ProductOverview />
-      </main>
-      <PublicFooter />
-    </div>
+    </PublicPageShell>
   );
 }

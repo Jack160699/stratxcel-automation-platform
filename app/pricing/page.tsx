@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { PublicHeader } from "@/app/components/PublicHeader";
-import { PublicFooter } from "@/app/components/PublicFooter";
+import { PublicPageShell } from "@/app/components/public/PublicPageShell";
 import { Card } from "@/components/ui/Card";
 import { CommercialTrustSection } from "@/app/components/public/commercial/CommercialTrustGrid";
 import { PricingViewTracker } from "@/app/components/public/commercial/PricingViewTracker";
@@ -27,10 +26,7 @@ const ORDER: CommercialPillarId[] = ["audit", "platform", "growth_execution", "e
 
 export default function PricingPage() {
   return (
-    <div className="flex min-h-screen flex-col bg-sx-bg text-sx-text">
-      <PricingViewTracker />
-      <PublicHeader />
-      <main className="flex-1">
+    <PublicPageShell beforeMain={<PricingViewTracker />}>
         <section className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
           <div className="mx-auto max-w-3xl text-center">
             <span className="font-sx-mono text-xs font-bold uppercase tracking-wider text-sx-accent">Pricing & Plans</span>
@@ -39,7 +35,7 @@ export default function PricingPage() {
           </div>
           <div className="mt-14 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {COMMERCIAL_PILLARS.map((p) => (
-              <Card key={p.id} variant="panel" className="p-5">
+              <Card key={p.id} variant="panel" className="p-5 shadow-[var(--sx-shadow-lg)]">
                 <p className="font-sx-mono text-[10px] font-bold uppercase text-sx-accent">{p.subtitle}</p>
                 <h2 className="mt-2 font-bold">{p.title}</h2>
                 <p className="mt-2 text-xs text-sx-text-muted">{p.description}</p>
@@ -61,7 +57,7 @@ export default function PricingPage() {
                   <p className="mt-2 text-sm text-sx-text-muted">{pillar.description}</p>
                 </div>
                 {auditOnly ? (
-                  <div className="mt-10 mx-auto max-w-4xl rounded-sx-lg border border-sx-accent/40 bg-sx-surface-1 p-8 text-center">
+                  <div className="mt-10 mx-auto max-w-4xl rounded-sx-lg border border-sx-accent/30 bg-sx-surface-1 p-8 text-center shadow-[var(--sx-shadow-xl)]">
                     <h3 className="text-2xl font-bold">{tiers[0].name} — {tiers[0].price}</h3>
                     <p className="mt-2 text-sm text-sx-text-muted">{tiers[0].pitch}</p>
                     <TrackedCtaLink href={tiers[0].href} event="start_audit" surface="pricing_audit" plan="audit" className="mt-6 inline-block rounded-sx-sm bg-sx-accent px-8 py-3 text-xs font-bold text-sx-accent-on">{tiers[0].cta} →</TrackedCtaLink>
@@ -93,7 +89,7 @@ export default function PricingPage() {
             <h2 className="text-center text-2xl font-bold">Frequently Asked Questions</h2>
             <dl className="mt-10 space-y-4">
               {faq.map((item) => (
-                <div key={item.q} className="rounded-sx-md border border-sx-border bg-sx-bg p-6">
+                <div key={item.q} className="rounded-sx-md border border-sx-border bg-sx-bg p-6 shadow-[var(--sx-shadow-lg)]">
                   <dt className="font-bold">{item.q}</dt>
                   <dd className="mt-2 text-sm text-sx-text-muted">{item.a}</dd>
                 </div>
@@ -110,8 +106,6 @@ export default function PricingPage() {
             <TrackedCtaLink href={PUBLIC_CTAS.explorePlatform.href} event="explore_product" surface="pricing_footer" className="rounded-sx-sm border border-sx-border-strong px-6 py-3 text-xs font-semibold">{PUBLIC_CTAS.explorePlatform.label}</TrackedCtaLink>
           </div>
         </section>
-      </main>
-      <PublicFooter />
-    </div>
+    </PublicPageShell>
   );
 }

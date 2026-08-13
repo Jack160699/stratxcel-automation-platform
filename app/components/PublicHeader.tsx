@@ -14,7 +14,7 @@ const PRIMARY_LINKS: { label: string; href: string }[] = [
   { label: "Resources", href: "/resources" },
 ];
 
-export function PublicHeader() {
+export function PublicHeader({ logoVariant = "dark" }: { logoVariant?: "light" | "dark" }) {
   const [open, setOpen] = useState(false);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -72,7 +72,7 @@ export function PublicHeader() {
         inert={open || undefined}
       >
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
-          <Logo variant="dark" priority />
+          <Logo variant={logoVariant} priority />
 
           <nav className="hidden items-center gap-7 lg:flex" aria-label="Primary">
             <ProductMegaMenu />
@@ -134,7 +134,7 @@ export function PublicHeader() {
           aria-label="Main navigation"
         >
           <div className="flex h-16 items-center justify-between border-b border-sx-border px-4 sm:px-6">
-            <Logo variant="dark" />
+            <Logo variant={logoVariant} />
             <button
               type="button"
               className="inline-flex h-11 w-11 items-center justify-center rounded-sx-sm border border-sx-border-strong text-sx-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sx-accent"

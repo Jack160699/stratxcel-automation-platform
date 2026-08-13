@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { PublicHeader } from "@/app/components/PublicHeader";
-import { PublicFooter } from "@/app/components/PublicFooter";
+import { PublicPageShell } from "@/app/components/public/PublicPageShell";
 import { AuditCheckoutCta } from "./AuditCheckoutCta";
 import { splitGstInclusive, formatCentsAsRupees } from "@/lib/payments/gst";
 
@@ -29,9 +28,7 @@ const INCLUDES = [
  */
 export default function PublicAuditPage() {
   return (
-    <div className="flex min-h-screen flex-col bg-sx-bg text-sx-text">
-      <PublicHeader />
-      <main className="flex-1">
+    <PublicPageShell>
         <section className="mx-auto max-w-3xl px-4 py-10 text-center sm:px-6"><p className="text-sm text-sx-text-muted">New to Stratxcel? <Link href="/solutions" className="font-semibold text-sx-accent hover:underline">See how outcomes connect across the platform</Link> before you purchase.</p></section>
         <section className="mx-auto max-w-3xl px-4 pb-16 text-center sm:px-6 sm:pb-24">
           <span className="font-sx-mono text-xs font-bold uppercase tracking-wider text-sx-accent">
@@ -45,7 +42,7 @@ export default function PublicAuditPage() {
             analyzed automatically and delivered in your workspace, not generated from a generic template.
           </p>
 
-          <div className="mt-10 rounded-sx-lg border border-sx-accent/40 bg-sx-surface-1 p-8 shadow-lg sm:p-10">
+          <div className="mt-10 rounded-sx-lg border border-sx-accent/30 bg-sx-surface-1 p-8 shadow-[var(--sx-shadow-xl)] sm:p-10">
             <div className="flex items-baseline justify-center gap-2">
               <span className="font-sx-sans text-5xl font-extrabold text-sx-text">₹999</span>
               <span className="font-sx-sans text-sm text-sx-text-subtle">one-time, GST included</span>
@@ -93,8 +90,6 @@ export default function PublicAuditPage() {
             instead.
           </p>
         </section>
-      </main>
-      <PublicFooter />
-    </div>
+    </PublicPageShell>
   );
 }
