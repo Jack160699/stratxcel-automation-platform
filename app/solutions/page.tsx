@@ -1,6 +1,14 @@
-import { redirect } from "next/navigation";
-
-/** Canonical compatibility route — /use-cases is the real Solutions experience. */
-export default function SolutionsRedirect() {
-  redirect("/use-cases");
+import type { Metadata } from "next";
+import { PublicHeader } from "@/app/components/PublicHeader";
+import { PublicFooter } from "@/app/components/PublicFooter";
+import { SolutionsHero, OutcomesGrid, GrowthLifecycle, HowStratxcelWorks, CustomerTypesSection, AuditFunnelCta, SolutionConversionCta } from "@/app/components/public/solutions";
+export const metadata: Metadata = { title: "Solutions — Stratxcel", description: "Outcome-oriented growth solutions for business owners." };
+export default function SolutionsPage() {
+  return (
+    <div className="flex min-h-screen flex-col bg-sx-bg text-sx-text">
+      <PublicHeader />
+      <main className="flex-1"><SolutionsHero /><GrowthLifecycle /><OutcomesGrid /><HowStratxcelWorks /><CustomerTypesSection /><AuditFunnelCta /><SolutionConversionCta /></main>
+      <PublicFooter />
+    </div>
+  );
 }

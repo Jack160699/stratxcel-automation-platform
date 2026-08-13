@@ -276,6 +276,49 @@ body {
   animation: sx-dash-shift 14s linear infinite;
 }
 
+/* Wave-2 motion system — homepage premium visuals */
+@keyframes sx-float-slow {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+.animate-sx-float-slow {
+  animation: sx-float-slow 9s ease-in-out infinite;
+}
+
+@keyframes sx-glow-pulse {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+.animate-sx-glow-pulse {
+  animation: sx-glow-pulse 4s ease-in-out infinite;
+}
+
+@keyframes sx-progress {
+  0%, 100% { opacity: 0.85; }
+  50% { opacity: 1; }
+}
+.animate-sx-progress {
+  animation: sx-progress 3s ease-in-out infinite;
+}
+
+@keyframes sx-frame-settle {
+  from { transform: translateY(4px); }
+  to { transform: translateY(0); }
+}
+.animate-sx-frame-settle {
+  animation: sx-frame-settle 0.5s ease-out;
+}
+
+.sx-reveal {
+  opacity: 0;
+  transform: translateY(16px);
+  transition: opacity 0.6s ease-out, transform 0.6s ease-out;
+}
+.sx-reveal--visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
 /* Scrollbar — near-invisible, cinematic */
 .sx-journey::-webkit-scrollbar,
 body::-webkit-scrollbar {
@@ -314,12 +357,41 @@ body::-webkit-scrollbar-thumb {
     scroll-behavior: auto;
   }
   .animate-sx-float,
+  .animate-sx-float-slow,
   .animate-sx-pulse,
+  .animate-sx-glow-pulse,
+  .animate-sx-progress,
+  .animate-sx-frame-settle,
   .sx-cta-glow,
   .sx-dash-animate,
   .sx-start-pulse,
   .sx-blink,
   .sx-grain::after {
     animation: none !important;
+  }
+  .sx-reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+}
+
+/* Public marketing layout rhythm — opt-in via class on section wrappers */
+.sx-public-section {
+  margin-inline: auto;
+  max-width: 80rem;
+  padding-inline: 1rem;
+  padding-block: 3rem;
+}
+@media (min-width: 640px) {
+  .sx-public-section {
+    padding-inline: 1.5rem;
+    padding-block: 3.5rem;
+  }
+}
+@media (min-width: 1024px) {
+  .sx-public-section {
+    padding-inline: 2rem;
+    padding-block: 4rem;
   }
 }
