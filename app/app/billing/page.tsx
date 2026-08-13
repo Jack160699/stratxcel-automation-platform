@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import { useCurrentTenant } from "../CurrentTenantContext";
 import { Card } from "@/components/ui/Card";
@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/Button";
 import { StatusChip } from "@/components/ui/StatusChip";
 import { ErrorState, EmptyState } from "@/components/ui/Feedback";
 import { isActivePaidSubscription } from "@/lib/billing/plan-state";
+import { loadCustomerJson } from "@/lib/customer-app/load-result";
 
 interface WalletAccount {
   tenant_id: string;
@@ -99,6 +100,7 @@ export default function BillingPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
+  const loadSequence = useRef(0);
   const [profileForm, setProfileForm] = useState<BillingProfile>({
     legal_business_name: "",
     gstin: "",
@@ -110,37 +112,58 @@ export default function BillingPage() {
 
   const load = useCallback(async () => {
     if (!tenantId) return;
+    const requestId = ++loadSequence.current;
     setLoading(true);
     setError(null);
+    setAccount(null);
+    setSubscription(null);
+    setPriceBreakdown(null);
+    setPaymentUrl(null);
+    setBillingProfile(null);
+    setInvoices([]);
     try {
-      const [walletRes, subRes] = await Promise.all([
-        fetch(`/api/platform/wallet?tenantId=${encodeURIComponent(tenantId)}`),
-        fetch(`/api/platform/subscriptions?tenantId=${encodeURIComponent(tenantId)}`),
+      const [walletResult, subscriptionResult] = await Promise.all([
+        loadCustomerJson<{ account: WalletAccount | null }>(
+          () => fetch(`/api/platform/wallet?tenantId=${encodeURIComponent(tenantId)}`),
+          "We couldn't load your wallet. Please try again."
+        ),
+        loadCustomerJson<{
+          subscription: Subscription | null;
+          priceBreakdown: PriceBreakdown | null;
+          paymentUrl: string | null;
+          billingProfile: BillingProfile | null;
+          invoices?: Invoice[];
+        }>(
+          () => fetch(`/api/platform/subscriptions?tenantId=${encodeURIComponent(tenantId)}`),
+          "We couldn't load your billing details. Please try again."
+        ),
       ]);
-      const walletBody = await walletRes.json();
-      if (walletRes.ok) setAccount(walletBody.account);
-
-      const subBody = await subRes.json();
-      if (!subRes.ok) {
-        setError(subBody.error ?? `Failed to load billing (HTTP ${subRes.status})`);
+      if (requestId !== loadSequence.current) return;
+      if (walletResult.status === "error") {
+        setError(walletResult.message);
         return;
       }
-      setSubscription(subBody.subscription);
-      setPriceBreakdown(subBody.priceBreakdown);
-      setPaymentUrl(subBody.paymentUrl);
-      setBillingProfile(subBody.billingProfile);
-      setInvoices(subBody.invoices ?? []);
-      if (subBody.billingProfile) {
+      if (subscriptionResult.status === "error") {
+        setError(subscriptionResult.message);
+        return;
+      }
+      setAccount(walletResult.data.account);
+      setSubscription(subscriptionResult.data.subscription);
+      setPriceBreakdown(subscriptionResult.data.priceBreakdown);
+      setPaymentUrl(subscriptionResult.data.paymentUrl);
+      setBillingProfile(subscriptionResult.data.billingProfile);
+      setInvoices(subscriptionResult.data.invoices ?? []);
+      if (subscriptionResult.data.billingProfile) {
         setProfileForm({
-          legal_business_name: subBody.billingProfile.legal_business_name ?? "",
-          gstin: subBody.billingProfile.gstin ?? "",
-          billing_address: subBody.billingProfile.billing_address ?? "",
-          billing_state: subBody.billingProfile.billing_state ?? "",
-          pin_code: subBody.billingProfile.pin_code ?? "",
+          legal_business_name: subscriptionResult.data.billingProfile.legal_business_name ?? "",
+          gstin: subscriptionResult.data.billingProfile.gstin ?? "",
+          billing_address: subscriptionResult.data.billingProfile.billing_address ?? "",
+          billing_state: subscriptionResult.data.billingProfile.billing_state ?? "",
+          pin_code: subscriptionResult.data.billingProfile.pin_code ?? "",
         });
       }
     } finally {
-      setLoading(false);
+      if (requestId === loadSequence.current) setLoading(false);
     }
   }, [tenantId]);
 
@@ -222,9 +245,9 @@ export default function BillingPage() {
       {notice && (
         <div className="rounded-sx-md border border-sx-accent/40 bg-sx-accent/10 px-3.5 py-2.5 text-[12.5px] text-sx-text">{notice}</div>
       )}
-      {loading && <p className="text-sm text-sx-text-subtle">Loading…</p>}
+      {loading && !error && <p className="text-sm text-sx-text-subtle">Loading…</p>}
 
-      {account && (
+      {!loading && !error && account && (
         <Card className="p-6">
           <Metric
             label="Wallet balance"
@@ -235,7 +258,7 @@ export default function BillingPage() {
       )}
 
       {/* Subscription plan & status */}
-      <Card className="p-6">
+      {!loading && !error && <Card className="p-6">
         <h2 className="font-sx-sans text-sm font-semibold text-sx-text">Plan & subscription</h2>
 
         {!hasActivePaidPlan && (
@@ -378,10 +401,10 @@ export default function BillingPage() {
             )}
           </div>
         )}
-      </Card>
+      </Card>}
 
       {/* GST invoice details */}
-      <Card className="p-6">
+      {!loading && !error && <Card className="p-6">
         <h2 className="font-sx-sans text-sm font-semibold text-sx-text">GST invoice details</h2>
         <p className="mt-1 text-xs text-sx-text-subtle">Optional — used only to print on your invoices. GST is already included in every price shown above.</p>
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -419,10 +442,10 @@ export default function BillingPage() {
         <Button className="mt-3" variant="primary" size="sm" disabled={busy} onClick={saveBillingProfile}>
           Save GST details
         </Button>
-      </Card>
+      </Card>}
 
       {/* Invoices */}
-      <Card className="p-6">
+      {!loading && !error && <Card className="p-6">
         <h2 className="font-sx-sans text-sm font-semibold text-sx-text">Invoices</h2>
         {invoices.length === 0 ? (
           <div className="mt-4">
@@ -458,7 +481,7 @@ export default function BillingPage() {
             </table>
           </div>
         )}
-      </Card>
+      </Card>}
     </div>
   );
 }

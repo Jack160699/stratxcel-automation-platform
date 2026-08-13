@@ -2,20 +2,25 @@ import type { ReactNode } from "react";
 
 /** The 56px top command bar shared by /app and /admin — docs/product-design/SHARED_SHELL_SPECIFICATION.md §3. */
 export function TopCommandBar({
+  brand,
   context,
   agentStatus,
   staffBadge,
   userMenu,
+  showSearch = true,
 }: {
+  brand?: ReactNode;
   context: ReactNode;
   agentStatus?: ReactNode;
   staffBadge?: ReactNode;
   userMenu?: ReactNode;
+  showSearch?: boolean;
 }) {
   return (
     <header className="flex h-14 shrink-0 items-center gap-3.5 border-b border-sx-border px-5">
+      {brand && <div className="shrink-0 md:hidden">{brand}</div>}
       <div className="min-w-0 truncate text-[13.5px] font-semibold text-sx-text">{context}</div>
-      <SearchPill />
+      {showSearch && <SearchPill />}
       <div className="flex-1" />
       {agentStatus}
       {staffBadge}

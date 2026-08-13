@@ -6,6 +6,7 @@ import { Card, CardHeading } from "@/components/ui/Card";
 import { ErrorState } from "@/components/ui/Feedback";
 import { IntakeWizard, type IntakeOrder } from "./IntakeWizard";
 import { trackFunnel } from "@/lib/analytics/events";
+import { loadCustomerJson } from "@/lib/customer-app/load-result";
 import {
   AUDIT_CATEGORY_SCORE_KEYS,
   deriveAuditCustomerState,
@@ -88,35 +89,37 @@ export default function AuditHubPage() {
 
   const load = useCallback(async () => {
     setError(null);
-    try {
-      const res = await fetch("/api/platform/audit/checkout");
-      const body = await res.json();
-      if (!res.ok) {
-        setError(body.error ?? "Could not load your Audit.");
-        return;
-      }
-      setOrder(body.order ?? null);
-      setGeneration(body.generation ?? null);
-      setPaymentUrl(body.paymentUrl ?? null);
-    } catch {
-      setError("Network error loading your Audit.");
+    const result = await loadCustomerJson<{
+      order?: AuditOrder | null;
+      generation?: AuditGeneration | null;
+      paymentUrl?: string | null;
+    }>(() => fetch("/api/platform/audit/checkout"), "We couldn't load your Audit. Please try again.");
+    if (result.status === "error") {
+      setOrder(null);
+      setGeneration(null);
+      setPaymentUrl(null);
+      setError(result.message);
+      return;
     }
+    setOrder(result.data.order ?? null);
+    setGeneration(result.data.generation ?? null);
+    setPaymentUrl(result.data.paymentUrl ?? null);
   }, []);
 
   const startAudit = useCallback(async () => {
     setStarting(true);
     setError(null);
     try {
-      const res = await fetch("/api/platform/audit/intake", { method: "POST" });
-      const body = await res.json();
-      if (!res.ok) {
-        setError(body.error ?? "Could not start your Audit.");
+      const result = await loadCustomerJson<Record<string, unknown>>(
+        () => fetch("/api/platform/audit/intake", { method: "POST" }),
+        "We couldn't start your Audit. Please try again."
+      );
+      if (result.status === "error") {
+        setError(result.message);
         return;
       }
       trackFunnel("audit_started", { surface: "app_audit" });
       await load();
-    } catch {
-      setError("Network error starting your Audit.");
     } finally {
       setStarting(false);
     }
@@ -168,6 +171,7 @@ export default function AuditHubPage() {
           message={error}
           onRetry={() => {
             autoStartAttempted.current = false;
+            setOrder(undefined);
             void load();
           }}
         />

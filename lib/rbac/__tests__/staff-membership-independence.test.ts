@@ -16,6 +16,7 @@ function run() {
   const resolver = read("lib", "identity", "resolve-identity.ts");
   const clientContext = read("lib", "tenants", "client-context.ts");
   const tenantContext = read("lib", "tenants", "tenant-context.ts");
+  const readDecision = read("lib", "tenants", "read-access-decision.ts");
   const token = read("lib", "identity", "staff-workspace.ts");
 
   // 1. Internal admin with zero memberships can see agency clients.
@@ -49,7 +50,7 @@ function run() {
   // 7. A forged staff-workspace tenant ID fails signature/subject/exact-tenant checks.
   assert.ok(token.includes("createHmac") && token.includes("timingSafeEqual"));
   assert.ok(token.includes("claims.subject !== subject") && token.includes("claims.expiresAt <= currentTime"));
-  assert.ok(tenantContext.includes("workspaceTenantId !== tenantId"));
+  assert.ok(readDecision.includes("staffWorkspaceTenantId === input.requestedTenantId"));
 
   // 8. Deleted or nonexistent target tenants fail closed.
   assert.ok(adminRepo.includes('.eq("id", tenantId).maybeSingle()'));
@@ -65,7 +66,8 @@ function run() {
   // 10. Dual-role staff + membership: customer intent → customer; admin intent → admin.
   assert.equal(decideIdentityState({ hasSession: true, isStaff: true, membershipCount: 1, hasValidStaffWorkspace: false, workspaceMode: "customer" }), "CUSTOMER_MEMBER");
   assert.equal(decideIdentityState({ hasSession: true, isStaff: true, membershipCount: 1, hasValidStaffWorkspace: false, workspaceMode: "admin" }), "INTERNAL_STAFF");
-  assert.equal(decideIdentityState({ hasSession: true, isStaff: true, membershipCount: 1, hasValidStaffWorkspace: true, workspaceMode: "customer" }), "STAFF_VIEWING_CLIENT");
+  assert.equal(decideIdentityState({ hasSession: true, isStaff: true, membershipCount: 1, hasValidStaffWorkspace: true, workspaceMode: "customer" }), "CUSTOMER_MEMBER");
+  assert.equal(decideIdentityState({ hasSession: true, isStaff: true, membershipCount: 1, hasValidStaffWorkspace: true, workspaceMode: "admin" }), "STAFF_VIEWING_CLIENT");
 
   // Explicit support posture: no fake TenantRole and unsafe writes unavailable.
   assert.ok(clientContext.includes('accessMode: "staff_support"') && clientContext.includes("workspaceTenant: identity.staffWorkspace"));

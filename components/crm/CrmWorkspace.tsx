@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { can } from "@/lib/rbac/policy";
 import type { TenantRole } from "@/lib/tenants/types";
@@ -12,6 +12,7 @@ import { LeadDetailsPanel } from "./LeadDetailsPanel";
 import { ErrorState, EmptyState } from "@/components/ui/Feedback";
 import { Drawer, Modal } from "@/components/ui/Overlay";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import { loadCustomerJson } from "@/lib/customer-app/load-result";
 import { contactLabel, type Appointment, type ConversationAutomationMode, type CrmConversation, type CrmLead, type CrmMessage, type FollowUp, type InboxEntry, type LeadStatus } from "./types";
 
 const LIST_POLL_MS = 8_000;
@@ -60,8 +61,12 @@ export function CrmWorkspace({
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   useEffect(() => {
     async function loadUserId() {
-      const { data } = await createSupabaseBrowserClient().auth.getUser();
-      setCurrentUserId(data.user?.id ?? null);
+      try {
+        const { data } = await createSupabaseBrowserClient().auth.getUser();
+        setCurrentUserId(data.user?.id ?? null);
+      } catch {
+        setCurrentUserId(null);
+      }
     }
     loadUserId();
   }, []);
@@ -92,36 +97,84 @@ export function CrmWorkspace({
   // over and no session accidentally opens straight into a drawer.
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [mobileView, setMobileView] = useState<"list" | "thread">(initialLeadId ? "thread" : "list");
+  const listLoadSequence = useRef(0);
 
   function toggleDetails() {
     setDetailsOpen((prev) => !prev);
   }
 
-  const loadLists = useCallback(async () => {
-    const [leadsRes, convosRes, followUpsRes, appointmentsRes] = await Promise.all([
-      fetch(`/api/platform/leads?tenantId=${encodeURIComponent(tenantId)}`),
-      fetch(`/api/platform/whatsapp/conversations?tenantId=${encodeURIComponent(tenantId)}`),
-      fetch(`/api/platform/crm/follow-ups?tenantId=${encodeURIComponent(tenantId)}`),
-      fetch(`/api/platform/crm/appointments?tenantId=${encodeURIComponent(tenantId)}`),
+  const loadLists = useCallback(async (reset = false) => {
+    const requestId = ++listLoadSequence.current;
+    if (reset) {
+      setLeads(null);
+      setConversations(null);
+      setFollowUps([]);
+      setAppointments([]);
+      setSelectedLeadId(initialLeadId ?? null);
+      setAutoSelected(false);
+    }
+    const [leadsResult, conversationsResult, followUpsResult, appointmentsResult] = await Promise.all([
+      loadCustomerJson<{ leads?: CrmLead[] }>(
+        () => fetch(`/api/platform/leads?tenantId=${encodeURIComponent(tenantId)}`),
+        "We couldn't load your CRM. Please try again."
+      ),
+      loadCustomerJson<{ conversations?: CrmConversation[] }>(
+        () => fetch(`/api/platform/whatsapp/conversations?tenantId=${encodeURIComponent(tenantId)}`),
+        "We couldn't load your conversations. Please try again."
+      ),
+      loadCustomerJson<{ followUps?: FollowUp[] }>(
+        () => fetch(`/api/platform/crm/follow-ups?tenantId=${encodeURIComponent(tenantId)}`),
+        "We couldn't load your follow-ups. Please try again."
+      ),
+      loadCustomerJson<{ appointments?: Appointment[] }>(
+        () => fetch(`/api/platform/crm/appointments?tenantId=${encodeURIComponent(tenantId)}`),
+        "We couldn't load your appointments. Please try again."
+      ),
     ]);
-    if (!leadsRes.ok) {
-      const body = await leadsRes.json().catch(() => ({}));
-      setError(body.error ?? `Failed to load leads (HTTP ${leadsRes.status})`);
+    if (requestId !== listLoadSequence.current) return;
+    if (leadsResult.status === "error") {
+      setLeads([]);
+      setConversations([]);
+      setFollowUps([]);
+      setAppointments([]);
+      setError(leadsResult.message);
       return;
     }
-    const leadsBody = await leadsRes.json();
-    setLeads(leadsBody.leads);
-
-    if (convosRes.ok) setConversations((await convosRes.json()).conversations);
-    if (followUpsRes.ok) setFollowUps((await followUpsRes.json()).followUps ?? []);
-    if (appointmentsRes.ok) setAppointments((await appointmentsRes.json()).appointments ?? []);
+    if (conversationsResult.status === "error") {
+      setLeads([]);
+      setConversations([]);
+      setFollowUps([]);
+      setAppointments([]);
+      setError(conversationsResult.message);
+      return;
+    }
+    if (followUpsResult.status === "error") {
+      setLeads([]);
+      setConversations([]);
+      setFollowUps([]);
+      setAppointments([]);
+      setError(followUpsResult.message);
+      return;
+    }
+    if (appointmentsResult.status === "error") {
+      setLeads([]);
+      setConversations([]);
+      setFollowUps([]);
+      setAppointments([]);
+      setError(appointmentsResult.message);
+      return;
+    }
+    setLeads(leadsResult.data.leads ?? []);
+    setConversations(conversationsResult.data.conversations ?? []);
+    setFollowUps(followUpsResult.data.followUps ?? []);
+    setAppointments(appointmentsResult.data.appointments ?? []);
     setError(null);
-  }, [tenantId]);
+  }, [initialLeadId, tenantId]);
 
   useEffect(() => {
-    loadLists();
+    void loadLists(true);
     const interval = setInterval(() => {
-      if (!document.hidden) loadLists();
+      if (!document.hidden) void loadLists();
     }, LIST_POLL_MS);
     return () => clearInterval(interval);
   }, [loadLists]);
@@ -165,10 +218,15 @@ export function CrmWorkspace({
     async (convoId: string, showLoading: boolean) => {
       if (showLoading) setMessagesLoading(true);
       try {
-        const res = await fetch(`/api/platform/whatsapp/conversations/${convoId}?tenantId=${encodeURIComponent(tenantId)}`);
-        if (res.ok) {
-          const body = await res.json();
-          setMessages(body.messages ?? []);
+        const result = await loadCustomerJson<{ messages?: CrmMessage[] }>(
+          () => fetch(`/api/platform/whatsapp/conversations/${convoId}?tenantId=${encodeURIComponent(tenantId)}`),
+          "We couldn't load this conversation. Please try again."
+        );
+        if (result.status === "error") {
+          setMessages([]);
+          setError(result.message);
+        } else {
+          setMessages(result.data.messages ?? []);
         }
       } finally {
         if (showLoading) setMessagesLoading(false);
@@ -283,12 +341,12 @@ export function CrmWorkspace({
     <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-sx-lg border border-sx-border bg-sx-bg">
       {error && (
         <div className="shrink-0 p-2">
-          <ErrorState message={error} onRetry={loadLists} />
+          <ErrorState message={error} onRetry={() => void loadLists(true)} />
         </div>
       )}
       <div className="grid min-h-0 min-w-0 flex-1 grid-cols-1 md:grid-cols-[minmax(280px,330px)_1fr]">
         <div className={`min-h-0 min-w-0 w-full max-w-full overflow-x-hidden ${mobileView === "list" ? "flex" : "hidden"} md:flex`}>
-          <ConversationList entries={entries} loading={leads === null} selectedLeadId={selectedLeadId} onSelect={selectLead} currentUserId={currentUserId} title={title} />
+          <ConversationList entries={entries} loading={leads === null && !error} selectedLeadId={selectedLeadId} onSelect={selectLead} currentUserId={currentUserId} title={title} />
         </div>
 
         <div className={`min-h-0 min-w-0 w-full max-w-full flex-col overflow-hidden ${mobileView === "thread" ? "flex" : "hidden"} md:flex`}>
@@ -318,9 +376,13 @@ export function CrmWorkspace({
                 </div>
               )}
             </>
-          ) : leads === null ? (
+          ) : leads === null && !error ? (
             <div className="flex h-full items-center justify-center px-6 text-center">
               <p className="text-sm text-sx-text-subtle">Loading…</p>
+            </div>
+          ) : error ? (
+            <div className="flex h-full items-center justify-center px-6 text-center">
+              <p className="text-sm text-sx-text-subtle">CRM could not be loaded. Retry to try again.</p>
             </div>
           ) : entries.length === 0 ? (
             <div className="flex h-full items-center justify-center px-6">
