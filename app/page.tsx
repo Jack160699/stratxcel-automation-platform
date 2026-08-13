@@ -2,10 +2,8 @@ import type { Metadata } from "next";
 import { PublicHeader } from "@/app/components/PublicHeader";
 import { PublicFooter } from "@/app/components/PublicFooter";
 import { CommercialTrustSection } from "@/app/components/public/commercial/CommercialTrustGrid";
-import { ConversionFaqSection } from "@/app/components/public/commercial/ConversionFaqSection";
-import { ConversionTrustQuestions } from "@/app/components/public/commercial/ConversionTrustQuestions";
 import { PlatformHero } from "@/app/components/public/home/PlatformHero";
-import { GrowthLoopSection } from "@/app/components/public/home/GrowthLoopSection";
+import { HomeBusinessWorkSection } from "@/app/components/public/home/HomeBusinessWorkSection";
 import { HomeSectionSlot } from "@/app/components/public/home/HomeSectionSlot";
 import { HomeAuditOffer } from "@/app/components/public/home/HomeAuditOffer";
 import { HomeFinalCta } from "@/app/components/public/home/HomeFinalCta";
@@ -13,15 +11,13 @@ import { HomeAiWorkforce } from "@/app/components/public/home/HomeAiWorkforce";
 import { HomeIntegrationsPreview } from "@/app/components/public/home/HomeIntegrationsPreview";
 import { HomePricingBridge } from "@/app/components/public/home/HomePricingBridge";
 import { HomeSolutionsPreview } from "@/app/components/public/home/HomeSolutionsPreview";
-import { HomeLocalBusinessJourneys } from "@/app/components/public/home/HomeLocalBusinessJourneys";
 import { HomeProductsPreview } from "@/app/components/public/product-suite/HomeProductsPreview";
 import { ProductShowcase } from "@/app/components/public/showcase/ProductShowcase";
-import { JOURNEY_OBJECTIONS } from "@/lib/commercial/objections";
 
 export const metadata: Metadata = {
-  title: "Stratxcel Ã¢â‚¬â€ Your AI Growth Operating System",
+  title: "Stratxcel — Marketing, Customers & Daily Work in One Place",
   description:
-    "Research your market, create content, grow on search, manage leads, and run campaigns from one connected AI growth platform.",
+    "Stratxcel helps local and growing businesses get found, follow up faster, and get more done — with AI in one connected workspace.",
 };
 
 export default function HomePage() {
@@ -30,7 +26,7 @@ export default function HomePage() {
       <PublicHeader />
       <main className="flex-1">
         <PlatformHero />
-        <GrowthLoopSection />
+        <HomeBusinessWorkSection />
 
         <HomeSectionSlot id="products" sectionKey="products" label="Products" bordered={false}>
           <HomeProductsPreview />
@@ -43,7 +39,6 @@ export default function HomePage() {
         </HomeSectionSlot>
 
         <HomeSectionSlot id="solutions" sectionKey="solutions" label="Outcomes and Solutions">
-          <HomeLocalBusinessJourneys />
           <HomeSolutionsPreview />
         </HomeSectionSlot>
 
@@ -56,11 +51,7 @@ export default function HomePage() {
         </HomeSectionSlot>
 
         <HomeAuditOffer />
-        <ConversionTrustQuestions />
         <CommercialTrustSection />
-        <HomeSectionSlot id="objections" sectionKey="objections" label="Common Questions" bordered={false}>
-          <ConversionFaqSection title="Straight answers for small-business owners" subtitle="No AI jargon, no fake urgency." items={JOURNEY_OBJECTIONS} className="py-14" />
-        </HomeSectionSlot>
 
         <HomeSectionSlot id="pricing" sectionKey="pricing" label="Pricing" bordered={false}>
           <HomePricingBridge />
