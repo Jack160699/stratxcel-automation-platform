@@ -15,6 +15,7 @@ import { Textarea } from "@/components/ui/Input";
 import { ErrorState } from "@/components/ui/Feedback";
 import { CopilotChat } from "@/components/agent-core/CopilotChat";
 import { loadClientCopilotThreadAction, sendClientCopilotMessageAction } from "./actions";
+import { Modal } from "@/components/ui/Overlay";
 
 interface BrandBrainSummary {
   business_name?: string;
@@ -37,14 +38,11 @@ const TEMPLATES = [
 const NON_TERMINAL_STATES = new Set(["DRAFT", "ESTIMATING", "AWAITING_FUNDS", "READY", "QUEUED", "RUNNING", "AWAITING_INPUT", "AWAITING_APPROVAL", "HUMAN_HANDOFF", "RESUMED"]);
 
 /**
- * Client-facing mission composer over the same real, tenant-scoped mission
- * API the Missions page uses (createAndEstimateMission via
- * POST /api/platform/missions) — no separate Copilot backend. Templates
- * only pre-fill the goal text; the real service match and cost estimate
- * come back from the server after submission, never guessed client-side.
- * Hermes execution itself is not connected in this build phase, so
- * whatever mission state the API returns (including QUEUED/RUNNING) is
- * shown as-is — this page never overrides or fabricates a "running" state.
+ * Customer Copilot: conversation first, mission compile second.
+ * Chat uses the real tenant-scoped Agent Core. Mission submit compiles
+ * through POST /api/platform/missions (Hermes planner + specialist
+ * delegation). High-risk work stays approval-gated. Core platform coding
+ * returns an engineering brief instead of rewriting Stratxcel.
  */
 export default function CopilotPage() {
   const { active } = useCurrentTenant();
@@ -61,6 +59,7 @@ export default function CopilotPage() {
   const [approvals, setApprovals] = useState<ApprovalSummaryItem[] | null | "forbidden">(null);
   const [artifacts, setArtifacts] = useState<ArtifactSummary[] | null | "unavailable">(null);
   const [brand, setBrand] = useState<BrandBrainSummary | null | "unavailable">(null);
+  const [activityOpen, setActivityOpen] = useState(false);
 
   async function loadMissions() {
     if (!tenantId) return;
@@ -132,6 +131,14 @@ export default function CopilotPage() {
         body: JSON.stringify({ tenantId, goalText: goalText.trim() }),
       });
       const body = await res.json();
+      if (body.status === "ENGINEERING_REQUIRED" && body.brief) {
+        setSubmitError(`${body.brief.title}. ${body.brief.summary}`);
+        return;
+      }
+      if (body.status === "APPROVAL_REQUIRED") {
+        setSubmitError(body.message ?? "Owner approval is required before this can run.");
+        return;
+      }
       if (!res.ok) {
         setSubmitError(body.error ?? `Failed to create mission (HTTP ${res.status})`);
         return;
@@ -149,14 +156,19 @@ export default function CopilotPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <ModulePageHeader
-        title="Copilot"
-        tenantName={active?.name}
-        description="Tell Stratxcel what you need. It compiles your request into a mission with a real cost estimate before anything runs."
-      />
+      <div className="flex items-start justify-between gap-3">
+        <ModulePageHeader
+          title="Copilot"
+          tenantName={active?.name}
+          description="Tell Stratxcel what you need. Hermes plans the work, specialists execute, and high-risk actions stay gated."
+        />
+        <Button className="xl:hidden" variant="secondary" size="sm" onClick={() => setActivityOpen(true)}>
+          Activity
+        </Button>
+      </div>
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
-        <div className="flex flex-col gap-6">
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_280px]">
+        <div className="flex min-w-0 flex-col gap-6 pb-8">
           {tenantId && (
             <CopilotChat
               title="Ask Copilot"
@@ -244,7 +256,7 @@ export default function CopilotPage() {
           </section>
         </div>
 
-        <aside className="flex flex-col gap-4">
+        <aside className="hidden flex-col gap-4 xl:flex">
           <RuntimeStatus />
 
           <Card>
@@ -289,6 +301,15 @@ export default function CopilotPage() {
           </Card>
         </aside>
       </div>
+
+      <Modal open={activityOpen} onClose={() => setActivityOpen(false)} title="Activity">
+        <div className="flex flex-col gap-4">
+          <RuntimeStatus />
+          <p className="text-xs text-sx-text-muted">
+            {brand && brand !== "unavailable" ? `${brand.business_name ?? "Brand Brain"} · ${brand.industry ?? "industry unset"}` : "Business context loads when available."}
+          </p>
+        </div>
+      </Modal>
     </div>
   );
 }

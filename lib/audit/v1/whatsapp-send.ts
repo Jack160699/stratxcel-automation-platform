@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import {
   listTemplatesForTenant,
+  resolvePlatformWhatsAppSender,
   sendOutboundWhatsAppMessage,
   type SendOutboundOutcome,
   type ServiceClient,
@@ -16,9 +17,10 @@ export type AuditWhatsAppSendStatus =
   | "SENT"
   | "DELIVERED"
   | "FAILED"
-  | "NOT_CONFIGURED"
   | "NO_DESTINATION"
-  | "NO_CONSENT";
+  | "NO_CONSENT"
+  | "SENDER_NOT_CONFIGURED"
+  | "TEMPLATE_REQUIRED";
 
 export interface AuditWhatsAppSendResult {
   status: AuditWhatsAppSendStatus;
@@ -43,29 +45,48 @@ export function preferredAuditWhatsAppBody(businessName: string | null, reportUr
 
 type SendFn = typeof sendOutboundWhatsAppMessage;
 
-function mapFailureReason(reason: string): { status: AuditWhatsAppSendStatus; message: string; blocker?: string } {
+export function mapAuditWhatsAppFailureReason(reason: string): {
+  status: AuditWhatsAppSendStatus;
+  message: string;
+  blocker?: string;
+} {
   if (reason === "consent_required") {
     return { status: "NO_CONSENT", message: "WhatsApp consent is required before we can send this Audit." };
   }
-  if (
-    reason === "integration_disabled" ||
-    reason === "no_active_binding" ||
-    reason === "legacy_verified_bot" ||
-    reason === "kill_switch_active" ||
-    reason === "template_required_outside_service_window" ||
-    reason === "template_not_approved"
-  ) {
-    const blocker =
-      reason === "template_required_outside_service_window" || reason === "template_not_approved"
-        ? "Meta requires an approved WhatsApp template for business-initiated messages outside the 24-hour customer-service window. No usable APPROVED template is available for this workspace."
-        : reason === "integration_disabled"
-          ? "WhatsApp outbound is not configured for live delivery in this environment."
-          : reason === "no_active_binding"
-            ? "No active outbound-enabled WhatsApp Business number is bound to this workspace."
-            : reason === "legacy_verified_bot"
-              ? "This workspace is still on a legacy WhatsApp bot that cannot send customer Audit reports."
-              : "WhatsApp sending is paused by a kill switch.";
-    return { status: "NOT_CONFIGURED", message: blocker, blocker };
+  if (reason === "sender_not_configured" || reason === "no_active_outbound_binding" || reason === "no_active_binding") {
+    return {
+      status: "SENDER_NOT_CONFIGURED",
+      message: "Stratxcel’s WhatsApp Business sender is not configured for live Audit delivery.",
+      blocker: reason,
+    };
+  }
+  if (reason === "integration_disabled") {
+    return {
+      status: "SENDER_NOT_CONFIGURED",
+      message: "WhatsApp outbound is not configured for live delivery in this environment.",
+      blocker: reason,
+    };
+  }
+  if (reason === "legacy_bot_shadow_no_send" || reason === "legacy_verified_bot") {
+    return {
+      status: "SENDER_NOT_CONFIGURED",
+      message: "The platform WhatsApp sender is still on a legacy bot that cannot send customer Audit reports.",
+      blocker: reason,
+    };
+  }
+  if (reason.startsWith("kill_switch_active")) {
+    return {
+      status: "SENDER_NOT_CONFIGURED",
+      message: "WhatsApp sending is paused by a kill switch.",
+      blocker: reason,
+    };
+  }
+  if (reason === "template_required_outside_service_window" || reason === "template_not_approved") {
+    return {
+      status: "TEMPLATE_REQUIRED",
+      message: "Meta requires an approved WhatsApp template for business-initiated messages outside the 24-hour customer-service window. Preferred template: audit_report_ready.",
+      blocker: reason,
+    };
   }
   return { status: "FAILED", message: "WhatsApp could not send this Audit. Please try again later.", blocker: reason };
 }
@@ -175,9 +196,24 @@ export async function sendAuditReportWhatsApp(
     };
   }
 
+  const sender = await resolvePlatformWhatsAppSender(supabase);
+  if (!sender.ok) {
+    await recordDeliveryEvent(supabase, {
+      auditOrderId: input.orderId,
+      tenantId: input.tenantId,
+      status: "sender_not_configured",
+      detail: "sender_not_configured",
+      destinationMasked: maskWhatsAppNumber(destination.e164),
+    });
+    return {
+      ...mapAuditWhatsAppFailureReason("sender_not_configured"),
+      destinationMasked: maskWhatsAppNumber(destination.e164),
+    };
+  }
+
   const digits = destination.e164.replace(/^\+/, "");
   const idempotencyKey = auditWhatsAppIdempotencyKey(input.orderId, digits);
-  const template = await findApprovedTemplate(supabase, input.tenantId);
+  const template = await findApprovedTemplate(supabase, sender.sender.tenantId);
   const body = preferredAuditWhatsAppBody(input.businessName, input.reportUrl);
   const send = input.sendOutbound ?? sendOutboundWhatsAppMessage;
 
@@ -186,6 +222,8 @@ export async function sendAuditReportWhatsApp(
     leadId: destination.lead_id,
     body,
     idempotencyKey,
+    senderPhoneBindingId: sender.sender.bindingId,
+    templateTenantId: sender.sender.tenantId,
     templateId: template?.id ?? null,
     templateName: template?.name ?? null,
     templateLanguage: template?.language ?? null,
@@ -196,11 +234,11 @@ export async function sendAuditReportWhatsApp(
   const masked = maskWhatsAppNumber(destination.e164);
 
   if (!outcome.ok) {
-    const mapped = mapFailureReason(outcome.reason);
+    const mapped = mapAuditWhatsAppFailureReason(outcome.reason);
     await recordDeliveryEvent(supabase, {
       auditOrderId: input.orderId,
       tenantId: input.tenantId,
-      status: mapped.status === "NOT_CONFIGURED" ? "not_configured" : mapped.status === "NO_CONSENT" ? "no_consent" : "failed",
+      status: mapped.status.toLowerCase(),
       detail: outcome.reason,
       destinationMasked: masked,
     });
@@ -225,14 +263,14 @@ export async function sendAuditReportWhatsApp(
     await recordDeliveryEvent(supabase, {
       auditOrderId: input.orderId,
       tenantId: input.tenantId,
-      status: "not_configured",
+      status: "sender_not_configured",
       detail: `adapter_mode:${outcome.mode}`,
       providerMessageId,
       outboundMessageId: outcome.messageId,
       destinationMasked: masked,
     });
     return {
-      status: "NOT_CONFIGURED",
+      status: "SENDER_NOT_CONFIGURED",
       message: "WhatsApp outbound is not in live mode, so this Audit was not delivered to the customer number.",
       blocker: `adapter_mode:${outcome.mode}`,
       providerMessageId,
@@ -289,11 +327,45 @@ export function auditShareUrl(token: string): string {
   return `${origin}/audit/share/${token}`;
 }
 
+export async function getOrCreateAuditShareUrl(
+  supabase: ServiceClient,
+  input: { tenantId: string; orderId: string; userId: string },
+): Promise<string> {
+  const { data: existingToken } = await supabase
+    .from("audit_share_tokens")
+    .select("id, expires_at")
+    .eq("tenant_id", input.tenantId)
+    .eq("audit_order_id", input.orderId)
+    .gt("expires_at", new Date().toISOString())
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (existingToken) {
+    const { data: prior } = await supabase
+      .from("audit_delivery_events")
+      .select("detail")
+      .eq("tenant_id", input.tenantId)
+      .eq("audit_order_id", input.orderId)
+      .eq("channel", "share")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const url = typeof prior?.detail === "string" ? prior.detail : "";
+    if (/^https:\/\/[^ ]+\/audit\/share\/[A-Za-z0-9_-]+$/.test(url)) {
+      return url;
+    }
+  }
+
+  return createAuditShareUrl(supabase, input);
+}
+
 export async function createAuditShareUrl(
   supabase: ServiceClient,
   input: { tenantId: string; orderId: string; userId: string },
 ): Promise<string> {
   const { token, tokenHash } = issueAuditShareToken();
+  const url = auditShareUrl(token);
   await supabase.from("audit_share_tokens").insert({
     audit_order_id: input.orderId,
     tenant_id: input.tenantId,
@@ -306,6 +378,7 @@ export async function createAuditShareUrl(
     tenant_id: input.tenantId,
     channel: "share",
     status: "sent",
+    detail: url,
   });
-  return auditShareUrl(token);
+  return url;
 }

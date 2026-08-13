@@ -49,6 +49,7 @@ function destinationTables() {
       status: "active",
       outbound_enabled: true,
       source: "migrated_verified_bot",
+      phone_number_id: "12345",
     }],
     kill_switches: [],
     whatsapp_templates: [],
@@ -198,6 +199,8 @@ async function run() {
   assert.match(overlay, /Escape/);
   assert.match(overlay, /onClick=\{onClose\}/);
   assert.match(overlay, /aria-modal/);
+  assert.match(overlay, /onCloseRef/);
+  assert.match(overlay, /}, \[open\]\);/);
   const icons = readFileSync(path.join(root, "components", "audit", "PlatformIcon.tsx"), "utf8");
   assert.match(icons, /aria-hidden="true"/);
   assert.match(icons, /Instagram/);
@@ -207,7 +210,7 @@ async function run() {
   assert.match(nav, /label: "Copilot"/);
   assert.match(nav, /label: "Connectors"/);
   assert.match(nav, /\/app\/integrations/);
-  assert.match(nav, /APP_MOBILE_NAV_KEYS = \["home", "customer-audit", "crm", "billing"\]/);
+  assert.match(nav, /APP_MOBILE_NAV_KEYS = \["home", "customer-audit", "copilot", "crm"\]/);
   const settings = readFileSync(path.join(root, "app", "app", "settings", "page.tsx"), "utf8");
   assert.doesNotMatch(settings, /Open Brand Brain/);
   assert.match(settings, /Appearance/);

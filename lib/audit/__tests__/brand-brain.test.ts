@@ -58,6 +58,12 @@ assert.deepEqual(content.rules, ["Never claim a discount unless active"]);
 assert.deepEqual(content.pillars, ["Trust"]);
 assert.equal(content.audit_order_id, "audit-order-1");
 assert.equal(content.audit_intake_updated_at, "2026-08-12T12:00:00.000Z");
+assert.equal(content.website_url, "https://guptagarments.example");
+const preservedWebsite = buildBrandBrainContentFromAuditIntake(order, {
+  website_url: "https://customer-edited.example",
+  audit_synced_website_url: "https://old-audit.example",
+});
+assert.equal(preservedWebsite.website_url, "https://customer-edited.example", "Customer-edited website remains highest truth");
 assert.equal(isBrandBrainCurrentForAudit(order, content), true);
 assert.equal(isBrandBrainCurrentForAudit({
   ...order,

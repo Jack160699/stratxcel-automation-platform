@@ -225,7 +225,7 @@ function run() {
   const mobileNavMatch = appNavData.match(/APP_MOBILE_NAV_KEYS = \[([\s\S]*?)\]/);
   assert.ok(mobileNavMatch, "APP_MOBILE_NAV_KEYS must be defined in app-nav-data.ts");
   const mobileNavItemCount = (mobileNavMatch![1].match(/"/g) ?? []).length / 2;
-  assert.equal(mobileNavItemCount, 4, "Mobile bottom nav must stay at exactly 4 closed-beta items (Home, Audit, CRM, Billing)");
+  assert.equal(mobileNavItemCount, 4, "Mobile bottom nav must stay at exactly 4 closed-beta items (Home, Audit, Copilot, CRM)");
   assert.ok(/mobileMoreGroups=\{APP_SIDEBAR_GROUPS\.map/.test(shell), "The mobile More sheet must be derived from APP_SIDEBAR_GROUPS, not a separately hand-maintained list");
   assert.ok(/mobileMoreGroups=\{sidebarGroups\.map/.test(adminShell), "Admin's mobile More sheet must be derived from the filtered admin sidebar groups");
 

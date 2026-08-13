@@ -3,6 +3,8 @@ import { AUDIT_CATEGORY_SCORE_KEYS } from "@/lib/audit/customer-state";
 import { countEvidenceCoverage, type EvidenceCoverage } from "@/lib/audit/v1/scoring";
 import type { VerifiedReviewSummary } from "@/lib/audit/v1/reviews";
 import { PlatformIcon, PLATFORM_LABELS, type PlatformIconKey } from "@/components/audit/PlatformIcon";
+import { PresenceCards } from "@/components/audit/PresenceCards";
+import type { PresenceLink } from "@/lib/audit/v1/presence";
 
 const LABELS: Record<string, string> = {
   brandPositioning: "Brand positioning",
@@ -57,6 +59,7 @@ export function VisualAuditReport({
   report,
   coverage,
   reviews,
+  presence,
   onDownload,
   onShare,
   onWhatsApp,
@@ -67,6 +70,7 @@ export function VisualAuditReport({
   report: AuditDeliveryReport;
   coverage?: EvidenceCoverage;
   reviews?: VerifiedReviewSummary | null;
+  presence?: PresenceLink[];
   onDownload: () => void;
   onShare: () => void;
   onWhatsApp: () => void;
@@ -84,6 +88,12 @@ export function VisualAuditReport({
     reviews: Boolean(reviews),
     analytics: false,
   };
+  const healthUnsupported =
+    score == null ||
+    (score === 0 && (
+      (evidence?.present ?? 0) < 2
+      || /insufficient|not enough|ungrounded|sparse|preliminary/i.test(report.overallHealth?.explanation ?? "")
+    ));
 
   return (
     <div className="mx-auto max-w-4xl space-y-5 px-4 py-8">
@@ -110,11 +120,18 @@ export function VisualAuditReport({
       <section className="grid gap-4 sm:grid-cols-3">
         <div className="rounded-sx-md border border-sx-border bg-sx-surface-1 p-4">
           <p className="text-xs text-sx-text-subtle">Business health</p>
-          <p className="mt-2 font-sx-sans text-3xl font-bold">{score == null ? "Readiness" : score}</p>
-          <p className="mt-2 text-sm text-sx-text-muted">{report.overallHealth?.explanation ?? "Score shown only where verified evidence exists."}</p>
+          <p className="mt-2 font-sx-sans text-3xl font-bold">{healthUnsupported ? "Readiness" : score}</p>
+          <p className="mt-2 text-sm text-sx-text-muted">
+            {healthUnsupported
+              ? "Not enough verified data"
+              : report.overallHealth?.explanation ?? "Score shown only where verified evidence exists."}
+          </p>
         </div>
         <div className="rounded-sx-md border border-sx-border bg-sx-surface-1 p-4 sm:col-span-2">
           <p className="text-xs text-sx-text-subtle">Evidence coverage</p>
+          {presence && presence.length > 0 ? (
+            <PresenceCards links={presence} />
+          ) : (
           <dl className="mt-3 grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
             {COVERAGE_KEYS.map(({ key, icon }) => (
               <div key={key} className="flex items-center justify-between gap-2 rounded-sx-sm bg-sx-surface-2 px-2 py-1.5">
@@ -126,6 +143,7 @@ export function VisualAuditReport({
               </div>
             ))}
           </dl>
+          )}
           {reviews && (
             <div className="mt-3 flex flex-wrap items-center gap-2 rounded-sx-sm border border-sx-border px-3 py-2">
               <PlatformIcon name="reviews" />

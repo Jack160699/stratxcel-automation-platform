@@ -126,7 +126,7 @@ export function CopilotChat({ title, description, placeholder, loadThread, sendM
         </Card>
       )}
 
-      <form onSubmit={handleSubmit} className="flex flex-col gap-2">
+      <form onSubmit={handleSubmit} className="sticky bottom-[4.75rem] z-10 flex flex-col gap-2 border-t border-sx-border bg-sx-elevated pt-2 md:static md:bottom-auto md:border-0 md:bg-transparent md:pt-0">
         <Textarea value={input} onChange={(e) => setInput(e.target.value)} placeholder={placeholder} className="min-h-[70px]" disabled={sending} />
         <div className="flex items-center justify-between">
           {sendError ? <ErrorState message={sendError} /> : <span />}
