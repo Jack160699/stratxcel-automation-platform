@@ -70,10 +70,12 @@ async function run() {
   assert.ok(/signInWithOAuth/.test(buttonSource), "GoogleOAuthButton must invoke signInWithOAuth");
   assert.ok(/provider:\s*["']google["']/.test(buttonSource), "GoogleOAuthButton must target google provider");
   assert.ok(/redirectTo/.test(buttonSource), "GoogleOAuthButton must configure redirectTo callback");
+  assert.ok(/searchParams\.set\("mode"/.test(buttonSource), "GoogleOAuthButton must preserve auth mode through OAuth");
 
   // --- 5. Google One Tap inspection ------------------------------------------
   const oneTapSource = read("app", "components", "auth", "GoogleOneTap.tsx");
   assert.ok(/signInWithIdToken/.test(oneTapSource), "GoogleOneTap must call signInWithIdToken");
+  assert.ok(/finalizeAuthWorkspaceIntent/.test(oneTapSource), "GoogleOneTap must commit workspace intent after sign-in");
   assert.ok(/process\.env\.NEXT_PUBLIC_GOOGLE_CLIENT_ID/.test(oneTapSource), "GoogleOneTap must check NEXT_PUBLIC_GOOGLE_CLIENT_ID");
   assert.ok(/nonce:/.test(oneTapSource), "GoogleOneTap must generate and pass secure nonces");
 

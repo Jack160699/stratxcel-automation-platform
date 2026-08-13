@@ -1,9 +1,10 @@
-import Link from "next/link";
 import type { Metadata } from "next";
+import Link from "next/link";
 import { PublicHeader } from "@/app/components/PublicHeader";
 import { PublicFooter } from "@/app/components/PublicFooter";
 import { Card } from "@/components/ui/Card";
 import { SignupForm } from "./SignupForm";
+import { establishPendingWorkspaceIntent } from "@/app/actions/auth";
 
 export const metadata: Metadata = {
   title: "Create Account — Stratxcel Workspace",
@@ -11,7 +12,8 @@ export const metadata: Metadata = {
   robots: { index: false, follow: true },
 };
 
-export default function SignupPage() {
+export default async function SignupPage() {
+  await establishPendingWorkspaceIntent("customer");
   return (
     <div className="flex min-h-screen flex-col bg-sx-bg text-sx-text">
       <PublicHeader />
@@ -26,7 +28,7 @@ export default function SignupPage() {
               A secure workspace for your Business Growth Audit.
             </h2>
             <p className="font-sx-sans text-sm text-sx-text-muted leading-relaxed">
-              Create your organization&rsquo;s isolated workspace to claim a paid Audit, complete the guided intake, and receive the team&rsquo;s written roadmap.
+              Create your organization&rsquo;s isolated workspace to claim a paid Audit, complete the guided intake, and receive your automatic growth roadmap.
             </p>
 
             <ul className="space-y-3 text-xs text-sx-text-muted">
@@ -36,7 +38,7 @@ export default function SignupPage() {
               </li>
               <li className="flex items-center gap-2">
                 <span className="text-sx-accent font-bold">✓</span>
-                <span>Human-reviewed Audit delivery with a clear status</span>
+                <span>Automatic Audit analysis with a clear delivery status</span>
               </li>
               <li className="flex items-center gap-2">
                 <span className="text-sx-accent font-bold">✓</span>

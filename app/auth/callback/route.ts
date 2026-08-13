@@ -1,12 +1,13 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { resolvePostLoginRedirect } from "@/app/actions/auth";
+import { resolvePostLoginRedirect, finalizeAuthWorkspaceIntent } from "@/app/actions/auth";
 import { sanitizeRedirectUrl } from "@/lib/auth/redirect";
 
 export async function GET(request: NextRequest) {
   const requestUrl = new URL(request.url);
   const code = requestUrl.searchParams.get("code");
   const rawNext = requestUrl.searchParams.get("next");
+  const rawMode = requestUrl.searchParams.get("mode");
   const error = requestUrl.searchParams.get("error");
   const errorDescription = requestUrl.searchParams.get("error_description");
 
@@ -27,6 +28,8 @@ export async function GET(request: NextRequest) {
       errorUrl.searchParams.set("error", exchangeError.message);
       return NextResponse.redirect(errorUrl);
     }
+
+    await finalizeAuthWorkspaceIntent(rawMode);
   }
 
   let destination = "/app";

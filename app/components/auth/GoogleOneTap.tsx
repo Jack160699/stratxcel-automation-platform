@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
-import { resolvePostLoginRedirect } from "@/app/actions/auth";
+import { resolvePostLoginRedirect, finalizeAuthWorkspaceIntent } from "@/app/actions/auth";
 import { generateRandomNonce, hashNonce } from "@/lib/auth/google-nonce";
 
 declare global {
@@ -21,12 +21,12 @@ declare global {
 }
 
 interface GoogleOneTapProps {
-  /** Sanitized destination to resume after sign-in, e.g. the Audit checkout. */
   next?: string;
+  mode?: "customer" | "admin";
   onError?: (error: string) => void;
 }
 
-export function GoogleOneTap({ next, onError }: GoogleOneTapProps) {
+export function GoogleOneTap({ next, mode, onError }: GoogleOneTapProps) {
   const router = useRouter();
   const initializedRef = useRef(false);
   const [loaded, setLoaded] = useState(() => typeof window !== "undefined" && !!window.google);
@@ -90,8 +90,8 @@ export function GoogleOneTap({ next, onError }: GoogleOneTapProps) {
               return;
             }
 
-            // Honour the caller's ?next= (e.g. the Audit checkout the customer
-            // was on before being sent to sign in) over the default landing.
+            await finalizeAuthWorkspaceIntent(mode ?? "customer");
+
             const destination = next ?? (await resolvePostLoginRedirect());
             router.push(destination);
             router.refresh();
@@ -112,7 +112,7 @@ export function GoogleOneTap({ next, onError }: GoogleOneTapProps) {
         onError?.(msg);
       }
     })();
-  }, [loaded, router, onError, next]);
+  }, [loaded, router, onError, next, mode]);
 
   return null;
 }

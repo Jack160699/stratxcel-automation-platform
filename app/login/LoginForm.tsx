@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { describeAuthError } from "@/app/admin/auth/authErrors";
-import { resolvePostLoginRedirect } from "@/app/actions/auth";
+import { resolvePostLoginRedirect, finalizeAuthWorkspaceIntent } from "@/app/actions/auth";
 import { useNextParam } from "@/lib/auth/use-next-param";
 import { trackFunnel } from "@/lib/analytics/events";
 import { EyeIcon, EyeOffIcon } from "@/app/components/auth/PasswordVisibilityIcons";
@@ -45,7 +45,8 @@ export function LoginForm() {
       return;
     }
 
-    // Honour the Audit CTA's ?next= so the customer resumes where they left off.
+    await finalizeAuthWorkspaceIntent("customer");
+
     const destination = next ?? (await resolvePostLoginRedirect());
     router.push(destination);
     router.refresh();
@@ -53,8 +54,8 @@ export function LoginForm() {
 
   return (
     <div className="space-y-4">
-      <GoogleOneTap next={next ?? undefined} onError={setError} />
-      <GoogleOAuthButton next={next ?? undefined} onError={setError} />
+      <GoogleOneTap next={next ?? undefined} mode="customer" onError={setError} />
+      <GoogleOAuthButton next={next ?? undefined} mode="customer" onError={setError} />
 
       <div className="relative flex items-center justify-center py-1">
         <div className="w-full border-t border-sx-border" />

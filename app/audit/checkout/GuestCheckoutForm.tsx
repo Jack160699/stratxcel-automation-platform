@@ -220,7 +220,7 @@ export function GuestCheckoutForm() {
         </Button>
         <p className="text-center text-[11px] text-sx-text-subtle">
           Already have a Stratxcel account?{" "}
-          <a href="/login?next=/audit/checkout" className="font-semibold text-sx-accent hover:underline">
+          <a href="/login?mode=customer&next=/audit/checkout" className="font-semibold text-sx-accent hover:underline">
             Sign in
           </a>{" "}
           to skip this step.
