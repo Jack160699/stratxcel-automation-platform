@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import {
+  autoResolvePlatformTemplates,
   listTemplatesForTenant,
   resolvePlatformWhatsAppSender,
   sendOutboundWhatsAppMessage,

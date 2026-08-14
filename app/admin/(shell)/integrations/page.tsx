@@ -82,19 +82,42 @@ export default function WhatsAppAdminPage() {
   const [wabaId, setWabaId] = useState("");
   const [phoneNumberId, setPhoneNumberId] = useState("");
   const [creating, setCreating] = useState(false);
+  
+  // Platform templates state (tenant-independent)
   const [templates, setTemplates] = useState<WhatsAppTemplate[]>([]);
+  const [templateMetaAvailable, setTemplateMetaAvailable] = useState(true);
+  const [templateLastVerified, setTemplateLastVerified] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [signupNotice, setSignupNotice] = useState<string | null>(null);
   const [migration, setMigration] = useState<MigrationStatus | null>(null);
 
-  async function load() {
-    if (!tenantId) return;
+  async function loadTemplates(force = false) {
+    try {
+      const url = force ? "/api/platform/whatsapp/templates?force=true" : "/api/platform/whatsapp/templates";
+      const res = await platformFetch(url);
+      if (res.ok) {
+        const body = await res.json();
+        setTemplates(body.templates ?? []);
+        setTemplateMetaAvailable(body.metaAvailable ?? true);
+        setTemplateLastVerified(body.lastVerifiedAt ?? null);
+      }
+    } catch {
+      // Non-blocking template load
+    }
+  }
+
+  async function loadTenantData() {
+    if (!tenantId) {
+      setBindings(null);
+      setMessages(null);
+      setMigration(null);
+      return;
+    }
     setError(null);
-    const [bindingsRes, messagesRes, templatesRes, migrationRes] = await Promise.all([
+    const [bindingsRes, messagesRes, migrationRes] = await Promise.all([
       platformFetch(`/api/platform/whatsapp/bindings?tenantId=${encodeURIComponent(tenantId)}`),
       platformFetch(`/api/platform/whatsapp/shadow-messages?tenantId=${encodeURIComponent(tenantId)}`),
-      platformFetch(`/api/platform/whatsapp/templates?tenantId=${encodeURIComponent(tenantId)}`),
       platformFetch(`/api/platform/whatsapp/migration/status?tenantId=${encodeURIComponent(tenantId)}`),
     ]);
     const bindingsBody = await bindingsRes.json();
@@ -106,9 +129,17 @@ export default function WhatsAppAdminPage() {
     }
     setBindings(bindingsBody.bindings);
     setMessages(messagesRes.ok ? messagesBody.messages : []);
-    if (templatesRes.ok) setTemplates((await templatesRes.json()).templates ?? []);
     if (migrationRes.ok) setMigration(await migrationRes.json());
   }
+
+  useEffect(() => {
+    void loadTemplates();
+  }, []);
+
+  useEffect(() => {
+    void loadTenantData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenantId]);
 
   async function handleEmbeddedSignup() {
     if (!tenantId) return;
@@ -132,30 +163,25 @@ export default function WhatsAppAdminPage() {
   }
 
   async function handleSyncTemplates() {
-    if (!tenantId) return;
     setSyncing(true);
     setError(null);
     try {
       const res = await fetch("/api/platform/whatsapp/templates", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tenantId }),
       });
       const body = await res.json();
       if (!res.ok) {
         setError(body.error ?? "Template sync failed");
         return;
       }
-      await load();
+      setTemplates(body.templates ?? []);
+      setTemplateMetaAvailable(body.metaAvailable ?? true);
+      setTemplateLastVerified(body.lastVerifiedAt ?? null);
     } finally {
       setSyncing(false);
     }
   }
-
-  useEffect(() => {
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tenantId]);
 
   async function handleCreateBinding(e: React.FormEvent) {
     e.preventDefault();
@@ -175,7 +201,7 @@ export default function WhatsAppAdminPage() {
       }
       setWabaId("");
       setPhoneNumberId("");
-      await load();
+      await loadTenantData();
     } finally {
       setCreating(false);
     }
@@ -186,26 +212,72 @@ export default function WhatsAppAdminPage() {
       <header>
         <h1 className="font-sx-sans text-xl font-semibold text-sx-text">Integrations{active ? ` — ${active.name}` : ""}</h1>
         <p className="mt-1 text-sm text-sx-text-muted">
-          WhatsApp today. Other integration kinds (Meta, Google, YouTube) live under Social Autopilot until the migration in
-          docs/product-design/CURRENT_TO_FINAL_MIGRATION_PLAN.md §3 folds them in here.
+          WhatsApp Cloud API configuration, platform delivery templates, and client messaging routing.
         </p>
       </header>
-      {error && <ErrorState message={error} onRetry={load} />}
+      {error && <ErrorState message={error} onRetry={() => { void loadTemplates(true); void loadTenantData(); }} />}
 
       <Card>
         <CardHeading>Integration layers</CardHeading>
         <p className="mt-2 text-xs text-sx-text-subtle">
-          <strong className="text-sx-text">Owner WhatsApp Agent</strong> (below) links your authenticated staff account to the
-          Stratxcel business number for command and control. <strong className="text-sx-text">Tenant phone bindings</strong> route
-          customer WhatsApp traffic for the selected client workspace. <strong className="text-sx-text">Legacy / shadow migration</strong>{" "}
-          compares the old verified bot against the new stack — it does not replace either layer above.
+          <strong className="text-sx-text">Platform Delivery Templates</strong> (below) are automatically resolved from Meta for core product deliveries like Audit reports.{" "}
+          <strong className="text-sx-text">Owner WhatsApp Agent</strong> links your staff account for command and control.{" "}
+          <strong className="text-sx-text">Tenant phone bindings</strong> route customer WhatsApp traffic for the selected workspace.
         </p>
       </Card>
 
-      {/* Platform-staff scoped, not tenant-selection scoped — a
-          platform_owner/platform_admin with zero client tenants must still
-          be able to link their own WhatsApp. See app/api/admin/whatsapp-agent/*
-          routes, which resolve identity from the session alone. */}
+      {/* Platform Templates Section (Tenant-Independent) */}
+      <section className="flex flex-col gap-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="font-sx-sans text-base font-medium text-sx-text">Platform Templates</h2>
+            <p className="text-xs text-sx-text-subtle">Authoritative Meta approval status for core delivery templates.</p>
+          </div>
+          <Button variant="secondary" size="sm" onClick={handleSyncTemplates} disabled={syncing}>
+            {syncing ? "Syncing…" : "Sync from Meta"}
+          </Button>
+        </div>
+
+        {templates.length === 0 && (
+          <Card variant="nested" className="p-4">
+            <p className="text-sm text-sx-text-muted">Waiting for Meta verification…</p>
+            <p className="mt-1 text-xs text-sx-text-subtle">Platform templates auto-resolve on load. Click &quot;Sync from Meta&quot; to force an immediate refresh.</p>
+          </Card>
+        )}
+
+        {templates.length > 0 && (
+          <div className="flex flex-col gap-2">
+            {templates.map((t) => (
+              <Card key={t.id} variant="nested">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <p className="font-medium text-sx-text">
+                      {t.name} <span className="text-xs text-sx-text-subtle">({t.language}{t.category ? ` · ${t.category}` : ""})</span>
+                    </p>
+                    <span className="rounded-full bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold text-emerald-400">
+                      Meta verified
+                    </span>
+                  </div>
+                  <StatusChip state={t.status === "APPROVED" ? "success" : t.status === "REJECTED" ? "danger" : "warning"}>
+                    {t.status}
+                  </StatusChip>
+                </div>
+                <div className="mt-2 text-xs text-sx-text-subtle flex flex-wrap items-center justify-between gap-1">
+                  <span>Synced: automatic</span>
+                  {templateLastVerified && (
+                    <span>
+                      {templateMetaAvailable ? "Last verified: " : "Meta offline (cached): "}
+                      {new Date(templateLastVerified).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                    </span>
+                  )}
+                </div>
+              </Card>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* Platform-staff scoped Owner Agent */}
       <WhatsAppAgentPairingCard
         pairingUrl="/api/admin/whatsapp-agent/pairing"
         statusUrl="/api/admin/whatsapp-agent/status"
@@ -221,9 +293,7 @@ export default function WhatsAppAdminPage() {
         <Card>
           <CardHeading>Connect via WhatsApp Embedded Signup</CardHeading>
           <p className="text-xs text-sx-text-subtle">
-            Meta&apos;s guided connect flow — requires a separate WhatsApp Embedded Signup app configuration this environment
-            does not have yet, so this may report &quot;not available&quot; rather than connect. Use the manual form below in the
-            meantime.
+            Meta&apos;s guided connect flow — requires a separate WhatsApp Embedded Signup app configuration.
           </p>
           {signupNotice && <p className="mt-2 text-xs text-[#FF8A90]">{signupNotice}</p>}
           <Button className="mt-2" variant="primary" size="sm" onClick={handleEmbeddedSignup} disabled={connecting}>
@@ -236,8 +306,7 @@ export default function WhatsAppAdminPage() {
         <Card>
           <CardHeading>Add a phone binding (pending, shadow mode)</CardHeading>
           <p className="text-xs text-sx-text-subtle">
-            Created as pending/shadow with inbound and outbound disabled — activating it with the real, verified
-            phone_number_id is a separate manual action, not something this form does.
+            Created as pending/shadow with inbound and outbound disabled.
           </p>
           <form onSubmit={handleCreateBinding} className="flex flex-col gap-3 sm:flex-row">
             <Input value={wabaId} onChange={(e) => setWabaId(e.target.value)} required placeholder="WABA ID" className="flex-1" />
@@ -257,7 +326,7 @@ export default function WhatsAppAdminPage() {
 
       <section className="flex flex-col gap-3">
         <h2 className="font-sx-sans text-base font-medium text-sx-text">Tenant Cloud API phone bindings</h2>
-        <p className="text-xs text-sx-text-subtle">These numbers route inbound/outbound WhatsApp for the selected client — separate from your personal Owner Agent link above.</p>
+        <p className="text-xs text-sx-text-subtle">These numbers route inbound/outbound WhatsApp for the selected client.</p>
         {!tenantId && <NoClientSelected what="phone bindings" />}
         {tenantId && bindings === null && !error && <p className="text-sm text-sx-text-subtle">Loading…</p>}
         {tenantId && bindings?.length === 0 && !error && <p className="text-sm text-sx-text-subtle">No phone bindings yet.</p>}
@@ -278,31 +347,6 @@ export default function WhatsAppAdminPage() {
                 </Card>
               );
             })}
-          </div>
-        )}
-      </section>
-
-      <section className="flex flex-col gap-3">
-        <div className="flex items-center justify-between">
-          <h2 className="font-sx-sans text-base font-medium text-sx-text">Message templates</h2>
-          <Button variant="secondary" size="sm" onClick={handleSyncTemplates} disabled={syncing || !tenantId}>
-            {syncing ? "Syncing…" : "Sync from Meta"}
-          </Button>
-        </div>
-        <p className="text-xs text-sx-text-subtle">Real Meta approval status only — never shown as approved unless Meta itself reports it.</p>
-        {templates.length === 0 && <p className="text-sm text-sx-text-subtle">No templates synced yet.</p>}
-        {templates.length > 0 && (
-          <div className="flex flex-col gap-2">
-            {templates.map((t) => (
-              <Card key={t.id} variant="nested">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="font-medium text-sx-text">
-                    {t.name} <span className="text-xs text-sx-text-subtle">({t.language})</span>
-                  </p>
-                  <StatusChip state={t.status === "APPROVED" ? "success" : t.status === "REJECTED" ? "danger" : "warning"}>{t.status}</StatusChip>
-                </div>
-              </Card>
-            ))}
           </div>
         )}
       </section>
@@ -351,22 +395,6 @@ export default function WhatsAppAdminPage() {
                 {migration.cutoverReadiness.replace(/_/g, " ")}
               </StatusChip>
             </div>
-            <p className="mt-1 text-xs text-sx-text-subtle">
-              The old bot stays the live sender at every readiness level — this is evidence for a human decision, not an automatic
-              cutover trigger.
-            </p>
-            {migration.recentMismatches.length > 0 && (
-              <div className="mt-3">
-                <p className="text-xs font-medium text-sx-text">Recent mismatches</p>
-                <div className="mt-1 flex flex-col gap-1">
-                  {migration.recentMismatches.map((m) => (
-                    <p key={m.legacyEventId} className="text-xs text-[#FF8A90]">
-                      {m.legacyEventId}: {m.mismatchReason ?? "—"}
-                    </p>
-                  ))}
-                </div>
-              </div>
-            )}
           </Card>
         </section>
       )}
