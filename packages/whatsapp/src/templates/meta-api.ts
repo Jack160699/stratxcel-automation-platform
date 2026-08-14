@@ -123,7 +123,7 @@ export async function inspectMetaTemplateEndpoint(
 
   const configuredTemplates = await requestTemplates(input.wabaId, apiVersion, token, fetchFn);
   diagnostics.push(toDiagnostic("template_list", input.wabaId, apiVersion, configuredTemplates));
-  if (configuredTemplates.response.ok && configuredOwnsPlatformPhone) {
+  if (configuredTemplates.response.ok) {
     return {
       configuredWabaId: input.wabaId,
       resolvedWabaId: input.wabaId,
@@ -141,33 +141,19 @@ export async function inspectMetaTemplateEndpoint(
   const candidates = await discoverWabaCandidates(input.wabaId, apiVersion, token, diagnostics, fetchFn);
   for (const candidate of candidates) {
     if (candidate.id === input.wabaId) continue;
-    const phoneList = await requestPhoneNumbers(candidate.id, apiVersion, token, fetchFn);
-    diagnostics.push(toDiagnostic("phone_list", candidate.id, apiVersion, phoneList));
-    const ownsPlatformPhone = phoneList.body.data?.some((phone) => String(phone.id) === input.phoneNumberId) ?? false;
-    if (!phoneList.response.ok || !ownsPlatformPhone) continue;
-
     const candidateTemplates = await requestTemplates(candidate.id, apiVersion, token, fetchFn);
     diagnostics.push(toDiagnostic("template_list", candidate.id, apiVersion, candidateTemplates));
-    if (!candidateTemplates.response.ok) {
-      throw toEndpointError(candidateTemplates, classifyMetaFailure(candidateTemplates), diagnostics);
+    if (candidateTemplates.response.ok) {
+      return {
+        configuredWabaId: input.wabaId,
+        resolvedWabaId: candidate.id,
+        apiVersion,
+        diagnostics,
+        templates: candidateTemplates.body.data as MetaTemplateApiEntry[] | undefined ?? [],
+      };
     }
-    return {
-      configuredWabaId: input.wabaId,
-      resolvedWabaId: candidate.id,
-      apiVersion,
-      diagnostics,
-      templates: candidateTemplates.body.data as MetaTemplateApiEntry[] | undefined ?? [],
-    };
   }
 
-  if (configuredTemplates.response.ok && !configuredOwnsPlatformPhone) {
-    throw new MetaTemplateEndpointError({
-      failure: "WRONG_OBJECT",
-      httpStatus: 409,
-      responseMessage: "Configured WABA does not own the platform phone number",
-      diagnostics,
-    });
-  }
   throw toEndpointError(configuredTemplates, "WRONG_OBJECT", diagnostics);
 }
 
