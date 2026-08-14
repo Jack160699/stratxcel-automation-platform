@@ -160,6 +160,7 @@ export default async function ClientCommandCenterPage() {
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-8 pb-12">
+      <h1 className="sr-only">Your business growth command center</h1>
       {/* 1. Business Journey Header */}
       <BusinessJourneyHeader journey={journey} />
 
@@ -344,7 +345,7 @@ export default async function ClientCommandCenterPage() {
 
           {/* Next Best Actions */}
           <section>
-            <h2 className="mb-3 text-xl font-semibold text-sx-text">Your next best actions</h2>
+            <h2 className="mb-3 text-xl font-semibold text-sx-text">Next best actions</h2>
             <Card>
               <div className="space-y-2">
                 {nextActions.map((action) => (

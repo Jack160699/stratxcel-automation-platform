@@ -176,54 +176,7 @@ export async function executeRealProductionReset(actorEmail: string): Promise<Re
   // D. AFTER INVENTORY
   const afterData = await captureInventory();
 
-  // E. CREATE ONE CONTROLLED VERIFICATION JOURNEY
-  let verificationAccount: {
-    created: boolean;
-    tenantId?: string;
-    freshAuditEligible?: boolean;
-    freshBrandBrain?: boolean;
-  } = { created: false };
-
-  try {
-    const testSlug = `verify-fresh-${Date.now().toString(36)}`;
-    const adminUser = Array.from(beforeData.protectedUserIds)[0] ?? "system";
-    const testTenant = await createTenant(service, {
-      slug: testSlug,
-      name: "Fresh Verified Customer",
-      ownerUserId: adminUser,
-    });
-
-    if (testTenant?.id) {
-      await saveBrandBrainVersion(service, {
-        tenantId: testTenant.id,
-        content: {
-          business_name: "Fresh Verified Customer",
-          website_url: "https://stratxcel.in",
-          location: "India",
-          goals: ["growth"],
-        },
-        createdBy: adminUser,
-      });
-
-      const eligibility = await service.rpc("tenant_has_fresh_audit_grant", { p_tenant_id: testTenant.id });
-      verificationAccount = {
-        created: true,
-        tenantId: testTenant.id,
-        freshAuditEligible: eligibility.data === true,
-        freshBrandBrain: true,
-      };
-
-      // Clean up the verification tenant immediately so environment remains pristine
-      await safeExec(() => service.from("brand_brain_versions").delete().eq("tenant_id", testTenant.id));
-      await safeExec(() => service.from("brand_brains").delete().eq("tenant_id", testTenant.id));
-      await safeExec(() => service.from("tenant_memberships").delete().eq("tenant_id", testTenant.id));
-      await safeExec(() => service.from("tenants").delete().eq("id", testTenant.id));
-    }
-  } catch (err) {
-    console.warn("Verification journey trace:", err);
-  }
-
-  // F. LOG PERSISTENT AUDIT EVENT
+  // E. LOG PERSISTENT AUDIT EVENT
   await safeExec(() => service.from("platform_audit_events").insert({
     tenant_id: Array.from(beforeData.protectedTenantIds)[0] ?? null,
     actor_user_id: Array.from(beforeData.protectedUserIds)[0] ?? null,
@@ -234,7 +187,6 @@ export async function executeRealProductionReset(actorEmail: string): Promise<Re
       timestamp,
       before: beforeData.inventory,
       after: afterData.inventory,
-      verificationAccount,
     },
   }));
 
@@ -244,7 +196,7 @@ export async function executeRealProductionReset(actorEmail: string): Promise<Re
     initiatedBy: actorEmail,
     before: beforeData.inventory,
     after: afterData.inventory,
-    verificationAccount,
+    verificationAccount: { created: false },
     status: "SUCCESS",
   };
 }
