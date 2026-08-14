@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { PublicHeader } from "@/app/components/PublicHeader";
 import { PublicFooter } from "@/app/components/PublicFooter";
-import { CinematicIntro } from "@/app/components/public/home/CinematicIntro";
 import { HomeHeroLight } from "@/app/components/public/home/HomeHeroLight";
 import { HomeProblemRecognition } from "@/app/components/public/home/HomeProblemRecognition";
 import { HomeHowStratxcelHelps } from "@/app/components/public/home/HomeHowStratxcelHelps";
@@ -34,14 +33,11 @@ export const metadata: Metadata = {
 export default function HomePage() {
   return (
     <div className="sx-public-theme flex min-h-screen flex-col overflow-x-hidden bg-white font-sx-sans text-slate-900 antialiased">
-      {/* Cinematic Narrative Intro Overlay (First Visit / Responsive HTML-SVG) */}
-      <CinematicIntro />
-
       {/* Primary Light Sticky Header */}
       <PublicHeader logoVariant="light" />
 
       <main className="flex-1">
-        {/* SECTION 01: Hero */}
+        {/* SECTION 01: Hero with Living SaaS Command Center */}
         <HomeHeroLight />
 
         {/* SECTION 02: The Problem / Recognition */}
