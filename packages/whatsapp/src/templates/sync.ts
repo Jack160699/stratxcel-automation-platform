@@ -176,10 +176,20 @@ export async function autoResolvePlatformTemplates(
     };
   } catch (err) {
     // Graceful fallback to cached database records if Meta is temporarily offline
+    const { data: allAudits } = await supabase
+      .from("whatsapp_templates")
+      .select("*")
+      .eq("name", "audit_report_ready")
+      .order("synced_at", { ascending: false });
+
+    const fallbackTemplates = existingTemplates.length > 0
+      ? existingTemplates
+      : ((allAudits ?? []) as WhatsAppTemplateRow[]);
+
     return {
-      templates: existingTemplates,
+      templates: fallbackTemplates,
       source: "cached_db",
-      lastVerifiedAt: auditTemplate?.synced_at ?? null,
+      lastVerifiedAt: auditTemplate?.synced_at ?? fallbackTemplates[0]?.synced_at ?? null,
       metaAvailable: false,
       senderStatus: "CONFIGURED",
     };

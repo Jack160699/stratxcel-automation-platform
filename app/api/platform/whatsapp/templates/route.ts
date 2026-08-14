@@ -1,6 +1,6 @@
 import { getTenantServiceContext } from "@/lib/tenants/tenant-context";
 import { requireAdmin } from "@/lib/social/admin-guard";
-import { autoResolvePlatformTemplates } from "@stratxcel/whatsapp";
+import { autoResolvePlatformTemplates, resolvePlatformWhatsAppSender } from "@stratxcel/whatsapp";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
