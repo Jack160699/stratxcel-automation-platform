@@ -84,7 +84,45 @@ function runTests() {
     console.log("  ✓ 4. Mandatory deletion failure is FAIL-CLOSED (no silent swallow, exact error reported)");
   });
 
-  console.log("  ✓ 5. All tenant lifecycle policies unified across environment-reset and Delete Client");
+  // 5. Mock schema cache missing RPC falling back to successful client cascade
+  const createSuccessChain = (table: string) => {
+    const chain: any = {
+      eq: () => chain,
+      in: () => chain,
+      neq: () => chain,
+      maybeSingle: async () => {
+        if (table === "tenants") {
+          return {
+            data: { id: "tnt_success", slug: "ascend-theory", name: "Ascend Theory" },
+            error: null,
+          };
+        }
+        return { data: null, error: null };
+      },
+      then: (resolve: any) => resolve({ data: [], error: null }),
+    };
+    return chain;
+  };
+
+  const mockSchemaCacheService = {
+    from: (table: string) => ({
+      select: () => createSuccessChain(table),
+      delete: () => createSuccessChain(table),
+      insert: async () => ({ error: null }),
+    }),
+    rpc: async () => ({
+      data: null,
+      error: { message: "Could not find the function public.delete_customer_tenant_v1(p_actor, p_tenant_id) in the schema cache." },
+    }),
+  } as any;
+
+  deleteCustomerTenantData(mockSchemaCacheService, "tnt_success", "admin@stratxcel.in").then((result) => {
+    assert.equal(result.ok, true);
+    assert.equal(result.deletedTenantId, "tnt_success");
+    console.log("  ✓ 5. Schema cache RPC fallback executes fail-closed cascade and succeeds cleanly");
+  });
+
+  console.log("  ✓ 6. All tenant lifecycle policies unified across environment-reset and Delete Client");
   console.log("\nALL DELETE CLIENT & LIFECYCLE TESTS PASS!");
 }
 

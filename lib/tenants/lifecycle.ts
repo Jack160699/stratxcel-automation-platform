@@ -102,13 +102,13 @@ export async function deleteCustomerTenantData(
   });
 
   if (!rpcErr && rpcData && typeof rpcData === "object" && (rpcData as { ok?: boolean }).ok) {
-    // RPC succeeded atomically! Now clean up any non-admin customer auth accounts
+    // RPC succeeded atomically! Clean up non-admin customer auth accounts
     await cleanupOrphanAuthUsers(service, tenantId);
     return { ok: true, deletedTenantId: tenantId };
   }
 
-  // If RPC was missing or failed with a non-fatal RPC mismatch, execute strict fail-closed fallback
-  if (rpcErr && !rpcErr.message.includes("does not exist")) {
+  // If RPC failed with an execution error (other than function missing/not in schema cache), fail-closed immediately
+  if (rpcErr && !isRpcMissingError(rpcErr)) {
     return { ok: false, error: `Transactional deletion failed: ${rpcErr.message}. No customer data was considered deleted.` };
   }
 
@@ -192,6 +192,18 @@ export async function deleteCustomerTenantData(
     const msg = err instanceof Error ? err.message : String(err);
     return { ok: false, error: `Client deletion failed: ${msg}. No customer data was considered deleted.` };
   }
+}
+
+function isRpcMissingError(rpcErr: { message?: string; code?: string } | null | undefined): boolean {
+  if (!rpcErr) return false;
+  const msg = (rpcErr.message ?? "").toLowerCase();
+  return (
+    rpcErr.code === "PGRST202" ||
+    msg.includes("could not find the function") ||
+    msg.includes("schema cache") ||
+    msg.includes("does not exist") ||
+    msg.includes("not found")
+  );
 }
 
 async function assertDeleteSuccess(promise: PromiseLike<{ error: { message: string; code?: string } | null }>, tableName: string) {
