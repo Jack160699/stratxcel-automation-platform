@@ -1,12 +1,12 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { signOutAction } from "./actions";
 import { returnToAdminAction } from "./staff-workspace-actions";
 import { CoreAppShell } from "@/components/shell/CoreAppShell";
 import { APP_SIDEBAR_GROUPS, APP_MOBILE_NAV, resolveAppActiveKey } from "@/components/shell/navigation/app-navigation";
 import { ClientTenantSwitcher } from "./ClientTenantSwitcher";
-import { ThemeToggle } from "@/components/theme/ThemeProvider";
+import type { CustomerPlanSummary } from "@/lib/billing/customer-plan";
+import { CustomerHeaderActions } from "./components/CustomerHeaderActions";
 
 /**
  * /app's own shell — the client/workspace product's information
@@ -17,7 +17,25 @@ import { ThemeToggle } from "@/components/theme/ThemeProvider";
  * Operations Queue, System Health, Audit Log, internal Human Handoffs);
  * those exist only in /admin.
  */
-export function ClientAppShell({ email, staffWorkspace, children }: { email: string; staffWorkspace: { tenantName: string } | null; children: React.ReactNode }) {
+export function ClientAppShell({
+  tenantId,
+  email,
+  name,
+  plan,
+  showPlanPrompt,
+  auditOpportunityCount,
+  staffWorkspace,
+  children,
+}: {
+  tenantId: string;
+  email: string;
+  name: string | null;
+  plan: CustomerPlanSummary;
+  showPlanPrompt: boolean;
+  auditOpportunityCount: number | null;
+  staffWorkspace: { tenantName: string } | null;
+  children: React.ReactNode;
+}) {
   const pathname = usePathname();
   const activeKey = resolveAppActiveKey(pathname);
 
@@ -33,18 +51,14 @@ export function ClientAppShell({ email, staffWorkspace, children }: { email: str
       }))}
       topBarContext={<ClientTenantSwitcher />}
       userMenu={
-        <div className="flex items-center gap-2.5">
-          <span className="hidden truncate text-xs text-sx-text-subtle sm:inline">{email}</span>
-          <ThemeToggle />
-          <form action={signOutAction}>
-            <button
-              type="submit"
-              className="min-h-9 rounded-sx-sm border border-sx-border-strong px-2.5 text-xs font-medium text-sx-text-muted hover:bg-sx-surface-2 hover:text-sx-text"
-            >
-              Sign out
-            </button>
-          </form>
-        </div>
+        <CustomerHeaderActions
+          tenantId={tenantId}
+          email={email}
+          name={name}
+          plan={plan}
+          showPlanPrompt={showPlanPrompt}
+          auditOpportunityCount={auditOpportunityCount}
+        />
       }
     >
       {staffWorkspace && (

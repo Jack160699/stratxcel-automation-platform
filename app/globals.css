@@ -233,6 +233,32 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* Customer product mobile type scale: comfortable reading sizes without
+   inflating desktop density or monospace technical identifiers. */
+@media (max-width: 767px) {
+  .sx-customer-app .text-xs {
+    font-size: 0.8125rem;
+    line-height: 1.25rem;
+  }
+
+  .sx-customer-app .text-sm {
+    font-size: 0.9375rem;
+    line-height: 1.5rem;
+  }
+
+  .sx-customer-app h1.text-xl {
+    font-size: 1.5rem;
+    line-height: 2rem;
+  }
+
+  .sx-customer-app p[class*="text-[10"],
+  .sx-customer-app p[class*="text-[11"],
+  .sx-customer-app p[class*="text-[12"] {
+    font-size: 0.8125rem;
+    line-height: 1.25rem;
+  }
+}
+
 ::selection {
   background: color-mix(in srgb, var(--sx-accent) 30%, transparent);
   color: #fff;

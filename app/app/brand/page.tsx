@@ -113,8 +113,8 @@ export default function BrandPage() {
     <div className="flex flex-col gap-6">
       <header className="flex items-center justify-between gap-3">
         <div>
-          <h1 className="font-sx-sans text-xl font-semibold text-sx-text">Brand Brain{active ? ` — ${active.name}` : ""}</h1>
-          <p className="mt-1 text-sm text-sx-text-muted">
+          <h1 className="font-sx-sans text-2xl font-semibold leading-tight text-sx-text sm:text-xl">Brand Brain{active ? ` — ${active.name}` : ""}</h1>
+          <p className="mt-1 text-base text-sx-text-muted sm:text-sm">
             {version != null ? `Version ${version}` : "—"} · the context every mission is compiled against.
           </p>
         </div>

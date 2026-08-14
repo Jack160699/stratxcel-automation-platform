@@ -1,4 +1,6 @@
 import { requireTenantReadContext } from "@/lib/tenants/tenant-context";
+import { getCurrentBrandBrain } from "@stratxcel/brand-brain";
+import { buildPresenceLinks } from "@/lib/audit/v1/presence";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -9,10 +11,13 @@ export async function GET(request: Request) {
   const ctx = await requireTenantReadContext(tenantId);
   if (!ctx.ok) return Response.json({ error: ctx.error }, { status: ctx.status });
 
-  const { data, error } = await ctx.supabase
-    .from("whatsapp_phone_bindings")
-    .select("status")
-    .eq("tenant_id", tenantId);
+  const [{ data, error }, brandBrain] = await Promise.all([
+    ctx.supabase
+      .from("whatsapp_phone_bindings")
+      .select("status")
+      .eq("tenant_id", tenantId),
+    getCurrentBrandBrain(ctx.supabase, tenantId).catch(() => null),
+  ]);
   if (error) return Response.json({ error: "Could not load connection status" }, { status: 500 });
 
   const statuses = (data ?? []).map((row) => row.status);
@@ -46,6 +51,23 @@ export async function GET(request: Request) {
     : googleRow.data?.status === "error" || googleRow.data?.status === "revoked"
       ? "action_required"
       : "setup_required";
+  const brandContent = brandBrain?.content as { website_url?: string; online_profiles?: unknown; channels?: unknown } | undefined;
+  const onlineProfiles = Array.isArray(brandContent?.online_profiles)
+    ? brandContent.online_profiles.filter((value): value is string => typeof value === "string")
+    : Array.isArray(brandContent?.channels)
+      ? brandContent.channels.filter((value): value is string => typeof value === "string")
+      : [];
+  const presence = buildPresenceLinks({
+    websiteUrl: brandContent?.website_url,
+    onlineProfiles,
+  }).map((link) => ({
+    key: link.key,
+    label: link.label,
+    handle: link.handle,
+    href: link.href,
+    provenance: link.provenance,
+    lastSync: brandBrain?.updated_at ?? null,
+  }));
 
   return Response.json({
     whatsapp,
@@ -55,6 +77,7 @@ export async function GET(request: Request) {
     youtube: platformStatus("youtube"),
     linkedin: platformStatus("linkedin"),
     google: googleStatus,
+    presence,
     selfService: {
       google: true,
       social: false,

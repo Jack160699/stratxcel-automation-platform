@@ -19,11 +19,11 @@ export function ModulePageHeader({
   return (
     <header className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
       <div>
-        <h1 className="font-sx-sans text-xl font-semibold text-sx-text">
+        <h1 className="font-sx-sans text-2xl font-semibold leading-tight text-sx-text sm:text-xl">
           {title}
           {tenantName ? ` — ${tenantName}` : ""}
         </h1>
-        {description && <p className="mt-1 text-sm text-sx-text-muted">{description}</p>}
+        {description && <p className="mt-1 text-base leading-6 text-sx-text-muted sm:text-sm">{description}</p>}
       </div>
       {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
     </header>

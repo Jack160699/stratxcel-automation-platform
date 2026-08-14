@@ -67,7 +67,9 @@ function run() {
   );
   assert.equal(/listMissionsForTenant|listPendingApprovals/.test(commandCenter), false, "customer Command Center must not read the mixed internal mission/approval stores");
   assert.equal(/\/app\/(missions|approvals)/.test(commandCenter), false, "customer Command Center must not link hidden engineering routes");
-  assert.ok(/loadJourneyInput\(ctx\.supabase, active\.tenantId\)/.test(commandCenter), "customer Command Center must use the tenant-scoped Audit journey");
+  assert.ok(/loadCommandCenter\(ctx\.supabase, active\.tenantId\)/.test(commandCenter), "customer Command Center must use tenant-scoped Audit results");
+  assert.ok(/Business impact summary|Biggest opportunities|Next best actions/.test(commandCenter), "customer Command Center must be results-first");
+  assert.equal(/JourneyPanel|Your setup|setup checklist/i.test(commandCenter), false, "completed setup must not remain the Command Center information architecture");
   assert.equal(/Unread inbox|AI actions/.test(commandCenter), false, "Command Center must not show fabricated disconnected metric cards");
 
   // --- 4. /app and /admin share one shell component, not two ----------------

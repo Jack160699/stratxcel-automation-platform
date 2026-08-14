@@ -66,7 +66,7 @@ export function CoreAppShell({
       <div className="hidden md:block">
         <Sidebar groups={sidebarGroups} activeKey={activeKey} brand={(collapsed) => <BrandMark expanded={!collapsed} product={product} />} />
       </div>
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col pb-24 md:pb-0">
+      <div className={`flex min-h-0 min-w-0 flex-1 flex-col pb-24 md:pb-0 ${product === "App" ? "sx-customer-app" : ""}`}>
         <TopCommandBar
           brand={<BrandMark product={product} />}
           context={topBarContext}
@@ -75,7 +75,7 @@ export function CoreAppShell({
           userMenu={userMenu}
           showSearch={product !== "App"}
         />
-        <main className="min-h-0 min-w-0 flex-1 overflow-y-auto p-5">{children}</main>
+        <main className="min-h-0 min-w-0 flex-1 overflow-y-auto px-4 py-5 sm:p-5">{children}</main>
       </div>
       <MobileBottomNav items={mobileNavItems} activeKey={activeKey} moreGroups={mobileMoreGroups} />
     </div>

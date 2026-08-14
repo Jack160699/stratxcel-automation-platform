@@ -4,6 +4,7 @@ import {
   cancelPaymentLink,
   checkAuditCreditEligibility,
   isPaymentFeatureEnabled,
+  getPlanDefinition,
   getSelfServicePlan,
   isPlanTier,
   upsertBillingProfile,
@@ -305,6 +306,7 @@ export async function GET(request: Request) {
   return Response.json(
     {
       subscription: subscription ?? null,
+      planDefinition: getPlanDefinition(isPlanTier(subscription?.plan_tier) ? subscription.plan_tier : "free"),
       priceBreakdown: subscription ? splitGstInclusive(subscription.price_cents) : null,
       paymentUrl,
       billingProfile,

@@ -7,6 +7,7 @@ import { StatusChip } from "@/components/ui/StatusChip";
 import { ErrorState } from "@/components/ui/Feedback";
 import { PlatformIcon, type PlatformIconKey } from "@/components/audit/PlatformIcon";
 import { GoogleSearchIntegrationPanel } from "../components/GoogleSearchIntegrationPanel";
+import { ModulePageHeader } from "../components/ModulePageHeader";
 
 type ConnectorState = "checking" | "connected" | "action_required" | "setup_required";
 
@@ -18,6 +19,14 @@ interface CustomerIntegrationStatus {
   youtube: ConnectorState;
   linkedin: ConnectorState;
   google: ConnectorState;
+  presence?: Array<{
+    key: PlatformIconKey;
+    label: string;
+    handle: string | null;
+    href: string | null;
+    provenance: string;
+    lastSync: string | null;
+  }>;
   selfService?: { google?: boolean; social?: boolean; whatsapp?: boolean };
 }
 
@@ -56,7 +65,21 @@ export default function IntegrationsPage() {
     };
   }, [tenantId]);
 
+  const presenceFor = (key: PlatformIconKey) => status?.presence?.find((entry) => entry.key === key);
+  const website = presenceFor("website");
   const cards: Array<{ key: PlatformIconKey; title: string; state: ConnectorState; copy: string }> = [
+    {
+      key: "website",
+      title: "Website",
+      state: website?.href ? "connected" : "setup_required",
+      copy: website?.href ? "Website saved in your verified business context." : "Add your website through the Audit or Brand Brain.",
+    },
+    {
+      key: "google_business",
+      title: "Google Business / Maps",
+      state: "setup_required",
+      copy: "Your public Google Business listing is shown when discovered. Direct profile management is not connected yet.",
+    },
     {
       key: "whatsapp",
       title: "WhatsApp",
@@ -99,10 +122,7 @@ export default function IntegrationsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <header>
-        <h1 className="font-sx-sans text-xl font-semibold text-sx-text">Connectors{active ? ` — ${active.name}` : ""}</h1>
-        <p className="mt-1 text-sm text-sx-text-muted">Real connection status for this workspace. Buttons appear only where a live action exists.</p>
-      </header>
+      <ModulePageHeader title="Connectors" tenantName={active?.name} description="Real connection status and verified business destinations. Actions appear only where a live backend exists." />
       {error && (
         <ErrorState
           message={error}
@@ -124,17 +144,31 @@ export default function IntegrationsPage() {
       )}
 
       <div className="grid gap-4 md:grid-cols-2">
-        {cards.map((card) => (
-          <Card key={card.key} className="p-5">
-            <div className="flex items-start justify-between gap-3">
-              <CardHeading>
-                <span className="inline-flex items-center gap-2"><PlatformIcon name={card.key} /> {card.title}</span>
-              </CardHeading>
-              <BusinessStatus state={card.state} />
-            </div>
-            <p className="mt-2 text-sm text-sx-text-muted">{card.copy}</p>
-          </Card>
-        ))}
+        {cards.map((card) => {
+          const presence = presenceFor(card.key);
+          return (
+            <Card key={card.key} className="p-5">
+              <div className="flex items-start justify-between gap-3">
+                <CardHeading>
+                  <span className="inline-flex items-center gap-2"><PlatformIcon name={card.key} /> {card.title}</span>
+                </CardHeading>
+                <BusinessStatus state={card.state} />
+              </div>
+              <p className="mt-2 text-sm text-sx-text-muted">{card.copy}</p>
+              {presence?.href && (
+                <div className="mt-3 rounded-sx-sm bg-sx-surface-2 p-3">
+                  <a href={presence.href} target="_blank" rel="noreferrer" className="block break-all text-sm font-semibold text-sx-accent hover:underline">
+                    {presence.handle || presence.href}
+                  </a>
+                  <p className="mt-1 text-xs text-sx-text-subtle">
+                    {presence.provenance.replaceAll("_", " ")}
+                    {presence.lastSync ? ` · synced ${new Date(presence.lastSync).toLocaleDateString()}` : ""}
+                  </p>
+                </div>
+              )}
+            </Card>
+          );
+        })}
       </div>
 
       {tenantId && (

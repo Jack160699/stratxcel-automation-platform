@@ -20,7 +20,7 @@ export function Card({
   return (
     <div
       role={variant === "alert" ? "alert" : undefined}
-      className={`rounded-sx-md p-4 ${VARIANT_CLASSES[variant]} ${className}`}
+      className={`rounded-sx-md p-4 sm:p-4 ${VARIANT_CLASSES[variant]} ${className}`}
       {...rest}
     >
       {children}
@@ -29,13 +29,13 @@ export function Card({
 }
 
 export function CardHeading({ children, className = "" }: { children: ReactNode; className?: string }) {
-  return <h3 className={`font-sx-sans text-sm font-semibold text-sx-text ${className}`}>{children}</h3>;
+  return <h3 className={`font-sx-sans text-base font-semibold text-sx-text sm:text-sm ${className}`}>{children}</h3>;
 }
 
 /** One row inside a Card's list content — top-border-separated, matches the artifact's .panel-row / .mission-row. */
 export function CardRow({ children, className = "" }: { children: ReactNode; className?: string }) {
   return (
-    <div className={`flex items-center gap-2.5 border-t border-sx-border py-2.5 text-[12.5px] first:border-t-0 first:pt-0 ${className}`}>
+    <div className={`flex items-center gap-2.5 border-t border-sx-border py-3 text-sm first:border-t-0 first:pt-0 sm:py-2.5 sm:text-[12.5px] ${className}`}>
       {children}
     </div>
   );
