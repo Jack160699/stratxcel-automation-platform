@@ -16,6 +16,7 @@ export * from "./messages.ts";
 export * from "./follow-ups.ts";
 export * from "./appointments.ts";
 export * from "./templates/sync.ts";
+export * from "./templates/meta-api.ts";
 export * from "./embedded-signup/state.ts";
 export * from "./legacy-bridge/index.ts";
 export * from "./outbound.ts";

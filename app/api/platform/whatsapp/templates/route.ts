@@ -59,6 +59,7 @@ export async function POST(request: Request) {
       tenantId: platformSender.sender.tenantId,
       phoneBindingId: platformSender.sender.bindingId,
       wabaId: platformSender.sender.wabaId,
+      phoneNumberId: platformSender.sender.phoneNumberId,
     });
     const templates = await listTemplatesForTenant(supabase, platformSender.sender.tenantId);
     return Response.json({ ...result, templates, senderStatus: "CONFIGURED" });
