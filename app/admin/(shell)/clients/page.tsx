@@ -22,6 +22,8 @@ export default function TenantsPage() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
   async function loadTenants() {
     setError(null);
     const res = await fetch("/api/platform/tenants", { cache: "no-store" });
@@ -48,24 +50,36 @@ export default function TenantsPage() {
     if (!deletingTenant || confirmInput !== "DELETE") return;
     setIsDeleting(true);
     setDeleteError(null);
+    setSuccessMessage(null);
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 15000);
 
     try {
       const res = await fetch(`/api/platform/admin/clients/${deletingTenant.tenantId}/delete`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ confirmation: "DELETE" }),
+        signal: controller.signal,
       });
+
+      clearTimeout(timer);
 
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
-        throw new Error(body.error ?? `Failed to delete client (HTTP ${res.status})`);
+        throw new Error(body.error ?? `HTTP ${res.status}`);
       }
 
+      const deletedName = deletingTenant.name;
       setDeletingTenant(null);
       setConfirmInput("");
+      setSuccessMessage(`Client "${deletedName}" deleted successfully.`);
       await loadTenants();
     } catch (err) {
-      setDeleteError(err instanceof Error ? err.message : "Delete failed");
+      clearTimeout(timer);
+      const isAbort = err instanceof Error && err.name === "AbortError";
+      const message = isAbort ? "Request timed out after 15s. The server is still processing." : (err instanceof Error ? err.message : "Delete failed");
+      setDeleteError(`Unable to delete this client: ${message}`);
     } finally {
       setIsDeleting(false);
     }
@@ -83,6 +97,12 @@ export default function TenantsPage() {
         <CreateClientForm onCreated={handleCreated} compact />
         {error && <ErrorState message={error} />}
       </Card>
+
+      {successMessage && (
+        <div className="rounded-sx-sm bg-emerald-500/10 border border-emerald-500/20 p-3 text-xs text-emerald-300">
+          ✓ {successMessage}
+        </div>
+      )}
 
       <section className="flex flex-col gap-3">
         <h2 className="font-sx-sans text-base font-medium text-sx-text">Agency clients</h2>
