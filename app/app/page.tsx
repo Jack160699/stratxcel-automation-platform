@@ -5,17 +5,20 @@ import { resolveCurrentAuditOrderId } from "@/lib/audit/current-pointer";
 import { hasValidAuditReport, type AuditDeliveryReport } from "@/lib/audit/customer-state";
 import { resolveCustomerPlanSummary } from "@/lib/billing/customer-plan";
 import { getCurrentBrandBrain } from "@stratxcel/brand-brain";
+import { deriveBusinessJourney } from "@/lib/journey/business-journey";
+import { BusinessJourneyHeader } from "@/components/journey/BusinessJourneyHeader";
+import { AchievementMoment } from "@/components/journey/AchievementMoment";
 import { Card, CardHeading } from "@/components/ui/Card";
 
 async function loadCommandCenter(tenantDb: SupabaseClient, tenantId: string) {
-  const [order, subscription, brandBrain] = await Promise.all([
+  const [order, subscription, brandBrain, socialAccountsCount, crmLeadsCount, whatsappBinding, activeRunsCount] = await Promise.all([
     (async () => {
       try {
         const currentOrderId = await resolveCurrentAuditOrderId(tenantDb, tenantId);
         if (currentOrderId === null) return null;
         let query = tenantDb
           .from("audit_orders")
-          .select("status, business_name, website_url, report_data, created_at, updated_at")
+          .select("id, status, business_name, website_url, report_data, created_at, updated_at")
           .eq("tenant_id", tenantId);
         if (typeof currentOrderId === "string") query = query.eq("id", currentOrderId);
         else query = query.order("created_at", { ascending: false }).limit(1);
@@ -25,23 +28,84 @@ async function loadCommandCenter(tenantDb: SupabaseClient, tenantId: string) {
         return null;
       }
     })(),
-    tenantDb
-      .from("subscriptions")
-      .select("plan_tier, status, provider_status, current_period_end, next_charge_at, price_cents")
-      .eq("tenant_id", tenantId)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle()
-      .then((result) => result.data),
+    (async () => {
+      try {
+        const { data } = await tenantDb
+          .from("subscriptions")
+          .select("plan_tier, status, provider_status, current_period_end, next_charge_at, price_cents")
+          .eq("tenant_id", tenantId)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        return data;
+      } catch {
+        return null;
+      }
+    })(),
     getCurrentBrandBrain(tenantDb, tenantId).catch(() => null),
+    (async () => {
+      try {
+        const { count } = await tenantDb
+          .from("social_accounts")
+          .select("id", { count: "exact", head: true })
+          .eq("tenant_id", tenantId);
+        return count ?? 0;
+      } catch {
+        return 0;
+      }
+    })(),
+    (async () => {
+      try {
+        const { count } = await tenantDb
+          .from("crm_leads")
+          .select("id", { count: "exact", head: true })
+          .eq("tenant_id", tenantId);
+        return count ?? 0;
+      } catch {
+        return 0;
+      }
+    })(),
+    (async () => {
+      try {
+        const { data } = await tenantDb
+          .from("whatsapp_phone_bindings")
+          .select("status, phone_number")
+          .eq("tenant_id", tenantId)
+          .maybeSingle();
+        return data;
+      } catch {
+        return null;
+      }
+    })(),
+    (async () => {
+      try {
+        const { count } = await tenantDb
+          .from("social_agent_runs")
+          .select("id", { count: "exact", head: true })
+          .eq("tenant_id", tenantId);
+        return count ?? 0;
+      } catch {
+        return 0;
+      }
+    })(),
   ]);
 
-  return { order, plan: resolveCustomerPlanSummary(subscription), brandBrain };
+  return {
+    order,
+    plan: resolveCustomerPlanSummary(subscription),
+    brandBrain,
+    socialAccountsCount,
+    crmLeadsCount,
+    whatsappBinding,
+    activeRunsCount,
+  };
 }
 
 /**
- * Results-first customer home. Generic missions remain excluded because the
- * mission store does not yet carry a reliable customer-audience discriminator.
+ * Intelligent Business Operating System — Command Center.
+ *
+ * Provides real-time journey status, what Stratxcel discovered, what changed,
+ * what needs attention, active operations, and next best actions.
  */
 export default async function ClientCommandCenterPage() {
   const ctx = await requireClientContext();
@@ -49,38 +113,134 @@ export default async function ClientCommandCenterPage() {
 
   const active = ctx.workspaceTenant;
 
-  const { order, plan, brandBrain } = await loadCommandCenter(ctx.supabase, active.tenantId);
+  const {
+    order,
+    plan,
+    brandBrain,
+    socialAccountsCount,
+    crmLeadsCount,
+    whatsappBinding,
+    activeRunsCount,
+  } = await loadCommandCenter(ctx.supabase, active.tenantId);
+
   const report = hasValidAuditReport(order?.report_data) ? (order?.report_data as AuditDeliveryReport) : null;
   const opportunities = report?.opportunities?.slice(0, 5) ?? [];
   const risks = report?.priorityRisks ?? [];
   const sources = report?.sources ?? [];
   const score = report?.overallHealth?.score ?? report?.scores?.overall;
   const supportedScore = typeof score === "number" && (score > 0 || sources.length > 0) ? score : null;
+
+  // Real journey derivation
+  const brainContent = brandBrain?.content as Record<string, any> | undefined;
+  const brainDomain = typeof brainContent?.website_url === "string" ? brainContent.website_url : null;
+  const verifiedSocials = Array.isArray(brainContent?.verified_social_links) ? brainContent.verified_social_links.length : socialAccountsCount;
+  const brainServices = Array.isArray(brainContent?.services)
+    ? (brainContent.services as string[])
+    : Array.isArray(brainContent?.offerings?.services)
+      ? (brainContent.offerings.services as string[])
+      : [];
+
+  const journey = deriveBusinessJourney({
+    hasWebsite: Boolean(order?.website_url || brainDomain),
+    websiteUrl: order?.website_url || brainDomain,
+    brandBrainVersion: brandBrain?.current_version ?? 0,
+    socialAccountsCount,
+    confirmedSocialsCount: verifiedSocials,
+    hasAuditOrder: Boolean(order),
+    auditOrderStatus: order?.status,
+    hasReportData: Boolean(report),
+    reportKind: (order?.report_data as any)?.reportKind,
+    whatsappConnected: Boolean(whatsappBinding && whatsappBinding.status === "active"),
+    crmLeadsCount,
+    hasAutomations: activeRunsCount > 0,
+    hasActivePlan: plan.activePaid,
+  });
+
   const nextActions = buildNextActions({ report, planActive: plan.activePaid });
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-8">
-      <header className="rounded-[1.25rem] border border-sx-border bg-gradient-to-br from-sx-accent/10 via-sx-surface-1 to-sx-surface-1 p-5 sm:p-7">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-sx-accent">{active.name}</p>
-            <h1 className="mt-2 max-w-3xl font-sx-sans text-3xl font-semibold leading-tight text-sx-text sm:text-4xl">
-              Your business growth command center
-            </h1>
-            <p className="mt-2 max-w-2xl text-base leading-7 text-sx-text-muted">
-              See what Stratxcel found, what changed, and what to do next.
-            </p>
-          </div>
-          <Link href="/app/social/copilot" className="inline-flex min-h-11 items-center justify-center rounded-sx-sm bg-sx-accent px-5 text-sm font-bold text-sx-accent-on">
-            Open Copilot
-          </Link>
-        </div>
-      </header>
+    <div className="mx-auto flex w-full max-w-6xl flex-col gap-8 pb-12">
+      {/* 1. Business Journey Header */}
+      <BusinessJourneyHeader journey={journey} />
 
+      {/* 2. Achievement Moment (if any milestone achieved) */}
+      {journey.latestAchievement && (
+        <AchievementMoment milestone={journey.latestAchievement} />
+      )}
+
+      {/* 3. What We Discovered (Rich Business Intelligence SSOT) */}
+      {brandBrain && (
+        <section aria-labelledby="discovery-heading">
+          <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+            <h2 id="discovery-heading" className="text-xl font-semibold text-sx-text">
+              What we discovered
+            </h2>
+            <Link href="/app/brand" className="text-sm font-semibold text-sx-accent hover:underline">
+              Edit in Brand Brain →
+            </Link>
+          </div>
+          <Card>
+            <div className="grid gap-4 sm:grid-cols-3">
+              <div className="space-y-1">
+                <p className="text-xs font-semibold uppercase tracking-[0.1em] text-sx-text-subtle">
+                  Business & Industry
+                </p>
+                <p className="text-sm font-semibold text-sx-text">
+                  {brainContent?.business_name || brainContent?.identity?.name || active.name}
+                </p>
+                <p className="text-xs text-sx-text-muted">
+                  {brainContent?.industry || brainContent?.positioning?.industry || "SaaS & Operations"}
+                </p>
+              </div>
+
+              <div className="space-y-1">
+                <p className="text-xs font-semibold uppercase tracking-[0.1em] text-sx-text-subtle">
+                  Operating Model
+                </p>
+                <p className="text-sm font-semibold text-sx-text">
+                  {brainContent?.business_model || brainContent?.positioning?.businessModel || "B2B Subscription / Growth Operations"}
+                </p>
+                <p className="text-xs text-sx-text-muted">
+                  {brainDomain ? `Connected: ${brainDomain}` : "Domain linked"}
+                </p>
+              </div>
+
+              <div className="space-y-1">
+                <p className="text-xs font-semibold uppercase tracking-[0.1em] text-sx-text-subtle">
+                  Audience & Voice
+                </p>
+                <p className="text-sm font-semibold text-sx-text">
+                  {brainContent?.tone_of_voice || brainContent?.voice?.tone || "Professional & Customer-Focused"}
+                </p>
+                <p className="text-xs text-sx-text-muted">
+                  {brainContent?.target_audience || brainContent?.positioning?.targetAudience || "Growing business customers"}
+                </p>
+              </div>
+            </div>
+
+            {brainServices.length > 0 && (
+              <div className="mt-4 pt-3 border-t border-sx-border/60">
+                <p className="text-xs font-semibold uppercase tracking-[0.08em] text-sx-text-subtle mb-1.5">
+                  Core Offerings & Services:
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {brainServices.slice(0, 6).map((service: string, i: number) => (
+                    <span key={i} className="inline-flex items-center rounded-full bg-sx-surface-2 px-2.5 py-0.5 text-xs text-sx-text">
+                      {service}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </Card>
+        </section>
+      )}
+
+      {/* 4. Business Impact Summary */}
       <section aria-labelledby="impact-heading">
         <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
           <h2 id="impact-heading" className="text-xl font-semibold text-sx-text">Business impact summary</h2>
-          <Link href="/app/audit" className="text-sm font-semibold text-sx-accent hover:underline">View Audit</Link>
+          <Link href="/app/audit" className="text-sm font-semibold text-sx-accent hover:underline">View Audit / Launch Plan</Link>
         </div>
         <div className="grid gap-3 sm:grid-cols-3">
           <ImpactCard label="Business health" value={supportedScore === null ? "Not enough verified data" : `${supportedScore}/100`} />
@@ -89,6 +249,7 @@ export default async function ClientCommandCenterPage() {
         </div>
       </section>
 
+      {/* 5. Main Split View: Opportunities / What Changed / What Needs Attention */}
       <section className="grid gap-6 lg:grid-cols-[1.15fr_0.85fr]">
         <div>
           <h2 className="mb-3 text-xl font-semibold text-sx-text">Biggest opportunities</h2>
@@ -126,6 +287,7 @@ export default async function ClientCommandCenterPage() {
         </div>
 
         <div className="space-y-6">
+          {/* What Changed */}
           <section>
             <h2 className="mb-3 text-xl font-semibold text-sx-text">What changed</h2>
             <Card>
@@ -138,8 +300,51 @@ export default async function ClientCommandCenterPage() {
             </Card>
           </section>
 
+          {/* What Needs Attention */}
           <section>
-            <h2 className="mb-3 text-xl font-semibold text-sx-text">Next best actions</h2>
+            <h2 className="mb-3 text-xl font-semibold text-sx-text">What needs attention</h2>
+            <Card>
+              <div className="space-y-3 text-xs">
+                {!whatsappBinding && (
+                  <div className="flex items-start justify-between gap-2 border-b border-sx-border pb-2.5">
+                    <div>
+                      <p className="font-semibold text-sx-text">Connect WhatsApp Receptionist</p>
+                      <p className="text-sx-text-muted">Enable 24/7 automated inquiry response.</p>
+                    </div>
+                    <Link href="/app/integrations" className="font-semibold text-sx-accent hover:underline">
+                      Connect →
+                    </Link>
+                  </div>
+                )}
+                {socialAccountsCount === 0 && (
+                  <div className="flex items-start justify-between gap-2 border-b border-sx-border pb-2.5">
+                    <div>
+                      <p className="font-semibold text-sx-text">Confirm Social Channels</p>
+                      <p className="text-sx-text-muted">Link verified Instagram and Facebook handles.</p>
+                    </div>
+                    <Link href="/app/brand" className="font-semibold text-sx-accent hover:underline">
+                      Verify →
+                    </Link>
+                  </div>
+                )}
+                {crmLeadsCount === 0 && (
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <p className="font-semibold text-sx-text">Initialize CRM Leads</p>
+                      <p className="text-sx-text-muted">Track customer enquiries in one pipeline.</p>
+                    </div>
+                    <Link href="/app/crm" className="font-semibold text-sx-accent hover:underline">
+                      View CRM →
+                    </Link>
+                  </div>
+                )}
+              </div>
+            </Card>
+          </section>
+
+          {/* Next Best Actions */}
+          <section>
+            <h2 className="mb-3 text-xl font-semibold text-sx-text">Your next best actions</h2>
             <Card>
               <div className="space-y-2">
                 {nextActions.map((action) => (
@@ -151,6 +356,7 @@ export default async function ClientCommandCenterPage() {
             </Card>
           </section>
 
+          {/* Current Plan Card */}
           <Card variant={plan.activePaid ? "elevated" : "ai"}>
             <p className="text-xs font-semibold uppercase tracking-[0.1em] text-sx-accent">Current plan · {plan.name}</p>
             <CardHeading className="mt-2">{plan.activePaid ? `You’re operating on ${plan.name}` : "Unlock ongoing execution with Growth"}</CardHeading>
@@ -193,7 +399,7 @@ function ChangeItem({ active, title, detail }: { active: boolean; title: string;
 }
 
 function buildNextActions({ report, planActive }: { report: AuditDeliveryReport | null; planActive: boolean }) {
-  const actions = [{ label: report ? "Review your Audit" : "Start your Business Growth Audit", href: "/app/audit" }];
+  const actions = [{ label: report ? "Review your Audit / Launch Plan" : "Start your Business Growth Audit", href: "/app/audit" }];
   actions.push({ label: "Review verified Brand Brain", href: "/app/brand" });
   actions.push({ label: "Check business connectors", href: "/app/integrations" });
   actions.push({ label: planActive ? "Open Copilot" : "Explore Growth", href: planActive ? "/app/social/copilot" : "/app/billing" });
