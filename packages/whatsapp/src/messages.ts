@@ -120,6 +120,49 @@ export async function updateAgentChannelMessageStatus(
   return { success: true, updated: true };
 }
 
+/**
+ * Updates audit_delivery_events when a Meta WhatsApp delivery receipt
+ * (sent/delivered/read/failed) arrives for an outbound Audit delivery.
+ */
+export async function updateAuditDeliveryEventStatus(
+  supabase: ServiceClient,
+  input: { providerMessageId: string; status: WhatsAppMessageStatus }
+): Promise<{ success: boolean; updated?: boolean; reason?: string }> {
+  const { data: existing, error: readError } = await supabase
+    .from("audit_delivery_events")
+    .select("id, status")
+    .eq("provider_message_id", input.providerMessageId)
+    .maybeSingle();
+
+  if (readError) throw new Error(`updateAuditDeliveryEventStatus: ${readError.message}`);
+  if (!existing) return { success: true, updated: false, reason: "not_found" };
+
+  const validStatuses: Record<WhatsAppMessageStatus, string> = {
+    queued: "queued",
+    submitted: "sending",
+    sent: "sent",
+    delivered: "delivered",
+    read: "delivered",
+    failed: "failed",
+  };
+
+  const nextStatus = validStatuses[input.status] ?? "delivered";
+  if (existing.status === "delivered" && nextStatus === "sent") {
+    return { success: true, updated: false, reason: "stale_status" };
+  }
+
+  const { error: updateError } = await supabase
+    .from("audit_delivery_events")
+    .update({
+      status: nextStatus,
+      detail: `provider_receipt:${input.status}`,
+    })
+    .eq("id", existing.id as string);
+
+  if (updateError) throw new Error(`updateAuditDeliveryEventStatus: ${updateError.message}`);
+  return { success: true, updated: true };
+}
+
 export async function listConversationsForTenant(supabase: ServiceClient, tenantId: string, limit = 100): Promise<WhatsAppConversationRow[]> {
   const { data, error } = await supabase
     .from("whatsapp_conversations")

@@ -24,6 +24,6 @@ export async function GET(request: Request) {
     throw err;
   }
 
-  const account = await getWalletAccount(getTenantServiceContext().supabase, tenantId);
+  const account = await getWalletAccount(ctx.supabase ?? getTenantServiceContext().supabase, tenantId);
   return Response.json({ account }, { headers: { "Cache-Control": "no-store" } });
 }

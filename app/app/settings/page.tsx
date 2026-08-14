@@ -57,18 +57,25 @@ export default function SettingsPage() {
       <ModulePageHeader title="Settings" tenantName={active?.name} description="Workspace identity and account security." />
 
       <Card>
-        <CardHeading>Workspace identity</CardHeading>
-        <div className="mt-3 grid gap-3 sm:grid-cols-2">
-          <Field label="Workspace name">
+        <div className="flex items-center justify-between">
+          <CardHeading>Business Profile</CardHeading>
+          <Link href="/app/brand">
+            <Button variant="secondary" size="sm">
+              Edit in Brand Brain →
+            </Button>
+          </Link>
+        </div>
+        <p className="mt-1.5 text-xs text-sx-text-muted">
+          Your canonical business identity, website, location, positioning, and verified channels.
+        </p>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <Field label="Business name">
             <Input value={active?.name ?? ""} disabled />
           </Field>
-          <Field label="Slug">
+          <Field label="Workspace slug">
             <Input value={active?.slug ?? ""} disabled />
           </Field>
         </div>
-        <p className="mt-2 text-[10.5px] text-sx-text-subtle">
-          Workspace identity is set at creation. Contact Stratxcel support if it needs to change.
-        </p>
       </Card>
 
       <Card>

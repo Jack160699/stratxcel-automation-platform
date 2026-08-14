@@ -1,65 +1,39 @@
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { NextResponse, type NextRequest } from "next/server";
+import { runSmartWebsiteDiscovery } from "@/lib/audit/v1/smart-discovery";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-function isPrivateIP(hostname: string): boolean {
-  const host = hostname.toLowerCase();
-  if (host === "localhost" || host === "127.0.0.1" || host === "::1" || host === "0.0.0.0") return true;
-  if (host.startsWith("10.") || host.startsWith("192.168.") || host.startsWith("169.254.")) return true;
-  if (host.startsWith("172.")) {
-    const parts = host.split(".");
-    if (parts.length >= 2) {
-      const second = parseInt(parts[1], 10);
-      if (second >= 16 && second <= 31) return true;
-    }
-  }
-  return false;
-}
-
-export async function POST(request: Request) {
-  const supabase = await createSupabaseServerClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    return Response.json({ error: "Not authenticated" }, { status: 401 });
-  }
-
+/**
+ * POST /api/platform/site-discovery/resolve
+ * Fast, bounded website crawl & discovery endpoint.
+ * Returns explicit state machine status (IDLE, VALIDATING, FETCHING, DISCOVERING, EXTRACTING, COMPLETE, PARTIAL, FAILED, TIMEOUT).
+ */
+export async function POST(req: NextRequest) {
   try {
-    const body = await request.json().catch(() => ({}));
-    let rawInput = (body.url ?? "").trim();
+    const body = (await req.json().catch(() => ({}))) as { websiteUrl?: unknown };
+    const websiteUrl = typeof body.websiteUrl === "string" ? body.websiteUrl.trim() : "";
 
-    if (!rawInput) {
-      return Response.json({ error: "URL is required" }, { status: 400 });
+    if (!websiteUrl) {
+      return NextResponse.json({ error: "websiteUrl is required" }, { status: 400 });
     }
 
-    if (!/^https?:\/\//i.test(rawInput)) {
-      rawInput = `https://${rawInput}`;
-    }
-
-    const parsed = new URL(rawInput);
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-      return Response.json({ error: "Invalid protocol. Only http and https allowed." }, { status: 400 });
-    }
-
-    if (isPrivateIP(parsed.hostname)) {
-      return Response.json({ error: "Private or internal URLs are restricted for security." }, { status: 400 });
-    }
-
-    const normalizedUrl = parsed.origin;
-
-    return Response.json({
-      ok: true,
-      rawInput,
-      normalizedUrl,
-      hostname: parsed.hostname,
-      verification_status: "not_checked",
-      verification_note: "URL normalized cleanly. Remote site fetch disabled for security (not_checked).",
+    const result = await runSmartWebsiteDiscovery(websiteUrl);
+    return NextResponse.json(result, {
+      status: 200,
+      headers: { "Cache-Control": "no-store" },
     });
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : "Failed to resolve website";
-    return Response.json({ error: msg }, { status: 400 });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Website discovery failed";
+    return NextResponse.json(
+      {
+        operationId: `disc_err_${Date.now()}`,
+        finalState: "FAILED",
+        isSuccess: false,
+        isPartial: false,
+        error: message,
+      },
+      { status: 500 }
+    );
   }
 }

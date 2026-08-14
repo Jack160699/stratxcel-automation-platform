@@ -8,6 +8,7 @@ import {
   recordUnmatchedEvent,
   updateWhatsAppMessageStatus,
   updateAgentChannelMessageStatus,
+  updateAuditDeliveryEventStatus,
 } from "@stratxcel/whatsapp";
 import { createServiceClient as createQueueClient, createPostgresQueueAdapter, recordWorkerHeartbeat, getWorkerHealth } from "@stratxcel/queue";
 
@@ -178,6 +179,11 @@ export async function handleInbound(
           console.error("[whatsapp-worker] agent-channel status correlation failed:", err instanceof Error ? err.message : String(err))
         );
       }
+
+      // Correlate with audit_delivery_events for product delivery (e.g. Audit reports)
+      await updateAuditDeliveryEventStatus(whatsapp, { providerMessageId: update.providerMessageId, status: update.status }).catch((err) =>
+        console.error("[whatsapp-worker] audit-delivery status correlation failed:", err instanceof Error ? err.message : String(err))
+      );
     }
   } catch (err) {
     // A genuine failure reaching a durable outcome for this delivery —

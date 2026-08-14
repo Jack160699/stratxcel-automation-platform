@@ -27,17 +27,71 @@
       "@/*": [
         "./*"
       ],
+      "@stratxcel/agent-core": [
+        "./packages/agent-core/src/index.ts"
+      ],
+      "@stratxcel/ai-runtime": [
+        "./packages/ai-runtime/src/index.ts"
+      ],
+      "@stratxcel/approvals": [
+        "./packages/approvals/src/index.ts"
+      ],
+      "@stratxcel/audit": [
+        "./packages/audit/src/index.ts"
+      ],
+      "@stratxcel/audit-engine": [
+        "./packages/audit-engine/src/index.ts"
+      ],
+      "@stratxcel/brand-brain": [
+        "./packages/brand-brain/src/index.ts"
+      ],
+      "@stratxcel/byok": [
+        "./packages/byok/src/index.ts"
+      ],
+      "@stratxcel/creative-studio": [
+        "./packages/creative-studio/src/index.ts"
+      ],
       "@stratxcel/email-runtime": [
         "./packages/email-runtime/src/index.ts"
       ],
-      "@stratxcel/websites-and-domains": [
-        "./packages/websites-and-domains/src/index.ts"
+      "@stratxcel/hermes": [
+        "./packages/hermes/src/index.ts"
+      ],
+      "@stratxcel/human-handoff": [
+        "./packages/human-handoff/src/index.ts"
+      ],
+      "@stratxcel/leads-and-crm": [
+        "./packages/leads-and-crm/src/index.ts"
+      ],
+      "@stratxcel/missions": [
+        "./packages/missions/src/index.ts"
+      ],
+      "@stratxcel/payments-and-wallet": [
+        "./packages/payments-and-wallet/src/index.ts"
+      ],
+      "@stratxcel/queue": [
+        "./packages/queue/src/index.ts"
+      ],
+      "@stratxcel/revenue-ops": [
+        "./packages/revenue-ops/src/index.ts"
       ],
       "@stratxcel/search-discovery": [
         "./packages/search-discovery/src/index.ts"
       ],
-      "@stratxcel/revenue-ops": [
-        "./packages/revenue-ops/src/index.ts"
+      "@stratxcel/storage": [
+        "./packages/storage/src/index.ts"
+      ],
+      "@stratxcel/trust-department": [
+        "./packages/trust-department/src/index.ts"
+      ],
+      "@stratxcel/websites-and-domains": [
+        "./packages/websites-and-domains/src/index.ts"
+      ],
+      "@stratxcel/whatsapp": [
+        "./packages/whatsapp/src/index.ts"
+      ],
+      "@stratxcel/workforce-core": [
+        "./packages/workforce-core/src/index.ts"
       ]
     }
   },

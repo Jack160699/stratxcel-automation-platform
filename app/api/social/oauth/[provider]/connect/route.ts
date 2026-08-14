@@ -1,12 +1,12 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { requireAdmin } from "@/lib/social/admin-guard";
+import { requireConnectorEligibleUser } from "@/lib/social/admin-guard";
 import { isValidProvider, getProvider } from "@/lib/social/providers";
 import { createSignedState } from "@/lib/social/oauth-state";
 import { createSupabaseServiceClient } from "@/lib/supabase/service";
 
 /**
  * GET /api/social/oauth/:provider/connect
- * Admin-only. Issues a signed, single-use, expiring state token and
+ * Issues a signed, single-use, expiring state token and
  * redirects the browser to the Meta authorization dialog for that provider.
  */
 export async function GET(
@@ -14,10 +14,11 @@ export async function GET(
   { params }: { params: Promise<{ provider: string }> }
 ) {
   const { provider } = await params;
+  const tenantId = req.nextUrl.searchParams.get("tenantId");
 
-  const admin = await requireAdmin();
-  if (!admin.ok) {
-    return NextResponse.json({ error: admin.error }, { status: admin.status });
+  const authUser = await requireConnectorEligibleUser(tenantId);
+  if (!authUser.ok) {
+    return NextResponse.json({ error: authUser.error, code: authUser.code }, { status: authUser.status });
   }
 
   if (!isValidProvider(provider)) {
@@ -32,7 +33,7 @@ export async function GET(
     provider,
     state_hash: hash,
     redirect_to: redirectTo,
-    created_by: admin.userId,
+    created_by: authUser.userId,
     expires_at: expiresAt.toISOString(),
   });
   if (error) {

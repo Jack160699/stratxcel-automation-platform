@@ -69,6 +69,8 @@ export async function GET(request: Request) {
     lastSync: brandBrain?.updated_at ?? null,
   }));
 
+  const canDirectConnect = ctx.role === "owner" || ctx.role === "admin";
+
   return Response.json({
     whatsapp,
     facebook: platformStatus("facebook"),
@@ -80,7 +82,7 @@ export async function GET(request: Request) {
     presence,
     selfService: {
       google: true,
-      social: false,
+      social: canDirectConnect,
       whatsapp: false,
     },
   }, { headers: { "Cache-Control": "private, no-store" } });

@@ -632,26 +632,99 @@ export function IntakeWizard({ order, onIntakeComplete }: { order: IntakeOrder; 
     setCurrentStepId(visibleSteps[currentIndex - 1].id);
   }
 
+  const hasKnownBusiness = Boolean(
+    (order.business_name && order.business_name !== PLACEHOLDER) ||
+    order.website_url ||
+    answers.businessDescription ||
+    answers.location
+  );
+
   if (!started) {
     return (
       <Card className="mx-auto max-w-2xl p-5 sm:p-7">
         <span className="inline-flex rounded-full border border-sx-border bg-sx-surface-2 px-3 py-1 font-sx-mono text-[11px] font-semibold text-sx-text-muted">
-          About 5–8 minutes
+          About 3–5 minutes
         </span>
-        <CardHeading className="mt-4">Tell us about your business</CardHeading>
+        <CardHeading className="mt-4">
+          {hasKnownBusiness ? "Confirm your business details" : "Tell us about your business"}
+        </CardHeading>
         <p className="mt-2 text-sm leading-6 text-sx-text-muted">
-          We&rsquo;ll ask simple questions and turn your answers into your Stratxcel Brand Brain. No marketing jargon and no long form.
+          {hasKnownBusiness
+            ? "We’ve loaded your verified business profile from your onboarding & Brand Brain. Confirm these details or jump straight into your growth goals."
+            : "We’ll ask simple questions and turn your answers into your Stratxcel Brand Brain. No marketing jargon and no long form."}
         </p>
+
+        {hasKnownBusiness && (
+          <div className="my-5 rounded-sx-md border border-sx-border bg-sx-surface-2 p-4">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase tracking-wider text-sx-text-subtle">
+                Saved Business Profile
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setStarted(true);
+                  setCurrentStepId("businessName");
+                }}
+                className="text-xs font-medium text-sx-accent hover:underline"
+              >
+                Edit
+              </button>
+            </div>
+            <div className="mt-3 grid gap-2.5 text-sm sm:grid-cols-2">
+              {order.business_name && order.business_name !== PLACEHOLDER && (
+                <div>
+                  <span className="block text-xs text-sx-text-subtle">Business Name</span>
+                  <span className="font-semibold text-sx-text">{order.business_name}</span>
+                </div>
+              )}
+              {order.website_url && (
+                <div>
+                  <span className="block text-xs text-sx-text-subtle">Website</span>
+                  <span className="font-semibold text-sx-accent break-all">{order.website_url}</span>
+                </div>
+              )}
+              {answers.location && (
+                <div>
+                  <span className="block text-xs text-sx-text-subtle">Location</span>
+                  <span className="text-sx-text">{String(answers.location)}</span>
+                </div>
+              )}
+              {answers.businessDescription && (
+                <div className="sm:col-span-2">
+                  <span className="block text-xs text-sx-text-subtle">Description / Services</span>
+                  <span className="text-sx-text text-xs line-clamp-2">{String(answers.businessDescription)}</span>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         <div className="mt-5 grid gap-3 text-sm text-sx-text-muted sm:grid-cols-3">
-          <div className="rounded-sx-sm border border-sx-border bg-sx-surface-2 p-3"><strong className="block text-sx-text">Mostly one tap</strong><span className="mt-1 block text-xs">Choose simple answers where possible.</span></div>
-          <div className="rounded-sx-sm border border-sx-border bg-sx-surface-2 p-3"><strong className="block text-sx-text">Speak if easier</strong><span className="mt-1 block text-xs">Voice input appears when your browser supports it.</span></div>
-          <div className="rounded-sx-sm border border-sx-border bg-sx-surface-2 p-3"><strong className="block text-sx-text">Saved as you go</strong><span className="mt-1 block text-xs">Close the page and continue later.</span></div>
+          <div className="rounded-sx-sm border border-sx-border bg-sx-surface-2 p-3">
+            <strong className="block text-sx-text">Mostly one tap</strong>
+            <span className="mt-1 block text-xs">Choose simple answers where possible.</span>
+          </div>
+          <div className="rounded-sx-sm border border-sx-border bg-sx-surface-2 p-3">
+            <strong className="block text-sx-text">Speak if easier</strong>
+            <span className="mt-1 block text-xs">Voice input appears when your browser supports it.</span>
+          </div>
+          <div className="rounded-sx-sm border border-sx-border bg-sx-surface-2 p-3">
+            <strong className="block text-sx-text">Saved as you go</strong>
+            <span className="mt-1 block text-xs">Close the page and continue later.</span>
+          </div>
         </div>
-        <Button variant="primary" size="touch" className="mt-6 w-full" onClick={() => {
-          setStarted(true);
-          trackFunnel("audit_intake_started", { surface: "audit_brand_brain_intake" });
-        }}>
-          Let&rsquo;s start →
+
+        <Button
+          variant="primary"
+          size="touch"
+          className="mt-6 w-full"
+          onClick={() => {
+            setStarted(true);
+            trackFunnel("audit_intake_started", { surface: "audit_brand_brain_intake" });
+          }}
+        >
+          {hasKnownBusiness ? "Continue to Audit questions →" : "Let’s start →"}
         </Button>
       </Card>
     );

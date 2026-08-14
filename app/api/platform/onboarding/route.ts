@@ -11,9 +11,10 @@ const ONBOARDING_METADATA_KEY = "stratxcel_onboarding_draft_v1";
 const MAX_STEP = 6;
 
 interface OnboardingRequestBody {
-  business?: { name?: string; slug?: string; industry?: string };
+  business?: { name?: string; slug?: string; industry?: string; website?: string; location?: string };
   brand?: {
     businessName?: string;
+    description?: string;
     audience?: string;
     tone?: string;
     offers?: string[];
@@ -143,12 +144,17 @@ export async function POST(request: Request) {
 
   let brandBrainSaved = false;
   const content: BrandBrainContent = {};
-  if (body.brand?.businessName) content.business_name = body.brand.businessName;
+  if (body.brand?.businessName || name) content.business_name = body.brand?.businessName || name;
+  if (body.business?.website) content.website_url = body.business.website;
+  if (body.business?.location) content.location = body.business.location;
   if (body.business?.industry) content.industry = body.business.industry;
+  if (body.brand?.description) content.description = body.brand.description;
   if (body.brand?.tone) content.tone_of_voice = body.brand.tone;
   if (body.brand?.audience) content.target_audience = body.brand.audience;
   if (body.brand?.offers?.length) content.products = body.brand.offers.map((o) => ({ name: o, description: "" }));
   if (body.brand?.restrictions?.length) content.rules = body.brand.restrictions;
+  if (body.goals?.length) content.goals = body.goals;
+
   if (Object.keys(content).length > 0) {
     try {
       await saveBrandBrainVersion(serviceClient, { tenantId: tenant.id, content, createdBy: user.id });

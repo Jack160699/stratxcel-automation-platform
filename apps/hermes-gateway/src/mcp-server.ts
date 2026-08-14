@@ -261,10 +261,10 @@ export async function handleMcpRequest(req: http.IncomingMessage, res: http.Serv
     if (req.method === "POST" && isInitializeRequest(body)) {
       transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: () => crypto.randomUUID(),
-        onsessioninitialized: (newSessionId) => {
+        onsessioninitialized: (newSessionId: string) => {
           sessions.set(newSessionId, transport as StreamableHTTPServerTransport);
         },
-        onsessionclosed: (closedSessionId) => {
+        onsessionclosed: (closedSessionId: string) => {
           sessions.delete(closedSessionId);
         },
       });
