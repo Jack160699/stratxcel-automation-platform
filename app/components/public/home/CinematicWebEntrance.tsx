@@ -26,8 +26,8 @@ function getServerSnapshot() {
 export function CinematicWebEntrance() {
   const shouldPlayOnMount = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
-  const [isComplete, setIsComplete] = useState<boolean>(true);
-  const [currentAct, setCurrentAct] = useState<number>(0);
+  const [isComplete, setIsComplete] = useState<boolean>(false);
+  const [currentAct, setCurrentAct] = useState<number>(1);
   const [activeShot, setActiveShot] = useState<number>(0);
   const [spawnedPings, setSpawnedPings] = useState<number[]>([]);
 
@@ -292,6 +292,10 @@ export function CinematicWebEntrance() {
       delete (window as unknown as { __replayStratxcelIntro?: () => void }).__replayStratxcelIntro;
     };
   }, [playSequence]);
+
+  if (!shouldPlayOnMount && !isPlaying) {
+    return null;
+  }
 
   if (isComplete && !isPlaying) {
     return null;
