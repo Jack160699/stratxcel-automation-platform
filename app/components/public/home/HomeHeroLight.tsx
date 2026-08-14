@@ -16,7 +16,6 @@ import {
   LockClosedIcon,
   CheckIcon,
   ArrowRightIcon,
-  SparklesIcon,
 } from "../icons/FeatureIcons";
 
 interface CapabilityView {
@@ -158,6 +157,12 @@ export function HomeHeroLight() {
   const [activeId, setActiveId] = useState<string>("website");
   const active = CAPABILITY_VIEWS.find((v) => v.id === activeId) || CAPABILITY_VIEWS[0];
 
+  const handleReplay = () => {
+    if (typeof window !== "undefined" && (window as unknown as { __replayStratxcelIntro?: () => void }).__replayStratxcelIntro) {
+      (window as unknown as { __replayStratxcelIntro: () => void }).__replayStratxcelIntro();
+    }
+  };
+
   return (
     <section
       id="hero"
@@ -172,7 +177,7 @@ export function HomeHeroLight() {
       </div>
 
       <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        {/* Main Headline & Value Proposition */}
+        {/* Main Headline & Strategic Value Proposition */}
         <div className="mx-auto max-w-4xl text-center">
           {/* Eyebrow Badge */}
           <div className="inline-flex items-center gap-2 rounded-full border border-blue-600/20 bg-blue-50/90 px-4 py-1.5 text-blue-700 shadow-xs backdrop-blur-sm">
@@ -181,25 +186,30 @@ export function HomeHeroLight() {
               <span className="relative inline-flex h-2 w-2 rounded-full bg-blue-600" />
             </span>
             <span className="font-sx-mono text-xs font-bold uppercase tracking-[0.18em]">
-              STRATXCEL AI AGENT
+              AUTONOMOUS WORKFORCE FOR MODERN COMMERCE
             </span>
           </div>
 
           {/* Primary H1 */}
-          <h1 className="mt-6 font-sx-sans text-[clamp(2.3rem,5.6vw,4.4rem)] font-bold tracking-tight text-slate-900 leading-[1.08]">
-            Your AI assistant for the{" "}
+          <h1 className="mt-6 font-sx-sans text-[clamp(2.3rem,5.6vw,4.4rem)] font-bold tracking-tight text-slate-900 leading-[1.1]">
+            You didn’t start your business to spend your day{" "}
             <span className="bg-gradient-to-r from-blue-600 to-sky-600 bg-clip-text text-transparent">
-              business you are building.
+              managing everything online.
             </span>
           </h1>
 
+          {/* Core Statement */}
+          <div className="mt-4 font-sx-sans text-xl sm:text-2xl font-semibold text-blue-600">
+            You need the work to get done.
+          </div>
+
           {/* Clean Subhead */}
-          <p className="mx-auto mt-6 max-w-2xl font-sx-sans text-base sm:text-lg leading-relaxed text-slate-600">
-            Connect the tools you already use. Stratxcel takes care of the digital work your business needs every day — website, Google discovery, content, social media, and customer lead follow-ups.
+          <p className="mx-auto mt-4 max-w-2xl font-sx-sans text-base sm:text-lg leading-relaxed text-slate-600">
+            Meet <strong>Stratxcel</strong>. Your AI Business Agent that autonomously captures leads, resolves client inquiries, automates schedules, and executes digital tasks 24/7.
           </p>
 
           {/* Dual CTAs */}
-          <div className="mt-9 flex flex-col items-center justify-center gap-3.5 sm:flex-row sm:gap-4">
+          <div className="mt-8 flex flex-col items-center justify-center gap-3.5 sm:flex-row sm:gap-4">
             <TrackedCtaLink
               href="/audit"
               event="audit_cta_click"
@@ -222,6 +232,37 @@ export function HomeHeroLight() {
           <p className="mt-3.5 font-sx-sans text-xs text-slate-500">
             ₹999 one-time · GST included · No automatic subscription · Complete 30/60/90-day roadmap
           </p>
+
+          {/* Live Agent Telemetry Strip */}
+          <div className="mt-10 mx-auto max-w-3xl rounded-xl border border-slate-200 bg-white/80 p-4 shadow-sm backdrop-blur-md">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 text-left">
+              <div className="border-b sm:border-b-0 sm:border-r border-slate-100 pb-3 sm:pb-0 sm:pr-4">
+                <p className="font-sx-mono text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                  Agent Status
+                </p>
+                <p className="mt-1 flex items-center gap-2 font-sx-sans text-sm font-bold text-slate-900">
+                  <span className="h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_8px_#10b981]" />
+                  Active &amp; Executing
+                </p>
+              </div>
+              <div className="border-b sm:border-b-0 sm:border-r border-slate-100 pb-3 sm:pb-0 sm:px-4">
+                <p className="font-sx-mono text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                  Lead Response Time
+                </p>
+                <p className="mt-1 font-sx-sans text-sm font-bold text-slate-900">
+                  &lt; 3.8 Seconds
+                </p>
+              </div>
+              <div className="sm:pl-4">
+                <p className="font-sx-mono text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                  Digital Hours Saved
+                </p>
+                <p className="mt-1 font-sx-sans text-sm font-bold text-slate-900">
+                  28.4 hrs / wk
+                </p>
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Living SaaS Workstation Window */}
@@ -387,6 +428,19 @@ export function HomeHeroLight() {
           </div>
         </div>
       </div>
+
+      {/* Floating Replay Brand Intro Button */}
+      <button
+        type="button"
+        onClick={handleReplay}
+        className="fixed bottom-6 left-6 z-40 flex items-center gap-2 rounded-full border border-slate-200/90 bg-white/90 px-3.5 py-2 font-sx-mono text-xs font-medium text-slate-700 shadow-lg backdrop-blur-md transition-all hover:bg-slate-50 hover:border-blue-400 hover:text-blue-600"
+      >
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+          <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+          <path d="M3 3v5h5" />
+        </svg>
+        <span>Replay Brand Intro</span>
+      </button>
     </section>
   );
 }

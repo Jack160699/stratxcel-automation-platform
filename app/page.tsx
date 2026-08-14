@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { PublicHeader } from "@/app/components/PublicHeader";
 import { PublicFooter } from "@/app/components/PublicFooter";
+import { CinematicWebEntrance } from "@/app/components/public/home/CinematicWebEntrance";
 import { HomeHeroLight } from "@/app/components/public/home/HomeHeroLight";
 import { HomeProblemRecognition } from "@/app/components/public/home/HomeProblemRecognition";
 import { HomeHowStratxcelHelps } from "@/app/components/public/home/HomeHowStratxcelHelps";
@@ -33,6 +34,9 @@ export const metadata: Metadata = {
 export default function HomePage() {
   return (
     <div className="sx-public-theme flex min-h-screen flex-col overflow-x-hidden bg-white font-sx-sans text-slate-900 antialiased">
+      {/* Cinematic Web Entrance & Seamless Hero Transition */}
+      <CinematicWebEntrance />
+
       {/* Primary Light Sticky Header */}
       <PublicHeader logoVariant="light" />
 
