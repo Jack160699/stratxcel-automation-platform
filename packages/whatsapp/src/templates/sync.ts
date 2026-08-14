@@ -1,5 +1,6 @@
 import type { ServiceClient } from "../db.ts";
 import { getIntegrationMode } from "../flags.ts";
+import { inspectMetaTemplateEndpoint } from "./meta-api.ts";
 
 export interface WhatsAppTemplateRow {
   id: string;
@@ -14,24 +15,6 @@ export interface WhatsAppTemplateRow {
   synced_at: string | null;
 }
 
-interface MetaTemplateApiEntry {
-  id: string;
-  name: string;
-  language: string;
-  category?: string;
-  status?: string;
-  components?: unknown[];
-}
-
-interface MetaGraphErrorBody {
-  error?: {
-    message?: string;
-    code?: number;
-    error_subcode?: number;
-    fbtrace_id?: string;
-  };
-}
-
 /**
  * Pulls the real, current template list + approval status from Meta's own
  * Graph API — never fabricates an APPROVED status. In 'disabled'/'shadow'
@@ -43,7 +26,7 @@ interface MetaGraphErrorBody {
  */
 export async function syncTemplatesForBinding(
   supabase: ServiceClient,
-  input: { tenantId: string; phoneBindingId: string; wabaId: string },
+  input: { tenantId: string; phoneBindingId: string; wabaId: string; phoneNumberId: string },
   fetchFn: typeof fetch = fetch
 ): Promise<{ synced: number; mode: "disabled" | "shadow" | "live" }> {
   const mode = getIntegrationMode("WHATSAPP_INTEGRATION_MODE");
@@ -51,30 +34,25 @@ export async function syncTemplatesForBinding(
     return { synced: 0, mode };
   }
 
-  const token = process.env.WHATSAPP_TOKEN;
-  const apiVersion = process.env.WHATSAPP_GRAPH_API_VERSION ?? "v20.0";
-  if (!token) {
-    throw new Error("WHATSAPP_INTEGRATION_MODE is 'live' but WHATSAPP_TOKEN is not set");
+  const inspection = await inspectMetaTemplateEndpoint(
+    { wabaId: input.wabaId, phoneNumberId: input.phoneNumberId },
+    fetchFn,
+  );
+  if (!inspection.resolvedWabaId || !inspection.templates) {
+    throw new Error("Meta template sync failed: no canonical WhatsApp Business Account resolved");
   }
 
-  const response = await fetchFn(`https://graph.facebook.com/${apiVersion}/${input.wabaId}/message_templates?limit=200`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!response.ok) {
-    const body = (await response.json().catch(() => null)) as MetaGraphErrorBody | null;
-    const error = body?.error;
-    const details = [
-      error?.code != null ? `code ${error.code}` : null,
-      error?.error_subcode != null ? `subcode ${error.error_subcode}` : null,
-      error?.message?.trim() || null,
-      error?.fbtrace_id ? `trace ${error.fbtrace_id}` : null,
-    ].filter(Boolean);
-    throw new Error(`Meta template sync failed: HTTP ${response.status}${details.length ? ` (${details.join("; ")})` : ""}`);
+  if (inspection.resolvedWabaId !== input.wabaId) {
+    const { error } = await supabase
+      .from("whatsapp_phone_bindings")
+      .update({ waba_id: inspection.resolvedWabaId, updated_at: new Date().toISOString() })
+      .eq("id", input.phoneBindingId)
+      .eq("phone_number_id", input.phoneNumberId);
+    if (error) throw new Error(`Unable to persist canonical WABA ID: ${error.message}`);
   }
-  const body = (await response.json()) as { data?: MetaTemplateApiEntry[] };
 
   let synced = 0;
-  for (const entry of body.data ?? []) {
+  for (const entry of inspection.templates) {
     const status = (entry.status ?? "PENDING").toUpperCase();
     const normalizedStatus = ["PENDING", "APPROVED", "REJECTED", "DISABLED", "PAUSED"].includes(status) ? status : "PENDING";
 
@@ -95,7 +73,8 @@ export async function syncTemplatesForBinding(
         },
         { onConflict: "tenant_id,name,language" }
       );
-    if (!error) synced += 1;
+    if (error) throw new Error(`Unable to persist Meta template ${entry.name}: ${error.message}`);
+    synced += 1;
   }
 
   return { synced, mode };

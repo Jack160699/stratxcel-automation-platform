@@ -4,6 +4,9 @@ export interface PlatformWhatsAppSender {
   bindingId: string;
   tenantId: string;
   wabaId: string;
+  phoneNumberId: string;
+  displayPhoneNumber: string | null;
+  providerAccountRef: string | null;
 }
 
 /**
@@ -22,33 +25,54 @@ export async function resolvePlatformWhatsAppSender(
   const bindingId = process.env.STRATXCEL_WHATSAPP_PLATFORM_BINDING_ID?.trim();
   if (bindingId) {
     const row = await loadActiveOutboundBinding(supabase, { id: bindingId });
-    if (row) return { ok: true, sender: { bindingId: row.id, tenantId: row.tenant_id, wabaId: row.waba_id } };
+    if (row) return { ok: true, sender: toPlatformSender(row) };
     return { ok: false, reason: "sender_not_configured" };
   }
 
   const platformTenantId = process.env.STRATXCEL_WHATSAPP_PLATFORM_TENANT_ID?.trim();
   if (platformTenantId) {
     const row = await loadActiveOutboundBinding(supabase, { tenantId: platformTenantId });
-    if (row) return { ok: true, sender: { bindingId: row.id, tenantId: row.tenant_id, wabaId: row.waba_id } };
+    if (row) return { ok: true, sender: toPlatformSender(row) };
     return { ok: false, reason: "sender_not_configured" };
   }
 
   const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID?.trim();
   if (phoneNumberId) {
     const row = await loadActiveOutboundBinding(supabase, { phoneNumberId });
-    if (row) return { ok: true, sender: { bindingId: row.id, tenantId: row.tenant_id, wabaId: row.waba_id } };
+    if (row) return { ok: true, sender: toPlatformSender(row) };
   }
 
   return { ok: false, reason: "sender_not_configured" };
 }
 
+interface PlatformBindingRow {
+  id: string;
+  tenant_id: string;
+  source: string;
+  waba_id: string;
+  phone_number_id: string;
+  display_phone_number: string | null;
+  provider_account_ref: string | null;
+}
+
+function toPlatformSender(row: PlatformBindingRow): PlatformWhatsAppSender {
+  return {
+    bindingId: row.id,
+    tenantId: row.tenant_id,
+    wabaId: row.waba_id,
+    phoneNumberId: row.phone_number_id,
+    displayPhoneNumber: row.display_phone_number,
+    providerAccountRef: row.provider_account_ref,
+  };
+}
+
 async function loadActiveOutboundBinding(
   supabase: ServiceClient,
   filter: { id?: string; tenantId?: string; phoneNumberId?: string },
-): Promise<{ id: string; tenant_id: string; source: string; waba_id: string } | null> {
+): Promise<PlatformBindingRow | null> {
   let query = supabase
     .from("whatsapp_phone_bindings")
-    .select("id, tenant_id, source, waba_id")
+    .select("id, tenant_id, source, waba_id, phone_number_id, display_phone_number, provider_account_ref")
     .eq("status", "active")
     .eq("outbound_enabled", true);
   if (filter.id) query = query.eq("id", filter.id);
@@ -56,5 +80,5 @@ async function loadActiveOutboundBinding(
   if (filter.phoneNumberId) query = query.eq("phone_number_id", filter.phoneNumberId);
   const { data } = await query.maybeSingle();
   if (!data || data.source === "legacy_verified_bot") return null;
-  return data as { id: string; tenant_id: string; source: string; waba_id: string };
+  return data as PlatformBindingRow;
 }
