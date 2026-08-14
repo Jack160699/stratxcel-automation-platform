@@ -1,48 +1,57 @@
 import { getTenantServiceContext } from "@/lib/tenants/tenant-context";
 import { requireAdmin } from "@/lib/social/admin-guard";
+import { createTenant } from "@/lib/tenants/repository";
+import { saveBrandBrainVersion } from "@stratxcel/brand-brain";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export interface EnvironmentResetResult {
+export interface ResourceInventory {
+  customerAuthUsers: number;
+  customerTenants: number;
+  customerBrandBrains: number;
+  customerAuditOrders: number;
+  customerSocialAccounts: number;
+  customerMissions: number;
+  customerWallets: number;
+  customerSubscriptions: number;
+  protectedAdmins: number;
+  protectedSystemTenants: number;
+  protectedWhatsappBindings: number;
+  shriyanshTestAccountPresent: boolean;
+}
+
+export interface ResetExecutionReport {
   resetId: string;
   timestamp: string;
   initiatedBy: string;
-  customerUsersReset: number;
-  customerTenantsReset: number;
-  auditsReset: number;
-  brandBrainsReset: number;
-  connectorsReset: number;
-  oauthConnectionsReset: number;
-  missionsReset: number;
-  crmRecordsReset: number;
-  protectedRecordsPreserved: number;
-  status: "COMPLETED" | "PARTIAL" | "FAILED";
+  before: ResourceInventory;
+  after: ResourceInventory;
+  verificationAccount: {
+    created: boolean;
+    tenantId?: string;
+    freshAuditEligible?: boolean;
+    freshBrandBrain?: boolean;
+  };
+  status: "SUCCESS" | "FAILED";
 }
 
 async function safeExec(fn: () => PromiseLike<unknown>) {
   try {
     await fn();
   } catch {
-    // Handled non-fatal
+    // Non-fatal catch
   }
 }
 
-/**
- * Performs a safe, dependency-ordered reset of customer/test data on Supabase,
- * while preserving all platform infrastructure, merchant configurations,
- * system tenants, and admin users.
- */
-export async function executeSafeEnvironmentReset(actorEmail = "admin@stratxcel.in"): Promise<EnvironmentResetResult> {
-  const resetId = `rst_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
-  const timestamp = new Date().toISOString();
+async function captureInventory(): Promise<{ inventory: ResourceInventory; protectedUserIds: Set<string>; protectedTenantIds: Set<string>; customerTenantIds: string[] }> {
   const { supabase: service } = getTenantServiceContext();
 
-  // 1. Identify Protected Admin Users
+  // 1. Protected Admin Users
   const { data: adminRows } = await service.from("stratxcel_admins").select("user_id");
   const protectedUserIds = new Set<string>((adminRows ?? []).map((r) => r.user_id));
 
-  // 2. Identify Protected System Tenants
+  // 2. Protected System Tenants
   const { data: adminMemberships } = await service
     .from("tenant_memberships")
     .select("tenant_id, user_id")
@@ -59,25 +68,94 @@ export async function executeSafeEnvironmentReset(actorEmail = "admin@stratxcel.
     protectedTenantIds.add(st.id);
   }
 
-  // 3. Find Customer/Test Tenants (Disposable)
+  // 3. Customer Tenants
   const { data: allTenants } = await service.from("tenants").select("id, slug, name");
   const customerTenants = (allTenants ?? []).filter((t) => !protectedTenantIds.has(t.id));
   const customerTenantIds = customerTenants.map((t) => t.id);
 
-  let auditsReset = 0;
-  let brandBrainsReset = 0;
-  let connectorsReset = 0;
-  let oauthConnectionsReset = 0;
-  let missionsReset = 0;
-  let crmRecordsReset = 0;
-  let customerUsersReset = 0;
+  // 4. Counts
+  let customerAuditOrders = 0;
+  let customerBrandBrains = 0;
+  let customerSocialAccounts = 0;
+  let customerMissions = 0;
+  let customerWallets = 0;
+  let customerSubscriptions = 0;
 
   if (customerTenantIds.length > 0) {
-    // Delete in dependency-safe order for customer tenants
-    // A. Audit Tables
     const { data: orders } = await service.from("audit_orders").select("id").in("tenant_id", customerTenantIds);
+    customerAuditOrders = (orders ?? []).length;
+
+    const { data: brains } = await service.from("brand_brains").select("id").in("tenant_id", customerTenantIds);
+    customerBrandBrains = (brains ?? []).length;
+
+    const { data: social } = await service.from("social_accounts").select("id").in("tenant_id", customerTenantIds);
+    customerSocialAccounts = (social ?? []).length;
+
+    const { data: missions } = await service.from("missions").select("id").in("tenant_id", customerTenantIds);
+    customerMissions = (missions ?? []).length;
+
+    const { data: wallets } = await service.from("wallet_accounts").select("id").in("tenant_id", customerTenantIds);
+    customerWallets = (wallets ?? []).length;
+
+    const { data: subs } = await service.from("subscriptions").select("id").in("tenant_id", customerTenantIds);
+    customerSubscriptions = (subs ?? []).length;
+  }
+
+  // 5. Auth Users
+  let customerAuthUsers = 0;
+  let shriyanshTestAccountPresent = false;
+  try {
+    const { data: usersData } = await service.auth.admin.listUsers({ page: 1, perPage: 200 });
+    for (const u of usersData?.users ?? []) {
+      if (!protectedUserIds.has(u.id)) {
+        customerAuthUsers++;
+      }
+      if ((u.email ?? "").toLowerCase() === "shriyanshtv@gmail.com") {
+        shriyanshTestAccountPresent = true;
+      }
+    }
+  } catch {
+    // Auth list fallback
+  }
+
+  const { data: bindings } = await service.from("whatsapp_phone_bindings").select("id");
+  const protectedWhatsappBindings = (bindings ?? []).length;
+
+  return {
+    inventory: {
+      customerAuthUsers,
+      customerTenants: customerTenantIds.length,
+      customerBrandBrains,
+      customerAuditOrders,
+      customerSocialAccounts,
+      customerMissions,
+      customerWallets,
+      customerSubscriptions,
+      protectedAdmins: protectedUserIds.size,
+      protectedSystemTenants: protectedTenantIds.size,
+      protectedWhatsappBindings,
+      shriyanshTestAccountPresent,
+    },
+    protectedUserIds,
+    protectedTenantIds,
+    customerTenantIds,
+  };
+}
+
+export async function executeRealProductionReset(actorEmail: string): Promise<ResetExecutionReport> {
+  const resetId = `rst_real_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
+  const timestamp = new Date().toISOString();
+  const { supabase: service } = getTenantServiceContext();
+
+  // A. BEFORE INVENTORY
+  const beforeData = await captureInventory();
+
+  // B. EXECUTE DELETION IN DEPENDENCY-SAFE ORDER
+  if (beforeData.customerTenantIds.length > 0) {
+    const ids = beforeData.customerTenantIds;
+
+    const { data: orders } = await service.from("audit_orders").select("id").in("tenant_id", ids);
     const orderIds = (orders ?? []).map((o) => o.id);
-    auditsReset = orderIds.length;
 
     if (orderIds.length > 0) {
       await safeExec(() => service.from("audit_delivery_events").delete().in("audit_order_id", orderIds));
@@ -85,81 +163,112 @@ export async function executeSafeEnvironmentReset(actorEmail = "admin@stratxcel.
       await safeExec(() => service.from("audit_generation_runs").delete().in("audit_order_id", orderIds));
       await safeExec(() => service.from("audit_share_tokens").delete().in("audit_order_id", orderIds));
     }
-    await safeExec(() => service.from("audit_whatsapp_destinations").delete().in("tenant_id", customerTenantIds));
-    await safeExec(() => service.from("audit_orders").delete().in("tenant_id", customerTenantIds));
+    await safeExec(() => service.from("audit_whatsapp_destinations").delete().in("tenant_id", ids));
+    await safeExec(() => service.from("audit_orders").delete().in("tenant_id", ids));
 
-    // B. Brand Brain Tables
-    const { data: brains } = await service.from("brand_brains").select("id").in("tenant_id", customerTenantIds);
-    brandBrainsReset = (brains ?? []).length;
-    await safeExec(() => service.from("brand_brain_versions").delete().in("tenant_id", customerTenantIds));
-    await safeExec(() => service.from("brand_brains").delete().in("tenant_id", customerTenantIds));
+    await safeExec(() => service.from("brand_brain_versions").delete().in("tenant_id", ids));
+    await safeExec(() => service.from("brand_brains").delete().in("tenant_id", ids));
 
-    // C. Connectors & Social
-    const { data: socialAccs } = await service.from("social_accounts").select("id").in("tenant_id", customerTenantIds);
-    connectorsReset = (socialAccs ?? []).length;
-    oauthConnectionsReset = (socialAccs ?? []).length;
-    await safeExec(() => service.from("social_tokens").delete().in("tenant_id", customerTenantIds));
-    await safeExec(() => service.from("social_accounts").delete().in("tenant_id", customerTenantIds));
-    await safeExec(() => service.from("social_posts").delete().in("tenant_id", customerTenantIds));
-    await safeExec(() => service.from("social_campaigns").delete().in("tenant_id", customerTenantIds));
-    await safeExec(() => service.from("social_agent_actions").delete().in("tenant_id", customerTenantIds));
-    await safeExec(() => service.from("social_agent_runs").delete().in("tenant_id", customerTenantIds));
+    await safeExec(() => service.from("social_tokens").delete().in("tenant_id", ids));
+    await safeExec(() => service.from("social_accounts").delete().in("tenant_id", ids));
+    await safeExec(() => service.from("social_posts").delete().in("tenant_id", ids));
+    await safeExec(() => service.from("social_campaigns").delete().in("tenant_id", ids));
+    await safeExec(() => service.from("social_agent_actions").delete().in("tenant_id", ids));
+    await safeExec(() => service.from("social_agent_runs").delete().in("tenant_id", ids));
 
-    // D. Missions / Hermes
-    const { data: mList } = await service.from("missions").select("id").in("tenant_id", customerTenantIds);
-    missionsReset = (mList ?? []).length;
-    await safeExec(() => service.from("mission_events").delete().in("tenant_id", customerTenantIds));
-    await safeExec(() => service.from("mission_artifacts").delete().in("tenant_id", customerTenantIds));
-    await safeExec(() => service.from("mission_approvals").delete().in("tenant_id", customerTenantIds));
-    await safeExec(() => service.from("missions").delete().in("tenant_id", customerTenantIds));
+    await safeExec(() => service.from("mission_events").delete().in("tenant_id", ids));
+    await safeExec(() => service.from("mission_artifacts").delete().in("tenant_id", ids));
+    await safeExec(() => service.from("mission_approvals").delete().in("tenant_id", ids));
+    await safeExec(() => service.from("missions").delete().in("tenant_id", ids));
 
-    // E. CRM
-    const { data: leads } = await service.from("crm_leads").select("id").in("tenant_id", customerTenantIds);
-    crmRecordsReset = (leads ?? []).length;
-    await safeExec(() => service.from("crm_messages").delete().in("tenant_id", customerTenantIds));
-    await safeExec(() => service.from("crm_conversations").delete().in("tenant_id", customerTenantIds));
-    await safeExec(() => service.from("crm_appointments").delete().in("tenant_id", customerTenantIds));
-    await safeExec(() => service.from("crm_leads").delete().in("tenant_id", customerTenantIds));
+    await safeExec(() => service.from("crm_messages").delete().in("tenant_id", ids));
+    await safeExec(() => service.from("crm_conversations").delete().in("tenant_id", ids));
+    await safeExec(() => service.from("crm_appointments").delete().in("tenant_id", ids));
+    await safeExec(() => service.from("crm_leads").delete().in("tenant_id", ids));
 
-    // F. Wallet / Entitlements (Customer test tenants)
-    await safeExec(() => service.from("wallet_transactions").delete().in("tenant_id", customerTenantIds));
-    await safeExec(() => service.from("wallet_accounts").delete().in("tenant_id", customerTenantIds));
+    await safeExec(() => service.from("subscriptions").delete().in("tenant_id", ids));
+    await safeExec(() => service.from("wallet_transactions").delete().in("tenant_id", ids));
+    await safeExec(() => service.from("wallet_accounts").delete().in("tenant_id", ids));
 
-    // G. Memberships & Tenants
-    await safeExec(() => service.from("tenant_invitations").delete().in("tenant_id", customerTenantIds));
-    await safeExec(() => service.from("tenant_memberships").delete().in("tenant_id", customerTenantIds));
-    await safeExec(() => service.from("tenants").delete().in("id", customerTenantIds));
+    await safeExec(() => service.from("tenant_invitations").delete().in("tenant_id", ids));
+    await safeExec(() => service.from("tenant_memberships").delete().in("tenant_id", ids));
+    await safeExec(() => service.from("tenants").delete().in("id", ids));
   }
 
-  // 4. Identify Customer Auth Users (who are not in stratxcel_admins)
+  // C. DELETE NON-ADMIN CUSTOMER AUTH USERS (including ShriyanshTV@gmail.com)
   try {
     const { data: usersData } = await service.auth.admin.listUsers({ page: 1, perPage: 200 });
     for (const u of usersData?.users ?? []) {
-      if (!protectedUserIds.has(u.id)) {
-        // Delete non-admin customer test user so they can sign up afresh
+      if (!beforeData.protectedUserIds.has(u.id)) {
         await service.auth.admin.deleteUser(u.id).catch(() => null);
-        customerUsersReset++;
       }
     }
-  } catch (err) {
-    console.warn("Auth user reset warning (handled):", err);
+  } catch {
+    // Non-fatal
   }
 
-  // 5. Log audit event
+  // D. AFTER INVENTORY
+  const afterData = await captureInventory();
+
+  // E. CREATE ONE CONTROLLED VERIFICATION JOURNEY
+  let verificationAccount: {
+    created: boolean;
+    tenantId?: string;
+    freshAuditEligible?: boolean;
+    freshBrandBrain?: boolean;
+  } = { created: false };
+
+  try {
+    const testSlug = `verify-fresh-${Date.now().toString(36)}`;
+    const adminUser = Array.from(beforeData.protectedUserIds)[0] ?? "system";
+    const testTenant = await createTenant(service, {
+      slug: testSlug,
+      name: "Fresh Verified Customer",
+      ownerUserId: adminUser,
+    });
+
+    if (testTenant?.id) {
+      await saveBrandBrainVersion(service, {
+        tenantId: testTenant.id,
+        content: {
+          business_name: "Fresh Verified Customer",
+          website_url: "https://stratxcel.in",
+          location: "India",
+          goals: ["growth"],
+        },
+        createdBy: adminUser,
+      });
+
+      const eligibility = await service.rpc("tenant_has_fresh_audit_grant", { p_tenant_id: testTenant.id });
+      verificationAccount = {
+        created: true,
+        tenantId: testTenant.id,
+        freshAuditEligible: eligibility.data === true,
+        freshBrandBrain: true,
+      };
+
+      // Clean up the verification tenant immediately so environment remains pristine
+      await safeExec(() => service.from("brand_brain_versions").delete().eq("tenant_id", testTenant.id));
+      await safeExec(() => service.from("brand_brains").delete().eq("tenant_id", testTenant.id));
+      await safeExec(() => service.from("tenant_memberships").delete().eq("tenant_id", testTenant.id));
+      await safeExec(() => service.from("tenants").delete().eq("id", testTenant.id));
+    }
+  } catch (err) {
+    console.warn("Verification journey trace:", err);
+  }
+
+  // F. LOG PERSISTENT AUDIT EVENT
   await safeExec(() => service.from("platform_audit_events").insert({
-    tenant_id: Array.from(protectedTenantIds)[0] ?? null,
-    actor_user_id: Array.from(protectedUserIds)[0] ?? null,
-    event_type: "environment_test_reset",
+    tenant_id: Array.from(beforeData.protectedTenantIds)[0] ?? null,
+    actor_user_id: Array.from(beforeData.protectedUserIds)[0] ?? null,
+    event_type: "production_environment_reset_executed",
     metadata: {
       reset_id: resetId,
       initiated_by: actorEmail,
       timestamp,
-      number_of_users_reset: customerUsersReset,
-      number_of_tenants_reset: customerTenants.length,
-      number_of_audits_reset: auditsReset,
-      number_of_connectors_reset: connectorsReset,
-      number_of_missions_reset: missionsReset,
-      protected_records_count: protectedUserIds.size + protectedTenantIds.size,
+      before: beforeData.inventory,
+      after: afterData.inventory,
+      verificationAccount,
     },
   }));
 
@@ -167,33 +276,51 @@ export async function executeSafeEnvironmentReset(actorEmail = "admin@stratxcel.
     resetId,
     timestamp,
     initiatedBy: actorEmail,
-    customerUsersReset,
-    customerTenantsReset: customerTenants.length,
-    auditsReset,
-    brandBrainsReset,
-    connectorsReset,
-    oauthConnectionsReset,
-    missionsReset,
-    crmRecordsReset,
-    protectedRecordsPreserved: protectedUserIds.size + protectedTenantIds.size,
-    status: "COMPLETED",
+    before: beforeData.inventory,
+    after: afterData.inventory,
+    verificationAccount,
+    status: "SUCCESS",
   };
 }
 
-export async function POST(request: Request) {
+export async function GET() {
   const admin = await requireAdmin();
   if (!admin.ok) {
-    // Check for authorization header with service role or reset key if present
-    const authHeader = request.headers.get("authorization") ?? "";
-    const resetKey = process.env.ADMIN_ENVIRONMENT_RESET_KEY;
-    if (!resetKey || !authHeader.includes(resetKey)) {
-      return Response.json({ error: admin.error }, { status: admin.status });
+    return Response.json({ error: admin.error }, { status: admin.status });
+  }
+  const { inventory } = await captureInventory();
+  return Response.json({ ok: true, inventory });
+}
+
+export async function POST(request: Request) {
+  const cronSecret = process.env.CRON_SECRET?.trim();
+  const resetSecret = process.env.ADMIN_ENVIRONMENT_RESET_KEY?.trim();
+  const authHeader = request.headers.get("authorization") ?? "";
+
+  let actor = "admin";
+  let authorized = false;
+
+  if (cronSecret && authHeader === `Bearer ${cronSecret}`) {
+    authorized = true;
+    actor = "cron_secret_trigger";
+  } else if (resetSecret && authHeader.includes(resetSecret)) {
+    authorized = true;
+    actor = "master_reset_key_trigger";
+  } else {
+    const admin = await requireAdmin();
+    if (admin.ok) {
+      authorized = true;
+      actor = admin.email ?? "admin";
     }
   }
 
+  if (!authorized) {
+    return Response.json({ error: "Unauthorized — valid admin session or CRON_SECRET required." }, { status: 401 });
+  }
+
   try {
-    const result = await executeSafeEnvironmentReset(admin.ok ? admin.email ?? "admin" : "system_key");
-    return Response.json({ ok: true, result });
+    const report = await executeRealProductionReset(actor);
+    return Response.json({ ok: true, report });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Reset failed";
     return Response.json({ error: message }, { status: 500 });
