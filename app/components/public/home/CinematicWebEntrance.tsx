@@ -2,6 +2,8 @@
 
 import React, { useEffect, useRef, useState, useCallback, useSyncExternalStore } from "react";
 
+/* ─── Session / Reduced-Motion External Store ────────────────────────────── */
+
 function subscribe(callback: () => void) {
   if (typeof window === "undefined") return () => {};
   window.addEventListener("storage", callback);
@@ -23,12 +25,39 @@ function getServerSnapshot() {
   return false;
 }
 
+/* ─── Notification Badge Data (Act 2: Digital Overload) ──────────────────── */
+
+const OVERLOAD_BADGES = [
+  { text: "42 Unanswered WhatsApp Leads", position: "top-[12%] left-[8%]", delay: 0 },
+  { text: "Slot Conflict: 11:30 AM", position: "top-[22%] right-[10%]", delay: 300 },
+  { text: "Ad Campaign Stalled (Low ROAS)", position: "top-[42%] left-[5%]", delay: 500 },
+  { text: "5 Overdue Invoices", position: "bottom-[30%] right-[6%]", delay: 700 },
+  { text: "Pending Review: Instagram Post", position: "bottom-[18%] left-[12%]", delay: 900 },
+];
+
+/* ─── Business Character Micro-Shots (Act 1: Real Business Life) ─────────── */
+
+const BUSINESS_SHOTS = [
+  { name: "Kabir", role: "Gym Owner, Pune", action: "Unlocking the iron shutter. Dawn sunlight cuts through chalk dust." },
+  { name: "Priya", role: "Café Owner, Bengaluru", action: "Tamping fresh espresso into the portafilter. Steam backlit by window light." },
+  { name: "Meera", role: "Salon Owner, Mumbai", action: "Aligning shears in front of clean studio mirrors." },
+  { name: "Rohan", role: "Apparel Store, Jaipur", action: "Folding heritage textiles, arranging the wooden counter." },
+  { name: "Ananya", role: "Aspiring Founder, Raipur", action: "Sketching workflow architecture beside a slim laptop." },
+];
+
+/* ─── Main Component ─────────────────────────────────────────────────────── */
+
 export function CinematicWebEntrance() {
   const shouldPlayOnMount = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [isComplete, setIsComplete] = useState<boolean>(false);
-  const [activeStep, setActiveStep] = useState<number>(0); // 1: Line 1, 2: Line 2, 3: Line 3 (The Stop), 4: Brand Reveal
-  const [exitStep, setExitStep] = useState<number>(0);
+
+  // Act states: 0=idle, 1=business shots, 2=overload, 3=the stop, 4=brand reveal
+  const [currentAct, setCurrentAct] = useState<number>(0);
+  const [activeShot, setActiveShot] = useState<number>(0);
+  const [visibleBadges, setVisibleBadges] = useState<number[]>([]);
+  const [textPhase, setTextPhase] = useState<number>(0); // 0=none, 1=line1, 2=line2, 3=line3+hindi, 4=brand
+  const [exitPhase, setExitPhase] = useState<number>(0);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -39,7 +68,8 @@ export function CinematicWebEntrance() {
   const speedMultiplierRef = useRef<number>(1.6);
   const timeRef = useRef<number>(0);
 
-  // Initialize Web Audio API Synthesizer
+  /* ─── Web Audio API Sound Design Synthesizer ───────────────────────────── */
+
   const getAudioCtx = useCallback(() => {
     if (typeof window === "undefined") return null;
     if (!audioCtxRef.current) {
@@ -56,8 +86,9 @@ export function CinematicWebEntrance() {
     return audioCtxRef.current;
   }, []);
 
-  const playShimmer = useCallback(
-    (freq = 440) => {
+  // Foley-like tactile taps (Act 1: Real Business Life)
+  const playFoleyTap = useCallback(
+    (freq = 280) => {
       const ctx = getAudioCtx();
       if (!ctx) return;
       try {
@@ -65,21 +96,72 @@ export function CinematicWebEntrance() {
         const gain = ctx.createGain();
         osc.type = "sine";
         osc.frequency.setValueAtTime(freq, ctx.currentTime);
-        osc.frequency.exponentialRampToValueAtTime(freq * 1.8, ctx.currentTime + 0.4);
-
-        gain.gain.setValueAtTime(0.04, ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.6);
-
+        osc.frequency.exponentialRampToValueAtTime(freq * 0.4, ctx.currentTime + 0.12);
+        gain.gain.setValueAtTime(0.06, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.15);
         osc.connect(gain);
         gain.connect(ctx.destination);
-
         osc.start();
-        osc.stop(ctx.currentTime + 0.6);
+        osc.stop(ctx.currentTime + 0.15);
       } catch {}
     },
     [getAudioCtx]
   );
 
+  // Room tone (40Hz sub-hum)
+  const roomToneRef = useRef<{ osc: OscillatorNode; gain: GainNode } | null>(null);
+  const startRoomTone = useCallback(() => {
+    const ctx = getAudioCtx();
+    if (!ctx || roomToneRef.current) return;
+    try {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(40, ctx.currentTime);
+      gain.gain.setValueAtTime(0.03, ctx.currentTime);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      roomToneRef.current = { osc, gain };
+    } catch {}
+  }, [getAudioCtx]);
+
+  const stopRoomTone = useCallback(() => {
+    if (!roomToneRef.current) return;
+    try {
+      const ctx = getAudioCtx();
+      if (ctx) {
+        roomToneRef.current.gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.3);
+        roomToneRef.current.osc.stop(ctx.currentTime + 0.35);
+      }
+      roomToneRef.current = null;
+    } catch {
+      roomToneRef.current = null;
+    }
+  }, [getAudioCtx]);
+
+  // Notification pings (Act 2: Digital Overload) — rising pitch, alternating stereo
+  const playPing = useCallback(
+    (freq: number) => {
+      const ctx = getAudioCtx();
+      if (!ctx) return;
+      try {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = "sine";
+        osc.frequency.setValueAtTime(freq, ctx.currentTime);
+        gain.gain.setValueAtTime(0.06, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.08);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.12);
+      } catch {}
+    },
+    [getAudioCtx]
+  );
+
+  // Sub-Bass Drop (Act 3: The Stop — 110Hz → 36Hz sine sweep)
   const playSubDrop = useCallback(() => {
     const ctx = getAudioCtx();
     if (!ctx) return;
@@ -89,18 +171,16 @@ export function CinematicWebEntrance() {
       osc.type = "sine";
       osc.frequency.setValueAtTime(110, ctx.currentTime);
       osc.frequency.exponentialRampToValueAtTime(36, ctx.currentTime + 0.9);
-
       gain.gain.setValueAtTime(0.3, ctx.currentTime);
       gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 1.2);
-
       osc.connect(gain);
       gain.connect(ctx.destination);
-
       osc.start();
       osc.stop(ctx.currentTime + 1.2);
     } catch {}
   }, [getAudioCtx]);
 
+  // Royal Cobalt Chime (Act 4: Brand Reveal — polyphonic 440/554/659/880/1318 Hz)
   const playCobaltChime = useCallback(() => {
     const ctx = getAudioCtx();
     if (!ctx) return;
@@ -111,18 +191,17 @@ export function CinematicWebEntrance() {
         const gain = ctx.createGain();
         osc.type = "triangle";
         osc.frequency.setValueAtTime(f, ctx.currentTime + i * 0.05);
-
         gain.gain.setValueAtTime(0.05, ctx.currentTime + i * 0.05);
         gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + i * 0.05 + 1.8);
-
         osc.connect(gain);
         gain.connect(ctx.destination);
-
         osc.start(ctx.currentTime + i * 0.05);
         osc.stop(ctx.currentTime + i * 0.05 + 1.8);
       });
     } catch {}
   }, [getAudioCtx]);
+
+  /* ─── Utility ──────────────────────────────────────────────────────────── */
 
   const clearAllTimers = useCallback(() => {
     timeoutsRef.current.forEach((t) => clearTimeout(t));
@@ -131,17 +210,21 @@ export function CinematicWebEntrance() {
 
   const endIntro = useCallback(() => {
     clearAllTimers();
+    stopRoomTone();
     setIsPlaying(false);
     setIsComplete(true);
-    speedMultiplierRef.current = 0.45; // Calm fluid motion for live background
+    setCurrentAct(0);
+    setVisibleBadges([]);
+    speedMultiplierRef.current = 0.45; // Calm fluid for live homepage background
     if (typeof window !== "undefined") {
       try {
         sessionStorage.setItem("stratxcel_intro_viewed", "true");
       } catch {}
     }
-  }, [clearAllTimers]);
+  }, [clearAllTimers, stopRoomTone]);
 
-  // WebGL 60fps Liquid Cobalt Shader Engine
+  /* ─── WebGL 60fps Liquid Cobalt Fluid Shader ───────────────────────────── */
+
   const initFluidShader = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -152,8 +235,9 @@ export function CinematicWebEntrance() {
     const gl =
       canvas.getContext("webgl") ||
       (canvas.getContext("experimental-webgl") as WebGLRenderingContext | null);
+
     if (!gl) {
-      // 2D Fallback
+      // 2D Canvas Fallback
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
       const render2D = () => {
@@ -189,6 +273,8 @@ export function CinematicWebEntrance() {
       }
     `;
 
+    // Organic Watery Domain-Warping Fluid Shader
+    // Palette: Obsidian → Midnight Navy → Royal Cobalt → Bright Sapphire
     const fsSource = `
       precision highp float;
       uniform vec2 u_resolution;
@@ -307,7 +393,7 @@ export function CinematicWebEntrance() {
     render();
   }, []);
 
-  // Window resize handler for fluid canvas
+  // Window resize handler
   useEffect(() => {
     const handleResize = () => {
       if (canvasRef.current) {
@@ -322,13 +408,17 @@ export function CinematicWebEntrance() {
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
-  // Cinematic Timeline Orchestrator
+  /* ─── Cinematic Timeline Orchestrator ──────────────────────────────────── */
+
   const playSequence = useCallback(() => {
     clearAllTimers();
     setIsPlaying(true);
     setIsComplete(false);
-    setActiveStep(0);
-    setExitStep(0);
+    setCurrentAct(0);
+    setActiveShot(0);
+    setVisibleBadges([]);
+    setTextPhase(0);
+    setExitPhase(0);
     speedMultiplierRef.current = 1.6;
 
     const schedule = (fn: () => void, delay: number) => {
@@ -337,49 +427,99 @@ export function CinematicWebEntrance() {
       return id;
     };
 
-    // 00:00.0 - 00:02.0: Line 1 Writing In
-    schedule(() => {
-      setActiveStep(1);
-      playShimmer(480);
-    }, 300);
-
-    // 00:02.0 - 00:03.5: Line 1 Exits, Line 2 Writes In
-    schedule(() => {
-      setExitStep(1);
-    }, 1900);
+    /* ─── ACT 1: REAL BUSINESS LIFE (00:00.0 – 00:02.0) ──────────────── */
+    // 5 rapid micro-shots, 400ms each
+    startRoomTone();
 
     schedule(() => {
-      setActiveStep(2);
-      playShimmer(560);
-    }, 2200);
-
-    // 00:03.5 - 00:04.8: Line 2 Exits, Line 3 "The Stop / Insight" Appears with Sub Bass
-    schedule(() => {
-      setExitStep(2);
-    }, 3600);
+      setCurrentAct(1);
+      setActiveShot(0);
+      playFoleyTap(280); // shutter latch
+    }, 100);
 
     schedule(() => {
-      setActiveStep(3);
-      playSubDrop();
-    }, 3900);
+      setActiveShot(1);
+      playFoleyTap(420); // espresso tamp
+    }, 500);
 
-    // 00:04.8 - 00:06.2: Line 3 Exits, Stratxcel 3D Cobalt Logo Resolves
     schedule(() => {
-      setExitStep(3);
+      setActiveShot(2);
+      playFoleyTap(600); // scissor snip
+    }, 900);
+
+    schedule(() => {
+      setActiveShot(3);
+      playFoleyTap(340); // cloth fold
+    }, 1300);
+
+    schedule(() => {
+      setActiveShot(4);
+      playFoleyTap(500); // pen scratch
+    }, 1700);
+
+    /* ─── ACT 2: DIGITAL OVERLOAD (00:02.0 – 00:03.5) ────────────────── */
+    const PING_FREQS = [660, 880, 1046, 1174, 1318];
+
+    schedule(() => {
+      setCurrentAct(2);
+      setVisibleBadges([0]);
+      playPing(PING_FREQS[0]);
+    }, 2100);
+
+    schedule(() => {
+      setVisibleBadges([0, 1]);
+      playPing(PING_FREQS[1]);
+    }, 2400);
+
+    schedule(() => {
+      setVisibleBadges([0, 1, 2]);
+      playPing(PING_FREQS[2]);
+    }, 2700);
+
+    schedule(() => {
+      setVisibleBadges([0, 1, 2, 3]);
+      playPing(PING_FREQS[3]);
+    }, 2950);
+
+    schedule(() => {
+      setVisibleBadges([0, 1, 2, 3, 4]);
+      playPing(PING_FREQS[4]);
+    }, 3200);
+
+    /* ─── ACT 3: THE STOP & THE INSIGHT (00:03.5 – 00:04.5) ──────────── */
+    schedule(() => {
+      setCurrentAct(3);
+      setVisibleBadges([]); // All badges vanish
+      stopRoomTone();
+      // 0.3s dead silence before typography
+    }, 3500);
+
+    // Typography: "You need the work to get done." + Hindi subtitle
+    schedule(() => {
+      setTextPhase(3);
+      playSubDrop(); // 110Hz → 36Hz sub-bass
+    }, 3800);
+
+    /* ─── ACT 4: STRATXCEL REVEAL (00:04.5 – 00:05.5) ────────────────── */
+    schedule(() => {
+      setExitPhase(3); // dissolve the insight text
+    }, 4600);
+
+    schedule(() => {
+      setTextPhase(4); // brand reveal
+      setCurrentAct(4);
+      playCobaltChime(); // polyphonic chime
     }, 4900);
 
-    schedule(() => {
-      setActiveStep(4);
-      playCobaltChime();
-    }, 5100);
-
-    // 00:06.2 - 00:07.0: Smooth Dissolve into Homepage Hero
+    /* ─── ACT 5: SEAMLESS HOMEPAGE TRANSITION (00:05.5 – 00:07.0) ─────── */
     schedule(() => {
       endIntro();
     }, 6800);
-  }, [clearAllTimers, endIntro, playCobaltChime, playShimmer, playSubDrop]);
+  }, [clearAllTimers, endIntro, playCobaltChime, playSubDrop, playPing, playFoleyTap, startRoomTone, stopRoomTone]);
 
-  // Initial mount lifecycle
+  /* ─── Lifecycle Effects ────────────────────────────────────────────────── */
+
+  // Mount: Initialize fluid shader + play if first visit
   useEffect(() => {
     initFluidShader();
     if (shouldPlayOnMount) {
@@ -390,7 +530,7 @@ export function CinematicWebEntrance() {
     }
   }, [shouldPlayOnMount, initFluidShader, playSequence]);
 
-  // Keyboard shortcut: ESC to skip
+  // Keyboard: ESC / Space to skip
   useEffect(() => {
     if (!isPlaying) return;
     const handleKey = (e: KeyboardEvent) => {
@@ -403,7 +543,7 @@ export function CinematicWebEntrance() {
     return () => window.removeEventListener("keydown", handleKey);
   }, [isPlaying, endIntro]);
 
-  // Register global replay hook
+  // Register global replay hook on window
   useEffect(() => {
     (window as unknown as { __replayStratxcelIntro?: () => void }).__replayStratxcelIntro = () => {
       playSequence();
@@ -413,10 +553,12 @@ export function CinematicWebEntrance() {
     };
   }, [playSequence]);
 
+  /* ─── Render ───────────────────────────────────────────────────────────── */
+
   return (
     <>
-      {/* SVG Defs for 3D Interlocking Dual-Orbital Stratxcel Emblem */}
-      <svg style={{ display: "none" }}>
+      {/* SVG Defs: 3D Interlocking Dual-Orbital Stratxcel Emblem */}
+      <svg style={{ display: "none" }} aria-hidden="true">
         <defs>
           <linearGradient id="stratxcel-blue-outer" x1="0%" y1="0%" x2="100%" y2="100%">
             <stop offset="0%" stopColor="#3B82F6" />
@@ -484,128 +626,378 @@ export function CinematicWebEntrance() {
         </defs>
       </svg>
 
-      {/* Watery Fluid Background Canvas (WebGL Shader / 2D Fallback) */}
+      {/* Watery Fluid Background Canvas (WebGL / 2D Fallback) */}
       <canvas
         ref={canvasRef}
-        className="pointer-events-none fixed inset-0 z-0 h-screen w-screen scale-105 filter blur-[26px] saturate-[1.25] contrast-[1.15] transition-opacity duration-1000"
+        aria-hidden="true"
+        style={{
+          position: "fixed",
+          inset: 0,
+          width: "100vw",
+          height: "100vh",
+          zIndex: 0,
+          pointerEvents: "none",
+          filter: "blur(26px) saturate(1.25) contrast(1.15)",
+          transform: "scale(1.08)",
+          transition: "filter 1.2s ease, opacity 1.2s ease",
+        }}
       />
 
-      {/* Cinematic Film Grain Static Texture Overlay */}
+      {/* Film Grain Static Texture */}
       <div
-        className="pointer-events-none fixed inset-0 z-[1] opacity-[0.055]"
+        aria-hidden="true"
         style={{
+          position: "fixed",
+          inset: 0,
+          zIndex: 1,
+          pointerEvents: "none",
+          opacity: 0.055,
           backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E")`,
         }}
       />
 
       {/* Vignette Overlay */}
       <div
-        className="pointer-events-none fixed inset-0 z-[2]"
+        aria-hidden="true"
         style={{
+          position: "fixed",
+          inset: 0,
+          zIndex: 2,
+          pointerEvents: "none",
           background:
-            "radial-gradient(circle at 50% 50%, rgba(2, 4, 8, 0.05) 0%, rgba(2, 4, 8, 0.7) 75%, rgba(1, 2, 5, 0.95) 100%)",
+            "radial-gradient(circle at 50% 50%, rgba(2,4,8,0.05) 0%, rgba(2,4,8,0.7) 75%, rgba(1,2,5,0.95) 100%)",
         }}
       />
 
-      {/* CINEMATIC INTRO STAGE OVERLAY (00:00 - 00:06.8) */}
+      {/* ═══ CINEMATIC INTRO STAGE ═══ */}
       {(!isComplete || isPlaying) && (
         <div
           role="dialog"
           aria-label="Stratxcel Brand Entrance"
           aria-modal="true"
-          className={`fixed inset-0 z-[100] flex flex-col items-center justify-center bg-[#020408]/90 text-white transition-all duration-1000 select-none ${
-            isPlaying ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
-          }`}
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 100,
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            background: "rgba(2, 4, 8, 0.92)",
+            color: "#FFFFFF",
+            userSelect: "none",
+            transition: "opacity 1s cubic-bezier(0.16, 1, 0.3, 1), visibility 1s ease",
+            opacity: isPlaying ? 1 : 0,
+            visibility: isPlaying ? "visible" : "hidden",
+            pointerEvents: isPlaying ? "auto" : "none",
+          }}
         >
           {/* Skip Intro Button */}
           <button
             type="button"
             onClick={endIntro}
-            className="absolute bottom-8 right-9 z-[120] flex items-center gap-2 rounded-full border border-white/10 bg-slate-900/60 px-4 py-2 font-sx-mono text-[11px] font-semibold tracking-wider text-slate-300 uppercase backdrop-blur-xl transition-all hover:border-blue-500 hover:bg-blue-600/25 hover:text-white"
+            style={{
+              position: "absolute",
+              bottom: 32,
+              right: 36,
+              zIndex: 120,
+              background: "rgba(15, 23, 42, 0.6)",
+              border: "1px solid rgba(255,255,255,0.1)",
+              color: "#94A3B8",
+              fontFamily: "var(--font-sx-mono, 'JetBrains Mono', monospace)",
+              fontSize: 11,
+              letterSpacing: "1.5px",
+              textTransform: "uppercase",
+              padding: "8px 18px",
+              borderRadius: 20,
+              cursor: "pointer",
+              backdropFilter: "blur(16px)",
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              transition: "all 0.3s ease",
+            }}
           >
             <span>Skip Intro</span>
-            <kbd className="rounded bg-white/10 px-1.5 py-0.5 text-[9px] text-white">ESC</kbd>
+            <kbd
+              style={{
+                background: "rgba(255,255,255,0.1)",
+                padding: "2px 6px",
+                borderRadius: 4,
+                fontSize: 9,
+                color: "#FFFFFF",
+              }}
+            >
+              ESC
+            </kbd>
           </button>
 
-          {/* Liquid Typography Stage */}
-          <div className="relative flex min-h-[220px] w-[90vw] max-w-[920px] flex-col items-center justify-center text-center">
-            {/* Line 1: The Problem (00:00 - 00:02) */}
+          {/* ─── ACT 1: Business Character Micro-Shots ──────────────────── */}
+          {currentAct === 1 && (
             <div
-              className={`absolute max-w-[860px] font-sx-sans text-[clamp(28px,4.2vw,52px)] font-bold tracking-tight text-white leading-snug transition-all duration-600 ${
-                activeStep === 1 && exitStep !== 1
-                  ? "opacity-100 scale-100 blur-0 translate-y-0"
-                  : exitStep === 1
-                  ? "opacity-0 scale-105 blur-md -translate-y-4 pointer-events-none"
-                  : "opacity-0 scale-95 blur-md translate-y-4 pointer-events-none"
-              }`}
               style={{
-                textShadow: "0 10px 40px rgba(0, 0, 0, 0.9), 0 0 30px rgba(0, 71, 255, 0.35)",
+                position: "relative",
+                width: "90vw",
+                maxWidth: 920,
+                minHeight: 220,
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                textAlign: "center",
               }}
             >
-              Running a business creates{" "}
-              <span className="text-blue-300 drop-shadow-[0_0_24px_rgba(0,71,255,0.7)]">
-                too much digital work.
-              </span>
+              {BUSINESS_SHOTS.map((shot, i) => (
+                <div
+                  key={shot.name}
+                  style={{
+                    position: "absolute",
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    gap: 8,
+                    opacity: activeShot === i ? 1 : 0,
+                    transform: activeShot === i ? "scale(1) translateY(0)" : "scale(0.96) translateY(12px)",
+                    filter: activeShot === i ? "blur(0px)" : "blur(10px)",
+                    transition: "all 0.35s cubic-bezier(0.16, 1, 0.3, 1)",
+                  }}
+                >
+                  <p
+                    style={{
+                      fontFamily: "var(--font-sx-sans, 'Plus Jakarta Sans', sans-serif)",
+                      fontSize: "clamp(20px, 3.2vw, 36px)",
+                      fontWeight: 700,
+                      color: "#FFFFFF",
+                      letterSpacing: "-0.3px",
+                      textShadow: "0 8px 30px rgba(0,0,0,0.9), 0 0 20px rgba(0,71,255,0.25)",
+                    }}
+                  >
+                    {shot.name}
+                  </p>
+                  <p
+                    style={{
+                      fontFamily: "var(--font-sx-mono, monospace)",
+                      fontSize: "clamp(10px, 1.4vw, 13px)",
+                      fontWeight: 600,
+                      color: "#93C5FD",
+                      letterSpacing: "2px",
+                      textTransform: "uppercase",
+                    }}
+                  >
+                    {shot.role}
+                  </p>
+                  <p
+                    style={{
+                      fontFamily: "var(--font-sx-sans, sans-serif)",
+                      fontSize: "clamp(13px, 1.6vw, 16px)",
+                      fontWeight: 400,
+                      color: "#94A3B8",
+                      maxWidth: 520,
+                      lineHeight: 1.5,
+                      marginTop: 4,
+                    }}
+                  >
+                    {shot.action}
+                  </p>
+                </div>
+              ))}
             </div>
+          )}
 
-            {/* Line 2: The Reality (00:02 - 00:03.5) */}
+          {/* ─── ACT 2: Digital Overload Notification Badges ─────────────── */}
+          {currentAct === 2 && (
             <div
-              className={`absolute max-w-[860px] font-sx-sans text-[clamp(26px,3.8vw,48px)] font-bold tracking-tight text-white leading-snug transition-all duration-600 ${
-                activeStep === 2 && exitStep !== 2
-                  ? "opacity-100 scale-100 blur-0 translate-y-0"
-                  : exitStep === 2
-                  ? "opacity-0 scale-105 blur-md -translate-y-4 pointer-events-none"
-                  : "opacity-0 scale-95 blur-md translate-y-4 pointer-events-none"
-              }`}
               style={{
-                textShadow: "0 10px 40px rgba(0, 0, 0, 0.9), 0 0 30px rgba(0, 71, 255, 0.35)",
+                position: "absolute",
+                inset: 0,
+                overflow: "hidden",
+                pointerEvents: "none",
               }}
             >
-              You didn’t start your business to spend your day managing everything online.
+              {OVERLOAD_BADGES.map((badge, i) => {
+                const isVisible = visibleBadges.includes(i);
+                return (
+                  <div
+                    key={badge.text}
+                    className={badge.position}
+                    style={{
+                      position: "absolute",
+                      background: "rgba(15, 23, 42, 0.85)",
+                      border: "1px solid rgba(239, 68, 68, 0.5)",
+                      borderRadius: 10,
+                      padding: "10px 16px",
+                      backdropFilter: "blur(12px)",
+                      fontFamily: "var(--font-sx-sans, sans-serif)",
+                      fontSize: "clamp(11px, 1.3vw, 14px)",
+                      fontWeight: 600,
+                      color: "#FCA5A5",
+                      boxShadow: "0 4px 20px rgba(239, 68, 68, 0.3)",
+                      opacity: isVisible ? 1 : 0,
+                      transform: isVisible ? "scale(1) translateY(0)" : "scale(0.85) translateY(10px)",
+                      transition: "all 0.3s cubic-bezier(0.16, 1, 0.3, 1)",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: 6,
+                        height: 6,
+                        borderRadius: "50%",
+                        background: "#EF4444",
+                        boxShadow: "0 0 8px #EF4444",
+                        flexShrink: 0,
+                      }}
+                    />
+                    {badge.text}
+                  </div>
+                );
+              })}
             </div>
+          )}
 
-            {/* Line 3: The Insight / The Stop (00:03.5 - 00:04.8) */}
+          {/* ─── ACT 3: The Stop & The Insight ──────────────────────────── */}
+          {(currentAct === 3 || (currentAct === 4 && exitPhase === 3)) && (
             <div
-              className={`absolute max-w-[860px] font-sx-sans text-[clamp(28px,4.5vw,54px)] font-extrabold tracking-tight text-white leading-tight transition-all duration-600 ${
-                activeStep === 3 && exitStep !== 3
-                  ? "opacity-100 scale-100 blur-0 translate-y-0"
-                  : exitStep === 3
-                  ? "opacity-0 scale-105 blur-md -translate-y-4 pointer-events-none"
-                  : "opacity-0 scale-95 blur-md translate-y-4 pointer-events-none"
-              }`}
               style={{
-                textShadow: "0 10px 40px rgba(0, 0, 0, 0.9), 0 0 30px rgba(0, 71, 255, 0.45)",
+                position: "relative",
+                width: "90vw",
+                maxWidth: 920,
+                minHeight: 220,
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                textAlign: "center",
               }}
             >
-              You need the work{" "}
-              <span className="text-blue-300 drop-shadow-[0_0_28px_rgba(0,71,255,0.85)]">
-                to get done.
-              </span>
-            </div>
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  gap: 14,
+                  opacity: textPhase === 3 && exitPhase !== 3 ? 1 : 0,
+                  transform:
+                    textPhase === 3 && exitPhase !== 3
+                      ? "scale(1) translateY(0)"
+                      : exitPhase === 3
+                      ? "scale(1.03) translateY(-14px)"
+                      : "scale(0.96) translateY(14px)",
+                  filter: textPhase === 3 && exitPhase !== 3 ? "blur(0px)" : "blur(12px)",
+                  transition: "all 0.6s cubic-bezier(0.16, 1, 0.3, 1)",
+                }}
+              >
+                {/* Primary English */}
+                <h2
+                  style={{
+                    fontFamily: "var(--font-sx-sans, 'Syne', sans-serif)",
+                    fontSize: "clamp(28px, 4.5vw, 54px)",
+                    fontWeight: 800,
+                    color: "#FFFFFF",
+                    letterSpacing: "-0.5px",
+                    lineHeight: 1.2,
+                    textShadow: "0 10px 40px rgba(0,0,0,0.9), 0 0 30px rgba(0,71,255,0.45)",
+                  }}
+                >
+                  You need the work{" "}
+                  <span
+                    style={{
+                      color: "#93C5FD",
+                      filter: "drop-shadow(0 0 28px rgba(0,71,255,0.85))",
+                    }}
+                  >
+                    to get done.
+                  </span>
+                </h2>
 
-            {/* Act 4: Stratxcel 3D Cobalt Reveal (00:04.8 - 00:06.5) */}
-            <div
-              className={`absolute flex flex-col items-center justify-center transition-all duration-800 ${
-                activeStep === 4
-                  ? "opacity-100 scale-100 blur-0 translate-y-0"
-                  : "opacity-0 scale-90 blur-xl translate-y-6 pointer-events-none"
-              }`}
-            >
-              <div className="relative mb-6 h-32 w-32 filter drop-shadow-[0_15px_45px_rgba(0,71,255,0.85)] animate-float">
-                <svg viewBox="0 0 200 200" width="100%" height="100%">
-                  <use href="#stratxcel-emblem-vector" />
-                </svg>
+                {/* Hindi Emotional Anchor */}
+                <p
+                  style={{
+                    fontFamily: "var(--font-sx-sans, sans-serif)",
+                    fontSize: "clamp(14px, 2vw, 22px)",
+                    fontWeight: 500,
+                    color: "rgba(147, 197, 253, 0.75)",
+                    letterSpacing: "1px",
+                    marginTop: 2,
+                  }}
+                >
+                  आपको काम करवाना है
+                </p>
               </div>
-              <h2 className="font-sx-sans text-3xl sm:text-5xl font-extrabold tracking-[0.22em] text-white uppercase drop-shadow-[0_4px_24px_rgba(0,71,255,0.6)]">
-                STRATXCEL
-              </h2>
-              <p className="mt-2 font-sx-mono text-xs sm:text-sm font-semibold tracking-[0.26em] text-blue-300 uppercase">
-                Your AI Business Agent
-              </p>
             </div>
+          )}
+
+          {/* ─── ACT 4: Stratxcel 3D Brand Reveal ───────────────────────── */}
+          <div
+            style={{
+              position: "absolute",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+              opacity: textPhase === 4 ? 1 : 0,
+              transform: textPhase === 4 ? "scale(1)" : "scale(0.9)",
+              filter: textPhase === 4 ? "blur(0px)" : "blur(16px)",
+              transition: "all 0.8s cubic-bezier(0.16, 1, 0.3, 1)",
+              pointerEvents: "none",
+            }}
+          >
+            <div
+              style={{
+                width: 140,
+                height: 140,
+                position: "relative",
+                marginBottom: 24,
+                filter: "drop-shadow(0 15px 45px rgba(0,71,255,0.85))",
+                animation: "subtleOrbit 6s ease-in-out infinite",
+              }}
+            >
+              <svg viewBox="0 0 200 200" width="100%" height="100%">
+                <use href="#stratxcel-emblem-vector" />
+              </svg>
+            </div>
+
+            <h2
+              style={{
+                fontFamily: "var(--font-sx-sans, 'Syne', sans-serif)",
+                fontSize: "clamp(28px, 4vw, 42px)",
+                fontWeight: 800,
+                letterSpacing: "7px",
+                color: "#FFFFFF",
+                textTransform: "uppercase",
+                textShadow: "0 4px 24px rgba(0,71,255,0.5)",
+              }}
+            >
+              STRATXCEL
+            </h2>
+
+            <p
+              style={{
+                fontFamily: "var(--font-sx-mono, monospace)",
+                fontSize: "clamp(11px, 1.4vw, 15px)",
+                fontWeight: 500,
+                letterSpacing: "3.5px",
+                textTransform: "uppercase",
+                color: "#93C5FD",
+                marginTop: 8,
+              }}
+            >
+              Your AI Business Agent
+            </p>
           </div>
         </div>
       )}
+
+      {/* Keyframe for emblem orbital float */}
+      <style>{`
+        @keyframes subtleOrbit {
+          0%, 100% { transform: translateY(0px) rotate(0deg); }
+          50% { transform: translateY(-8px) rotate(2deg); }
+        }
+      `}</style>
     </>
   );
 }
