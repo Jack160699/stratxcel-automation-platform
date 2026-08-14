@@ -44,6 +44,9 @@ interface MetaGraphErrorBody {
 interface MetaGraphObjectBody extends MetaGraphErrorBody {
   id?: string;
   name?: string;
+  metadata?: {
+    type?: string;
+  };
   data?: Array<{
     id: string;
     name?: string;
@@ -107,7 +110,7 @@ export async function inspectMetaTemplateEndpoint(
   if (!/^v\d+\.\d+$/.test(apiVersion)) throw new Error("Invalid Meta Graph API version");
   const diagnostics: SafeMetaEndpointDiagnostic[] = [];
   const configuredLookup = await graphGet(
-    buildMetaGraphUrl(apiVersion, input.wabaId, undefined, new URLSearchParams({ fields: "id,name" })),
+    buildMetaGraphUrl(apiVersion, input.wabaId, undefined, new URLSearchParams({ fields: "id,name", metadata: "1" })),
     token,
     fetchFn,
   );
@@ -266,7 +269,9 @@ function toDiagnostic(
     apiVersion,
     httpStatus: result.response.status,
     errorCode: result.body.error?.code ?? null,
-    responseMessage: result.body.error?.message ?? null,
+    responseMessage:
+      result.body.error?.message ??
+      (result.body.metadata?.type ? `Object type: ${result.body.metadata.type}` : null),
     objectId: result.body.id ?? firstObject?.id ?? null,
     objectName: result.body.name ?? firstObject?.name ?? firstObject?.verified_name ?? null,
   };

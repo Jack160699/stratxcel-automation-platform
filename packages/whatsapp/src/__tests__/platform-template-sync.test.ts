@@ -88,7 +88,7 @@ async function run() {
     assert.equal(requestedUrls.length, 3);
     assert.equal(
       requestedUrls[0],
-      buildMetaGraphUrl("v26.0", "platform-waba", undefined, new URLSearchParams({ fields: "id,name" })),
+      buildMetaGraphUrl("v26.0", "platform-waba", undefined, new URLSearchParams({ fields: "id,name", metadata: "1" })),
     );
     assert.match(requestedUrls[1] ?? "", /v26\.0\/platform-waba\/phone_numbers\?/);
     assert.match(requestedUrls[2] ?? "", /v26\.0\/platform-waba\/message_templates\?/);
