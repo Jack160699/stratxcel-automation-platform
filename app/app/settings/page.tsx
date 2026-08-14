@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useCurrentTenant } from "../CurrentTenantContext";
-import { signOutAction } from "../actions";
 import { ModulePageHeader } from "../components/ModulePageHeader";
 import { Card, CardHeading, CardRow } from "@/components/ui/Card";
 import { Field, Input } from "@/components/ui/Input";
@@ -88,11 +87,6 @@ export default function SettingsPage() {
               Reset password
             </Button>
           </Link>
-          <form action={signOutAction}>
-            <Button type="submit" variant="danger" size="sm">
-              Sign out
-            </Button>
-          </form>
         </div>
       </Card>
 

@@ -141,7 +141,7 @@ export default function TeamPage() {
         <CardHeading>Invite a team member</CardHeading>
         <p className="mt-1 text-xs text-sx-text-muted">Creates a secure, expiring, single-use invite link. Copy it if email delivery is unavailable.</p>
         <div className="mt-2 flex flex-col gap-2 sm:flex-row">
-          <Input value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} placeholder="teammate@company.com" className="flex-1" />
+          <Input value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} placeholder="teammate@company.com" className="sm:flex-1" />
           <select
             value={inviteRole}
             onChange={(e) => setInviteRole(e.target.value)}
@@ -151,14 +151,14 @@ export default function TeamPage() {
             <option value="operator">Operator</option>
             <option value="admin">Admin</option>
           </select>
-          <Button type="button" onClick={() => void createInvite()} disabled={!tenantId || inviting || !inviteEmail.trim()}>
+          <Button className="min-h-11" type="button" onClick={() => void createInvite()} disabled={!tenantId || inviting || !inviteEmail.trim()}>
             {inviting ? "Creating…" : "Generate invite"}
           </Button>
         </div>
         {inviteUrl && (
           <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-            <Input readOnly value={inviteUrl} className="flex-1" />
-            <Button type="button" onClick={() => void navigator.clipboard.writeText(inviteUrl)}>Copy invite link</Button>
+            <Input readOnly value={inviteUrl} className="sm:flex-1" />
+            <Button className="min-h-11" type="button" onClick={() => void navigator.clipboard.writeText(inviteUrl)}>Copy invite link</Button>
           </div>
         )}
       </Card>

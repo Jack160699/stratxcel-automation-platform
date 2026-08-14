@@ -75,7 +75,7 @@ export function ConversationList({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search name, phone, or message…"
-            className="box-border h-8 w-full min-w-0 max-w-full rounded-sx-sm border border-sx-border-strong bg-sx-surface-2 pl-8 pr-2.5 text-[12.5px] text-sx-text placeholder:text-sx-text-subtle outline-none focus-visible:border-sx-accent"
+            className="box-border h-11 w-full min-w-0 max-w-full rounded-sx-sm border border-sx-border-strong bg-sx-surface-2 pl-8 pr-3 text-base text-sx-text placeholder:text-sx-text-subtle outline-none focus-visible:border-sx-accent md:h-8 md:pr-2.5 md:text-[12.5px]"
           />
         </div>
         <div className="flex w-full min-w-0 flex-wrap gap-1">
@@ -83,7 +83,7 @@ export function ConversationList({
             <button
               key={f.key}
               onClick={() => setFilter(f.key)}
-              className={`rounded-sx-pill px-2.5 py-1 text-[11px] font-medium transition-colors ${
+              className={`min-h-10 rounded-sx-pill px-3 py-1.5 text-sm font-medium transition-colors md:min-h-0 md:px-2.5 md:py-1 md:text-[11px] ${
                 filter === f.key ? "bg-sx-accent-muted text-sx-accent" : "text-sx-text-muted hover:bg-sx-surface-2 hover:text-sx-text"
               }`}
             >
