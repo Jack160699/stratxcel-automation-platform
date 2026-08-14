@@ -23,9 +23,22 @@ export async function requireAdmin(): Promise<
     .eq("user_id", user.id)
     .maybeSingle();
 
-  if (!adminRow) return { ok: false, status: 403, error: "Not authorized" };
+  if (adminRow) {
+    return { ok: true, userId: user.id, email: user.email ?? null };
+  }
 
-  return { ok: true, userId: user.id, email: user.email ?? null };
+  const { data: staffRow } = await supabase
+    .from("platform_staff_users")
+    .select("user_id")
+    .eq("user_id", user.id)
+    .eq("is_active", true)
+    .maybeSingle();
+
+  if (staffRow) {
+    return { ok: true, userId: user.id, email: user.email ?? null };
+  }
+
+  return { ok: false, status: 403, error: "Not authorized" };
 }
 
 /**

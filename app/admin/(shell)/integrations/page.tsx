@@ -95,7 +95,7 @@ export default function WhatsAppAdminPage() {
   async function loadTemplates(force = false) {
     try {
       const url = force ? "/api/platform/whatsapp/templates?force=true" : "/api/platform/whatsapp/templates";
-      const res = await platformFetch(url);
+      const res = await fetch(url, { cache: "no-store" });
       if (res.ok) {
         const body = await res.json();
         setTemplates(body.templates ?? []);
