@@ -269,8 +269,8 @@ export default function BillingPage() {
 
         {!hasActivePaidPlan && (
           <div className="mt-4 flex flex-col gap-4">
-            <p className="max-w-2xl text-sm leading-6 text-sx-text-muted">
-              Your Audit and saved business context remain available. Start Growth when you want ongoing execution, Copilot-led planning, and recurring improvement.
+            <p className="max-w-2xl text-sm leading-6 text-sx-text-muted" title="Free">
+              No active paid plan. Your Audit and saved business context remain available. Start Growth when you want ongoing execution, Copilot-led planning, and recurring improvement.
             </p>
             <div className="rounded-sx-md border border-sx-accent/30 bg-sx-accent/10 p-4">
               <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">

@@ -4,7 +4,7 @@ import { useId, useState } from "react";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { FormField } from "../FormField";
-import { slugify, type OnboardingDraft } from "../types";
+import { slugify, type OnboardingDraft, type DiscoveredSocialDraft } from "../types";
 import { PlatformIcon } from "@/components/audit/PlatformIcon";
 import type { DiscoveredSocialLink } from "@/lib/identity/smart-url";
 
@@ -24,6 +24,8 @@ export function StepBusiness({
   const industryId = useId();
   const websiteId = useId();
   const locationId = useId();
+  const stageId = useId();
+  const modelId = useId();
 
   const [discoveryState, setDiscoveryState] = useState<DiscoveryStatus>("idle");
   const [discoveryMessage, setDiscoveryMessage] = useState<string>("");
@@ -57,11 +59,11 @@ export function StepBusiness({
       setDiscoveryState(body.finalState === "COMPLETE" ? "complete" : "partial");
       setDiscoveryMessage(
         body.finalState === "COMPLETE"
-          ? "✓ Business details and profiles discovered!"
+          ? "✓ We found your business details and public channels!"
           : "Partial website information discovered."
       );
 
-      // Auto-populate discovered business fields if not already manually typed
+      // Auto-populate discovered business fields
       const updates: Partial<OnboardingDraft["business"]> = {};
       if (body.data?.websiteUrl) updates.website = body.data.websiteUrl;
       if (body.data?.businessName && (!draft.business.name || !draft.business.slugTouched)) {
@@ -71,10 +73,34 @@ export function StepBusiness({
       if (body.data?.location && !draft.business.location) {
         updates.location = body.data.location;
       }
+      if (body.data?.industry && !draft.business.industry) {
+        updates.industry = body.data.industry;
+      }
+      if (body.data?.businessModel) {
+        updates.businessModel = body.data.businessModel;
+      }
+      if (body.data?.businessStage) {
+        updates.stage = body.data.businessStage;
+      }
+      if (body.data?.services && Array.isArray(body.data.services)) {
+        updates.services = body.data.services;
+      }
+      if (body.data?.primaryOffer) {
+        updates.primaryOffer = body.data.primaryOffer;
+      }
+      if (body.data?.phone || body.data?.whatsapp) {
+        updates.whatsapp = body.data.whatsapp || body.data.phone;
+      }
       if (body.data?.socialLinks && Array.isArray(body.data.socialLinks)) {
         setDiscoveredSocials(body.data.socialLinks);
-        // Default confirm all discovered
-        setConfirmedSocials(new Set(body.data.socialLinks.map((s: DiscoveredSocialLink) => s.url)));
+        const confirmedSet = new Set<string>(body.data.socialLinks.map((s: DiscoveredSocialLink) => s.url));
+        setConfirmedSocials(confirmedSet);
+        updates.socials = body.data.socialLinks.map((s: DiscoveredSocialLink) => ({
+          platform: s.platform,
+          url: s.url,
+          handle: s.handle,
+          confirmed: true,
+        }));
       }
       update(updates);
     } catch {
@@ -91,6 +117,8 @@ export function StepBusiness({
         next.delete(url);
         return next;
       });
+      const currentSocials = (draft.business.socials ?? []).map((s) => (s.url === url ? { ...s, confirmed: true } : s));
+      update({ socials: currentSocials });
     } else {
       setRejectedSocials((prev) => new Set([...prev, url]));
       setConfirmedSocials((prev) => {
@@ -98,6 +126,8 @@ export function StepBusiness({
         next.delete(url);
         return next;
       });
+      const currentSocials = (draft.business.socials ?? []).map((s) => (s.url === url ? { ...s, confirmed: false } : s));
+      update({ socials: currentSocials });
     }
   }
 
@@ -108,7 +138,7 @@ export function StepBusiness({
       {/* 1. Website Primary Discovery Anchor */}
       <div className="rounded-sx-md bg-sx-surface-2 p-4 border border-sx-border/60">
         <FormField
-          label="Your Website (Primary Discovery Anchor)"
+          label="Connect your business (Website or Domain)"
           htmlFor={websiteId}
           hint="Enter your domain or website. We'll automatically discover your business profile and public channels."
         >
@@ -124,7 +154,7 @@ export function StepBusiness({
                   void handleWebsiteDiscovery(draft.business.website);
                 }
               }}
-              placeholder="e.g. xyzconsultants.in or https://mybusiness.com"
+              placeholder="e.g. yourbusiness.com or https://mycompany.in"
               className="h-11 flex-1"
               autoFocus
             />
@@ -172,7 +202,10 @@ export function StepBusiness({
         {/* Discovered Social Profiles Confirmation List */}
         {discoveredSocials.length > 0 && (
           <div className="mt-4 pt-3 border-t border-sx-border/40 flex flex-col gap-2.5">
-            <span className="text-xs font-semibold text-sx-text">Discovered Social Channels</span>
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-sx-text">Discovered Social Channels</span>
+              <span className="text-[11px] text-sx-text-subtle">Is this yours?</span>
+            </div>
             <div className="grid gap-2 sm:grid-cols-2">
               {discoveredSocials.map((social) => {
                 const isConfirmed = confirmedSocials.has(social.url);
@@ -219,7 +252,7 @@ export function StepBusiness({
         )}
       </div>
 
-      {/* 2. Confirmed Business Identity Fields */}
+      {/* 2. Discovered/Confirmed Business Identity Fields */}
       <FormField label="Business / workspace name" htmlFor={nameId} error={errors.name}>
         <Input
           id={nameId}
@@ -247,25 +280,57 @@ export function StepBusiness({
         />
       </FormField>
 
-      <FormField label="Industry / category" htmlFor={industryId} optional>
-        <Input
-          id={industryId}
-          value={draft.business.industry}
-          onChange={(e) => update({ industry: e.target.value })}
-          placeholder="e.g. Retail, SaaS, Hospitality, Consulting"
-          className="h-11"
-        />
-      </FormField>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <FormField label="Industry / category" htmlFor={industryId} optional>
+          <Input
+            id={industryId}
+            value={draft.business.industry}
+            onChange={(e) => update({ industry: e.target.value })}
+            placeholder="e.g. Retail, SaaS, Hospitality, Consulting"
+            className="h-11"
+          />
+        </FormField>
 
-      <FormField label="Primary operating location" htmlFor={locationId} optional hint="Saved to your Business Profile (editable in Workspace Settings & Brand Brain).">
-        <Input
-          id={locationId}
-          value={draft.business.location}
-          onChange={(e) => update({ location: e.target.value })}
-          placeholder="e.g. Bhilai, Chhattisgarh, India"
-          className="h-11"
-        />
-      </FormField>
+        <FormField label="Business model" htmlFor={modelId} optional>
+          <Input
+            id={modelId}
+            value={draft.business.businessModel ?? ""}
+            onChange={(e) => update({ businessModel: e.target.value })}
+            placeholder="e.g. B2B Client Services, D2C Retail"
+            className="h-11"
+          />
+        </FormField>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <FormField label="Primary operating location" htmlFor={locationId} optional hint="Saved to your Business Profile (editable in Workspace Settings & Brand Brain).">
+          <Input
+            id={locationId}
+            value={draft.business.location}
+            onChange={(e) => update({ location: e.target.value })}
+            placeholder="e.g. Bhilai, Chhattisgarh, India"
+            className="h-11"
+          />
+        </FormField>
+
+        <FormField label="Business stage" htmlFor={stageId} optional hint="Determines your Audit Report vs Business Launch Plan.">
+          <select
+            id={stageId}
+            value={draft.business.stage ?? "NEW/STARTING"}
+            onChange={(e) => update({ stage: e.target.value })}
+            className="h-11 w-full rounded-sx-sm border border-sx-border bg-sx-surface-2 px-3 text-sm text-sx-text focus:outline-none focus:ring-1 focus:ring-sx-accent"
+          >
+            <option value="IDEA">Idea Stage (Pre-website)</option>
+            <option value="PRE-LAUNCH">Pre-Launch</option>
+            <option value="NEW/STARTING">New / Starting Business</option>
+            <option value="EARLY BUSINESS">Early Business</option>
+            <option value="GROWING">Growing SMB</option>
+            <option value="ESTABLISHED">Established Business</option>
+            <option value="MATURE">Mature Enterprise</option>
+          </select>
+        </FormField>
+      </div>
     </div>
   );
 }
+

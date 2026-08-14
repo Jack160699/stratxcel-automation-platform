@@ -57,16 +57,9 @@ export default function SettingsPage() {
       <ModulePageHeader title="Settings" tenantName={active?.name} description="Workspace identity and account security." />
 
       <Card>
-        <div className="flex items-center justify-between">
-          <CardHeading>Business Profile</CardHeading>
-          <Link href="/app/brand">
-            <Button variant="secondary" size="sm">
-              Edit in Brand Brain →
-            </Button>
-          </Link>
-        </div>
+        <CardHeading>Business Profile</CardHeading>
         <p className="mt-1.5 text-xs text-sx-text-muted">
-          Your canonical business identity, website, location, positioning, and verified channels.
+          Your canonical business identity and workspace slug.
         </p>
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           <Field label="Business name">

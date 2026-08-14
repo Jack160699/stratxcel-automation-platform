@@ -33,6 +33,9 @@ export interface DiscoveredSocialLink {
   url: string;
   handle: string;
   rawHref: string;
+  displayName?: string;
+  previewUrl?: string;
+  isConfirmed?: boolean;
 }
 
 const UNSAFE_PROTOCOL_REGEX = /^(javascript|data|file|vbscript|about|blob):/i;

@@ -37,6 +37,9 @@ const instrumentSans = Instrument_Sans({
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://www.stratxcel.in"),
+  alternates: {
+    canonical: "https://www.stratxcel.in",
+  },
   title: "Stratxcel — practical growth operations for small businesses",
   description:
     "Start with an evidence-backed AI Business Growth Audit, then activate the growth workflows that fit your business.",
@@ -52,11 +55,17 @@ export const metadata: Metadata = {
     description:
       "Start with an evidence-backed AI Business Growth Audit, then activate the growth workflows that fit your business.",
     type: "website",
-    images: [{ url: "/logo-v2.png", width: 641, height: 641 }],
+    url: "https://www.stratxcel.in",
+    siteName: "Stratxcel",
+    images: [{ url: "/logo-v2.png", width: 641, height: 641, alt: "Stratxcel Logo" }],
   },
-  // Google Search Console HTML-tag ownership verification. Emits the
-  // <meta name="google-site-verification"> tag only when the token is set, so
-  // the head stays clean until the property is actually being verified.
+  twitter: {
+    card: "summary_large_image",
+    site: "@stratxcel",
+    title: "Stratxcel — practical growth operations for small businesses",
+    description: "Start with an evidence-backed AI Business Growth Audit, then activate the growth workflows that fit your business.",
+  },
+  // Google Search Console HTML-tag ownership verification.
   verification: process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION
     ? { google: process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION }
     : undefined,
@@ -66,6 +75,45 @@ export const viewport: Viewport = {
   themeColor: "#fafbfc",
   width: "device-width",
   initialScale: 1,
+};
+
+const ORGANIZATION_JSON_LD = {
+  "@context": "https://schema.org",
+  "@type": "Organization",
+  name: "Stratxcel",
+  url: "https://www.stratxcel.in",
+  logo: "https://www.stratxcel.in/logo-v2.png",
+  description:
+    "Stratxcel runs end-to-end growth operations for small and local businesses, providing AI audits, social autopilot, WhatsApp reception, and CRM.",
+  email: "contact@stratxcel.in",
+  telephone: "+91-77778-12777",
+  address: {
+    "@type": "PostalAddress",
+    addressLocality: "Bhilai",
+    addressRegion: "Chhattisgarh",
+    addressCountry: "IN",
+  },
+  sameAs: [
+    "https://www.instagram.com/stratxcel",
+    "https://www.facebook.com/stratxcel",
+    "https://www.threads.net/@stratxcel",
+    "https://www.youtube.com/@stratxcel",
+    "https://www.linkedin.com/company/stratxcel",
+    "https://x.com/stratxcel",
+    "https://wa.me/917777812777",
+  ],
+};
+
+const WEBSITE_JSON_LD = {
+  "@context": "https://schema.org",
+  "@type": "WebSite",
+  name: "Stratxcel",
+  url: "https://www.stratxcel.in",
+  potentialAction: {
+    "@type": "SearchAction",
+    target: "https://www.stratxcel.in/search?q={search_term_string}",
+    "query-input": "required name=search_term_string",
+  },
 };
 
 export default function RootLayout({
@@ -79,16 +127,26 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} ${instrumentSans.variable} h-full antialiased sx-theme-light`}
       suppressHydrationWarning
     >
+      <head>
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(ORGANIZATION_JSON_LD) }}
+        />
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(WEBSITE_JSON_LD) }}
+        />
+      </head>
       <body className="min-h-full bg-sx-bg text-sx-text">
         <Script
           id="sx-theme-boot"
           strategy="beforeInteractive"
         >{`(function(){try{var t=localStorage.getItem("sx-theme");if(t==="dark"){document.documentElement.classList.remove("sx-theme-light");document.documentElement.classList.add("sx-theme-dark");}}catch(e){}})();`}</Script>
         <ThemeProvider>
-        <ScrollRestoration />
-        {children}
-        <Analytics />
-        <GoogleAnalytics />
+          <ScrollRestoration />
+          {children}
+          <Analytics />
+          <GoogleAnalytics />
         </ThemeProvider>
       </body>
     </html>

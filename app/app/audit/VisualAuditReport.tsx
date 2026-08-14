@@ -67,7 +67,7 @@ export function VisualAuditReport({
   whatsAppMasked,
   whatsAppSent,
 }: {
-  report: AuditDeliveryReport;
+  report: AuditDeliveryReport & { reportKind?: string; businessStage?: string; launchPlan?: any };
   coverage?: EvidenceCoverage;
   reviews?: VerifiedReviewSummary | null;
   presence?: PresenceLink[];
@@ -78,6 +78,7 @@ export function VisualAuditReport({
   whatsAppMasked?: string | null;
   whatsAppSent?: boolean;
 }) {
+  const isLaunchPlan = report.reportKind === "LAUNCH_PLAN" || Boolean(report.launchPlan);
   const evidence = coverage ? countEvidenceCoverage(coverage) : null;
   const score = report.overallHealth?.score ?? report.scores?.overall ?? null;
   const coverageMap = coverage ?? {
@@ -99,8 +100,12 @@ export function VisualAuditReport({
     <div className="mx-auto max-w-4xl space-y-5 px-4 py-8">
       <header className="flex flex-wrap items-end justify-between gap-4 border-b border-sx-border pb-5">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-sx-accent">Growth plan</p>
-          <h1 className="mt-1 font-sx-sans text-2xl font-bold text-sx-text">Your Audit is ready</h1>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-sx-accent">
+            {isLaunchPlan ? "Launch & Growth Strategy" : "Growth plan"}
+          </p>
+          <h1 className="mt-1 font-sx-sans text-2xl font-bold text-sx-text">
+            {isLaunchPlan ? "Your Business Launch & Growth Plan" : "Your Audit is ready"}
+          </h1>
         </div>
         <div className="flex flex-wrap gap-2">
           <button type="button" onClick={onDownload} className="rounded-sx-sm border border-sx-border-strong px-3 py-2 text-xs font-semibold">Download PDF</button>
@@ -116,6 +121,48 @@ export function VisualAuditReport({
         </div>
       </header>
       {whatsAppState && <p className="text-xs text-sx-text-subtle">{whatsAppSent ? `✓ ${whatsAppState}` : whatsAppState}</p>}
+
+      {isLaunchPlan && (
+        <section className="rounded-sx-md border border-sx-border bg-sx-surface-2 p-5">
+          <div className="flex items-center gap-2">
+            <span className="rounded-full bg-sx-accent/20 px-2.5 py-0.5 text-xs font-semibold text-sx-accent">
+              Pre-Launch Stage Identified
+            </span>
+          </div>
+          <h2 className="mt-3 font-sx-sans text-lg font-semibold text-sx-text">
+            Foundation Roadmap: What Must Be Built First
+          </h2>
+          <p className="mt-1 text-sm text-sx-text-muted">
+            Because this business is at an early / pre-launch stage without public operations, we have generated a structured
+            Business Launch Plan with the exact sequence to establish your market presence.
+          </p>
+
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 text-xs">
+            <div className="rounded-sx-sm bg-sx-surface-1 p-3.5 border border-sx-border">
+              <span className="font-bold text-sx-text block mb-2">1. WHAT IS MISSING</span>
+              <ul className="space-y-1.5 text-sx-text-muted list-disc pl-4">
+                <li>Public domain & high-converting landing website</li>
+                <li>Branded multi-channel social presence</li>
+                <li>WhatsApp business automated receptionist</li>
+                <li>Centralized customer & inquiry CRM</li>
+                <li>Initial targeted customer acquisition (Meta Ads)</li>
+              </ul>
+            </div>
+
+            <div className="rounded-sx-sm bg-sx-surface-1 p-3.5 border border-sx-accent/40">
+              <span className="font-bold text-sx-accent block mb-2">2. RECOMMENDED BUILD SEQUENCE</span>
+              <ol className="space-y-1 text-sx-text list-decimal pl-4 font-medium">
+                <li>Launch Website & Domain</li>
+                <li>Establish Social Channels & Content Engine</li>
+                <li>Solidify Brand Identity & Offer</li>
+                <li>Connect WhatsApp Automated Lead Flow</li>
+                <li>Centralize CRM Lead Tracking</li>
+                <li>Launch Initial Acquisition Campaign</li>
+              </ol>
+            </div>
+          </div>
+        </section>
+      )}
 
       <section className="grid gap-4 sm:grid-cols-3">
         <div className="rounded-sx-md border border-sx-border bg-sx-surface-1 p-4">

@@ -1,8 +1,45 @@
+export interface DiscoveredSocialDraft {
+  platform: string;
+  url: string;
+  handle: string;
+  confirmed: boolean;
+}
+
 export interface OnboardingDraft {
-  business: { name: string; slug: string; slugTouched: boolean; industry: string; website: string; location: string };
+  business: {
+    name: string;
+    slug: string;
+    slugTouched: boolean;
+    industry: string;
+    businessModel?: string;
+    website: string;
+    location: string;
+    stage?: string;
+    whatsapp?: string;
+    services?: string[];
+    primaryOffer?: string;
+    socials?: DiscoveredSocialDraft[];
+  };
   goals: string[];
-  brand: { businessName: string; description: string; audience: string; tone: string; offers: string; restrictions: string };
-  plan: { tier: string | null; note: string };
+  brand: {
+    businessName: string;
+    description: string;
+    audience: string;
+    tone: string;
+    offers: string;
+    restrictions: string;
+  };
+  plan: {
+    tier: string | null;
+    note: string;
+    recommendedPackage?: string;
+    transformation?: { current: string[]; target: string[]; thirtyDayAction: string };
+  };
+  whatsappDelivery?: {
+    countryIso: string;
+    nationalNumber: string;
+    consent: boolean;
+  };
 }
 
 export const ONBOARDING_DRAFT_KEY = "stratxcel_onboarding_draft_v1";
@@ -10,10 +47,24 @@ export const ONBOARDING_DRAFT_KEY = "stratxcel_onboarding_draft_v1";
 export const ONBOARDING_STEP_LABELS = ["Account", "Business", "Goals", "Brand", "Plan", "Review"] as const;
 
 export const EMPTY_DRAFT: OnboardingDraft = {
-  business: { name: "", slug: "", slugTouched: false, industry: "", website: "", location: "" },
+  business: {
+    name: "",
+    slug: "",
+    slugTouched: false,
+    industry: "",
+    businessModel: "",
+    website: "",
+    location: "",
+    stage: "NEW/STARTING",
+    whatsapp: "",
+    services: [],
+    primaryOffer: "",
+    socials: [],
+  },
   goals: [],
   brand: { businessName: "", description: "", audience: "", tone: "", offers: "", restrictions: "" },
   plan: { tier: null, note: "" },
+  whatsappDelivery: { countryIso: "IN", nationalNumber: "", consent: true },
 };
 
 export function slugify(value: string): string {

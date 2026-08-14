@@ -100,8 +100,20 @@ export interface AuditScoreDimension {
   evidenceSourceIds: string[];
 }
 
+export interface LaunchPlanDetail {
+  currentStage: string;
+  missingItems: string[];
+  buildSequence: string[];
+  priorities: string[];
+  recommendedPackage: string;
+  needsBreakdown: Record<string, string>;
+}
+
 export interface AuditReportV1 {
   reportVersion: "automatic_audit_v1";
+  reportKind?: "AUDIT" | "LAUNCH_PLAN";
+  businessStage?: string;
+  launchPlan?: LaunchPlanDetail;
   generatedAt: string;
   businessName: string;
   executiveSummary: string;

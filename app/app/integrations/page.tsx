@@ -152,11 +152,11 @@ export default function IntegrationsPage() {
     },
     {
       key: "whatsapp",
-      title: "WhatsApp",
-      state: status?.whatsapp ?? "checking",
+      title: "WhatsApp Business",
+      state: status?.whatsapp ?? "setup_required",
       copy: status?.whatsapp === "connected"
         ? "WhatsApp Business is active for this workspace."
-        : "WhatsApp Business connects via Stratxcel's platform sender for Audit delivery and CRM escalation.",
+        : "WhatsApp Business connects via Stratxcel's platform sender for Audit delivery and CRM escalation. Setup required.",
       isOAuth: false,
     },
     {

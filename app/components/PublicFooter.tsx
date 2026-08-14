@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Logo } from "./Logo";
 import { CONTACT_EMAIL } from "@/lib/constants";
+import { PlatformIcon } from "@/components/audit/PlatformIcon";
 
 const COLUMNS = [
   {
@@ -50,6 +51,15 @@ const COLUMNS = [
   },
 ];
 
+const OFFICIAL_SOCIALS = [
+  { platform: "instagram" as const, label: "Instagram", url: "https://www.instagram.com/stratxcel" },
+  { platform: "facebook" as const, label: "Facebook", url: "https://www.facebook.com/stratxcel" },
+  { platform: "threads" as const, label: "Threads", url: "https://www.threads.net/@stratxcel" },
+  { platform: "youtube" as const, label: "YouTube", url: "https://www.youtube.com/@stratxcel" },
+  { platform: "whatsapp" as const, label: "WhatsApp", url: "https://wa.me/917777812777" },
+  { platform: "website" as const, label: "LinkedIn", url: "https://www.linkedin.com/company/stratxcel" },
+];
+
 export function PublicFooter({ logoVariant = "dark" }: { logoVariant?: "light" | "dark" }) {
   return (
     <footer className="border-t border-sx-border bg-sx-bg text-sx-text">
@@ -58,9 +68,25 @@ export function PublicFooter({ logoVariant = "dark" }: { logoVariant?: "light" |
           <div className="sm:col-span-2 md:col-span-3 lg:col-span-1">
             <Logo variant={logoVariant} />
             <p className="mt-3 text-xs text-sx-text-muted">
-              Stratxcel runs growth work that turns attention into opportunities.
+              Stratxcel runs growth operations that turn attention into opportunities.
             </p>
             <p className="mt-3 font-sx-mono text-[11px] font-semibold text-sx-accent">https://www.stratxcel.in</p>
+
+            {/* Official Social Channels */}
+            <div className="mt-4 flex flex-wrap items-center gap-2.5">
+              {OFFICIAL_SOCIALS.map((s) => (
+                <a
+                  key={s.url}
+                  href={s.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label={s.label}
+                  className="flex h-7 w-7 items-center justify-center rounded-sx-sm bg-sx-surface-2 text-sx-text-muted transition-colors hover:bg-sx-surface-3 hover:text-sx-text"
+                >
+                  <PlatformIcon name={s.platform} />
+                </a>
+              ))}
+            </div>
           </div>
           {COLUMNS.map((col) => (
             <div key={col.title}>
@@ -81,9 +107,15 @@ export function PublicFooter({ logoVariant = "dark" }: { logoVariant?: "light" |
       <div className="border-t border-sx-border px-4 py-6 sm:px-6 lg:px-8">
         <div className="mx-auto flex max-w-7xl flex-col gap-2 text-xs text-sx-text-subtle sm:flex-row sm:items-center sm:justify-between">
           <p>© {new Date().getFullYear()} Stratxcel Technologies. All rights reserved.</p>
-          <a href={`mailto:${CONTACT_EMAIL}`} className="font-medium hover:text-sx-text">
-            Contact: {CONTACT_EMAIL}
-          </a>
+          <div className="flex items-center gap-4">
+            <a href="https://wa.me/917777812777" target="_blank" rel="noopener noreferrer" className="font-medium hover:text-sx-text">
+              WhatsApp: +91 77778 12777
+            </a>
+            <span>·</span>
+            <a href={`mailto:${CONTACT_EMAIL}`} className="font-medium hover:text-sx-text">
+              Contact: {CONTACT_EMAIL}
+            </a>
+          </div>
         </div>
       </div>
     </footer>

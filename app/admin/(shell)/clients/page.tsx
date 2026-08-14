@@ -26,7 +26,7 @@ export default function TenantsPage() {
 
   async function loadTenants() {
     setError(null);
-    const res = await fetch("/api/platform/tenants", { cache: "no-store" });
+    const res = await fetch("/api/platform/tenants");
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
       setError(body.error ?? `Failed to load clients (HTTP ${res.status})`);

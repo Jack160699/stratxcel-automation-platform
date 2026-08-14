@@ -164,6 +164,29 @@ export async function POST(request: Request) {
     }
   }
 
+  // Sync initial CRM lead for the newly created tenant
+  try {
+    const contactEmail = user.email ?? null;
+    const contactName = user.user_metadata?.full_name ?? name;
+    await serviceClient.from("crm_leads").insert({
+      tenant_id: tenant.id,
+      source: "website",
+      contact_name: contactName,
+      contact_email: contactEmail,
+      status: "new",
+      metadata: {
+        kind: "CUSTOMER_ONBOARDING_PRIMARY_CONTACT",
+        businessName: name,
+        websiteUrl: body.business?.website ?? null,
+        industry: body.business?.industry ?? null,
+        goals: body.goals ?? [],
+        planRequested: body.plan?.tier ?? null,
+      },
+    });
+  } catch (crmErr) {
+    console.warn("onboarding: non-fatal crm lead sync trace", crmErr);
+  }
+
   let auditLogged = false;
   const auditRows: { tenant_id: string; actor_user_id: string; action: string; target_type: string; target_id: string; metadata: Record<string, unknown> }[] = [];
   if (body.goals?.length) {

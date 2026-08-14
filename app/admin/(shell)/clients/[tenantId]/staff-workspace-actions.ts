@@ -13,21 +13,18 @@ export async function viewClientWorkspaceAction(tenantId: string): Promise<never
   const ctx = await requireOwnerContext();
   if (!ctx.ok) redirect("/admin");
 
-  const targetTenant = await getAgencyTenant(tenantId);
-  if (!targetTenant) redirect("/admin/clients?error=TENANT_NOT_FOUND");
+  if (!(await getAgencyTenant(tenantId))) redirect("/admin/clients?error=TENANT_NOT_FOUND");
 
   // Log auditable server-side admin access event
   try {
     const service = createSupabaseServiceClient();
     await service.from("platform_audit_events").insert({
-      tenant_id: targetTenant.tenantId,
+      tenant_id: tenantId,
       actor_user_id: ctx.ownerId,
       event_type: "admin_client_workspace_viewed",
       metadata: {
         admin_user_id: ctx.ownerId,
-        target_tenant_id: targetTenant.tenantId,
-        target_tenant_slug: targetTenant.slug,
-        target_tenant_name: targetTenant.name,
+        target_tenant_id: tenantId,
       },
     });
   } catch {

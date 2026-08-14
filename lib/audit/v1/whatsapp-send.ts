@@ -307,6 +307,20 @@ export async function sendAuditReportWhatsApp(
     destinationMasked: masked,
   });
 
+  // Sync delivery state to CRM lead
+  try {
+    await supabase
+      .from("crm_leads")
+      .update({
+        notes: `Report delivered to WhatsApp (${masked}). Report URL: ${input.reportUrl}`,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", destination.lead_id)
+      .eq("tenant_id", input.tenantId);
+  } catch {
+    // Non-fatal CRM note update
+  }
+
   return {
     status: "SENT",
     message: `Sent to ${masked}`,

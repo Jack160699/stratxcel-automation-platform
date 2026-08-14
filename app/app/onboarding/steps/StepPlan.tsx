@@ -5,14 +5,6 @@ import { Textarea } from "@/components/ui/Input";
 import { FormField } from "../FormField";
 import { PLAN_TIERS, type OnboardingDraft } from "../types";
 
-/**
- * No billing/subscription table exists anywhere in this schema
- * (confirmed against supabase/migrations/ — app/app/billing/page.tsx
- * already says this plainly: "Plan management ... has no backend yet").
- * This step never activates anything — it records a non-binding request
- * Stratxcel will confirm, using the same tier names as the public
- * /pricing page.
- */
 export function StepPlan({
   draft,
   update,
@@ -21,13 +13,79 @@ export function StepPlan({
   update: (patch: Partial<OnboardingDraft["plan"]>) => void;
 }) {
   const noteId = useId();
+  const stage = draft.business.stage ?? "NEW/STARTING";
+  const isEarlyStage = stage === "IDEA" || stage === "PRE-LAUNCH";
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-5">
+      {/* Contextual Recommendation / From This -> To This Transformation Card */}
+      <div className="rounded-sx-md border border-sx-border/80 bg-sx-surface-2 p-4">
+        <p className="text-[11px] font-bold uppercase tracking-wider text-sx-accent">
+          {isEarlyStage ? "Recommended Launch Roadmap" : "Recommended 30-Day Growth Transformation"}
+        </p>
+        <h3 className="mt-1 font-sx-sans text-sm font-semibold text-sx-text">
+          {isEarlyStage
+            ? "Your Stage: Pre-Launch Foundation"
+            : `Your Stage: ${stage} — Active Business Growth`}
+        </h3>
+
+        <div className="mt-3 grid gap-3 sm:grid-cols-2 text-xs">
+          <div className="rounded-sx-sm bg-sx-surface-1 p-3 border border-sx-border/60">
+            <span className="font-semibold text-rose-400 block mb-1">CURRENT GAPS</span>
+            <ul className="list-disc pl-4 space-y-1 text-sx-text-muted">
+              {isEarlyStage ? (
+                <>
+                  <li>No live customer website</li>
+                  <li>No connected social channels</li>
+                  <li>Manual or missing WhatsApp entry</li>
+                  <li>No customer database or CRM</li>
+                </>
+              ) : (
+                <>
+                  <li>Inconsistent brand publishing</li>
+                  <li>Manual customer replies</li>
+                  <li>Scattered inbound inquiries</li>
+                  <li>Untapped local & AI search discoverability</li>
+                </>
+              )}
+            </ul>
+          </div>
+
+          <div className="rounded-sx-sm bg-sx-surface-1 p-3 border border-emerald-500/30">
+            <span className="font-semibold text-emerald-400 block mb-1">30-DAY TARGET</span>
+            <ul className="list-disc pl-4 space-y-1 text-sx-text-muted">
+              {isEarlyStage ? (
+                <>
+                  <li>High-converting live website & domain</li>
+                  <li>Active multi-channel social setup</li>
+                  <li>24/7 automated WhatsApp reception</li>
+                  <li>Centralized CRM & lead pipeline</li>
+                </>
+              ) : (
+                <>
+                  <li>Daily automated content publishing</li>
+                  <li>Instant WhatsApp lead qualification</li>
+                  <li>Unified CRM conversation inbox</li>
+                  <li>Optimized local presence & reviews</li>
+                </>
+              )}
+            </ul>
+          </div>
+        </div>
+
+        <div className="mt-3 rounded-sx-sm bg-sx-surface-1/60 p-2.5 text-xs text-sx-text">
+          <span className="font-semibold text-sx-accent">Recommended sequence: </span>
+          {isEarlyStage
+            ? "1. Website → 2. Social presence → 3. Brand identity → 4. WhatsApp → 5. CRM → 6. Initial ads"
+            : "1. WhatsApp instant response → 2. Social Autopilot → 3. CRM unification → 4. Discovery optimization"}
+        </div>
+      </div>
+
       <p className="font-sx-sans text-[13.5px] leading-relaxed text-sx-text-muted">
         This is a request, not an activation — no payment happens here. Stratxcel will follow up to confirm engagement
         details.
       </p>
+
       <div role="radiogroup" aria-label="Requested engagement tier" className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
         {PLAN_TIERS.map((tier) => {
           const isSelected = draft.plan.tier === tier.key;
@@ -57,3 +115,4 @@ export function StepPlan({
     </div>
   );
 }
+
