@@ -72,7 +72,8 @@ export function isV1OnboardingComplete(state: AuditOnboardingState | null): bool
 export function resumeStep(state: AuditOnboardingState | null): AuditOnboardingStep {
   if (!state) return "connect";
   if (!state.websiteUrl) return "connect";
-  if (!state.profile) return "discovering";
+  if (state.step === "discovering") return "discovering";
+  if (!state.profile) return "connect";
   if (!state.verified) return "verify";
   if (!isV1OnboardingComplete(state)) return "questions";
   if (state.step === "generating" || state.step === "complete") return state.step;

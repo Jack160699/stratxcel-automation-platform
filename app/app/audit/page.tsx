@@ -79,6 +79,7 @@ export default function AuditHubPage() {
   const [starting, setStarting] = useState(false);
   const autoStartAttempted = useRef(false);
 
+  const [brandBrain, setBrandBrain] = useState<Record<string, unknown> | null>(null);
   const [freshAuditEligible, setFreshAuditEligible] = useState(false);
   const [shareMessage, setShareMessage] = useState<string | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
@@ -100,6 +101,7 @@ export default function AuditHubPage() {
       paymentUrl?: string | null;
       freshAuditEligible?: boolean;
       whatsappDestination?: { masked: string; countryIso: string; nationalNumber: string; consent: boolean } | null;
+      brandBrain?: Record<string, unknown> | null;
     }>(() => fetch("/api/platform/audit/checkout"), "We couldn't load your Audit. Please try again.");
     if (result.status === "error") {
       setOrder(null);
@@ -112,6 +114,7 @@ export default function AuditHubPage() {
     setGeneration(result.data.generation ?? null);
     setPaymentUrl(result.data.paymentUrl ?? null);
     setFreshAuditEligible(result.data.freshAuditEligible === true);
+    setBrandBrain(result.data.brandBrain ?? null);
     const destination = result.data.whatsappDestination;
     if (destination) {
       setWaMasked(destination.masked);
@@ -279,7 +282,7 @@ export default function AuditHubPage() {
   }
 
   if (customerState === "INTAKE_REQUIRED") {
-    return <ConnectExperience order={order} onChanged={load} />;
+    return <ConnectExperience order={order} brandBrain={brandBrain} onChanged={load} />;
   }
 
   if (customerState === "READY_FOR_EXECUTION") {

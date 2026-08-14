@@ -6,7 +6,7 @@ import { getCurrentBrandBrain, saveBrandBrainVersion } from "@stratxcel/brand-br
 import { resolveAuditBudgetLimitUsd } from "@stratxcel/audit-engine";
 import { AUDIT_CHANNEL_TYPES, sanitizeChannels } from "@/lib/audit/v1/channels";
 import { discoverPublicBusiness } from "@/lib/audit/v1/discovery";
-import { selectAdaptiveQuestions, adaptiveAnswersComplete } from "@/lib/audit/v1/adaptive-questions";
+import { selectAdaptiveQuestions, adaptiveAnswersComplete, type DiscoveredBusinessProfile } from "@/lib/audit/v1/adaptive-questions";
 import {
   CONNECT_DISCOVER_VERSION,
   emptyOnboardingState,
@@ -164,27 +164,81 @@ export async function POST(request: Request) {
       const websiteUrl = normalizeBusinessWebsiteInput(String(body.websiteUrl ?? parseOnboardingState(current.deep_dive_answers)?.websiteUrl ?? ""));
       const discovering = mergeState(current, { step: "discovering", websiteUrl });
       await persist(ctx.service, current, discovering);
-      const packet = await discoverPublicBusiness({ websiteUrl });
-      await ctx.service.from("audit_discovery_snapshots").insert({
-        audit_order_id: current.id,
-        tenant_id: ctx.tenantId,
-        website_url: packet.websiteUrl,
-        packet,
-      });
+
+      let profile: DiscoveredBusinessProfile = { websiteUrl };
+      let coverage: Record<string, boolean> = {};
+
+      try {
+        const packet = await discoverPublicBusiness({ websiteUrl });
+        profile = packet.profile;
+        coverage = packet.coverage;
+        try {
+          await ctx.service.from("audit_discovery_snapshots").insert({
+            audit_order_id: current.id,
+            tenant_id: ctx.tenantId,
+            website_url: packet.websiteUrl,
+            packet,
+          });
+        } catch {
+          // Non-fatal
+        }
+      } catch (err) {
+        console.warn("Standard discovery error, recovering with Brand Brain context:", err);
+        const brain = await getCurrentBrandBrain(ctx.service, ctx.tenantId).catch(() => null);
+        if (brain?.content) {
+          const c = brain.content;
+          profile = {
+            websiteUrl,
+            name: typeof c.business_name === "string" && c.business_name ? field(c.business_name, "CUSTOMER_PROVIDED") : undefined,
+            category: typeof c.industry === "string" && c.industry ? field(c.industry, "CUSTOMER_PROVIDED") : undefined,
+            location: typeof c.location === "string" && c.location ? field(c.location, "CUSTOMER_PROVIDED") : undefined,
+            offer: typeof c.description === "string" && c.description ? field(c.description, "CUSTOMER_PROVIDED") : undefined,
+            positioning: typeof c.tone_of_voice === "string" && c.tone_of_voice ? field(c.tone_of_voice, "CUSTOMER_PROVIDED") : undefined,
+          };
+        }
+      }
+
       const state = mergeState(current, {
         step: "verify",
-        websiteUrl: packet.websiteUrl,
-        profile: packet.profile,
+        websiteUrl: profile.websiteUrl || websiteUrl,
+        profile,
       });
-      await persist(ctx.service, current, state, { website_url: packet.websiteUrl });
+      await persist(ctx.service, current, state, { website_url: state.websiteUrl });
       await syncBrandBrainPresence(ctx.service, { tenantId: ctx.tenantId, userId: ctx.user.id, order: current, state });
       return Response.json({
         ok: true,
         state,
-        questions: selectAdaptiveQuestions(packet.profile),
-        coverage: packet.coverage,
-        pagesFetched: packet.pagesFetched.length,
+        questions: selectAdaptiveQuestions(profile),
+        coverage,
       });
+    }
+
+    if (action === "continue_anyway") {
+      const existing = parseOnboardingState(current.deep_dive_answers) ?? emptyOnboardingState();
+      const brain = await getCurrentBrandBrain(ctx.service, ctx.tenantId).catch(() => null);
+      const c = brain?.content;
+      const resolvedWebsite = typeof existing.websiteUrl === "string" && existing.websiteUrl.trim()
+        ? existing.websiteUrl
+        : typeof current.website_url === "string" && current.website_url.trim()
+          ? current.website_url
+          : typeof c?.website_url === "string" && c.website_url.trim()
+            ? c.website_url
+            : "";
+      const profile: DiscoveredBusinessProfile = existing.profile ?? {
+        websiteUrl: resolvedWebsite,
+        name: typeof c?.business_name === "string" && c.business_name ? field(c.business_name, "CUSTOMER_PROVIDED") : field(typeof current.business_name === "string" ? current.business_name : "My Business", "CUSTOMER_PROVIDED"),
+        category: typeof c?.industry === "string" && c.industry ? field(c.industry, "CUSTOMER_PROVIDED") : field(typeof current.industry === "string" ? current.industry : "", "CUSTOMER_PROVIDED"),
+        location: typeof c?.location === "string" && c.location ? field(c.location, "CUSTOMER_PROVIDED") : undefined,
+        offer: typeof c?.description === "string" && c.description ? field(c.description, "CUSTOMER_PROVIDED") : undefined,
+        positioning: typeof c?.tone_of_voice === "string" && c.tone_of_voice ? field(c.tone_of_voice, "CUSTOMER_PROVIDED") : undefined,
+      };
+      const state = mergeState(current, {
+        step: "verify",
+        websiteUrl: resolvedWebsite,
+        profile,
+      });
+      await persist(ctx.service, current, state);
+      return Response.json({ ok: true, state, questions: selectAdaptiveQuestions(profile) });
     }
 
     if (action === "verify") {

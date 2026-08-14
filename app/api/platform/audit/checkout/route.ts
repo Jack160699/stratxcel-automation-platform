@@ -2,6 +2,7 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getTenantServiceContext } from "@/lib/tenants/tenant-context";
 import { createTenant, listMembershipsForUser } from "@/lib/tenants/repository";
 import { createPaymentLink, isPaymentFeatureEnabled } from "@stratxcel/payments-and-wallet";
+import { getCurrentBrandBrain } from "@stratxcel/brand-brain";
 import { resolveCanonicalIdentity } from "@/lib/identity/resolve-identity";
 import { ensurePendingAuditOrder, AUDIT_FEE_CENTS } from "@/lib/audit/ensure-pending-order";
 import { isMissingRelation, resolveCurrentAuditOrderId } from "@/lib/audit/current-pointer";
@@ -211,6 +212,7 @@ export async function GET() {
   const eligibility = await service.rpc("tenant_has_fresh_audit_grant", { p_tenant_id: tenantId });
   const eligible = isMissingRelation(eligibility.error) ? false : eligibility.data === true;
   const destination = await loadAuditWhatsAppDestination(service, tenantId);
+  const brandBrain = await getCurrentBrandBrain(service, tenantId).catch(() => null);
 
   return Response.json({
     order: visibleOrder ?? null,
@@ -219,5 +221,6 @@ export async function GET() {
     generation,
     freshAuditEligible: eligible === true,
     whatsappDestination: destination ? toPublicDestination(destination) : null,
+    brandBrain: brandBrain?.content ?? null,
   }, { headers: { "Cache-Control": "no-store" } });
 }
