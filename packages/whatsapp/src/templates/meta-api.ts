@@ -14,7 +14,7 @@ export interface MetaTemplateApiEntry {
 }
 
 export interface SafeMetaEndpointDiagnostic {
-  label: "waba_lookup" | "template_list" | "phone_list";
+  label: "waba_lookup" | "template_list" | "phone_list" | "business_list" | "waba_candidates";
   wabaId: string;
   apiVersion: string;
   httpStatus: number;
@@ -97,13 +97,14 @@ export function buildMetaGraphUrl(apiVersion: string, objectId: string, edge?: s
 }
 
 export async function inspectMetaTemplateEndpoint(
-  input: { wabaId: string; phoneNumberId: string },
+  input: { wabaId: string; phoneNumberId: string; apiVersion?: string },
   fetchFn: typeof fetch = fetch,
 ): Promise<MetaTemplateInspection> {
   const token = process.env.WHATSAPP_TOKEN?.trim();
   if (!token) throw new Error("WHATSAPP_TOKEN is not configured");
 
-  const apiVersion = getMetaGraphApiVersion();
+  const apiVersion = input.apiVersion?.trim() || getMetaGraphApiVersion();
+  if (!/^v\d+\.\d+$/.test(apiVersion)) throw new Error("Invalid Meta Graph API version");
   const diagnostics: SafeMetaEndpointDiagnostic[] = [];
   const configuredLookup = await graphGet(
     buildMetaGraphUrl(apiVersion, input.wabaId, undefined, new URLSearchParams({ fields: "id,name" })),
@@ -134,7 +135,7 @@ export async function inspectMetaTemplateEndpoint(
     throw toEndpointError(configuredTemplates, failure, diagnostics);
   }
 
-  const candidates = await discoverWabaCandidates(input.wabaId, apiVersion, token, fetchFn);
+  const candidates = await discoverWabaCandidates(input.wabaId, apiVersion, token, diagnostics, fetchFn);
   for (const candidate of candidates) {
     if (candidate.id === input.wabaId) continue;
     const phoneList = await requestPhoneNumbers(candidate.id, apiVersion, token, fetchFn);
@@ -171,6 +172,7 @@ async function discoverWabaCandidates(
   objectId: string,
   apiVersion: string,
   token: string,
+  diagnostics: SafeMetaEndpointDiagnostic[],
   fetchFn: typeof fetch,
 ): Promise<Array<{ id: string; name?: string }>> {
   const candidates = new Map<string, { id: string; name?: string }>();
@@ -185,6 +187,7 @@ async function discoverWabaCandidates(
     token,
     fetchFn,
   );
+  diagnostics.push(toDiagnostic("business_list", objectId, apiVersion, businesses));
   for (const business of businesses.body.data ?? []) portfolioIds.add(String(business.id));
 
   for (const portfolioId of portfolioIds) {
@@ -199,6 +202,7 @@ async function discoverWabaCandidates(
         token,
         fetchFn,
       );
+      diagnostics.push(toDiagnostic("waba_candidates", portfolioId, apiVersion, result));
       for (const candidate of result.body.data ?? []) {
         candidates.set(String(candidate.id), { id: String(candidate.id), name: candidate.name });
       }

@@ -15,9 +15,14 @@ export const dynamic = "force-dynamic";
  * template catalog. The access token and request authorization header are
  * never returned or logged.
  */
-export async function GET() {
+export async function GET(request: Request) {
   const owner = await requireOwnerContext();
   if (!owner.ok) return Response.json({ responseMessage: owner.error }, { status: owner.status });
+  const requestedVersion = new URL(request.url).searchParams.get("apiVersion")?.trim();
+  if (requestedVersion && !/^v\d+\.\d+$/.test(requestedVersion)) {
+    return Response.json({ responseMessage: "Invalid Meta Graph API version" }, { status: 400 });
+  }
+  const diagnosticVersion = requestedVersion || getMetaGraphApiVersion();
 
   const { supabase } = getTenantServiceContext();
   const platformSender = await resolvePlatformWhatsAppSender(supabase);
@@ -25,7 +30,7 @@ export async function GET() {
     return Response.json(
       {
         wabaId: null,
-        apiVersion: getMetaGraphApiVersion(),
+        apiVersion: diagnosticVersion,
         httpStatus: 409,
         errorCode: null,
         responseMessage: "Stratxcel platform WhatsApp sender is not configured",
@@ -40,6 +45,7 @@ export async function GET() {
     const inspection = await inspectMetaTemplateEndpoint({
       wabaId: platformSender.sender.wabaId,
       phoneNumberId: platformSender.sender.phoneNumberId,
+      apiVersion: requestedVersion,
     });
     return Response.json(
       {
@@ -54,7 +60,7 @@ export async function GET() {
       return Response.json(
         {
           wabaId: platformSender.sender.wabaId,
-          apiVersion: getMetaGraphApiVersion(),
+          apiVersion: diagnosticVersion,
           httpStatus: error.httpStatus,
           errorCode: error.errorCode,
           responseMessage: error.message,
@@ -68,7 +74,7 @@ export async function GET() {
     return Response.json(
       {
         wabaId: platformSender.sender.wabaId,
-        apiVersion: getMetaGraphApiVersion(),
+        apiVersion: diagnosticVersion,
         httpStatus: 500,
         errorCode: null,
         responseMessage: error instanceof Error ? error.message : "Meta diagnostics failed",
