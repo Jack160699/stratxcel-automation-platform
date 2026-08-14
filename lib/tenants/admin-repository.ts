@@ -12,16 +12,21 @@ export interface AgencyTenant {
   slug: string;
 }
 
+import { SYSTEM_TENANT_SLUGS } from "./constants";
+export { SYSTEM_TENANT_SLUGS };
+
 function mapTenant(row: { id: string; name: string; slug: string }): AgencyTenant {
   return { tenantId: row.id, name: row.name, slug: row.slug };
 }
 
-/** Server-only agency tenant listing. Callers must authenticate with requireOwnerContext first. */
+/** Server-only agency tenant listing. Callers must authenticate with requireOwnerContext first. Filters out platform system tenants. */
 export async function listAgencyTenants(): Promise<AgencyTenant[]> {
   const service = createSupabaseServiceClient();
   const { data, error } = await service.from("tenants").select("id,name,slug").order("name");
   if (error) throw new Error(`listAgencyTenants: ${error.message}`);
-  return (data ?? []).map(mapTenant);
+  return (data ?? [])
+    .filter((r) => !SYSTEM_TENANT_SLUGS.has((r.slug ?? "").toLowerCase()))
+    .map(mapTenant);
 }
 
 /** Server-only existence/detail lookup. Callers must authenticate with requireOwnerContext first. */
@@ -29,7 +34,8 @@ export async function getAgencyTenant(tenantId: string): Promise<AgencyTenant | 
   const service = createSupabaseServiceClient();
   const { data, error } = await service.from("tenants").select("id,name,slug").eq("id", tenantId).maybeSingle();
   if (error) throw new Error(`getAgencyTenant: ${error.message}`);
-  return data ? mapTenant(data) : null;
+  if (!data || SYSTEM_TENANT_SLUGS.has((data.slug ?? "").toLowerCase())) return null;
+  return mapTenant(data);
 }
 
 /** Creates an agency-managed tenant without fabricating a staff customer membership. */

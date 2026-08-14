@@ -71,8 +71,8 @@ const state = parseOnboardingState({
 });
 assert.equal(isV1OnboardingComplete(state), true);
 assert.equal(resumeStep({ ...state!, websiteUrl: "" }), "connect");
-assert.equal(resumeStep({ ...state!, verified: false, adaptiveAnswers: {} }), "verify");
-assert.equal(resumeStep({ ...state!, profile: undefined, adaptiveAnswers: {} }), "discovering");
+assert.equal(resumeStep({ ...state!, profile: undefined, adaptiveAnswers: {} }), "connect");
+assert.equal(resumeStep({ ...state!, step: "discovering", profile: undefined, adaptiveAnswers: {} }), "discovering");
 
 const html = `<html><head><title>Stratxcel</title><meta name="description" content="Growth operations for small businesses"><script type="application/ld+json">{"@type":"Organization","name":"Stratxcel","sameAs":["https://www.instagram.com/stratxcel"]}</script></head><body><h1>Stratxcel</h1></body></html>`;
 const publicResolver = (async () => [{ address: "93.184.216.34", family: 4 }]) as unknown as typeof import("node:dns/promises").lookup;

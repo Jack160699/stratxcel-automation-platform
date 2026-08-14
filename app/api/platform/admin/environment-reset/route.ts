@@ -51,13 +51,8 @@ async function captureInventory(): Promise<{ inventory: ResourceInventory; prote
   const { data: adminRows } = await service.from("stratxcel_admins").select("user_id");
   const protectedUserIds = new Set<string>((adminRows ?? []).map((r) => r.user_id));
 
-  // 2. Protected System Tenants
-  const { data: adminMemberships } = await service
-    .from("tenant_memberships")
-    .select("tenant_id, user_id")
-    .in("user_id", Array.from(protectedUserIds));
-
-  const protectedTenantIds = new Set<string>((adminMemberships ?? []).map((m) => m.tenant_id));
+  // 2. Protected System Tenants (Only genuine platform infrastructure tenants, NOT customer test workspaces)
+  const protectedTenantIds = new Set<string>();
 
   const { data: systemTenants } = await service
     .from("tenants")
@@ -68,7 +63,17 @@ async function captureInventory(): Promise<{ inventory: ResourceInventory; prote
     protectedTenantIds.add(st.id);
   }
 
-  // 3. Customer Tenants
+  // Platform WhatsApp outbound sender binding tenant
+  const { data: whatsappBindings } = await service
+    .from("whatsapp_phone_bindings")
+    .select("tenant_id")
+    .eq("outbound_enabled", true);
+
+  for (const wb of whatsappBindings ?? []) {
+    if (wb.tenant_id) protectedTenantIds.add(wb.tenant_id);
+  }
+
+  // 3. Customer/Test Tenants (Disposable)
   const { data: allTenants } = await service.from("tenants").select("id, slug, name");
   const customerTenants = (allTenants ?? []).filter((t) => !protectedTenantIds.has(t.id));
   const customerTenantIds = customerTenants.map((t) => t.id);
