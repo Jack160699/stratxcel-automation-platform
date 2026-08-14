@@ -1,34 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useState, useSyncExternalStore } from "react";
+import { useCallback, useState } from "react";
 import { TrackedCtaLink } from "@/app/components/public/commercial/TrackedCtaLink";
-import { DEMO_DISCLAIMER } from "@/app/components/public/showcase/fixtures/showcase-data";
 import { useInView } from "@/lib/motion/useInView";
 import { HeroMediaLayer } from "./hero/HeroMediaLayer";
-import { HeroWorkspaceBoard, HeroWorkspaceCard } from "./hero/HeroWorkspaceBoard";
+import { HeroConvergenceVisual } from "./hero/HeroConvergenceVisual";
 import { KineticHeadline } from "./hero/KineticHeadline";
 import type { HeroSceneKey } from "./hero/hero-phrases";
 
-const COMPACT_QUERY = "(max-width: 767px)";
-
-function subscribeCompact(callback: () => void) {
-  const mq = window.matchMedia(COMPACT_QUERY);
-  mq.addEventListener("change", callback);
-  return () => mq.removeEventListener("change", callback);
-}
-
-function getCompactSnapshot() {
-  return window.matchMedia(COMPACT_QUERY).matches;
-}
-
-function getCompactServerSnapshot() {
-  return false;
-}
-
 export function PlatformHero() {
-  const [scene, setScene] = useState<HeroSceneKey>("search");
-  const compact = useSyncExternalStore(subscribeCompact, getCompactSnapshot, getCompactServerSnapshot);
+  const [, setScene] = useState<HeroSceneKey>("grow");
   const [sectionRef, inView] = useInView<HTMLElement>({ threshold: 0.15, once: false });
 
   const handleSceneChange = useCallback((next: HeroSceneKey) => setScene(next), []);
@@ -40,67 +22,76 @@ export function PlatformHero() {
       data-home-section="platform-hero"
       className="relative isolate flex min-h-[100svh] flex-col overflow-hidden bg-[#06080c] text-white"
     >
+      {/* Volumetric Depth & Atmospheric Lighting Layer */}
       <HeroMediaLayer>
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_85%_60%_at_50%_18%,rgb(37_99_235/0.16),transparent_60%)]" />
-        <div className="sx-hero-light-drift absolute -left-[18%] top-[8%] h-[52%] w-[52%] rounded-full bg-[radial-gradient(circle,rgb(58_160_255/0.11),transparent_70%)] blur-3xl" />
-        <div className="sx-hero-light-drift-reverse absolute -right-[14%] top-[38%] h-[44%] w-[44%] rounded-full bg-[radial-gradient(circle,rgb(79_220_229/0.07),transparent_70%)] blur-3xl" />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_90%_65%_at_50%_15%,rgb(37_99_235/0.2),transparent_65%)]" />
+        <div className="sx-hero-light-drift absolute -left-[16%] top-[6%] h-[55%] w-[55%] rounded-full bg-[radial-gradient(circle,rgb(58_160_255/0.12),transparent_70%)] blur-3xl" />
+        <div className="sx-hero-light-drift-reverse absolute -right-[12%] top-[35%] h-[48%] w-[48%] rounded-full bg-[radial-gradient(circle,rgb(79_220_229/0.08),transparent_70%)] blur-3xl" />
+        <div className="pointer-events-none absolute inset-0 sx-hero-vignette" />
+        <div className="pointer-events-none absolute inset-0 sx-hero-grain opacity-40" />
       </HeroMediaLayer>
 
-      <div className="relative z-10 flex flex-1 flex-col px-4 pb-[max(4.5rem,10vh)] pt-24 sm:px-6 sm:pt-26 lg:px-8 lg:pt-28">
-        <div className="mx-auto w-full max-w-3xl text-center">
-          <p className="font-sx-mono text-[10.5px] font-semibold uppercase tracking-[0.28em] text-white/40">
-            Stratxcel
-          </p>
+      <div className="relative z-10 flex flex-1 flex-col px-4 pb-[max(4.5rem,10vh)] pt-24 sm:px-6 sm:pt-28 lg:px-8 lg:pt-32">
+        <div className="mx-auto w-full max-w-4xl text-center">
+          {/* Eyebrow / Kicker */}
+          <div className="inline-flex items-center gap-2 rounded-full border border-sky-400/25 bg-sky-500/10 px-3.5 py-1 text-sky-300">
+            <span className="h-1.5 w-1.5 rounded-full bg-sky-400 animate-pulse" />
+            <span className="font-sx-mono text-[11px] font-semibold uppercase tracking-[0.2em]">
+              STRATXCEL AI AGENT
+            </span>
+          </div>
 
-          <h1 className="mt-4 font-sx-sans text-[clamp(1.9rem,5.2vw+0.3rem,3.6rem)] font-semibold leading-[1.06] tracking-[-0.035em] text-white">
-            <span className="block text-white/70">Stratxcel helps you</span>
-            <span className="mt-1.5 block">
+          {/* Main Headline */}
+          <h1 className="mt-5 font-sx-sans text-[clamp(2.1rem,5.6vw+0.4rem,4.2rem)] font-bold leading-[1.05] tracking-[-0.04em] text-white">
+            <span className="block text-white">YOUR AI BUSINESS AGENT.</span>
+            <span className="mt-2 flex flex-wrap items-center justify-center gap-x-3 text-[clamp(1.5rem,4.2vw+0.2rem,3.2rem)] font-semibold text-white/70">
+              <span>Built to help you</span>
               <KineticHeadline onSceneChange={handleSceneChange} paused={!inView} />
             </span>
           </h1>
 
-          <p className="mx-auto mt-5 max-w-lg font-sx-sans text-[15px] leading-relaxed text-white/55 sm:text-[17px]">
-            One place to market your business, find customers, and get the daily work done — with AI helping and you
-            deciding.
+          {/* Supporting Copy */}
+          <p className="mx-auto mt-6 max-w-2xl font-sx-sans text-[15px] leading-relaxed text-white/70 sm:text-[18px]">
+            Connect your business. Your AI Agent operates the digital work that helps it grow.
           </p>
 
-          <div className="mt-7 flex flex-col items-stretch gap-2.5 sm:mt-9 sm:flex-row sm:items-center sm:justify-center sm:gap-3">
+          {/* Direct Clear CTAs */}
+          <div className="mt-8 flex flex-col items-stretch justify-center gap-3 sm:flex-row sm:items-center sm:gap-4">
+            <TrackedCtaLink
+              href="/audit"
+              event="audit_cta_click"
+              surface="home_hero_primary"
+              plan="audit"
+              className="inline-flex min-h-12 items-center justify-center rounded-sx-sm bg-gradient-to-r from-blue-600 via-blue-500 to-sky-500 px-8 py-3.5 font-sx-sans text-sm font-bold text-white shadow-[0_0_28px_rgba(37,99,235,0.4)] transition-all duration-200 hover:brightness-110 motion-reduce:transition-none"
+            >
+              GET YOUR BUSINESS GROWTH AUDIT — ₹999
+            </TrackedCtaLink>
             <TrackedCtaLink
               href="/products"
-              event="explore_product"
-              surface="home_hero"
-              className="inline-flex min-h-11 items-center justify-center rounded-sx-sm bg-white px-7 py-3 font-sx-sans text-sm font-semibold text-[#0a1020] transition-colors hover:bg-white/90 motion-reduce:transition-none"
+              event="explore_agent"
+              surface="home_hero_secondary"
+              className="inline-flex min-h-12 items-center justify-center rounded-sx-sm border border-white/20 bg-white/[0.05] px-7 py-3.5 font-sx-sans text-sm font-semibold text-white/90 backdrop-blur-sm transition-colors hover:border-white/40 hover:bg-white/[0.1] motion-reduce:transition-none"
             >
-              Explore Stratxcel
+              EXPLORE THE AI AGENT
             </TrackedCtaLink>
-            <Link
-              href="/how-it-works"
-              className="inline-flex min-h-11 items-center justify-center rounded-sx-sm border border-white/15 bg-white/[0.04] px-7 py-3 font-sx-sans text-sm font-semibold text-white/85 transition-colors hover:bg-white/[0.09] motion-reduce:transition-none"
-            >
-              See how it works
-            </Link>
           </div>
+
+          <p className="mt-3.5 font-sx-sans text-xs text-white/45">
+            One-time ₹999 audit · GST included · No subscription starts automatically
+          </p>
         </div>
 
-        {compact ? (
-          <div className="mt-10 flex flex-1 items-end pb-2">
-            <HeroWorkspaceCard scene={scene} />
-          </div>
-        ) : (
-          <div className="relative mt-10 min-h-[17rem] flex-1">
-            <HeroWorkspaceBoard scene={scene} />
-          </div>
-        )}
-
-        {/* Sits above the dawn gradient so the demo-data disclosure stays readable. */}
-        <p className="relative z-30 mt-6 text-center font-sx-sans text-[11px] text-white/45">{DEMO_DISCLAIMER}</p>
+        {/* Business Convergence Visual System */}
+        <div className="mt-10 flex-1">
+          <HeroConvergenceVisual />
+        </div>
       </div>
 
-      {/* Dawn transition — the dark environment recedes and the light site rises. */}
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 h-[min(22vh,11rem)]" aria-hidden>
-        <div className="absolute inset-0 bg-gradient-to-b from-transparent via-[#06080c]/70 to-[#06080c]" />
-        <div className="absolute inset-x-0 bottom-0 h-[62%] bg-gradient-to-b from-transparent via-[#f7f8fc]/55 to-[#f7f8fc]" />
-        <div className="absolute inset-x-0 bottom-0 h-[26%] bg-[#f7f8fc]" />
+      {/* Dawn transition to Section 02 */}
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 h-[min(18vh,9rem)]" aria-hidden>
+        <div className="absolute inset-0 bg-gradient-to-b from-transparent via-[#06080c]/80 to-[#06080c]" />
+        <div className="absolute inset-x-0 bottom-0 h-[50%] bg-gradient-to-b from-transparent via-[#fafbfc]/60 to-[#fafbfc]" />
+        <div className="absolute inset-x-0 bottom-0 h-[20%] bg-[#fafbfc]" />
       </div>
     </section>
   );

@@ -34,6 +34,15 @@ export interface PublicRoute {
 
 export const PUBLIC_ROUTES: PublicRoute[] = [
   { path: "", changeFrequency: "weekly", priority: 1.0 },
+  { path: "/ai-business-agent", changeFrequency: "weekly", priority: 0.95 },
+  { path: "/ai-workforce", changeFrequency: "weekly", priority: 0.9 },
+  { path: "/ai-seo-agent", changeFrequency: "weekly", priority: 0.9 },
+  { path: "/ai-social-media-agent", changeFrequency: "weekly", priority: 0.9 },
+  { path: "/ai-website-agent", changeFrequency: "weekly", priority: 0.9 },
+  { path: "/ai-content-agent", changeFrequency: "weekly", priority: 0.9 },
+  { path: "/ai-crm-agent", changeFrequency: "weekly", priority: 0.9 },
+  { path: "/ai-marketing-agent", changeFrequency: "weekly", priority: 0.9 },
+  { path: "/ai-business-automation", changeFrequency: "weekly", priority: 0.9 },
   { path: "/products", changeFrequency: "weekly", priority: 0.9 },
   { path: "/solutions", changeFrequency: "weekly", priority: 0.9 },
   { path: "/social-autopilot", changeFrequency: "weekly", priority: 0.9 },

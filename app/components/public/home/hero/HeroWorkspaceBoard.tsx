@@ -18,7 +18,7 @@ function resolveFocus(scene: HeroSceneKey): Focus {
   if (scene === "unified") {
     return { scale: PULLED_BACK_SCALE, center: BOARD_WIDTH / 2, activeIndex: null };
   }
-  const activeIndex = WORKSPACE_AREA_INDEX[scene];
+  const activeIndex = (WORKSPACE_AREA_INDEX as Record<string, number>)[scene] ?? 0;
   return { scale: 1, center: panelCenter(activeIndex), activeIndex };
 }
 
@@ -140,8 +140,11 @@ export function HeroWorkspaceBoard({ scene }: { scene: HeroSceneKey }) {
  * composition. No pan, no peripheral overflow, no wide transform.
  */
 export function HeroWorkspaceCard({ scene }: { scene: HeroSceneKey }) {
-  const activeIndex = scene === "unified" ? WORKSPACE_AREA_INDEX.workflow : WORKSPACE_AREA_INDEX[scene];
-  const area = WORKSPACE_AREAS[activeIndex]!;
+  const activeIndex =
+    (scene === "unified"
+      ? (WORKSPACE_AREA_INDEX as Record<string, number>).workflow
+      : (WORKSPACE_AREA_INDEX as Record<string, number>)[scene]) ?? 0;
+  const area = WORKSPACE_AREAS[activeIndex] || WORKSPACE_AREAS[0];
 
   return (
     <div className="mx-auto w-full max-w-[19rem]" aria-hidden>

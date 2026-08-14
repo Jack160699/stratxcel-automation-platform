@@ -17,8 +17,16 @@ import { track } from "@vercel/analytics";
 
 export type FunnelEvent =
   | "audit_cta"
+  | "audit_cta_click"
+  | "hero_cta_click"
+  | "explore_agent"
+  | "use_case_selection"
+  | "agent_demo_interaction"
+  | "integration_exploration"
+  | "pricing_interaction"
   | "audit_checkout_started"
   | "audit_payment_confirmed"
+  | "audit_purchase"
   | "audit_intake_started"
   | "audit_business_completed"
   | "audit_deep_dive_completed"

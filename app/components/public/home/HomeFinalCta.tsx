@@ -1,44 +1,71 @@
+"use client";
+
 import Link from "next/link";
 import { TrackedCtaLink } from "@/app/components/public/commercial/TrackedCtaLink";
 
-/** Brand bookend — the page opened dark and closes dark, deliberately. */
 export function HomeFinalCta() {
   return (
-    <section data-home-section="final-cta" className="relative isolate overflow-hidden bg-[#06080c] text-white">
+    <section
+      data-home-section="final-cta"
+      className="relative isolate overflow-hidden bg-[#06080c] py-24 text-white sm:py-32"
+    >
+      {/* Background Volumetric Glow */}
       <div
-        className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_70%_80%_at_50%_120%,rgb(37_99_235/0.22),transparent_60%)]"
+        className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_75%_65%_at_50%_110%,rgb(37_99_235/0.25),transparent_65%)]"
         aria-hidden
       />
-      <div className="relative mx-auto max-w-3xl px-4 py-[clamp(4.5rem,11vw,8rem)] text-center sm:px-6">
-        <h2 className="font-sx-sans text-[clamp(1.7rem,3.6vw+0.5rem,2.9rem)] font-semibold leading-[1.14] tracking-[-0.035em] text-white">
-          Your business already has enough moving parts.
-          <span className="mt-1 block text-white/55">Bring them together.</span>
+      <div className="pointer-events-none absolute inset-0 sx-hero-grain opacity-30" aria-hidden />
+
+      <div className="relative z-10 mx-auto max-w-4xl px-4 text-center sm:px-6 lg:px-8">
+        <p className="font-sx-mono text-[11px] font-semibold uppercase tracking-[0.24em] text-sky-400">
+          STRATXCEL AI AGENT
+        </p>
+
+        <h2 className="mt-4 font-sx-sans text-[clamp(2rem,4.5vw+0.4rem,3.5rem)] font-bold leading-[1.1] tracking-[-0.035em] text-white">
+          Put the digital side of your business
+          <span className="block text-white/70">on a coordinated AI operating layer.</span>
         </h2>
 
-        <div className="mt-9 flex flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-center">
+        <p className="mx-auto mt-6 max-w-2xl font-sx-sans text-[15px] leading-relaxed text-white/65 sm:text-[18px]">
+          Start with complete clarity on your growth opportunities, or explore the specialist workforce operating under the
+          Stratxcel AI Agent.
+        </p>
+
+        {/* Dual CTA Actions */}
+        <div className="mt-10 flex flex-col items-stretch justify-center gap-3.5 sm:flex-row sm:items-center">
           <TrackedCtaLink
-            href="/signup"
-            event="homepage_primary_cta"
-            surface="home_final_cta"
-            className="inline-flex min-h-11 items-center justify-center rounded-sx-sm bg-white px-8 py-3.5 font-sx-sans text-sm font-semibold text-[#0a1020] transition-colors hover:bg-white/90 motion-reduce:transition-none"
+            href="/audit"
+            event="audit_cta_click"
+            surface="home_final_primary"
+            plan="audit"
+            className="inline-flex min-h-12 items-center justify-center rounded-sx-sm bg-gradient-to-r from-blue-600 via-blue-500 to-sky-500 px-8 py-3.5 font-sx-sans text-sm font-bold text-white shadow-[0_0_28px_rgba(37,99,235,0.4)] transition-all duration-200 hover:brightness-110 motion-reduce:transition-none"
           >
-            Get started free
+            GET YOUR BUSINESS GROWTH AUDIT — ₹999
           </TrackedCtaLink>
-          <Link
-            href="/contact?intent=demo"
-            className="inline-flex min-h-11 items-center justify-center rounded-sx-sm border border-white/25 bg-white/[0.06] px-8 py-3.5 font-sx-sans text-sm font-semibold text-white transition-colors hover:bg-white/[0.12] motion-reduce:transition-none"
+          <TrackedCtaLink
+            href="#ai-workforce"
+            event="explore_agent"
+            surface="home_final_secondary"
+            className="inline-flex min-h-12 items-center justify-center rounded-sx-sm border border-white/20 bg-white/[0.05] px-8 py-3.5 font-sx-sans text-sm font-semibold text-white backdrop-blur-sm transition-colors hover:bg-white/[0.1] motion-reduce:transition-none"
           >
+            EXPLORE THE AI AGENT
+          </TrackedCtaLink>
+        </div>
+
+        {/* Secondary Links */}
+        <div className="mt-8 flex flex-wrap items-center justify-center gap-4 text-xs text-white/45">
+          <span>₹999 One-time</span>
+          <span>•</span>
+          <span>No automatic subscription</span>
+          <span>•</span>
+          <Link href="/security" className="text-white/70 hover:underline">
+            Read Security Architecture
+          </Link>
+          <span>•</span>
+          <Link href="/contact?intent=demo" className="text-white/70 hover:underline">
             Book a demo
           </Link>
         </div>
-
-        {/* Tertiary path stays a quiet text link so the bookend keeps two buttons. */}
-        <p className="mt-7 font-sx-sans text-[13.5px] text-white/45">
-          Still deciding?{" "}
-          <Link href="/audit" className="font-semibold text-white/80 underline-offset-4 hover:underline">
-            Start with a Business Growth Audit
-          </Link>
-        </p>
       </div>
     </section>
   );

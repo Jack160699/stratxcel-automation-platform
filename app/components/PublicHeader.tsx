@@ -8,7 +8,9 @@ import { PUBLIC_CTAS } from "@/lib/commercial/ctas";
 import { Logo } from "./Logo";
 
 const PRIMARY_LINKS: { label: string; href: string }[] = [
+  { label: "AI Workforce", href: "/ai-workforce" },
   { label: "Solutions", href: "/solutions" },
+  { label: "Integrations", href: "/integrations" },
   { label: "How it works", href: "/how-it-works" },
   { label: "Pricing", href: "/pricing" },
   { label: "Resources", href: "/resources" },
@@ -128,15 +130,24 @@ export function PublicHeader({ logoVariant = "dark", overHeroId }: PublicHeaderP
           <div className="hidden items-center gap-3 lg:flex">
             <Link
               href={PUBLIC_CTAS.signIn.href}
-              className="rounded-sx-sm px-3 py-2.5 text-[13px] font-medium text-sx-text-subtle transition-colors hover:text-sx-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sx-accent"
+              className="rounded-sx-sm px-3 py-2 text-[13px] font-medium text-sx-text-subtle transition-colors hover:text-sx-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sx-accent"
             >
               {PUBLIC_CTAS.signIn.label}
             </Link>
             <TrackedCtaLink
+              href="/audit"
+              event="audit_cta_click"
+              surface="public_header_audit"
+              plan="audit"
+              className="rounded-sx-sm border border-sx-border-strong bg-sx-surface-2 px-3.5 py-2 text-[13px] font-semibold text-sx-text transition-colors hover:bg-sx-surface-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sx-accent"
+            >
+              Get Audit — ₹999
+            </TrackedCtaLink>
+            <TrackedCtaLink
               href={PUBLIC_CTAS.primary.href}
               event={PUBLIC_CTAS.primary.event}
               surface={PUBLIC_CTAS.primary.surface}
-              className="rounded-sx-sm bg-sx-accent px-5 py-2.5 text-[13px] font-bold text-sx-accent-on shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sx-accent"
+              className="rounded-sx-sm bg-sx-accent px-4 py-2 text-[13px] font-bold text-sx-accent-on shadow-md transition-colors hover:bg-[color:var(--sx-accent-hover)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sx-accent"
             >
               {PUBLIC_CTAS.primary.label}
             </TrackedCtaLink>
@@ -205,6 +216,16 @@ export function PublicHeader({ logoVariant = "dark", overHeroId }: PublicHeaderP
             >
               {PUBLIC_CTAS.signIn.label}
             </Link>
+            <TrackedCtaLink
+              href="/audit"
+              event="audit_cta_click"
+              surface="public_header_mobile_audit"
+              plan="audit"
+              onClick={closeMenu}
+              className="rounded-sx-sm border border-sx-border-strong bg-sx-surface-2 px-4 py-3 text-center text-sm font-semibold text-sx-text"
+            >
+              Get Business Growth Audit — ₹999
+            </TrackedCtaLink>
             <TrackedCtaLink
               href={PUBLIC_CTAS.primary.href}
               event={PUBLIC_CTAS.primary.event}

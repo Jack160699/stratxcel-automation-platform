@@ -2,7 +2,20 @@ import type { ReactNode } from "react";
 import { DEMO_BUSINESS } from "@/app/components/public/showcase/fixtures/showcase-data";
 import type { HeroSceneKey } from "./hero-phrases";
 
-export type WorkspaceAreaKey = Exclude<HeroSceneKey, "unified">;
+export type WorkspaceAreaKey =
+  | "search"
+  | "social"
+  | "content"
+  | "leads"
+  | "whatsapp"
+  | "website"
+  | "workflow"
+  | "analytics"
+  | "grow"
+  | "market"
+  | "sell"
+  | "automate"
+  | "scale";
 
 export type WorkspaceArea = {
   key: WorkspaceAreaKey;

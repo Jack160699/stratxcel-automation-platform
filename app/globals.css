@@ -543,6 +543,25 @@ body::-webkit-scrollbar-thumb {
   border-radius: 999px;
 }
 
+/* Convergence stream and signal animations */
+@keyframes sx-signal-pulse {
+  0% { transform: scale(0.95); opacity: 0.5; }
+  50% { transform: scale(1.05); opacity: 1; filter: drop-shadow(0 0 12px rgba(58, 160, 255, 0.6)); }
+  100% { transform: scale(0.95); opacity: 0.5; }
+}
+.animate-sx-signal-pulse {
+  animation: sx-signal-pulse 3s ease-in-out infinite;
+}
+
+@keyframes sx-stream-travel {
+  0% { stroke-dashoffset: 200; opacity: 0.2; }
+  50% { opacity: 0.85; }
+  100% { stroke-dashoffset: 0; opacity: 0.2; }
+}
+.animate-sx-stream-travel {
+  animation: sx-stream-travel 4s ease-in-out infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;
@@ -553,6 +572,8 @@ body::-webkit-scrollbar-thumb {
   .animate-sx-glow-pulse,
   .animate-sx-progress,
   .animate-sx-frame-settle,
+  .animate-sx-signal-pulse,
+  .animate-sx-stream-travel,
   .sx-cta-glow,
   .sx-dash-animate,
   .sx-start-pulse,

@@ -5,6 +5,19 @@ import { PlatformIcon } from "@/components/audit/PlatformIcon";
 
 const COLUMNS = [
   {
+    title: "AI Agents",
+    links: [
+      { label: "AI Business Agent", href: "/ai-business-agent" },
+      { label: "AI Workforce", href: "/ai-workforce" },
+      { label: "AI SEO Agent", href: "/ai-seo-agent" },
+      { label: "AI Website Agent", href: "/ai-website-agent" },
+      { label: "AI Social Media Agent", href: "/ai-social-media-agent" },
+      { label: "AI CRM Agent", href: "/ai-crm-agent" },
+      { label: "AI Marketing Agent", href: "/ai-marketing-agent" },
+      { label: "AI Automation", href: "/ai-business-automation" },
+    ],
+  },
+  {
     title: "Product",
     links: [
       { label: "All products", href: "/products" },
@@ -64,8 +77,8 @@ export function PublicFooter({ logoVariant = "dark" }: { logoVariant?: "light" |
   return (
     <footer className="border-t border-sx-border bg-sx-bg text-sx-text">
       <div className="mx-auto max-w-7xl px-4 py-14 sm:px-6 lg:px-8">
-        <div className="grid gap-8 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6">
-          <div className="sm:col-span-2 md:col-span-3 lg:col-span-1">
+        <div className="grid gap-8 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-7">
+          <div className="sm:col-span-2 md:col-span-4 lg:col-span-1">
             <Logo variant={logoVariant} />
             <p className="mt-3 text-xs text-sx-text-muted">
               Stratxcel runs growth operations that turn attention into opportunities.

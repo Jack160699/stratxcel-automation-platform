@@ -8,6 +8,11 @@
  */
 
 export type HeroSceneKey =
+  | "grow"
+  | "market"
+  | "sell"
+  | "automate"
+  | "scale"
   | "search"
   | "social"
   | "content"
@@ -24,18 +29,14 @@ export type HeroPhrase = {
 };
 
 export const HERO_PHRASES: HeroPhrase[] = [
-  { text: "get found on Google.", scene: "search" },
-  { text: "grow on social.", scene: "social" },
-  { text: "create better content.", scene: "content" },
-  { text: "find more customers.", scene: "leads" },
-  { text: "follow up faster.", scene: "whatsapp" },
-  { text: "improve your website.", scene: "website" },
-  { text: "automate daily work.", scene: "workflow" },
-  { text: "understand what works.", scene: "analytics" },
-  { text: "grow your business.", scene: "unified" },
+  { text: "GROW.", scene: "grow" },
+  { text: "MARKET.", scene: "market" },
+  { text: "SELL.", scene: "sell" },
+  { text: "AUTOMATE.", scene: "automate" },
+  { text: "SCALE.", scene: "scale" },
 ];
 
 /** Static fallback when motion is reduced — the strongest universal outcome. */
-export const HERO_PHRASE_REDUCED_MOTION = HERO_PHRASES[HERO_PHRASES.length - 1]!;
+export const HERO_PHRASE_REDUCED_MOTION = HERO_PHRASES[0]!;
 
-export const HERO_PHRASE_INTERVAL_MS = 3600;
+export const HERO_PHRASE_INTERVAL_MS = 3200;
