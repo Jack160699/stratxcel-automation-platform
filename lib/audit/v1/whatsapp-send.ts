@@ -38,9 +38,16 @@ export function auditWhatsAppIdempotencyKey(orderId: string, destinationDigits: 
   return `${AUDIT_WHATSAPP_IDEMPOTENCY_PREFIX}:${orderId}:${destinationDigits}`;
 }
 
-export function preferredAuditWhatsAppBody(businessName: string | null, reportUrl: string): string {
+export function preferredAuditWhatsAppBody(
+  businessName: string | null,
+  reportUrl: string,
+  meta?: { stage?: string; topOpportunity?: string; nextStep?: string }
+): string {
   const name = (businessName ?? "").trim() || "your business";
-  return `Your Stratxcel Business Growth Audit is ready.\n\n${name}\n${reportUrl}`;
+  const stageLine = meta?.stage ? `\nCurrent stage: ${meta.stage}` : "";
+  const oppLine = meta?.topOpportunity ? `\nTop opportunity: ${meta.topOpportunity}` : "";
+  const nextLine = meta?.nextStep ? `\nNext recommended move: ${meta.nextStep}` : "";
+  return `Your Stratxcel business analysis is ready.\n\n${name}${stageLine}${oppLine}${nextLine}\n\nView full analysis:\n${reportUrl}`;
 }
 
 type SendFn = typeof sendOutboundWhatsAppMessage;

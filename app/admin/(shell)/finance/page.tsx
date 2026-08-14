@@ -2,69 +2,93 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useCurrentTenant } from "../CurrentTenantContext";
-import { NoClientSelected } from "../NoClientSelected";
-import { Card } from "@/components/ui/Card";
+import { Card, CardHeading } from "@/components/ui/Card";
 import { Metric } from "@/components/ui/Metric";
 import { ErrorState } from "@/components/ui/Feedback";
 import { platformFetch } from "@/lib/admin/platform-fetch";
 
-interface WalletAccount {
-  tenant_id: string;
-  balance_cents: number;
-  currency: string;
-  updated_at: string;
+interface FinanceData {
+  revenue: {
+    grossInr: number;
+    todayInr: number;
+    weekInr: number;
+    monthInr: number;
+    refundsInr: number;
+    netInr: number;
+    successfulPayments: number;
+    failedPayments: number;
+    activeSubscriptions: number;
+    averageOrderValueInr: number;
+  };
+  costs: {
+    totalAiSpendInr: number;
+    todayAiSpendInr: number;
+    monthAiSpendInr: number;
+    totalRequests: number;
+    totalTokens: number;
+    providers: Array<{
+      provider: string;
+      requests: number;
+      tokens: number;
+      costInr: number;
+      percentShare: number;
+    }>;
+    services: Array<{
+      service: string;
+      requests: number;
+      costInr: number;
+      percentShare: number;
+    }>;
+  };
+  netPosition: {
+    grossRevenueInr: number;
+    totalCostInr: number;
+    netContributionInr: number;
+    marginPercent: number;
+  };
+  budget: {
+    dailyBudgetInr: number;
+    monthlyBudgetInr: number;
+    monthUsedInr: number;
+    remainingInr: number;
+    utilizationPercent: number;
+    status: "NORMAL" | "WATCH" | "OVER BUDGET";
+  };
+  products: Array<{
+    product: string;
+    salesCount: number;
+    revenueInr: number;
+    percentShare: number;
+  }>;
+  recentPayments: Array<{
+    description: string;
+    amountInr: number;
+    status: string;
+    customer: string;
+    createdAt: string;
+  }>;
 }
 
-interface AdminSubscription {
-  id: string;
-  plan_tier: string;
-  status: string;
-  price_cents: number;
-  current_period_end: string | null;
-  cancel_at_period_end: boolean;
-  payment_link_id: string | null;
-}
-
-interface AdminInvoice {
-  id: string;
-  invoice_number: string;
-  invoice_type: string;
-  total_cents: number;
-  status: string;
-  created_at: string;
-}
-
-export default function WalletPage() {
+export default function AdminFinancePage() {
   const { active } = useCurrentTenant();
-  const tenantId = active?.tenantId;
-  const [account, setAccount] = useState<WalletAccount | null>(null);
-  const [subscription, setSubscription] = useState<AdminSubscription | null>(null);
-  const [invoices, setInvoices] = useState<AdminInvoice[]>([]);
+  const tenantId = active?.tenantId ?? "stratxcel";
+  const [data, setData] = useState<FinanceData | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
-    if (!tenantId) return;
     setLoading(true);
     setError(null);
     try {
-      const [walletRes, subRes] = await Promise.all([
-        platformFetch(`/api/platform/wallet?tenantId=${encodeURIComponent(tenantId)}`),
-        platformFetch(`/api/platform/subscriptions?tenantId=${encodeURIComponent(tenantId)}`),
-      ]);
-      const walletBody = await walletRes.json();
-      if (!walletRes.ok) {
-        setAccount(null);
-        setError(walletBody.error ?? `Failed to load wallet (HTTP ${walletRes.status})`);
+      const res = await platformFetch(`/api/platform/admin/finance?tenantId=${encodeURIComponent(tenantId)}`);
+      const body = await res.json();
+      if (!res.ok) {
+        setError(body.error ?? `Failed to load finance data (HTTP ${res.status})`);
         return;
       }
-      setAccount(walletBody.account);
-
-      const subBody = await subRes.json();
-      if (subRes.ok) {
-        setSubscription(subBody.subscription);
-        setInvoices(subBody.invoices ?? []);
-      }
+      setData(body);
+    } catch {
+      setError("Network error loading finance control center.");
     } finally {
       setLoading(false);
     }
@@ -74,58 +98,259 @@ export default function WalletPage() {
     void load();
   }, [load]);
 
+  const budgetStatusBadge = (status: "NORMAL" | "WATCH" | "OVER BUDGET") => {
+    switch (status) {
+      case "NORMAL":
+        return <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-xs font-bold text-emerald-400">🟢 Normal</span>;
+      case "WATCH":
+        return <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2.5 py-0.5 text-xs font-bold text-amber-400">🟡 Watch</span>;
+      case "OVER BUDGET":
+        return <span className="inline-flex items-center gap-1 rounded-full bg-rose-500/10 px-2.5 py-0.5 text-xs font-bold text-rose-400">🔴 Over Budget</span>;
+    }
+  };
+
   return (
-    <div className="flex flex-col gap-6">
-      <header>
-        <h1 className="font-sx-sans text-xl font-semibold text-sx-text">Finance / Wallet{active ? ` — ${active.name}` : ""}</h1>
+    <div className="flex flex-col gap-8 pb-12">
+      {/* Header */}
+      <header className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-sx-accent">Platform Economics</p>
+          <h1 className="mt-1 font-sx-sans text-2xl font-bold text-sx-text sm:text-3xl">
+            Billing, Revenue & AI Cost Intelligence
+          </h1>
+          <p className="mt-1 text-sm text-sx-text-muted">
+            Stratxcel financial control center, operator spend, and net contribution.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={load}
+            disabled={loading}
+            className="inline-flex min-h-10 items-center justify-center rounded-sx-sm border border-sx-border bg-sx-surface-2 px-4 text-xs font-semibold text-sx-text hover:bg-sx-surface-1 disabled:opacity-50"
+          >
+            {loading ? "Refreshing…" : "Refresh Financials"}
+          </button>
+        </div>
       </header>
 
-      {!tenantId && <NoClientSelected what="the wallet" />}
       {error && <ErrorState message={error} onRetry={load} />}
-      {tenantId && loading && <p className="text-sm text-sx-text-subtle">Loading…</p>}
 
-      {account && (
-        <Card className="p-6">
-          <Metric
-            label="Balance"
-            value={`${account.currency} ${(account.balance_cents / 100).toFixed(2)}`}
-            deltaLabel={`last updated ${new Date(account.updated_at).toLocaleString()}`}
-          />
-        </Card>
-      )}
+      {data && (
+        <>
+          {/* Top 4 KPI Cards */}
+          <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <Card className="p-5">
+              <Metric
+                label="Gross Revenue"
+                value={`₹${data.revenue.grossInr.toLocaleString()}`}
+                deltaLabel={`₹${data.revenue.monthInr.toLocaleString()} this month`}
+              />
+            </Card>
 
-      {tenantId && !loading && (
-        <Card className="p-6">
-          <h2 className="font-sx-sans text-sm font-semibold text-sx-text">Subscription (support view)</h2>
-          {!subscription ? (
-            <p className="mt-3 text-xs text-sx-text-subtle">No subscription on this tenant.</p>
-          ) : (
-            <dl className="mt-3 grid grid-cols-2 gap-3 text-xs sm:grid-cols-4">
-              <div><dt className="text-sx-text-subtle">Plan</dt><dd className="font-semibold text-sx-text capitalize">{subscription.plan_tier}</dd></div>
-              <div><dt className="text-sx-text-subtle">Status</dt><dd className="font-semibold text-sx-text">{subscription.status}{subscription.cancel_at_period_end ? " (cancelling)" : ""}</dd></div>
-              <div><dt className="text-sx-text-subtle">Price</dt><dd className="font-semibold text-sx-text">₹{(subscription.price_cents / 100).toFixed(2)}/mo</dd></div>
-              <div><dt className="text-sx-text-subtle">Period end</dt><dd className="font-semibold text-sx-text">{subscription.current_period_end ? new Date(subscription.current_period_end).toLocaleDateString() : "—"}</dd></div>
-            </dl>
-          )}
+            <Card className="p-5">
+              <Metric
+                label="Tracked AI Operator Spend"
+                value={`₹${data.costs.totalAiSpendInr.toLocaleString()}`}
+                deltaLabel={`₹${data.costs.todayAiSpendInr.toLocaleString()} today`}
+              />
+            </Card>
 
-          <h3 className="mt-5 font-sx-sans text-xs font-semibold text-sx-text-subtle uppercase tracking-wide">Recent invoices</h3>
-          {invoices.length === 0 ? (
-            <p className="mt-2 text-xs text-sx-text-subtle">No invoices issued yet.</p>
-          ) : (
-            <table className="mt-2 w-full text-left text-xs">
-              <tbody>
-                {invoices.slice(0, 5).map((inv) => (
-                  <tr key={inv.id} className="border-t border-sx-border">
-                    <td className="py-1.5 pr-3 font-mono text-[11px]">{inv.invoice_number}</td>
-                    <td className="py-1.5 pr-3 capitalize">{inv.invoice_type}</td>
-                    <td className="py-1.5 pr-3">₹{(inv.total_cents / 100).toFixed(2)}</td>
-                    <td className="py-1.5">{inv.status}</td>
-                  </tr>
+            <Card className="p-5">
+              <Metric
+                label="Net Contribution"
+                value={`₹${data.netPosition.netContributionInr.toLocaleString()}`}
+                deltaLabel={`${data.netPosition.marginPercent}% Net Margin`}
+              />
+            </Card>
+
+            <Card className="p-5">
+              <div className="flex items-start justify-between">
+                <p className="text-sm font-medium text-sx-text-muted">AI Budget Status</p>
+                {budgetStatusBadge(data.budget.status)}
+              </div>
+              <p className="mt-3 font-sx-sans text-2xl font-semibold text-sx-text sm:text-3xl">
+                {data.budget.utilizationPercent}%
+              </p>
+              <p className="mt-1 text-xs text-sx-text-muted">
+                ₹{data.budget.remainingInr.toLocaleString()} remaining of ₹{data.budget.monthlyBudgetInr.toLocaleString()}
+              </p>
+            </Card>
+          </section>
+
+          {/* Second Section: Revenue Intelligence & AI Budget Monitor */}
+          <section className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
+            {/* Revenue Details */}
+            <Card className="p-6">
+              <CardHeading>Payment & Revenue Intelligence</CardHeading>
+              <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4 text-xs">
+                <div className="rounded-sx-sm bg-sx-surface-2 p-3">
+                  <span className="text-sx-text-subtle">Today</span>
+                  <p className="mt-1 text-base font-bold text-sx-text">₹{data.revenue.todayInr.toLocaleString()}</p>
+                </div>
+                <div className="rounded-sx-sm bg-sx-surface-2 p-3">
+                  <span className="text-sx-text-subtle">This Week</span>
+                  <p className="mt-1 text-base font-bold text-sx-text">₹{data.revenue.weekInr.toLocaleString()}</p>
+                </div>
+                <div className="rounded-sx-sm bg-sx-surface-2 p-3">
+                  <span className="text-sx-text-subtle">Active Subscriptions</span>
+                  <p className="mt-1 text-base font-bold text-sx-text">{data.revenue.activeSubscriptions}</p>
+                </div>
+                <div className="rounded-sx-sm bg-sx-surface-2 p-3">
+                  <span className="text-sx-text-subtle">Average Order Value</span>
+                  <p className="mt-1 text-base font-bold text-sx-text">₹{data.revenue.averageOrderValueInr.toLocaleString()}</p>
+                </div>
+              </div>
+
+              <div className="mt-6 pt-4 border-t border-sx-border space-y-2">
+                <div className="flex justify-between text-xs text-sx-text">
+                  <span className="text-sx-text-muted">Total Successful Transactions</span>
+                  <span className="font-semibold">{data.revenue.successfulPayments}</span>
+                </div>
+                <div className="flex justify-between text-xs text-sx-text">
+                  <span className="text-sx-text-muted">Total Refunds Issued</span>
+                  <span className="font-semibold text-rose-400">₹{data.revenue.refundsInr.toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between text-xs text-sx-text">
+                  <span className="text-sx-text-muted">Net Received Cash</span>
+                  <span className="font-bold text-emerald-400">₹{data.revenue.netInr.toLocaleString()}</span>
+                </div>
+              </div>
+            </Card>
+
+            {/* AI Budget Progress */}
+            <Card className="p-6">
+              <div className="flex items-center justify-between">
+                <CardHeading>AI Spend & Budget Control</CardHeading>
+                {budgetStatusBadge(data.budget.status)}
+              </div>
+
+              <div className="mt-4 space-y-4">
+                <div>
+                  <div className="flex justify-between text-xs mb-1.5">
+                    <span className="text-sx-text-muted">Monthly AI Budget Consumption</span>
+                    <span className="font-mono font-semibold text-sx-text">
+                      ₹{data.budget.monthUsedInr.toLocaleString()} / ₹{data.budget.monthlyBudgetInr.toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="h-2.5 w-full rounded-full bg-sx-surface-2 overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all ${
+                        data.budget.utilizationPercent > 90 ? "bg-rose-500" : data.budget.utilizationPercent > 70 ? "bg-amber-500" : "bg-sx-accent"
+                      }`}
+                      style={{ width: `${Math.min(100, data.budget.utilizationPercent)}%` }}
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 text-xs pt-2">
+                  <div className="rounded-sx-sm border border-sx-border p-2.5">
+                    <span className="text-sx-text-subtle">Total AI Requests</span>
+                    <p className="mt-1 text-sm font-bold text-sx-text">{data.costs.totalRequests.toLocaleString()}</p>
+                  </div>
+                  <div className="rounded-sx-sm border border-sx-border p-2.5">
+                    <span className="text-sx-text-subtle">Total Tokens Processed</span>
+                    <p className="mt-1 text-sm font-bold text-sx-text">{data.costs.totalTokens.toLocaleString()}</p>
+                  </div>
+                </div>
+              </div>
+            </Card>
+          </section>
+
+          {/* Third Section: AI Operator Cost Dashboard (Providers & Services) */}
+          <section className="grid gap-6 lg:grid-cols-2">
+            {/* By Provider */}
+            <Card className="p-6">
+              <CardHeading>AI Operator Cost by Provider</CardHeading>
+              <p className="mt-1 text-xs text-sx-text-muted">Model & API runtime consumption breakdown.</p>
+              <div className="mt-4 space-y-3">
+                {data.costs.providers.map((p) => (
+                  <div key={p.provider} className="rounded-sx-sm border border-sx-border p-3">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-bold text-sx-text">{p.provider}</span>
+                      <span className="font-mono font-semibold text-sx-accent">₹{p.costInr.toLocaleString()} ({p.percentShare}%)</span>
+                    </div>
+                    <div className="mt-1.5 flex justify-between text-[11px] text-sx-text-subtle">
+                      <span>{p.requests.toLocaleString()} calls</span>
+                      <span>{p.tokens.toLocaleString()} tokens</span>
+                    </div>
+                    <div className="mt-2 h-1.5 w-full rounded-full bg-sx-surface-2 overflow-hidden">
+                      <div className="h-full bg-sx-accent rounded-full" style={{ width: `${p.percentShare}%` }} />
+                    </div>
+                  </div>
                 ))}
-              </tbody>
-            </table>
-          )}
-        </Card>
+              </div>
+            </Card>
+
+            {/* By Service */}
+            <Card className="p-6">
+              <CardHeading>Spend by Platform Capability</CardHeading>
+              <p className="mt-1 text-xs text-sx-text-muted">Direct AI costs allocated across platform modules.</p>
+              <div className="mt-4 space-y-3">
+                {data.costs.services.map((s) => (
+                  <div key={s.service} className="rounded-sx-sm border border-sx-border p-3">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-semibold text-sx-text capitalize">{s.service}</span>
+                      <span className="font-mono font-semibold text-sx-text">₹{s.costInr.toLocaleString()} ({s.percentShare}%)</span>
+                    </div>
+                    <div className="mt-1 text-[11px] text-sx-text-subtle">
+                      {s.requests.toLocaleString()} executions
+                    </div>
+                    <div className="mt-2 h-1.5 w-full rounded-full bg-sx-surface-2 overflow-hidden">
+                      <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${s.percentShare}%` }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          </section>
+
+          {/* Fourth Section: Revenue by Product & Recent Payments */}
+          <section className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
+            {/* Products */}
+            <Card className="p-6">
+              <CardHeading>Revenue by Product Tier</CardHeading>
+              <div className="mt-4 space-y-3">
+                {data.products.map((prod) => (
+                  <div key={prod.product} className="flex items-center justify-between border-b border-sx-border pb-2.5 text-xs">
+                    <div>
+                      <p className="font-semibold text-sx-text">{prod.product}</p>
+                      <p className="text-[11px] text-sx-text-subtle">{prod.salesCount} active / sold</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-mono font-bold text-sx-text">₹{prod.revenueInr.toLocaleString()}</p>
+                      <p className="text-[10px] text-sx-text-subtle">{prod.percentShare}% of gross</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+
+            {/* Recent Payments */}
+            <Card className="p-6">
+              <CardHeading>Recent Payment Events</CardHeading>
+              {data.recentPayments.length === 0 ? (
+                <p className="mt-3 text-xs text-sx-text-subtle">No payment events recorded yet.</p>
+              ) : (
+                <div className="mt-4 space-y-2">
+                  {data.recentPayments.map((p, idx) => (
+                    <div key={idx} className="flex items-center justify-between rounded-sx-sm bg-sx-surface-2 px-3 py-2 text-xs">
+                      <div>
+                        <p className="font-semibold text-sx-text">{p.description}</p>
+                        <p className="text-[10px] text-sx-text-subtle">{p.customer} · {new Date(p.createdAt).toLocaleDateString()}</p>
+                      </div>
+                      <div className="text-right">
+                        <span className="font-mono font-bold text-sx-text">₹{p.amountInr.toLocaleString()}</span>
+                        <span className={`block text-[10px] uppercase font-bold ${p.status === "paid" ? "text-emerald-400" : "text-amber-400"}`}>
+                          {p.status}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Card>
+          </section>
+        </>
       )}
     </div>
   );
