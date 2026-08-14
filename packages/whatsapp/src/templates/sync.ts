@@ -23,6 +23,15 @@ interface MetaTemplateApiEntry {
   components?: unknown[];
 }
 
+interface MetaGraphErrorBody {
+  error?: {
+    message?: string;
+    code?: number;
+    error_subcode?: number;
+    fbtrace_id?: string;
+  };
+}
+
 /**
  * Pulls the real, current template list + approval status from Meta's own
  * Graph API — never fabricates an APPROVED status. In 'disabled'/'shadow'
@@ -52,7 +61,15 @@ export async function syncTemplatesForBinding(
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!response.ok) {
-    throw new Error(`Meta template sync failed: HTTP ${response.status}`);
+    const body = (await response.json().catch(() => null)) as MetaGraphErrorBody | null;
+    const error = body?.error;
+    const details = [
+      error?.code != null ? `code ${error.code}` : null,
+      error?.error_subcode != null ? `subcode ${error.error_subcode}` : null,
+      error?.message?.trim() || null,
+      error?.fbtrace_id ? `trace ${error.fbtrace_id}` : null,
+    ].filter(Boolean);
+    throw new Error(`Meta template sync failed: HTTP ${response.status}${details.length ? ` (${details.join("; ")})` : ""}`);
   }
   const body = (await response.json()) as { data?: MetaTemplateApiEntry[] };
 
