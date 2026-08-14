@@ -26,6 +26,7 @@ assert.match(header, /plan-prompt/);
 const shell = read("app", "app", "ClientAppShell.tsx");
 assert.match(shell, /CustomerHeaderActions/);
 assert.doesNotMatch(shell, />\s*Sign out\s*</);
+assert.doesNotMatch(read("app", "app", "settings", "page.tsx"), /signOutAction|>\s*Sign out\s*</, "sign out belongs only in the profile sheet");
 
 const nav = read("components", "shell", "navigation", "app-nav-data.ts");
 for (const group of ["Overview", "Growth", "Execution", "Account"]) assert.match(nav, new RegExp(`label: "${group}"`));
@@ -33,6 +34,8 @@ for (const group of ["Overview", "Growth", "Execution", "Account"]) assert.match
 const mobileNav = read("components", "shell", "MobileBottomNav.tsx");
 assert.match(mobileNav, /text-xs font-medium/);
 assert.match(mobileNav, /min-h-12/);
+assert.match(read("components", "crm", "ConversationList.tsx"), /h-11[\s\S]*text-base[\s\S]*md:h-8/, "CRM search must use a mobile-sized control");
+assert.match(read("app", "app", "team", "page.tsx"), /className="sm:flex-1"/, "team invite input must not collapse in the mobile flex column");
 
 const styles = read("app", "globals.css");
 assert.match(styles, /\.sx-customer-app \.text-sm/);
