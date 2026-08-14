@@ -1,27 +1,29 @@
 import type { Metadata } from "next";
 import { PublicHeader } from "@/app/components/PublicHeader";
 import { PublicFooter } from "@/app/components/PublicFooter";
-import { PlatformHero } from "@/app/components/public/home/PlatformHero";
-import { HomeHowItWorks } from "@/app/components/public/home/HomeHowItWorks";
-import { HomeAiWorkforce } from "@/app/components/public/home/HomeAiWorkforce";
-import { HomeConnectBusiness } from "@/app/components/public/home/HomeConnectBusiness";
+import { CinematicIntro } from "@/app/components/public/home/CinematicIntro";
+import { HomeHeroLight } from "@/app/components/public/home/HomeHeroLight";
+import { HomeProblemRecognition } from "@/app/components/public/home/HomeProblemRecognition";
+import { HomeHowStratxcelHelps } from "@/app/components/public/home/HomeHowStratxcelHelps";
+import { HomeWhatItHelpsWith } from "@/app/components/public/home/HomeWhatItHelpsWith";
+import { HomeSimpleSteps } from "@/app/components/public/home/HomeSimpleSteps";
+import { HomeInteractiveExplorerClean } from "@/app/components/public/home/HomeInteractiveExplorerClean";
 import { HomeBusinessTypes } from "@/app/components/public/home/HomeBusinessTypes";
-import { HomeUseCaseExplorer } from "@/app/components/public/home/HomeUseCaseExplorer";
-import { HomeProductEvidence } from "@/app/components/public/home/HomeProductEvidence";
-import { HomeAuditOffer } from "@/app/components/public/home/HomeAuditOffer";
-import { HomeFinalCta } from "@/app/components/public/home/HomeFinalCta";
+import { HomeToolsAndSafety } from "@/app/components/public/home/HomeToolsAndSafety";
+import { HomeAuditSection } from "@/app/components/public/home/HomeAuditSection";
+import { HomeClosingSection } from "@/app/components/public/home/HomeClosingSection";
 
 export const metadata: Metadata = {
-  title: "Stratxcel AI Agent — Your AI Business Agent & Digital Operating Workforce",
+  title: "Stratxcel AI Agent — Your AI Business Assistant & Digital Growth Team",
   description:
-    "Connect your business. Your Stratxcel AI Agent operates the digital work across website, technical SEO, content, social media, CRM, and analytics that helps it grow.",
+    "Connect the tools you already use. Your Stratxcel AI Agent helps manage and grow the digital side of your business across website, Google SEO, content, social media, and customer inquiries.",
   alternates: {
     canonical: "https://www.stratxcel.in",
   },
   openGraph: {
-    title: "Stratxcel AI Agent — Your AI Business Agent",
+    title: "Stratxcel AI Agent — Your AI Business Assistant",
     description:
-      "Connect your business. Your Stratxcel AI Agent operates the digital work across website, SEO, content, social, CRM, and analytics.",
+      "Connect the tools you already use. Stratxcel helps manage and grow the digital side of your business with human approval at every step.",
     url: "https://www.stratxcel.in",
     siteName: "Stratxcel",
     images: [{ url: "/logo-v2.png", width: 641, height: 641, alt: "Stratxcel AI Agent" }],
@@ -31,34 +33,44 @@ export const metadata: Metadata = {
 
 export default function HomePage() {
   return (
-    <div className="sx-public-theme flex min-h-screen flex-col overflow-x-hidden bg-sx-bg font-sx-sans text-sx-text antialiased">
-      <PublicHeader overHeroId="platform-hero" logoVariant="light" />
+    <div className="sx-public-theme flex min-h-screen flex-col overflow-x-hidden bg-white font-sx-sans text-slate-900 antialiased">
+      {/* Cinematic Narrative Intro Overlay (First Visit / Responsive HTML-SVG) */}
+      <CinematicIntro />
+
+      {/* Primary Light Sticky Header */}
+      <PublicHeader logoVariant="light" />
+
       <main className="flex-1">
         {/* SECTION 01: Hero */}
-        <PlatformHero />
+        <HomeHeroLight />
 
-        {/* SECTION 02: How Stratxcel Works */}
-        <HomeHowItWorks />
+        {/* SECTION 02: The Problem / Recognition */}
+        <HomeProblemRecognition />
 
-        {/* SECTION 03: Your AI Workforce */}
-        <HomeAiWorkforce />
+        {/* SECTION 03: How Stratxcel Helps */}
+        <HomeHowStratxcelHelps />
 
-        {/* SECTION 04: Connect Your Business */}
-        <HomeConnectBusiness />
+        {/* SECTION 04: What Stratxcel Can Help You With */}
+        <HomeWhatItHelpsWith />
 
-        {/* SECTION 05: What Can Your Agent Do? & Business Types */}
-        <HomeUseCaseExplorer />
+        {/* SECTION 05: How It Works (Simple 4 Steps) */}
+        <HomeSimpleSteps />
+
+        {/* SECTION 06: Interactive Business Explorer & Business Types */}
+        <HomeInteractiveExplorerClean />
         <HomeBusinessTypes />
 
-        {/* SECTION 06: Proof / Real Product Evidence */}
-        <HomeProductEvidence />
+        {/* SECTION 07: Connect Your Tools & Privacy Guarantees */}
+        <HomeToolsAndSafety />
 
-        {/* SECTION 07: Business Growth Audit */}
-        <HomeAuditOffer />
+        {/* SECTION 08: ₹999 Business Growth Audit */}
+        <HomeAuditSection />
 
-        {/* SECTION 08: Final CTA */}
-        <HomeFinalCta />
+        {/* SECTION 09: Final Closing CTA */}
+        <HomeClosingSection />
       </main>
+
+      {/* Public Footer */}
       <PublicFooter logoVariant="light" />
     </div>
   );
