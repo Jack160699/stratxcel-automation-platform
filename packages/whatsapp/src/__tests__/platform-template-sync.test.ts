@@ -73,6 +73,30 @@ async function run() {
     assert.equal(templates[0]?.status, "APPROVED");
     assert.equal(await isTemplateUsable(fake.client, "platform-tenant", String(templates[0]?.id)), true);
 
+    await assert.rejects(
+      syncTemplatesForBinding(
+        fake.client,
+        {
+          tenantId: resolved.sender.tenantId,
+          phoneBindingId: resolved.sender.bindingId,
+          wabaId: resolved.sender.wabaId,
+        },
+        async () =>
+          Response.json(
+            {
+              error: {
+                message: "Unsupported get request.",
+                code: 100,
+                error_subcode: 33,
+                fbtrace_id: "safe-trace-id",
+              },
+            },
+            { status: 400 },
+          ),
+      ),
+      /HTTP 400 \(code 100; subcode 33; Unsupported get request\.; trace safe-trace-id\)/,
+    );
+
     const routeSource = readFileSync(resolve(process.cwd(), "app/api/platform/whatsapp/templates/route.ts"), "utf8");
     assert.match(routeSource, /resolvePlatformWhatsAppSender/);
     assert.doesNotMatch(routeSource, /listPhoneBindingsForTenant/);

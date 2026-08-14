@@ -151,14 +151,14 @@ export default function TeamPage() {
             <option value="operator">Operator</option>
             <option value="admin">Admin</option>
           </select>
-          <Button className="min-h-11" type="button" onClick={() => void createInvite()} disabled={!tenantId || inviting || !inviteEmail.trim()}>
+          <Button className="min-h-11 text-sm" type="button" onClick={() => void createInvite()} disabled={!tenantId || inviting || !inviteEmail.trim()}>
             {inviting ? "Creating…" : "Generate invite"}
           </Button>
         </div>
         {inviteUrl && (
           <div className="mt-3 flex flex-col gap-2 sm:flex-row">
             <Input readOnly value={inviteUrl} className="sm:flex-1" />
-            <Button className="min-h-11" type="button" onClick={() => void navigator.clipboard.writeText(inviteUrl)}>Copy invite link</Button>
+            <Button className="min-h-11 text-sm" type="button" onClick={() => void navigator.clipboard.writeText(inviteUrl)}>Copy invite link</Button>
           </div>
         )}
       </Card>
