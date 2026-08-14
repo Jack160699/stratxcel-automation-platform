@@ -2,6 +2,7 @@ import { getTenantServiceContext } from "@/lib/tenants/tenant-context";
 import { requireAdmin } from "@/lib/social/admin-guard";
 import { createTenant } from "@/lib/tenants/repository";
 import { saveBrandBrainVersion } from "@stratxcel/brand-brain";
+import { deleteCustomerTenantData } from "@/lib/tenants/lifecycle";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -155,52 +156,12 @@ export async function executeRealProductionReset(actorEmail: string): Promise<Re
   // A. BEFORE INVENTORY
   const beforeData = await captureInventory();
 
-  // B. EXECUTE DELETION IN DEPENDENCY-SAFE ORDER
-  if (beforeData.customerTenantIds.length > 0) {
-    const ids = beforeData.customerTenantIds;
-
-    const { data: orders } = await service.from("audit_orders").select("id").in("tenant_id", ids);
-    const orderIds = (orders ?? []).map((o) => o.id);
-
-    if (orderIds.length > 0) {
-      await safeExec(() => service.from("audit_delivery_events").delete().in("audit_order_id", orderIds));
-      await safeExec(() => service.from("audit_discovery_snapshots").delete().in("audit_order_id", orderIds));
-      await safeExec(() => service.from("audit_generation_runs").delete().in("audit_order_id", orderIds));
-      await safeExec(() => service.from("audit_share_tokens").delete().in("audit_order_id", orderIds));
-    }
-    await safeExec(() => service.from("audit_whatsapp_destinations").delete().in("tenant_id", ids));
-    await safeExec(() => service.from("audit_orders").delete().in("tenant_id", ids));
-
-    await safeExec(() => service.from("brand_brain_versions").delete().in("tenant_id", ids));
-    await safeExec(() => service.from("brand_brains").delete().in("tenant_id", ids));
-
-    await safeExec(() => service.from("social_tokens").delete().in("tenant_id", ids));
-    await safeExec(() => service.from("social_accounts").delete().in("tenant_id", ids));
-    await safeExec(() => service.from("social_posts").delete().in("tenant_id", ids));
-    await safeExec(() => service.from("social_campaigns").delete().in("tenant_id", ids));
-    await safeExec(() => service.from("social_agent_actions").delete().in("tenant_id", ids));
-    await safeExec(() => service.from("social_agent_runs").delete().in("tenant_id", ids));
-
-    await safeExec(() => service.from("mission_events").delete().in("tenant_id", ids));
-    await safeExec(() => service.from("mission_artifacts").delete().in("tenant_id", ids));
-    await safeExec(() => service.from("mission_approvals").delete().in("tenant_id", ids));
-    await safeExec(() => service.from("missions").delete().in("tenant_id", ids));
-
-    await safeExec(() => service.from("crm_messages").delete().in("tenant_id", ids));
-    await safeExec(() => service.from("crm_conversations").delete().in("tenant_id", ids));
-    await safeExec(() => service.from("crm_appointments").delete().in("tenant_id", ids));
-    await safeExec(() => service.from("crm_leads").delete().in("tenant_id", ids));
-
-    await safeExec(() => service.from("subscriptions").delete().in("tenant_id", ids));
-    await safeExec(() => service.from("wallet_transactions").delete().in("tenant_id", ids));
-    await safeExec(() => service.from("wallet_accounts").delete().in("tenant_id", ids));
-
-    await safeExec(() => service.from("tenant_invitations").delete().in("tenant_id", ids));
-    await safeExec(() => service.from("tenant_memberships").delete().in("tenant_id", ids));
-    await safeExec(() => service.from("tenants").delete().in("id", ids));
+  // B. EXECUTE DELETION IN DEPENDENCY-SAFE ORDER USING CANONICAL LIFECYCLE HELPER
+  for (const tenantId of beforeData.customerTenantIds) {
+    await deleteCustomerTenantData(service, tenantId, actorEmail);
   }
 
-  // C. DELETE NON-ADMIN CUSTOMER AUTH USERS (including ShriyanshTV@gmail.com)
+  // C. DELETE ANY REMAINING NON-ADMIN TEST AUTH USERS
   try {
     const { data: usersData } = await service.auth.admin.listUsers({ page: 1, perPage: 200 });
     for (const u of usersData?.users ?? []) {
