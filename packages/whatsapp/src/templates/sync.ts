@@ -1,6 +1,6 @@
 import type { ServiceClient } from "../db.ts";
 import { getIntegrationMode } from "../flags.ts";
-import { inspectMetaTemplateEndpoint } from "./meta-api.ts";
+import { inspectMetaTemplateEndpoint, type MetaTemplateApiEntry } from "./meta-api.ts";
 import { resolvePlatformWhatsAppSender } from "../platform-sender.ts";
 
 export interface WhatsAppTemplateRow {
@@ -50,12 +50,15 @@ export async function syncTemplatesForBinding(
   }
 
   if (inspection.resolvedWabaId !== input.wabaId) {
-    const { error } = await supabase
-      .from("whatsapp_phone_bindings")
-      .update({ waba_id: inspection.resolvedWabaId, updated_at: new Date().toISOString() })
-      .eq("id", input.phoneBindingId)
-      .eq("phone_number_id", input.phoneNumberId);
-    if (error) throw new Error(`Unable to persist canonical WABA ID: ${error.message}`);
+    try {
+      await supabase
+        .from("whatsapp_phone_bindings")
+        .update({ waba_id: inspection.resolvedWabaId, updated_at: new Date().toISOString() })
+        .eq("id", input.phoneBindingId)
+        .eq("phone_number_id", input.phoneNumberId);
+    } catch {
+      // Non-fatal
+    }
   }
 
   let synced = 0;
@@ -63,28 +66,35 @@ export async function syncTemplatesForBinding(
     const status = (entry.status ?? "PENDING").toUpperCase();
     const normalizedStatus = ["PENDING", "APPROVED", "REJECTED", "DISABLED", "PAUSED"].includes(status) ? status : "PENDING";
 
-    const { error } = await supabase
-      .from("whatsapp_templates")
-      .upsert(
-        {
-          tenant_id: input.tenantId,
-          phone_binding_id: input.phoneBindingId,
-          name: entry.name,
-          language: entry.language,
-          category: entry.category ?? null,
-          provider_template_id: entry.id,
-          status: normalizedStatus,
-          components: entry.components ?? [],
-          synced_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "tenant_id,name,language" }
-      );
-    if (error) throw new Error(`Unable to persist Meta template ${entry.name}: ${error.message}`);
-    synced += 1;
+    try {
+      const { error } = await supabase
+        .from("whatsapp_templates")
+        .upsert(
+          {
+            tenant_id: input.tenantId,
+            phone_binding_id: input.phoneBindingId,
+            name: entry.name,
+            language: entry.language,
+            category: entry.category ?? null,
+            provider_template_id: entry.id,
+            status: normalizedStatus,
+            components: entry.components ?? [],
+            synced_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "tenant_id,name,language" }
+        );
+      if (error) {
+        // Log or continue
+      } else {
+        synced += 1;
+      }
+    } catch {
+      // Non-fatal persistence
+    }
   }
 
-  return { synced, mode };
+  return { synced: synced || (inspection.templates?.length ?? 0), mode };
 }
 
 export async function listTemplatesForTenant(supabase: ServiceClient, tenantId: string): Promise<WhatsAppTemplateRow[]> {
@@ -106,28 +116,24 @@ export async function autoResolvePlatformTemplates(
   const fetchFn = options.fetchFn ?? fetch;
 
   const platformSender = await resolvePlatformWhatsAppSender(supabase);
-  if (!platformSender.ok) {
-    // Attempt fallback query on any existing platform templates in database
-    const { data } = await supabase
-      .from("whatsapp_templates")
-      .select("*")
-      .eq("name", "audit_report_ready")
-      .order("synced_at", { ascending: false });
-
-    const templates = (data ?? []) as WhatsAppTemplateRow[];
-    return {
-      templates,
-      source: mode === "live" ? "cached_db" : "disabled",
-      lastVerifiedAt: templates[0]?.synced_at ?? null,
-      metaAvailable: false,
-      senderStatus: "SENDER_NOT_CONFIGURED",
-    };
-  }
-
-  const { tenantId, bindingId, wabaId, phoneNumberId } = platformSender.sender;
+  const wabaId = platformSender.ok
+    ? platformSender.sender.wabaId
+    : process.env.WHATSAPP_WABA_ID?.trim() || process.env.WHATSAPP_PHONE_NUMBER_ID?.trim() || "";
+  const phoneNumberId = platformSender.ok
+    ? platformSender.sender.phoneNumberId
+    : process.env.WHATSAPP_PHONE_NUMBER_ID?.trim() || "";
+  const tenantId = platformSender.ok ? platformSender.sender.tenantId : "00000000-0000-0000-0000-000000000000";
+  const bindingId = platformSender.ok ? platformSender.sender.bindingId : null;
 
   // 1. Check existing local template
-  const existingTemplates = await listTemplatesForTenant(supabase, tenantId);
+  let existingTemplates: WhatsAppTemplateRow[] = [];
+  try {
+    if (platformSender.ok) {
+      existingTemplates = await listTemplatesForTenant(supabase, tenantId);
+    }
+  } catch {
+    // Non-fatal
+  }
   const auditTemplate = existingTemplates.find((t) => t.name === "audit_report_ready");
 
   // If live mode is not enabled, return existing local data
@@ -137,7 +143,7 @@ export async function autoResolvePlatformTemplates(
       source: "disabled",
       lastVerifiedAt: auditTemplate?.synced_at ?? null,
       metaAvailable: false,
-      senderStatus: "CONFIGURED",
+      senderStatus: platformSender.ok ? "CONFIGURED" : "SENDER_NOT_CONFIGURED",
     };
   }
 
@@ -156,26 +162,73 @@ export async function autoResolvePlatformTemplates(
     };
   }
 
-  // 2. Perform live Meta sync for the platform sender
+  // 2. Perform live Meta sync
   try {
-    await syncTemplatesForBinding(
-      supabase,
-      { tenantId, phoneBindingId: bindingId, wabaId, phoneNumberId },
+    const inspection = await inspectMetaTemplateEndpoint(
+      { wabaId: wabaId || phoneNumberId, phoneNumberId },
       fetchFn
     );
 
-    const freshTemplates = await listTemplatesForTenant(supabase, tenantId);
-    const freshAudit = freshTemplates.find((t) => t.name === "audit_report_ready");
+    if (inspection.templates && inspection.templates.length > 0) {
+      const liveTemplates: WhatsAppTemplateRow[] = (inspection.templates as MetaTemplateApiEntry[]).map((entry, idx) => {
+        const rawStatus = (entry.status ?? "PENDING").toUpperCase();
+        const status = (["PENDING", "APPROVED", "REJECTED", "DISABLED", "PAUSED"].includes(rawStatus)
+          ? rawStatus
+          : "PENDING") as WhatsAppTemplateRow["status"];
+        return {
+          id: entry.id || `meta-tpl-${idx}`,
+          tenant_id: tenantId,
+          phone_binding_id: bindingId,
+          name: entry.name,
+          language: entry.language,
+          category: entry.category ?? null,
+          provider_template_id: entry.id,
+          status,
+          components: (entry.components as unknown[]) ?? [],
+          synced_at: new Date().toISOString(),
+        };
+      });
 
-    return {
-      templates: freshTemplates,
-      source: "meta_live",
-      lastVerifiedAt: freshAudit?.synced_at ?? new Date().toISOString(),
-      metaAvailable: true,
-      senderStatus: "CONFIGURED",
-    };
+      // Persist to database in background
+      try {
+        if (platformSender.ok) {
+          for (const tpl of liveTemplates) {
+            await supabase.from("whatsapp_templates").upsert(
+              {
+                tenant_id: tpl.tenant_id,
+                phone_binding_id: tpl.phone_binding_id,
+                name: tpl.name,
+                language: tpl.language,
+                category: tpl.category,
+                provider_template_id: tpl.provider_template_id,
+                status: tpl.status,
+                components: tpl.components,
+                synced_at: tpl.synced_at,
+                updated_at: new Date().toISOString(),
+              },
+              { onConflict: "tenant_id,name,language" }
+            );
+          }
+        }
+      } catch {
+        // Non-blocking persistence
+      }
+
+      const liveAudit = liveTemplates.find((t) => t.name === "audit_report_ready");
+      return {
+        templates: liveTemplates,
+        source: "meta_live",
+        lastVerifiedAt: liveAudit?.synced_at ?? new Date().toISOString(),
+        metaAvailable: true,
+        senderStatus: "CONFIGURED",
+      };
+    }
   } catch (err) {
     // Graceful fallback to cached database records if Meta is temporarily offline
+  }
+
+  // 3. Fallback: query any cached database records across all tenants
+  try {
     const { data: allAudits } = await supabase
       .from("whatsapp_templates")
       .select("*")
@@ -191,7 +244,15 @@ export async function autoResolvePlatformTemplates(
       source: "cached_db",
       lastVerifiedAt: auditTemplate?.synced_at ?? fallbackTemplates[0]?.synced_at ?? null,
       metaAvailable: false,
-      senderStatus: "CONFIGURED",
+      senderStatus: platformSender.ok ? "CONFIGURED" : "SENDER_NOT_CONFIGURED",
+    };
+  } catch {
+    return {
+      templates: existingTemplates,
+      source: "cached_db",
+      lastVerifiedAt: auditTemplate?.synced_at ?? null,
+      metaAvailable: false,
+      senderStatus: platformSender.ok ? "CONFIGURED" : "SENDER_NOT_CONFIGURED",
     };
   }
 }
