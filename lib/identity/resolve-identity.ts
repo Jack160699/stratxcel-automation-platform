@@ -11,6 +11,9 @@ interface BaseIdentity {
   state: Exclude<IdentityState, "NO_SESSION">;
   userId: string;
   email: string | null;
+  profileName: string | null;
+  avatarUrl: string | null;
+  planPromptSeenTenantIds: string[];
   isStaff: boolean;
   workspaceMode: "customer" | "admin" | null;
   tenants: TenantMembership[];
@@ -57,7 +60,27 @@ export async function resolveCanonicalIdentity(options?: { routeSurface?: RouteS
     hasValidStaffWorkspace: Boolean(staffWorkspace),
     workspaceMode,
   });
-  const base = { userId: user.id, email: user.email ?? null, isStaff, workspaceMode, tenants, supabase };
+  const profileName =
+    typeof user.user_metadata?.full_name === "string"
+      ? user.user_metadata.full_name.trim() || null
+      : typeof user.user_metadata?.name === "string"
+        ? user.user_metadata.name.trim() || null
+        : null;
+  const avatarUrl = typeof user.user_metadata?.avatar_url === "string" ? user.user_metadata.avatar_url : null;
+  const planPromptSeenTenantIds = Array.isArray(user.user_metadata?.stratxcel_plan_prompt_seen)
+    ? user.user_metadata.stratxcel_plan_prompt_seen.filter((value: unknown): value is string => typeof value === "string")
+    : [];
+  const base = {
+    userId: user.id,
+    email: user.email ?? null,
+    profileName,
+    avatarUrl,
+    planPromptSeenTenantIds,
+    isStaff,
+    workspaceMode,
+    tenants,
+    supabase,
+  };
   if (state === "STAFF_VIEWING_CLIENT") return { ...base, state, staffWorkspace: staffWorkspace! };
   return { ...base, state } as CanonicalIdentity;
 }

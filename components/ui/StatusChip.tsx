@@ -40,7 +40,7 @@ export function StatusChip({
 }) {
   return (
     <span
-      className={`inline-flex h-[21px] items-center gap-1.5 whitespace-nowrap rounded-sx-pill px-2 font-sx-mono text-[9.5px] uppercase tracking-[0.08em] ${CHIP_CLASSES[state]} ${className}`}
+      className={`inline-flex h-6 items-center gap-1.5 whitespace-nowrap rounded-sx-pill px-2 text-[11px] font-semibold uppercase tracking-[0.06em] sm:h-[21px] sm:font-sx-mono sm:text-[9.5px] ${CHIP_CLASSES[state]} ${className}`}
     >
       {dot && (
         <span

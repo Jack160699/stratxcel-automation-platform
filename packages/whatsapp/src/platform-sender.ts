@@ -3,6 +3,7 @@ import type { ServiceClient } from "./db.ts";
 export interface PlatformWhatsAppSender {
   bindingId: string;
   tenantId: string;
+  wabaId: string;
 }
 
 /**
@@ -21,21 +22,21 @@ export async function resolvePlatformWhatsAppSender(
   const bindingId = process.env.STRATXCEL_WHATSAPP_PLATFORM_BINDING_ID?.trim();
   if (bindingId) {
     const row = await loadActiveOutboundBinding(supabase, { id: bindingId });
-    if (row) return { ok: true, sender: { bindingId: row.id, tenantId: row.tenant_id } };
+    if (row) return { ok: true, sender: { bindingId: row.id, tenantId: row.tenant_id, wabaId: row.waba_id } };
     return { ok: false, reason: "sender_not_configured" };
   }
 
   const platformTenantId = process.env.STRATXCEL_WHATSAPP_PLATFORM_TENANT_ID?.trim();
   if (platformTenantId) {
     const row = await loadActiveOutboundBinding(supabase, { tenantId: platformTenantId });
-    if (row) return { ok: true, sender: { bindingId: row.id, tenantId: row.tenant_id } };
+    if (row) return { ok: true, sender: { bindingId: row.id, tenantId: row.tenant_id, wabaId: row.waba_id } };
     return { ok: false, reason: "sender_not_configured" };
   }
 
   const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID?.trim();
   if (phoneNumberId) {
     const row = await loadActiveOutboundBinding(supabase, { phoneNumberId });
-    if (row) return { ok: true, sender: { bindingId: row.id, tenantId: row.tenant_id } };
+    if (row) return { ok: true, sender: { bindingId: row.id, tenantId: row.tenant_id, wabaId: row.waba_id } };
   }
 
   return { ok: false, reason: "sender_not_configured" };
@@ -44,10 +45,10 @@ export async function resolvePlatformWhatsAppSender(
 async function loadActiveOutboundBinding(
   supabase: ServiceClient,
   filter: { id?: string; tenantId?: string; phoneNumberId?: string },
-): Promise<{ id: string; tenant_id: string; source: string } | null> {
+): Promise<{ id: string; tenant_id: string; source: string; waba_id: string } | null> {
   let query = supabase
     .from("whatsapp_phone_bindings")
-    .select("id, tenant_id, source")
+    .select("id, tenant_id, source, waba_id")
     .eq("status", "active")
     .eq("outbound_enabled", true);
   if (filter.id) query = query.eq("id", filter.id);
@@ -55,5 +56,5 @@ async function loadActiveOutboundBinding(
   if (filter.phoneNumberId) query = query.eq("phone_number_id", filter.phoneNumberId);
   const { data } = await query.maybeSingle();
   if (!data || data.source === "legacy_verified_bot") return null;
-  return data as { id: string; tenant_id: string; source: string };
+  return data as { id: string; tenant_id: string; source: string; waba_id: string };
 }

@@ -22,19 +22,23 @@ export const APP_NAV_GROUPS_DATA: NavGroupData[] = [
     items: [{ key: "home", label: "Command Center", href: "/app", release: "v1" }],
   },
   {
-    label: "Your audit",
-    items: [{ key: "customer-audit", label: "Business Growth Audit", href: "/app/audit", release: "v1" }],
-  },
-  {
-    label: "Customers",
-    items: [{ key: "crm", label: "Leads & CRM", href: "/app/crm", release: "v1" }],
-  },
-  {
-    label: "Business",
+    label: "Growth",
     items: [
+      { key: "customer-audit", label: "Business Growth Audit", href: "/app/audit", release: "v1" },
       { key: "brand", label: "Brand Brain", href: "/app/brand", release: "v1" },
+      { key: "crm", label: "CRM", href: "/app/crm", release: "v1" },
+    ],
+  },
+  {
+    label: "Execution",
+    items: [
       { key: "copilot", label: "Copilot", href: "/app/social/copilot", release: "v1" },
       { key: "integrations", label: "Connectors", href: "/app/integrations", release: "v1" },
+    ],
+  },
+  {
+    label: "Account",
+    items: [
       { key: "billing", label: "Billing", href: "/app/billing", release: "v1" },
       { key: "team", label: "Team", href: "/app/team", release: "v1" },
       { key: "settings", label: "Settings", href: "/app/settings", release: "v1" },

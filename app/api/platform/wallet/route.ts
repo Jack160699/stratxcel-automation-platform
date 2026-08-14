@@ -1,4 +1,4 @@
-import { requireTenantReadContext, requireTenantReadPermission } from "@/lib/tenants/tenant-context";
+import { getTenantServiceContext, requireTenantReadContext, requireTenantReadPermission } from "@/lib/tenants/tenant-context";
 import { PermissionDeniedError } from "@/lib/rbac/policy";
 import { getWalletAccount } from "@stratxcel/payments-and-wallet";
 
@@ -6,9 +6,9 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * Plain user-initiated read, covered by wallet_accounts_tenant_read RLS
- * (see supabase/migrations/20260803121500_approvals_wallet_handoff.sql) —
- * runs on the authenticated session client, not the service-role client.
+ * Plain user-initiated read. Authorization is checked against the caller's
+ * authenticated tenant membership before the service client lazily creates
+ * the tenant's zero-balance wallet when one does not exist.
  */
 export async function GET(request: Request) {
   const tenantId = new URL(request.url).searchParams.get("tenantId");
@@ -24,6 +24,6 @@ export async function GET(request: Request) {
     throw err;
   }
 
-  const account = await getWalletAccount(ctx.supabase, tenantId);
+  const account = await getWalletAccount(getTenantServiceContext().supabase, tenantId);
   return Response.json({ account }, { headers: { "Cache-Control": "no-store" } });
 }

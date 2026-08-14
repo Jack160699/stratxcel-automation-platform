@@ -42,7 +42,7 @@ export function MobileBottomNav({
                 <span className={`flex h-7 w-7 items-center justify-center rounded-full ${active ? "bg-sx-accent/15 text-sx-accent" : "text-sx-text-subtle"}`}>
                   {item.icon}
                 </span>
-                <span className={`text-[10px] font-medium ${active ? "text-sx-accent" : "text-sx-text-subtle"}`}>{shortLabel(item.label)}</span>
+                <span className={`text-xs font-medium ${active ? "text-sx-accent" : "text-sx-text-subtle"}`}>{shortLabel(item.label)}</span>
                 {item.live && <span className="absolute right-[calc(50%-14px)] top-1.5 h-1.5 w-1.5 rounded-full bg-sx-success" />}
               </>
             );
@@ -60,7 +60,7 @@ export function MobileBottomNav({
             <span className={`flex h-7 w-7 items-center justify-center rounded-full ${moreOpen ? "bg-sx-accent/15 text-sx-accent" : ""}`}>
               <MoreIcon />
             </span>
-            <span className="text-[10px] font-medium">More</span>
+            <span className="text-xs font-medium">More</span>
           </button>
         </div>
       </nav>
@@ -69,13 +69,13 @@ export function MobileBottomNav({
         <div className="flex max-h-[70vh] flex-col gap-4 overflow-y-auto">
           {moreGroups.map((group) => (
             <div key={group.label} className="flex flex-col gap-1">
-              <div className="px-1 pb-1 font-sx-mono text-[9px] uppercase tracking-[0.14em] text-sx-text-subtle">{group.label}</div>
+              <div className="px-1 pb-1 text-xs font-semibold uppercase tracking-[0.12em] text-sx-text-subtle">{group.label}</div>
               {group.items.map((item) => (
                 <Link
                   key={item.key}
                   href={item.href}
                   onClick={() => setMoreOpen(false)}
-                  className="flex min-h-11 items-center gap-3 rounded-sx-sm px-2.5 text-[13px] text-sx-text-muted hover:bg-sx-surface-2 hover:text-sx-text"
+                  className="flex min-h-12 items-center gap-3 rounded-sx-sm px-2.5 text-base text-sx-text-muted hover:bg-sx-surface-2 hover:text-sx-text"
                 >
                   {item.icon}
                   {item.label}

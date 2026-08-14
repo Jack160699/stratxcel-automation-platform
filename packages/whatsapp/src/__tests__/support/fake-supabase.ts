@@ -105,7 +105,7 @@ export function createFakeSupabase(seed: Tables = {}, options: FakeSupabaseOptio
   const chain: any = {
     _table: "",
     _filters: {} as Record<string, unknown>,
-    _mode: "select" as "select" | "insert" | "update",
+    _mode: "select" as "select" | "insert" | "update" | "upsert",
     _payload: null as Record<string, unknown> | null,
     from(table: string) {
       fromCalls.push(table);
@@ -127,6 +127,16 @@ export function createFakeSupabase(seed: Tables = {}, options: FakeSupabaseOptio
       chain._mode = "update";
       chain._payload = payload;
       return chain;
+    },
+    upsert(payload: Record<string, unknown>, options?: { onConflict?: string }) {
+      chain._mode = "upsert";
+      chain._payload = payload;
+      const keys = options?.onConflict?.split(",") ?? [];
+      const rows = (tables[chain._table] ??= []);
+      const existing = rows.find((row) => keys.length > 0 && keys.every((key) => row[key] === payload[key]));
+      if (existing) Object.assign(existing, payload);
+      else rows.push({ id: nextId(chain._table), ...payload });
+      return Promise.resolve({ data: existing ?? payload, error: null });
     },
     eq(col: string, val: unknown) {
       chain._filters[col] = val;

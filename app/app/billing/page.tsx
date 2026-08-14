@@ -10,6 +10,7 @@ import { StatusChip } from "@/components/ui/StatusChip";
 import { ErrorState, EmptyState } from "@/components/ui/Feedback";
 import { isActivePaidSubscription } from "@/lib/billing/plan-state";
 import { loadCustomerJson } from "@/lib/customer-app/load-result";
+import { ModulePageHeader } from "../components/ModulePageHeader";
 
 interface WalletAccount {
   tenant_id: string;
@@ -41,6 +42,17 @@ interface PriceBreakdown {
   taxableValueCents: number;
   gstCents: number;
   ratePercent: number;
+}
+
+interface PlanDefinition {
+  publicName: string;
+  billingIntervalMonths: number;
+  entitlements: {
+    social_posts: number;
+    meta_ad_campaigns: number;
+    whatsapp_contacts: number;
+    website_maintenance: number;
+  };
 }
 
 interface BillingProfile {
@@ -93,10 +105,12 @@ export default function BillingPage() {
   const [account, setAccount] = useState<WalletAccount | null>(null);
   const [subscription, setSubscription] = useState<Subscription | null>(null);
   const [priceBreakdown, setPriceBreakdown] = useState<PriceBreakdown | null>(null);
+  const [planDefinition, setPlanDefinition] = useState<PlanDefinition | null>(null);
   const [paymentUrl, setPaymentUrl] = useState<string | null>(null);
   const [billingProfile, setBillingProfile] = useState<BillingProfile | null>(null);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [walletError, setWalletError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -115,9 +129,11 @@ export default function BillingPage() {
     const requestId = ++loadSequence.current;
     setLoading(true);
     setError(null);
+    setWalletError(null);
     setAccount(null);
     setSubscription(null);
     setPriceBreakdown(null);
+    setPlanDefinition(null);
     setPaymentUrl(null);
     setBillingProfile(null);
     setInvoices([]);
@@ -129,6 +145,7 @@ export default function BillingPage() {
         ),
         loadCustomerJson<{
           subscription: Subscription | null;
+          planDefinition: PlanDefinition;
           priceBreakdown: PriceBreakdown | null;
           paymentUrl: string | null;
           billingProfile: BillingProfile | null;
@@ -139,16 +156,14 @@ export default function BillingPage() {
         ),
       ]);
       if (requestId !== loadSequence.current) return;
-      if (walletResult.status === "error") {
-        setError(walletResult.message);
-        return;
-      }
       if (subscriptionResult.status === "error") {
         setError(subscriptionResult.message);
         return;
       }
-      setAccount(walletResult.data.account);
+      if (walletResult.status === "error") setWalletError(walletResult.message);
+      else setAccount(walletResult.data.account);
       setSubscription(subscriptionResult.data.subscription);
+      setPlanDefinition(subscriptionResult.data.planDefinition);
       setPriceBreakdown(subscriptionResult.data.priceBreakdown);
       setPaymentUrl(subscriptionResult.data.paymentUrl);
       setBillingProfile(subscriptionResult.data.billingProfile);
@@ -237,9 +252,7 @@ export default function BillingPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <header>
-        <h1 className="font-sx-sans text-xl font-semibold text-sx-text">Billing{active ? ` — ${active.name}` : ""}</h1>
-      </header>
+      <ModulePageHeader title="Billing" tenantName={active?.name} description="Your current plan, included capabilities, wallet, and payment history." />
 
       {error && <ErrorState message={error} onRetry={load} />}
       {notice && (
@@ -247,26 +260,36 @@ export default function BillingPage() {
       )}
       {loading && !error && <p className="text-sm text-sx-text-subtle">Loading…</p>}
 
-      {!loading && !error && account && (
-        <Card className="p-6">
-          <Metric
-            label="Wallet balance"
-            value={`${account.currency} ${(account.balance_cents / 100).toFixed(2)}`}
-            deltaLabel={`last updated ${new Date(account.updated_at).toLocaleString()}`}
-          />
-        </Card>
-      )}
-
       {/* Subscription plan & status */}
-      {!loading && !error && <Card className="p-6">
-        <h2 className="font-sx-sans text-sm font-semibold text-sx-text">Plan & subscription</h2>
+      {!loading && !error && <Card className="border-sx-accent/25 p-6">
+        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-sx-accent">Current plan</p>
+        <h2 className="mt-1 font-sx-sans text-2xl font-semibold text-sx-text">
+          {hasActivePaidPlan && subscription ? `You’re on ${subscription.plan_tier.replace("_", " ")}` : "Free"}
+        </h2>
 
         {!hasActivePaidPlan && (
           <div className="mt-4 flex flex-col gap-4">
-            <EmptyState
-              title="Free"
-              subtitle="No active paid plan. Monthly plans use staff-assisted activation during closed beta, so availability and scope are confirmed before payment."
-            />
+            <p className="max-w-2xl text-sm leading-6 text-sx-text-muted">
+              Your Audit and saved business context remain available. Start Growth when you want ongoing execution, Copilot-led planning, and recurring improvement.
+            </p>
+            <div className="rounded-sx-md border border-sx-accent/30 bg-sx-accent/10 p-4">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-lg font-semibold text-sx-text">Start Growth</p>
+                  <p className="mt-1 text-sm text-sx-text-muted">Best for Audit-led businesses ready to turn findings into ongoing action.</p>
+                  <p className="mt-2 text-sm font-semibold text-sx-text">{money(999_900)}/month <span className="font-normal text-sx-text-muted">· GST included</span></p>
+                </div>
+                <Link href="/contact?intent=growth" className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-sx-sm bg-sx-accent px-5 text-sm font-bold text-sx-accent-on">
+                  Request Growth activation
+                </Link>
+              </div>
+              <ul className="mt-4 grid gap-2 text-sm text-sx-text-muted sm:grid-cols-2">
+                <li>✓ Ongoing growth missions</li>
+                <li>✓ Copilot planning and execution</li>
+                <li>✓ Managed AI capacity</li>
+                <li>✓ Business connector support</li>
+              </ul>
+            </div>
             {subscription && subscription.status !== "active" && (
               <div className="rounded-sx-md border border-sx-border bg-sx-surface-2 p-3">
                 <p className="text-xs font-semibold text-sx-text">Previous payment attempt: {STATUS_CHIP[subscription.status]?.label ?? subscription.status}</p>
@@ -321,6 +344,20 @@ export default function BillingPage() {
                 <div>
                   <p className="text-sx-text-subtle">Total payable</p>
                   <p className="font-semibold text-sx-text">{money(priceBreakdown.totalCents)}</p>
+                </div>
+              </div>
+            )}
+
+            {planDefinition && (
+              <div>
+                <p className="text-sm font-semibold text-sx-text">Included each month</p>
+                <div className="mt-2 grid gap-2 text-sm text-sx-text-muted sm:grid-cols-2">
+                  <p className="rounded-sx-sm bg-sx-surface-2 p-3">{planDefinition.entitlements.social_posts} social posts</p>
+                  <p className="rounded-sx-sm bg-sx-surface-2 p-3">{planDefinition.entitlements.meta_ad_campaigns} Meta ad campaigns</p>
+                  <p className="rounded-sx-sm bg-sx-surface-2 p-3">{planDefinition.entitlements.whatsapp_contacts.toLocaleString("en-IN")} WhatsApp contacts</p>
+                  <p className="rounded-sx-sm bg-sx-surface-2 p-3">
+                    {planDefinition.entitlements.website_maintenance > 0 ? "Website maintenance included" : "Website maintenance not included"}
+                  </p>
                 </div>
               </div>
             )}
@@ -402,6 +439,25 @@ export default function BillingPage() {
           </div>
         )}
       </Card>}
+
+      {!loading && !error && (
+        <Card className="p-6">
+          <h2 className="font-sx-sans text-base font-semibold text-sx-text">Managed AI wallet</h2>
+          {walletError ? (
+            <div className="mt-3"><ErrorState message={walletError} onRetry={load} /></div>
+          ) : account ? (
+            <div className="mt-3">
+              <Metric
+                label="Wallet balance"
+                value={`${account.currency} ${(account.balance_cents / 100).toFixed(2)}`}
+                deltaLabel={`last updated ${new Date(account.updated_at).toLocaleString()}`}
+              />
+            </div>
+          ) : (
+            <p className="mt-2 text-sm text-sx-text-muted">No wallet information is available.</p>
+          )}
+        </Card>
+      )}
 
       {/* GST invoice details */}
       {!loading && !error && <Card className="p-6">

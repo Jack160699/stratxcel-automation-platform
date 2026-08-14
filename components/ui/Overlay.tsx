@@ -84,13 +84,13 @@ export function Modal({
         aria-modal="true"
         aria-labelledby={titleId}
         onClick={(event) => event.stopPropagation()}
-        className="w-full max-w-md rounded-t-sx-lg border border-sx-border-strong bg-sx-elevated p-5 shadow-[var(--sx-shadow-xl)] transition-transform duration-200 ease-[cubic-bezier(0.2,0.8,0.2,1)] sm:rounded-sx-lg"
+        className="max-h-[calc(100dvh-1rem)] w-full max-w-md overflow-hidden rounded-t-sx-lg border border-sx-border-strong bg-sx-elevated p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] shadow-[var(--sx-shadow-xl)] transition-transform duration-200 ease-[cubic-bezier(0.2,0.8,0.2,1)] sm:rounded-sx-lg sm:pb-5"
       >
         <div className="mb-2 flex justify-center sm:hidden">
           <span className="h-1 w-10 rounded-full bg-sx-border-strong" />
         </div>
         <div className="mb-3 flex items-center justify-between">
-          <h2 id={titleId} className="font-sx-sans text-base font-semibold text-sx-text">{title}</h2>
+          <h2 id={titleId} className="font-sx-sans text-lg font-semibold text-sx-text sm:text-base">{title}</h2>
           <button type="button" onClick={onClose} aria-label="Close" className="min-h-11 min-w-11 text-sx-text-subtle hover:text-sx-text">
             ✕
           </button>

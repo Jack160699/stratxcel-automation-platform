@@ -6,6 +6,8 @@ import AppLogin from "./AppLogin";
 import { OnboardingPanel } from "./OnboardingPanel";
 import { CurrentTenantProvider } from "./CurrentTenantContext";
 import { ClientAppShell } from "./ClientAppShell";
+import { resolveCustomerPlanSummary } from "@/lib/billing/customer-plan";
+import { resolveCurrentAuditOrderId } from "@/lib/audit/current-pointer";
 
 export const dynamic = "force-dynamic";
 
@@ -33,11 +35,44 @@ export default async function ClientLayout({ children }: { children: ReactNode }
     ? [{ ...identity.staffWorkspace, role: null, accessMode: "staff_support" as const }]
     : identity.tenants.map((tenant) => ({ ...tenant, accessMode: "customer" as const }));
   const active = tenants[0];
+  const tenantDb = identity.supabase;
+  const [subscriptionResult, auditResult] = await Promise.all([
+    tenantDb
+      .from("subscriptions")
+      .select("plan_tier, status, provider_status, current_period_end, next_charge_at, price_cents")
+      .eq("tenant_id", active.tenantId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    (async () => {
+      const currentOrderId = await resolveCurrentAuditOrderId(tenantDb, active.tenantId);
+      if (currentOrderId === null) return { data: null };
+      let query = tenantDb.from("audit_orders").select("report_data").eq("tenant_id", active.tenantId);
+      if (typeof currentOrderId === "string") query = query.eq("id", currentOrderId);
+      else query = query.order("created_at", { ascending: false }).limit(1);
+      return query.maybeSingle();
+    })(),
+  ]);
+  const plan = resolveCustomerPlanSummary(subscriptionResult.data);
+  const report = auditResult.data?.report_data;
+  const auditOpportunityCount =
+    report && typeof report === "object" && Array.isArray((report as { opportunities?: unknown }).opportunities)
+      ? (report as { opportunities: unknown[] }).opportunities.length
+      : null;
+  const showPlanPrompt =
+    identity.state === "CUSTOMER_MEMBER" &&
+    !plan.activePaid &&
+    !identity.planPromptSeenTenantIds.includes(active.tenantId);
 
   return (
     <CurrentTenantProvider initialTenants={tenants} initialActive={active}>
       <ClientAppShell
+        tenantId={active.tenantId}
         email={identity.email ?? ""}
+        name={identity.profileName}
+        plan={plan}
+        showPlanPrompt={showPlanPrompt}
+        auditOpportunityCount={auditOpportunityCount}
         staffWorkspace={identity.state === "STAFF_VIEWING_CLIENT" ? { tenantName: identity.staffWorkspace.name } : null}
       >
         {children}
