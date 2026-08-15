@@ -136,7 +136,7 @@ export async function inspectMetaTemplateEndpoint(
     }
 
     const failure = classifyMetaFailure(configuredTemplates);
-    if (!configuredTemplates.response.ok && failure !== "WRONG_OBJECT") {
+    if (failure === "WRONG_API_VERSION") {
       throw toEndpointError(configuredTemplates, failure, diagnostics);
     }
   }
@@ -190,23 +190,49 @@ async function discoverWabaCandidates(
   const portfolioIds = new Set<string>();
   if (objectId) portfolioIds.add(objectId);
 
-  // 1. Direct phone number inspect: retrieve whatsapp_business_account object
+  const envWabaId = process.env.WHATSAPP_WABA_ID?.trim();
+  if (envWabaId) {
+    candidates.set(envWabaId, { id: envWabaId, name: "Configured WABA" });
+  }
+
+  // 1. Direct phone number inspect: retrieve health_status entities (WABA & Business IDs)
   if (phoneNumberId) {
-    const phoneObj = await graphGet(
+    let phoneObj = await graphGet(
       buildMetaGraphUrl(
         apiVersion,
         phoneNumberId,
         undefined,
-        new URLSearchParams({ fields: "id,verified_name,display_phone_number,whatsapp_business_account" }),
+        new URLSearchParams({ fields: "id,verified_name,display_phone_number,health_status" }),
       ),
       token,
       fetchFn,
     );
+    if (!phoneObj.response.ok) {
+      phoneObj = await graphGet(
+        buildMetaGraphUrl(
+          apiVersion,
+          phoneNumberId,
+          undefined,
+          new URLSearchParams({ fields: "id,verified_name,display_phone_number" }),
+        ),
+        token,
+        fetchFn,
+      );
+    }
     diagnostics.push(toDiagnostic("phone_list", phoneNumberId, apiVersion, phoneObj));
-    const wabaObj = (phoneObj.body as { whatsapp_business_account?: { id?: string; name?: string } })
-      ?.whatsapp_business_account;
-    if (wabaObj?.id) {
-      candidates.set(String(wabaObj.id), { id: String(wabaObj.id), name: wabaObj.name });
+
+    // Extract WABA and Business entities from health_status
+    const healthEntities = (phoneObj.body as { health_status?: { entities?: Array<{ entity_type: string; id: string; name?: string }> } })
+      ?.health_status?.entities;
+    if (Array.isArray(healthEntities)) {
+      for (const ent of healthEntities) {
+        if (ent.entity_type === "WABA" && ent.id) {
+          candidates.set(String(ent.id), { id: String(ent.id), name: ent.name ?? "WhatsApp Business Account" });
+        }
+        if (ent.entity_type === "BUSINESS" && ent.id) {
+          portfolioIds.add(String(ent.id));
+        }
+      }
     }
   }
 

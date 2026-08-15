@@ -226,6 +226,18 @@ export async function autoResolvePlatformTemplates(
 
       // Persist to database in background
       try {
+        if (inspection.resolvedWabaId && bindingId) {
+          await supabase
+            .from("whatsapp_phone_bindings")
+            .update({ waba_id: inspection.resolvedWabaId, updated_at: new Date().toISOString() })
+            .eq("id", bindingId);
+        } else if (inspection.resolvedWabaId && phoneNumberId) {
+          await supabase
+            .from("whatsapp_phone_bindings")
+            .update({ waba_id: inspection.resolvedWabaId, updated_at: new Date().toISOString() })
+            .eq("phone_number_id", phoneNumberId);
+        }
+
         if (tenantId && tenantId !== "00000000-0000-0000-0000-000000000000") {
           for (const tpl of liveTemplates) {
             await supabase.from("whatsapp_templates").upsert(
