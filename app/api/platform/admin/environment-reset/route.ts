@@ -61,11 +61,11 @@ export async function captureInventory(): Promise<{ inventory: ResourceInventory
     protectedTenantIds.add(st.id);
   }
 
-  // Platform WhatsApp outbound sender binding tenant
+  // Platform WhatsApp shared sender binding tenant (only platform_shared_sender, NOT customer bindings)
   const { data: whatsappBindings } = await service
     .from("whatsapp_phone_bindings")
     .select("tenant_id")
-    .eq("outbound_enabled", true);
+    .eq("source", "platform_shared_sender");
 
   for (const wb of whatsappBindings ?? []) {
     if (wb.tenant_id) protectedTenantIds.add(wb.tenant_id);
@@ -174,7 +174,10 @@ export async function executeRealProductionReset(actorEmail: string): Promise<Re
 
   // B. EXECUTE DELETION IN DEPENDENCY-SAFE ORDER USING CANONICAL LIFECYCLE HELPER
   for (const tenantId of beforeData.customerTenantIds) {
-    await deleteCustomerTenantData(service, tenantId, actorEmail);
+    const res = await deleteCustomerTenantData(service, tenantId, actorEmail);
+    if (!res.ok) {
+      throw new Error(`Failed to delete customer tenant ${tenantId}: ${res.error}`);
+    }
   }
 
   // C. DELETE ANY REMAINING NON-ADMIN DISPOSABLE AUTH USERS
