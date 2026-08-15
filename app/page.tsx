@@ -2,27 +2,27 @@ import type { Metadata } from "next";
 import { PublicHeader } from "@/app/components/PublicHeader";
 import { PublicFooter } from "@/app/components/PublicFooter";
 import { HomeHeroLight } from "@/app/components/public/home/HomeHeroLight";
-import { HomeProblemRecognition } from "@/app/components/public/home/HomeProblemRecognition";
-import { HomeHowStratxcelHelps } from "@/app/components/public/home/HomeHowStratxcelHelps";
+import { HomeBenefitStrip } from "@/app/components/public/home/HomeBenefitStrip";
 import { HomeWhatItHelpsWith } from "@/app/components/public/home/HomeWhatItHelpsWith";
 import { HomeSimpleSteps } from "@/app/components/public/home/HomeSimpleSteps";
 import { HomeInteractiveExplorerClean } from "@/app/components/public/home/HomeInteractiveExplorerClean";
 import { HomeBusinessTypes } from "@/app/components/public/home/HomeBusinessTypes";
-import { HomeToolsAndSafety } from "@/app/components/public/home/HomeToolsAndSafety";
+import { HomeProductEvidence } from "@/app/components/public/home/HomeProductEvidence";
 import { HomeAuditSection } from "@/app/components/public/home/HomeAuditSection";
+import { HomeTrustControl } from "@/app/components/public/home/HomeTrustControl";
 import { HomeClosingSection } from "@/app/components/public/home/HomeClosingSection";
 
 export const metadata: Metadata = {
-  title: "Stratxcel AI Agent — Your AI Business Assistant & Digital Growth Team",
+  title: "Stratxcel AI Agent — You Run Your Business. We Help With The Digital Work.",
   description:
-    "Connect the tools you already use. Your Stratxcel AI Agent helps manage and grow the digital side of your business across website, Google SEO, content, social media, and customer inquiries.",
+    "Stratxcel helps plan, create, manage and improve the digital work behind your business. Start with an evidence-based ₹999 Business Growth Audit.",
   alternates: {
     canonical: "https://www.stratxcel.in",
   },
   openGraph: {
-    title: "Stratxcel AI Agent — Your AI Business Assistant",
+    title: "Stratxcel AI Agent — Business Assistant & Growth Team",
     description:
-      "Connect the tools you already use. Stratxcel helps manage and grow the digital side of your business with human approval at every step.",
+      "Stratxcel helps plan, create, manage and improve the digital work behind your business with human approval at every step.",
     url: "https://www.stratxcel.in",
     siteName: "Stratxcel",
     images: [{ url: "/logo-v2.png", width: 641, height: 641, alt: "Stratxcel AI Agent" }],
@@ -33,40 +33,40 @@ export const metadata: Metadata = {
 export default function HomePage() {
   return (
     <div className="sx-public-theme flex min-h-screen flex-col overflow-x-hidden bg-white font-sx-sans text-slate-900 antialiased">
-      {/* Primary Light Sticky Header */}
+      {/* Primary Sticky Header */}
       <PublicHeader logoVariant="light" />
 
       <main className="flex-1">
-        {/* SECTION 01: Hero with Living SaaS Command Center */}
+        {/* 01 HERO */}
         <HomeHeroLight />
 
-        {/* SECTION 02: The Problem / Recognition */}
-        <HomeProblemRecognition />
+        {/* 02 RESULTS / BENEFITS */}
+        <HomeBenefitStrip />
 
-        {/* SECTION 03: How Stratxcel Helps */}
-        <HomeHowStratxcelHelps />
-
-        {/* SECTION 04: What Stratxcel Can Help You With */}
+        {/* 03 WHAT STRATXCEL HELPS WITH */}
         <HomeWhatItHelpsWith />
 
-        {/* SECTION 05: How It Works (Simple 4 Steps) */}
+        {/* 04 HOW IT WORKS */}
         <HomeSimpleSteps />
 
-        {/* SECTION 06: Interactive Business Explorer & Business Types */}
+        {/* 05 WHAT DO YOU NEED HELP WITH? / BUSINESS EXPLORER */}
         <HomeInteractiveExplorerClean />
         <HomeBusinessTypes />
 
-        {/* SECTION 07: Connect Your Tools & Privacy Guarantees */}
-        <HomeToolsAndSafety />
+        {/* 06 REAL PRODUCT EVIDENCE */}
+        <HomeProductEvidence />
 
-        {/* SECTION 08: ₹999 Business Growth Audit */}
+        {/* 07 ₹999 BUSINESS GROWTH AUDIT */}
         <HomeAuditSection />
 
-        {/* SECTION 09: Final Closing CTA */}
+        {/* 08 TRUST / CONTROL */}
+        <HomeTrustControl />
+
+        {/* 09 FINAL CTA */}
         <HomeClosingSection />
       </main>
 
-      {/* Public Footer */}
+      {/* Public Footer with Verified Destinations */}
       <PublicFooter logoVariant="light" />
     </div>
   );

@@ -6,11 +6,15 @@ import { trackFunnel } from "@/lib/analytics/events";
 import {
   GlobeIcon,
   SearchIcon,
+  DocumentTextIcon,
   ShareNodesIcon,
   UsersGroupIcon,
   TargetIcon,
+  HandshakeIcon,
   ChartBarIcon,
   CheckIcon,
+  LockClosedIcon,
+  ShieldCheckIcon,
   ArrowRightIcon,
 } from "../icons/FeatureIcons";
 
@@ -20,7 +24,7 @@ interface GoalOption {
   category: string;
   icon: React.ReactNode;
   conversationalSummary: string;
-  howStratxcelHelps: string[];
+  workflowSteps: { step: string; action: string; badge: string }[];
   deliverable: string;
   ctaText: string;
   ctaHref: string;
@@ -28,15 +32,16 @@ interface GoalOption {
 
 const GOALS: GoalOption[] = [
   {
-    id: "get-customers",
+    id: "get-more-customers",
     label: "Get more customers",
     category: "Customer Acquisition",
     icon: <UsersGroupIcon className="w-5 h-5 text-blue-600" />,
-    conversationalSummary: "Turn online discovery into paying clients by connecting search, clear landing pages, and instant WhatsApp inquiry follow-up.",
-    howStratxcelHelps: [
-      "Attract high-intent searchers looking for your exact services",
-      "Route new inquiries directly into a structured lead pipeline",
-      "Draft personalized, prompt follow-up replies ready for your 1-click review",
+    conversationalSummary:
+      "Turn online discovery into paying clients by connecting search, clear landing pages, and instant WhatsApp inquiry follow-up.",
+    workflowSteps: [
+      { step: "1. Capture Intent", action: "Identifies searchers and visitors looking for your core services.", badge: "Organic Discovery" },
+      { step: "2. Clean Intake", action: "Routes incoming WhatsApp & web questions into one structured pipeline.", badge: "Zero Lost Leads" },
+      { step: "3. Drafted Replies", action: "Prepares personalized response drafts ready for your 1-click review.", badge: "Human In Control" },
     ],
     deliverable: "An end-to-end client acquisition path with zero forgotten inquiries.",
     ctaText: "Explore Customer Growth Workflows",
@@ -47,88 +52,110 @@ const GOALS: GoalOption[] = [
     label: "Improve my website",
     category: "Website & UX",
     icon: <GlobeIcon className="w-5 h-5 text-blue-600" />,
-    conversationalSummary: "Transform your website into a fast, mobile-friendly storefront with crystal-clear service descriptions and customer proof.",
-    howStratxcelHelps: [
-      "Audit page speed, broken links, and mobile layout readability",
-      "Rewrite confusing headlines with clear, benefit-driven customer copy",
-      "Stage updates in a live preview sandbox for your approval before publishing",
+    conversationalSummary:
+      "Transform your website into a fast, mobile-friendly storefront with crystal-clear service descriptions and customer proof.",
+    workflowSteps: [
+      { step: "1. Health Audit", action: "Audits page speed, broken links, and mobile layout readability.", badge: "Core Web Vitals" },
+      { step: "2. Copy Polish", action: "Rewrites confusing headlines with clear, benefit-driven customer copy.", badge: "Brand Voice Grounded" },
+      { step: "3. Preview Sandbox", action: "Stages all updates in a live preview sandbox for your review before publishing.", badge: "Approval Gate" },
     ],
     deliverable: "A modern, high-converting website that loads quickly on every device.",
     ctaText: "Learn About Website Management",
     ctaHref: "/ai-website-agent",
   },
   {
-    id: "get-found-google",
+    id: "get-found-on-google",
     label: "Get found on Google",
     category: "Search Discovery",
     icon: <SearchIcon className="w-5 h-5 text-blue-600" />,
-    conversationalSummary: "Help prospective buyers in your area find your business when they search for the services you provide.",
-    howStratxcelHelps: [
-      "Identify the top 10 search phrases your local competitors are ranking for",
-      "Plan and draft helpful, keyword-grounded articles answering customer questions",
-      "Optimize on-page titles, meta tags, and internal link structure",
+    conversationalSummary:
+      "Help prospective buyers find your business when they search for the exact services you provide.",
+    workflowSteps: [
+      { step: "1. Competitor Gap", action: "Finds the top search keywords local competitors rank for that you're missing.", badge: "SERP Intelligence" },
+      { step: "2. Structured Content", action: "Drafts comprehensive, helpful articles answering real customer queries.", badge: "Zero False Claims" },
+      { step: "3. Indexation Guard", action: "Submits clean sitemaps to Google Search Console and monitors rankings.", badge: "Compound Discovery" },
     ],
     deliverable: "Higher visibility and steady organic discovery on Google search.",
     ctaText: "Learn About Google SEO Help",
     ctaHref: "/ai-seo-agent",
   },
   {
-    id: "grow-social",
+    id: "grow-on-social-media",
     label: "Grow on social media",
     category: "Social Presence",
     icon: <ShareNodesIcon className="w-5 h-5 text-blue-600" />,
-    conversationalSummary: "Build trust and brand awareness with consistent, professional weekly posts across LinkedIn, Instagram, and Facebook.",
-    howStratxcelHelps: [
-      "Create a planned 7-day multi-channel calendar every Monday",
-      "Write platform-native captions tailored to each network's style",
-      "Stage clean images and carousel outlines for your quick review",
+    conversationalSummary:
+      "Build trust and brand awareness with consistent, professional weekly posts across LinkedIn, Instagram, and Facebook.",
+    workflowSteps: [
+      { step: "1. Weekly Calendar", action: "Generates a complete multi-channel content calendar every Monday morning.", badge: "Consistency Score" },
+      { step: "2. Native Captions", action: "Writes platform-tailored captions and prepares clean visual cards.", badge: "Multi-Channel" },
+      { step: "3. Sign-off Queue", action: "You review and approve with one tap; posts publish on schedule.", badge: "Zero Gimmicks" },
     ],
     deliverable: "Consistent weekly presence without spending hours writing posts.",
     ctaText: "Learn About Social Autopilot",
     ctaHref: "/ai-social-media-agent",
   },
   {
-    id: "stay-in-touch",
-    label: "Stay in touch with customers",
+    id: "create-better-content",
+    label: "Create better content",
+    category: "Content & Copy",
+    icon: <DocumentTextIcon className="w-5 h-5 text-blue-600" />,
+    conversationalSummary:
+      "Draft helpful articles, service guides, customer emails, and FAQs that reflect your genuine expertise.",
+    workflowSteps: [
+      { step: "1. Brand Grounding", action: "Aligns every draft with your Brand Brain guidelines and factual service rules.", badge: "Verified Grounding" },
+      { step: "2. High-Utility Copy", action: "Produces well-structured drafts focused on solving customer problems.", badge: "Original Writing" },
+      { step: "3. Human Edit & Sign", action: "Stages drafts in your editor where you can tweak or approve in seconds.", badge: "Full Control" },
+    ],
+    deliverable: "Compelling, accurate business copy without expensive copywriter fees.",
+    ctaText: "Learn About Content Drafting",
+    ctaHref: "/ai-content-agent",
+  },
+  {
+    id: "follow-up-with-customers",
+    label: "Follow up with customers",
     category: "Lead Follow-up",
     icon: <UsersGroupIcon className="w-5 h-5 text-blue-600" />,
-    conversationalSummary: "Keep track of every lead and customer inquiry from WhatsApp and web forms so no deal falls through the cracks.",
-    howStratxcelHelps: [
-      "Consolidate incoming questions into one unified, organized inbox",
-      "Normalize phone numbers and record client interaction history",
-      "Prepare smart follow-up reminders and draft responses for busy days",
+    conversationalSummary:
+      "Keep track of every lead and customer inquiry from WhatsApp and web forms so no deal falls through the cracks.",
+    workflowSteps: [
+      { step: "1. Unified Inbox", action: "Consolidates incoming WhatsApp, form, and email inquiries in one place.", badge: "Centralized CRM" },
+      { step: "2. Contact Normalization", action: "Cleans phone numbers, removes duplicates, and records interaction history.", badge: "Clean Records" },
+      { step: "3. Smart Follow-ups", action: "Alerts you to pending questions and prepares contextual draft replies.", badge: "Sub-2 Min Speed" },
     ],
     deliverable: "Faster reply times and higher conversion from initial inquiries.",
     ctaText: "Learn About Inquiries & CRM",
     ctaHref: "/ai-crm-agent",
   },
   {
-    id: "improve-marketing",
-    label: "Improve my marketing",
-    category: "Marketing Strategy",
-    icon: <TargetIcon className="w-5 h-5 text-blue-600" />,
-    conversationalSummary: "Discover which marketing channels actually produce results and stop wasting budget on underperforming campaigns.",
-    howStratxcelHelps: [
-      "Plan focused promotional campaigns for your key business seasons",
-      "Draft varied ad copy and messaging angles to test customer interest",
-      "Analyze channel performance so you invest only where it pays off",
+    id: "improve-sales",
+    label: "Improve sales",
+    category: "Closing Customers",
+    icon: <HandshakeIcon className="w-5 h-5 text-blue-600" />,
+    conversationalSummary:
+      "Turn interested prospects into paying clients with structured quotes, clear proposals, and timely reminders.",
+    workflowSteps: [
+      { step: "1. Proposal Prep", action: "Structures customized proposals with clear deliverables and pricing breakdown.", badge: "Professional Clarity" },
+      { step: "2. Milestone Reminders", action: "Sends automated reminders to your team before client follow-ups turn cold.", badge: "Pipeline Cadence" },
+      { step: "3. Won/Lost Analysis", action: "Identifies why deals convert and suggests ways to improve win rates.", badge: "Revenue Intelligence" },
     ],
-    deliverable: "Clear marketing direction focused on your highest-return opportunities.",
-    ctaText: "Learn About Marketing Assistance",
-    ctaHref: "/ai-marketing-agent",
+    deliverable: "Organized proposal workflows that help you close clients with confidence.",
+    ctaText: "Learn About Sales Assistance",
+    ctaHref: "/ai-business-automation",
   },
   {
-    id: "understand-business",
+    id: "understand-my-business",
     label: "Understand my business",
     category: "Insights & Direction",
     icon: <ChartBarIcon className="w-5 h-5 text-blue-600" />,
-    conversationalSummary: "Get a clear, jargon-free executive overview of your digital performance and know exactly what to do next.",
-    howStratxcelHelps: [
-      "Synthesize traffic, leads, social engagement, and sales trends",
-      "Deliver a 1-page weekly summary written in plain business English",
-      "Provide a prioritized 30/60/90-day growth roadmap for your business",
+    conversationalSummary:
+      "Get a clear, jargon-free executive overview of your digital performance and know exactly what to do next.",
+    workflowSteps: [
+      { step: "1. Data Synthesis", action: "Connects traffic, search visibility, social reach, and lead conversions.", badge: "Unified Attribution" },
+      { step: "2. Plain Briefing", action: "Delivers a 1-page weekly summary written in clear, simple business language.", badge: "Weekly Executive Digest" },
+      { step: "3. Prioritized Actions", action: "Highlights the top 3 highest-ROI moves for your business this month.", badge: "30/60/90 Roadmap" },
     ],
-    deliverable: "Complete clarity on what is driving growth and where to focus.",
+    deliverable: "Complete clarity on what is driving growth and where to focus next.",
     ctaText: "Start With Growth Audit — ₹999",
     ctaHref: "/audit",
   },
@@ -149,19 +176,19 @@ export function HomeInteractiveExplorerClean() {
         {/* Header */}
         <div className="mx-auto max-w-3xl text-center">
           <p className="font-sx-mono text-xs font-semibold uppercase tracking-[0.2em] text-blue-600">
-            BUSINESS GOAL EXPLORER
+            INTERACTIVE DISCOVERY
           </p>
           <h2 className="mt-3 font-sx-sans text-[clamp(1.8rem,3.6vw+0.4rem,2.8rem)] font-bold tracking-tight text-slate-900 leading-tight">
             What would you like help with?
           </h2>
           <p className="mt-4 font-sx-sans text-base leading-relaxed text-slate-600 sm:text-lg">
-            Choose your current priority to see how Stratxcel handles it for your business.
+            Select your current business priority to see how Stratxcel handles the workflow for you.
           </p>
         </div>
 
         {/* 2-Column Explorer Workspace */}
         <div className="mt-14 grid gap-8 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] lg:gap-10">
-          {/* Left: Goals List */}
+          {/* Left: 8 Goal Options */}
           <div role="tablist" aria-label="Business Goals" className="flex flex-col gap-2">
             {GOALS.map((goal) => {
               const isSelected = goal.id === activeId;
@@ -174,9 +201,9 @@ export function HomeInteractiveExplorerClean() {
                   aria-selected={isSelected}
                   aria-controls={`goal-panel-${goal.id}`}
                   onClick={() => handleSelect(goal.id)}
-                  className={`flex items-center justify-between rounded-xl border p-4 text-left transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600 ${
+                  className={`flex items-center justify-between rounded-xl border p-3.5 text-left transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600 ${
                     isSelected
-                      ? "border-blue-600 bg-blue-50/50 shadow-xs"
+                      ? "border-blue-600 bg-blue-50/70 shadow-xs"
                       : "border-slate-200 bg-slate-50/40 hover:bg-slate-50 hover:border-slate-300"
                   }`}
                 >
@@ -201,7 +228,7 @@ export function HomeInteractiveExplorerClean() {
             })}
           </div>
 
-          {/* Right: Conversational Explanation Card */}
+          {/* Right: Dynamic Product Demonstration Panel */}
           <div
             id={`goal-panel-${activeGoal.id}`}
             role="tabpanel"
@@ -213,8 +240,9 @@ export function HomeInteractiveExplorerClean() {
                 <span className="font-sx-mono text-[10.5px] font-bold uppercase tracking-wider text-blue-600">
                   {activeGoal.category}
                 </span>
-                <span className="rounded-full bg-white border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-700">
-                  Governed Execution
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-white border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-700">
+                  <ShieldCheckIcon className="w-3.5 h-3.5 text-blue-600" />
+                  <span>Governed Execution</span>
                 </span>
               </div>
 
@@ -226,27 +254,37 @@ export function HomeInteractiveExplorerClean() {
                 {activeGoal.conversationalSummary}
               </p>
 
-              {/* How Stratxcel helps checklist */}
-              <div className="mt-6 space-y-2.5 border-t border-slate-200/60 pt-5">
+              {/* Dynamic 3-Step Demonstration */}
+              <div className="mt-6 space-y-3 border-t border-slate-200/60 pt-5">
                 <p className="font-sx-mono text-[10.5px] font-bold uppercase tracking-wider text-slate-500">
-                  How Stratxcel handles this for you:
+                  How Stratxcel executes this workflow:
                 </p>
-                {activeGoal.howStratxcelHelps.map((point) => (
-                  <div key={point} className="flex items-start gap-2.5 text-xs sm:text-sm text-slate-700">
-                    <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 font-bold">
-                      <CheckIcon className="w-3 h-3 text-emerald-700" />
-                    </span>
-                    <span>{point}</span>
+                {activeGoal.workflowSteps.map((ws) => (
+                  <div
+                    key={ws.step}
+                    className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-2xs"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-sx-sans text-xs font-bold text-slate-900">
+                        {ws.step}
+                      </span>
+                      <span className="font-sx-mono text-[9px] font-bold uppercase text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-100">
+                        {ws.badge}
+                      </span>
+                    </div>
+                    <p className="mt-1.5 font-sx-sans text-xs text-slate-600 leading-relaxed">
+                      {ws.action}
+                    </p>
                   </div>
                 ))}
               </div>
 
-              {/* Final deliverable note */}
-              <div className="mt-6 rounded-xl bg-white border border-slate-200 p-4">
-                <span className="block font-sx-mono text-[9.5px] font-bold uppercase tracking-wider text-slate-400">
+              {/* What you receive banner */}
+              <div className="mt-6 rounded-xl bg-blue-50/60 border border-blue-100 p-4">
+                <span className="block font-sx-mono text-[9.5px] font-bold uppercase tracking-wider text-blue-700">
                   What you receive
                 </span>
-                <p className="mt-1 font-sx-sans text-xs font-semibold text-slate-800">
+                <p className="mt-1 font-sx-sans text-xs font-semibold text-slate-900">
                   {activeGoal.deliverable}
                 </p>
               </div>

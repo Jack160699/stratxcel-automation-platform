@@ -1,10 +1,10 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Image from "next/image";
-import Link from "next/link";
 import { OFFICIAL_LOGO } from "@/lib/brand";
 import { TrackedCtaLink } from "@/app/components/public/commercial/TrackedCtaLink";
+import { FluidRibbonsCanvas, OutcomeType } from "@/app/components/public/motion/FluidRibbonsCanvas";
 import {
   GlobeIcon,
   SearchIcon,
@@ -12,11 +12,21 @@ import {
   ShareNodesIcon,
   UsersGroupIcon,
   ChartBarIcon,
-  ShieldCheckIcon,
   LockClosedIcon,
+  ShieldCheckIcon,
   CheckIcon,
   ArrowRightIcon,
 } from "../icons/FeatureIcons";
+
+const OUTCOMES: { word: OutcomeType; subtext: string; color: string }[] = [
+  { word: "TIME", subtext: "Automate repetitive daily digital routines", color: "from-blue-600 to-indigo-600" },
+  { word: "COST", subtext: "Replace fragmented subscriptions and retainers", color: "from-blue-600 to-cyan-600" },
+  { word: "QUALITY", subtext: "Grounded strictly in verified business truth", color: "from-blue-700 to-sky-600" },
+  { word: "CUSTOMERS", subtext: "Capture organic search intent and inbound inquiries", color: "from-blue-600 to-blue-800" },
+  { word: "FOLLOW-UPS", subtext: "Zero missed WhatsApp chats or web leads", color: "from-indigo-600 to-blue-600" },
+  { word: "SALES", subtext: "Turn interest into structured proposals faster", color: "from-blue-600 to-teal-600" },
+  { word: "GROWTH", subtext: "Consistent compounding digital presence", color: "from-blue-600 to-sky-500" },
+];
 
 interface CapabilityView {
   id: string;
@@ -38,7 +48,7 @@ const CAPABILITY_VIEWS: CapabilityView[] = [
     icon: <GlobeIcon className="w-4 h-4 text-blue-600" />,
     headline: "Fast, high-converting pages updated without developers.",
     description:
-      "Keeps your mobile layouts sharp, fixes broken links, updates service pricing, and ensures 95+ Core Web Vitals automatically.",
+      "Keeps your mobile layouts sharp, fixes broken links, updates service pricing, and ensures fast Core Web Vitals automatically.",
     keyPoints: [
       "Continuous mobile layout & responsive audit",
       "Instant copy and pricing updates staged for approval",
@@ -58,7 +68,7 @@ const CAPABILITY_VIEWS: CapabilityView[] = [
     icon: <SearchIcon className="w-4 h-4 text-blue-600" />,
     headline: "Get discovered by local and search customers on Google.",
     description:
-      "Analyzes top local and national competitor keyword gaps, audits indexation status, and writes targeted search content to capture real customer demand.",
+      "Analyzes top local competitor keyword gaps, audits indexation status, and writes targeted search content to capture real customer demand.",
     keyPoints: [
       "Top 10 competitor keyword gap detection",
       "Google Search Console sitemap & indexation tracking",
@@ -154,25 +164,42 @@ const CAPABILITY_VIEWS: CapabilityView[] = [
 ];
 
 export function HomeHeroLight() {
+  const [outcomeIndex, setOutcomeIndex] = useState(0);
+  const [isTransitioning, setIsTransitioning] = useState(false);
   const [activeId, setActiveId] = useState<string>("website");
+
+  const currentOutcome = OUTCOMES[outcomeIndex];
   const active = CAPABILITY_VIEWS.find((v) => v.id === activeId) || CAPABILITY_VIEWS[0];
 
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setIsTransitioning(true);
+      setTimeout(() => {
+        setOutcomeIndex((prev) => (prev + 1) % OUTCOMES.length);
+        setIsTransitioning(false);
+      }, 350);
+    }, 3200);
+
+    return () => clearInterval(interval);
+  }, []);
 
   return (
     <section
       id="hero"
       data-home-section="hero"
-      className="relative overflow-hidden bg-gradient-to-b from-white via-slate-50/50 to-white pt-24 pb-20 sm:pt-32 sm:pb-28"
+      className="relative overflow-hidden bg-white pt-20 pb-16 sm:pt-28 sm:pb-24"
     >
-      {/* Background Ambient High-End Glow */}
+      {/* Ambient Fluid Ribbons Canvas */}
+      <FluidRibbonsCanvas activeOutcome={currentOutcome.word} />
+
+      {/* Gentle Radial Overlay */}
       <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
-        <div className="absolute -top-[20%] left-1/2 h-[60vw] w-[80vw] -translate-x-1/2 rounded-full bg-[radial-gradient(ellipse_at_center,rgba(37,99,235,0.08),transparent_70%)] blur-3xl" />
-        <div className="absolute top-[30%] -right-[10%] h-[40vw] w-[40vw] rounded-full bg-[radial-gradient(circle,rgba(58,160,255,0.05),transparent_70%)] blur-2xl" />
-        <div className="absolute inset-0 bg-[linear-gradient(to_right,#00000005_1px,transparent_1px),linear-gradient(to_bottom,#00000005_1px,transparent_1px)] bg-[size:3.5rem_3.5rem] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_0%,#000_70%,transparent_100%)]" />
+        <div className="absolute -top-[10%] left-1/2 h-[50vw] w-[70vw] -translate-x-1/2 rounded-full bg-[radial-gradient(ellipse_at_center,rgba(37,99,235,0.06),transparent_70%)] blur-3xl" />
+        <div className="absolute inset-0 bg-[linear-gradient(to_right,#00000003_1px,transparent_1px),linear-gradient(to_bottom,#00000003_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_0%,#000_70%,transparent_100%)]" />
       </div>
 
       <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        {/* Main Headline & Strategic Value Proposition */}
+        {/* Main Headline & Outcome Cycling */}
         <div className="mx-auto max-w-4xl text-center">
           {/* Eyebrow Badge */}
           <div className="inline-flex items-center gap-2 rounded-full border border-blue-600/20 bg-blue-50/90 px-4 py-1.5 text-blue-700 shadow-xs backdrop-blur-sm">
@@ -181,30 +208,38 @@ export function HomeHeroLight() {
               <span className="relative inline-flex h-2 w-2 rounded-full bg-blue-600" />
             </span>
             <span className="font-sx-mono text-xs font-bold uppercase tracking-[0.18em]">
-              AUTONOMOUS WORKFORCE FOR MODERN COMMERCE
+              STRATXCEL AI AGENT
             </span>
           </div>
 
-          {/* Primary H1 */}
-          <h1 className="mt-6 font-sx-sans text-[clamp(2.3rem,5.6vw,4.4rem)] font-bold tracking-tight text-slate-900 leading-[1.1]">
-            You didn’t start your business to spend your day{" "}
-            <span className="bg-gradient-to-r from-blue-600 to-sky-600 bg-clip-text text-transparent">
-              managing everything online.
-            </span>
-          </h1>
-
-          {/* Core Statement */}
-          <div className="mt-4 font-sx-sans text-xl sm:text-2xl font-semibold text-blue-600">
-            You need the work to get done.
+          {/* Primary Fixed Hero Sentences with Dynamic Outcome Word */}
+          <div className="mt-7">
+            <p className="font-sx-sans text-[clamp(1.8rem,4vw,3.2rem)] font-bold tracking-tight text-slate-900 leading-tight">
+              You run your business.
+            </p>
+            <div className="mt-2 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 font-sx-sans text-[clamp(1.8rem,4vw,3.2rem)] font-bold tracking-tight text-slate-900 leading-tight">
+              <span>We help you get more on</span>
+              <span
+                className={`inline-block min-w-[5ch] text-left transition-all duration-300 ${
+                  isTransitioning
+                    ? "opacity-0 -translate-y-2 blur-xs scale-95"
+                    : "opacity-100 translate-y-0 blur-none scale-100"
+                }`}
+              >
+                <span className="bg-gradient-to-r from-blue-600 via-blue-700 to-indigo-700 bg-clip-text text-transparent underline decoration-blue-400/40 decoration-4 underline-offset-8">
+                  {currentOutcome.word}
+                </span>
+              </span>
+            </div>
           </div>
 
-          {/* Clean Subhead */}
-          <p className="mx-auto mt-4 max-w-2xl font-sx-sans text-base sm:text-lg leading-relaxed text-slate-600">
-            Meet <strong>Stratxcel</strong>. Your AI Business Agent that autonomously captures leads, resolves client inquiries, automates schedules, and executes digital tasks 24/7.
+          {/* Supporting Core Message */}
+          <p className="mx-auto mt-6 max-w-2xl font-sx-sans text-base sm:text-lg leading-relaxed text-slate-600 font-medium">
+            Stratxcel helps plan, create, manage and improve the digital work behind your business.
           </p>
 
-          {/* Dual CTAs */}
-          <div className="mt-8 flex flex-col items-center justify-center gap-3.5 sm:flex-row sm:gap-4">
+          {/* Primary and Secondary Hero CTAs */}
+          <div className="mt-9 flex flex-col items-center justify-center gap-3.5 sm:flex-row sm:gap-4">
             <TrackedCtaLink
               href="/audit"
               event="audit_cta_click"
@@ -212,7 +247,7 @@ export function HomeHeroLight() {
               plan="audit"
               className="inline-flex min-h-12 w-full items-center justify-center rounded-xl bg-blue-600 px-8 py-3.5 font-sx-sans text-sm font-bold text-white shadow-md transition-all hover:bg-blue-700 hover:shadow-lg sm:w-auto"
             >
-              <span>GET YOUR BUSINESS AUDIT — ₹999</span>
+              <span>START MY ₹999 BUSINESS AUDIT</span>
               <ArrowRightIcon className="ml-2 w-4 h-4" />
             </TrackedCtaLink>
 
@@ -224,49 +259,18 @@ export function HomeHeroLight() {
             </a>
           </div>
 
-          <p className="mt-3.5 font-sx-sans text-xs text-slate-500">
+          <p className="mt-3.5 font-sx-sans text-xs text-slate-500 font-medium">
             ₹999 one-time · GST included · No automatic subscription · Complete 30/60/90-day roadmap
           </p>
-
-          {/* Live Agent Telemetry Strip */}
-          <div className="mt-10 mx-auto max-w-3xl rounded-xl border border-slate-200 bg-white/80 p-4 shadow-sm backdrop-blur-md">
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 text-left">
-              <div className="border-b sm:border-b-0 sm:border-r border-slate-100 pb-3 sm:pb-0 sm:pr-4">
-                <p className="font-sx-mono text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                  Agent Status
-                </p>
-                <p className="mt-1 flex items-center gap-2 font-sx-sans text-sm font-bold text-slate-900">
-                  <span className="h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_8px_#10b981]" />
-                  Active &amp; Executing
-                </p>
-              </div>
-              <div className="border-b sm:border-b-0 sm:border-r border-slate-100 pb-3 sm:pb-0 sm:px-4">
-                <p className="font-sx-mono text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                  Lead Response Time
-                </p>
-                <p className="mt-1 font-sx-sans text-sm font-bold text-slate-900">
-                  &lt; 3.8 Seconds
-                </p>
-              </div>
-              <div className="sm:pl-4">
-                <p className="font-sx-mono text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                  Digital Hours Saved
-                </p>
-                <p className="mt-1 font-sx-sans text-sm font-bold text-slate-900">
-                  28.4 hrs / wk
-                </p>
-              </div>
-            </div>
-          </div>
         </div>
 
         {/* Living SaaS Workstation Window */}
         <div className="mt-14 sm:mt-18">
-          <div className="relative mx-auto max-w-5xl rounded-2xl border border-slate-200/90 bg-white shadow-2xl shadow-slate-200/70 overflow-hidden">
-            {/* macOS Chrome Header Bar */}
+          <div className="relative mx-auto max-w-5xl rounded-2xl border border-slate-200/90 bg-white shadow-2xl shadow-slate-200/60 overflow-hidden">
+            {/* Window Chrome Header Bar */}
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/80 bg-slate-50/90 px-4 py-3 sm:px-6">
               <div className="flex items-center gap-2">
-                <div className="flex gap-1.5">
+                <div className="flex gap-1.5" aria-hidden="true">
                   <span className="h-3 w-3 rounded-full bg-slate-300" />
                   <span className="h-3 w-3 rounded-full bg-slate-300" />
                   <span className="h-3 w-3 rounded-full bg-slate-300" />
@@ -423,8 +427,6 @@ export function HomeHeroLight() {
           </div>
         </div>
       </div>
-
-
     </section>
   );
 }

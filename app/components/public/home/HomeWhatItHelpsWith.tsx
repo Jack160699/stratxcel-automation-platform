@@ -17,19 +17,19 @@ import {
 const CAPABILITIES = [
   {
     id: "website",
-    title: "Your Website",
-    category: "Website & Pages",
+    title: "Website",
+    category: "Site & Mobile",
     headline: "Keep your website updated and working properly.",
-    desc: "Update product copy, fix formatting, add customer reviews, and ensure your site loads fast on mobile phones.",
+    desc: "Update product copy, fix formatting, add customer reviews, and ensure your site loads quickly on mobile phones.",
     icon: <GlobeIcon className="w-5 h-5 text-blue-600" />,
     link: "/ai-website-agent",
     linkText: "Learn about website help",
   },
   {
     id: "seo",
-    title: "Google Search",
+    title: "SEO / Google",
     category: "Search & Discovery",
-    headline: "Help more people find your business on Google.",
+    headline: "Help more people find your business.",
     desc: "Discover what keywords prospective clients search for, analyze nearby competitors, and produce helpful search-friendly articles.",
     icon: <SearchIcon className="w-5 h-5 text-blue-600" />,
     link: "/ai-seo-agent",
@@ -37,9 +37,9 @@ const CAPABILITIES = [
   },
   {
     id: "content",
-    title: "Content & Copy",
-    category: "Writing & Briefs",
-    headline: "Plan and create useful content for your audience.",
+    title: "Content",
+    category: "Writing & Copy",
+    headline: "Create useful content consistently.",
     desc: "Draft articles, service descriptions, email newsletters, and customer FAQs that follow your tone with zero fabricated claims.",
     icon: <DocumentTextIcon className="w-5 h-5 text-blue-600" />,
     link: "/ai-content-agent",
@@ -49,17 +49,17 @@ const CAPABILITIES = [
     id: "social",
     title: "Social Media",
     category: "Social Presence",
-    headline: "Keep your social presence active and consistent.",
+    headline: "Stay visible where your customers are.",
     desc: "Prepare a weekly calendar across LinkedIn, Instagram, and Facebook with platform-tailored captions and clean visuals.",
     icon: <ShareNodesIcon className="w-5 h-5 text-blue-600" />,
     link: "/ai-social-media-agent",
     linkText: "Learn about social autopilot",
   },
   {
-    id: "crm",
-    title: "Customer Inquiries",
-    category: "Leads & Follow-ups",
-    headline: "Keep track of leads and follow-ups.",
+    id: "customers",
+    title: "Customers",
+    category: "Leads & Enquiries",
+    headline: "Keep enquiries and follow-ups organized.",
     desc: "Capture questions arriving from WhatsApp and web forms into one clean pipeline, with prepared reply drafts ready for you.",
     icon: <UsersGroupIcon className="w-5 h-5 text-blue-600" />,
     link: "/ai-crm-agent",
@@ -69,7 +69,7 @@ const CAPABILITIES = [
     id: "marketing",
     title: "Marketing",
     category: "Reach & Campaigns",
-    headline: "Find better ways to reach potential customers.",
+    headline: "Reach the right people.",
     desc: "Plan campaign ideas, test marketing angles, and determine which channels bring the most interested buyers for your budget.",
     icon: <TargetIcon className="w-5 h-5 text-blue-600" />,
     link: "/ai-marketing-agent",
@@ -77,9 +77,9 @@ const CAPABILITIES = [
   },
   {
     id: "sales",
-    title: "Sales & Proposals",
+    title: "Sales",
     category: "Closing Customers",
-    headline: "Help turn interested people into customers.",
+    headline: "Turn interest into customers.",
     desc: "Structure customized quotes, prepare clear service proposals, and send timely follow-ups before leads cool down.",
     icon: <HandshakeIcon className="w-5 h-5 text-blue-600" />,
     link: "/ai-business-automation",
@@ -87,13 +87,13 @@ const CAPABILITIES = [
   },
   {
     id: "reporting",
-    title: "Weekly Reporting",
+    title: "Reporting",
     category: "Insights & Direction",
-    headline: "See what is working and where you should focus next.",
+    headline: "Know what is working.",
     desc: "Receive a simple 1-page weekly summary showing traffic, new inquiries, customer trends, and suggested priorities.",
     icon: <ChartBarIcon className="w-5 h-5 text-blue-600" />,
     link: "/ai-business-agent",
-    linkText: "Learn about business insights",
+    linkText: "Learn about business reporting",
   },
 ];
 
@@ -104,13 +104,13 @@ export function HomeWhatItHelpsWith() {
         {/* Section Header */}
         <div className="mx-auto max-w-3xl text-center">
           <p className="font-sx-mono text-xs font-semibold uppercase tracking-[0.2em] text-blue-600">
-            CAPABILITIES
+            WHAT STRATXCEL HELPS WITH
           </p>
           <h2 className="mt-3 font-sx-sans text-[clamp(1.8rem,3.6vw+0.4rem,2.8rem)] font-bold tracking-tight text-slate-900 leading-tight">
-            What Stratxcel helps you handle.
+            The digital work behind your business, handled.
           </h2>
           <p className="mt-4 font-sx-sans text-base leading-relaxed text-slate-600 sm:text-lg">
-            Practical help across the eight digital areas that matter most for growing a modern business.
+            Practical help across the eight areas that matter most for running and growing your business online.
           </p>
         </div>
 
@@ -119,7 +119,7 @@ export function HomeWhatItHelpsWith() {
           {CAPABILITIES.map((cap) => (
             <div
               key={cap.id}
-              className="flex flex-col justify-between rounded-2xl border border-slate-200 bg-slate-50/40 p-6 transition-all hover:border-blue-200 hover:bg-white hover:shadow-md"
+              className="flex flex-col justify-between rounded-2xl border border-slate-200 bg-slate-50/50 p-6 transition-all hover:border-blue-200 hover:bg-white hover:shadow-md"
             >
               <div>
                 <div className="flex items-center justify-between">

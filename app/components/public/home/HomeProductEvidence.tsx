@@ -1,130 +1,242 @@
 "use client";
 
+import React, { useState } from "react";
 import Link from "next/link";
-import { PRODUCT_AVAILABILITY_LABELS } from "@/lib/product-suite/taxonomy";
+import {
+  LockClosedIcon,
+  ShieldCheckIcon,
+  CheckIcon,
+  ChartBarIcon,
+  DocumentTextIcon,
+  ShareNodesIcon,
+  UsersGroupIcon,
+  ArrowRightIcon,
+} from "../icons/FeatureIcons";
 
-const REAL_EVIDENCE_POINTS = [
-  {
-    title: "Grounding in Brand Brain",
-    badge: "Active in Product",
-    desc: "Every agent artifact — from search articles to WhatsApp replies — is grounded directly in verified Brand Brain positioning rules. Hallucinations are actively filtered by policy gates.",
-  },
-  {
-    title: "Multi-Department Execution DAG",
-    badge: "Verified Engine",
-    desc: "Workflows execute across specialized departments (Strategy, Research, Creative, SEO, Social, CRM, Sales) over a structured Directed Acyclic Graph with explicit quality gates.",
-  },
-  {
-    title: "Governed Mutation Controls",
-    badge: "Security Standard",
-    desc: "Agents cannot unilaterally commit high-stake mutations (such as live publishing, CRM deletions, or ad spend changes) without passing human approval checkpoints.",
-  },
-  {
-    title: "Isolated Tenant Architecture",
-    badge: "Production Reality",
-    desc: "Tenant isolation and Row Level Security (RLS) protect customer data from cross-tenant leakage. No client data is pooled or fed into shared foundational model weights.",
-  },
-];
+interface ProductScreen {
+  id: string;
+  title: string;
+  badge: "LIVE" | "BETA" | "STAFF-ASSISTED" | "COMING SOON";
+  badgeClass: string;
+  description: string;
+  interfaceType: string;
+  previewDetails: {
+    heading: string;
+    subheading: string;
+    items: { label: string; detail: string; status: string }[];
+    governanceNote: string;
+  };
+}
 
-const AVAILABILITY_LEVELS = [
+const PRODUCT_SCREENS: ProductScreen[] = [
   {
-    label: PRODUCT_AVAILABILITY_LABELS.live,
-    meaning: "Built, tested, running, and accessible for direct business use today.",
-    badgeClass: "bg-emerald-500/10 text-emerald-600 border-emerald-500/20",
+    id: "audit-screen",
+    title: "Growth Audit Dashboard",
+    badge: "LIVE",
+    badgeClass: "bg-emerald-50 text-emerald-700 border-emerald-200",
+    description: "The initial diagnostic screen delivered after intake, highlighting gaps and prioritized 30/60/90-day action items.",
+    interfaceType: "Diagnostic Report View",
+    previewDetails: {
+      heading: "Business Growth Diagnostic Roadmap",
+      subheading: "Delivered directly into your private workspace",
+      items: [
+        { label: "Website Speed & Mobile Layout", detail: "Scored across Core Web Vitals & mobile viewport responsiveness", status: "Audit Complete" },
+        { label: "Google Competitor Keyword Gap", detail: "Analyzes top 10 search phrases competitors capture in your area", status: "8 Opportunities Found" },
+        { label: "Inbound Lead Path Review", detail: "Checks WhatsApp & web form response speed and contact hygiene", status: "Roadmap Formatted" },
+      ],
+      governanceNote: "One-time report. No automated subscription or unauthorized data modification.",
+    },
   },
   {
-    label: PRODUCT_AVAILABILITY_LABELS.beta,
-    meaning: "Working in production, actively refined with early customer feedback.",
-    badgeClass: "bg-sky-500/10 text-sky-600 border-sky-500/20",
+    id: "task-queue",
+    title: "Agent Task Sign-Off Queue",
+    badge: "LIVE",
+    badgeClass: "bg-emerald-50 text-emerald-700 border-emerald-200",
+    description: "Every drafted article, social post, and landing page copy update waits here for your 1-click review.",
+    interfaceType: "Human Approval Sandbox",
+    previewDetails: {
+      heading: "Staged Actions Awaiting Your Confirmation",
+      subheading: "Nothing is published to live channels without human sign-off",
+      items: [
+        { label: "SEO Article Draft", detail: "'How to Choose the Right Commercial Architecture Partner'", status: "Staged (Review)" },
+        { label: "LinkedIn Weekly Carousel", detail: "3-slide visual summary explaining recent service updates", status: "Awaiting 1-Click Approval" },
+        { label: "Pricing Page Copy Tweak", detail: "Clearer service breakdown staged on preview subdomain", status: "Pending Confirmation" },
+      ],
+      governanceNote: "All mutations require explicit tenant owner confirmation.",
+    },
   },
   {
-    label: PRODUCT_AVAILABILITY_LABELS.assisted,
-    meaning: "Our team operates the workflow alongside you while automation matures.",
-    badgeClass: "bg-purple-500/10 text-purple-600 border-purple-500/20",
+    id: "brand-brain",
+    title: "Brand Brain & Knowledge Rules",
+    badge: "LIVE",
+    badgeClass: "bg-emerald-50 text-emerald-700 border-emerald-200",
+    description: "Your business truth repository. Enforces factual service rules, pricing limits, and brand tone across all outputs.",
+    interfaceType: "Grounding Engine",
+    previewDetails: {
+      heading: "Verified Brand & Business Guardrails",
+      subheading: "Zero hallucination policy gates applied across all agent generations",
+      items: [
+        { label: "Service Catalog Grounding", detail: "Strict list of offered services; out-of-scope requests rejected", status: "Enforced" },
+        { label: "Zero False Claims Policy", detail: "Prohibits unverified statistics, fake awards, or exaggerated promises", status: "Active Guard" },
+        { label: "Tone & Voice Settings", detail: "Calm, professional, helpful tone calibrated to Indian SMB commerce", status: "Calibrated" },
+      ],
+      governanceNote: "Customer data is never used to train shared public foundation models.",
+    },
   },
   {
-    label: PRODUCT_AVAILABILITY_LABELS["coming-later"],
-    meaning: "On the product roadmap. Not built yet, and we explicitly declare it.",
-    badgeClass: "bg-sx-surface-2 text-sx-text-subtle border-sx-border",
+    id: "weekly-briefing",
+    title: "Weekly Executive Digest",
+    badge: "BETA",
+    badgeClass: "bg-blue-50 text-blue-700 border-blue-200",
+    description: "A 1-page Monday morning digest synthesizing web visits, inquiries, and next 7-day priorities in plain English.",
+    interfaceType: "Executive Intelligence",
+    previewDetails: {
+      heading: "Monday Morning Executive Briefing",
+      subheading: "Actionable summary with zero confusing vanity metrics",
+      items: [
+        { label: "Search & Visibility Trends", detail: "Which search terms brought new visits this week", status: "Synthesized" },
+        { label: "Inquiry Ingestion Summary", detail: "Total inquiries routed through WhatsApp and website forms", status: "Organized" },
+        { label: "Top 3 Recommended Moves", detail: "Highest-leverage digital tasks suggested for the coming week", status: "Ready for Sign-off" },
+      ],
+      governanceNote: "Available in production with active customer feedback iteration.",
+    },
   },
 ];
 
 export function HomeProductEvidence() {
+  const [activeTab, setActiveTab] = useState<string>(PRODUCT_SCREENS[0].id);
+  const activeScreen = PRODUCT_SCREENS.find((s) => s.id === activeTab) || PRODUCT_SCREENS[0];
+
   return (
-    <section
-      id="proof"
-      data-home-section="product-evidence"
-      className="relative border-t border-sx-border bg-sx-bg py-20 sm:py-28"
-    >
+    <section id="proof" className="border-t border-slate-200/80 bg-white py-20 sm:py-28">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         {/* Header */}
         <div className="mx-auto max-w-3xl text-center">
-          <p className="font-sx-mono text-[11px] font-semibold uppercase tracking-[0.24em] text-sx-accent">
-            VERIFIED PRODUCT PROOF
+          <p className="font-sx-mono text-xs font-semibold uppercase tracking-[0.2em] text-blue-600">
+            REAL PRODUCT EVIDENCE
           </p>
-          <h2 className="mt-3 font-sx-sans text-[clamp(1.8rem,3.6vw+0.4rem,3rem)] font-bold tracking-tight text-sx-text">
+          <h2 className="mt-3 font-sx-sans text-[clamp(1.8rem,3.6vw+0.4rem,2.8rem)] font-bold tracking-tight text-slate-900 leading-tight">
             Built for real business operations.
           </h2>
-          <p className="mt-4 font-sx-sans text-[15px] leading-relaxed text-sx-text-muted sm:text-[17px]">
-            We build real software and label every capability with radical honesty. Zero fabricated customer metrics,
-            zero fake case studies, and zero unverified compliance claims.
+          <p className="mt-4 font-sx-sans text-base leading-relaxed text-slate-600 sm:text-lg">
+            We build real software and label every capability with radical honesty. Zero fabricated customer metrics, zero fake reviews, and zero unverified claims.
           </p>
         </div>
 
-        {/* Evidence Cards */}
-        <div className="mt-14 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-          {REAL_EVIDENCE_POINTS.map((item) => (
-            <div
-              key={item.title}
-              className="flex flex-col justify-between rounded-2xl border border-sx-border bg-sx-surface-1 p-6 transition-colors hover:border-sx-border-strong"
-            >
-              <div>
-                <span className="inline-block rounded-full bg-sx-surface-2 px-2.5 py-0.5 font-sx-mono text-[10px] font-bold uppercase text-sx-accent">
-                  {item.badge}
-                </span>
-                <h3 className="mt-3.5 font-sx-sans text-base font-bold text-sx-text">
-                  {item.title}
-                </h3>
-                <p className="mt-2 font-sx-sans text-[13px] leading-relaxed text-sx-text-muted">
-                  {item.desc}
-                </p>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {/* Honest Availability Standards Box */}
-        <div className="mt-12 rounded-2xl border border-sx-border bg-sx-surface-1 p-6 sm:p-8">
-          <div className="flex flex-col justify-between gap-4 border-b border-sx-border pb-5 sm:flex-row sm:items-center">
-            <div>
-              <p className="font-sx-mono text-[10.5px] font-bold uppercase tracking-wider text-sx-accent">
-                Availability Standard
-              </p>
-              <h3 className="mt-1 font-sx-sans text-lg font-bold text-sx-text">
-                How we label every module in the catalogue
-              </h3>
-            </div>
-            <Link
-              href="/product-proof"
-              className="inline-flex items-center gap-1 font-sx-sans text-xs font-semibold text-sx-accent hover:underline"
-            >
-              Walk through illustrative interface screens →
-            </Link>
+        {/* Product Preview Workstation */}
+        <div className="mt-14 rounded-2xl border border-slate-200/90 bg-slate-50/60 shadow-lg overflow-hidden">
+          {/* Top Tab Bar with Truthful Availability Labels */}
+          <div className="flex flex-wrap items-center gap-2 border-b border-slate-200/80 bg-white p-3 sm:px-6">
+            {PRODUCT_SCREENS.map((screen) => {
+              const isSelected = screen.id === activeTab;
+              return (
+                <button
+                  key={screen.id}
+                  type="button"
+                  onClick={() => setActiveTab(screen.id)}
+                  className={`inline-flex items-center gap-2 rounded-lg px-3.5 py-2 text-xs font-semibold transition-all ${
+                    isSelected
+                      ? "bg-slate-100 text-blue-900 border border-slate-300/80 shadow-2xs"
+                      : "text-slate-600 hover:bg-slate-50 hover:text-slate-900 border border-transparent"
+                  }`}
+                >
+                  <span>{screen.title}</span>
+                  <span
+                    className={`rounded border px-1.5 py-0.2 font-mono text-[9px] font-bold uppercase ${screen.badgeClass}`}
+                  >
+                    {screen.badge}
+                  </span>
+                </button>
+              );
+            })}
           </div>
 
-          <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {AVAILABILITY_LEVELS.map((lvl) => (
-              <div key={lvl.label} className="rounded-xl border border-sx-border bg-sx-bg p-4">
+          {/* Screen Content Body */}
+          <div className="p-6 sm:p-8 lg:p-10">
+            <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-xs sm:p-8">
+              <div className="flex flex-col justify-between gap-4 border-b border-slate-100 pb-5 sm:flex-row sm:items-center">
+                <div>
+                  <span className="font-sx-mono text-[10px] font-bold uppercase tracking-wider text-blue-600">
+                    {activeScreen.interfaceType}
+                  </span>
+                  <h3 className="mt-1 font-sx-sans text-lg font-bold text-slate-900 sm:text-xl">
+                    {activeScreen.previewDetails.heading}
+                  </h3>
+                  <p className="mt-1 font-sx-sans text-xs text-slate-500">
+                    {activeScreen.previewDetails.subheading}
+                  </p>
+                </div>
                 <span
-                  className={`inline-block rounded border px-2 py-0.5 font-sx-mono text-[10px] font-bold uppercase ${lvl.badgeClass}`}
+                  className={`self-start rounded-full border px-3 py-1 font-mono text-[10px] font-bold uppercase ${activeScreen.badgeClass}`}
                 >
-                  {lvl.label}
+                  Status: {activeScreen.badge}
                 </span>
-                <p className="mt-2 font-sx-sans text-xs leading-relaxed text-sx-text-muted">
-                  {lvl.meaning}
-                </p>
               </div>
-            ))}
+
+              {/* Staged Items List */}
+              <div className="mt-6 space-y-3">
+                {activeScreen.previewDetails.items.map((item) => (
+                  <div
+                    key={item.label}
+                    className="flex flex-col justify-between gap-2 rounded-lg border border-slate-100 bg-slate-50/60 p-4 sm:flex-row sm:items-center"
+                  >
+                    <div>
+                      <span className="block font-sx-sans text-xs font-bold text-slate-900">
+                        {item.label}
+                      </span>
+                      <span className="block font-sx-sans text-xs text-slate-600 mt-0.5">
+                        {item.detail}
+                      </span>
+                    </div>
+                    <span className="self-start rounded bg-white border border-slate-200 px-2.5 py-1 font-mono text-[10px] font-semibold text-slate-700 sm:self-auto shrink-0">
+                      {item.status}
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              {/* Bottom Guarantee Note */}
+              <div className="mt-6 flex items-center gap-2 text-xs text-slate-500 border-t border-slate-100 pt-4">
+                <ShieldCheckIcon className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>{activeScreen.previewDetails.governanceNote}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Availability Standard Definitions */}
+        <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-4">
+            <span className="inline-block rounded border border-emerald-200 bg-emerald-50 px-2 py-0.5 font-mono text-[10px] font-bold uppercase text-emerald-700">
+              LIVE
+            </span>
+            <p className="mt-2 font-sx-sans text-xs text-slate-600">
+              Built, tested, and running in production for direct business use.
+            </p>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-4">
+            <span className="inline-block rounded border border-blue-200 bg-blue-50 px-2 py-0.5 font-mono text-[10px] font-bold uppercase text-blue-700">
+              BETA
+            </span>
+            <p className="mt-2 font-sx-sans text-xs text-slate-600">
+              Working in production, actively refined with direct customer feedback.
+            </p>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-4">
+            <span className="inline-block rounded border border-purple-200 bg-purple-50 px-2 py-0.5 font-mono text-[10px] font-bold uppercase text-purple-700">
+              STAFF-ASSISTED
+            </span>
+            <p className="mt-2 font-sx-sans text-xs text-slate-600">
+              Our team operates the workflow alongside you while automation matures.
+            </p>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-4">
+            <span className="inline-block rounded border border-slate-200 bg-slate-100 px-2 py-0.5 font-mono text-[10px] font-bold uppercase text-slate-600">
+              COMING SOON
+            </span>
+            <p className="mt-2 font-sx-sans text-xs text-slate-600">
+              On the product roadmap. Explicitly declared before release.
+            </p>
           </div>
         </div>
       </div>

@@ -5,29 +5,29 @@ import Link from "next/link";
 import { TrackedCtaLink } from "@/app/components/public/commercial/TrackedCtaLink";
 import { CheckIcon, ArrowRightIcon } from "../icons/FeatureIcons";
 
-const AUDIT_INCLUDES = [
-  "Comprehensive website speed, mobile layout, and conversion check",
-  "Top 10 competitor keyword gap & search discovery analysis",
-  "Social media consistency & channel engagement evaluation",
-  "WhatsApp and inbound lead response speed assessment",
-  "Actionable, prioritized 30/60/90-day business growth roadmap",
+const AUDIT_OUTCOMES = [
+  "Understand your online presence",
+  "Find gaps in your website, SEO, and follow-ups",
+  "Identify high-return growth opportunities",
+  "Prioritize what matters most for your budget",
+  "Get a clear 30/60/90-day actionable roadmap",
 ];
 
 const PROCESS_STEPS = [
   {
     step: "1. Intake",
-    title: "5-Minute Guided Intake",
-    desc: "Share your website domain, services, and current marketing channels.",
+    title: "5-Minute Intake",
+    desc: "Share your business website, core services, and marketing channels.",
   },
   {
     step: "2. Analysis",
-    title: "In-Depth Diagnosis",
-    desc: "We analyze your search visibility, competitor moves, and lead paths.",
+    title: "Diagnosis",
+    desc: "We analyze search visibility, competitor moves, and lead response speed.",
   },
   {
     step: "3. Delivery",
-    title: "Clear 30/60/90-Day Roadmap",
-    desc: "Receive your customized roadmap showing where growth is leaking and what to fix first.",
+    title: "Action Roadmap",
+    desc: "Receive your customized 30/60/90-day roadmap in your private dashboard.",
   },
 ];
 
@@ -36,7 +36,7 @@ export function HomeAuditSection() {
     <section id="audit" className="border-t border-slate-200/80 bg-white py-20 sm:py-28">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="grid gap-12 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)] lg:items-center">
-          {/* Left: Positioning & Step Flow */}
+          {/* Left: Positioning & Outcomes */}
           <div>
             <div className="inline-flex items-center gap-2 rounded-full border border-blue-600/20 bg-blue-50 px-3.5 py-1 text-blue-700">
               <span className="font-sx-mono text-[10.5px] font-bold uppercase tracking-[0.16em]">
@@ -45,18 +45,18 @@ export function HomeAuditSection() {
             </div>
 
             <h2 className="mt-4 font-sx-sans text-[clamp(2rem,4vw,3.2rem)] font-bold tracking-tight text-slate-900 leading-tight">
-              Business Growth Audit
+              Not sure what your business needs first?
             </h2>
 
-            <p className="mt-4 font-sx-sans text-base font-semibold text-slate-800 sm:text-lg">
-              Find the opportunities, gaps, and immediate next moves across your digital business.
+            <p className="mt-4 font-sx-sans text-base font-semibold text-blue-700 sm:text-lg">
+              Find the gaps, opportunities and next steps across your digital business.
             </p>
 
             <p className="mt-2.5 font-sx-sans text-sm leading-relaxed text-slate-600">
-              Before choosing monthly workflows, start with complete clarity. The Audit gives you an objective, evidence-based roadmap tailored to your specific business.
+              Before committing to monthly workflows, start with complete clarity. The Audit gives you an objective, evidence-based roadmap tailored to your specific business.
             </p>
 
-            {/* 3 Steps sequence */}
+            {/* 3 Step sequence */}
             <div className="mt-8 grid gap-4 sm:grid-cols-3">
               {PROCESS_STEPS.map((s) => (
                 <div key={s.step} className="rounded-xl border border-slate-200 bg-slate-50/50 p-4">
@@ -78,7 +78,7 @@ export function HomeAuditSection() {
                 href="/how-it-works"
                 className="inline-flex items-center gap-1.5 font-sx-sans text-xs sm:text-sm font-semibold text-blue-600 hover:text-blue-800"
               >
-                <span>Learn more about the audit methodology</span>
+                <span>Learn more about the audit process</span>
                 <ArrowRightIcon className="w-3.5 h-3.5" />
               </Link>
             </div>
@@ -105,11 +105,11 @@ export function HomeAuditSection() {
             </div>
 
             <p className="mt-5 font-sx-mono text-[10.5px] font-bold uppercase tracking-wider text-slate-500">
-              What your audit delivers:
+              Simple outcomes you receive:
             </p>
 
             <ul className="mt-3.5 space-y-2.5">
-              {AUDIT_INCLUDES.map((item) => (
+              {AUDIT_OUTCOMES.map((item) => (
                 <li key={item} className="flex items-start gap-2.5 text-xs sm:text-sm text-slate-700 leading-snug">
                   <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 font-bold">
                     <CheckIcon className="w-3 h-3 text-emerald-700" />
@@ -126,7 +126,7 @@ export function HomeAuditSection() {
               plan="audit"
               className="mt-8 flex min-h-12 w-full items-center justify-center rounded-xl bg-blue-600 px-6 py-3.5 font-sx-sans text-sm font-bold text-white shadow-md transition-all hover:bg-blue-700 hover:shadow-lg"
             >
-              <span>START YOUR AUDIT — ₹999</span>
+              <span>START MY ₹999 AUDIT</span>
               <ArrowRightIcon className="ml-2 w-4 h-4" />
             </TrackedCtaLink>
 

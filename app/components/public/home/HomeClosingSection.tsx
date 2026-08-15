@@ -3,14 +3,14 @@
 import React from "react";
 import Link from "next/link";
 import { TrackedCtaLink } from "@/app/components/public/commercial/TrackedCtaLink";
-import { ArrowRightIcon } from "../icons/FeatureIcons";
+import { ArrowRightIcon, ShieldCheckIcon } from "../icons/FeatureIcons";
 
 export function HomeClosingSection() {
   return (
-    <section className="border-t border-slate-200/80 bg-gradient-to-b from-slate-50 to-white py-20 sm:py-28 text-center">
+    <section className="border-t border-slate-200/80 bg-gradient-to-b from-white via-slate-50/50 to-white py-20 sm:py-28 text-center">
       <div className="mx-auto max-w-4xl px-4 sm:px-6 lg:px-8">
         <p className="font-sx-mono text-xs font-semibold uppercase tracking-[0.2em] text-blue-600">
-          STRATXCEL AI AGENT
+          GET STARTED WITH STRATXCEL
         </p>
 
         <h2 className="mt-4 font-sx-sans text-[clamp(2rem,4.5vw,3.4rem)] font-bold tracking-tight text-slate-900 leading-tight">
@@ -18,7 +18,7 @@ export function HomeClosingSection() {
         </h2>
 
         <p className="mx-auto mt-5 max-w-2xl font-sx-sans text-base sm:text-lg leading-relaxed text-slate-600">
-          Start with an evidence-backed growth audit, or see how Stratxcel takes care of the digital work your business needs every day.
+          Start with an evidence-backed growth audit, or explore how Stratxcel handles the digital work behind your business every day.
         </p>
 
         {/* Dual CTAs */}
@@ -30,7 +30,7 @@ export function HomeClosingSection() {
             plan="audit"
             className="inline-flex min-h-12 w-full items-center justify-center rounded-xl bg-blue-600 px-8 py-3.5 font-sx-sans text-sm font-bold text-white shadow-md transition-all hover:bg-blue-700 hover:shadow-lg sm:w-auto"
           >
-            <span>GET YOUR BUSINESS AUDIT — ₹999</span>
+            <span>START MY ₹999 BUSINESS AUDIT</span>
             <ArrowRightIcon className="ml-2 w-4 h-4" />
           </TrackedCtaLink>
 
@@ -43,17 +43,17 @@ export function HomeClosingSection() {
         </div>
 
         {/* Secondary Trust Note */}
-        <div className="mt-8 flex flex-wrap items-center justify-center gap-4 text-xs text-slate-500">
+        <div className="mt-8 flex flex-wrap items-center justify-center gap-4 text-xs text-slate-500 font-medium">
           <span>₹999 One-time</span>
           <span>•</span>
           <span>No automatic subscription</span>
           <span>•</span>
           <Link href="/security" className="text-slate-700 hover:underline">
-            Read Security Architecture
+            Security &amp; Privacy
           </Link>
           <span>•</span>
           <Link href="/contact?intent=demo" className="text-slate-700 hover:underline">
-            Book a demo
+            Talk to our team
           </Link>
         </div>
       </div>
