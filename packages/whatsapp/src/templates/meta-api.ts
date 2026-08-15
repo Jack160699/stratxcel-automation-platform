@@ -109,63 +109,126 @@ export async function inspectMetaTemplateEndpoint(
   const apiVersion = input.apiVersion?.trim() || getMetaGraphApiVersion();
   if (!/^v\d+\.\d+$/.test(apiVersion)) throw new Error("Invalid Meta Graph API version");
   const diagnostics: SafeMetaEndpointDiagnostic[] = [];
-  const configuredLookup = await graphGet(
-    buildMetaGraphUrl(apiVersion, input.wabaId, undefined, new URLSearchParams({ fields: "id,name", metadata: "1" })),
+
+  const configuredWabaId = input.wabaId?.trim() || "";
+
+  if (configuredWabaId) {
+    const configuredLookup = await graphGet(
+      buildMetaGraphUrl(apiVersion, configuredWabaId, undefined, new URLSearchParams({ fields: "id,name", metadata: "1" })),
+      token,
+      fetchFn,
+    );
+    diagnostics.push(toDiagnostic("waba_lookup", configuredWabaId, apiVersion, configuredLookup));
+
+    const configuredPhones = await requestPhoneNumbers(configuredWabaId, apiVersion, token, fetchFn);
+    diagnostics.push(toDiagnostic("phone_list", configuredWabaId, apiVersion, configuredPhones));
+
+    const configuredTemplates = await requestTemplates(configuredWabaId, apiVersion, token, fetchFn);
+    diagnostics.push(toDiagnostic("template_list", configuredWabaId, apiVersion, configuredTemplates));
+    if (configuredTemplates.response.ok) {
+      return {
+        configuredWabaId,
+        resolvedWabaId: configuredWabaId,
+        apiVersion,
+        diagnostics,
+        templates: (configuredTemplates.body.data as MetaTemplateApiEntry[] | undefined) ?? [],
+      };
+    }
+
+    const failure = classifyMetaFailure(configuredTemplates);
+    if (!configuredTemplates.response.ok && failure !== "WRONG_OBJECT") {
+      throw toEndpointError(configuredTemplates, failure, diagnostics);
+    }
+  }
+
+  const candidates = await discoverWabaCandidates(
+    configuredWabaId,
+    input.phoneNumberId?.trim() || "",
+    apiVersion,
     token,
+    diagnostics,
     fetchFn,
   );
-  diagnostics.push(toDiagnostic("waba_lookup", input.wabaId, apiVersion, configuredLookup));
 
-  const configuredPhones = await requestPhoneNumbers(input.wabaId, apiVersion, token, fetchFn);
-  diagnostics.push(toDiagnostic("phone_list", input.wabaId, apiVersion, configuredPhones));
-  const configuredOwnsPlatformPhone =
-    configuredPhones.body.data?.some((phone) => String(phone.id) === input.phoneNumberId) ?? false;
-
-  const configuredTemplates = await requestTemplates(input.wabaId, apiVersion, token, fetchFn);
-  diagnostics.push(toDiagnostic("template_list", input.wabaId, apiVersion, configuredTemplates));
-  if (configuredTemplates.response.ok) {
-    return {
-      configuredWabaId: input.wabaId,
-      resolvedWabaId: input.wabaId,
-      apiVersion,
-      diagnostics,
-      templates: configuredTemplates.body.data as MetaTemplateApiEntry[] | undefined ?? [],
-    };
-  }
-
-  const failure = classifyMetaFailure(configuredTemplates);
-  if (!configuredTemplates.response.ok && failure !== "WRONG_OBJECT") {
-    throw toEndpointError(configuredTemplates, failure, diagnostics);
-  }
-
-  const candidates = await discoverWabaCandidates(input.wabaId, apiVersion, token, diagnostics, fetchFn);
   for (const candidate of candidates) {
-    if (candidate.id === input.wabaId) continue;
+    if (candidate.id === configuredWabaId) continue;
     const candidateTemplates = await requestTemplates(candidate.id, apiVersion, token, fetchFn);
     diagnostics.push(toDiagnostic("template_list", candidate.id, apiVersion, candidateTemplates));
     if (candidateTemplates.response.ok) {
       return {
-        configuredWabaId: input.wabaId,
+        configuredWabaId: configuredWabaId || candidate.id,
         resolvedWabaId: candidate.id,
         apiVersion,
         diagnostics,
-        templates: candidateTemplates.body.data as MetaTemplateApiEntry[] | undefined ?? [],
+        templates: (candidateTemplates.body.data as MetaTemplateApiEntry[] | undefined) ?? [],
       };
     }
   }
 
-  throw toEndpointError(configuredTemplates, "WRONG_OBJECT", diagnostics);
+  const lastDiag = diagnostics[diagnostics.length - 1];
+  const lastStatus = lastDiag?.httpStatus ?? 400;
+  const lastCode = lastDiag?.errorCode ?? 100;
+  const lastMsg = lastDiag?.responseMessage ?? "No canonical WhatsApp Business Account found";
+  throw new MetaTemplateEndpointError({
+    failure: "WRONG_OBJECT",
+    httpStatus: lastStatus,
+    errorCode: lastCode,
+    responseMessage: lastMsg,
+    diagnostics,
+  });
 }
 
 async function discoverWabaCandidates(
   objectId: string,
+  phoneNumberId: string,
   apiVersion: string,
   token: string,
   diagnostics: SafeMetaEndpointDiagnostic[],
   fetchFn: typeof fetch,
 ): Promise<Array<{ id: string; name?: string }>> {
   const candidates = new Map<string, { id: string; name?: string }>();
-  const portfolioIds = new Set([objectId]);
+  const portfolioIds = new Set<string>();
+  if (objectId) portfolioIds.add(objectId);
+
+  // 1. Direct phone number inspect: retrieve whatsapp_business_account object
+  if (phoneNumberId) {
+    const phoneObj = await graphGet(
+      buildMetaGraphUrl(
+        apiVersion,
+        phoneNumberId,
+        undefined,
+        new URLSearchParams({ fields: "id,verified_name,display_phone_number,whatsapp_business_account" }),
+      ),
+      token,
+      fetchFn,
+    );
+    diagnostics.push(toDiagnostic("phone_list", phoneNumberId, apiVersion, phoneObj));
+    const wabaObj = (phoneObj.body as { whatsapp_business_account?: { id?: string; name?: string } })
+      ?.whatsapp_business_account;
+    if (wabaObj?.id) {
+      candidates.set(String(wabaObj.id), { id: String(wabaObj.id), name: wabaObj.name });
+    }
+  }
+
+  // 2. Direct /me/whatsapp_business_accounts edge (System User or User token)
+  const meWabas = await graphGet(
+    buildMetaGraphUrl(
+      apiVersion,
+      "me",
+      "whatsapp_business_accounts",
+      new URLSearchParams({ fields: "id,name", limit: "100" }),
+    ),
+    token,
+    fetchFn,
+  );
+  if (meWabas.response.ok && meWabas.body.data) {
+    diagnostics.push(toDiagnostic("waba_candidates", "me", apiVersion, meWabas));
+    for (const waba of meWabas.body.data) {
+      if (waba.id) candidates.set(String(waba.id), { id: String(waba.id), name: waba.name });
+    }
+  }
+
+  // 3. /me/businesses (Business portfolio check)
   const businesses = await graphGet(
     buildMetaGraphUrl(
       apiVersion,
@@ -176,8 +239,10 @@ async function discoverWabaCandidates(
     token,
     fetchFn,
   );
-  diagnostics.push(toDiagnostic("business_list", objectId, apiVersion, businesses));
-  for (const business of businesses.body.data ?? []) portfolioIds.add(String(business.id));
+  diagnostics.push(toDiagnostic("business_list", objectId || "me", apiVersion, businesses));
+  for (const business of businesses.body.data ?? []) {
+    if (business.id) portfolioIds.add(String(business.id));
+  }
 
   for (const portfolioId of portfolioIds) {
     for (const edge of ["owned_whatsapp_business_accounts", "client_whatsapp_business_accounts"]) {
@@ -193,10 +258,13 @@ async function discoverWabaCandidates(
       );
       diagnostics.push(toDiagnostic("waba_candidates", portfolioId, apiVersion, result));
       for (const candidate of result.body.data ?? []) {
-        candidates.set(String(candidate.id), { id: String(candidate.id), name: candidate.name });
+        if (candidate.id) {
+          candidates.set(String(candidate.id), { id: String(candidate.id), name: candidate.name });
+        }
       }
     }
   }
+
   return [...candidates.values()];
 }
 

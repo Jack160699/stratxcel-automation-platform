@@ -113,6 +113,7 @@ export async function autoResolvePlatformTemplates(
   options: { forceRefresh?: boolean; fetchFn?: typeof fetch } = {}
 ): Promise<PlatformTemplateResolution> {
   const mode = getIntegrationMode("WHATSAPP_INTEGRATION_MODE");
+  const token = process.env.WHATSAPP_TOKEN?.trim();
   const fetchFn = options.fetchFn ?? fetch;
 
   const platformSender = await resolvePlatformWhatsAppSender(supabase);
@@ -122,22 +123,49 @@ export async function autoResolvePlatformTemplates(
   const phoneNumberId = platformSender.ok
     ? platformSender.sender.phoneNumberId
     : process.env.WHATSAPP_PHONE_NUMBER_ID?.trim() || "";
-  const tenantId = platformSender.ok ? platformSender.sender.tenantId : "00000000-0000-0000-0000-000000000000";
+
+  // Resolve a valid tenant ID for persistence
+  let tenantId = platformSender.ok ? platformSender.sender.tenantId : "";
+  if (!tenantId) {
+    try {
+      const { data: anyTenant } = await supabase
+        .from("tenants")
+        .select("id")
+        .limit(1)
+        .maybeSingle();
+      tenantId = anyTenant?.id ?? "";
+    } catch {
+      // Non-fatal
+    }
+  }
+  if (!tenantId) {
+    tenantId = "00000000-0000-0000-0000-000000000000";
+  }
   const bindingId = platformSender.ok ? platformSender.sender.bindingId : null;
 
   // 1. Check existing local template
   let existingTemplates: WhatsAppTemplateRow[] = [];
   try {
-    if (platformSender.ok) {
+    if (tenantId && tenantId !== "00000000-0000-0000-0000-000000000000") {
       existingTemplates = await listTemplatesForTenant(supabase, tenantId);
+    }
+    if (existingTemplates.length === 0) {
+      const { data: anyTemplates } = await supabase
+        .from("whatsapp_templates")
+        .select("*")
+        .eq("name", "audit_report_ready")
+        .order("synced_at", { ascending: false });
+      if (anyTemplates && anyTemplates.length > 0) {
+        existingTemplates = anyTemplates as WhatsAppTemplateRow[];
+      }
     }
   } catch {
     // Non-fatal
   }
   const auditTemplate = existingTemplates.find((t) => t.name === "audit_report_ready");
 
-  // If live mode is not enabled, return existing local data
-  if (mode !== "live") {
+  // If neither WHATSAPP_TOKEN nor live mode is available, return local data
+  if (!token && mode !== "live") {
     return {
       templates: existingTemplates,
       source: "disabled",
@@ -158,16 +186,23 @@ export async function autoResolvePlatformTemplates(
       source: "cached_db",
       lastVerifiedAt: auditTemplate.synced_at,
       metaAvailable: true,
-      senderStatus: "CONFIGURED",
+      senderStatus: platformSender.ok ? "CONFIGURED" : "SENDER_NOT_CONFIGURED",
     };
   }
 
-  // 2. Perform live Meta sync
+  // 2. Perform live Meta sync with timeout protection
   try {
-    const inspection = await inspectMetaTemplateEndpoint(
-      { wabaId: wabaId || phoneNumberId, phoneNumberId },
-      fetchFn
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("Meta API request timed out (10s)")), 10000)
     );
+
+    const inspection = await Promise.race([
+      inspectMetaTemplateEndpoint(
+        { wabaId: wabaId || phoneNumberId, phoneNumberId },
+        fetchFn
+      ),
+      timeoutPromise,
+    ]);
 
     if (inspection.templates && inspection.templates.length > 0) {
       const liveTemplates: WhatsAppTemplateRow[] = (inspection.templates as MetaTemplateApiEntry[]).map((entry, idx) => {
@@ -191,7 +226,7 @@ export async function autoResolvePlatformTemplates(
 
       // Persist to database in background
       try {
-        if (platformSender.ok) {
+        if (tenantId && tenantId !== "00000000-0000-0000-0000-000000000000") {
           for (const tpl of liveTemplates) {
             await supabase.from("whatsapp_templates").upsert(
               {
@@ -220,11 +255,11 @@ export async function autoResolvePlatformTemplates(
         source: "meta_live",
         lastVerifiedAt: liveAudit?.synced_at ?? new Date().toISOString(),
         metaAvailable: true,
-        senderStatus: "CONFIGURED",
+        senderStatus: (platformSender.ok || Boolean(phoneNumberId)) ? "CONFIGURED" : "SENDER_NOT_CONFIGURED",
       };
     }
   } catch (err) {
-    // Graceful fallback to cached database records if Meta is temporarily offline
+    // Graceful fallback to cached database records if Meta is temporarily offline or times out
   }
 
   // 3. Fallback: query any cached database records across all tenants
@@ -244,7 +279,7 @@ export async function autoResolvePlatformTemplates(
       source: "cached_db",
       lastVerifiedAt: auditTemplate?.synced_at ?? fallbackTemplates[0]?.synced_at ?? null,
       metaAvailable: false,
-      senderStatus: platformSender.ok ? "CONFIGURED" : "SENDER_NOT_CONFIGURED",
+      senderStatus: (platformSender.ok || Boolean(phoneNumberId)) ? "CONFIGURED" : "SENDER_NOT_CONFIGURED",
     };
   } catch {
     return {
@@ -252,7 +287,7 @@ export async function autoResolvePlatformTemplates(
       source: "cached_db",
       lastVerifiedAt: auditTemplate?.synced_at ?? null,
       metaAvailable: false,
-      senderStatus: platformSender.ok ? "CONFIGURED" : "SENDER_NOT_CONFIGURED",
+      senderStatus: (platformSender.ok || Boolean(phoneNumberId)) ? "CONFIGURED" : "SENDER_NOT_CONFIGURED",
     };
   }
 }

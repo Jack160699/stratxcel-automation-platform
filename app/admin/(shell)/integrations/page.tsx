@@ -87,23 +87,33 @@ export default function WhatsAppAdminPage() {
   const [templates, setTemplates] = useState<WhatsAppTemplate[]>([]);
   const [templateMetaAvailable, setTemplateMetaAvailable] = useState(true);
   const [templateLastVerified, setTemplateLastVerified] = useState<string | null>(null);
+  const [loadingTemplates, setLoadingTemplates] = useState(true);
+  const [templateError, setTemplateError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [signupNotice, setSignupNotice] = useState<string | null>(null);
   const [migration, setMigration] = useState<MigrationStatus | null>(null);
 
   async function loadTemplates(force = false) {
+    if (force) setSyncing(true);
+    else setLoadingTemplates(true);
+    setTemplateError(null);
     try {
       const url = force ? "/api/platform/whatsapp/templates?force=true" : "/api/platform/whatsapp/templates";
       const res = await fetch(url, { cache: "no-store" });
+      const body = await res.json().catch(() => ({}));
       if (res.ok) {
-        const body = await res.json();
         setTemplates(body.templates ?? []);
         setTemplateMetaAvailable(body.metaAvailable ?? true);
         setTemplateLastVerified(body.lastVerifiedAt ?? null);
+      } else {
+        setTemplateError(body.error ?? `Failed to load templates (HTTP ${res.status})`);
       }
-    } catch {
-      // Non-blocking template load
+    } catch (err) {
+      setTemplateError(err instanceof Error ? err.message : "Failed to load templates");
+    } finally {
+      setLoadingTemplates(false);
+      setSyncing(false);
     }
   }
 
@@ -163,24 +173,7 @@ export default function WhatsAppAdminPage() {
   }
 
   async function handleSyncTemplates() {
-    setSyncing(true);
-    setError(null);
-    try {
-      const res = await fetch("/api/platform/whatsapp/templates", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-      });
-      const body = await res.json();
-      if (!res.ok) {
-        setError(body.error ?? "Template sync failed");
-        return;
-      }
-      setTemplates(body.templates ?? []);
-      setTemplateMetaAvailable(body.metaAvailable ?? true);
-      setTemplateLastVerified(body.lastVerifiedAt ?? null);
-    } finally {
-      setSyncing(false);
-    }
+    await loadTemplates(true);
   }
 
   async function handleCreateBinding(e: React.FormEvent) {
@@ -238,9 +231,32 @@ export default function WhatsAppAdminPage() {
           </Button>
         </div>
 
-        {templates.length === 0 && (
+        {loadingTemplates && !syncing && templates.length === 0 && (
           <Card variant="nested" className="p-4">
-            <p className="text-sm text-sx-text-muted">Waiting for Meta verification…</p>
+            <div className="flex items-center gap-2">
+              <span className="inline-block h-2 w-2 rounded-full bg-cyan-400 animate-pulse" />
+              <p className="text-sm text-sx-text-muted">Resolving platform delivery templates…</p>
+            </div>
+          </Card>
+        )}
+
+        {templateError && templates.length === 0 && (
+          <Card variant="nested" className="p-4 border-rose-500/30 bg-rose-500/5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <p className="text-sm font-medium text-rose-400">Template verification offline</p>
+                <p className="mt-0.5 text-xs text-sx-text-subtle">{templateError}</p>
+              </div>
+              <Button variant="secondary" size="sm" onClick={() => void loadTemplates(true)}>
+                Retry
+              </Button>
+            </div>
+          </Card>
+        )}
+
+        {!loadingTemplates && !templateError && templates.length === 0 && (
+          <Card variant="nested" className="p-4">
+            <p className="text-sm text-sx-text-muted">No templates synced from Meta yet</p>
             <p className="mt-1 text-xs text-sx-text-subtle">Platform templates auto-resolve on load. Click &quot;Sync from Meta&quot; to force an immediate refresh.</p>
           </Card>
         )}

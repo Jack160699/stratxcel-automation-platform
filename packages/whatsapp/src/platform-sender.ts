@@ -57,13 +57,23 @@ export async function resolvePlatformWhatsAppSender(
         return { ok: true, sender: toPlatformSender(anyRow as PlatformBindingRow) };
       }
 
-      // If no binding row exists, find a system tenant to bind to
-      const { data: systemTenant } = await supabase
+      // If no binding row exists, find a system tenant or oldest tenant to bind to
+      let { data: systemTenant } = await supabase
         .from("tenants")
         .select("id")
-        .in("slug", ["staff-workspace", "stratxcel", "staff", "system"])
+        .in("slug", ["staff-workspace", "stratxcel", "staff", "system", "platform"])
         .limit(1)
         .maybeSingle();
+
+      if (!systemTenant) {
+        const { data: anyTenant } = await supabase
+          .from("tenants")
+          .select("id")
+          .order("created_at", { ascending: true })
+          .limit(1)
+          .maybeSingle();
+        systemTenant = anyTenant;
+      }
 
       const targetTenantId = systemTenant?.id;
       if (targetTenantId) {
