@@ -172,7 +172,7 @@ export function HomeHeroLight() {
   const active = CAPABILITY_VIEWS.find((v) => v.id === activeId) || CAPABILITY_VIEWS[0];
 
   useEffect(() => {
-    // 3600ms total loop: 2400ms hold + 600ms transition + 600ms enter
+    // 3500ms total loop: 2400ms hold + 550ms transition
     const interval = setInterval(() => {
       setIsTransitioning(true);
       setTimeout(() => {
@@ -188,20 +188,19 @@ export function HomeHeroLight() {
     <section
       id="hero"
       data-home-section="hero"
-      className="relative overflow-hidden bg-white pt-20 pb-16 sm:pt-28 sm:pb-24"
+      className="relative overflow-hidden bg-white pt-16 pb-16 sm:pt-24 sm:pb-24"
     >
-      {/* Ambient Fluid Silk Ribbons Canvas (Quiet Zone Center) */}
+      {/* Ambient Diagonal Translucent Bands Canvas (Quiet Zone Center) */}
       <FluidRibbonsCanvas activeOutcome={currentOutcome.phrase} />
 
       {/* Gentle Radial Overlay */}
       <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
-        <div className="absolute -top-[10%] left-1/2 h-[45vw] w-[65vw] -translate-x-1/2 rounded-full bg-[radial-gradient(ellipse_at_center,rgba(37,99,235,0.045),transparent_70%)] blur-3xl" />
-        <div className="absolute inset-0 bg-[linear-gradient(to_right,#00000003_1px,transparent_1px),linear-gradient(to_bottom,#00000003_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_0%,#000_70%,transparent_100%)]" />
+        <div className="absolute -top-[10%] left-1/2 h-[45vw] w-[65vw] -translate-x-1/2 rounded-full bg-[radial-gradient(ellipse_at_center,rgba(37,99,235,0.035),transparent_70%)] blur-3xl" />
       </div>
 
       <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        {/* Main Headline & Structurally Invariant Outcome Slot */}
-        <div className="mx-auto max-w-4xl text-center">
+        {/* Main Headline Container: Left-aligned on mobile, Centered on desktop */}
+        <div className="mx-auto max-w-4xl text-left sm:text-center flex flex-col items-start sm:items-center">
           {/* Eyebrow Badge */}
           <div className="inline-flex items-center gap-2 rounded-full border border-blue-600/20 bg-blue-50/90 px-4 py-1.5 text-blue-700 shadow-xs backdrop-blur-sm">
             <span className="relative flex h-2 w-2">
@@ -213,20 +212,21 @@ export function HomeHeroLight() {
             </span>
           </div>
 
-          {/* Primary Fixed Hero Sentences with Invariant Outcome Slot */}
-          <div className="mt-7">
-            <h1 className="font-sx-sans text-[clamp(1.75rem,4.4vw,3.25rem)] font-bold tracking-tight text-slate-900 leading-tight">
+          {/* Primary Fixed Hero Headline: Strictly 2 lines on desktop/laptop */}
+          <div className="mt-6 sm:mt-7 w-full">
+            {/* Line 1: Stable Single Line */}
+            <h1 className="font-sx-sans text-[clamp(1.85rem,4.2vw,3.25rem)] font-bold tracking-tight text-slate-900 leading-tight">
               You run your business.
             </h1>
 
-            {/* Structurally Fixed Second Line: Never wraps dynamic word to a 3rd line */}
-            <div className="mt-2 flex flex-wrap items-center justify-center gap-x-2.5 sm:gap-x-3 font-sx-sans text-[clamp(1.5rem,4.2vw,3.25rem)] font-bold tracking-tight text-slate-900 leading-tight whitespace-nowrap">
-              <span className="whitespace-nowrap">We help you get</span>
+            {/* Line 2: Fixed Visual Slot — Strictly 1 line on desktop, clean on mobile */}
+            <div className="mt-1.5 sm:mt-2 flex flex-wrap sm:flex-nowrap items-baseline sm:items-center justify-start sm:justify-center gap-x-2.5 sm:gap-x-3 font-sx-sans text-[clamp(1.6rem,3.8vw,3.15rem)] font-bold tracking-tight text-slate-900 leading-tight whitespace-normal sm:whitespace-nowrap">
+              <span className="whitespace-nowrap shrink-0">We help you get</span>
 
-              {/* Reserved Fixed-Width & Fixed-Height Invariant Container */}
+              {/* Reserved Invariant Slot Container for Dynamic Outcome */}
               <div
                 id="outcome-container"
-                className="relative inline-flex items-center justify-start overflow-visible whitespace-nowrap min-w-[13.5ch] sm:min-w-[15ch] h-[1.3em] align-middle text-left"
+                className="relative inline-flex items-center justify-start overflow-visible whitespace-nowrap min-w-[13ch] sm:min-w-[15ch] h-[1.3em] align-middle text-left"
                 aria-live="polite"
               >
                 <span
@@ -246,18 +246,18 @@ export function HomeHeroLight() {
           </div>
 
           {/* Supporting Core Message */}
-          <p className="mx-auto mt-6 max-w-2xl font-sx-sans text-base sm:text-lg leading-relaxed text-slate-600 font-medium">
+          <p className="mt-5 sm:mt-6 max-w-2xl font-sx-sans text-base sm:text-lg leading-relaxed text-slate-600 font-medium text-left sm:text-center mx-0 sm:mx-auto">
             Stratxcel helps with the digital work behind your business, so you can focus on running it.
           </p>
 
           {/* Primary and Secondary Hero CTAs */}
-          <div className="mt-9 flex flex-col items-center justify-center gap-3.5 sm:flex-row sm:gap-4">
+          <div className="mt-8 sm:mt-9 flex flex-col sm:flex-row items-stretch sm:items-center justify-start sm:justify-center gap-3.5 sm:gap-4 w-full sm:w-auto">
             <TrackedCtaLink
               href="/audit"
               event="audit_cta_click"
               surface="home_hero_primary"
               plan="audit"
-              className="inline-flex min-h-12 w-full items-center justify-center rounded-xl bg-blue-600 px-8 py-3.5 font-sx-sans text-sm font-bold text-white shadow-md transition-all hover:bg-blue-700 hover:shadow-lg sm:w-auto"
+              className="inline-flex min-h-12 w-full sm:w-auto items-center justify-center rounded-xl bg-blue-600 px-8 py-3.5 font-sx-sans text-sm font-bold text-white shadow-md transition-all hover:bg-blue-700 hover:shadow-lg"
             >
               <span>START MY ₹999 BUSINESS AUDIT</span>
               <ArrowRightIcon className="ml-2 w-4 h-4" />
@@ -265,19 +265,19 @@ export function HomeHeroLight() {
 
             <a
               href="#how-it-works"
-              className="inline-flex min-h-12 w-full items-center justify-center rounded-xl border border-slate-300 bg-white px-7 py-3.5 font-sx-sans text-sm font-semibold text-slate-800 shadow-xs transition-colors hover:bg-slate-50 hover:border-slate-400 sm:w-auto"
+              className="inline-flex min-h-12 w-full sm:w-auto items-center justify-center rounded-xl border border-slate-300 bg-white px-7 py-3.5 font-sx-sans text-sm font-semibold text-slate-800 shadow-xs transition-colors hover:bg-slate-50 hover:border-slate-400"
             >
               SEE HOW IT WORKS
             </a>
           </div>
 
-          <p className="mt-3.5 font-sx-sans text-xs text-slate-500 font-medium">
+          <p className="mt-3.5 font-sx-sans text-xs text-slate-500 font-medium text-left sm:text-center">
             ₹999 one-time · GST included · No automatic subscription · Complete 30/60/90-day roadmap
           </p>
         </div>
 
         {/* Living SaaS Workstation Window */}
-        <div className="mt-14 sm:mt-18">
+        <div className="mt-12 sm:mt-18">
           <div className="relative mx-auto max-w-5xl rounded-2xl border border-slate-200/90 bg-white shadow-2xl shadow-slate-200/60 overflow-hidden">
             {/* Window Chrome Header Bar */}
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/80 bg-slate-50/90 px-4 py-3 sm:px-6">

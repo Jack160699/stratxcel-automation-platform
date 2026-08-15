@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import { chromium } from "playwright-core";
 
-const BASE_URL = process.argv[2] || process.env.BASE_URL || "http://localhost:3312";
+const BASE_URL = process.argv[2] || process.env.BASE_URL || "http://localhost:3313";
 
 const CHROME_CANDIDATES = [
   process.env.CHROME_PATH,
@@ -42,7 +42,9 @@ async function runVerification() {
   assert.ok(heroText?.includes("SEE HOW IT WORKS"), "Hero must have secondary CTA");
   console.log("✓ Hero copy, outcome word container, and dual CTAs verified.");
 
-  // 4. Invariant Container & Zero Layout Shift Assertion
+  // 4. Desktop 2-Line Headline Verification
+  const h1 = heroSection.locator("h1");
+  assert.ok(await h1.count() > 0, "Line 1 <h1> must exist");
   const outcomeContainer = page.locator("#outcome-container");
   assert.ok(await outcomeContainer.count() > 0, "#outcome-container must exist");
 
@@ -50,8 +52,8 @@ async function runVerification() {
   const primaryCta = page.locator("a:has-text('START MY ₹999 BUSINESS AUDIT')").first();
   const initialCtaBox = await primaryCta.boundingBox();
 
-  // Watch across 2 complete phrase transitions (7.2s total)
-  console.log("Measuring layout stability during dynamic outcome word transitions...");
+  // Watch across 3 complete phrase transitions (10.5s total)
+  console.log("Measuring layout stability during dynamic outcome word transitions on Desktop...");
   const recordedOutcomes = [];
 
   for (let i = 0; i < 3; i++) {
@@ -80,7 +82,7 @@ async function runVerification() {
   console.log(`✓ Dynamic Outcomes observed: [${[...new Set(recordedOutcomes)].join(", ")}]`);
   console.log("✓ Hero height and CTA position remained 100% stable (0px layout shift).");
 
-  // 5. Single-Line No-Wrap Assertion on Desktop and Mobile
+  // 5. Single-Line No-Wrap Assertion on Desktop
   const outcomeBox = await outcomeContainer.boundingBox();
   const outcomeSpan = outcomeContainer.locator("span.whitespace-nowrap").first();
   const spanBox = await outcomeSpan.boundingBox();
@@ -176,17 +178,26 @@ async function runVerification() {
   assert.ok(linkedinLink > 0, "Real Stratxcel LinkedIn link must be in footer");
   console.log("✓ Footer & Verified Social Destinations verified.");
 
-  // 15. Mobile Viewport (390px) Single-Line and Stability Test
+  // 15. Mobile Viewport (390px) Left Alignment and Stability Test
   await page.setViewportSize({ width: 390, height: 844 });
   await page.reload({ waitUntil: "domcontentloaded" });
   await page.waitForTimeout(500);
-  const mobileHero = await page.textContent("section#hero");
-  assert.ok(mobileHero?.includes("You run your business."), "Mobile hero renders cleanly");
-  assert.ok(mobileHero?.includes("START MY ₹999 BUSINESS AUDIT"), "Mobile CTA renders cleanly");
+  
+  const mobileHero = page.locator("section#hero");
+  const mobileHeroText = await mobileHero.textContent();
+  assert.ok(mobileHeroText?.includes("You run your business."), "Mobile hero renders cleanly");
+  assert.ok(mobileHeroText?.includes("START MY ₹999 BUSINESS AUDIT"), "Mobile CTA renders cleanly");
   
   const mobileOutcome = page.locator("#outcome-container");
   assert.ok(await mobileOutcome.count() > 0, "Mobile outcome container exists");
-  console.log("✓ Mobile Viewport (390px) layout & stability verified.");
+
+  // Check left-alignment of headline on mobile (computed text-align or left bounding coordinate)
+  const mobileH1Box = await mobileHero.locator("h1").boundingBox();
+  const mobileSectionBox = await mobileHero.boundingBox();
+  // On mobile left aligned, the h1 left offset is near the container padding (~16-24px)
+  const leftPadding = (mobileH1Box?.x || 0) - (mobileSectionBox?.x || 0);
+  console.log(`✓ Mobile Viewport (390px) Left Padding: ${leftPadding}px (Left Aligned)`);
+  assert.ok(leftPadding < 36, "Hero on mobile must be left-aligned");
 
   await browser.close();
   console.log("\n=======================================================");

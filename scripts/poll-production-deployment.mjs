@@ -6,7 +6,7 @@ async function checkProduction() {
   console.log(`Checking production HTML response from ${PROD_URL}...`);
   const response = await fetch(PROD_URL, {
     headers: {
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) StratxcelVerification/1.0",
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) StratxcelVerification/2.0",
       "Cache-Control": "no-cache",
     },
   });
@@ -18,7 +18,8 @@ async function checkProduction() {
   const html = await response.text();
 
   const hasNewHeadline1 = html.includes("You run your business.");
-  const hasNewHeadline2 = html.includes("We help you get more on");
+  const hasNewHeadline2 = html.includes("We help you get");
+  const hasOutcomeContainer = html.includes("outcome-container");
   const hasAuditCTA = html.includes("START MY ₹999 BUSINESS AUDIT") || html.includes("START MY ₹999 AUDIT");
   const hasBenefitStrip = html.includes("SAVE TIME") && html.includes("REDUCE COSTS") && html.includes("BETTER QUALITY");
   const hasTrustPillar = html.includes("YOU STAY IN CONTROL.");
@@ -27,7 +28,8 @@ async function checkProduction() {
   console.log("------------------------------------------");
   console.log("PRODUCTION HTML CHECKS:");
   console.log(`- Headline 'You run your business.': ${hasNewHeadline1 ? "FOUND" : "MISSING"}`);
-  console.log(`- Headline 'We help you get more on': ${hasNewHeadline2 ? "FOUND" : "MISSING"}`);
+  console.log(`- Headline 'We help you get': ${hasNewHeadline2 ? "FOUND" : "MISSING"}`);
+  console.log(`- Invariant #outcome-container: ${hasOutcomeContainer ? "FOUND" : "MISSING"}`);
   console.log(`- Audit CTA: ${hasAuditCTA ? "FOUND" : "MISSING"}`);
   console.log(`- Benefit Strip: ${hasBenefitStrip ? "FOUND" : "MISSING"}`);
   console.log(`- Trust & Control ('YOU STAY IN CONTROL.'): ${hasTrustPillar ? "FOUND" : "MISSING"}`);
@@ -35,8 +37,8 @@ async function checkProduction() {
   console.log("------------------------------------------");
 
   return {
-    isNew: hasNewHeadline1 && hasNewHeadline2 && hasAuditCTA && hasBenefitStrip && hasTrustPillar && !hasOldHeadline,
-    details: { hasNewHeadline1, hasNewHeadline2, hasAuditCTA, hasBenefitStrip, hasTrustPillar, hasOldHeadline },
+    isNew: hasNewHeadline1 && hasNewHeadline2 && hasOutcomeContainer && hasAuditCTA && hasBenefitStrip && hasTrustPillar && !hasOldHeadline,
+    details: { hasNewHeadline1, hasNewHeadline2, hasOutcomeContainer, hasAuditCTA, hasBenefitStrip, hasTrustPillar, hasOldHeadline },
   };
 }
 
@@ -46,7 +48,7 @@ async function main() {
     try {
       const { isNew, details } = await checkProduction();
       if (isNew) {
-        console.log("\n>>> SUCCESS: Production is live with the new implementation! <<<\n");
+        console.log("\n>>> SUCCESS: Production is live with commit b1236fb! <<<\n");
         process.exit(0);
       } else {
         console.log("Vercel build is still completing or cache is updating. Retrying in 10s...");
