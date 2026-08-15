@@ -8,6 +8,7 @@ create table if not exists owner_chat_connections (
   created_at timestamptz not null default now(), updated_at timestamptz not null default now(), unique(owner_id, provider_key)
 );
 alter table owner_chat_connections enable row level security;
+drop policy if exists owner_chat_connections_admin_owner on owner_chat_connections;
 create policy owner_chat_connections_admin_owner on owner_chat_connections for all to authenticated
   using (owner_id = (select auth.uid()) and exists (select 1 from stratxcel_admins a where a.user_id = (select auth.uid())))
   with check (owner_id = (select auth.uid()) and exists (select 1 from stratxcel_admins a where a.user_id = (select auth.uid())));
@@ -21,6 +22,7 @@ create table if not exists owner_chat_imports (
   unique(connection_id, import_hash)
 );
 alter table owner_chat_imports enable row level security;
+drop policy if exists owner_chat_imports_admin_owner on owner_chat_imports;
 create policy owner_chat_imports_admin_owner on owner_chat_imports for all to authenticated
   using (owner_id = (select auth.uid()) and exists (select 1 from stratxcel_admins a where a.user_id = (select auth.uid())))
   with check (owner_id = (select auth.uid()) and exists (select 1 from stratxcel_admins a where a.user_id = (select auth.uid())));
@@ -34,6 +36,7 @@ create table if not exists owner_chat_messages (
   created_at timestamptz not null default now(), unique(connection_id, external_id)
 );
 alter table owner_chat_messages enable row level security;
+drop policy if exists owner_chat_messages_admin_owner on owner_chat_messages;
 create policy owner_chat_messages_admin_owner on owner_chat_messages for all to authenticated
   using (owner_id = (select auth.uid()) and exists (select 1 from stratxcel_admins a where a.user_id = (select auth.uid())))
   with check (owner_id = (select auth.uid()) and exists (select 1 from stratxcel_admins a where a.user_id = (select auth.uid())));
@@ -45,6 +48,7 @@ create table if not exists owner_chat_sync_cursors (
   scope_key text not null, cursor jsonb not null default '{}'::jsonb, updated_at timestamptz not null default now(), unique(connection_id, scope_key)
 );
 alter table owner_chat_sync_cursors enable row level security;
+drop policy if exists owner_chat_sync_cursors_admin_owner on owner_chat_sync_cursors;
 create policy owner_chat_sync_cursors_admin_owner on owner_chat_sync_cursors for all to authenticated
   using (owner_id = (select auth.uid()) and exists (select 1 from stratxcel_admins a where a.user_id = (select auth.uid())))
   with check (owner_id = (select auth.uid()) and exists (select 1 from stratxcel_admins a where a.user_id = (select auth.uid())));

@@ -6,7 +6,7 @@ import {
   SYSTEM_TENANT_SLUGS,
 } from "../lifecycle.ts";
 
-function runTests() {
+async function runTests() {
   console.log("Starting Delete Client & Tenant Lifecycle Unit Test Suite...");
 
   // 1. Protected platform tenant classification
@@ -69,6 +69,7 @@ function runTests() {
     from: (table: string) => ({
       select: () => createChain(table),
       delete: () => createChain(table),
+      update: () => createChain(table),
       insert: async () => ({ error: null }),
     }),
     rpc: async () => ({
@@ -78,13 +79,15 @@ function runTests() {
   } as any;
 
   // Verify deletion fails closed without false success
-  deleteCustomerTenantData(mockFailingService, "tnt_fail", "admin@stratxcel.in").then((result) => {
-    assert.equal(result.ok, false);
-    assert.match(result.error ?? "", /Client deletion failed|Foreign key/);
-    console.log("  ✓ 4. Mandatory deletion failure is FAIL-CLOSED (no silent swallow, exact error reported)");
-  });
+  const failResult = await deleteCustomerTenantData(mockFailingService, "tnt_fail", "admin@stratxcel.in");
+  assert.equal(failResult.ok, false);
+  assert.match(failResult.error ?? "", /Client deletion failed|Foreign key/);
+  console.log("  ✓ 4. Mandatory deletion failure is FAIL-CLOSED (no silent swallow, exact error reported)");
 
-  // 5. Mock schema cache missing RPC falling back to successful client cascade
+  // 5. Mock schema cache missing RPC falling back to successful client cascade with promo_redemptions & audit_orders
+  const tablesDeleted: string[] = [];
+  const tablesUpdated: string[] = [];
+
   const createSuccessChain = (table: string) => {
     const chain: any = {
       eq: () => chain,
@@ -99,7 +102,10 @@ function runTests() {
         }
         return { data: null, error: null };
       },
-      then: (resolve: any) => resolve({ data: [], error: null }),
+      then: (resolve: any) => {
+        tablesDeleted.push(table);
+        return resolve({ data: [], error: null });
+      },
     };
     return chain;
   };
@@ -108,6 +114,10 @@ function runTests() {
     from: (table: string) => ({
       select: () => createSuccessChain(table),
       delete: () => createSuccessChain(table),
+      update: () => {
+        tablesUpdated.push(table);
+        return createSuccessChain(table);
+      },
       insert: async () => ({ error: null }),
     }),
     rpc: async () => ({
@@ -116,14 +126,67 @@ function runTests() {
     }),
   } as any;
 
-  deleteCustomerTenantData(mockSchemaCacheService, "tnt_success", "admin@stratxcel.in").then((result) => {
-    assert.equal(result.ok, true);
-    assert.equal(result.deletedTenantId, "tnt_success");
-    console.log("  ✓ 5. Schema cache RPC fallback executes fail-closed cascade and succeeds cleanly");
-  });
+  const successResult = await deleteCustomerTenantData(mockSchemaCacheService, "tnt_success", "admin@stratxcel.in");
+  assert.equal(successResult.ok, true);
+  assert.equal(successResult.deletedTenantId, "tnt_success");
+  assert.ok(tablesUpdated.includes("audit_orders"), "audit_orders promo_redemption_id must be nullified first");
+  assert.ok(tablesDeleted.includes("promo_redemptions"), "promo_redemptions must be deleted");
+  assert.ok(tablesDeleted.includes("audit_orders"), "audit_orders must be deleted");
+  assert.ok(tablesDeleted.includes("tenants"), "tenants must be deleted");
+  console.log("  ✓ 5. Schema cache RPC fallback executes fail-closed cascade with promo_redemptions & audit_orders cleanly");
 
-  console.log("  ✓ 6. All tenant lifecycle policies unified across environment-reset and Delete Client");
+  // 6. Direct RPC success path verification
+  const mockRpcSuccessService = {
+    from: (table: string) => ({
+      select: () => createSuccessChain(table),
+    }),
+    rpc: async (fn: string) => {
+      if (fn === "delete_customer_tenant_v1") {
+        return {
+          data: { ok: true, deleted_tenant_id: "tnt_rpc_success", slug: "rpc-customer" },
+          error: null,
+        };
+      }
+      return { data: null, error: { message: "Unknown RPC" } };
+    },
+  } as any;
+
+  const rpcResult = await deleteCustomerTenantData(mockRpcSuccessService, "tnt_rpc_success", "admin@stratxcel.in");
+  assert.equal(rpcResult.ok, true);
+  assert.equal(rpcResult.deletedTenantId, "tnt_rpc_success");
+  console.log("  ✓ 6. Direct delete_customer_tenant_v1 RPC execution succeeds atomically");
+
+  // 7. Protected platform workspace rejection before DB execution
+  const createProtectedChain = (table: string) => {
+    const chain: any = {
+      eq: () => chain,
+      in: () => chain,
+      neq: () => chain,
+      maybeSingle: async () => {
+        if (table === "tenants") {
+          return {
+            data: { id: "tnt_stratxcel", slug: "stratxcel", name: "Stratxcel Platform" },
+            error: null,
+          };
+        }
+        return { data: null, error: null };
+      },
+    };
+    return chain;
+  };
+
+  const mockProtectedService = {
+    from: (table: string) => ({
+      select: () => createProtectedChain(table),
+    }),
+  } as any;
+
+  const protectedResult = await deleteCustomerTenantData(mockProtectedService, "tnt_stratxcel", "admin@stratxcel.in");
+  assert.equal(protectedResult.ok, false);
+  assert.match(protectedResult.error ?? "", /protected/i);
+  console.log("  ✓ 7. Protected system workspace (stratxcel) cannot be deleted");
+
   console.log("\nALL DELETE CLIENT & LIFECYCLE TESTS PASS!");
 }
 
-runTests();
+void runTests();

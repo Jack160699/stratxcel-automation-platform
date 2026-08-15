@@ -120,13 +120,19 @@ export async function deleteCustomerTenantData(
     const { data: orders } = await service.from("audit_orders").select("id").eq("tenant_id", tenantId);
     const orderIds = (orders ?? []).map((o) => o.id);
 
-    // A. Promo Redemptions (must delete before audit_orders due to promo_redemptions_audit_order_id_fkey)
+    // A. Break mutual FK from audit_orders to promo_redemptions
+    await assertSuccess(
+      service.from("audit_orders").update({ promo_redemption_id: null }).eq("tenant_id", tenantId),
+      "audit_orders (nullify promo_redemption_id)"
+    );
+
+    // B. Promo Redemptions
     if (orderIds.length > 0) {
       await assertDeleteSuccess(service.from("promo_redemptions").delete().in("audit_order_id", orderIds), "promo_redemptions");
     }
     await assertDeleteSuccess(service.from("promo_redemptions").delete().eq("tenant_id", tenantId), "promo_redemptions");
 
-    // B. Audit Engine Tables
+    // C. Audit Engine Tables
     if (orderIds.length > 0) {
       await assertDeleteSuccess(service.from("audit_delivery_events").delete().in("audit_order_id", orderIds), "audit_delivery_events");
       await assertDeleteSuccess(service.from("audit_discovery_snapshots").delete().in("audit_order_id", orderIds), "audit_discovery_snapshots");
@@ -135,13 +141,19 @@ export async function deleteCustomerTenantData(
     }
 
     await assertDeleteSuccess(service.from("audit_reset_snapshots").delete().eq("tenant_id", tenantId), "audit_reset_snapshots");
+    await assertDeleteSuccess(service.from("audit_discovery_snapshots").delete().eq("tenant_id", tenantId), "audit_discovery_snapshots");
     await assertDeleteSuccess(service.from("audit_whatsapp_destinations").delete().eq("tenant_id", tenantId), "audit_whatsapp_destinations");
     await assertDeleteSuccess(service.from("audit_orders").delete().eq("tenant_id", tenantId), "audit_orders");
 
-    // C. Brand Brain Tables
+    // D. Brand Brain Tables
     await assertDeleteSuccess(service.from("brand_brain_versions").delete().eq("tenant_id", tenantId), "brand_brain_versions");
     await assertDeleteSuccess(service.from("brand_brains").delete().eq("tenant_id", tenantId), "brand_brains");
     await assertDeleteSuccess(service.from("brand_assets").delete().eq("tenant_id", tenantId), "brand_assets");
+
+    // E. Image Generation & Media Tables
+    await assertDeleteSuccess(service.from("image_generation_references").delete().eq("tenant_id", tenantId), "image_generation_references");
+    await assertDeleteSuccess(service.from("image_generation_candidates").delete().eq("tenant_id", tenantId), "image_generation_candidates");
+    await assertDeleteSuccess(service.from("image_generation_jobs").delete().eq("tenant_id", tenantId), "image_generation_jobs");
 
     // D. Social & Content Tables
     await assertDeleteSuccess(service.from("social_tokens").delete().eq("tenant_id", tenantId), "social_tokens");
@@ -261,6 +273,13 @@ async function assertDeleteSuccess(promise: PromiseLike<{ error: { message: stri
   const { error } = await promise;
   if (error && error.code !== "PGRST205" && !error.message.includes("does not exist")) {
     throw new Error(`Failed to delete from ${tableName}: ${error.message}`);
+  }
+}
+
+async function assertSuccess(promise: PromiseLike<{ error: { message: string; code?: string } | null }>, actionName: string) {
+  const { error } = await promise;
+  if (error && error.code !== "PGRST205" && !error.message.includes("does not exist")) {
+    throw new Error(`Failed to update ${actionName}: ${error.message}`);
   }
 }
 

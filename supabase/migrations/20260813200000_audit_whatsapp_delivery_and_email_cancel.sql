@@ -45,6 +45,7 @@ create unique index if not exists audit_whatsapp_destinations_tenant_uidx
 create index if not exists audit_whatsapp_destinations_lead_idx
   on public.audit_whatsapp_destinations (lead_id);
 
+drop policy if exists audit_whatsapp_destinations_tenant_read on public.audit_whatsapp_destinations;
 create policy audit_whatsapp_destinations_tenant_read
   on public.audit_whatsapp_destinations
   for select
