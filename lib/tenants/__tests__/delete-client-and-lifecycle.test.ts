@@ -186,6 +186,85 @@ async function runTests() {
   assert.match(protectedResult.error ?? "", /protected/i);
   console.log("  ✓ 7. Protected system workspace (stratxcel) cannot be deleted");
 
+  // 8. REGRESSION: The canonical historical failure scenario
+  //    Old implementation: DELETE audit_orders would hit RESTRICT FK from:
+  //      - tenant_current_audits.current_audit_order_id
+  //      - tenant_current_audits.previous_audit_order_id
+  //      - promo_redemptions.audit_order_id
+  //    This test verifies the NEW deletion order handles all three.
+  //    Expected: tenant_current_audits deleted BEFORE audit_orders; promo_redemptions nullified then deleted.
+  const historicalDeletionOrder: string[] = [];
+  const historicalUpdates: Array<{ table: string; set: Record<string, unknown> }> = [];
+
+  const createHistoricalChain = (table: string) => {
+    const chain: any = {
+      eq: (..._args: unknown[]) => chain,
+      in: (..._args: unknown[]) => chain,
+      neq: (..._args: unknown[]) => chain,
+      is: (..._args: unknown[]) => chain,
+      not: (..._args: unknown[]) => chain,
+      or: (..._args: unknown[]) => chain,
+      select: (..._args: unknown[]) => chain,
+      insert: (..._args: unknown[]) => chain,
+      delete: (..._args: unknown[]) => {
+        historicalDeletionOrder.push(table);
+        return chain;
+      },
+      update: (setObj: Record<string, unknown>) => {
+        historicalUpdates.push({ table, set: setObj });
+        return chain;
+      },
+      maybeSingle: async () => {
+        if (table === "tenants")
+          return { data: { id: "tnt_hist", slug: "acme-business", name: "Acme Business" }, error: null };
+        if (table === "whatsapp_phone_bindings")
+          return { data: null, error: null };
+        return { data: null, error: null };
+      },
+      then: (resolve: (val: any) => any) => {
+        return Promise.resolve({ data: table === "audit_orders" ? [{ id: "order_hist_1" }] : [], error: null }).then(resolve);
+      },
+    };
+    return chain;
+  };
+
+  const mockHistoricalService = {
+    from: (table: string) => createHistoricalChain(table),
+    rpc: async (_fn: string) => {
+      // Simulate RPC not in schema cache — force application fallback
+      return { data: null, error: { message: "Could not find the function public.delete_customer_tenant_v1" } };
+    },
+  } as any;
+
+  const historicalResult = await deleteCustomerTenantData(mockHistoricalService, "tnt_hist", "admin@stratxcel.in");
+  assert.equal(historicalResult.ok, true, "Historical FK scenario should succeed with new deletion order");
+
+  // CRITICAL: tenant_current_audits must be deleted BEFORE audit_orders
+  const tcaIdx = historicalDeletionOrder.indexOf("tenant_current_audits");
+  const aoIdx = historicalDeletionOrder.indexOf("audit_orders");
+  assert.ok(tcaIdx !== -1, "tenant_current_audits must be deleted");
+  assert.ok(aoIdx !== -1, "audit_orders must be deleted");
+  assert.ok(
+    tcaIdx < aoIdx,
+    `tenant_current_audits (pos ${tcaIdx}) must be deleted BEFORE audit_orders (pos ${aoIdx}) to avoid RESTRICT FK violation`
+  );
+
+  // CRITICAL: promo_redemptions must be deleted before audit_orders
+  const prIdx = historicalDeletionOrder.indexOf("promo_redemptions");
+  assert.ok(prIdx !== -1, "promo_redemptions must be deleted");
+  assert.ok(
+    prIdx < aoIdx,
+    `promo_redemptions (pos ${prIdx}) must be deleted BEFORE audit_orders (pos ${aoIdx}) to avoid RESTRICT FK violation`
+  );
+
+  // CRITICAL: audit_orders.promo_redemption_id must be nullified BEFORE deleting promo_redemptions
+  const promoNullifyUpdate = historicalUpdates.find(
+    (u) => u.table === "audit_orders" && "promo_redemption_id" in u.set && u.set["promo_redemption_id"] === null
+  );
+  assert.ok(promoNullifyUpdate !== undefined, "audit_orders.promo_redemption_id must be nullified before deleting promo_redemptions");
+
+  console.log("  ✓ 8. REGRESSION: tenant_current_audits + promo_redemptions deleted before audit_orders (no RESTRICT FK violation)");
+
   console.log("\nALL DELETE CLIENT & LIFECYCLE TESTS PASS!");
 }
 

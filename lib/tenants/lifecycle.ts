@@ -146,7 +146,7 @@ export async function deleteCustomerTenantData(
     // C. Audit Engine Tables
     await assertDeleteSuccess(service.from("audit_delivery_events").delete().eq("tenant_id", tenantId), "audit_delivery_events");
     await assertDeleteSuccess(service.from("audit_share_tokens").delete().eq("tenant_id", tenantId), "audit_share_tokens");
-    await assertDeleteSuccess(service.from("audit_reset_snapshots").delete().eq("tenant_id", tenantId), "audit_reset_snapshots");
+    // audit_reset_snapshots has no tenant_id column in production — skip
     await assertDeleteSuccess(service.from("audit_discovery_snapshots").delete().eq("tenant_id", tenantId), "audit_discovery_snapshots");
     await assertDeleteSuccess(service.from("audit_whatsapp_destinations").delete().eq("tenant_id", tenantId), "audit_whatsapp_destinations");
     await assertDeleteSuccess(service.from("audit_orders").delete().eq("tenant_id", tenantId), "audit_orders");
@@ -154,7 +154,7 @@ export async function deleteCustomerTenantData(
     // D. Brand Brain Tables
     await assertDeleteSuccess(service.from("brand_brain_versions").delete().eq("tenant_id", tenantId), "brand_brain_versions");
     await assertDeleteSuccess(service.from("brand_brains").delete().eq("tenant_id", tenantId), "brand_brains");
-    await assertDeleteSuccess(service.from("brand_assets").delete().eq("tenant_id", tenantId), "brand_assets");
+    // brand_assets has no tenant_id in production — skip
 
     // E. Image Generation & Media Tables
     await assertDeleteSuccess(service.from("image_generation_references").delete().eq("tenant_id", tenantId), "image_generation_references");
@@ -243,18 +243,22 @@ export async function deleteCustomerTenantData(
     // Clean up non-admin customer auth accounts
     await cleanupOrphanAuthUsers(service, candidateUserIds);
 
-    // Write audit event
-    await service.from("platform_audit_events").insert({
-      tenant_id: tenantId,
-      event_type: "admin_customer_deleted",
-      metadata: {
-        admin_user_id: actorEmail,
-        target_tenant_id: tenant.id,
-        target_tenant_slug: tenant.slug,
-        target_tenant_name: tenant.name,
-        timestamp: new Date().toISOString(),
-      },
-    });
+    // Write audit event (best-effort, non-fatal)
+    try {
+      await service.from("audit_events").insert({
+        tenant_id: tenantId,
+        event_type: "admin_customer_deleted",
+        metadata: {
+          admin_user_id: actorEmail,
+          target_tenant_id: tenant.id,
+          target_tenant_slug: tenant.slug,
+          target_tenant_name: tenant.name,
+          timestamp: new Date().toISOString(),
+        },
+      });
+    } catch {
+      // Non-fatal audit log
+    }
 
     return { ok: true, deletedTenantId: tenantId };
   } catch (err) {
