@@ -62,8 +62,15 @@ BEGIN
 END;
 $$;
 
--- 3. Ensure service_role can delete promo_redemptions when clearing disposable customer tenants
-GRANT SELECT, INSERT, DELETE ON public.promo_redemptions TO service_role;
+-- 3. Ensure service_role has necessary permissions on all audit & commercial tables
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.promo_redemptions TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.tenant_current_audits TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.audit_free_eligibility_events TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.audit_discovery_snapshots TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.audit_share_tokens TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.audit_delivery_events TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.audit_reset_snapshots TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.audit_whatsapp_destinations TO service_role;
 
 -- 4. Create the canonical customer tenant deletion function
 CREATE OR REPLACE FUNCTION public.delete_customer_tenant_v1(
@@ -113,7 +120,19 @@ BEGIN
   FROM public.audit_orders
   WHERE tenant_id = p_tenant_id;
 
-  -- 6. Break mutual FK reference between audit_orders and promo_redemptions
+  -- 6. Break mutual FK references and clean audit engine dependencies
+  DELETE FROM public.tenant_current_audits WHERE tenant_id = p_tenant_id;
+  DELETE FROM public.audit_free_eligibility_events WHERE tenant_id = p_tenant_id;
+
+  IF CARDINALITY(v_order_ids) > 0 THEN
+    DELETE FROM public.audit_free_eligibility_events WHERE audit_order_id = ANY(v_order_ids);
+    DELETE FROM public.audit_delivery_events WHERE audit_order_id = ANY(v_order_ids);
+    DELETE FROM public.audit_discovery_snapshots WHERE audit_order_id = ANY(v_order_ids);
+    DELETE FROM public.audit_generation_runs WHERE audit_order_id = ANY(v_order_ids);
+    DELETE FROM public.audit_share_tokens WHERE audit_order_id = ANY(v_order_ids);
+  END IF;
+
+  -- Break mutual FK reference between audit_orders and promo_redemptions
   UPDATE public.audit_orders
   SET promo_redemption_id = NULL
   WHERE tenant_id = p_tenant_id;
@@ -125,13 +144,8 @@ BEGIN
      OR (CARDINALITY(v_order_ids) > 0 AND audit_order_id = ANY(v_order_ids));
 
   -- B. Audit Engine Tables
-  IF CARDINALITY(v_order_ids) > 0 THEN
-    DELETE FROM public.audit_delivery_events WHERE audit_order_id = ANY(v_order_ids);
-    DELETE FROM public.audit_discovery_snapshots WHERE audit_order_id = ANY(v_order_ids);
-    DELETE FROM public.audit_generation_runs WHERE audit_order_id = ANY(v_order_ids);
-    DELETE FROM public.audit_share_tokens WHERE audit_order_id = ANY(v_order_ids);
-  END IF;
-
+  DELETE FROM public.audit_delivery_events WHERE tenant_id = p_tenant_id;
+  DELETE FROM public.audit_share_tokens WHERE tenant_id = p_tenant_id;
   DELETE FROM public.audit_reset_snapshots WHERE tenant_id = p_tenant_id;
   DELETE FROM public.audit_discovery_snapshots WHERE tenant_id = p_tenant_id;
   DELETE FROM public.audit_whatsapp_destinations WHERE tenant_id = p_tenant_id;
@@ -142,12 +156,12 @@ BEGIN
   DELETE FROM public.brand_brains WHERE tenant_id = p_tenant_id;
   DELETE FROM public.brand_assets WHERE tenant_id = p_tenant_id;
 
-  -- D. Image Generation & Media Tables
-  DELETE FROM public.image_generation_references WHERE tenant_id = p_tenant_id;
+  -- D. Image Generation & Media Tables (candidates reference assets, so delete in reverse dependency order)
   DELETE FROM public.image_generation_candidates WHERE tenant_id = p_tenant_id;
+  DELETE FROM public.image_generation_references WHERE tenant_id = p_tenant_id;
   DELETE FROM public.image_generation_jobs WHERE tenant_id = p_tenant_id;
 
-  -- E. Social & Content Tables
+  -- E. Social & Content Tables (authorizations reference brand profiles, so delete authorizations first)
   DELETE FROM public.social_autopilot_queue_items WHERE tenant_id = p_tenant_id;
   DELETE FROM public.social_autopilot_authorizations WHERE tenant_id = p_tenant_id;
   DELETE FROM public.social_tokens WHERE tenant_id = p_tenant_id;

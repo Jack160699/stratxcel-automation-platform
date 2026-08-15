@@ -120,7 +120,18 @@ export async function deleteCustomerTenantData(
     const { data: orders } = await service.from("audit_orders").select("id").eq("tenant_id", tenantId);
     const orderIds = (orders ?? []).map((o) => o.id);
 
-    // A. Break mutual FK from audit_orders to promo_redemptions
+    // A. Break pointers and mutual FK from audit_orders
+    await assertDeleteSuccess(service.from("tenant_current_audits").delete().eq("tenant_id", tenantId), "tenant_current_audits");
+    await assertDeleteSuccess(service.from("audit_free_eligibility_events").delete().eq("tenant_id", tenantId), "audit_free_eligibility_events");
+
+    if (orderIds.length > 0) {
+      await assertDeleteSuccess(service.from("audit_free_eligibility_events").delete().in("audit_order_id", orderIds), "audit_free_eligibility_events (orders)");
+      await assertDeleteSuccess(service.from("audit_delivery_events").delete().in("audit_order_id", orderIds), "audit_delivery_events");
+      await assertDeleteSuccess(service.from("audit_discovery_snapshots").delete().in("audit_order_id", orderIds), "audit_discovery_snapshots");
+      await assertDeleteSuccess(service.from("audit_generation_runs").delete().in("audit_order_id", orderIds), "audit_generation_runs");
+      await assertDeleteSuccess(service.from("audit_share_tokens").delete().in("audit_order_id", orderIds), "audit_share_tokens");
+    }
+
     await assertSuccess(
       service.from("audit_orders").update({ promo_redemption_id: null }).eq("tenant_id", tenantId),
       "audit_orders (nullify promo_redemption_id)"
@@ -133,13 +144,8 @@ export async function deleteCustomerTenantData(
     await assertDeleteSuccess(service.from("promo_redemptions").delete().eq("tenant_id", tenantId), "promo_redemptions");
 
     // C. Audit Engine Tables
-    if (orderIds.length > 0) {
-      await assertDeleteSuccess(service.from("audit_delivery_events").delete().in("audit_order_id", orderIds), "audit_delivery_events");
-      await assertDeleteSuccess(service.from("audit_discovery_snapshots").delete().in("audit_order_id", orderIds), "audit_discovery_snapshots");
-      await assertDeleteSuccess(service.from("audit_generation_runs").delete().in("audit_order_id", orderIds), "audit_generation_runs");
-      await assertDeleteSuccess(service.from("audit_share_tokens").delete().in("audit_order_id", orderIds), "audit_share_tokens");
-    }
-
+    await assertDeleteSuccess(service.from("audit_delivery_events").delete().eq("tenant_id", tenantId), "audit_delivery_events");
+    await assertDeleteSuccess(service.from("audit_share_tokens").delete().eq("tenant_id", tenantId), "audit_share_tokens");
     await assertDeleteSuccess(service.from("audit_reset_snapshots").delete().eq("tenant_id", tenantId), "audit_reset_snapshots");
     await assertDeleteSuccess(service.from("audit_discovery_snapshots").delete().eq("tenant_id", tenantId), "audit_discovery_snapshots");
     await assertDeleteSuccess(service.from("audit_whatsapp_destinations").delete().eq("tenant_id", tenantId), "audit_whatsapp_destinations");
