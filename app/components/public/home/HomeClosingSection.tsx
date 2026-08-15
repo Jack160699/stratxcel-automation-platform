@@ -14,7 +14,7 @@ export function HomeClosingSection() {
         </p>
 
         <h2 className="mt-4 font-sx-sans text-[clamp(2rem,4.5vw,3.4rem)] font-bold tracking-tight text-slate-900 leading-tight">
-          Give your business the digital team it deserves.
+          You run the business.<br className="hidden sm:inline" /> Let Stratxcel help with the work behind it.
         </h2>
 
         <p className="mx-auto mt-5 max-w-2xl font-sx-sans text-base sm:text-lg leading-relaxed text-slate-600">
@@ -30,7 +30,7 @@ export function HomeClosingSection() {
             plan="audit"
             className="inline-flex min-h-12 w-full items-center justify-center rounded-xl bg-blue-600 px-8 py-3.5 font-sx-sans text-sm font-bold text-white shadow-md transition-all hover:bg-blue-700 hover:shadow-lg sm:w-auto"
           >
-            <span>START MY ₹999 BUSINESS AUDIT</span>
+            <span>START MY ₹999 AUDIT</span>
             <ArrowRightIcon className="ml-2 w-4 h-4" />
           </TrackedCtaLink>
 

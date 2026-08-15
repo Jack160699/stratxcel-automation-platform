@@ -18,14 +18,14 @@ import {
   ArrowRightIcon,
 } from "../icons/FeatureIcons";
 
-const OUTCOMES: { word: OutcomeType; subtext: string; color: string }[] = [
-  { word: "TIME", subtext: "Automate repetitive daily digital routines", color: "from-blue-600 to-indigo-600" },
-  { word: "COST", subtext: "Replace fragmented subscriptions and retainers", color: "from-blue-600 to-cyan-600" },
-  { word: "QUALITY", subtext: "Grounded strictly in verified business truth", color: "from-blue-700 to-sky-600" },
-  { word: "CUSTOMERS", subtext: "Capture organic search intent and inbound inquiries", color: "from-blue-600 to-blue-800" },
-  { word: "FOLLOW-UPS", subtext: "Zero missed WhatsApp chats or web leads", color: "from-indigo-600 to-blue-600" },
-  { word: "SALES", subtext: "Turn interest into structured proposals faster", color: "from-blue-600 to-teal-600" },
-  { word: "GROWTH", subtext: "Consistent compounding digital presence", color: "from-blue-600 to-sky-500" },
+const OUTCOMES: { phrase: OutcomeType; subtext: string }[] = [
+  { phrase: "MORE TIME", subtext: "Automate repetitive daily digital routines" },
+  { phrase: "LOWER COSTS", subtext: "Replace fragmented subscriptions and retainers" },
+  { phrase: "BETTER QUALITY", subtext: "Grounded strictly in verified business truth" },
+  { phrase: "MORE CUSTOMERS", subtext: "Capture organic search intent and inbound inquiries" },
+  { phrase: "BETTER FOLLOW-UPS", subtext: "Zero missed WhatsApp chats or web leads" },
+  { phrase: "MORE SALES", subtext: "Turn interest into structured proposals faster" },
+  { phrase: "FASTER GROWTH", subtext: "Consistent compounding digital presence" },
 ];
 
 interface CapabilityView {
@@ -66,7 +66,7 @@ const CAPABILITY_VIEWS: CapabilityView[] = [
     name: "Google & Search",
     badge: "DISCOVERY",
     icon: <SearchIcon className="w-4 h-4 text-blue-600" />,
-    headline: "Get discovered by local and search customers on Google.",
+    headline: "Help more people find your business on Google.",
     description:
       "Analyzes top local competitor keyword gaps, audits indexation status, and writes targeted search content to capture real customer demand.",
     keyPoints: [
@@ -172,13 +172,14 @@ export function HomeHeroLight() {
   const active = CAPABILITY_VIEWS.find((v) => v.id === activeId) || CAPABILITY_VIEWS[0];
 
   useEffect(() => {
+    // 3600ms total loop: 2400ms hold + 600ms transition + 600ms enter
     const interval = setInterval(() => {
       setIsTransitioning(true);
       setTimeout(() => {
         setOutcomeIndex((prev) => (prev + 1) % OUTCOMES.length);
         setIsTransitioning(false);
-      }, 350);
-    }, 3200);
+      }, 550);
+    }, 3400);
 
     return () => clearInterval(interval);
   }, []);
@@ -189,17 +190,17 @@ export function HomeHeroLight() {
       data-home-section="hero"
       className="relative overflow-hidden bg-white pt-20 pb-16 sm:pt-28 sm:pb-24"
     >
-      {/* Ambient Fluid Ribbons Canvas */}
-      <FluidRibbonsCanvas activeOutcome={currentOutcome.word} />
+      {/* Ambient Fluid Silk Ribbons Canvas (Quiet Zone Center) */}
+      <FluidRibbonsCanvas activeOutcome={currentOutcome.phrase} />
 
       {/* Gentle Radial Overlay */}
       <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
-        <div className="absolute -top-[10%] left-1/2 h-[50vw] w-[70vw] -translate-x-1/2 rounded-full bg-[radial-gradient(ellipse_at_center,rgba(37,99,235,0.06),transparent_70%)] blur-3xl" />
+        <div className="absolute -top-[10%] left-1/2 h-[45vw] w-[65vw] -translate-x-1/2 rounded-full bg-[radial-gradient(ellipse_at_center,rgba(37,99,235,0.045),transparent_70%)] blur-3xl" />
         <div className="absolute inset-0 bg-[linear-gradient(to_right,#00000003_1px,transparent_1px),linear-gradient(to_bottom,#00000003_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_0%,#000_70%,transparent_100%)]" />
       </div>
 
       <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        {/* Main Headline & Outcome Cycling */}
+        {/* Main Headline & Structurally Invariant Outcome Slot */}
         <div className="mx-auto max-w-4xl text-center">
           {/* Eyebrow Badge */}
           <div className="inline-flex items-center gap-2 rounded-full border border-blue-600/20 bg-blue-50/90 px-4 py-1.5 text-blue-700 shadow-xs backdrop-blur-sm">
@@ -212,30 +213,41 @@ export function HomeHeroLight() {
             </span>
           </div>
 
-          {/* Primary Fixed Hero Sentences with Dynamic Outcome Word */}
+          {/* Primary Fixed Hero Sentences with Invariant Outcome Slot */}
           <div className="mt-7">
-            <p className="font-sx-sans text-[clamp(1.8rem,4vw,3.2rem)] font-bold tracking-tight text-slate-900 leading-tight">
+            <h1 className="font-sx-sans text-[clamp(1.75rem,4.4vw,3.25rem)] font-bold tracking-tight text-slate-900 leading-tight">
               You run your business.
-            </p>
-            <div className="mt-2 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 font-sx-sans text-[clamp(1.8rem,4vw,3.2rem)] font-bold tracking-tight text-slate-900 leading-tight">
-              <span>We help you get more on</span>
-              <span
-                className={`inline-block min-w-[5ch] text-left transition-all duration-300 ${
-                  isTransitioning
-                    ? "opacity-0 -translate-y-2 blur-xs scale-95"
-                    : "opacity-100 translate-y-0 blur-none scale-100"
-                }`}
+            </h1>
+
+            {/* Structurally Fixed Second Line: Never wraps dynamic word to a 3rd line */}
+            <div className="mt-2 flex flex-wrap items-center justify-center gap-x-2.5 sm:gap-x-3 font-sx-sans text-[clamp(1.5rem,4.2vw,3.25rem)] font-bold tracking-tight text-slate-900 leading-tight whitespace-nowrap">
+              <span className="whitespace-nowrap">We help you get</span>
+
+              {/* Reserved Fixed-Width & Fixed-Height Invariant Container */}
+              <div
+                id="outcome-container"
+                className="relative inline-flex items-center justify-start overflow-visible whitespace-nowrap min-w-[13.5ch] sm:min-w-[15ch] h-[1.3em] align-middle text-left"
+                aria-live="polite"
               >
-                <span className="bg-gradient-to-r from-blue-600 via-blue-700 to-indigo-700 bg-clip-text text-transparent underline decoration-blue-400/40 decoration-4 underline-offset-8">
-                  {currentOutcome.word}
+                <span
+                  key={currentOutcome.phrase}
+                  className={`inline-block whitespace-nowrap transition-all duration-500 ease-out ${
+                    isTransitioning
+                      ? "opacity-0 -translate-y-1.5 blur-[2px] scale-[0.98]"
+                      : "opacity-100 translate-y-0 blur-none scale-100"
+                  }`}
+                >
+                  <span className="bg-gradient-to-r from-blue-600 via-blue-700 to-indigo-700 bg-clip-text text-transparent underline decoration-blue-400/40 decoration-4 underline-offset-8">
+                    {currentOutcome.phrase}
+                  </span>
                 </span>
-              </span>
+              </div>
             </div>
           </div>
 
           {/* Supporting Core Message */}
           <p className="mx-auto mt-6 max-w-2xl font-sx-sans text-base sm:text-lg leading-relaxed text-slate-600 font-medium">
-            Stratxcel helps plan, create, manage and improve the digital work behind your business.
+            Stratxcel helps with the digital work behind your business, so you can focus on running it.
           </p>
 
           {/* Primary and Secondary Hero CTAs */}
