@@ -157,11 +157,6 @@ export function HomeHeroLight() {
   const [activeId, setActiveId] = useState<string>("website");
   const active = CAPABILITY_VIEWS.find((v) => v.id === activeId) || CAPABILITY_VIEWS[0];
 
-  const handleReplay = () => {
-    if (typeof window !== "undefined" && (window as unknown as { __replayStratxcelIntro?: () => void }).__replayStratxcelIntro) {
-      (window as unknown as { __replayStratxcelIntro: () => void }).__replayStratxcelIntro();
-    }
-  };
 
   return (
     <section
@@ -429,18 +424,7 @@ export function HomeHeroLight() {
         </div>
       </div>
 
-      {/* Floating Replay Brand Intro Button */}
-      <button
-        type="button"
-        onClick={handleReplay}
-        className="fixed bottom-6 left-6 z-40 flex items-center gap-2 rounded-full border border-slate-200/90 bg-white/90 px-3.5 py-2 font-sx-mono text-xs font-medium text-slate-700 shadow-lg backdrop-blur-md transition-all hover:bg-slate-50 hover:border-blue-400 hover:text-blue-600"
-      >
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-          <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-          <path d="M3 3v5h5" />
-        </svg>
-        <span>Replay Brand Intro</span>
-      </button>
+
     </section>
   );
 }
