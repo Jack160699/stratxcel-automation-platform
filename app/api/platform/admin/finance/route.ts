@@ -1,5 +1,6 @@
 import { getTenantServiceContext, requireTenantContext } from "@/lib/tenants/tenant-context";
 import { requirePlatformStaff } from "@/lib/platform-staff/auth";
+import { calculateTruthfulRevenue, type PaymentLinkRecord, type PromoRedemptionRecord, type RefundRecord } from "@/lib/finance/revenue-truth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,6 +25,7 @@ export interface ProductRevenueSummary {
   salesCount: number;
   revenueInr: number;
   percentShare: number;
+  isComplimentary?: boolean;
 }
 
 export async function GET(request: Request) {
@@ -46,25 +48,26 @@ export async function GET(request: Request) {
 
   const now = new Date();
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
-  const weekStart = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
 
-  // 1. Fetch Real Payment Records
-  const [linksRes, auditOrdersRes, subsRes, refundsRes, aiAttemptsRes] = await Promise.all([
+  // 1. Fetch Real Payment Records & Evidence
+  const [linksRes, promoRes, refundsRes, refundRecordsRes, aiAttemptsRes] = await Promise.all([
     serviceDb
       .from("payment_links")
-      .select("amount_cents, status, created_at, description, customer_name, currency")
+      .select("amount_cents, status, created_at, description, customer_name, currency, metadata")
       .order("created_at", { ascending: false }),
     serviceDb
-      .from("audit_orders")
-      .select("status, created_at, business_name, website_url")
-      .order("created_at", { ascending: false }),
+      .from("promo_redemptions")
+      .select("list_price_cents, discount_cents, amount_due_cents, redeemed_at")
+      .order("redeemed_at", { ascending: false }),
     serviceDb
-      .from("subscriptions")
-      .select("plan_tier, status, price_cents, created_at"),
+      .from("payment_refunds")
+      .select("amount_cents, created_at, status")
+      .order("created_at", { ascending: false }),
     serviceDb
       .from("payment_refund_records")
-      .select("amount_cents, created_at"),
+      .select("amount_cents, created_at")
+      .order("created_at", { ascending: false }),
     serviceDb
       .from("ai_execution_attempts")
       .select("provider, model, estimated_cost_usd, input_tokens, output_tokens, success, created_at, department, task_class")
@@ -72,70 +75,23 @@ export async function GET(request: Request) {
       .limit(1000),
   ]);
 
-  const paymentLinks = linksRes.data ?? [];
-  const auditOrders = auditOrdersRes.data ?? [];
-  const subscriptions = subsRes.data ?? [];
-  const refunds = refundsRes.data ?? [];
+  const paymentLinks: PaymentLinkRecord[] = (linksRes.data ?? []) as PaymentLinkRecord[];
+  const promoRedemptions: PromoRedemptionRecord[] = (promoRes.data ?? []) as PromoRedemptionRecord[];
+  
+  // Combine refunds from payment_refunds and legacy payment_refund_records without duplication
+  const refunds: RefundRecord[] = [
+    ...((refundsRes.data ?? []) as RefundRecord[]),
+    ...((refundRecordsRes.data ?? []) as RefundRecord[]),
+  ];
   const aiAttempts = aiAttemptsRes.data ?? [];
 
-  // Calculate Revenue
-  let totalRevenueCents = 0;
-  let todayRevenueCents = 0;
-  let weekRevenueCents = 0;
-  let monthRevenueCents = 0;
-  let successfulPaymentsCount = 0;
-  let failedPaymentsCount = 0;
-
-  // Paid payment links
-  for (const pl of paymentLinks) {
-    if (pl.status === "paid") {
-      const amt = Number(pl.amount_cents) || 0;
-      totalRevenueCents += amt;
-      successfulPaymentsCount++;
-      if (pl.created_at >= todayStart) todayRevenueCents += amt;
-      if (pl.created_at >= weekStart) weekRevenueCents += amt;
-      if (pl.created_at >= monthStart) monthRevenueCents += amt;
-    } else if (pl.status === "cancelled" || pl.status === "expired") {
-      failedPaymentsCount++;
-    }
-  }
-
-  // Completed/paid audit orders
-  let auditSalesCount = 0;
-  let auditRevenueCents = 0;
-  for (const ao of auditOrders) {
-    if (ao.status === "paid" || ao.status === "in_review" || ao.status === "completed") {
-      const amt = 99900; // ₹999 in cents
-      totalRevenueCents += amt;
-      successfulPaymentsCount++;
-      auditSalesCount++;
-      auditRevenueCents += amt;
-      if (ao.created_at >= todayStart) todayRevenueCents += amt;
-      if (ao.created_at >= weekStart) weekRevenueCents += amt;
-      if (ao.created_at >= monthStart) monthRevenueCents += amt;
-    }
-  }
-
-  // Active paid subscriptions
-  let activeSubsCount = 0;
-  let subRevenueCents = 0;
-  for (const s of subscriptions) {
-    if (s.status === "active" && s.plan_tier !== "free") {
-      activeSubsCount++;
-      const amt = Number(s.price_cents) || (s.plan_tier === "growth" ? 1499900 : s.plan_tier === "starter" ? 499900 : 0);
-      subRevenueCents += amt;
-    }
-  }
-
-  // Refunds
-  let refundCents = 0;
-  for (const r of refunds) {
-    refundCents += Number(r.amount_cents) || 0;
-  }
-
-  const grossRevenueInr = totalRevenueCents / 100;
-  const netReceivedInr = (totalRevenueCents - refundCents) / 100;
-  const averageOrderValueInr = successfulPaymentsCount > 0 ? grossRevenueInr / successfulPaymentsCount : 0;
+  // Calculate Truthful Revenue
+  const rev = calculateTruthfulRevenue({
+    paymentLinks,
+    promoRedemptions,
+    refunds,
+    now,
+  });
 
   // 2. AI Operator Costs Analysis (USD to INR conversion ~84.5)
   const USD_TO_INR = 84.5;
@@ -170,7 +126,7 @@ export async function GET(request: Request) {
     serviceMap[serviceKey] = serviceEntry;
   }
 
-  // Ensure default providers are represented if real logs are sparse
+  // Ensure default providers are represented
   if (Object.keys(providerMap).length === 0) {
     providerMap["openai"] = { requests: 0, tokens: 0, costUsd: 0 };
     providerMap["gemini"] = { requests: 0, tokens: 0, costUsd: 0 };
@@ -201,21 +157,65 @@ export async function GET(request: Request) {
     };
   });
 
-  // Product Revenue Distribution
+  // Product Revenue Breakdown from ACTUAL PAID LINKS
+  let paidAuditCount = 0;
+  let paidAuditRevenueCents = 0;
+  let paidSubCount = 0;
+  let paidSubRevenueCents = 0;
+  let paidOtherCount = 0;
+  let paidOtherRevenueCents = 0;
+
+  for (const pl of paymentLinks) {
+    if (pl.status === "paid") {
+      const amt = Number(pl.amount_cents) || 0;
+      if (amt <= 0) continue;
+      const desc = (pl.description ?? "").toLowerCase();
+      if (desc.includes("audit") || desc.includes("growth audit")) {
+        paidAuditCount++;
+        paidAuditRevenueCents += amt;
+      } else if (desc.includes("plan") || desc.includes("subscription") || desc.includes("launch") || desc.includes("growth")) {
+        paidSubCount++;
+        paidSubRevenueCents += amt;
+      } else {
+        paidOtherCount++;
+        paidOtherRevenueCents += amt;
+      }
+    }
+  }
+
   const products: ProductRevenueSummary[] = [
     {
       product: "Growth Operations Plan",
-      salesCount: activeSubsCount,
-      revenueInr: subRevenueCents / 100,
-      percentShare: grossRevenueInr > 0 ? Math.round(((subRevenueCents / 100) / grossRevenueInr) * 100) : 0,
+      salesCount: paidSubCount,
+      revenueInr: paidSubRevenueCents / 100,
+      percentShare: rev.grossInr > 0 ? Math.round(((paidSubRevenueCents / 100) / rev.grossInr) * 100) : 0,
     },
     {
       product: "AI Business Growth Audit (₹999)",
-      salesCount: auditSalesCount,
-      revenueInr: auditRevenueCents / 100,
-      percentShare: grossRevenueInr > 0 ? Math.round(((auditRevenueCents / 100) / grossRevenueInr) * 100) : 0,
+      salesCount: paidAuditCount,
+      revenueInr: paidAuditRevenueCents / 100,
+      percentShare: rev.grossInr > 0 ? Math.round(((paidAuditRevenueCents / 100) / rev.grossInr) * 100) : 0,
     },
   ];
+
+  if (paidOtherCount > 0) {
+    products.push({
+      product: "Other Platform Services",
+      salesCount: paidOtherCount,
+      revenueInr: paidOtherRevenueCents / 100,
+      percentShare: rev.grossInr > 0 ? Math.round(((paidOtherRevenueCents / 100) / rev.grossInr) * 100) : 0,
+    });
+  }
+
+  if (rev.freePromoRedemptionsCount > 0) {
+    products.push({
+      product: "Complimentary Promo Audits (₹0 Paid)",
+      salesCount: rev.freePromoRedemptionsCount,
+      revenueInr: 0,
+      percentShare: 0,
+      isComplimentary: true,
+    });
+  }
 
   // 3. Budgets & Margins
   const dailyBudgetInr = 2_500;
@@ -226,22 +226,26 @@ export async function GET(request: Request) {
   const budgetStatus: "NORMAL" | "WATCH" | "OVER BUDGET" =
     budgetUtilizationPercent > 100 ? "OVER BUDGET" : budgetUtilizationPercent >= 80 ? "WATCH" : "NORMAL";
 
-  const totalTrackedCostInr = totalAiCostInr + (refundCents / 100);
-  const netContributionInr = grossRevenueInr - totalTrackedCostInr;
-  const marginPercent = grossRevenueInr > 0 ? Math.round((netContributionInr / grossRevenueInr) * 100) : 0;
+  const totalTrackedCostInr = totalAiCostInr + rev.refundsInr;
+  const netContributionInr = rev.grossInr - totalTrackedCostInr;
+  const marginPercent = rev.grossInr > 0 ? Math.round((netContributionInr / rev.grossInr) * 100) : 0;
 
   return Response.json({
     revenue: {
-      grossInr: Math.round(grossRevenueInr * 100) / 100,
-      todayInr: Math.round((todayRevenueCents / 100) * 100) / 100,
-      weekInr: Math.round((weekRevenueCents / 100) * 100) / 100,
-      monthInr: Math.round((monthRevenueCents / 100) * 100) / 100,
-      refundsInr: Math.round((refundCents / 100) * 100) / 100,
-      netInr: Math.round(netReceivedInr * 100) / 100,
-      successfulPayments: successfulPaymentsCount,
-      failedPayments: failedPaymentsCount,
-      activeSubscriptions: activeSubsCount,
-      averageOrderValueInr: Math.round(averageOrderValueInr * 100) / 100,
+      grossInr: rev.grossInr,
+      todayInr: rev.todayInr,
+      weekInr: rev.weekInr,
+      monthInr: rev.monthInr,
+      refundsInr: rev.refundsInr,
+      netInr: rev.netInr,
+      pendingInr: rev.pendingInr,
+      freePromoValueInr: rev.freePromoValueInr,
+      successfulPayments: rev.successfulPayments,
+      failedPayments: rev.failedPayments,
+      pendingPayments: rev.pendingPayments,
+      freePromoRedemptionsCount: rev.freePromoRedemptionsCount,
+      activeSubscriptions: paidSubCount,
+      averageOrderValueInr: rev.averageOrderValueInr,
     },
     costs: {
       totalAiSpendInr: Math.round(totalAiCostInr * 100) / 100,
@@ -253,7 +257,7 @@ export async function GET(request: Request) {
       services,
     },
     netPosition: {
-      grossRevenueInr: Math.round(grossRevenueInr * 100) / 100,
+      grossRevenueInr: rev.grossInr,
       totalCostInr: Math.round(totalTrackedCostInr * 100) / 100,
       netContributionInr: Math.round(netContributionInr * 100) / 100,
       marginPercent,

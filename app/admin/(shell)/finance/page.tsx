@@ -15,8 +15,12 @@ interface FinanceData {
     monthInr: number;
     refundsInr: number;
     netInr: number;
+    pendingInr: number;
+    freePromoValueInr: number;
     successfulPayments: number;
     failedPayments: number;
+    pendingPayments: number;
+    freePromoRedemptionsCount: number;
     activeSubscriptions: number;
     averageOrderValueInr: number;
   };
@@ -59,6 +63,7 @@ interface FinanceData {
     salesCount: number;
     revenueInr: number;
     percentShare: number;
+    isComplimentary?: boolean;
   }>;
   recentPayments: Array<{
     description: string;
@@ -141,7 +146,7 @@ export default function AdminFinancePage() {
           <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <Card className="p-5">
               <Metric
-                label="Gross Revenue"
+                label="Gross Revenue Received"
                 value={`₹${data.revenue.grossInr.toLocaleString()}`}
                 deltaLabel={`₹${data.revenue.monthInr.toLocaleString()} this month`}
               />
@@ -203,15 +208,23 @@ export default function AdminFinancePage() {
 
               <div className="mt-6 pt-4 border-t border-sx-border space-y-2">
                 <div className="flex justify-between text-xs text-sx-text">
-                  <span className="text-sx-text-muted">Total Successful Transactions</span>
+                  <span className="text-sx-text-muted">Total Captured Transactions</span>
                   <span className="font-semibold">{data.revenue.successfulPayments}</span>
+                </div>
+                <div className="flex justify-between text-xs text-sx-text">
+                  <span className="text-sx-text-muted">Pending / Unpaid Payment Links</span>
+                  <span className="font-semibold text-amber-400">₹{data.revenue.pendingInr.toLocaleString()} ({data.revenue.pendingPayments} links)</span>
+                </div>
+                <div className="flex justify-between text-xs text-sx-text">
+                  <span className="text-sx-text-muted">Complimentary / Promo Discount Value</span>
+                  <span className="font-semibold text-sky-400">₹{data.revenue.freePromoValueInr.toLocaleString()} ({data.revenue.freePromoRedemptionsCount} free redemptions · ₹0 Paid)</span>
                 </div>
                 <div className="flex justify-between text-xs text-sx-text">
                   <span className="text-sx-text-muted">Total Refunds Issued</span>
                   <span className="font-semibold text-rose-400">₹{data.revenue.refundsInr.toLocaleString()}</span>
                 </div>
-                <div className="flex justify-between text-xs text-sx-text">
-                  <span className="text-sx-text-muted">Net Received Cash</span>
+                <div className="flex justify-between text-xs text-sx-text pt-2 border-t border-sx-border/60">
+                  <span className="text-sx-text-muted font-medium">Net Settled Revenue</span>
                   <span className="font-bold text-emerald-400">₹{data.revenue.netInr.toLocaleString()}</span>
                 </div>
               </div>
@@ -313,8 +326,15 @@ export default function AdminFinancePage() {
                 {data.products.map((prod) => (
                   <div key={prod.product} className="flex items-center justify-between border-b border-sx-border pb-2.5 text-xs">
                     <div>
-                      <p className="font-semibold text-sx-text">{prod.product}</p>
-                      <p className="text-[11px] text-sx-text-subtle">{prod.salesCount} active / sold</p>
+                      <p className="font-semibold text-sx-text flex items-center gap-1.5">
+                        {prod.product}
+                        {prod.isComplimentary && (
+                          <span className="rounded bg-sky-500/10 px-1.5 py-0.5 text-[10px] font-bold text-sky-400">
+                            PROMO / ₹0
+                          </span>
+                        )}
+                      </p>
+                      <p className="text-[11px] text-sx-text-subtle">{prod.salesCount} {prod.isComplimentary ? "redeemed" : "paid"}</p>
                     </div>
                     <div className="text-right">
                       <p className="font-mono font-bold text-sx-text">₹{prod.revenueInr.toLocaleString()}</p>

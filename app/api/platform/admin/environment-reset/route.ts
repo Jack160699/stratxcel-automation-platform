@@ -1,7 +1,5 @@
 import { getTenantServiceContext } from "@/lib/tenants/tenant-context";
 import { requireAdmin } from "@/lib/social/admin-guard";
-import { createTenant } from "@/lib/tenants/repository";
-import { saveBrandBrainVersion } from "@stratxcel/brand-brain";
 import { deleteCustomerTenantData } from "@/lib/tenants/lifecycle";
 
 export const runtime = "nodejs";
@@ -12,14 +10,19 @@ export interface ResourceInventory {
   customerTenants: number;
   customerBrandBrains: number;
   customerAuditOrders: number;
+  customerCrm: number;
   customerSocialAccounts: number;
+  customerWhatsapp: number;
   customerMissions: number;
   customerWallets: number;
   customerSubscriptions: number;
   protectedAdmins: number;
   protectedSystemTenants: number;
   protectedWhatsappBindings: number;
-  shriyanshTestAccountPresent: boolean;
+  smQueryPresent: boolean;
+  myBusinessPresent: boolean;
+  fredExcelPresent: boolean;
+  ascendTheroryPresent: boolean;
 }
 
 export interface ResetExecutionReport {
@@ -28,12 +31,6 @@ export interface ResetExecutionReport {
   initiatedBy: string;
   before: ResourceInventory;
   after: ResourceInventory;
-  verificationAccount: {
-    created: boolean;
-    tenantId?: string;
-    freshAuditEligible?: boolean;
-    freshBrandBrain?: boolean;
-  };
   status: "SUCCESS" | "FAILED";
 }
 
@@ -45,7 +42,7 @@ async function safeExec(fn: () => PromiseLike<unknown>) {
   }
 }
 
-async function captureInventory(): Promise<{ inventory: ResourceInventory; protectedUserIds: Set<string>; protectedTenantIds: Set<string>; customerTenantIds: string[] }> {
+export async function captureInventory(): Promise<{ inventory: ResourceInventory; protectedUserIds: Set<string>; protectedTenantIds: Set<string>; customerTenantIds: string[] }> {
   const { supabase: service } = getTenantServiceContext();
 
   // 1. Protected Admin Users
@@ -79,45 +76,59 @@ async function captureInventory(): Promise<{ inventory: ResourceInventory; prote
   const customerTenants = (allTenants ?? []).filter((t) => !protectedTenantIds.has(t.id));
   const customerTenantIds = customerTenants.map((t) => t.id);
 
+  let smQueryPresent = false;
+  let myBusinessPresent = false;
+  let fredExcelPresent = false;
+  let ascendTheroryPresent = false;
+
+  for (const t of customerTenants) {
+    const nameLower = (t.name ?? "").toLowerCase();
+    const slugLower = (t.slug ?? "").toLowerCase();
+    if (nameLower.includes("sm query") || slugLower.includes("sm-query")) smQueryPresent = true;
+    if (nameLower === "my business" || slugLower.includes("audit-guest")) myBusinessPresent = true;
+    if (nameLower.includes("fred excel") || slugLower.includes("fred-excel")) fredExcelPresent = true;
+    if (nameLower.includes("ascend") || slugLower.includes("ascend")) ascendTheroryPresent = true;
+  }
+
   // 4. Counts
   let customerAuditOrders = 0;
   let customerBrandBrains = 0;
+  let customerCrm = 0;
   let customerSocialAccounts = 0;
+  let customerWhatsapp = 0;
   let customerMissions = 0;
   let customerWallets = 0;
   let customerSubscriptions = 0;
 
   if (customerTenantIds.length > 0) {
-    const { data: orders } = await service.from("audit_orders").select("id").in("tenant_id", customerTenantIds);
-    customerAuditOrders = (orders ?? []).length;
+    const [ordersRes, brainsRes, leadsRes, socialRes, waRes, missionsRes, walletsRes, subsRes] = await Promise.all([
+      service.from("audit_orders").select("id").in("tenant_id", customerTenantIds),
+      service.from("brand_brains").select("id").in("tenant_id", customerTenantIds),
+      service.from("crm_leads").select("id").in("tenant_id", customerTenantIds),
+      service.from("social_accounts").select("id").in("tenant_id", customerTenantIds),
+      service.from("whatsapp_phone_bindings").select("id").in("tenant_id", customerTenantIds).neq("source", "platform_shared_sender"),
+      service.from("missions").select("id").in("tenant_id", customerTenantIds),
+      service.from("wallet_accounts").select("id").in("tenant_id", customerTenantIds),
+      service.from("subscriptions").select("id").in("tenant_id", customerTenantIds),
+    ]);
 
-    const { data: brains } = await service.from("brand_brains").select("id").in("tenant_id", customerTenantIds);
-    customerBrandBrains = (brains ?? []).length;
-
-    const { data: social } = await service.from("social_accounts").select("id").in("tenant_id", customerTenantIds);
-    customerSocialAccounts = (social ?? []).length;
-
-    const { data: missions } = await service.from("missions").select("id").in("tenant_id", customerTenantIds);
-    customerMissions = (missions ?? []).length;
-
-    const { data: wallets } = await service.from("wallet_accounts").select("id").in("tenant_id", customerTenantIds);
-    customerWallets = (wallets ?? []).length;
-
-    const { data: subs } = await service.from("subscriptions").select("id").in("tenant_id", customerTenantIds);
-    customerSubscriptions = (subs ?? []).length;
+    customerAuditOrders = (ordersRes.data ?? []).length;
+    customerBrandBrains = (brainsRes.data ?? []).length;
+    customerCrm = (leadsRes.data ?? []).length;
+    customerSocialAccounts = (socialRes.data ?? []).length;
+    customerWhatsapp = (waRes.data ?? []).length;
+    customerMissions = (missionsRes.data ?? []).length;
+    customerWallets = (walletsRes.data ?? []).length;
+    customerSubscriptions = (subsRes.data ?? []).length;
   }
 
   // 5. Auth Users
   let customerAuthUsers = 0;
-  let shriyanshTestAccountPresent = false;
   try {
-    const { data: usersData } = await service.auth.admin.listUsers({ page: 1, perPage: 200 });
+    const { data: usersData } = await service.auth.admin.listUsers({ page: 1, perPage: 500 });
     for (const u of usersData?.users ?? []) {
       if (!protectedUserIds.has(u.id)) {
         customerAuthUsers++;
-      }
-      if ((u.email ?? "").toLowerCase() === "shriyanshtv@gmail.com") {
-        shriyanshTestAccountPresent = true;
       }
     }
   } catch {
@@ -133,14 +144,19 @@ async function captureInventory(): Promise<{ inventory: ResourceInventory; prote
       customerTenants: customerTenantIds.length,
       customerBrandBrains,
       customerAuditOrders,
+      customerCrm,
       customerSocialAccounts,
+      customerWhatsapp,
       customerMissions,
       customerWallets,
       customerSubscriptions,
       protectedAdmins: protectedUserIds.size,
       protectedSystemTenants: protectedTenantIds.size,
       protectedWhatsappBindings,
-      shriyanshTestAccountPresent,
+      smQueryPresent,
+      myBusinessPresent,
+      fredExcelPresent,
+      ascendTheroryPresent,
     },
     protectedUserIds,
     protectedTenantIds,
@@ -161,9 +177,9 @@ export async function executeRealProductionReset(actorEmail: string): Promise<Re
     await deleteCustomerTenantData(service, tenantId, actorEmail);
   }
 
-  // C. DELETE ANY REMAINING NON-ADMIN TEST AUTH USERS
+  // C. DELETE ANY REMAINING NON-ADMIN DISPOSABLE AUTH USERS
   try {
-    const { data: usersData } = await service.auth.admin.listUsers({ page: 1, perPage: 200 });
+    const { data: usersData } = await service.auth.admin.listUsers({ page: 1, perPage: 500 });
     for (const u of usersData?.users ?? []) {
       if (!beforeData.protectedUserIds.has(u.id)) {
         await service.auth.admin.deleteUser(u.id).catch(() => null);
@@ -196,7 +212,6 @@ export async function executeRealProductionReset(actorEmail: string): Promise<Re
     initiatedBy: actorEmail,
     before: beforeData.inventory,
     after: afterData.inventory,
-    verificationAccount: { created: false },
     status: "SUCCESS",
   };
 }

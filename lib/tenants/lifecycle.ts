@@ -95,6 +95,9 @@ export async function deleteCustomerTenantData(
     return { ok: false, error: classification.reason ?? "PROTECTED_TENANT" };
   }
 
+  // Capture candidate orphan auth user IDs before removing membership rows
+  const candidateUserIds = await getTenantMemberUserIds(service, tenantId);
+
   // 4. Try transactional database RPC
   const { data: rpcData, error: rpcErr } = await service.rpc("delete_customer_tenant_v1", {
     p_tenant_id: tenantId,
@@ -103,7 +106,7 @@ export async function deleteCustomerTenantData(
 
   if (!rpcErr && rpcData && typeof rpcData === "object" && (rpcData as { ok?: boolean }).ok) {
     // RPC succeeded atomically! Clean up non-admin customer auth accounts
-    await cleanupOrphanAuthUsers(service, tenantId);
+    await cleanupOrphanAuthUsers(service, candidateUserIds);
     return { ok: true, deletedTenantId: tenantId };
   }
 
@@ -138,6 +141,7 @@ export async function deleteCustomerTenantData(
     // C. Brand Brain Tables
     await assertDeleteSuccess(service.from("brand_brain_versions").delete().eq("tenant_id", tenantId), "brand_brain_versions");
     await assertDeleteSuccess(service.from("brand_brains").delete().eq("tenant_id", tenantId), "brand_brains");
+    await assertDeleteSuccess(service.from("brand_assets").delete().eq("tenant_id", tenantId), "brand_assets");
 
     // D. Social & Content Tables
     await assertDeleteSuccess(service.from("social_tokens").delete().eq("tenant_id", tenantId), "social_tokens");
@@ -148,6 +152,8 @@ export async function deleteCustomerTenantData(
     await assertDeleteSuccess(service.from("social_agent_run_events").delete().eq("tenant_id", tenantId), "social_agent_run_events");
     await assertDeleteSuccess(service.from("social_agent_runs").delete().eq("tenant_id", tenantId), "social_agent_runs");
     await assertDeleteSuccess(service.from("social_media_assets").delete().eq("tenant_id", tenantId), "social_media_assets");
+    await assertDeleteSuccess(service.from("social_brand_profiles").delete().eq("tenant_id", tenantId), "social_brand_profiles");
+    await assertDeleteSuccess(service.from("social_whatsapp_sessions").delete().eq("tenant_id", tenantId), "social_whatsapp_sessions");
 
     // E. Missions & Hermes Tables
     await assertDeleteSuccess(service.from("mission_events").delete().eq("tenant_id", tenantId), "mission_events");
@@ -159,6 +165,7 @@ export async function deleteCustomerTenantData(
     await assertDeleteSuccess(service.from("crm_messages").delete().eq("tenant_id", tenantId), "crm_messages");
     await assertDeleteSuccess(service.from("crm_conversations").delete().eq("tenant_id", tenantId), "crm_conversations");
     await assertDeleteSuccess(service.from("crm_appointments").delete().eq("tenant_id", tenantId), "crm_appointments");
+    await assertDeleteSuccess(service.from("crm_follow_ups").delete().eq("tenant_id", tenantId), "crm_follow_ups");
     await assertDeleteSuccess(service.from("crm_leads").delete().eq("tenant_id", tenantId), "crm_leads");
     await assertDeleteSuccess(service.from("contact_consent").delete().eq("tenant_id", tenantId), "contact_consent");
     await assertDeleteSuccess(service.from("whatsapp_shadow_messages").delete().eq("tenant_id", tenantId), "whatsapp_shadow_messages");
@@ -169,33 +176,54 @@ export async function deleteCustomerTenantData(
 
     // G. Subscriptions, Wallets & Payments
     await assertDeleteSuccess(service.from("payment_refund_records").delete().eq("tenant_id", tenantId), "payment_refund_records");
+    await assertDeleteSuccess(service.from("payment_refunds").delete().eq("tenant_id", tenantId), "payment_refunds");
     await assertDeleteSuccess(service.from("payment_orders").delete().eq("tenant_id", tenantId), "payment_orders");
     await assertDeleteSuccess(service.from("payment_links").delete().eq("tenant_id", tenantId), "payment_links");
+    await assertDeleteSuccess(service.from("invoices").delete().eq("tenant_id", tenantId), "invoices");
+    await assertDeleteSuccess(service.from("credit_notes").delete().eq("tenant_id", tenantId), "credit_notes");
+    await assertDeleteSuccess(service.from("billing_profiles").delete().eq("tenant_id", tenantId), "billing_profiles");
     await assertDeleteSuccess(service.from("subscriptions").delete().eq("tenant_id", tenantId), "subscriptions");
     await assertDeleteSuccess(service.from("wallet_transactions").delete().eq("tenant_id", tenantId), "wallet_transactions");
     await assertDeleteSuccess(service.from("wallet_accounts").delete().eq("tenant_id", tenantId), "wallet_accounts");
 
     // H. Websites, Domains, Storage & BYOK
+    await assertDeleteSuccess(service.from("site_projects").delete().eq("tenant_id", tenantId), "site_projects");
     await assertDeleteSuccess(service.from("websites").delete().eq("tenant_id", tenantId), "websites");
+    await assertDeleteSuccess(service.from("domains").delete().eq("tenant_id", tenantId), "domains");
     await assertDeleteSuccess(service.from("custom_domains").delete().eq("tenant_id", tenantId), "custom_domains");
+    await assertDeleteSuccess(service.from("storage_file_references").delete().eq("tenant_id", tenantId), "storage_file_references");
+    await assertDeleteSuccess(service.from("storage_connections").delete().eq("tenant_id", tenantId), "storage_connections");
     await assertDeleteSuccess(service.from("storage_drive_connections").delete().eq("tenant_id", tenantId), "storage_drive_connections");
+    await assertDeleteSuccess(service.from("tenant_provider_connections").delete().eq("tenant_id", tenantId), "tenant_provider_connections");
+    await assertDeleteSuccess(service.from("provider_usage_events").delete().eq("tenant_id", tenantId), "provider_usage_events");
     await assertDeleteSuccess(service.from("byok_tenant_credentials").delete().eq("tenant_id", tenantId), "byok_tenant_credentials");
 
-    // I. Workforce, Media & AI Execution
+    // I. Workforce, Media, Search & AI Execution
     await assertDeleteSuccess(service.from("workforce_tasks").delete().eq("tenant_id", tenantId), "workforce_tasks");
     await assertDeleteSuccess(service.from("workforce_agents").delete().eq("tenant_id", tenantId), "workforce_agents");
+    await assertDeleteSuccess(service.from("workforce_plans").delete().eq("tenant_id", tenantId), "workforce_plans");
+    await assertDeleteSuccess(service.from("workforce_stages").delete().eq("tenant_id", tenantId), "workforce_stages");
+    await assertDeleteSuccess(service.from("workforce_reviews").delete().eq("tenant_id", tenantId), "workforce_reviews");
     await assertDeleteSuccess(service.from("image_generation_jobs").delete().eq("tenant_id", tenantId), "image_generation_jobs");
     await assertDeleteSuccess(service.from("ai_execution_attempts").delete().eq("tenant_id", tenantId), "ai_execution_attempts");
     await assertDeleteSuccess(service.from("ai_usage_ledger").delete().eq("tenant_id", tenantId), "ai_usage_ledger");
     await assertDeleteSuccess(service.from("oauth_states").delete().eq("tenant_id", tenantId), "oauth_states");
+    await assertDeleteSuccess(service.from("search_actions").delete().eq("tenant_id", tenantId), "search_actions");
+    await assertDeleteSuccess(service.from("search_recommendations").delete().eq("tenant_id", tenantId), "search_recommendations");
+    await assertDeleteSuccess(service.from("search_opportunities").delete().eq("tenant_id", tenantId), "search_opportunities");
+    await assertDeleteSuccess(service.from("search_analysis_runs").delete().eq("tenant_id", tenantId), "search_analysis_runs");
+    await assertDeleteSuccess(service.from("search_projects").delete().eq("tenant_id", tenantId), "search_projects");
+    await assertDeleteSuccess(service.from("search_measurement_snapshots").delete().eq("tenant_id", tenantId), "search_measurement_snapshots");
+    await assertDeleteSuccess(service.from("search_google_connections").delete().eq("tenant_id", tenantId), "search_google_connections");
 
     // J. Memberships & Invitations
     await assertDeleteSuccess(service.from("tenant_invitations").delete().eq("tenant_id", tenantId), "tenant_invitations");
     await assertDeleteSuccess(service.from("tenant_memberships").delete().eq("tenant_id", tenantId), "tenant_memberships");
+    await assertDeleteSuccess(service.from("tenant_members").delete().eq("tenant_id", tenantId), "tenant_members");
     await assertDeleteSuccess(service.from("tenants").delete().eq("id", tenantId), "tenants");
 
     // Clean up non-admin customer auth accounts
-    await cleanupOrphanAuthUsers(service, tenantId);
+    await cleanupOrphanAuthUsers(service, candidateUserIds);
 
     // Write audit event
     await service.from("platform_audit_events").insert({
@@ -236,26 +264,40 @@ async function assertDeleteSuccess(promise: PromiseLike<{ error: { message: stri
   }
 }
 
-async function cleanupOrphanAuthUsers(service: SupabaseClient, tenantId: string) {
+async function getTenantMemberUserIds(service: SupabaseClient, tenantId: string): Promise<string[]> {
+  try {
+    const [membersRes, membershipsRes] = await Promise.all([
+      service.from("tenant_members").select("user_id").eq("tenant_id", tenantId),
+      service.from("tenant_memberships").select("user_id").eq("tenant_id", tenantId),
+    ]);
+    const userIds = new Set<string>();
+    for (const row of membersRes.data ?? []) if (row.user_id) userIds.add(row.user_id);
+    for (const row of membershipsRes.data ?? []) if (row.user_id) userIds.add(row.user_id);
+    return Array.from(userIds);
+  } catch {
+    return [];
+  }
+}
+
+async function cleanupOrphanAuthUsers(service: SupabaseClient, candidateUserIds: string[]) {
+  if (candidateUserIds.length === 0) return;
   try {
     const { data: adminRows } = await service.from("stratxcel_admins").select("user_id");
     const adminUserIds = new Set<string>((adminRows ?? []).map((r) => r.user_id));
 
-    const { data: memberships } = await service
-      .from("tenant_memberships")
-      .select("user_id")
-      .eq("tenant_id", tenantId);
+    for (const userId of candidateUserIds) {
+      if (adminUserIds.has(userId)) continue;
 
-    for (const m of memberships ?? []) {
-      if (!adminUserIds.has(m.user_id)) {
-        const { data: remaining } = await service
-          .from("tenant_memberships")
-          .select("tenant_id")
-          .eq("user_id", m.user_id);
+      const [membersRes, membershipsRes] = await Promise.all([
+        service.from("tenant_members").select("tenant_id").eq("user_id", userId),
+        service.from("tenant_memberships").select("tenant_id").eq("user_id", userId),
+      ]);
 
-        if ((remaining ?? []).length === 0) {
-          await service.auth.admin.deleteUser(m.user_id).catch(() => null);
-        }
+      const remainingMembers = (membersRes.data ?? []).length;
+      const remainingMemberships = (membershipsRes.data ?? []).length;
+
+      if (remainingMembers === 0 && remainingMemberships === 0) {
+        await service.auth.admin.deleteUser(userId).catch(() => null);
       }
     }
   } catch {
