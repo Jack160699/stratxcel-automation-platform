@@ -23,10 +23,10 @@ export default async function SignupPage() {
               Get Started with Stratxcel
             </span>
             <h2 className="font-sx-sans text-3xl font-extrabold tracking-tight text-sx-text">
-              A secure workspace for your Business Growth Audit.
+              A secure workspace for your Instant Business Audit.
             </h2>
             <p className="font-sx-sans text-sm text-sx-text-muted leading-relaxed">
-              Create your organization&rsquo;s isolated workspace to claim a paid Audit, complete the guided intake, and receive your automatic growth roadmap.
+              Create your organization&rsquo;s isolated workspace to get your Free Business Audit, verify discovered signals, and receive your automatic growth roadmap.
             </p>
 
             <ul className="space-y-3 text-xs text-sx-text-muted">
@@ -36,17 +36,17 @@ export default async function SignupPage() {
               </li>
               <li className="flex items-center gap-2">
                 <span className="text-sx-accent font-bold">✓</span>
-                <span>Automatic Audit analysis with a clear delivery status</span>
+                <span>Automatic website &amp; presence discovery with instant analysis</span>
               </li>
               <li className="flex items-center gap-2">
                 <span className="text-sx-accent font-bold">✓</span>
-                <span>Audit fee adjustment guarantee on qualifying plans</span>
+                <span>100% Free · No credit card or upfront payment required</span>
               </li>
             </ul>
 
             <div className="text-xs text-sx-text-subtle flex gap-4 border-t border-sx-border pt-4">
               <Link href="/audit" className="text-sx-accent font-semibold underline hover:text-sx-accent/80">
-                Learn about the ₹999 Business Growth Audit →
+                Learn about the Free Business Growth Audit →
               </Link>
             </div>
           </div>

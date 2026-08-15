@@ -141,7 +141,7 @@ export function PublicHeader({ logoVariant = "dark", overHeroId }: PublicHeaderP
               plan="audit"
               className="rounded-sx-sm border border-sx-border-strong bg-sx-surface-2 px-3.5 py-2 text-[13px] font-semibold text-sx-text transition-colors hover:bg-sx-surface-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sx-accent"
             >
-              Get Audit — ₹999
+              Free Business Audit
             </TrackedCtaLink>
             <TrackedCtaLink
               href={PUBLIC_CTAS.primary.href}
@@ -224,7 +224,7 @@ export function PublicHeader({ logoVariant = "dark", overHeroId }: PublicHeaderP
               onClick={closeMenu}
               className="rounded-sx-sm border border-sx-border-strong bg-sx-surface-2 px-4 py-3 text-center text-sm font-semibold text-sx-text"
             >
-              Get Business Growth Audit — ₹999
+              Get Free Instant Audit
             </TrackedCtaLink>
             <TrackedCtaLink
               href={PUBLIC_CTAS.primary.href}

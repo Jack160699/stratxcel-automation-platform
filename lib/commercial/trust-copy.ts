@@ -17,5 +17,5 @@ export const TRUST_QUESTIONS: TrustQuestion[] = [
   { id: "auto_publish", question: "Will AI publish things without me knowing?", answer: "Not by default. Publishing can require your approval before anything goes live.", learnMoreHref: "/social-autopilot" },
   { id: "review_actions", question: "Can I review important actions?", answer: "Yes. Consequential work can pause for explicit approval.", learnMoreHref: "/how-it-works" },
   { id: "data_retention", question: "What happens to my data?", answer: "Your data stays yours. You can request deletion through our documented process.", learnMoreHref: "/privacy" },
-  { id: "payments", question: "How do payments work?", answer: "The ₹999 audit is one-time via Razorpay. Monthly plans are confirmed separately.", learnMoreHref: "/pricing" },
+  { id: "payments", question: "How do payments work?", answer: "The Instant Business Audit is 100% free with no payment required. Monthly subscription plans are confirmed separately.", learnMoreHref: "/pricing" },
 ];

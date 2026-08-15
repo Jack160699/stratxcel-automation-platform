@@ -64,7 +64,7 @@ export function PlatformHero() {
               plan="audit"
               className="inline-flex min-h-12 items-center justify-center rounded-sx-sm bg-gradient-to-r from-blue-600 via-blue-500 to-sky-500 px-8 py-3.5 font-sx-sans text-sm font-bold text-white shadow-[0_0_28px_rgba(37,99,235,0.4)] transition-all duration-200 hover:brightness-110 motion-reduce:transition-none"
             >
-              GET YOUR BUSINESS GROWTH AUDIT — ₹999
+              GET YOUR FREE BUSINESS GROWTH AUDIT
             </TrackedCtaLink>
             <TrackedCtaLink
               href="/products"
@@ -77,7 +77,7 @@ export function PlatformHero() {
           </div>
 
           <p className="mt-3.5 font-sx-sans text-xs text-white/45">
-            One-time ₹999 audit · GST included · No subscription starts automatically
+            100% Free · Evidence-backed audit · No subscription starts automatically
           </p>
         </div>
 

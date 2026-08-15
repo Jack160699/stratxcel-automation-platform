@@ -259,7 +259,7 @@ export function HomeHeroLight() {
               plan="audit"
               className="inline-flex min-h-12 w-full sm:w-auto items-center justify-center rounded-xl bg-blue-600 px-8 py-3.5 font-sx-sans text-sm font-bold text-white shadow-md transition-all hover:bg-blue-700 hover:shadow-lg"
             >
-              <span>START MY ₹999 BUSINESS AUDIT</span>
+              <span>GET YOUR FREE INSTANT AUDIT</span>
               <ArrowRightIcon className="ml-2 w-4 h-4" />
             </TrackedCtaLink>
 
@@ -272,7 +272,7 @@ export function HomeHeroLight() {
           </div>
 
           <p className="mt-3.5 font-sx-sans text-xs text-slate-500 font-medium text-left sm:text-center">
-            ₹999 one-time · GST included · No automatic subscription · Complete 30/60/90-day roadmap
+            100% Free · Evidence-backed website &amp; presence analysis · Complete 30/60/90-day roadmap
           </p>
         </div>
 
@@ -364,7 +364,7 @@ export function HomeHeroLight() {
                     plan="audit"
                     className="inline-flex items-center gap-1.5 font-sx-sans text-xs sm:text-sm font-bold text-blue-600 hover:text-blue-800"
                   >
-                    <span>Audit your {active.name.toLowerCase()} in the ₹999 Growth Audit</span>
+                    <span>Audit your {active.name.toLowerCase()} with the Free Instant Audit</span>
                     <ArrowRightIcon className="w-3.5 h-3.5" />
                   </TrackedCtaLink>
                 </div>

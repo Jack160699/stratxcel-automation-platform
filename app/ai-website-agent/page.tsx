@@ -43,7 +43,7 @@ export default function AiWebsiteAgentPage() {
             plan="audit"
             className="rounded-sx-sm bg-sx-accent px-7 py-3.5 font-sx-sans text-sm font-bold text-sx-accent-on transition-colors hover:bg-[color:var(--sx-accent-hover)]"
           >
-            Audit Your Website in ₹999 Growth Audit
+            Audit Your Website in Free Growth Audit
           </TrackedCtaLink>
           <Link
             href="/product-proof"
@@ -98,7 +98,7 @@ export default function AiWebsiteAgentPage() {
               plan="audit"
               className="rounded-sx-sm bg-sx-accent px-8 py-3.5 font-sx-sans text-sm font-bold text-sx-accent-on hover:bg-[color:var(--sx-accent-hover)]"
             >
-              Start Business Growth Audit — ₹999
+              Start Free Business Growth Audit
             </TrackedCtaLink>
           </div>
         </div>

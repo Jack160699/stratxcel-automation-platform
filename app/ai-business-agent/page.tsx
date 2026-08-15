@@ -65,7 +65,7 @@ export default function AiBusinessAgentPage() {
             plan="audit"
             className="rounded-sx-sm bg-sx-accent px-7 py-3.5 font-sx-sans text-sm font-bold text-sx-accent-on transition-colors hover:bg-[color:var(--sx-accent-hover)]"
           >
-            Get Business Growth Audit — ₹999
+            Get Free Business Growth Audit
           </TrackedCtaLink>
           <Link
             href="/how-it-works"
@@ -127,7 +127,7 @@ export default function AiBusinessAgentPage() {
       <section className="border-t border-sx-border bg-sx-bg py-16 text-center">
         <div className="mx-auto max-w-3xl px-4 sm:px-6">
           <h2 className="font-sx-sans text-2xl font-bold text-sx-text sm:text-3xl">
-            Start with the ₹999 Business Growth Audit
+            Start with the Free Business Growth Audit
           </h2>
           <p className="mt-3 font-sx-sans text-sm text-sx-text-muted">
             Find the opportunities, gaps, and immediate next moves across your digital business before activating monthly workflows.
@@ -140,7 +140,7 @@ export default function AiBusinessAgentPage() {
               plan="audit"
               className="rounded-sx-sm bg-sx-accent px-8 py-3.5 font-sx-sans text-sm font-bold text-sx-accent-on hover:bg-[color:var(--sx-accent-hover)]"
             >
-              Start Business Growth Audit — ₹999
+              Start Free Business Growth Audit
             </TrackedCtaLink>
           </div>
         </div>

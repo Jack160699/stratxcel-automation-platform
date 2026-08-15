@@ -10,15 +10,15 @@ import { WorkflowRail } from "@/components/ui/WorkflowRail";
 
 export const metadata: Metadata = {
   title: "How it works — Stratxcel",
-  description: "How the ₹999 staff-delivered audit moves from checkout to a written roadmap.",
+  description: "How the free instant audit moves from discovery to an actionable growth roadmap.",
 };
 
 const STAGES = [
-  { label: "Checkout", title: "Purchase the one-time Audit", body: "Pay ₹999, GST included. No subscription starts." },
-  { label: "Intake", title: "Share business context", body: "Complete three guided sections in your workspace." },
-  { label: "Review", title: "Team reviews evidence", body: "A staff member reviews your context and lead path." },
-  { label: "Delivery", title: "Roadmap delivered", body: "Written 30/60/90-day action plan in your workspace." },
-  { label: "Next step", title: "Decide what to act on", body: "Use the report independently or scope monthly help separately." },
+  { label: "Connect", title: "Connect your business", body: "Enter your website URL to instantly begin background discovery — 100% free." },
+  { label: "Verify", title: "Confirm discovered presence", body: "Review discovered identity, social links, and Google signals with zero redundant forms." },
+  { label: "Analysis", title: "AI analyzes growth opportunities", body: "Comprehensive evaluation of SEO, messaging, lead channels, and category competitors." },
+  { label: "Delivery", title: "Actionable roadmap ready", body: "Interactive 30/60/90-day action plan delivered directly to your dashboard." },
+  { label: "Next step", title: "Act on clear priorities", body: "Execute recommendations independently or connect platform execution when ready." },
 ];
 
 const AUDIT_FAQ = PRICING_OBJECTIONS.filter((i) =>
@@ -31,7 +31,7 @@ export default function HowItWorksPage() {
       <section className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20 lg:px-8">
         <p className="font-sx-mono text-[11px] uppercase tracking-[0.3em] text-sx-text-subtle">How it works</p>
         <h1 className="mt-4 max-w-2xl font-sx-sans text-[clamp(1.8rem,4vw,2.6rem)] font-semibold leading-tight tracking-[-0.02em] text-sx-text">
-          One clear path from purchase to a useful written roadmap.
+          One clear path from discovery to an actionable growth roadmap.
         </h1>
         <div className="mt-10 max-w-md">
           <WorkflowRail stages={STAGES.map((s, i) => ({ label: s.label, status: i === 0 ? "active" : "future" }))} />

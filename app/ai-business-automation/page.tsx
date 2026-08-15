@@ -43,7 +43,7 @@ export default function AiBusinessAutomationPage() {
             plan="audit"
             className="rounded-sx-sm bg-sx-accent px-7 py-3.5 font-sx-sans text-sm font-bold text-sx-accent-on transition-colors hover:bg-[color:var(--sx-accent-hover)]"
           >
-            Audit Your Automations in ₹999 Growth Audit
+            Audit Your Automations in Free Growth Audit
           </TrackedCtaLink>
           <Link
             href="/security"
@@ -88,7 +88,7 @@ export default function AiBusinessAutomationPage() {
             Find what routine tasks you should automate first
           </h2>
           <p className="mt-3 font-sx-sans text-sm text-sx-text-muted">
-            The ₹999 Business Growth Audit maps your manual digital tasks and outlines high-leverage automation opportunities.
+            The Free Business Growth Audit maps your manual digital tasks and outlines high-leverage automation opportunities.
           </p>
           <div className="mt-8 flex justify-center">
             <TrackedCtaLink
@@ -98,7 +98,7 @@ export default function AiBusinessAutomationPage() {
               plan="audit"
               className="rounded-sx-sm bg-sx-accent px-8 py-3.5 font-sx-sans text-sm font-bold text-sx-accent-on hover:bg-[color:var(--sx-accent-hover)]"
             >
-              Start Business Growth Audit — ₹999
+              Start Free Business Growth Audit
             </TrackedCtaLink>
           </div>
         </div>

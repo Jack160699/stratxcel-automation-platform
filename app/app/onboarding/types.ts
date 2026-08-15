@@ -94,7 +94,7 @@ export interface PlanTier {
  * strings cannot break existing data.
  */
 export const PLAN_TIERS: PlanTier[] = [
-  { key: "audit", name: "Audit", pitch: "Start with a ₹999 staff-delivered Business Growth Audit." },
+  { key: "audit", name: "Instant Audit", pitch: "Start with a free evidence-backed Instant Business Audit." },
   { key: "free", name: "Free", pitch: "Explore the workspace and prepare your growth system." },
   { key: "starter", name: "Starter", pitch: "A complete entry system for one small or local business." },
   { key: "growth", name: "Growth", pitch: "The serious SMB plan for recurring execution and follow-up." },

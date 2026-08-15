@@ -156,7 +156,7 @@ const GOALS: GoalOption[] = [
       { step: "3. Prioritized Actions", action: "Highlights the top 3 highest-ROI moves for your business this month.", badge: "30/60/90 Roadmap" },
     ],
     deliverable: "Complete clarity on what is driving growth and where to focus next.",
-    ctaText: "Start With Growth Audit — ₹999",
+    ctaText: "Start Free Growth Audit",
     ctaHref: "/audit",
   },
 ];
@@ -303,7 +303,7 @@ export function HomeInteractiveExplorerClean() {
                 href="/audit"
                 className="font-sx-sans text-xs font-semibold text-slate-600 hover:text-slate-900 underline underline-offset-4"
               >
-                Or start with ₹999 Business Audit
+                Or start with Free Business Audit
               </Link>
             </div>
           </div>

@@ -205,44 +205,33 @@ export default function AuditHubPage() {
     return (
       <div className="mx-auto max-w-2xl px-4 py-16 text-center">
         <h1 className="font-sx-sans text-xl font-semibold text-sx-text">
-          {freshAuditEligible ? "Your fresh Audit is ready to start" : "You haven't started an Audit yet"}
+          Your Free Instant Business Audit is ready
         </h1>
         <p className="mt-2 text-sm text-sx-text-muted">
-          {freshAuditEligible
-            ? "Connect your business. We will read public pages and ask only a few questions."
-            : "Start with the ₹999 AI Business Growth Audit."}
+          Connect your business website. We will research public pages and build your growth roadmap — 100% free.
         </p>
-        {freshAuditEligible ? (
-          <button
-            type="button"
-            disabled={starting}
-            onClick={() => {
-              setStarting(true);
-              void fetch("/api/platform/audit/onboarding", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ action: "start_fresh" }),
-              }).then(async (response) => {
-                if (!response.ok) {
-                  const json = await response.json().catch(() => ({})) as { error?: string };
-                  setError(json.error ?? "Could not start a new Audit.");
-                  return;
-                }
-                await load();
-              }).finally(() => setStarting(false));
-            }}
-            className="mt-6 inline-flex min-h-11 items-center rounded-sx-sm bg-sx-accent px-6 font-sx-sans text-xs font-bold text-sx-accent-on"
-          >
-            {starting ? "Starting…" : "Connect your business →"}
-          </button>
-        ) : (
-          <Link
-            href="/audit"
-            className="mt-6 inline-flex min-h-11 items-center rounded-sx-sm bg-sx-accent px-6 font-sx-sans text-xs font-bold text-sx-accent-on hover:bg-[color:var(--sx-accent-hover)]"
-          >
-            Start My Audit &rarr;
-          </Link>
-        )}
+        <button
+          type="button"
+          disabled={starting}
+          onClick={() => {
+            setStarting(true);
+            void fetch("/api/platform/audit/onboarding", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ action: "start_fresh" }),
+            }).then(async (response) => {
+              if (!response.ok) {
+                const json = await response.json().catch(() => ({})) as { error?: string };
+                setError(json.error ?? "Could not start a new Audit.");
+                return;
+              }
+              await load();
+            }).finally(() => setStarting(false));
+          }}
+          className="mt-6 inline-flex min-h-11 items-center rounded-sx-sm bg-sx-accent px-6 font-sx-sans text-xs font-bold text-sx-accent-on hover:bg-[color:var(--sx-accent-hover)]"
+        >
+          {starting ? "Starting…" : "Connect your business →"}
+        </button>
       </div>
     );
   }
@@ -252,20 +241,30 @@ export default function AuditHubPage() {
   if (customerState === "PAYMENT_PENDING") {
     return (
       <div className="mx-auto max-w-2xl px-4 py-16 text-center">
-        <h1 className="font-sx-sans text-xl font-semibold text-sx-text">Your payment isn&apos;t confirmed yet</h1>
-        <p className="mt-2 text-sm text-sx-text-muted">Finish paying to unlock your Audit.</p>
-        {paymentUrl ? (
-          <a
-            href={paymentUrl}
-            className="mt-6 inline-flex min-h-11 items-center rounded-sx-sm bg-sx-accent px-6 font-sx-sans text-xs font-bold text-sx-accent-on hover:bg-[color:var(--sx-accent-hover)]"
-          >
-            Resume payment &rarr;
-          </a>
-        ) : (
-          <Link href="/audit/checkout" className="mt-6 inline-flex min-h-11 items-center rounded-sx-sm bg-sx-accent px-6 font-sx-sans text-xs font-bold text-sx-accent-on hover:bg-[color:var(--sx-accent-hover)]">
-            Resume payment &rarr;
-          </Link>
-        )}
+        <h1 className="font-sx-sans text-xl font-semibold text-sx-text">Start Your Free Business Audit</h1>
+        <p className="mt-2 text-sm text-sx-text-muted">The audit is now 100% free. Connect your business to begin.</p>
+        <button
+          type="button"
+          disabled={starting}
+          onClick={() => {
+            setStarting(true);
+            void fetch("/api/platform/audit/onboarding", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ action: "start_fresh" }),
+            }).then(async (response) => {
+              if (!response.ok) {
+                const json = await response.json().catch(() => ({})) as { error?: string };
+                setError(json.error ?? "Could not start your free Audit.");
+                return;
+              }
+              await load();
+            }).finally(() => setStarting(false));
+          }}
+          className="mt-6 inline-flex min-h-11 items-center rounded-sx-sm bg-sx-accent px-6 font-sx-sans text-xs font-bold text-sx-accent-on hover:bg-[color:var(--sx-accent-hover)]"
+        >
+          {starting ? "Starting…" : "Start Free Audit →"}
+        </button>
       </div>
     );
   }

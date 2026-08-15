@@ -202,7 +202,7 @@ export default async function AdminAuditRequestsPage() {
 
       {error && <ErrorState message="Could not load paid audit orders." />}
       {list.length === 0 && !error ? (
-        <EmptyState title="No paid-flow audit orders yet." subtitle="New ₹999 Audit checkouts will appear here." />
+        <EmptyState title="No audit orders yet." subtitle="Customer audit orders will appear here." />
       ) : (
         <section className="grid gap-4">
           {list.map((order) => {

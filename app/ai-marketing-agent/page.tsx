@@ -43,7 +43,7 @@ export default function AiMarketingAgentPage() {
             plan="audit"
             className="rounded-sx-sm bg-sx-accent px-7 py-3.5 font-sx-sans text-sm font-bold text-sx-accent-on transition-colors hover:bg-[color:var(--sx-accent-hover)]"
           >
-            Audit Your Marketing in ₹999 Growth Audit
+            Audit Your Marketing in Free Growth Audit
           </TrackedCtaLink>
           <Link
             href="/pricing"
@@ -88,7 +88,7 @@ export default function AiMarketingAgentPage() {
             Discover where your marketing spend will have the highest impact
           </h2>
           <p className="mt-3 font-sx-sans text-sm text-sx-text-muted">
-            The ₹999 Business Growth Audit provides a prioritized roadmap of your channels, messaging, and customer acquisition paths.
+            The Free Business Growth Audit provides a prioritized roadmap of your channels, messaging, and customer acquisition paths.
           </p>
           <div className="mt-8 flex justify-center">
             <TrackedCtaLink
@@ -98,7 +98,7 @@ export default function AiMarketingAgentPage() {
               plan="audit"
               className="rounded-sx-sm bg-sx-accent px-8 py-3.5 font-sx-sans text-sm font-bold text-sx-accent-on hover:bg-[color:var(--sx-accent-hover)]"
             >
-              Start Business Growth Audit — ₹999
+              Start Free Business Growth Audit
             </TrackedCtaLink>
           </div>
         </div>

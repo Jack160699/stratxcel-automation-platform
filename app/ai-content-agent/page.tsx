@@ -43,7 +43,7 @@ export default function AiContentAgentPage() {
             plan="audit"
             className="rounded-sx-sm bg-sx-accent px-7 py-3.5 font-sx-sans text-sm font-bold text-sx-accent-on transition-colors hover:bg-[color:var(--sx-accent-hover)]"
           >
-            Audit Your Messaging in ₹999 Growth Audit
+            Audit Your Messaging in Free Growth Audit
           </TrackedCtaLink>
           <Link
             href="/solutions"
@@ -88,7 +88,7 @@ export default function AiContentAgentPage() {
             Get clear feedback on your current positioning
           </h2>
           <p className="mt-3 font-sx-sans text-sm text-sx-text-muted">
-            The ₹999 Business Growth Audit identifies positioning gaps and delivers clear recommendations for your message clarity.
+            The Free Business Growth Audit identifies positioning gaps and delivers clear recommendations for your message clarity.
           </p>
           <div className="mt-8 flex justify-center">
             <TrackedCtaLink
@@ -98,7 +98,7 @@ export default function AiContentAgentPage() {
               plan="audit"
               className="rounded-sx-sm bg-sx-accent px-8 py-3.5 font-sx-sans text-sm font-bold text-sx-accent-on hover:bg-[color:var(--sx-accent-hover)]"
             >
-              Start Business Growth Audit — ₹999
+              Start Free Business Growth Audit
             </TrackedCtaLink>
           </div>
         </div>

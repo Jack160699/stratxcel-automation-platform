@@ -51,7 +51,7 @@ export default function AiSocialMediaAgentPage() {
             plan="audit"
             className="rounded-sx-sm border border-sx-border-strong bg-sx-bg px-6 py-3.5 font-sx-sans text-sm font-semibold text-sx-text transition-colors hover:bg-sx-surface-2"
           >
-            Get Business Growth Audit — ₹999
+            Get Free Business Growth Audit
           </TrackedCtaLink>
         </div>
       </section>
@@ -90,7 +90,7 @@ export default function AiSocialMediaAgentPage() {
             Audit your social reach and competitor footprint
           </h2>
           <p className="mt-3 font-sx-sans text-sm text-sx-text-muted">
-            The ₹999 Business Growth Audit analyzes your digital footprint across channels and delivers immediate actionable recommendations.
+            The Free Business Growth Audit analyzes your digital footprint across channels and delivers immediate actionable recommendations.
           </p>
           <div className="mt-8 flex justify-center">
             <TrackedCtaLink
@@ -100,7 +100,7 @@ export default function AiSocialMediaAgentPage() {
               plan="audit"
               className="rounded-sx-sm bg-sx-accent px-8 py-3.5 font-sx-sans text-sm font-bold text-sx-accent-on hover:bg-[color:var(--sx-accent-hover)]"
             >
-              Start Business Growth Audit — ₹999
+              Start Free Business Growth Audit
             </TrackedCtaLink>
           </div>
         </div>

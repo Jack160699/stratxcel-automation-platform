@@ -15,7 +15,7 @@ import { HomeClosingSection } from "@/app/components/public/home/HomeClosingSect
 export const metadata: Metadata = {
   title: "Stratxcel AI Agent — You Run Your Business. We Help With The Digital Work.",
   description:
-    "Stratxcel helps plan, create, manage and improve the digital work behind your business. Start with an evidence-based ₹999 Business Growth Audit.",
+    "Stratxcel helps plan, create, manage and improve the digital work behind your business. Start with a free evidence-based Instant Business Audit.",
   alternates: {
     canonical: "https://www.stratxcel.in",
   },
@@ -56,7 +56,7 @@ export default function HomePage() {
         {/* 06 REAL PRODUCT EVIDENCE */}
         <HomeProductEvidence />
 
-        {/* 07 ₹999 BUSINESS GROWTH AUDIT */}
+        {/* 07 FREE BUSINESS GROWTH AUDIT */}
         <HomeAuditSection />
 
         {/* 08 TRUST / CONTROL */}

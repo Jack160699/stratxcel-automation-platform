@@ -4,13 +4,10 @@ import { PublicPageShell } from "@/app/components/public/PublicPageShell";
 import { ConversionTrustQuestions } from "@/app/components/public/commercial/ConversionTrustQuestions";
 import { AuditCheckoutCta } from "./AuditCheckoutCta";
 import { AUDIT_INCLUDES, AUDIT_POSITIONING } from "@/lib/commercial/audit-positioning";
-import { splitGstInclusive, formatCentsAsRupees } from "@/lib/payments/gst";
-
-const gst = splitGstInclusive(99900);
 
 export const metadata: Metadata = {
-  title: "₹999 Business Growth Audit — Stratxcel",
-  description: "Evidence-based audit for ₹999, GST-inclusive.",
+  title: "Instant Business Audit — Stratxcel",
+  description: "Get an evidence-backed audit of your business, website and online presence — completely free.",
 };
 
 export default function PublicAuditPage() {
@@ -23,7 +20,7 @@ export default function PublicAuditPage() {
           <Link href="/solutions" className="font-semibold text-sx-accent hover:underline">
             See how outcomes connect
           </Link>{" "}
-          before you purchase.
+          or start with your free audit below.
         </p>
       </section>
 
@@ -36,25 +33,16 @@ export default function PublicAuditPage() {
         <p className="mt-2 text-sm text-sx-text-subtle">{copy.reassurance}</p>
 
         <div className="mt-10 rounded-sx-lg border border-sx-accent/30 bg-sx-surface-1 p-8 shadow-[var(--sx-public-shadow-md)] sm:p-10">
-          <p className="font-sx-mono text-[11px] font-bold uppercase text-sx-accent">{copy.productName}</p>
-          <div className="mt-4 flex items-baseline justify-center gap-2">
-            <span className="font-sx-sans text-5xl font-extrabold text-sx-text">{copy.price}</span>
-            <span className="font-sx-sans text-sm text-sx-text-subtle">{copy.priceNote}</span>
+          <div className="flex items-center justify-between">
+            <p className="font-sx-mono text-[11px] font-bold uppercase text-sx-accent">{copy.productName}</p>
+            <span className="rounded-full bg-emerald-500/10 px-2.5 py-0.5 font-sx-mono text-[10px] font-bold uppercase text-emerald-600">
+              100% Free
+            </span>
           </div>
 
-          <div className="mx-auto mt-4 flex max-w-xs flex-col gap-1 rounded-sx-sm border border-sx-border bg-sx-surface-2 p-3 text-xs text-sx-text-muted">
-            <div className="flex justify-between">
-              <span>Taxable value</span>
-              <span>{formatCentsAsRupees(gst.taxableValueCents)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span>GST ({gst.ratePercent}%)</span>
-              <span>{formatCentsAsRupees(gst.gstCents)}</span>
-            </div>
-            <div className="flex justify-between border-t border-sx-border pt-1 font-semibold text-sx-text">
-              <span>Total payable</span>
-              <span>{formatCentsAsRupees(gst.totalCents)}</span>
-            </div>
+          <div className="mt-4 flex items-baseline justify-center gap-2 border-b border-sx-border pb-5">
+            <span className="font-sx-sans text-5xl font-extrabold text-sx-text">{copy.price}</span>
+            <span className="font-sx-sans text-sm text-sx-text-subtle">{copy.priceNote}</span>
           </div>
 
           <ul className="mt-6 flex flex-col gap-2.5 text-left text-sm text-sx-text-muted">
@@ -69,6 +57,10 @@ export default function PublicAuditPage() {
           <div className="mt-8">
             <AuditCheckoutCta />
           </div>
+
+          <p className="mt-3 text-center font-sx-sans text-xs text-sx-text-subtle">
+            No credit card or upfront payment required · Instant analysis generated for your business
+          </p>
         </div>
 
         <p className="mt-8 text-sm text-sx-text-muted">

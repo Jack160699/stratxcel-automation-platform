@@ -54,7 +54,7 @@ export default function AiWorkforcePage() {
             plan="audit"
             className="rounded-sx-sm bg-sx-accent px-7 py-3.5 font-sx-sans text-sm font-bold text-sx-accent-on transition-colors hover:bg-[color:var(--sx-accent-hover)]"
           >
-            Start Business Growth Audit — ₹999
+            Start Free Business Growth Audit
           </TrackedCtaLink>
           <Link
             href="/how-it-works"
@@ -96,7 +96,7 @@ export default function AiWorkforcePage() {
             Activate your digital AI workforce with clarity
           </h2>
           <p className="mt-3 font-sx-sans text-sm text-sx-text-muted">
-            The ₹999 Business Growth Audit identifies exactly where to deploy specialist agents for maximum ROI.
+            The Free Business Growth Audit identifies exactly where to deploy specialist agents for maximum ROI.
           </p>
           <div className="mt-8 flex justify-center">
             <TrackedCtaLink
@@ -106,7 +106,7 @@ export default function AiWorkforcePage() {
               plan="audit"
               className="rounded-sx-sm bg-sx-accent px-8 py-3.5 font-sx-sans text-sm font-bold text-sx-accent-on hover:bg-[color:var(--sx-accent-hover)]"
             >
-              Start Business Growth Audit — ₹999
+              Start Free Business Growth Audit
             </TrackedCtaLink>
           </div>
         </div>

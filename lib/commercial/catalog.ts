@@ -15,10 +15,10 @@ export interface CommercialPillar {
 export const COMMERCIAL_PILLARS: CommercialPillar[] = [
   {
     id: "audit",
-    title: "Business Growth Audit",
-    subtitle: "Entry product",
+    title: "Instant Business Audit",
+    subtitle: "Free Discovery Product",
     description:
-      "A staff-delivered, evidence-based read on positioning, discoverability, competitors, and lead paths — with a written 30/60/90-day roadmap.",
+      "An instant, evidence-backed read on positioning, discoverability, competitors, and lead paths — completely free with a written 30/60/90-day roadmap.",
   },
   {
     id: "platform",
@@ -107,7 +107,7 @@ export interface PricingTier {
 }
 
 export const PRICING_TIERS: PricingTier[] = [
-  { id: "audit", pillar: "audit", name: "Business Growth Audit", badge: "Lower-funnel entry", price: "₹999", period: "one-time (GST included)", pitch: "A staff-delivered read before monthly platform work.", whoItsFor: "Owners who want clarity on priorities before monthly execution.", scope: ["Structured review of positioning and business context", "Website health and discoverability check", "Competitor and category landscape", "Lead-channel and response-speed review", "30/60/90-day growth roadmap"], note: "A one-time audit. No subscription starts from this.", popular: false, cta: "Start Business Audit", href: "/audit", planKey: "audit" },
+  { id: "audit", pillar: "audit", name: "Instant Business Audit", badge: "100% Free", price: "Free", period: "instant evidence-backed report", pitch: "Get an evidence-backed audit of your business, website and online presence — free.", whoItsFor: "Owners who want clarity on digital priorities and growth gaps.", scope: ["Structured review of positioning and business context", "Website health and discoverability check", "Competitor and category landscape", "Lead-channel and response-speed review", "30/60/90-day growth roadmap"], note: "100% Free audit. No payment or credit card required.", popular: false, cta: "Get Your Free Instant Audit", href: "/audit", planKey: "audit" },
   { id: "free", pillar: "platform", name: "Free", badge: "Explore", price: "₹0", period: "no card required", pitch: "Explore the workspace and prepare your growth system.", whoItsFor: "Anyone who wants to see real software before paying.", upgradePath: "Move to Starter or take the audit for a roadmap.", scope: ["1 workspace, 1 user", "Guided Brand Brain drafts", "1 Search & Discovery task (preview only)", "No published posts or campaigns yet"], note: "Free is not a paid subscription.", popular: false, cta: "Get Started", href: "/signup", planKey: "free" },
   { id: "starter", pillar: "platform", name: "Starter", badge: "Essential Growth", price: "₹4,999", period: "per month (GST included)", pitch: "Build a consistent growth engine.", whoItsFor: "Solo owners starting consistent content and lead capture.", upgradePath: "Upgrade to Growth for more volume and a website.", scope: ["Social content workflow for up to 12 posts/mo", "1 Meta ad campaign planning workflow & ad creative", "WhatsApp and CRM setup assistance", "Lead workflow for up to 100 captured leads", "Monthly summary from connected sources"], note: "Staff-assisted activation during closed beta.", popular: false, cta: "Request Starter Activation", href: "/contact?intent=starter", planKey: "starter" },
   { id: "growth", pillar: "platform", name: "Growth", badge: "Most Popular Fit", price: "₹9,999", period: "per month (GST included)", pitch: "Generate and follow up on more opportunities.", whoItsFor: "Growing businesses ready for higher volume and structured follow-up.", upgradePath: "Move to Business for priority execution.", scope: ["Everything in Starter + higher volume content workflow (25 posts/mo)", "WhatsApp and CRM follow-up workflow for up to 500 captured leads", "One controlled-scope website, confirmed during activation", "Website hosting and maintenance", "Search review and monthly reporting from connected sources"], note: "Staff-assisted activation. Domain registration & ad spend separate.", popular: true, cta: "Request Growth Activation", href: "/contact?intent=growth", planKey: "growth" },

@@ -147,7 +147,7 @@ export default function InteractiveExperiencePage() {
               href="/audit"
               className="inline-flex min-h-11 items-center justify-center rounded-sx-sm bg-sx-accent px-6 py-2.5 font-sx-sans text-[13.5px] font-semibold text-sx-accent-on transition-colors hover:bg-[color:var(--sx-accent-hover)] motion-reduce:transition-none"
             >
-              Start the ₹999 Audit →
+              Start the Free Audit →
             </Link>
           )}
         </div>

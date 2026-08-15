@@ -49,7 +49,6 @@ export const ADMIN_NAV_GROUPS_DATA: NavGroupData[] = [
     label: "Platform",
     items: [
       { key: "finance", label: "Finance", href: "/admin/finance", release: "v1" },
-      { key: "go-free-codes", label: "Go Free Codes", href: "/admin/go-free-codes", release: "v1" },
       { key: "team", label: "Team", href: "/admin/team", release: "v1" },
       { key: "integrations", label: "Integrations", href: "/admin/integrations", release: "v1" },
       { key: "system", label: "System Health", href: "/admin/system", release: "v1" },

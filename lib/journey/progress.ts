@@ -81,32 +81,32 @@ export function deriveJourney(input: JourneyInput): JourneyStage[] {
         }
       : {
           key: "purchase",
-          label: "Purchase",
+          label: "Audit Access",
           status: "Not started",
-          detail: "Start with the ₹999 AI Business Growth Audit.",
-          action: { label: "Pay ₹999 & start", href: "/audit" },
+          detail: "Start with the Free Instant Business Audit.",
+          action: { label: "Start Free Audit", href: "/app/audit" },
         }
     : order.status === "pending_payment"
       ? {
           key: "purchase",
-          label: "Purchase",
+          label: "Audit Access",
           status: "In progress",
-          detail: "Your ₹999 payment hasn't been completed yet.",
-          action: { label: "Resume payment", href: "/audit/checkout" },
+          detail: "Your free audit is ready to start.",
+          action: { label: "Start Free Audit", href: "/app/audit" },
         }
       : order.status === "refunded" || order.status === "cancelled"
         ? {
             key: "purchase",
-            label: "Purchase",
+            label: "Audit Access",
             status: "Needs attention",
             detail: `Your audit order was ${order.status}.`,
             action: { label: "Request a consultation", href: "/contact?intent=consultation" },
           }
         : {
             key: "purchase",
-            label: "Purchase",
+            label: "Audit Access",
             status: "Complete",
-            detail: "Your ₹999 Audit is paid for.",
+            detail: "Your Free Business Audit is active.",
             action: null,
           };
 
@@ -124,7 +124,7 @@ export function deriveJourney(input: JourneyInput): JourneyStage[] {
     (Boolean(order?.industry) || Boolean(order?.website_url)));
   const businessStarted = Boolean(order?.business_name && order.business_name !== BUSINESS_NAME_PLACEHOLDER);
   const business: JourneyStage = !paidOrLater
-    ? { key: "business", label: "Your Business", status: "Not started", detail: "Unlocks once your ₹999 Audit is paid for.", action: null }
+    ? { key: "business", label: "Your Business", status: "Not started", detail: "Unlocks once your Business Audit is started.", action: null }
     : businessAnswered
       ? { key: "business", label: "Your Business", status: "Complete", detail: "Your business basics are saved.", action: null }
       : {

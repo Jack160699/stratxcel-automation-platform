@@ -30,7 +30,7 @@ export function HomeClosingSection() {
             plan="audit"
             className="inline-flex min-h-12 w-full items-center justify-center rounded-xl bg-blue-600 px-8 py-3.5 font-sx-sans text-sm font-bold text-white shadow-md transition-all hover:bg-blue-700 hover:shadow-lg sm:w-auto"
           >
-            <span>START MY ₹999 AUDIT</span>
+            <span>GET YOUR FREE INSTANT AUDIT</span>
             <ArrowRightIcon className="ml-2 w-4 h-4" />
           </TrackedCtaLink>
 
@@ -44,9 +44,9 @@ export function HomeClosingSection() {
 
         {/* Secondary Trust Note */}
         <div className="mt-8 flex flex-wrap items-center justify-center gap-4 text-xs text-slate-500 font-medium">
-          <span>₹999 One-time</span>
+          <span>100% Free Audit</span>
           <span>•</span>
-          <span>No automatic subscription</span>
+          <span>No credit card required</span>
           <span>•</span>
           <Link href="/security" className="text-slate-700 hover:underline">
             Security &amp; Privacy

@@ -31,8 +31,7 @@ export default function PricingPage() {
             Clear plans for every stage of growth
           </h1>
           <p className="mt-3 text-sx-text-muted">
-            Explore free, activate monthly execution when ready, or start with the ₹999 audit if you need priorities
-            first.
+            Start with the free Instant Business Audit to uncover priorities, explore workspace tools, or activate monthly execution when ready.
           </p>
         </div>
         <div className="mt-14 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

@@ -62,7 +62,7 @@ export default function AiSeoAgentPage() {
             plan="audit"
             className="rounded-sx-sm bg-sx-accent px-7 py-3.5 font-sx-sans text-sm font-bold text-sx-accent-on transition-colors hover:bg-[color:var(--sx-accent-hover)]"
           >
-            Audit Your SEO in the ₹999 Growth Audit
+            Audit Your SEO in the Free Growth Audit
           </TrackedCtaLink>
           <Link
             href="/products"
@@ -123,7 +123,7 @@ export default function AiSeoAgentPage() {
             Uncover your highest-value search opportunities
           </h2>
           <p className="mt-3 font-sx-sans text-sm text-sx-text-muted">
-            The ₹999 Business Growth Audit analyzes your site discoverability, competitor ranking positions, and immediate keyword wins.
+            The Free Business Growth Audit analyzes your site discoverability, competitor ranking positions, and immediate keyword wins.
           </p>
           <div className="mt-8 flex justify-center">
             <TrackedCtaLink
@@ -133,7 +133,7 @@ export default function AiSeoAgentPage() {
               plan="audit"
               className="rounded-sx-sm bg-sx-accent px-8 py-3.5 font-sx-sans text-sm font-bold text-sx-accent-on hover:bg-[color:var(--sx-accent-hover)]"
             >
-              Start Business Growth Audit — ₹999
+              Start Free Business Growth Audit
             </TrackedCtaLink>
           </div>
         </div>

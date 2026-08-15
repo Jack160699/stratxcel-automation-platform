@@ -97,10 +97,10 @@ export function HomeAuditSection() {
 
             <div className="mt-5 flex items-baseline gap-2.5 border-b border-slate-200/80 pb-5">
               <span className="font-sx-sans text-4xl font-bold tracking-tight text-slate-900 sm:text-5xl">
-                ₹999
+                Free
               </span>
               <span className="font-sx-sans text-xs text-slate-500 font-medium">
-                one-time · GST included
+                100% Free · No credit card required
               </span>
             </div>
 
@@ -126,12 +126,12 @@ export function HomeAuditSection() {
               plan="audit"
               className="mt-8 flex min-h-12 w-full items-center justify-center rounded-xl bg-blue-600 px-6 py-3.5 font-sx-sans text-sm font-bold text-white shadow-md transition-all hover:bg-blue-700 hover:shadow-lg"
             >
-              <span>START MY ₹999 AUDIT</span>
+              <span>START FREE BUSINESS AUDIT</span>
               <ArrowRightIcon className="ml-2 w-4 h-4" />
             </TrackedCtaLink>
 
             <p className="mt-3 text-center font-sx-sans text-xs text-slate-500">
-              No recurring subscription starts automatically · Delivered straight to your dashboard
+              No subscription or payment required · Instant analysis delivered straight to your dashboard
             </p>
           </div>
         </div>

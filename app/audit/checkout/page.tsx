@@ -1,21 +1,16 @@
+import { redirect } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { CheckoutRedirect } from "./CheckoutRedirect";
-import { GuestCheckoutForm } from "./GuestCheckoutForm";
 
 export const dynamic = "force-dynamic";
 
 /**
- * The step between "Pay ₹999" / "Continue Free" and fulfilment.
- * Signed-in customers see CheckoutRedirect (pay or apply a Go Free code).
- * Guests see GuestCheckoutForm. Complimentary redemption never hits Razorpay.
+ * Free Audit Migration:
+ * The old ₹999 checkout step is retired.
+ * Visitors to /audit/checkout are redirected directly into the Free Audit flow.
  */
 export default async function AuditCheckoutGatePage() {
-  // Keep the public checkout entry usable when auth configuration has not
-  // reached an environment yet. The payment API still fails closed behind
-  // PAYMENTS_AUDIT_ENABLED, but the customer gets the guest form and its
-  // actionable availability message instead of a Server Component crash.
   if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
-    return <GuestCheckoutForm />;
+    redirect("/app/audit");
   }
 
   const supabase = await createSupabaseServerClient();
@@ -23,5 +18,9 @@ export default async function AuditCheckoutGatePage() {
     data: { user },
   } = await supabase.auth.getUser();
 
-  return user ? <CheckoutRedirect /> : <GuestCheckoutForm />;
+  if (user) {
+    redirect("/app/audit");
+  } else {
+    redirect("/signup?next=/app/audit");
+  }
 }

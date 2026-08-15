@@ -119,7 +119,7 @@ const USE_CASES: UseCase[] = [
       "30/60/90-day growth priority roadmaps",
     ],
     workflow: ["Channel telemetry gathered", "Attribution synthesized", "Executive brief compiled", "Priorities delivered to inbox"],
-    ctaText: "Start Business Growth Audit — ₹999",
+    ctaText: "Start Free Business Growth Audit",
     ctaHref: "/audit",
   },
 ];
@@ -266,7 +266,7 @@ export function HomeUseCaseExplorer() {
                 href="/audit"
                 className="font-sx-sans text-xs font-semibold text-sx-text-muted hover:text-sx-text underline"
               >
-                Or begin with the ₹999 Business Growth Audit
+                Or begin with the Free Business Growth Audit
               </Link>
             </div>
           </div>

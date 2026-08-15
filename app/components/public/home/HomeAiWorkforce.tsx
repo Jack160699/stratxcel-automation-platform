@@ -202,7 +202,7 @@ export function HomeAiWorkforce() {
               href="/audit"
               className="inline-flex min-h-11 items-center justify-center rounded-sx-sm border border-sx-border-strong bg-sx-bg px-6 py-2.5 font-sx-sans text-sm font-semibold text-sx-text transition-colors hover:bg-sx-surface-3"
             >
-              Start with Business Growth Audit — ₹999
+              Start with Free Business Growth Audit
             </Link>
           </div>
         </div>

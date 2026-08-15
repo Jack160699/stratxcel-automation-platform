@@ -43,7 +43,7 @@ export default function AiCrmAgentPage() {
             plan="audit"
             className="rounded-sx-sm bg-sx-accent px-7 py-3.5 font-sx-sans text-sm font-bold text-sx-accent-on transition-colors hover:bg-[color:var(--sx-accent-hover)]"
           >
-            Audit Your Lead Flow in ₹999 Growth Audit
+            Audit Your Lead Flow in Free Growth Audit
           </TrackedCtaLink>
           <Link
             href="/solutions"
@@ -88,7 +88,7 @@ export default function AiCrmAgentPage() {
             Find where leads are leaking in your sales flow
           </h2>
           <p className="mt-3 font-sx-sans text-sm text-sx-text-muted">
-            The ₹999 Business Growth Audit examines your lead response paths and gives you a 30/60/90-day pipeline roadmap.
+            The Free Business Growth Audit examines your lead response paths and gives you a 30/60/90-day pipeline roadmap.
           </p>
           <div className="mt-8 flex justify-center">
             <TrackedCtaLink
@@ -98,7 +98,7 @@ export default function AiCrmAgentPage() {
               plan="audit"
               className="rounded-sx-sm bg-sx-accent px-8 py-3.5 font-sx-sans text-sm font-bold text-sx-accent-on hover:bg-[color:var(--sx-accent-hover)]"
             >
-              Start Business Growth Audit — ₹999
+              Start Free Business Growth Audit
             </TrackedCtaLink>
           </div>
         </div>

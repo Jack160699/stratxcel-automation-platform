@@ -40,7 +40,7 @@ export function HomeFinalCta() {
             plan="audit"
             className="inline-flex min-h-12 items-center justify-center rounded-sx-sm bg-gradient-to-r from-blue-600 via-blue-500 to-sky-500 px-8 py-3.5 font-sx-sans text-sm font-bold text-white shadow-[0_0_28px_rgba(37,99,235,0.4)] transition-all duration-200 hover:brightness-110 motion-reduce:transition-none"
           >
-            GET YOUR BUSINESS GROWTH AUDIT — ₹999
+            GET YOUR FREE BUSINESS GROWTH AUDIT
           </TrackedCtaLink>
           <TrackedCtaLink
             href="#ai-workforce"
@@ -54,9 +54,9 @@ export function HomeFinalCta() {
 
         {/* Secondary Links */}
         <div className="mt-8 flex flex-wrap items-center justify-center gap-4 text-xs text-white/45">
-          <span>₹999 One-time</span>
+          <span>100% Free Audit</span>
           <span>•</span>
-          <span>No automatic subscription</span>
+          <span>No credit card required</span>
           <span>•</span>
           <Link href="/security" className="text-white/70 hover:underline">
             Read Security Architecture
