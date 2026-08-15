@@ -52,6 +52,7 @@ export function isSafeProtocol(input: string): boolean {
 
 /**
  * Normalize any website URL into a safe, canonical https:// (or http://) URL.
+ * Tolerates leading/trailing whitespace, missing protocols, www, mobile/copied strings.
  */
 export function normalizeWebsiteUrl(raw: string): { ok: boolean; url?: string; host?: string; error?: string } {
   if (!raw || typeof raw !== "string") {
@@ -63,6 +64,9 @@ export function normalizeWebsiteUrl(raw: string): { ok: boolean; url?: string; h
   if (!isSafeProtocol(trimmed)) {
     return { ok: false, error: "Unsafe URL scheme detected" };
   }
+
+  // Remove common leading prefixes or copy artefacts
+  trimmed = trimmed.replace(/^(url:\s*|website:\s*|link:\s*)/i, "").trim();
 
   // Add protocol if missing
   if (!/^https?:\/\//i.test(trimmed)) {
@@ -99,7 +103,7 @@ export function detectPlatformFromInput(input: string): SupportedPlatform {
   if (/linkedin\.com/i.test(s)) return "linkedin";
   if (/twitter\.com|x\.com/i.test(s)) return "x";
   if (/wa\.me|api\.whatsapp\.com|whatsapp\.com/i.test(s)) return "whatsapp";
-  if (/google\.com\/maps|g\.page|maps\.app\.goo\.gl|business\.google\.com/i.test(s)) return "google_business";
+  if (/google\.[a-z.]+\/maps|g\.page|maps\.app\.goo\.gl|goo\.gl\/maps|business\.google\.com/i.test(s)) return "google_business";
   return "website";
 }
 
@@ -283,15 +287,44 @@ export function normalizePlatformInput(
     }
 
     case "google_business": {
-      const websiteNorm = normalizeWebsiteUrl(trimmed);
-      if (!websiteNorm.ok) return { ok: false, platform, rawInput: raw, error: "Invalid Google Business link" };
-      return {
-        ok: true,
-        platform: "google_business",
-        rawInput: raw,
-        canonicalUrl: websiteNorm.url,
-        displayHandle: websiteNorm.host,
-      };
+      // Inputs:
+      // - https://maps.app.goo.gl/xyz
+      // - https://goo.gl/maps/xyz
+      // - https://www.google.com/maps/place/Business+Name/@lat,lng,zoom
+      // - https://g.page/r/xyz
+      // - https://business.google.com/xyz
+      // - embed maps iframe url
+      const withProto = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+      try {
+        const parsed = new URL(withProto);
+        let placeName: string | undefined;
+
+        if (parsed.pathname.includes("/maps/place/")) {
+          const placePart = parsed.pathname.split("/maps/place/")[1]?.split("/")[0];
+          if (placePart) {
+            placeName = decodeURIComponent(placePart.replace(/\+/g, " "));
+          }
+        } else if (parsed.pathname.startsWith("/maps/search/")) {
+          const searchPart = parsed.pathname.split("/maps/search/")[1]?.split("/")[0];
+          if (searchPart) {
+            placeName = decodeURIComponent(searchPart.replace(/\+/g, " "));
+          }
+        } else if (parsed.hostname.includes("g.page")) {
+          placeName = parsed.pathname.replace(/^\/r\/|^\//, "").split(/[/?#]/)[0];
+        }
+
+        const displayHandle = placeName ? placeName : parsed.hostname;
+        return {
+          ok: true,
+          platform: "google_business",
+          rawInput: raw,
+          canonicalUrl: parsed.href,
+          displayHandle,
+          displayName: placeName,
+        };
+      } catch {
+        return { ok: false, platform, rawInput: raw, error: "Invalid Google Maps / Business link" };
+      }
     }
 
     default:
@@ -306,16 +339,19 @@ export function extractAllSocialLinksFromHtml(html: string): DiscoveredSocialLin
   if (!html || typeof html !== "string") return [];
 
   const linkRegex = /<a[^>]+href=["']([^"']+)["'][^>]*>/gi;
+  const iframeRegex = /<iframe[^>]+src=["']([^"']+)["'][^>]*>/gi;
   const discovered: DiscoveredSocialLink[] = [];
   const seenUrls = new Set<string>();
 
   let match: RegExpExecArray | null;
+
+  // Extract from <a> tags
   while ((match = linkRegex.exec(html)) !== null) {
     const rawHref = match[1]?.trim();
     if (!rawHref || !isSafeProtocol(rawHref)) continue;
 
     const detected = detectPlatformFromInput(rawHref);
-    if (detected === "website" || detected === "google_business") continue;
+    if (detected === "website") continue;
 
     const norm = normalizePlatformInput(detected, rawHref);
     if (norm.ok && norm.canonicalUrl && !seenUrls.has(norm.canonicalUrl)) {
@@ -324,10 +360,31 @@ export function extractAllSocialLinksFromHtml(html: string): DiscoveredSocialLin
         platform: detected,
         url: norm.canonicalUrl,
         handle: norm.displayHandle || norm.canonicalUrl,
+        displayName: norm.displayName,
         rawHref,
       });
     }
   }
 
+  // Extract Google Maps embed iframes
+  while ((match = iframeRegex.exec(html)) !== null) {
+    const rawSrc = match[1]?.trim();
+    if (!rawSrc || !isSafeProtocol(rawSrc)) continue;
+    if (/google\.[a-z.]+\/maps\/embed/i.test(rawSrc)) {
+      const norm = normalizePlatformInput("google_business", rawSrc);
+      if (norm.ok && norm.canonicalUrl && !seenUrls.has(norm.canonicalUrl)) {
+        seenUrls.add(norm.canonicalUrl);
+        discovered.push({
+          platform: "google_business",
+          url: norm.canonicalUrl,
+          handle: norm.displayHandle || "Google Maps Listing",
+          displayName: norm.displayName || "Google Maps Location",
+          rawHref: rawSrc,
+        });
+      }
+    }
+  }
+
   return discovered;
 }
+

@@ -4,8 +4,9 @@ import { listMembershipsForUser } from "@/lib/tenants/repository";
 import { brandBrainPresenceChanged, buildBrandBrainContentFromAuditIntake, isBrandBrainCurrentForAudit } from "@/lib/audit/brand-brain";
 import { getCurrentBrandBrain, saveBrandBrainVersion } from "@stratxcel/brand-brain";
 import { resolveAuditBudgetLimitUsd } from "@stratxcel/audit-engine";
-import { AUDIT_CHANNEL_TYPES, sanitizeChannels } from "@/lib/audit/v1/channels";
+import { AUDIT_CHANNEL_TYPES, sanitizeChannels, type AuditChannelType } from "@/lib/audit/v1/channels";
 import { discoverPublicBusiness } from "@/lib/audit/v1/discovery";
+import { runSmartWebsiteDiscovery, type DiscoveredBusinessData } from "@/lib/audit/v1/smart-discovery";
 import { selectAdaptiveQuestions, adaptiveAnswersComplete, type DiscoveredBusinessProfile } from "@/lib/audit/v1/adaptive-questions";
 import {
   CONNECT_DISCOVER_VERSION,
@@ -92,6 +93,10 @@ async function syncBrandBrainPresence(
     deep_dive_answers: {
       intakeMeta: { questionnaireVersion: CONNECT_DISCOVER_VERSION, updatedAt: input.state.updatedAt },
       v1Experience: input.state,
+      businessStage: input.state.profile?.businessStage,
+      googleBusiness: (input.state.profile as Record<string, unknown>)?.googleBusiness,
+      reviews: input.state.profile?.reviews?.value,
+      services: input.state.profile?.services?.value,
     },
   };
   const next = buildBrandBrainContentFromAuditIntake(mapped, existingBrain?.content ?? null);
@@ -166,22 +171,105 @@ export async function POST(request: Request) {
       await persist(ctx.service, current, discovering);
 
       let profile: DiscoveredBusinessProfile = { websiteUrl };
+      let discoveryData: DiscoveredBusinessData | null = null;
       let coverage: Record<string, boolean> = {};
 
       try {
-        const packet = await discoverPublicBusiness({ websiteUrl });
-        profile = packet.profile;
-        coverage = packet.coverage;
+        const smartResult = await runSmartWebsiteDiscovery(websiteUrl);
+        discoveryData = smartResult.data;
+
+        profile = {
+          websiteUrl: discoveryData.websiteUrl || websiteUrl,
+          name: discoveryData.businessName ? field(discoveryData.businessName, discoveryData.confidenceTags.businessName || "VERIFIED_PUBLIC") : undefined,
+          category: discoveryData.industry ? field(discoveryData.industry, discoveryData.confidenceTags.industry || "AI_INFERRED") : undefined,
+          location: discoveryData.location ? field(discoveryData.location, discoveryData.confidenceTags.location || "VERIFIED_PUBLIC") : undefined,
+          services: discoveryData.services.length > 0 ? field(discoveryData.services, "AI_INFERRED") : undefined,
+          offer: discoveryData.primaryOffer ? field(discoveryData.primaryOffer, "AI_INFERRED") : undefined,
+          phone: discoveryData.phone ? field(discoveryData.phone, "VERIFIED_PUBLIC") : undefined,
+          email: discoveryData.email ? field(discoveryData.email, "VERIFIED_PUBLIC") : undefined,
+          positioning: discoveryData.description ? field(discoveryData.description, "VERIFIED_PUBLIC") : undefined,
+          differentiators: discoveryData.differentiators && discoveryData.differentiators.length > 0 ? field(discoveryData.differentiators, "AI_INFERRED") : undefined,
+          reviews: discoveryData.reviews ? field(discoveryData.reviews, "VERIFIED_PUBLIC") : undefined,
+          candidateGoals: discoveryData.candidateGoals,
+          businessStage: discoveryData.businessStage,
+        };
+
+        // Extract and populate channels from discovery
+        const existingChannels = (parseOnboardingState(current.deep_dive_answers)?.channels ?? []);
+        const discoveredChannels = discoveryData.socialLinks.map((s) => ({
+          id: s.platform as AuditChannelType,
+          type: s.platform as AuditChannelType,
+          value: s.url,
+          notAvailable: false,
+          displayName: s.displayName,
+          handle: s.handle,
+        }));
+
+        // Merge channels avoiding duplicates
+        const channelMap = new Map<string, { id: string; type: AuditChannelType; value: string; notAvailable: boolean }>();
+        for (const ch of existingChannels) {
+          if (AUDIT_CHANNEL_TYPES.includes(ch.type)) channelMap.set(ch.type, ch);
+        }
+        for (const ch of discoveredChannels) {
+          if (AUDIT_CHANNEL_TYPES.includes(ch.type) && (!channelMap.has(ch.type) || !channelMap.get(ch.type)?.value)) {
+            channelMap.set(ch.type, ch);
+          }
+        }
+        if (discoveryData.googleBusiness?.url && !channelMap.has("google_business")) {
+          channelMap.set("google_business", {
+            id: "google_business",
+            type: "google_business",
+            value: discoveryData.googleBusiness.url,
+            notAvailable: false,
+          });
+        }
+
+        const mergedChannels = Array.from(channelMap.values());
+
+        coverage = {
+          website: discoveryData.isReachable,
+          google: Boolean(discoveryData.googleBusiness?.url || mergedChannels.some((c) => c.type === "google_business" && c.value)),
+          instagram: mergedChannels.some((c) => c.type === "instagram" && c.value),
+          facebook: mergedChannels.some((c) => c.type === "facebook" && c.value),
+          reviews: Boolean(discoveryData.reviews || (discoveryData.testimonials?.length ?? 0) > 0),
+          analytics: false,
+        };
+
         try {
           await ctx.service.from("audit_discovery_snapshots").insert({
             audit_order_id: current.id,
             tenant_id: ctx.tenantId,
-            website_url: packet.websiteUrl,
-            packet,
+            website_url: websiteUrl,
+            packet: {
+              ...discoveryData,
+              smartDiscoveryResult: smartResult,
+            },
           });
         } catch {
-          // Non-fatal
+          // Non-fatal snapshot store
         }
+
+        const state = mergeState(current, {
+          step: "verify",
+          websiteUrl: profile.websiteUrl || websiteUrl,
+          channels: mergedChannels,
+          profile,
+        });
+
+        await persist(ctx.service, current, state, {
+          website_url: state.websiteUrl,
+          business_name: profile.name?.value ?? current.business_name,
+          industry: profile.category?.value ?? current.industry,
+        });
+        await syncBrandBrainPresence(ctx.service, { tenantId: ctx.tenantId, userId: ctx.user.id, order: current, state });
+
+        return Response.json({
+          ok: true,
+          state,
+          discoveryData,
+          questions: selectAdaptiveQuestions(profile),
+          coverage,
+        });
       } catch (err) {
         console.warn("Standard discovery error, recovering with Brand Brain context:", err);
         const brain = await getCurrentBrandBrain(ctx.service, ctx.tenantId).catch(() => null);
@@ -196,21 +284,22 @@ export async function POST(request: Request) {
             positioning: typeof c.tone_of_voice === "string" && c.tone_of_voice ? field(c.tone_of_voice, "CUSTOMER_PROVIDED") : undefined,
           };
         }
-      }
 
-      const state = mergeState(current, {
-        step: "verify",
-        websiteUrl: profile.websiteUrl || websiteUrl,
-        profile,
-      });
-      await persist(ctx.service, current, state, { website_url: state.websiteUrl });
-      await syncBrandBrainPresence(ctx.service, { tenantId: ctx.tenantId, userId: ctx.user.id, order: current, state });
-      return Response.json({
-        ok: true,
-        state,
-        questions: selectAdaptiveQuestions(profile),
-        coverage,
-      });
+        const state = mergeState(current, {
+          step: "verify",
+          websiteUrl: profile.websiteUrl || websiteUrl,
+          profile,
+        });
+        await persist(ctx.service, current, state, { website_url: state.websiteUrl });
+
+        return Response.json({
+          ok: true,
+          state,
+          discoveryData: null,
+          questions: selectAdaptiveQuestions(profile),
+          coverage: { website: false, google: false, instagram: false, facebook: false, reviews: false, analytics: false },
+        });
+      }
     }
 
     if (action === "continue_anyway") {
@@ -248,9 +337,24 @@ export async function POST(request: Request) {
       for (const [key, value] of Object.entries(edits)) {
         if (typeof value === "string" && value.trim()) {
           (profile as Record<string, unknown>)[key] = field(value.trim(), "CUSTOMER_PROVIDED", undefined, true);
+        } else if (Array.isArray(value)) {
+          (profile as Record<string, unknown>)[key] = field(value, "CUSTOMER_PROVIDED", undefined, true);
         }
       }
-      const state = mergeState(current, { step: "questions", verified: true, profile });
+
+      if (typeof body.businessStage === "string" && body.businessStage) {
+        profile.businessStage = body.businessStage;
+      }
+
+      // Update channels if provided
+      const updatedChannels = Array.isArray(body.channels) ? sanitizeChannels(body.channels) : existing.channels;
+
+      const state = mergeState(current, {
+        step: "questions",
+        verified: true,
+        channels: updatedChannels,
+        profile,
+      });
       await persist(ctx.service, current, state, {
         business_name: profile.name?.value ?? current.business_name,
         industry: profile.category?.value ?? current.industry,
@@ -283,8 +387,8 @@ export async function POST(request: Request) {
       });
       await persist(ctx.service, current, state, {
         goals_answers: {
-          primaryGoal: adaptiveAnswers.ninetyDayResult,
-          successDefinition: adaptiveAnswers.ninetyDayResult,
+          primaryGoal: adaptiveAnswers.primaryGoal || adaptiveAnswers.ninetyDayResult,
+          successDefinition: adaptiveAnswers.primaryGoal || adaptiveAnswers.ninetyDayResult,
           biggestObstacle: adaptiveAnswers.biggestGrowthProblem,
         },
       });
@@ -299,6 +403,9 @@ export async function POST(request: Request) {
         return Response.json({ error: "A few questions still need an answer." }, { status: 409 });
       }
       const existingBrain = await getCurrentBrandBrain(ctx.service, ctx.tenantId);
+      const stage = state.profile?.businessStage || "EARLY BUSINESS";
+      const isPreLaunch = stage === "IDEA" || stage === "PRE-LAUNCH";
+
       const mappedOrder = {
         id: current.id,
         business_name: state.profile?.name?.value ?? current.business_name,
@@ -309,6 +416,7 @@ export async function POST(request: Request) {
           intakeMeta: { questionnaireVersion: CONNECT_DISCOVER_VERSION, updatedAt: new Date().toISOString() },
           v1Experience: state,
           businessDescription: state.profile?.positioning?.value,
+          businessStage: stage,
           location: state.profile?.location?.value,
           majorProducts: state.profile?.services?.value?.join("\n"),
           priorityOffering: state.adaptiveAnswers.priorityOffering || state.profile?.offer?.value,
@@ -317,8 +425,8 @@ export async function POST(request: Request) {
           biggestProblem: state.adaptiveAnswers.biggestGrowthProblem,
         },
         goals_answers: {
-          primaryGoal: state.adaptiveAnswers.ninetyDayResult,
-          successDefinition: state.adaptiveAnswers.ninetyDayResult,
+          primaryGoal: state.adaptiveAnswers.primaryGoal || state.adaptiveAnswers.ninetyDayResult,
+          successDefinition: state.adaptiveAnswers.primaryGoal || state.adaptiveAnswers.ninetyDayResult,
         },
       };
       if (!isBrandBrainCurrentForAudit(mappedOrder, existingBrain?.content ?? {})) {
@@ -345,7 +453,7 @@ export async function POST(request: Request) {
       }
       const generating = mergeState(current, { step: "generating" });
       await persist(ctx.service, current, generating);
-      return Response.json({ ok: true, started: true });
+      return Response.json({ ok: true, started: true, stage, isBusinessPlan: isPreLaunch });
     }
   } catch (error) {
     if (error instanceof UnsafeBusinessUrlError) {
@@ -360,3 +468,4 @@ export async function POST(request: Request) {
 
   return Response.json({ error: `Unknown action. Supported channels: ${AUDIT_CHANNEL_TYPES.join(", ")}` }, { status: 400 });
 }
+

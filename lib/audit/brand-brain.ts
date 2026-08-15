@@ -112,6 +112,12 @@ export function buildBrandBrainContentFromAuditIntake(
   const businessReach = text(deepDive.businessReach) || text(deepDive.geographicReach);
   const targetAudience = customerSegments.join(", ") || text(base.target_audience);
   const toneOfVoice = personality.join(", ") || text(base.tone_of_voice);
+  const businessStage = text(deepDive.businessStage) || existingText(base, "business_stage") || "EARLY BUSINESS";
+
+  const v1Experience = record(deepDive.v1Experience);
+  const v1Profile = record(v1Experience.profile);
+  const googleBusiness = deepDive.googleBusiness ?? v1Profile.googleBusiness ?? base.google_business;
+  const reviews = deepDive.reviews ?? v1Profile.reviews ?? base.reviews;
 
   return {
     ...base,
@@ -123,11 +129,14 @@ export function buildBrandBrainContentFromAuditIntake(
     industry: industry || undefined,
     business_description: businessDescription || undefined,
     business_reach: businessReach || undefined,
+    business_stage: businessStage || undefined,
     location: businessReach === "online_anywhere" ? undefined : text(deepDive.location) || undefined,
     website_url: customerOwnsWebsite ? existingWebsite : (auditWebsite || existingWebsite) || undefined,
     audit_synced_website_url: auditWebsite || lastSyncedWebsite || undefined,
     online_profiles: customerOwnsProfiles ? existingProfiles : unique([...onlineProfiles, ...existingProfiles]),
     audit_synced_online_profiles: onlineProfiles,
+    google_business: googleBusiness ?? undefined,
+    reviews: reviews ?? undefined,
     products: products.length > 0 ? products : base.products,
     priority_offering: text(deepDive.priorityOffering) || undefined,
     target_audience: targetAudience || undefined,
@@ -151,6 +160,7 @@ export function buildBrandBrainContentFromAuditIntake(
     audit_intake: {
       businessDescription: text(deepDive.businessDescription),
       businessReach: text(deepDive.businessReach),
+      businessStage: businessStage,
       location: businessReach === "online_anywhere" ? "" : text(deepDive.location),
       majorProducts: text(deepDive.majorProducts),
       priorityOffering: text(deepDive.priorityOffering),
