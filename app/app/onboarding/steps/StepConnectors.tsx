@@ -158,7 +158,8 @@ export function StepConnectors({
   }
 
   function startOAuth(platform: SocialPlatformKey) {
-    window.location.href = `/api/platform/onboarding/social/${platform}/connect`;
+    // Redirect to canonical OAuth authorization route with onboarding return target
+    window.location.href = `/api/social/oauth/${platform}/connect?redirectTo=/app`;
   }
 
   function handleDisconnect(platform: SocialPlatformKey) {

@@ -2,19 +2,19 @@ import { NextResponse, type NextRequest } from "next/server";
 import { requireAdmin } from "@/lib/social/admin-guard";
 import { isValidProvider, getProvider } from "@/lib/social/providers";
 import { verifySignedState } from "@/lib/social/oauth-state";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createSupabaseServiceClient } from "@/lib/supabase/service";
 import { upsertConnectedAccount, type Platform } from "@/lib/social/repositories/accounts";
 import { recordAudit } from "@/lib/social/repositories/system";
 
 /**
  * GET /api/social/oauth/:provider/callback
- * Validates the signed state (single-use, expiring, admin-issued), exchanges
- * the authorization code for tokens, encrypts them, and upserts the
- * connected account + its token row. Never returns tokens to the browser.
- * Runs via service-role: social_accounts/social_tokens writes here happen
- * before/independent of any owner-scoped RLS path decision, and this route
- * has no cookie-bound Supabase session of its own beyond requireAdmin()'s
- * check.
+ *
+ * Canonical OAuth callback for all social connectors (Admin + Onboarding).
+ *
+ * Validates the signed state token, exchanges code for token, and:
+ * - Onboarding (redirectTo=/app): records verified connection proof in user metadata (pre-tenant).
+ * - Admin (/admin/social): enforces requireAdmin(), upserts encrypted tokens to social_accounts table.
  */
 export async function GET(
   req: NextRequest,
@@ -22,20 +22,27 @@ export async function GET(
 ) {
   const { provider } = await params;
   const origin = req.nextUrl.origin;
-  const failRedirect = (reason: string) =>
-    NextResponse.redirect(`${origin}/admin/social?connect_error=${encodeURIComponent(reason)}`);
-
-  const admin = await requireAdmin();
-  if (!admin.ok) return failRedirect("not_authorized");
-
-  if (!isValidProvider(provider)) return failRedirect("unknown_provider");
 
   const code = req.nextUrl.searchParams.get("code");
   const state = req.nextUrl.searchParams.get("state");
   const oauthError = req.nextUrl.searchParams.get("error");
 
+  // Determine fallback fail destination from state if available
+  let fallbackRedirect = "/admin/social";
+  if (state) {
+    const v = verifySignedState(state);
+    if (v.valid && v.payload.redirectTo?.startsWith("/app")) {
+      fallbackRedirect = "/app";
+    }
+  }
+
+  const failRedirect = (reason: string) =>
+    NextResponse.redirect(`${origin}${fallbackRedirect}?connect_error=${encodeURIComponent(reason)}`);
+
   if (oauthError) return failRedirect(`provider_error:${oauthError}`);
   if (!code || !state) return failRedirect("missing_code_or_state");
+
+  if (!isValidProvider(provider)) return failRedirect("unknown_provider");
 
   const verified = verifySignedState(state);
   if (!verified.valid) return failRedirect(`bad_state:${verified.reason}`);
@@ -43,11 +50,10 @@ export async function GET(
 
   const service = createSupabaseServiceClient();
 
-  // State must exist, be unconsumed, and unexpired server-side (belt & braces
-  // beyond the signature/expiry check already in the token itself).
+  // State must exist, be unconsumed, and unexpired server-side
   const { data: stateRow } = await service
     .from("social_oauth_states")
-    .select("id, consumed_at, expires_at")
+    .select("id, consumed_at, expires_at, created_by")
     .eq("state_hash", verified.hash)
     .maybeSingle();
 
@@ -68,6 +74,55 @@ export async function GET(
 
   try {
     const result = await getProvider(provider).exchangeCodeForToken(code, redirectUri);
+    const redirectTo = verified.payload.redirectTo || "/admin/social";
+    const isOnboarding = redirectTo.startsWith("/app");
+
+    if (isOnboarding) {
+      // Pre-tenant onboarding connection proof saved to user metadata
+      const supabase = await createSupabaseServerClient();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      const userId = user?.id || stateRow.created_by;
+
+      if (userId) {
+        const { data: userData } = await service.auth.admin.getUserById(userId);
+        const existingMeta = (userData?.user?.user_metadata ?? {}) as Record<string, unknown>;
+        const existingConnections = (existingMeta.onboarding_oauth_connections ?? {}) as Record<string, unknown>;
+
+        await service.auth.admin.updateUserById(userId, {
+          user_metadata: {
+            ...existingMeta,
+            onboarding_oauth_connections: {
+              ...existingConnections,
+              [provider]: {
+                providerAccountId: result.externalAccountId,
+                username: result.username ?? result.displayName ?? result.externalAccountId,
+                displayName: result.displayName ?? null,
+                avatarUrl: result.profilePictureUrl ?? null,
+                scopes: result.scopes,
+                connectedAt: new Date().toISOString(),
+              },
+            },
+          },
+        });
+      }
+
+      await recordAudit({
+        actorType: "USER",
+        actorId: userId,
+        action: "account.connect",
+        targetType: "social_account",
+        summary: `Connected ${provider} account during onboarding`,
+        meta: { provider_account_id: result.externalAccountId },
+      });
+
+      return NextResponse.redirect(`${origin}${redirectTo}?connected=${provider}`);
+    }
+
+    // Admin flow
+    const admin = await requireAdmin();
+    if (!admin.ok) return failRedirect("not_authorized");
 
     await upsertConnectedAccount(service, {
       ownerId: admin.userId,
@@ -91,7 +146,6 @@ export async function GET(
       meta: { provider_account_id: result.externalAccountId },
     });
 
-    const redirectTo = verified.payload.redirectTo || "/admin/social";
     return NextResponse.redirect(`${origin}${redirectTo}?connected=${provider}`);
   } catch (err) {
     const message = err instanceof Error ? err.message : "unknown_error";

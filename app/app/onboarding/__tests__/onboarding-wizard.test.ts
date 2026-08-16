@@ -118,11 +118,11 @@ function run() {
   assert.ok(/fetch\("\/api\/platform\/onboarding", \{ cache: "no-store" \}\)/.test(wizard), "wizard must restore server-saved progress");
 
   // --- 14. Step 2 Dedicated OAuth connector architecture ----------------------
-  const connectRoute = read("app", "api", "platform", "onboarding", "social", "[provider]", "connect", "route.ts");
-  const callbackRoute = read("app", "api", "platform", "onboarding", "social", "[provider]", "callback", "route.ts");
+  const connectRoute = read("app", "api", "social", "oauth", "[provider]", "connect", "route.ts");
+  const callbackRoute = read("app", "api", "social", "oauth", "[provider]", "callback", "route.ts");
 
   // StepConnectors must redirect to the real OAuth flow, not ask for a URL/handle
-  assert.ok(/window\.location\.href\s*=\s*[`"']\/api\/platform\/onboarding\/social\//.test(stepConnectors), "Connect button must redirect to the real OAuth endpoint, not open a URL input form");
+  assert.ok(/window\.location\.href\s*=\s*[`"']\/api\/social\/oauth\//.test(stepConnectors), "Connect button must redirect to the real OAuth endpoint, not open a URL input form");
   assert.ok(/connectionType/.test(stepConnectors), "StepConnectors must track connection type (oauth vs public_profile)");
   assert.equal(/Authorize\s+\w+/.test(stepConnectors), false, "StepConnectors must NOT have a fake 'Authorize {Provider}' button that just saves a URL");
   assert.ok(/public.profile.manually/.test(stepConnectors), "StepConnectors must offer 'Add public profile manually' as a secondary action");
