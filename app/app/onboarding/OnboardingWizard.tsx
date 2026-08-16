@@ -124,6 +124,47 @@ export function OnboardingWizard() {
     return () => window.clearTimeout(timeout);
   }, [step, draft, draftHydrated]);
 
+  function applySynthesizedIntelligence(intel: any) {
+    if (!intel) return;
+    setDraft((d) => {
+      const nextBusiness = {
+        ...d.business,
+        name: d.business.name && d.business.slugTouched ? d.business.name : (intel.business?.name || d.business.name),
+        slug: d.business.slug && d.business.slugTouched ? d.business.slug : (intel.business?.slug || d.business.slug),
+        industry: d.business.industry || intel.business?.industry || d.business.industry,
+        businessModel: intel.business?.businessModel || d.business.businessModel,
+        location: d.business.location || intel.business?.location || d.business.location,
+        whatsapp: d.business.whatsapp || intel.business?.whatsapp || d.business.whatsapp,
+        services: intel.business?.services?.length ? intel.business.services : d.business.services,
+        primaryOffer: intel.business?.primaryOffer || d.business.primaryOffer,
+        stage: intel.business?.stage || d.business.stage,
+        socials: intel.business?.socials?.length ? intel.business.socials : d.business.socials,
+        intelligenceProvenance: intel.provenance || d.business.intelligenceProvenance,
+      };
+
+      const nextBrand = {
+        ...d.brand,
+        businessName: d.brand.businessName || intel.brand?.businessName || nextBusiness.name,
+        description: d.brand.description || intel.brand?.description || "",
+        audience: d.brand.audience || intel.brand?.audience || "",
+        tone: d.brand.tone || intel.brand?.tone || "",
+        offers: d.brand.offers || intel.brand?.offers || "",
+        restrictions: d.brand.restrictions || intel.brand?.restrictions || "",
+      };
+
+      const recommendedKeys = Array.isArray(intel.goals?.recommendedKeys) ? intel.goals.recommendedKeys : [];
+      const nextGoals = d.goals.length > 0 ? d.goals : recommendedKeys.slice(0, 3);
+
+      return {
+        ...d,
+        business: nextBusiness,
+        brand: nextBrand,
+        goals: nextGoals,
+        recommendedGoals: recommendedKeys,
+      };
+    });
+  }
+
   function updateBusiness(patch: Partial<OnboardingDraft["business"]>) {
     setDraft((d) => ({ ...d, business: { ...d.business, ...patch } }));
   }
@@ -268,8 +309,15 @@ export function OnboardingWizard() {
         ) : (
           <>
             {step === 1 && <StepAccount account={account} onAccountChange={setAccount} />}
-            {step === 2 && <StepBusiness draft={draft} update={updateBusiness} errors={businessErrors} />}
-            {step === 3 && <StepGoals selected={draft.goals} onToggle={toggleGoal} />}
+            {step === 2 && (
+              <StepBusiness
+                draft={draft}
+                update={updateBusiness}
+                errors={businessErrors}
+                onIntelligenceSynthesized={applySynthesizedIntelligence}
+              />
+            )}
+            {step === 3 && <StepGoals draft={draft} selected={draft.goals} onToggle={toggleGoal} />}
             {step === 4 && <StepBrand draft={draft} update={updateBrand} />}
             {step === 5 && <StepPlan draft={draft} update={updatePlan} />}
             {step === 6 && (

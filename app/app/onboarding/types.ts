@@ -13,14 +13,18 @@ export interface OnboardingDraft {
     industry: string;
     businessModel?: string;
     website: string;
+    googleMapsUrl?: string;
     location: string;
     stage?: string;
     whatsapp?: string;
     services?: string[];
     primaryOffer?: string;
     socials?: DiscoveredSocialDraft[];
+    intelligenceProvenance?: Record<string, string>;
+    userEditedFields?: Record<string, boolean>;
   };
   goals: string[];
+  recommendedGoals?: string[];
   brand: {
     businessName: string;
     description: string;
@@ -54,14 +58,18 @@ export const EMPTY_DRAFT: OnboardingDraft = {
     industry: "",
     businessModel: "",
     website: "",
+    googleMapsUrl: "",
     location: "",
     stage: "NEW/STARTING",
     whatsapp: "",
     services: [],
     primaryOffer: "",
     socials: [],
+    intelligenceProvenance: {},
+    userEditedFields: {},
   },
   goals: [],
+  recommendedGoals: [],
   brand: { businessName: "", description: "", audience: "", tone: "", offers: "", restrictions: "" },
   plan: { tier: null, note: "" },
   whatsappDelivery: { countryIso: "IN", nationalNumber: "", consent: true },

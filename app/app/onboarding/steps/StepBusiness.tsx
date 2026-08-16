@@ -7,24 +7,27 @@ import { FormField } from "../FormField";
 import { slugify, type OnboardingDraft, type DiscoveredSocialDraft } from "../types";
 import { PlatformIcon } from "@/components/audit/PlatformIcon";
 import type { DiscoveredSocialLink } from "@/lib/identity/smart-url";
+import { validateAndNormalizeSocialInput } from "@/lib/identity/social-normalizer";
+import { validateAndNormalizeGoogleMapsInput } from "@/lib/identity/google-maps-normalizer";
 
 type DiscoveryStatus = "idle" | "validating" | "fetching" | "discovering" | "complete" | "partial" | "failed" | "timeout";
-
-import { validateAndNormalizeSocialInput } from "@/lib/identity/social-normalizer";
 
 export function StepBusiness({
   draft,
   update,
   errors,
+  onIntelligenceSynthesized,
 }: {
   draft: OnboardingDraft;
   update: (patch: Partial<OnboardingDraft["business"]>) => void;
   errors: { name?: string; slug?: string };
+  onIntelligenceSynthesized?: (intelligence: any) => void;
 }) {
   const nameId = useId();
   const slugId = useId();
   const industryId = useId();
   const websiteId = useId();
+  const googleMapsId = useId();
   const locationId = useId();
   const stageId = useId();
   const modelId = useId();
@@ -77,80 +80,91 @@ export function StepBusiness({
     }
   }, [draft.business.socials]);
 
-  async function handleWebsiteDiscovery(urlToScan: string) {
-    if (!urlToScan.trim()) return;
+  async function handleRunDiscovery() {
+    const websiteToScan = draft.business.website?.trim() || "";
+    const gbpToScan = draft.business.googleMapsUrl?.trim() || "";
+
+    if (!websiteToScan && !gbpToScan && !draft.business.industry?.trim()) {
+      return;
+    }
+
     setDiscoveryState("validating");
-    setDiscoveryMessage("Validating domain and security checks...");
+    setDiscoveryMessage("Validating presence and security checks...");
 
     try {
       setDiscoveryState("fetching");
-      setDiscoveryMessage(`Connecting to ${urlToScan.trim()}...`);
+      const targetLabel = websiteToScan || gbpToScan || "business profile";
+      setDiscoveryMessage(`Connecting to ${targetLabel}...`);
 
       const res = await fetch("/api/platform/site-discovery/resolve", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ websiteUrl: urlToScan }),
+        body: JSON.stringify({
+          websiteUrl: websiteToScan,
+          googleMapsUrl: gbpToScan,
+          industry: draft.business.industry?.trim() || undefined,
+          confirmedSocials: draft.business.socials?.filter((s) => s.confirmed !== false),
+          existingDraft: {
+            businessName: draft.business.name,
+            location: draft.business.location,
+            whatsapp: draft.business.whatsapp,
+          },
+        }),
       });
 
       const body = await res.json();
 
       if (body.finalState === "FAILED" || body.finalState === "TIMEOUT") {
         setDiscoveryState(body.finalState === "TIMEOUT" ? "timeout" : "failed");
-        setDiscoveryMessage(body.error ?? "Website could not be fully analyzed.");
+        setDiscoveryMessage(body.error ?? "Discovery could not be fully completed.");
         return;
       }
 
       setDiscoveryState(body.finalState === "COMPLETE" ? "complete" : "partial");
       setDiscoveryMessage(
         body.finalState === "COMPLETE"
-          ? "✓ We found your business details and public channels!"
-          : "Partial website information discovered."
+          ? "✓ Business profile, brand signals & goals prepared!"
+          : "Partial business information discovered."
       );
 
-      // Auto-populate discovered business fields
-      const updates: Partial<OnboardingDraft["business"]> = {};
-      if (body.data?.websiteUrl) updates.website = body.data.websiteUrl;
-      if (body.data?.businessName && (!draft.business.name || !draft.business.slugTouched)) {
-        updates.name = body.data.businessName;
-        updates.slug = slugify(body.data.businessName);
-      }
-      if (body.data?.location && !draft.business.location) {
-        updates.location = body.data.location;
-      }
-      if (body.data?.industry && !draft.business.industry) {
-        updates.industry = body.data.industry;
-      }
-      if (body.data?.businessModel) {
-        updates.businessModel = body.data.businessModel;
-      }
-      if (body.data?.businessStage) {
-        updates.stage = body.data.businessStage;
-      }
-      if (body.data?.services && Array.isArray(body.data.services)) {
-        updates.services = body.data.services;
-      }
-      if (body.data?.primaryOffer) {
-        updates.primaryOffer = body.data.primaryOffer;
-      }
-      if (body.data?.phone || body.data?.whatsapp) {
-        updates.whatsapp = body.data.whatsapp || body.data.phone;
-      }
+      // 1. Auto-populate discovered social links if found
       if (body.data?.socialLinks && Array.isArray(body.data.socialLinks)) {
         setDiscoveredSocials(body.data.socialLinks);
         const confirmedSet = new Set<string>(body.data.socialLinks.map((s: DiscoveredSocialLink) => s.url));
         setConfirmedSocials(confirmedSet);
-        updates.socials = body.data.socialLinks.map((s: DiscoveredSocialLink) => ({
-          platform: s.platform,
-          url: s.url,
-          handle: s.handle,
-          confirmed: true,
-        }));
       }
 
-      update(updates);
+      // 2. Pass synthesized intelligence to wizard to pre-populate Business, Brand, Goals
+      if (body.intelligence && onIntelligenceSynthesized) {
+        onIntelligenceSynthesized(body.intelligence);
+      } else {
+        // Fallback direct business updates
+        const updates: Partial<OnboardingDraft["business"]> = {};
+        if (body.data?.websiteUrl) updates.website = body.data.websiteUrl;
+        if (body.data?.businessName && (!draft.business.name || !draft.business.slugTouched)) {
+          updates.name = body.data.businessName;
+          updates.slug = slugify(body.data.businessName);
+        }
+        if (body.data?.location && !draft.business.location) {
+          updates.location = body.data.location;
+        }
+        if (body.data?.industry && !draft.business.industry) {
+          updates.industry = body.data.industry;
+        }
+        if (body.data?.businessModel) {
+          updates.businessModel = body.data.businessModel;
+        }
+        if (body.data?.services && Array.isArray(body.data.services)) {
+          updates.services = body.data.services;
+        }
+        if (body.data?.primaryOffer) {
+          updates.primaryOffer = body.data.primaryOffer;
+        }
+        update(updates);
+      }
     } catch {
       setDiscoveryState("failed");
-      setDiscoveryMessage("Website analysis failed. You can continue filling details manually.");
+      setDiscoveryMessage("Business analysis failed. You can continue filling details manually.");
     }
   }
 
@@ -176,21 +190,17 @@ export function StepBusiness({
       next.delete(social.url);
       return next;
     });
-    // Open replacement inline panel directly for this platform
     setReplacingPlatform(social.platform);
+    setReplacementInputs((prev) => ({
+      ...prev,
+      [social.platform]: prev[social.platform] ?? (social.isCustom ? social.handle : ""),
+    }));
     setReplacementErrors((prev) => ({ ...prev, [social.platform]: "" }));
-    const currentSocials = (draft.business.socials ?? []).map((s) => (s.url === social.url ? { ...s, confirmed: false } : s));
-    update({ socials: currentSocials });
-  }
-
-  function handleCancelReplacement(platform: string) {
-    setReplacingPlatform(null);
-    setReplacementErrors((prev) => ({ ...prev, [platform]: "" }));
   }
 
   function handleSubmitReplacement(social: DiscoveredSocialLink) {
-    const rawVal = replacementInputs[social.platform] ?? "";
-    const result = validateAndNormalizeSocialInput(social.platform, rawVal);
+    const rawInput = replacementInputs[social.platform] ?? "";
+    const result = validateAndNormalizeSocialInput(social.platform, rawInput);
 
     if (!result.success) {
       setReplacementErrors((prev) => ({ ...prev, [social.platform]: result.error }));
@@ -200,7 +210,7 @@ export function StepBusiness({
     const normalized = result.data;
     const oldUrl = social.url;
 
-    // Update discovered socials array with the new correct account
+    // Update discovered socials list with the replaced item
     setDiscoveredSocials((prev) =>
       prev.map((s) =>
         s.platform === social.platform
@@ -245,17 +255,26 @@ export function StepBusiness({
   }
 
   const isScanning = discoveryState === "validating" || discoveryState === "fetching" || discoveryState === "discovering";
+  const hasInputToScan = Boolean(draft.business.website?.trim() || draft.business.googleMapsUrl?.trim());
 
   return (
     <div className="flex flex-col gap-6 w-full">
-      {/* 1. Website Primary Discovery Anchor */}
+      {/* 1. Primary Discovery Card: Website + Google Maps / GBP */}
       <div className="rounded-sx-md bg-sx-surface-2 p-5 sm:p-6 border border-sx-border/60 w-full shadow-xs">
-        <FormField
-          label="Connect your business (Website or Domain)"
-          htmlFor={websiteId}
-          hint="Enter your domain or website. We'll automatically discover your business profile and public channels."
-        >
-          <div className="flex flex-col sm:flex-row gap-3">
+        <div className="mb-4">
+          <h3 className="text-sm font-semibold text-sx-text">Tell us where your business exists online</h3>
+          <p className="text-xs text-sx-text-muted mt-0.5">
+            We&rsquo;ll automatically discover your services, reviews, brand language, and public channels.
+          </p>
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-1 md:grid-cols-2">
+          {/* Website Input */}
+          <FormField
+            label="Website / Domain"
+            htmlFor={websiteId}
+            hint="e.g. yourbusiness.com or https://mycompany.in"
+          >
             <Input
               id={websiteId}
               type="text"
@@ -264,52 +283,77 @@ export function StepBusiness({
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
                   e.preventDefault();
-                  void handleWebsiteDiscovery(draft.business.website);
+                  void handleRunDiscovery();
                 }
               }}
-              placeholder="e.g. yourbusiness.com or https://mycompany.in"
-              className="h-11 flex-1 min-w-0"
+              placeholder="e.g. https://yourbusiness.com"
+              className="h-11 w-full"
               autoFocus
             />
-            <Button
-              variant="primary"
-              onClick={() => handleWebsiteDiscovery(draft.business.website)}
-              disabled={isScanning || !draft.business.website.trim()}
-              className="h-11 px-6 shrink-0 font-medium"
-            >
-              {isScanning ? "Scanning…" : "Scan & Auto-Fill"}
-            </Button>
-          </div>
-        </FormField>
+          </FormField>
 
-        {/* Discovery Progress Indicator */}
-        {discoveryState !== "idle" && (
-          <div className="mt-3.5 text-xs flex items-center justify-between gap-2 flex-wrap">
-            <div className="flex items-center gap-2">
-              {isScanning && <span className="inline-block h-2.5 w-2.5 rounded-full bg-sx-accent animate-pulse" />}
-              {discoveryState === "complete" && <span className="text-sx-success font-bold">✓</span>}
-              {discoveryState === "partial" && <span className="text-sx-warning font-bold">●</span>}
-              {(discoveryState === "failed" || discoveryState === "timeout") && <span className="text-sx-danger font-bold">✕</span>}
-              <span className="text-sx-text font-medium">{discoveryMessage}</span>
-            </div>
-            {(discoveryState === "failed" || discoveryState === "timeout") && (
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => handleWebsiteDiscovery(draft.business.website)}
-                >
-                  Retry
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setDiscoveryState("idle")}
-                >
-                  Continue anyway
-                </Button>
-              </div>
+          {/* Google Maps / Business Profile Input */}
+          <FormField
+            label="Google Maps / Business Profile"
+            htmlFor={googleMapsId}
+            hint="Paste your Google Maps link to extract reviews, location & services"
+          >
+            <Input
+              id={googleMapsId}
+              type="text"
+              value={draft.business.googleMapsUrl || ""}
+              onChange={(e) => update({ googleMapsUrl: e.target.value })}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  void handleRunDiscovery();
+                }
+              }}
+              placeholder="e.g. https://maps.app.goo.gl/... or google.com/maps/place/..."
+              className="h-11 w-full"
+            />
+          </FormField>
+        </div>
+
+        {/* Scan & Auto-Fill Action Row */}
+        <div className="mt-4 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-3 border-t border-sx-border/40">
+          <div className="text-xs text-sx-text-subtle">
+            {discoveryState === "complete" ? (
+              <span className="text-sx-success font-medium flex items-center gap-1.5">
+                <span>✓</span> Business profile & brand signals synthesized
+              </span>
+            ) : isScanning ? (
+              <span className="text-sx-accent font-medium flex items-center gap-1.5">
+                <span className="inline-block h-2 w-2 rounded-full bg-sx-accent animate-pulse" />
+                {discoveryMessage}
+              </span>
+            ) : (
+              <span>Provide your website or Google Maps link to auto-fill your profile and goals.</span>
             )}
+          </div>
+
+          <Button
+            variant="primary"
+            onClick={handleRunDiscovery}
+            disabled={isScanning || !hasInputToScan}
+            className="h-10 px-6 font-medium shrink-0 self-end sm:self-auto"
+          >
+            {isScanning ? "Scanning…" : "Scan & Auto-Fill"}
+          </Button>
+        </div>
+
+        {/* Failure Retry Row */}
+        {(discoveryState === "failed" || discoveryState === "timeout") && (
+          <div className="mt-3.5 text-xs flex items-center justify-between gap-2 flex-wrap pt-2 border-t border-sx-danger/20">
+            <span className="text-sx-danger font-medium">{discoveryMessage}</span>
+            <div className="flex items-center gap-2">
+              <Button variant="secondary" size="sm" onClick={handleRunDiscovery}>
+                Retry
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => setDiscoveryState("idle")}>
+                Continue anyway
+              </Button>
+            </div>
           </div>
         )}
 
@@ -370,51 +414,51 @@ export function StepBusiness({
                       <div className="flex items-center justify-between gap-2 pt-2 border-t border-sx-border/40">
                         {isConfirmed ? (
                           <div className="flex items-center justify-between w-full">
-                            <span className="text-xs font-medium text-sx-success">✓ Verified</span>
+                            <span className="text-[11.5px] font-medium text-sx-success flex items-center gap-1">
+                              ✓ Verified for your brand
+                            </span>
                             <button
                               type="button"
                               onClick={() => handleSelectNotMine(social)}
-                              className="text-xs text-sx-text-muted hover:text-sx-text underline hover:no-underline px-2 py-1"
+                              className="text-[11.5px] text-sx-text-muted hover:text-sx-text underline cursor-pointer"
                             >
                               Change
                             </button>
                           </div>
                         ) : (
                           <>
-                            <button
+                            <Button
                               type="button"
+                              variant="secondary"
+                              size="sm"
                               onClick={() => handleSelectMine(social)}
                               className="flex-1 min-h-8.5 px-3 py-1.5 rounded-sx-sm text-xs font-semibold bg-sx-surface-2 text-sx-text hover:bg-sx-success hover:text-white border border-sx-border transition-colors text-center"
                             >
                               ✓ Mine
-                            </button>
-                            <button
+                            </Button>
+                            <Button
                               type="button"
+                              variant="ghost"
+                              size="sm"
                               onClick={() => handleSelectNotMine(social)}
-                              className="flex-1 min-h-8.5 px-3 py-1.5 rounded-sx-sm text-xs font-semibold bg-sx-surface-2 text-sx-text-muted hover:bg-sx-danger hover:text-white border border-sx-border transition-colors text-center"
+                              className="flex-1 min-h-8.5 px-3 py-1.5 rounded-sx-sm text-xs font-medium text-sx-text-muted hover:text-sx-danger hover:bg-sx-danger/10 border border-transparent transition-colors text-center"
                             >
                               Not mine
-                            </button>
+                            </Button>
                           </>
                         )}
                       </div>
                     )}
 
-                    {/* Inline Replacement Workflow Panel */}
+                    {/* Inline Account Replacement Workflow */}
                     {isReplacing && (
-                      <div className="mt-2 pt-3 border-t border-sx-border flex flex-col gap-2.5 bg-sx-surface-2 p-3 rounded-sx-sm">
-                        <div className="flex items-center justify-between">
-                          <p className="text-xs font-semibold text-sx-text">Enter your real {platformLabel} account:</p>
-                          <button
-                            type="button"
-                            onClick={() => handleCancelReplacement(social.platform)}
-                            className="text-[11px] text-sx-text-subtle hover:text-sx-text"
-                          >
-                            ✕ Cancel
-                          </button>
-                        </div>
-                        <div>
+                      <div className="flex flex-col gap-2.5 pt-2.5 border-t border-sx-border bg-sx-surface-2/80 p-3 rounded-sx-sm">
+                        <label className="text-xs font-medium text-sx-text">
+                          Enter your real {platformLabel} account:
+                        </label>
+                        <div className="flex flex-col gap-1.5">
                           <Input
+                            type="text"
                             value={replacementInputs[social.platform] ?? ""}
                             onChange={(e) => {
                               const val = e.target.value;
@@ -434,27 +478,29 @@ export function StepBusiness({
                                 ? "@yourbrand or instagram.com/yourbrand"
                                 : social.platform === "youtube"
                                 ? "@YourChannel or youtube.com/@YourChannel"
-                                : social.platform === "threads"
-                                ? "@yourbrand or threads.net/@yourbrand"
-                                : social.platform === "linkedin"
-                                ? "company-name or linkedin.com/company/..."
                                 : social.platform === "whatsapp"
                                 ? "+91 98765 43210"
-                                : "https://..."
+                                : `Your ${platformLabel} URL or handle`
                             }
-                            className="h-9 text-xs"
+                            className="h-9 text-xs w-full bg-sx-surface-1"
                             autoFocus
                           />
                           {replacementErrors[social.platform] && (
-                            <p className="mt-1 text-[11.5px] text-sx-danger font-medium">{replacementErrors[social.platform]}</p>
+                            <p className="text-[11px] text-sx-danger font-medium leading-tight">
+                              {replacementErrors[social.platform]}
+                            </p>
                           )}
                         </div>
-                        <div className="flex items-center justify-end gap-2 pt-1">
+                        <div className="flex items-center justify-end gap-2 mt-1">
                           <Button
                             type="button"
                             variant="ghost"
                             size="sm"
-                            onClick={() => handleCancelReplacement(social.platform)}
+                            onClick={() => {
+                              setReplacingPlatform(null);
+                              setReplacementErrors((prev) => ({ ...prev, [social.platform]: "" }));
+                            }}
+                            className="h-7 text-xs px-2.5"
                           >
                             Cancel
                           </Button>
@@ -463,6 +509,7 @@ export function StepBusiness({
                             variant="primary"
                             size="sm"
                             onClick={() => handleSubmitReplacement(social)}
+                            className="h-7 text-xs px-3 font-medium"
                           >
                             Use this account
                           </Button>
@@ -477,59 +524,72 @@ export function StepBusiness({
         )}
       </div>
 
-      {/* 2. Discovered/Confirmed Business Identity Fields */}
+      {/* 2. Workspace & Business Identity Details */}
       <div className="grid gap-4 sm:grid-cols-2">
-        <FormField label="Business / workspace name" htmlFor={nameId} error={errors.name}>
+        <FormField label="Business name" htmlFor={nameId} error={errors.name}>
           <Input
             id={nameId}
             value={draft.business.name}
             onChange={(e) => {
               const name = e.target.value;
-              update({ name, slug: draft.business.slugTouched ? draft.business.slug : slugify(name) });
+              update({
+                name,
+                slug: draft.business.slugTouched ? draft.business.slug : slugify(name),
+              });
             }}
-            aria-invalid={!!errors.name}
+            placeholder="Acme Studio"
+            aria-invalid={Boolean(errors.name)}
             aria-describedby={errors.name ? `${nameId}-error` : undefined}
-            placeholder="Acme Retail"
             className="h-11"
           />
         </FormField>
 
-        <FormField label="Workspace URL slug" htmlFor={slugId} error={errors.slug} hint="Lowercase letters, numbers, and hyphens only.">
+        <FormField
+          label="Workspace slug"
+          htmlFor={slugId}
+          error={errors.slug}
+          hint="Permanent workspace identifier. Lowercase letters, numbers, hyphens."
+        >
           <Input
             id={slugId}
             value={draft.business.slug}
-            onChange={(e) => update({ slug: slugify(e.target.value), slugTouched: true })}
-            aria-invalid={!!errors.slug}
+            onChange={(e) =>
+              update({
+                slug: slugify(e.target.value),
+                slugTouched: true,
+              })
+            }
+            placeholder="acme-studio"
+            aria-invalid={Boolean(errors.slug)}
             aria-describedby={errors.slug ? `${slugId}-error` : `${slugId}-hint`}
-            placeholder="acme-retail"
-            className="h-11"
+            className="h-11 font-mono text-sm"
           />
         </FormField>
       </div>
 
-      {/* 3. Operational Metadata Grid */}
+      {/* 3. Operational & Industry Signals */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-4">
-        <FormField label="Industry / category" htmlFor={industryId} hint="Optional">
+        <FormField label="Industry / Category" htmlFor={industryId} hint="Guides tone & goals">
           <Input
             id={industryId}
             value={draft.business.industry}
             onChange={(e) => update({ industry: e.target.value })}
-            placeholder="e.g. Retail, HVAC, Cafe"
+            placeholder="e.g. SaaS, Clinic, Bakery, Agency"
             className="h-11"
           />
         </FormField>
 
-        <FormField label="Business model" htmlFor={modelId} hint="Optional">
+        <FormField label="Business model" htmlFor={modelId} hint="Inferred automatically">
           <Input
             id={modelId}
             value={draft.business.businessModel}
             onChange={(e) => update({ businessModel: e.target.value })}
-            placeholder="e.g. Local Store, Service, D2C"
+            placeholder="e.g. B2B Services, Local Store"
             className="h-11"
           />
         </FormField>
 
-        <FormField label="Primary location" htmlFor={locationId} hint="Optional">
+        <FormField label="Primary location" htmlFor={locationId} hint="Locality or City">
           <Input
             id={locationId}
             value={draft.business.location}
@@ -539,7 +599,7 @@ export function StepBusiness({
           />
         </FormField>
 
-        <FormField label="Business stage" htmlFor={stageId} hint="Optional">
+        <FormField label="Business stage" htmlFor={stageId} hint="Growth stage">
           <Input
             id={stageId}
             value={draft.business.stage}
