@@ -81,25 +81,25 @@ async function run() {
     await page.waitForTimeout(300);
 
     // ---------------------------------------------------------------------------
-    // 2. STEP 2: CONNECTORS (Mandatory 8 Channels in Order)
+    // 2. STEP 2: CONNECTORS (Mandatory 5 V1 Channels in Order)
     // ---------------------------------------------------------------------------
-    console.log("\n>>> Step 2: Connectors (Mandatory 8 Channels in Order)");
+    console.log("\n>>> Step 2: Connectors (Mandatory 5 V1 Channels in Order)");
     const step2Text = await page.textContent("body");
     assert.ok(step2Text?.includes("Connect your business channels"), "Must display Step 2 headline");
     assert.ok(step2Text?.includes("Google Business"), "Must display Google Business connector");
     assert.ok(step2Text?.includes("Instagram"), "Must display Instagram connector");
     assert.ok(step2Text?.includes("Facebook"), "Must display Facebook connector");
     assert.ok(step2Text?.includes("YouTube"), "Must display YouTube connector");
-    assert.ok(step2Text?.includes("Threads"), "Must display Threads connector");
-    assert.ok(step2Text?.includes("LinkedIn"), "Must display LinkedIn connector");
-    assert.ok(step2Text?.includes("X"), "Must display X connector");
     assert.ok(step2Text?.includes("WhatsApp Number"), "Must display WhatsApp Number connector");
-    assert.ok(step2Text?.includes("Continue with Google"), "Must display Google Business CTA: Continue with Google");
-    assert.ok(step2Text?.includes("Verify Number"), "Must display WhatsApp Number CTA: Verify Number");
+    assert.equal(step2Text?.includes("Threads"), false, "Must NOT display Threads connector in V1");
+    assert.equal(step2Text?.includes("LinkedIn"), false, "Must NOT display LinkedIn connector in V1");
     assert.equal(step2Text?.includes("WhatsApp Business connected"), false, "Must NOT say WhatsApp Business connected");
 
     // Test WhatsApp OTP Modal
-    const verifyNumberBtn = page.locator("button:has-text('Verify Number')");
+    const connectButtons = await page.locator("button:has-text('Connect')").all();
+    assert.ok(connectButtons.length >= 5, "All 5 connector cards must display Connect CTA");
+
+    const verifyNumberBtn = page.locator("[data-platform='whatsapp'] button:has-text('Connect')");
     await verifyNumberBtn.click();
     await page.waitForSelector("text=Verify WhatsApp Number", { timeout: 3000 });
     const modalText = await page.textContent("body");
@@ -128,7 +128,7 @@ async function run() {
     );
 
     await page.screenshot({ path: path.join(OUT_DIR, "step2-dedicated-connectors.png") });
-    console.log("  ✓ Step 2: Mandatory 8-channel order, YouTube, X, Google one-tap, WhatsApp OTP modal, and manual profile fallback verified.");
+    console.log("  ✓ Step 2: Mandatory 5-channel V1 order, YouTube, WhatsApp OTP modal, and manual profile fallback verified.");
 
     // Advance to Step 3
     await page.locator("button:has-text('Continue →')").click();
