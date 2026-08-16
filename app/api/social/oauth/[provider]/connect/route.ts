@@ -4,6 +4,7 @@ import { isValidProvider, getProvider } from "@/lib/social/providers";
 import { createSignedState } from "@/lib/social/oauth-state";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createSupabaseServiceClient } from "@/lib/supabase/service";
+import { getCanonicalSocialRedirectUri } from "@/lib/social/oauth-origin";
 
 /**
  * GET /api/social/oauth/:provider/connect
@@ -58,10 +59,7 @@ export async function GET(
     return NextResponse.json({ error: "Could not start OAuth flow" }, { status: 500 });
   }
 
-  const redirectUri = new URL(
-    `/api/social/oauth/${provider}/callback`,
-    req.nextUrl.origin
-  ).toString();
+  const redirectUri = getCanonicalSocialRedirectUri(provider, req.nextUrl.origin);
 
   const authUrl = getProvider(provider).getAuthorizationUrl(token, redirectUri);
 

@@ -1,4 +1,12 @@
-export type SocialPlatformKey = "instagram" | "facebook" | "whatsapp" | "linkedin" | "youtube" | "threads" | "x";
+export type SocialPlatformKey =
+  | "google_business"
+  | "instagram"
+  | "facebook"
+  | "threads"
+  | "linkedin"
+  | "whatsapp"
+  | "youtube"
+  | "x";
 
 export interface SocialConnection {
   platform: SocialPlatformKey;
@@ -7,12 +15,12 @@ export interface SocialConnection {
   displayName?: string;
   status: "not_connected" | "connecting" | "connected" | "needs_attention";
   /** How this connection was established. OAuth = real provider authorization. */
-  connectionType?: "oauth" | "public_profile" | "manual";
+  connectionType?: "oauth" | "public_profile" | "otp_verified" | "manual";
   /** Provider-assigned account ID from OAuth (e.g. Meta IG user ID). */
   providerAccountId?: string;
   /** Display label from the provider (e.g. "StratXcel Solutions" from Meta). */
   providerDisplayName?: string;
-  /** Provider name for attribution (e.g. "Meta", "Google", "LinkedIn"). */
+  /** Provider name for attribution (e.g. "Google", "Meta", "LinkedIn", "WhatsApp Verified"). */
   providerLabel?: string;
   connectedAt?: string;
 }
@@ -78,13 +86,14 @@ export const ONBOARDING_STEP_LABELS = [
   "Review",
 ] as const;
 
+/** Mandatory connector order: Google Business -> Instagram -> Facebook -> Threads -> LinkedIn -> WhatsApp Number */
 export const INITIAL_SOCIAL_CONNECTORS: SocialConnection[] = [
+  { platform: "google_business", status: "not_connected" },
   { platform: "instagram", status: "not_connected" },
   { platform: "facebook", status: "not_connected" },
-  { platform: "whatsapp", status: "not_connected" },
-  { platform: "linkedin", status: "not_connected" },
-  { platform: "youtube", status: "not_connected" },
   { platform: "threads", status: "not_connected" },
+  { platform: "linkedin", status: "not_connected" },
+  { platform: "whatsapp", status: "not_connected" },
 ];
 
 export const EMPTY_DRAFT: OnboardingDraft = {

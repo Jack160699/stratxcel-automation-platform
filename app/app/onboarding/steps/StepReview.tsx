@@ -26,9 +26,13 @@ export function StepReview({
   const industry = draft.business.industry?.trim() || "General Business";
   const model = draft.business.businessModel || "B2B";
 
-  // Separate OAuth-connected from public-profile-only channels
-  const oauthChannels = (draft.account?.connections || []).filter((c) => c.status === "connected" && c.connectionType === "oauth");
-  const publicChannels = (draft.account?.connections || []).filter((c) => c.status === "connected" && c.connectionType === "public_profile");
+  // Separate verified connections (OAuth / OTP verified) from public-profile-only channels
+  const verifiedChannels = (draft.account?.connections || []).filter(
+    (c) => c.status === "connected" && (c.connectionType === "oauth" || c.connectionType === "otp_verified")
+  );
+  const publicChannels = (draft.account?.connections || []).filter(
+    (c) => c.status === "connected" && c.connectionType === "public_profile"
+  );
 
   const goals = draft.goals.length > 0
     ? draft.goals.map((g) => g.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase()))
@@ -64,9 +68,9 @@ export function StepReview({
             </div>
             <div className="space-y-2">
               <span className="text-sx-text-subtle block">Connected Channels</span>
-              {oauthChannels.length > 0 ? (
+              {verifiedChannels.length > 0 ? (
                 <div className="flex flex-wrap items-center gap-2">
-                  {oauthChannels.map((c) => (
+                  {verifiedChannels.map((c) => (
                     <span
                       key={c.platform}
                       className="inline-flex items-center gap-1 px-2 py-0.5 rounded-sx-sm bg-emerald-500/10 border border-emerald-500/20 text-[11px] font-medium text-emerald-400"
@@ -78,7 +82,7 @@ export function StepReview({
                   ))}
                 </div>
               ) : (
-                <span className="text-sx-text-muted italic">None connected via OAuth (can connect later)</span>
+                <span className="text-sx-text-muted italic">None connected via OAuth / OTP (can connect later)</span>
               )}
               {publicChannels.length > 0 && (
                 <div className="flex flex-wrap items-center gap-2 mt-1">

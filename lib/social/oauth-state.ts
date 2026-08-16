@@ -10,7 +10,7 @@ import crypto from "node:crypto";
 const TTL_MS = 10 * 60 * 1000; // 10 minutes
 
 interface StatePayload {
-  provider: "instagram" | "facebook" | "threads" | "linkedin" | "youtube";
+  provider: "google_business" | "google" | "instagram" | "facebook" | "threads" | "linkedin" | "youtube" | string;
   nonce: string;
   issuedAt: number;
   redirectTo?: string;

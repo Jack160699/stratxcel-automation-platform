@@ -27,11 +27,14 @@ import { validateAndNormalizeGoogleMapsInput } from "@/lib/identity/google-maps-
 const TOTAL_STEPS = ONBOARDING_STEP_LABELS.length;
 
 const PROVIDER_LABELS: Record<string, string> = {
+  google_business: "Google",
+  google: "Google",
   instagram: "Meta",
   facebook: "Meta",
   threads: "Meta",
   linkedin: "LinkedIn",
   youtube: "Google",
+  whatsapp: "WhatsApp Verified",
 };
 
 function loadDraft(): { step: number; draft: OnboardingDraft } {

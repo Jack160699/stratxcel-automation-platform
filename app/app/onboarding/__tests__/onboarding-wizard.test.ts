@@ -140,8 +140,8 @@ function run() {
   assert.ok(/verifySignedState/.test(callbackRoute), "callback must verify signed state to prevent CSRF");
   assert.equal(/accessToken/.test(callbackRoute.split("user_metadata")[1] || ""), false, "callback must NOT store access tokens in user metadata");
 
-  // Review step must distinguish OAuth vs public profile connections
-  assert.ok(/oauthChannels/.test(stepReview), "StepReview must separate OAuth channels from public profile channels");
+  // Review step must distinguish OAuth/verified vs public profile connections
+  assert.ok(/verifiedChannels|oauthChannels/.test(stepReview), "StepReview must separate verified channels from public profile channels");
   assert.ok(/publicChannels/.test(stepReview), "StepReview must show public profile channels separately");
   assert.ok(/via\s*\{c\.providerLabel\}/.test(stepReview), "StepReview must show provider attribution for OAuth connections");
 

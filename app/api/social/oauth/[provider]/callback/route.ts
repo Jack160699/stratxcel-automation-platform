@@ -6,8 +6,11 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createSupabaseServiceClient } from "@/lib/supabase/service";
 import { upsertConnectedAccount, type Platform } from "@/lib/social/repositories/accounts";
 import { recordAudit } from "@/lib/social/repositories/system";
+import { getCanonicalSocialRedirectUri } from "@/lib/social/oauth-origin";
 
 const PROVIDER_LABELS: Record<string, string> = {
+  google_business: "Google",
+  google: "Google",
   instagram: "Meta",
   facebook: "Meta",
   threads: "Meta",
@@ -67,7 +70,9 @@ export async function GET(
 
   const verified = verifySignedState(state);
   if (!verified.valid) return failRedirect("error", `bad_state:${verified.reason}`);
-  if (verified.payload.provider !== provider) return failRedirect("error", "provider_mismatch");
+  if (verified.payload.provider !== provider && !(provider === "google_business" && verified.payload.provider === "google")) {
+    return failRedirect("error", "provider_mismatch");
+  }
 
   const service = createSupabaseServiceClient();
 
@@ -88,10 +93,7 @@ export async function GET(
     .update({ consumed_at: new Date().toISOString() })
     .eq("id", stateRow.id);
 
-  const redirectUri = new URL(
-    `/api/social/oauth/${provider}/callback`,
-    origin
-  ).toString();
+  const redirectUri = getCanonicalSocialRedirectUri(provider, origin);
 
   try {
     const result = await getProvider(provider).exchangeCodeForToken(code, redirectUri);
@@ -112,18 +114,23 @@ export async function GET(
         const existingConnections = (existingMeta.onboarding_oauth_connections ?? {}) as Record<string, unknown>;
 
         const username = result.username || result.displayName || result.externalAccountId;
-        const normalizedHandle = username.startsWith("@") ? username : `@${username}`;
+        let formattedHandle = username;
+        if (["instagram", "threads"].includes(provider)) {
+          formattedHandle = username.startsWith("@") ? username : `@${username}`;
+        }
+
+        const canonicalPlatformKey = provider === "google" ? "google_business" : provider;
 
         const connectionPayload = {
-          provider,
+          provider: canonicalPlatformKey,
           providerAccountId: result.externalAccountId,
-          username: normalizedHandle,
-          displayName: result.displayName || result.username || provider,
+          username: formattedHandle,
+          displayName: result.displayName || result.username || canonicalPlatformKey,
           avatarUrl: result.profilePictureUrl || null,
           scopes: result.scopes,
           status: "connected",
           authorized: true,
-          providerLabel: PROVIDER_LABELS[provider] || "OAuth",
+          providerLabel: PROVIDER_LABELS[canonicalPlatformKey] || "Google",
           connectedAt: new Date().toISOString(),
         };
 
@@ -132,7 +139,7 @@ export async function GET(
             ...existingMeta,
             onboarding_oauth_connections: {
               ...existingConnections,
-              [provider]: connectionPayload,
+              [canonicalPlatformKey]: connectionPayload,
             },
           },
         });
@@ -147,11 +154,10 @@ export async function GET(
         meta: { provider_account_id: result.externalAccountId },
       });
 
-      // Build target redirect with both explicit status params and backward-compatible ?connected= param
       const successUrl = new URL(redirectTo, origin);
       successUrl.searchParams.set("oauth", "success");
-      successUrl.searchParams.set("provider", provider);
-      successUrl.searchParams.set("connected", provider);
+      successUrl.searchParams.set("provider", provider === "google" ? "google_business" : provider);
+      successUrl.searchParams.set("connected", provider === "google" ? "google_business" : provider);
 
       return NextResponse.redirect(successUrl.toString());
     }

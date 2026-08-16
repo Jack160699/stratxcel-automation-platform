@@ -11,6 +11,7 @@ function run() {
   const connectRoute = read("app", "api", "social", "oauth", "[provider]", "connect", "route.ts");
   const callbackRoute = read("app", "api", "social", "oauth", "[provider]", "callback", "route.ts");
   const onboardingRoute = read("app", "api", "platform", "onboarding", "route.ts");
+  const oauthOrigin = read("lib", "social", "oauth-origin.ts");
   const stepConnectors = read("app", "app", "onboarding", "steps", "StepConnectors.tsx");
   const wizard = read("app", "app", "onboarding", "OnboardingWizard.tsx");
   const instagramProvider = read("lib", "social", "providers", "instagram.ts");
@@ -18,20 +19,26 @@ function run() {
   const threadsProvider = read("lib", "social", "providers", "threads.ts");
   const linkedinProvider = read("lib", "social", "providers", "linkedin.ts");
   const youtubeProvider = read("lib", "social", "providers", "youtube.ts");
+  const googleBusinessProvider = read("lib", "social", "providers", "google-business.ts");
 
   // --- 1. Single Canonical Redirect URI Architecture -----------------------
   assert.ok(
-    connectRoute.includes("`/api/social/oauth/${provider}/callback`"),
+    connectRoute.includes("getCanonicalSocialRedirectUri") && oauthOrigin.includes("/api/social/oauth/"),
     "connect route must ALWAYS generate the canonical registered redirect URI (/api/social/oauth/:provider/callback)"
   );
   assert.ok(
-    callbackRoute.includes("`/api/social/oauth/${provider}/callback`"),
+    callbackRoute.includes("getCanonicalSocialRedirectUri") && oauthOrigin.includes("/api/social/oauth/"),
     "callback route must ALWAYS exchange tokens against the canonical registered redirect URI"
+  );
+  assert.equal(
+    connectRoute.includes("/api/platform/onboarding/social"),
+    false,
+    "connect route must NOT generate un-registered platform onboarding redirect URIs"
   );
 
   // --- 2. Onboarding wires to canonical OAuth route ------------------------
   assert.ok(
-    stepConnectors.includes("`/api/social/oauth/${platform}/connect?redirectTo=/app`"),
+    stepConnectors.includes("`/api/social/oauth/${routePlatform}/connect?redirectTo=/app`"),
     "StepConnectors must initiate OAuth using the canonical connect route with redirectTo=/app"
   );
 
@@ -68,6 +75,7 @@ function run() {
   );
 
   // --- 5. Canonical Providers Configuration Integrity ----------------------
+  assert.ok(googleBusinessProvider.includes("business.manage"), "Google Business provider must request business.manage scope");
   assert.ok(instagramProvider.includes("META_INSTAGRAM_APP_ID"), "Instagram provider must use META_INSTAGRAM_APP_ID");
   assert.ok(instagramProvider.includes("https://www.instagram.com/oauth/authorize"), "Instagram must use official Instagram OAuth endpoint");
   assert.ok(facebookProvider.includes("META_APP_ID"), "Facebook provider must use META_APP_ID");
@@ -77,7 +85,7 @@ function run() {
 
   // --- 6. Security: No tokens in user_metadata or client-side code ---------
   assert.equal(
-    callbackRoute.includes("accessToken: result.accessToken") && callbackRoute.includes("onboarding_oauth_connections: {\n              ...existingConnections,\n              [provider]: {\n                accessToken"),
+    callbackRoute.includes("accessToken: result.accessToken") && callbackRoute.includes("onboarding_oauth_connections: {\n              ...existingConnections,\n              [canonicalPlatformKey]: {\n                accessToken"),
     false,
     "Access tokens must NEVER be stored in user_metadata during onboarding"
   );

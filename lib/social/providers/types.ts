@@ -1,4 +1,12 @@
-export type SocialProviderName = "instagram" | "facebook" | "threads" | "linkedin" | "youtube";
+export type SocialProviderName =
+  | "google_business"
+  | "google"
+  | "instagram"
+  | "facebook"
+  | "threads"
+  | "linkedin"
+  | "youtube";
+
 export type PublishPrivacyStatus = "private" | "unlisted" | "public";
 
 export interface OAuthExchangeResult {
@@ -17,11 +25,6 @@ export interface PublishInput {
   externalAccountId: string;
   caption: string;
   mediaUrls: string[];
-  /**
-   * Provider-supported visibility for media publishing. YouTube defaults to
-   * private when this is omitted so a newly added workflow cannot
-   * accidentally publish a public video.
-   */
   privacyStatus?: PublishPrivacyStatus;
 }
 
@@ -35,13 +38,8 @@ export interface InsightsResult {
   metrics: Record<string, number | string>;
 }
 
-/**
- * Shared contract every Meta destination implements. Keeps platform-specific
- * conditionals inside each provider file instead of scattered through
- * routes/worker code.
- */
 export interface SocialProvider {
-  readonly name: SocialProviderName;
+  readonly name: string;
   readonly requiredScopes: string[];
 
   getAuthorizationUrl(state: string, redirectUri: string): string;
@@ -53,7 +51,6 @@ export interface SocialProvider {
     expiresInSeconds?: number;
   }>;
 
-  /** Full container-create → wait → publish lifecycle where applicable. */
   publish(input: PublishInput): Promise<PublishResult>;
 
   getInsights?(accessToken: string, externalPostId: string): Promise<InsightsResult>;
