@@ -16,35 +16,40 @@ test("Commercial Engine: One-Time Setup vs Monthly Recurring Services", async ()
   assert.ok(gbpOptimization);
   assert.equal(gbpOptimization.billingType, "RECURRING");
 
-  // Month 1 Requirements including One-Time GBP Creation
   const month1Synthesis: RequirementSynthesisResult = {
-    businessType: "Local Retail / Service",
-    industry: "Bakery",
     requirements: [
       {
-        requirementId: "req-gbp-create",
+        id: "req-1",
+        requirementKey: "req-gbp-create",
         title: "Create Verified Google Business Profile",
         priority: "REQUIRED",
-        rationale: "New business has no Google presence.",
+        reason: "New business has no Google presence.",
+        evidence: "Missing Google Map listing",
+        businessImpact: "Enables discovery on Google Maps",
+        confidence: "HIGH",
         recommendedServiceKey: "google_business_creation",
         expectedQuantity: 1,
         expectedFrequency: "one_time",
-        estimatedImpact: "HIGH",
+        dependencies: [],
       },
       {
-        requirementId: "req-gbp-opt",
+        id: "req-2",
+        requirementKey: "req-gbp-opt",
         title: "Google Map Optimization & Weekly Posts",
         priority: "HIGH",
-        rationale: "Drive local footfall.",
+        reason: "Drive local footfall.",
+        evidence: "Low local search ranking",
+        businessImpact: "Improves local visibility",
+        confidence: "HIGH",
         recommendedServiceKey: "google_business_optimization",
         expectedQuantity: 4,
         expectedFrequency: "weekly",
-        estimatedImpact: "HIGH",
+        dependencies: [],
       },
     ],
-    unneededServices: [],
-    strategicFocus: "Local footfall",
-    confidenceBand: "HIGH",
+    highPriorityCount: 2,
+    unneededServicesCount: 0,
+    executiveSummary: "Local bakery requiring initial profile setup and weekly posts.",
   };
 
   const month1Plans = generateTailoredCustomerPlans("Fresh Bakery", month1Synthesis, {

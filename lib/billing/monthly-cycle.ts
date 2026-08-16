@@ -134,7 +134,7 @@ export class MonthlyRenewalEngine {
     if (delta > 0) changeType = "INCREASE";
     else if (delta < 0) changeType = "DECREASE";
 
-    let explanation = {
+    let explanation: NextMonthPlanAdaptation["explanation"] = {
       whatChanged: ["Requirements maintained for consistent growth."],
       whyItChanged: "Steady ongoing execution.",
       additionalWork: [],

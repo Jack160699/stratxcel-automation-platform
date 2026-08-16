@@ -12,7 +12,7 @@ interface ValidationResultRecord {
     businessName: string;
     businessType: string;
     industry: string;
-    whatsapp: string;
+    whatsapp: string | null;
   };
   evidenceQuality: string;
   missingInformationCount: number;
