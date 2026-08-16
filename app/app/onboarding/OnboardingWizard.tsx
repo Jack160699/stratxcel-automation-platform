@@ -220,9 +220,19 @@ export function OnboardingWizard() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          business: { name: draft.business.name.trim(), slug: draft.business.slug.trim(), industry: draft.business.industry.trim() || undefined },
+          business: {
+            name: draft.business.name.trim(),
+            slug: draft.business.slug.trim(),
+            industry: draft.business.industry.trim() || undefined,
+            website: draft.business.website?.trim() || undefined,
+            googleMapsUrl: draft.business.googleMapsUrl?.trim() || undefined,
+            location: draft.business.location?.trim() || undefined,
+            businessModel: draft.business.businessModel?.trim() || undefined,
+            socials: draft.business.socials?.filter((s) => s.confirmed !== false),
+          },
           brand: {
             businessName: draft.brand.businessName.trim() || undefined,
+            description: draft.brand.description.trim() || undefined,
             audience: draft.brand.audience.trim() || undefined,
             tone: draft.brand.tone.trim() || undefined,
             offers: draft.brand.offers.split("\n").map((l) => l.trim()).filter(Boolean),

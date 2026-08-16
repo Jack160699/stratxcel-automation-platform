@@ -11,7 +11,16 @@ const ONBOARDING_METADATA_KEY = "stratxcel_onboarding_draft_v1";
 const MAX_STEP = 5;
 
 interface OnboardingRequestBody {
-  business?: { name?: string; slug?: string; industry?: string; website?: string; location?: string };
+  business?: {
+    name?: string;
+    slug?: string;
+    industry?: string;
+    website?: string;
+    googleMapsUrl?: string;
+    location?: string;
+    businessModel?: string;
+    socials?: Array<{ platform: string; url: string; handle: string; confirmed?: boolean }>;
+  };
   brand?: {
     businessName?: string;
     description?: string;
@@ -39,14 +48,26 @@ function sanitizeDraft(value: unknown) {
   const business = source.business && typeof source.business === "object" ? (source.business as Record<string, unknown>) : {};
   const brand = source.brand && typeof source.brand === "object" ? (source.brand as Record<string, unknown>) : {};
   const plan = source.plan && typeof source.plan === "object" ? (source.plan as Record<string, unknown>) : {};
+  const rawSocials = Array.isArray(business.socials) ? business.socials : [];
+
   return {
     business: {
       name: text(business.name, 120),
       slug: text(business.slug, 80),
       slugTouched: business.slugTouched === true,
       industry: text(business.industry, 120),
+      businessModel: text(business.businessModel, 120),
       website: text(business.website, 500),
+      googleMapsUrl: text(business.googleMapsUrl, 500),
       location: text(business.location, 200),
+      socials: rawSocials
+        .filter((s) => s && typeof s === "object")
+        .map((s) => ({
+          platform: text((s as any).platform, 40),
+          url: text((s as any).url, 500),
+          handle: text((s as any).handle, 120),
+          confirmed: (s as any).confirmed !== false,
+        })),
     },
     goals: Array.isArray(source.goals) ? source.goals.filter((goal): goal is string => typeof goal === "string").slice(0, 12).map((goal) => goal.slice(0, 100)) : [],
     brand: {
@@ -146,14 +167,24 @@ export async function POST(request: Request) {
   const content: BrandBrainContent = {};
   if (body.brand?.businessName || name) content.business_name = body.brand?.businessName || name;
   if (body.business?.website) content.website_url = body.business.website;
+  if (body.business?.googleMapsUrl) (content as any).google_maps_url = body.business.googleMapsUrl;
   if (body.business?.location) content.location = body.business.location;
   if (body.business?.industry) content.industry = body.business.industry;
+  if (body.business?.businessModel) (content as any).business_model = body.business.businessModel;
   if (body.brand?.description) content.description = body.brand.description;
   if (body.brand?.tone) content.tone_of_voice = body.brand.tone;
   if (body.brand?.audience) content.target_audience = body.brand.audience;
   if (body.brand?.offers?.length) content.products = body.brand.offers.map((o) => ({ name: o, description: "" }));
   if (body.brand?.restrictions?.length) content.rules = body.brand.restrictions;
   if (body.goals?.length) content.goals = body.goals;
+  if (body.business?.socials && body.business.socials.length > 0) {
+    const confirmed = body.business.socials.filter((s) => s.confirmed !== false);
+    (content as any).verified_social_links = confirmed.map((s) => ({
+      platform: s.platform,
+      url: s.url,
+      handle: s.handle,
+    }));
+  }
 
   if (Object.keys(content).length > 0) {
     try {
@@ -178,7 +209,12 @@ export async function POST(request: Request) {
         kind: "CUSTOMER_ONBOARDING_PRIMARY_CONTACT",
         businessName: name,
         websiteUrl: body.business?.website ?? null,
+        googleMapsUrl: body.business?.googleMapsUrl ?? null,
+        location: body.business?.location ?? null,
         industry: body.business?.industry ?? null,
+        businessModel: body.business?.businessModel ?? null,
+        socials: body.business?.socials ?? [],
+        description: body.brand?.description ?? null,
         goals: body.goals ?? [],
         planRequested: body.plan?.tier ?? null,
       },

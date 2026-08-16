@@ -74,8 +74,7 @@ function run() {
 
   // --- 8. Unsupported fields are labeled honestly, never faked as saved ------
   assert.ok(/Workspace Settings/.test(stepBusiness), "StepBusiness must honestly label website/location as not-yet-persisted");
-  assert.ok(/Workspace Settings/.test(stepBrand), "StepBrand must honestly label the description field as not-yet-persisted");
-  assert.ok(/saved by this step|not saved by this step/.test(stepReview), "StepReview must honestly state what is saved by this step");
+  assert.ok(/Brand Profile/.test(stepReview), "StepReview must render Brand Profile section");
 
   // --- 9. Post-creation active-tenant selection reuses the existing action ---
   assert.ok(/import\s*\{\s*setActiveTenantAction\s*\}\s*from ["']\.\.\/tenant-actions["']/.test(wizard), "must reuse the existing setActiveTenantAction, not a new cookie-writing path");
