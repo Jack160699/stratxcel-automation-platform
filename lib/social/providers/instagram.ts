@@ -4,8 +4,9 @@ import type {
   PublishResult,
   InsightsResult,
   SocialProvider,
-} from "./types";
-import { toMetaApiError } from "../errors";
+  ExchangeTokenOptions,
+} from "./types.ts";
+import { toMetaApiError } from "../errors.ts";
 
 /**
  * Instagram Business API via Instagram Login (not the legacy Facebook Login

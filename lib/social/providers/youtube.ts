@@ -4,9 +4,10 @@ import type {
   PublishResult,
   InsightsResult,
   SocialProvider,
-} from "./types";
-import { toYouTubeApiError } from "../errors";
-import { normalizeYouTubePrivacyStatus } from "./youtube-visibility";
+  ExchangeTokenOptions,
+} from "./types.ts";
+import { toYouTubeApiError } from "../errors.ts";
+import { normalizeYouTubePrivacyStatus } from "./youtube-visibility.ts";
 
 /**
  * YouTube — Google OAuth2 + YouTube Data API v3. Unlike the other providers,

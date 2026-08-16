@@ -39,13 +39,22 @@ export interface InsightsResult {
   metrics: Record<string, number | string>;
 }
 
+export interface ExchangeTokenOptions {
+  state?: string;
+  origin?: string;
+}
+
 export interface SocialProvider {
   readonly name: string;
   readonly requiredScopes: string[];
 
   getAuthorizationUrl(state: string, redirectUri: string): string;
 
-  exchangeCodeForToken(code: string, redirectUri: string): Promise<OAuthExchangeResult>;
+  exchangeCodeForToken(
+    code: string,
+    redirectUri: string,
+    options?: ExchangeTokenOptions
+  ): Promise<OAuthExchangeResult>;
 
   refreshAccessToken?(refreshToken: string): Promise<{
     accessToken: string;

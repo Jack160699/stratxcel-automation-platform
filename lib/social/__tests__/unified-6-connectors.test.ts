@@ -47,8 +47,9 @@ function run() {
   assert.equal(cardKeys.includes("website"), false, "Website connector must NOT be in Step 2");
   assert.equal(stepConnectors.includes("WhatsApp Business"), false, "WhatsApp Business must NOT be in onboarding connector list");
 
-  // --- 2. Google Business One-Tap & CTA Visibility --------------------------
-  assert.ok(stepConnectors.includes("Continue with Google"), "Google Business card must offer 'Continue with Google' CTA");
+  // --- 2. Google Business Unified CTA & Security -----------------------------
+  assert.equal(stepConnectors.includes("Continue with Google"), false, "Google Business card must NOT say 'Continue with Google'");
+  assert.ok(stepConnectors.includes("ctaText: \"Connect\""), "Google Business card must offer unified 'Connect' CTA");
   assert.ok(!stepConnectors.includes("bg-white text-gray-900"), "Google Business card must NOT have white-on-white conflicting classes");
   assert.ok(googleBusiness.includes("business.manage"), "Google Business provider must request business.manage scope");
   assert.ok(googleBusiness.includes("accounts.google.com/o/oauth2/v2/auth"), "Google Business must use official OAuth2 endpoint");

@@ -35,7 +35,7 @@ const PLATFORM_CARDS: PlatformCardConfig[] = [
     label: "Google Business",
     description: "Connect your Google Business Profile to boost local ranking, sync reviews, and manage business details.",
     oauthAvailable: true,
-    ctaText: "Continue with Google",
+    ctaText: "Connect",
   },
   {
     key: "instagram",
@@ -90,7 +90,7 @@ const PLATFORM_CARDS: PlatformCardConfig[] = [
     label: "WhatsApp Number",
     description: "Verify your WhatsApp phone number to receive instant lead notifications and customer audit alerts.",
     oauthAvailable: false,
-    ctaText: "Verify Number",
+    ctaText: "Connect",
     publicProfilePlaceholder: "+91 98765 43210",
   },
 ];
@@ -133,6 +133,16 @@ export function StepConnectors({
           ? "Google Business"
           : provider === "x"
           ? "X"
+          : provider === "linkedin"
+          ? "LinkedIn"
+          : provider === "threads"
+          ? "Threads"
+          : provider === "youtube"
+          ? "YouTube"
+          : provider === "instagram"
+          ? "Instagram"
+          : provider === "facebook"
+          ? "Facebook"
           : provider
           ? provider.charAt(0).toUpperCase() + provider.slice(1)
           : "Channel";
@@ -140,7 +150,23 @@ export function StepConnectors({
     } else if (oauthStatus === "denied") {
       setNotification({ type: "info", message: "Connection request was cancelled. You can connect anytime later." });
     } else if (oauthStatus === "error" || connectError) {
-      setNotification({ type: "error", message: `Connection failed: ${connectError || "Authorization could not be completed"}` });
+      const pLabel =
+        provider === "google_business" || provider === "google"
+          ? "Google Business"
+          : provider === "linkedin"
+          ? "LinkedIn"
+          : provider === "x"
+          ? "X"
+          : provider === "threads"
+          ? "Threads"
+          : provider === "youtube"
+          ? "YouTube"
+          : provider === "instagram"
+          ? "Instagram"
+          : provider === "facebook"
+          ? "Facebook"
+          : "Channel";
+      setNotification({ type: "error", message: `${pLabel} connection failed. Please try again.` });
     }
 
     if (oauthStatus || connectError || params.get("connected")) {
@@ -406,7 +432,7 @@ export function StepConnectors({
                   ) : card.key === "whatsapp" ? (
                     <Button
                       type="button"
-                      variant="secondary"
+                      variant="primary"
                       size="sm"
                       onClick={() => {
                         setWhatsappModalOpen(true);
@@ -414,19 +440,9 @@ export function StepConnectors({
                         setOtpSent(false);
                         setWhatsappOtp("");
                       }}
-                      className="h-8 text-xs font-semibold px-3"
-                    >
-                      {card.ctaText || "Verify Number"}
-                    </Button>
-                  ) : card.key === "google_business" ? (
-                    <Button
-                      type="button"
-                      variant="primary"
-                      size="sm"
-                      onClick={() => startOAuth(card.key)}
                       className="h-8 text-xs font-semibold px-3 bg-sx-accent text-sx-accent-on hover:bg-[color:var(--sx-accent-hover)] shadow-xs"
                     >
-                      {card.ctaText || "Continue with Google"}
+                      Connect
                     </Button>
                   ) : card.oauthAvailable ? (
                     <Button
@@ -436,7 +452,7 @@ export function StepConnectors({
                       onClick={() => startOAuth(card.key)}
                       className="h-8 text-xs font-semibold px-3 bg-sx-accent text-sx-accent-on hover:bg-[color:var(--sx-accent-hover)] shadow-xs"
                     >
-                      {card.ctaText || "Connect"}
+                      Connect
                     </Button>
                   ) : (
                     <Button
@@ -450,7 +466,7 @@ export function StepConnectors({
                       }}
                       className="h-8 text-xs font-semibold px-3"
                     >
-                      Add
+                      Connect
                     </Button>
                   )}
                 </div>

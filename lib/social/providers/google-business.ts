@@ -4,7 +4,8 @@ import type {
   PublishResult,
   InsightsResult,
   SocialProvider,
-} from "./types";
+  ExchangeTokenOptions,
+} from "./types.ts";
 
 /**
  * Google Business Profile API provider.
@@ -62,7 +63,7 @@ export const googleBusinessProvider: SocialProvider = {
     return `${GOOGLE_AUTH_ENDPOINT}?${params.toString()}`;
   },
 
-  async exchangeCodeForToken(code, redirectUri): Promise<OAuthExchangeResult> {
+  async exchangeCodeForToken(code, redirectUri, _options?: ExchangeTokenOptions): Promise<OAuthExchangeResult> {
     const clientId = getClientId();
     const clientSecret = getClientSecret();
 
@@ -79,7 +80,13 @@ export const googleBusinessProvider: SocialProvider = {
     });
 
     if (!tokenRes.ok) {
-      throw new Error(`Google Business token exchange failed: ${tokenRes.status}`);
+      let errBody = "";
+      try {
+        errBody = await tokenRes.text();
+      } catch {
+        // ignore
+      }
+      throw new Error(`Google Business token exchange failed (${tokenRes.status}): ${errBody || "Invalid grant or client"}`);
     }
 
     const tokenData = (await tokenRes.json()) as {
@@ -102,21 +109,52 @@ export const googleBusinessProvider: SocialProvider = {
       // Non-blocking fallback
     }
 
-    // Try to fetch location/account name from Google My Business API if available
+    // Discover accessible Google Business Profile accounts and locations
     let locationDisplayName = profileData.name || profileData.email || "Google Business Profile";
+    let locationExternalId = profileData.id || profileData.email || "google_business_account";
+    let gbpAccountFound = false;
+    let gbpLocationFound = false;
+
     try {
       const gbpAccountsRes = await fetch(
         "https://mybusinessaccountmanagement.googleapis.com/v1/accounts",
         { headers: { Authorization: `Bearer ${tokenData.access_token}` } }
       );
       if (gbpAccountsRes.ok) {
-        const gbpData = (await gbpAccountsRes.json()) as { accounts?: Array<{ accountName?: string }> };
-        if (gbpData.accounts?.[0]?.accountName) {
-          locationDisplayName = gbpData.accounts[0].accountName;
+        const gbpData = (await gbpAccountsRes.json()) as {
+          accounts?: Array<{ name?: string; accountName?: string; type?: string; verificationState?: string }>;
+        };
+        const accounts = gbpData.accounts || [];
+        if (accounts.length > 0) {
+          gbpAccountFound = true;
+          const account = accounts[0];
+          if (account.accountName) locationDisplayName = account.accountName;
+          if (account.name) {
+            locationExternalId = account.name;
+            try {
+              const locationsRes = await fetch(
+                `https://mybusinessbusinessinformation.googleapis.com/v1/${account.name}/locations?readMask=name,title,storefrontAddress,websiteUri`,
+                { headers: { Authorization: `Bearer ${tokenData.access_token}` } }
+              );
+              if (locationsRes.ok) {
+                const locData = (await locationsRes.json()) as {
+                  locations?: Array<{ name?: string; title?: string }>;
+                };
+                if (locData.locations && locData.locations.length > 0) {
+                  gbpLocationFound = true;
+                  const loc = locData.locations[0];
+                  if (loc.title) locationDisplayName = loc.title;
+                  if (loc.name) locationExternalId = loc.name;
+                }
+              }
+            } catch {
+              // Location query non-blocking
+            }
+          }
         }
       }
     } catch {
-      // Graceful fallback to user profile name
+      // Graceful fallback
     }
 
     const grantedScopes = tokenData.scope ? tokenData.scope.split(" ") : googleBusinessProvider.requiredScopes;
@@ -125,7 +163,7 @@ export const googleBusinessProvider: SocialProvider = {
       accessToken: tokenData.access_token,
       refreshToken: tokenData.refresh_token,
       expiresInSeconds: tokenData.expires_in,
-      externalAccountId: profileData.id || profileData.email || "google_business_account",
+      externalAccountId: locationExternalId,
       displayName: locationDisplayName,
       username: profileData.email || profileData.name,
       profilePictureUrl: profileData.picture,

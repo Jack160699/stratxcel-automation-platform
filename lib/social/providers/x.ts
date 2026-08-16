@@ -4,11 +4,12 @@ import type {
   PublishResult,
   InsightsResult,
   SocialProvider,
-} from "./types";
+  ExchangeTokenOptions,
+} from "./types.ts";
 import crypto from "node:crypto";
 
 /**
- * X (formerly Twitter) OAuth 2.0 implementation.
+ * X (formerly Twitter) OAuth 2.0 implementation with PKCE S256.
  *
  * Scopes:
  * - tweet.read, tweet.write (read timeline and publish posts)
@@ -38,11 +39,11 @@ function getClientSecret(): string {
 /**
  * Deterministically derives a PKCE code_verifier from the signed state token.
  */
-function getCodeVerifierFromState(state: string): string {
+export function getCodeVerifierFromState(state: string): string {
   return crypto.createHash("sha256").update(`x_pkce:${state}`).digest("base64url");
 }
 
-function getCodeChallenge(verifier: string): string {
+export function getCodeChallenge(verifier: string): string {
   return crypto.createHash("sha256").update(verifier).digest("base64url");
 }
 
@@ -68,11 +69,10 @@ export const xProvider: SocialProvider = {
     return `${X_OAUTH_AUTHORIZE}?${params.toString()}`;
   },
 
-  async exchangeCodeForToken(code, redirectUri): Promise<OAuthExchangeResult> {
+  async exchangeCodeForToken(code, redirectUri, options?: ExchangeTokenOptions): Promise<OAuthExchangeResult> {
     const clientId = getClientId();
     const clientSecret = getClientSecret();
-    // For token exchange, X OAuth 2.0 PKCE requires code_verifier
-    // We recreate it from standard verifier pattern
+    const verifier = options?.state ? getCodeVerifierFromState(options.state) : "x_pkce_auth_code_verifier";
     const basicAuth = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
 
     const tokenRes = await fetch(X_OAUTH_TOKEN, {
@@ -84,13 +84,20 @@ export const xProvider: SocialProvider = {
       body: new URLSearchParams({
         code,
         grant_type: "authorization_code",
+        client_id: clientId,
         redirect_uri: redirectUri,
-        code_verifier: "x_pkce_auth_code_verifier", // fallback if plain or client basic auth
+        code_verifier: verifier,
       }),
     });
 
     if (!tokenRes.ok) {
-      throw new Error(`X token exchange failed: ${tokenRes.status}`);
+      let errBody = "";
+      try {
+        errBody = await tokenRes.text();
+      } catch {
+        // ignore
+      }
+      throw new Error(`X token exchange failed (${tokenRes.status}): ${errBody || "Invalid grant or client"}`);
     }
 
     const tokenData = (await tokenRes.json()) as {
@@ -110,7 +117,7 @@ export const xProvider: SocialProvider = {
         profileData = (await userRes.json()) as typeof profileData;
       }
     } catch {
-      // Non-blocking trace
+      // Non-blocking fallback
     }
 
     const user = profileData.data;
@@ -142,6 +149,7 @@ export const xProvider: SocialProvider = {
       body: new URLSearchParams({
         refresh_token: refreshToken,
         grant_type: "refresh_token",
+        client_id: clientId,
       }),
     });
 

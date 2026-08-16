@@ -4,8 +4,9 @@ import type {
   PublishResult,
   InsightsResult,
   SocialProvider,
-} from "./types";
-import { toMetaApiError } from "../errors";
+  ExchangeTokenOptions,
+} from "./types.ts";
+import { toMetaApiError } from "../errors.ts";
 
 /**
  * Threads API — a distinct identity/token/publish path from Instagram and

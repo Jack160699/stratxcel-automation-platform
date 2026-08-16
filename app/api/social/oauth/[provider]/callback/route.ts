@@ -7,6 +7,7 @@ import { createSupabaseServiceClient } from "@/lib/supabase/service";
 import { upsertConnectedAccount, type Platform } from "@/lib/social/repositories/accounts";
 import { recordAudit } from "@/lib/social/repositories/system";
 import { getCanonicalSocialRedirectUri } from "@/lib/social/oauth-origin";
+import { recordOAuthDiagnostic } from "@/lib/social/oauth-diagnostics";
 
 const PROVIDER_LABELS: Record<string, string> = {
   google_business: "Google",
@@ -41,6 +42,14 @@ export async function GET(
   const oauthError = req.nextUrl.searchParams.get("error");
   const errorReason = req.nextUrl.searchParams.get("error_reason") || req.nextUrl.searchParams.get("error_description");
 
+  recordOAuthDiagnostic({
+    provider,
+    stage: "callback_received",
+    status: oauthError ? "failure" : "info",
+    reason: oauthError || undefined,
+    details: { hasCode: !!code, hasState: !!state, errorReason },
+  });
+
   // Determine fallback fail destination from state if available
   let fallbackRedirect = "/admin/social";
   let isOnboarding = false;
@@ -62,18 +71,64 @@ export async function GET(
 
   if (oauthError) {
     const isDenied = oauthError === "access_denied" || errorReason?.includes("denied") || errorReason?.includes("cancelled");
+    recordOAuthDiagnostic({
+      provider,
+      stage: "authorization",
+      status: "failure",
+      reason: oauthError,
+      details: { isDenied, errorReason },
+    });
     return failRedirect(isDenied ? "denied" : "error", oauthError);
   }
 
-  if (!code || !state) return failRedirect("error", "missing_code_or_state");
+  if (!code || !state) {
+    recordOAuthDiagnostic({
+      provider,
+      stage: "callback_received",
+      status: "failure",
+      reason: "missing_code_or_state",
+    });
+    return failRedirect("error", "missing_code_or_state");
+  }
 
-  if (!isValidProvider(provider)) return failRedirect("error", "unknown_provider");
+  if (!isValidProvider(provider)) {
+    recordOAuthDiagnostic({
+      provider,
+      stage: "callback_received",
+      status: "failure",
+      reason: "unknown_provider",
+    });
+    return failRedirect("error", "unknown_provider");
+  }
 
   const verified = verifySignedState(state);
-  if (!verified.valid) return failRedirect("error", `bad_state:${verified.reason}`);
+  if (!verified.valid) {
+    recordOAuthDiagnostic({
+      provider,
+      stage: "state_verified",
+      status: "failure",
+      reason: `bad_state:${verified.reason}`,
+    });
+    return failRedirect("error", `bad_state:${verified.reason}`);
+  }
+
   if (verified.payload.provider !== provider && !(provider === "google_business" && verified.payload.provider === "google")) {
+    recordOAuthDiagnostic({
+      provider,
+      stage: "state_verified",
+      status: "failure",
+      reason: "provider_mismatch",
+      details: { expected: verified.payload.provider, received: provider },
+    });
     return failRedirect("error", "provider_mismatch");
   }
+
+  recordOAuthDiagnostic({
+    provider,
+    stage: "state_verified",
+    status: "success",
+    details: { redirectTo: verified.payload.redirectTo },
+  });
 
   const service = createSupabaseServiceClient();
 
@@ -84,9 +139,35 @@ export async function GET(
     .eq("state_hash", verified.hash)
     .maybeSingle();
 
-  if (!stateRow) return failRedirect("error", "state_not_found");
-  if (stateRow.consumed_at) return failRedirect("error", "state_already_used");
-  if (new Date(stateRow.expires_at).getTime() < Date.now()) return failRedirect("error", "state_expired");
+  if (!stateRow) {
+    recordOAuthDiagnostic({
+      provider,
+      stage: "state_verified",
+      status: "failure",
+      reason: "state_not_found",
+    });
+    return failRedirect("error", "state_not_found");
+  }
+
+  if (stateRow.consumed_at) {
+    recordOAuthDiagnostic({
+      provider,
+      stage: "state_verified",
+      status: "failure",
+      reason: "state_already_used",
+    });
+    return failRedirect("error", "state_already_used");
+  }
+
+  if (new Date(stateRow.expires_at).getTime() < Date.now()) {
+    recordOAuthDiagnostic({
+      provider,
+      stage: "state_verified",
+      status: "failure",
+      reason: "state_expired",
+    });
+    return failRedirect("error", "state_expired");
+  }
 
   // Consume immediately to prevent replay, before doing the token exchange.
   await service
@@ -97,7 +178,30 @@ export async function GET(
   const redirectUri = getCanonicalSocialRedirectUri(provider, origin);
 
   try {
-    const result = await getProvider(provider).exchangeCodeForToken(code, redirectUri);
+    recordOAuthDiagnostic({
+      provider,
+      stage: "token_exchange",
+      status: "info",
+      details: { redirectUri },
+    });
+
+    const result = await getProvider(provider).exchangeCodeForToken(code, redirectUri, {
+      state,
+      origin,
+    });
+
+    recordOAuthDiagnostic({
+      provider,
+      stage: "identity_fetch",
+      status: "success",
+      details: {
+        externalAccountId: result.externalAccountId,
+        hasDisplayName: !!result.displayName,
+        hasUsername: !!result.username,
+        scopesCount: result.scopes?.length ?? 0,
+      },
+    });
+
     const redirectTo = verified.payload.redirectTo || "/admin/social";
     isOnboarding = redirectTo.startsWith("/app");
 
@@ -155,6 +259,13 @@ export async function GET(
         meta: { provider_account_id: result.externalAccountId },
       });
 
+      recordOAuthDiagnostic({
+        provider,
+        stage: "connection_persisted",
+        status: "success",
+        details: { target: "user_metadata", userId },
+      });
+
       const successUrl = new URL(redirectTo, origin);
       successUrl.searchParams.set("oauth", "success");
       successUrl.searchParams.set("provider", provider === "google" ? "google_business" : provider);
@@ -165,7 +276,15 @@ export async function GET(
 
     // Admin flow
     const admin = await requireAdmin();
-    if (!admin.ok) return failRedirect("error", "not_authorized");
+    if (!admin.ok) {
+      recordOAuthDiagnostic({
+        provider,
+        stage: "connection_persisted",
+        status: "failure",
+        reason: "not_authorized",
+      });
+      return failRedirect("error", "not_authorized");
+    }
 
     await upsertConnectedAccount(service, {
       ownerId: admin.userId,
@@ -189,6 +308,13 @@ export async function GET(
       meta: { provider_account_id: result.externalAccountId },
     });
 
+    recordOAuthDiagnostic({
+      provider,
+      stage: "connection_persisted",
+      status: "success",
+      details: { target: "social_accounts", ownerId: admin.userId },
+    });
+
     const adminTarget = new URL(redirectTo, origin);
     adminTarget.searchParams.set("oauth", "success");
     adminTarget.searchParams.set("provider", provider);
@@ -198,11 +324,21 @@ export async function GET(
   } catch (err) {
     const message = err instanceof Error ? err.message : "unknown_error";
     console.error(`${provider} OAuth callback failed:`, message);
+
+    recordOAuthDiagnostic({
+      provider,
+      stage: "token_exchange",
+      status: "failure",
+      reason: message,
+      error: err,
+    });
+
     await recordAudit({
       actorType: "SYSTEM",
       action: "account.connect_failed",
       summary: `${provider} connect failed: ${message}`,
     });
+
     return failRedirect("error", "token_exchange_failed");
   }
 }

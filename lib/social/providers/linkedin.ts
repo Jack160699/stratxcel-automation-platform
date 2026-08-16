@@ -4,8 +4,9 @@ import type {
   PublishResult,
   InsightsResult,
   SocialProvider,
-} from "./types";
-import { toLinkedInApiError } from "../errors";
+  ExchangeTokenOptions,
+} from "./types.ts";
+import { toLinkedInApiError } from "../errors.ts";
 
 /**
  * LinkedIn — "Sign In with LinkedIn using OpenID Connect" (profile identity)
@@ -40,7 +41,7 @@ function restHeaders(accessToken: string): HeadersInit {
 
 export const linkedinProvider: SocialProvider = {
   name: "linkedin",
-  requiredScopes: ["openid", "profile", "w_member_social"],
+  requiredScopes: ["openid", "profile", "email", "w_member_social"],
 
   getAuthorizationUrl(state, redirectUri) {
     const clientId = requireEnv("LINKEDIN_CLIENT_ID");
