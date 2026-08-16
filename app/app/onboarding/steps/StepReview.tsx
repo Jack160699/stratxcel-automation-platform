@@ -19,15 +19,16 @@ export function StepReview({
   error: string | null;
   onSubmit: () => void;
 }) {
-  const businessName = draft.business.name || draft.brand.businessName || "My Business";
+  const businessName = draft.business.name || "My Business";
   const website = draft.business.website?.trim();
   const gbp = draft.business.googleMapsUrl?.trim();
   const location = draft.business.location?.trim() || "Not specified";
   const industry = draft.business.industry?.trim() || "General Business";
   const model = draft.business.businessModel || "B2B";
 
-  // Filter only explicitly connected channels
-  const connectedChannels = (draft.account?.connections || []).filter((c) => c.status === "connected");
+  // Separate OAuth-connected from public-profile-only channels
+  const oauthChannels = (draft.account?.connections || []).filter((c) => c.status === "connected" && c.connectionType === "oauth");
+  const publicChannels = (draft.account?.connections || []).filter((c) => c.status === "connected" && c.connectionType === "public_profile");
 
   const goals = draft.goals.length > 0
     ? draft.goals.map((g) => g.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase()))
@@ -38,7 +39,7 @@ export function StepReview({
       <div>
         <h3 className="font-sx-sans text-base font-semibold text-sx-text">Everything looks good?</h3>
         <p className="font-sx-sans text-xs text-sx-text-muted mt-1">
-          Review your details below. We&rsquo;ll use this verified snapshot to start your free business audit.
+          Review your verified details below. We&rsquo;ll use this snapshot to start your free business audit.
         </p>
       </div>
 
@@ -61,22 +62,37 @@ export function StepReview({
               <span className="text-sx-text-subtle block">StratXcel Account</span>
               <span className="font-medium text-sx-text">{account.displayName} ({account.email})</span>
             </div>
-            <div>
+            <div className="space-y-2">
               <span className="text-sx-text-subtle block">Connected Channels</span>
-              {connectedChannels.length > 0 ? (
-                <div className="flex flex-wrap items-center gap-2 mt-1">
-                  {connectedChannels.map((c) => (
+              {oauthChannels.length > 0 ? (
+                <div className="flex flex-wrap items-center gap-2">
+                  {oauthChannels.map((c) => (
                     <span
                       key={c.platform}
-                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-sx-sm bg-sx-surface-1 border border-sx-border text-[11px] font-medium text-sx-text"
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-sx-sm bg-emerald-500/10 border border-emerald-500/20 text-[11px] font-medium text-emerald-400"
                     >
                       <PlatformIcon name={c.platform} className="h-3 w-3" />
-                      <span>{c.handle || c.displayName || c.platform}</span>
+                      <span>✓ {c.handle || c.displayName || c.platform}</span>
+                      {c.providerLabel && <span className="text-emerald-400/60">via {c.providerLabel}</span>}
                     </span>
                   ))}
                 </div>
               ) : (
-                <span className="text-sx-text-muted italic">None connected yet (can connect later)</span>
+                <span className="text-sx-text-muted italic">None connected via OAuth (can connect later)</span>
+              )}
+              {publicChannels.length > 0 && (
+                <div className="flex flex-wrap items-center gap-2 mt-1">
+                  {publicChannels.map((c) => (
+                    <span
+                      key={c.platform}
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-sx-sm bg-amber-500/5 border border-amber-500/20 text-[11px] font-medium text-amber-400"
+                    >
+                      <PlatformIcon name={c.platform} className="h-3 w-3" />
+                      <span>○ {c.handle || c.displayName || c.platform}</span>
+                      <span className="text-amber-400/60">public profile</span>
+                    </span>
+                  ))}
+                </div>
               )}
             </div>
           </div>
@@ -131,26 +147,6 @@ export function StepReview({
             ))}
           </div>
         </div>
-
-        {/* 4. Brand Voice Summary */}
-        <div className="rounded-sx-md border border-sx-border bg-sx-surface-2/60 p-4 space-y-2.5 text-xs">
-          <span className="text-[11px] font-bold uppercase tracking-wider text-sx-text-subtle block">
-            Brand Signals
-          </span>
-          <p className="text-sx-text leading-relaxed">
-            {draft.brand.description || `${businessName} provides specialized ${industry} solutions.`}
-          </p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 text-[11px]">
-            <div>
-              <span className="text-sx-text-subtle">Audience: </span>
-              <span className="text-sx-text font-medium">{draft.brand.audience || "Target buyers"}</span>
-            </div>
-            <div>
-              <span className="text-sx-text-subtle">Tone: </span>
-              <span className="text-sx-text font-medium">{draft.brand.tone || "Professional"}</span>
-            </div>
-          </div>
-        </div>
       </div>
 
       {/* Action Footer */}
@@ -163,7 +159,7 @@ export function StepReview({
           disabled={submitting}
           className="w-full sm:w-auto min-h-12 px-8 text-sm font-bold shadow-md"
         >
-          {submitting ? "Starting Your Free Audit…" : "Start My Free Business Audit →"}
+          {submitting ? "Starting Your Free Audit…" : "GET MY FREE AUDIT →"}
         </Button>
         <p className="text-center text-xs text-sx-text-muted">
           Your information will be used to research your business and prepare your free audit.

@@ -7,9 +7,9 @@ import { Button } from "@/components/ui/Button";
 import { ErrorState } from "@/components/ui/Feedback";
 import { setActiveTenantAction } from "../tenant-actions";
 import { StepAccount, type AccountInfo } from "./steps/StepAccount";
+import { StepConnectors } from "./steps/StepConnectors";
 import { StepBusiness } from "./steps/StepBusiness";
 import { StepGoals } from "./steps/StepGoals";
-import { StepBrand } from "./steps/StepBrand";
 import { StepReview } from "./steps/StepReview";
 import {
   EMPTY_DRAFT,
@@ -20,6 +20,8 @@ import {
   type SocialConnection,
 } from "./types";
 import { trackFunnel } from "@/lib/analytics/events";
+import { normalizeWebsiteUrl } from "@/lib/identity/smart-url";
+import { validateAndNormalizeGoogleMapsInput } from "@/lib/identity/google-maps-normalizer";
 
 const TOTAL_STEPS = ONBOARDING_STEP_LABELS.length;
 
@@ -80,10 +82,20 @@ export function OnboardingWizard() {
   const [businessErrors, setBusinessErrors] = useState<{ name?: string }>({});
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [isSynthesizing, setIsSynthesizing] = useState(false);
+
+  // If user returned from OAuth callback, stay on or jump to Step 2 (Connectors)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("connected") || params.get("connect_error")) {
+      setStep(2);
+    }
+  }, []);
 
   useEffect(() => {
     const clientDraft = loadDraft();
-    if (clientDraft.step > 1 || clientDraft.draft.business.name) {
+    if (clientDraft.step > 1 || clientDraft.draft.business.name || clientDraft.draft.business.website) {
       setStep(clientDraft.step);
       setDraft(clientDraft.draft);
     }
@@ -181,6 +193,52 @@ export function OnboardingWizard() {
     });
   }
 
+  async function triggerDiscoverySynthesis(websiteInput?: string, gbpInput?: string) {
+    const rawWebsite = websiteInput || draft.business.website || "";
+    const rawGbp = gbpInput || draft.business.googleMapsUrl || "";
+    if (!rawWebsite && !rawGbp) return;
+
+    let cleanWebsite = rawWebsite.trim();
+    if (cleanWebsite) {
+      const norm = normalizeWebsiteUrl(cleanWebsite);
+      if (norm.ok && norm.url) cleanWebsite = norm.url;
+    }
+
+    let cleanGbp = rawGbp.trim();
+    if (cleanGbp) {
+      const norm = validateAndNormalizeGoogleMapsInput(cleanGbp);
+      if (norm.success) cleanGbp = norm.data.canonicalUrl;
+    }
+
+    setIsSynthesizing(true);
+    try {
+      const res = await fetch("/api/platform/site-discovery/resolve", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          websiteUrl: cleanWebsite || undefined,
+          googleMapsUrl: cleanGbp || undefined,
+          industry: draft.business.industry || undefined,
+          existingDraft: {
+            businessName: draft.business.name,
+            location: draft.business.location,
+          },
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.intelligence) {
+          applySynthesizedIntelligence(data.intelligence);
+        }
+      }
+    } catch {
+      // Non-blocking background intelligence trace
+    } finally {
+      setIsSynthesizing(false);
+    }
+  }
+
   function updateConnections(connections: SocialConnection[]) {
     setDraft((d) => ({
       ...d,
@@ -193,7 +251,7 @@ export function OnboardingWizard() {
             platform: c.platform,
             url: c.url || `https://${c.platform}.com/${c.handle?.replace(/^@/, "")}`,
             handle: c.handle || c.displayName || "",
-            confirmed: true,
+            confirmed: c.connectionType === "oauth",
           })),
       },
     }));
@@ -201,10 +259,6 @@ export function OnboardingWizard() {
 
   function updateBusiness(patch: Partial<OnboardingDraft["business"]>) {
     setDraft((d) => ({ ...d, business: { ...d.business, ...patch } }));
-  }
-
-  function updateBrand(patch: Partial<OnboardingDraft["brand"]>) {
-    setDraft((d) => ({ ...d, brand: { ...d.brand, ...patch } }));
   }
 
   function toggleGoal(key: string) {
@@ -223,7 +277,7 @@ export function OnboardingWizard() {
         return false;
       }
     }
-    if (step === 2) {
+    if (step === 3) {
       if (!draft.business.name.trim()) {
         setBusinessErrors({ name: "Business name is required." });
         return false;
@@ -234,6 +288,34 @@ export function OnboardingWizard() {
 
   function handleContinue() {
     if (!validateCurrentStep()) return;
+
+    // When advancing from Step 1 (Account), trigger background intelligence synthesis
+    if (step === 1) {
+      let normalizedWebsite = draft.business.website.trim();
+      if (normalizedWebsite) {
+        const norm = normalizeWebsiteUrl(normalizedWebsite);
+        if (norm.ok && norm.url) {
+          normalizedWebsite = norm.url;
+          updateBusiness({ website: norm.url });
+        }
+      }
+
+      let normalizedGbp = (draft.business.googleMapsUrl ?? "").trim();
+      if (normalizedGbp) {
+        const norm = validateAndNormalizeGoogleMapsInput(normalizedGbp);
+        if (norm.success) {
+          normalizedGbp = norm.data.canonicalUrl;
+          updateBusiness({
+            googleMapsUrl: norm.data.canonicalUrl,
+            name: !draft.business.name && norm.data.placeName ? norm.data.placeName : draft.business.name,
+          });
+        }
+      }
+
+      // Fire intelligence synthesis in background for Step 3 and Brand Brain
+      void triggerDiscoverySynthesis(normalizedWebsite, normalizedGbp);
+    }
+
     setStep((s) => Math.min(s + 1, TOTAL_STEPS));
   }
 
@@ -257,7 +339,9 @@ export function OnboardingWizard() {
         platform: c.platform,
         url: c.url || `https://${c.platform}.com/${c.handle?.replace(/^@/, "")}`,
         handle: c.handle || c.displayName || "",
-        confirmed: true,
+        confirmed: c.connectionType === "oauth",
+        connectionType: c.connectionType || "manual",
+        providerAccountId: c.providerAccountId,
       }));
 
     try {
@@ -387,21 +471,26 @@ export function OnboardingWizard() {
             {step === 1 && (
               <StepAccount
                 account={account}
-                connections={draft.account?.connections || []}
+                draft={draft}
                 onAccountChange={setAccount}
-                onConnectionsChange={updateConnections}
+                onBusinessChange={updateBusiness}
               />
             )}
             {step === 2 && (
+              <StepConnectors
+                connections={draft.account?.connections || []}
+                onConnectionsChange={updateConnections}
+              />
+            )}
+            {step === 3 && (
               <StepBusiness
                 draft={draft}
                 update={updateBusiness}
                 errors={businessErrors}
-                onIntelligenceSynthesized={applySynthesizedIntelligence}
+                isSynthesizing={isSynthesizing}
               />
             )}
-            {step === 3 && <StepGoals draft={draft} selected={draft.goals} onToggle={toggleGoal} />}
-            {step === 4 && <StepBrand draft={draft} update={updateBrand} />}
+            {step === 4 && <StepGoals draft={draft} selected={draft.goals} onToggle={toggleGoal} />}
             {step === 5 && (
               <StepReview
                 account={account}
@@ -428,7 +517,9 @@ export function OnboardingWizard() {
               Back
             </Button>
             <Button type="submit" variant="primary" size="touch" className="min-w-28 text-xs font-bold shadow-xs">
-              Continue →
+              {step === 2 && (draft.account?.connections || []).every((c) => c.status !== "connected")
+                ? "Skip for now →"
+                : "Continue →"}
             </Button>
           </div>
         )}

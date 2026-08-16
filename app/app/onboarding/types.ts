@@ -6,6 +6,14 @@ export interface SocialConnection {
   url?: string;
   displayName?: string;
   status: "not_connected" | "connecting" | "connected" | "needs_attention";
+  /** How this connection was established. OAuth = real provider authorization. */
+  connectionType?: "oauth" | "public_profile" | "manual";
+  /** Provider-assigned account ID from OAuth (e.g. Meta IG user ID). */
+  providerAccountId?: string;
+  /** Display label from the provider (e.g. "StratXcel Solutions" from Meta). */
+  providerDisplayName?: string;
+  /** Provider name for attribution (e.g. "Meta", "Google", "LinkedIn"). */
+  providerLabel?: string;
   connectedAt?: string;
 }
 
@@ -62,7 +70,13 @@ export interface OnboardingDraft {
 
 export const ONBOARDING_DRAFT_KEY = "stratxcel_onboarding_draft_v1";
 
-export const ONBOARDING_STEP_LABELS = ["Account", "Business", "Goals", "Brand", "Review"] as const;
+export const ONBOARDING_STEP_LABELS = [
+  "Account",
+  "Connectors",
+  "Business",
+  "Goals",
+  "Review",
+] as const;
 
 export const INITIAL_SOCIAL_CONNECTORS: SocialConnection[] = [
   { platform: "instagram", status: "not_connected" },
