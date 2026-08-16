@@ -48,7 +48,7 @@ export interface OnboardingDraft {
 
 export const ONBOARDING_DRAFT_KEY = "stratxcel_onboarding_draft_v1";
 
-export const ONBOARDING_STEP_LABELS = ["Account", "Business", "Goals", "Brand", "Plan", "Review"] as const;
+export const ONBOARDING_STEP_LABELS = ["Account", "Business", "Goals", "Brand", "Review"] as const;
 
 export const EMPTY_DRAFT: OnboardingDraft = {
   business: {

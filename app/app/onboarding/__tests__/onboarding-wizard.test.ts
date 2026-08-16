@@ -75,12 +75,12 @@ function run() {
   // --- 8. Unsupported fields are labeled honestly, never faked as saved ------
   assert.ok(/Workspace Settings/.test(stepBusiness), "StepBusiness must honestly label website/location as not-yet-persisted");
   assert.ok(/Workspace Settings/.test(stepBrand), "StepBrand must honestly label the description field as not-yet-persisted");
-  assert.ok(/No plan is activated/.test(stepReview), "StepReview must not imply a plan/payment was activated");
+  assert.ok(/saved by this step|not saved by this step/.test(stepReview), "StepReview must honestly state what is saved by this step");
 
   // --- 9. Post-creation active-tenant selection reuses the existing action ---
   assert.ok(/import\s*\{\s*setActiveTenantAction\s*\}\s*from ["']\.\.\/tenant-actions["']/.test(wizard), "must reuse the existing setActiveTenantAction, not a new cookie-writing path");
   assert.ok(/await setActiveTenantAction\(tenant\.id\)/.test(wizard), "must set the active-tenant cookie immediately after workspace creation");
-  assert.ok(/router\.push\(["']\/app["']\)/.test(wizard), "must redirect to /app after creation");
+  assert.ok(/router\.push\(["']\/app\/audit["']\)/.test(wizard), "must redirect to /app/audit after creation");
 
   // --- 10. Double-submission protection ---------------------------------------
   assert.ok(/if \(submitting\) return;/.test(wizard), "handleCreateWorkspace must guard against double-submit");
@@ -100,7 +100,7 @@ function run() {
   assert.ok(/role="status"/.test(wizard), "wizard must expose an accessible 'step X of N' status region");
   assert.ok(/size="touch"/.test(wizard), "primary Back/Continue controls must use the ~44px touch target size");
   assert.ok(/aria-pressed=\{isSelected\}/.test(read("app", "app", "onboarding", "steps", "StepGoals.tsx")), "goal chips must expose pressed state to assistive tech");
-  assert.ok(/role="radiogroup"/.test(read("app", "app", "onboarding", "steps", "StepPlan.tsx")), "plan tier selection must use a radiogroup for assistive tech");
+  assert.ok(/role="radio"|role="radiogroup"/.test(read("app", "app", "audit", "VisualAuditReport.tsx")), "plan tier selection in audit report must use radio semantics for assistive tech");
   assert.ok(/max-w-(full|xl|2xl|3xl|4xl|5xl|6xl|7xl)/.test(wizard), "wizard container must be a single-column, mobile-first layout");
   assert.ok(/aria-invalid/.test(stepBusiness), "form fields must expose aria-invalid on validation errors");
   assert.ok(/aria-describedby/.test(stepBusiness), "form field errors/hints must be associated via aria-describedby");

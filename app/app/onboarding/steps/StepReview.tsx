@@ -4,7 +4,7 @@ import { SERVICE_CATALOGUE } from "@stratxcel/missions";
 import { Card, CardHeading, CardRow } from "@/components/ui/Card";
 import { ErrorState } from "@/components/ui/Feedback";
 import { Button } from "@/components/ui/Button";
-import { PLAN_TIERS, type OnboardingDraft } from "../types";
+import type { OnboardingDraft } from "../types";
 import type { AccountInfo } from "./StepAccount";
 import { PlatformIcon } from "@/components/audit/PlatformIcon";
 
@@ -22,7 +22,6 @@ export function StepReview({
   onSubmit: () => void;
 }) {
   const goalLabels = draft.goals.map((key) => SERVICE_CATALOGUE.find((e) => e.key === key)?.label ?? key);
-  const planTier = PLAN_TIERS.find((t) => t.key === draft.plan.tier);
   const offers = draft.brand.offers.split("\n").map((l) => l.trim()).filter(Boolean);
   const restrictions = draft.brand.restrictions.split("\n").map((l) => l.trim()).filter(Boolean);
   const confirmedSocials = (draft.business.socials ?? []).filter((s) => s.confirmed !== false);
@@ -30,7 +29,7 @@ export function StepReview({
   return (
     <div className="flex flex-col gap-5 w-full">
       <p className="font-sx-sans text-[13.5px] leading-relaxed text-sx-text-muted">
-        Review everything below, then create your workspace. This is the only step that writes anything permanent.
+        Review what we discovered and confirmed about your business. When ready, proceed to generate your business audit.
       </p>
 
       {error && <ErrorState message={error} />}
@@ -166,18 +165,6 @@ export function StepReview({
             </div>
           )}
         </Card>
-
-        {/* Plan Card */}
-        <Card variant="nested" className="sm:col-span-2">
-          <CardHeading>Plan — non-binding request</CardHeading>
-          <p className="pt-2 text-[12.5px] text-sx-text font-medium">
-            {planTier ? planTier.name : "Instant Audit (Free)"}
-            {draft.plan.note && <span className="block font-normal text-sx-text-muted mt-0.5">{draft.plan.note}</span>}
-          </p>
-          <div className="border-t border-sx-border pt-2.5 text-[11.5px] text-sx-text-subtle">
-            No plan is activated and no card is charged during onboarding.
-          </div>
-        </Card>
       </div>
 
       <div className="flex items-center justify-end pt-3">
@@ -189,7 +176,7 @@ export function StepReview({
           disabled={submitting}
           className="w-full sm:w-auto px-8 font-semibold"
         >
-          {submitting ? "Creating Workspace…" : "Create Workspace"}
+          {submitting ? "Creating Workspace & Starting Audit…" : "Create Workspace & Start Audit →"}
         </Button>
       </div>
     </div>

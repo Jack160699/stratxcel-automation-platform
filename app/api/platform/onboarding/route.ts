@@ -8,7 +8,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const ONBOARDING_METADATA_KEY = "stratxcel_onboarding_draft_v1";
-const MAX_STEP = 6;
+const MAX_STEP = 5;
 
 interface OnboardingRequestBody {
   business?: { name?: string; slug?: string; industry?: string; website?: string; location?: string };

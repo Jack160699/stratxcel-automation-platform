@@ -11,7 +11,6 @@ import { StepAccount, type AccountInfo } from "./steps/StepAccount";
 import { StepBusiness } from "./steps/StepBusiness";
 import { StepGoals } from "./steps/StepGoals";
 import { StepBrand } from "./steps/StepBrand";
-import { StepPlan } from "./steps/StepPlan";
 import { StepReview } from "./steps/StepReview";
 import { EMPTY_DRAFT, ONBOARDING_DRAFT_KEY, ONBOARDING_STEP_LABELS, type OnboardingDraft } from "./types";
 import { trackFunnel } from "@/lib/analytics/events";
@@ -171,9 +170,6 @@ export function OnboardingWizard() {
   function updateBrand(patch: Partial<OnboardingDraft["brand"]>) {
     setDraft((d) => ({ ...d, brand: { ...d.brand, ...patch } }));
   }
-  function updatePlan(patch: Partial<OnboardingDraft["plan"]>) {
-    setDraft((d) => ({ ...d, plan: { ...d.plan, ...patch } }));
-  }
   function toggleGoal(key: string) {
     setDraft((d) => ({
       ...d,
@@ -233,7 +229,7 @@ export function OnboardingWizard() {
             restrictions: draft.brand.restrictions.split("\n").map((l) => l.trim()).filter(Boolean),
           },
           goals: draft.goals,
-          plan: draft.plan.tier || draft.plan.note.trim() ? { tier: draft.plan.tier ?? undefined, note: draft.plan.note.trim() || undefined } : null,
+          plan: null,
         }),
       });
       const body = await res.json();
@@ -256,11 +252,10 @@ export function OnboardingWizard() {
       const tenant = body.tenant as { id: string };
       trackFunnel("business_profile_completed", {
         surface: "onboarding",
-        plan: draft.plan.tier ?? undefined,
       });
       await setActiveTenantAction(tenant.id);
       if (typeof window !== "undefined") window.sessionStorage.removeItem(ONBOARDING_DRAFT_KEY);
-      router.push("/app");
+      router.push("/app/audit");
       router.refresh();
     } catch {
       setSubmitError("Network error — check your connection and try again.");
@@ -319,8 +314,7 @@ export function OnboardingWizard() {
             )}
             {step === 3 && <StepGoals draft={draft} selected={draft.goals} onToggle={toggleGoal} />}
             {step === 4 && <StepBrand draft={draft} update={updateBrand} />}
-            {step === 5 && <StepPlan draft={draft} update={updatePlan} />}
-            {step === 6 && (
+            {step === 5 && (
               <StepReview account={account} draft={draft} submitting={submitting} error={submitError} onSubmit={handleCreateWorkspace} />
             )}
           </>
