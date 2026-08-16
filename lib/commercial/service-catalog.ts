@@ -32,6 +32,7 @@ export interface ModularServiceDefinition {
   standardMonthlyMrpPaise: number; // Standard monthly price in paise
   premiumMonthlyMrpPaise: number; // Premium monthly price in paise
   marketAdjustmentFactor: number; // Multiplier based on tier/demand (1.0 default)
+  billingType?: "RECURRING" | "ONE_TIME" | "ADD_ON";
 }
 
 export const MODULAR_SERVICE_CATALOG: Record<string, ModularServiceDefinition> = {
@@ -267,13 +268,102 @@ export const MODULAR_SERVICE_CATALOG: Record<string, ModularServiceDefinition> =
     standardMonthlyMrpPaise: 2_999_00, // ₹2,999/mo
     premiumMonthlyMrpPaise: 5_999_00, // ₹5,999/mo
     marketAdjustmentFactor: 1.0,
+    billingType: "RECURRING",
+  },
+
+  google_business_creation: {
+    serviceKey: "google_business_creation",
+    label: "Google Business Profile Creation & Verification Setup",
+    category: "Discovery & SEO",
+    description: "New Google Business Profile creation, NAP consistency setup, location category tuning, initial photo upload, and guided verification handling.",
+    customerFacingDescription: "Creates and verifies your new Google Business profile from scratch to get your business on Google Maps.",
+    unit: "one_time_setup",
+    defaultMonthlyQuantity: 1,
+    minQuantity: 1,
+    maxQuantity: 1,
+    billingType: "ONE_TIME",
+    standardQuality: {
+      tierName: "Standard",
+      modelTier: "standard",
+      deliverableStandard: "Standard business profile creation & verification submission",
+      revisionCycles: 1,
+      criticPassRequired: false,
+      slaHours: 48,
+    },
+    premiumQuality: {
+      tierName: "Premium",
+      modelTier: "premium",
+      deliverableStandard: "Complete profile creation, 10 optimized photos, service menu cataloging, and concierge verification tracking",
+      revisionCycles: 2,
+      criticPassRequired: true,
+      slaHours: 24,
+    },
+    requiredTools: ["get_brand_context", "update_mission_progress"],
+    aiModelPolicy: {
+      standardModel: "gemini-3.6-flash",
+      premiumModel: "gemini-3.6-pro",
+      estimatedTokensPerUnit: 2500,
+    },
+    estimatedExecutionMinutes: 25,
+    baseInternalCostPaise: 30_00, // ₹30/unit
+    standardMonthlyMrpPaise: 999_00, // ₹999 one-time
+    premiumMonthlyMrpPaise: 1_499_00, // ₹1,499 one-time
+    marketAdjustmentFactor: 1.0,
+  },
+
+  website_conversion_foundation: {
+    serviceKey: "website_conversion_foundation",
+    label: "Website SEO & Schema.org Architecture Setup",
+    category: "Discovery & SEO",
+    description: "One-time technical SEO foundation, LocalBusiness JSON-LD schema injection, mobile responsiveness tuning, and meta tag architecture.",
+    customerFacingDescription: "Sets up clean technical SEO and structured business data on your website for maximum Google rank authority.",
+    unit: "one_time_setup",
+    defaultMonthlyQuantity: 1,
+    minQuantity: 1,
+    maxQuantity: 1,
+    billingType: "ONE_TIME",
+    standardQuality: {
+      tierName: "Standard",
+      modelTier: "standard",
+      deliverableStandard: "Basic meta tags & LocalBusiness JSON-LD schema template",
+      revisionCycles: 1,
+      criticPassRequired: false,
+      slaHours: 48,
+    },
+    premiumQuality: {
+      tierName: "Premium",
+      modelTier: "premium",
+      deliverableStandard: "Custom LocalBusiness/Product schema, OpenGraph tags, sitemap submission, and core web vitals optimization guide",
+      revisionCycles: 2,
+      criticPassRequired: true,
+      slaHours: 24,
+    },
+    requiredTools: ["get_brand_context", "create_draft_artifact", "update_mission_progress"],
+    aiModelPolicy: {
+      standardModel: "gemini-3.6-flash",
+      premiumModel: "gemini-3.6-pro",
+      estimatedTokensPerUnit: 3000,
+    },
+    estimatedExecutionMinutes: 30,
+    baseInternalCostPaise: 40_00, // ₹40/unit
+    standardMonthlyMrpPaise: 1_299_00, // ₹1,299 one-time
+    premiumMonthlyMrpPaise: 1_999_00, // ₹1,999 one-time
+    marketAdjustmentFactor: 1.0,
   },
 };
 
 export function getServiceDefinition(serviceKey: string): ModularServiceDefinition | undefined {
-  return MODULAR_SERVICE_CATALOG[serviceKey];
+  const service = MODULAR_SERVICE_CATALOG[serviceKey];
+  if (!service) return undefined;
+  return {
+    ...service,
+    billingType: service.billingType ?? "RECURRING",
+  };
 }
 
 export function listModularServices(): ModularServiceDefinition[] {
-  return Object.values(MODULAR_SERVICE_CATALOG);
+  return Object.values(MODULAR_SERVICE_CATALOG).map((s) => ({
+    ...s,
+    billingType: s.billingType ?? "RECURRING",
+  }));
 }

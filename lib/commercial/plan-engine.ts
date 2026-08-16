@@ -12,6 +12,7 @@ export interface PlanItemSpec {
   qualityTier: "Standard" | "Premium";
   qualityDescription: string;
   itemPricePaise: number;
+  billingType?: "RECURRING" | "ONE_TIME" | "ADD_ON";
 }
 
 export interface GeneratedCustomerPlan {
@@ -80,6 +81,7 @@ export function generateTailoredCustomerPlans(
       qualityTier: "Premium",
       qualityDescription: service.premiumQuality.deliverableStandard,
       itemPricePaise: pricing.finalMrpPaise,
+      billingType: service.billingType ?? "RECURRING",
     });
 
     premiumCostItems.push({ serviceKey: service.serviceKey, quantity: qty });
@@ -138,6 +140,7 @@ export function generateTailoredCustomerPlans(
       qualityTier: "Standard",
       qualityDescription: service.standardQuality.deliverableStandard,
       itemPricePaise: pricing.finalMrpPaise,
+      billingType: service.billingType ?? "RECURRING",
     });
 
     standardCostItems.push({ serviceKey: service.serviceKey, quantity: qty });

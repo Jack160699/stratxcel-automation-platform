@@ -545,6 +545,31 @@ export const STRATXCEL_AGENT_REGISTRY: Record<string, AgentDefinition> = {
     databasePermissions: ["value_ledger:read_write"],
   },
 
+  "google-growth-agent": {
+    id: "google-growth-agent",
+    name: "Google Growth & Local Map Specialist",
+    category: "EXECUTION",
+    responsibility: "Audits Google Business Profile, drafts review responses, plans weekly map updates, and tracks local ranking signals.",
+    parentOrchestrator: "stratxcel-orchestrator",
+    allowedTools: ["get_brand_context", "create_draft_artifact", "request_approval", "update_mission_progress"],
+    forbiddenTools: ["submit_publish_request", "create_website_change_request"],
+    modelPolicy: {
+      tier: "standard",
+      recommendedModel: "gemini-3.6-flash",
+      fallbackModel: "gemini-3.6-pro",
+      maxTokens: 2500,
+      temperature: 0.3,
+    },
+    budgetPolicy: {
+      maxCostCentsPerRun: 15,
+      maxExecutionTimeMs: 30_000,
+      maxRetries: 2,
+    },
+    approvalRequirements: { requiresHumanApproval: false },
+    tenantScope: "STRICT_TENANT",
+    databasePermissions: ["mission_artifacts:read_write", "value_ledger:read_write"],
+  },
+
   // CUSTOMER
   "customer-copilot-agent": {
     id: "customer-copilot-agent",
