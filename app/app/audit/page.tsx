@@ -4,17 +4,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Card } from "@/components/ui/Card";
 import { ErrorState } from "@/components/ui/Feedback";
-import { ConnectExperience } from "./ConnectExperience";
 import { VisualAuditReport } from "./VisualAuditReport";
 import { trackFunnel } from "@/lib/analytics/events";
 import { loadCustomerJson } from "@/lib/customer-app/load-result";
-import { parseOnboardingState } from "@/lib/audit/v1/onboarding-state";
-import { verifiedReviewsFromProfile } from "@/lib/audit/v1/reviews";
 import { AuditShareDialog } from "@/components/audit/AuditShareDialog";
 import { AuditWhatsAppPanel } from "@/components/audit/AuditWhatsAppPanel";
 import { Modal } from "@/components/ui/Overlay";
-import { buildPresenceLinks } from "@/lib/audit/v1/presence";
-import type { EvidenceCoverage } from "@/lib/audit/v1/scoring";
 import {
   deriveAuditCustomerState,
   normalizeAuditDeliveryReport,
@@ -44,43 +39,23 @@ interface AuditGeneration {
   stage_updated_at: string;
 }
 
-function coverageFromOrder(order: AuditOrder, report: { sources?: unknown[] }): EvidenceCoverage {
-  const state = parseOnboardingState(order.deep_dive_answers);
-  const verifiedPublic = Object.values(state?.profile ?? {}).some((item) => {
-    return Boolean(item && typeof item === "object" && "sourceClass" in item && (item as { sourceClass?: string }).sourceClass === "VERIFIED_PUBLIC");
-  });
-  const hasChannel = (type: string) => Boolean(state?.channels?.some((channel) => channel.type === type && channel.value && !channel.notAvailable));
-  const reviews = verifiedReviewsFromProfile(state?.profile);
-  return {
-    website: verifiedPublic || Boolean(report.sources?.length),
-    google: hasChannel("google_business"),
-    instagram: hasChannel("instagram"),
-    facebook: hasChannel("facebook"),
-    reviews: Boolean(reviews),
-    analytics: false,
-  };
-}
-
 const PROCESSING_STAGES = [
-  { key: "QUEUED", label: "Understanding your business" },
-  { key: "RESEARCH", label: "Checking website presence" },
-  { key: "ANALYSIS", label: "Reviewing local & social visibility" },
-  { key: "QUALITY_GATE", label: "Identifying growth gaps & bottlenecks" },
-  { key: "DELIVERY", label: "Preparing 30-day recommendations" },
-  { key: "COMPLETE", label: "Your growth audit is ready" },
+  { key: "QUEUED", label: "Business information received" },
+  { key: "RESEARCH", label: "Connected channels checked" },
+  { key: "ANALYSIS", label: "Website presence being analyzed" },
+  { key: "QUALITY_GATE", label: "Google visibility & local search analysis" },
+  { key: "DELIVERY", label: "Growth opportunities & gaps being identified" },
+  { key: "COMPLETE", label: "30-day recommendations being prepared" },
 ] as const;
 
-/** Payment-first Audit hub driven only by persisted order and generation state. */
 export default function AuditHubPage() {
   const [order, setOrder] = useState<AuditOrder | null | undefined>(undefined);
   const [generation, setGeneration] = useState<AuditGeneration | null>(null);
-  const [paymentUrl, setPaymentUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
   const autoStartAttempted = useRef(false);
 
   const [brandBrain, setBrandBrain] = useState<Record<string, unknown> | null>(null);
-  const [freshAuditEligible, setFreshAuditEligible] = useState(false);
   const [shareMessage, setShareMessage] = useState<string | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
   const [shareUrl, setShareUrl] = useState<string | null>(null);
@@ -106,14 +81,11 @@ export default function AuditHubPage() {
     if (result.status === "error") {
       setOrder(null);
       setGeneration(null);
-      setPaymentUrl(null);
       setError(result.message);
       return;
     }
     setOrder(result.data.order ?? null);
     setGeneration(result.data.generation ?? null);
-    setPaymentUrl(result.data.paymentUrl ?? null);
-    setFreshAuditEligible(result.data.freshAuditEligible === true);
     setBrandBrain(result.data.brandBrain ?? null);
     const destination = result.data.whatsappDestination;
     if (destination) {
@@ -159,19 +131,18 @@ export default function AuditHubPage() {
   }, [order, generation, load]);
 
   useEffect(() => {
-    if (!order || deriveAuditCustomerState(order) !== "READY_FOR_EXECUTION" || autoStartAttempted.current) return;
-    autoStartAttempted.current = true;
-    void startAudit();
+    if (!order) return;
+    const state = deriveAuditCustomerState(order);
+    if ((state === "READY_FOR_EXECUTION" || state === "INTAKE_REQUIRED") && !autoStartAttempted.current) {
+      autoStartAttempted.current = true;
+      void startAudit();
+    }
   }, [order, startAudit]);
 
   const trackedRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     if (!order) return;
     const customerState = deriveAuditCustomerState(order);
-    if (customerState === "INTAKE_REQUIRED" && !trackedRef.current.has("intake_started")) {
-      trackedRef.current.add("intake_started");
-      trackFunnel("audit_intake_started", { surface: "app_audit" });
-    }
     if (customerState === "DELIVERED" && !trackedRef.current.has("report_ready")) {
       trackedRef.current.add("report_ready");
       trackFunnel("audit_report_ready", { surface: "app_audit" });
@@ -219,13 +190,13 @@ export default function AuditHubPage() {
         <div className="mx-auto max-w-2xl px-4 py-12">
           <div className="text-center">
             <span className="inline-block rounded-full bg-sx-accent/15 px-3 py-1 text-xs font-bold uppercase tracking-wider text-sx-accent">
-              Free Growth Audit
+              Free Business Audit
             </span>
             <h1 className="mt-3 font-sx-sans text-2xl font-bold text-sx-text sm:text-3xl">
-              Your free business audit is ready to begin
+              Your business is connected
             </h1>
             <p className="mt-2 text-sm text-sx-text-muted">
-              We already have your business details and online presence from onboarding. We&rsquo;ll now analyze them and prepare your growth report.
+              We have your verified business details from onboarding. We&rsquo;ll now analyze them and prepare your growth report.
             </p>
           </div>
 
@@ -248,7 +219,7 @@ export default function AuditHubPage() {
                 <span className="font-medium text-sx-text">{bIndustry}</span>
               </div>
               <div>
-                <span className="text-sx-text-subtle block">Social Presence</span>
+                <span className="text-sx-text-subtle block">Connected Channels</span>
                 <span className="font-medium text-sx-text">{bSocials}</span>
               </div>
             </div>
@@ -288,30 +259,14 @@ export default function AuditHubPage() {
           Start your free business audit
         </h1>
         <p className="mt-2 text-sm text-sx-text-muted">
-          Connect your business website. We will research public pages and build your growth roadmap — 100% free.
+          Complete the quick setup to connect your business and generate your growth report — 100% free.
         </p>
-        <button
-          type="button"
-          disabled={starting}
-          onClick={() => {
-            setStarting(true);
-            void fetch("/api/platform/audit/onboarding", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ action: "start_fresh" }),
-            }).then(async (response) => {
-              if (!response.ok) {
-                const json = await response.json().catch(() => ({})) as { error?: string };
-                setError(json.error ?? "Could not start a new Audit.");
-                return;
-              }
-              await load();
-            }).finally(() => setStarting(false));
-          }}
+        <Link
+          href="/app"
           className="mt-6 inline-flex min-h-11 items-center rounded-sx-sm bg-sx-accent px-6 font-sx-sans text-xs font-bold text-sx-accent-on hover:bg-[color:var(--sx-accent-hover)]"
         >
-          {starting ? "Starting…" : "Connect your business →"}
-        </button>
+          Start Onboarding →
+        </Link>
       </div>
     );
   }
@@ -322,7 +277,7 @@ export default function AuditHubPage() {
     return (
       <div className="mx-auto max-w-2xl px-4 py-16 text-center">
         <h1 className="font-sx-sans text-xl font-semibold text-sx-text">Start Your Free Business Audit</h1>
-        <p className="mt-2 text-sm text-sx-text-muted">The audit is now 100% free. Connect your business to begin.</p>
+        <p className="mt-2 text-sm text-sx-text-muted">The audit is 100% free. Click below to begin research.</p>
         <button
           type="button"
           disabled={starting}
@@ -360,17 +315,13 @@ export default function AuditHubPage() {
     );
   }
 
-  if (customerState === "INTAKE_REQUIRED") {
-    return <ConnectExperience order={order} brandBrain={brandBrain} onChanged={load} />;
-  }
-
-  if (customerState === "READY_FOR_EXECUTION") {
+  if (customerState === "READY_FOR_EXECUTION" || customerState === "INTAKE_REQUIRED") {
     return (
       <div className="mx-auto max-w-2xl px-4 py-16 text-center">
         <div className="mx-auto h-10 w-10 animate-spin rounded-full border-4 border-sx-accent border-t-transparent" />
-        <h1 className="mt-5 font-sx-sans text-xl font-semibold text-sx-text">Starting your Audit</h1>
-        <p className="mt-2 text-sm text-sx-text-muted">Your Brand Brain is saved. Processing starts automatically.</p>
-        {starting && <p className="mt-4 text-xs text-sx-text-subtle">Creating the secure research job&hellip;</p>}
+        <h1 className="mt-5 font-sx-sans text-xl font-semibold text-sx-text">Starting your Free Business Audit</h1>
+        <p className="mt-2 text-sm text-sx-text-muted">Your business details are verified. Starting research automatically…</p>
+        {starting && <p className="mt-4 text-xs text-sx-text-subtle">Initializing research job…</p>}
       </div>
     );
   }
@@ -402,27 +353,46 @@ export default function AuditHubPage() {
     return (
       <div className="mx-auto max-w-2xl px-4 py-16">
         <div className="text-center">
-          <h1 className="font-sx-sans text-xl font-semibold text-sx-text">
-            {generation ? "Creating your Audit" : "Creating your Audit"}
+          <span className="inline-block rounded-full bg-sx-accent/15 px-3 py-1 text-xs font-bold uppercase tracking-wider text-sx-accent">
+            Audit Research Active
+          </span>
+          <h1 className="mt-3 font-sx-sans text-2xl font-bold text-sx-text sm:text-3xl">
+            Your Free Business Audit is underway
           </h1>
           <p className="mt-2 text-sm text-sx-text-muted">
-            Finding your business, reading your website, and building your growth plan. You can safely leave this page.
+            StratXcel is researching your business across the public web and the channels you connected. You can safely leave this page.
           </p>
         </div>
-        <Card className="mt-8">
-          <ol className="flex flex-col gap-2 text-sm text-sx-text-muted">
-            {PROCESSING_STAGES.map((stage, index) => (
-              <li key={stage.key} className="flex items-center gap-2">
-                <span className={`h-1.5 w-1.5 rounded-full ${index <= activeIndex ? "bg-emerald-500" : "bg-sx-border-strong"}`} />
-                <span className={index === activeIndex ? "font-medium text-sx-text" : ""}>{stage.label}</span>
-              </li>
-            ))}
+        <Card className="mt-8 p-6">
+          <ol className="flex flex-col gap-3.5 text-sm text-sx-text-muted">
+            {PROCESSING_STAGES.map((stage, index) => {
+              const isDone = index < activeIndex;
+              const isCurrent = index === activeIndex;
+              return (
+                <li key={stage.key} className="flex items-center gap-3">
+                  <span
+                    className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
+                      isDone
+                        ? "bg-emerald-500/20 text-emerald-400"
+                        : isCurrent
+                        ? "bg-sx-accent text-sx-accent-on animate-pulse"
+                        : "bg-sx-surface-2 text-sx-text-subtle"
+                    }`}
+                  >
+                    {isDone ? "✓" : isCurrent ? "●" : "○"}
+                  </span>
+                  <span className={isCurrent ? "font-semibold text-sx-text" : isDone ? "text-sx-text-muted" : "text-sx-text-subtle"}>
+                    {stage.label}
+                  </span>
+                </li>
+              );
+            })}
           </ol>
         </Card>
         <p className="mt-4 text-center text-xs text-sx-text-subtle">
           {generation
             ? `Last update: ${new Date(generation.stage_updated_at).toLocaleString()}`
-            : "Your growth plan is being created."}
+            : "Your growth audit is being created."}
         </p>
       </div>
     );
@@ -448,109 +418,74 @@ export default function AuditHubPage() {
     setShareMessage(null);
     const response = await fetch("/api/platform/audit/report/share", { method: "POST" });
     const json = await response.json() as { url?: string; error?: string };
-    if (json.url) {
-      setShareUrl(json.url);
-      setShareOpen(true);
+    if (!response.ok || !json.url) {
+      setShareMessage(json.error ?? "Could not generate a share link.");
       return;
     }
-    setShareMessage(json.error ?? "Could not create a share link.");
+    setShareUrl(json.url);
+    setShareOpen(true);
   }
 
-  async function sendWhatsApp(payload: Record<string, unknown> = {}) {
-    if (waSending || waSent) return;
+  async function handleSendWhatsApp(payload: { nationalNumber: string; countryIso: string; consent: boolean }) {
     setWaSending(true);
-    setShareMessage(null);
     try {
-    const response = await fetch("/api/platform/audit/report/whatsapp", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    const json = await response.json() as {
-      status?: string;
-      message?: string;
-      destinationMasked?: string;
-      error?: string;
-    };
-    if (json.status === "NO_DESTINATION") {
-      setWaDialog("number");
-      return;
-    }
-    if (json.status === "NO_CONSENT") {
-      setWaDialog("consent");
-      if (json.destinationMasked) setWaMasked(json.destinationMasked);
-      return;
-    }
-    if (json.destinationMasked) setWaMasked(json.destinationMasked);
-    if (json.status === "SENT" || json.status === "DELIVERED") {
+      const response = await fetch("/api/platform/audit/report/whatsapp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const json = await response.json() as { error?: string; masked?: string };
+      if (!response.ok) {
+        setError(json.error ?? "Could not send report via WhatsApp.");
+        return;
+      }
       setWaSent(true);
-      setShareMessage(json.message ?? "Sent to WhatsApp");
+      if (json.masked) setWaMasked(json.masked);
       setWaDialog(null);
-      return;
-    }
-    setShareMessage(json.message ?? json.error ?? "WhatsApp delivery checked.");
+    } catch {
+      setError("Network error while sending to WhatsApp.");
     } finally {
       setWaSending(false);
     }
   }
 
   return (
-    <>
+    <div className="mx-auto w-full max-w-full sm:max-w-5xl lg:max-w-6xl xl:max-w-7xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
       <VisualAuditReport
         report={report}
-        coverage={coverageFromOrder(order, report)}
-        reviews={verifiedReviewsFromProfile(parseOnboardingState(order.deep_dive_answers)?.profile)}
-        presence={buildPresenceLinks({
-          websiteUrl: order.website_url,
-          channels: parseOnboardingState(order.deep_dive_answers)?.channels,
-          verifiedPublicTypes: Object.entries(parseOnboardingState(order.deep_dive_answers)?.profile ?? {}).flatMap(([key, item]) =>
-            item && typeof item === "object" && "sourceClass" in item && (item as { sourceClass?: string }).sourceClass === "VERIFIED_PUBLIC"
-              ? [key === "websiteUrl" ? "website" : key]
-              : [],
-          ),
-          whatsappDeliveryMasked: waMasked,
-        })}
-        onDownload={() => { window.open(`/api/platform/audit/report/pdf?order=${order.id}`, "_blank"); }}
-        onShare={() => { void openShare(); }}
-        onWhatsApp={() => { void sendWhatsApp(); }}
-        whatsAppState={shareMessage ?? undefined}
-        whatsAppMasked={waMasked}
-        whatsAppSent={waSent}
+        onDownload={() => {
+          window.open("/api/platform/audit/report/pdf", "_blank");
+        }}
+        onShare={openShare}
+        onWhatsApp={() => setWaDialog(waMasked ? "consent" : "number")}
       />
-      <AuditShareDialog open={shareOpen} url={shareUrl} onClose={() => setShareOpen(false)} />
-      <Modal open={waDialog === "number"} onClose={closeWaDialog} title="Add your WhatsApp number">
-        <AuditWhatsAppPanel
-          masked={null}
-          consent={waConsent}
-          sending={waSending}
-          sent={waSent}
-          statusMessage={shareMessage}
-          countryIso={waCountry}
-          nationalNumber={waNational}
-          draftConsent={waConsent}
-          onCountry={setWaCountry}
-          onNational={setWaNational}
-          onConsent={setWaConsent}
-          onSend={() => void sendWhatsApp({
-            destination: { countryIso: waCountry, nationalNumber: waNational },
-            consent: waConsent,
-          })}
-          onChangeDestination={() => undefined}
+
+      {shareOpen && shareUrl && (
+        <AuditShareDialog
+          url={shareUrl}
+          open={shareOpen}
+          onClose={() => setShareOpen(false)}
         />
-      </Modal>
-      <Modal open={waDialog === "consent"} onClose={closeWaDialog} title="Allow WhatsApp delivery">
-        <p className="text-sm text-sx-text-muted">
-          Send my completed Audit and Audit-related updates to {waMasked ?? "this WhatsApp number"}.
-        </p>
-        <button
-          type="button"
-          disabled={waSending}
-          className="mt-4 min-h-11 w-full rounded-sx-sm bg-sx-accent px-4 text-sm font-semibold text-sx-accent-on disabled:opacity-60"
-          onClick={() => void sendWhatsApp({ consent: true })}
-        >
-          {waSending ? "Sending your Audit…" : "Enable consent and send"}
-        </button>
-      </Modal>
-    </>
+      )}
+
+      {waDialog && (
+        <Modal open={Boolean(waDialog)} onClose={closeWaDialog} title="Send Audit Report to WhatsApp">
+          <AuditWhatsAppPanel
+            countryIso={waCountry}
+            nationalNumber={waNational}
+            consent={waConsent}
+            draftConsent={waConsent}
+            masked={waMasked}
+            sending={waSending}
+            sent={waSent}
+            onCountry={setWaCountry}
+            onNational={setWaNational}
+            onConsent={setWaConsent}
+            onSend={() => void handleSendWhatsApp({ countryIso: waCountry, nationalNumber: waNational, consent: waConsent })}
+            onChangeDestination={() => setWaDialog("number")}
+          />
+        </Modal>
+      )}
+    </div>
   );
 }

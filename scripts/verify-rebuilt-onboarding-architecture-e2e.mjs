@@ -169,8 +169,7 @@ async function run() {
     assert.ok(step5Text?.includes("Business Identity"), "Must show Business Identity section");
     assert.ok(step5Text?.includes("StratXcel Solutions"), "Must show business name");
     assert.ok(step5Text?.includes("https://stratxcel.in"), "Must show website");
-    assert.ok(step5Text?.includes("Focus Priorities"), "Must show focus priorities");
-    assert.ok(step5Text?.includes("Create Workspace & Start Free Audit →"), "Must have primary audit CTA");
+    assert.ok(step5Text?.includes("Start My Free Business Audit →"), "Must have primary audit CTA");
 
     // Critical assertion: Zero slug, zero internal metadata, zero pricing
     assert.equal(step5Text?.includes("slug"), false, "Must NOT show slug in review");

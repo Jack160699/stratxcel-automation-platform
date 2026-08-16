@@ -163,7 +163,7 @@ export function StepReview({
           disabled={submitting}
           className="w-full sm:w-auto min-h-12 px-8 text-sm font-bold shadow-md"
         >
-          {submitting ? "Creating Workspace & Starting Audit…" : "Create Workspace & Start Free Audit →"}
+          {submitting ? "Starting Your Free Audit…" : "Start My Free Business Audit →"}
         </Button>
         <p className="text-center text-xs text-sx-text-muted">
           Your information will be used to research your business and prepare your free audit.
