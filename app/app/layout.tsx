@@ -59,10 +59,9 @@ export default async function ClientLayout({ children }: { children: ReactNode }
     report && typeof report === "object" && Array.isArray((report as { opportunities?: unknown }).opportunities)
       ? (report as { opportunities: unknown[] }).opportunities.length
       : null;
-  const showPlanPrompt =
-    identity.state === "CUSTOMER_MEMBER" &&
-    !plan.activePaid &&
-    !identity.planPromptSeenTenantIds.includes(active.tenantId);
+  // Commercial recommendation is presented downstream after the audit report on VisualAuditReport.tsx
+  // and /app/billing rather than an intrusive modal popup before the user has seen their audit.
+  const showPlanPrompt = false;
 
   return (
     <CurrentTenantProvider initialTenants={tenants} initialActive={active}>

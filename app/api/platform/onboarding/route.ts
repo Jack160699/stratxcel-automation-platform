@@ -223,6 +223,60 @@ export async function POST(request: Request) {
     console.warn("onboarding: non-fatal crm lead sync trace", crmErr);
   }
 
+  // Seed free audit order for the newly created tenant
+  try {
+    const channels = [
+      ...(body.business?.googleMapsUrl ? [{ id: "google_business", type: "google_business", value: body.business.googleMapsUrl, notAvailable: false }] : []),
+      ...(body.business?.socials ? body.business.socials.filter((s) => s.confirmed !== false).map((s) => ({
+        id: s.platform,
+        type: s.platform,
+        value: s.url,
+        handle: s.handle,
+        notAvailable: false,
+      })) : []),
+    ];
+
+    const deepDiveAnswers = {
+      intakeMeta: { questionnaireVersion: "connect_discover_v1" },
+      onboardingCompleted: true,
+      v1Experience: {
+        flowVersion: "connect_discover_v1",
+        verified: true,
+        completed: true,
+        websiteUrl: body.business?.website || null,
+        profile: {
+          name: name,
+          industry: body.business?.industry || null,
+          businessModel: body.business?.businessModel || null,
+          location: body.business?.location || null,
+          googleMapsUrl: body.business?.googleMapsUrl || null,
+          description: body.brand?.description || null,
+        },
+        channels,
+        adaptiveAnswers: {
+          biggestGrowthProblem: "lead_response_and_consistency",
+          ninetyDayResult: "accelerated_customer_acquisition",
+        },
+      },
+    };
+
+    await serviceClient.from("audit_orders").insert({
+      tenant_id: tenant.id,
+      business_name: name,
+      website_url: body.business?.website ?? null,
+      industry: body.business?.industry ?? null,
+      audit_fee_cents: 0,
+      list_price_cents: 99900,
+      discount_cents: 99900,
+      status: "paid",
+      fulfilment_source: "free_audit",
+      deep_dive_answers: deepDiveAnswers,
+      goals: body.goals ?? [],
+    });
+  } catch (auditErr) {
+    console.warn("onboarding: non-fatal audit order seed trace", auditErr);
+  }
+
   let auditLogged = false;
   const auditRows: { tenant_id: string; actor_user_id: string; action: string; target_type: string; target_id: string; metadata: Record<string, unknown> }[] = [];
   if (body.goals?.length) {

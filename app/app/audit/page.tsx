@@ -62,12 +62,12 @@ function coverageFromOrder(order: AuditOrder, report: { sources?: unknown[] }): 
 }
 
 const PROCESSING_STAGES = [
-  { key: "QUEUED", label: "Information received" },
-  { key: "RESEARCH", label: "Reading your website" },
-  { key: "ANALYSIS", label: "Checking your public presence" },
-  { key: "QUALITY_GATE", label: "Building your growth plan" },
-  { key: "DELIVERY", label: "Preparing your report" },
-  { key: "COMPLETE", label: "Your growth plan is ready" },
+  { key: "QUEUED", label: "Understanding your business" },
+  { key: "RESEARCH", label: "Checking website presence" },
+  { key: "ANALYSIS", label: "Reviewing local & social visibility" },
+  { key: "QUALITY_GATE", label: "Identifying growth gaps & bottlenecks" },
+  { key: "DELIVERY", label: "Preparing 30-day recommendations" },
+  { key: "COMPLETE", label: "Your growth audit is ready" },
 ] as const;
 
 /** Payment-first Audit hub driven only by persisted order and generation state. */
@@ -202,10 +202,90 @@ export default function AuditHubPage() {
   }
 
   if (!order) {
+    const hasBrandBrain = Boolean(brandBrain && (brandBrain.business_name || brandBrain.website_url || brandBrain.google_maps_url));
+    if (hasBrandBrain) {
+      const bName = (brandBrain?.business_name as string) || "Your Business";
+      const bWebsite = (brandBrain?.website_url as string) || "Not connected";
+      const bGoogle = brandBrain?.google_maps_url ? "Connected" : "Not connected";
+      const bSocials = Array.isArray(brandBrain?.verified_social_links) && (brandBrain.verified_social_links as any[]).length > 0
+        ? (brandBrain.verified_social_links as Array<{ platform?: string; handle?: string }>)
+            .map((s) => s.platform ? s.platform.charAt(0).toUpperCase() + s.platform.slice(1) : "")
+            .filter(Boolean)
+            .join(" · ")
+        : "None connected";
+      const bIndustry = (brandBrain?.industry as string) || "General Business";
+
+      return (
+        <div className="mx-auto max-w-2xl px-4 py-12">
+          <div className="text-center">
+            <span className="inline-block rounded-full bg-sx-accent/15 px-3 py-1 text-xs font-bold uppercase tracking-wider text-sx-accent">
+              Free Growth Audit
+            </span>
+            <h1 className="mt-3 font-sx-sans text-2xl font-bold text-sx-text sm:text-3xl">
+              Your free business audit is ready to begin
+            </h1>
+            <p className="mt-2 text-sm text-sx-text-muted">
+              We already have your business details and online presence from onboarding. We&rsquo;ll now analyze them and prepare your growth report.
+            </p>
+          </div>
+
+          <div className="mt-6 rounded-sx-md border border-sx-border bg-sx-surface-1 p-5 space-y-3.5 shadow-sm">
+            <div className="flex items-center justify-between border-b border-sx-border/60 pb-3">
+              <span className="text-xs font-semibold uppercase text-sx-text-subtle">Business Identity</span>
+              <span className="font-bold text-sm text-sx-text">{bName}</span>
+            </div>
+            <div className="grid grid-cols-2 gap-3.5 text-xs">
+              <div>
+                <span className="text-sx-text-subtle block">Website</span>
+                <span className="font-mono text-sx-text font-medium break-all">{bWebsite}</span>
+              </div>
+              <div>
+                <span className="text-sx-text-subtle block">Google Business Profile</span>
+                <span className="font-medium text-sx-text">{bGoogle}</span>
+              </div>
+              <div>
+                <span className="text-sx-text-subtle block">Industry</span>
+                <span className="font-medium text-sx-text">{bIndustry}</span>
+              </div>
+              <div>
+                <span className="text-sx-text-subtle block">Social Presence</span>
+                <span className="font-medium text-sx-text">{bSocials}</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-6 flex justify-center">
+            <button
+              type="button"
+              disabled={starting}
+              onClick={() => {
+                setStarting(true);
+                void fetch("/api/platform/audit/onboarding", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ action: "start_fresh" }),
+                }).then(async (response) => {
+                  if (!response.ok) {
+                    const json = await response.json().catch(() => ({})) as { error?: string };
+                    setError(json.error ?? "Could not start your free Audit.");
+                    return;
+                  }
+                  await load();
+                }).finally(() => setStarting(false));
+              }}
+              className="inline-flex min-h-12 w-full sm:w-auto items-center justify-center rounded-sx-sm bg-sx-accent px-8 font-sx-sans text-sm font-bold text-sx-accent-on shadow-sm hover:bg-[color:var(--sx-accent-hover)] transition-colors"
+            >
+              {starting ? "Starting Your Free Audit…" : "Start Free Audit →"}
+            </button>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="mx-auto max-w-2xl px-4 py-16 text-center">
         <h1 className="font-sx-sans text-xl font-semibold text-sx-text">
-          Your Free Instant Business Audit is ready
+          Start your free business audit
         </h1>
         <p className="mt-2 text-sm text-sx-text-muted">
           Connect your business website. We will research public pages and build your growth roadmap — 100% free.
