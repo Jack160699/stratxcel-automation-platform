@@ -343,7 +343,7 @@ export function StepConnectors({
           const identifier = connection?.handle || connection?.displayName || connection?.url;
 
           const attributionText =
-            isOtpVerified || card.key === "whatsapp"
+            isOtpVerified
               ? "✓ WhatsApp number verified"
               : isOAuthConnected
               ? `✓ Connected via ${connection?.providerLabel || PROVIDER_LABELS[card.key] || "OAuth"}`
@@ -545,6 +545,13 @@ export function StepConnectors({
               </div>
             ) : (
               <div className="space-y-4">
+                <div className="rounded-sx-sm bg-emerald-500/10 border border-emerald-500/20 p-2.5 text-xs text-emerald-300">
+                  <p className="font-semibold">WhatsApp code sent to {whatsappPhone}</p>
+                  <p className="text-[11px] text-emerald-400/80 mt-0.5">
+                    Tap <strong>Copy Code</strong> in your WhatsApp message, then paste the 6-digit code below.
+                  </p>
+                </div>
+
                 <FormField label="Enter 6-Digit Code" htmlFor="whatsapp-otp-input">
                   <Input
                     id="whatsapp-otp-input"
@@ -553,7 +560,7 @@ export function StepConnectors({
                     placeholder="123456"
                     autoFocus
                     maxLength={6}
-                    className="h-12 text-center text-lg font-mono tracking-widest"
+                    className="h-12 text-center text-lg font-mono tracking-widest font-bold"
                   />
                 </FormField>
 
@@ -564,11 +571,15 @@ export function StepConnectors({
                     disabled={cooldownSeconds > 0 || otpLoading}
                     className="text-sx-accent hover:underline disabled:opacity-50 disabled:no-underline"
                   >
-                    {cooldownSeconds > 0 ? `Resend in ${cooldownSeconds}s` : "Resend OTP"}
+                    {cooldownSeconds > 0 ? `Resend code in ${cooldownSeconds}s` : "Resend code"}
                   </button>
                   <button
                     type="button"
-                    onClick={() => setOtpSent(false)}
+                    onClick={() => {
+                      setOtpSent(false);
+                      setWhatsappOtp("");
+                      setOtpError(null);
+                    }}
                     className="text-sx-text-subtle hover:text-sx-text-muted"
                   >
                     Change Number
@@ -591,7 +602,7 @@ export function StepConnectors({
                     onClick={handleVerifyWhatsappOtp}
                     disabled={otpLoading || whatsappOtp.length < 6}
                   >
-                    {otpLoading ? "Verifying…" : "Verify OTP"}
+                    {otpLoading ? "Verifying…" : "Verify & Connect"}
                   </Button>
                 </div>
               </div>

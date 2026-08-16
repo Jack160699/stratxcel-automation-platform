@@ -138,6 +138,11 @@ function run() {
     stepReview.includes("V1_CONNECTORS.includes"),
     "StepReview must filter verified channels with V1_CONNECTORS"
   );
+  assert.equal(
+    stepConnectors.includes('isOtpVerified || card.key === "whatsapp"'),
+    false,
+    "StepConnectors must never unconditionally display 'WhatsApp number verified' for unverified WhatsApp card"
+  );
 
   // =========================================================================
   // 5. Backend & Provider Infrastructure Preservation

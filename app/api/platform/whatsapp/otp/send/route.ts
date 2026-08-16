@@ -16,9 +16,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 
-  const body = (await req.json().catch(() => ({}))) as { phone?: string };
-  const rawPhone = (body.phone ?? "").trim();
+  const body = (await req.json().catch(() => ({}))) as {
+    phone?: string;
+    purpose?: string;
+    tenantId?: string;
+  };
 
+  const rawPhone = (body.phone ?? "").trim();
   if (!rawPhone) {
     return NextResponse.json({ error: "Phone number is required." }, { status: 400 });
   }
@@ -31,8 +35,9 @@ export async function POST(req: NextRequest) {
 
   const result = await sendWhatsAppOtp(service, {
     phone: rawPhone,
-    purpose: "onboarding_verification",
+    purpose: body.purpose || "phone_verification",
     userId: user.id,
+    tenantId: body.tenantId || null,
     ipAddress,
   });
 

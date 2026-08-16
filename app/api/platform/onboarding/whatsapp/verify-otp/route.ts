@@ -1,38 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
-import crypto from "node:crypto";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createSupabaseServiceClient } from "@/lib/supabase/service";
+import { verifyWhatsAppOtp, normalizePhoneNumberE164, verifyOtpHash } from "@stratxcel/whatsapp";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-function getSecret(): string {
-  return (
-    process.env.WHATSAPP_OTP_SECRET ||
-    process.env.SOCIAL_OAUTH_STATE_SECRET ||
-    process.env.SUPABASE_SERVICE_ROLE_KEY ||
-    "stratxcel-default-whatsapp-otp-secret-salt-2026"
-  );
-}
-
-function hashOtp(phone: string, otp: string): string {
-  return crypto
-    .createHmac("sha256", getSecret())
-    .update(`${phone}:${otp}`)
-    .digest("hex");
-}
-
-function normalizePhone(input: string): string {
-  let cleaned = input.trim().replace(/[^\d+]/g, "");
-  if (!cleaned.startsWith("+")) {
-    if (cleaned.length === 10) {
-      cleaned = `+91${cleaned}`;
-    } else {
-      cleaned = `+${cleaned}`;
-    }
-  }
-  return cleaned;
-}
 
 export async function POST(req: NextRequest) {
   const supabase = await createSupabaseServerClient();
@@ -52,76 +24,89 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Phone number and 6-digit OTP are required." }, { status: 400 });
   }
 
-  const phone = normalizePhone(rawPhone);
+  const normalizedPhone = normalizePhoneNumberE164(rawPhone);
+  if (!normalizedPhone) {
+    return NextResponse.json({ error: "Invalid phone number format." }, { status: 400 });
+  }
+
   const service = createSupabaseServiceClient();
+
+  // 1. Try verification via the database-backed OTP service
+  let result = await verifyWhatsAppOtp(service, {
+    phone: normalizedPhone,
+    otp: rawOtp,
+    purpose: "onboarding_verification",
+  });
+
+  // 2. If not found in DB table (e.g. migration pending or user metadata fallback), check user_metadata
+  if (!result.ok && result.errorCode === "NOT_FOUND") {
+    const { data: userData } = await service.auth.admin.getUserById(user.id);
+    const existingMeta = (userData?.user?.user_metadata ?? {}) as Record<string, unknown>;
+    const otpState = existingMeta.onboarding_whatsapp_otp_state as
+      | { phone: string; hash: string; attemptsLeft: number; expiresAt: number }
+      | undefined;
+
+    if (otpState && otpState.phone === normalizedPhone) {
+      if (Date.now() > otpState.expiresAt) {
+        return NextResponse.json({ error: "This OTP has expired. Please request a new OTP." }, { status: 400 });
+      }
+
+      if (otpState.attemptsLeft <= 0) {
+        return NextResponse.json({ error: "Too many incorrect attempts. Please request a new OTP." }, { status: 429 });
+      }
+
+      const isMatch = verifyOtpHash(normalizedPhone, rawOtp, otpState.hash);
+      if (!isMatch) {
+        const nextAttempts = otpState.attemptsLeft - 1;
+        await service.auth.admin.updateUserById(user.id, {
+          user_metadata: {
+            ...existingMeta,
+            onboarding_whatsapp_otp_state: {
+              ...otpState,
+              attemptsLeft: nextAttempts,
+            },
+          },
+        });
+
+        if (nextAttempts <= 0) {
+          return NextResponse.json(
+            { error: "Incorrect OTP. Maximum attempts exceeded. Please request a new OTP." },
+            { status: 400 }
+          );
+        }
+
+        return NextResponse.json(
+          { error: `Incorrect OTP. ${nextAttempts} attempt${nextAttempts === 1 ? "" : "s"} remaining.` },
+          { status: 400 }
+        );
+      }
+
+      // Metadata match succeeded!
+      result = { ok: true, phone: normalizedPhone };
+    }
+  }
+
+  if (!result.ok) {
+    return NextResponse.json(
+      {
+        error: result.error || "Invalid OTP code.",
+        errorCode: result.errorCode,
+        attemptsLeft: result.attemptsLeft,
+      },
+      { status: result.status || 400 }
+    );
+  }
+
+  // 3. Mark user metadata with verified connection and invalidate active OTP
   const { data: userData } = await service.auth.admin.getUserById(user.id);
   const existingMeta = (userData?.user?.user_metadata ?? {}) as Record<string, unknown>;
-  const otpState = existingMeta.onboarding_whatsapp_otp_state as
-    | { phone: string; hash: string; attemptsLeft: number; expiresAt: number }
-    | undefined;
-
-  if (!otpState || otpState.phone !== phone) {
-    return NextResponse.json(
-      { error: "No OTP was requested for this phone number. Please request a new OTP." },
-      { status: 400 }
-    );
-  }
-
-  if (Date.now() > otpState.expiresAt) {
-    return NextResponse.json(
-      { error: "This OTP has expired. Please request a new OTP." },
-      { status: 400 }
-    );
-  }
-
-  if (otpState.attemptsLeft <= 0) {
-    return NextResponse.json(
-      { error: "Too many incorrect attempts. Please request a new OTP." },
-      { status: 429 }
-    );
-  }
-
-  const candidateHash = hashOtp(phone, rawOtp);
-  const expectedHashBuf = Buffer.from(otpState.hash);
-  const candidateHashBuf = Buffer.from(candidateHash);
-
-  const isMatch =
-    expectedHashBuf.length === candidateHashBuf.length &&
-    crypto.timingSafeEqual(expectedHashBuf, candidateHashBuf);
-
-  if (!isMatch) {
-    const nextAttempts = otpState.attemptsLeft - 1;
-    await service.auth.admin.updateUserById(user.id, {
-      user_metadata: {
-        ...existingMeta,
-        onboarding_whatsapp_otp_state: {
-          ...otpState,
-          attemptsLeft: nextAttempts,
-        },
-      },
-    });
-
-    if (nextAttempts <= 0) {
-      return NextResponse.json(
-        { error: "Incorrect OTP. Maximum attempts exceeded. Please request a new OTP." },
-        { status: 400 }
-      );
-    }
-
-    return NextResponse.json(
-      { error: `Incorrect OTP. ${nextAttempts} attempt${nextAttempts === 1 ? "" : "s"} remaining.` },
-      { status: 400 }
-    );
-  }
-
-  // OTP verified successfully!
-  // Invalidate OTP state immediately to prevent replay
   const existingConnections = (existingMeta.onboarding_oauth_connections ?? {}) as Record<string, unknown>;
+
   const verifiedPayload = {
     provider: "whatsapp",
-    providerAccountId: phone,
-    username: phone,
-    displayName: phone,
+    providerAccountId: normalizedPhone,
+    username: normalizedPhone,
+    displayName: normalizedPhone,
     status: "connected",
     connectionType: "otp_verified",
     providerLabel: "WhatsApp Verified",
@@ -133,7 +118,7 @@ export async function POST(req: NextRequest) {
       ...existingMeta,
       onboarding_whatsapp_otp_state: null, // Invalidate OTP
       onboarding_whatsapp_verification: {
-        phone,
+        phone: normalizedPhone,
         verifiedAt: new Date().toISOString(),
       },
       onboarding_oauth_connections: {
@@ -145,7 +130,7 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({
     ok: true,
-    verifiedNumber: phone,
+    verifiedNumber: normalizedPhone,
     connection: verifiedPayload,
   });
 }

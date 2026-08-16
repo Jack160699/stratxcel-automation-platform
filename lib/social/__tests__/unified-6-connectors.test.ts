@@ -78,11 +78,13 @@ function run() {
   assert.ok(x.includes("x.com/i/oauth2/authorize"), "X provider must remain preserved for future V2");
   assert.ok(providersIndex.includes("V1_CUSTOMER_PROVIDERS"), "Provider registry must declare V1_CUSTOMER_PROVIDERS");
 
+  const otpService = read("packages", "whatsapp", "src", "otp.ts");
+
   // --- 7. WhatsApp Number OTP Security Requirements --------------------------
-  assert.ok(sendOtpRoute.includes("crypto.randomInt"), "send-otp must generate cryptographically random OTP");
-  assert.ok(sendOtpRoute.includes("createHmac"), "send-otp must hash OTP with HMAC-SHA256");
-  assert.ok(sendOtpRoute.includes("RESEND_COOLDOWN_MS"), "send-otp must enforce resend cooldown");
-  assert.ok(verifyOtpRoute.includes("timingSafeEqual"), "verify-otp must use timingSafeEqual for hash comparison");
+  assert.ok(otpService.includes("crypto.randomInt"), "send-otp must generate cryptographically random OTP");
+  assert.ok(otpService.includes("createHmac"), "send-otp must hash OTP with HMAC-SHA256");
+  assert.ok(otpService.includes("RESEND_COOLDOWN_MS"), "send-otp must enforce resend cooldown");
+  assert.ok(otpService.includes("timingSafeEqual"), "verify-otp must use timingSafeEqual for hash comparison");
   assert.ok(verifyOtpRoute.includes("onboarding_whatsapp_otp_state: null"), "verify-otp must invalidate OTP after success to prevent replay");
 
   console.log(

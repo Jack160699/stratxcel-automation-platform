@@ -21,3 +21,4 @@ export * from "./embedded-signup/state.ts";
 export * from "./legacy-bridge/index.ts";
 export * from "./outbound.ts";
 export * from "./platform-sender.ts";
+export * from "./otp.ts";

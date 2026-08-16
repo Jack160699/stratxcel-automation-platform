@@ -66,13 +66,30 @@ export default function IntegrationsPage() {
   const [requestSubmitting, setRequestSubmitting] = useState(false);
   const [requestFeedback, setRequestFeedback] = useState<string | null>(null);
 
+  // WhatsApp Verification Modal State
+  const [whatsappModalOpen, setWhatsappModalOpen] = useState(false);
+  const [whatsappPhone, setWhatsappPhone] = useState("");
+  const [whatsappOtp, setWhatsappOtp] = useState("");
+  const [otpSent, setOtpSent] = useState(false);
+  const [otpLoading, setOtpLoading] = useState(false);
+  const [otpError, setOtpError] = useState<string | null>(null);
+  const [cooldownSeconds, setCooldownSeconds] = useState(0);
+  const [whatsappSuccessMsg, setWhatsappSuccessMsg] = useState<string | null>(null);
+
+  // Countdown timer for OTP resend cooldown
   useEffect(() => {
+    if (cooldownSeconds <= 0) return;
+    const timer = setInterval(() => {
+      setCooldownSeconds((s) => Math.max(0, s - 1));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [cooldownSeconds]);
+
+  function reloadStatus() {
     if (!tenantId) return;
-    let cancelled = false;
     fetch(`/api/platform/integrations/status?tenantId=${encodeURIComponent(tenantId)}`)
       .then(async (response) => {
         const body = await response.json();
-        if (cancelled) return;
         if (!response.ok) {
           setError(body.error ?? "Could not load connection status.");
           return;
@@ -80,16 +97,15 @@ export default function IntegrationsPage() {
         setError(null);
         setStatus(body as CustomerIntegrationStatus);
       })
-      .catch(() => {
-        if (!cancelled) setError("Could not load connection status.");
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [tenantId]);
+      .catch(() => setError("Could not load connection status."));
+  }
+
+  useEffect(() => {
+    if (!tenantId) return;
+    reloadStatus();
+  }, [tenantId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const presenceFor = (key: PlatformIconKey) => status?.presence?.find((entry) => entry.key === key);
-  const website = presenceFor("website");
 
   const cards: Array<{
     key: PlatformIconKey;
@@ -143,6 +159,57 @@ export default function IntegrationsPage() {
     },
   ];
 
+  async function handleSendWhatsappOtp() {
+    setOtpError(null);
+    setOtpLoading(true);
+    try {
+      const res = await fetch("/api/platform/onboarding/whatsapp/send-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone: whatsappPhone }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setOtpError(data.error || "Failed to send OTP. Please check the phone number.");
+        return;
+      }
+      setOtpSent(true);
+      setCooldownSeconds(data.cooldownSeconds || 60);
+    } catch {
+      setOtpError("Network error sending OTP. Please try again.");
+    } finally {
+      setOtpLoading(false);
+    }
+  }
+
+  async function handleVerifyWhatsappOtp() {
+    setOtpError(null);
+    setOtpLoading(true);
+    try {
+      const res = await fetch("/api/platform/onboarding/whatsapp/verify-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone: whatsappPhone, otp: whatsappOtp }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setOtpError(data.error || "Invalid OTP code. Please retry.");
+        return;
+      }
+      const verified = data.verifiedNumber || whatsappPhone;
+      setWhatsappModalOpen(false);
+      setOtpSent(false);
+      setWhatsappOtp("");
+      setWhatsappSuccessMsg(`✓ WhatsApp number ${verified} verified successfully!`);
+      reloadStatus();
+      setTimeout(() => setWhatsappSuccessMsg(null), 5000);
+    } catch {
+      setOtpError("Network error verifying OTP. Please try again.");
+    } finally {
+      setOtpLoading(false);
+    }
+  }
+
   async function submitAccessRequest() {
     if (!requestModalProvider || !tenantId) return;
     setRequestSubmitting(true);
@@ -182,30 +249,30 @@ export default function IntegrationsPage() {
         description="Real connection status and verified business destinations. One-tap connect begins the real provider authorization."
       />
 
+      {whatsappSuccessMsg && (
+        <div className="rounded-sx-sm border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm font-medium text-emerald-300 flex items-center justify-between">
+          <span>{whatsappSuccessMsg}</span>
+          <button
+            type="button"
+            onClick={() => setWhatsappSuccessMsg(null)}
+            className="text-emerald-400 hover:text-emerald-200"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {error && (
         <ErrorState
           message={error}
-          onRetry={() => {
-            if (!tenantId) return;
-            setError(null);
-            fetch(`/api/platform/integrations/status?tenantId=${encodeURIComponent(tenantId)}`)
-              .then(async (response) => {
-                const body = await response.json();
-                if (!response.ok) {
-                  setError(body.error ?? "Could not load connection status.");
-                  return;
-                }
-                setStatus(body as CustomerIntegrationStatus);
-              })
-              .catch(() => setError("Could not load connection status."));
-          }}
+          onRetry={reloadStatus}
         />
       )}
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {cards.map((card) => {
           const presence = presenceFor(card.key);
-          const canConnect = card.isOAuth ? Boolean(status?.selfService?.social) : false;
+          const canConnect = card.isOAuth ? Boolean(status?.selfService?.social) : true;
           const isDiscovered = Boolean(presence?.href && card.state !== "connected");
           const connectHref = tenantId && card.isOAuth
             ? `/api/social/oauth/${card.key}/connect?redirectTo=${encodeURIComponent("/app/integrations")}&tenantId=${encodeURIComponent(tenantId)}`
@@ -292,6 +359,38 @@ export default function IntegrationsPage() {
                   )}
                 </div>
               )}
+
+              {!card.isOAuth && card.key === "whatsapp" && (
+                <div className="mt-5 pt-3 border-t border-sx-border/40 flex items-center justify-between gap-3">
+                  {card.state === "connected" ? (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => {
+                        setWhatsappModalOpen(true);
+                        setOtpSent(false);
+                        setWhatsappOtp("");
+                        setOtpError(null);
+                      }}
+                    >
+                      Update Number
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      onClick={() => {
+                        setWhatsappModalOpen(true);
+                        setOtpSent(false);
+                        setWhatsappOtp("");
+                        setOtpError(null);
+                      }}
+                    >
+                      Verify Number
+                    </Button>
+                  )}
+                </div>
+              )}
             </Card>
           );
         })}
@@ -311,6 +410,148 @@ export default function IntegrationsPage() {
           </p>
           <GoogleSearchIntegrationPanel tenantId={tenantId} />
         </Card>
+      )}
+
+      {/* WhatsApp OTP Modal */}
+      {whatsappModalOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="whatsapp-dialog-title"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-xs"
+        >
+          <div className="w-full max-w-md rounded-sx-lg border border-sx-border bg-sx-surface-1 p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <PlatformIcon name="whatsapp" className="h-5 w-5" />
+                <h4 id="whatsapp-dialog-title" className="font-sx-sans text-base font-bold text-sx-text">
+                  Verify WhatsApp Number
+                </h4>
+              </div>
+              <button
+                type="button"
+                onClick={() => setWhatsappModalOpen(false)}
+                className="text-sx-text-muted hover:text-sx-text text-sm"
+              >
+                ✕
+              </button>
+            </div>
+
+            <p className="text-xs text-sx-text-muted">
+              We&rsquo;ll send a 6-digit verification code directly to your WhatsApp to verify your account.
+            </p>
+
+            {otpError && (
+              <div className="rounded-sx-sm border border-rose-400/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">
+                {otpError}
+              </div>
+            )}
+
+            {!otpSent ? (
+              <div className="space-y-4">
+                <div>
+                  <label htmlFor="integrations-whatsapp-phone" className="block text-xs font-medium text-sx-text mb-1">
+                    WhatsApp Phone Number
+                  </label>
+                  <input
+                    id="integrations-whatsapp-phone"
+                    value={whatsappPhone}
+                    onChange={(e) => setWhatsappPhone(e.target.value)}
+                    placeholder="+91 98765 43210"
+                    autoFocus
+                    className="w-full rounded-sx-sm border border-sx-border bg-sx-surface-2 p-2.5 text-sm font-mono text-sx-text placeholder:text-sx-text-subtle focus:border-sx-accent focus:outline-none"
+                  />
+                </div>
+
+                <div className="flex items-center justify-end gap-2.5 pt-2">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setWhatsappModalOpen(false)}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="primary"
+                    size="sm"
+                    onClick={handleSendWhatsappOtp}
+                    disabled={otpLoading || !whatsappPhone.trim()}
+                  >
+                    {otpLoading ? "Sending OTP…" : "Send OTP on WhatsApp"}
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="rounded-sx-sm bg-emerald-500/10 border border-emerald-500/20 p-2.5 text-xs text-emerald-300">
+                  <p className="font-semibold">WhatsApp code sent to {whatsappPhone}</p>
+                  <p className="text-[11px] text-emerald-400/80 mt-0.5">
+                    Tap <strong>Copy Code</strong> in your WhatsApp message, then paste the 6-digit code below.
+                  </p>
+                </div>
+
+                <div>
+                  <label htmlFor="integrations-whatsapp-otp" className="block text-xs font-medium text-sx-text mb-1">
+                    Enter 6-Digit Code
+                  </label>
+                  <input
+                    id="integrations-whatsapp-otp"
+                    value={whatsappOtp}
+                    onChange={(e) => setWhatsappOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                    placeholder="123456"
+                    autoFocus
+                    maxLength={6}
+                    className="w-full rounded-sx-sm border border-sx-border bg-sx-surface-2 p-3 text-center text-lg font-mono font-bold tracking-widest text-sx-text placeholder:text-sx-text-subtle focus:border-sx-accent focus:outline-none"
+                  />
+                </div>
+
+                <div className="flex items-center justify-between text-xs">
+                  <button
+                    type="button"
+                    onClick={handleSendWhatsappOtp}
+                    disabled={cooldownSeconds > 0 || otpLoading}
+                    className="text-sx-accent hover:underline disabled:opacity-50 disabled:no-underline"
+                  >
+                    {cooldownSeconds > 0 ? `Resend code in ${cooldownSeconds}s` : "Resend code"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOtpSent(false);
+                      setWhatsappOtp("");
+                      setOtpError(null);
+                    }}
+                    className="text-sx-text-subtle hover:text-sx-text-muted"
+                  >
+                    Change Number
+                  </button>
+                </div>
+
+                <div className="flex items-center justify-end gap-2.5 pt-2">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setWhatsappModalOpen(false)}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="primary"
+                    size="sm"
+                    onClick={handleVerifyWhatsappOtp}
+                    disabled={otpLoading || whatsappOtp.length < 6}
+                  >
+                    {otpLoading ? "Verifying…" : "Verify & Connect"}
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
       )}
 
       {/* Request Access Dialog */}
