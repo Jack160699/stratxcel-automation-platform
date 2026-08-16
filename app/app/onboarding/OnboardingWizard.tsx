@@ -18,12 +18,21 @@ import {
   slugify,
   type OnboardingDraft,
   type SocialConnection,
+  type SocialPlatformKey,
 } from "./types";
 import { trackFunnel } from "@/lib/analytics/events";
 import { normalizeWebsiteUrl } from "@/lib/identity/smart-url";
 import { validateAndNormalizeGoogleMapsInput } from "@/lib/identity/google-maps-normalizer";
 
 const TOTAL_STEPS = ONBOARDING_STEP_LABELS.length;
+
+const PROVIDER_LABELS: Record<string, string> = {
+  instagram: "Meta",
+  facebook: "Meta",
+  threads: "Meta",
+  linkedin: "LinkedIn",
+  youtube: "Google",
+};
 
 function loadDraft(): { step: number; draft: OnboardingDraft } {
   if (typeof window === "undefined") return { step: 1, draft: EMPTY_DRAFT };
@@ -65,6 +74,49 @@ function mergeDraft(value: Partial<OnboardingDraft> | undefined): OnboardingDraf
   };
 }
 
+function mergeOAuthConnectionsIntoDraft(
+  draft: OnboardingDraft,
+  oauthConnections: Record<string, any>
+): OnboardingDraft {
+  if (!oauthConnections || Object.keys(oauthConnections).length === 0) return draft;
+
+  const currentConnections = [...(draft.account?.connections || EMPTY_DRAFT.account.connections)];
+  for (const [platform, data] of Object.entries(oauthConnections)) {
+    const idx = currentConnections.findIndex((c) => c.platform === platform);
+    const conn: SocialConnection = {
+      platform: platform as SocialPlatformKey,
+      handle: data.username || undefined,
+      displayName: data.displayName || data.username || platform,
+      status: "connected",
+      connectionType: "oauth",
+      providerAccountId: data.providerAccountId,
+      providerDisplayName: data.displayName || undefined,
+      providerLabel: data.providerLabel || PROVIDER_LABELS[platform] || "OAuth",
+      connectedAt: data.connectedAt || new Date().toISOString(),
+    };
+    if (idx >= 0) {
+      currentConnections[idx] = conn;
+    } else {
+      currentConnections.push(conn);
+    }
+  }
+
+  const confirmedSocials = currentConnections
+    .filter((c) => c.status === "connected")
+    .map((c) => ({
+      platform: c.platform,
+      url: c.url || `https://${c.platform}.com/${c.handle?.replace(/^@/, "")}`,
+      handle: c.handle || c.displayName || "",
+      confirmed: c.connectionType === "oauth",
+    }));
+
+  return {
+    ...draft,
+    account: { ...draft.account, connections: currentConnections },
+    business: { ...draft.business, socials: confirmedSocials },
+  };
+}
+
 export function OnboardingWizard() {
   const router = useRouter();
   const initial = useRef(loadDraft());
@@ -84,14 +136,66 @@ export function OnboardingWizard() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isSynthesizing, setIsSynthesizing] = useState(false);
 
-  // If user returned from OAuth callback, stay on or jump to Step 2 (Connectors)
+  // Handle popup window communication or URL query parameters
   useEffect(() => {
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
-    if (params.get("connected") || params.get("connect_error")) {
+    const oauthStatus = params.get("oauth");
+    const provider = params.get("provider") || params.get("connected");
+
+    // If running in a popup OAuth window, notify opener and close
+    if (window.opener && window.opener !== window) {
+      if (oauthStatus === "success" || params.get("connected")) {
+        try {
+          window.opener.postMessage({ type: "STRATXCEL_OAUTH_SUCCESS", provider }, window.location.origin);
+          window.close();
+          return;
+        } catch {
+          // Fallback to in-page rendering
+        }
+      }
+    }
+
+    if (params.get("connected") || params.get("connect_error") || oauthStatus) {
       setStep(2);
     }
   }, []);
+
+  // Listen for popup OAuth messages in main tab
+  useEffect(() => {
+    function handleMessage(e: MessageEvent) {
+      if (e.origin === window.location.origin && e.data?.type === "STRATXCEL_OAUTH_SUCCESS") {
+        void rehydrateFromServer();
+      }
+    }
+    window.addEventListener("message", handleMessage);
+    return () => window.removeEventListener("message", handleMessage);
+  }, []);
+
+  async function rehydrateFromServer() {
+    try {
+      const res = await fetch("/api/platform/onboarding", { cache: "no-store" });
+      if (res.ok) {
+        const body = (await res.json()) as {
+          saved?: { step?: number; draft?: Partial<OnboardingDraft> } | null;
+          oauthConnections?: Record<string, any>;
+        };
+
+        setDraft((prevDraft) => {
+          let merged = body.saved?.draft ? mergeDraft(body.saved.draft) : prevDraft;
+          if (body.oauthConnections) {
+            merged = mergeOAuthConnectionsIntoDraft(merged, body.oauthConnections);
+          }
+          if (typeof window !== "undefined") {
+            window.sessionStorage.setItem(ONBOARDING_DRAFT_KEY, JSON.stringify({ step: 2, draft: merged }));
+          }
+          return merged;
+        });
+      }
+    } catch {
+      // Non-blocking trace
+    }
+  }
 
   useEffect(() => {
     const clientDraft = loadDraft();
@@ -111,10 +215,22 @@ export function OnboardingWizard() {
         if (cancelled) return;
         if (user) {
           if (draftResponse && draftResponse.ok) {
-            const body = (await draftResponse.json()) as { saved?: { step?: number; draft?: Partial<OnboardingDraft> } | null };
-            if (body.saved?.draft) {
-              setStep(Math.min(Math.max(body.saved.step ?? 1, 1), TOTAL_STEPS));
-              setDraft(mergeDraft(body.saved.draft));
+            const body = (await draftResponse.json()) as {
+              saved?: { step?: number; draft?: Partial<OnboardingDraft> } | null;
+              oauthConnections?: Record<string, any>;
+            };
+            if (body.saved?.draft || body.oauthConnections) {
+              const baseDraft = body.saved?.draft ? mergeDraft(body.saved.draft) : clientDraft.draft;
+              const merged = body.oauthConnections
+                ? mergeOAuthConnectionsIntoDraft(baseDraft, body.oauthConnections)
+                : baseDraft;
+
+              const urlParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
+              const hasOAuthReturn = urlParams?.get("connected") || urlParams?.get("oauth");
+              const nextStep = hasOAuthReturn ? 2 : Math.min(Math.max(body.saved?.step ?? 1, 1), TOTAL_STEPS);
+
+              setStep(nextStep);
+              setDraft(merged);
             }
           }
           setAccount({
@@ -289,7 +405,6 @@ export function OnboardingWizard() {
   function handleContinue() {
     if (!validateCurrentStep()) return;
 
-    // When advancing from Step 1 (Account), trigger background intelligence synthesis
     if (step === 1) {
       let normalizedWebsite = draft.business.website.trim();
       if (normalizedWebsite) {
@@ -312,7 +427,6 @@ export function OnboardingWizard() {
         }
       }
 
-      // Fire intelligence synthesis in background for Step 3 and Brand Brain
       void triggerDiscoverySynthesis(normalizedWebsite, normalizedGbp);
     }
 
@@ -332,7 +446,6 @@ export function OnboardingWizard() {
 
     const generatedSlug = slugify(draft.business.name) || "workspace";
 
-    // Format confirmed social channels from account connections
     const confirmedSocials = (draft.account?.connections || [])
       .filter((c) => c.status === "connected")
       .map((c) => ({
@@ -407,7 +520,6 @@ export function OnboardingWizard() {
 
       {/* Progress Indicator */}
       <div className="w-full">
-        {/* Mobile-first compact step header */}
         <div className="flex items-center justify-between text-xs font-semibold text-sx-text-muted mb-2">
           <span className="uppercase tracking-wider text-sx-accent">
             Step {step} of {TOTAL_STEPS} · {currentStepName}
@@ -417,7 +529,6 @@ export function OnboardingWizard() {
           </span>
         </div>
 
-        {/* Sleek Progress Bar */}
         <div className="h-1.5 w-full overflow-hidden rounded-full bg-sx-surface-2">
           <div
             className="h-full bg-sx-accent transition-all duration-300 ease-out"
@@ -425,7 +536,6 @@ export function OnboardingWizard() {
           />
         </div>
 
-        {/* Step dots for quick visual orientation */}
         <div className="flex justify-between items-center mt-2 px-1">
           {ONBOARDING_STEP_LABELS.map((label, idx) => {
             const stepNum = idx + 1;

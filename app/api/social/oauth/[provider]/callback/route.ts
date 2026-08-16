@@ -7,13 +7,22 @@ import { createSupabaseServiceClient } from "@/lib/supabase/service";
 import { upsertConnectedAccount, type Platform } from "@/lib/social/repositories/accounts";
 import { recordAudit } from "@/lib/social/repositories/system";
 
+const PROVIDER_LABELS: Record<string, string> = {
+  instagram: "Meta",
+  facebook: "Meta",
+  threads: "Meta",
+  linkedin: "LinkedIn",
+  youtube: "Google",
+};
+
 /**
  * GET /api/social/oauth/:provider/callback
  *
  * Canonical OAuth callback for all social connectors (Admin + Onboarding).
  *
  * Validates the signed state token, exchanges code for token, and:
- * - Onboarding (redirectTo=/app): records verified connection proof in user metadata (pre-tenant).
+ * - Onboarding (redirectTo=/app): records verified connection proof in user metadata (pre-tenant)
+ *   and redirects with explicit status: /app?oauth=success&provider=:provider&connected=:provider
  * - Admin (/admin/social): enforces requireAdmin(), upserts encrypted tokens to social_accounts table.
  */
 export async function GET(
@@ -26,27 +35,39 @@ export async function GET(
   const code = req.nextUrl.searchParams.get("code");
   const state = req.nextUrl.searchParams.get("state");
   const oauthError = req.nextUrl.searchParams.get("error");
+  const errorReason = req.nextUrl.searchParams.get("error_reason") || req.nextUrl.searchParams.get("error_description");
 
   // Determine fallback fail destination from state if available
   let fallbackRedirect = "/admin/social";
+  let isOnboarding = false;
   if (state) {
     const v = verifySignedState(state);
     if (v.valid && v.payload.redirectTo?.startsWith("/app")) {
       fallbackRedirect = "/app";
+      isOnboarding = true;
     }
   }
 
-  const failRedirect = (reason: string) =>
-    NextResponse.redirect(`${origin}${fallbackRedirect}?connect_error=${encodeURIComponent(reason)}`);
+  const failRedirect = (status: "error" | "denied" | "cancelled", reason: string) => {
+    const target = new URL(fallbackRedirect, origin);
+    target.searchParams.set("oauth", status);
+    target.searchParams.set("provider", provider);
+    target.searchParams.set("connect_error", reason);
+    return NextResponse.redirect(target.toString());
+  };
 
-  if (oauthError) return failRedirect(`provider_error:${oauthError}`);
-  if (!code || !state) return failRedirect("missing_code_or_state");
+  if (oauthError) {
+    const isDenied = oauthError === "access_denied" || errorReason?.includes("denied") || errorReason?.includes("cancelled");
+    return failRedirect(isDenied ? "denied" : "error", oauthError);
+  }
 
-  if (!isValidProvider(provider)) return failRedirect("unknown_provider");
+  if (!code || !state) return failRedirect("error", "missing_code_or_state");
+
+  if (!isValidProvider(provider)) return failRedirect("error", "unknown_provider");
 
   const verified = verifySignedState(state);
-  if (!verified.valid) return failRedirect(`bad_state:${verified.reason}`);
-  if (verified.payload.provider !== provider) return failRedirect("provider_mismatch");
+  if (!verified.valid) return failRedirect("error", `bad_state:${verified.reason}`);
+  if (verified.payload.provider !== provider) return failRedirect("error", "provider_mismatch");
 
   const service = createSupabaseServiceClient();
 
@@ -57,9 +78,9 @@ export async function GET(
     .eq("state_hash", verified.hash)
     .maybeSingle();
 
-  if (!stateRow) return failRedirect("state_not_found");
-  if (stateRow.consumed_at) return failRedirect("state_already_used");
-  if (new Date(stateRow.expires_at).getTime() < Date.now()) return failRedirect("state_expired");
+  if (!stateRow) return failRedirect("error", "state_not_found");
+  if (stateRow.consumed_at) return failRedirect("error", "state_already_used");
+  if (new Date(stateRow.expires_at).getTime() < Date.now()) return failRedirect("error", "state_expired");
 
   // Consume immediately to prevent replay, before doing the token exchange.
   await service
@@ -75,7 +96,7 @@ export async function GET(
   try {
     const result = await getProvider(provider).exchangeCodeForToken(code, redirectUri);
     const redirectTo = verified.payload.redirectTo || "/admin/social";
-    const isOnboarding = redirectTo.startsWith("/app");
+    isOnboarding = redirectTo.startsWith("/app");
 
     if (isOnboarding) {
       // Pre-tenant onboarding connection proof saved to user metadata
@@ -90,19 +111,28 @@ export async function GET(
         const existingMeta = (userData?.user?.user_metadata ?? {}) as Record<string, unknown>;
         const existingConnections = (existingMeta.onboarding_oauth_connections ?? {}) as Record<string, unknown>;
 
+        const username = result.username || result.displayName || result.externalAccountId;
+        const normalizedHandle = username.startsWith("@") ? username : `@${username}`;
+
+        const connectionPayload = {
+          provider,
+          providerAccountId: result.externalAccountId,
+          username: normalizedHandle,
+          displayName: result.displayName || result.username || provider,
+          avatarUrl: result.profilePictureUrl || null,
+          scopes: result.scopes,
+          status: "connected",
+          authorized: true,
+          providerLabel: PROVIDER_LABELS[provider] || "OAuth",
+          connectedAt: new Date().toISOString(),
+        };
+
         await service.auth.admin.updateUserById(userId, {
           user_metadata: {
             ...existingMeta,
             onboarding_oauth_connections: {
               ...existingConnections,
-              [provider]: {
-                providerAccountId: result.externalAccountId,
-                username: result.username ?? result.displayName ?? result.externalAccountId,
-                displayName: result.displayName ?? null,
-                avatarUrl: result.profilePictureUrl ?? null,
-                scopes: result.scopes,
-                connectedAt: new Date().toISOString(),
-              },
+              [provider]: connectionPayload,
             },
           },
         });
@@ -117,12 +147,18 @@ export async function GET(
         meta: { provider_account_id: result.externalAccountId },
       });
 
-      return NextResponse.redirect(`${origin}${redirectTo}?connected=${provider}`);
+      // Build target redirect with both explicit status params and backward-compatible ?connected= param
+      const successUrl = new URL(redirectTo, origin);
+      successUrl.searchParams.set("oauth", "success");
+      successUrl.searchParams.set("provider", provider);
+      successUrl.searchParams.set("connected", provider);
+
+      return NextResponse.redirect(successUrl.toString());
     }
 
     // Admin flow
     const admin = await requireAdmin();
-    if (!admin.ok) return failRedirect("not_authorized");
+    if (!admin.ok) return failRedirect("error", "not_authorized");
 
     await upsertConnectedAccount(service, {
       ownerId: admin.userId,
@@ -146,7 +182,12 @@ export async function GET(
       meta: { provider_account_id: result.externalAccountId },
     });
 
-    return NextResponse.redirect(`${origin}${redirectTo}?connected=${provider}`);
+    const adminTarget = new URL(redirectTo, origin);
+    adminTarget.searchParams.set("oauth", "success");
+    adminTarget.searchParams.set("provider", provider);
+    adminTarget.searchParams.set("connected", provider);
+
+    return NextResponse.redirect(adminTarget.toString());
   } catch (err) {
     const message = err instanceof Error ? err.message : "unknown_error";
     console.error(`${provider} OAuth callback failed:`, message);
@@ -155,7 +196,7 @@ export async function GET(
       action: "account.connect_failed",
       summary: `${provider} connect failed: ${message}`,
     });
-    return failRedirect("token_exchange_failed");
+    return failRedirect("error", "token_exchange_failed");
   }
 }
 

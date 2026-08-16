@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { FormField } from "../FormField";
@@ -41,113 +40,70 @@ export function StepConnectors({
   connections: SocialConnection[];
   onConnectionsChange: (next: SocialConnection[]) => void;
 }) {
-  // Public profile manual input state
   const [publicProfilePlatform, setPublicProfilePlatform] = useState<SocialPlatformKey | null>(null);
   const [publicProfileInput, setPublicProfileInput] = useState("");
   const [publicProfileError, setPublicProfileError] = useState<string | null>(null);
 
-  // OAuth error from URL params
-  const [oauthError, setOauthError] = useState<string | null>(null);
+  const [notification, setNotification] = useState<{ type: "success" | "error" | "info"; message: string } | null>(null);
 
-  // On mount, check URL params for OAuth callback results
+  // Rehydrate fresh OAuth connections from server on mount and check query params
   useEffect(() => {
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
 
-    const connectedProvider = params.get("connected");
+    const oauthStatus = params.get("oauth");
+    const provider = params.get("provider") || params.get("connected");
     const connectError = params.get("connect_error");
 
-    if (connectError) {
-      setOauthError(`Connection failed: ${connectError}`);
-      const url = new URL(window.location.href);
-      url.searchParams.delete("connect_error");
-      window.history.replaceState({}, "", url.toString());
+    if (oauthStatus === "success" || params.get("connected")) {
+      const pName = provider ? provider.charAt(0).toUpperCase() + provider.slice(1) : "Account";
+      setNotification({ type: "success", message: `✓ ${pName} connected successfully via OAuth!` });
+    } else if (oauthStatus === "denied") {
+      setNotification({ type: "info", message: "Connection request was cancelled. You can connect anytime later." });
+    } else if (oauthStatus === "error" || connectError) {
+      setNotification({ type: "error", message: `Connection failed: ${connectError || "Authorization could not be completed"}` });
     }
 
-    if (connectedProvider) {
-      void loadOAuthConnection(connectedProvider as SocialPlatformKey);
+    if (oauthStatus || connectError || params.get("connected")) {
       const url = new URL(window.location.href);
+      url.searchParams.delete("oauth");
+      url.searchParams.delete("provider");
       url.searchParams.delete("connected");
-      window.history.replaceState({}, "", url.toString());
+      url.searchParams.delete("connect_error");
+      window.history.replaceState({}, "", url.pathname);
     }
+
+    void loadFreshServerOAuthConnections();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  async function loadOAuthConnection(platform: SocialPlatformKey) {
+  async function loadFreshServerOAuthConnections() {
     try {
-      const supabase = createSupabaseBrowserClient();
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      const oauthConnections = (user.user_metadata?.onboarding_oauth_connections ?? {}) as Record<string, {
-        providerAccountId?: string;
-        username?: string;
-        displayName?: string;
-        connectedAt?: string;
-      }>;
-
-      const providerData = oauthConnections[platform];
-      if (!providerData) return;
-
-      const nextConnections = connections.filter((c) => c.platform !== platform);
-      nextConnections.push({
-        platform,
-        handle: providerData.username ? (providerData.username.startsWith("@") ? providerData.username : `@${providerData.username}`) : undefined,
-        displayName: providerData.displayName || providerData.username || platform,
-        status: "connected",
-        connectionType: "oauth",
-        providerAccountId: providerData.providerAccountId,
-        providerDisplayName: providerData.displayName || undefined,
-        providerLabel: PROVIDER_LABELS[platform],
-        connectedAt: providerData.connectedAt || new Date().toISOString(),
-      });
-      onConnectionsChange(nextConnections);
-    } catch {
-      // Non-blocking trace
-    }
-  }
-
-  // Load any existing OAuth connections from user metadata on mount
-  useEffect(() => {
-    void loadExistingOAuthConnections();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  async function loadExistingOAuthConnections() {
-    try {
-      const supabase = createSupabaseBrowserClient();
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      const oauthConnections = (user.user_metadata?.onboarding_oauth_connections ?? {}) as Record<string, {
-        providerAccountId?: string;
-        username?: string;
-        displayName?: string;
-        connectedAt?: string;
-      }>;
+      const res = await fetch("/api/platform/onboarding", { cache: "no-store" });
+      if (!res.ok) return;
+      const body = (await res.json()) as { oauthConnections?: Record<string, any> };
+      const oauthConnections = body.oauthConnections ?? {};
 
       if (Object.keys(oauthConnections).length === 0) return;
 
       const updated = [...connections];
       for (const [platform, data] of Object.entries(oauthConnections)) {
         const key = platform as SocialPlatformKey;
-        const existing = updated.find((c) => c.platform === key);
-        if (!existing || existing.status !== "connected") {
-          const idx = updated.findIndex((c) => c.platform === key);
-          const conn: SocialConnection = {
-            platform: key,
-            handle: data.username ? (data.username.startsWith("@") ? data.username : `@${data.username}`) : undefined,
-            displayName: data.displayName || data.username || platform,
-            status: "connected",
-            connectionType: "oauth",
-            providerAccountId: data.providerAccountId,
-            providerDisplayName: data.displayName || undefined,
-            providerLabel: PROVIDER_LABELS[key],
-            connectedAt: data.connectedAt || new Date().toISOString(),
-          };
-          if (idx >= 0) {
-            updated[idx] = conn;
-          } else {
-            updated.push(conn);
-          }
+        const idx = updated.findIndex((c) => c.platform === key);
+        const conn: SocialConnection = {
+          platform: key,
+          handle: data.username ? (data.username.startsWith("@") ? data.username : `@${data.username}`) : undefined,
+          displayName: data.displayName || data.username || platform,
+          status: "connected",
+          connectionType: "oauth",
+          providerAccountId: data.providerAccountId,
+          providerDisplayName: data.displayName || undefined,
+          providerLabel: data.providerLabel || PROVIDER_LABELS[key] || "OAuth",
+          connectedAt: data.connectedAt || new Date().toISOString(),
+        };
+        if (idx >= 0) {
+          updated[idx] = conn;
+        } else {
+          updated.push(conn);
         }
       }
 
@@ -158,7 +114,7 @@ export function StepConnectors({
   }
 
   function startOAuth(platform: SocialPlatformKey) {
-    // Redirect to canonical OAuth authorization route with onboarding return target
+    // Navigate directly to canonical OAuth authorization route
     window.location.href = `/api/social/oauth/${platform}/connect?redirectTo=/app`;
   }
 
@@ -210,10 +166,24 @@ export function StepConnectors({
         </p>
       </div>
 
-      {oauthError && (
-        <div className="rounded-sx-sm border border-rose-400/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">
-          {oauthError}
-          <button type="button" onClick={() => setOauthError(null)} className="ml-2 font-bold hover:text-rose-200">✕</button>
+      {notification && (
+        <div
+          className={`flex items-center justify-between rounded-sx-sm px-3.5 py-2.5 text-xs font-medium ${
+            notification.type === "success"
+              ? "border border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
+              : notification.type === "error"
+              ? "border border-rose-400/30 bg-rose-500/10 text-rose-300"
+              : "border border-amber-500/30 bg-amber-500/10 text-amber-300"
+          }`}
+        >
+          <span>{notification.message}</span>
+          <button
+            type="button"
+            onClick={() => setNotification(null)}
+            className="ml-3 font-bold opacity-70 hover:opacity-100"
+          >
+            ✕
+          </button>
         </div>
       )}
 
@@ -267,7 +237,7 @@ export function StepConnectors({
                       onClick={() => handleDisconnect(card.key)}
                       className="px-2 py-1 text-[11px] font-medium rounded-sx-sm text-sx-text-muted hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
                     >
-                      Remove
+                      Disconnect
                     </button>
                   ) : card.oauthAvailable ? (
                     <Button
@@ -297,10 +267,10 @@ export function StepConnectors({
                 </div>
               </div>
 
-              {/* OAuth attribution label */}
-              {isOAuthConnected && connection?.providerLabel && (
-                <p className="text-[10px] text-emerald-400/70 font-medium pl-10">
-                  Connected via {connection.providerLabel}
+              {/* OAuth attribution badge */}
+              {isOAuthConnected && (
+                <p className="text-[10px] text-emerald-400/80 font-medium pl-10">
+                  ✓ Connected via {connection?.providerLabel || "OAuth"}
                 </p>
               )}
 

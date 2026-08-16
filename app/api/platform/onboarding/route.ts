@@ -45,12 +45,30 @@ function text(value: unknown, max = 500): string {
 
 function sanitizeDraft(value: unknown) {
   const source = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+  const account = source.account && typeof source.account === "object" ? (source.account as Record<string, unknown>) : {};
   const business = source.business && typeof source.business === "object" ? (source.business as Record<string, unknown>) : {};
   const brand = source.brand && typeof source.brand === "object" ? (source.brand as Record<string, unknown>) : {};
   const plan = source.plan && typeof source.plan === "object" ? (source.plan as Record<string, unknown>) : {};
+  const rawConnections = Array.isArray(account.connections) ? account.connections : [];
   const rawSocials = Array.isArray(business.socials) ? business.socials : [];
 
   return {
+    account: {
+      connections: rawConnections
+        .filter((c) => c && typeof c === "object")
+        .map((c) => ({
+          platform: text((c as any).platform, 40),
+          handle: text((c as any).handle, 120),
+          url: text((c as any).url, 500),
+          displayName: text((c as any).displayName, 120),
+          status: text((c as any).status, 40) || "not_connected",
+          connectionType: text((c as any).connectionType, 40),
+          providerAccountId: text((c as any).providerAccountId, 120),
+          providerDisplayName: text((c as any).providerDisplayName, 120),
+          providerLabel: text((c as any).providerLabel, 60),
+          connectedAt: text((c as any).connectedAt, 60),
+        })),
+    },
     business: {
       name: text(business.name, 120),
       slug: text(business.slug, 80),
@@ -90,12 +108,39 @@ async function authenticatedUser() {
   return { supabase, user };
 }
 
-/** Cross-device draft recovery without a new table or service-role write. */
+/** Cross-device draft recovery with verified OAuth connection rehydration. */
 export async function GET() {
   const { user } = await authenticatedUser();
   if (!user) return Response.json({ error: "Not authenticated" }, { status: 401 });
   const saved = user.user_metadata?.[ONBOARDING_METADATA_KEY] ?? null;
-  return Response.json({ saved }, { headers: { "Cache-Control": "no-store" } });
+  const oauthConnections = (user.user_metadata?.onboarding_oauth_connections ?? {}) as Record<string, any>;
+
+  // If saved draft exists, merge verified OAuth connections into draft account connections
+  if (saved?.draft && Object.keys(oauthConnections).length > 0) {
+    const existingConns = Array.isArray(saved.draft.account?.connections) ? [...saved.draft.account.connections] : [];
+    for (const [platform, data] of Object.entries(oauthConnections)) {
+      const idx = existingConns.findIndex((c) => c.platform === platform);
+      const conn = {
+        platform,
+        handle: data.username || undefined,
+        displayName: data.displayName || data.username || platform,
+        status: "connected",
+        connectionType: "oauth",
+        providerAccountId: data.providerAccountId,
+        providerDisplayName: data.displayName || undefined,
+        providerLabel: data.providerLabel || "OAuth",
+        connectedAt: data.connectedAt || new Date().toISOString(),
+      };
+      if (idx >= 0) {
+        existingConns[idx] = conn;
+      } else {
+        existingConns.push(conn);
+      }
+    }
+    saved.draft.account = { ...saved.draft.account, connections: existingConns };
+  }
+
+  return Response.json({ saved, oauthConnections }, { headers: { "Cache-Control": "no-store" } });
 }
 
 /** Saves only bounded, non-secret setup fields in the authenticated user's metadata. */
