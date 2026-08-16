@@ -215,7 +215,9 @@ export async function sendMetaAuthenticationOtp({
 
   const endpoint = `https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`;
 
-  // Canonical Meta Authentication Copy Code Template payload
+  // Canonical Meta Authentication Template payload
+  // For AUTHENTICATION category with Copy Code, Meta requires only the single body variable.
+  // The Copy Code button natively copies the body OTP code without separate button parameters.
   const payload = {
     messaging_product: "whatsapp",
     recipient_type: "individual",
@@ -234,23 +236,12 @@ export async function sendMetaAuthenticationOtp({
             },
           ],
         },
-        {
-          type: "button",
-          sub_type: "copy_code",
-          index: 0,
-          parameters: [
-            {
-              type: "coupon_code",
-              coupon_code: otpCode,
-            },
-          ],
-        },
       ],
     },
   };
 
   // Safe sanitized outgoing payload trace (NO tokens, NO plaintext OTP in logs)
-  console.log(`[Meta WhatsApp OTP Request] [${correlationId}] POST ${endpoint} -> To: ${maskedTo}, Template: ${META_AUTHENTICATION_TEMPLATE_NAME} (${META_AUTHENTICATION_TEMPLATE_LANG}), Button: copy_code (index 0)`);
+  console.log(`[Meta WhatsApp OTP Request] [${correlationId}] POST ${endpoint} -> To: ${maskedTo}, Template: ${META_AUTHENTICATION_TEMPLATE_NAME} (${META_AUTHENTICATION_TEMPLATE_LANG}), Components: body (1 param)`);
 
   try {
     const res = await fetch(endpoint, {
