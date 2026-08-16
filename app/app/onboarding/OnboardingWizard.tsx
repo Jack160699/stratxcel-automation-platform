@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
-import { WorkflowRail, type RailStage } from "@/components/ui/WorkflowRail";
 import { Button } from "@/components/ui/Button";
 import { ErrorState } from "@/components/ui/Feedback";
 import { setActiveTenantAction } from "../tenant-actions";
@@ -12,7 +11,14 @@ import { StepBusiness } from "./steps/StepBusiness";
 import { StepGoals } from "./steps/StepGoals";
 import { StepBrand } from "./steps/StepBrand";
 import { StepReview } from "./steps/StepReview";
-import { EMPTY_DRAFT, ONBOARDING_DRAFT_KEY, ONBOARDING_STEP_LABELS, type OnboardingDraft } from "./types";
+import {
+  EMPTY_DRAFT,
+  ONBOARDING_DRAFT_KEY,
+  ONBOARDING_STEP_LABELS,
+  slugify,
+  type OnboardingDraft,
+  type SocialConnection,
+} from "./types";
 import { trackFunnel } from "@/lib/analytics/events";
 
 const TOTAL_STEPS = ONBOARDING_STEP_LABELS.length;
@@ -24,7 +30,18 @@ function loadDraft(): { step: number; draft: OnboardingDraft } {
     if (!raw) return { step: 1, draft: EMPTY_DRAFT };
     const parsed = JSON.parse(raw) as { step: number; draft: OnboardingDraft };
     if (!parsed?.draft) return { step: 1, draft: EMPTY_DRAFT };
-    return { step: Math.min(Math.max(parsed.step ?? 1, 1), TOTAL_STEPS), draft: { ...EMPTY_DRAFT, ...parsed.draft } };
+    return {
+      step: Math.min(Math.max(parsed.step ?? 1, 1), TOTAL_STEPS),
+      draft: {
+        ...EMPTY_DRAFT,
+        ...parsed.draft,
+        account: {
+          ...EMPTY_DRAFT.account,
+          ...parsed.draft.account,
+          connections: parsed.draft.account?.connections || EMPTY_DRAFT.account.connections,
+        },
+      },
+    };
   } catch {
     return { step: 1, draft: EMPTY_DRAFT };
   }
@@ -34,6 +51,11 @@ function mergeDraft(value: Partial<OnboardingDraft> | undefined): OnboardingDraf
   return {
     ...EMPTY_DRAFT,
     ...value,
+    account: {
+      ...EMPTY_DRAFT.account,
+      ...value?.account,
+      connections: value?.account?.connections || EMPTY_DRAFT.account.connections,
+    },
     business: { ...EMPTY_DRAFT.business, ...value?.business },
     brand: { ...EMPTY_DRAFT.brand, ...value?.brand },
     plan: { ...EMPTY_DRAFT.plan, ...value?.plan },
@@ -41,29 +63,27 @@ function mergeDraft(value: Partial<OnboardingDraft> | undefined): OnboardingDraf
   };
 }
 
-/**
- * Six-stage onboarding wizard — one URL, step tracked in local state per
- * docs/product-design/AUTH_AND_ONBOARDING_FLOW.md §3. Non-secret draft fields
- * are saved through the authenticated onboarding API, with sessionStorage as
- * an immediate same-tab fallback. The final step creates the workspace.
- */
 export function OnboardingWizard() {
   const router = useRouter();
   const initial = useRef(loadDraft());
   const [step, setStep] = useState(initial.current.step);
   const [draft, setDraft] = useState<OnboardingDraft>(initial.current.draft);
-  const [account, setAccount] = useState<AccountInfo>({ displayName: "StratXcel Account", email: "hello@stratxcel.com", emailVerified: true });
+  const [account, setAccount] = useState<AccountInfo>({
+    displayName: "StratXcel Account",
+    email: "hello@stratxcel.com",
+    emailVerified: true,
+  });
   const [accountLoading, setAccountLoading] = useState(true);
   const [draftHydrated, setDraftHydrated] = useState(false);
   const [draftSaveError, setDraftSaveError] = useState<string | null>(null);
   const [stepError, setStepError] = useState<string | null>(null);
-  const [businessErrors, setBusinessErrors] = useState<{ name?: string; slug?: string }>({});
+  const [businessErrors, setBusinessErrors] = useState<{ name?: string }>({});
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   useEffect(() => {
     const clientDraft = loadDraft();
-    if (clientDraft.step > 1 || clientDraft.draft.business.name || (clientDraft.draft.business.socials && clientDraft.draft.business.socials.length > 0)) {
+    if (clientDraft.step > 1 || clientDraft.draft.business.name) {
       setStep(clientDraft.step);
       setDraft(clientDraft.draft);
     }
@@ -128,8 +148,7 @@ export function OnboardingWizard() {
     setDraft((d) => {
       const nextBusiness = {
         ...d.business,
-        name: d.business.name && d.business.slugTouched ? d.business.name : (intel.business?.name || d.business.name),
-        slug: d.business.slug && d.business.slugTouched ? d.business.slug : (intel.business?.slug || d.business.slug),
+        name: d.business.name || intel.business?.name || d.business.name,
         industry: d.business.industry || intel.business?.industry || d.business.industry,
         businessModel: intel.business?.businessModel || d.business.businessModel,
         location: d.business.location || intel.business?.location || d.business.location,
@@ -137,8 +156,6 @@ export function OnboardingWizard() {
         services: intel.business?.services?.length ? intel.business.services : d.business.services,
         primaryOffer: intel.business?.primaryOffer || d.business.primaryOffer,
         stage: intel.business?.stage || d.business.stage,
-        socials: intel.business?.socials?.length ? intel.business.socials : d.business.socials,
-        intelligenceProvenance: intel.provenance || d.business.intelligenceProvenance,
       };
 
       const nextBrand = {
@@ -164,12 +181,32 @@ export function OnboardingWizard() {
     });
   }
 
+  function updateConnections(connections: SocialConnection[]) {
+    setDraft((d) => ({
+      ...d,
+      account: { ...d.account, connections },
+      business: {
+        ...d.business,
+        socials: connections
+          .filter((c) => c.status === "connected")
+          .map((c) => ({
+            platform: c.platform,
+            url: c.url || `https://${c.platform}.com/${c.handle?.replace(/^@/, "")}`,
+            handle: c.handle || c.displayName || "",
+            confirmed: true,
+          })),
+      },
+    }));
+  }
+
   function updateBusiness(patch: Partial<OnboardingDraft["business"]>) {
     setDraft((d) => ({ ...d, business: { ...d.business, ...patch } }));
   }
+
   function updateBrand(patch: Partial<OnboardingDraft["brand"]>) {
     setDraft((d) => ({ ...d, brand: { ...d.brand, ...patch } }));
   }
+
   function toggleGoal(key: string) {
     setDraft((d) => ({
       ...d,
@@ -187,12 +224,8 @@ export function OnboardingWizard() {
       }
     }
     if (step === 2) {
-      const errs: { name?: string; slug?: string } = {};
-      if (!draft.business.name.trim()) errs.name = "Business name is required.";
-      if (!draft.business.slug.trim()) errs.slug = "Workspace slug is required.";
-      else if (!/^[a-z0-9-]+$/.test(draft.business.slug)) errs.slug = "Slug must be lowercase letters, numbers, and hyphens only.";
-      if (Object.keys(errs).length) {
-        setBusinessErrors(errs);
+      if (!draft.business.name.trim()) {
+        setBusinessErrors({ name: "Business name is required." });
         return false;
       }
     }
@@ -215,6 +248,18 @@ export function OnboardingWizard() {
     setSubmitting(true);
     setSubmitError(null);
 
+    const generatedSlug = slugify(draft.business.name) || "workspace";
+
+    // Format confirmed social channels from account connections
+    const confirmedSocials = (draft.account?.connections || [])
+      .filter((c) => c.status === "connected")
+      .map((c) => ({
+        platform: c.platform,
+        url: c.url || `https://${c.platform}.com/${c.handle?.replace(/^@/, "")}`,
+        handle: c.handle || c.displayName || "",
+        confirmed: true,
+      }));
+
     try {
       const res = await fetch("/api/platform/onboarding", {
         method: "POST",
@@ -222,13 +267,13 @@ export function OnboardingWizard() {
         body: JSON.stringify({
           business: {
             name: draft.business.name.trim(),
-            slug: draft.business.slug.trim(),
+            slug: generatedSlug,
             industry: draft.business.industry.trim() || undefined,
             website: draft.business.website?.trim() || undefined,
             googleMapsUrl: draft.business.googleMapsUrl?.trim() || undefined,
             location: draft.business.location?.trim() || undefined,
             businessModel: draft.business.businessModel?.trim() || undefined,
-            socials: draft.business.socials?.filter((s) => s.confirmed !== false),
+            socials: confirmedSocials,
           },
           brand: {
             businessName: draft.brand.businessName.trim() || undefined,
@@ -245,12 +290,6 @@ export function OnboardingWizard() {
       const body = await res.json();
 
       if (!res.ok) {
-        if (res.status === 409) {
-          setStep(2);
-          setBusinessErrors({ slug: body.error ?? "That slug is already taken." });
-          setSubmitError(null);
-          return;
-        }
         if (res.status === 401) {
           setSubmitError("Your session expired — sign in again to continue.");
           return;
@@ -260,9 +299,7 @@ export function OnboardingWizard() {
       }
 
       const tenant = body.tenant as { id: string };
-      trackFunnel("business_profile_completed", {
-        surface: "onboarding",
-      });
+      trackFunnel("business_profile_completed", { surface: "onboarding" });
       await setActiveTenantAction(tenant.id);
       if (typeof window !== "undefined") window.sessionStorage.removeItem(ONBOARDING_DRAFT_KEY);
       router.push("/app/audit");
@@ -274,46 +311,87 @@ export function OnboardingWizard() {
     }
   }
 
-  const stages: RailStage[] = ONBOARDING_STEP_LABELS.map((label, i) => ({
-    label,
-    status: i + 1 < step ? "done" : i + 1 === step ? "active" : "future",
-  }));
+  const currentStepName = ONBOARDING_STEP_LABELS[step - 1];
 
   return (
-    <div className="mx-auto flex min-h-screen w-full max-w-full sm:max-w-2xl md:max-w-4xl lg:max-w-5xl xl:max-w-6xl 2xl:max-w-7xl flex-col gap-6 px-4 py-8 sm:px-6 lg:px-8 pb-[max(2rem,env(safe-area-inset-bottom))]">
+    <div className="mx-auto flex min-h-screen w-full max-w-full sm:max-w-2xl lg:max-w-3xl flex-col gap-6 px-4 py-8 sm:px-6 pb-[max(2rem,env(safe-area-inset-bottom))]">
+      {/* Header */}
       <div className="text-center">
-        <h1 className="font-sx-sans text-xl sm:text-2xl font-semibold text-sx-text">Welcome to Stratxcel</h1>
-        <p className="mt-2 font-sx-sans text-sm text-sx-text-muted">Let&rsquo;s set up your workspace.</p>
+        <h1 className="font-sx-sans text-xl sm:text-2xl font-bold text-sx-text">Welcome to StratXcel</h1>
+        <p className="mt-1 font-sx-sans text-xs sm:text-sm text-sx-text-muted">Set up your business workspace and start your free audit.</p>
       </div>
 
+      {/* Progress Indicator */}
       <div className="w-full">
-        <WorkflowRail stages={stages} />
-        <p className="sr-only" role="status">
-          Step {step} of {TOTAL_STEPS}: {ONBOARDING_STEP_LABELS[step - 1]}
-        </p>
+        {/* Mobile-first compact step header */}
+        <div className="flex items-center justify-between text-xs font-semibold text-sx-text-muted mb-2">
+          <span className="uppercase tracking-wider text-sx-accent">
+            Step {step} of {TOTAL_STEPS} · {currentStepName}
+          </span>
+          <span className="text-sx-text-subtle font-mono text-[11px]">
+            {Math.round((step / TOTAL_STEPS) * 100)}%
+          </span>
+        </div>
+
+        {/* Sleek Progress Bar */}
+        <div className="h-1.5 w-full overflow-hidden rounded-full bg-sx-surface-2">
+          <div
+            className="h-full bg-sx-accent transition-all duration-300 ease-out"
+            style={{ width: `${(step / TOTAL_STEPS) * 100}%` }}
+          />
+        </div>
+
+        {/* Step dots for quick visual orientation */}
+        <div className="flex justify-between items-center mt-2 px-1">
+          {ONBOARDING_STEP_LABELS.map((label, idx) => {
+            const stepNum = idx + 1;
+            const isDone = stepNum < step;
+            const isCurrent = stepNum === step;
+            return (
+              <span
+                key={label}
+                className={`text-[10px] font-medium transition-colors ${
+                  isCurrent ? "text-sx-text font-bold" : isDone ? "text-emerald-400" : "text-sx-text-subtle"
+                }`}
+              >
+                {label}
+              </span>
+            );
+          })}
+        </div>
+
         <p className="mt-2 text-center text-xs text-sx-text-subtle" role="status">
-          {draftSaveError ?? (draftHydrated ? "Progress saves to your account." : "Loading saved progress…")}
+          {draftSaveError ?? (draftHydrated ? "Progress saves to your account automatically." : "Loading saved progress…")}
         </p>
       </div>
 
+      {/* Main Wizard Form Card */}
       <form
         onSubmit={(e) => {
           e.preventDefault();
           if (step < TOTAL_STEPS) handleContinue();
         }}
-        className="flex flex-col gap-6 rounded-sx-md border border-sx-border bg-sx-surface-1 p-5 sm:p-7 lg:p-8 w-full shadow-sm"
+        className="flex flex-col gap-6 rounded-sx-lg border border-sx-border bg-sx-surface-1 p-5 sm:p-7 shadow-sm w-full"
       >
-        <h2 className="font-sx-sans text-[15px] font-semibold text-sx-text">{ONBOARDING_STEP_LABELS[step - 1]}</h2>
-
         <div aria-live="polite">
           {stepError && <ErrorState message={stepError} />}
         </div>
 
         {accountLoading && step === 1 ? (
-          <p className="font-sx-sans text-sm text-sx-text-subtle">Loading your account…</p>
+          <div className="py-12 text-center">
+            <div className="mx-auto h-8 w-8 animate-spin rounded-full border-3 border-sx-accent border-t-transparent" />
+            <p className="mt-3 font-sx-sans text-xs text-sx-text-subtle">Loading your account…</p>
+          </div>
         ) : (
           <>
-            {step === 1 && <StepAccount account={account} onAccountChange={setAccount} />}
+            {step === 1 && (
+              <StepAccount
+                account={account}
+                connections={draft.account?.connections || []}
+                onAccountChange={setAccount}
+                onConnectionsChange={updateConnections}
+              />
+            )}
             {step === 2 && (
               <StepBusiness
                 draft={draft}
@@ -325,25 +403,46 @@ export function OnboardingWizard() {
             {step === 3 && <StepGoals draft={draft} selected={draft.goals} onToggle={toggleGoal} />}
             {step === 4 && <StepBrand draft={draft} update={updateBrand} />}
             {step === 5 && (
-              <StepReview account={account} draft={draft} submitting={submitting} error={submitError} onSubmit={handleCreateWorkspace} />
+              <StepReview
+                account={account}
+                draft={draft}
+                submitting={submitting}
+                error={submitError}
+                onSubmit={handleCreateWorkspace}
+              />
             )}
           </>
         )}
 
+        {/* Action Buttons */}
         {step < TOTAL_STEPS && (
-          <div className="flex items-center justify-between gap-3">
-            <Button type="button" variant="ghost" size="touch" onClick={handleBack} disabled={step === 1}>
+          <div className="flex items-center justify-between gap-3 pt-4 border-t border-sx-border/60">
+            <Button
+              type="button"
+              variant="ghost"
+              size="touch"
+              onClick={handleBack}
+              disabled={step === 1}
+              className="text-xs font-semibold"
+            >
               Back
             </Button>
-            <Button type="submit" variant="primary" size="touch">
-              Continue
+            <Button type="submit" variant="primary" size="touch" className="min-w-28 text-xs font-bold shadow-xs">
+              Continue →
             </Button>
           </div>
         )}
         {step === TOTAL_STEPS && (
-          <div className="flex items-center justify-start">
-            <Button type="button" variant="ghost" size="touch" onClick={handleBack} disabled={submitting}>
-              Back
+          <div className="flex items-center justify-start pt-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="touch"
+              onClick={handleBack}
+              disabled={submitting}
+              className="text-xs font-semibold"
+            >
+              ← Back to Edit
             </Button>
           </div>
         )}

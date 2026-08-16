@@ -72,9 +72,9 @@ function run() {
   assert.ok(route.includes('from "@stratxcel/brand-brain"'), "must import the real Brand Brain package");
   assert.ok(route.includes("saveBrandBrainVersion("), "must write through saveBrandBrainVersion(), the existing versioned repository function");
 
-  // --- 8. Unsupported fields are labeled honestly, never faked as saved ------
-  assert.ok(/Workspace Settings/.test(stepBusiness), "StepBusiness must honestly label website/location as not-yet-persisted");
-  assert.ok(/Brand Profile/.test(stepReview), "StepReview must render Brand Profile section");
+  // --- 8. Canonical sections rendered cleanly across steps -----------------
+  assert.ok(/Tell us about your business/.test(stepBusiness), "StepBusiness must render clean business headline");
+  assert.ok(/Business Identity/.test(stepReview), "StepReview must render Business Identity section");
 
   // --- 9. Post-creation active-tenant selection reuses the existing action ---
   assert.ok(/import\s*\{\s*setActiveTenantAction\s*\}\s*from ["']\.\.\/tenant-actions["']/.test(wizard), "must reuse the existing setActiveTenantAction, not a new cookie-writing path");

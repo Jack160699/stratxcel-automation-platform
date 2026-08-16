@@ -1,3 +1,14 @@
+export type SocialPlatformKey = "instagram" | "facebook" | "whatsapp" | "linkedin" | "youtube" | "threads" | "x";
+
+export interface SocialConnection {
+  platform: SocialPlatformKey;
+  handle?: string;
+  url?: string;
+  displayName?: string;
+  status: "not_connected" | "connecting" | "connected" | "needs_attention";
+  connectedAt?: string;
+}
+
 export interface DiscoveredSocialDraft {
   platform: string;
   url: string;
@@ -6,10 +17,13 @@ export interface DiscoveredSocialDraft {
 }
 
 export interface OnboardingDraft {
+  account: {
+    connections: SocialConnection[];
+  };
   business: {
     name: string;
-    slug: string;
-    slugTouched: boolean;
+    slug?: string;
+    slugTouched?: boolean;
     industry: string;
     businessModel?: string;
     website: string;
@@ -50,13 +64,25 @@ export const ONBOARDING_DRAFT_KEY = "stratxcel_onboarding_draft_v1";
 
 export const ONBOARDING_STEP_LABELS = ["Account", "Business", "Goals", "Brand", "Review"] as const;
 
+export const INITIAL_SOCIAL_CONNECTORS: SocialConnection[] = [
+  { platform: "instagram", status: "not_connected" },
+  { platform: "facebook", status: "not_connected" },
+  { platform: "whatsapp", status: "not_connected" },
+  { platform: "linkedin", status: "not_connected" },
+  { platform: "youtube", status: "not_connected" },
+  { platform: "threads", status: "not_connected" },
+];
+
 export const EMPTY_DRAFT: OnboardingDraft = {
+  account: {
+    connections: INITIAL_SOCIAL_CONNECTORS,
+  },
   business: {
     name: "",
     slug: "",
     slugTouched: false,
     industry: "",
-    businessModel: "",
+    businessModel: "B2B",
     website: "",
     googleMapsUrl: "",
     location: "",
@@ -91,22 +117,8 @@ export interface PlanTier {
   pitch: string;
 }
 
-/**
- * Mirrors app/pricing/page.tsx's customer-facing plans — one public
- * taxonomy, not two. The earlier Signal/Mesh/Fleet names were internal-era
- * terminology that had drifted out of the pricing page; they appeared
- * nowhere a customer could reconcile them against a price.
- *
- * `key` is only ever written to an audit_events metadata blob
- * (onboarding.plan_requested), never to a schema column, so changing these
- * strings cannot break existing data.
- */
-export const PLAN_TIERS: PlanTier[] = [
-  { key: "audit", name: "Instant Audit", pitch: "Start with a free evidence-backed Instant Business Audit." },
-  { key: "free", name: "Free", pitch: "Explore the workspace and prepare your growth system." },
-  { key: "starter", name: "Starter", pitch: "A complete entry system for one small or local business." },
-  { key: "growth", name: "Growth", pitch: "The serious SMB plan for recurring execution and follow-up." },
-  { key: "business", name: "Business", pitch: "Advanced Search, CRM, publishing, ads support, and priority execution." },
-  { key: "scale", name: "Scale / Custom", pitch: "Tailored scope with a dedicated account owner." },
-  { key: "unsure", name: "Not sure yet", pitch: "Talk to the team before choosing a plan." },
+export const PLAN_TIERS: readonly PlanTier[] = [
+  { key: "starter", name: "Starter", pitch: "Live verified website, WhatsApp receptionist, and essential brand foundation." },
+  { key: "growth", name: "Growth", pitch: "Daily Social Autopilot, instant WhatsApp qualification, and active lead management." },
+  { key: "business", name: "Business", pitch: "Multi-channel advertising, full CRM automations, and priority execution support." },
 ];

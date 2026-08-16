@@ -5,12 +5,6 @@ import { Input, Textarea } from "@/components/ui/Input";
 import { FormField } from "../FormField";
 import type { OnboardingDraft } from "../types";
 
-/**
- * StepBrand: Seeds Brand Brain with evidence-based intelligence and pre-filled fields.
- *
- * Pre-populates Brand Name, Description, Target Audience, Tone of Voice,
- * Primary Offers, and Restrictions from synthesized business intelligence.
- */
 export function StepBrand({
   draft,
   update,
@@ -18,14 +12,13 @@ export function StepBrand({
   draft: OnboardingDraft;
   update: (patch: Partial<OnboardingDraft["brand"]>) => void;
 }) {
-  const nameId = useId();
   const descId = useId();
   const audienceId = useId();
   const toneId = useId();
   const offersId = useId();
   const restrictionsId = useId();
 
-  // Smart fallback if fields are empty upon navigating to Brand step
+  // Smart fallback prefill if fields are empty
   useEffect(() => {
     const patch: Partial<OnboardingDraft["brand"]> = {};
     const bizName = draft.business.name || draft.brand.businessName || "My Business";
@@ -65,84 +58,97 @@ export function StepBrand({
     }
   }, [draft.business, draft.brand, update]);
 
-  const hasIntelligence = Boolean(draft.brand.description || draft.brand.audience || draft.brand.tone);
-
   return (
     <div className="flex flex-col gap-5 w-full">
-      {hasIntelligence && (
-        <div className="flex items-center gap-2 px-3.5 py-2.5 rounded-sx-md bg-sx-surface-2 border border-sx-border/80 text-xs text-sx-text-muted">
-          <span className="text-sx-success font-bold">✓</span>
-          <span>We&rsquo;ve pre-filled your brand profile from discovered business intelligence. Please verify or adjust below.</span>
-        </div>
-      )}
-
-      <div className="grid gap-4 sm:grid-cols-2">
-        <FormField label="Brand / business name" htmlFor={nameId} optional hint="Defaults to workspace name if blank.">
-          <Input
-            id={nameId}
-            value={draft.brand.businessName}
-            onChange={(e) => update({ businessName: e.target.value })}
-            placeholder={draft.brand.businessName ? undefined : "Same as workspace name"}
-            className="h-11"
-          />
-        </FormField>
-
-        <FormField label="Tone / personality" htmlFor={toneId} optional hint="Inferred from brand language & industry">
-          <Input
-            id={toneId}
-            value={draft.brand.tone}
-            onChange={(e) => update({ tone: e.target.value })}
-            placeholder="e.g. Direct, warm, consultative"
-            className="h-11"
-          />
-        </FormField>
+      <div>
+        <h3 className="font-sx-sans text-base font-semibold text-sx-text">Help StratXcel understand how your business should sound</h3>
+        <p className="font-sx-sans text-xs text-sx-text-muted mt-1">
+          These guidelines ensure all AI content, audit analyses, and automated responses match your voice.
+        </p>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        <FormField label="Target audience" htmlFor={audienceId} optional hint="Who your business primarily serves">
-          <Input
-            id={audienceId}
-            value={draft.brand.audience}
-            onChange={(e) => update({ audience: e.target.value })}
-            placeholder="Who you're speaking to"
-            className="h-11"
-          />
-        </FormField>
+      <div className="flex items-center gap-2 rounded-sx-md bg-emerald-500/10 border border-emerald-500/20 px-3.5 py-2 text-xs text-emerald-400 font-medium">
+        <span>✓</span>
+        <span>Pre-filled from your business information. You can edit any field below.</span>
+      </div>
 
+      <div className="flex flex-col gap-4">
+        {/* 1. Brand Description */}
         <FormField
-          label="Short description"
+          label="Short Business Description"
           htmlFor={descId}
-          optional
-          hint="Completed further in Workspace Settings."
+          hint="Summarize what your business does and why customers choose you."
         >
-          <Input
+          <Textarea
             id={descId}
             value={draft.brand.description}
             onChange={(e) => update({ description: e.target.value })}
-            placeholder="Brief summary of what your business does and why it matters"
-            className="h-11"
+            placeholder="Tell us what you do..."
+            rows={2}
+            className="text-sm leading-relaxed"
           />
         </FormField>
-      </div>
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        <FormField label="Primary offers / services" htmlFor={offersId} optional hint="One per line.">
+        {/* 2. Target Audience & Tone in 2 columns */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <FormField
+            label="Target Audience"
+            htmlFor={audienceId}
+            hint="Who are your ideal customers?"
+          >
+            <Input
+              id={audienceId}
+              value={draft.brand.audience}
+              onChange={(e) => update({ audience: e.target.value })}
+              placeholder="e.g. Local homeowners, founders, clinics"
+              className="h-11"
+            />
+          </FormField>
+
+          <FormField
+            label="Tone of Voice"
+            htmlFor={toneId}
+            hint="How your communications should feel."
+          >
+            <Input
+              id={toneId}
+              value={draft.brand.tone}
+              onChange={(e) => update({ tone: e.target.value })}
+              placeholder="e.g. Professional, friendly, direct"
+              className="h-11"
+            />
+          </FormField>
+        </div>
+
+        {/* 3. Primary Offers / Services */}
+        <FormField
+          label="Primary Services / Offers"
+          htmlFor={offersId}
+          hint="Enter your top offerings (one per line)."
+        >
           <Textarea
             id={offersId}
             value={draft.brand.offers}
             onChange={(e) => update({ offers: e.target.value })}
+            placeholder="e.g. Automated Social Publishing&#10;WhatsApp CRM Receptionist&#10;Local SEO Audits"
             rows={3}
-            placeholder={"e.g.\nBrand strategy\nSocial management\nAI Automation"}
+            className="text-sm font-mono"
           />
         </FormField>
 
-        <FormField label="Restrictions or claims to avoid" htmlFor={restrictionsId} optional hint="One per line. Safe compliance guidelines.">
+        {/* 4. Things to Avoid */}
+        <FormField
+          label="Important Things to Avoid"
+          htmlFor={restrictionsId}
+          hint="Rules and topics AI should never mention."
+        >
           <Textarea
             id={restrictionsId}
             value={draft.brand.restrictions}
             onChange={(e) => update({ restrictions: e.target.value })}
-            rows={3}
-            placeholder={"e.g.\nNever guarantee results\nNo competitor comparisons"}
+            placeholder="e.g. No unverified revenue guarantees"
+            rows={2}
+            className="text-sm"
           />
         </FormField>
       </div>

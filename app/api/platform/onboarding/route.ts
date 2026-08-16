@@ -144,10 +144,17 @@ export async function POST(request: Request) {
 
   const body = (await request.json()) as OnboardingRequestBody;
   const name = body.business?.name?.trim();
-  const slug = body.business?.slug?.trim();
-  if (!name || !slug) return Response.json({ error: "business name and slug are required" }, { status: 400 });
-  if (!/^[a-z0-9-]+$/.test(slug)) {
-    return Response.json({ error: "slug must be lowercase letters, numbers, and hyphens only" }, { status: 400 });
+  if (!name) return Response.json({ error: "business name is required" }, { status: 400 });
+
+  let slug = body.business?.slug?.trim() || "";
+  if (!slug || !/^[a-z0-9-]+$/.test(slug)) {
+    slug = name
+      .toLowerCase()
+      .replace(/[^a-z0-9\s-]/g, "")
+      .trim()
+      .replace(/\s+/g, "-")
+      .replace(/-+/g, "-")
+      .slice(0, 48) || "workspace";
   }
 
   const { supabase: serviceClient } = getTenantServiceContext();
@@ -158,9 +165,15 @@ export async function POST(request: Request) {
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     if (message.includes("duplicate key")) {
-      return Response.json({ error: `Slug '${slug}' is already taken` }, { status: 409 });
+      try {
+        const uniqueSlug = `${slug.slice(0, 40)}-${Date.now().toString(36).slice(-4)}`;
+        tenant = await createTenant(serviceClient, { slug: uniqueSlug, name, ownerUserId: user.id });
+      } catch {
+        return Response.json({ error: `Slug '${slug}' is already taken` }, { status: 409 });
+      }
+    } else {
+      throw err;
     }
-    throw err;
   }
 
   let brandBrainSaved = false;
