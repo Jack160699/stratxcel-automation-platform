@@ -211,12 +211,12 @@ export async function sendMetaAuthenticationOtp({
           },
           {
             type: "button",
-            sub_type: "copy_code",
-            index: "0",
+            sub_type: "url",
+            index: 0,
             parameters: [
               {
-                type: "coupon_code",
-                coupon_code: otpCode,
+                type: "text",
+                text: otpCode,
               },
             ],
           },
@@ -247,7 +247,7 @@ export async function sendMetaAuthenticationOtp({
 
   const endpoint = `https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`;
 
-  // Canonical Meta Authentication Copy Code Template payload
+  // Canonical Meta Authentication Template payload
   const payload = {
     messaging_product: "whatsapp",
     recipient_type: "individual",
@@ -268,12 +268,12 @@ export async function sendMetaAuthenticationOtp({
         },
         {
           type: "button",
-          sub_type: "copy_code",
-          index: "0",
+          sub_type: "url",
+          index: 0,
           parameters: [
             {
-              type: "coupon_code",
-              coupon_code: otpCode,
+              type: "text",
+              text: otpCode,
             },
           ],
         },
@@ -282,7 +282,7 @@ export async function sendMetaAuthenticationOtp({
   };
 
   // Safe sanitized outgoing payload trace (NO tokens, NO plaintext OTP in logs)
-  console.log(`[Meta WhatsApp OTP Request] [${correlationId}] POST ${endpoint} -> To: ${maskedTo}, Template: ${META_AUTHENTICATION_TEMPLATE_NAME} (${META_AUTHENTICATION_TEMPLATE_LANG}), Components: body (1 param), button (sub_type: copy_code, index: 0, param: coupon_code)`);
+  console.log(`[Meta WhatsApp OTP Request] [${correlationId}] POST ${endpoint} -> To: ${maskedTo}, Template: ${META_AUTHENTICATION_TEMPLATE_NAME} (${META_AUTHENTICATION_TEMPLATE_LANG}), Components: body (text), button (sub_type: url, index: 0, text)`);
 
   try {
     const res = await fetch(endpoint, {

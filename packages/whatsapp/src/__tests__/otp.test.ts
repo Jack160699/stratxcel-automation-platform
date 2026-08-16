@@ -105,16 +105,16 @@ console.log("Running StratXcel WhatsApp OTP Test Suite...");
   const bodyComponent = components.find((c: any) => c.type === "body");
   const buttonComponent = components.find((c: any) => c.type === "button");
 
-  assert.ok(bodyComponent, "body parameter exists");
-  assert.equal(bodyComponent.parameters?.[0]?.type, "text", "body parameter type is text");
+  assert.ok(bodyComponent, "body component exists");
+  assert.equal(bodyComponent.parameters?.[0]?.type, "text", "body parameter type = text");
   assert.equal(bodyComponent.parameters?.[0]?.text, "654321", "body parameter has OTP code");
 
-  assert.ok(buttonComponent, "button exists");
-  assert.equal(buttonComponent.sub_type, "copy_code", "button subtype = copy_code");
-  assert.ok(buttonComponent.index === 0 || buttonComponent.index === "0", "button index = 0");
-  assert.equal(buttonComponent.parameters?.[0]?.type, "coupon_code", "button parameter type = coupon_code");
-  assert.equal(buttonComponent.parameters?.[0]?.coupon_code, "654321", "button coupon_code === body OTP");
-  assert.equal(buttonComponent.parameters?.[0]?.coupon_code, bodyComponent.parameters?.[0]?.text, "button and body use identical generated OTP");
+  assert.ok(buttonComponent, "button component exists");
+  assert.equal(buttonComponent.sub_type, "url", "button subtype = url");
+  assert.equal(buttonComponent.index, 0, "button index = 0");
+  assert.equal(buttonComponent.parameters?.[0]?.type, "text", "button parameter type = text");
+  assert.equal(buttonComponent.parameters?.[0]?.text, "654321", "button parameter value === body OTP");
+  assert.equal(buttonComponent.parameters?.[0]?.text, bodyComponent.parameters?.[0]?.text, "button and body use identical generated OTP");
 
   console.log("✓ Meta Authentication template contract verified");
 }
