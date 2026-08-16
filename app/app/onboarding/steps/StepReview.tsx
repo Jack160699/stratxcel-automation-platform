@@ -4,7 +4,8 @@ import { Button } from "@/components/ui/Button";
 import { ErrorState } from "@/components/ui/Feedback";
 import { PlatformIcon } from "@/components/audit/PlatformIcon";
 import type { AccountInfo } from "./StepAccount";
-import type { OnboardingDraft } from "../types";
+import type { OnboardingDraft, V1SocialPlatformKey } from "../types";
+import { V1_CONNECTORS } from "../types";
 
 export function StepReview({
   account,
@@ -26,12 +27,18 @@ export function StepReview({
   const industry = draft.business.industry?.trim() || "General Business";
   const model = draft.business.businessModel || "B2B";
 
-  // Separate verified connections (OAuth / OTP verified) from public-profile-only channels
+  // Separate verified connections (OAuth / OTP verified) from public-profile-only channels, strictly filtering for V1 connectors
   const verifiedChannels = (draft.account?.connections || []).filter(
-    (c) => c.status === "connected" && (c.connectionType === "oauth" || c.connectionType === "otp_verified")
+    (c) =>
+      V1_CONNECTORS.includes(c.platform as V1SocialPlatformKey) &&
+      c.status === "connected" &&
+      (c.connectionType === "oauth" || c.connectionType === "otp_verified")
   );
   const publicChannels = (draft.account?.connections || []).filter(
-    (c) => c.status === "connected" && c.connectionType === "public_profile"
+    (c) =>
+      V1_CONNECTORS.includes(c.platform as V1SocialPlatformKey) &&
+      c.status === "connected" &&
+      c.connectionType === "public_profile"
   );
 
   const goals = draft.goals.length > 0

@@ -18,6 +18,18 @@ const registry: Record<string, SocialProvider> = {
   x: xProvider,
 };
 
+/** Active V1 customer-facing OAuth providers. Inactive providers remain in the registry for future V2 extensibility. */
+export const V1_CUSTOMER_PROVIDERS: readonly SocialProviderName[] = [
+  "google_business",
+  "instagram",
+  "facebook",
+  "youtube",
+] as const;
+
+export function isV1CustomerProvider(name: string): boolean {
+  return V1_CUSTOMER_PROVIDERS.includes(name as SocialProviderName) || name === "google";
+}
+
 export function getProvider(name: string): SocialProvider {
   if (!(name in registry)) {
     throw new Error(`Unknown social provider: ${name}`);

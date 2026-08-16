@@ -16,9 +16,11 @@ import {
   ONBOARDING_DRAFT_KEY,
   ONBOARDING_STEP_LABELS,
   slugify,
+  V1_CONNECTORS,
   type OnboardingDraft,
   type SocialConnection,
   type SocialPlatformKey,
+  type V1SocialPlatformKey,
 } from "./types";
 import { trackFunnel } from "@/lib/analytics/events";
 import { normalizeWebsiteUrl } from "@/lib/identity/smart-url";
@@ -33,9 +35,6 @@ const PROVIDER_LABELS: Record<string, string> = {
   instagram: "Meta",
   facebook: "Meta",
   youtube: "Google",
-  threads: "Meta",
-  linkedin: "LinkedIn",
-  x: "X",
   whatsapp: "WhatsApp Verified",
 };
 
@@ -87,16 +86,18 @@ function mergeOAuthConnectionsIntoDraft(
 
   const currentConnections = [...(draft.account?.connections || EMPTY_DRAFT.account.connections)];
   for (const [platform, data] of Object.entries(oauthConnections)) {
-    const idx = currentConnections.findIndex((c) => c.platform === platform);
+    const key = (platform === "google" ? "google_business" : platform) as SocialPlatformKey;
+    if (!V1_CONNECTORS.includes(key as V1SocialPlatformKey)) continue;
+    const idx = currentConnections.findIndex((c) => c.platform === key);
     const conn: SocialConnection = {
-      platform: platform as SocialPlatformKey,
+      platform: key,
       handle: data.username || undefined,
-      displayName: data.displayName || data.username || platform,
+      displayName: data.displayName || data.username || key,
       status: "connected",
       connectionType: "oauth",
       providerAccountId: data.providerAccountId,
       providerDisplayName: data.displayName || undefined,
-      providerLabel: data.providerLabel || PROVIDER_LABELS[platform] || "OAuth",
+      providerLabel: data.providerLabel || PROVIDER_LABELS[key] || "OAuth",
       connectedAt: data.connectedAt || new Date().toISOString(),
     };
     if (idx >= 0) {

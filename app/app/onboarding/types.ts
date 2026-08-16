@@ -1,12 +1,23 @@
-export type SocialPlatformKey =
+export type V1SocialPlatformKey =
   | "google_business"
   | "instagram"
   | "facebook"
   | "youtube"
+  | "whatsapp";
+
+export type SocialPlatformKey =
+  | V1SocialPlatformKey
   | "threads"
   | "linkedin"
-  | "x"
-  | "whatsapp";
+  | "x";
+
+export const V1_CONNECTORS: readonly V1SocialPlatformKey[] = [
+  "google_business",
+  "instagram",
+  "facebook",
+  "youtube",
+  "whatsapp",
+] as const;
 
 export interface SocialConnection {
   platform: SocialPlatformKey;
@@ -20,7 +31,7 @@ export interface SocialConnection {
   providerAccountId?: string;
   /** Display label from the provider (e.g. "StratXcel Solutions" from Meta). */
   providerDisplayName?: string;
-  /** Provider name for attribution (e.g. "Google", "Meta", "LinkedIn", "X", "WhatsApp Verified"). */
+  /** Provider name for attribution (e.g. "Google", "Meta", "WhatsApp Verified"). */
   providerLabel?: string;
   connectedAt?: string;
 }
@@ -86,15 +97,12 @@ export const ONBOARDING_STEP_LABELS = [
   "Review",
 ] as const;
 
-/** Mandatory connector order: Google Business -> Instagram -> Facebook -> YouTube -> Threads -> LinkedIn -> X -> WhatsApp Number */
+/** Mandatory V1 connector order: Google Business -> Instagram -> Facebook -> YouTube -> WhatsApp Number */
 export const INITIAL_SOCIAL_CONNECTORS: SocialConnection[] = [
   { platform: "google_business", status: "not_connected" },
   { platform: "instagram", status: "not_connected" },
   { platform: "facebook", status: "not_connected" },
   { platform: "youtube", status: "not_connected" },
-  { platform: "threads", status: "not_connected" },
-  { platform: "linkedin", status: "not_connected" },
-  { platform: "x", status: "not_connected" },
   { platform: "whatsapp", status: "not_connected" },
 ];
 

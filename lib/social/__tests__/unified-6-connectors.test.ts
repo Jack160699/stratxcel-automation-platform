@@ -9,6 +9,7 @@ const read = (...parts: string[]) => fs.readFileSync(path.join(root, ...parts), 
 
 function run() {
   const stepConnectors = read("app", "app", "onboarding", "steps", "StepConnectors.tsx");
+  const stepReview = read("app", "app", "onboarding", "steps", "StepReview.tsx");
   const types = read("app", "app", "onboarding", "types.ts");
   const oauthOrigin = read("lib", "social", "oauth-origin.ts");
   const platformIcon = read("components", "audit", "PlatformIcon.tsx");
@@ -21,31 +22,35 @@ function run() {
   const threads = read("lib", "social", "providers", "threads.ts");
   const linkedin = read("lib", "social", "providers", "linkedin.ts");
   const x = read("lib", "social", "providers", "x.ts");
+  const providersIndex = read("lib", "social", "providers", "index.ts");
   const sendOtpRoute = read("app", "api", "platform", "onboarding", "whatsapp", "send-otp", "route.ts");
   const verifyOtpRoute = read("app", "api", "platform", "onboarding", "whatsapp", "verify-otp", "route.ts");
 
-  // --- 1. Mandatory 8-Connector Order ----------------------------------------
+  // --- 1. Mandatory V1 5-Connector Order & Count ------------------------------
   const expectedOrder = [
     "google_business",
     "instagram",
     "facebook",
     "youtube",
-    "threads",
-    "linkedin",
-    "x",
     "whatsapp",
   ];
   const matches = [...stepConnectors.matchAll(/key:\s*"([a-z_]+)"/g)].map((m) => m[1]);
-  const cardKeys = matches.slice(0, 8);
+  assert.equal(matches.length, 5, `V1 StepConnectors must contain exactly 5 cards (found: ${matches.length})`);
   assert.deepEqual(
-    cardKeys,
+    matches,
     expectedOrder,
-    `Connectors must appear in mandatory order: ${expectedOrder.join(" -> ")}`
+    `V1 Connectors must appear in exact mandatory order: ${expectedOrder.join(" -> ")}`
   );
 
-  // Exclude Website and WhatsApp Business from Step 2
-  assert.equal(cardKeys.includes("website"), false, "Website connector must NOT be in Step 2");
+  // Inactive in V1: X, Threads, LinkedIn, Website, WhatsApp Business
+  assert.equal(matches.includes("x"), false, "X connector must NOT be in V1 onboarding");
+  assert.equal(matches.includes("threads"), false, "Threads connector must NOT be in V1 onboarding");
+  assert.equal(matches.includes("linkedin"), false, "LinkedIn connector must NOT be in V1 onboarding");
+  assert.equal(matches.includes("website"), false, "Website connector must NOT be in Step 2");
   assert.equal(stepConnectors.includes("WhatsApp Business"), false, "WhatsApp Business must NOT be in onboarding connector list");
+
+  // Review step filters strictly to V1 connectors
+  assert.ok(stepReview.includes("V1_CONNECTORS"), "StepReview must import and use V1_CONNECTORS");
 
   // --- 2. Google Business Unified CTA & Security -----------------------------
   assert.equal(stepConnectors.includes("Continue with Google"), false, "Google Business card must NOT say 'Continue with Google'");
@@ -53,6 +58,7 @@ function run() {
   assert.ok(!stepConnectors.includes("bg-white text-gray-900"), "Google Business card must NOT have white-on-white conflicting classes");
   assert.ok(googleBusiness.includes("business.manage"), "Google Business provider must request business.manage scope");
   assert.ok(googleBusiness.includes("accounts.google.com/o/oauth2/v2/auth"), "Google Business must use official OAuth2 endpoint");
+  assert.ok(googleBusiness.includes("prompt: \"select_account\""), "Google Business must force select_account");
 
   // --- 3. Instagram Integrity ------------------------------------------------
   assert.ok(instagram.includes("META_INSTAGRAM_APP_ID"), "Instagram must use META_INSTAGRAM_APP_ID");
@@ -66,22 +72,13 @@ function run() {
   assert.ok(youtube.includes("https://accounts.google.com/o/oauth2/v2/auth"), "YouTube must use Google OAuth2 endpoint");
   assert.ok(youtube.includes("youtube.upload"), "YouTube must request youtube.upload scope");
 
-  // --- 6. Threads Authorization & Official Vector Icon -----------------------
-  assert.ok(threads.includes("META_THREADS_APP_ID"), "Threads must use META_THREADS_APP_ID");
-  assert.ok(threads.includes("threads.net/oauth/authorize"), "Threads must use official Threads authorize endpoint");
-  assert.ok(platformIcon.includes("141.537 88.9883"), "PlatformIcon must render official Meta Threads spiral brand vector");
+  // --- 6. Future Extensibility: Provider Implementations Preserved -----------
+  assert.ok(threads.includes("META_THREADS_APP_ID"), "Threads provider must remain preserved for future V2");
+  assert.ok(linkedin.includes("LINKEDIN_CLIENT_ID"), "LinkedIn provider must remain preserved for future V2");
+  assert.ok(x.includes("x.com/i/oauth2/authorize"), "X provider must remain preserved for future V2");
+  assert.ok(providersIndex.includes("V1_CUSTOMER_PROVIDERS"), "Provider registry must declare V1_CUSTOMER_PROVIDERS");
 
-  // --- 7. LinkedIn Deterministic Canonical Redirect URI -----------------------
-  assert.ok(linkedin.includes("LINKEDIN_CLIENT_ID"), "LinkedIn must use LINKEDIN_CLIENT_ID");
-  assert.ok(linkedin.includes("linkedin.com/oauth/v2"), "LinkedIn must use OAuth v2 endpoint");
-  assert.ok(oauthOrigin.includes("https://www.stratxcel.in"), "oauthOrigin must use canonical HTTPS origin in production");
-
-  // --- 8. X (Twitter) OAuth 2.0 & Official Vector Logo ------------------------
-  assert.ok(x.includes("x.com/i/oauth2/authorize"), "X provider must use x.com/i/oauth2/authorize");
-  assert.ok(x.includes("api.x.com/2/oauth2/token"), "X provider must use api.x.com/2/oauth2/token");
-  assert.ok(platformIcon.includes("M18.244 2.25h3.308l-7.227 8.26"), "PlatformIcon must render official X logo vector");
-
-  // --- 9. WhatsApp Number OTP Security Requirements --------------------------
+  // --- 7. WhatsApp Number OTP Security Requirements --------------------------
   assert.ok(sendOtpRoute.includes("crypto.randomInt"), "send-otp must generate cryptographically random OTP");
   assert.ok(sendOtpRoute.includes("createHmac"), "send-otp must hash OTP with HMAC-SHA256");
   assert.ok(sendOtpRoute.includes("RESEND_COOLDOWN_MS"), "send-otp must enforce resend cooldown");
@@ -89,7 +86,7 @@ function run() {
   assert.ok(verifyOtpRoute.includes("onboarding_whatsapp_otp_state: null"), "verify-otp must invalidate OTP after success to prevent replay");
 
   console.log(
-    "unified-6-connectors.test.ts: ALL PASS (mandatory 8-connector order: Google Business -> Instagram -> Facebook -> YouTube -> Threads -> LinkedIn -> X -> WhatsApp Number; YouTube restored; X OAuth 2.0 + official mark; official Threads spiral mark; Google Business CTA fixed without conflicting classes; WhatsApp OTP security verified)"
+    "unified-6-connectors.test.ts: ALL PASS (mandatory 5-connector V1 order: Google Business -> Instagram -> Facebook -> YouTube -> WhatsApp Number; exact count=5; X, Threads, LinkedIn absent from onboarding; all CTAs 'Connect'; YouTube restored; WhatsApp OTP security verified; future V2 extensibility preserved)"
   );
 }
 

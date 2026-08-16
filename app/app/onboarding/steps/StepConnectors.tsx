@@ -5,7 +5,8 @@ import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { FormField } from "../FormField";
 import { PlatformIcon } from "@/components/audit/PlatformIcon";
-import type { SocialConnection, SocialPlatformKey } from "../types";
+import type { SocialConnection, SocialPlatformKey, V1SocialPlatformKey } from "../types";
+import { V1_CONNECTORS } from "../types";
 
 /** Provider label used for OAuth attribution in UI. */
 const PROVIDER_LABELS: Partial<Record<SocialPlatformKey, string>> = {
@@ -13,9 +14,6 @@ const PROVIDER_LABELS: Partial<Record<SocialPlatformKey, string>> = {
   instagram: "Meta",
   facebook: "Meta",
   youtube: "Google",
-  threads: "Meta",
-  linkedin: "LinkedIn",
-  x: "X",
   whatsapp: "WhatsApp Verified",
 };
 
@@ -28,7 +26,7 @@ interface PlatformCardConfig {
   publicProfilePlaceholder?: string;
 }
 
-/** Mandatory order: Google Business -> Instagram -> Facebook -> YouTube -> Threads -> LinkedIn -> X -> WhatsApp Number */
+/** Mandatory V1 order: Google Business -> Instagram -> Facebook -> YouTube -> WhatsApp Number */
 const PLATFORM_CARDS: PlatformCardConfig[] = [
   {
     key: "google_business",
@@ -60,30 +58,6 @@ const PLATFORM_CARDS: PlatformCardConfig[] = [
     oauthAvailable: true,
     ctaText: "Connect",
     publicProfilePlaceholder: "Channel URL or @handle",
-  },
-  {
-    key: "threads",
-    label: "Threads",
-    description: "Connect your Threads account for conversational marketing and audience growth.",
-    oauthAvailable: true,
-    ctaText: "Connect",
-    publicProfilePlaceholder: "@yourbrand",
-  },
-  {
-    key: "linkedin",
-    label: "LinkedIn",
-    description: "Connect your LinkedIn profile or organization page for professional authority and B2B reach.",
-    oauthAvailable: true,
-    ctaText: "Connect",
-    publicProfilePlaceholder: "Company page URL or profile",
-  },
-  {
-    key: "x",
-    label: "X",
-    description: "Connect your X account for real-time posts, community updates, and viral reach.",
-    oauthAvailable: true,
-    ctaText: "Connect",
-    publicProfilePlaceholder: "@yourbrand",
   },
   {
     key: "whatsapp",
@@ -131,20 +105,14 @@ export function StepConnectors({
       const pLabel =
         provider === "google_business" || provider === "google"
           ? "Google Business"
-          : provider === "x"
-          ? "X"
-          : provider === "linkedin"
-          ? "LinkedIn"
-          : provider === "threads"
-          ? "Threads"
           : provider === "youtube"
           ? "YouTube"
           : provider === "instagram"
           ? "Instagram"
           : provider === "facebook"
           ? "Facebook"
-          : provider
-          ? provider.charAt(0).toUpperCase() + provider.slice(1)
+          : provider === "whatsapp"
+          ? "WhatsApp Number"
           : "Channel";
       setNotification({ type: "success", message: `✓ ${pLabel} connected successfully!` });
     } else if (oauthStatus === "denied") {
@@ -153,18 +121,14 @@ export function StepConnectors({
       const pLabel =
         provider === "google_business" || provider === "google"
           ? "Google Business"
-          : provider === "linkedin"
-          ? "LinkedIn"
-          : provider === "x"
-          ? "X"
-          : provider === "threads"
-          ? "Threads"
           : provider === "youtube"
           ? "YouTube"
           : provider === "instagram"
           ? "Instagram"
           : provider === "facebook"
           ? "Facebook"
+          : provider === "whatsapp"
+          ? "WhatsApp Number"
           : "Channel";
       setNotification({ type: "error", message: `${pLabel} connection failed. Please try again.` });
     }
@@ -202,6 +166,7 @@ export function StepConnectors({
       const updated = [...connections];
       for (const [platform, data] of Object.entries(oauthConnections)) {
         const key = (platform === "google" ? "google_business" : platform) as SocialPlatformKey;
+        if (!V1_CONNECTORS.includes(key as V1SocialPlatformKey)) continue;
         const idx = updated.findIndex((c) => c.platform === key);
         const conn: SocialConnection = {
           platform: key,

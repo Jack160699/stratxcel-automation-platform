@@ -39,30 +39,32 @@ function run() {
   const diagnosticsModule = read("lib", "social", "oauth-diagnostics.ts");
 
   // =========================================================================
-  // 1. General Connector Order and Unified "Connect" CTA
+  // 1. General Connector Order and Unified "Connect" CTA (V1: 5 Connectors)
   // =========================================================================
   const expectedOrder = [
     "google_business",
     "instagram",
     "facebook",
     "youtube",
-    "threads",
-    "linkedin",
-    "x",
     "whatsapp",
   ];
   const matches = [...stepConnectors.matchAll(/key:\s*"([a-z_]+)"/g)].map((m) => m[1]);
-  const cardKeys = matches.slice(0, 8);
+  assert.equal(matches.length, 5, `StepConnectors must contain exactly 5 V1 cards (found: ${matches.length})`);
   assert.deepEqual(
-    cardKeys,
+    matches,
     expectedOrder,
-    `Connectors must appear in mandatory order: ${expectedOrder.join(" -> ")}`
+    `Connectors must appear in mandatory V1 order: ${expectedOrder.join(" -> ")}`
   );
 
-  // Assert all 8 cards have ctaText: "Connect"
+  // Inactive in V1: X, Threads, LinkedIn
+  assert.equal(matches.includes("x"), false, "X must not be in V1 onboarding");
+  assert.equal(matches.includes("threads"), false, "Threads must not be in V1 onboarding");
+  assert.equal(matches.includes("linkedin"), false, "LinkedIn must not be in V1 onboarding");
+
+  // Assert all 5 cards have ctaText: "Connect"
   const ctaMatches = [...stepConnectors.matchAll(/ctaText:\s*"([^"]+)"/g)].map((m) => m[1]);
-  assert.ok(ctaMatches.length >= 8, "Expected at least 8 ctaText entries in StepConnectors");
-  for (const cta of ctaMatches.slice(0, 8)) {
+  assert.equal(ctaMatches.length, 5, "Expected exactly 5 ctaText entries in StepConnectors");
+  for (const cta of ctaMatches) {
     assert.equal(cta, "Connect", `All initial connector cards must have ctaText 'Connect' (found: '${cta}')`);
   }
 
