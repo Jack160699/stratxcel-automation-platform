@@ -26,7 +26,6 @@ export const APP_NAV_GROUPS_DATA: NavGroupData[] = [
     items: [
       { key: "customer-audit", label: "Business Growth Audit", href: "/app/audit", release: "v1" },
       { key: "brand", label: "Brand Brain", href: "/app/brand", release: "v1" },
-      { key: "crm", label: "CRM", href: "/app/crm", release: "v1" },
     ],
   },
   {
@@ -46,5 +45,5 @@ export const APP_NAV_GROUPS_DATA: NavGroupData[] = [
   },
 ];
 
-/** Mobile primary: Home, Audit, Copilot, CRM — More holds the rest. */
-export const APP_MOBILE_NAV_KEYS = ["home", "customer-audit", "copilot", "crm"];
+/** Mobile primary: Home, Audit, Copilot, Connectors — More holds the rest. */
+export const APP_MOBILE_NAV_KEYS = ["home", "customer-audit", "copilot", "integrations"];

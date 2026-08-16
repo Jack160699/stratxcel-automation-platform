@@ -37,14 +37,14 @@ export function StepPlan({
                 <>
                   <li>No live customer website</li>
                   <li>No connected social channels</li>
-                  <li>Manual or missing WhatsApp entry</li>
-                  <li>No customer database or CRM</li>
+                  <li>Unverified contact channels</li>
+                  <li>Scattered digital footprint</li>
                 </>
               ) : (
                 <>
                   <li>Inconsistent brand publishing</li>
-                  <li>Manual customer replies</li>
-                  <li>Scattered inbound inquiries</li>
+                  <li>Untapped audience growth</li>
+                  <li>Unoptimized channel presence</li>
                   <li>Untapped local & AI search discoverability</li>
                 </>
               )}
@@ -58,14 +58,14 @@ export function StepPlan({
                 <>
                   <li>High-converting live website & domain</li>
                   <li>Active multi-channel social setup</li>
-                  <li>24/7 automated WhatsApp reception</li>
-                  <li>Centralized CRM & lead pipeline</li>
+                  <li>Verified WhatsApp alert routing</li>
+                  <li>Established brand foundation</li>
                 </>
               ) : (
                 <>
                   <li>Daily automated content publishing</li>
-                  <li>Instant WhatsApp lead qualification</li>
-                  <li>Unified CRM conversation inbox</li>
+                  <li>Active Social Copilot campaigns</li>
+                  <li>Multi-channel audience expansion</li>
                   <li>Optimized local presence & reviews</li>
                 </>
               )}
@@ -76,8 +76,8 @@ export function StepPlan({
         <div className="mt-3 rounded-sx-sm bg-sx-surface-1/60 p-2.5 text-xs text-sx-text">
           <span className="font-semibold text-sx-accent">Recommended sequence: </span>
           {isEarlyStage
-            ? "1. Website → 2. Social presence → 3. Brand identity → 4. WhatsApp → 5. CRM → 6. Initial ads"
-            : "1. WhatsApp instant response → 2. Social Autopilot → 3. CRM unification → 4. Discovery optimization"}
+            ? "1. Website → 2. Social presence → 3. Brand identity → 4. WhatsApp verification → 5. Initial campaigns"
+            : "1. Brand Brain verification → 2. Social Autopilot → 3. Copilot campaigns → 4. Discovery optimization"}
         </div>
       </div>
 

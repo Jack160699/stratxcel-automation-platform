@@ -44,11 +44,12 @@ function run() {
   assert.ok([...appHrefs].every((h) => h.startsWith("/app")), "every app nav href must live under /app");
   assert.ok([...adminHrefs].every((h) => h.startsWith("/admin")), "every admin nav href must live under /admin");
 
-  // --- 3. app does not inherit admin-only items ---------------------------
-  for (const key of ["clients", "handoffs", "operations", "system", "audit"]) {
-    assert.equal(appKeys.has(key), false, `agency-only nav item "${key}" must never appear in APP_NAV_GROUPS_DATA`);
+  // --- 3. app does not inherit admin-only items or unapproved V1 items ---
+  for (const key of ["clients", "handoffs", "operations", "system", "audit", "crm"]) {
+    assert.equal(appKeys.has(key), false, `nav item "${key}" must never appear in customer V1 APP_NAV_GROUPS_DATA`);
   }
   assert.equal(appHrefs.has("/admin"), false, "app nav must not link into /admin at all");
+  assert.equal(appHrefs.has("/app/crm"), false, "app nav must not link to /app/crm in V1");
 
   // --- 4. admin does not automatically inherit client-only modules --------
   for (const key of ["copilot", "website", "ads", "brand", "files", "billing", "settings"]) {
@@ -64,8 +65,10 @@ function run() {
   assert.equal((coreShell.match(/<Sidebar\b/g) ?? []).length, 1, "CoreAppShell must render exactly one Sidebar for either product");
 
   // --- 6/7/8. Active-route highlighting resolves independently, real calls
-  assert.equal(resolveActiveKey("/app/crm", APP_NAV_GROUPS_DATA), "crm", "app CRM must resolve /app/crm");
-  assert.equal(resolveActiveKey("/app/crm/lead-123", APP_NAV_GROUPS_DATA), "crm", "a lead deep link must still highlight the app CRM nav item");
+  assert.equal(resolveActiveKey("/app", APP_NAV_GROUPS_DATA), "home", "app Command Center must resolve /app");
+  assert.equal(resolveActiveKey("/app/audit", APP_NAV_GROUPS_DATA), "customer-audit", "app Audit must resolve /app/audit");
+  assert.equal(resolveActiveKey("/app/social/copilot", APP_NAV_GROUPS_DATA), "copilot", "app Copilot must resolve /app/social/copilot");
+  assert.equal(resolveActiveKey("/app/integrations", APP_NAV_GROUPS_DATA), "integrations", "app Connectors must resolve /app/integrations");
   assert.equal(resolveActiveKey("/admin/leads", ADMIN_NAV_GROUPS_DATA), "leads", "admin CRM must resolve /admin/leads");
   assert.equal(resolveActiveKey("/admin", ADMIN_NAV_GROUPS_DATA), "overview");
   assert.equal(resolveActiveKey("/admin/clients/some-id", ADMIN_NAV_GROUPS_DATA), "clients", "longest-prefix match must win");
@@ -164,9 +167,9 @@ function run() {
   assert.ok(/THREAD_POLL_MS = 4_000/.test(crmWorkspace), "thread polling interval must be preserved");
   assert.ok(/if \(!document\.hidden\)/.test(crmWorkspace), "polling must still pause while the tab is hidden");
 
-  // --- 29. /app/conversations uses/redirects to one CRM implementation ------
+  // --- 29. /app/conversations redirects to /app in customer V1 ------
   const conversationsPage = read("app", "app", "conversations", "page.tsx");
-  assert.ok(/redirect\("\/app\/crm"\)/.test(conversationsPage), "conversations must redirect into the one unified CRM workspace");
+  assert.ok(/redirect\("\/app"\)/.test(conversationsPage), "conversations must redirect to /app in customer V1");
 
   // =========================================================================
   // ADMIN LEADS

@@ -42,10 +42,10 @@ function run() {
 
   // CUSTOMER INTEGRATIONS
   const integrations = read("app", "app", "integrations", "page.tsx");
-  for (const forbidden of ["WABA ID", "Phone number ID", "shadow_mode", "inbound_enabled", "outbound_enabled", "WhatsAppAgentPairingCard", "linkCommandPrefix"]) {
+  for (const forbidden of ["WABA ID", "Phone number ID", "shadow_mode", "inbound_enabled", "outbound_enabled", "WhatsAppAgentPairingCard", "linkCommandPrefix", "WhatsApp Business"]) {
     assert.equal(integrations.includes(forbidden), false, `customer integrations must not expose ${forbidden}`);
   }
-  assert.ok(integrations.includes("WhatsApp Business") && integrations.includes("Setup required"));
+  assert.ok(integrations.includes("WhatsApp Number"));
   const safeStatus = read("app", "api", "platform", "integrations", "status", "route.ts");
   assert.ok(safeStatus.includes('select("status")') && !safeStatus.includes("waba_id") && !safeStatus.includes("phone_number_id"));
   const rawBindings = read("app", "api", "platform", "whatsapp", "bindings", "route.ts");

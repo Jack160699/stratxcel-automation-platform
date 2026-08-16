@@ -99,37 +99,28 @@ export default function IntegrationsPage() {
     isOAuth: boolean;
   }> = [
     {
-      key: "website",
-      title: "Website",
-      state: website?.href ? "connected" : "setup_required",
-      copy: website?.href ? "Website saved in your verified business context." : "Add your website through the Audit or Brand Brain.",
-      isOAuth: false,
+      key: "google_business",
+      title: "Google Business",
+      state: status?.google ?? "setup_required",
+      copy: "Connect your Google Business Profile to boost local ranking, sync reviews, and manage business details.",
+      isOAuth: true,
     },
     {
       key: "instagram",
       title: "Instagram",
       state: status?.instagram ?? "checking",
       copy: status?.instagram === "connected"
-        ? "Connected to Meta for direct publishing, inbox, and insights."
-        : "Connect your Instagram Professional or Creator account for publishing and insights.",
+        ? "Connected to Meta for direct publishing, audience growth, and insights."
+        : "Connect your Instagram Business account to automate publishing, creative stories, and track insights.",
       isOAuth: true,
     },
     {
       key: "facebook",
-      title: "Facebook Page",
+      title: "Facebook",
       state: status?.facebook ?? "checking",
       copy: status?.facebook === "connected"
         ? "Connected to Meta for Facebook Page management."
-        : "Connect your Facebook Business Page for automated posts and comments.",
-      isOAuth: true,
-    },
-    {
-      key: "threads",
-      title: "Threads",
-      state: status?.threads ?? "checking",
-      copy: status?.threads === "connected"
-        ? "Connected to Threads for text and image posts."
-        : "Connect your Threads account for micro-blogging and automated updates.",
+        : "Connect your Facebook Business Page for automated content distribution and community engagement.",
       isOAuth: true,
     },
     {
@@ -138,32 +129,16 @@ export default function IntegrationsPage() {
       state: status?.youtube ?? "checking",
       copy: status?.youtube === "connected"
         ? "Connected to YouTube for video uploads and analytics."
-        : "Connect your YouTube Channel for video publishing and insights.",
-      isOAuth: true,
-    },
-    {
-      key: "linkedin",
-      title: "LinkedIn",
-      state: status?.linkedin ?? "checking",
-      copy: status?.linkedin === "connected"
-        ? "Connected to LinkedIn for company page and profile updates."
-        : "Connect your LinkedIn account or Organization Page.",
+        : "Connect your YouTube channel for video publishing, shorts distribution, and performance tracking.",
       isOAuth: true,
     },
     {
       key: "whatsapp",
-      title: "WhatsApp Business",
+      title: "WhatsApp Number",
       state: status?.whatsapp ?? "setup_required",
       copy: status?.whatsapp === "connected"
-        ? "WhatsApp Business is active for this workspace."
-        : "WhatsApp Business connects via Stratxcel's platform sender for Audit delivery and CRM escalation. Setup required.",
-      isOAuth: false,
-    },
-    {
-      key: "google_business",
-      title: "Google Business / Maps",
-      state: "setup_required",
-      copy: "Your public Google Business profile is shown when discovered. Direct management connects via Google Search Console.",
+        ? "Phone number verified for instant lead notifications and audit alerts."
+        : "Verify the phone number you use for WhatsApp to receive instant updates and audit alerts.",
       isOAuth: false,
     },
   ];

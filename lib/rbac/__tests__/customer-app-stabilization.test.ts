@@ -120,9 +120,10 @@ async function run() {
   assert.equal(/\/app\/(missions|approvals)/.test(commandCenter), false);
 
   const nav = read("components", "shell", "navigation", "app-nav-data.ts");
-  for (const href of ["/app", "/app/audit", "/app/crm", "/app/brand", "/app/billing", "/app/team", "/app/settings", "/app/social/copilot", "/app/integrations"]) {
+  for (const href of ["/app", "/app/audit", "/app/brand", "/app/billing", "/app/team", "/app/settings", "/app/social/copilot", "/app/integrations"]) {
     assert.ok(nav.includes(`href: "${href}"`), `${href} must remain a V1 destination`);
   }
+  assert.equal(nav.includes('href: "/app/crm"'), false, "/app/crm must NOT be in customer V1 navigation");
   for (const segment of ["missions", "approvals", "copilot", "website", "ads", "search", "files", "reports"]) {
     assert.ok(
       read("app", "app", segment, "layout.tsx").includes("NotV1CustomerRoute"),

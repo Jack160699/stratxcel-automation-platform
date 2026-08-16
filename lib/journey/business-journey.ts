@@ -112,7 +112,7 @@ export const CANONICAL_MILESTONES: Omit<BusinessMilestone, "isUnlocked" | "unloc
     id: "BRAND_FOUNDATION_COMPLETE",
     title: "Brand Foundation Complete",
     description: "Brand Brain is initialized with your tone, offerings, and positioning.",
-    businessImpact: "AI content and WhatsApp responses match your authentic business voice.",
+    businessImpact: "AI content and marketing copy match your authentic business voice.",
     whatWasAccomplished: [
       "Brand voice & tone encoded",
       "Primary offerings and target audience saved",
@@ -134,25 +134,25 @@ export const CANONICAL_MILESTONES: Omit<BusinessMilestone, "isUnlocked" | "unloc
   },
   {
     id: "WHATSAPP_CONNECTED",
-    title: "WhatsApp Channel Ready",
-    description: "WhatsApp business routing is active for instant customer follow-ups and report delivery.",
-    businessImpact: "Prevents lead drop-off with 24/7 automated inquiry qualification.",
+    title: "WhatsApp Number Verified",
+    description: "Your WhatsApp phone number is verified to receive instant growth alerts and audit updates.",
+    businessImpact: "Ensures critical business alerts and audit deliveries reach you instantly.",
     whatWasAccomplished: [
-      "WhatsApp customer destination mapped",
-      "Instant response capability armed",
-      "Delivery state synced to CRM",
+      "WhatsApp phone number verified via OTP",
+      "Direct alert destination established",
+      "Audit report delivery enabled",
     ],
-    nextStep: { label: "View CRM Inbox", href: "/app/crm" },
+    nextStep: { label: "Explore Copilot", href: "/app/social/copilot" },
   },
   {
-    id: "CRM_READY",
-    title: "CRM Pipeline Ready",
-    description: "Your centralized customer inbox and lead qualification pipeline are initialized.",
-    businessImpact: "Ensures every customer inquiry is tracked from first touch to conversion.",
+    id: "GROWTH_READY",
+    title: "Growth Autopilot Ready",
+    description: "Your verified brand foundation and Social Copilot are armed for autonomous execution.",
+    businessImpact: "Enables consistent daily brand publishing and audience growth.",
     whatWasAccomplished: [
-      "Customer pipeline initialized",
-      "Lead scoring rules configured",
-      "Interaction history tracking armed",
+      "Multi-channel content pipeline configured",
+      "Brand Brain positioning active",
+      "Social Autopilot ready",
     ],
     nextStep: { label: "Explore Copilot", href: "/app/social/copilot" },
   },
@@ -175,7 +175,7 @@ export function deriveBusinessJourney(ctx: BusinessJourneyContext): BusinessJour
   const isDiscovered = isConnected && ctx.brandBrainVersion > 0;
   const isVerified = isDiscovered && ctx.confirmedSocialsCount > 0;
   const isBuilt = Boolean(ctx.hasAuditOrder && (ctx.hasReportData || ctx.auditOrderStatus === "completed"));
-  const isGrowing = isBuilt && (ctx.hasAutomations || ctx.crmLeadsCount > 0 || ctx.whatsappConnected);
+  const isGrowing = isBuilt && (ctx.hasAutomations || ctx.whatsappConnected);
   const isOptimized = isGrowing && ctx.hasActivePlan;
 
   // Stages calculation
@@ -247,13 +247,13 @@ export function deriveBusinessJourney(ctx: BusinessJourneyContext): BusinessJour
       order: 5,
       status: !isBuilt ? "Not started" : isGrowing ? "Complete" : "Ready",
       percentComplete: !isBuilt ? 0 : isGrowing ? 100 : 40,
-      summary: isGrowing ? "Automations & CRM active" : "Activate WhatsApp & CRM",
+      summary: isGrowing ? "Social Copilot active" : "Activate Social Autopilot",
       detail: isGrowing
-        ? "Lead capture and automated follow-ups are active."
-        : "Turn on WhatsApp instant replies and lead tracking to capture incoming demand.",
-      whatStratxcelDoes: "Coordinates multi-channel lead qualification and content publishing.",
-      whatIsUnlocked: ["WhatsApp Receptionist", "Unified CRM", "Social Autopilot"],
-      action: isGrowing ? null : { label: "Connect WhatsApp", href: "/app/integrations" },
+        ? "Automated content generation and multi-channel publishing are active."
+        : "Turn on Social Copilot to generate and publish brand-aligned content.",
+      whatStratxcelDoes: "Coordinates multi-channel content creation and performance intelligence.",
+      whatIsUnlocked: ["Social Autopilot", "Copilot Studio", "Autonomous Campaigns"],
+      action: isGrowing ? null : { label: "Open Copilot", href: "/app/social/copilot" },
     },
     {
       key: "optimize",
@@ -265,9 +265,9 @@ export function deriveBusinessJourney(ctx: BusinessJourneyContext): BusinessJour
       summary: isOptimized ? "Operating at full scale" : "Ongoing performance tuning",
       detail: isOptimized
         ? "Growth operations running on schedule."
-        : "Upgrade to Growth tier for unlimited automated campaigns and deep CRM analytics.",
+        : "Upgrade to Growth tier for unlimited automated campaigns and continuous optimization.",
       whatStratxcelDoes: "Audits performance weekly and recommends ongoing optimizations.",
-      whatIsUnlocked: ["Autonomous Copilot", "Advanced Lead Analytics"],
+      whatIsUnlocked: ["Autonomous Copilot", "Advanced Growth Analytics"],
       action: isOptimized ? null : { label: "Explore Plans", href: "/app/billing" },
     },
   ];
@@ -311,10 +311,8 @@ export function deriveBusinessJourney(ctx: BusinessJourneyContext): BusinessJour
   if (ctx.whatsappConnected) {
     unlockedMilestones.push({ ...CANONICAL_MILESTONES[5], isUnlocked: true });
   }
-  if (ctx.crmLeadsCount > 0) {
-    unlockedMilestones.push({ ...CANONICAL_MILESTONES[6], isUnlocked: true });
-  }
   if (ctx.hasAutomations) {
+    unlockedMilestones.push({ ...CANONICAL_MILESTONES[6], isUnlocked: true });
     unlockedMilestones.push({ ...CANONICAL_MILESTONES[7], isUnlocked: true });
   }
 

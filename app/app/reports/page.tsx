@@ -33,7 +33,6 @@ export default function ReportsPage() {
 
   const [missions, setMissions] = useState<MissionSummary[] | null>(null);
   const [approvalsCount, setApprovalsCount] = useState<number | "forbidden" | null>(null);
-  const [leadsCount, setLeadsCount] = useState<number | null>(null);
   const [walletBalance, setWalletBalance] = useState<{ cents: number; currency: string } | null>(null);
   const [auditEvents, setAuditEvents] = useState<{ id: string; action: string; target_type: string | null; created_at: string }[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -42,10 +41,9 @@ export default function ReportsPage() {
   async function load() {
     if (!tenantId) return;
     setError(null);
-    const [missionsRes, approvalsRes, leadsRes, walletRes, auditRes] = await Promise.all([
+    const [missionsRes, approvalsRes, walletRes, auditRes] = await Promise.all([
       fetch(`/api/platform/missions?tenantId=${encodeURIComponent(tenantId)}`),
       fetch(`/api/platform/approvals?tenantId=${encodeURIComponent(tenantId)}`),
-      fetch(`/api/platform/leads?tenantId=${encodeURIComponent(tenantId)}`),
       fetch(`/api/platform/wallet?tenantId=${encodeURIComponent(tenantId)}`),
       fetch(`/api/platform/audit?tenantId=${encodeURIComponent(tenantId)}`),
     ]);
@@ -61,9 +59,6 @@ export default function ReportsPage() {
       const approvalsBody = await approvalsRes.json();
       if (approvalsRes.ok) setApprovalsCount(approvalsBody.approvals.length);
     }
-
-    const leadsBody = await leadsRes.json();
-    if (leadsRes.ok) setLeadsCount(leadsBody.leads.length);
 
     const walletBody = await walletRes.json();
     if (walletRes.ok && walletBody.account) setWalletBalance({ cents: walletBody.account.balance_cents, currency: walletBody.account.currency });
@@ -116,7 +111,7 @@ export default function ReportsPage() {
             value={approvalsCount === "forbidden" ? "—" : approvalsCount ?? "—"}
             deltaLabel={approvalsCount === "forbidden" ? "no access for your role" : "current"}
           />
-          <Metric label="Leads" value={leadsCount ?? "—"} deltaLabel="all time" />
+          <Metric label="Audit events" value={auditEvents === null ? "—" : auditEvents.length} deltaLabel="all time" />
         </ModuleStatusSummary>
       </section>
 
@@ -145,11 +140,6 @@ export default function ReportsPage() {
       <section className="flex flex-col gap-3">
         <h2 className="font-sx-sans text-base font-medium text-sx-text">Website and SEO</h2>
         <Metric label="Website / SEO missions" value={websiteSeo.length} deltaLabel="in range" />
-      </section>
-
-      <section className="flex flex-col gap-3">
-        <h2 className="font-sx-sans text-base font-medium text-sx-text">Leads and CRM</h2>
-        <Metric label="Leads received" value={leadsCount ?? "—"} deltaLabel="all time" />
       </section>
 
       <section className="flex flex-col gap-3">

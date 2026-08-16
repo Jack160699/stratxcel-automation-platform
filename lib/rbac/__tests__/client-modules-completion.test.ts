@@ -40,7 +40,6 @@ function run() {
   // --- 2. No module in scope for this pass remains a generic FoundationPage ---
   for (const parts of [
     ["app", "app", "copilot", "page.tsx"],
-    ["app", "app", "crm", "page.tsx"],
     ["app", "app", "files", "page.tsx"],
     ["app", "app", "reports", "page.tsx"],
     ["app", "app", "team", "page.tsx"],
@@ -50,6 +49,9 @@ function run() {
     assert.equal(/FoundationPage/.test(source), false, `${parts.join("/")} must no longer render the generic FoundationPage placeholder`);
     assert.ok(/"use client"/.test(source), `${parts.join("/")} must be a real interactive client module, not a static server placeholder`);
   }
+  // CRM & Conversations redirect to /app in customer V1
+  assert.ok(/redirect\("\/app"\)/.test(read("app", "app", "crm", "page.tsx")), "CRM must redirect to /app in customer V1");
+  assert.ok(/redirect\("\/app"\)/.test(read("app", "app", "conversations", "page.tsx")), "Conversations must redirect to /app in customer V1");
   // Website/Ads keep "use client" real interfaces too, but intentionally still
   // show disconnected states (no backend exists) — checked separately below.
   for (const parts of [
@@ -112,7 +114,7 @@ function run() {
   // (app/app/content/inbox/page.tsx) — it was never actually lost, just no
   // longer duplicated on a page that doesn't fetch anything Social-related.
   const conversations = read("app", "app", "conversations", "page.tsx");
-  assert.ok(/redirect\("\/app\/crm"\)/.test(conversations), "Conversations must redirect into the unified CRM workspace, not maintain its own separate implementation");
+  assert.ok(/redirect\("\/app"\)/.test(conversations), "Conversations must redirect to /app in customer V1");
   const contentInbox = read("app", "app", "content", "inbox", "page.tsx");
   assert.ok(/StaffScopedNotice/.test(contentInbox), "Social's own DM/comment inbox must still surface StaffScopedNotice");
   const crmWorkspace = read("components", "crm", "CrmWorkspace.tsx");
@@ -158,7 +160,6 @@ function run() {
   for (const href of [
     "/app",
     "/app/audit",
-    "/app/crm",
     "/app/brand",
     "/app/billing",
     "/app/team",
@@ -169,6 +170,7 @@ function run() {
     assert.ok(appNavData.includes(`href: "${href}"`), `app-nav-data.ts must include ${href}`);
   }
   for (const hiddenUntilComplete of [
+    "/app/crm",
     "/app/copilot",
     "/app/missions",
     "/app/approvals",

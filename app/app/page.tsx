@@ -11,7 +11,7 @@ import { AchievementMoment } from "@/components/journey/AchievementMoment";
 import { Card, CardHeading } from "@/components/ui/Card";
 
 async function loadCommandCenter(tenantDb: SupabaseClient, tenantId: string) {
-  const [order, subscription, brandBrain, socialAccountsCount, crmLeadsCount, whatsappBinding, activeRunsCount] = await Promise.all([
+  const [order, subscription, brandBrain, socialAccountsCount, whatsappBinding, activeRunsCount] = await Promise.all([
     (async () => {
       try {
         const currentOrderId = await resolveCurrentAuditOrderId(tenantDb, tenantId);
@@ -56,17 +56,6 @@ async function loadCommandCenter(tenantDb: SupabaseClient, tenantId: string) {
     })(),
     (async () => {
       try {
-        const { count } = await tenantDb
-          .from("crm_leads")
-          .select("id", { count: "exact", head: true })
-          .eq("tenant_id", tenantId);
-        return count ?? 0;
-      } catch {
-        return 0;
-      }
-    })(),
-    (async () => {
-      try {
         const { data } = await tenantDb
           .from("whatsapp_phone_bindings")
           .select("status, phone_number")
@@ -95,7 +84,6 @@ async function loadCommandCenter(tenantDb: SupabaseClient, tenantId: string) {
     plan: resolveCustomerPlanSummary(subscription),
     brandBrain,
     socialAccountsCount,
-    crmLeadsCount,
     whatsappBinding,
     activeRunsCount,
   };
@@ -118,7 +106,6 @@ export default async function ClientCommandCenterPage() {
     plan,
     brandBrain,
     socialAccountsCount,
-    crmLeadsCount,
     whatsappBinding,
     activeRunsCount,
   } = await loadCommandCenter(ctx.supabase, active.tenantId);
@@ -151,7 +138,7 @@ export default async function ClientCommandCenterPage() {
     hasReportData: Boolean(report),
     reportKind: (order?.report_data as any)?.reportKind,
     whatsappConnected: Boolean(whatsappBinding && whatsappBinding.status === "active"),
-    crmLeadsCount,
+    crmLeadsCount: 0,
     hasAutomations: activeRunsCount > 0,
     hasActivePlan: plan.activePaid,
   });
@@ -309,33 +296,22 @@ export default async function ClientCommandCenterPage() {
                 {!whatsappBinding && (
                   <div className="flex items-start justify-between gap-2 border-b border-sx-border pb-2.5">
                     <div>
-                      <p className="font-semibold text-sx-text">Connect WhatsApp Receptionist</p>
-                      <p className="text-sx-text-muted">Enable 24/7 automated inquiry response.</p>
+                      <p className="font-semibold text-sx-text">Verify WhatsApp Number</p>
+                      <p className="text-sx-text-muted">Verify your phone number to receive instant alerts.</p>
                     </div>
                     <Link href="/app/integrations" className="font-semibold text-sx-accent hover:underline">
-                      Connect →
-                    </Link>
-                  </div>
-                )}
-                {socialAccountsCount === 0 && (
-                  <div className="flex items-start justify-between gap-2 border-b border-sx-border pb-2.5">
-                    <div>
-                      <p className="font-semibold text-sx-text">Confirm Social Channels</p>
-                      <p className="text-sx-text-muted">Link verified Instagram and Facebook handles.</p>
-                    </div>
-                    <Link href="/app/brand" className="font-semibold text-sx-accent hover:underline">
                       Verify →
                     </Link>
                   </div>
                 )}
-                {crmLeadsCount === 0 && (
+                {socialAccountsCount === 0 && (
                   <div className="flex items-start justify-between gap-2">
                     <div>
-                      <p className="font-semibold text-sx-text">Initialize CRM Leads</p>
-                      <p className="text-sx-text-muted">Track customer enquiries in one pipeline.</p>
+                      <p className="font-semibold text-sx-text">Confirm Social Channels</p>
+                      <p className="text-sx-text-muted">Link verified Instagram and Facebook handles.</p>
                     </div>
-                    <Link href="/app/crm" className="font-semibold text-sx-accent hover:underline">
-                      View CRM →
+                    <Link href="/app/integrations" className="font-semibold text-sx-accent hover:underline">
+                      Connect →
                     </Link>
                   </div>
                 )}

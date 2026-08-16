@@ -151,7 +151,7 @@ export interface PlanTier {
 }
 
 export const PLAN_TIERS: readonly PlanTier[] = [
-  { key: "starter", name: "Starter", pitch: "Live verified website, WhatsApp receptionist, and essential brand foundation." },
-  { key: "growth", name: "Growth", pitch: "Daily Social Autopilot, instant WhatsApp qualification, and active lead management." },
-  { key: "business", name: "Business", pitch: "Multi-channel advertising, full CRM automations, and priority execution support." },
+  { key: "starter", name: "Starter", pitch: "Live verified website, verified WhatsApp alerts, and essential brand foundation." },
+  { key: "growth", name: "Growth", pitch: "Daily Social Autopilot, intelligent audience growth, and multi-channel publishing." },
+  { key: "business", name: "Business", pitch: "Multi-channel advertising, autonomous campaign execution, and priority execution support." },
 ];

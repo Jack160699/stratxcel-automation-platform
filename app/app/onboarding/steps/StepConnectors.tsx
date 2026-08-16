@@ -62,7 +62,7 @@ const PLATFORM_CARDS: PlatformCardConfig[] = [
   {
     key: "whatsapp",
     label: "WhatsApp Number",
-    description: "Verify your WhatsApp phone number to receive instant lead notifications and customer audit alerts.",
+    description: "Verify the phone number you use for WhatsApp to receive instant updates and audit alerts.",
     oauthAvailable: false,
     ctaText: "Connect",
     publicProfilePlaceholder: "+91 98765 43210",
