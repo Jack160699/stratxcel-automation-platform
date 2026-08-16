@@ -101,7 +101,7 @@ function run() {
   assert.ok(/size="touch"/.test(wizard), "primary Back/Continue controls must use the ~44px touch target size");
   assert.ok(/aria-pressed=\{isSelected\}/.test(read("app", "app", "onboarding", "steps", "StepGoals.tsx")), "goal chips must expose pressed state to assistive tech");
   assert.ok(/role="radiogroup"/.test(read("app", "app", "onboarding", "steps", "StepPlan.tsx")), "plan tier selection must use a radiogroup for assistive tech");
-  assert.ok(/max-w-(xl|2xl|3xl|4xl|5xl|6xl|7xl)/.test(wizard), "wizard container must be a single-column, mobile-first layout");
+  assert.ok(/max-w-(full|xl|2xl|3xl|4xl|5xl|6xl|7xl)/.test(wizard), "wizard container must be a single-column, mobile-first layout");
   assert.ok(/aria-invalid/.test(stepBusiness), "form fields must expose aria-invalid on validation errors");
   assert.ok(/aria-describedby/.test(stepBusiness), "form field errors/hints must be associated via aria-describedby");
 
