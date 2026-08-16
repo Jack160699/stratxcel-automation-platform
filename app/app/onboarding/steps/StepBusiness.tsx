@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { FormField } from "../FormField";
@@ -29,9 +29,44 @@ export function StepBusiness({
 
   const [discoveryState, setDiscoveryState] = useState<DiscoveryStatus>("idle");
   const [discoveryMessage, setDiscoveryMessage] = useState<string>("");
-  const [discoveredSocials, setDiscoveredSocials] = useState<DiscoveredSocialLink[]>([]);
-  const [confirmedSocials, setConfirmedSocials] = useState<Set<string>>(new Set());
-  const [rejectedSocials, setRejectedSocials] = useState<Set<string>>(new Set());
+  const [discoveredSocials, setDiscoveredSocials] = useState<DiscoveredSocialLink[]>(() => {
+    if (draft.business.socials && draft.business.socials.length > 0) {
+      return draft.business.socials.map((s) => ({
+        platform: s.platform,
+        url: s.url,
+        handle: s.handle,
+        isCustom: false,
+      }));
+    }
+    return [];
+  });
+  const [confirmedSocials, setConfirmedSocials] = useState<Set<string>>(() => {
+    if (draft.business.socials && draft.business.socials.length > 0) {
+      return new Set(draft.business.socials.filter((s) => s.confirmed !== false).map((s) => s.url));
+    }
+    return new Set();
+  });
+  const [rejectedSocials, setRejectedSocials] = useState<Set<string>>(() => {
+    if (draft.business.socials && draft.business.socials.length > 0) {
+      return new Set(draft.business.socials.filter((s) => s.confirmed === false).map((s) => s.url));
+    }
+    return new Set();
+  });
+
+  useEffect(() => {
+    if (draft.business.socials && draft.business.socials.length > 0 && discoveredSocials.length === 0) {
+      setDiscoveredSocials(
+        draft.business.socials.map((s) => ({
+          platform: s.platform,
+          url: s.url,
+          handle: s.handle,
+          isCustom: false,
+        }))
+      );
+      setConfirmedSocials(new Set(draft.business.socials.filter((s) => s.confirmed !== false).map((s) => s.url)));
+      setRejectedSocials(new Set(draft.business.socials.filter((s) => s.confirmed === false).map((s) => s.url)));
+    }
+  }, [draft.business.socials]);
 
   async function handleWebsiteDiscovery(urlToScan: string) {
     if (!urlToScan.trim()) return;
@@ -201,35 +236,35 @@ export function StepBusiness({
 
         {/* Discovered Social Profiles Confirmation List */}
         {discoveredSocials.length > 0 && (
-          <div className="mt-4 pt-3 border-t border-sx-border/40 flex flex-col gap-2.5">
-            <div className="flex items-center justify-between">
+          <div className="mt-4 pt-3 border-t border-sx-border/40 flex flex-col gap-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="text-xs font-semibold text-sx-text">Discovered Social Channels</span>
-              <span className="text-[11px] text-sx-text-subtle">Is this yours?</span>
+              <span className="text-[11px] text-sx-text-subtle">Confirm which official accounts belong to your business</span>
             </div>
-            <div className="grid gap-2 sm:grid-cols-2">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3">
               {discoveredSocials.map((social) => {
                 const isConfirmed = confirmedSocials.has(social.url);
                 const isRejected = rejectedSocials.has(social.url);
                 return (
                   <div
                     key={social.url}
-                    className={`flex items-center justify-between p-2.5 rounded-sx-sm border text-xs ${
-                      isConfirmed ? "bg-sx-surface-1 border-sx-success/40" : isRejected ? "bg-sx-surface-1/40 border-sx-border opacity-50" : "bg-sx-surface-1 border-sx-border"
+                    className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-sx-sm border text-xs transition-colors ${
+                      isConfirmed ? "bg-sx-surface-1 border-sx-success/50 shadow-sm" : isRejected ? "bg-sx-surface-1/40 border-sx-border opacity-60" : "bg-sx-surface-1 border-sx-border"
                     }`}
                   >
-                    <div className="flex items-center gap-2 min-w-0 pr-2">
+                    <div className="flex items-center gap-3 min-w-0 flex-1">
                       <PlatformIcon name={social.platform === "x" ? "threads" : (social.platform as any)} />
-                      <div className="truncate">
-                        <p className="font-semibold truncate text-sx-text">{social.handle}</p>
-                        <p className="text-[10px] text-sx-text-subtle truncate">{social.url}</p>
+                      <div className="min-w-0 flex-1">
+                        <p className="font-semibold text-xs sm:text-sm text-sx-text break-all">{social.handle}</p>
+                        <p className="text-[11px] text-sx-text-subtle break-all font-mono">{social.url}</p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-1 shrink-0">
+                    <div className="flex items-center gap-2 shrink-0 pt-1 sm:pt-0">
                       <button
                         type="button"
                         onClick={() => toggleSocialConfirmation(social.url, true)}
-                        className={`px-2 py-1 rounded text-[11px] font-medium transition-colors ${
-                          isConfirmed ? "bg-sx-success text-white" : "bg-sx-surface-2 text-sx-text-muted hover:text-sx-text"
+                        className={`min-h-8 px-3 py-1.5 rounded-sx-xs text-xs font-semibold transition-colors ${
+                          isConfirmed ? "bg-sx-success text-white shadow-sm" : "bg-sx-surface-2 text-sx-text-muted hover:bg-sx-surface-3 hover:text-sx-text border border-sx-border"
                         }`}
                       >
                         ✓ Mine
@@ -237,8 +272,8 @@ export function StepBusiness({
                       <button
                         type="button"
                         onClick={() => toggleSocialConfirmation(social.url, false)}
-                        className={`px-2 py-1 rounded text-[11px] font-medium transition-colors ${
-                          isRejected ? "bg-sx-danger text-white" : "bg-sx-surface-2 text-sx-text-muted hover:text-sx-text"
+                        className={`min-h-8 px-3 py-1.5 rounded-sx-xs text-xs font-semibold transition-colors ${
+                          isRejected ? "bg-sx-danger text-white shadow-sm" : "bg-sx-surface-2 text-sx-text-muted hover:bg-sx-surface-3 hover:text-sx-text border border-sx-border"
                         }`}
                       >
                         Not mine
@@ -253,40 +288,42 @@ export function StepBusiness({
       </div>
 
       {/* 2. Discovered/Confirmed Business Identity Fields */}
-      <FormField label="Business / workspace name" htmlFor={nameId} error={errors.name}>
-        <Input
-          id={nameId}
-          value={draft.business.name}
-          onChange={(e) => {
-            const name = e.target.value;
-            update({ name, slug: draft.business.slugTouched ? draft.business.slug : slugify(name) });
-          }}
-          aria-invalid={!!errors.name}
-          aria-describedby={errors.name ? `${nameId}-error` : undefined}
-          placeholder="Acme Retail"
-          className="h-11"
-        />
-      </FormField>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <FormField label="Business / workspace name" htmlFor={nameId} error={errors.name}>
+          <Input
+            id={nameId}
+            value={draft.business.name}
+            onChange={(e) => {
+              const name = e.target.value;
+              update({ name, slug: draft.business.slugTouched ? draft.business.slug : slugify(name) });
+            }}
+            aria-invalid={!!errors.name}
+            aria-describedby={errors.name ? `${nameId}-error` : undefined}
+            placeholder="Acme Retail"
+            className="h-11"
+          />
+        </FormField>
 
-      <FormField label="Workspace URL slug" htmlFor={slugId} error={errors.slug} hint="Lowercase letters, numbers, and hyphens only.">
-        <Input
-          id={slugId}
-          value={draft.business.slug}
-          onChange={(e) => update({ slug: slugify(e.target.value), slugTouched: true })}
-          aria-invalid={!!errors.slug}
-          aria-describedby={errors.slug ? `${slugId}-error` : `${slugId}-hint`}
-          placeholder="acme-retail"
-          className="h-11"
-        />
-      </FormField>
+        <FormField label="Workspace URL slug" htmlFor={slugId} error={errors.slug} hint="Lowercase letters, numbers, and hyphens only.">
+          <Input
+            id={slugId}
+            value={draft.business.slug}
+            onChange={(e) => update({ slug: slugify(e.target.value), slugTouched: true })}
+            aria-invalid={!!errors.slug}
+            aria-describedby={errors.slug ? `${slugId}-error` : `${slugId}-hint`}
+            placeholder="acme-retail"
+            className="h-11"
+          />
+        </FormField>
+      </div>
 
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-4">
         <FormField label="Industry / category" htmlFor={industryId} optional>
           <Input
             id={industryId}
             value={draft.business.industry}
             onChange={(e) => update({ industry: e.target.value })}
-            placeholder="e.g. Retail, SaaS, Hospitality, Consulting"
+            placeholder="e.g. Retail, SaaS, Hospitality"
             className="h-11"
           />
         </FormField>
@@ -296,24 +333,22 @@ export function StepBusiness({
             id={modelId}
             value={draft.business.businessModel ?? ""}
             onChange={(e) => update({ businessModel: e.target.value })}
-            placeholder="e.g. B2B Client Services, D2C Retail"
+            placeholder="e.g. B2B Client Services, D2C"
             className="h-11"
           />
         </FormField>
-      </div>
 
-      <div className="grid gap-3 sm:grid-cols-2">
-        <FormField label="Primary operating location" htmlFor={locationId} optional hint="Saved to your Business Profile (editable in Workspace Settings & Brand Brain).">
+        <FormField label="Primary location" htmlFor={locationId} optional hint="Saved to your Business Profile (editable in Workspace Settings & Brand Brain).">
           <Input
             id={locationId}
             value={draft.business.location}
             onChange={(e) => update({ location: e.target.value })}
-            placeholder="e.g. Bhilai, Chhattisgarh, India"
+            placeholder="e.g. Bhilai, Chhattisgarh"
             className="h-11"
           />
         </FormField>
 
-        <FormField label="Business stage" htmlFor={stageId} optional hint="Determines your Audit Report vs Business Launch Plan.">
+        <FormField label="Business stage" htmlFor={stageId} optional hint="Routes your Audit or Launch Plan.">
           <select
             id={stageId}
             value={draft.business.stage ?? "NEW/STARTING"}

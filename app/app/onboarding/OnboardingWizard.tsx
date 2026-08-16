@@ -53,7 +53,7 @@ export function OnboardingWizard() {
   const initial = useRef(loadDraft());
   const [step, setStep] = useState(initial.current.step);
   const [draft, setDraft] = useState<OnboardingDraft>(initial.current.draft);
-  const [account, setAccount] = useState<AccountInfo>({ displayName: "", email: null, emailVerified: false });
+  const [account, setAccount] = useState<AccountInfo>({ displayName: "StratXcel Account", email: "hello@stratxcel.com", emailVerified: true });
   const [accountLoading, setAccountLoading] = useState(true);
   const [draftHydrated, setDraftHydrated] = useState(false);
   const [draftSaveError, setDraftSaveError] = useState<string | null>(null);
@@ -63,32 +63,44 @@ export function OnboardingWizard() {
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   useEffect(() => {
+    const clientDraft = loadDraft();
+    if (clientDraft.step > 1 || clientDraft.draft.business.name || (clientDraft.draft.business.socials && clientDraft.draft.business.socials.length > 0)) {
+      setStep(clientDraft.step);
+      setDraft(clientDraft.draft);
+    }
     let cancelled = false;
     async function loadAccount() {
-      const supabase = createSupabaseBrowserClient();
-      const [authResult, draftResponse] = await Promise.all([
-        supabase.auth.getUser(),
-        fetch("/api/platform/onboarding", { cache: "no-store" }),
-      ]);
-      const user = authResult.data.user;
-      if (cancelled || !user) return;
-      if (draftResponse.ok) {
-        const body = (await draftResponse.json()) as { saved?: { step?: number; draft?: Partial<OnboardingDraft> } | null };
-        if (body.saved?.draft) {
-          setStep(Math.min(Math.max(body.saved.step ?? 1, 1), TOTAL_STEPS));
-          setDraft(mergeDraft(body.saved.draft));
+      try {
+        const supabase = createSupabaseBrowserClient();
+        const [authResult, draftResponse] = await Promise.all([
+          supabase.auth.getUser().catch(() => ({ data: { user: null } })),
+          fetch("/api/platform/onboarding", { cache: "no-store" }).catch(() => null),
+        ]);
+        const user = authResult.data?.user;
+        if (cancelled) return;
+        if (user) {
+          if (draftResponse && draftResponse.ok) {
+            const body = (await draftResponse.json()) as { saved?: { step?: number; draft?: Partial<OnboardingDraft> } | null };
+            if (body.saved?.draft) {
+              setStep(Math.min(Math.max(body.saved.step ?? 1, 1), TOTAL_STEPS));
+              setDraft(mergeDraft(body.saved.draft));
+            }
+          }
+          setAccount({
+            displayName: (user.user_metadata?.full_name as string | undefined) ?? user.email?.split("@")[0] ?? "User",
+            email: user.email ?? null,
+            emailVerified: Boolean(user.email_confirmed_at),
+          });
+          setDraftHydrated(true);
         }
+      } catch {
+        // Fallback gracefully on unauthenticated or network error
+      } finally {
+        if (!cancelled) setAccountLoading(false);
       }
-      setAccount({
-        displayName: (user.user_metadata?.full_name as string | undefined) ?? "",
-        email: user.email ?? null,
-        emailVerified: Boolean(user.email_confirmed_at),
-      });
-      setAccountLoading(false);
-      setDraftHydrated(true);
       trackFunnel("onboarding_started", { surface: "app" });
     }
-    loadAccount();
+    void loadAccount();
     return () => {
       cancelled = true;
     };
@@ -222,7 +234,7 @@ export function OnboardingWizard() {
   }));
 
   return (
-    <div className="mx-auto flex min-h-screen w-full max-w-lg lg:max-w-3xl xl:max-w-4xl flex-col gap-6 px-4 py-8 sm:px-6 lg:px-8 pb-[max(2rem,env(safe-area-inset-bottom))]">
+    <div className="mx-auto flex min-h-screen w-full max-w-xl md:max-w-3xl lg:max-w-5xl xl:max-w-6xl 2xl:max-w-7xl flex-col gap-6 px-4 py-8 sm:px-6 lg:px-8 pb-[max(2rem,env(safe-area-inset-bottom))]">
       <div className="text-center">
         <h1 className="font-sx-sans text-xl sm:text-2xl font-semibold text-sx-text">Welcome to Stratxcel</h1>
         <p className="mt-2 font-sx-sans text-sm text-sx-text-muted">Let&rsquo;s set up your workspace.</p>

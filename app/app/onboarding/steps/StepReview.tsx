@@ -31,95 +31,97 @@ export function StepReview({
         Review everything below, then create your workspace. This is the only step that writes anything permanent.
       </p>
 
-      <Card variant="nested">
-        <CardHeading>Account</CardHeading>
-        <CardRow className="justify-between">
-          <span className="text-sx-text-muted">Name</span>
-          <span className="text-sx-text">{account.displayName || "—"}</span>
-        </CardRow>
-        <CardRow className="justify-between">
-          <span className="text-sx-text-muted">Email</span>
-          <span className="text-sx-text">{account.email ?? "—"}</span>
-        </CardRow>
-      </Card>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Card variant="nested">
+          <CardHeading>Account</CardHeading>
+          <CardRow className="justify-between">
+            <span className="text-sx-text-muted">Name</span>
+            <span className="text-sx-text">{account.displayName || "—"}</span>
+          </CardRow>
+          <CardRow className="justify-between">
+            <span className="text-sx-text-muted">Email</span>
+            <span className="text-sx-text">{account.email ?? "—"}</span>
+          </CardRow>
+        </Card>
 
-      <Card variant="nested">
-        <CardHeading>Business — saved now</CardHeading>
-        <CardRow className="justify-between">
-          <span className="text-sx-text-muted">Name</span>
-          <span className="text-sx-text">{draft.business.name || "—"}</span>
-        </CardRow>
-        <CardRow className="justify-between">
-          <span className="text-sx-text-muted">Slug</span>
-          <span className="font-sx-mono text-sx-text">{draft.business.slug || "—"}</span>
-        </CardRow>
-        {draft.business.industry && (
+        <Card variant="nested">
+          <CardHeading>Business — saved now</CardHeading>
           <CardRow className="justify-between">
-            <span className="text-sx-text-muted">Industry</span>
-            <span className="text-sx-text">{draft.business.industry}</span>
+            <span className="text-sx-text-muted">Name</span>
+            <span className="text-sx-text">{draft.business.name || "—"}</span>
           </CardRow>
-        )}
-        {(draft.business.website || draft.business.location) && (
-          <div className="border-t border-sx-border pt-2.5 text-[11.5px] text-sx-text-subtle">
-            Website / location will be completed in Workspace Settings — not saved by this step.
-          </div>
-        )}
-      </Card>
+          <CardRow className="justify-between">
+            <span className="text-sx-text-muted">Slug</span>
+            <span className="font-sx-mono text-sx-text">{draft.business.slug || "—"}</span>
+          </CardRow>
+          {draft.business.industry && (
+            <CardRow className="justify-between">
+              <span className="text-sx-text-muted">Industry</span>
+              <span className="text-sx-text">{draft.business.industry}</span>
+            </CardRow>
+          )}
+          {(draft.business.website || draft.business.location) && (
+            <div className="border-t border-sx-border pt-2.5 text-[11.5px] text-sx-text-subtle">
+              Website / location will be completed in Workspace Settings — not saved by this step.
+            </div>
+          )}
+        </Card>
 
-      <Card variant="nested">
-        <CardHeading>Goals — recorded as a request</CardHeading>
-        {goalLabels.length ? (
-          <p className="pt-2 text-[12.5px] text-sx-text">{goalLabels.join(", ")}</p>
-        ) : (
-          <p className="pt-2 text-[12.5px] text-sx-text-subtle">None selected.</p>
-        )}
-      </Card>
+        <Card variant="nested">
+          <CardHeading>Goals — recorded as a request</CardHeading>
+          {goalLabels.length ? (
+            <p className="pt-2 text-[12.5px] text-sx-text">{goalLabels.join(", ")}</p>
+          ) : (
+            <p className="pt-2 text-[12.5px] text-sx-text-subtle">None selected.</p>
+          )}
+        </Card>
 
-      <Card variant="nested">
-        <CardHeading>Brand — saved to Brand Brain</CardHeading>
-        <CardRow className="justify-between">
-          <span className="text-sx-text-muted">Brand name</span>
-          <span className="text-sx-text">{draft.brand.businessName || draft.business.name || "—"}</span>
-        </CardRow>
-        {draft.brand.audience && (
+        <Card variant="nested">
+          <CardHeading>Brand — saved to Brand Brain</CardHeading>
           <CardRow className="justify-between">
-            <span className="text-sx-text-muted">Audience</span>
-            <span className="text-sx-text">{draft.brand.audience}</span>
+            <span className="text-sx-text-muted">Brand name</span>
+            <span className="text-sx-text">{draft.brand.businessName || draft.business.name || "—"}</span>
           </CardRow>
-        )}
-        {draft.brand.tone && (
-          <CardRow className="justify-between">
-            <span className="text-sx-text-muted">Tone</span>
-            <span className="text-sx-text">{draft.brand.tone}</span>
-          </CardRow>
-        )}
-        {offers.length > 0 && (
-          <CardRow className="justify-between">
-            <span className="text-sx-text-muted">Offers</span>
-            <span className="text-right text-sx-text">{offers.join(", ")}</span>
-          </CardRow>
-        )}
-        {restrictions.length > 0 && (
-          <CardRow className="justify-between">
-            <span className="text-sx-text-muted">Restrictions</span>
-            <span className="text-right text-sx-text">{restrictions.join(", ")}</span>
-          </CardRow>
-        )}
-        {draft.brand.description && (
-          <div className="border-t border-sx-border pt-2.5 text-[11.5px] text-sx-text-subtle">
-            Short description will be completed in Workspace Settings — not saved by this step.
-          </div>
-        )}
-      </Card>
+          {draft.brand.audience && (
+            <CardRow className="justify-between">
+              <span className="text-sx-text-muted">Audience</span>
+              <span className="text-sx-text">{draft.brand.audience}</span>
+            </CardRow>
+          )}
+          {draft.brand.tone && (
+            <CardRow className="justify-between">
+              <span className="text-sx-text-muted">Tone</span>
+              <span className="text-sx-text">{draft.brand.tone}</span>
+            </CardRow>
+          )}
+          {offers.length > 0 && (
+            <CardRow className="justify-between">
+              <span className="text-sx-text-muted">Offers</span>
+              <span className="text-right text-sx-text">{offers.join(", ")}</span>
+            </CardRow>
+          )}
+          {restrictions.length > 0 && (
+            <CardRow className="justify-between">
+              <span className="text-sx-text-muted">Restrictions</span>
+              <span className="text-right text-sx-text">{restrictions.join(", ")}</span>
+            </CardRow>
+          )}
+          {draft.brand.description && (
+            <div className="border-t border-sx-border pt-2.5 text-[11.5px] text-sx-text-subtle">
+              Short description will be completed in Workspace Settings — not saved by this step.
+            </div>
+          )}
+        </Card>
 
-      <Card variant="nested">
-        <CardHeading>Plan — non-binding request</CardHeading>
-        <p className="pt-2 text-[12.5px] text-sx-text">
-          {planTier ? planTier.name : "No preference selected"}
-          {draft.plan.note && <span className="block text-sx-text-muted">{draft.plan.note}</span>}
-        </p>
-        <p className="pt-2 text-[11.5px] text-sx-text-subtle">No plan is activated and nothing is billed by this step.</p>
-      </Card>
+        <Card variant="nested" className="sm:col-span-2">
+          <CardHeading>Plan — non-binding request</CardHeading>
+          <p className="pt-2 text-[12.5px] text-sx-text">
+            {planTier ? planTier.name : "No preference selected"}
+            {draft.plan.note && <span className="block text-sx-text-muted">{draft.plan.note}</span>}
+          </p>
+          <p className="pt-2 text-[11.5px] text-sx-text-subtle">No plan is activated and nothing is billed by this step.</p>
+        </Card>
+      </div>
 
       {error && <ErrorState message={error} />}
 
