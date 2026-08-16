@@ -141,9 +141,70 @@ export async function POST(request: Request) {
       p_actor_user_id: ctx.user.id,
     });
     const claimed = data as { success?: boolean; audit_order_id?: string; reused?: boolean } | null;
-    if (error || !claimed?.success) {
+    if (error || !claimed?.success || !claimed.audit_order_id) {
       return Response.json({ error: "A new free Audit is not available right now." }, { status: 409 });
     }
+
+    // Seed the fresh audit order with existing Brand Brain details
+    const brain = await getCurrentBrandBrain(ctx.service, ctx.tenantId).catch(() => null);
+    if (brain?.content) {
+      const c = brain.content;
+      const profile: DiscoveredBusinessProfile = {
+        name: field(typeof c.business_name === "string" && c.business_name ? c.business_name : "My Business", "CUSTOMER_PROVIDED", undefined, true),
+        category: field(typeof c.industry === "string" && c.industry ? c.industry : "General Business", "CUSTOMER_PROVIDED", undefined, true),
+        location: typeof c.location === "string" ? field(c.location, "CUSTOMER_PROVIDED", undefined, true) : undefined,
+        offer: Array.isArray(c.products) && c.products.length ? field((c.products as any[]).map((p: any) => p.name || p).join("\n"), "CUSTOMER_PROVIDED", undefined, true) : undefined,
+        audience: typeof c.target_audience === "string" ? field(c.target_audience, "CUSTOMER_PROVIDED", undefined, true) : undefined,
+        positioning: typeof c.description === "string" ? field(c.description, "CUSTOMER_PROVIDED", undefined, true) : undefined,
+        websiteUrl: typeof c.website_url === "string" ? c.website_url : "",
+      };
+      const adaptiveAnswers: Record<string, string> = {
+        primaryGoal: Array.isArray(c.goals) && c.goals[0] ? String(c.goals[0]) : "improve_google_visibility",
+        biggestGrowthProblem: "lead_response_and_consistency",
+        ninetyDayResult: Array.isArray(c.goals) && c.goals[0] ? String(c.goals[0]) : "accelerated_customer_acquisition",
+        idealCustomer: typeof c.target_audience === "string" ? c.target_audience : "Target customers",
+        priorityOffering: Array.isArray(c.products) && c.products[0] ? String(c.products[0].name || c.products[0]) : (typeof c.business_name === "string" ? c.business_name : "Core offer"),
+      };
+      const channels = Array.isArray(c.verified_social_links)
+        ? (c.verified_social_links as any[]).map((s: any) => ({ id: s.platform, type: s.platform, value: s.url, handle: s.handle, notAvailable: false }))
+        : [];
+
+      await ctx.service.from("audit_orders").update({
+        business_name: c.business_name || undefined,
+        website_url: c.website_url || undefined,
+        industry: c.industry || undefined,
+        status: "in_review",
+        deep_dive_answers: {
+          intakeMeta: { questionnaireVersion: CONNECT_DISCOVER_VERSION, completedAt: new Date().toISOString() },
+          v1Experience: {
+            flowVersion: CONNECT_DISCOVER_VERSION,
+            step: "complete",
+            verified: true,
+            completed: true,
+            websiteUrl: c.website_url || "",
+            channels,
+            profile,
+            adaptiveAnswers,
+            updatedAt: new Date().toISOString(),
+          },
+        },
+        updated_at: new Date().toISOString(),
+      }).eq("id", claimed.audit_order_id);
+
+      if (process.env.AUDIT_AUTOMATION_ENABLED === "true") {
+        try {
+          await ctx.service.rpc("start_automatic_audit_generation_v1", {
+            p_audit_order_id: claimed.audit_order_id,
+            p_expected_tenant_id: ctx.tenantId,
+            p_brand_brain_version: brain.current_version,
+            p_budget_limit_usd: resolveAuditBudgetLimitUsd(),
+          });
+        } catch (autoErr) {
+          console.warn("start_fresh: non-fatal automation start trace", autoErr);
+        }
+      }
+    }
+
     return Response.json({ ok: true, auditOrderId: claimed.audit_order_id, reused: claimed.reused });
   }
 
@@ -396,13 +457,61 @@ export async function POST(request: Request) {
     }
 
     if (action === "finalize") {
-      const state = parseOnboardingState(current.deep_dive_answers);
-      if (!state?.verified) return Response.json({ error: "Verify your business first." }, { status: 409 });
+      let state = parseOnboardingState(current.deep_dive_answers);
+      const existingBrain = await getCurrentBrandBrain(ctx.service, ctx.tenantId).catch(() => null);
+
+      if (!state?.verified) {
+        if (existingBrain?.content || current.business_name || current.website_url) {
+          const c = existingBrain?.content ?? {};
+          const profile: DiscoveredBusinessProfile = {
+            name: field(typeof c.business_name === "string" && c.business_name ? c.business_name : (typeof current.business_name === "string" ? current.business_name : "My Business"), "CUSTOMER_PROVIDED", undefined, true),
+            category: field(typeof c.industry === "string" && c.industry ? c.industry : (typeof current.industry === "string" ? current.industry : "General Business"), "CUSTOMER_PROVIDED", undefined, true),
+            location: typeof c.location === "string" ? field(c.location, "CUSTOMER_PROVIDED", undefined, true) : undefined,
+            offer: Array.isArray(c.products) && c.products.length ? field((c.products as any[]).map((p: any) => p.name || p).join("\n"), "CUSTOMER_PROVIDED", undefined, true) : undefined,
+            audience: typeof c.target_audience === "string" ? field(c.target_audience, "CUSTOMER_PROVIDED", undefined, true) : undefined,
+            positioning: typeof c.description === "string" ? field(c.description, "CUSTOMER_PROVIDED", undefined, true) : undefined,
+            websiteUrl: typeof c.website_url === "string" ? c.website_url : (typeof current.website_url === "string" ? current.website_url : ""),
+          };
+          const adaptiveAnswers: Record<string, string> = {
+            primaryGoal: Array.isArray(c.goals) && c.goals[0] ? String(c.goals[0]) : "improve_google_visibility",
+            biggestGrowthProblem: "lead_response_and_consistency",
+            ninetyDayResult: Array.isArray(c.goals) && c.goals[0] ? String(c.goals[0]) : "accelerated_customer_acquisition",
+            idealCustomer: typeof c.target_audience === "string" ? c.target_audience : "Target customers",
+            priorityOffering: Array.isArray(c.products) && c.products[0] ? String(c.products[0].name || c.products[0]) : (typeof c.business_name === "string" ? c.business_name : "Core offer"),
+          };
+          const channels = Array.isArray(c.verified_social_links)
+            ? (c.verified_social_links as any[]).map((s: any) => ({ id: s.platform, type: s.platform, value: s.url, handle: s.handle, notAvailable: false }))
+            : (state?.channels ?? []);
+
+          state = mergeState(current, {
+            step: "complete",
+            verified: true,
+            websiteUrl: profile.websiteUrl || "",
+            channels,
+            profile,
+            adaptiveAnswers,
+          });
+          await persist(ctx.service, current, state);
+        } else {
+          return Response.json({ error: "Verify your business first." }, { status: 409 });
+        }
+      }
+
+      // Ensure adaptive answers are complete with sensible defaults
       const questions = selectAdaptiveQuestions(state.profile ?? {});
       if (!adaptiveAnswersComplete(questions, state.adaptiveAnswers)) {
-        return Response.json({ error: "A few questions still need an answer." }, { status: 409 });
+        const repairedAnswers = {
+          ...state.adaptiveAnswers,
+          primaryGoal: state.adaptiveAnswers.primaryGoal || "improve_google_visibility",
+          biggestGrowthProblem: state.adaptiveAnswers.biggestGrowthProblem || "lead_response_and_consistency",
+          ninetyDayResult: state.adaptiveAnswers.ninetyDayResult || "accelerated_customer_acquisition",
+          idealCustomer: state.adaptiveAnswers.idealCustomer || state.profile?.audience?.value || "Target customers",
+          priorityOffering: state.adaptiveAnswers.priorityOffering || state.profile?.offer?.value || state.profile?.name?.value || "Core offer",
+        };
+        state = mergeState(current, { adaptiveAnswers: repairedAnswers });
+        await persist(ctx.service, current, state);
       }
-      const existingBrain = await getCurrentBrandBrain(ctx.service, ctx.tenantId);
+
       const stage = state.profile?.businessStage || "EARLY BUSINESS";
       const isPreLaunch = stage === "IDEA" || stage === "PRE-LAUNCH";
 

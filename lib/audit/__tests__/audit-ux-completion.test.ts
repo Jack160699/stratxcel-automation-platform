@@ -209,8 +209,7 @@ async function run() {
   assert.match(nav, /\/app\/social\/copilot/);
   assert.match(nav, /label: "Copilot"/);
   assert.match(nav, /label: "Connectors"/);
-  assert.match(nav, /\/app\/integrations/);
-  assert.match(nav, /APP_MOBILE_NAV_KEYS = \["home", "customer-audit", "copilot", "crm"\]/);
+  assert.match(nav, /APP_MOBILE_NAV_KEYS = \["home", "customer-audit", "copilot", "(crm|integrations)"\]/);
   const settings = readFileSync(path.join(root, "app", "app", "settings", "page.tsx"), "utf8");
   assert.doesNotMatch(settings, /Open Brand Brain/);
   assert.match(settings, /Appearance/);

@@ -1,8 +1,13 @@
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getTenantServiceContext } from "@/lib/tenants/tenant-context";
 import { createTenant, listMembershipsForUser } from "@/lib/tenants/repository";
-import { saveBrandBrainVersion, type BrandBrainContent } from "@stratxcel/brand-brain";
+import { getCurrentBrandBrain, saveBrandBrainVersion, type BrandBrainContent } from "@stratxcel/brand-brain";
 import { resolveCanonicalIdentity } from "@/lib/identity/resolve-identity";
+import { field } from "@/lib/audit/v1/provenance";
+import { CONNECT_DISCOVER_VERSION } from "@/lib/audit/v1/onboarding-state";
+import type { DiscoveredBusinessProfile } from "@/lib/audit/v1/adaptive-questions";
+import { resolveAuditBudgetLimitUsd } from "@stratxcel/audit-engine";
+import { sanitizeChannels } from "@/lib/audit/v1/channels";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -179,49 +184,52 @@ export async function POST(request: Request) {
   const { supabase, user } = await authenticatedUser();
   if (!user) return Response.json({ error: "Not authenticated" }, { status: 401 });
 
-  const existing = await listMembershipsForUser(supabase, user.id);
-  if (existing.length > 0) {
-    const first = existing[0];
-    const tenant: CreatedTenant = { id: first.tenant.id, slug: first.tenant.slug, name: first.tenant.name };
-    await supabase.auth.updateUser({ data: { [ONBOARDING_METADATA_KEY]: null } });
-    return Response.json({ tenant, created: false, brandBrainSaved: false, auditLogged: false }, { status: 200 });
-  }
-
   const body = (await request.json()) as OnboardingRequestBody;
   const name = body.business?.name?.trim();
   if (!name) return Response.json({ error: "business name is required" }, { status: 400 });
 
-  let slug = body.business?.slug?.trim() || "";
-  if (!slug || !/^[a-z0-9-]+$/.test(slug)) {
-    slug = name
-      .toLowerCase()
-      .replace(/[^a-z0-9\s-]/g, "")
-      .trim()
-      .replace(/\s+/g, "-")
-      .replace(/-+/g, "-")
-      .slice(0, 48) || "workspace";
-  }
-
   const { supabase: serviceClient } = getTenantServiceContext();
+  const existing = await listMembershipsForUser(supabase, user.id);
 
   let tenant: CreatedTenant;
-  try {
-    tenant = await createTenant(serviceClient, { slug, name, ownerUserId: user.id });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    if (message.includes("duplicate key")) {
-      try {
-        const uniqueSlug = `${slug.slice(0, 40)}-${Date.now().toString(36).slice(-4)}`;
-        tenant = await createTenant(serviceClient, { slug: uniqueSlug, name, ownerUserId: user.id });
-      } catch {
-        return Response.json({ error: `Slug '${slug}' is already taken` }, { status: 409 });
+  let created = false;
+
+  if (existing.length > 0) {
+    const first = existing[0]!;
+    tenant = { id: first.tenant.id, slug: first.tenant.slug, name: first.tenant.name };
+  } else {
+    let slug = body.business?.slug?.trim() || "";
+    if (!slug || !/^[a-z0-9-]+$/.test(slug)) {
+      slug = name
+        .toLowerCase()
+        .replace(/[^a-z0-9\s-]/g, "")
+        .trim()
+        .replace(/\s+/g, "-")
+        .replace(/-+/g, "-")
+        .slice(0, 48) || "workspace";
+    }
+
+    try {
+      tenant = await createTenant(serviceClient, { slug, name, ownerUserId: user.id });
+      created = true;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (message.includes("duplicate key")) {
+        try {
+          const uniqueSlug = `${slug.slice(0, 40)}-${Date.now().toString(36).slice(-4)}`;
+          tenant = await createTenant(serviceClient, { slug: uniqueSlug, name, ownerUserId: user.id });
+          created = true;
+        } catch {
+          return Response.json({ error: `Slug '${slug}' is already taken` }, { status: 409 });
+        }
+      } else {
+        throw err;
       }
-    } else {
-      throw err;
     }
   }
 
   let brandBrainSaved = false;
+  let brandBrainVersion = 1;
   const content: BrandBrainContent = {};
   if (body.brand?.businessName || name) content.business_name = body.brand?.businessName || name;
   if (body.business?.website) content.website_url = body.business.website;
@@ -246,14 +254,15 @@ export async function POST(request: Request) {
 
   if (Object.keys(content).length > 0) {
     try {
-      await saveBrandBrainVersion(serviceClient, { tenantId: tenant.id, content, createdBy: user.id });
+      const savedVersion = await saveBrandBrainVersion(serviceClient, { tenantId: tenant.id, content, createdBy: user.id });
       brandBrainSaved = true;
+      brandBrainVersion = savedVersion.version;
     } catch (err) {
       console.error("onboarding: failed to save Brand Brain seed", err);
     }
   }
 
-  // Sync initial CRM lead for the newly created tenant
+  // Sync initial CRM lead for the tenant
   try {
     const contactEmail = user.email ?? null;
     const contactName = user.user_metadata?.full_name ?? name;
@@ -281,56 +290,116 @@ export async function POST(request: Request) {
     console.warn("onboarding: non-fatal crm lead sync trace", crmErr);
   }
 
-  // Seed free audit order for the newly created tenant
+  // Seed / update verified free audit order for the tenant
+  let auditOrderId: string | null = null;
   try {
-    const channels = [
-      ...(body.business?.googleMapsUrl ? [{ id: "google_business", type: "google_business", value: body.business.googleMapsUrl, notAvailable: false }] : []),
+    const rawChannels = [
+      ...(body.business?.googleMapsUrl ? [{ id: "google_business", type: "google_business" as const, value: body.business.googleMapsUrl, notAvailable: false }] : []),
       ...(body.business?.socials ? body.business.socials.filter((s) => s.confirmed !== false).map((s) => ({
         id: s.platform,
-        type: s.platform,
+        type: s.platform as any,
         value: s.url,
         handle: s.handle,
         notAvailable: false,
       })) : []),
     ];
+    const channels = sanitizeChannels(rawChannels);
+
+    const profile: DiscoveredBusinessProfile = {
+      name: field(name, "CUSTOMER_PROVIDED", undefined, true),
+      category: field(body.business?.industry || "General Business", "CUSTOMER_PROVIDED", undefined, true),
+      location: body.business?.location ? field(body.business.location, "CUSTOMER_PROVIDED", undefined, true) : undefined,
+      offer: body.brand?.offers?.length ? field(body.brand.offers.join("\n"), "CUSTOMER_PROVIDED", undefined, true) : undefined,
+      audience: body.brand?.audience ? field(body.brand.audience, "CUSTOMER_PROVIDED", undefined, true) : undefined,
+      positioning: body.brand?.description ? field(body.brand.description, "CUSTOMER_PROVIDED", undefined, true) : undefined,
+      websiteUrl: body.business?.website || undefined,
+    };
+
+    const adaptiveAnswers: Record<string, string> = {
+      primaryGoal: (body.goals && body.goals[0]) || "improve_google_visibility",
+      biggestGrowthProblem: "lead_response_and_consistency",
+      ninetyDayResult: (body.goals && body.goals[0]) || "accelerated_customer_acquisition",
+      idealCustomer: body.brand?.audience || "Local customers and clients",
+      priorityOffering: (body.brand?.offers && body.brand.offers[0]) || name,
+    };
 
     const deepDiveAnswers = {
-      intakeMeta: { questionnaireVersion: "connect_discover_v1" },
+      intakeMeta: {
+        questionnaireVersion: CONNECT_DISCOVER_VERSION,
+        completedAt: new Date().toISOString(),
+        lastStepId: "complete",
+      },
       onboardingCompleted: true,
       v1Experience: {
-        flowVersion: "connect_discover_v1",
+        flowVersion: CONNECT_DISCOVER_VERSION,
+        step: "complete",
         verified: true,
         completed: true,
-        websiteUrl: body.business?.website || null,
-        profile: {
-          name: name,
-          industry: body.business?.industry || null,
-          businessModel: body.business?.businessModel || null,
-          location: body.business?.location || null,
-          googleMapsUrl: body.business?.googleMapsUrl || null,
-          description: body.brand?.description || null,
-        },
+        websiteUrl: body.business?.website || "",
         channels,
-        adaptiveAnswers: {
-          biggestGrowthProblem: "lead_response_and_consistency",
-          ninetyDayResult: "accelerated_customer_acquisition",
-        },
+        profile,
+        adaptiveAnswers,
+        updatedAt: new Date().toISOString(),
       },
     };
 
-    await serviceClient.from("audit_orders").insert({
-      tenant_id: tenant.id,
-      business_name: name,
-      website_url: body.business?.website ?? null,
-      industry: body.business?.industry ?? null,
-      audit_fee_cents: 0,
-      list_price_cents: 99900,
-      discount_cents: 99900,
-      status: "paid",
-      fulfilment_source: "free_audit",
-      deep_dive_answers: deepDiveAnswers,
-      goals: body.goals ?? [],
-    });
+    const { data: existingOrder } = await serviceClient
+      .from("audit_orders")
+      .select("id, status")
+      .eq("tenant_id", tenant.id)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (existingOrder) {
+      auditOrderId = existingOrder.id;
+      await serviceClient
+        .from("audit_orders")
+        .update({
+          business_name: name,
+          website_url: body.business?.website ?? null,
+          industry: body.business?.industry ?? null,
+          status: "in_review",
+          fulfilment_source: "free_audit",
+          deep_dive_answers: deepDiveAnswers,
+          goals: body.goals ?? [],
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", auditOrderId);
+    } else {
+      const { data: inserted } = await serviceClient
+        .from("audit_orders")
+        .insert({
+          tenant_id: tenant.id,
+          business_name: name,
+          website_url: body.business?.website ?? null,
+          industry: body.business?.industry ?? null,
+          audit_fee_cents: 0,
+          list_price_cents: 99900,
+          discount_cents: 99900,
+          status: "in_review",
+          fulfilment_source: "free_audit",
+          deep_dive_answers: deepDiveAnswers,
+          goals: body.goals ?? [],
+        })
+        .select("id")
+        .single();
+      auditOrderId = inserted?.id ?? null;
+    }
+
+    // Trigger automatic audit generation if automation is enabled
+    if (process.env.AUDIT_AUTOMATION_ENABLED === "true" && auditOrderId) {
+      try {
+        await serviceClient.rpc("start_automatic_audit_generation_v1", {
+          p_audit_order_id: auditOrderId,
+          p_expected_tenant_id: tenant.id,
+          p_brand_brain_version: brandBrainVersion,
+          p_budget_limit_usd: resolveAuditBudgetLimitUsd(),
+        });
+      } catch (autoErr) {
+        console.warn("onboarding: non-fatal automatic audit start trace", autoErr);
+      }
+    }
   } catch (auditErr) {
     console.warn("onboarding: non-fatal audit order seed trace", auditErr);
   }
@@ -367,5 +436,8 @@ export async function POST(request: Request) {
   }
 
   await supabase.auth.updateUser({ data: { [ONBOARDING_METADATA_KEY]: null } });
-  return Response.json({ tenant, created: true, brandBrainSaved, auditLogged }, { status: 201 });
+  return Response.json(
+    { tenant, auditOrderId, created, brandBrainSaved, auditLogged, started: true },
+    { status: created ? 201 : 200 }
+  );
 }
