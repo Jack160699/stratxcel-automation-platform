@@ -5,7 +5,8 @@ export type SocialProviderName =
   | "facebook"
   | "threads"
   | "linkedin"
-  | "youtube";
+  | "youtube"
+  | "x";
 
 export type PublishPrivacyStatus = "private" | "unlisted" | "public";
 

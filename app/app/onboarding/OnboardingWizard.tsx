@@ -31,9 +31,10 @@ const PROVIDER_LABELS: Record<string, string> = {
   google: "Google",
   instagram: "Meta",
   facebook: "Meta",
+  youtube: "Google",
   threads: "Meta",
   linkedin: "LinkedIn",
-  youtube: "Google",
+  x: "X",
   whatsapp: "WhatsApp Verified",
 };
 

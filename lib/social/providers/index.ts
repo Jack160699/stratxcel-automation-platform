@@ -4,6 +4,7 @@ import { facebookProvider } from "./facebook";
 import { threadsProvider } from "./threads";
 import { linkedinProvider } from "./linkedin";
 import { youtubeProvider } from "./youtube";
+import { xProvider } from "./x";
 import type { SocialProvider, SocialProviderName } from "./types";
 
 const registry: Record<string, SocialProvider> = {
@@ -14,6 +15,7 @@ const registry: Record<string, SocialProvider> = {
   threads: threadsProvider,
   linkedin: linkedinProvider,
   youtube: youtubeProvider,
+  x: xProvider,
 };
 
 export function getProvider(name: string): SocialProvider {

@@ -34,7 +34,7 @@ const VIEWPORTS = [
 
 async function run() {
   console.log("================================================================================");
-  console.log("STARTING CANONICAL 5-STEP STRATXCEL ONBOARDING & 6-CONNECTOR E2E VALIDATION");
+  console.log("STARTING CANONICAL 5-STEP STRATXCEL ONBOARDING & 8-CONNECTOR E2E VALIDATION");
   console.log(`Target: ${BASE_URL}`);
   console.log("================================================================================\n");
 
@@ -77,23 +77,25 @@ async function run() {
     console.log("  ✓ Step 1: Google account, website normalization, and Google Maps inputs verified.");
 
     // Advance to Step 2
-    await page.locator("button:has-text('Continue')").click();
+    await page.locator("button:has-text('Continue →')").click();
     await page.waitForTimeout(300);
 
     // ---------------------------------------------------------------------------
-    // 2. STEP 2: CONNECTORS (Mandatory 6-Channel Sequence)
+    // 2. STEP 2: CONNECTORS (Mandatory 8 Channels in Order)
     // ---------------------------------------------------------------------------
-    console.log("\n>>> Step 2: Connectors (Mandatory 6 Channels in Order)");
+    console.log("\n>>> Step 2: Connectors (Mandatory 8 Channels in Order)");
     const step2Text = await page.textContent("body");
     assert.ok(step2Text?.includes("Connect your business channels"), "Must display Step 2 headline");
     assert.ok(step2Text?.includes("Google Business"), "Must display Google Business connector");
     assert.ok(step2Text?.includes("Instagram"), "Must display Instagram connector");
     assert.ok(step2Text?.includes("Facebook"), "Must display Facebook connector");
+    assert.ok(step2Text?.includes("YouTube"), "Must display YouTube connector");
     assert.ok(step2Text?.includes("Threads"), "Must display Threads connector");
     assert.ok(step2Text?.includes("LinkedIn"), "Must display LinkedIn connector");
+    assert.ok(step2Text?.includes("X"), "Must display X connector");
     assert.ok(step2Text?.includes("WhatsApp Number"), "Must display WhatsApp Number connector");
-    assert.ok(step2Text?.includes("Continue with Google"), "Must display Google Business CTA");
-    assert.ok(step2Text?.includes("Verify Number"), "Must display WhatsApp Number CTA");
+    assert.ok(step2Text?.includes("Continue with Google"), "Must display Google Business CTA: Continue with Google");
+    assert.ok(step2Text?.includes("Verify Number"), "Must display WhatsApp Number CTA: Verify Number");
     assert.equal(step2Text?.includes("WhatsApp Business connected"), false, "Must NOT say WhatsApp Business connected");
 
     // Test WhatsApp OTP Modal
@@ -126,10 +128,10 @@ async function run() {
     );
 
     await page.screenshot({ path: path.join(OUT_DIR, "step2-dedicated-connectors.png") });
-    console.log("  ✓ Step 2: Mandatory 6-channel order, Google one-tap, WhatsApp OTP modal, and manual profile fallback verified.");
+    console.log("  ✓ Step 2: Mandatory 8-channel order, YouTube, X, Google one-tap, WhatsApp OTP modal, and manual profile fallback verified.");
 
     // Advance to Step 3
-    await page.locator("button:has-text('Continue')").click();
+    await page.locator("button:has-text('Continue →')").click();
     await page.waitForTimeout(300);
 
     // ---------------------------------------------------------------------------
@@ -147,7 +149,7 @@ async function run() {
     console.log("  ✓ Step 3: Business fields verified, zero slug input.");
 
     // Advance to Step 4
-    await page.locator("button:has-text('Continue')").click();
+    await page.locator("button:has-text('Continue →')").click();
     await page.waitForTimeout(300);
 
     // ---------------------------------------------------------------------------
@@ -161,7 +163,7 @@ async function run() {
     console.log("  ✓ Step 4: Strategic goals selection verified.");
 
     // Advance to Step 5
-    await page.locator("button:has-text('Continue')").click();
+    await page.locator("button:has-text('Continue →')").click();
     await page.waitForTimeout(300);
 
     // ---------------------------------------------------------------------------
@@ -190,7 +192,7 @@ async function run() {
     await page.waitForTimeout(200);
 
     // Click to Step 2
-    await page.locator("button:has-text('Continue')").click();
+    await page.locator("button:has-text('Continue →')").click();
     await page.waitForTimeout(200);
 
     const shotPath = path.join(OUT_DIR, `step2-connectors-${vp.name}.png`);
@@ -201,7 +203,7 @@ async function run() {
 
   await browser.close();
   console.log("\n================================================================================");
-  console.log("CANONICAL 5-STEP & 6-CONNECTOR E2E VALIDATION: ALL VIEWPORTS PASSED");
+  console.log("CANONICAL 5-STEP & 8-CONNECTOR E2E VALIDATION: ALL VIEWPORTS PASSED");
   console.log("================================================================================\n");
 }
 

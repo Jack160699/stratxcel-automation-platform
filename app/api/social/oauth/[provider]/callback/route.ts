@@ -16,6 +16,7 @@ const PROVIDER_LABELS: Record<string, string> = {
   threads: "Meta",
   linkedin: "LinkedIn",
   youtube: "Google",
+  x: "X",
 };
 
 /**

@@ -12,9 +12,10 @@ const PROVIDER_LABELS: Partial<Record<SocialPlatformKey, string>> = {
   google_business: "Google",
   instagram: "Meta",
   facebook: "Meta",
+  youtube: "Google",
   threads: "Meta",
   linkedin: "LinkedIn",
-  youtube: "Google",
+  x: "X",
   whatsapp: "WhatsApp Verified",
 };
 
@@ -27,7 +28,7 @@ interface PlatformCardConfig {
   publicProfilePlaceholder?: string;
 }
 
-/** Mandatory order: Google Business -> Instagram -> Facebook -> Threads -> LinkedIn -> WhatsApp Number */
+/** Mandatory order: Google Business -> Instagram -> Facebook -> YouTube -> Threads -> LinkedIn -> X -> WhatsApp Number */
 const PLATFORM_CARDS: PlatformCardConfig[] = [
   {
     key: "google_business",
@@ -41,6 +42,7 @@ const PLATFORM_CARDS: PlatformCardConfig[] = [
     label: "Instagram",
     description: "Connect your Instagram Business account to automate publishing, creative stories, and track insights.",
     oauthAvailable: true,
+    ctaText: "Connect",
     publicProfilePlaceholder: "@yourbrand",
   },
   {
@@ -48,13 +50,23 @@ const PLATFORM_CARDS: PlatformCardConfig[] = [
     label: "Facebook",
     description: "Connect your Facebook Page for automated content distribution and community engagement.",
     oauthAvailable: true,
+    ctaText: "Connect",
     publicProfilePlaceholder: "Page name or URL",
+  },
+  {
+    key: "youtube",
+    label: "YouTube",
+    description: "Connect your YouTube channel for video publishing, shorts distribution, and performance tracking.",
+    oauthAvailable: true,
+    ctaText: "Connect",
+    publicProfilePlaceholder: "Channel URL or @handle",
   },
   {
     key: "threads",
     label: "Threads",
     description: "Connect your Threads account for conversational marketing and audience growth.",
     oauthAvailable: true,
+    ctaText: "Connect",
     publicProfilePlaceholder: "@yourbrand",
   },
   {
@@ -62,7 +74,16 @@ const PLATFORM_CARDS: PlatformCardConfig[] = [
     label: "LinkedIn",
     description: "Connect your LinkedIn profile or organization page for professional authority and B2B reach.",
     oauthAvailable: true,
+    ctaText: "Connect",
     publicProfilePlaceholder: "Company page URL or profile",
+  },
+  {
+    key: "x",
+    label: "X",
+    description: "Connect your X account for real-time posts, community updates, and viral reach.",
+    oauthAvailable: true,
+    ctaText: "Connect",
+    publicProfilePlaceholder: "@yourbrand",
   },
   {
     key: "whatsapp",
@@ -110,6 +131,8 @@ export function StepConnectors({
       const pLabel =
         provider === "google_business" || provider === "google"
           ? "Google Business"
+          : provider === "x"
+          ? "X"
           : provider
           ? provider.charAt(0).toUpperCase() + provider.slice(1)
           : "Channel";
@@ -267,7 +290,7 @@ export function StepConnectors({
     }
 
     let handle = trimmed;
-    if (["instagram", "threads", "youtube"].includes(publicProfilePlatform)) {
+    if (["instagram", "threads", "youtube", "x"].includes(publicProfilePlatform)) {
       if (!handle.startsWith("@") && !handle.startsWith("http")) handle = `@${handle}`;
     }
 
@@ -318,7 +341,7 @@ export function StepConnectors({
         </div>
       )}
 
-      {/* 6 Connector Cards in Mandatory Order */}
+      {/* 8 Connector Cards in Mandatory Order */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {PLATFORM_CARDS.map((card) => {
           const connection = connections.find((c) => c.platform === card.key);
@@ -401,7 +424,7 @@ export function StepConnectors({
                       variant="primary"
                       size="sm"
                       onClick={() => startOAuth(card.key)}
-                      className="h-8 text-xs font-bold px-3 shadow-xs bg-white text-gray-900 hover:bg-gray-100 border border-gray-300"
+                      className="h-8 text-xs font-semibold px-3 bg-sx-accent text-sx-accent-on hover:bg-[color:var(--sx-accent-hover)] shadow-xs"
                     >
                       {card.ctaText || "Continue with Google"}
                     </Button>
@@ -411,7 +434,7 @@ export function StepConnectors({
                       variant="primary"
                       size="sm"
                       onClick={() => startOAuth(card.key)}
-                      className="h-8 text-xs font-semibold px-3"
+                      className="h-8 text-xs font-semibold px-3 bg-sx-accent text-sx-accent-on hover:bg-[color:var(--sx-accent-hover)] shadow-xs"
                     >
                       {card.ctaText || "Connect"}
                     </Button>
