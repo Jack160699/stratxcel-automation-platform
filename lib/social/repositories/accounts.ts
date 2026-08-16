@@ -60,6 +60,7 @@ export async function upsertConnectedAccount(
   service: ServiceClient,
   input: {
     ownerId: string;
+    tenantId?: string | null;
     platform: Platform;
     providerAccountId: string;
     username: string;
@@ -76,6 +77,7 @@ export async function upsertConnectedAccount(
     .upsert(
       {
         owner_id: input.ownerId,
+        ...(input.tenantId ? { tenant_id: input.tenantId } : {}),
         platform: input.platform,
         provider_account_id: input.providerAccountId,
         username: input.username,

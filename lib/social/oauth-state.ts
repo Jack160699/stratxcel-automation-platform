@@ -14,6 +14,7 @@ interface StatePayload {
   nonce: string;
   issuedAt: number;
   redirectTo?: string;
+  tenantId?: string;
 }
 
 function getSecret(): string {
@@ -30,13 +31,15 @@ function sign(payloadB64: string): string {
 
 export function createSignedState(
   provider: StatePayload["provider"],
-  redirectTo?: string
+  redirectTo?: string,
+  tenantId?: string
 ): { token: string; hash: string; expiresAt: Date } {
   const payload: StatePayload = {
     provider,
     nonce: crypto.randomBytes(16).toString("hex"),
     issuedAt: Date.now(),
     redirectTo,
+    tenantId,
   };
   const payloadB64 = Buffer.from(JSON.stringify(payload)).toString("base64url");
   const sig = sign(payloadB64);

@@ -63,7 +63,7 @@ export async function GET(
     return NextResponse.json({ error: "Unknown provider" }, { status: 400 });
   }
 
-  const { token, hash, expiresAt } = createSignedState(provider, redirectTo);
+  const { token, hash, expiresAt } = createSignedState(provider, redirectTo, tenantId || undefined);
 
   const service = createSupabaseServiceClient();
   const { error } = await service.from("social_oauth_states").insert({

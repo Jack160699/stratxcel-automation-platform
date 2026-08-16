@@ -8,6 +8,7 @@ import { CONNECT_DISCOVER_VERSION } from "@/lib/audit/v1/onboarding-state";
 import type { DiscoveredBusinessProfile } from "@/lib/audit/v1/adaptive-questions";
 import { resolveAuditBudgetLimitUsd } from "@stratxcel/audit-engine";
 import { sanitizeChannels } from "@/lib/audit/v1/channels";
+import { provisionTenantConnectorsFromMetadata } from "@/lib/social/provisioning";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -288,6 +289,20 @@ export async function POST(request: Request) {
     });
   } catch (crmErr) {
     console.warn("onboarding: non-fatal crm lead sync trace", crmErr);
+  }
+
+  // Provision canonical tenant connector records from onboarding metadata & draft connections
+  try {
+    const { data: userData } = await serviceClient.auth.admin.getUserById(user.id);
+    const userMetadata = userData?.user?.user_metadata ?? user.user_metadata;
+    await provisionTenantConnectorsFromMetadata(serviceClient, {
+      tenantId: tenant.id,
+      userId: user.id,
+      userMetadata,
+      socials: body.business?.socials,
+    });
+  } catch (provErr) {
+    console.warn("onboarding: non-fatal connector provisioning trace", provErr);
   }
 
   // Seed / update verified free audit order for the tenant

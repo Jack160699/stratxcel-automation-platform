@@ -128,6 +128,62 @@ export async function POST(req: NextRequest) {
     },
   });
 
+  // 4. If user already has an active workspace/tenant, provision canonical whatsapp_phone_bindings directly
+  try {
+    const requestedTenantId = typeof (body as any).tenantId === "string" ? (body as any).tenantId : null;
+    let targetTenantId: string | null = requestedTenantId;
+    if (!targetTenantId) {
+      const { data: mems } = await service
+        .from("tenant_members")
+        .select("tenant_id")
+        .eq("user_id", user.id)
+        .limit(1);
+      if (mems && mems.length > 0) {
+        targetTenantId = mems[0].tenant_id;
+      }
+    }
+
+    if (targetTenantId) {
+      const { data: existingBinding } = await service
+        .from("whatsapp_phone_bindings")
+        .select("id")
+        .eq("tenant_id", targetTenantId)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      const now = new Date().toISOString();
+      if (existingBinding) {
+        await service
+          .from("whatsapp_phone_bindings")
+          .update({
+            display_phone_number: normalizedPhone,
+            phone_number_id: normalizedPhone,
+            status: "active",
+            verified_at: now,
+            updated_at: now,
+          })
+          .eq("id", existingBinding.id);
+      } else {
+        await service.from("whatsapp_phone_bindings").insert({
+          tenant_id: targetTenantId,
+          waba_id: "waba_onboarding",
+          phone_number_id: normalizedPhone,
+          display_phone_number: normalizedPhone,
+          environment: "production",
+          status: "active",
+          default_language: "en",
+          timezone: "UTC",
+          created_by: user.id,
+          verified_at: now,
+          updated_at: now,
+        });
+      }
+    }
+  } catch (bindingErr) {
+    console.warn("verify-otp: non-fatal direct tenant binding trace", bindingErr);
+  }
+
   return NextResponse.json({
     ok: true,
     verifiedNumber: normalizedPhone,

@@ -203,10 +203,9 @@ export async function GET(
     });
 
     const redirectTo = verified.payload.redirectTo || "/admin/social";
-    isOnboarding = redirectTo.startsWith("/app");
+    const isAppFlow = redirectTo.startsWith("/app");
 
-    if (isOnboarding) {
-      // Pre-tenant onboarding connection proof saved to user metadata
+    if (isAppFlow) {
       const supabase = await createSupabaseServerClient();
       const {
         data: { user },
@@ -214,10 +213,6 @@ export async function GET(
       const userId = user?.id || stateRow.created_by;
 
       if (userId) {
-        const { data: userData } = await service.auth.admin.getUserById(userId);
-        const existingMeta = (userData?.user?.user_metadata ?? {}) as Record<string, unknown>;
-        const existingConnections = (existingMeta.onboarding_oauth_connections ?? {}) as Record<string, unknown>;
-
         const username = result.username || result.displayName || result.externalAccountId;
         let formattedHandle = username;
         if (["instagram", "threads"].includes(provider)) {
@@ -225,6 +220,71 @@ export async function GET(
         }
 
         const canonicalPlatformKey = provider === "google" ? "google_business" : provider;
+
+        // 1. Check if an active tenant is specified in state or if user already has a workspace
+        let targetTenantId: string | null = (verified.payload.tenantId as string) || null;
+        if (!targetTenantId && userId) {
+          const { data: mems } = await service
+            .from("tenant_members")
+            .select("tenant_id")
+            .eq("user_id", userId)
+            .limit(1);
+          if (mems && mems.length > 0) {
+            targetTenantId = mems[0].tenant_id;
+          }
+        }
+
+        // Verify membership if tenant was explicitly specified in state
+        if (targetTenantId && verified.payload.tenantId) {
+          const { data: memberCheck } = await service
+            .from("tenant_members")
+            .select("id")
+            .eq("tenant_id", targetTenantId)
+            .eq("user_id", userId)
+            .maybeSingle();
+          if (!memberCheck) {
+            targetTenantId = null; // Unverified tenant ID from state ignored
+          }
+        }
+
+        // 2. If tenant exists, provision directly to canonical tenant relational tables
+        if (targetTenantId) {
+          try {
+            await upsertConnectedAccount(service, {
+              ownerId: userId,
+              tenantId: targetTenantId,
+              platform: (canonicalPlatformKey === "google_business" ? "youtube" : canonicalPlatformKey) as Platform,
+              providerAccountId: result.externalAccountId,
+              username: formattedHandle,
+              displayName: result.displayName || result.username || canonicalPlatformKey,
+              avatarUrl: result.profilePictureUrl || null,
+              permissions: result.scopes ?? [],
+              accessToken: result.accessToken,
+              refreshToken: result.refreshToken,
+              expiresInSeconds: result.expiresInSeconds,
+            });
+
+            if (provider === "google" || provider === "google_business") {
+              await service.from("search_google_connections").upsert(
+                {
+                  tenant_id: targetTenantId,
+                  status: "connected",
+                  connected_by_user_id: userId,
+                  connected_at: new Date().toISOString(),
+                  updated_at: new Date().toISOString(),
+                },
+                { onConflict: "tenant_id" }
+              );
+            }
+          } catch (upsertErr) {
+            console.warn("oauth callback: non-fatal direct tenant upsert trace", upsertErr);
+          }
+        }
+
+        // 3. Always maintain user metadata for seamless cross-device rehydration & audit recovery
+        const { data: userData } = await service.auth.admin.getUserById(userId);
+        const existingMeta = (userData?.user?.user_metadata ?? {}) as Record<string, unknown>;
+        const existingConnections = (existingMeta.onboarding_oauth_connections ?? {}) as Record<string, unknown>;
 
         const connectionPayload = {
           provider: canonicalPlatformKey,
@@ -255,7 +315,7 @@ export async function GET(
         actorId: userId,
         action: "account.connect",
         targetType: "social_account",
-        summary: `Connected ${provider} account during onboarding`,
+        summary: `Connected ${provider} account in app workspace`,
         meta: { provider_account_id: result.externalAccountId },
       });
 
@@ -263,7 +323,7 @@ export async function GET(
         provider,
         stage: "connection_persisted",
         status: "success",
-        details: { target: "user_metadata", userId },
+        details: { target: "canonical_and_metadata", userId },
       });
 
       const successUrl = new URL(redirectTo, origin);
