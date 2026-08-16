@@ -210,7 +210,7 @@ export function ConnectExperience({
   }
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-8 sm:py-12">
+    <div className="mx-auto w-full max-w-5xl lg:max-w-6xl xl:max-w-7xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
       {error && <p className="mb-6 rounded-sx-sm border border-sx-danger/40 bg-sx-danger/10 px-4 py-3 text-sm text-sx-danger">{error}</p>}
 
       {/* STEP 1: CONNECT YOUR BUSINESS */}
@@ -371,7 +371,7 @@ export function ConnectExperience({
               <span className="text-xs text-sx-text-subtle">OAuth grants provide authoritative data</span>
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {AUDIT_CHANNEL_TYPES.map((type) => {
                 const channel = channels.find((c) => c.type === type && c.value && !c.notAvailable);
                 const isGoogle = type === "google_business";
@@ -435,7 +435,7 @@ export function ConnectExperience({
               </button>
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {([
                 ["name", "Business Name"],
                 ["category", "Industry / Category"],
@@ -552,7 +552,7 @@ export function ConnectExperience({
               <p className="mt-1 text-xs text-sx-text-muted">Inferred from your business signals. Select all that fit:</p>
             </div>
 
-            <div className="grid gap-2.5">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {candidateGoals.map((goal) => {
                 const isChecked = selectedGoals.includes(goal.label);
                 return (

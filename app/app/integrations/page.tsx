@@ -227,7 +227,7 @@ export default function IntegrationsPage() {
         />
       )}
 
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {cards.map((card) => {
           const presence = presenceFor(card.key);
           const canConnect = card.isOAuth ? Boolean(status?.selfService?.social) : false;
@@ -260,7 +260,7 @@ export default function IntegrationsPage() {
                         href={presence.href}
                         target="_blank"
                         rel="noreferrer"
-                        className="block truncate text-sm font-semibold text-sx-accent hover:underline"
+                        className="block text-sm font-semibold text-sx-accent hover:underline break-all"
                       >
                         {presence.handle || presence.href}
                       </a>

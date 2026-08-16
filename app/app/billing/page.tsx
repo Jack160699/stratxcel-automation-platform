@@ -296,7 +296,7 @@ export default function BillingPage() {
                 <p className="mt-1 text-xs text-sx-text-muted">This attempt does not activate a paid plan or paid entitlements.</p>
               </div>
             )}
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {SELF_SERVICE_PLANS.map((p) => (
                 <div key={p.tier} className="rounded-sx-md border border-sx-border p-4">
                   <p className="font-sx-sans text-sm font-bold text-sx-text">{p.name}</p>

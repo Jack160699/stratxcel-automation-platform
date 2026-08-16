@@ -127,10 +127,10 @@ export default function BrandPage() {
       {tenantId && loading && <p className="text-sm text-sx-text-subtle">Loading…</p>}
 
       {content && (
-        <fieldset disabled={readOnly} className="contents">
+        <fieldset disabled={readOnly} className="space-y-6">
           <Card>
             <CardHeading>Business identity</CardHeading>
-            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               <Field label="Business name">
                 <Input value={content.business_name ?? ""} onChange={(e) => field("business_name", e.target.value)} />
               </Field>
@@ -175,80 +175,83 @@ export default function BrandPage() {
             </div>
           </Card>
 
-          <Card>
-            <CardHeading>Positioning</CardHeading>
-            <Field label="In one or two sentences, what do you do and for whom?">
-              <Textarea value={content.positioning ?? ""} onChange={(e) => field("positioning", e.target.value)} />
-            </Field>
-          </Card>
+          {/* Strategic Context Grid */}
+          <div className="grid gap-4 lg:grid-cols-2">
+            <Card>
+              <CardHeading>Positioning</CardHeading>
+              <Field label="In one or two sentences, what do you do and for whom?">
+                <Textarea value={content.positioning ?? ""} onChange={(e) => field("positioning", e.target.value)} />
+              </Field>
+            </Card>
 
-          <Card>
-            <CardHeading>Audience</CardHeading>
-            <Field label="Who you serve">
-              <Textarea value={content.target_audience ?? ""} onChange={(e) => field("target_audience", e.target.value)} />
-            </Field>
-          </Card>
+            <Card>
+              <CardHeading>Audience</CardHeading>
+              <Field label="Who you serve">
+                <Textarea value={content.target_audience ?? ""} onChange={(e) => field("target_audience", e.target.value)} />
+              </Field>
+            </Card>
 
-          <Card>
-            <CardHeading>Brand voice</CardHeading>
-            <Field label="Tone of voice">
-              <Textarea value={content.tone_of_voice ?? ""} onChange={(e) => field("tone_of_voice", e.target.value)} />
-            </Field>
-          </Card>
+            <Card>
+              <CardHeading>Brand voice</CardHeading>
+              <Field label="Tone of voice">
+                <Textarea value={content.tone_of_voice ?? ""} onChange={(e) => field("tone_of_voice", e.target.value)} />
+              </Field>
+            </Card>
 
-          <Card>
-            <CardHeading>Differentiators</CardHeading>
-            <Field label="One per line — why customers choose you over the alternative">
-              <Textarea
-                value={(content.differentiators ?? []).join("\n")}
-                onChange={(e) => field("differentiators", e.target.value.split("\n").filter(Boolean))}
-              />
-            </Field>
-          </Card>
+            <Card>
+              <CardHeading>Differentiators</CardHeading>
+              <Field label="One per line — why customers choose you over the alternative">
+                <Textarea
+                  value={(content.differentiators ?? []).join("\n")}
+                  onChange={(e) => field("differentiators", e.target.value.split("\n").filter(Boolean))}
+                />
+              </Field>
+            </Card>
 
-          <Card>
-            <CardHeading>Goals</CardHeading>
-            <Field label="One per line — what you want the next 90 days to achieve">
-              <Textarea
-                value={(content.goals ?? []).join("\n")}
-                onChange={(e) => field("goals", e.target.value.split("\n").filter(Boolean))}
-              />
-            </Field>
-          </Card>
+            <Card>
+              <CardHeading>Goals</CardHeading>
+              <Field label="One per line — what you want the next 90 days to achieve">
+                <Textarea
+                  value={(content.goals ?? []).join("\n")}
+                  onChange={(e) => field("goals", e.target.value.split("\n").filter(Boolean))}
+                />
+              </Field>
+            </Card>
 
-          <Card>
-            <CardHeading>Growth constraints</CardHeading>
-            <Field label="Biggest constraint, previous attempts, or limits missions must respect">
-              <Textarea
-                value={typeof content.biggest_business_problem === "string" ? content.biggest_business_problem : ""}
-                onChange={(e) => field("biggest_business_problem", e.target.value)}
-              />
-            </Field>
-          </Card>
+            <Card>
+              <CardHeading>Growth constraints</CardHeading>
+              <Field label="Biggest constraint, previous attempts, or limits missions must respect">
+                <Textarea
+                  value={typeof content.biggest_business_problem === "string" ? content.biggest_business_problem : ""}
+                  onChange={(e) => field("biggest_business_problem", e.target.value)}
+                />
+              </Field>
+            </Card>
 
-          <Card>
-            <CardHeading>Pillars</CardHeading>
-            <Field label="One per line">
-              <Textarea
-                value={(content.pillars ?? []).join("\n")}
-                onChange={(e) => field("pillars", e.target.value.split("\n").filter(Boolean))}
-              />
-            </Field>
-          </Card>
+            <Card>
+              <CardHeading>Pillars</CardHeading>
+              <Field label="One per line">
+                <Textarea
+                  value={(content.pillars ?? []).join("\n")}
+                  onChange={(e) => field("pillars", e.target.value.split("\n").filter(Boolean))}
+                />
+              </Field>
+            </Card>
 
-          <Card>
-            <CardHeading>Rules</CardHeading>
-            <Field label="One per line — things missions must never do or say">
-              <Textarea value={(content.rules ?? []).join("\n")} onChange={(e) => field("rules", e.target.value.split("\n").filter(Boolean))} />
-            </Field>
-          </Card>
+            <Card>
+              <CardHeading>Rules</CardHeading>
+              <Field label="One per line — things missions must never do or say">
+                <Textarea value={(content.rules ?? []).join("\n")} onChange={(e) => field("rules", e.target.value.split("\n").filter(Boolean))} />
+              </Field>
+            </Card>
+          </div>
 
           <section className="flex flex-col gap-3">
             <h2 className="font-sx-sans text-base font-medium text-sx-text">Products / services</h2>
             {(content.products ?? []).length === 0 ? (
               <EmptyState title="No products listed." subtitle="Product/service editing is a follow-up to this pass." />
             ) : (
-              <div className="flex flex-col gap-2">
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {content.products!.map((p) => (
                   <Card key={p.name} variant="nested">
                     <p className="font-medium text-sx-text">{p.name}</p>

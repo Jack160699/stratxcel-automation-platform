@@ -86,7 +86,7 @@ export function StepPlan({
         details.
       </p>
 
-      <div role="radiogroup" aria-label="Requested engagement tier" className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+      <div role="radiogroup" aria-label="Requested engagement tier" className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {PLAN_TIERS.map((tier) => {
           const isSelected = draft.plan.tier === tier.key;
           return (

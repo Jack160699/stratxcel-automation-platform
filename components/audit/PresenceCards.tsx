@@ -13,27 +13,31 @@ function statusLabel(status: PresenceLink["status"]): string {
 
 export function PresenceCards({ links }: { links: PresenceLink[] }) {
   return (
-    <dl className="mt-3 grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
+    <dl className="mt-3 grid grid-cols-1 gap-2.5 text-sm sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
       {links.map((link) => (
-        <div key={link.key} className="flex items-start justify-between gap-2 rounded-sx-sm bg-sx-surface-2 px-2 py-2">
-          <dt className="min-w-0">
-            <span className="flex items-center gap-2">
-              <PlatformIcon name={link.key} />
-              <span className="font-medium">{link.label}</span>
-            </span>
-            {link.handle && <p className="mt-1 truncate pl-7 text-xs text-sx-text-muted">{link.handle}</p>}
-            {link.href && link.public && (
+        <div key={link.key} className="flex flex-col justify-between gap-2 rounded-sx-sm bg-sx-surface-2 p-3 border border-sx-border/60">
+          <div className="flex items-start justify-between gap-2">
+            <dt className="min-w-0">
+              <span className="flex items-center gap-2">
+                <PlatformIcon name={link.key} />
+                <span className="font-semibold text-sx-text text-sm">{link.label}</span>
+              </span>
+              {link.handle && <p className="mt-1.5 pl-6 text-xs text-sx-text-muted break-all font-mono">{link.handle}</p>}
+            </dt>
+            <dd className="shrink-0 text-[11px] font-medium text-sx-text-subtle">{statusLabel(link.status)}</dd>
+          </div>
+          {link.href && link.public && (
+            <div className="pt-1 pl-6">
               <a
                 href={link.href}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="mt-1 inline-flex pl-7 text-xs font-medium text-sx-accent"
+                className="inline-flex text-xs font-semibold text-sx-accent hover:underline"
               >
-                {link.openLabel ?? "Open"}
+                {link.openLabel ?? "Open channel →"}
               </a>
-            )}
-          </dt>
-          <dd className="shrink-0 text-xs text-sx-text-subtle">{statusLabel(link.status)}</dd>
+            </div>
+          )}
         </div>
       ))}
     </dl>

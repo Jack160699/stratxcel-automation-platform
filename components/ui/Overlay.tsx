@@ -11,15 +11,34 @@ const FIELD_FOCUSABLE = "input, select, textarea";
  * §8). 200ms cubic-bezier(.2,.8,.2,1) matches the design system's modal/sheet
  * motion timing exactly.
  */
+export type ModalSize = "sm" | "md" | "lg" | "xl" | "wide" | "full";
+
+const MODAL_SIZE_CLASSES: Record<ModalSize, string> = {
+  sm: "sm:max-w-sm",
+  md: "sm:max-w-md",
+  lg: "sm:max-w-xl lg:max-w-2xl",
+  xl: "sm:max-w-2xl lg:max-w-3xl xl:max-w-4xl",
+  wide: "sm:max-w-3xl lg:max-w-5xl xl:max-w-6xl",
+  full: "sm:max-w-[calc(100vw-2rem)] lg:max-w-[calc(100vw-4rem)]",
+};
+
+/**
+ * Modal on desktop, bottom sheet <768px — one component, CSS handles the
+ * breakpoint switch (docs/product-design/RESPONSIVE_AND_MOBILE_SPECIFICATION.md
+ * §8). 200ms cubic-bezier(.2,.8,.2,1) matches the design system's modal/sheet
+ * motion timing exactly.
+ */
 export function Modal({
   open,
   onClose,
   title,
+  size = "md",
   children,
 }: {
   open: boolean;
   onClose: () => void;
   title: string;
+  size?: ModalSize;
   children: ReactNode;
 }) {
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -40,9 +59,6 @@ export function Modal({
         : [];
     const firstField = root?.querySelector<HTMLElement>(FIELD_FOCUSABLE);
     const initial = firstField && !firstField.hasAttribute("disabled") ? firstField : focusables()[0];
-    // Focus once when `open` becomes true. Do not depend on `onClose` identity
-    // or re-trap when the dialog already contains the active field — that was
-    // stealing input focus during typing.
     if (initial) initial.focus();
 
     function onKey(e: KeyboardEvent) {
@@ -73,9 +89,11 @@ export function Modal({
 
   if (!open) return null;
 
+  const sizeClass = MODAL_SIZE_CLASSES[size] ?? MODAL_SIZE_CLASSES.md;
+
   return (
     <div
-      className="fixed inset-0 z-[var(--sx-z-modal,60)] flex items-end justify-center bg-[rgb(4_6_10_/_0.72)] backdrop-blur-[2px] sm:items-center"
+      className="fixed inset-0 z-[var(--sx-z-modal,60)] flex items-end justify-center bg-[rgb(4_6_10_/_0.72)] p-0 sm:p-4 backdrop-blur-[2px] sm:items-center"
       onClick={onClose}
     >
       <div
@@ -84,18 +102,20 @@ export function Modal({
         aria-modal="true"
         aria-labelledby={titleId}
         onClick={(event) => event.stopPropagation()}
-        className="max-h-[calc(100dvh-1rem)] w-full max-w-md overflow-hidden rounded-t-sx-lg border border-sx-border-strong bg-sx-elevated p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] shadow-[var(--sx-shadow-xl)] transition-transform duration-200 ease-[cubic-bezier(0.2,0.8,0.2,1)] sm:rounded-sx-lg sm:pb-5"
+        className={`max-h-[calc(100dvh-1rem)] sm:max-h-[calc(100dvh-3rem)] w-full ${sizeClass} flex flex-col overflow-hidden rounded-t-sx-lg border border-sx-border-strong bg-sx-elevated p-4 sm:p-6 pb-[max(1.25rem,env(safe-area-inset-bottom))] shadow-[var(--sx-shadow-xl)] transition-transform duration-200 ease-[cubic-bezier(0.2,0.8,0.2,1)] sm:rounded-sx-lg sm:pb-6`}
       >
-        <div className="mb-2 flex justify-center sm:hidden">
+        <div className="mb-2 flex justify-center sm:hidden shrink-0">
           <span className="h-1 w-10 rounded-full bg-sx-border-strong" />
         </div>
-        <div className="mb-3 flex items-center justify-between">
+        <div className="mb-3 flex items-center justify-between shrink-0">
           <h2 id={titleId} className="font-sx-sans text-lg font-semibold text-sx-text sm:text-base">{title}</h2>
-          <button type="button" onClick={onClose} aria-label="Close" className="min-h-11 min-w-11 text-sx-text-subtle hover:text-sx-text">
+          <button type="button" onClick={onClose} aria-label="Close" className="min-h-11 min-w-11 flex items-center justify-center text-sx-text-subtle hover:text-sx-text">
             ✕
           </button>
         </div>
-        {children}
+        <div className="overflow-y-auto max-h-[calc(100dvh-8rem)] sm:max-h-[calc(100dvh-10rem)] pr-0.5 min-h-0 flex-1">
+          {children}
+        </div>
       </div>
     </div>
   );
@@ -107,7 +127,7 @@ export function Drawer({
   onClose,
   side = "right",
   children,
-  widthClassName = "w-80",
+  widthClassName = "w-full max-w-[min(22rem,100vw)] sm:w-88 sm:max-w-md",
 }: {
   open: boolean;
   onClose: () => void;

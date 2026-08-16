@@ -222,13 +222,13 @@ export function OnboardingWizard() {
   }));
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-lg flex-col gap-6 px-4 py-8 pb-[max(2rem,env(safe-area-inset-bottom))]">
+    <div className="mx-auto flex min-h-screen w-full max-w-lg lg:max-w-3xl xl:max-w-4xl flex-col gap-6 px-4 py-8 sm:px-6 lg:px-8 pb-[max(2rem,env(safe-area-inset-bottom))]">
       <div className="text-center">
-        <h1 className="font-sx-sans text-xl font-semibold text-sx-text">Welcome to Stratxcel</h1>
+        <h1 className="font-sx-sans text-xl sm:text-2xl font-semibold text-sx-text">Welcome to Stratxcel</h1>
         <p className="mt-2 font-sx-sans text-sm text-sx-text-muted">Let&rsquo;s set up your workspace.</p>
       </div>
 
-      <div>
+      <div className="w-full">
         <WorkflowRail stages={stages} />
         <p className="sr-only" role="status">
           Step {step} of {TOTAL_STEPS}: {ONBOARDING_STEP_LABELS[step - 1]}
@@ -243,7 +243,7 @@ export function OnboardingWizard() {
           e.preventDefault();
           if (step < TOTAL_STEPS) handleContinue();
         }}
-        className="flex flex-col gap-6 rounded-sx-md border border-sx-border bg-sx-surface-1 p-5 sm:p-6"
+        className="flex flex-col gap-6 rounded-sx-md border border-sx-border bg-sx-surface-1 p-5 sm:p-7 lg:p-8 w-full shadow-sm"
       >
         <h2 className="font-sx-sans text-[15px] font-semibold text-sx-text">{ONBOARDING_STEP_LABELS[step - 1]}</h2>
 

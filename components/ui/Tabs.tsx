@@ -13,16 +13,16 @@ export function Tabs({ items, defaultKey }: { items: TabItem[]; defaultKey?: str
   const [active, setActive] = useState(defaultKey ?? items[0]?.key);
   const activeItem = items.find((i) => i.key === active);
   return (
-    <div>
-      <div role="tablist" className="flex gap-5 border-b border-sx-border">
+    <div className="w-full min-w-0">
+      <div role="tablist" className="flex items-center gap-4 sm:gap-6 border-b border-sx-border overflow-x-auto no-scrollbar flex-nowrap pb-px">
         {items.map((item) => (
           <button
             key={item.key}
             role="tab"
             aria-selected={item.key === active}
             onClick={() => setActive(item.key)}
-            className={`pb-2.5 text-[13.5px] font-medium transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sx-accent ${
-              item.key === active ? "text-sx-text shadow-[inset_0_-2px_0_var(--sx-accent)]" : "text-sx-text-muted hover:text-sx-text"
+            className={`shrink-0 whitespace-nowrap pb-2.5 text-[13.5px] font-medium transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sx-accent ${
+              item.key === active ? "text-sx-text shadow-[inset_0_-2px_0_var(--sx-accent)] font-semibold" : "text-sx-text-muted hover:text-sx-text"
             }`}
           >
             {item.label}

@@ -18,7 +18,7 @@ export function StepGoals({ selected, onToggle }: { selected: string[]; onToggle
         What do you want Stratxcel to help with first? Pick as many as apply — this is optional and just helps us point you
         at the right place to start.
       </p>
-      <div role="group" aria-label="Initial goals" className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+      <div role="group" aria-label="Initial goals" className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {options.map((entry) => {
           const isSelected = selected.includes(entry.key);
           return (

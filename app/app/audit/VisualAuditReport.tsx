@@ -130,7 +130,7 @@ export function VisualAuditReport({
   ];
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6 px-4 py-8">
+    <div className="mx-auto w-full max-w-5xl lg:max-w-6xl xl:max-w-7xl space-y-6 px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
       {/* 1. Header & Quick Actions */}
       <header className="flex flex-wrap items-end justify-between gap-4 border-b border-sx-border pb-5">
         <div>
@@ -283,7 +283,7 @@ export function VisualAuditReport({
           {presence && presence.length > 0 ? (
             <PresenceCards links={presence} />
           ) : (
-          <dl className="mt-3 grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
+          <dl className="mt-3 grid grid-cols-1 gap-2 text-sm sm:grid-cols-2 lg:grid-cols-3">
             {COVERAGE_KEYS.map(({ key, icon }) => (
               <div key={key} className="flex items-center justify-between gap-2 rounded-sx-sm bg-sx-surface-2 px-2 py-1.5">
                 <dt className="flex items-center gap-2">
@@ -339,7 +339,7 @@ export function VisualAuditReport({
       </section>
 
       {/* 7. Findings & Opportunities */}
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <ListCard title="What is Working" items={report.strengths} />
         <ListCard title="Growth Bottlenecks" items={report.growthProblems ?? []} />
         <ListCard title="Priority Risks" items={report.priorityRisks} />
@@ -385,8 +385,8 @@ export function VisualAuditReport({
 
       {/* 10. RECOMMENDED STRATXCEL PACKAGE & 30-DAY TRANSFORMATION */}
       <section className="rounded-[1.25rem] border border-sx-accent/40 bg-gradient-to-br from-sx-accent/10 via-sx-surface-1 to-sx-surface-1 p-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div className="space-y-2 max-w-xl">
+        <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+          <div className="space-y-2 flex-1 min-w-0">
             <span className="inline-flex items-center gap-1.5 rounded-full bg-sx-accent/20 px-3 py-0.5 text-xs font-bold uppercase tracking-wide text-sx-accent">
               Recommended for {businessName}
             </span>
@@ -410,7 +410,7 @@ export function VisualAuditReport({
             </div>
           </div>
 
-          <div className="flex shrink-0 flex-col items-start sm:items-end gap-2">
+          <div className="flex shrink-0 flex-col items-start lg:items-end gap-2">
             <Link
               href="/app/billing"
               className="inline-flex min-h-11 items-center justify-center rounded-sx-sm bg-sx-accent px-6 text-sm font-bold text-sx-accent-on transition-colors hover:bg-[color:var(--sx-accent-hover)]"

@@ -25,12 +25,12 @@ export function DataTable<T extends { id: string }>({
 }) {
   return (
     <>
-      <div className="hidden overflow-hidden rounded-sx-md border border-sx-border md:block">
-        <table className="w-full border-collapse text-[12.5px]">
+      <div className="hidden overflow-x-auto rounded-sx-md border border-sx-border md:block">
+        <table className="w-full min-w-full border-collapse text-[12.5px]">
           <thead>
             <tr className="bg-sx-surface-2">
               {columns.map((c) => (
-                <th key={c.key} className="px-3.5 py-2.5 text-left font-sx-mono text-[9.5px] font-medium uppercase tracking-[0.1em] text-sx-text-subtle">
+                <th key={c.key} className="whitespace-nowrap px-3.5 py-2.5 text-left font-sx-mono text-[9.5px] font-medium uppercase tracking-[0.1em] text-sx-text-subtle">
                   {c.header}
                 </th>
               ))}
@@ -44,7 +44,7 @@ export function DataTable<T extends { id: string }>({
                 className={`border-t border-sx-border ${onRowClick ? "cursor-pointer hover:bg-sx-surface-1" : ""}`}
               >
                 {columns.map((c, i) => (
-                  <td key={c.key} className={`px-3.5 py-2.5 ${i === 0 ? "text-sx-text" : "text-sx-text-muted"}`}>
+                  <td key={c.key} className={`px-3.5 py-2.5 ${i === 0 ? "text-sx-text font-medium" : "text-sx-text-muted"}`}>
                     {c.render(row)}
                   </td>
                 ))}
@@ -77,10 +77,16 @@ export function MobileCardList<T extends { id: string }>({
           key={row.id}
           type="button"
           onClick={onRowClick ? () => onRowClick(row) : undefined}
-          className="flex items-center justify-between gap-3 rounded-sx-md border border-sx-border bg-sx-surface-1 p-3 text-left"
+          className="flex flex-wrap items-center justify-between gap-2.5 rounded-sx-md border border-sx-border bg-sx-surface-1 p-3 text-left transition-colors hover:bg-sx-surface-2"
         >
-          <span className="min-w-0 truncate text-[12.5px] text-sx-text">{primary?.render(row)}</span>
-          <span className="shrink-0 text-[11.5px] text-sx-text-muted">{secondary && rest.includes(secondary) ? secondary.render(row) : null}</span>
+          <div className="min-w-0 flex-1 text-[13px] font-medium text-sx-text break-words">
+            {primary?.render(row)}
+          </div>
+          {secondary && (
+            <div className="shrink-0 text-[11.5px] text-sx-text-muted">
+              {secondary.render(row)}
+            </div>
+          )}
         </button>
       ))}
     </div>

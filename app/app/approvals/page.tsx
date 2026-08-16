@@ -76,9 +76,9 @@ export default function ClientApprovalsPage() {
           <div className="flex flex-col gap-2">
             {approvals.map((a) => (
               <Card key={a.id} className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <div>
+                <div className="flex-1 min-w-0 pr-4">
                   <p className="font-medium text-sx-text">{a.kind}</p>
-                  <p className="max-w-md truncate text-xs text-sx-text-subtle">{JSON.stringify(a.subject)}</p>
+                  <p className="break-all text-xs text-sx-text-subtle">{JSON.stringify(a.subject)}</p>
                 </div>
                 {readOnly ? <p className="text-xs text-sx-text-subtle">Read-only staff support</p> : <div className="flex gap-2">
                   <Button variant="secondary" size="sm" onClick={() => decide(a.id, "REJECTED")} disabled={decidingId === a.id}>

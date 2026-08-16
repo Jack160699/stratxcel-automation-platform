@@ -159,7 +159,7 @@ export default async function ClientCommandCenterPage() {
   const nextActions = buildNextActions({ report, planActive: plan.activePaid });
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-8 pb-12">
+    <div className="mx-auto flex w-full max-w-6xl xl:max-w-7xl flex-col gap-8 pb-12">
       <h1 className="sr-only">Your business growth command center</h1>
       {/* 1. Business Journey Header */}
       <BusinessJourneyHeader journey={journey} />

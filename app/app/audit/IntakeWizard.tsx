@@ -641,7 +641,7 @@ export function IntakeWizard({ order, onIntakeComplete }: { order: IntakeOrder; 
 
   if (!started) {
     return (
-      <Card className="mx-auto max-w-2xl p-5 sm:p-7">
+      <Card className="mx-auto w-full max-w-3xl lg:max-w-4xl xl:max-w-5xl p-5 sm:p-7 lg:p-8">
         <span className="inline-flex rounded-full border border-sx-border bg-sx-surface-2 px-3 py-1 font-sx-mono text-[11px] font-semibold text-sx-text-muted">
           About 3–5 minutes
         </span>
@@ -734,7 +734,7 @@ export function IntakeWizard({ order, onIntakeComplete }: { order: IntakeOrder; 
   const selected = arrayValue(value);
 
   return (
-    <Card className="mx-auto max-w-2xl p-5 sm:p-7">
+    <Card className="mx-auto w-full max-w-3xl lg:max-w-4xl xl:max-w-5xl p-5 sm:p-7 lg:p-8">
       <div className="flex items-center justify-between gap-4">
         <span className="font-sx-mono text-[11px] font-semibold uppercase tracking-wider text-sx-text-subtle">
           Question {currentIndex + 1} of {visibleSteps.length}
@@ -795,7 +795,7 @@ export function IntakeWizard({ order, onIntakeComplete }: { order: IntakeOrder; 
         )}
 
         {currentStep.kind === "single" && (
-          <div className="grid gap-2 sm:grid-cols-2" role="group" aria-labelledby="intake-question-title">
+          <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3" role="group" aria-labelledby="intake-question-title">
             {(currentStep.options ?? []).map((option) => {
               const active = value === option.value;
               return (
@@ -814,7 +814,7 @@ export function IntakeWizard({ order, onIntakeComplete }: { order: IntakeOrder; 
         )}
 
         {currentStep.kind === "multi" && (
-          <div className="grid gap-2 sm:grid-cols-2" role="group" aria-labelledby="intake-question-title">
+          <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3" role="group" aria-labelledby="intake-question-title">
             {(currentStep.options ?? []).map((option) => {
               const active = selected.includes(option.value);
               return (
