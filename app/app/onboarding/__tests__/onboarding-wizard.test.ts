@@ -26,7 +26,7 @@ function run() {
   const stepReview = read("app", "app", "onboarding", "steps", "StepReview.tsx");
 
   // --- 1. Onboarding only appears for zero-membership users, unchanged gate --
-  assert.ok(layout.includes('identity.state === "NEW_CUSTOMER"') && layout.includes("<OnboardingPanel />"), "layout.tsx must gate onboarding on the canonical NEW_CUSTOMER state");
+  assert.ok(layout.includes('identity.state === "NEW_CUSTOMER"') && /<OnboardingPanel[\s/>]/.test(layout), "layout.tsx must gate onboarding on the canonical NEW_CUSTOMER state");
   assert.ok(/requireClientContext\(\)/.test(pageTsx) && /ctx\.workspaceTenant/.test(pageTsx), "page.tsx must independently use the canonical client context; NEW_CUSTOMER is handled by layout onboarding");
   assert.ok(onboardingPanel.includes('from "./onboarding/OnboardingWizard"'), "OnboardingPanel must render the structured wizard");
 

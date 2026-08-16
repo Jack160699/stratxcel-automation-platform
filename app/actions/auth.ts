@@ -4,6 +4,7 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { defaultDestination, resolveCanonicalIdentity } from "@/lib/identity/resolve-identity";
 import {
   commitWorkspaceIntent,
+  readWorkspaceMode,
   setPendingWorkspaceMode,
   setWorkspaceModeCookie,
   type WorkspaceMode,
@@ -51,7 +52,26 @@ export async function ensureAdminWorkspaceForAdminEntry(userId: string): Promise
  * (a stratxcel_admins row) grants /admin only when workspace mode is admin.
  * Customer intent always routes to /app or a safe customer next URL.
  */
-export async function resolvePostLoginRedirect(): Promise<"/admin" | "/app"> {
+export async function resolvePostLoginRedirect(): Promise<"/admin" | "/app" | "/auth/select-context"> {
+  const supabase = await createSupabaseServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return "/app";
+
+  const { data: adminRow } = await supabase
+    .from("stratxcel_admins")
+    .select("user_id")
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  const isStaff = Boolean(adminRow);
+  const cookieWorkspaceMode = await readWorkspaceMode(user.id);
+
+  if (isStaff && !cookieWorkspaceMode) {
+    return "/auth/select-context";
+  }
+
   const identity = await resolveCanonicalIdentity();
   const destination = defaultDestination(identity.state);
   return destination === "/admin" ? "/admin" : "/app";

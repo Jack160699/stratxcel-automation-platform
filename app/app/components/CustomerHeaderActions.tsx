@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import type { CustomerPlanSummary } from "@/lib/billing/customer-plan";
 import { Modal } from "@/components/ui/Overlay";
+import { ContextSwitcher } from "@/components/shell/ContextSwitcher";
 import { useTheme } from "@/components/theme/ThemeProvider";
 import { signOutAction } from "../actions";
 
@@ -14,6 +15,7 @@ interface CustomerHeaderActionsProps {
   plan: CustomerPlanSummary;
   showPlanPrompt: boolean;
   auditOpportunityCount: number | null;
+  isStaff?: boolean;
 }
 
 export function CustomerHeaderActions({
@@ -23,6 +25,7 @@ export function CustomerHeaderActions({
   plan,
   showPlanPrompt,
   auditOpportunityCount,
+  isStaff = false,
 }: CustomerHeaderActionsProps) {
   const [profileOpen, setProfileOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
@@ -42,6 +45,7 @@ export function CustomerHeaderActions({
   return (
     <>
       <div className="flex items-center gap-1.5 sm:gap-2.5">
+        {isStaff && <ContextSwitcher currentContext="user" compact />}
         <Link
           href="/app/billing"
           className="hidden min-h-9 items-center rounded-full border border-sx-accent/30 bg-sx-accent/10 px-3 text-xs font-semibold text-sx-accent hover:bg-sx-accent/15 sm:inline-flex"
@@ -122,6 +126,17 @@ export function CustomerHeaderActions({
               ))}
             </div>
           </SheetSection>
+
+          {isStaff && (
+            <SheetSection title="Staff workspace">
+              <div className="rounded-sx-sm border border-sx-accent/30 bg-sx-accent/10 p-3">
+                <p className="text-xs font-medium text-sx-text">You are currently in User workspace mode.</p>
+                <div className="mt-2.5">
+                  <ContextSwitcher currentContext="user" />
+                </div>
+              </div>
+            </SheetSection>
+          )}
 
           <SheetSection title="Security & preferences">
             <SheetLink href="/forgot-password" label="Reset password" onNavigate={() => setProfileOpen(false)} />

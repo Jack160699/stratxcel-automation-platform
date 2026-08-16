@@ -12,6 +12,6 @@ import { OnboardingWizard } from "./onboarding/OnboardingWizard";
  * (tenant creation + Brand Brain seed + audit log), which still reuses the
  * same createTenant()/Brand Brain repository the rest of the platform uses.
  */
-export function OnboardingPanel() {
-  return <OnboardingWizard />;
+export function OnboardingPanel({ isStaff = false }: { isStaff?: boolean }) {
+  return <OnboardingWizard isStaff={isStaff} />;
 }

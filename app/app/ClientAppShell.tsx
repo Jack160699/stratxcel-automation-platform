@@ -25,6 +25,7 @@ export function ClientAppShell({
   showPlanPrompt,
   auditOpportunityCount,
   staffWorkspace,
+  isStaff = false,
   children,
 }: {
   tenantId: string;
@@ -34,6 +35,7 @@ export function ClientAppShell({
   showPlanPrompt: boolean;
   auditOpportunityCount: number | null;
   staffWorkspace: { tenantName: string } | null;
+  isStaff?: boolean;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -58,6 +60,7 @@ export function ClientAppShell({
           plan={plan}
           showPlanPrompt={showPlanPrompt}
           auditOpportunityCount={auditOpportunityCount}
+          isStaff={isStaff}
         />
       }
     >

@@ -10,6 +10,7 @@ import {
 } from "@/components/shell/navigation/admin-navigation";
 import { AdminBetaModeToggle } from "@/components/shell/AdminBetaModeToggle";
 import { ClientSwitcher } from "./ClientSwitcher";
+import { ContextSwitcher } from "@/components/shell/ContextSwitcher";
 import { ThemeToggle } from "@/components/theme/ThemeProvider";
 
 /**
@@ -49,6 +50,7 @@ export function AppShell({
       staffBadge={<AdminBetaModeToggle enabled={betaEnabled} />}
       userMenu={
         <div className="flex items-center gap-2.5">
+          <ContextSwitcher currentContext="admin" compact />
           <span className="hidden truncate text-xs text-sx-text-subtle sm:inline">{email}</span>
           <ThemeToggle />
           <form action={signOutAction}>

@@ -29,7 +29,7 @@ export default async function ClientLayout({ children }: { children: ReactNode }
   const identity = await resolveCanonicalIdentity({ routeSurface: "app" });
   if (identity.state === "NO_SESSION") return <AppLogin />;
   if (identity.state === "INTERNAL_STAFF") redirect("/admin");
-  if (identity.state === "NEW_CUSTOMER") return <OnboardingPanel />;
+  if (identity.state === "NEW_CUSTOMER") return <OnboardingPanel isStaff={identity.isStaff} />;
 
   const tenants = identity.state === "STAFF_VIEWING_CLIENT"
     ? [{ ...identity.staffWorkspace, role: null, accessMode: "staff_support" as const }]
@@ -73,6 +73,7 @@ export default async function ClientLayout({ children }: { children: ReactNode }
         showPlanPrompt={showPlanPrompt}
         auditOpportunityCount={auditOpportunityCount}
         staffWorkspace={identity.state === "STAFF_VIEWING_CLIENT" ? { tenantName: identity.staffWorkspace.name } : null}
+        isStaff={identity.isStaff}
       >
         {children}
       </ClientAppShell>

@@ -25,7 +25,7 @@ function run() {
   );
   assert.equal(
     decideIdentityState({ hasSession: true, isStaff: true, membershipCount: 0, hasValidStaffWorkspace: false, workspaceMode: "customer" }),
-    "INTERNAL_STAFF"
+    "NEW_CUSTOMER"
   );
   assert.equal(
     decideIdentityState({ hasSession: true, isStaff: false, membershipCount: 1, hasValidStaffWorkspace: false, workspaceMode: "admin" }),
