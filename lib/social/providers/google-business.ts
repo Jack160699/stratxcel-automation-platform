@@ -57,7 +57,7 @@ export const googleBusinessProvider: SocialProvider = {
       response_type: "code",
       scope: googleBusinessProvider.requiredScopes.join(" "),
       access_type: "offline",
-      prompt: "consent",
+      prompt: "select_account",
       state,
     });
     return `${GOOGLE_AUTH_ENDPOINT}?${params.toString()}`;

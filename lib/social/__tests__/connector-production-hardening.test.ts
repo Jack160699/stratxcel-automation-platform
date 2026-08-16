@@ -142,7 +142,15 @@ function run() {
   );
   assert.ok(googleBusinessAuthUrl.startsWith("https://accounts.google.com/o/oauth2/v2/auth"));
   assert.ok(googleBusinessAuthUrl.includes("access_type=offline"));
-  assert.ok(googleBusinessAuthUrl.includes("prompt=consent"));
+  assert.ok(
+    googleBusinessAuthUrl.includes("prompt=select_account"),
+    "Google Business must explicitly set prompt=select_account to force account selection"
+  );
+  assert.equal(
+    googleBusinessAuthUrl.includes("login_hint"),
+    false,
+    "Google Business must not provide an admin/user login_hint"
+  );
   assert.ok(googleBusinessAuthUrl.includes("response_type=code"));
 
   // =========================================================================
