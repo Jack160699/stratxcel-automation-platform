@@ -94,12 +94,11 @@ const ORGANIZATION_JSON_LD = {
     addressCountry: "IN",
   },
   sameAs: [
-    "https://www.instagram.com/stratxcel",
-    "https://www.facebook.com/stratxcel",
-    "https://www.threads.net/@stratxcel",
-    "https://www.youtube.com/@stratxcel",
-    "https://www.linkedin.com/company/stratxcel",
-    "https://x.com/stratxcel",
+    "https://www.instagram.com/stratxcel.ai/",
+    "https://www.threads.net/@stratxcel.ai",
+    "https://www.facebook.com/share/1ZfjUR2RTS/",
+    "https://www.youtube.com/@StratxcelSolutions",
+    "https://www.linkedin.com/company/107894380/",
     "https://wa.me/917777812777",
   ],
 };

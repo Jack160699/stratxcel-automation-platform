@@ -28,12 +28,11 @@ async function testDiscovery() {
             "addressCountry": "IN"
           },
           "sameAs": [
-            "https://www.instagram.com/stratxcel",
-            "https://www.facebook.com/stratxcel",
-            "https://www.threads.net/@stratxcel",
-            "https://www.youtube.com/@stratxcel",
-            "https://www.linkedin.com/company/stratxcel",
-            "https://x.com/stratxcel",
+            "https://www.instagram.com/stratxcel.ai/",
+            "https://www.threads.net/@stratxcel.ai",
+            "https://www.facebook.com/share/1ZfjUR2RTS/",
+            "https://www.youtube.com/@StratxcelSolutions",
+            "https://www.linkedin.com/company/107894380/",
             "https://wa.me/917777812777"
           ]
         }
@@ -49,12 +48,12 @@ async function testDiscovery() {
           <li>Search & Discovery Optimization</li>
         </ul>
         <footer>
-          <a href="https://www.instagram.com/stratxcel">Instagram</a>
-          <a href="https://www.facebook.com/stratxcel">Facebook</a>
-          <a href="https://www.threads.net/@stratxcel">Threads</a>
-          <a href="https://www.youtube.com/@stratxcel">YouTube</a>
+          <a href="https://www.instagram.com/stratxcel.ai/">Instagram</a>
+          <a href="https://www.facebook.com/share/1ZfjUR2RTS/">Facebook</a>
+          <a href="https://www.threads.net/@stratxcel.ai">Threads</a>
+          <a href="https://www.youtube.com/@StratxcelSolutions">YouTube</a>
           <a href="https://wa.me/917777812777">WhatsApp</a>
-          <a href="https://www.linkedin.com/company/stratxcel">LinkedIn</a>
+          <a href="https://www.linkedin.com/company/107894380/">LinkedIn</a>
           <a href="mailto:contact@stratxcel.in">contact@stratxcel.in</a>
         </footer>
       </body>

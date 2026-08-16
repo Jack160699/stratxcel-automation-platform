@@ -174,7 +174,7 @@ async function runVerification() {
   assert.ok(footerText?.includes("https://www.stratxcel.in"), "Canonical domain in footer verified");
   assert.ok(footerText?.includes("+91 77778 12777"), "WhatsApp contact in footer verified");
   
-  const linkedinLink = await page.locator("footer a[href*='linkedin.com/company/stratxcel']").count();
+  const linkedinLink = await page.locator("footer a[href*='linkedin.com/company/107894380']").count();
   assert.ok(linkedinLink > 0, "Real Stratxcel LinkedIn link must be in footer");
   console.log("✓ Footer & Verified Social Destinations verified.");
 

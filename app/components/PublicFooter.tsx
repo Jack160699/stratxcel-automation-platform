@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Logo } from "./Logo";
-import { CONTACT_EMAIL } from "@/lib/constants";
-import { PlatformIcon } from "@/components/audit/PlatformIcon";
+import { CONTACT_EMAIL, OFFICIAL_SOCIAL_LINKS } from "@/lib/constants";
+import { PlatformIcon, type PlatformIconKey } from "@/components/audit/PlatformIcon";
 
 const COLUMNS = [
   {
@@ -64,13 +64,13 @@ const COLUMNS = [
   },
 ];
 
-const OFFICIAL_SOCIALS = [
-  { platform: "instagram" as const, label: "Instagram", url: "https://www.instagram.com/stratxcel" },
-  { platform: "facebook" as const, label: "Facebook", url: "https://www.facebook.com/stratxcel" },
-  { platform: "threads" as const, label: "Threads", url: "https://www.threads.net/@stratxcel" },
-  { platform: "youtube" as const, label: "YouTube", url: "https://www.youtube.com/@stratxcel" },
-  { platform: "whatsapp" as const, label: "WhatsApp", url: "https://wa.me/917777812777" },
-  { platform: "website" as const, label: "LinkedIn", url: "https://www.linkedin.com/company/stratxcel" },
+const OFFICIAL_SOCIALS: Array<{ platform: PlatformIconKey; label: string; url: string }> = [
+  { platform: "instagram", label: "Instagram", url: OFFICIAL_SOCIAL_LINKS.instagram },
+  { platform: "threads", label: "Threads", url: OFFICIAL_SOCIAL_LINKS.threads },
+  { platform: "facebook", label: "Facebook", url: OFFICIAL_SOCIAL_LINKS.facebook },
+  { platform: "youtube", label: "YouTube", url: OFFICIAL_SOCIAL_LINKS.youtube },
+  { platform: "linkedin", label: "LinkedIn", url: OFFICIAL_SOCIAL_LINKS.linkedin },
+  { platform: "whatsapp", label: "WhatsApp", url: OFFICIAL_SOCIAL_LINKS.whatsapp },
 ];
 
 export function PublicFooter({ logoVariant = "dark" }: { logoVariant?: "light" | "dark" }) {
@@ -89,12 +89,13 @@ export function PublicFooter({ logoVariant = "dark" }: { logoVariant?: "light" |
             <div className="mt-4 flex flex-wrap items-center gap-2.5">
               {OFFICIAL_SOCIALS.map((s) => (
                 <a
-                  key={s.url}
+                  key={s.platform}
                   href={s.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  aria-label={s.label}
-                  className="flex h-7 w-7 items-center justify-center rounded-sx-sm bg-sx-surface-2 text-sx-text-muted transition-colors hover:bg-sx-surface-3 hover:text-sx-text"
+                  aria-label={`StratXcel on ${s.label}`}
+                  title={`StratXcel on ${s.label}`}
+                  className="flex h-7 w-7 items-center justify-center rounded-sx-sm bg-sx-surface-2 text-sx-text-muted transition-colors hover:bg-sx-surface-3 hover:text-sx-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sx-accent"
                 >
                   <PlatformIcon name={s.platform} />
                 </a>
