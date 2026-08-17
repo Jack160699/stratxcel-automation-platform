@@ -13,6 +13,7 @@ export async function GET() {
     {
       status: "healthy",
       timestamp,
+      commit: process.env.VERCEL_GIT_COMMIT_SHA || process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA || null,
       environment: envSummary,
     },
     { status: 200 }
