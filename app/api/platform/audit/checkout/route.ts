@@ -7,7 +7,7 @@ import { resolveCanonicalIdentity } from "@/lib/identity/resolve-identity";
 import { ensurePendingAuditOrder, AUDIT_FEE_CENTS } from "@/lib/audit/ensure-pending-order";
 import { isMissingRelation, resolveCurrentAuditOrderId } from "@/lib/audit/current-pointer";
 import { loadAuditWhatsAppDestination, toPublicDestination } from "@/lib/audit/v1/whatsapp-destination";
-import { createLiveAutomaticAuditExecutor } from "@stratxcel/audit-engine";
+import { createLiveAutomaticAuditExecutor, resolveAuditBudgetLimitUsd } from "@stratxcel/audit-engine";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -200,13 +200,40 @@ export async function GET() {
 
   let generation: Record<string, unknown> | null = null;
   if (visibleOrder?.id) {
-    const { data: run } = await service
+    let { data: run } = await service
       .from("audit_generation_runs")
       .select("id, status, stage, quality_outcome, confidence_band, failure_message_safe, stage_updated_at")
       .eq("audit_order_id", visibleOrder.id)
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
+
+    // If order is in_review or paid but no generation run exists yet, start one automatically
+    if (!run && (visibleOrder.status === "in_review" || visibleOrder.status === "paid")) {
+      const brain = await getCurrentBrandBrain(service, tenantId).catch(() => null);
+      if (brain) {
+        try {
+          const started = await service.rpc("start_automatic_audit_generation_v1", {
+            p_audit_order_id: visibleOrder.id,
+            p_expected_tenant_id: tenantId,
+            p_brand_brain_version: brain.current_version,
+            p_budget_limit_usd: resolveAuditBudgetLimitUsd(),
+          });
+          const result = started.data as { success?: boolean; run_id?: string } | null;
+          if (result?.run_id) {
+            const { data: newRun } = await service
+              .from("audit_generation_runs")
+              .select("id, status, stage, quality_outcome, confidence_band, failure_message_safe, stage_updated_at")
+              .eq("id", result.run_id)
+              .maybeSingle();
+            run = newRun;
+          }
+        } catch (startErr) {
+          console.warn("audit checkout: auto-start generation run trace", startErr);
+        }
+      }
+    }
+
     generation = run ?? null;
 
     // Auto-advance queued audit in serverless environments

@@ -429,8 +429,8 @@ export async function POST(request: Request) {
       auditOrderId = inserted?.id ?? null;
     }
 
-    // Trigger automatic audit generation if automation is enabled
-    if (process.env.AUDIT_AUTOMATION_ENABLED === "true" && auditOrderId) {
+    // Trigger automatic audit generation
+    if (auditOrderId) {
       try {
         const started = await serviceClient.rpc("start_automatic_audit_generation_v1", {
           p_audit_order_id: auditOrderId,

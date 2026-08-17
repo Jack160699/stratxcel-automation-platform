@@ -1,4 +1,5 @@
 import { requireTenantReadContext } from "@/lib/tenants/tenant-context";
+import { createSupabaseServiceClient } from "@/lib/supabase/service";
 import { getCurrentBrandBrain } from "@stratxcel/brand-brain";
 import { buildPresenceLinks } from "@/lib/audit/v1/presence";
 import { provisionTenantConnectorsFromMetadata } from "@/lib/social/provisioning";
@@ -12,20 +13,22 @@ export async function GET(request: Request) {
   const ctx = await requireTenantReadContext(tenantId);
   if (!ctx.ok) return Response.json({ error: ctx.error }, { status: ctx.status });
 
-  // 1. Initial query of canonical tenant connector tables
+  const service = createSupabaseServiceClient();
+
+  // 1. Initial query of canonical tenant connector tables via trusted service client
   let [{ data: waData, error: waError }, brandBrain, socialRes, googleRow] = await Promise.all([
-    ctx.supabase
+    service
       .from("whatsapp_phone_bindings")
       .select("status")
       .eq("tenant_id", tenantId),
-    getCurrentBrandBrain(ctx.supabase, tenantId).catch(() => null),
-    ctx.supabase
+    getCurrentBrandBrain(service, tenantId).catch(() => null),
+    service
       .from("social_accounts")
-      .select("platform, status")
+      .select("platform, status, username, display_name")
       .eq("tenant_id", tenantId),
-    ctx.supabase
+    service
       .from("search_google_connections")
-      .select("status")
+      .select("status, search_console_site_url, ga4_property_id")
       .eq("tenant_id", tenantId)
       .maybeSingle(),
   ]);
@@ -41,12 +44,13 @@ export async function GET(request: Request) {
   const oauthConnections = (userMetadata?.onboarding_oauth_connections ?? {}) as Record<string, unknown>;
   const hasUnprovisionedMetadata =
     (statuses.length === 0 && Boolean(oauthConnections.whatsapp || userMetadata?.onboarding_whatsapp_verification)) ||
-    (socialRows.length === 0 && Object.keys(oauthConnections).some((k) => k !== "whatsapp"));
+    (socialRows.length === 0 && Object.keys(oauthConnections).some((k) => k !== "whatsapp")) ||
+    (!googleRow.data && Boolean(oauthConnections.google_business || oauthConnections.google_search));
 
   const userRole = "role" in ctx ? ctx.role : null;
   if (hasUnprovisionedMetadata && (userRole === "owner" || userRole === "admin")) {
     try {
-      await provisionTenantConnectorsFromMetadata(ctx.supabase, {
+      await provisionTenantConnectorsFromMetadata(service, {
         tenantId,
         userId: ctx.userId,
         userMetadata,
@@ -54,9 +58,9 @@ export async function GET(request: Request) {
 
       // Re-read canonical tables after reconciliation
       const [nextWa, nextSocial, nextGoogle] = await Promise.all([
-        ctx.supabase.from("whatsapp_phone_bindings").select("status").eq("tenant_id", tenantId),
-        ctx.supabase.from("social_accounts").select("platform, status").eq("tenant_id", tenantId),
-        ctx.supabase.from("search_google_connections").select("status").eq("tenant_id", tenantId).maybeSingle(),
+        service.from("whatsapp_phone_bindings").select("status").eq("tenant_id", tenantId),
+        service.from("social_accounts").select("platform, status, username, display_name").eq("tenant_id", tenantId),
+        service.from("search_google_connections").select("status, search_console_site_url, ga4_property_id").eq("tenant_id", tenantId).maybeSingle(),
       ]);
 
       if (!nextWa.error && nextWa.data) {

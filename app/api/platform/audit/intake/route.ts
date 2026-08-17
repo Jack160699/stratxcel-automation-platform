@@ -236,7 +236,7 @@ export async function POST() {
     .maybeSingle();
 
   if (!order) return Response.json({ error: "No audit found for this workspace" }, { status: 404 });
-  const automationEnabled = process.env.AUDIT_AUTOMATION_ENABLED === "true";
+  const automationEnabled = process.env.AUDIT_AUTOMATION_ENABLED !== "false";
   if (order.status !== "paid" && !(automationEnabled && order.status === "in_review")) {
     return Response.json({ error: `Audit cannot be started from status '${order.status}'` }, { status: 409 });
   }

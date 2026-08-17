@@ -191,7 +191,7 @@ export async function POST(request: Request) {
         updated_at: new Date().toISOString(),
       }).eq("id", claimed.audit_order_id);
 
-      if (process.env.AUDIT_AUTOMATION_ENABLED === "true") {
+      if (brain) {
         try {
           await ctx.service.rpc("start_automatic_audit_generation_v1", {
             p_audit_order_id: claimed.audit_order_id,
@@ -546,7 +546,7 @@ export async function POST(request: Request) {
         });
       }
       const brain = await getCurrentBrandBrain(ctx.service, ctx.tenantId);
-      if (process.env.AUDIT_AUTOMATION_ENABLED === "true" && brain) {
+      if (brain) {
         const started = await ctx.service.rpc("start_automatic_audit_generation_v1", {
           p_audit_order_id: current.id,
           p_expected_tenant_id: ctx.tenantId,

@@ -55,8 +55,8 @@ export function GoogleSearchIntegrationPanel({ tenantId }: { tenantId: string })
       const body = await response.json();
       if (!response.ok) return setError(body.error ?? "SEARCH_GOOGLE_STATUS_FAILED");
       setState(body);
-      setPendingSite((current) => current || body.searchConsoleSiteUrl || "");
-      setPendingGa4((current) => current || body.ga4PropertyId || "");
+      setPendingSite(body.searchConsoleSiteUrl || "");
+      setPendingGa4(body.ga4PropertyId || "");
     } catch {
       setError("SEARCH_GOOGLE_STATUS_FAILED");
     }
@@ -97,6 +97,8 @@ export function GoogleSearchIntegrationPanel({ tenantId }: { tenantId: string })
       });
       const body = await response.json();
       if (!response.ok) return setError(body.error ?? "SEARCH_GOOGLE_CONFIG_FAILED");
+      setPendingSite(body.searchConsoleSiteUrl || "");
+      setPendingGa4(body.ga4PropertyId || "");
       setSuccessMsg("✓ Search Console & GA4 property selection saved successfully!");
       await load();
       setTimeout(() => setSuccessMsg(null), 5000);
