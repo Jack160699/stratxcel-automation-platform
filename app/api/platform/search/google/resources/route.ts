@@ -1,5 +1,5 @@
-import { requireTenantReadContext, requireTenantReadPermission, getTenantServiceContext } from "@/lib/tenants/tenant-context";
-import { PermissionDeniedError } from "@/lib/rbac/policy";
+import { requireTenantContext, getTenantServiceContext } from "@/lib/tenants/tenant-context";
+import { requirePermission, PermissionDeniedError } from "@/lib/rbac/policy";
 import { createDevEncryptedVault } from "@stratxcel/byok";
 import {
   getGoogleConnection,
@@ -28,11 +28,11 @@ export async function GET(request: Request) {
   const tenantId = new URL(request.url).searchParams.get("tenantId");
   if (!tenantId) return Response.json({ error: "tenantId query param is required" }, { status: 400 });
 
-  const ctx = await requireTenantReadContext(tenantId);
+  const ctx = await requireTenantContext(tenantId);
   if (!ctx.ok) return Response.json({ error: ctx.error }, { status: ctx.status });
 
   try {
-    requireTenantReadPermission(ctx, "integration:configure");
+    requirePermission(ctx.role, "integration:configure");
   } catch (err) {
     if (err instanceof PermissionDeniedError) return Response.json({ error: err.message }, { status: 403 });
     throw err;

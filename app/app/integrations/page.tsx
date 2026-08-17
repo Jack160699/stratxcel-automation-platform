@@ -308,7 +308,9 @@ export default function IntegrationsPage() {
                       </a>
                     </div>
                     <p className="mt-1 text-xs text-sx-text-subtle">
-                      {presence.provenance.replaceAll("_", " ")}
+                      {card.state === "connected"
+                        ? "Authenticated account · direct publishing & analytics active"
+                        : "Discovered via public web · Connect account to authenticate"}
                       {presence.lastSync ? ` · synced ${new Date(presence.lastSync).toLocaleDateString()}` : ""}
                     </p>
                   </div>

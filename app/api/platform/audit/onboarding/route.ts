@@ -3,7 +3,7 @@ import { getTenantServiceContext } from "@/lib/tenants/tenant-context";
 import { listMembershipsForUser } from "@/lib/tenants/repository";
 import { brandBrainPresenceChanged, buildBrandBrainContentFromAuditIntake, isBrandBrainCurrentForAudit } from "@/lib/audit/brand-brain";
 import { getCurrentBrandBrain, saveBrandBrainVersion } from "@stratxcel/brand-brain";
-import { resolveAuditBudgetLimitUsd } from "@stratxcel/audit-engine";
+import { resolveAuditBudgetLimitUsd, createLiveAutomaticAuditExecutor } from "@stratxcel/audit-engine";
 import { AUDIT_CHANNEL_TYPES, sanitizeChannels, type AuditChannelType } from "@/lib/audit/v1/channels";
 import { discoverPublicBusiness } from "@/lib/audit/v1/discovery";
 import { runSmartWebsiteDiscovery, type DiscoveredBusinessData } from "@/lib/audit/v1/smart-discovery";
@@ -553,9 +553,22 @@ export async function POST(request: Request) {
           p_brand_brain_version: brain.current_version,
           p_budget_limit_usd: resolveAuditBudgetLimitUsd(),
         });
-        const result = started.data as { success?: boolean } | null;
+        const result = started.data as { success?: boolean; run_id?: string } | null;
         if (started.error || result?.success !== true) {
           await ctx.service.from("audit_orders").update({ status: "in_review", updated_at: new Date().toISOString() }).eq("id", current.id);
+        } else if (result?.run_id) {
+          // Asynchronously advance the audit run in serverless runtime
+          const executor = createLiveAutomaticAuditExecutor(ctx.service);
+          void executor
+            .execute({
+              runId: result.run_id,
+              attemptNumber: 1,
+              maxAttempts: 3,
+              expectedTenantId: ctx.tenantId,
+            })
+            .catch((err) => {
+              console.warn("audit onboarding finalize: background executor trace", err);
+            });
         }
       } else {
         await ctx.service.from("audit_orders").update({ status: "in_review", updated_at: new Date().toISOString() }).eq("id", current.id);

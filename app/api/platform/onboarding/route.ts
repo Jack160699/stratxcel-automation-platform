@@ -6,7 +6,7 @@ import { resolveCanonicalIdentity } from "@/lib/identity/resolve-identity";
 import { field } from "@/lib/audit/v1/provenance";
 import { CONNECT_DISCOVER_VERSION } from "@/lib/audit/v1/onboarding-state";
 import type { DiscoveredBusinessProfile } from "@/lib/audit/v1/adaptive-questions";
-import { resolveAuditBudgetLimitUsd } from "@stratxcel/audit-engine";
+import { resolveAuditBudgetLimitUsd, createLiveAutomaticAuditExecutor } from "@stratxcel/audit-engine";
 import { sanitizeChannels } from "@/lib/audit/v1/channels";
 import { provisionTenantConnectorsFromMetadata } from "@/lib/social/provisioning";
 
@@ -405,12 +405,26 @@ export async function POST(request: Request) {
     // Trigger automatic audit generation if automation is enabled
     if (process.env.AUDIT_AUTOMATION_ENABLED === "true" && auditOrderId) {
       try {
-        await serviceClient.rpc("start_automatic_audit_generation_v1", {
+        const started = await serviceClient.rpc("start_automatic_audit_generation_v1", {
           p_audit_order_id: auditOrderId,
           p_expected_tenant_id: tenant.id,
           p_brand_brain_version: brandBrainVersion,
           p_budget_limit_usd: resolveAuditBudgetLimitUsd(),
         });
+        const result = started.data as { success?: boolean; run_id?: string } | null;
+        if (result?.run_id) {
+          const executor = createLiveAutomaticAuditExecutor(serviceClient);
+          void executor
+            .execute({
+              runId: result.run_id,
+              attemptNumber: 1,
+              maxAttempts: 3,
+              expectedTenantId: tenant.id,
+            })
+            .catch((err) => {
+              console.warn("onboarding: background executor trace", err);
+            });
+        }
       } catch (autoErr) {
         console.warn("onboarding: non-fatal automatic audit start trace", autoErr);
       }

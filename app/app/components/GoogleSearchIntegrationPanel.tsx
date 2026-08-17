@@ -42,6 +42,7 @@ const formatSync = (iso: string | null) => (iso ? new Date(iso).toLocaleString()
 export function GoogleSearchIntegrationPanel({ tenantId }: { tenantId: string }) {
   const [state, setState] = useState<ResourcesState | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
   const [pendingSite, setPendingSite] = useState("");
@@ -83,6 +84,7 @@ export function GoogleSearchIntegrationPanel({ tenantId }: { tenantId: string })
   async function saveConfig() {
     setSaving(true);
     setError(null);
+    setSuccessMsg(null);
     try {
       const response = await fetch("/api/platform/search/google/config", {
         method: "POST",
@@ -95,7 +97,9 @@ export function GoogleSearchIntegrationPanel({ tenantId }: { tenantId: string })
       });
       const body = await response.json();
       if (!response.ok) return setError(body.error ?? "SEARCH_GOOGLE_CONFIG_FAILED");
+      setSuccessMsg("✓ Search Console & GA4 property selection saved successfully!");
       await load();
+      setTimeout(() => setSuccessMsg(null), 5000);
     } finally {
       setSaving(false);
     }
@@ -104,6 +108,7 @@ export function GoogleSearchIntegrationPanel({ tenantId }: { tenantId: string })
   async function disconnect() {
     setDisconnecting(true);
     setError(null);
+    setSuccessMsg(null);
     try {
       const response = await fetch("/api/platform/search/google/disconnect", {
         method: "POST",
@@ -134,6 +139,12 @@ export function GoogleSearchIntegrationPanel({ tenantId }: { tenantId: string })
       <p className="mt-1.5 text-xs text-sx-text-muted">
         One Google sign-in covers both read-only surfaces. Stratxcel never stores your Google password and only requests read-only access.
       </p>
+
+      {successMsg && (
+        <div className="mt-3 rounded-sx-sm border border-emerald-500/30 bg-emerald-500/10 px-3.5 py-2.5 text-xs font-medium text-emerald-300">
+          {successMsg}
+        </div>
+      )}
 
       {error && (
         <div className="mt-3">

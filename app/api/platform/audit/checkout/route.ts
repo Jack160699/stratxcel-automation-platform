@@ -7,6 +7,7 @@ import { resolveCanonicalIdentity } from "@/lib/identity/resolve-identity";
 import { ensurePendingAuditOrder, AUDIT_FEE_CENTS } from "@/lib/audit/ensure-pending-order";
 import { isMissingRelation, resolveCurrentAuditOrderId } from "@/lib/audit/current-pointer";
 import { loadAuditWhatsAppDestination, toPublicDestination } from "@/lib/audit/v1/whatsapp-destination";
+import { createLiveAutomaticAuditExecutor } from "@stratxcel/audit-engine";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -207,6 +208,21 @@ export async function GET() {
       .limit(1)
       .maybeSingle();
     generation = run ?? null;
+
+    // Auto-advance queued audit in serverless environments
+    if (generation?.id && (generation.status === "QUEUED" || generation.stage === "QUEUED")) {
+      const executor = createLiveAutomaticAuditExecutor(service);
+      void executor
+        .execute({
+          runId: generation.id as string,
+          attemptNumber: 1,
+          maxAttempts: 3,
+          expectedTenantId: tenantId,
+        })
+        .catch((err) => {
+          console.warn("audit checkout: non-fatal serverless audit trigger trace", err);
+        });
+    }
   }
 
   const eligibility = await service.rpc("tenant_has_fresh_audit_grant", { p_tenant_id: tenantId });

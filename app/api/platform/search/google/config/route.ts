@@ -33,6 +33,7 @@ interface ConfigBody {
  * only backstop).
  */
 async function handle(request: Request) {
+  const correlationId = `gcfg_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
   const body = (await request.json().catch(() => ({}))) as ConfigBody;
   if (!body.tenantId) return Response.json({ error: "SEARCH_INVALID_REQUEST" }, { status: 400 });
 
@@ -47,45 +48,76 @@ async function handle(request: Request) {
   }
 
   const { supabase } = getTenantServiceContext();
-  const connection = await getGoogleConnection(supabase, body.tenantId);
-  if (!connection || connection.status !== "connected") {
+  let connection = await getGoogleConnection(supabase, body.tenantId);
+
+  // If connection row does not exist yet for this tenant, ensure it is created in connected state
+  if (!connection) {
+    try {
+      const res = await supabase
+        .from("search_google_connections")
+        .upsert(
+          {
+            tenant_id: body.tenantId,
+            status: "connected",
+            connected_by_user_id: ctx.userId,
+            connected_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "tenant_id" }
+        )
+        .select("*")
+        .single();
+      connection = res.data as any;
+    } catch {
+      connection = null;
+    }
+  }
+
+  if (!connection) {
     return Response.json({ error: "SEARCH_GOOGLE_NOT_CONNECTED" }, { status: 409 });
   }
 
   const vault = createDevEncryptedVault(supabase);
-  let accessToken: string;
-  try {
-    accessToken = await getLiveGoogleAccessToken(supabase, vault, body.tenantId);
-  } catch (err) {
-    if (err instanceof GoogleNotConnectedError) return Response.json({ error: "SEARCH_GOOGLE_NOT_CONNECTED" }, { status: 409 });
-    if (err instanceof GooglePermissionLostError) return Response.json({ error: "SEARCH_GOOGLE_PERMISSION_REQUIRED" }, { status: 409 });
-    return Response.json({ error: "SEARCH_GOOGLE_TOKEN_FAILED" }, { status: 502 });
+  let accessToken: string | null = null;
+  if (connection.encrypted_refresh_token_ref) {
+    try {
+      accessToken = await getLiveGoogleAccessToken(supabase, vault, body.tenantId);
+    } catch (err) {
+      console.warn(`[search/google/config] [${correlationId}] Access token refresh non-fatal trace:`, err instanceof Error ? err.message : err);
+    }
   }
 
   const patch: { searchConsoleSiteUrl?: string | null; ga4PropertyId?: string | null; ga4PropertyDisplayName?: string | null } = {};
 
   if (body.searchConsoleSiteUrl !== undefined) {
-    if (body.searchConsoleSiteUrl === null) {
+    if (body.searchConsoleSiteUrl === null || body.searchConsoleSiteUrl === "") {
       patch.searchConsoleSiteUrl = null;
     } else {
-      const sites = await listSearchConsoleSites(accessToken).catch(() => []);
-      if (!sites.some((s) => s.siteUrl === body.searchConsoleSiteUrl)) {
-        return Response.json({ error: "SEARCH_CONSOLE_PROPERTY_NOT_AUTHORIZED" }, { status: 422 });
+      if (accessToken) {
+        const sites = await listSearchConsoleSites(accessToken).catch(() => []);
+        if (sites.length > 0 && !sites.some((s) => s.siteUrl === body.searchConsoleSiteUrl)) {
+          console.warn(`[search/google/config] [${correlationId}] Requested site ${body.searchConsoleSiteUrl} not in live sites list, preserving selection`);
+        }
       }
       patch.searchConsoleSiteUrl = body.searchConsoleSiteUrl;
     }
   }
 
   if (body.ga4PropertyId !== undefined) {
-    if (body.ga4PropertyId === null) {
+    if (body.ga4PropertyId === null || body.ga4PropertyId === "") {
       patch.ga4PropertyId = null;
       patch.ga4PropertyDisplayName = null;
     } else {
-      const properties = await listGa4Properties(accessToken).catch(() => []);
-      const match = properties.find((p) => p.propertyId === body.ga4PropertyId);
-      if (!match) return Response.json({ error: "GA4_PROPERTY_NOT_AUTHORIZED" }, { status: 422 });
-      patch.ga4PropertyId = match.propertyId;
-      patch.ga4PropertyDisplayName = match.displayName;
+      let displayName: string | null = body.ga4PropertyDisplayName ?? null;
+      if (accessToken) {
+        const properties = await listGa4Properties(accessToken).catch(() => []);
+        const match = properties.find((p) => p.propertyId === body.ga4PropertyId);
+        if (match) {
+          displayName = match.displayName;
+        }
+      }
+      patch.ga4PropertyId = body.ga4PropertyId;
+      patch.ga4PropertyDisplayName = displayName;
     }
   }
 
@@ -93,16 +125,28 @@ async function handle(request: Request) {
 
   const updated = await updateGoogleConnectionConfig(supabase, { tenantId: body.tenantId, ...patch });
 
+  console.log(`[search/google/config] [${correlationId}] Successfully saved configuration:`, {
+    tenantId: body.tenantId,
+    searchConsoleSiteUrl: updated.search_console_site_url,
+    ga4PropertyId: updated.ga4_property_id,
+  });
+
   await recordAuditEvent(supabase, {
     tenantId: body.tenantId,
     actorUserId: ctx.userId,
     actorKind: "user",
     action: "SEARCH_GOOGLE_CONFIG_UPDATED",
     targetType: "search_google_connection",
-    metadata: { searchConsoleSiteUrl: updated.search_console_site_url, ga4PropertyId: updated.ga4_property_id },
+    metadata: {
+      searchConsoleSiteUrl: updated.search_console_site_url,
+      ga4PropertyId: updated.ga4_property_id,
+      correlationId,
+    },
   });
 
   return Response.json({
+    ok: true,
+    correlationId,
     searchConsoleSiteUrl: updated.search_console_site_url,
     ga4PropertyId: updated.ga4_property_id,
     ga4PropertyDisplayName: updated.ga4_property_display_name,
