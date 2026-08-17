@@ -109,6 +109,18 @@ function createFakeDb() {
 
       if (table === "search_google_connections") {
         return {
+          select(_cols: string) {
+            return {
+              eq(col: string, val: any) {
+                return {
+                  async maybeSingle() {
+                    const found = googleConnections.find((r) => r[col] === val);
+                    return { data: found || null, error: null };
+                  },
+                };
+              },
+            };
+          },
           upsert(payload: any) {
             const existing = googleConnections.find((r) => r.tenant_id === payload.tenant_id);
             if (existing) {

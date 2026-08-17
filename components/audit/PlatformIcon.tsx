@@ -4,6 +4,8 @@ import { ChartIcon, GlobeIcon } from "@/components/shell/navigation/shared-icons
 export type PlatformIconKey =
   | "website"
   | "google_business"
+  | "google_search_console"
+  | "google_analytics"
   | "google"
   | "instagram"
   | "facebook"
@@ -35,12 +37,23 @@ export function PlatformIcon({ name, className }: { name: PlatformIconKey | stri
       return wrap("Website", <GlobeIcon />);
 
     case "google_business":
-      return wrap("Google Business", (
+    case "google_search_console":
+      return wrap("Google", (
         <svg className={svgClass} viewBox="0 0 18 18" aria-hidden="true">
           <path fill="#4285F4" d="M16.5 9.2c0-.6-.05-1.18-.15-1.73H9.2v3.28h4.1a3.5 3.5 0 01-1.52 2.3v1.9h2.46c1.44-1.33 2.26-3.28 2.26-5.75z" />
           <path fill="#34A853" d="M9.2 16.5c2.05 0 3.78-.68 5.04-1.85l-2.46-1.9c-.68.46-1.56.73-2.58.73-1.98 0-3.66-1.34-4.26-3.14H2.4v1.96A7.3 7.3 0 009.2 16.5z" />
           <path fill="#FBBC05" d="M4.94 10.34A4.38 4.38 0 014.7 9c0-.47.08-.92.24-1.34V5.7H2.4A7.3 7.3 0 001.9 9c0 1.18.28 2.3.5 3.3l2.54-1.96z" />
           <path fill="#EA4335" d="M9.2 4.52c1.12 0 2.12.38 2.91 1.14l2.18-2.18C12.97 2.2 11.25 1.5 9.2 1.5A7.3 7.3 0 002.4 5.7l2.54 1.96c.6-1.8 2.28-3.14 4.26-3.14z" />
+        </svg>
+      ));
+
+    case "google_analytics":
+    case "analytics":
+      return wrap("Google Analytics", (
+        <svg className={svgClass} viewBox="0 0 18 18" fill="none" aria-hidden="true">
+          <rect x="2" y="9" width="3.5" height="7" rx="1" fill="#F9AB00" />
+          <rect x="7.25" y="5" width="3.5" height="11" rx="1" fill="#E37400" />
+          <rect x="12.5" y="2" width="3.5" height="14" rx="1" fill="#EA4335" />
         </svg>
       ));
 
@@ -125,6 +138,8 @@ export const PLATFORM_LABELS: Record<PlatformIconKey, string> = {
   website: "Website",
   google_business: "Google Business / Maps",
   google: "Google Business / Maps",
+  google_search_console: "Google Search Console",
+  google_analytics: "Google Analytics",
   instagram: "Instagram",
   facebook: "Facebook",
   youtube: "YouTube",

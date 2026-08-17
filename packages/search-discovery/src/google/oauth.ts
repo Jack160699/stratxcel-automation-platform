@@ -58,15 +58,22 @@ function getStateSecret(): string {
  * using a wholly separate signing secret from every other OAuth flow in the
  * app (Drive, Meta/social).
  */
-export function generateOAuthState(input: { tenantId: string; userId: string }): string {
-  const payload = { purpose: STATE_PURPOSE, tenantId: input.tenantId, userId: input.userId, nonce: crypto.randomBytes(12).toString("base64url"), issuedAtMs: Date.now() };
+export function generateOAuthState(input: { tenantId?: string | null; userId: string; redirectTo?: string }): string {
+  const payload = {
+    purpose: STATE_PURPOSE,
+    tenantId: input.tenantId ?? "",
+    userId: input.userId,
+    redirectTo: input.redirectTo,
+    nonce: crypto.randomBytes(12).toString("base64url"),
+    issuedAtMs: Date.now(),
+  };
   const encoded = Buffer.from(JSON.stringify(payload)).toString("base64url");
   const signature = crypto.createHmac("sha256", getStateSecret()).update(encoded).digest("base64url");
   return `${encoded}.${signature}`;
 }
 
 export type VerifyOAuthStateResult =
-  | { ok: true; tenantId: string; userId: string }
+  | { ok: true; tenantId: string; userId: string; redirectTo?: string }
   | { ok: false; reason: "malformed" | "invalid_signature" | "expired" | "wrong_purpose" };
 
 export function verifyOAuthState(state: string): VerifyOAuthStateResult {
@@ -87,20 +94,20 @@ export function verifyOAuthState(state: string): VerifyOAuthStateResult {
     return { ok: false, reason: "invalid_signature" };
   }
 
-  let payload: { purpose?: string; tenantId?: string; userId?: string; issuedAtMs?: number };
+  let payload: { purpose?: string; tenantId?: string; userId?: string; issuedAtMs?: number; redirectTo?: string };
   try {
     payload = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8"));
   } catch {
     return { ok: false, reason: "malformed" };
   }
 
-  if (typeof payload.tenantId !== "string" || typeof payload.userId !== "string" || typeof payload.issuedAtMs !== "number") {
+  if (typeof payload.userId !== "string" || typeof payload.issuedAtMs !== "number") {
     return { ok: false, reason: "malformed" };
   }
   if (payload.purpose !== STATE_PURPOSE) return { ok: false, reason: "wrong_purpose" };
   if (Date.now() - payload.issuedAtMs > STATE_TTL_MS) return { ok: false, reason: "expired" };
 
-  return { ok: true, tenantId: payload.tenantId, userId: payload.userId };
+  return { ok: true, tenantId: payload.tenantId || "", userId: payload.userId, redirectTo: payload.redirectTo };
 }
 
 function getClientCredentials(): { clientId: string; clientSecret: string } {

@@ -182,13 +182,40 @@ export async function provisionTenantConnectorsFromMetadata(
   // 3. Provision Google Search / GA4 / Business Connections
   try {
     const googleMeta = oauthConnections.google_business || oauthConnections.google;
-    const googleSocial = socials.find((s) => (s.platform === "google_business" || s.platform === "google") && s.confirmed !== false);
+    const googleSearchMeta = oauthConnections.google_search;
+    const googleSocial = socials.find((s) => (s.platform === "google_business" || s.platform === "google" || s.platform === "google_search_console" || s.platform === "google_analytics") && s.confirmed !== false);
 
-    if (googleMeta || googleSocial) {
+    if (googleMeta || googleSearchMeta || googleSocial) {
+      const searchConsoleSiteUrl =
+        (googleSearchMeta?.searchConsoleSiteUrl as string) ||
+        (googleMeta?.searchConsoleSiteUrl as string) ||
+        (socials.find((s) => s.platform === "google_search_console")?.url) ||
+        null;
+
+      const ga4PropertyId =
+        (googleSearchMeta?.ga4PropertyId as string) ||
+        (googleMeta?.ga4PropertyId as string) ||
+        (socials.find((s) => s.platform === "google_analytics")?.handle) ||
+        null;
+
+      const ga4PropertyDisplayName =
+        (googleSearchMeta?.ga4PropertyDisplayName as string) ||
+        (googleMeta?.ga4PropertyDisplayName as string) ||
+        null;
+
+      const { data: existingG } = await supabase
+        .from("search_google_connections")
+        .select("search_console_site_url, ga4_property_id, ga4_property_display_name")
+        .eq("tenant_id", tenantId)
+        .maybeSingle();
+
       await supabase.from("search_google_connections").upsert(
         {
           tenant_id: tenantId,
           status: "connected",
+          search_console_site_url: searchConsoleSiteUrl || existingG?.search_console_site_url || null,
+          ga4_property_id: ga4PropertyId || existingG?.ga4_property_id || null,
+          ga4_property_display_name: ga4PropertyDisplayName || existingG?.ga4_property_display_name || null,
           connected_by_user_id: userId,
           connected_at: now,
           updated_at: now,

@@ -116,7 +116,7 @@ async function authenticatedUser() {
 
 /** Cross-device draft recovery with verified OAuth connection rehydration. */
 export async function GET() {
-  const { user } = await authenticatedUser();
+  const { supabase, user } = await authenticatedUser();
   if (!user) return Response.json({ error: "Not authenticated" }, { status: 401 });
   const saved = user.user_metadata?.[ONBOARDING_METADATA_KEY] ?? null;
   const oauthConnections = (user.user_metadata?.onboarding_oauth_connections ?? {}) as Record<string, any>;
@@ -146,7 +146,34 @@ export async function GET() {
     saved.draft.account = { ...saved.draft.account, connections: existingConns };
   }
 
-  return Response.json({ saved, oauthConnections }, { headers: { "Cache-Control": "no-store" } });
+  // Rehydrate existing Google Search / GA4 connection if tenant exists
+  let googleSearchConnection: any = null;
+  try {
+    const userMemberships = await listMembershipsForUser(supabase, user.id);
+    const activeTenantId = userMemberships[0]?.tenant_id;
+    if (activeTenantId) {
+      const { supabase: serviceSupabase } = getTenantServiceContext();
+      const { data: gData } = await serviceSupabase
+        .from("search_google_connections")
+        .select("status, search_console_site_url, ga4_property_id, ga4_property_display_name")
+        .eq("tenant_id", activeTenantId)
+        .maybeSingle();
+      if (gData && gData.status === "connected") {
+        googleSearchConnection = {
+          status: "connected",
+          searchConsoleSiteUrl: gData.search_console_site_url,
+          ga4PropertyId: gData.ga4_property_id,
+          ga4PropertyDisplayName: gData.ga4_property_display_name,
+        };
+      }
+    }
+  } catch {
+    // Non-fatal
+  }
+
+  const googleSearch = googleSearchConnection || oauthConnections.google_search || null;
+
+  return Response.json({ saved, oauthConnections, googleSearch }, { headers: { "Cache-Control": "no-store" } });
 }
 
 /** Saves only bounded, non-secret setup fields in the authenticated user's metadata. */

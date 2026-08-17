@@ -35,7 +35,43 @@ interface ConfigBody {
 async function handle(request: Request) {
   const correlationId = `gcfg_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
   const body = (await request.json().catch(() => ({}))) as ConfigBody;
-  if (!body.tenantId) return Response.json({ error: "SEARCH_INVALID_REQUEST" }, { status: 400 });
+
+  if (!body.tenantId) {
+    const { createSupabaseServerClient } = await import("@/lib/supabase/server");
+    const supabaseUserClient = await createSupabaseServerClient();
+    const { data: { user } } = await supabaseUserClient.auth.getUser();
+    if (!user) return Response.json({ error: "SEARCH_INVALID_REQUEST" }, { status: 400 });
+
+    const metadata = (user.user_metadata ?? {}) as Record<string, any>;
+    const oauthConns = (metadata.onboarding_oauth_connections ?? {}) as Record<string, any>;
+    const googleSearch = oauthConns.google_search || {};
+
+    const updatedGoogleSearch = {
+      ...googleSearch,
+      status: "connected",
+      searchConsoleSiteUrl: body.searchConsoleSiteUrl !== undefined ? body.searchConsoleSiteUrl : googleSearch.searchConsoleSiteUrl ?? null,
+      ga4PropertyId: body.ga4PropertyId !== undefined ? body.ga4PropertyId : googleSearch.ga4PropertyId ?? null,
+      ga4PropertyDisplayName: body.ga4PropertyDisplayName !== undefined ? body.ga4PropertyDisplayName : googleSearch.ga4PropertyDisplayName ?? null,
+    };
+
+    await supabaseUserClient.auth.updateUser({
+      data: {
+        ...metadata,
+        onboarding_oauth_connections: {
+          ...oauthConns,
+          google_search: updatedGoogleSearch,
+        },
+      },
+    });
+
+    return Response.json({
+      ok: true,
+      correlationId,
+      searchConsoleSiteUrl: updatedGoogleSearch.searchConsoleSiteUrl,
+      ga4PropertyId: updatedGoogleSearch.ga4PropertyId,
+      ga4PropertyDisplayName: updatedGoogleSearch.ga4PropertyDisplayName,
+    });
+  }
 
   const ctx = await requireTenantContext(body.tenantId);
   if (!ctx.ok) return Response.json({ error: ctx.error }, { status: ctx.status });

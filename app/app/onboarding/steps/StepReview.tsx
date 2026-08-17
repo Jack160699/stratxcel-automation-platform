@@ -74,7 +74,7 @@ export function StepReview({
               <span className="font-medium text-sx-text">{account.displayName} ({account.email})</span>
             </div>
             <div className="space-y-2">
-              <span className="text-sx-text-subtle block">Connected Channels</span>
+              <span className="text-sx-text-subtle block">YOUR AUDIT DATA</span>
               {verifiedChannels.length > 0 ? (
                 <div className="flex flex-wrap items-center gap-2">
                   {verifiedChannels.map((c) => (
@@ -83,13 +83,13 @@ export function StepReview({
                       className="inline-flex items-center gap-1 px-2 py-0.5 rounded-sx-sm bg-emerald-500/10 border border-emerald-500/20 text-[11px] font-medium text-emerald-400"
                     >
                       <PlatformIcon name={c.platform} className="h-3 w-3" />
-                      <span>✓ {c.handle || c.displayName || c.platform}</span>
-                      {c.providerLabel && <span className="text-emerald-400/60">via {c.providerLabel}</span>}
+                      <span>✓ {c.displayName || c.handle || c.platform}</span>
+                      {c.providerLabel && <span className="text-emerald-400/60">({c.providerLabel})</span>}
                     </span>
                   ))}
                 </div>
               ) : (
-                <span className="text-sx-text-muted italic">None connected via OAuth / OTP (can connect later)</span>
+                <span className="text-sx-text-muted italic">No OAuth accounts connected (public web discovery active)</span>
               )}
               {publicChannels.length > 0 && (
                 <div className="flex flex-wrap items-center gap-2 mt-1">
@@ -99,8 +99,7 @@ export function StepReview({
                       className="inline-flex items-center gap-1 px-2 py-0.5 rounded-sx-sm bg-amber-500/5 border border-amber-500/20 text-[11px] font-medium text-amber-400"
                     >
                       <PlatformIcon name={c.platform} className="h-3 w-3" />
-                      <span>○ {c.handle || c.displayName || c.platform}</span>
-                      <span className="text-amber-400/60">public profile</span>
+                      <span>○ {c.displayName || c.handle || c.platform} (Found publicly)</span>
                     </span>
                   ))}
                 </div>

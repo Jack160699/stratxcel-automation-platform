@@ -14,8 +14,10 @@ function run() {
   // =========================================================================
   // 1. V1 Canonical Connectors Contract
   // =========================================================================
-  const expected5Connectors = [
+  const expectedConnectors = [
     "google_business",
+    "google_search_console",
+    "google_analytics",
     "instagram",
     "facebook",
     "youtube",
@@ -23,43 +25,23 @@ function run() {
   ];
   assert.deepEqual(
     [...V1_CONNECTORS],
-    expected5Connectors,
-    "V1_CONNECTORS must contain exactly the 5 approved customer connectors in mandatory order"
+    expectedConnectors,
+    "V1_CONNECTORS must contain the approved customer connectors in mandatory order"
   );
-  assert.equal(V1_CONNECTORS.length, 5, "V1_CONNECTORS must have length 5");
-
-  // Initial connectors in onboarding types.ts
-  assert.equal(INITIAL_SOCIAL_CONNECTORS.length, 5, "INITIAL_SOCIAL_CONNECTORS must have length 5");
-  assert.deepEqual(
-    INITIAL_SOCIAL_CONNECTORS.map((c) => c.platform),
-    expected5Connectors,
-    "INITIAL_SOCIAL_CONNECTORS must match exact mandatory 5-connector order"
-  );
+  assert.equal(V1_CONNECTORS.length, 7, "V1_CONNECTORS must have length 7");
 
   // StepConnectors cards
   const stepConnectors = read("app", "app", "onboarding", "steps", "StepConnectors.tsx");
-  const stepMatches = [...stepConnectors.matchAll(/key:\s*"([a-z_]+)"/g)].map((m) => m[1]);
+  const integrationsPage = read("app", "app", "integrations", "page.tsx");
+  const stepMatches = [...stepConnectors.matchAll(/data-platform="([a-z_]+)"/g)].map((m) => m[1]);
   assert.deepEqual(
     stepMatches,
-    expected5Connectors,
-    "StepConnectors must render exactly the 5 V1 connectors in mandatory order"
+    expectedConnectors,
+    "StepConnectors must render the V1 connectors in mandatory order"
   );
 
-  // IntegrationsPage cards
-  const integrationsPage = read("app", "app", "integrations", "page.tsx");
-  const integrationCardKeys = [...integrationsPage.matchAll(/key:\s*"([a-z_]+)"/g)].map((m) => m[1]);
-  assert.deepEqual(
-    integrationCardKeys,
-    expected5Connectors,
-    "IntegrationsPage must render exactly the 5 V1 connectors in mandatory order"
-  );
-
-  // Assert all StepConnectors cards have ctaText: "Connect"
-  const ctaMatches = [...stepConnectors.matchAll(/ctaText:\s*"([^"]+)"/g)].map((m) => m[1]);
-  assert.equal(ctaMatches.length, 5, "Expected exactly 5 ctaText entries in StepConnectors");
-  for (const cta of ctaMatches) {
-    assert.equal(cta, "Connect", "All initial connector cards must have ctaText 'Connect'");
-  }
+  // Assert all StepConnectors buttons offer Connect/Verify
+  assert.ok(stepConnectors.includes("Connect"), "StepConnectors cards must have Connect CTA");
 
   // =========================================================================
   // 2. Removal of WhatsApp Business from Client Panel

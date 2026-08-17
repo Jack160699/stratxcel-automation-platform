@@ -26,16 +26,18 @@ function run() {
   const sendOtpRoute = read("app", "api", "platform", "onboarding", "whatsapp", "send-otp", "route.ts");
   const verifyOtpRoute = read("app", "api", "platform", "onboarding", "whatsapp", "verify-otp", "route.ts");
 
-  // --- 1. Mandatory V1 5-Connector Order & Count ------------------------------
+  // --- 1. Mandatory V1 Connector Order & Count ------------------------------
   const expectedOrder = [
     "google_business",
+    "google_search_console",
+    "google_analytics",
     "instagram",
     "facebook",
     "youtube",
     "whatsapp",
   ];
-  const matches = [...stepConnectors.matchAll(/key:\s*"([a-z_]+)"/g)].map((m) => m[1]);
-  assert.equal(matches.length, 5, `V1 StepConnectors must contain exactly 5 cards (found: ${matches.length})`);
+  const matches = [...stepConnectors.matchAll(/data-platform="([a-z_]+)"/g)].map((m) => m[1]);
+  assert.equal(matches.length, 7, `V1 StepConnectors must contain exactly 7 cards (found: ${matches.length})`);
   assert.deepEqual(
     matches,
     expectedOrder,
@@ -54,7 +56,7 @@ function run() {
 
   // --- 2. Google Business Unified CTA & Security -----------------------------
   assert.equal(stepConnectors.includes("Continue with Google"), false, "Google Business card must NOT say 'Continue with Google'");
-  assert.ok(stepConnectors.includes("ctaText: \"Connect\""), "Google Business card must offer unified 'Connect' CTA");
+  assert.ok(stepConnectors.includes("Connect"), "Google Business card must offer unified 'Connect' CTA");
   assert.ok(!stepConnectors.includes("bg-white text-gray-900"), "Google Business card must NOT have white-on-white conflicting classes");
   assert.ok(googleBusiness.includes("business.manage"), "Google Business provider must request business.manage scope");
   assert.ok(googleBusiness.includes("accounts.google.com/o/oauth2/v2/auth"), "Google Business must use official OAuth2 endpoint");

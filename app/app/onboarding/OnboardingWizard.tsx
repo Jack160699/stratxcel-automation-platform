@@ -86,6 +86,40 @@ function mergeOAuthConnectionsIntoDraft(
 
   const currentConnections = [...(draft.account?.connections || EMPTY_DRAFT.account.connections)];
   for (const [platform, data] of Object.entries(oauthConnections)) {
+    if (platform === "google_search") {
+      if (data.searchConsoleSiteUrl) {
+        const idx = currentConnections.findIndex((c) => c.platform === "google_search_console");
+        const conn: SocialConnection = {
+          platform: "google_search_console",
+          handle: data.searchConsoleSiteUrl,
+          displayName: data.searchConsoleSiteUrl,
+          status: "connected",
+          connectionType: "oauth",
+          providerLabel: "Google Search Console",
+          propertyId: data.searchConsoleSiteUrl,
+          connectedAt: data.connectedAt || new Date().toISOString(),
+        };
+        if (idx >= 0) currentConnections[idx] = conn;
+        else currentConnections.push(conn);
+      }
+      if (data.ga4PropertyId) {
+        const idx = currentConnections.findIndex((c) => c.platform === "google_analytics");
+        const conn: SocialConnection = {
+          platform: "google_analytics",
+          handle: data.ga4PropertyId,
+          displayName: data.ga4PropertyDisplayName || `GA4: ${data.ga4PropertyId}`,
+          status: "connected",
+          connectionType: "oauth",
+          providerLabel: "Google Analytics",
+          propertyId: data.ga4PropertyId,
+          propertyDisplayName: data.ga4PropertyDisplayName || undefined,
+          connectedAt: data.connectedAt || new Date().toISOString(),
+        };
+        if (idx >= 0) currentConnections[idx] = conn;
+        else currentConnections.push(conn);
+      }
+      continue;
+    }
     const key = (platform === "google" ? "google_business" : platform) as SocialPlatformKey;
     if (!V1_CONNECTORS.includes(key as V1SocialPlatformKey)) continue;
     const idx = currentConnections.findIndex((c) => c.platform === key);
@@ -118,7 +152,11 @@ function mergeOAuthConnectionsIntoDraft(
 
   return {
     ...draft,
-    account: { ...draft.account, connections: currentConnections },
+    account: {
+      ...draft.account,
+      connections: currentConnections,
+      googleSearch: oauthConnections.google_search || draft.account?.googleSearch,
+    },
     business: { ...draft.business, socials: confirmedSocials },
   };
 }
@@ -224,15 +262,18 @@ export function OnboardingWizard({ isStaff = false }: { isStaff?: boolean }) {
             const body = (await draftResponse.json()) as {
               saved?: { step?: number; draft?: Partial<OnboardingDraft> } | null;
               oauthConnections?: Record<string, any>;
+              googleSearch?: any;
             };
-            if (body.saved?.draft || body.oauthConnections) {
+            if (body.saved?.draft || body.oauthConnections || body.googleSearch) {
+              const combinedOauth = {
+                ...(body.oauthConnections || {}),
+                ...(body.googleSearch ? { google_search: body.googleSearch } : {}),
+              };
               const baseDraft = body.saved?.draft ? mergeDraft(body.saved.draft) : clientDraft.draft;
-              const merged = body.oauthConnections
-                ? mergeOAuthConnectionsIntoDraft(baseDraft, body.oauthConnections)
-                : baseDraft;
+              const merged = mergeOAuthConnectionsIntoDraft(baseDraft, combinedOauth);
 
               const urlParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
-              const hasOAuthReturn = urlParams?.get("connected") || urlParams?.get("oauth");
+              const hasOAuthReturn = urlParams?.get("connected") || urlParams?.get("oauth") || urlParams?.get("googleConnected");
               const nextStep = hasOAuthReturn ? 2 : Math.min(Math.max(body.saved?.step ?? 1, 1), TOTAL_STEPS);
 
               setStep(nextStep);

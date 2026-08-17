@@ -26,20 +26,69 @@ export const dynamic = "force-dynamic";
  */
 export async function GET(request: Request) {
   const tenantId = new URL(request.url).searchParams.get("tenantId");
-  if (!tenantId) return Response.json({ error: "tenantId query param is required" }, { status: 400 });
 
-  const ctx = await requireTenantContext(tenantId);
-  if (!ctx.ok) return Response.json({ error: ctx.error }, { status: ctx.status });
+  let connection: any = null;
+  let accessToken: string | null = null;
+  let accessError: string | null = null;
 
-  try {
-    requirePermission(ctx.role, "integration:configure");
-  } catch (err) {
-    if (err instanceof PermissionDeniedError) return Response.json({ error: err.message }, { status: 403 });
-    throw err;
+  if (tenantId) {
+    const ctx = await requireTenantContext(tenantId);
+    if (!ctx.ok) return Response.json({ error: ctx.error }, { status: ctx.status });
+
+    try {
+      requirePermission(ctx.role, "integration:configure");
+    } catch (err) {
+      if (err instanceof PermissionDeniedError) return Response.json({ error: err.message }, { status: 403 });
+      throw err;
+    }
+
+    const { supabase } = getTenantServiceContext();
+    connection = await getGoogleConnection(supabase, tenantId);
+
+    if (connection && connection.status === "connected") {
+      const vault = createDevEncryptedVault(supabase);
+      try {
+        accessToken = await getLiveGoogleAccessToken(supabase, vault, tenantId);
+      } catch (err) {
+        accessError =
+          err instanceof GoogleNotConnectedError
+            ? "not_connected"
+            : err instanceof GooglePermissionLostError
+              ? "permission_required"
+              : "token_refresh_failed";
+      }
+    }
+  } else {
+    // Onboarding pre-workspace context
+    const { createSupabaseServerClient } = await import("@/lib/supabase/server");
+    const supabaseUserClient = await createSupabaseServerClient();
+    const { data: { user } } = await supabaseUserClient.auth.getUser();
+    if (!user) return Response.json({ error: "Not authenticated" }, { status: 401 });
+
+    const metadata = (user.user_metadata ?? {}) as Record<string, any>;
+    const oauthConns = (metadata.onboarding_oauth_connections ?? {}) as Record<string, any>;
+    const googleSearch = oauthConns.google_search;
+
+    if (googleSearch && googleSearch.status === "connected") {
+      connection = {
+        status: "connected",
+        search_console_site_url: googleSearch.searchConsoleSiteUrl ?? null,
+        ga4_property_id: googleSearch.ga4PropertyId ?? null,
+        ga4_property_display_name: googleSearch.ga4PropertyDisplayName ?? null,
+      };
+
+      if (googleSearch.refreshToken) {
+        try {
+          const { createGoogleSearchTokenAdapter } = await import("@stratxcel/search-discovery");
+          const tokenAdapter = createGoogleSearchTokenAdapter();
+          const refreshed = await tokenAdapter.refreshAccessToken(googleSearch.refreshToken);
+          accessToken = refreshed.accessToken;
+        } catch {
+          accessError = "token_refresh_failed";
+        }
+      }
+    }
   }
-
-  const { supabase } = getTenantServiceContext();
-  const connection = await getGoogleConnection(supabase, tenantId);
 
   const base = {
     status: connection?.status ?? "disconnected",
@@ -60,19 +109,16 @@ export async function GET(request: Request) {
     );
   }
 
-  const vault = createDevEncryptedVault(supabase);
-  let accessToken: string;
-  try {
-    accessToken = await getLiveGoogleAccessToken(supabase, vault, tenantId);
-  } catch (err) {
-    const reason =
-      err instanceof GoogleNotConnectedError
-        ? "not_connected"
-        : err instanceof GooglePermissionLostError
-          ? "permission_required"
-          : "token_refresh_failed";
+  if (accessError || !accessToken) {
     return Response.json(
-      { ...base, status: reason === "not_connected" ? "disconnected" : "error", searchConsoleSites: [], searchConsoleError: reason, ga4Properties: [], ga4Error: reason },
+      {
+        ...base,
+        status: accessError === "not_connected" ? "disconnected" : "error",
+        searchConsoleSites: [],
+        searchConsoleError: accessError || "token_missing",
+        ga4Properties: [],
+        ga4Error: accessError || "token_missing",
+      },
       { headers: { "Cache-Control": "no-store" } }
     );
   }

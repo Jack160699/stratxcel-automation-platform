@@ -1,5 +1,7 @@
 export type V1SocialPlatformKey =
   | "google_business"
+  | "google_search_console"
+  | "google_analytics"
   | "instagram"
   | "facebook"
   | "youtube"
@@ -13,11 +15,20 @@ export type SocialPlatformKey =
 
 export const V1_CONNECTORS: readonly V1SocialPlatformKey[] = [
   "google_business",
+  "google_search_console",
+  "google_analytics",
   "instagram",
   "facebook",
   "youtube",
   "whatsapp",
 ] as const;
+
+export interface GoogleSearchConfigDraft {
+  status?: string;
+  searchConsoleSiteUrl?: string | null;
+  ga4PropertyId?: string | null;
+  ga4PropertyDisplayName?: string | null;
+}
 
 export interface SocialConnection {
   platform: SocialPlatformKey;
@@ -34,6 +45,9 @@ export interface SocialConnection {
   /** Provider name for attribution (e.g. "Google", "Meta", "WhatsApp Verified"). */
   providerLabel?: string;
   connectedAt?: string;
+  /** Optional Search Console / GA4 property meta attached to the connection */
+  propertyId?: string;
+  propertyDisplayName?: string;
 }
 
 export interface DiscoveredSocialDraft {
@@ -46,6 +60,7 @@ export interface DiscoveredSocialDraft {
 export interface OnboardingDraft {
   account: {
     connections: SocialConnection[];
+    googleSearch?: GoogleSearchConfigDraft;
   };
   business: {
     name: string;
