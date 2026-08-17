@@ -19,13 +19,13 @@ import type { NavGroupData } from "./nav-types";
 export const APP_NAV_GROUPS_DATA: NavGroupData[] = [
   {
     label: "Overview",
-    items: [{ key: "home", label: "Command Center", href: "/app", release: "v1" }],
+    items: [{ key: "home", label: "Home", href: "/app", release: "v1" }],
   },
   {
     label: "Growth",
     items: [
-      { key: "customer-audit", label: "Business Growth Audit", href: "/app/audit", release: "v1" },
-      { key: "brand", label: "Brand Brain", href: "/app/brand", release: "v1" },
+      { key: "customer-audit", label: "Audit", href: "/app/audit", release: "v1" },
+      { key: "brand", label: "Business", href: "/app/brand", release: "v1" },
     ],
   },
   {
@@ -38,12 +38,12 @@ export const APP_NAV_GROUPS_DATA: NavGroupData[] = [
   {
     label: "Account",
     items: [
-      { key: "billing", label: "Billing", href: "/app/billing", release: "v1" },
+      { key: "billing", label: "Billing & Plans", href: "/app/billing", release: "v1" },
       { key: "team", label: "Team", href: "/app/team", release: "v1" },
       { key: "settings", label: "Settings", href: "/app/settings", release: "v1" },
     ],
   },
 ];
 
-/** Mobile primary: Home, Audit, Copilot, Connectors — More holds the rest. */
-export const APP_MOBILE_NAV_KEYS = ["home", "customer-audit", "copilot", "integrations"];
+/** Mobile primary dock: Home, Audit, Copilot, Business — More sheet holds the rest. */
+export const APP_MOBILE_NAV_KEYS = ["home", "customer-audit", "copilot", "brand"];

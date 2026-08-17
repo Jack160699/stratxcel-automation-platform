@@ -44,11 +44,11 @@ export function CustomerHeaderActions({
 
   return (
     <>
-      <div className="flex items-center gap-1.5 sm:gap-2.5">
+      <div className="flex items-center gap-2 sm:gap-3">
         {isStaff && <ContextSwitcher currentContext="user" compact />}
         <Link
           href="/app/billing"
-          className="hidden min-h-9 items-center rounded-full border border-sx-accent/30 bg-sx-accent/10 px-3 text-xs font-semibold text-sx-accent hover:bg-sx-accent/15 sm:inline-flex"
+          className="hidden min-h-8 items-center rounded-full border border-sx-accent/30 bg-sx-accent/10 px-3 text-[12px] font-semibold text-sx-accent hover:bg-sx-accent/15 sm:inline-flex transition-colors"
           aria-label={`Current plan: ${plan.name}. View billing`}
         >
           {plan.name}
@@ -57,7 +57,7 @@ export function CustomerHeaderActions({
           type="button"
           onClick={() => setNotificationsOpen(true)}
           aria-label="Notifications"
-          className="relative flex min-h-11 min-w-11 items-center justify-center rounded-full text-sx-text-muted hover:bg-sx-surface-2 hover:text-sx-text"
+          className="relative flex h-9 w-9 items-center justify-center rounded-full text-sx-text-muted hover:bg-sx-surface-2 hover:text-sx-text transition-colors"
         >
           <BellIcon />
         </button>
@@ -65,51 +65,86 @@ export function CustomerHeaderActions({
           type="button"
           onClick={() => setProfileOpen(true)}
           aria-label="Open profile"
-          className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-sx-royal to-sx-ai text-sm font-bold text-white shadow-sm ring-2 ring-sx-bg"
+          className="flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-full bg-gradient-to-br from-sx-royal to-sx-ai text-xs sm:text-sm font-bold text-white shadow-sm ring-2 ring-sx-bg transition-transform active:scale-95"
         >
           {initials}
         </button>
       </div>
 
+      {/* Notifications Modal */}
       <Modal open={notificationsOpen} onClose={() => setNotificationsOpen(false)} title="Notifications">
-        <div className="py-8 text-center">
-          <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-sx-surface-2 text-sx-text-subtle">
+        <div className="py-6 text-center">
+          <span className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-sx-surface-2 text-sx-text-subtle">
             <BellIcon />
           </span>
-          <p className="mt-3 text-base font-semibold text-sx-text">You&apos;re all caught up</p>
-          <p className="mx-auto mt-1 max-w-xs text-sm leading-6 text-sx-text-muted">
-            There are no account notifications to show. New product updates will appear here when notification delivery is available.
+          <p className="mt-3 text-[15px] font-semibold text-sx-text">You&apos;re all caught up</p>
+          <p className="mx-auto mt-1 max-w-xs text-[13px] leading-relaxed text-sx-text-muted">
+            There are no unread notifications. Real-time updates on your audit and campaigns will appear here.
           </p>
         </div>
       </Modal>
 
-      <Modal open={profileOpen} onClose={() => setProfileOpen(false)} title="Profile & account">
-        <div className="max-h-[min(72vh,42rem)] overflow-y-auto pb-[max(0.5rem,env(safe-area-inset-bottom))]">
-          <div className="flex min-w-0 items-center gap-3 rounded-sx-md bg-sx-surface-2 p-3">
-            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-sx-royal to-sx-ai font-bold text-white">
+      {/* Compact App-Style Profile Sheet */}
+      <Modal open={profileOpen} onClose={() => setProfileOpen(false)} title="Account & Profile">
+        <div className="max-h-[min(70vh,38rem)] overflow-y-auto space-y-4 pb-2">
+          {/* User Info Header */}
+          <div className="flex items-center gap-3 rounded-sx-md bg-sx-surface-2 p-3">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-sx-royal to-sx-ai text-sm font-bold text-white shadow-sm">
               {initials}
             </span>
-            <div className="min-w-0">
-              <p className="truncate text-base font-semibold text-sx-text">{name || "Stratxcel customer"}</p>
-              <p className="break-all text-sm text-sx-text-muted">{email}</p>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-[15px] font-semibold text-sx-text">{name || "StratXcel User"}</p>
+              <p className="truncate text-[13px] text-sx-text-muted">{email}</p>
             </div>
           </div>
 
-          <SheetSection title="Current plan">
+          {/* Plan & Wallet Summary */}
+          <div className="grid grid-cols-2 gap-2">
+            <div className="rounded-sx-md border border-sx-border bg-sx-surface-1 p-3">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-sx-text-subtle">Plan</p>
+              <p className="mt-0.5 text-[15px] font-bold text-sx-text">{plan.name}</p>
+              <p className="text-[11px] text-sx-text-muted">{plan.status}</p>
+            </div>
+            <div className="rounded-sx-md border border-sx-border bg-sx-surface-1 p-3">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-sx-text-subtle">Wallet</p>
+              <p className="mt-0.5 text-[15px] font-bold text-sx-text">{plan.activePaid ? "Active" : "₹0"}</p>
+              <Link href="/app/billing" onClick={() => setProfileOpen(false)} className="text-[11px] font-semibold text-sx-accent hover:underline">
+                Manage →
+              </Link>
+            </div>
+          </div>
+
+          {/* Quick Links */}
+          <div className="rounded-sx-md border border-sx-border bg-sx-surface-1 divide-y divide-sx-border/60">
             <Link
               href="/app/billing"
               onClick={() => setProfileOpen(false)}
-              className="flex min-h-12 items-center justify-between rounded-sx-sm border border-sx-border px-3 hover:bg-sx-surface-2"
+              className="flex min-h-[44px] items-center justify-between px-3 text-[14px] font-medium text-sx-text hover:bg-sx-surface-2 transition-colors"
             >
-              <span>
-                <span className="block text-sm font-semibold text-sx-text">{plan.name}</span>
-                <span className="block text-xs text-sx-text-muted">{plan.status} · {plan.billingStatus}</span>
-              </span>
-              <span className="text-sm font-semibold text-sx-accent">Manage plan</span>
+              <span>Billing & Subscriptions</span>
+              <span className="text-sx-text-muted text-xs">›</span>
             </Link>
-          </SheetSection>
+            <Link
+              href="/app/settings"
+              onClick={() => setProfileOpen(false)}
+              className="flex min-h-[44px] items-center justify-between px-3 text-[14px] font-medium text-sx-text hover:bg-sx-surface-2 transition-colors"
+            >
+              <span>Account Settings</span>
+              <span className="text-sx-text-muted text-xs">›</span>
+            </Link>
+            <Link
+              href="/forgot-password"
+              onClick={() => setProfileOpen(false)}
+              className="flex min-h-[44px] items-center justify-between px-3 text-[14px] font-medium text-sx-text hover:bg-sx-surface-2 transition-colors"
+            >
+              <span>Reset Password</span>
+              <span className="text-sx-text-muted text-xs">›</span>
+            </Link>
+          </div>
 
-          <SheetSection title="Preferences">
+          {/* Theme Preference */}
+          <div className="pt-1">
+            <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-sx-text-subtle">Appearance</p>
             <div className="grid grid-cols-2 gap-2" role="group" aria-label="Appearance">
               {(["light", "dark"] as const).map((option) => (
                 <button
@@ -117,44 +152,33 @@ export function CustomerHeaderActions({
                   type="button"
                   onClick={() => setTheme(option)}
                   aria-pressed={theme === option}
-                  className={`min-h-11 rounded-sx-sm border px-3 text-sm font-medium capitalize ${
-                    theme === option ? "border-sx-accent bg-sx-accent/10 text-sx-accent" : "border-sx-border text-sx-text-muted"
+                  className={`min-h-[40px] rounded-sx-sm border text-[13px] font-semibold capitalize transition-colors ${
+                    theme === option
+                      ? "border-sx-accent bg-sx-accent/10 text-sx-accent"
+                      : "border-sx-border text-sx-text-muted hover:bg-sx-surface-2"
                   }`}
                 >
                   {option}
                 </button>
               ))}
             </div>
-          </SheetSection>
+          </div>
 
           {isStaff && (
-            <SheetSection title="Staff workspace">
-              <div className="rounded-sx-sm border border-sx-accent/30 bg-sx-accent/10 p-3">
-                <p className="text-xs font-medium text-sx-text">You are currently in User workspace mode.</p>
-                <div className="mt-2.5">
-                  <ContextSwitcher currentContext="user" />
-                </div>
+            <div className="rounded-sx-sm border border-sx-accent/30 bg-sx-accent/10 p-3">
+              <p className="text-[12px] font-medium text-sx-text">Staff Workspace Mode</p>
+              <div className="mt-2">
+                <ContextSwitcher currentContext="user" />
               </div>
-            </SheetSection>
+            </div>
           )}
 
-          <SheetSection title="Security & preferences">
-            <SheetLink href="/forgot-password" label="Reset password" onNavigate={() => setProfileOpen(false)} />
-            <SheetLink href="/app/settings" label="Account settings" onNavigate={() => setProfileOpen(false)} />
+          {/* Sign Out Button */}
+          <form action={signOutAction} className="pt-2">
             <button
-              type="button"
-              onClick={() => {
-                setProfileOpen(false);
-                setNotificationsOpen(true);
-              }}
-              className="flex min-h-11 w-full items-center justify-between border-t border-sx-border px-1 text-left text-sm text-sx-text-muted hover:text-sx-text"
+              type="submit"
+              className="min-h-[44px] w-full rounded-sx-md border border-sx-danger/30 text-[14px] font-semibold text-sx-danger hover:bg-sx-danger/10 transition-colors"
             >
-              Notifications <span aria-hidden="true">›</span>
-            </button>
-          </SheetSection>
-
-          <form action={signOutAction} className="mt-5">
-            <button type="submit" className="min-h-11 w-full rounded-sx-sm border border-sx-danger/30 text-sm font-semibold text-sx-danger hover:bg-sx-danger/10">
               Sign out
             </button>
           </form>

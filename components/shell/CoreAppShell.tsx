@@ -10,17 +10,17 @@ export function BrandMark({ expanded = false, product }: { expanded?: boolean; p
     <div className="flex items-center gap-2.5">
       <Image
         src="/logo-v2.png"
-        alt=""
+        alt="StratXcel"
         role="presentation"
         width={OFFICIAL_LOGO.width}
         height={OFFICIAL_LOGO.height}
-        sizes="24px"
+        sizes="28px"
         unoptimized
-        className="h-6 w-6 shrink-0 object-contain"
+        className="h-7 w-7 shrink-0 object-contain"
       />
       {expanded && (
         <span className="flex items-baseline gap-2 truncate">
-          <span className="font-sx-sans text-[15px] font-semibold tracking-[-0.02em] text-sx-text">Stratxcel</span>
+          <span className="font-sx-sans text-[16px] font-bold tracking-tight text-sx-text">StratXcel</span>
           {product && (
             <span className="rounded-[5px] border border-[rgb(79_220_229_/_0.24)] bg-[rgb(79_220_229_/_0.1)] px-1.5 py-0.5 font-sx-mono text-[9px] uppercase tracking-[0.08em] text-sx-ai">
               {product}

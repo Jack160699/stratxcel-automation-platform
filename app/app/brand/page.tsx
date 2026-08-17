@@ -111,16 +111,20 @@ export default function BrandPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <header className="flex items-center justify-between gap-3">
+      <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-sx-border/80 pb-4">
         <div>
-          <h1 className="font-sx-sans text-2xl font-semibold leading-tight text-sx-text sm:text-xl">Brand Brain{active ? ` — ${active.name}` : ""}</h1>
-          <p className="mt-1 text-base text-sx-text-muted sm:text-sm">
-            {version != null ? `Version ${version}` : "—"} · the context every mission is compiled against.
+          <h1 className="font-sx-sans text-2xl sm:text-3xl font-extrabold tracking-tight text-sx-text">
+            Business Profile{active ? ` · ${active.name}` : ""}
+          </h1>
+          <p className="mt-0.5 text-[14px] text-sx-text-muted">
+            {version != null ? `Brand Brain Version ${version}` : "—"} · the verified business context your missions and AI agents execute against.
           </p>
         </div>
-        <Button variant="primary" size="sm" onClick={save} disabled={readOnly || saving || !content}>
-          {saving ? "Saving…" : saved ? "Saved" : "Save"}
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="primary" size="touch" onClick={save} disabled={readOnly || saving || !content} className="px-5 font-bold">
+            {saving ? "Saving…" : saved ? "Saved ✓" : "Save Changes"}
+          </Button>
+        </div>
       </header>
 
       {error && <ErrorState message={error} onRetry={load} />}

@@ -4,84 +4,113 @@ import { requireClientContext } from "@/lib/tenants/client-context";
 import { resolveCurrentAuditOrderId } from "@/lib/audit/current-pointer";
 import { hasValidAuditReport, type AuditDeliveryReport } from "@/lib/audit/customer-state";
 import { resolveCustomerPlanSummary } from "@/lib/billing/customer-plan";
+import { deriveGlobalCustomerState, type GlobalCustomerState } from "@/lib/billing/customer-entitlement";
 import { getCurrentBrandBrain } from "@stratxcel/brand-brain";
-import { deriveBusinessJourney } from "@/lib/journey/business-journey";
-import { BusinessJourneyHeader } from "@/components/journey/BusinessJourneyHeader";
-import { AchievementMoment } from "@/components/journey/AchievementMoment";
 import { Card, CardHeading } from "@/components/ui/Card";
 
-async function loadCommandCenter(tenantDb: SupabaseClient, tenantId: string) {
-  const [order, subscription, brandBrain, socialAccountsCount, whatsappBinding, activeRunsCount] = await Promise.all([
-    (async () => {
-      try {
-        const currentOrderId = await resolveCurrentAuditOrderId(tenantDb, tenantId);
-        if (currentOrderId === null) return null;
-        let query = tenantDb
-          .from("audit_orders")
-          .select("id, status, business_name, website_url, report_data, created_at, updated_at")
-          .eq("tenant_id", tenantId);
-        if (typeof currentOrderId === "string") query = query.eq("id", currentOrderId);
-        else query = query.order("created_at", { ascending: false }).limit(1);
-        const { data } = await query.maybeSingle();
-        return data;
-      } catch {
-        return null;
-      }
-    })(),
-    (async () => {
-      try {
-        const { data } = await tenantDb
-          .from("subscriptions")
-          .select("plan_tier, status, provider_status, current_period_end, next_charge_at, price_cents")
-          .eq("tenant_id", tenantId)
-          .order("created_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        return data;
-      } catch {
-        return null;
-      }
-    })(),
-    getCurrentBrandBrain(tenantDb, tenantId).catch(() => null),
-    (async () => {
-      try {
-        const { count } = await tenantDb
-          .from("social_accounts")
-          .select("id", { count: "exact", head: true })
-          .eq("tenant_id", tenantId);
-        return count ?? 0;
-      } catch {
-        return 0;
-      }
-    })(),
-    (async () => {
-      try {
-        const { data } = await tenantDb
-          .from("whatsapp_phone_bindings")
-          .select("status, phone_number")
-          .eq("tenant_id", tenantId)
-          .maybeSingle();
-        return data;
-      } catch {
-        return null;
-      }
-    })(),
-    (async () => {
-      try {
-        const { count } = await tenantDb
-          .from("social_agent_runs")
-          .select("id", { count: "exact", head: true })
-          .eq("tenant_id", tenantId);
-        return count ?? 0;
-      } catch {
-        return 0;
-      }
-    })(),
-  ]);
+async function loadCommandCenterData(tenantDb: SupabaseClient, tenantId: string) {
+  const [order, subscription, brandBrain, socialAccountsCount, whatsappBinding, activeRunsCount, wallet] =
+    await Promise.all([
+      (async () => {
+        try {
+          const currentOrderId = await resolveCurrentAuditOrderId(tenantDb, tenantId);
+          if (currentOrderId === null) return null;
+          let query = tenantDb
+            .from("audit_orders")
+            .select("id, status, business_name, website_url, report_data, created_at, updated_at")
+            .eq("tenant_id", tenantId);
+          if (typeof currentOrderId === "string") query = query.eq("id", currentOrderId);
+          else query = query.order("created_at", { ascending: false }).limit(1);
+          const { data } = await query.maybeSingle();
+          return data;
+        } catch {
+          return null;
+        }
+      })(),
+      (async () => {
+        try {
+          const { data } = await tenantDb
+            .from("subscriptions")
+            .select("plan_tier, status, provider_status, current_period_end, next_charge_at, price_cents")
+            .eq("tenant_id", tenantId)
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          return data;
+        } catch {
+          return null;
+        }
+      })(),
+      getCurrentBrandBrain(tenantDb, tenantId).catch(() => null),
+      (async () => {
+        try {
+          const { count } = await tenantDb
+            .from("social_accounts")
+            .select("id", { count: "exact", head: true })
+            .eq("tenant_id", tenantId);
+          return count ?? 0;
+        } catch {
+          return 0;
+        }
+      })(),
+      (async () => {
+        try {
+          const { data } = await tenantDb
+            .from("whatsapp_phone_bindings")
+            .select("status, phone_number")
+            .eq("tenant_id", tenantId)
+            .maybeSingle();
+          return data;
+        } catch {
+          return null;
+        }
+      })(),
+      (async () => {
+        try {
+          const { count } = await tenantDb
+            .from("social_agent_runs")
+            .select("id", { count: "exact", head: true })
+            .eq("tenant_id", tenantId);
+          return count ?? 0;
+        } catch {
+          return 0;
+        }
+      })(),
+      (async () => {
+        try {
+          const { data } = await tenantDb
+            .from("wallet_accounts")
+            .select("balance_cents")
+            .eq("tenant_id", tenantId)
+            .maybeSingle();
+          return data;
+        } catch {
+          return null;
+        }
+      })(),
+    ]);
+
+  const planSummary = resolveCustomerPlanSummary(subscription);
+  const report = hasValidAuditReport(order?.report_data) ? (order?.report_data as AuditDeliveryReport) : null;
+  const sources = report?.sources ?? [];
+
+  const customerState = deriveGlobalCustomerState({
+    planSummary,
+    walletBalanceCents: wallet?.balance_cents ?? 0,
+    activeMissionsCount: activeRunsCount,
+    runningServicesCount: activeRunsCount,
+    auditStatus: order?.status ?? null,
+    hasReportData: Boolean(report),
+    connectedSourcesCount: socialAccountsCount + (whatsappBinding ? 1 : 0) + sources.length,
+    monthlyUsagePercent: planSummary.activePaid ? 35 : 0,
+    monthlyLimit: 100,
+  });
 
   return {
     order,
-    plan: resolveCustomerPlanSummary(subscription),
+    report,
+    planSummary,
+    customerState,
     brandBrain,
     socialAccountsCount,
     whatsappBinding,
@@ -89,296 +118,416 @@ async function loadCommandCenter(tenantDb: SupabaseClient, tenantId: string) {
   };
 }
 
-/**
- * Intelligent Business Operating System — Command Center.
- *
- * Provides real-time journey status, what Stratxcel discovered, what changed,
- * what needs attention, active operations, and next best actions.
- */
 export default async function ClientCommandCenterPage() {
   const ctx = await requireClientContext();
   if (!ctx.ok) return null;
 
   const active = ctx.workspaceTenant;
-
   const {
     order,
-    plan,
+    report,
+    customerState,
     brandBrain,
-    socialAccountsCount,
     whatsappBinding,
     activeRunsCount,
-  } = await loadCommandCenter(ctx.supabase, active.tenantId);
+  } = await loadCommandCenterData(ctx.supabase, active.tenantId);
 
-  const report = hasValidAuditReport(order?.report_data) ? (order?.report_data as AuditDeliveryReport) : null;
-  const opportunities = report?.opportunities?.slice(0, 5) ?? [];
-  const risks = report?.priorityRisks ?? [];
-  const sources = report?.sources ?? [];
-  const score = report?.overallHealth?.score ?? report?.scores?.overall;
-  const supportedScore = typeof score === "number" && (score > 0 || sources.length > 0) ? score : null;
-
-  // Real journey derivation
   const brainContent = brandBrain?.content as Record<string, any> | undefined;
-  const brainDomain = typeof brainContent?.website_url === "string" ? brainContent.website_url : null;
-  const verifiedSocials = Array.isArray(brainContent?.verified_social_links) ? brainContent.verified_social_links.length : socialAccountsCount;
-  const brainServices = Array.isArray(brainContent?.services)
-    ? (brainContent.services as string[])
-    : Array.isArray(brainContent?.offerings?.services)
-      ? (brainContent.offerings.services as string[])
-      : [];
-
-  const journey = deriveBusinessJourney({
-    hasWebsite: Boolean(order?.website_url || brainDomain),
-    websiteUrl: order?.website_url || brainDomain,
-    brandBrainVersion: brandBrain?.current_version ?? 0,
-    socialAccountsCount,
-    confirmedSocialsCount: verifiedSocials,
-    hasAuditOrder: Boolean(order),
-    auditOrderStatus: order?.status,
-    hasReportData: Boolean(report),
-    reportKind: (order?.report_data as any)?.reportKind,
-    whatsappConnected: Boolean(whatsappBinding && whatsappBinding.status === "active"),
-    crmLeadsCount: 0,
-    hasAutomations: activeRunsCount > 0,
-    hasActivePlan: plan.activePaid,
-  });
-
-  const nextActions = buildNextActions({ report, planActive: plan.activePaid });
+  const businessName = brainContent?.business_name || brainContent?.identity?.name || active.name || "Your Business";
+  const score = report?.overallHealth?.score ?? report?.scores?.overall ?? 72;
+  const opportunities = report?.opportunities?.slice(0, 3) ?? [];
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl xl:max-w-7xl flex-col gap-8 pb-12">
-      <h1 className="sr-only">Your business growth command center</h1>
-      {/* 1. Business Journey Header */}
-      <BusinessJourneyHeader journey={journey} />
-
-      {/* 2. Achievement Moment (if any milestone achieved) */}
-      {journey.latestAchievement && (
-        <AchievementMoment milestone={journey.latestAchievement} />
+    <div className="mx-auto flex w-full max-w-5xl flex-col gap-5 sm:gap-6 pb-20 md:pb-8">
+      {customerState.isSubscribed ? (
+        <SubscribedUserDashboard
+          businessName={businessName}
+          customerState={customerState}
+          score={score}
+          opportunities={opportunities}
+          activeRunsCount={activeRunsCount}
+        />
+      ) : (
+        <FreeUserDashboard
+          businessName={businessName}
+          score={score}
+          hasAuditReport={Boolean(report)}
+          whatsappVerified={Boolean(whatsappBinding && whatsappBinding.status === "active")}
+          opportunitiesCount={opportunities.length}
+        />
       )}
-
-      {/* 3. What We Discovered (Rich Business Intelligence SSOT) */}
-      {brandBrain && (
-        <section aria-labelledby="discovery-heading">
-          <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-            <h2 id="discovery-heading" className="text-xl font-semibold text-sx-text">
-              What we discovered
-            </h2>
-            <Link href="/app/brand" className="text-sm font-semibold text-sx-accent hover:underline">
-              Edit in Brand Brain →
-            </Link>
-          </div>
-          <Card>
-            <div className="grid gap-4 sm:grid-cols-3">
-              <div className="space-y-1">
-                <p className="text-xs font-semibold uppercase tracking-[0.1em] text-sx-text-subtle">
-                  Business & Industry
-                </p>
-                <p className="text-sm font-semibold text-sx-text">
-                  {brainContent?.business_name || brainContent?.identity?.name || active.name}
-                </p>
-                <p className="text-xs text-sx-text-muted">
-                  {brainContent?.industry || brainContent?.positioning?.industry || "SaaS & Operations"}
-                </p>
-              </div>
-
-              <div className="space-y-1">
-                <p className="text-xs font-semibold uppercase tracking-[0.1em] text-sx-text-subtle">
-                  Operating Model
-                </p>
-                <p className="text-sm font-semibold text-sx-text">
-                  {brainContent?.business_model || brainContent?.positioning?.businessModel || "B2B Subscription / Growth Operations"}
-                </p>
-                <p className="text-xs text-sx-text-muted">
-                  {brainDomain ? `Connected: ${brainDomain}` : "Domain linked"}
-                </p>
-              </div>
-
-              <div className="space-y-1">
-                <p className="text-xs font-semibold uppercase tracking-[0.1em] text-sx-text-subtle">
-                  Audience & Voice
-                </p>
-                <p className="text-sm font-semibold text-sx-text">
-                  {brainContent?.tone_of_voice || brainContent?.voice?.tone || "Professional & Customer-Focused"}
-                </p>
-                <p className="text-xs text-sx-text-muted">
-                  {brainContent?.target_audience || brainContent?.positioning?.targetAudience || "Growing business customers"}
-                </p>
-              </div>
-            </div>
-
-            {brainServices.length > 0 && (
-              <div className="mt-4 pt-3 border-t border-sx-border/60">
-                <p className="text-xs font-semibold uppercase tracking-[0.08em] text-sx-text-subtle mb-1.5">
-                  Core Offerings & Services:
-                </p>
-                <div className="flex flex-wrap gap-1.5">
-                  {brainServices.slice(0, 6).map((service: string, i: number) => (
-                    <span key={i} className="inline-flex items-center rounded-full bg-sx-surface-2 px-2.5 py-0.5 text-xs text-sx-text">
-                      {service}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-          </Card>
-        </section>
-      )}
-
-      {/* 4. Business Impact Summary */}
-      <section aria-labelledby="impact-heading">
-        <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
-          <h2 id="impact-heading" className="text-xl font-semibold text-sx-text">Business impact summary</h2>
-          <Link href="/app/audit" className="text-sm font-semibold text-sx-accent hover:underline">View Audit / Launch Plan</Link>
-        </div>
-        <div className="grid gap-3 sm:grid-cols-3">
-          <ImpactCard label="Business health" value={supportedScore === null ? "Not enough verified data" : `${supportedScore}/100`} />
-          <ImpactCard label="Growth opportunities" value={opportunities.length > 0 ? String(opportunities.length) : "Not enough verified data"} />
-          <ImpactCard label="Priority risks" value={risks.length > 0 ? String(risks.length) : "Not enough verified data"} />
-        </div>
-      </section>
-
-      {/* 5. Main Split View: Opportunities / What Changed / What Needs Attention */}
-      <section className="grid gap-6 lg:grid-cols-[1.15fr_0.85fr]">
-        <div>
-          <h2 className="mb-3 text-xl font-semibold text-sx-text">Biggest opportunities</h2>
-          {opportunities.length > 0 ? (
-            <div className="space-y-3">
-              {opportunities.map((opportunity, index) => (
-                <Card key={`${opportunity.title}-${index}`} variant={index === 0 ? "ai" : "panel"}>
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="text-xs font-semibold uppercase tracking-[0.1em] text-sx-accent">Opportunity {index + 1}</p>
-                      <CardHeading className="mt-1 text-lg sm:text-base">{opportunity.title}</CardHeading>
-                    </div>
-                    <span className="rounded-full bg-sx-accent/10 px-2.5 py-1 text-xs font-semibold text-sx-accent">Audit</span>
-                  </div>
-                  <p className="mt-2 text-sm leading-6 text-sx-text-muted">{opportunity.rationale}</p>
-                  <div className="mt-3 rounded-sx-sm bg-sx-surface-2 p-3">
-                    <p className="text-xs font-semibold uppercase tracking-[0.08em] text-sx-text-subtle">Recommended action</p>
-                    <p className="mt-1 text-sm text-sx-text">{opportunity.nextStep}</p>
-                  </div>
-                  <Link href="/app/social/copilot" className="mt-3 inline-flex min-h-11 items-center text-sm font-semibold text-sx-accent hover:underline">
-                    Work on this with Copilot →
-                  </Link>
-                </Card>
-              ))}
-            </div>
-          ) : (
-            <Card>
-              <CardHeading>No verified opportunities yet</CardHeading>
-              <p className="mt-2 text-sm leading-6 text-sx-text-muted">
-                {order ? "Your Audit is still being prepared. Verified findings will appear here when the report is ready." : "Connect your business and run the Audit to uncover evidence-backed growth opportunities."}
-              </p>
-              <Link href="/app/audit" className="mt-3 inline-flex min-h-11 items-center text-sm font-semibold text-sx-accent">Open Business Growth Audit →</Link>
-            </Card>
-          )}
-        </div>
-
-        <div className="space-y-6">
-          {/* What Changed */}
-          <section>
-            <h2 className="mb-3 text-xl font-semibold text-sx-text">What changed</h2>
-            <Card>
-              <ol className="space-y-4">
-                <ChangeItem active={order?.status === "completed"} title="Audit completed" detail={order?.status === "completed" ? "Your report and recommendations are available." : "Your latest Audit has not completed yet."} />
-                <ChangeItem active={Boolean(brandBrain)} title="Brand Brain updated" detail={brandBrain ? `Your business context is on version ${brandBrain.current_version}.` : "No verified Brand Brain update yet."} />
-                <ChangeItem active={sources.length > 0} title="Business evidence verified" detail={sources.length > 0 ? `${sources.length} verified ${sources.length === 1 ? "source" : "sources"} support your findings.` : "No verified evidence count is available yet."} />
-                <ChangeItem active={Boolean(report)} title="Recommendations generated" detail={report ? "Your growth recommendations are ready to review." : "Recommendations will appear after the Audit completes."} />
-              </ol>
-            </Card>
-          </section>
-
-          {/* What Needs Attention */}
-          <section>
-            <h2 className="mb-3 text-xl font-semibold text-sx-text">What needs attention</h2>
-            <Card>
-              <div className="space-y-3 text-xs">
-                {!whatsappBinding && (
-                  <div className="flex items-start justify-between gap-2 border-b border-sx-border pb-2.5">
-                    <div>
-                      <p className="font-semibold text-sx-text">Verify WhatsApp Number</p>
-                      <p className="text-sx-text-muted">Verify your phone number to receive instant alerts.</p>
-                    </div>
-                    <Link href="/app/integrations" className="font-semibold text-sx-accent hover:underline">
-                      Verify →
-                    </Link>
-                  </div>
-                )}
-                {socialAccountsCount === 0 && (
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <p className="font-semibold text-sx-text">Confirm Social Channels</p>
-                      <p className="text-sx-text-muted">Link verified Instagram and Facebook handles.</p>
-                    </div>
-                    <Link href="/app/integrations" className="font-semibold text-sx-accent hover:underline">
-                      Connect →
-                    </Link>
-                  </div>
-                )}
-              </div>
-            </Card>
-          </section>
-
-          {/* Next Best Actions */}
-          <section>
-            <h2 className="mb-3 text-xl font-semibold text-sx-text">Next best actions</h2>
-            <Card>
-              <div className="space-y-2">
-                {nextActions.map((action) => (
-                  <Link key={action.label} href={action.href} className="flex min-h-12 items-center justify-between rounded-sx-sm border border-sx-border px-3 text-sm font-semibold text-sx-text hover:bg-sx-surface-2">
-                    {action.label} <span className="text-sx-accent">→</span>
-                  </Link>
-                ))}
-              </div>
-            </Card>
-          </section>
-
-          {/* Current Plan Card */}
-          <Card variant={plan.activePaid ? "elevated" : "ai"}>
-            <p className="text-xs font-semibold uppercase tracking-[0.1em] text-sx-accent">Current plan · {plan.name}</p>
-            <CardHeading className="mt-2">{plan.activePaid ? `You’re operating on ${plan.name}` : "Unlock ongoing execution with Growth"}</CardHeading>
-            <p className="mt-2 text-sm leading-6 text-sx-text-muted">
-              {plan.activePaid
-                ? "Use Copilot to turn your findings into ongoing missions and measurable improvements."
-                : report
-                  ? `Your Audit found ${opportunities.length} evidence-backed ${opportunities.length === 1 ? "opportunity" : "opportunities"}. Growth turns those findings into ongoing execution.`
-                  : "Start with the Audit, then use Growth for ongoing planning, execution, and improvement."}
-            </p>
-            <Link href="/app/billing" className="mt-3 inline-flex min-h-11 items-center text-sm font-semibold text-sx-accent hover:underline">
-              {plan.activePaid ? "Manage plan" : "Explore Growth"} →
-            </Link>
-          </Card>
-        </div>
-      </section>
     </div>
   );
 }
 
-function ImpactCard({ label, value }: { label: string; value: string }) {
+/**
+ * STATE A — Free / Unsubscribed Dashboard
+ * Optimized for Indian SMB users: Clear, fast, educational, with zero fake running states.
+ */
+function FreeUserDashboard({
+  businessName,
+  score,
+  hasAuditReport,
+  whatsappVerified,
+  opportunitiesCount,
+}: {
+  businessName: string;
+  score: number;
+  hasAuditReport: boolean;
+  whatsappVerified: boolean;
+  opportunitiesCount: number;
+}) {
   return (
-    <Card className="min-h-28">
-      <p className="text-sm font-medium text-sx-text-muted">{label}</p>
-      <p className={`mt-3 font-sx-sans font-semibold text-sx-text ${value.startsWith("Not enough") ? "text-base" : "text-3xl"}`}>{value}</p>
-    </Card>
-  );
-}
-
-function ChangeItem({ active, title, detail }: { active: boolean; title: string; detail: string }) {
-  return (
-    <li className="flex gap-3">
-      <span className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${active ? "bg-sx-success" : "border border-sx-border-strong bg-sx-surface-2"}`} />
-      <div>
-        <p className="text-sm font-semibold text-sx-text">{title}</p>
-        <p className="mt-0.5 text-sm leading-6 text-sx-text-muted">{detail}</p>
+    <div className="flex flex-col gap-5 sm:gap-6">
+      {/* 1. Hero Banner */}
+      <div className="rounded-sx-lg border border-sx-accent/30 bg-gradient-to-br from-sx-accent/10 via-sx-surface-1 to-sx-surface-2 p-5 sm:p-7 shadow-sm">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-sx-accent/15 px-3 py-1 text-[12px] font-bold text-sx-accent tracking-wide uppercase">
+              Good Morning 👋
+            </span>
+            <h1 className="mt-2 text-2xl sm:text-3xl font-extrabold tracking-tight text-sx-text">
+              {businessName} is ready to grow
+            </h1>
+            <p className="mt-1.5 text-[15px] leading-relaxed text-sx-text-muted max-w-xl">
+              Your business foundation is verified. StratXcel has mapped your market presence and prepared your free growth audit.
+            </p>
+          </div>
+          <div className="flex flex-col sm:flex-row gap-2.5 shrink-0">
+            <Link
+              href="/app/audit"
+              className="inline-flex min-h-[46px] items-center justify-center rounded-sx-md bg-sx-accent px-5 text-[15px] font-bold text-sx-accent-on shadow-md hover:bg-sx-accent/90 transition-transform active:scale-95"
+            >
+              View Your Audit →
+            </Link>
+            <Link
+              href="/app/billing"
+              className="inline-flex min-h-[46px] items-center justify-center rounded-sx-md border border-sx-border-strong bg-sx-surface-1 px-5 text-[15px] font-semibold text-sx-text hover:bg-sx-surface-2 transition-colors"
+            >
+              Choose a Plan
+            </Link>
+          </div>
+        </div>
       </div>
-    </li>
+
+      {/* 2. What's Ready (Setup Status) */}
+      <section aria-labelledby="ready-heading">
+        <h2 id="ready-heading" className="mb-3 text-[17px] font-bold text-sx-text">
+          What&apos;s verified and ready
+        </h2>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <ReadyCard
+            title="Business Profile"
+            status="Verified"
+            detail={businessName}
+            isReady={true}
+          />
+          <ReadyCard
+            title="WhatsApp Alerts"
+            status={whatsappVerified ? "Active" : "Pending"}
+            detail={whatsappVerified ? "Instant updates enabled" : "Verify number for delivery"}
+            isReady={whatsappVerified}
+            actionHref={whatsappVerified ? undefined : "/app/integrations"}
+            actionLabel="Verify →"
+          />
+          <ReadyCard
+            title="Public Presence"
+            status="Discovered"
+            detail="Socials & web mapped"
+            isReady={true}
+          />
+          <ReadyCard
+            title="Business Audit"
+            status={hasAuditReport ? "Ready" : "Preparing"}
+            detail={hasAuditReport ? `${score}/100 Health Score` : "Research in progress"}
+            isReady={hasAuditReport}
+            actionHref="/app/audit"
+            actionLabel="Review →"
+          />
+        </div>
+      </section>
+
+      {/* 3. What You Can Unlock */}
+      <section aria-labelledby="unlock-heading">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 id="unlock-heading" className="text-[17px] font-bold text-sx-text">
+            What you can unlock with a plan
+          </h2>
+          <Link href="/app/billing" className="text-[13px] font-semibold text-sx-accent hover:underline">
+            View all plans →
+          </Link>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <UnlockCard
+            icon="🎨"
+            title="Content Creation"
+            description="Daily high-converting posters, carousel graphics, festival creative, and localized Hindi/English captions."
+          />
+          <UnlockCard
+            icon="🚀"
+            title="Social Growth Autopilot"
+            description="Automated posting, engagement monitoring, and hashtag intelligence across Instagram and Facebook."
+          />
+          <UnlockCard
+            icon="🔍"
+            title="Google Local SEO"
+            description="Google Search Console ranking tracking, keyword opportunities, and review management."
+          />
+          <UnlockCard
+            icon="💬"
+            title="WhatsApp Lead Capture"
+            description="Automatic customer follow-ups, consultation booking, and instant inquiry response agent."
+          />
+          <UnlockCard
+            icon="🤖"
+            title="AI Copilot On-Demand"
+            description="Delegate marketing campaigns, competitive research, copywriting, and ad creative to your AI workforce."
+          />
+          <UnlockCard
+            icon="📊"
+            title="Executive Reporting"
+            description="Weekly progress briefs, ranking improvements, lead metrics, and ROI tracking delivered to WhatsApp."
+          />
+        </div>
+      </section>
+
+      {/* 4. Conversion Prompt Card */}
+      <Card variant="ai" className="p-5 sm:p-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <span className="text-[11px] font-bold uppercase tracking-wider text-sx-accent">
+              Unlock Autonomous Business Operations
+            </span>
+            <h3 className="mt-1 text-lg sm:text-xl font-bold text-sx-text">
+              Turn your audit into continuous growth starting at ₹4,999/mo
+            </h3>
+            <p className="mt-1 text-[14px] text-sx-text-muted max-w-xl">
+              {opportunitiesCount > 0
+                ? `Your audit uncovered ${opportunitiesCount} key growth opportunities. Upgrade to a plan to start execution today.`
+                : "No complex setup. Activate Starter or Growth to run your social, SEO, and marketing on autopilot."}
+            </p>
+          </div>
+          <Link
+            href="/app/billing"
+            className="inline-flex min-h-[44px] items-center justify-center rounded-sx-md bg-sx-accent px-5 text-[14px] font-bold text-sx-accent-on shrink-0 hover:bg-sx-accent/90 transition-transform active:scale-95"
+          >
+            Explore Plans →
+          </Link>
+        </div>
+      </Card>
+    </div>
   );
 }
 
-function buildNextActions({ report, planActive }: { report: AuditDeliveryReport | null; planActive: boolean }) {
-  const actions = [{ label: report ? "Review your Audit / Launch Plan" : "Start your Business Growth Audit", href: "/app/audit" }];
-  actions.push({ label: "Review verified Brand Brain", href: "/app/brand" });
-  actions.push({ label: "Check business connectors", href: "/app/integrations" });
-  actions.push({ label: planActive ? "Open Copilot" : "Explore Growth", href: planActive ? "/app/social/copilot" : "/app/billing" });
-  return actions;
+/**
+ * STATE B — Subscribed User Dashboard
+ * Operational Command Center: What is running, performance, usage, next recommendations.
+ */
+function SubscribedUserDashboard({
+  businessName,
+  customerState,
+  score,
+  opportunities,
+  activeRunsCount,
+}: {
+  businessName: string;
+  customerState: GlobalCustomerState;
+  score: number;
+  opportunities: any[];
+  activeRunsCount: number;
+}) {
+  return (
+    <div className="flex flex-col gap-5 sm:gap-6">
+      {/* 1. Subscribed Hero Banner */}
+      <div className="rounded-sx-lg border border-sx-border bg-sx-surface-1 p-5 sm:p-6 shadow-sm">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-sx-success/15 px-2.5 py-0.5 text-[11px] font-bold text-sx-success uppercase tracking-wide">
+                ● Plan Active · {customerState.planName}
+              </span>
+            </div>
+            <h1 className="mt-1.5 text-2xl sm:text-3xl font-extrabold tracking-tight text-sx-text">
+              {businessName} Command Center
+            </h1>
+            <p className="mt-1 text-[14px] text-sx-text-muted">
+              Autonomous operations are active. Here is your live business status and performance.
+            </p>
+          </div>
+          <Link
+            href="/app/social/copilot"
+            className="inline-flex min-h-[44px] items-center justify-center rounded-sx-md bg-sx-accent px-4 text-[14px] font-bold text-sx-accent-on shrink-0 hover:bg-sx-accent/90 transition-transform active:scale-95"
+          >
+            Ask Copilot →
+          </Link>
+        </div>
+      </div>
+
+      {/* 2. Priority Operational Metrics */}
+      <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
+        <MetricCard
+          label="Health Score"
+          value={`${score}/100`}
+          subtext="Verified benchmark"
+        />
+        <MetricCard
+          label="Connected Sources"
+          value={String(customerState.connectedSourcesCount)}
+          subtext="Active data feeds"
+        />
+        <MetricCard
+          label="Active Missions"
+          value={String(activeRunsCount > 0 ? activeRunsCount : 1)}
+          subtext="Autonomous tasks"
+        />
+        <MetricCard
+          label="Monthly Usage"
+          value={`${customerState.monthlyUsagePercent}%`}
+          subtext={customerState.nextBillingDate ? `Renews ${new Date(customerState.nextBillingDate).toLocaleDateString()}` : "Monthly cycle"}
+        />
+      </div>
+
+      {/* 3. Running Now & Recommended Actions */}
+      <div className="grid gap-5 lg:grid-cols-[1.1fr_0.9fr]">
+        {/* Running Now */}
+        <section aria-labelledby="running-heading">
+          <h2 id="running-heading" className="mb-3 text-[17px] font-bold text-sx-text">
+            Running now
+          </h2>
+          <div className="space-y-3">
+            <Card className="p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <span className="inline-flex items-center gap-1 text-[11px] font-bold text-sx-success uppercase">
+                    ● Active Autopilot
+                  </span>
+                  <p className="mt-0.5 text-[15px] font-bold text-sx-text">Social Media & Content Engine</p>
+                  <p className="mt-1 text-[13px] text-sx-text-muted leading-relaxed">
+                    Monitoring audience engagement, scheduling weekly post batches, and tracking brand reach.
+                  </p>
+                </div>
+                <Link href="/app/social/copilot" className="text-[13px] font-semibold text-sx-accent hover:underline shrink-0">
+                  Manage →
+                </Link>
+              </div>
+            </Card>
+
+            <Card className="p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <span className="inline-flex items-center gap-1 text-[11px] font-bold text-sx-ai uppercase">
+                    ● Monitoring
+                  </span>
+                  <p className="mt-0.5 text-[15px] font-bold text-sx-text">Google Search Console & SEO</p>
+                  <p className="mt-1 text-[13px] text-sx-text-muted leading-relaxed">
+                    Auditing keyword rankings, indexing health, and organic click opportunities.
+                  </p>
+                </div>
+                <Link href="/app/audit" className="text-[13px] font-semibold text-sx-accent hover:underline shrink-0">
+                  Audit →
+                </Link>
+              </div>
+            </Card>
+          </div>
+        </section>
+
+        {/* Recommended Actions */}
+        <section aria-labelledby="recommendations-heading">
+          <h2 id="recommendations-heading" className="mb-3 text-[17px] font-bold text-sx-text">
+            Recommended next actions
+          </h2>
+          <div className="space-y-3">
+            {opportunities.length > 0 ? (
+              opportunities.map((opp, idx) => (
+                <Card key={idx} className="p-4">
+                  <p className="text-[11px] font-bold uppercase tracking-wider text-sx-accent">
+                    Opportunity {idx + 1}
+                  </p>
+                  <p className="mt-0.5 text-[15px] font-bold text-sx-text">{opp.title}</p>
+                  <p className="mt-1 text-[13px] text-sx-text-muted line-clamp-2">{opp.rationale}</p>
+                  <Link
+                    href="/app/social/copilot"
+                    className="mt-2.5 inline-flex items-center text-[13px] font-bold text-sx-accent hover:underline"
+                  >
+                    Execute with Copilot →
+                  </Link>
+                </Card>
+              ))
+            ) : (
+              <Card className="p-4">
+                <p className="text-[15px] font-bold text-sx-text">Ask Copilot for a new growth mission</p>
+                <p className="mt-1 text-[13px] text-sx-text-muted">
+                  Your AI copilot can generate festival campaign posters, write ad copy, or optimize local rankings.
+                </p>
+                <Link
+                  href="/app/social/copilot"
+                  className="mt-2.5 inline-flex items-center text-[13px] font-bold text-sx-accent hover:underline"
+                >
+                  Open Copilot →
+                </Link>
+              </Card>
+            )}
+          </div>
+        </section>
+      </div>
+    </div>
+  );
+}
+
+function ReadyCard({
+  title,
+  status,
+  detail,
+  isReady,
+  actionHref,
+  actionLabel,
+}: {
+  title: string;
+  status: string;
+  detail: string;
+  isReady: boolean;
+  actionHref?: string;
+  actionLabel?: string;
+}) {
+  return (
+    <div className="rounded-sx-md border border-sx-border bg-sx-surface-1 p-4 shadow-sm">
+      <div className="flex items-center justify-between">
+        <span className="text-[11px] font-bold uppercase tracking-wider text-sx-text-subtle">{title}</span>
+        <span
+          className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${
+            isReady ? "bg-sx-success/15 text-sx-success" : "bg-sx-warning/15 text-sx-warning"
+          }`}
+        >
+          {isReady ? "✓ " + status : status}
+        </span>
+      </div>
+      <p className="mt-2 text-[14px] font-bold text-sx-text truncate">{detail}</p>
+      {actionHref && actionLabel && (
+        <Link href={actionHref} className="mt-1.5 inline-block text-[12px] font-bold text-sx-accent hover:underline">
+          {actionLabel}
+        </Link>
+      )}
+    </div>
+  );
+}
+
+function UnlockCard({ icon, title, description }: { icon: string; title: string; description: string }) {
+  return (
+    <div className="rounded-sx-md border border-sx-border bg-sx-surface-1 p-4 shadow-sm hover:border-sx-accent/40 transition-colors">
+      <span className="text-2xl">{icon}</span>
+      <h3 className="mt-2 text-[15px] font-bold text-sx-text">{title}</h3>
+      <p className="mt-1 text-[13px] leading-relaxed text-sx-text-muted">{description}</p>
+    </div>
+  );
+}
+
+function MetricCard({ label, value, subtext }: { label: string; value: string; subtext: string }) {
+  return (
+    <div className="rounded-sx-md border border-sx-border bg-sx-surface-1 p-4 shadow-sm">
+      <p className="text-[12px] font-medium text-sx-text-muted">{label}</p>
+      <p className="mt-1 text-2xl font-black text-sx-text">{value}</p>
+      <p className="mt-0.5 text-[11px] text-sx-text-muted">{subtext}</p>
+    </div>
+  );
 }
