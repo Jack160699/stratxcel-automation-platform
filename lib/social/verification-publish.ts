@@ -43,7 +43,7 @@ export async function executeYoutubeVerification(
   if (!asset || asset.mime_type !== "video/mp4") throw new Error("YouTube verification requires an owned READY MP4 asset.");
   const account = accountResult.data;
   if (!account || account.platform !== "youtube") throw new Error("Select an owned YouTube account.");
-  if (account.status !== "CONNECTED" || account.token_health === "INVALID") {
+  if (account.status !== "CONNECTED" || account.token_health === "EXPIRED") {
     throw new Error("The selected YouTube account is disconnected or requires OAuth renewal.");
   }
   const variant = variantResult.data;

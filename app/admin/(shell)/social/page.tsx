@@ -33,7 +33,7 @@ export default async function CommandCenterPage() {
     getRecentMissionSessions(ctx, 5),
   ]);
 
-  const reauthAccounts = accounts.filter((a) => a.status === "REAUTH_REQUIRED");
+  const reauthAccounts = accounts.filter((a) => a.status === "RECONNECT_REQUIRED");
   const upcoming = jobs.filter((j) => j.status === "SCHEDULED").slice(0, 8);
   const publishedCount = jobs.filter((j) => j.status === "PUBLISHED").length;
   const failedCount = jobs.filter((j) => j.status === "FAILED").length;
@@ -63,8 +63,8 @@ export default async function CommandCenterPage() {
     return {
       platform,
       handle: account.username ?? null,
-      status: account.status === "REAUTH_REQUIRED" ? "REAUTH_REQUIRED" : account.status === "CONNECTED" ? "CONNECTED" : "DISCONNECTED",
-      tokenHealth: account.status === "CONNECTED" ? (account.token_health as "HEALTHY" | "DEGRADED" | "INVALID" | null) : null,
+      status: account.status === "RECONNECT_REQUIRED" ? "RECONNECT_REQUIRED" : account.status === "CONNECTED" ? "CONNECTED" : "DISCONNECTED",
+      tokenHealth: account.status === "CONNECTED" ? (account.token_health as "HEALTHY" | "DEGRADED" | "EXPIRED" | null) : null,
       lastSyncAt: account.last_sync_at,
     };
   });

@@ -17,7 +17,7 @@ export interface SocialAccountRow {
   display_name: string | null;
   avatar_url: string | null;
   permissions: string[];
-  status: string; // 'CONNECTED' | 'DISCONNECTED' | 'REAUTH_REQUIRED'
+  status: string; // 'CONNECTED' | 'DISCONNECTED' | 'ERROR' | 'RECONNECT_REQUIRED' — matches the social_accounts_status_check constraint
   token_health: string;
   last_sync_at: string | null;
   next_scheduled_at: string | null;
@@ -249,7 +249,12 @@ export async function disconnectAccount(ctx: OwnerContext, id: string) {
 }
 
 export async function markReauthRequired(service: ServiceClient, accountId: string) {
-  await service.from("social_accounts").update({ status: "REAUTH_REQUIRED", token_health: "INVALID", updated_at: new Date().toISOString() }).eq("id", accountId);
+  // "RECONNECT_REQUIRED"/"EXPIRED" are the actual social_accounts_status_check
+  // and social_accounts_token_health_check enum values — an earlier revision
+  // of this function wrote two values that aren't in either CHECK constraint,
+  // so this update always violated it and threw, silently masking every
+  // reauth condition it was meant to record.
+  await service.from("social_accounts").update({ status: "RECONNECT_REQUIRED", token_health: "EXPIRED", updated_at: new Date().toISOString() }).eq("id", accountId);
 }
 
 export interface DecryptedTokenState {

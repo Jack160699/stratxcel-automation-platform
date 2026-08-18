@@ -57,7 +57,7 @@ export async function runHealthChecks(ctx: OwnerContext): Promise<HealthRecord[]
         status: acct.token_health === "HEALTHY" ? "OPERATIONAL" : "DEGRADED",
         message: `Connected · token ${acct.token_health.toLowerCase()}`,
       });
-    } else if (acct.status === "REAUTH_REQUIRED") {
+    } else if (acct.status === "RECONNECT_REQUIRED") {
       records.push({ component: `social:${platform}`, group: "social", status: "FAILED", message: "Reauthorization required" });
     } else {
       records.push({ component: `social:${platform}`, group: "social", status: "NOT_CONFIGURED", message: "Disconnected" });
