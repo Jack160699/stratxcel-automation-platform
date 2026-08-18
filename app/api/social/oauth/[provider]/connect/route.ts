@@ -63,7 +63,19 @@ export async function GET(
     return NextResponse.json({ error: "Unknown provider" }, { status: 400 });
   }
 
-  const { token, hash, expiresAt } = createSignedState(provider, redirectTo, tenantId || undefined);
+  let resolvedTenantId = tenantId;
+  if (!resolvedTenantId && user) {
+    const service = createSupabaseServiceClient();
+    const { data: mems } = await service
+      .from("tenant_members")
+      .select("tenant_id")
+      .eq("user_id", user.id);
+    if (mems && mems.length === 1) {
+      resolvedTenantId = mems[0].tenant_id;
+    }
+  }
+
+  const { token, hash, expiresAt } = createSignedState(provider, redirectTo, resolvedTenantId || undefined);
 
   const service = createSupabaseServiceClient();
   const { error } = await service.from("social_oauth_states").insert({

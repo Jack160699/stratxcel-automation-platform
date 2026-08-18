@@ -98,13 +98,17 @@ export async function upsertConnectedAccount(
 
   // 1. If tenantId is provided, check for existing tenant account for this platform
   if (input.tenantId) {
-    const { data: existingTenantAccount } = await service
+    const { data: existingTenantAccount, error: fetchErr } = await service
       .from("social_accounts")
       .select("id")
       .eq("tenant_id", input.tenantId)
       .eq("platform", input.platform)
       .limit(1)
       .maybeSingle();
+
+    if (fetchErr) {
+      throw new Error(`Failed to query social_accounts: ${fetchErr.message}`);
+    }
 
     if (existingTenantAccount?.id) {
       const { data: updated, error: updateErr } = await service
@@ -125,38 +129,94 @@ export async function upsertConnectedAccount(
         .select("id")
         .single();
 
-      if (!updateErr && updated) {
-        accountId = updated.id;
+      if (updateErr || !updated) {
+        throw new Error(updateErr?.message ?? "Failed to update existing tenant social account");
       }
+      accountId = updated.id;
     }
   }
 
-  // 2. Fallback to standard owner_id + platform + provider_account_id upsert
+  // 2. If no existing tenant row was updated, perform upsert
   if (!accountId) {
-    const { data: account, error } = await service
-      .from("social_accounts")
-      .upsert(
-        {
-          owner_id: input.ownerId,
-          ...(input.tenantId ? { tenant_id: input.tenantId } : {}),
-          platform: input.platform,
-          provider_account_id: input.providerAccountId,
-          username: input.username,
-          display_name: input.displayName ?? null,
-          avatar_url: input.avatarUrl ?? null,
-          permissions: input.permissions,
-          status: "CONNECTED",
-          token_health: "HEALTHY",
-          last_sync_at: now,
-          updated_at: now,
-        },
-        { onConflict: "owner_id,platform,provider_account_id" }
-      )
-      .select("id")
-      .single();
+    if (input.tenantId) {
+      const { data: account, error } = await service
+        .from("social_accounts")
+        .upsert(
+          {
+            owner_id: input.ownerId,
+            tenant_id: input.tenantId,
+            platform: input.platform,
+            provider_account_id: input.providerAccountId,
+            username: input.username,
+            display_name: input.displayName ?? null,
+            avatar_url: input.avatarUrl ?? null,
+            permissions: input.permissions,
+            status: "CONNECTED",
+            token_health: "HEALTHY",
+            last_sync_at: now,
+            updated_at: now,
+          },
+          { onConflict: "tenant_id,platform" }
+        )
+        .select("id")
+        .single();
 
-    if (error || !account) throw new Error(error?.message ?? "account upsert failed");
-    accountId = account.id;
+      if (error || !account) {
+        // Fallback to onConflict: owner_id,platform,provider_account_id
+        const { data: fallbackAccount, error: fallbackError } = await service
+          .from("social_accounts")
+          .upsert(
+            {
+              owner_id: input.ownerId,
+              tenant_id: input.tenantId,
+              platform: input.platform,
+              provider_account_id: input.providerAccountId,
+              username: input.username,
+              display_name: input.displayName ?? null,
+              avatar_url: input.avatarUrl ?? null,
+              permissions: input.permissions,
+              status: "CONNECTED",
+              token_health: "HEALTHY",
+              last_sync_at: now,
+              updated_at: now,
+            },
+            { onConflict: "owner_id,platform,provider_account_id" }
+          )
+          .select("id")
+          .single();
+
+        if (fallbackError || !fallbackAccount) {
+          throw new Error(error?.message || fallbackError?.message || "account upsert failed");
+        }
+        accountId = fallbackAccount.id;
+      } else {
+        accountId = account.id;
+      }
+    } else {
+      const { data: account, error } = await service
+        .from("social_accounts")
+        .upsert(
+          {
+            owner_id: input.ownerId,
+            platform: input.platform,
+            provider_account_id: input.providerAccountId,
+            username: input.username,
+            display_name: input.displayName ?? null,
+            avatar_url: input.avatarUrl ?? null,
+            permissions: input.permissions,
+            status: "CONNECTED",
+            token_health: "HEALTHY",
+            last_sync_at: now,
+            updated_at: now,
+          },
+          { onConflict: "owner_id,platform,provider_account_id" }
+        )
+        .select("id")
+        .single();
+
+      if (error || !account) throw new Error(error?.message ?? "account upsert failed");
+      accountId = account.id;
+    }
   }
 
   const expiresAt = input.expiresInSeconds ? new Date(Date.now() + input.expiresInSeconds * 1000).toISOString() : null;
