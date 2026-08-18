@@ -22,10 +22,12 @@ interface CustomerIntegrationStatus {
   whatsapp: ConnectorState;
   facebook: ConnectorState;
   instagram: ConnectorState;
-  threads: ConnectorState;
   youtube: ConnectorState;
-  linkedin: ConnectorState;
   google: ConnectorState;
+  google_analytics?: ConnectorState;
+  google_search_console?: ConnectorState;
+  threads?: ConnectorState;
+  linkedin?: ConnectorState;
   presence?: Array<{
     key: PlatformIconKey;
     label: string;
@@ -98,6 +100,30 @@ export default function IntegrationsPage() {
         setStatus(body as CustomerIntegrationStatus);
       })
       .catch(() => setError("Could not load connection status."));
+  }
+
+  async function handleDisconnect(provider: string) {
+    if (!tenantId) return;
+    const confirmed = window.confirm(`Are you sure you want to disconnect ${provider.replace("_", " ")}?`);
+    if (!confirmed) return;
+
+    try {
+      const res = await fetch("/api/platform/integrations/disconnect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tenantId, provider }),
+      });
+      if (res.ok) {
+        setWhatsappSuccessMsg(`✓ ${provider.replace("_", " ")} disconnected successfully.`);
+        reloadStatus();
+        setTimeout(() => setWhatsappSuccessMsg(null), 4000);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setError(data.error || "Could not disconnect account.");
+      }
+    } catch {
+      setError("Network error disconnecting account.");
+    }
   }
 
   useEffect(() => {
@@ -319,12 +345,24 @@ export default function IntegrationsPage() {
 
               {card.isOAuth && tenantId && (
                 <div className="mt-5 pt-3 border-t border-sx-border/40 flex items-center justify-between gap-3">
-                  {card.state === "connected" && connectHref && (
-                    <a href={connectHref}>
-                      <Button variant="secondary" size="sm">
-                        Reconnect
+                  {card.state === "connected" && (
+                    <div className="flex w-full items-center justify-between gap-2">
+                      {connectHref ? (
+                        <a href={connectHref}>
+                          <Button variant="secondary" size="sm">
+                            Reconnect
+                          </Button>
+                        </a>
+                      ) : <span />}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-rose-400 hover:text-rose-300 hover:bg-rose-500/10"
+                        onClick={() => handleDisconnect(card.key)}
+                      >
+                        Disconnect
                       </Button>
-                    </a>
+                    </div>
                   )}
 
                   {card.state === "action_required" && connectHref && (

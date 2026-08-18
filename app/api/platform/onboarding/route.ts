@@ -441,16 +441,20 @@ export async function POST(request: Request) {
         const result = started.data as { success?: boolean; run_id?: string } | null;
         if (result?.run_id) {
           const executor = createLiveAutomaticAuditExecutor(serviceClient);
-          void executor
-            .execute({
+          try {
+            const executionPromise = executor.execute({
               runId: result.run_id,
               attemptNumber: 1,
               maxAttempts: 3,
               expectedTenantId: tenant.id,
-            })
-            .catch((err) => {
-              console.warn("onboarding: background executor trace", err);
             });
+            const timeoutPromise = new Promise<{ kind: string }>((resolve) =>
+              setTimeout(() => resolve({ kind: "TIMEOUT_SLICE" }), 15_000)
+            );
+            await Promise.race([executionPromise, timeoutPromise]);
+          } catch (execErr) {
+            console.warn("onboarding: executor execution trace", execErr);
+          }
         }
       } catch (autoErr) {
         console.warn("onboarding: non-fatal automatic audit start trace", autoErr);

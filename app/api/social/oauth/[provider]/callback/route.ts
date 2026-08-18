@@ -253,7 +253,7 @@ export async function GET(
             await upsertConnectedAccount(service, {
               ownerId: userId,
               tenantId: targetTenantId,
-              platform: (canonicalPlatformKey === "google_business" ? "youtube" : canonicalPlatformKey) as Platform,
+              platform: canonicalPlatformKey as Platform,
               providerAccountId: result.externalAccountId,
               username: formattedHandle,
               displayName: result.displayName || result.username || canonicalPlatformKey,

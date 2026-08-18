@@ -8,8 +8,7 @@ import { Field, Input, Textarea } from "@/components/ui/Input";
 import { ErrorState, EmptyState } from "@/components/ui/Feedback";
 import { trackFunnel } from "@/lib/analytics/events";
 import { loadCustomerJson } from "@/lib/customer-app/load-result";
-import { PresenceCards } from "@/components/audit/PresenceCards";
-import { buildPresenceLinks } from "@/lib/audit/v1/presence";
+import { DigitalPresenceCards } from "@/components/audit/DigitalPresenceCards";
 
 interface BrandBrainContent {
   business_name?: string;
@@ -153,24 +152,28 @@ export default function BrandPage() {
 
           <Card>
             <CardHeading>Digital presence</CardHeading>
-            <p className="mt-1 text-xs text-sx-text-muted">Website and social profiles collected during Audit appear here. Your edits stay the highest truth.</p>
-            <PresenceCards
-              links={buildPresenceLinks({
-                websiteUrl: content.website_url,
-                onlineProfiles: Array.isArray(content.online_profiles)
-                  ? content.online_profiles.filter((item): item is string => typeof item === "string")
-                  : content.channels,
-              })}
-            />
-            <div className="mt-3 grid gap-3 sm:grid-cols-2">
-              <Field label="Website">
+            <p className="mt-1 text-xs text-sx-text-muted">
+              Live connection status and verified business destinations. Connect accounts to enable AI missions and autonomous publishing.
+            </p>
+            <div className="mt-3">
+              {tenantId && (
+                <DigitalPresenceCards
+                  tenantId={tenantId}
+                  readOnly={readOnly}
+                  returnPath="/app/brand"
+                  onStatusChange={load}
+                />
+              )}
+            </div>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 pt-3 border-t border-sx-border/40">
+              <Field label="Website URL">
                 <Input
                   value={content.website_url ?? ""}
-                  placeholder="yourbusiness.in"
+                  placeholder="https://yourbusiness.in"
                   onChange={(e) => field("website_url", e.target.value)}
                 />
               </Field>
-              <Field label="Channels / profiles (one per line)">
+              <Field label="Public channels / profiles (one per line)">
                 <Textarea
                   value={(content.channels ?? []).join("\n")}
                   onChange={(e) => field("channels", e.target.value.split("\n").filter(Boolean))}

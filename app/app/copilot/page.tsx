@@ -214,7 +214,7 @@ export default function CopilotPage() {
       </div>
 
       {/* 2. 3-Tab Mobile Navigation */}
-      <div className="grid grid-cols-3 rounded-sx-md border border-sx-border bg-sx-surface-1 p-1">
+      <div className="grid grid-cols-3 xl:hidden rounded-sx-md border border-sx-border bg-sx-surface-1 p-1">
         <button
           type="button"
           onClick={() => setActiveTab("ask")}

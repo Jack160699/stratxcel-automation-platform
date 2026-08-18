@@ -17,7 +17,7 @@ export default async function ContentInboxPage() {
       <StaffScopedNotice what="Content Inbox" />
 
       <div className="flex flex-wrap gap-2">
-        {["All", "Unread", "Instagram", "Facebook", "Threads", "YouTube"].map((f) => (
+        {["All", "Unread", "Instagram", "Facebook", "YouTube"].map((f) => (
           <span key={f} className="rounded-sx-xs border border-sx-border-strong px-2.5 py-1 text-[11px] text-sx-text-muted">
             {f}
           </span>

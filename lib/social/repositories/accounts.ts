@@ -1,6 +1,6 @@
-import { createSupabaseServiceClient } from "../../supabase/service";
-import { encryptTokenPacked, decryptTokenPacked } from "../crypto";
-import type { OwnerContext } from "../db-context";
+import { createSupabaseServiceClient } from "../../supabase/service.ts";
+import { encryptTokenPacked, decryptTokenPacked } from "../crypto.ts";
+import type { OwnerContext } from "../db-context.ts";
 
 type ServiceClient = ReturnType<typeof createSupabaseServiceClient>;
 
@@ -61,7 +61,7 @@ export async function upsertConnectedAccount(
   input: {
     ownerId: string;
     tenantId?: string | null;
-    platform: Platform;
+    platform: Platform | string;
     providerAccountId: string;
     username: string;
     displayName?: string | null;
@@ -72,45 +72,87 @@ export async function upsertConnectedAccount(
     expiresInSeconds?: number | null;
   }
 ) {
-  const { data: account, error } = await service
-    .from("social_accounts")
-    .upsert(
-      {
-        owner_id: input.ownerId,
-        ...(input.tenantId ? { tenant_id: input.tenantId } : {}),
-        platform: input.platform,
-        provider_account_id: input.providerAccountId,
-        username: input.username,
-        display_name: input.displayName ?? null,
-        avatar_url: input.avatarUrl ?? null,
-        permissions: input.permissions,
-        status: "CONNECTED",
-        token_health: "HEALTHY",
-        last_sync_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: "owner_id,platform,provider_account_id" }
-    )
-    .select("id")
-    .single();
+  const now = new Date().toISOString();
+  let accountId: string | null = null;
 
-  if (error || !account) throw new Error(error?.message ?? "account upsert failed");
+  // 1. If tenantId is provided, check for existing tenant account for this platform
+  if (input.tenantId) {
+    const { data: existingTenantAccount } = await service
+      .from("social_accounts")
+      .select("id")
+      .eq("tenant_id", input.tenantId)
+      .eq("platform", input.platform)
+      .limit(1)
+      .maybeSingle();
+
+    if (existingTenantAccount?.id) {
+      const { data: updated, error: updateErr } = await service
+        .from("social_accounts")
+        .update({
+          owner_id: input.ownerId,
+          provider_account_id: input.providerAccountId,
+          username: input.username,
+          display_name: input.displayName ?? null,
+          avatar_url: input.avatarUrl ?? null,
+          permissions: input.permissions,
+          status: "CONNECTED",
+          token_health: "HEALTHY",
+          last_sync_at: now,
+          updated_at: now,
+        })
+        .eq("id", existingTenantAccount.id)
+        .select("id")
+        .single();
+
+      if (!updateErr && updated) {
+        accountId = updated.id;
+      }
+    }
+  }
+
+  // 2. Fallback to standard owner_id + platform + provider_account_id upsert
+  if (!accountId) {
+    const { data: account, error } = await service
+      .from("social_accounts")
+      .upsert(
+        {
+          owner_id: input.ownerId,
+          ...(input.tenantId ? { tenant_id: input.tenantId } : {}),
+          platform: input.platform,
+          provider_account_id: input.providerAccountId,
+          username: input.username,
+          display_name: input.displayName ?? null,
+          avatar_url: input.avatarUrl ?? null,
+          permissions: input.permissions,
+          status: "CONNECTED",
+          token_health: "HEALTHY",
+          last_sync_at: now,
+          updated_at: now,
+        },
+        { onConflict: "owner_id,platform,provider_account_id" }
+      )
+      .select("id")
+      .single();
+
+    if (error || !account) throw new Error(error?.message ?? "account upsert failed");
+    accountId = account.id;
+  }
 
   const expiresAt = input.expiresInSeconds ? new Date(Date.now() + input.expiresInSeconds * 1000).toISOString() : null;
 
   const { error: tokenError } = await service.from("social_tokens").upsert(
     {
-      account_id: account.id,
+      account_id: accountId,
       access_token_encrypted: encryptTokenPacked(input.accessToken),
       refresh_token_encrypted: input.refreshToken ? encryptTokenPacked(input.refreshToken) : null,
       expires_at: expiresAt,
-      updated_at: new Date().toISOString(),
+      updated_at: now,
     },
     { onConflict: "account_id" }
   );
   if (tokenError) throw new Error(tokenError.message);
 
-  return account.id as string;
+  return accountId;
 }
 
 export async function disconnectAccount(ctx: OwnerContext, id: string) {

@@ -31,7 +31,7 @@ const BUSINESS_GOALS: GoalOption[] = [
   {
     key: "social_presence",
     title: "Stay active on social media",
-    description: "Maintain daily high-quality publishing across Instagram, Facebook, and LinkedIn.",
+    description: "Maintain daily high-quality publishing across Instagram, Facebook, and YouTube.",
     icon: "📱",
   },
   {

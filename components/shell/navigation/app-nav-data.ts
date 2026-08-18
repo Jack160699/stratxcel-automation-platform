@@ -45,5 +45,5 @@ export const APP_NAV_GROUPS_DATA: NavGroupData[] = [
   },
 ];
 
-/** Mobile primary dock: Home, Audit, Copilot, Business — More sheet holds the rest. */
-export const APP_MOBILE_NAV_KEYS = ["home", "customer-audit", "copilot", "brand"];
+/** Mobile primary dock: Home, Audit, Copilot, Integrations — More sheet holds the rest. */
+export const APP_MOBILE_NAV_KEYS = ["home", "customer-audit", "copilot", "integrations"];

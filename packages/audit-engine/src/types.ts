@@ -70,6 +70,7 @@ export interface AuditGenerationRunSnapshot {
   confidence_band?: "HIGH" | "MEDIUM" | "LOW" | "UNKNOWN" | null;
   failure_code?: string | null;
   failure_message_safe?: string | null;
+  heartbeat_at?: string | null;
 }
 
 export interface AuditGenerationContext {

@@ -18,7 +18,7 @@ export const dynamic = "force-dynamic";
 // Always a same-origin, hardcoded relative path — never derived from any
 // request input — so this callback can never be used as an open redirect.
 const RETURN_PATH = "/app/search";
-const ALLOWED_RETURN_PATHS = ["/app", "/app/integrations", "/app/search"] as const;
+const ALLOWED_RETURN_PATHS = ["/app", "/app/brand", "/app/integrations", "/app/search"] as const;
 
 function getSafeReturnPath(redirectTo?: string): string {
   if (redirectTo && ALLOWED_RETURN_PATHS.includes(redirectTo as any)) {

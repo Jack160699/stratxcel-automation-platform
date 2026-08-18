@@ -70,6 +70,7 @@ export function buildPresenceLinks(input: {
   verifiedPublicTypes?: string[];
   customerVerifiedTypes?: string[];
   whatsappDeliveryMasked?: string | null;
+  allowedTypes?: PlatformIconKey[];
 }): PresenceLink[] {
   const links: PresenceLink[] = [];
   const website = input.websiteUrl?.trim() ? safeCanonicalWebsite(input.websiteUrl) : null;
@@ -90,8 +91,10 @@ export function buildPresenceLinks(input: {
     public: true,
   });
 
-  const types: PlatformIconKey[] = ["google_business", "instagram", "facebook", "linkedin", "youtube", "x", "threads"];
+  const defaultTypes: PlatformIconKey[] = ["google_business", "instagram", "facebook", "youtube"];
+  const types = input.allowedTypes ?? defaultTypes;
   for (const type of types) {
+    if (type === "website" || type === "whatsapp") continue;
     const channel = input.channels?.find((row) => row.type === type);
     const fromProfiles = inferProfile(type, input.onlineProfiles ?? []);
     const value = channel?.notAvailable ? "" : (channel?.value || fromProfiles || "");

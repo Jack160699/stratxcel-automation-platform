@@ -193,12 +193,26 @@ export async function POST(request: Request) {
 
       if (brain) {
         try {
-          await ctx.service.rpc("start_automatic_audit_generation_v1", {
+          const started = await ctx.service.rpc("start_automatic_audit_generation_v1", {
             p_audit_order_id: claimed.audit_order_id,
             p_expected_tenant_id: ctx.tenantId,
             p_brand_brain_version: brain.current_version,
             p_budget_limit_usd: resolveAuditBudgetLimitUsd(),
           });
+          const result = started.data as { success?: boolean; run_id?: string } | null;
+          if (result?.run_id) {
+            const executor = createLiveAutomaticAuditExecutor(ctx.service);
+            const executionPromise = executor.execute({
+              runId: result.run_id,
+              attemptNumber: 1,
+              maxAttempts: 3,
+              expectedTenantId: ctx.tenantId,
+            });
+            const timeoutPromise = new Promise<{ kind: string }>((resolve) =>
+              setTimeout(() => resolve({ kind: "TIMEOUT_SLICE" }), 15_000)
+            );
+            await Promise.race([executionPromise, timeoutPromise]).catch(() => {});
+          }
         } catch (autoErr) {
           console.warn("start_fresh: non-fatal automation start trace", autoErr);
         }
@@ -557,18 +571,22 @@ export async function POST(request: Request) {
         if (started.error || result?.success !== true) {
           await ctx.service.from("audit_orders").update({ status: "in_review", updated_at: new Date().toISOString() }).eq("id", current.id);
         } else if (result?.run_id) {
-          // Asynchronously advance the audit run in serverless runtime
+          // Advance the audit run within the request lifecycle
           const executor = createLiveAutomaticAuditExecutor(ctx.service);
-          void executor
-            .execute({
+          try {
+            const executionPromise = executor.execute({
               runId: result.run_id,
               attemptNumber: 1,
               maxAttempts: 3,
               expectedTenantId: ctx.tenantId,
-            })
-            .catch((err) => {
-              console.warn("audit onboarding finalize: background executor trace", err);
             });
+            const timeoutPromise = new Promise<{ kind: string }>((resolve) =>
+              setTimeout(() => resolve({ kind: "TIMEOUT_SLICE" }), 18_000)
+            );
+            await Promise.race([executionPromise, timeoutPromise]);
+          } catch (execErr) {
+            console.warn("audit onboarding finalize: executor execution trace", execErr);
+          }
         }
       } else {
         await ctx.service.from("audit_orders").update({ status: "in_review", updated_at: new Date().toISOString() }).eq("id", current.id);

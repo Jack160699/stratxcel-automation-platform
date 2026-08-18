@@ -114,6 +114,7 @@ export async function runAutomaticAuditGeneration(
           failure_code: code,
           failure_message_safe: "Grounded research could not be completed yet.",
           stage_updated_at: nowIso(),
+          heartbeat_at: nowIso(),
         });
         return { kind: "RETRY", code, message };
       }
@@ -127,6 +128,7 @@ export async function runAutomaticAuditGeneration(
           : "Grounded research needs staff review.",
         review_required_at: nowIso(),
         stage_updated_at: nowIso(),
+        heartbeat_at: nowIso(),
       });
       return { kind: "NEEDS_REVIEW" };
     }
@@ -144,6 +146,7 @@ export async function runAutomaticAuditGeneration(
       ai_receipts: allReceipts,
       estimated_cost_usd: estimatedCostUsd,
       stage_updated_at: nowIso(),
+      heartbeat_at: nowIso(),
     });
   }
 
@@ -156,6 +159,7 @@ export async function runAutomaticAuditGeneration(
         failure_code: research.reasonCode ?? "RESEARCH_FAILED",
         failure_message_safe: "Grounded research could not be completed yet.",
         stage_updated_at: nowIso(),
+        heartbeat_at: nowIso(),
       });
       return {
         kind: "RETRY",
@@ -172,6 +176,7 @@ export async function runAutomaticAuditGeneration(
       failure_message_safe: "Grounded research needs staff review.",
       review_required_at: nowIso(),
       stage_updated_at: nowIso(),
+      heartbeat_at: nowIso(),
     });
     return { kind: "NEEDS_REVIEW" };
   }
@@ -187,12 +192,14 @@ export async function runAutomaticAuditGeneration(
       failure_message_safe: "The automatic Audit reached its protected AI cost limit.",
       review_required_at: nowIso(),
       stage_updated_at: nowIso(),
+      heartbeat_at: nowIso(),
     });
     return { kind: "NEEDS_REVIEW" };
   }
   await deps.store.updateRun(input.runId, {
     stage: "ANALYSIS",
     stage_updated_at: nowIso(),
+    heartbeat_at: nowIso(),
   });
 
   // Re-read immediately before the second external/provider step.
@@ -215,6 +222,7 @@ export async function runAutomaticAuditGeneration(
         failure_code: code,
         failure_message_safe: "The report could not be generated yet.",
         stage_updated_at: nowIso(),
+        heartbeat_at: nowIso(),
       });
       return { kind: "RETRY", code, message };
     }
@@ -226,6 +234,7 @@ export async function runAutomaticAuditGeneration(
       failure_message_safe: "Report generation needs staff review.",
       review_required_at: nowIso(),
       stage_updated_at: nowIso(),
+      heartbeat_at: nowIso(),
     });
     return { kind: "NEEDS_REVIEW" };
   }
@@ -243,6 +252,7 @@ export async function runAutomaticAuditGeneration(
       estimated_cost_usd: estimatedCostUsd,
       review_required_at: nowIso(),
       stage_updated_at: nowIso(),
+      heartbeat_at: nowIso(),
     });
     return { kind: "NEEDS_REVIEW" };
   }
@@ -252,6 +262,7 @@ export async function runAutomaticAuditGeneration(
     ai_receipts: allReceipts,
     estimated_cost_usd: estimatedCostUsd,
     stage_updated_at: nowIso(),
+    heartbeat_at: nowIso(),
   });
 
   if (estimatedCostUsd > context.run.budget_limit_usd) {
@@ -263,6 +274,7 @@ export async function runAutomaticAuditGeneration(
       failure_message_safe: "The automatic Audit exceeded its protected AI cost limit.",
       review_required_at: nowIso(),
       stage_updated_at: nowIso(),
+      heartbeat_at: nowIso(),
     });
     return { kind: "NEEDS_REVIEW" };
   }
@@ -283,6 +295,7 @@ export async function runAutomaticAuditGeneration(
       failure_message_safe: "The automatic report did not pass Stratxcel's delivery checks.",
       review_required_at: nowIso(),
       stage_updated_at: nowIso(),
+      heartbeat_at: nowIso(),
     });
     return { kind: "NEEDS_REVIEW" };
   }
@@ -297,6 +310,7 @@ export async function runAutomaticAuditGeneration(
     quality_score: quality.score,
     confidence_band: quality.confidenceBand,
     stage_updated_at: nowIso(),
+    heartbeat_at: nowIso(),
   });
   context = await stopIfClosed(input.runId, deps.store, input.expectedTenantId);
   if (!context) return { kind: "STOPPED" };
@@ -325,6 +339,7 @@ export async function runAutomaticAuditGeneration(
         : "The report passed review but delivery needs staff recovery.",
       ...(closed ? { stopped_at: nowIso() } : { review_required_at: nowIso() }),
       stage_updated_at: nowIso(),
+      heartbeat_at: nowIso(),
     });
     return { kind: closed ? "STOPPED" : "NEEDS_REVIEW" };
   }

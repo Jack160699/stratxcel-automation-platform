@@ -202,7 +202,7 @@ export async function GET() {
   if (visibleOrder?.id) {
     let { data: run } = await service
       .from("audit_generation_runs")
-      .select("id, status, stage, quality_outcome, confidence_band, failure_message_safe, stage_updated_at")
+      .select("id, status, stage, quality_outcome, confidence_band, failure_message_safe, stage_updated_at, heartbeat_at")
       .eq("audit_order_id", visibleOrder.id)
       .order("created_at", { ascending: false })
       .limit(1)
@@ -223,7 +223,7 @@ export async function GET() {
           if (result?.run_id) {
             const { data: newRun } = await service
               .from("audit_generation_runs")
-              .select("id, status, stage, quality_outcome, confidence_band, failure_message_safe, stage_updated_at")
+              .select("id, status, stage, quality_outcome, confidence_band, failure_message_safe, stage_updated_at, heartbeat_at")
               .eq("id", result.run_id)
               .maybeSingle();
             run = newRun;
@@ -236,19 +236,46 @@ export async function GET() {
 
     generation = run ?? null;
 
-    // Auto-advance queued audit in serverless environments
-    if (generation?.id && (generation.status === "QUEUED" || generation.stage === "QUEUED")) {
+    // Check if run needs advancement or stalled-run recovery in serverless environments
+    const isQueued = generation?.id && (generation.status === "QUEUED" || generation.stage === "QUEUED");
+    const isStalledRunning = Boolean(
+      generation?.id &&
+      generation.status === "RUNNING" &&
+      (!generation.heartbeat_at || Date.now() - new Date(generation.heartbeat_at as string).getTime() > 25_000)
+    );
+
+    if (isQueued || isStalledRunning) {
       const executor = createLiveAutomaticAuditExecutor(service);
-      void executor
-        .execute({
-          runId: generation.id as string,
+      try {
+        // Execute synchronously within request lifecycle up to 20s
+        const executionPromise = executor.execute({
+          runId: generation!.id as string,
           attemptNumber: 1,
           maxAttempts: 3,
           expectedTenantId: tenantId,
-        })
-        .catch((err) => {
-          console.warn("audit checkout: non-fatal serverless audit trigger trace", err);
         });
+        const timeoutPromise = new Promise<{ kind: string }>((resolve) =>
+          setTimeout(() => resolve({ kind: "TIMEOUT_SLICE" }), 20_000)
+        );
+        await Promise.race([executionPromise, timeoutPromise]);
+
+        // Re-read latest state to return freshest truth to the polling client
+        const { data: refreshedRun } = await service
+          .from("audit_generation_runs")
+          .select("id, status, stage, quality_outcome, confidence_band, failure_message_safe, stage_updated_at, heartbeat_at")
+          .eq("id", generation!.id as string)
+          .maybeSingle();
+        if (refreshedRun) generation = refreshedRun;
+
+        const { data: refreshedOrder } = await service
+          .from("audit_orders")
+          .select("id, status, business_name, industry, website_url, social_links, goals, deep_dive_answers, goals_answers, report_data, audit_completed_at, payment_link_id, fulfilment_source, actual_paid_cents, discount_cents")
+          .eq("id", visibleOrder.id)
+          .maybeSingle();
+        if (refreshedOrder) visibleOrder = refreshedOrder as CheckoutOrder;
+      } catch (err) {
+        console.warn("audit checkout: serverless execution trace", err);
+      }
     }
   }
 

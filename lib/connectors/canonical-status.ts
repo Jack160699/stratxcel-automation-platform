@@ -1,0 +1,458 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { getCurrentBrandBrain } from "@stratxcel/brand-brain";
+import type { PlatformIconKey } from "@/components/audit/PlatformIcon";
+
+export type CanonicalConnectionState =
+  | "CONNECTED"
+  | "DISCOVERED_PUBLICLY"
+  | "NOT_CONNECTED"
+  | "REAUTH_REQUIRED"
+  | "ERROR";
+
+export type AuthState = "AUTHENTICATED" | "UNAUTHENTICATED" | "EXPIRED" | "REVOKED";
+export type HealthState = "HEALTHY" | "DEGRADED" | "UNKNOWN" | "ERROR";
+
+export const V1_DIGITAL_PRESENCE_PLATFORMS = [
+  "website",
+  "google_business",
+  "instagram",
+  "facebook",
+  "youtube",
+  "google_analytics",
+  "google_search_console",
+  "whatsapp",
+] as const;
+
+export type V1DigitalPresencePlatform = (typeof V1_DIGITAL_PRESENCE_PLATFORMS)[number];
+
+export interface CanonicalConnectionStatus {
+  provider: V1DigitalPresencePlatform;
+  asset: "website" | "profile" | "page" | "channel" | "property" | "phone";
+  title: string;
+  tenantId: string;
+  externalAccountId: string | null;
+  displayName: string | null;
+  handle: string | null;
+  publicUrl: string | null;
+  connectionState: CanonicalConnectionState;
+  authState: AuthState;
+  healthState: HealthState;
+  capabilities: string[];
+  lastSyncedAt: string | null;
+  reauthRequired: boolean;
+  isDiscoveredPublicly: boolean;
+  isOAuth: boolean;
+  provenance: "oauth_authenticated" | "otp_verified" | "customer_supplied" | "verified_public" | "discovered_public" | "unknown";
+  error: string | null;
+}
+
+export interface TenantDigitalPresenceSummary {
+  tenantId: string;
+  connections: Record<V1DigitalPresencePlatform, CanonicalConnectionStatus>;
+  connectedCount: number;
+  discoveredCount: number;
+  lastUpdated: string;
+}
+
+const BLOCKED_SCHEMES = /^(javascript|data|file|blob|about|vbscript):/i;
+
+function isSafeHttpUrl(value: string | null | undefined): value is string {
+  if (!value) return false;
+  try {
+    const url = new URL(value.startsWith("http") ? value : `https://${value}`);
+    return (url.protocol === "https:" || url.protocol === "http:") && !BLOCKED_SCHEMES.test(value);
+  } catch {
+    return false;
+  }
+}
+
+function cleanHandle(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  if (trimmed.startsWith("@")) return trimmed;
+  if (trimmed.startsWith("+")) return trimmed;
+  try {
+    const url = new URL(trimmed.startsWith("http") ? trimmed : `https://${trimmed}`);
+    const path = url.pathname.replace(/\/+$/, "").replace(/^\/@?/, "");
+    const segment = path.split("/")[0];
+    if (segment) return `@${decodeURIComponent(segment)}`;
+    return url.hostname.replace(/^www\./, "");
+  } catch {
+    return trimmed;
+  }
+}
+
+function extractPublicProfile(provider: V1DigitalPresencePlatform, profiles: string[]): { url: string | null; handle: string | null } {
+  const needle =
+    provider === "instagram" ? "instagram.com"
+    : provider === "facebook" ? "facebook.com"
+    : provider === "youtube" ? "youtube.com"
+    : provider === "google_business" ? "google.com/maps"
+    : "";
+
+  if (!needle) return { url: null, handle: null };
+
+  const matched = profiles.find((item) => typeof item === "string" && item.toLowerCase().includes(needle));
+  if (!matched) return { url: null, handle: null };
+
+  const url = isSafeHttpUrl(matched) ? (matched.startsWith("http") ? matched : `https://${matched}`) : null;
+  return {
+    url,
+    handle: cleanHandle(matched),
+  };
+}
+
+/**
+ * Resolves the canonical connection status for all V1.5 digital presence assets
+ * for a specific tenant from database ground truth.
+ *
+ * Ground Truth Rules:
+ * 1. STATE 3 (OPERATIONALLY_READY / CONNECTED) strictly overrides PUBLIC DISCOVERY.
+ * 2. An account is only CONNECTED if the database record is active, tenant-bound, and healthy.
+ * 3. PUBLICLY_DISCOVERED is only set when no valid OAuth connection exists.
+ * 4. LinkedIn, X, and Threads are excluded from this V1.5 canonical model.
+ */
+export async function getTenantDigitalPresence(
+  supabase: SupabaseClient,
+  tenantId: string
+): Promise<TenantDigitalPresenceSummary> {
+  const now = new Date().toISOString();
+
+  // 1. Parallel query of ground truth tables
+  const [waRes, socialRes, googleRes, brandBrain] = await Promise.all([
+    supabase
+      .from("whatsapp_phone_bindings")
+      .select("id, status, display_phone_number, verified_at, updated_at")
+      .eq("tenant_id", tenantId)
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("social_accounts")
+      .select("id, platform, provider_account_id, username, display_name, status, token_health, last_sync_at, updated_at")
+      .eq("tenant_id", tenantId),
+    supabase
+      .from("search_google_connections")
+      .select("id, status, search_console_site_url, search_console_last_synced_at, ga4_property_id, ga4_property_display_name, ga4_last_synced_at, last_error, updated_at")
+      .eq("tenant_id", tenantId)
+      .maybeSingle(),
+    getCurrentBrandBrain(supabase, tenantId).catch(() => null),
+  ]);
+
+  const socialRows = socialRes.data ?? [];
+  const waRows = waRes.data ?? [];
+  const googleRow = googleRes.data ?? null;
+
+  const brandContent = (brandBrain?.content ?? {}) as Record<string, unknown>;
+  const rawProfiles: string[] = [
+    ...(Array.isArray(brandContent.online_profiles) ? brandContent.online_profiles : []),
+    ...(Array.isArray(brandContent.channels) ? brandContent.channels : []),
+    ...(Array.isArray(brandContent.verified_social_links)
+      ? (brandContent.verified_social_links as Array<{ url?: string; handle?: string }>).map((s) => s.url || s.handle || "")
+      : []),
+  ];
+  const onlineProfiles = [...new Set(rawProfiles.filter((v): v is string => typeof v === "string" && v.trim().length > 0))];
+
+  // Helper to find social account row by platform
+  const findSocialRow = (platform: string) =>
+    socialRows.find((r) => String(r.platform).toLowerCase() === platform.toLowerCase());
+
+  // 1. Website
+  const rawWebsite = typeof brandContent.website_url === "string" ? brandContent.website_url.trim() : "";
+  const validWebsiteUrl = isSafeHttpUrl(rawWebsite) ? (rawWebsite.startsWith("http") ? rawWebsite : `https://${rawWebsite}`) : null;
+  const websiteStatus: CanonicalConnectionStatus = {
+    provider: "website",
+    asset: "website",
+    title: "Website",
+    tenantId,
+    externalAccountId: null,
+    displayName: validWebsiteUrl ? new URL(validWebsiteUrl).hostname.replace(/^www\./, "") : null,
+    handle: validWebsiteUrl ? new URL(validWebsiteUrl).hostname.replace(/^www\./, "") : null,
+    publicUrl: validWebsiteUrl,
+    connectionState: validWebsiteUrl ? "CONNECTED" : "NOT_CONNECTED",
+    authState: validWebsiteUrl ? "AUTHENTICATED" : "UNAUTHENTICATED",
+    healthState: validWebsiteUrl ? "HEALTHY" : "UNKNOWN",
+    capabilities: ["domain_crawling", "seo_indexing", "content_extraction"],
+    lastSyncedAt: brandBrain?.updated_at ?? null,
+    reauthRequired: false,
+    isDiscoveredPublicly: false,
+    isOAuth: false,
+    provenance: validWebsiteUrl ? "customer_supplied" : "unknown",
+    error: null,
+  };
+
+  // 2. Google Business Profile
+  const gbSocial = findSocialRow("google_business") || findSocialRow("google");
+  const gbPublic = extractPublicProfile("google_business", onlineProfiles);
+  const gbConnected = gbSocial && String(gbSocial.status).toUpperCase() === "CONNECTED";
+  const gbReauth = gbSocial && (String(gbSocial.status).toUpperCase().includes("REAUTH") || gbSocial.token_health === "INVALID");
+  const gbError = gbSocial && String(gbSocial.status).toUpperCase() === "ERROR";
+
+  const googleBusinessStatus: CanonicalConnectionStatus = {
+    provider: "google_business",
+    asset: "profile",
+    title: "Google Business",
+    tenantId,
+    externalAccountId: gbSocial?.provider_account_id ?? null,
+    displayName: gbSocial?.display_name || gbSocial?.username || (gbConnected ? "Google Business Profile" : null),
+    handle: gbSocial?.username ? cleanHandle(gbSocial.username) : gbPublic.handle,
+    publicUrl: gbPublic.url,
+    connectionState: gbConnected
+      ? "CONNECTED"
+      : gbReauth
+      ? "REAUTH_REQUIRED"
+      : gbError
+      ? "ERROR"
+      : gbPublic.url
+      ? "DISCOVERED_PUBLICLY"
+      : "NOT_CONNECTED",
+    authState: gbConnected ? "AUTHENTICATED" : gbReauth ? "EXPIRED" : "UNAUTHENTICATED",
+    healthState: gbConnected ? "HEALTHY" : gbReauth || gbError ? "DEGRADED" : "UNKNOWN",
+    capabilities: ["local_seo", "review_sync", "business_hours"],
+    lastSyncedAt: gbSocial?.last_sync_at ?? gbSocial?.updated_at ?? null,
+    reauthRequired: Boolean(gbReauth),
+    isDiscoveredPublicly: Boolean(gbPublic.url && !gbConnected),
+    isOAuth: true,
+    provenance: gbConnected ? "oauth_authenticated" : gbPublic.url ? "discovered_public" : "unknown",
+    error: gbError ? "Google Business connection error. Please reconnect." : null,
+  };
+
+  // 3. Instagram
+  const igSocial = findSocialRow("instagram");
+  const igPublic = extractPublicProfile("instagram", onlineProfiles);
+  const igConnected = igSocial && String(igSocial.status).toUpperCase() === "CONNECTED";
+  const igReauth = igSocial && (String(igSocial.status).toUpperCase().includes("REAUTH") || igSocial.token_health === "INVALID");
+  const igError = igSocial && String(igSocial.status).toUpperCase() === "ERROR";
+
+  const instagramStatus: CanonicalConnectionStatus = {
+    provider: "instagram",
+    asset: "profile",
+    title: "Instagram",
+    tenantId,
+    externalAccountId: igSocial?.provider_account_id ?? null,
+    displayName: igSocial?.display_name || igSocial?.username || (igConnected ? "Instagram Business" : null),
+    handle: igSocial?.username ? cleanHandle(igSocial.username) : igPublic.handle,
+    publicUrl: igConnected && igSocial?.username ? `https://instagram.com/${igSocial.username.replace(/^@/, "")}` : igPublic.url,
+    connectionState: igConnected
+      ? "CONNECTED"
+      : igReauth
+      ? "REAUTH_REQUIRED"
+      : igError
+      ? "ERROR"
+      : igPublic.url
+      ? "DISCOVERED_PUBLICLY"
+      : "NOT_CONNECTED",
+    authState: igConnected ? "AUTHENTICATED" : igReauth ? "EXPIRED" : "UNAUTHENTICATED",
+    healthState: igConnected ? "HEALTHY" : igReauth || igError ? "DEGRADED" : "UNKNOWN",
+    capabilities: ["direct_publishing", "reels_publishing", "insights_analytics", "comment_monitoring"],
+    lastSyncedAt: igSocial?.last_sync_at ?? igSocial?.updated_at ?? null,
+    reauthRequired: Boolean(igReauth),
+    isDiscoveredPublicly: Boolean(igPublic.url && !igConnected),
+    isOAuth: true,
+    provenance: igConnected ? "oauth_authenticated" : igPublic.url ? "discovered_public" : "unknown",
+    error: igError ? "Instagram authorization expired. Please reconnect." : null,
+  };
+
+  // 4. Facebook
+  const fbSocial = findSocialRow("facebook");
+  const fbPublic = extractPublicProfile("facebook", onlineProfiles);
+  const fbConnected = fbSocial && String(fbSocial.status).toUpperCase() === "CONNECTED";
+  const fbReauth = fbSocial && (String(fbSocial.status).toUpperCase().includes("REAUTH") || fbSocial.token_health === "INVALID");
+  const fbError = fbSocial && String(fbSocial.status).toUpperCase() === "ERROR";
+
+  const facebookStatus: CanonicalConnectionStatus = {
+    provider: "facebook",
+    asset: "page",
+    title: "Facebook",
+    tenantId,
+    externalAccountId: fbSocial?.provider_account_id ?? null,
+    displayName: fbSocial?.display_name || fbSocial?.username || (fbConnected ? "Facebook Page" : null),
+    handle: fbSocial?.username ? cleanHandle(fbSocial.username) : fbPublic.handle,
+    publicUrl: fbConnected && fbSocial?.username ? `https://facebook.com/${fbSocial.username.replace(/^@/, "")}` : fbPublic.url,
+    connectionState: fbConnected
+      ? "CONNECTED"
+      : fbReauth
+      ? "REAUTH_REQUIRED"
+      : fbError
+      ? "ERROR"
+      : fbPublic.url
+      ? "DISCOVERED_PUBLICLY"
+      : "NOT_CONNECTED",
+    authState: fbConnected ? "AUTHENTICATED" : fbReauth ? "EXPIRED" : "UNAUTHENTICATED",
+    healthState: fbConnected ? "HEALTHY" : fbReauth || fbError ? "DEGRADED" : "UNKNOWN",
+    capabilities: ["page_publishing", "page_insights", "community_engagement"],
+    lastSyncedAt: fbSocial?.last_sync_at ?? fbSocial?.updated_at ?? null,
+    reauthRequired: Boolean(fbReauth),
+    isDiscoveredPublicly: Boolean(fbPublic.url && !fbConnected),
+    isOAuth: true,
+    provenance: fbConnected ? "oauth_authenticated" : fbPublic.url ? "discovered_public" : "unknown",
+    error: fbError ? "Facebook page token invalid. Please reconnect." : null,
+  };
+
+  // 5. YouTube
+  const ytSocial = findSocialRow("youtube");
+  const ytPublic = extractPublicProfile("youtube", onlineProfiles);
+  const ytConnected = ytSocial && String(ytSocial.status).toUpperCase() === "CONNECTED";
+  const ytReauth = ytSocial && (String(ytSocial.status).toUpperCase().includes("REAUTH") || ytSocial.token_health === "INVALID");
+  const ytError = ytSocial && String(ytSocial.status).toUpperCase() === "ERROR";
+
+  const youtubeStatus: CanonicalConnectionStatus = {
+    provider: "youtube",
+    asset: "channel",
+    title: "YouTube",
+    tenantId,
+    externalAccountId: ytSocial?.provider_account_id ?? null,
+    displayName: ytSocial?.display_name || ytSocial?.username || (ytConnected ? "YouTube Channel" : null),
+    handle: ytSocial?.username ? cleanHandle(ytSocial.username) : ytPublic.handle,
+    publicUrl: ytConnected && ytSocial?.username ? `https://youtube.com/@${ytSocial.username.replace(/^@/, "")}` : ytPublic.url,
+    connectionState: ytConnected
+      ? "CONNECTED"
+      : ytReauth
+      ? "REAUTH_REQUIRED"
+      : ytError
+      ? "ERROR"
+      : ytPublic.url
+      ? "DISCOVERED_PUBLICLY"
+      : "NOT_CONNECTED",
+    authState: ytConnected ? "AUTHENTICATED" : ytReauth ? "EXPIRED" : "UNAUTHENTICATED",
+    healthState: ytConnected ? "HEALTHY" : ytReauth || ytError ? "DEGRADED" : "UNKNOWN",
+    capabilities: ["video_upload", "shorts_publishing", "channel_analytics"],
+    lastSyncedAt: ytSocial?.last_sync_at ?? ytSocial?.updated_at ?? null,
+    reauthRequired: Boolean(ytReauth),
+    isDiscoveredPublicly: Boolean(ytPublic.url && !ytConnected),
+    isOAuth: true,
+    provenance: ytConnected ? "oauth_authenticated" : ytPublic.url ? "discovered_public" : "unknown",
+    error: ytError ? "YouTube authorization failed. Please reconnect." : null,
+  };
+
+  // 6. Google Analytics (GA4)
+  const ga4Connected = Boolean(googleRow && googleRow.status === "connected" && googleRow.ga4_property_id);
+  const ga4AccountReady = Boolean(googleRow && googleRow.status === "connected");
+  const ga4Reauth = Boolean(googleRow && (googleRow.status === "revoked" || googleRow.status === "error"));
+  const ga4Error = googleRow?.last_error ?? null;
+
+  const googleAnalyticsStatus: CanonicalConnectionStatus = {
+    provider: "google_analytics",
+    asset: "property",
+    title: "Google Analytics (GA4)",
+    tenantId,
+    externalAccountId: googleRow?.ga4_property_id ?? null,
+    displayName: googleRow?.ga4_property_display_name || (googleRow?.ga4_property_id ? `GA4: ${googleRow.ga4_property_id}` : ga4AccountReady ? "Google OAuth Connected (Select Property)" : null),
+    handle: googleRow?.ga4_property_id ?? null,
+    publicUrl: null,
+    connectionState: ga4Connected
+      ? "CONNECTED"
+      : ga4AccountReady
+      ? "CONNECTED" // Account is authenticated, property selection available
+      : ga4Reauth
+      ? "REAUTH_REQUIRED"
+      : "NOT_CONNECTED",
+    authState: ga4AccountReady ? "AUTHENTICATED" : ga4Reauth ? "EXPIRED" : "UNAUTHENTICATED",
+    healthState: ga4Connected ? "HEALTHY" : ga4AccountReady ? "DEGRADED" : "UNKNOWN",
+    capabilities: ["traffic_analytics", "conversion_tracking", "session_metrics"],
+    lastSyncedAt: googleRow?.ga4_last_synced_at ?? googleRow?.updated_at ?? null,
+    reauthRequired: Boolean(ga4Reauth),
+    isDiscoveredPublicly: false,
+    isOAuth: true,
+    provenance: ga4AccountReady ? "oauth_authenticated" : "unknown",
+    error: ga4Reauth ? (ga4Error || "Google Analytics authorization expired") : null,
+  };
+
+  // 7. Google Search Console
+  const scConnected = Boolean(googleRow && googleRow.status === "connected" && googleRow.search_console_site_url);
+  const scAccountReady = Boolean(googleRow && googleRow.status === "connected");
+  const scReauth = Boolean(googleRow && (googleRow.status === "revoked" || googleRow.status === "error"));
+  const scError = googleRow?.last_error ?? null;
+
+  const googleSearchConsoleStatus: CanonicalConnectionStatus = {
+    provider: "google_search_console",
+    asset: "property",
+    title: "Google Search Console",
+    tenantId,
+    externalAccountId: googleRow?.search_console_site_url ?? null,
+    displayName: googleRow?.search_console_site_url || (scAccountReady ? "Google OAuth Connected (Select Property)" : null),
+    handle: googleRow?.search_console_site_url ?? null,
+    publicUrl: googleRow?.search_console_site_url ?? null,
+    connectionState: scConnected
+      ? "CONNECTED"
+      : scAccountReady
+      ? "CONNECTED"
+      : scReauth
+      ? "REAUTH_REQUIRED"
+      : "NOT_CONNECTED",
+    authState: scAccountReady ? "AUTHENTICATED" : scReauth ? "EXPIRED" : "UNAUTHENTICATED",
+    healthState: scConnected ? "HEALTHY" : scAccountReady ? "DEGRADED" : "UNKNOWN",
+    capabilities: ["search_indexing", "keyword_impressions", "crawl_errors"],
+    lastSyncedAt: googleRow?.search_console_last_synced_at ?? googleRow?.updated_at ?? null,
+    reauthRequired: Boolean(scReauth),
+    isDiscoveredPublicly: false,
+    isOAuth: true,
+    provenance: scAccountReady ? "oauth_authenticated" : "unknown",
+    error: scReauth ? (scError || "Google Search Console authorization expired") : null,
+  };
+
+  // 8. WhatsApp Verified Number
+  const activeWa = waRows.find((r) => r.status === "active");
+  const disabledWa = waRows.find((r) => r.status === "disabled" || r.status === "revoked");
+  const waRawFromBrain = typeof brandContent.whatsapp_number === "string" ? brandContent.whatsapp_number : null;
+
+  const whatsappStatus: CanonicalConnectionStatus = {
+    provider: "whatsapp",
+    asset: "phone",
+    title: "WhatsApp Number",
+    tenantId,
+    externalAccountId: activeWa?.display_phone_number ?? activeWa?.id ?? null,
+    displayName: activeWa?.display_phone_number || waRawFromBrain || null,
+    handle: activeWa?.display_phone_number || waRawFromBrain || null,
+    publicUrl: null,
+    connectionState: activeWa
+      ? "CONNECTED"
+      : disabledWa
+      ? "REAUTH_REQUIRED"
+      : waRawFromBrain
+      ? "DISCOVERED_PUBLICLY"
+      : "NOT_CONNECTED",
+    authState: activeWa ? "AUTHENTICATED" : "UNAUTHENTICATED",
+    healthState: activeWa ? "HEALTHY" : disabledWa ? "DEGRADED" : "UNKNOWN",
+    capabilities: ["lead_alerts", "audit_delivery", "client_messaging"],
+    lastSyncedAt: activeWa?.verified_at ?? activeWa?.updated_at ?? null,
+    reauthRequired: Boolean(disabledWa && !activeWa),
+    isDiscoveredPublicly: Boolean(waRawFromBrain && !activeWa),
+    isOAuth: false,
+    provenance: activeWa ? "otp_verified" : waRawFromBrain ? "customer_supplied" : "unknown",
+    error: disabledWa && !activeWa ? "WhatsApp number verification disabled. Please re-verify." : null,
+  };
+
+  const connections: Record<V1DigitalPresencePlatform, CanonicalConnectionStatus> = {
+    website: websiteStatus,
+    google_business: googleBusinessStatus,
+    instagram: instagramStatus,
+    facebook: facebookStatus,
+    youtube: youtubeStatus,
+    google_analytics: googleAnalyticsStatus,
+    google_search_console: googleSearchConsoleStatus,
+    whatsapp: whatsappStatus,
+  };
+
+  const connectedCount = Object.values(connections).filter((c) => c.connectionState === "CONNECTED").length;
+  const discoveredCount = Object.values(connections).filter((c) => c.connectionState === "DISCOVERED_PUBLICLY").length;
+
+  return {
+    tenantId,
+    connections,
+    connectedCount,
+    discoveredCount,
+    lastUpdated: now,
+  };
+}
+
+/**
+ * Resolves a single provider's connection status.
+ */
+export async function getBusinessConnectionStatus(
+  supabase: SupabaseClient,
+  tenantId: string,
+  provider: V1DigitalPresencePlatform
+): Promise<CanonicalConnectionStatus> {
+  const summary = await getTenantDigitalPresence(supabase, tenantId);
+  return summary.connections[provider];
+}

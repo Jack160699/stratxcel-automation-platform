@@ -62,7 +62,7 @@ export function MobileBottomNav({
                 key={item.key}
                 href={item.href}
                 aria-current={active ? "page" : undefined}
-                className="relative flex min-h-[48px] flex-col items-center justify-center gap-0.5"
+                className="relative flex min-h-11 min-h-[48px] flex-col items-center justify-center gap-0.5"
               >
                 {content}
               </Link>
@@ -72,7 +72,7 @@ export function MobileBottomNav({
             type="button"
             onClick={() => setMoreOpen(true)}
             aria-label="Open more menu"
-            className="relative flex min-h-[48px] flex-col items-center justify-center gap-0.5 text-sx-text-muted transition-transform active:scale-95"
+            className="relative flex min-h-11 min-h-[48px] flex-col items-center justify-center gap-0.5 text-sx-text-muted transition-transform active:scale-95"
           >
             <span
               className={`flex h-7 w-7 items-center justify-center rounded-full ${
@@ -81,9 +81,7 @@ export function MobileBottomNav({
             >
               <MoreIcon />
             </span>
-            <span className={`text-[11px] font-semibold tracking-tight ${moreOpen ? "text-sx-accent font-bold" : "text-sx-text-muted"}`}>
-              More
-            </span>
+            <span className={`text-[11px] font-semibold tracking-tight ${moreOpen ? "text-sx-accent font-bold" : "text-sx-text-muted"}`}>More</span>
           </button>
         </div>
       </nav>

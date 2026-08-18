@@ -27,6 +27,10 @@
     {
       "path": "/api/admin/operating-brain/cron/retention",
       "schedule": "0 20 * * *"
+    },
+    {
+      "path": "/api/platform/audit/worker",
+      "schedule": "*/5 * * * *"
     }
   ]
 }
