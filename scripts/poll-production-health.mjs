@@ -8,8 +8,8 @@ async function main() {
         headers: { "Cache-Control": "no-cache" },
       });
       const data = await res.json();
-      console.log(`[Attempt ${i}/25] HTTP ${res.status} | Commit: ${data.commit ?? "null"} | Status: ${data.status}`);
-      if (data.commit) {
+      console.log(`[Attempt ${i}/30] HTTP ${res.status} | Commit: ${data.commit ?? "null"} | Status: ${data.status}`);
+      if (data.commit && (data.commit.startsWith("b62b0ef") || data.commit === "b62b0ef")) {
         console.log(`\n🎉 Production deployed with commit: ${data.commit}`);
         process.exit(0);
       }
