@@ -4,8 +4,8 @@ import { StatusBadge } from "./StatusBadge";
 export interface PlatformAccountRowData {
   platform: Platform;
   handle: string | null;
-  status: "CONNECTED" | "REAUTH_REQUIRED" | "DISCONNECTED" | "NOT_CONNECTED";
-  tokenHealth?: "HEALTHY" | "DEGRADED" | "INVALID" | null;
+  status: "CONNECTED" | "RECONNECT_REQUIRED" | "DISCONNECTED" | "NOT_CONNECTED";
+  tokenHealth?: "HEALTHY" | "DEGRADED" | "EXPIRED" | null;
   lastSyncAt: string | null;
 }
 
@@ -23,7 +23,7 @@ function relativeTime(iso: string | null): string | null {
 
 const STATUS_LABEL: Record<PlatformAccountRowData["status"], string> = {
   CONNECTED: "CONNECTED",
-  REAUTH_REQUIRED: "ACTION REQUIRED",
+  RECONNECT_REQUIRED: "ACTION REQUIRED",
   DISCONNECTED: "DISCONNECTED",
   NOT_CONNECTED: "NOT CONFIGURED",
 };

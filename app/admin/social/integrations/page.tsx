@@ -48,7 +48,7 @@ export default async function IntegrationsPage() {
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {PLATFORMS.map((platform) => {
             const acct = accounts.find((a) => a.platform === platform && a.status === "CONNECTED");
-            const reauth = accounts.find((a) => a.platform === platform && a.status === "REAUTH_REQUIRED");
+            const reauth = accounts.find((a) => a.platform === platform && a.status === "RECONNECT_REQUIRED");
             const active = acct ?? reauth;
             return (
               <div key={platform} className="saut-card p-4">
