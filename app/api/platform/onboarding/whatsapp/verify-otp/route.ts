@@ -136,9 +136,12 @@ export async function POST(req: NextRequest) {
       const { data: mems } = await service
         .from("tenant_members")
         .select("tenant_id")
-        .eq("user_id", user.id)
-        .limit(1);
-      if (mems && mems.length > 0) {
+        .eq("user_id", user.id);
+      // Only auto-resolve when unambiguous -- same reasoning as the OAuth
+      // callback's tenant fallback (app/api/social/oauth/[provider]/callback/
+      // route.ts): a user with more than one tenant must never have a
+      // connector silently attached to an arbitrarily-picked one.
+      if (mems && mems.length === 1) {
         targetTenantId = mems[0].tenant_id;
       }
     }

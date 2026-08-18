@@ -183,7 +183,14 @@ function createFakeDb() {
   });
 
   assert.equal(summary.whatsappProvisioned, true, "WhatsApp binding was provisioned");
-  assert.deepEqual(summary.socialAccountsProvisioned.sort(), ["instagram", "youtube"], "Social accounts provisioned");
+  // google_business must land in social_accounts, not just search_google_connections --
+  // the canonical resolver (lib/connectors/canonical-status.ts's
+  // getTenantDigitalPresence) reads Google Business's CONNECTED state from
+  // social_accounts (findSocialRow("google_business")) exclusively.
+  // Leaving it out here meant every onboarding-time Google Business
+  // connection was permanently stuck showing NOT_CONNECTED even after a
+  // real, successful OAuth grant.
+  assert.deepEqual(summary.socialAccountsProvisioned.sort(), ["google_business", "instagram", "youtube"], "Social accounts provisioned");
   assert.equal(summary.googleConnectionsProvisioned, true, "Google connection provisioned");
 
   assert.equal(whatsappBindings.length, 1);
@@ -191,9 +198,10 @@ function createFakeDb() {
   assert.equal(whatsappBindings[0].display_phone_number, "+919876543210");
   assert.equal(whatsappBindings[0].status, "active");
 
-  assert.equal(socialAccounts.length, 2);
+  assert.equal(socialAccounts.length, 3);
   assert.equal(socialAccounts.find((s) => s.platform === "instagram")?.status, "CONNECTED");
   assert.equal(socialAccounts.find((s) => s.platform === "youtube")?.status, "CONNECTED");
+  assert.equal(socialAccounts.find((s) => s.platform === "google_business")?.status, "CONNECTED");
 
   assert.equal(googleConnections.length, 1);
   assert.equal(googleConnections[0].tenant_id, "tenant_alpha");

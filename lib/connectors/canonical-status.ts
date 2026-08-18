@@ -391,8 +391,15 @@ export async function getTenantDigitalPresence(
   };
 
   // 8. WhatsApp Verified Number
+  // "disabled" (POST /api/platform/integrations/disconnect's own doing --
+  // a deliberate customer action) and "revoked" (the provider invalidated
+  // it -- an actual error) are different signals and must not collapse
+  // into the same REAUTH_REQUIRED state: a customer who just clicked
+  // Disconnect must see a clean not-connected card, never something that
+  // reads as "something is broken, please fix it."
   const activeWa = waRows.find((r) => r.status === "active");
-  const disabledWa = waRows.find((r) => r.status === "disabled" || r.status === "revoked");
+  const revokedWa = waRows.find((r) => r.status === "revoked");
+  const disabledWa = waRows.find((r) => r.status === "disabled");
   const waRawFromBrain = typeof brandContent.whatsapp_number === "string" ? brandContent.whatsapp_number : null;
 
   const whatsappStatus: CanonicalConnectionStatus = {
@@ -406,20 +413,20 @@ export async function getTenantDigitalPresence(
     publicUrl: null,
     connectionState: activeWa
       ? "CONNECTED"
-      : disabledWa
+      : revokedWa
       ? "REAUTH_REQUIRED"
-      : waRawFromBrain
+      : waRawFromBrain && !disabledWa
       ? "DISCOVERED_PUBLICLY"
       : "NOT_CONNECTED",
     authState: activeWa ? "AUTHENTICATED" : "UNAUTHENTICATED",
-    healthState: activeWa ? "HEALTHY" : disabledWa ? "DEGRADED" : "UNKNOWN",
+    healthState: activeWa ? "HEALTHY" : revokedWa ? "DEGRADED" : "UNKNOWN",
     capabilities: ["lead_alerts", "audit_delivery", "client_messaging"],
     lastSyncedAt: activeWa?.verified_at ?? activeWa?.updated_at ?? null,
-    reauthRequired: Boolean(disabledWa && !activeWa),
-    isDiscoveredPublicly: Boolean(waRawFromBrain && !activeWa),
+    reauthRequired: Boolean(revokedWa && !activeWa),
+    isDiscoveredPublicly: Boolean(waRawFromBrain && !activeWa && !disabledWa),
     isOAuth: false,
     provenance: activeWa ? "otp_verified" : waRawFromBrain ? "customer_supplied" : "unknown",
-    error: disabledWa && !activeWa ? "WhatsApp number verification disabled. Please re-verify." : null,
+    error: revokedWa && !activeWa ? "WhatsApp number verification revoked. Please re-verify." : null,
   };
 
   const connections: Record<V1DigitalPresencePlatform, CanonicalConnectionStatus> = {

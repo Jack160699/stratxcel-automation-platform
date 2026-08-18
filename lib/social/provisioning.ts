@@ -102,8 +102,15 @@ export async function provisionTenantConnectorsFromMetadata(
     console.warn("provisionTenantConnectors: non-fatal whatsapp binding error", err);
   }
 
-  // 2. Provision Social Accounts (Instagram, Facebook, YouTube, Threads, LinkedIn)
-  const socialPlatforms = ["instagram", "facebook", "youtube", "threads", "linkedin"] as const;
+  // 2. Provision Social Accounts (Instagram, Facebook, YouTube, Threads, LinkedIn, Google Business Profile)
+  // google_business must be included here -- the OAuth callback normalizes
+  // both "google" and "google_business" providers to the platform key
+  // "google_business" (see app/api/social/oauth/[provider]/callback/route.ts's
+  // canonicalPlatformKey), and social_accounts_platform_check now allows it
+  // (see 20260818231000_social_accounts_allow_google_business_platform.sql).
+  // Omitting it here left Google Business Profile connections permanently
+  // stuck in user_metadata with no canonical social_accounts row.
+  const socialPlatforms = ["instagram", "facebook", "youtube", "threads", "linkedin", "google_business"] as const;
 
   for (const platform of socialPlatforms) {
     try {

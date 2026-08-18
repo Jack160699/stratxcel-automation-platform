@@ -77,22 +77,38 @@ export async function POST(request: Request) {
         })
         .in("account_id", accountIds);
     }
-  } else if (normalizedProvider === "google_search_console") {
+  } else if (normalizedProvider === "google_search_console" || normalizedProvider === "google_analytics") {
+    // search_google_connections holds ONE shared Google OAuth grant behind
+    // TWO independently-disconnectable sub-connectors (Search Console site,
+    // GA4 property). Clearing only this sub-connector's own field left
+    // `status` untouched at 'connected', and the canonical resolver
+    // (lib/connectors/canonical-status.ts) treats status==='connected' as
+    // CONNECTED regardless of whether a property is selected -- so
+    // "Disconnect" here was a no-op from the customer's point of view; the
+    // card kept showing CONNECTED. Only drop status to 'disconnected' (and
+    // revoke the shared refresh token) once BOTH sub-connectors are clear;
+    // otherwise the sibling sub-connector legitimately keeps the shared
+    // OAuth grant alive.
+    const { data: current } = await service
+      .from("search_google_connections")
+      .select("search_console_site_url, ga4_property_id")
+      .eq("tenant_id", tenantId)
+      .maybeSingle();
+
+    const clearingSearchConsole = normalizedProvider === "google_search_console";
+    const siblingStillSet = clearingSearchConsole
+      ? Boolean(current?.ga4_property_id)
+      : Boolean(current?.search_console_site_url);
+
     await service
       .from("search_google_connections")
       .update({
-        search_console_site_url: null,
-        search_console_last_synced_at: null,
-        updated_at: now,
-      })
-      .eq("tenant_id", tenantId);
-  } else if (normalizedProvider === "google_analytics") {
-    await service
-      .from("search_google_connections")
-      .update({
-        ga4_property_id: null,
-        ga4_property_display_name: null,
-        ga4_last_synced_at: null,
+        ...(clearingSearchConsole
+          ? { search_console_site_url: null, search_console_last_synced_at: null }
+          : { ga4_property_id: null, ga4_property_display_name: null, ga4_last_synced_at: null }),
+        ...(siblingStillSet
+          ? {}
+          : { status: "disconnected", encrypted_refresh_token_ref: null, granted_scopes: [] }),
         updated_at: now,
       })
       .eq("tenant_id", tenantId);

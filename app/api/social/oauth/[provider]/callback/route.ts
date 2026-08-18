@@ -227,9 +227,15 @@ export async function GET(
           const { data: mems } = await service
             .from("tenant_members")
             .select("tenant_id")
-            .eq("user_id", userId)
-            .limit(1);
-          if (mems && mems.length > 0) {
+            .eq("user_id", userId);
+          // Only auto-resolve when the membership is unambiguous. A user
+          // with more than one tenant must never have a connector silently
+          // attached to an arbitrarily-picked one (Postgres gives no
+          // ordering guarantee without an explicit ORDER BY, so an earlier
+          // `.limit(1)` here was picking whichever row happened to come
+          // back first) -- fall through to the metadata-only path instead,
+          // to be reconciled once the caller supplies an explicit tenantId.
+          if (mems && mems.length === 1) {
             targetTenantId = mems[0].tenant_id;
           }
         }
