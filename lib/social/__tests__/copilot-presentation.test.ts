@@ -16,7 +16,7 @@ import { quickActionsForPath, contextChipForPath } from "../../../app/admin/(she
 import type { AgentSessionRow } from "../repositories/agent.ts";
 
 function session(id: string, updatedAt: string): AgentSessionRow {
-  return { id, owner_id: "owner-1", title: `Session ${id}`, status: "READY", context: {}, created_at: updatedAt, updated_at: updatedAt };
+  return { id, owner_id: "owner-1", tenant_id: null, title: `Session ${id}`, status: "READY", context: {}, created_at: updatedAt, updated_at: updatedAt };
 }
 
 function run() {

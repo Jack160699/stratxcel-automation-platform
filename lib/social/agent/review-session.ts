@@ -2,7 +2,7 @@
  * Load / assemble the canonical current Social Copilot review from persisted actions.
  */
 
-import type { OwnerContext } from "../db-context.ts";
+import { type AgentActorContext, isTenantAgentContext } from "../agent-tenant-types.ts";
 import { getSessionDetail, type AgentActionRow } from "../repositories/agent.ts";
 import { getBrandProfile } from "../repositories/brand.ts";
 import { getAutomationSettings } from "../repositories/automation.ts";
@@ -44,7 +44,7 @@ export function currentActiveReviewId(sessionId: string, revision: number): stri
 }
 
 export async function loadCurrentReviewArtifact(
-  ctx: OwnerContext,
+  ctx: AgentActorContext,
   sessionId: string,
   options?: { reviewId?: string | null },
 ): Promise<SocialCopilotReviewArtifact | null> {
@@ -120,7 +120,7 @@ export async function loadCurrentReviewArtifact(
   });
 
   return buildSocialCopilotReviewArtifact({
-    tenantId: ctx.ownerId,
+    tenantId: isTenantAgentContext(ctx) ? ctx.tenantId : ctx.ownerId,
     missionId: str(familyActions[0]?.input?.missionId) || sessionId,
     sessionId,
     reviewId,

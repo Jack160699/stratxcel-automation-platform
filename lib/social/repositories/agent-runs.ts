@@ -1,4 +1,4 @@
-import type { OwnerContext } from "../db-context.ts";
+import { type AgentReadContext } from "../agent-tenant-types.ts";
 
 export type RunEventType =
   | "RUN_STARTED"
@@ -39,7 +39,7 @@ export interface AgentRunEventRow {
   created_at: string;
 }
 
-export async function startRun(ctx: OwnerContext, sessionId: string): Promise<string> {
+export async function startRun(ctx: AgentReadContext, sessionId: string): Promise<string> {
   const { data, error } = await ctx.supabase
     .from("social_agent_runs")
     .insert({ session_id: sessionId, status: "RUNNING" })
@@ -49,12 +49,12 @@ export async function startRun(ctx: OwnerContext, sessionId: string): Promise<st
   return data.id as string;
 }
 
-export async function getRun(ctx: OwnerContext, runId: string): Promise<AgentRunRow | null> {
+export async function getRun(ctx: AgentReadContext, runId: string): Promise<AgentRunRow | null> {
   const { data } = await ctx.supabase.from("social_agent_runs").select("*").eq("id", runId).maybeSingle();
   return data as AgentRunRow | null;
 }
 
-export async function completeRun(ctx: OwnerContext, runId: string, status: "COMPLETED" | "FAILED", errorReason?: string) {
+export async function completeRun(ctx: AgentReadContext, runId: string, status: "COMPLETED" | "FAILED", errorReason?: string) {
   await ctx.supabase
     .from("social_agent_runs")
     .update({ status, error_reason: errorReason ?? null, completed_at: new Date().toISOString() })
@@ -62,7 +62,7 @@ export async function completeRun(ctx: OwnerContext, runId: string, status: "COM
 }
 
 export async function recordRunEvent(
-  ctx: OwnerContext,
+  ctx: AgentReadContext,
   runId: string,
   event: { type: RunEventType; label: string; toolName?: string; status?: RunEventStatus; meta?: Record<string, unknown> }
 ) {
@@ -76,7 +76,7 @@ export async function recordRunEvent(
   });
 }
 
-export async function getLatestRun(ctx: OwnerContext, sessionId: string): Promise<AgentRunRow | null> {
+export async function getLatestRun(ctx: AgentReadContext, sessionId: string): Promise<AgentRunRow | null> {
   const { data } = await ctx.supabase
     .from("social_agent_runs")
     .select("*")
@@ -87,7 +87,7 @@ export async function getLatestRun(ctx: OwnerContext, sessionId: string): Promis
   return data as AgentRunRow | null;
 }
 
-export async function getRunEvents(ctx: OwnerContext, runId: string): Promise<AgentRunEventRow[]> {
+export async function getRunEvents(ctx: AgentReadContext, runId: string): Promise<AgentRunEventRow[]> {
   const { data } = await ctx.supabase
     .from("social_agent_run_events")
     .select("*")
@@ -97,7 +97,7 @@ export async function getRunEvents(ctx: OwnerContext, runId: string): Promise<Ag
 }
 
 export async function getRunWithEvents(
-  ctx: OwnerContext,
+  ctx: AgentReadContext,
   runId: string,
   after?: string | null
 ): Promise<{ run: AgentRunRow | null; events: AgentRunEventRow[] }> {
@@ -113,7 +113,7 @@ export async function getRunWithEvents(
   return { run, events: (data ?? []) as AgentRunEventRow[] };
 }
 
-export async function getLatestRunWithEvents(ctx: OwnerContext, sessionId: string): Promise<{ run: AgentRunRow | null; events: AgentRunEventRow[] }> {
+export async function getLatestRunWithEvents(ctx: AgentReadContext, sessionId: string): Promise<{ run: AgentRunRow | null; events: AgentRunEventRow[] }> {
   const run = await getLatestRun(ctx, sessionId);
   if (!run) return { run: null, events: [] };
   const events = await getRunEvents(ctx, run.id);

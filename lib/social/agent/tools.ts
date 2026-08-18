@@ -9,7 +9,7 @@ import { createContentMaster, createContentVariant, listContentMaster } from "..
 import { scheduleJob, cancelJob } from "../repositories/publishing";
 import { upsertAutomationSettings } from "../repositories/automation";
 import { createSupabaseServiceClient } from "../../supabase/service";
-import type { OwnerContext } from "../db-context";
+import { type AgentActorContext, isTenantAgentContext } from "../agent-tenant-types.ts";
 import type { ToolSchema } from "./provider";
 import { CONTENT_OBJECTIVE_VALUES, platformsMatch } from "../content-options";
 import {
@@ -34,7 +34,7 @@ export interface AgentTool {
   mutating: boolean;
   /** Overrides the orchestrator's default tool-output character budget for this tool specifically. */
   outputBudget?: number;
-  execute(ctx: OwnerContext, args: Record<string, unknown>): Promise<unknown>;
+  execute(ctx: AgentActorContext, args: Record<string, unknown>): Promise<unknown>;
 }
 
 function str(args: Record<string, unknown>, key: string, fallback = ""): string {
@@ -53,7 +53,14 @@ const inspectHealth: AgentTool = {
     parameters: { type: "object", properties: {} },
   },
   mutating: false,
-  execute: async (ctx) => runHealthChecks(ctx),
+  execute: async (ctx) => {
+    // runHealthChecks checks StratXcel-staff-specific system health
+    // (stratxcel_admins membership, the shared publishing worker) — not a
+    // per-tenant concept. inspect_accounts already covers "are MY connected
+    // accounts healthy" for tenant sessions.
+    if (isTenantAgentContext(ctx)) throw new Error("System health isn't a per-workspace concept — use inspect_accounts to check your connected accounts instead.");
+    return runHealthChecks(ctx);
+  },
 };
 
 const inspectJobs: AgentTool = {
@@ -63,7 +70,12 @@ const inspectJobs: AgentTool = {
     parameters: { type: "object", properties: {} },
   },
   mutating: false,
-  execute: async (ctx) => listJobs(ctx),
+  execute: async (ctx) => {
+    // listJobs relies on RLS scoped to owner_id — no tenant_id policy exists
+    // on social_publishing_jobs yet.
+    if (isTenantAgentContext(ctx)) throw new Error("Job inspection isn't available in this workspace's Copilot yet.");
+    return listJobs(ctx);
+  },
 };
 
 const inspectDeadLetters: AgentTool = {
@@ -73,7 +85,10 @@ const inspectDeadLetters: AgentTool = {
     parameters: { type: "object", properties: {} },
   },
   mutating: false,
-  execute: async (ctx) => listDeadLetters(ctx),
+  execute: async (ctx) => {
+    if (isTenantAgentContext(ctx)) throw new Error("Dead-letter inspection isn't available in this workspace's Copilot yet.");
+    return listDeadLetters(ctx);
+  },
 };
 
 const inspectAccounts: AgentTool = {
@@ -93,7 +108,12 @@ const getPerformance: AgentTool = {
     parameters: { type: "object", properties: {} },
   },
   mutating: false,
-  execute: async (ctx) => ({ metrics: await listRecentMetrics(ctx), costs: await listCostEvents(ctx, 20) }),
+  execute: async (ctx) => {
+    // listRecentMetrics is tenant-safe (RLS via content_variants ->
+    // content_master.tenant_id); listCostEvents is still owner_id-only.
+    if (isTenantAgentContext(ctx)) return { metrics: await listRecentMetrics(ctx), costs: [] };
+    return { metrics: await listRecentMetrics(ctx), costs: await listCostEvents(ctx, 20) };
+  },
 };
 
 const listCampaignsTool: AgentTool = {
@@ -103,7 +123,10 @@ const listCampaignsTool: AgentTool = {
     parameters: { type: "object", properties: {} },
   },
   mutating: false,
-  execute: async (ctx) => listCampaigns(ctx),
+  execute: async (ctx) => {
+    if (isTenantAgentContext(ctx)) throw new Error("Campaigns aren't available in this workspace's Copilot yet.");
+    return listCampaigns(ctx);
+  },
 };
 
 const inspectBrand: AgentTool = {
@@ -146,7 +169,10 @@ const createCampaignTool: AgentTool = {
     },
   },
   mutating: true,
-  execute: async (ctx, args) => createCampaign(ctx, { name: str(args, "name"), goal: str(args, "goal"), platforms: arr(args, "platforms") }),
+  execute: async (ctx, args) => {
+    if (isTenantAgentContext(ctx)) throw new Error("Campaigns aren't available in this workspace's Copilot yet.");
+    return createCampaign(ctx, { name: str(args, "name"), goal: str(args, "goal"), platforms: arr(args, "platforms") });
+  },
 };
 
 const createContentItem: AgentTool = {
@@ -222,7 +248,7 @@ const createVariant: AgentTool = {
       str(args, "generationKey") ||
       (str(args, "sessionId") && str(args, "missionId")
         ? buildVariantGenerationKey({
-            tenantId: ctx.ownerId,
+            tenantId: isTenantAgentContext(ctx) ? ctx.tenantId : ctx.ownerId,
             missionId: str(args, "missionId"),
             sessionId: str(args, "sessionId"),
             contentSlot: str(args, "contentSlot") || `${platform}:${format}`,
@@ -311,7 +337,12 @@ const schedulePost: AgentTool = {
     const service = createSupabaseServiceClient();
     const scheduledAt = str(args, "scheduledAt") || new Date().toISOString();
     const jobId = await scheduleJob(service, { accountId, variantId, scheduledAt });
-    return runPublishNow(service, jobId, scheduledAt, ctx.ownerId, {
+    // runPublishNow's ownerId only scopes its own-batch immediate-fire
+    // optimization (runWorkerBatch({ ownerId })) — it is not a security
+    // boundary. A tenant's job is still picked up by the normal,
+    // unscoped periodic worker sweep either way, so tenant mode simply
+    // omits it rather than passing a tenantId into an owner-shaped filter.
+    return runPublishNow(service, jobId, scheduledAt, isTenantAgentContext(ctx) ? "" : ctx.ownerId, {
       platform: account.platform,
       accountLabel: account.display_name || account.username,
     });
@@ -342,6 +373,13 @@ const setOperatingMode: AgentTool = {
   },
   mutating: true,
   execute: async (ctx, args) => {
+    // Tenant-mode automation settings are fixed to the safe MANUAL/shadow
+    // default in this pass (see repositories/automation.ts) — there is no
+    // per-tenant settings row to write yet, so this must fail honestly
+    // rather than attempt an insert with no owner_id/tenant_id target.
+    if (isTenantAgentContext(ctx)) {
+      throw new Error("Changing the autonomy level isn't available in this workspace's Copilot yet — every publish action requires your approval.");
+    }
     const mode = str(args, "mode");
     if (!["MANUAL", "SUPERVISED", "AUTOPILOT"].includes(mode)) throw new Error("Invalid autonomy level");
     await upsertAutomationSettings(ctx, { autonomy_level: mode as "MANUAL" | "SUPERVISED" | "AUTOPILOT" });
@@ -375,7 +413,10 @@ const ingestMedia: AgentTool = {
   // Finalization normally creates the asset before the Agent runs; this is an
   // idempotent identity/access operation, not an external or content mutation.
   mutating: false,
-  execute: async (ctx, args) => ingestAttachmentMedia(ctx, assertAttachmentSlot(args)),
+  execute: async (ctx, args) => {
+    if (isTenantAgentContext(ctx)) throw new Error("Media attachments aren't available in this workspace's Copilot yet.");
+    return ingestAttachmentMedia(ctx, assertAttachmentSlot(args));
+  },
 };
 
 const generateImageTool: AgentTool = {
@@ -399,7 +440,15 @@ const generateImageTool: AgentTool = {
     },
   },
   mutating: true,
-  execute: (ctx, args) => executeGenerateImageTool(ctx, args),
+  execute: (ctx, args) => {
+    // generate-image-tool.ts writes to an owner_id-keyed storage path with
+    // no tenant-scoped equivalent yet — same reasoning as attachment
+    // upload above.
+    if (isTenantAgentContext(ctx)) {
+      throw new Error("Image generation isn't available in this workspace's Copilot yet.");
+    }
+    return executeGenerateImageTool(ctx, args);
+  },
 };
 
 const inspectContentMediaTool: AgentTool = {
@@ -444,6 +493,7 @@ const attachMediaToContentTool: AgentTool = {
   },
   mutating: true,
   execute: async (ctx, args) => {
+    if (isTenantAgentContext(ctx)) throw new Error("Media attachments aren't available in this workspace's Copilot yet.");
     const masterId = optionalUuid(args.masterId, "masterId");
     const variantId = optionalUuid(args.variantId, "variantId");
     if (Boolean(masterId) === Boolean(variantId)) throw new Error("Provide exactly one of masterId or variantId.");
@@ -509,12 +559,19 @@ const executeYoutubeVerificationTool: AgentTool = {
     },
   },
   mutating: true,
-  execute: async (ctx, args) => executeYoutubeVerification(ctx, {
-    accountId: requireUuid(args.accountId, "accountId"),
-    variantId: requireUuid(args.variantId, "variantId"),
-    assetId: requireUuid(args.assetId, "assetId"),
-    privacyStatus: str(args, "privacyStatus") as "private" | "unlisted",
-  }),
+  execute: async (ctx, args) => {
+    // Deeply owner_id-coupled (social_verification_publish_authorizations,
+    // the worker's runAuthorizedVerificationJob({ ownerId })) and explicitly
+    // a one-time Google-verification mechanism, not the general publish
+    // path — real tenant YouTube publishing goes through schedule_post.
+    if (isTenantAgentContext(ctx)) throw new Error("This verification path isn't available in this workspace's Copilot — use schedule_post to publish to YouTube.");
+    return executeYoutubeVerification(ctx, {
+      accountId: requireUuid(args.accountId, "accountId"),
+      variantId: requireUuid(args.variantId, "variantId"),
+      assetId: requireUuid(args.assetId, "assetId"),
+      privacyStatus: str(args, "privacyStatus") as "private" | "unlisted",
+    });
+  },
 };
 
 const executePrivateYoutubeVerificationTool: AgentTool = {
@@ -535,11 +592,14 @@ const executePrivateYoutubeVerificationTool: AgentTool = {
     },
   },
   mutating: true,
-  execute: async (ctx, args) => executePrivateYoutubeVerification(ctx, {
-    accountId: requireUuid(args.accountId, "accountId"),
-    variantId: requireUuid(args.variantId, "variantId"),
-    assetId: requireUuid(args.assetId, "assetId"),
-  }),
+  execute: async (ctx, args) => {
+    if (isTenantAgentContext(ctx)) throw new Error("This verification path isn't available in this workspace's Copilot — use schedule_post to publish to YouTube.");
+    return executePrivateYoutubeVerification(ctx, {
+      accountId: requireUuid(args.accountId, "accountId"),
+      variantId: requireUuid(args.variantId, "variantId"),
+      assetId: requireUuid(args.assetId, "assetId"),
+    });
+  },
 };
 
 export const AGENT_TOOLS: AgentTool[] = [

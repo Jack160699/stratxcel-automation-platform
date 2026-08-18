@@ -4,7 +4,8 @@
 // requested (never cached in the stored action), so an edit made after
 // proposing still shows correctly, and the card never needs to display a
 // raw UUID/tool name/internal payload (Section 3 of the follow-up brief).
-import type { OwnerContext } from "../db-context.ts";
+import { type AgentActorContext, type AgentReadContext, isTenantAgentContext } from "../agent-tenant-types.ts";
+import { createSupabaseServiceClient } from "../../supabase/service.ts";
 import {
   getAction,
   getSessionDetail,
@@ -84,15 +85,22 @@ type AccountRow = {
  * platform. Never leaves the UI stuck on "Not resolved" when a real destination exists.
  */
 export async function resolveConnectedAccountForPreview(
-  ctx: OwnerContext,
+  ctx: AgentActorContext,
   input: { accountId?: string; platform?: string }
 ): Promise<AccountRow | null> {
   const accountId = input.accountId;
   const platform = input.platform;
-  let query = ctx.supabase
+  // social_accounts has no tenant_id RLS policy — same reasoning as
+  // repositories/accounts.ts's listAccounts: verified tenant membership
+  // already established by requireAgentTenantContext, service-role read
+  // explicitly filtered to this tenant, matching the production V1.5
+  // connector system's own established pattern.
+  const client = isTenantAgentContext(ctx) ? createSupabaseServiceClient() : ctx.supabase;
+  let query = client
     .from("social_accounts")
     .select("id, platform, username, display_name, avatar_url")
     .eq("status", "CONNECTED");
+  if (isTenantAgentContext(ctx)) query = query.eq("tenant_id", ctx.tenantId);
   query = accountId ? query.eq("id", accountId) : platform ? query.ilike("platform", platform) : query.limit(0);
   if (!accountId && !platform) return null;
   const { data } = await query.limit(2);
@@ -106,7 +114,7 @@ export async function resolveConnectedAccountForPreview(
 /** Presentation identity for cards/modals — never provider IDs, never "Not resolved". */
 // formatAccountPresentation lives in account-presentation.ts (pure, unit-testable).
 
-async function variantMediaAssetIds(ctx: OwnerContext, variantId: string, masterId: string | null): Promise<string[]> {
+async function variantMediaAssetIds(ctx: AgentReadContext, variantId: string, masterId: string | null): Promise<string[]> {
   const { data: variantMedia } = await ctx.supabase
     .from("social_content_variant_media")
     .select("asset_id")
@@ -122,7 +130,7 @@ async function variantMediaAssetIds(ctx: OwnerContext, variantId: string, master
   return (masterMedia ?? []).map((row) => row.asset_id as string);
 }
 
-async function mediaMimeTypesFor(ctx: OwnerContext, assetIds: string[]): Promise<string[]> {
+async function mediaMimeTypesFor(ctx: AgentReadContext, assetIds: string[]): Promise<string[]> {
   if (!assetIds.length) return [];
   const { data } = await ctx.supabase.from("social_media_assets").select("id, mime_type").in("id", assetIds);
   const byId = new Map((data ?? []).map((row) => [row.id as string, String(row.mime_type || "")]));
@@ -130,7 +138,7 @@ async function mediaMimeTypesFor(ctx: OwnerContext, assetIds: string[]): Promise
 }
 
 /** Returns null for a non-publish-intent action (nothing to preview — the generic approval card handles those). */
-export async function getActionPreview(ctx: OwnerContext, actionId: string): Promise<PublishActionPreview | null> {
+export async function getActionPreview(ctx: AgentActorContext, actionId: string): Promise<PublishActionPreview | null> {
   const action = await getAction(ctx, actionId);
   if (!action || !PUBLISH_INTENT_TOOLS.has(action.tool_name)) return null;
   const input = stripInternalInput(action.input ?? {});
@@ -241,7 +249,7 @@ export async function getActionPreview(ctx: OwnerContext, actionId: string): Pro
  * Returns the preview for the NEW action identity.
  */
 export async function editProposedPublishAction(
-  ctx: OwnerContext,
+  ctx: AgentActorContext,
   actionId: string,
   patch: { caption?: string; hashtags?: string[]; scheduledAt?: string }
 ): Promise<PublishActionPreview> {
@@ -281,7 +289,7 @@ export async function editProposedPublishAction(
   const newScheduledAt = patch.scheduledAt !== undefined ? patch.scheduledAt : str(input.scheduledAt);
 
   const generationKey = buildVariantGenerationKey({
-    tenantId: ctx.ownerId,
+    tenantId: isTenantAgentContext(ctx) ? ctx.tenantId : ctx.ownerId,
     missionId: str(input.missionId) || sessionId,
     sessionId,
     contentSlot: `${oldVariant.platform}:${oldVariant.format ?? "post"}`,

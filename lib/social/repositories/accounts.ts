@@ -1,6 +1,7 @@
 import { createSupabaseServiceClient } from "../../supabase/service.ts";
 import { encryptTokenPacked, decryptTokenPacked } from "../crypto.ts";
 import type { OwnerContext } from "../db-context.ts";
+import { type AgentActorContext, isTenantAgentContext } from "../agent-tenant-types.ts";
 
 type ServiceClient = ReturnType<typeof createSupabaseServiceClient>;
 
@@ -28,7 +29,27 @@ export interface SocialAccountRow {
 const ACCOUNT_COLUMNS =
   "id, owner_id, platform, provider_account_id, username, display_name, avatar_url, permissions, status, token_health, last_sync_at, next_scheduled_at, metadata, created_at, updated_at";
 
-export async function listAccounts(ctx: OwnerContext): Promise<SocialAccountRow[]> {
+/**
+ * Tenant mode has no RLS policy on social_accounts scoped to tenant_id
+ * (only the pre-existing owner_id/stratxcel_admins policy exists) — the
+ * production V1.5 connector system itself already reads this table the
+ * same way (see app/api/platform/social/autopilot/route.ts): membership is
+ * verified up front by requireAgentTenantContext, then the service-role
+ * client is used with an explicit tenant_id filter, never a bare
+ * unfiltered service-role read. This is the existing, already-shipped
+ * pattern for tenant-scoped social_accounts access, reused as-is rather
+ * than inventing a second one.
+ */
+export async function listAccounts(ctx: AgentActorContext): Promise<SocialAccountRow[]> {
+  if (isTenantAgentContext(ctx)) {
+    const service = createSupabaseServiceClient();
+    const { data } = await service
+      .from("social_accounts")
+      .select(ACCOUNT_COLUMNS)
+      .eq("tenant_id", ctx.tenantId)
+      .order("created_at", { ascending: false });
+    return (data ?? []) as SocialAccountRow[];
+  }
   const { data } = await ctx.supabase
     .from("social_accounts")
     .select(ACCOUNT_COLUMNS)

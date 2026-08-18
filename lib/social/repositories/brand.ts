@@ -1,4 +1,5 @@
 import type { OwnerContext } from "../db-context.ts";
+import { type AgentActorContext, isTenantAgentContext } from "../agent-tenant-types.ts";
 
 export interface BrandProfileRow {
   id: string;
@@ -42,7 +43,20 @@ const DEFAULT_PROFILE: Omit<BrandProfileRow, "id" | "owner_id" | "updated_at"> =
   rules: [],
 };
 
-export async function getBrandProfile(ctx: OwnerContext): Promise<BrandProfileRow> {
+/**
+ * Tenant mode reads the profile already explicitly bound to this tenant
+ * (see assignBrandProfileToTenant in package-tenant-assignment.ts) — never
+ * a fuzzy "pick any" lookup. No bound profile yet -> the same empty
+ * DEFAULT_PROFILE fallback owner-mode already uses when nothing is saved,
+ * so a session with no Brand Brain configured degrades safely instead of
+ * erroring.
+ */
+export async function getBrandProfile(ctx: AgentActorContext): Promise<BrandProfileRow> {
+  if (isTenantAgentContext(ctx)) {
+    const { data } = await ctx.supabase.from("social_brand_profiles").select("*").eq("tenant_id", ctx.tenantId).maybeSingle();
+    if (data) return data as BrandProfileRow;
+    return { id: "", owner_id: "", ...DEFAULT_PROFILE, updated_at: "" };
+  }
   const { data } = await ctx.supabase.from("social_brand_profiles").select("*").eq("owner_id", ctx.ownerId).maybeSingle();
   if (data) return data as BrandProfileRow;
   return { id: "", owner_id: ctx.ownerId, ...DEFAULT_PROFILE, updated_at: "" };

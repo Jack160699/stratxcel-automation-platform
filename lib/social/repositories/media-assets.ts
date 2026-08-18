@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { createSupabaseServiceClient } from "../../supabase/service";
 import type { OwnerContext } from "../db-context";
+import { type AgentActorContext, isTenantAgentContext } from "../agent-tenant-types.ts";
 import { extensionForName, validateMediaMetadata } from "../media-validation";
 
 type ServiceClient = ReturnType<typeof createSupabaseServiceClient>;
@@ -223,7 +224,8 @@ async function requireAssets(ctx: OwnerContext, ids: string[]) {
   return assets;
 }
 
-export async function attachMediaToMaster(ctx: OwnerContext, masterId: string, assetIds: string[], replace = false) {
+export async function attachMediaToMaster(ctx: AgentActorContext, masterId: string, assetIds: string[], replace = false) {
+  if (isTenantAgentContext(ctx)) throw new Error("Media attachments aren't available in this workspace's Copilot yet.");
   const [{ data: master }, assets] = await Promise.all([
     ctx.supabase.from("content_master").select("id").eq("id", masterId).maybeSingle(),
     requireAssets(ctx, assetIds),
@@ -243,7 +245,8 @@ export async function attachMediaToMaster(ctx: OwnerContext, masterId: string, a
   return { masterId, assetIds: assets.map((asset) => asset.id), mode: replace ? "replace" : "append" };
 }
 
-export async function attachMediaToVariant(ctx: OwnerContext, variantId: string, assetIds: string[], replace = false) {
+export async function attachMediaToVariant(ctx: AgentActorContext, variantId: string, assetIds: string[], replace = false) {
+  if (isTenantAgentContext(ctx)) throw new Error("Media attachments aren't available in this workspace's Copilot yet.");
   const [{ data: variant }, assets] = await Promise.all([
     ctx.supabase.from("content_variants").select("id, master_id").eq("id", variantId).maybeSingle(),
     requireAssets(ctx, assetIds),
@@ -264,7 +267,7 @@ export async function attachMediaToVariant(ctx: OwnerContext, variantId: string,
 }
 
 export async function inspectContentMedia(
-  ctx: OwnerContext,
+  ctx: AgentActorContext,
   input: { masterId?: string; variantId?: string; title?: string }
 ) {
   let masterQuery = ctx.supabase
@@ -311,7 +314,7 @@ export async function inspectContentMedia(
 }
 
 export async function updateContentVariant(
-  ctx: OwnerContext,
+  ctx: AgentActorContext,
   input: {
     variantId: string;
     caption?: string;
@@ -321,6 +324,9 @@ export async function updateContentVariant(
     youtubePrivacyStatus?: "private" | "unlisted" | "public";
   }
 ) {
+  if (isTenantAgentContext(ctx) && input.mediaAssetIds !== undefined) {
+    throw new Error("Media attachments aren't available in this workspace's Copilot yet.");
+  }
   const { data: current } = await ctx.supabase
     .from("content_variants")
     .select("id, platform, creative_spec")

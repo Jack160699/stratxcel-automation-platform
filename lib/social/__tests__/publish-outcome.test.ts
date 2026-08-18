@@ -109,7 +109,7 @@ function run() {
 
   assert.ok(tools.includes("platformsMatch(account.platform, variant.platform)"), "schedule_post must compare platforms canonically, not with !==");
   assert.ok(!tools.includes("account.platform !== variant.platform"), "the literal casing-sensitive comparison must be gone");
-  assert.ok(tools.includes("runPublishNow(service, jobId, scheduledAt, ctx.ownerId,"), "schedule_post must return the real terminal state, not just a job id");
+  assert.ok(tools.includes("runPublishNow(service, jobId, scheduledAt,"), "schedule_post must return the real terminal state, not just a job id");
   assert.ok(tools.includes('requireUuid(args.accountId, "accountId")') && tools.includes('requireUuid(args.variantId, "variantId")'));
   assert.ok(tools.includes('optionalUuid(args.campaignId, "campaignId")'), "campaignId must never be a fabricated name");
   assert.ok(content.includes("requirePlatform(input.platform"), "content_variants.platform must be canonicalized at write time too");

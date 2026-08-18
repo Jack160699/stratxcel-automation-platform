@@ -1,14 +1,14 @@
 import "server-only";
 
-import { createSupabaseServerClient } from "../supabase/server";
-import { createSupabaseServiceClient } from "../supabase/service";
-import { readStaffWorkspaceTenantId, readWorkspaceMode } from "../identity/staff-workspace";
-import { STAFF_WORKSPACE_CONTEXT_ERROR } from "../identity/staff-workspace-errors";
-import { getAgencyTenant, type AgencyTenant } from "./admin-repository";
-import { decideTenantReadAccess } from "./read-access-decision";
-import type { TenantRole } from "./types";
-import type { Permission } from "../rbac/types";
-import { requirePermission } from "../rbac/policy";
+import { createSupabaseServerClient } from "../supabase/server.ts";
+import { createSupabaseServiceClient } from "../supabase/service.ts";
+import { readStaffWorkspaceTenantId, readWorkspaceMode } from "../identity/staff-workspace.ts";
+import { STAFF_WORKSPACE_CONTEXT_ERROR } from "../identity/staff-workspace-errors.ts";
+import { getAgencyTenant, type AgencyTenant } from "./admin-repository.ts";
+import { decideTenantReadAccess } from "./read-access-decision.ts";
+import type { TenantRole } from "./types.ts";
+import type { Permission } from "../rbac/types.ts";
+import { requirePermission } from "../rbac/policy.ts";
 
 /**
  * Tenant-scoped equivalent of lib/social/db-context.ts's OwnerContext, for

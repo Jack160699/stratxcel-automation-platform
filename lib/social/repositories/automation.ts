@@ -1,4 +1,5 @@
 import type { OwnerContext } from "../db-context.ts";
+import { type AgentActorContext, isTenantAgentContext } from "../agent-tenant-types.ts";
 
 export interface AutomationSettingsRow {
   owner_id: string;
@@ -32,7 +33,16 @@ const DEFAULTS: Omit<AutomationSettingsRow, "owner_id" | "updated_at"> = {
   min_confidence_to_autoact: 0.7,
 };
 
-export async function getAutomationSettings(ctx: OwnerContext): Promise<AutomationSettingsRow> {
+/**
+ * Tenant-mode Social Copilot has no per-tenant automation_settings row (and
+ * none is added in this pass — see AGENT_TENANT_SCOPING notes) — it always
+ * gets the same conservative DEFAULTS every owner-mode caller with no saved
+ * row already gets today: MANUAL autonomy (every publish-affecting action
+ * requires human approval) and shadow_mode on. This can only ever be as
+ * permissive as the existing no-row fallback, never more.
+ */
+export async function getAutomationSettings(ctx: AgentActorContext): Promise<AutomationSettingsRow> {
+  if (isTenantAgentContext(ctx)) return { owner_id: ctx.tenantId, ...DEFAULTS, updated_at: "" };
   const { data } = await ctx.supabase.from("social_automation_settings").select("*").eq("owner_id", ctx.ownerId).maybeSingle();
   if (data) return data as AutomationSettingsRow;
   return { owner_id: ctx.ownerId, ...DEFAULTS, updated_at: "" };

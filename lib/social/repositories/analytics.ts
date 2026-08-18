@@ -1,5 +1,6 @@
 import { createSupabaseServiceClient } from "../../supabase/service";
 import type { OwnerContext } from "../db-context";
+import { type AgentReadContext } from "../agent-tenant-types.ts";
 
 type ServiceClient = ReturnType<typeof createSupabaseServiceClient>;
 
@@ -23,7 +24,7 @@ export interface MetricsRow {
   raw: Record<string, unknown>;
 }
 
-export async function listRecentMetrics(ctx: OwnerContext, limit = 50): Promise<MetricsRow[]> {
+export async function listRecentMetrics(ctx: AgentReadContext, limit = 50): Promise<MetricsRow[]> {
   const { data } = await ctx.supabase
     .from("social_metrics")
     .select("*, content_variants(platform, caption, master_id)")

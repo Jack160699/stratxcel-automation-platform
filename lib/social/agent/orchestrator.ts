@@ -40,7 +40,7 @@ import { serializeToolOutput } from "./tool-output";
 import { labelForTool, labelForApproval, PHASE_LABELS } from "./activity-labels";
 import { summarizeForEvent } from "./tool-output-summary";
 import type { AgentTurnMessage } from "./provider";
-import type { OwnerContext } from "../db-context";
+import { type AgentActorContext, isTenantAgentContext } from "../agent-tenant-types.ts";
 import {
   INTERNAL_DEPENDENTS_KEY,
   readDeferredActions,
@@ -159,6 +159,20 @@ For private YouTube verification while SHADOW is active, only use execute_privat
 when the user explicitly requested that exact private upload. Keep responses concise and operational, not
 hype-y.`;
 
+/**
+ * Tenant-mode customers get their own connected accounts and their own
+ * Brand Brain, never "Stratxcel's own" presence/brand — the two
+ * self-referential lines above are the only ones that name Stratxcel
+ * specifically, so this is a substitution rather than a second prompt to
+ * keep in sync by hand.
+ */
+const TENANT_SYSTEM_PROMPT = SYSTEM_PROMPT
+  .replace(
+    "an operational copilot for Stratxcel's own\nInstagram, Facebook, Threads, LinkedIn, and YouTube presence.",
+    "an operational copilot for this workspace's own connected\nInstagram, Facebook, and YouTube accounts."
+  )
+  .replace("summarize or fully understand Stratxcel's brand,", "summarize or fully understand this workspace's brand,");
+
 // Media publishing may require: attachment identity, content lookup, variant
 // inspection, account selection, policy validation, then the final proposal.
 // Keep the loop bounded, but leave enough room for those real prerequisites.
@@ -207,23 +221,30 @@ function strOrEmpty(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
-export async function createAgentSession(ctx: OwnerContext, title: string | null) {
+export async function createAgentSession(ctx: AgentActorContext, title: string | null) {
   return createSessionRepo(ctx, title);
 }
 
 export async function acceptAgentMission(
-  ctx: OwnerContext,
+  ctx: AgentActorContext,
   sessionId: string | null,
   userText: string,
   attachmentIds: string[] = []
 ) {
+  // Attachment upload has no tenant-scoped storage path yet (see
+  // agent-attachments.ts, which is still owner_id-only) — rather than
+  // silently mis-scoping a customer's upload, tenant-mode sessions are
+  // text-only until that's built out.
+  if (isTenantAgentContext(ctx) && attachmentIds.length) {
+    throw new Error("Attachments aren't available in this workspace's Copilot yet.");
+  }
   const id = sessionId ?? (await createAgentSession(ctx, userText.slice(0, 60)));
-  const attachments = await getAttachmentsByIds(ctx, id, attachmentIds);
+  const attachments = isTenantAgentContext(ctx) ? [] : await getAttachmentsByIds(ctx, id, attachmentIds);
   if (attachments.length !== attachmentIds.length) throw new Error("One or more attachments do not belong to this session.");
   const messageId = await insertMessage(ctx, id, "USER", userText, attachments.length ? [attachmentPart(attachments)] : []);
   await setSessionStatus(ctx, id, "GENERATING");
   const runId = await startRun(ctx, id);
-  if (attachments.length && messageId) {
+  if (attachments.length && messageId && !isTenantAgentContext(ctx)) {
     await bindAttachmentsToMessage(ctx, id, attachments.map((attachment) => attachment.id), messageId, runId);
   }
   await recordRunEvent(ctx, runId, { type: "RUN_STARTED", label: PHASE_LABELS.RUN_STARTED });
@@ -239,7 +260,7 @@ export async function acceptAgentMission(
  * If no AI provider is configured, this is honest about it instead of
  * fabricating a response — the whole point of "no fake functionality".
  */
-export async function runAgentTurn(ctx: OwnerContext, sessionId: string, runId: string) {
+export async function runAgentTurn(ctx: AgentActorContext, sessionId: string, runId: string) {
   const history = await loadHistory(ctx, sessionId);
   const latestUserMessage = [...history].reverse().find((message) => message.role === "USER");
   const latestUserPrompt = latestUserMessage?.content ?? "";
@@ -287,10 +308,19 @@ export async function runAgentTurn(ctx: OwnerContext, sessionId: string, runId: 
     return { blocked: true as const, reason: "ai_not_configured", message, runId };
   }
 
-  // Resolve real tenants.id for billable AI — never use ownerId or a fake session string.
-  const { resolveCurrentTenant } = await import("../../tenants/current-tenant.ts");
-  const tenantResolution = await resolveCurrentTenant(ctx.supabase, ctx.ownerId);
-  const tenantId = tenantResolution.active?.tenantId;
+  // Resolve real tenants.id for billable AI — never use ownerId or a fake
+  // session string. Tenant-mode callers already know exactly which tenant
+  // they are (that's the whole isolation boundary) — the admin switcher
+  // resolution below only applies to the owner/admin path, which has no
+  // tenant of its own and must pick one explicitly.
+  let tenantId: string | undefined;
+  if (isTenantAgentContext(ctx)) {
+    tenantId = ctx.tenantId;
+  } else {
+    const { resolveCurrentTenant } = await import("../../tenants/current-tenant.ts");
+    const tenantResolution = await resolveCurrentTenant(ctx.supabase, ctx.ownerId);
+    tenantId = tenantResolution.active?.tenantId;
+  }
   if (!tenantId) {
     const message =
       "No active client tenant is selected, so AI processing cannot be attributed safely. " +
@@ -304,10 +334,13 @@ export async function runAgentTurn(ctx: OwnerContext, sessionId: string, runId: 
 
   const settings = await getAutomationSettings(ctx);
   const brandProfile = await getBrandProfile(ctx);
-  // Current mission media only: attachments on the latest user message — never old-session fallback.
-  const creativeImages = latestUserMessage?.id
-    ? await loadImageAttachmentsForModel(ctx, latestUserMessage.id)
-    : [];
+  // Current mission media only: attachments on the latest user message —
+  // never old-session fallback. Tenant mode never has attachments (see
+  // acceptAgentMission) so there is nothing to load.
+  const creativeImages =
+    latestUserMessage?.id && !isTenantAgentContext(ctx)
+      ? await loadImageAttachmentsForModel(ctx, latestUserMessage.id)
+      : [];
   const creativeRequestMode =
     isSafePreparationIntent(copilotIntent) || requiresConcreteFutureSchedule(copilotIntent)
       ? "EXECUTE"
@@ -359,7 +392,7 @@ export async function runAgentTurn(ctx: OwnerContext, sessionId: string, runId: 
 
   const roleMap: Record<string, AgentTurnMessage["role"]> = { USER: "user", AGENT: "assistant", SYSTEM: "system" };
   const messages: AgentTurnMessage[] = [
-    { role: "system", content: SYSTEM_PROMPT },
+    { role: "system", content: isTenantAgentContext(ctx) ? TENANT_SYSTEM_PROMPT : SYSTEM_PROMPT },
     ...history.map((message) => ({
       role: roleMap[message.role] ?? "user",
       content: message.content + attachmentContextSuffix(message.parts),
@@ -741,7 +774,7 @@ export async function runAgentTurn(ctx: OwnerContext, sessionId: string, runId: 
  * never learned what actually happened — a known, explicitly flagged PR #15
  * gap (Section 11 of the follow-up brief).
  */
-export async function approveAgentAction(ctx: OwnerContext, actionId: string) {
+export async function approveAgentAction(ctx: AgentActorContext, actionId: string) {
   const action = await getAction(ctx, actionId);
   if (!action) throw new Error("action not found");
   if (action.status === "SUPERSEDED") {
@@ -916,7 +949,7 @@ export async function approveAgentAction(ctx: OwnerContext, actionId: string) {
   }
 }
 
-export async function rejectAgentAction(ctx: OwnerContext, actionId: string) {
+export async function rejectAgentAction(ctx: AgentActorContext, actionId: string) {
   const action = await getAction(ctx, actionId);
   if (!action) throw new Error("action not found");
   if (!(await claimAgentAction(ctx, actionId, "REJECTED"))) return { alreadyResolved: true };

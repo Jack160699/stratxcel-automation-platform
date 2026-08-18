@@ -2,7 +2,7 @@
  * Artifact-first local Copilot turns — no AI provider invocation.
  */
 
-import type { OwnerContext } from "../db-context.ts";
+import { type AgentActorContext } from "../agent-tenant-types.ts";
 import { insertMessage, setSessionStatus } from "../repositories/agent.ts";
 import { completeRun, recordRunEvent } from "../repositories/agent-runs.ts";
 import {
@@ -18,7 +18,7 @@ import {
 } from "./review-session.ts";
 
 export async function handleLocalArtifactDisplayTurn(
-  ctx: OwnerContext,
+  ctx: AgentActorContext,
   sessionId: string,
   runId: string,
   userPrompt: string,

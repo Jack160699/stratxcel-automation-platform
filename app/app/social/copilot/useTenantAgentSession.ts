@@ -1,21 +1,27 @@
 "use client";
 
+// Tenant-scoped mirror of app/admin/(shell)/social/copilot/useAgentSession.ts
+// — same live-progress polling / hydration / approve-reject flow, but every
+// call is threaded through tenantId and hits the tenant-scoped server
+// actions (tenant-actions.ts) and REST routes
+// (/api/platform/social/copilot/runs...) instead of the owner-scoped ones.
+
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  approveAgentActionAction,
-  rejectAgentActionAction,
-  getAgentSessionAction,
-  getRunEventsAction,
-  getSessionAction,
-} from "../agent/actions";
-import type { AgentAttachmentData, AgentMessageData } from "../agent/AgentMessage";
+  approveTenantAgentActionAction,
+  rejectTenantAgentActionAction,
+  getTenantAgentSessionAction,
+  getTenantRunEventsAction,
+  getTenantSessionAction,
+} from "./tenant-actions";
+import type { AgentMessageData } from "../../../admin/(shell)/social/agent/AgentMessage";
 import type { AgentRunEventRow, AgentRunRow } from "@/lib/social/repositories/agent-runs";
 import type { AgentSessionRow } from "@/lib/social/repositories/agent";
 
 const RUN_EVENT_POLL_MS = 1000;
 const SESSION_HISTORY_TIMEOUT_MS = 12_000;
 
-interface UseAgentSessionResult {
+interface UseTenantAgentSessionResult {
   messages: AgentMessageData[];
   pending: boolean;
   loadingHistory: boolean;
@@ -24,12 +30,16 @@ interface UseAgentSessionResult {
   run: AgentRunRow | null;
   runEvents: AgentRunEventRow[];
   session: AgentSessionRow | null;
-  send: (text: string, attachments?: AgentAttachmentData[]) => void;
+  send: (text: string) => void;
   approve: (actionId: string) => void;
   reject: (actionId: string) => void;
 }
 
-export function useAgentSession(sessionId: string | null, onSessionCreated: (id: string) => void): UseAgentSessionResult {
+export function useTenantAgentSession(
+  tenantId: string,
+  sessionId: string | null,
+  onSessionCreated: (id: string) => void
+): UseTenantAgentSessionResult {
   const [messages, setMessages] = useState<AgentMessageData[]>([]);
   const [pending, setPending] = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(false);
@@ -48,29 +58,31 @@ export function useAgentSession(sessionId: string | null, onSessionCreated: (id:
     }
   }, []);
 
-  const pollRunEvents = useCallback((runId: string) => {
-    stopPolling();
-    const poll = () => {
-      fetch(`/api/social/copilot/runs/${encodeURIComponent(runId)}`, { cache: "no-store" })
-        .then((response) => {
-          if (!response.ok) throw new Error("Could not load run");
-          return response.json() as Promise<{ run: AgentRunRow; events: AgentRunEventRow[] }>;
-        })
-        .then(({ run: latestRun, events }) => {
-          setRun(latestRun);
-          setRunEvents(events);
-          if (latestRun && latestRun.status !== "RUNNING") stopPolling();
-        })
-        .catch(() => {});
-    };
-    poll();
-    pollRef.current = setInterval(poll, RUN_EVENT_POLL_MS);
-  }, [stopPolling]);
+  const pollRunEvents = useCallback(
+    (runId: string) => {
+      stopPolling();
+      const poll = () => {
+        fetch(`/api/platform/social/copilot/runs/${encodeURIComponent(runId)}?tenantId=${encodeURIComponent(tenantId)}`, { cache: "no-store" })
+          .then((response) => {
+            if (!response.ok) throw new Error("Could not load run");
+            return response.json() as Promise<{ run: AgentRunRow; events: AgentRunEventRow[] }>;
+          })
+          .then(({ run: latestRun, events }) => {
+            setRun(latestRun);
+            setRunEvents(events);
+            if (latestRun && latestRun.status !== "RUNNING") stopPolling();
+          })
+          .catch(() => {});
+      };
+      poll();
+      pollRef.current = setInterval(poll, RUN_EVENT_POLL_MS);
+    },
+    [stopPolling, tenantId]
+  );
 
   useEffect(() => stopPolling, [stopPolling]);
 
-  // Hydrate real persisted history when the active session changes (e.g. on
-  // page load, or when switching presentation modes) — never fabricated.
+  // Hydrate real persisted history when the active session changes — never fabricated.
   useEffect(() => {
     if (!sessionId || hydratedSessionRef.current === sessionId) return;
     hydratedSessionRef.current = sessionId;
@@ -84,9 +96,9 @@ export function useAgentSession(sessionId: string | null, onSessionCreated: (id:
       let timeoutId: ReturnType<typeof setTimeout> | null = null;
       try {
         const history = Promise.all([
-          getAgentSessionAction(sid),
-          getRunEventsAction(sid),
-          getSessionAction(sid),
+          getTenantAgentSessionAction(tenantId, sid),
+          getTenantRunEventsAction(tenantId, sid),
+          getTenantSessionAction(tenantId, sid),
         ]);
         const timeout = new Promise<never>((_, reject) => {
           timeoutId = setTimeout(() => reject(new Error("SESSION_HISTORY_TIMEOUT")), SESSION_HISTORY_TIMEOUT_MS);
@@ -126,22 +138,17 @@ export function useAgentSession(sessionId: string | null, onSessionCreated: (id:
     }
 
     hydrate(sessionId);
-  }, [sessionId, pollRunEvents]);
+  }, [sessionId, tenantId, pollRunEvents]);
 
   const send = useCallback(
-    (text: string, attachments: AgentAttachmentData[] = []) => {
+    (text: string) => {
       const trimmed = text.trim();
       if (!trimmed || pending) return;
       setBlockedReason(null);
       setFailedReason(null);
       setMessages((prev) => [
         ...(sessionId ? prev : []),
-        {
-          id: `local-${Date.now()}`,
-          role: "user",
-          content: trimmed,
-          parts: attachments.length ? [{ type: "attachments", attachments }] : [],
-        },
+        { id: `local-${Date.now()}`, role: "user", content: trimmed, parts: [] as AgentMessageData["parts"] },
       ]);
       if (!sessionId) {
         stopPolling();
@@ -150,10 +157,10 @@ export function useAgentSession(sessionId: string | null, onSessionCreated: (id:
         setSession(null);
       }
       setPending(true);
-      fetch("/api/social/copilot/runs", {
+      fetch("/api/platform/social/copilot/runs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId, message: trimmed, attachmentIds: attachments.map((attachment) => attachment.id) }),
+        body: JSON.stringify({ tenantId, sessionId, message: trimmed }),
       })
         .then(async (response) => {
           const accepted = await response.json();
@@ -165,8 +172,8 @@ export function useAgentSession(sessionId: string | null, onSessionCreated: (id:
           hydratedSessionRef.current = accepted.sessionId;
           setSession({
             id: accepted.sessionId,
-            owner_id: "",
-            tenant_id: null,
+            owner_id: null,
+            tenant_id: tenantId,
             title: trimmed.slice(0, 60),
             status: "GENERATING",
             context: {},
@@ -174,9 +181,10 @@ export function useAgentSession(sessionId: string | null, onSessionCreated: (id:
             updated_at: new Date().toISOString(),
           });
           pollRunEvents(accepted.runId);
-          const response = await fetch(`/api/social/copilot/runs/${encodeURIComponent(accepted.runId)}/execute`, {
-            method: "POST",
-          });
+          const response = await fetch(
+            `/api/platform/social/copilot/runs/${encodeURIComponent(accepted.runId)}/execute?tenantId=${encodeURIComponent(tenantId)}`,
+            { method: "POST" }
+          );
           const result = await response.json();
           if (!response.ok) throw new Error(result.error ?? "The run could not execute");
           if ("blocked" in result && result.blocked) {
@@ -201,7 +209,7 @@ export function useAgentSession(sessionId: string | null, onSessionCreated: (id:
               parts: result.proposedActions?.length ? [{ type: "proposed_actions", actions: result.proposedActions }] : [],
             },
           ]);
-          getSessionAction(accepted.sessionId).then(setSession).catch(() => {});
+          getTenantSessionAction(tenantId, accepted.sessionId).then(setSession).catch(() => {});
         })
         .catch((error) => {
           setFailedReason(error instanceof Error ? error.message : "The run failed unexpectedly.");
@@ -210,78 +218,82 @@ export function useAgentSession(sessionId: string | null, onSessionCreated: (id:
           setPending(false);
         });
     },
-    [pending, sessionId, onSessionCreated, pollRunEvents, stopPolling]
+    [pending, sessionId, tenantId, onSessionCreated, pollRunEvents, stopPolling]
   );
 
-  const approve = useCallback((actionId: string) => {
-    // Do not optimistically strip the READY artifact — a failed claim/refresh
-    // used to leave "0 selected" with no recovery path.
-    approveAgentActionAction(actionId)
-      .then((result) => {
-        if (!result?.ok) {
-          setFailedReason(result?.error ?? "Something went wrong while approving this review.");
-          return;
-        }
-        setMessages((prev) =>
-          prev.map((m) => ({
-            ...m,
-            parts: m.parts.map((p) =>
-              p.type === "proposed_actions" ? { ...p, actions: p.actions?.filter((a) => a.id !== actionId) } : p
-            ),
-          }))
-        );
-        if (sessionId) {
-          hydratedSessionRef.current = null;
-          return getAgentSessionAction(sessionId).then(({ messages: rows, actions }) => {
-            const proposed = actions.filter((a) => a.status === "PROPOSED");
-            const proposedIds = new Set(proposed.map((action) => action.id));
-            const mapped: AgentMessageData[] = rows.map((m) => ({
-              id: m.id,
-              role: m.role === "USER" ? "user" : m.role === "AGENT" ? "agent" : "system",
-              content: m.content,
-              parts: (m.parts as AgentMessageData["parts"]).map((part) =>
-                part.type === "proposed_actions"
-                  ? { ...part, actions: part.actions?.filter((action) => proposedIds.has(action.id)) }
-                  : part
+  const approve = useCallback(
+    (actionId: string) => {
+      approveTenantAgentActionAction(tenantId, actionId)
+        .then((result) => {
+          if (!result?.ok) {
+            setFailedReason(result?.error ?? "Something went wrong while approving this review.");
+            return;
+          }
+          setMessages((prev) =>
+            prev.map((m) => ({
+              ...m,
+              parts: m.parts.map((p) =>
+                p.type === "proposed_actions" ? { ...p, actions: p.actions?.filter((a) => a.id !== actionId) } : p
               ),
-            }));
-            const referenced = new Set(mapped.flatMap((message) => message.parts.flatMap((part) => part.actions?.map((action) => action.id) ?? [])));
-            const unreferenced = proposed.filter((action) => !referenced.has(action.id));
-            if (unreferenced.length) {
-              mapped.push({
-                id: `approvals-${Date.now()}`,
-                role: "system",
-                content: "The upstream work completed. Review the dependent action below.",
-                parts: [{ type: "proposed_actions", actions: unreferenced.map((a) => ({ id: a.id, tool: a.tool_name, input: a.input })) }],
-              });
-            }
-            setMessages(mapped);
-          });
-        }
-      })
-      .catch((error) =>
-        setFailedReason(error instanceof Error ? error.message : "Something went wrong while approving this review.")
-      );
-  }, [sessionId]);
-
-  const reject = useCallback((actionId: string) => {
-    rejectAgentActionAction(actionId)
-      .then((result) => {
-        if (!result?.ok) {
-          setFailedReason(result?.error ?? "Something went wrong while cancelling this review.");
-          return;
-        }
-        setMessages((prev) =>
-          prev.map((m) => ({
-            ...m,
-            parts: m.parts.map((p) =>
-              p.type === "proposed_actions" ? { ...p, actions: p.actions?.filter((a) => a.id !== actionId) } : p
-            ),
-          }))
+            }))
+          );
+          if (sessionId) {
+            hydratedSessionRef.current = null;
+            return getTenantAgentSessionAction(tenantId, sessionId).then(({ messages: rows, actions }) => {
+              const proposed = actions.filter((a) => a.status === "PROPOSED");
+              const proposedIds = new Set(proposed.map((action) => action.id));
+              const mapped: AgentMessageData[] = rows.map((m) => ({
+                id: m.id,
+                role: m.role === "USER" ? "user" : m.role === "AGENT" ? "agent" : "system",
+                content: m.content,
+                parts: (m.parts as AgentMessageData["parts"]).map((part) =>
+                  part.type === "proposed_actions"
+                    ? { ...part, actions: part.actions?.filter((action) => proposedIds.has(action.id)) }
+                    : part
+                ),
+              }));
+              const referenced = new Set(mapped.flatMap((message) => message.parts.flatMap((part) => part.actions?.map((action) => action.id) ?? [])));
+              const unreferenced = proposed.filter((action) => !referenced.has(action.id));
+              if (unreferenced.length) {
+                mapped.push({
+                  id: `approvals-${Date.now()}`,
+                  role: "system",
+                  content: "The upstream work completed. Review the dependent action below.",
+                  parts: [{ type: "proposed_actions", actions: unreferenced.map((a) => ({ id: a.id, tool: a.tool_name, input: a.input })) }],
+                });
+              }
+              setMessages(mapped);
+            });
+          }
+        })
+        .catch((error) =>
+          setFailedReason(error instanceof Error ? error.message : "Something went wrong while approving this review.")
         );
-      })
-      .catch(() => setFailedReason("Something went wrong while cancelling this review."));
-  }, []);
+    },
+    [sessionId, tenantId]
+  );
+
+  const reject = useCallback(
+    (actionId: string) => {
+      rejectTenantAgentActionAction(tenantId, actionId)
+        .then((result) => {
+          if (!result?.ok) {
+            setFailedReason(result?.error ?? "Something went wrong while cancelling this review.");
+            return;
+          }
+          setMessages((prev) =>
+            prev.map((m) => ({
+              ...m,
+              parts: m.parts.map((p) =>
+                p.type === "proposed_actions" ? { ...p, actions: p.actions?.filter((a) => a.id !== actionId) } : p
+              ),
+            }))
+          );
+        })
+        .catch(() => setFailedReason("Something went wrong while cancelling this review."));
+    },
+    [tenantId]
+  );
 
   return {
     messages: sessionId ? messages : [],

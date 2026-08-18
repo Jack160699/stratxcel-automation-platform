@@ -164,12 +164,15 @@ function ReadyToPublishCard({
   onReject,
   grouped = false,
   onPreviewLoaded,
+  tenantId,
 }: {
   action: { id: string; tool: string; input: Record<string, unknown> };
   onApprove: (id: string) => void;
   onReject: (id: string) => void;
   grouped?: boolean;
   onPreviewLoaded?: (actionId: string, preview: PublishActionPreview) => void;
+  /** Present only for the tenant-scoped Social Copilot — see AgentMessage's tenantId doc. */
+  tenantId?: string;
 }) {
   const [preview, setPreview] = useState<PublishActionPreview | null>(null);
   const [loading, setLoading] = useState(true);
@@ -195,7 +198,7 @@ function ReadyToPublishCard({
     let cancelled = false;
     setLoading(true);
     setLoadError(null);
-    getActionPreviewAction(action.id)
+    getActionPreviewAction(action.id, tenantId)
       .then((result) => {
         if (cancelled) return;
         if (!result) {
@@ -222,7 +225,7 @@ function ReadyToPublishCard({
     return () => {
       cancelled = true;
     };
-  }, [action.id, onPreviewLoaded, reloadToken]);
+  }, [action.id, onPreviewLoaded, reloadToken, tenantId]);
 
   const saveEdit = async () => {
     setSaving(true);
@@ -236,7 +239,7 @@ function ReadyToPublishCard({
       if (preview?.tool === "schedule_post") {
         patch.scheduledAt = scheduleMode === "now" ? new Date().toISOString() : new Date(customWhen).toISOString();
       }
-      const updated = await editProposedPublishActionAction(activeActionId, patch);
+      const updated = await editProposedPublishActionAction(activeActionId, patch, tenantId);
       setPreview(updated);
       setActiveActionId(updated.actionId);
       onPreviewLoaded?.(updated.actionId, updated);
@@ -466,10 +469,13 @@ export function PublishApprovalGroup({
   actions,
   onApprove,
   onReject,
+  tenantId,
 }: {
   actions: Array<{ id: string; tool: string; input: Record<string, unknown> }>;
   onApprove: (id: string) => void;
   onReject: (id: string) => void;
+  /** Present only for the tenant-scoped Social Copilot — see AgentMessage's tenantId doc. */
+  tenantId?: string;
 }) {
   const actionIds = actions.map((action) => action.id);
   const selectionKey = actionIds.slice().sort().join(",");
@@ -599,7 +605,7 @@ export function PublishApprovalGroup({
 
       <div className="saut-artifact-grid" aria-label="Platform previews">
         {actions.map((action) => (
-          <ReadyToPublishCard key={action.id} action={action} onApprove={onApprove} onReject={onReject} grouped onPreviewLoaded={handlePreviewLoaded} />
+          <ReadyToPublishCard key={action.id} action={action} onApprove={onApprove} onReject={onReject} grouped onPreviewLoaded={handlePreviewLoaded} tenantId={tenantId} />
         ))}
       </div>
 

@@ -126,12 +126,15 @@ export function AgentMessage({
   onApprove,
   onReject,
   compactSources = false,
+  tenantId,
 }: {
   message: AgentMessageData;
   onApprove: (actionId: string) => void;
   onReject: (actionId: string) => void;
   /** When READY, collapse source attachments into a compact strip. */
   compactSources?: boolean;
+  /** Present only for the tenant-scoped Social Copilot — routes the "ready to publish" preview/edit card through requireAgentTenantContext instead of the admin owner context. Omitted (undefined) preserves the existing admin/owner behavior exactly. */
+  tenantId?: string;
 }) {
   const isUser = message.role === "user";
   const hasPreparedArtifact = message.parts.some((part) => part.type === "proposed_actions" && part.actions?.some((action) => PUBLISH_INTENT_TOOLS.has(action.tool)));
@@ -166,7 +169,7 @@ export function AgentMessage({
           const otherActions = part.actions.filter((action) => !PUBLISH_INTENT_TOOLS.has(action.tool));
           return (
             <div key={index}>
-              {publishActions.length > 0 && <PublishApprovalGroup actions={publishActions} onApprove={onApprove} onReject={onReject} />}
+              {publishActions.length > 0 && <PublishApprovalGroup actions={publishActions} onApprove={onApprove} onReject={onReject} tenantId={tenantId} />}
               {otherActions.length > 0 && (
                 <div className="mt-2 space-y-2">
                   {otherActions.map((action) => (

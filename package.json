@@ -87,9 +87,9 @@
     "@stratxcel/queue": "*",
     "@stratxcel/revenue-ops": "*",
     "@stratxcel/search-discovery": "*",
+    "@stratxcel/trust-department": "*",
     "@stratxcel/websites-and-domains": "*",
     "@stratxcel/whatsapp": "*",
-    "@stratxcel/trust-department": "*",
     "@stratxcel/workforce-core": "*",
     "@supabase/ssr": "^0.12.3",
     "@supabase/supabase-js": "^2.110.7",
@@ -101,6 +101,7 @@
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "react-markdown": "^10.1.0",
+    "server-only": "^0.0.1",
     "three": "^0.185.1"
   },
   "devDependencies": {

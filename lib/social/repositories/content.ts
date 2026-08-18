@@ -1,6 +1,6 @@
 import { createSupabaseServiceClient } from "../../supabase/service.ts";
 import { requireContentObjective, requirePlatform } from "../content-options.ts";
-import type { OwnerContext } from "../db-context.ts";
+import { type AgentActorContext, type AgentReadContext, isTenantAgentContext } from "../agent-tenant-types.ts";
 
 type ServiceClient = ReturnType<typeof createSupabaseServiceClient>;
 
@@ -40,7 +40,7 @@ export interface ContentVariantRow {
   updated_at: string;
 }
 
-export async function listContentMaster(ctx: OwnerContext, limit = 50): Promise<ContentMasterRow[]> {
+export async function listContentMaster(ctx: AgentReadContext, limit = 50): Promise<ContentMasterRow[]> {
   const { data } = await ctx.supabase
     .from("content_master")
     .select("*")
@@ -50,7 +50,7 @@ export async function listContentMaster(ctx: OwnerContext, limit = 50): Promise<
 }
 
 export async function createContentMaster(
-  ctx: OwnerContext,
+  ctx: AgentActorContext,
   input: {
     campaignId?: string | null;
     title: string;
@@ -60,10 +60,11 @@ export async function createContentMaster(
     evergreen?: boolean;
   }
 ): Promise<string> {
+  const scope = isTenantAgentContext(ctx) ? { tenant_id: ctx.tenantId } : { owner_id: ctx.ownerId };
   const { data, error } = await ctx.supabase
     .from("content_master")
     .insert({
-      owner_id: ctx.ownerId,
+      ...scope,
       campaign_id: input.campaignId ?? null,
       title: input.title,
       master_idea: input.masterIdea,
@@ -78,12 +79,12 @@ export async function createContentMaster(
   return data.id as string;
 }
 
-export async function listVariantsForMaster(ctx: OwnerContext, masterId: string): Promise<ContentVariantRow[]> {
+export async function listVariantsForMaster(ctx: AgentReadContext, masterId: string): Promise<ContentVariantRow[]> {
   const { data } = await ctx.supabase.from("content_variants").select("*").eq("master_id", masterId).order("created_at", { ascending: false });
   return (data ?? []) as ContentVariantRow[];
 }
 
-export async function listRecentVariants(ctx: OwnerContext, limit = 50) {
+export async function listRecentVariants(ctx: AgentReadContext, limit = 50) {
   const { data } = await ctx.supabase
     .from("content_variants")
     .select("*, content_master(title, content_pillar)")
@@ -93,7 +94,7 @@ export async function listRecentVariants(ctx: OwnerContext, limit = 50) {
 }
 
 export async function createContentVariant(
-  ctx: OwnerContext,
+  ctx: AgentReadContext,
   input: {
     masterId: string;
     platform: string;

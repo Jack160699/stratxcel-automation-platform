@@ -1,8 +1,9 @@
-import type { OwnerContext } from "../db-context.ts";
+import { type AgentActorContext, type AgentReadContext, isTenantAgentContext } from "../agent-tenant-types.ts";
 
 export interface AgentSessionRow {
   id: string;
-  owner_id: string;
+  owner_id: string | null;
+  tenant_id: string | null;
   title: string | null;
   status: string;
   context: Record<string, unknown>;
@@ -32,23 +33,24 @@ export interface AgentActionRow {
   updated_at: string;
 }
 
-export async function createAgentSession(ctx: OwnerContext, title: string | null): Promise<string> {
+export async function createAgentSession(ctx: AgentActorContext, title: string | null): Promise<string> {
+  const scope = isTenantAgentContext(ctx) ? { tenant_id: ctx.tenantId } : { owner_id: ctx.ownerId };
   const { data, error } = await ctx.supabase
     .from("social_agent_sessions")
-    .insert({ owner_id: ctx.ownerId, title, status: "IDLE", context: { source: "MANUAL" } })
+    .insert({ ...scope, title, status: "IDLE", context: { source: "MANUAL" } })
     .select("id")
     .single();
   if (error || !data) throw new Error(error?.message ?? "agent session insert failed");
   return data.id as string;
 }
 
-export async function setSessionStatus(ctx: OwnerContext, sessionId: string, status: string) {
+export async function setSessionStatus(ctx: AgentReadContext, sessionId: string, status: string) {
   await ctx.supabase.from("social_agent_sessions").update({ status, updated_at: new Date().toISOString() }).eq("id", sessionId);
 }
 
 const ACTIVE_SESSION_STATUSES = new Set(["GENERATING", "RUNNING", "IN_PROGRESS", "ATTENTION_REQUIRED"]);
 
-export async function getLatestSession(ctx: OwnerContext): Promise<AgentSessionRow | null> {
+export async function getLatestSession(ctx: AgentReadContext): Promise<AgentSessionRow | null> {
   const { data } = await ctx.supabase
     .from("social_agent_sessions")
     .select("*")
@@ -59,7 +61,7 @@ export async function getLatestSession(ctx: OwnerContext): Promise<AgentSessionR
 }
 
 /** Returns only a genuinely active mission session — never a terminal FAILED/IDLE row. */
-export async function getCurrentMissionSession(ctx: OwnerContext): Promise<AgentSessionRow | null> {
+export async function getCurrentMissionSession(ctx: AgentReadContext): Promise<AgentSessionRow | null> {
   const { data } = await ctx.supabase
     .from("social_agent_sessions")
     .select("*")
@@ -70,7 +72,7 @@ export async function getCurrentMissionSession(ctx: OwnerContext): Promise<Agent
   return (data as AgentSessionRow | null) ?? null;
 }
 
-export async function getRecentMissionSessions(ctx: OwnerContext, limit = 5): Promise<AgentSessionRow[]> {
+export async function getRecentMissionSessions(ctx: AgentReadContext, limit = 5): Promise<AgentSessionRow[]> {
   const { data } = await ctx.supabase
     .from("social_agent_sessions")
     .select("*")
@@ -79,12 +81,12 @@ export async function getRecentMissionSessions(ctx: OwnerContext, limit = 5): Pr
   return (data ?? []) as AgentSessionRow[];
 }
 
-export async function getSession(ctx: OwnerContext, sessionId: string): Promise<AgentSessionRow | null> {
+export async function getSession(ctx: AgentReadContext, sessionId: string): Promise<AgentSessionRow | null> {
   const { data } = await ctx.supabase.from("social_agent_sessions").select("*").eq("id", sessionId).maybeSingle();
   return data as AgentSessionRow | null;
 }
 
-export async function listSessions(ctx: OwnerContext, limit = 30): Promise<AgentSessionRow[]> {
+export async function listSessions(ctx: AgentReadContext, limit = 30): Promise<AgentSessionRow[]> {
   const { data } = await ctx.supabase
     .from("social_agent_sessions")
     .select("*")
@@ -93,13 +95,13 @@ export async function listSessions(ctx: OwnerContext, limit = 30): Promise<Agent
   return (data ?? []) as AgentSessionRow[];
 }
 
-export async function insertMessage(ctx: OwnerContext, sessionId: string, role: "USER" | "AGENT" | "SYSTEM", content: string, parts: unknown[] = []): Promise<string | undefined> {
+export async function insertMessage(ctx: AgentReadContext, sessionId: string, role: "USER" | "AGENT" | "SYSTEM", content: string, parts: unknown[] = []): Promise<string | undefined> {
   const { data, error } = await ctx.supabase.from("social_agent_messages").insert({ session_id: sessionId, role, content, parts }).select("id").single();
   if (error || !data) throw new Error(error?.message ?? "agent message insert failed");
   return data?.id as string | undefined;
 }
 
-export async function loadHistory(ctx: OwnerContext, sessionId: string, limit = 40): Promise<AgentMessageRow[]> {
+export async function loadHistory(ctx: AgentReadContext, sessionId: string, limit = 40): Promise<AgentMessageRow[]> {
   const { data } = await ctx.supabase
     .from("social_agent_messages")
     .select("*")
@@ -109,7 +111,7 @@ export async function loadHistory(ctx: OwnerContext, sessionId: string, limit = 
   return (data ?? []) as AgentMessageRow[];
 }
 
-export async function getSessionDetail(ctx: OwnerContext, sessionId: string) {
+export async function getSessionDetail(ctx: AgentReadContext, sessionId: string) {
   const [{ data: messages }, { data: actions }] = await Promise.all([
     ctx.supabase.from("social_agent_messages").select("*").eq("session_id", sessionId).order("created_at", { ascending: true }),
     ctx.supabase.from("social_agent_actions").select("*").eq("session_id", sessionId).order("created_at", { ascending: true }),
@@ -117,7 +119,7 @@ export async function getSessionDetail(ctx: OwnerContext, sessionId: string) {
   return { messages: (messages ?? []) as AgentMessageRow[], actions: (actions ?? []) as AgentActionRow[] };
 }
 
-export async function proposeAction(ctx: OwnerContext, sessionId: string, toolName: string, input: Record<string, unknown>): Promise<string | undefined> {
+export async function proposeAction(ctx: AgentReadContext, sessionId: string, toolName: string, input: Record<string, unknown>): Promise<string | undefined> {
   const { data } = await ctx.supabase
     .from("social_agent_actions")
     .insert({ session_id: sessionId, tool_name: toolName, input, status: "PROPOSED" })
@@ -131,7 +133,7 @@ export async function proposeAction(ctx: OwnerContext, sessionId: string, toolNa
  * Does not delete rows — history remains queryable.
  */
 export async function supersedeProposedActions(
-  ctx: OwnerContext,
+  ctx: AgentReadContext,
   sessionId: string,
   actionIds: string[],
   reason = "superseded_by_newer_review_revision"
@@ -148,16 +150,16 @@ export async function supersedeProposedActions(
   return data?.length ?? 0;
 }
 
-export async function recordExecutedAction(ctx: OwnerContext, sessionId: string, toolName: string, input: Record<string, unknown>, output: unknown, status: "SUCCEEDED" | "FAILED", reason?: string) {
+export async function recordExecutedAction(ctx: AgentReadContext, sessionId: string, toolName: string, input: Record<string, unknown>, output: unknown, status: "SUCCEEDED" | "FAILED", reason?: string) {
   await ctx.supabase.from("social_agent_actions").insert({ session_id: sessionId, tool_name: toolName, input, output: output as never, status, reason: reason ?? null });
 }
 
-export async function getAction(ctx: OwnerContext, actionId: string): Promise<AgentActionRow | null> {
+export async function getAction(ctx: AgentReadContext, actionId: string): Promise<AgentActionRow | null> {
   const { data } = await ctx.supabase.from("social_agent_actions").select("*").eq("id", actionId).maybeSingle();
   return data as AgentActionRow | null;
 }
 
-export async function updateActionStatus(ctx: OwnerContext, actionId: string, status: string, extra: Record<string, unknown> = {}) {
+export async function updateActionStatus(ctx: AgentReadContext, actionId: string, status: string, extra: Record<string, unknown> = {}) {
   await ctx.supabase.from("social_agent_actions").update({ status, updated_at: new Date().toISOString(), ...extra }).eq("id", actionId);
 }
 
@@ -170,31 +172,35 @@ function isMissingClaimRpc(message: string): boolean {
  * that function (schema-cache miss), fall back to an equivalent conditional
  * update that still requires PROPOSED → target and owner-owned session.
  */
-export async function claimAgentAction(ctx: OwnerContext, actionId: string, targetStatus: "EXECUTING" | "REJECTED"): Promise<boolean> {
-  const { data, error } = await ctx.supabase.rpc("claim_social_agent_action", {
-    p_action_id: actionId,
-    p_owner_id: ctx.ownerId,
-    p_target_status: targetStatus,
-  });
+export async function claimAgentAction(ctx: AgentActorContext, actionId: string, targetStatus: "EXECUTING" | "REJECTED"): Promise<boolean> {
+  const { data, error } = isTenantAgentContext(ctx)
+    ? await ctx.supabase.rpc("claim_social_agent_action_tenant", {
+        p_action_id: actionId,
+        p_tenant_id: ctx.tenantId,
+        p_target_status: targetStatus,
+      })
+    : await ctx.supabase.rpc("claim_social_agent_action", {
+        p_action_id: actionId,
+        p_owner_id: ctx.ownerId,
+        p_target_status: targetStatus,
+      });
   if (!error) return data === true;
   if (!isMissingClaimRpc(error.message)) throw new Error(error.message);
   return claimAgentActionFallback(ctx, actionId, targetStatus);
 }
 
 async function claimAgentActionFallback(
-  ctx: OwnerContext,
+  ctx: AgentActorContext,
   actionId: string,
   targetStatus: "EXECUTING" | "REJECTED"
 ): Promise<boolean> {
   const action = await getAction(ctx, actionId);
   // SUPERSEDED and any non-PROPOSED status must never execute.
   if (!action || action.status !== "PROPOSED" || !action.session_id) return false;
-  const { data: session } = await ctx.supabase
-    .from("social_agent_sessions")
-    .select("id")
-    .eq("id", action.session_id)
-    .eq("owner_id", ctx.ownerId)
-    .maybeSingle();
+  const sessionQuery = ctx.supabase.from("social_agent_sessions").select("id").eq("id", action.session_id);
+  const { data: session } = isTenantAgentContext(ctx)
+    ? await sessionQuery.eq("tenant_id", ctx.tenantId).maybeSingle()
+    : await sessionQuery.eq("owner_id", ctx.ownerId).maybeSingle();
   if (!session) return false;
   const { data, error } = await ctx.supabase
     .from("social_agent_actions")
@@ -206,12 +212,12 @@ async function claimAgentActionFallback(
   return (data?.length ?? 0) === 1;
 }
 
-export async function updateActionInput(ctx: OwnerContext, actionId: string, input: Record<string, unknown>) {
+export async function updateActionInput(ctx: AgentReadContext, actionId: string, input: Record<string, unknown>) {
   await ctx.supabase.from("social_agent_actions").update({ input, updated_at: new Date().toISOString() }).eq("id", actionId);
 }
 
 /** Whether a session still has any action awaiting a human decision — used to decide whether resolving one approval/rejection can return the session to READY. */
-export async function hasPendingActions(ctx: OwnerContext, sessionId: string): Promise<boolean> {
+export async function hasPendingActions(ctx: AgentReadContext, sessionId: string): Promise<boolean> {
   const { count } = await ctx.supabase
     .from("social_agent_actions")
     .select("id", { count: "exact", head: true })

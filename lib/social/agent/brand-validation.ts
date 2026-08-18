@@ -1,5 +1,5 @@
 import { getBrandProfile } from "../repositories/brand";
-import type { OwnerContext } from "../db-context";
+import { type AgentActorContext } from "../agent-tenant-types.ts";
 
 function canonicalLabel(value: unknown, labels: string[], field: string): unknown {
   if (typeof value !== "string" || !value.trim()) return value;
@@ -11,7 +11,7 @@ function canonicalLabel(value: unknown, labels: string[], field: string): unknow
 }
 
 export async function validateBrandEntities(
-  ctx: OwnerContext,
+  ctx: AgentActorContext,
   toolName: string,
   input: Record<string, unknown>
 ): Promise<Record<string, unknown>> {

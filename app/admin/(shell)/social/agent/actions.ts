@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { requireOwnerContext } from "@/lib/social/db-context";
+import { requireAgentTenantContext } from "@/lib/social/agent-tenant-context";
 import { acceptAgentMission, runAgentTurn, approveAgentAction, rejectAgentAction } from "@/lib/social/agent/orchestrator";
 import { getActionPreview, editProposedPublishAction } from "@/lib/social/agent/action-preview";
 import { getSessionDetail, getLatestSession, listSessions, getSession } from "@/lib/social/repositories/agent";
@@ -12,6 +13,23 @@ async function assertOwner() {
   const ctx = await requireOwnerContext();
   if (!ctx.ok) throw new Error(ctx.error);
   return ctx;
+}
+
+/**
+ * getActionPreviewAction/editProposedPublishActionAction are shared with the
+ * tenant-scoped Social Copilot (app/app/social/copilot/TenantCopilotFullPage.tsx
+ * via PublishApprovalCard.tsx's optional tenantId prop) rather than
+ * duplicated — an optional tenantId here routes through
+ * requireAgentTenantContext instead of the admin owner context. Omitted
+ * (undefined), every existing admin caller is unaffected.
+ */
+async function assertOwnerOrTenant(tenantId?: string) {
+  if (tenantId) {
+    const ctx = await requireAgentTenantContext(tenantId);
+    if (!ctx.ok) throw new Error(ctx.error);
+    return ctx;
+  }
+  return assertOwner();
 }
 
 export async function sendAgentMessageAction(sessionId: string | null, text: string) {
@@ -63,9 +81,9 @@ export async function rejectAgentActionAction(actionId: string) {
   }
 }
 
-export async function getActionPreviewAction(actionId: string) {
+export async function getActionPreviewAction(actionId: string, tenantId?: string) {
   try {
-    const ctx = await assertOwner();
+    const ctx = await assertOwnerOrTenant(tenantId);
     return await getActionPreview(ctx, actionId);
   } catch (err) {
     console.error("[social.copilot.preview]", err);
@@ -76,10 +94,11 @@ export async function getActionPreviewAction(actionId: string) {
 
 export async function editProposedPublishActionAction(
   actionId: string,
-  patch: { caption?: string; hashtags?: string[]; scheduledAt?: string }
+  patch: { caption?: string; hashtags?: string[]; scheduledAt?: string },
+  tenantId?: string
 ) {
   try {
-    const ctx = await assertOwner();
+    const ctx = await assertOwnerOrTenant(tenantId);
     // Do not revalidate the Social layout — that remounts the Copilot client
     // tree and silently clears review selection. The caller already applies
     // the returned preview locally.
