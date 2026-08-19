@@ -84,31 +84,20 @@ async function handle(request: Request) {
   }
 
   const { supabase } = getTenantServiceContext();
-  let connection = await getGoogleConnection(supabase, body.tenantId);
+  const connection = await getGoogleConnection(supabase, body.tenantId);
 
-  // If connection row does not exist yet for this tenant, ensure it is created in connected state
-  if (!connection) {
-    try {
-      const res = await supabase
-        .from("search_google_connections")
-        .upsert(
-          {
-            tenant_id: body.tenantId,
-            status: "connected",
-            connected_by_user_id: ctx.userId,
-            connected_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: "tenant_id" }
-        )
-        .select("*")
-        .single();
-      connection = res.data as any;
-    } catch {
-      connection = null;
-    }
-  }
-
+  // This endpoint only ever *selects a property* on an already-connected
+  // Google account -- it must never conjure a connection row into
+  // existence. A real OAuth callback (search/google/callback/route.ts)
+  // always exchanges a real refresh token before writing status:
+  // "connected"; this route used to upsert a status:"connected" row here
+  // with no token and no granted scopes whenever one was missing, which
+  // produced a permanently fake "connected" state -- the canonical
+  // resolver, and every downstream reader (including the audit engine's
+  // connector insights), would report this tenant as connected while
+  // every real API call failed. Fail closed instead: if OAuth was never
+  // actually completed, the customer must complete it, not have this
+  // endpoint paper over the gap.
   if (!connection) {
     return Response.json({ error: "SEARCH_GOOGLE_NOT_CONNECTED" }, { status: 409 });
   }

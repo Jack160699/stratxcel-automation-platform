@@ -81,4 +81,21 @@ assert.match(oauthCode, /access_type: "offline"/);
 assert.match(oauthCode, /prompt: "consent"/);
 assert.equal(/response\.text\(\)/.test(oauthCode), false, "OAuth token response bodies must never be copied into thrown errors");
 
-console.log("api-security.test.ts (search/google): ALL PASS (tenant auth, RBAC, state/open-redirect safety, refresh-token preservation, no secret leakage, revocation, audit, scopes)");
+// --- config route must never conjure a fake "connected" search_google_connections
+// row into existence when one is missing — that produced a permanently false
+// CONNECTED state (no token, no granted scopes) for any tenant whose OAuth
+// callback never actually completed. It may only select a property on a
+// connection that a real OAuth callback already created. (Scoped to the
+// tenant-scoped branch specifically — the pre-tenant-onboarding branch above
+// it legitimately stages status in the user's own metadata, never the
+// search_google_connections table, and is out of scope here.)
+const configCode = stripComments(config);
+const tenantScopedConfig = configCode.slice(configCode.indexOf("getTenantServiceContext()"));
+assert.equal(
+  /\.from\(["'`]search_google_connections["'`]\)[\s\S]{0,400}status:\s*["'`]connected["'`]/.test(tenantScopedConfig),
+  false,
+  "config route must never insert/upsert status:\"connected\" into search_google_connections — only the real OAuth callback may mark a connection connected",
+);
+assert.match(configCode, /SEARCH_GOOGLE_NOT_CONNECTED/, "config route must fail closed with SEARCH_GOOGLE_NOT_CONNECTED when no real connection exists");
+
+console.log("api-security.test.ts (search/google): ALL PASS (tenant auth, RBAC, state/open-redirect safety, refresh-token preservation, no secret leakage, revocation, audit, scopes, no fake-connected config writes)");
