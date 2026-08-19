@@ -46,8 +46,19 @@ function run() {
     assert.equal(integrations.includes(forbidden), false, `customer integrations must not expose ${forbidden}`);
   }
   assert.ok(integrations.includes("WhatsApp Number"));
+  // The whatsapp_phone_bindings read used to live inline in this route; the
+  // canonical-connector-resolver refactor (b62b0ef) moved it into
+  // lib/connectors/canonical-status.ts, so the internal-only columns must be
+  // checked there now -- this assertion always failed post-refactor (the
+  // substrings it looked for no longer existed in route.ts at all), so it
+  // silently stopped verifying anything and blocked every later test in this
+  // file's chain from ever running.
   const safeStatus = read("app", "api", "platform", "integrations", "status", "route.ts");
-  assert.ok(safeStatus.includes('select("status")') && !safeStatus.includes("waba_id") && !safeStatus.includes("phone_number_id"));
+  assert.ok(safeStatus.includes("getTenantDigitalPresence"), "the status route must resolve through the canonical connector resolver, not its own query");
+  const canonicalResolver = read("lib", "connectors", "canonical-status.ts");
+  assert.ok(canonicalResolver.includes('.select("id, status, display_phone_number, verified_at, updated_at")'), "whatsapp_phone_bindings read must be scoped to customer-safe columns");
+  assert.equal(canonicalResolver.includes("waba_id"), false, "internal WABA ID must never be selected for the canonical customer-facing resolver");
+  assert.equal(canonicalResolver.includes("phone_number_id"), false, "internal phone_number_id must never be selected for the canonical customer-facing resolver");
   const rawBindings = read("app", "api", "platform", "whatsapp", "bindings", "route.ts");
   assert.ok(rawBindings.includes("requireOwnerContext"), "raw binding operations remain staff-only");
 

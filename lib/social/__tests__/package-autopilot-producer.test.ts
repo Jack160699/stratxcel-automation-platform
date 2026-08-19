@@ -117,7 +117,10 @@ function run() {
   const adminPage = read("app", "admin", "(shell)", "social", "packages", "page.tsx");
   assert.ok(adminPage.includes("requireOwnerContext"), "admin visibility must stay staff-gated");
   assert.ok(adminPage.includes("Producer health"));
-  const nav = read("app", "admin", "(shell)", "social", "nav.ts");
+  // Nav entries live in the section layout, not a standalone nav.ts (which
+  // never existed at this path -- this assertion always threw ENOENT before
+  // it could even run, silently never checking the thing it claims to).
+  const nav = read("app", "admin", "(shell)", "social", "layout.tsx");
   assert.ok(nav.includes("/admin/social/packages"), "the admin package page must be reachable from real navigation");
 
   console.log("package-autopilot-producer.test.ts: ALL PASS (schema hardening, idempotent producer, quality gate, tenant isolation, cron wiring, Shadow Mode, WhatsApp compliance, real UI)");
