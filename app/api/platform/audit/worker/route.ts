@@ -6,7 +6,21 @@ import { createSocialAuditConnectorInsightsProvider } from "@/lib/social/audit-c
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+// 270s (not 60s): grounded AI research for a sparse-public-presence
+// tenant routinely runs right up against a 60s ceiling, and
+// persistedResearch() only reuses a cached research pass when its
+// status is PASS -- any other outcome (e.g. INSUFFICIENT_EVIDENCE)
+// forces a full re-research on every resumed invocation. Under a 60s
+// cap that combination can loop indefinitely: research nearly
+// finishes, the function is killed, the next cron tick discards the
+// unfinished pass and starts over. 270s leaves headroom under the
+// */5 * * * * cron cadence (queue leases are 300s already) while
+// giving one invocation real room to finish RESEARCH + ANALYSIS.
+// Other routes in this app (social/copilot/actions,
+// social/copilot/runs/[runId]/execute) already run at maxDuration=300
+// on this same Vercel project/plan, so this is a proven-supported
+// ceiling here, not a new plan requirement.
+export const maxDuration = 270;
 
 function isAuthorized(req: NextRequest): boolean {
   const auth = req.headers.get("authorization");
