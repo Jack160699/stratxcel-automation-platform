@@ -56,9 +56,23 @@ function run() {
   assert.ok(/url\s*===\s*"\/health"/.test(source), "mission-worker must expose /health");
   assert.ok(/getWorkerHealth\(/.test(source), "/health must report real persisted worker health, not a hardcoded true");
 
-  // --- 7. Automatic Audit uses this durable worker and the same lease -----
-  assert.ok(/AUDIT_GENERATION_JOB_TYPE/.test(source), "mission-worker must claim automatic Audit jobs");
-  assert.ok(/auditExecutor\.execute\(/.test(source), "automatic Audit jobs must dispatch to the Audit executor");
+  // --- 7. Automatic Audit execution logic is retained (dormant) but this ---
+  //        poll loop must never actively claim audit.generate_v1 -- the
+  //        Vercel cron (/api/platform/audit/worker) is the sole, git-deploy-
+  //        synced owner. mission-worker is deployed outside this repo's
+  //        tracked pipeline and was found (2026-08-19) running 98 commits
+  //        stale while still winning every claim race against the cron on
+  //        its much faster poll interval, silently executing every audit
+  //        with old code. See the comment above `const jobTypes =` in
+  //        worker.ts for the full incident writeup.
+  assert.ok(/AUDIT_GENERATION_JOB_TYPE/.test(source), "the audit-job handling branch must still exist (dormant), not be deleted");
+  assert.ok(/auditExecutor\.execute\(/.test(source), "automatic Audit jobs, if ever claimed again, must dispatch to the Audit executor");
+  const jobTypesLine = source.match(/const jobTypes = [^;]+;/)?.[0] ?? "";
+  assert.ok(jobTypesLine.length > 0, "must find the jobTypes assignment");
+  assert.ok(
+    !/AUDIT_GENERATION_JOB_TYPE/.test(jobTypesLine),
+    "mission-worker's active jobTypes claim list must NOT include AUDIT_GENERATION_JOB_TYPE -- it must never compete with the Vercel cron for audit jobs again",
+  );
   assert.ok(/expectedTenantId:\s*job\.tenant_id/.test(source), "automatic Audit execution must bind the queue tenant to the run");
   const auditExecuteIdx = source.indexOf("auditExecutor.execute(");
   const auditHeartbeatIdx = source.lastIndexOf("executeWithLeaseHeartbeat", auditExecuteIdx);

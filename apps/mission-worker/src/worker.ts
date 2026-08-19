@@ -228,9 +228,26 @@ export async function processOnce(
     return false; // Stop claiming new work; already-claimed jobs still finish/fail normally.
   }
 
-  const jobTypes = auditExecutor
-    ? [MISSION_JOB_TYPE, AUDIT_GENERATION_JOB_TYPE]
-    : [MISSION_JOB_TYPE];
+  // AUDIT_GENERATION_JOB_TYPE is deliberately excluded from this poll loop's
+  // claimable job types. mission-worker is a long-running process deployed
+  // outside this repo's tracked pipeline (see
+  // infrastructure/workers/README.md -- no host was ever configured through
+  // any channel this repo controls) and was found, on 2026-08-19, still
+  // running commit 88649f4 (worker_heartbeats.version) -- 98 commits behind
+  // main -- while it kept winning the claim race against the Vercel cron
+  // (/api/platform/audit/worker, every 5 min) for every audit.generate_v1
+  // job every single time, because its poll interval is ~5s vs the cron's
+  // 5 minutes. That meant every audit ran with stale code (missing, among
+  // other things, the connector-to-audit wiring) with no way to detect it
+  // short of inspecting worker_heartbeats.version by hand. The Vercel cron
+  // is the intended, git-deploy-synced, single owner of audit.generate_v1;
+  // this process must never compete for it again, regardless of when or
+  // whether this file itself gets redeployed. auditExecutor and the
+  // AUDIT_GENERATION_JOB_TYPE handling below are left in place (unreachable
+  // while this line excludes the job type) rather than deleted, so a future,
+  // deliberate decision to make mission-worker a real consumer again is a
+  // one-line revert, not a rewrite.
+  const jobTypes = [MISSION_JOB_TYPE];
   const job = await queue.claimNext({ leaseOwner: LEASE_OWNER, jobTypes, leaseSeconds: LEASE_SECONDS });
   if (!job) return false;
 
