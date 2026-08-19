@@ -9,6 +9,7 @@ import { isMissingRelation, resolveCurrentAuditOrderId } from "@/lib/audit/curre
 import { loadAuditWhatsAppDestination, toPublicDestination } from "@/lib/audit/v1/whatsapp-destination";
 import { createLiveAutomaticAuditExecutor, resolveAuditBudgetLimitUsd } from "@stratxcel/audit-engine";
 import { createSocialAuditConnectorInsightsProvider } from "@/lib/social/audit-connector-insights";
+import { getBusinessConnectionStatus } from "@/lib/connectors/canonical-status";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -286,6 +287,16 @@ export async function GET() {
   const eligible = isMissingRelation(eligibility.error) ? false : eligibility.data === true;
   const destination = await loadAuditWhatsAppDestination(service, tenantId);
   const brandBrain = await getCurrentBrandBrain(service, tenantId).catch(() => null);
+  // The pre-order "Your business is connected" summary used to derive its
+  // Google Business Profile label purely from brandBrain.google_maps_url --
+  // true whenever onboarding merely *discovered* a public Maps URL, which is
+  // not the same claim as "your Google account is OAuth-connected". Give the
+  // client the real canonical state (lib/connectors/canonical-status.ts, the
+  // same ground truth every other surface reads) so it can say "Connected"
+  // only when that's actually true.
+  const googleBusinessConnectionState = await getBusinessConnectionStatus(service, tenantId, "google_business")
+    .then((status) => status.connectionState)
+    .catch(() => "NOT_CONNECTED" as const);
 
   return Response.json({
     order: visibleOrder ?? null,
@@ -295,5 +306,6 @@ export async function GET() {
     freshAuditEligible: eligible === true,
     whatsappDestination: destination ? toPublicDestination(destination) : null,
     brandBrain: brandBrain?.content ?? null,
+    googleBusinessConnectionState,
   }, { headers: { "Cache-Control": "no-store" } });
 }

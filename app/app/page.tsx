@@ -44,10 +44,15 @@ async function loadCommandCenterData(tenantDb: SupabaseClient, tenantId: string)
       getCurrentBrandBrain(tenantDb, tenantId).catch(() => null),
       (async () => {
         try {
+          // Only rows the canonical connector resolver (lib/connectors/canonical-status.ts)
+          // would also call CONNECTED -- a DISCONNECTED/ERROR/RECONNECT_REQUIRED row must
+          // not inflate this count, or Home disagrees with every other surface about how
+          // many sources are actually connected.
           const { count } = await tenantDb
             .from("social_accounts")
             .select("id", { count: "exact", head: true })
-            .eq("tenant_id", tenantId);
+            .eq("tenant_id", tenantId)
+            .eq("status", "CONNECTED");
           return count ?? 0;
         } catch {
           return 0;
@@ -55,12 +60,21 @@ async function loadCommandCenterData(tenantDb: SupabaseClient, tenantId: string)
       })(),
       (async () => {
         try {
+          // whatsapp_phone_bindings has no phone_number column (it's
+          // display_phone_number) and a tenant can legitimately have more than
+          // one row (pending attempts, a prior revoked number, etc.) -- the old
+          // .select("status, phone_number").maybeSingle() query therefore always
+          // errored (unknown column, and would also reject on >1 row) and was
+          // silently swallowed by this try/catch, so Home always treated
+          // WhatsApp as not connected even when a real active binding existed.
+          // Mirror the same ground truth read canonical-status.ts uses: fetch
+          // every row for the tenant and prefer the active one.
           const { data } = await tenantDb
             .from("whatsapp_phone_bindings")
-            .select("status, phone_number")
+            .select("status, display_phone_number")
             .eq("tenant_id", tenantId)
-            .maybeSingle();
-          return data;
+            .order("created_at", { ascending: false });
+          return (data ?? []).find((row) => row.status === "active") ?? null;
         } catch {
           return null;
         }

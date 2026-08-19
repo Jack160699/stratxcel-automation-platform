@@ -56,6 +56,7 @@ export default function AuditHubPage() {
   const autoStartAttempted = useRef(false);
 
   const [brandBrain, setBrandBrain] = useState<Record<string, unknown> | null>(null);
+  const [googleBusinessConnectionState, setGoogleBusinessConnectionState] = useState<string | null>(null);
   const [shareMessage, setShareMessage] = useState<string | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
   const [shareUrl, setShareUrl] = useState<string | null>(null);
@@ -77,6 +78,7 @@ export default function AuditHubPage() {
       freshAuditEligible?: boolean;
       whatsappDestination?: { masked: string; countryIso: string; nationalNumber: string; consent: boolean } | null;
       brandBrain?: Record<string, unknown> | null;
+      googleBusinessConnectionState?: string | null;
     }>(() => fetch("/api/platform/audit/checkout"), "We couldn't load your Audit. Please try again.");
     if (result.status === "error") {
       setOrder(null);
@@ -87,6 +89,7 @@ export default function AuditHubPage() {
     setOrder(result.data.order ?? null);
     setGeneration(result.data.generation ?? null);
     setBrandBrain(result.data.brandBrain ?? null);
+    setGoogleBusinessConnectionState(result.data.googleBusinessConnectionState ?? null);
     const destination = result.data.whatsappDestination;
     if (destination) {
       setWaMasked(destination.masked);
@@ -177,7 +180,17 @@ export default function AuditHubPage() {
     if (hasBrandBrain) {
       const bName = (brandBrain?.business_name as string) || "Your Business";
       const bWebsite = (brandBrain?.website_url as string) || "Not connected";
-      const bGoogle = brandBrain?.google_maps_url ? "Connected" : "Not connected";
+      // Real canonical connection state (not a raw "did onboarding see a Maps
+      // URL" guess) -- a publicly discovered profile must read as discovered,
+      // never as an authenticated connection that doesn't actually exist.
+      const bGoogle =
+        googleBusinessConnectionState === "CONNECTED"
+          ? "Connected"
+          : googleBusinessConnectionState === "DISCOVERED_PUBLICLY"
+          ? "Found publicly"
+          : googleBusinessConnectionState === "REAUTH_REQUIRED"
+          ? "Needs reconnect"
+          : "Not connected";
       const bSocials = Array.isArray(brandBrain?.verified_social_links) && (brandBrain.verified_social_links as any[]).length > 0
         ? (brandBrain.verified_social_links as Array<{ platform?: string; handle?: string }>)
             .map((s) => s.platform ? s.platform.charAt(0).toUpperCase() + s.platform.slice(1) : "")
