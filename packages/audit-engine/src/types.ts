@@ -160,6 +160,16 @@ export interface AuditReportV1 {
     provider: string;
     retrievedAt: string;
   }>;
+  /** Truthful per-connector state for this audit run — what was actually used,
+   * vs. connected-but-no-data, vs. not connected, vs. failed. Never omitted;
+   * never lets the UI imply a source was analyzed when it wasn't. */
+  connectorAvailability: Array<{
+    provider: string;
+    state: "available" | "unavailable" | "not_connected" | "permission_required" | "provider_error" | "no_data";
+    reason: string | null;
+    retrievedAt: string | null;
+    timeWindow: string | null;
+  }>;
   limitations: string[];
   /** Alias of limitations for the customer-facing researchLimitations contract. */
   researchLimitations: string[];

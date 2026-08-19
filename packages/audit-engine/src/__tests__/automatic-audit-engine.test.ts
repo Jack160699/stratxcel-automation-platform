@@ -187,6 +187,7 @@ function validReport(research = researchResult()): AuditReportV1 {
       provider: source.provider,
       retrievedAt: source.retrievedAt,
     })),
+    connectorAvailability: [],
     limitations: ["Only public evidence available at the time of research was assessed."],
     researchLimitations: ["Only public evidence available at the time of research was assessed."],
     generation: { method: "automatic_audit_v1", brandBrainVersion: 2 },

@@ -4,6 +4,7 @@ import { listMembershipsForUser } from "@/lib/tenants/repository";
 import { brandBrainPresenceChanged, buildBrandBrainContentFromAuditIntake, isBrandBrainCurrentForAudit } from "@/lib/audit/brand-brain";
 import { getCurrentBrandBrain, saveBrandBrainVersion } from "@stratxcel/brand-brain";
 import { resolveAuditBudgetLimitUsd, createLiveAutomaticAuditExecutor } from "@stratxcel/audit-engine";
+import { createSocialAuditConnectorInsightsProvider } from "@/lib/social/audit-connector-insights";
 import { AUDIT_CHANNEL_TYPES, sanitizeChannels, type AuditChannelType } from "@/lib/audit/v1/channels";
 import { discoverPublicBusiness } from "@/lib/audit/v1/discovery";
 import { runSmartWebsiteDiscovery, type DiscoveredBusinessData } from "@/lib/audit/v1/smart-discovery";
@@ -201,7 +202,9 @@ export async function POST(request: Request) {
           });
           const result = started.data as { success?: boolean; run_id?: string } | null;
           if (result?.run_id) {
-            const executor = createLiveAutomaticAuditExecutor(ctx.service);
+            const executor = createLiveAutomaticAuditExecutor(ctx.service, {
+              socialInsights: createSocialAuditConnectorInsightsProvider(),
+            });
             const executionPromise = executor.execute({
               runId: result.run_id,
               attemptNumber: 1,
@@ -572,7 +575,9 @@ export async function POST(request: Request) {
           await ctx.service.from("audit_orders").update({ status: "in_review", updated_at: new Date().toISOString() }).eq("id", current.id);
         } else if (result?.run_id) {
           // Advance the audit run within the request lifecycle
-          const executor = createLiveAutomaticAuditExecutor(ctx.service);
+          const executor = createLiveAutomaticAuditExecutor(ctx.service, {
+            socialInsights: createSocialAuditConnectorInsightsProvider(),
+          });
           try {
             const executionPromise = executor.execute({
               runId: result.run_id,

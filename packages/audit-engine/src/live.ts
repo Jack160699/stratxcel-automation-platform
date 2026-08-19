@@ -22,6 +22,11 @@ import {
 import { mergeFirstPartyDiscoverySources } from "./first-party-evidence.ts";
 import { canonicalizeResearchSources, normalizeAuditReport } from "./quality.ts";
 import { runAutomaticAuditGeneration } from "./pipeline.ts";
+import {
+  gatherAuditConnectorInsights,
+  mergeConnectorInsightSources,
+  type SocialConnectorInsightsProvider,
+} from "./connector-insights.ts";
 import type {
   AuditAIReceipt,
   AuditGenerationContext,
@@ -342,9 +347,11 @@ export class SupabaseAuditGenerationStore implements AuditGenerationStore {
 
 export class LiveAuditResearchProvider implements AuditResearchProvider {
   private readonly client: ServiceClient;
+  private readonly socialInsights?: SocialConnectorInsightsProvider;
 
-  constructor(client: ServiceClient) {
+  constructor(client: ServiceClient, socialInsights?: SocialConnectorInsightsProvider) {
     this.client = client;
+    this.socialInsights = socialInsights;
   }
 
   async research(context: AuditGenerationContext, attemptNumber: number) {
@@ -476,12 +483,27 @@ export class LiveAuditResearchProvider implements AuditResearchProvider {
     const packet = snapshot?.packet && typeof snapshot.packet === "object" && !Array.isArray(snapshot.packet)
       ? snapshot.packet as { pagesFetched?: Array<{ url?: string; title?: string; status?: number }> }
       : null;
+    const withFirstParty = mergeFirstPartyDiscoverySources(canonical, {
+      websiteUrl: website,
+      businessName: context.order.business_name,
+      pages: packet?.pagesFetched,
+    });
+
+    // Connector-derived evidence (GA4, Search Console, Facebook, Instagram, Google
+    // Business) is gathered independently of AI research and never blocks it — a
+    // slow/broken/unconnected provider only means that provider is marked
+    // unavailable, never a failed audit. Tenant-scoped via context.run.tenant_id.
+    const connectorInsights = await gatherAuditConnectorInsights(
+      this.client,
+      context.run.tenant_id,
+      this.socialInsights,
+    ).catch(() => null);
+    const withConnectors = connectorInsights
+      ? mergeConnectorInsightSources(withFirstParty, connectorInsights)
+      : withFirstParty;
+
     return {
-      result: mergeFirstPartyDiscoverySources(canonical, {
-        websiteUrl: website,
-        businessName: context.order.business_name,
-        pages: packet?.pagesFetched,
-      }),
+      result: withConnectors,
       receipt: execution ? receipt("research", execution) : null,
     };
   }
@@ -600,6 +622,7 @@ export class LiveAuditReportProvider implements AuditReportProvider {
             "Use null for a category score when evidence is not sufficient; explain the gap instead of inventing a score.",
             "If public presence is sparse (no website, few social profiles, few reviews), treat that as a finding and disclose it in limitations.",
             "Separate evidence-backed findings from recommendations. Disclose contradictions and limitations.",
+            "Some evidence sources are the business's own connected first-party accounts (Google Search Console, Google Analytics 4, Facebook, Instagram, Google Business Profile) and report real measured metrics for a stated time window, tagged with a provider name and a title identifying the source. Treat these as your strongest, most authoritative evidence and prioritize building findings, opportunities, and category scores from them (for example: high impressions with low CTR, declining or sparse organic sessions, weak posting cadence, low follower counts, an incomplete Business Profile) ahead of generic public-web observations.",
             "Owner actions must be realistic DIY steps. Stratxcel support must stay restrained and never become a sales pitch.",
             "Return the requested JSON only. Include practical 30, 60, and 90-day actions.",
           ].join(" "),
@@ -639,9 +662,12 @@ export class LiveAuditReportProvider implements AuditReportProvider {
   }
 }
 
-export function createLiveAutomaticAuditExecutor(client: ServiceClient) {
+export function createLiveAutomaticAuditExecutor(
+  client: ServiceClient,
+  deps?: { socialInsights?: SocialConnectorInsightsProvider },
+) {
   const store = new SupabaseAuditGenerationStore(client);
-  const research = new LiveAuditResearchProvider(client);
+  const research = new LiveAuditResearchProvider(client, deps?.socialInsights);
   const reports = new LiveAuditReportProvider(client);
   return {
     execute(input: { runId: string; attemptNumber: number; maxAttempts: number; expectedTenantId?: string }) {

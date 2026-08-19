@@ -21,6 +21,23 @@ const LABELS: Record<string, string> = {
   automationOperations: "Automation & operations",
 };
 
+const CONNECTOR_PROVIDER_LABELS: Record<string, string> = {
+  search_console: "Search Console",
+  google_analytics: "Google Analytics",
+  google_business: "Google Business",
+  facebook: "Facebook",
+  instagram: "Instagram",
+};
+
+const CONNECTOR_STATE_LABELS: Record<string, { label: string; className: string }> = {
+  available: { label: "connected · data used", className: "border-emerald-500/30 bg-emerald-500/10 text-emerald-400" },
+  no_data: { label: "connected · no data yet", className: "border-sx-border bg-sx-surface-2/60 text-sx-text-muted" },
+  not_connected: { label: "not connected", className: "border-sx-border bg-sx-surface-2/60 text-sx-text-subtle" },
+  unavailable: { label: "not set up yet", className: "border-sx-border bg-sx-surface-2/60 text-sx-text-subtle" },
+  permission_required: { label: "reconnect needed", className: "border-amber-500/30 bg-amber-500/10 text-amber-400" },
+  provider_error: { label: "fetch failed", className: "border-amber-500/30 bg-amber-500/10 text-amber-400" },
+};
+
 const COVERAGE_KEYS: Array<{ key: keyof EvidenceCoverage; icon: PlatformIconKey }> = [
   { key: "website", icon: "website" },
   { key: "google", icon: "google_business" },
@@ -259,6 +276,28 @@ export function VisualAuditReport({
           <div className="mt-5 pt-4 border-t border-sx-border/60">
             <h3 className="text-xs font-bold uppercase tracking-wider text-sx-text-subtle mb-1.5">Executive Summary</h3>
             <p className="text-sm leading-relaxed text-sx-text-muted whitespace-pre-wrap">{report.executiveSummary}</p>
+          </div>
+        )}
+
+        {/* Honest per-connector evidence ledger — never implies a source was used when it wasn't. */}
+        {report.connectorAvailability && report.connectorAvailability.length > 0 && (
+          <div className="mt-5 pt-4 border-t border-sx-border/60">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-sx-text-subtle mb-2">Data Sources Used In This Audit</h3>
+            <div className="flex flex-wrap gap-2">
+              {report.connectorAvailability.map((entry) => {
+                const meta = CONNECTOR_STATE_LABELS[entry.state] ?? CONNECTOR_STATE_LABELS.provider_error;
+                return (
+                  <span
+                    key={entry.provider}
+                    title={entry.reason ?? undefined}
+                    className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold ${meta.className}`}
+                  >
+                    {CONNECTOR_PROVIDER_LABELS[entry.provider] ?? entry.provider}
+                    <span className="opacity-70">· {meta.label}</span>
+                  </span>
+                );
+              })}
+            </div>
           </div>
         )}
       </section>

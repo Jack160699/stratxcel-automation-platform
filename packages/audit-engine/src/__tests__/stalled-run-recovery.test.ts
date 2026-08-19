@@ -165,6 +165,7 @@ function mockReport(research = mockResearchResult()): AuditReportV1 {
       provider: s.provider,
       retrievedAt: s.retrievedAt,
     })),
+    connectorAvailability: [],
     limitations: ["Only public sources available at time of research were analyzed."],
     researchLimitations: ["Only public sources available at time of research were analyzed."],
     generation: { method: "automatic_audit_v1", brandBrainVersion: 2 },

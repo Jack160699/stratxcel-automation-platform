@@ -9,11 +9,12 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "test": "node --experimental-strip-types src/__tests__/automatic-audit-engine.test.ts"
+    "test": "node --experimental-strip-types src/__tests__/automatic-audit-engine.test.ts && node --experimental-strip-types src/__tests__/connector-insights.test.ts"
   },
   "dependencies": {
     "@stratxcel/ai-runtime": "*",
     "@stratxcel/brand-brain": "*",
+    "@stratxcel/byok": "*",
     "@stratxcel/search-discovery": "*",
     "@supabase/supabase-js": "^2.110.7"
   }

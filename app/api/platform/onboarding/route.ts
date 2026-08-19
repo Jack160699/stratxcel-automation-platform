@@ -7,6 +7,7 @@ import { field } from "@/lib/audit/v1/provenance";
 import { CONNECT_DISCOVER_VERSION } from "@/lib/audit/v1/onboarding-state";
 import type { DiscoveredBusinessProfile } from "@/lib/audit/v1/adaptive-questions";
 import { resolveAuditBudgetLimitUsd, createLiveAutomaticAuditExecutor } from "@stratxcel/audit-engine";
+import { createSocialAuditConnectorInsightsProvider } from "@/lib/social/audit-connector-insights";
 import { sanitizeChannels } from "@/lib/audit/v1/channels";
 import { provisionTenantConnectorsFromMetadata } from "@/lib/social/provisioning";
 
@@ -440,7 +441,9 @@ export async function POST(request: Request) {
         });
         const result = started.data as { success?: boolean; run_id?: string } | null;
         if (result?.run_id) {
-          const executor = createLiveAutomaticAuditExecutor(serviceClient);
+          const executor = createLiveAutomaticAuditExecutor(serviceClient, {
+            socialInsights: createSocialAuditConnectorInsightsProvider(),
+          });
           try {
             const executionPromise = executor.execute({
               runId: result.run_id,

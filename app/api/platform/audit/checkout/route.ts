@@ -8,6 +8,7 @@ import { ensurePendingAuditOrder, AUDIT_FEE_CENTS } from "@/lib/audit/ensure-pen
 import { isMissingRelation, resolveCurrentAuditOrderId } from "@/lib/audit/current-pointer";
 import { loadAuditWhatsAppDestination, toPublicDestination } from "@/lib/audit/v1/whatsapp-destination";
 import { createLiveAutomaticAuditExecutor, resolveAuditBudgetLimitUsd } from "@stratxcel/audit-engine";
+import { createSocialAuditConnectorInsightsProvider } from "@/lib/social/audit-connector-insights";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -245,7 +246,9 @@ export async function GET() {
     );
 
     if (isQueued || isStalledRunning) {
-      const executor = createLiveAutomaticAuditExecutor(service);
+      const executor = createLiveAutomaticAuditExecutor(service, {
+        socialInsights: createSocialAuditConnectorInsightsProvider(),
+      });
       try {
         // Execute synchronously within request lifecycle up to 20s
         const executionPromise = executor.execute({

@@ -4,4 +4,5 @@ export * from "./pipeline.ts";
 export * from "./budget.ts";
 export * from "./provider-context.ts";
 export * from "./first-party-evidence.ts";
+export * from "./connector-insights.ts";
 export * from "./live.ts";

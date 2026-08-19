@@ -66,6 +66,15 @@ export interface AuditDeliveryReport {
   ownerActions?: string[];
   stratxcelSupport?: Array<{ recommendation: string; capability: string; why: string }>;
   sources?: Array<{ id: string; url: string; title?: string; provider?: string; retrievedAt?: string }>;
+  /** Truthful per-connector state for this audit — never omitted, never implies a
+   * source was analyzed when it wasn't. */
+  connectorAvailability?: Array<{
+    provider: string;
+    state: "available" | "unavailable" | "not_connected" | "permission_required" | "provider_error" | "no_data";
+    reason: string | null;
+    retrievedAt: string | null;
+    timeWindow: string | null;
+  }>;
   limitations?: string[];
   /** Alias of limitations for the customer-facing researchLimitations contract. */
   researchLimitations?: string[];
@@ -265,6 +274,22 @@ export function normalizeAuditDeliveryReport(value: unknown): AuditDeliveryRepor
         }];
       })
     : [];
+  const connectorAvailability = Array.isArray(report.connectorAvailability)
+    ? report.connectorAvailability.flatMap((item) => {
+        const row = objectValue(item);
+        const provider = typeof row.provider === "string" ? row.provider.slice(0, 60) : "";
+        const VALID_STATES = ["available", "unavailable", "not_connected", "permission_required", "provider_error", "no_data"];
+        const state = typeof row.state === "string" && VALID_STATES.includes(row.state) ? row.state : "";
+        if (!provider || !state) return [];
+        return [{
+          provider,
+          state: state as "available" | "unavailable" | "not_connected" | "permission_required" | "provider_error" | "no_data",
+          reason: typeof row.reason === "string" ? row.reason.slice(0, 500) : null,
+          retrievedAt: typeof row.retrievedAt === "string" ? row.retrievedAt : null,
+          timeWindow: typeof row.timeWindow === "string" ? row.timeWindow : null,
+        }];
+      })
+    : [];
   const limitations = cleanList(report.researchLimitations ?? report.limitations);
   const overallHealthScore = scoreOrNull(overallHealthValue.score);
   const overallHealthExplanation = typeof overallHealthValue.explanation === "string"
@@ -327,6 +352,7 @@ export function normalizeAuditDeliveryReport(value: unknown): AuditDeliveryRepor
     ownerActions: cleanList(report.ownerActions),
     stratxcelSupport: stratxcelSupport.length ? stratxcelSupport : undefined,
     sources: sources.length ? sources : undefined,
+    connectorAvailability: connectorAvailability.length ? connectorAvailability : undefined,
     limitations: limitations.length ? limitations : undefined,
     researchLimitations: limitations.length ? limitations : undefined,
   };

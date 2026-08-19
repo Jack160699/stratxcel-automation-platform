@@ -260,6 +260,13 @@ export function normalizeAuditReport(
       provider: source.provider,
       retrievedAt: source.retrievedAt,
     })),
+    connectorAvailability: (args.research.connectorAvailability ?? []).map((record) => ({
+      provider: record.provider,
+      state: record.state,
+      reason: record.reason,
+      retrievedAt: record.retrievedAt,
+      timeWindow: record.timeWindow,
+    })),
     limitations,
     researchLimitations: limitations,
     generation: {

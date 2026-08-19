@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createSupabaseServiceClient } from "@/lib/supabase/service";
 import { createPostgresQueueAdapter } from "@stratxcel/queue";
 import { AUDIT_GENERATION_JOB_TYPE, createLiveAutomaticAuditExecutor } from "@stratxcel/audit-engine";
+import { createSocialAuditConnectorInsightsProvider } from "@/lib/social/audit-connector-insights";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,7 +22,9 @@ export async function GET(req: NextRequest) {
 
   const supabase = createSupabaseServiceClient();
   const queue = createPostgresQueueAdapter(supabase);
-  const auditExecutor = createLiveAutomaticAuditExecutor(supabase);
+  const auditExecutor = createLiveAutomaticAuditExecutor(supabase, {
+    socialInsights: createSocialAuditConnectorInsightsProvider(),
+  });
 
   // Recover expired leases first
   await queue.recoverExpiredLeases().catch((err) => {

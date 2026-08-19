@@ -75,7 +75,16 @@ export interface ResearchSource {
   canonicalUrl: string;
   title?: string;
   domain: string;
-  provider: "google" | "openai" | "crawler" | "search_console" | "unknown";
+  provider:
+    | "google"
+    | "openai"
+    | "crawler"
+    | "search_console"
+    | "google_analytics"
+    | "google_business"
+    | "facebook"
+    | "instagram"
+    | "unknown";
   retrievedAt: string;
   searchQueries: readonly string[];
   sourceType: SourceQualityClass;
@@ -84,6 +93,27 @@ export interface ResearchSource {
   excerpt?: string;
   contentHash?: string;
   publishedAt?: string | null;
+}
+
+/**
+ * Truthful availability of one connected-provider data source consulted
+ * while assembling research evidence. Distinguishes "we have no data" from
+ * "the data is bad" — never silently converted into an empty/zero result.
+ */
+export type ConnectorAvailabilityState =
+  | "available"
+  | "unavailable"
+  | "not_connected"
+  | "permission_required"
+  | "provider_error"
+  | "no_data";
+
+export interface ConnectorAvailabilityRecord {
+  provider: string;
+  state: ConnectorAvailabilityState;
+  reason: string | null;
+  retrievedAt: string | null;
+  timeWindow: string | null;
 }
 
 export interface ResearchResult {
@@ -106,6 +136,13 @@ export interface ResearchResult {
   disagreements?: readonly string[];
   reasonCode?: string;
   humanReason?: string;
+  /**
+   * Truthful per-provider state for every connected-account data source
+   * attempted (not just the ones that produced a usable source/claim) — the
+   * customer report must be able to say "Search Console: connected, no data"
+   * distinctly from "Search Console: not connected" or "fetch failed".
+   */
+  connectorAvailability?: readonly ConnectorAvailabilityRecord[];
 }
 
 export const RESEARCH_BOUNDS = {
