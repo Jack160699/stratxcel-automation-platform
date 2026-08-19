@@ -462,6 +462,84 @@ function createTestDb() {
   console.log("✓ WhatsApp phone binding rehydration verified.\n");
 }
 
+// -------------------------------------------------------------
+// TEST 7: REAUTH_REQUIRED detection uses the real social_accounts enum values
+// -------------------------------------------------------------
+// Regression test: social_accounts_status_check only allows CONNECTED |
+// DISCONNECTED | ERROR | RECONNECT_REQUIRED, and
+// social_accounts_token_health_check only allows UNKNOWN | HEALTHY |
+// EXPIRING | EXPIRED | REVOKED | ERROR (verified against the live schema).
+// The canonical resolver used to check status.includes("REAUTH") and
+// token_health === "INVALID" -- neither value is legal under either
+// constraint, so REAUTH_REQUIRED was unreachable dead code for every social
+// provider until lib/social/repositories/accounts.ts markReauthRequired was
+// corrected to write the real values (RECONNECT_REQUIRED / EXPIRED).
+{
+  console.log("Test 7: REAUTH_REQUIRED detection matches the real persisted enum values...");
+  const { client, tables } = createTestDb();
+  const tenantId = "tenant_reauth_test";
+
+  // A row exactly as markReauthRequired() now writes it.
+  tables.social_accounts.push({
+    id: "acct_reauth_1",
+    tenant_id: tenantId,
+    owner_id: "owner_reauth_1",
+    platform: "instagram",
+    provider_account_id: "ig_1",
+    username: "reauth_business",
+    display_name: "Reauth Business",
+    status: "RECONNECT_REQUIRED",
+    token_health: "EXPIRED",
+    last_sync_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  });
+
+  let status = await getBusinessConnectionStatus(client, tenantId, "instagram");
+  assert.equal(status.connectionState, "REAUTH_REQUIRED", "status=RECONNECT_REQUIRED must resolve to REAUTH_REQUIRED");
+  assert.equal(status.reauthRequired, true);
+  assert.equal(status.healthState, "DEGRADED");
+
+  // A REVOKED token on an account still marked CONNECTED must also surface
+  // as REAUTH_REQUIRED (the provider silently invalidated it server-side).
+  tables.social_accounts.push({
+    id: "acct_reauth_2",
+    tenant_id: tenantId,
+    owner_id: "owner_reauth_2",
+    platform: "facebook",
+    provider_account_id: "fb_1",
+    username: "reauth_page",
+    display_name: "Reauth Page",
+    status: "CONNECTED",
+    token_health: "REVOKED",
+    last_sync_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  });
+  status = await getBusinessConnectionStatus(client, tenantId, "facebook");
+  assert.equal(status.connectionState, "REAUTH_REQUIRED", "a REVOKED token_health must also surface as REAUTH_REQUIRED");
+
+  // A deliberate customer DISCONNECTED must never read as REAUTH_REQUIRED,
+  // even if a leftover token_health value (recorded at disconnect time)
+  // would otherwise match -- disconnect is terminal, not broken.
+  tables.social_accounts.push({
+    id: "acct_reauth_3",
+    tenant_id: tenantId,
+    owner_id: "owner_reauth_3",
+    platform: "youtube",
+    provider_account_id: "yt_1",
+    username: "reauth_channel",
+    display_name: "Reauth Channel",
+    status: "DISCONNECTED",
+    token_health: "REVOKED",
+    last_sync_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  });
+  status = await getBusinessConnectionStatus(client, tenantId, "youtube");
+  assert.equal(status.connectionState, "NOT_CONNECTED", "an explicit DISCONNECTED status must win over a leftover token_health value");
+  assert.equal(status.reauthRequired, false);
+
+  console.log("✓ REAUTH_REQUIRED is reachable via the real enum values, and disconnect still takes precedence.\n");
+}
+
 console.log("===============================================================");
-console.log("ALL DIGITAL PRESENCE & CONNECTOR STABILITY TESTS PASSED (6/6)!");
+console.log("ALL DIGITAL PRESENCE & CONNECTOR STABILITY TESTS PASSED (7/7)!");
 console.log("===============================================================\n");

@@ -66,6 +66,30 @@ function isSafeHttpUrl(value: string | null | undefined): value is string {
   }
 }
 
+// social_accounts_status_check only allows CONNECTED | DISCONNECTED | ERROR |
+// RECONNECT_REQUIRED, and social_accounts_token_health_check only allows
+// UNKNOWN | HEALTHY | EXPIRING | EXPIRED | REVOKED | ERROR (verified against
+// the live schema). This resolver used to check status.includes("REAUTH")
+// and token_health === "INVALID" -- neither value is legal under either
+// constraint, so a row could never actually match and every provider's
+// REAUTH_REQUIRED state was unreachable dead code. Persistence (see
+// lib/social/repositories/accounts.ts markReauthRequired) writes
+// RECONNECT_REQUIRED / EXPIRED; check those real values instead.
+function isReauthRequired(row: { status?: unknown; token_health?: unknown } | null | undefined): boolean {
+  if (!row) return false;
+  const status = String(row.status).toUpperCase();
+  // A deliberate customer disconnect is terminal, not broken -- never surface
+  // it as "needs reconnect" just because a leftover token_health value (e.g.
+  // REVOKED, recorded at disconnect time) is still sitting on the row. Same
+  // principle already applied to WhatsApp's disabled-vs-revoked distinction
+  // below; social_accounts needed the same guard once REAUTH detection
+  // actually became reachable.
+  if (status === "DISCONNECTED") return false;
+  if (status === "RECONNECT_REQUIRED") return true;
+  const health = String(row.token_health).toUpperCase();
+  return health === "EXPIRED" || health === "REVOKED";
+}
+
 function cleanHandle(raw: string | null | undefined): string | null {
   if (!raw) return null;
   const trimmed = raw.trim();
@@ -184,7 +208,7 @@ export async function getTenantDigitalPresence(
   const gbSocial = findSocialRow("google_business") || findSocialRow("google");
   const gbPublic = extractPublicProfile("google_business", onlineProfiles);
   const gbConnected = gbSocial && String(gbSocial.status).toUpperCase() === "CONNECTED";
-  const gbReauth = gbSocial && (String(gbSocial.status).toUpperCase().includes("REAUTH") || gbSocial.token_health === "INVALID");
+  const gbReauth = isReauthRequired(gbSocial);
   const gbError = gbSocial && String(gbSocial.status).toUpperCase() === "ERROR";
 
   const googleBusinessStatus: CanonicalConnectionStatus = {
@@ -196,17 +220,22 @@ export async function getTenantDigitalPresence(
     displayName: gbSocial?.display_name || gbSocial?.username || (gbConnected ? "Google Business Profile" : null),
     handle: gbSocial?.username ? cleanHandle(gbSocial.username) : gbPublic.handle,
     publicUrl: gbPublic.url,
-    connectionState: gbConnected
-      ? "CONNECTED"
-      : gbReauth
+    // gbReauth takes precedence over gbConnected: a row can be status=CONNECTED
+    // with a REVOKED/EXPIRED token_health (the provider invalidated it without
+    // the customer disconnecting) -- that must still surface as needing
+    // reconnect, not as a healthy connection. isReauthRequired() already
+    // excludes DISCONNECTED, so a deliberate disconnect still wins below.
+    connectionState: gbReauth
       ? "REAUTH_REQUIRED"
+      : gbConnected
+      ? "CONNECTED"
       : gbError
       ? "ERROR"
       : gbPublic.url
       ? "DISCOVERED_PUBLICLY"
       : "NOT_CONNECTED",
-    authState: gbConnected ? "AUTHENTICATED" : gbReauth ? "EXPIRED" : "UNAUTHENTICATED",
-    healthState: gbConnected ? "HEALTHY" : gbReauth || gbError ? "DEGRADED" : "UNKNOWN",
+    authState: gbReauth ? "EXPIRED" : gbConnected ? "AUTHENTICATED" : "UNAUTHENTICATED",
+    healthState: gbReauth ? "DEGRADED" : gbConnected ? "HEALTHY" : gbError ? "DEGRADED" : "UNKNOWN",
     capabilities: ["local_seo", "review_sync", "business_hours"],
     lastSyncedAt: gbSocial?.last_sync_at ?? gbSocial?.updated_at ?? null,
     reauthRequired: Boolean(gbReauth),
@@ -220,7 +249,7 @@ export async function getTenantDigitalPresence(
   const igSocial = findSocialRow("instagram");
   const igPublic = extractPublicProfile("instagram", onlineProfiles);
   const igConnected = igSocial && String(igSocial.status).toUpperCase() === "CONNECTED";
-  const igReauth = igSocial && (String(igSocial.status).toUpperCase().includes("REAUTH") || igSocial.token_health === "INVALID");
+  const igReauth = isReauthRequired(igSocial);
   const igError = igSocial && String(igSocial.status).toUpperCase() === "ERROR";
 
   const instagramStatus: CanonicalConnectionStatus = {
@@ -232,17 +261,17 @@ export async function getTenantDigitalPresence(
     displayName: igSocial?.display_name || igSocial?.username || (igConnected ? "Instagram Business" : null),
     handle: igSocial?.username ? cleanHandle(igSocial.username) : igPublic.handle,
     publicUrl: igConnected && igSocial?.username ? `https://instagram.com/${igSocial.username.replace(/^@/, "")}` : igPublic.url,
-    connectionState: igConnected
-      ? "CONNECTED"
-      : igReauth
+    connectionState: igReauth
       ? "REAUTH_REQUIRED"
+      : igConnected
+      ? "CONNECTED"
       : igError
       ? "ERROR"
       : igPublic.url
       ? "DISCOVERED_PUBLICLY"
       : "NOT_CONNECTED",
-    authState: igConnected ? "AUTHENTICATED" : igReauth ? "EXPIRED" : "UNAUTHENTICATED",
-    healthState: igConnected ? "HEALTHY" : igReauth || igError ? "DEGRADED" : "UNKNOWN",
+    authState: igReauth ? "EXPIRED" : igConnected ? "AUTHENTICATED" : "UNAUTHENTICATED",
+    healthState: igReauth ? "DEGRADED" : igConnected ? "HEALTHY" : igError ? "DEGRADED" : "UNKNOWN",
     capabilities: ["direct_publishing", "reels_publishing", "insights_analytics", "comment_monitoring"],
     lastSyncedAt: igSocial?.last_sync_at ?? igSocial?.updated_at ?? null,
     reauthRequired: Boolean(igReauth),
@@ -256,7 +285,7 @@ export async function getTenantDigitalPresence(
   const fbSocial = findSocialRow("facebook");
   const fbPublic = extractPublicProfile("facebook", onlineProfiles);
   const fbConnected = fbSocial && String(fbSocial.status).toUpperCase() === "CONNECTED";
-  const fbReauth = fbSocial && (String(fbSocial.status).toUpperCase().includes("REAUTH") || fbSocial.token_health === "INVALID");
+  const fbReauth = isReauthRequired(fbSocial);
   const fbError = fbSocial && String(fbSocial.status).toUpperCase() === "ERROR";
 
   const facebookStatus: CanonicalConnectionStatus = {
@@ -268,17 +297,17 @@ export async function getTenantDigitalPresence(
     displayName: fbSocial?.display_name || fbSocial?.username || (fbConnected ? "Facebook Page" : null),
     handle: fbSocial?.username ? cleanHandle(fbSocial.username) : fbPublic.handle,
     publicUrl: fbConnected && fbSocial?.username ? `https://facebook.com/${fbSocial.username.replace(/^@/, "")}` : fbPublic.url,
-    connectionState: fbConnected
-      ? "CONNECTED"
-      : fbReauth
+    connectionState: fbReauth
       ? "REAUTH_REQUIRED"
+      : fbConnected
+      ? "CONNECTED"
       : fbError
       ? "ERROR"
       : fbPublic.url
       ? "DISCOVERED_PUBLICLY"
       : "NOT_CONNECTED",
-    authState: fbConnected ? "AUTHENTICATED" : fbReauth ? "EXPIRED" : "UNAUTHENTICATED",
-    healthState: fbConnected ? "HEALTHY" : fbReauth || fbError ? "DEGRADED" : "UNKNOWN",
+    authState: fbReauth ? "EXPIRED" : fbConnected ? "AUTHENTICATED" : "UNAUTHENTICATED",
+    healthState: fbReauth ? "DEGRADED" : fbConnected ? "HEALTHY" : fbError ? "DEGRADED" : "UNKNOWN",
     capabilities: ["page_publishing", "page_insights", "community_engagement"],
     lastSyncedAt: fbSocial?.last_sync_at ?? fbSocial?.updated_at ?? null,
     reauthRequired: Boolean(fbReauth),
@@ -292,7 +321,7 @@ export async function getTenantDigitalPresence(
   const ytSocial = findSocialRow("youtube");
   const ytPublic = extractPublicProfile("youtube", onlineProfiles);
   const ytConnected = ytSocial && String(ytSocial.status).toUpperCase() === "CONNECTED";
-  const ytReauth = ytSocial && (String(ytSocial.status).toUpperCase().includes("REAUTH") || ytSocial.token_health === "INVALID");
+  const ytReauth = isReauthRequired(ytSocial);
   const ytError = ytSocial && String(ytSocial.status).toUpperCase() === "ERROR";
 
   const youtubeStatus: CanonicalConnectionStatus = {
@@ -304,17 +333,17 @@ export async function getTenantDigitalPresence(
     displayName: ytSocial?.display_name || ytSocial?.username || (ytConnected ? "YouTube Channel" : null),
     handle: ytSocial?.username ? cleanHandle(ytSocial.username) : ytPublic.handle,
     publicUrl: ytConnected && ytSocial?.username ? `https://youtube.com/@${ytSocial.username.replace(/^@/, "")}` : ytPublic.url,
-    connectionState: ytConnected
-      ? "CONNECTED"
-      : ytReauth
+    connectionState: ytReauth
       ? "REAUTH_REQUIRED"
+      : ytConnected
+      ? "CONNECTED"
       : ytError
       ? "ERROR"
       : ytPublic.url
       ? "DISCOVERED_PUBLICLY"
       : "NOT_CONNECTED",
-    authState: ytConnected ? "AUTHENTICATED" : ytReauth ? "EXPIRED" : "UNAUTHENTICATED",
-    healthState: ytConnected ? "HEALTHY" : ytReauth || ytError ? "DEGRADED" : "UNKNOWN",
+    authState: ytReauth ? "EXPIRED" : ytConnected ? "AUTHENTICATED" : "UNAUTHENTICATED",
+    healthState: ytReauth ? "DEGRADED" : ytConnected ? "HEALTHY" : ytError ? "DEGRADED" : "UNKNOWN",
     capabilities: ["video_upload", "shorts_publishing", "channel_analytics"],
     lastSyncedAt: ytSocial?.last_sync_at ?? ytSocial?.updated_at ?? null,
     reauthRequired: Boolean(ytReauth),
