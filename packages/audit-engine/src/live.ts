@@ -472,7 +472,6 @@ export class LiveAuditResearchProvider implements AuditResearchProvider {
         },
       },
     );
-    const canonical = canonicalizeResearchSources(result);
     const { data: snapshot } = await this.client
       .from("audit_discovery_snapshots")
       .select("packet")
@@ -483,7 +482,7 @@ export class LiveAuditResearchProvider implements AuditResearchProvider {
     const packet = snapshot?.packet && typeof snapshot.packet === "object" && !Array.isArray(snapshot.packet)
       ? snapshot.packet as { pagesFetched?: Array<{ url?: string; title?: string; status?: number }> }
       : null;
-    const withFirstParty = mergeFirstPartyDiscoverySources(canonical, {
+    const withFirstParty = mergeFirstPartyDiscoverySources(result, {
       websiteUrl: website,
       businessName: context.order.business_name,
       pages: packet?.pagesFetched,
@@ -502,8 +501,27 @@ export class LiveAuditResearchProvider implements AuditResearchProvider {
       ? mergeConnectorInsightSources(withFirstParty, connectorInsights)
       : withFirstParty;
 
+    // Canonicalize *after* every source (AI research + first-party website
+    // crawl + connector insights) has been merged in, not before. Doing this
+    // too early left the first-party/connector sources with their raw,
+    // non-"src_"-prefixed ids (e.g. "connector_facebook") in the *persisted*
+    // research_data.sources -- while LiveAuditReportProvider.generate() below
+    // independently re-canonicalizes the same merged research right before
+    // handing it to the report-generation model, so the model's findings
+    // legitimately cited "src_2_facebook.com"-style ids that did not exist in
+    // what was actually persisted. Confirmed live: run 69eb978d's report cited
+    // real connector-derived findings (Facebook/Instagram follower and post
+    // counts) whose evidenceSourceIds could not be matched against the
+    // persisted sources, tripping complete_automatic_audit_generation_v1's
+    // citation check (quality_outcome LOW_CONFIDENCE,
+    // failure_code uncited_or_unknown_finding_sources) despite the citations
+    // being genuine. canonicalizeResearchSources is idempotent on ids that
+    // already start with "src_", so calling it once here (on the full merged
+    // set) makes the persisted ids and the report-generation ids agree.
+    const canonical = canonicalizeResearchSources(withConnectors);
+
     return {
-      result: withConnectors,
+      result: canonical,
       receipt: execution ? receipt("research", execution) : null,
     };
   }
