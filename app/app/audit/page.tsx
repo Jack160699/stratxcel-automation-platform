@@ -41,7 +41,7 @@ interface AuditGeneration {
 
 const PROCESSING_STAGES = [
   { key: "QUEUED", label: "Business information received" },
-  { key: "RESEARCH", label: "Connected channels checked" },
+  { key: "RESEARCH", label: "Public web presence researched" },
   { key: "ANALYSIS", label: "Website presence being analyzed" },
   { key: "QUALITY_GATE", label: "Google visibility & local search analysis" },
   { key: "DELIVERY", label: "Growth opportunities & gaps being identified" },
@@ -360,7 +360,7 @@ export default function AuditHubPage() {
             Your Free Business Audit is underway
           </h1>
           <p className="mt-2 text-sm text-sx-text-muted">
-            StratXcel is researching your business across the public web and the channels you connected. You can safely leave this page.
+            StratXcel is researching your business across the public web and your website. You can safely leave this page.
           </p>
         </div>
         <Card className="mt-8 p-6">
