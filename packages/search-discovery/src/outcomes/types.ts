@@ -21,7 +21,7 @@ export type ExperimentDecision =
   | "NOT_SUPPORTED"
   | "INCONCLUSIVE";
 
-export type QueryClass =
+export type OutcomeQueryClass =
   | "COMMERCIAL"
   | "LOCAL"
   | "INFORMATIONAL"
@@ -30,6 +30,7 @@ export type QueryClass =
   | "NON_BRANDED"
   | "HIGH_INTENT"
   | "SUPPORTING";
+
 
 export interface ActionBaselineMetrics {
   gscImpressions?: number;
@@ -58,7 +59,7 @@ export interface ActionExperimentRecord {
   actionId: string;
   actionType: string;
   industry: string;
-  queryClass: QueryClass;
+  queryClass: OutcomeQueryClass;
   hypothesis: string;
   observationWindowDays: number;
   status: ActionOutcomeState;
@@ -79,7 +80,7 @@ export interface ActionExperimentRecord {
 export interface ActionEffectivenessStats {
   actionType: string;
   industry?: string;
-  queryClass?: QueryClass;
+  queryClass?: OutcomeQueryClass;
   totalActionsCount: number;
   verifiedRate: number; // 0-100
   improvementRate: number; // 0-100

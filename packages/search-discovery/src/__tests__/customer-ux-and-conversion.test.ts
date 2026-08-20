@@ -178,7 +178,7 @@ test("Phase 17 Polish: 3. Competitor explanation ('Why Competitors Win')", async
   assert.equal(rival.competitorDomain, "citydentalcare.in");
   assert.equal(rival.competitorName, "City Dental Care");
   assert.ok(rival.evidence.length > 0);
-  assert.ok(rival.unknowns.length > 0, "explicitly show unknowns");
+  assert.ok((rival.unknowns || []).length > 0, "explicitly show unknowns");
   assert.ok(rival.recommendedAction.includes("Deploy"));
 });
 

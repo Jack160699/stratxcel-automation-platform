@@ -302,7 +302,7 @@ test("9. Competitor delta detection", () => {
 
   assert.equal(deltas.length, 1);
   assert.equal(deltas[0].deltaType, "CLIENT_GAINED");
-  assert.ok(deltas[0].summary.includes("improved from #8 to #4"));
+  assert.ok((deltas[0].summary || "").includes("improved from #8 to #4"));
 });
 
 test("10. Why They Win evidence requirements & 11. Missing backlink data is explicitly unknown", () => {
@@ -329,7 +329,7 @@ test("10. Why They Win evidence requirements & 11. Missing backlink data is expl
   assert.equal(explanations.length, 1);
   assert.equal(explanations[0].competitorDomain, "visionplus.in");
   assert.ok(explanations[0].evidence.some((e) => e.includes("holds position #2")));
-  assert.ok(explanations[0].unknowns.some((u) => u.includes("backlink profile: Unmeasured")));
+  assert.ok((explanations[0].unknowns || []).some((u) => u.includes("backlink profile: Unmeasured")));
   assert.ok(explanations[0].recommendedAction.length > 0);
 });
 

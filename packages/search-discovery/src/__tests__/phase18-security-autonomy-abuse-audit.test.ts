@@ -146,8 +146,12 @@ function createMockCmsProvider(overrides?: { siteUrl?: string; writeStatus?: "WR
       mutations.push({ type: "create_page", page });
       return { success: true, pageId: "p-new-1", url: `${overrides?.siteUrl || "https://victim-business.in"}/${page.slug}` };
     },
+    updateContent: async () => ({ success: true }),
+    publishPage: async () => ({ success: true }),
+    verifyPage: async () => ({ verified: true, issues: [] }),
+    rollbackPage: async () => ({ success: true }),
     getMutations: () => mutations,
-  };
+  } as any;
 }
 
 // ==================================================

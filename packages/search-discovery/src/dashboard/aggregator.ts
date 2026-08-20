@@ -172,7 +172,7 @@ export async function getSearchGrowthDashboardData(
     dataCoveragePercentage: 85,
   };
 
-  const verifiedCount = actions.filter((a) => a.status === "VERIFIED").length;
+  const verifiedCount = actions.filter((a: { status: string }) => a.status === "VERIFIED").length;
   const executionHealth: DashboardScorecardMetric = {
     label: "Execution Health",
     value: verifiedCount,
@@ -303,9 +303,9 @@ export async function getSearchGrowthDashboardData(
 
     actionCenter: {
       totalActionsCount: actions.length,
-      lockedCount: actions.filter((a) => a.isLocked).length,
-      verifiedCount: actions.filter((a) => a.status === "VERIFIED").length,
-      inProgressCount: actions.filter((a) => a.status === "RUNNING").length,
+      lockedCount: actions.filter((a: { isLocked: boolean }) => a.isLocked).length,
+      verifiedCount: actions.filter((a: { status: string }) => a.status === "VERIFIED").length,
+      inProgressCount: actions.filter((a: { status: string }) => a.status === "RUNNING").length,
       actions,
     },
 

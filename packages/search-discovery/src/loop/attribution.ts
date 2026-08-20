@@ -1,10 +1,10 @@
 import type { GrowthTimelineEvent } from "./types.ts";
 
 export interface BuildTimelineInput {
-  actions?: Array<Record<string, unknown>>;
-  opportunities?: Array<Record<string, unknown>>;
-  deltas?: Array<Record<string, unknown>>;
-  aiResults?: Array<Record<string, unknown>>;
+  actions?: Array<Record<string, unknown> | any>;
+  opportunities?: Array<Record<string, unknown> | any>;
+  deltas?: Array<Record<string, unknown> | any>;
+  aiResults?: Array<Record<string, unknown> | any>;
 }
 
 export function buildOutcomeAttributionTimeline(input: BuildTimelineInput): GrowthTimelineEvent[] {

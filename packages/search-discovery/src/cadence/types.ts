@@ -89,10 +89,11 @@ export interface GrowthCycleCostTracker {
 }
 
 export interface GrowthEngineState {
-  workspaceId: string;
+  workspaceId?: string;
   lastRunAt: string;
   cycleCountThisMonth: number;
-  status: "IDLE" | "RUNNING" | "COMPLETED" | "ERROR";
+  status?: "IDLE" | "RUNNING" | "COMPLETED" | "ERROR";
+  planTier?: string;
 }
 
 export interface CadenceConfig {

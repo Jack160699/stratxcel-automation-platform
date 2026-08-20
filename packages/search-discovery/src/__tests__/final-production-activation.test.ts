@@ -69,7 +69,7 @@ describe("Phase 16: Final Production Activation & Optional Provider Enablement",
     });
 
     assert.equal(evaluation.status, "NOT_DUE");
-    assert.ok(evaluation.hoursRemaining > 0);
+    assert.ok((evaluation.hoursRemaining ?? 0) > 0);
     assert.equal(crawlerCalls, 0);
     assert.equal(serpCalls, 0);
     assert.equal(aiCalls, 0);

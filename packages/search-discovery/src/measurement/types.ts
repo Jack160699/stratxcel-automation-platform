@@ -122,13 +122,14 @@ export interface CompetitorQuerySnapshot {
 export interface WhyTheyWinExplanation {
   competitorDomain: string;
   competitorName: string;
-  query: string;
-  gap: string;
+  query?: string;
+  gap?: string;
+  summary?: string;
   evidence: string[];
-  sources: string[];
-  confidence: "HIGH" | "MEDIUM" | "LOW";
-  likelyReasons: string[];
-  unknowns: string[];
+  sources?: string[];
+  confidence?: "HIGH" | "MEDIUM" | "LOW";
+  likelyReasons?: string[];
+  unknowns?: string[];
   recommendedAction: string;
 }
 
@@ -144,12 +145,17 @@ export interface CompetitorDeltaResult {
   query: string;
   competitorDomain: string;
   deltaType: CompetitorDeltaType;
-  previousClientPosition: number | null;
-  currentClientPosition: number | null;
-  previousCompetitorPosition: number | null;
-  currentCompetitorPosition: number | null;
-  summary: string;
-  fingerprint: string;
+  previousClientPosition?: number | null;
+  currentClientPosition?: number | null;
+  previousCompetitorPosition?: number | null;
+  currentCompetitorPosition?: number | null;
+  clientOldPosition?: number | null;
+  clientNewPosition?: number | null;
+  competitorOldPosition?: number | null;
+  competitorNewPosition?: number | null;
+  summary?: string;
+  fingerprint?: string;
+  timestamp?: string;
 }
 
 export interface SearchAuthorityScoreComponent {

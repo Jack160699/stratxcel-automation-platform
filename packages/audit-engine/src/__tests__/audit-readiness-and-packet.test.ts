@@ -45,7 +45,11 @@ function mockSupabase(input: {
 
 const BASE_RESEARCH: ResearchResult = {
   status: "PASS",
+  question: "Apollo Clinic Overview",
   summary: "Verified local clinic offering specialized diagnostics.",
+  provider: null,
+  model: null,
+  searchedAt: "2026-08-20T00:00:00Z",
   sources: [
     {
       id: "src_1_clinic.in",
@@ -53,7 +57,7 @@ const BASE_RESEARCH: ResearchResult = {
       canonicalUrl: "https://clinic.in",
       title: "Apollo Clinic Homepage",
       domain: "clinic.in",
-      provider: "website",
+      provider: "crawler",
       retrievedAt: "2026-08-20T00:00:00Z",
       searchQueries: [],
       sourceType: "PRIMARY",
@@ -65,7 +69,7 @@ const BASE_RESEARCH: ResearchResult = {
       canonicalUrl: "https://justdial.com/Apollo-Clinic",
       title: "Justdial Apollo Clinic Listing",
       domain: "justdial.com",
-      provider: "public_web",
+      provider: "crawler",
       retrievedAt: "2026-08-20T00:00:00Z",
       searchQueries: [],
       sourceType: "SECONDARY",
@@ -77,7 +81,7 @@ const BASE_RESEARCH: ResearchResult = {
       canonicalUrl: "https://practo.com/Apollo-Clinic",
       title: "Practo Apollo Clinic Profile",
       domain: "practo.com",
-      provider: "public_web",
+      provider: "crawler",
       retrievedAt: "2026-08-20T00:00:00Z",
       searchQueries: [],
       sourceType: "SECONDARY",
