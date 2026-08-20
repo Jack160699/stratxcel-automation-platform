@@ -224,6 +224,7 @@ export async function POST(request: Request) {
   let created = false;
 
   if (existing.length > 0) {
+    // Existing membership detected — skip second tenant creation (created: false)
     const first = existing[0]!;
     tenant = { id: first.tenant.id, slug: first.tenant.slug, name: first.tenant.name };
   } else {

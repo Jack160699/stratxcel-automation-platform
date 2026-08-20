@@ -24,6 +24,7 @@ export const APP_NAV_GROUPS_DATA: NavGroupData[] = [
   {
     label: "Growth",
     items: [
+      { key: "website", label: "Website", href: "/app/website", release: "v1" },
       { key: "customer-audit", label: "Audit", href: "/app/audit", release: "v1" },
       { key: "brand", label: "Business", href: "/app/brand", release: "v1" },
     ],
@@ -45,5 +46,5 @@ export const APP_NAV_GROUPS_DATA: NavGroupData[] = [
   },
 ];
 
-/** Mobile primary dock: Home, Audit, Copilot, Integrations — More sheet holds the rest. */
-export const APP_MOBILE_NAV_KEYS = ["home", "customer-audit", "copilot", "integrations"];
+/** Mobile primary dock: Home, Audit, Copilot, Business — More sheet holds Website, Connectors, Billing, Team, Settings. */
+export const APP_MOBILE_NAV_KEYS = ["home", "customer-audit", "copilot", "brand"];

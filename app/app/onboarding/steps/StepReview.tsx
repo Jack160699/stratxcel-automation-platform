@@ -84,7 +84,7 @@ export function StepReview({
                     >
                       <PlatformIcon name={c.platform} className="h-3 w-3" />
                       <span>✓ {c.displayName || c.handle || c.platform}</span>
-                      {c.providerLabel && <span className="text-emerald-400/60">({c.providerLabel})</span>}
+                      {c.providerLabel && <span className="text-emerald-400/60">via {c.providerLabel}</span>}
                     </span>
                   ))}
                 </div>

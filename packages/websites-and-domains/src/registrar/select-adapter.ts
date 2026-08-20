@@ -1,19 +1,24 @@
 import { getRegistrarMode } from "./flags.ts";
 import { createDisabledDomainRegistrar } from "./disabled.ts";
 import { SandboxDomainRegistrar } from "./sandbox.ts";
+import { ProductionDomainRegistrar } from "./production.ts";
 import type { DomainRegistrarAdapter } from "./adapter.ts";
 
 /**
- * Reads DOMAIN_REGISTRAR_MODE and returns the matching adapter. No "live"
- * adapter is implemented — no real registrar account/API credentials exist
- * anywhere in this repository (see infrastructure/workers-style runbook
- * note for the one owner action this is pending on). Requesting 'live'
- * fails closed to the disabled adapter rather than silently falling back to
- * sandbox, so a misconfiguration can never look like it's issuing real
- * quotes.
+ * Reads DOMAIN_REGISTRAR_MODE and returns the matching adapter.
+ * When 'live' is configured, returns ProductionDomainRegistrar if credentials exist,
+ * or fails closed to createDisabledDomainRegistrar() rather than silently falling back to sandbox.
  */
 export function selectDomainRegistrar(): DomainRegistrarAdapter {
   const mode = getRegistrarMode();
   if (mode === "sandbox") return new SandboxDomainRegistrar();
+  if (mode === "live") {
+    const hasKey = Boolean(process.env.DOMAIN_REGISTRAR_API_KEY?.trim());
+    const hasSecret = Boolean(process.env.DOMAIN_REGISTRAR_API_SECRET?.trim());
+    if (hasKey && hasSecret) {
+      return new ProductionDomainRegistrar();
+    }
+  }
   return createDisabledDomainRegistrar();
 }
+

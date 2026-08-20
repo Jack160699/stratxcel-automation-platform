@@ -37,7 +37,7 @@ export function StepConnectors({
   connections: SocialConnection[];
   onConnectionsChange: (next: SocialConnection[]) => void;
 }) {
-  // Manual public profile fallback state
+  // Manual public profile fallback state — Add public profile manually (Not an authorized connection)
   const [publicProfilePlatform, setPublicProfilePlatform] = useState<SocialPlatformKey | null>(null);
   const [publicProfileInput, setPublicProfileInput] = useState("");
   const [publicProfileError, setPublicProfileError] = useState<string | null>(null);

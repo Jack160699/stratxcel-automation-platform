@@ -213,7 +213,8 @@ export function TenantCopilotFullPage({
   useEffect(() => {
     if (reviewMode && !enteredReviewRef.current) {
       enteredReviewRef.current = true;
-      setFocusMode(true);
+      const timer = setTimeout(() => setFocusMode(true), 0);
+      return () => clearTimeout(timer);
     }
     if (!reviewMode) enteredReviewRef.current = false;
   }, [reviewMode]);

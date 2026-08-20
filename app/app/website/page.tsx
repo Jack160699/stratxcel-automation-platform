@@ -3,200 +3,351 @@
 import { useEffect, useState } from "react";
 import { useCurrentTenant } from "../CurrentTenantContext";
 import { ModulePageHeader } from "../components/ModulePageHeader";
-import { DisconnectedState, ActionUnavailableNotice } from "../components/DisconnectedState";
 import { IntegrationStatus } from "../components/IntegrationStatus";
-import { MissionSummaryCard, type MissionSummary } from "../components/MissionSummaryCard";
-import { ApprovalSummary, type ApprovalSummaryItem } from "../components/ApprovalSummary";
-import { ArtifactCard, type ArtifactSummary } from "../components/ArtifactCard";
-import { EmptyModuleState } from "../components/EmptyModuleState";
+import { DisconnectedState } from "../components/DisconnectedState";
 import { Card, CardHeading } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { StatusChip } from "@/components/ui/StatusChip";
 import { ErrorState } from "@/components/ui/Feedback";
+import { SmartWebsiteCreator } from "@/components/site-builder/SmartWebsiteCreator";
 
-const WEBSITE_SERVICE_KEYS = new Set(["website_landing_page"]);
-const SEO_SERVICE_KEYS = new Set(["seo_audit"]);
+interface WebsiteProject {
+  id: string;
+  name: string;
+  slug: string;
+  website_type: string;
+  status: string;
+  deployment_status: string;
+  preview_subdomain: string;
+  custom_domain?: string;
+  production_url?: string;
+  prompt?: string;
+  pages?: Array<{ id: string; title: string; slug: string }>;
+  created_at: string;
+  website_agents?: Array<{ id: string; name: string; enabled: boolean; conversation_count: number }>;
+}
 
-/**
- * Website & SEO is a specialized view over the same real missions/approvals/
- * artifacts data every other module reads — genuinely new capability
- * (no Vercel/GitHub/Search Console connection exists yet, per
- * CLIENT_APP_INFORMATION_ARCHITECTURE.md §5), so domain/deployment state is
- * always shown as honestly disconnected rather than fabricated.
- */
 export default function WebsitePage() {
   const { active } = useCurrentTenant();
   const tenantId = active?.tenantId;
 
-  const [missions, setMissions] = useState<MissionSummary[] | null>(null);
+  const [projects, setProjects] = useState<WebsiteProject[] | null>(null);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [approvals, setApprovals] = useState<ApprovalSummaryItem[] | null | "forbidden">(null);
-  const [artifacts, setArtifacts] = useState<ArtifactSummary[] | null | "unavailable">(null);
-  const [changeText, setChangeText] = useState("");
-  const [submitting, setSubmitting] = useState<string | null>(null);
 
-  async function loadMissions() {
+  // Creation State
+  const [showSmartCreator, setShowSmartCreator] = useState(false);
+
+  // Edit / Revision State
+  const [editInstruction, setEditInstruction] = useState("");
+  const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
+
+  // Agent Chat State
+  const [chatOpen, setChatOpen] = useState<string | null>(null);
+  const [chatMessage, setChatMessage] = useState("");
+  const [chatHistory, setChatHistory] = useState<Array<{ role: string; content: string }>>([]);
+  const [chatLoading, setChatLoading] = useState(false);
+
+  async function loadProjects() {
     if (!tenantId) return;
+    setLoading(true);
     setError(null);
-    const res = await fetch(`/api/platform/missions?tenantId=${encodeURIComponent(tenantId)}`);
-    const body = await res.json();
-    if (!res.ok) {
-      setError(body.error ?? `Failed to load missions (HTTP ${res.status})`);
-      return;
-    }
-    setMissions(body.missions);
-  }
-
-  async function loadApprovals() {
-    if (!tenantId) return;
-    const res = await fetch(`/api/platform/approvals?tenantId=${encodeURIComponent(tenantId)}`);
-    if (res.status === 403) return setApprovals("forbidden");
-    const body = await res.json();
-    if (res.ok) setApprovals(body.approvals);
-  }
-
-  async function loadArtifacts() {
-    if (!tenantId) return;
     try {
-      const res = await fetch(`/api/platform/artifacts?tenantId=${encodeURIComponent(tenantId)}&folderCategory=website`);
-      if (!res.ok) return setArtifacts("unavailable");
+      const res = await fetch(`/api/platform/website-factory?tenantId=${encodeURIComponent(tenantId)}`);
       const body = await res.json();
-      setArtifacts(body.artifacts);
+      if (!res.ok) {
+        setError(body.error ?? "Failed to load website projects");
+        return;
+      }
+      setProjects(body.projects || []);
     } catch {
-      setArtifacts("unavailable");
+      setError("Network error loading website projects");
+    } finally {
+      setLoading(false);
     }
   }
 
   useEffect(() => {
-    loadMissions();
-    loadApprovals();
-    loadArtifacts();
+    loadProjects();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenantId]);
 
-  async function startMission(goalText: string, key: string) {
-    if (!tenantId) return;
-    setSubmitting(key);
+  async function handleApplyEdit(projectId: string) {
+    if (!tenantId || !editInstruction.trim()) return;
+
+    setEditingProjectId(projectId);
     setError(null);
     try {
-      const res = await fetch("/api/platform/missions", {
+      const res = await fetch(`/api/platform/website-factory/${projectId}/edit`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tenantId, goalText }),
+        body: JSON.stringify({
+          tenantId,
+          instruction: editInstruction.trim(),
+        }),
       });
       const body = await res.json();
       if (!res.ok) {
-        setError(body.error ?? `Failed to create mission (HTTP ${res.status})`);
+        setError(body.error ?? "Failed to apply edit");
         return;
       }
-      setChangeText("");
-      await loadMissions();
+      setEditInstruction("");
+      await loadProjects();
+    } catch {
+      setError("Failed to apply website edit");
     } finally {
-      setSubmitting(null);
+      setEditingProjectId(null);
     }
   }
 
-  const websiteMissions = (missions ?? []).filter((m) => WEBSITE_SERVICE_KEYS.has(m.service_key ?? ""));
-  const seoMissions = (missions ?? []).filter((m) => SEO_SERVICE_KEYS.has(m.service_key ?? ""));
-  const currentProject = websiteMissions[0] ?? null;
+  async function handleSendAgentChat(projectId: string) {
+    if (!chatMessage.trim()) return;
+    const userMsg = chatMessage.trim();
+    setChatMessage("");
+    setChatHistory((prev) => [...prev, { role: "user", content: userMsg }]);
+    setChatLoading(true);
+
+    try {
+      const res = await fetch(`/api/platform/website-factory/${projectId}/agent/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: userMsg,
+          conversationHistory: chatHistory,
+        }),
+      });
+      const body = await res.json();
+      if (res.ok && body.reply) {
+        setChatHistory((prev) => [...prev, { role: "assistant", content: body.reply }]);
+      } else {
+        setChatHistory((prev) => [...prev, { role: "assistant", content: body.error || "Agent unavailable." }]);
+      }
+    } catch {
+      setChatHistory((prev) => [...prev, { role: "assistant", content: "Connection error." }]);
+    } finally {
+      setChatLoading(false);
+    }
+  }
+
+  const primaryProject = projects?.[0] || null;
 
   return (
-    <div className="flex flex-col gap-6">
-      <ModulePageHeader
-        title="Website & SEO"
-        tenantName={active?.name}
-        description="Requests here compile into real missions. Deployment stays in Preview until you approve production."
-        actions={
-          <Button variant="primary" size="sm" onClick={() => startMission("Create a website", "create")} disabled={submitting !== null || !tenantId}>
-            {submitting === "create" ? "Starting…" : "Start website mission"}
+    <div className="flex flex-col gap-8 pb-16">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <ModulePageHeader
+          title="AI Website Factory"
+          tenantName={active?.name}
+          description="Autonomous AI website generation, custom domain registration, e-commerce catalog, and embedded business agent."
+        />
+        {tenantId && (
+          <Button
+            variant="primary"
+            onClick={() => setShowSmartCreator(true)}
+            className="shadow-lg font-bold"
+          >
+            ✨ Create Website
           </Button>
-        }
-      />
+        )}
+      </div>
 
-      {error && <ErrorState message={error} onRetry={loadMissions} />}
+      {error && <ErrorState message={error} onRetry={loadProjects} />}
 
-      <section className="flex flex-col gap-3">
-        <h2 className="font-sx-sans text-base font-medium text-sx-text">Current website</h2>
-        {tenantId && missions === null && <p className="text-sm text-sx-text-subtle">Loading…</p>}
-        {missions && !currentProject && <EmptyModuleState resource="website project" subtitle="Start one above to begin." />}
-        {currentProject && <MissionSummaryCard mission={currentProject} href={`/app/missions/${currentProject.id}`} />}
-      </section>
-
-      <section className="grid gap-3 sm:grid-cols-2">
-        <IntegrationStatus name="Domain" state="disconnected" detail="No domain connected yet." />
-        <IntegrationStatus name="Website publishing" state="not_supported" detail="Publishing is not connected for this workspace yet." />
-      </section>
-
-      <DisconnectedState
-        title="Preview deployments"
-        reason="A live preview will appear after website publishing is connected."
-        cta={<ActionUnavailableNotice reason="Preview creation is not available for this workspace yet." />}
-      />
+      {/* Smart Website Creator Flow */}
+      {(showSmartCreator || (!loading && (!projects || projects.length === 0))) && tenantId && (
+        <div className="rounded-sx-lg border border-sx-accent/30 bg-sx-surface-1 p-2 sm:p-6 shadow-sm">
+          <div className="flex items-center justify-between mb-4 border-b border-sx-border pb-3">
+            <div>
+              <h2 className="font-sx-sans text-lg font-bold text-sx-text">Smart Website Creator</h2>
+              <p className="text-xs text-sx-text-muted">Type what you want in Hindi, Hinglish, or English. Stratxcel will ask smart questions and build your site.</p>
+            </div>
+            {projects && projects.length > 0 && (
+              <Button size="sm" variant="ghost" onClick={() => setShowSmartCreator(false)}>
+                ✕ Close
+              </Button>
+            )}
+          </div>
+          <SmartWebsiteCreator
+            tenantId={tenantId}
+            onClose={() => {
+              setShowSmartCreator(false);
+              loadProjects();
+            }}
+            onPublish={async () => {
+              setShowSmartCreator(false);
+              await loadProjects();
+            }}
+          />
+        </div>
+      )}
 
       <Card variant="alert">
         <CardHeading>Production promotion requires approval</CardHeading>
         <p className="mt-1 text-xs text-sx-text-muted">
-          Publishing a website always requires your explicit approval and is not available for this workspace yet.
+          Publishing a website always requires your explicit approval, verified payment confirmation, and passing automated QA checks.
         </p>
       </Card>
 
-      <Card>
-        <CardHeading>Request a website change</CardHeading>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (changeText.trim()) startMission(changeText.trim(), "change");
-          }}
-          className="mt-2 flex flex-col gap-3 sm:flex-row"
-        >
-          <Input value={changeText} onChange={(e) => setChangeText(e.target.value)} placeholder="e.g. Update the homepage hero copy" className="flex-1" />
-          <Button type="submit" disabled={submitting !== null || !tenantId || !changeText.trim()}>
-            {submitting === "change" ? "Sending…" : "Request change"}
-          </Button>
-        </form>
-      </Card>
-
-      <section className="flex flex-col gap-3">
+      {/* Projects List */}
+      <section className="flex flex-col gap-6">
         <div className="flex items-center justify-between">
-          <h2 className="font-sx-sans text-base font-medium text-sx-text">SEO findings & recent audits</h2>
-          <Button variant="secondary" size="sm" onClick={() => startMission("Audit my SEO", "seo")} disabled={submitting !== null || !tenantId}>
-            {submitting === "seo" ? "Starting…" : "Request SEO audit"}
-          </Button>
+          <h2 className="font-sx-sans text-xl font-bold text-sx-text">Your Website Projects</h2>
+          {projects && projects.length > 0 && !showSmartCreator && tenantId && (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setShowSmartCreator(true)}
+            >
+              + Create Another Site
+            </Button>
+          )}
         </div>
-        {missions && seoMissions.length === 0 && <EmptyModuleState resource="SEO audits" subtitle="Recommended actions appear here once an audit mission completes." />}
-        {seoMissions.length > 0 && (
-          <div className="flex flex-col gap-2">
-            {seoMissions.map((m) => (
-              <MissionSummaryCard key={m.id} mission={m} href={`/app/missions/${m.id}`} />
-            ))}
-          </div>
-        )}
-      </section>
 
-      <section className="flex flex-col gap-3">
-        <h2 className="font-sx-sans text-base font-medium text-sx-text">Website artifacts</h2>
-        {artifacts === "unavailable" && <EmptyModuleState resource="website artifacts" subtitle="Not available in this environment." />}
-        {artifacts && artifacts !== "unavailable" && artifacts.length === 0 && <EmptyModuleState resource="website artifacts" />}
-        {artifacts && artifacts !== "unavailable" && artifacts.length > 0 && (
-          <div className="flex flex-col gap-2">
-            {artifacts.map((a) => (
-              <ArtifactCard key={a.id} artifact={a} />
-            ))}
-          </div>
-        )}
-      </section>
+        {loading && <p className="text-sm text-sx-text-subtle">Loading website projects…</p>}
 
-      <section className="flex flex-col gap-3">
-        <h2 className="font-sx-sans text-base font-medium text-sx-text">Pending approvals</h2>
-        {approvals === "forbidden" && <p className="text-xs text-sx-text-subtle">No access for your role.</p>}
-        {approvals && approvals !== "forbidden" && approvals.length === 0 && <EmptyModuleState resource="pending approvals" />}
-        {approvals && approvals !== "forbidden" && approvals.length > 0 && (
-          <div className="flex flex-col gap-2">
-            {approvals.map((a) => (
-              <ApprovalSummary key={a.id} approval={a} />
-            ))}
+        {!loading && (!projects || projects.length === 0) && (
+          <div className="rounded-sx-md border border-dashed border-sx-border p-6 text-center">
+            <p className="text-sm font-semibold text-sx-text">Website Factory Ready</p>
+            <p className="mt-1 text-xs text-sx-text-muted">Use the Smart Website Creator above to build your first website.</p>
           </div>
         )}
+
+        {projects?.map((proj) => {
+          const isLive = proj.status === "live" || proj.deployment_status === "LIVE";
+          const agent = proj.website_agents?.[0];
+
+          return (
+            <div key={proj.id} className="rounded-sx-lg border border-sx-border bg-sx-surface-1 p-6 shadow-sm flex flex-col gap-6">
+              {/* Header */}
+              <div className="flex flex-wrap items-start justify-between gap-4 border-b border-sx-border pb-4">
+                <div>
+                  <div className="flex items-center gap-3">
+                    <h3 className="font-sx-sans text-xl font-extrabold text-sx-text">{proj.name}</h3>
+                    <StatusChip state={isLive ? "success" : "neutral"}>
+                      {isLive ? "LIVE" : proj.status.toUpperCase()}
+                    </StatusChip>
+                  </div>
+                  <p className="mt-1 text-xs text-sx-text-muted">
+                    Type: <span className="font-medium text-sx-text">{proj.website_type}</span> · Created: {new Date(proj.created_at).toLocaleDateString()}
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <a
+                    href={`/app/website/${proj.id}/preview`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="rounded-sx-sm border border-sx-border bg-sx-surface-2 px-4 py-2 text-xs font-semibold text-sx-text hover:bg-sx-surface-1 transition-colors"
+                  >
+                    Open Live Preview ↗
+                  </a>
+                  {isLive && (
+                    <a
+                      href={proj.production_url || `https://${proj.custom_domain || proj.slug + ".stratxcel.site"}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="rounded-sx-sm bg-sx-accent px-4 py-2 text-xs font-bold text-sx-accent-on hover:opacity-90 transition-opacity"
+                    >
+                      Visit Live Site 🌐
+                    </a>
+                  )}
+                </div>
+              </div>
+
+              {/* Status Grid */}
+              <div className="grid gap-4 sm:grid-cols-3">
+                <IntegrationStatus
+                  name="Live Domain"
+                  state={proj.custom_domain ? "connected" : "disconnected"}
+                  detail={proj.custom_domain ? `Connected: ${proj.custom_domain}` : "No custom domain connected"}
+                />
+                <IntegrationStatus
+                  name="Hosting & SSL"
+                  state={isLive ? "connected" : "disconnected"}
+                  detail={isLive ? "Active HTTPS on Vercel" : "Deployment pipeline ready"}
+                />
+                <IntegrationStatus
+                  name="AI Business Agent"
+                  state={agent ? "connected" : "disconnected"}
+                  detail={agent ? `${agent.name} (${agent.conversation_count || 0} chats)` : "No agent attached"}
+                />
+              </div>
+
+              {/* Natural Language Edit Bar */}
+              <div className="rounded-sx-md border border-sx-border bg-sx-surface-2 p-4">
+                <label className="block text-xs font-semibold text-sx-text-muted mb-1.5">
+                  Natural Language Website Editing
+                </label>
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <Input
+                    value={editingProjectId === proj.id ? editInstruction : ""}
+                    onChange={(e) => {
+                      setEditingProjectId(proj.id);
+                      setEditInstruction(e.target.value);
+                    }}
+                    placeholder="e.g. 'Make the homepage more premium', 'Add a testimonials section', 'Add products'"
+                    className="flex-1 text-xs"
+                  />
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    disabled={editingProjectId === proj.id && !editInstruction.trim()}
+                    onClick={() => handleApplyEdit(proj.id)}
+                  >
+                    {editingProjectId === proj.id ? "Applying Revision…" : "Apply Edit 🪄"}
+                  </Button>
+                </div>
+              </div>
+
+              {/* AI Agent Chat Modal / Accordion */}
+              {agent && (
+                <div className="border-t border-sx-border pt-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-sx-text">Embedded AI Business Agent ({agent.name})</span>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => {
+                        setChatOpen(chatOpen === proj.id ? null : proj.id);
+                        if (chatOpen !== proj.id && chatHistory.length === 0) {
+                          setChatHistory([{ role: "assistant", content: `Hi! I am ${agent.name}. How can I help with your website?` }]);
+                        }
+                      }}
+                    >
+                      {chatOpen === proj.id ? "Close Agent Test" : "Test Agent Chat 💬"}
+                    </Button>
+                  </div>
+
+                  {chatOpen === proj.id && (
+                    <div className="mt-4 rounded-sx-md border border-sx-border bg-sx-surface-1 p-4 flex flex-col gap-3">
+                      <div className="max-h-60 overflow-y-auto flex flex-col gap-2 p-2 rounded-sx-sm bg-sx-surface-2 text-xs">
+                        {chatHistory.map((m, idx) => (
+                          <div key={idx} className={`p-2 rounded-sx-sm max-w-[80%] ${m.role === "user" ? "bg-sx-accent text-sx-accent-on self-end" : "bg-sx-surface-1 text-sx-text self-start"}`}>
+                            {m.content}
+                          </div>
+                        ))}
+                        {chatLoading && <div className="text-sx-text-subtle italic">Agent thinking…</div>}
+                      </div>
+
+                      <div className="flex gap-2">
+                        <Input
+                          value={chatMessage}
+                          onChange={(e) => setChatMessage(e.target.value)}
+                          onKeyDown={(e) => e.key === "Enter" && handleSendAgentChat(proj.id)}
+                          placeholder="Ask product questions, business details, or navigation…"
+                          className="flex-1 text-xs"
+                        />
+                        <Button size="sm" variant="primary" disabled={chatLoading || !chatMessage.trim()} onClick={() => handleSendAgentChat(proj.id)}>
+                          Send
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </section>
     </div>
   );

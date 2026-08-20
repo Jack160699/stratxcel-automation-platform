@@ -101,6 +101,11 @@ async function registerDomain(supabase: ServiceClient, domain: Record<string, an
         updated_at: new Date().toISOString(),
       })
       .eq("id", domain.id);
+
+    // If linked to a site project, advance the deployment pipeline
+    if (domain.site_project_id) {
+      await advanceSiteProjectAfterDomainRegistration(supabase, domain.site_project_id, domain.tenant_id, domain.domain_name);
+    }
   } catch (err) {
     await supabase
       .from("domains")
@@ -111,6 +116,53 @@ async function registerDomain(supabase: ServiceClient, domain: Record<string, an
       })
       .eq("id", domain.id);
     console.error(`[Domain Fulfilment] Registration failed for ${domain.domain_name}`, err);
+  }
+}
+
+async function advanceSiteProjectAfterDomainRegistration(
+  supabase: ServiceClient,
+  siteProjectId: string,
+  tenantId: string,
+  domainName: string
+): Promise<void> {
+  try {
+    const { selectHostingProvider } = await import("@stratxcel/websites-and-domains");
+    const hosting = selectHostingProvider();
+
+    // 1. Assign custom domain to hosting project
+    const domainAttach = await hosting.assignCustomDomain(siteProjectId, domainName);
+
+    // 2. Mark project live and domain verified
+    await supabase.rpc("transition_website_deployment", {
+      p_site_project_id: siteProjectId,
+      p_tenant_id: tenantId,
+      p_from_status: "DEPLOYING",
+      p_to_status: "LIVE",
+      p_metadata: {
+        production_url: `https://${domainName}`,
+        ssl_status: domainAttach.sslActive ? "SSL_ACTIVE" : "SSL_PENDING",
+        qa_status: "PASSED",
+      },
+    });
+
+    // 3. Enable AI agent if one exists for this site
+    await supabase
+      .from("website_agents")
+      .update({ enabled: true, updated_at: new Date().toISOString() })
+      .eq("site_project_id", siteProjectId);
+
+    // 4. Update domains vercel state
+    await supabase
+      .from("domains")
+      .update({
+        vercel_attached: domainAttach.configured,
+        vercel_ssl_active: domainAttach.sslActive,
+        vercel_attachment_status: domainAttach.sslActive ? "live" : "verifying",
+        updated_at: new Date().toISOString(),
+      })
+      .eq("site_project_id", siteProjectId);
+  } catch (err) {
+    console.error(`[Domain Fulfilment] Failed to advance site project ${siteProjectId}:`, err);
   }
 }
 

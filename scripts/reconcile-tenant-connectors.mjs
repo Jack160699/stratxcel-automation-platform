@@ -46,7 +46,7 @@ async function main() {
     }
 
     const { data: userData } = await supabase.auth.admin.getUserById(ownerUserId);
-    const userMeta = userData?.user?.user_metadata as Record<string, unknown> | undefined;
+    const userMeta = userData?.user?.user_metadata;
 
     if (!userMeta?.onboarding_oauth_connections && !userMeta?.onboarding_whatsapp_verification) {
       healthy++;

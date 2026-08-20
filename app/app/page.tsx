@@ -8,7 +8,7 @@ import { deriveGlobalCustomerState, type GlobalCustomerState } from "@/lib/billi
 import { getCurrentBrandBrain } from "@stratxcel/brand-brain";
 import { Card, CardHeading } from "@/components/ui/Card";
 
-async function loadCommandCenterData(tenantDb: SupabaseClient, tenantId: string) {
+async function loadCommandCenter(tenantDb: SupabaseClient, tenantId: string) {
   const [order, subscription, brandBrain, socialAccountsCount, whatsappBinding, activeRunsCount, wallet] =
     await Promise.all([
       (async () => {
@@ -144,7 +144,7 @@ export default async function ClientCommandCenterPage() {
     brandBrain,
     whatsappBinding,
     activeRunsCount,
-  } = await loadCommandCenterData(ctx.supabase, active.tenantId);
+  } = await loadCommandCenter(ctx.supabase, active.tenantId);
 
   const brainContent = brandBrain?.content as Record<string, any> | undefined;
   const businessName = brainContent?.business_name || brainContent?.identity?.name || active.name || "Your Business";
@@ -209,16 +209,22 @@ function FreeUserDashboard({
           </div>
           <div className="flex flex-col sm:flex-row gap-2.5 shrink-0">
             <Link
-              href="/app/audit"
+              href="/app/website"
               className="inline-flex min-h-[46px] items-center justify-center rounded-sx-md bg-sx-accent px-5 text-[15px] font-bold text-sx-accent-on shadow-md hover:bg-sx-accent/90 transition-transform active:scale-95"
             >
-              View Your Audit →
+              ✨ Create Website
+            </Link>
+            <Link
+              href="/app/audit"
+              className="inline-flex min-h-[46px] items-center justify-center rounded-sx-md border border-sx-border-strong bg-sx-surface-1 px-5 text-[15px] font-semibold text-sx-text hover:bg-sx-surface-2 transition-colors"
+            >
+              View Audit →
             </Link>
             <Link
               href="/app/billing"
               className="inline-flex min-h-[46px] items-center justify-center rounded-sx-md border border-sx-border-strong bg-sx-surface-1 px-5 text-[15px] font-semibold text-sx-text hover:bg-sx-surface-2 transition-colors"
             >
-              Choose a Plan
+              Choose Plan
             </Link>
           </div>
         </div>
@@ -449,7 +455,7 @@ function SubscribedUserDashboard({
         {/* Recommended Actions */}
         <section aria-labelledby="recommendations-heading">
           <h2 id="recommendations-heading" className="mb-3 text-[17px] font-bold text-sx-text">
-            Recommended next actions
+            Next best actions
           </h2>
           <div className="space-y-3">
             {opportunities.length > 0 ? (

@@ -7,6 +7,7 @@ import { MissionSummaryCard, type MissionSummary } from "../components/MissionSu
 import { ApprovalSummary, type ApprovalSummaryItem } from "../components/ApprovalSummary";
 import { ArtifactCard, type ArtifactSummary } from "../components/ArtifactCard";
 import { Card, CardHeading } from "@/components/ui/Card";
+import { RuntimeStatus } from "../components/RuntimeStatus";
 import { CopilotChat } from "@/components/agent-core/CopilotChat";
 import { loadClientCopilotThreadAction, sendClientCopilotMessageAction } from "./actions";
 

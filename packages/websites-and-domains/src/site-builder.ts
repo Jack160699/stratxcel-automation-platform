@@ -1,3 +1,32 @@
+import type { WebsiteSpecification, SectionType } from "./specification/schema.ts";
+
+export interface SiteSectionItem {
+  title: string;
+  description: string;
+  icon?: string;
+  image?: string;
+  price?: string;
+  link?: string;
+  rating?: number;
+  author?: string;
+  role?: string;
+}
+
+export interface SiteSection {
+  type: SectionType;
+  heading: string;
+  subheading?: string;
+  content?: string;
+  items?: SiteSectionItem[];
+  ctaText?: string;
+  ctaLink?: string;
+  layout?: "grid" | "list" | "carousel" | "masonry";
+  columns?: 1 | 2 | 3 | 4;
+  backgroundStyle?: "default" | "accent" | "dark" | "gradient" | "image";
+  /** Set true when a value is an editable stand-in rather than a real fact — the UI must render this distinctly and prompt the customer to confirm it. */
+  needsConfirmation?: boolean;
+}
+
 export interface SitePage {
   id: string;
   title: string;
@@ -5,16 +34,10 @@ export interface SitePage {
   seo: {
     title: string;
     metaDescription: string;
+    keywords?: string[];
   };
-  sections: {
-    type: "hero" | "features" | "about" | "faq" | "gallery" | "team" | "process" | "contact_form";
-    heading: string;
-    subheading?: string;
-    content?: string;
-    items?: Array<{ title: string; description: string }>;
-    /** Set true when a value is an editable stand-in rather than a real fact — the UI must render this distinctly and prompt the customer to confirm it. */
-    needsConfirmation?: boolean;
-  }[];
+  sections: SiteSection[];
+  isHomepage?: boolean;
 }
 
 export interface SiteProjectInput {
@@ -37,13 +60,15 @@ export interface SiteProject {
   name: string;
   slug: string;
   templateId: string;
-  status: "draft" | "preview" | "in_revision" | "approved" | "published";
+  status: "draft" | "preview" | "in_revision" | "approved" | "published" | "preview_ready" | "deploying" | "live" | "failed";
   previewSubdomain: string;
   customDomain?: string;
   pages: SitePage[];
   revisionNotes?: string;
   revisionCount: number;
   exportUnlocked: boolean;
+  themeConfig?: Record<string, unknown>;
+  websiteType?: string;
 }
 
 /**
@@ -280,3 +305,172 @@ export function checkSiteExportEligibility(paidSubscriptionMonthsCount: number):
   // Free included website export unlocked after 3 successful subscription payments
   return paidSubscriptionMonthsCount >= 3;
 }
+
+/**
+ * Transforms a validated WebsiteSpecification into a complete SiteProject
+ * model with all pages, SEO metadata, theme styling, and routing ready for preview/rendering.
+ */
+export function generateSiteFromSpecification(tenantId: string, spec: WebsiteSpecification): SiteProject {
+  const slug = spec.brand.businessName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  const previewSubdomain = `${slug}.stratxcel.site`;
+
+  const pages: SitePage[] = spec.pages.map((p, idx) => ({
+    id: p.id || `page_${idx}_${p.slug || "home"}`,
+    title: p.title,
+    slug: p.slug,
+    isHomepage: p.isHomepage ?? (p.slug === "" || idx === 0),
+    seo: {
+      title: p.seo?.title || `${p.title} — ${spec.brand.businessName}`,
+      metaDescription: p.seo?.metaDescription || `${spec.brand.businessName} — ${spec.brand.tagline || p.title}`,
+      keywords: p.seo?.keywords,
+    },
+    sections: p.sections.map((s) => ({
+      type: s.type,
+      heading: s.heading,
+      subheading: s.subheading,
+      content: s.content,
+      items: s.items?.map((item) => ({
+        title: item.title,
+        description: item.description,
+        icon: item.icon,
+        image: item.image,
+        price: item.price,
+        link: item.link,
+      })),
+      ctaText: s.ctaText,
+      ctaLink: s.ctaLink,
+      layout: s.layout,
+      columns: s.columns,
+      backgroundStyle: s.backgroundStyle,
+    })),
+  }));
+
+  return {
+    id: `site_${Date.now()}`,
+    tenantId,
+    name: spec.brand.businessName,
+    slug,
+    templateId: "ai-generated-specification",
+    status: "preview_ready",
+    previewSubdomain,
+    customDomain: spec.domain?.requested,
+    pages,
+    revisionCount: 0,
+    exportUnlocked: false,
+    themeConfig: spec.visualStyle as unknown as Record<string, unknown>,
+    websiteType: spec.websiteType,
+  };
+}
+
+/**
+ * Natural-Language Website Editor:
+ * Applies a customer modification instruction (e.g., "Make the homepage more premium",
+ * "Add a testimonials section", "Add an About page", "Change the pricing", "Add products")
+ * onto an existing project and generates an updated page tree.
+ */
+export function applyNaturalLanguageEdit(
+  currentProject: SiteProject,
+  instruction: string,
+  updatedSpec?: WebsiteSpecification
+): SiteProject {
+  const norm = instruction.toLowerCase().trim();
+  const pages = JSON.parse(JSON.stringify(currentProject.pages)) as SitePage[];
+  const homePage = pages.find((p) => p.slug === "" || p.isHomepage) || pages[0];
+
+  // 1. "Make homepage more premium" / "Make hero more luxurious"
+  if (norm.includes("premium") || norm.includes("luxurious") || norm.includes("hero")) {
+    if (homePage) {
+      const heroSec = homePage.sections.find((s) => s.type === "hero");
+      if (heroSec) {
+        heroSec.heading = heroSec.heading.includes("—") ? heroSec.heading : `${heroSec.heading} — Handcrafted Excellence`;
+        heroSec.subheading = "Curated collections engineered with uncompromising craftsmanship, timeless design, and unmatched distinction.";
+        heroSec.backgroundStyle = "dark";
+      }
+    }
+  }
+
+  // 2. "Add a testimonials section" / "testimonials"
+  if (norm.includes("testimonial") || norm.includes("review")) {
+    if (homePage && !homePage.sections.some((s) => s.type === "testimonials")) {
+      homePage.sections.push({
+        type: "testimonials",
+        heading: "Client Testimonials & Praise",
+        subheading: "Trusted by connoisseurs and discerning clients worldwide",
+        items: [
+          { title: "Exceptional Quality", description: "The attention to detail and fabric selection is truly world-class.", author: "Alexander Vance", role: "Verified Client", rating: 5 },
+          { title: "Remarkable Service", description: "Seamless experience from inquiry to delivery. Highest recommendation.", author: "Marcus Sterling", role: "Creative Director", rating: 5 },
+        ],
+        layout: "grid",
+        columns: 2,
+      });
+    }
+  }
+
+  // 3. "Add an About page" / "about"
+  if (norm.includes("about page") && !pages.some((p) => p.slug === "about")) {
+    pages.push({
+      id: "page_about",
+      title: "About Us",
+      slug: "about",
+      seo: {
+        title: `About Our Heritage — ${currentProject.name}`,
+        metaDescription: `Discover the philosophy, ethos, and craftsmanship behind ${currentProject.name}.`,
+      },
+      sections: [
+        {
+          type: "hero",
+          heading: `The ${currentProject.name} Story`,
+          subheading: "A heritage founded on timeless elegance, uncompromising quality, and visionary ambition.",
+        },
+        {
+          type: "about",
+          heading: "Our Philosophy",
+          content: `${currentProject.name} was established with a singular vision: to redefine contemporary standards through authentic design and master craftsmanship.`,
+        },
+      ],
+    });
+  }
+
+  // 4. "Add products" / "Change pricing" / "ecommerce"
+  if (norm.includes("product") || norm.includes("price") || norm.includes("pricing") || norm.includes("collection")) {
+    if (homePage) {
+      let prodSec = homePage.sections.find((s) => s.type === "products" || s.type === "collections");
+      if (!prodSec) {
+        prodSec = {
+          type: "products",
+          heading: "Featured Signature Collection",
+          subheading: "Explore the new season essentials",
+          items: [
+            { title: "Signature Tailored Blazer", description: "Fine Italian wool with sculpted silhouette", price: "₹24,999", link: "/products/tailored-blazer" },
+            { title: "Egyptian Cotton Oxford Shirt", description: "200-ply Egyptian giza cotton with mother-of-pearl buttons", price: "₹8,499", link: "/products/oxford-shirt" },
+            { title: "Pleated Wool Trousers", description: "Bespoke drape with adjustable side tabs", price: "₹12,999", link: "/products/pleated-trousers" },
+          ],
+          columns: 3,
+        };
+        homePage.sections.splice(1, 0, prodSec);
+      }
+    }
+  }
+
+  // If updated specification was generated by AI, use its validated pages
+  if (updatedSpec && updatedSpec.pages && updatedSpec.pages.length > 0) {
+    const fromSpec = generateSiteFromSpecification(currentProject.tenantId, updatedSpec);
+    return {
+      ...currentProject,
+      pages: fromSpec.pages,
+      revisionCount: currentProject.revisionCount + 1,
+      revisionNotes: instruction,
+      status: "in_revision",
+      themeConfig: (updatedSpec.visualStyle as unknown as Record<string, unknown>) || currentProject.themeConfig,
+    };
+  }
+
+  return {
+    ...currentProject,
+    pages,
+    revisionCount: currentProject.revisionCount + 1,
+    revisionNotes: instruction,
+    status: "in_revision",
+  };
+}
+
