@@ -31,6 +31,10 @@
     {
       "path": "/api/platform/audit/worker",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/internal/search/scheduler",
+      "schedule": "0 */4 * * *"
     }
   ]
 }

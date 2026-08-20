@@ -134,6 +134,7 @@ export interface ResearchResult {
   selectionReceipt?: Record<string, unknown>;
   searchedAt: string;
   disagreements?: readonly string[];
+  confidenceBand?: "HIGH" | "MEDIUM" | "LOW" | "UNKNOWN" | string;
   reasonCode?: string;
   humanReason?: string;
   /**

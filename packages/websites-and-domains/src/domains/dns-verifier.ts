@@ -5,7 +5,6 @@
  * Formats errors into friendly, non-technical customer messages.
  */
 
-import dns from "node:dns/promises";
 import type {
   DnsInstructions,
   DnsVerificationResult,
@@ -13,6 +12,14 @@ import type {
 } from "./types.ts";
 import type { InspectDomainOptions } from "./dns-inspector.ts";
 import { normalizeDomainInput } from "./normalizer.ts";
+
+async function getDefaultDnsResolver() {
+  if (typeof window !== "undefined") {
+    throw new Error("DNS resolution cannot run in browser context");
+  }
+  const dnsModule = await import("node:dns/promises");
+  return dnsModule.default || dnsModule;
+}
 
 export interface VerifyDomainDnsOptions {
   domain: string;
@@ -29,7 +36,7 @@ export async function verifyDomainDns(
   const { domain, expectedInstructions, dnsResolver } = options;
   const norm = normalizeDomainInput(domain);
   const apexDomain = norm.apexDomain || domain;
-  const resolver = dnsResolver || dns;
+  const resolver = dnsResolver || (await getDefaultDnsResolver());
 
   const matchedRecords: DomainRecord[] = [];
   const missingRecords: DomainRecord[] = [];

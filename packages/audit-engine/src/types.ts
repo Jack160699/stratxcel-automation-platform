@@ -173,6 +173,85 @@ export interface AuditReportV1 {
   limitations: string[];
   /** Alias of limitations for the customer-facing researchLimitations contract. */
   researchLimitations: string[];
+  /** Deep Search Growth OS Diagnostics */
+  executiveSearchHealth?: {
+    searchAuthorityScore: number;
+    confidence: "HIGH" | "MEDIUM" | "LOW";
+    dataCoverage: string;
+  };
+  organicSearchPerformance?: {
+    totalClicks: number | null;
+    totalImpressions: number | null;
+    averageCtr: number | null;
+    averagePosition: number | null;
+    topQueries: Array<{ query: string; clicks: number; impressions: number; ctr: number; position: number }>;
+    topLandingPages: Array<{ page: string; clicks: number }>;
+    performanceSummary: string;
+  };
+  technicalSeoFindings?: {
+    score: number;
+    issuesCount: number;
+    criticalIssues: string[];
+    recommendations: string[];
+  };
+  contentCoverage?: {
+    missingServices: string[];
+    missingLocations: string[];
+    weakPages: string[];
+    recommendations: string[];
+  };
+  competitorSignals?: {
+    knownCompetitors: string[];
+    comparativeInsights: string[];
+    verifiedFindings: string[];
+    unknownAreas: string[];
+  };
+  whyTheyWin?: Array<{
+    competitorDomain: string;
+    competitorName: string;
+    query: string;
+    gap: string;
+    evidence: string[];
+    sources: string[];
+    confidence: "HIGH" | "MEDIUM" | "LOW";
+    likelyReasons: string[];
+    unknowns: string[];
+    recommendedAction: string;
+  }>;
+  localAndEntity?: {
+    gbpStatus: string;
+    entityConsistency: string;
+    localOpportunities: string[];
+  };
+  aiSearchReadiness?: {
+    citationScore: number;
+    entityCompleteness: string;
+    recommendations: string[];
+  };
+  priorityOpportunities?: Array<{
+    id: string;
+    category: string;
+    problem: string;
+    evidence: string;
+    source: string;
+    affectedUrl?: string;
+    affectedQuery?: string;
+    businessImpact: string;
+    searchImpact: string;
+    confidence: "HIGH" | "MEDIUM" | "LOW";
+    difficulty: "EASY" | "MEDIUM" | "HARD";
+    priority: number;
+    proposedAction: string;
+  }>;
+  whatStratxcelWouldDo?: Array<{
+    opportunityId: string;
+    title: string;
+    actionPlan: string;
+    executionType: string;
+    status: "LOCKED_ACTIVATION_REQUIRED";
+    lockReason: string;
+  }>;
+  dataReadiness?: Record<string, unknown>;
   generation: {
     method: "automatic_audit_v1";
     brandBrainVersion: number;

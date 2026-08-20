@@ -1,0 +1,24 @@
+$profileDir = "$env:TEMP\stratxcel-e2e-com-browser"
+if (Test-Path $profileDir) {
+    Remove-Item -Path $profileDir -Recurse -Force -ErrorAction SilentlyContinue
+}
+New-Item -ItemType Directory -Path $profileDir -Force | Out-Null
+
+$chrome = "C:\Program Files\Google\Chrome\Application\chrome.exe"
+$args = "--remote-debugging-port=9222 --user-data-dir=`"$profileDir`" --new-window --start-maximized https://www.stratxcel.in/login"
+
+Write-Host "Launching Chrome via Explorer COM Object (Shell.Application)..."
+$shell = New-Object -ComObject Shell.Application
+$shell.ShellExecute($chrome, $args, "", "open", 3) # 3 = SW_MAXIMIZE
+
+Write-Host "ShellExecute issued through explorer.exe COM server."
+Start-Sleep -Seconds 3
+
+$conn = Get-NetTCPConnection -LocalPort 9222 -ErrorAction SilentlyContinue
+Write-Host "Port 9222 TCP Active: $([bool]$conn)"
+if ($conn) {
+    $p = Get-Process -Id $conn.OwningProcess -ErrorAction SilentlyContinue
+    Write-Host "Owning PID: $($p.Id)"
+    Write-Host "MainWindowHandle: $($p.MainWindowHandle)"
+    Write-Host "MainWindowTitle: '$($p.MainWindowTitle)'"
+}
