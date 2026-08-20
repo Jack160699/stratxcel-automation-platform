@@ -90,6 +90,9 @@
       "@stratxcel/websites-and-domains": [
         "./packages/websites-and-domains/src/index.ts"
       ],
+      "@stratxcel/websites-and-domains/client": [
+        "./packages/websites-and-domains/src/client.ts"
+      ],
       "@stratxcel/whatsapp": [
         "./packages/whatsapp/src/index.ts"
       ],

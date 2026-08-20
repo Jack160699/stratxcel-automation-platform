@@ -5,8 +5,8 @@ import {
   smartWebsiteCreatorController,
   type CreatorSessionState,
   type RegenerateOptionItem,
-} from "@stratxcel/websites-and-domains";
-import type { AuthorizedConnectorContext, BriefVisualStyle } from "@stratxcel/websites-and-domains";
+} from "@stratxcel/websites-and-domains/client";
+import type { AuthorizedConnectorContext, BriefVisualStyle } from "@stratxcel/websites-and-domains/client";
 import { SiteRenderer } from "./SiteRenderer";
 import { CustomerDomainManager } from "./CustomerDomainManager";
 
