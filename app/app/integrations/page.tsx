@@ -276,12 +276,12 @@ export default function IntegrationsPage() {
       />
 
       {whatsappSuccessMsg && (
-        <div className="rounded-sx-sm border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm font-medium text-emerald-300 flex items-center justify-between">
+        <div className="rounded-sx-sm border border-sx-success/30 bg-sx-success/10 px-4 py-3 text-sm font-medium text-sx-success flex items-center justify-between">
           <span>{whatsappSuccessMsg}</span>
           <button
             type="button"
             onClick={() => setWhatsappSuccessMsg(null)}
-            className="text-emerald-400 hover:text-emerald-200"
+            className="text-sx-success hover:opacity-70"
           >
             ✕
           </button>
@@ -357,7 +357,7 @@ export default function IntegrationsPage() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="text-rose-400 hover:text-rose-300 hover:bg-rose-500/10"
+                        className="text-sx-danger hover:bg-sx-danger/10"
                         onClick={() => handleDisconnect(card.key)}
                       >
                         Disconnect
@@ -482,7 +482,7 @@ export default function IntegrationsPage() {
             </p>
 
             {otpError && (
-              <div className="rounded-sx-sm border border-rose-400/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">
+              <div className="rounded-sx-sm border border-sx-danger/30 bg-sx-danger/10 px-3 py-2 text-xs text-sx-danger">
                 {otpError}
               </div>
             )}
@@ -525,9 +525,9 @@ export default function IntegrationsPage() {
               </div>
             ) : (
               <div className="space-y-4">
-                <div className="rounded-sx-sm bg-emerald-500/10 border border-emerald-500/20 p-2.5 text-xs text-emerald-300">
+                <div className="rounded-sx-sm bg-sx-success/10 border border-sx-success/20 p-2.5 text-xs text-sx-success">
                   <p className="font-semibold">WhatsApp code sent to {whatsappPhone}</p>
-                  <p className="text-[11px] text-emerald-400/80 mt-0.5">
+                  <p className="text-[11px] text-sx-success/80 mt-0.5">
                     Tap <strong>Copy Code</strong> in your WhatsApp message, then paste the 6-digit code below.
                   </p>
                 </div>

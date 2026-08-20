@@ -178,9 +178,10 @@ export default async function ClientCommandCenterPage() {
 }
 
 /**
- * STATE A — Free / Unsubscribed Dashboard, built on the StratXcel App Design
- * Spec §7.1 Home pattern: ScoreSummary → one PriorityCard → status rows →
- * what a plan unlocks. Zero fake running states — every number here is real.
+ * STATE A — Free / Unsubscribed Dashboard, restructured to the StratXcel
+ * Desktop Claude Design canvas layout (Health + status row → Today's
+ * Priorities → Quick Tools → what a plan unlocks). Zero fake running
+ * states or placeholder numbers — every value here is real.
  */
 function FreeUserDashboard({
   businessName,
@@ -200,82 +201,74 @@ function FreeUserDashboard({
       : `${businessName}'s foundation is verified — your free audit found room to grow.`
     : `${businessName}'s foundation is verified. Your free growth audit is being prepared.`;
 
+  // Same progressive, mutually-exclusive priority the app has always
+  // surfaced (verify WhatsApp → turn audit into a plan → create a
+  // website while the audit runs) — now rendered as a tile instead of a
+  // single full-width card, per the design's "Today's Priorities" grid.
+  const priorities: PriorityTileProps[] = [
+    !whatsappVerified && {
+      icon: "💬",
+      iconTint: "success",
+      title: "Verify your WhatsApp number",
+      detail: "Customer alerts are delivered here — 2 min",
+      href: "/app/integrations",
+    },
+    whatsappVerified && hasAuditReport && {
+      icon: "🚀",
+      iconTint: "accent",
+      title: "Turn your audit into a plan",
+      detail: "Put StratXcel to work on what it found — 3 min",
+      href: "/app/billing",
+    },
+    whatsappVerified && !hasAuditReport && {
+      icon: "🌐",
+      iconTint: "warning",
+      title: "Create your business website",
+      detail: "Let customers find & trust you online — 5 min",
+      href: "/app/website",
+    },
+  ].filter(Boolean) as PriorityTileProps[];
+
   return (
     <div className="flex flex-col gap-6">
-      {/* ScoreSummary — spec §5.9 */}
-      <div className="flex flex-col items-center gap-3.5 text-center">
-        <div className="flex items-baseline gap-2">
-          <span className="text-[13px] font-semibold text-sx-text-muted">Business health</span>
-          <span className="sx-hi text-xs text-sx-text-muted">व्यापार स्वास्थ्य</span>
+      {/* Health + status — StratXcel Desktop canvas Row 1 */}
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="flex flex-col items-center gap-3 rounded-sx-md border border-sx-border bg-sx-surface-1 p-5 text-center">
+          <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-sx-text-subtle">Online Health</span>
+          <ScoreRing score={score} />
+          <ScoreBandChip band={band} />
+          <p className="text-[13px] leading-[20px] text-sx-text-muted">{sentence}</p>
+          <Link
+            href="/app/audit"
+            className="mt-1 inline-flex h-11 w-full items-center justify-center rounded-sx-sm bg-sx-accent text-[14px] font-semibold text-sx-accent-on transition-transform active:scale-95 hover:bg-[color:var(--sx-accent-hover)]"
+          >
+            View Report
+          </Link>
         </div>
-        <ScoreRing score={score} />
-        <ScoreBandChip band={band} />
-        <p className="max-w-[280px] text-[17px] leading-[26px] text-sx-text">{sentence}</p>
+        <div className="rounded-sx-md border border-sx-border bg-sx-surface-1 p-5">
+          <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-sx-text-subtle">What&apos;s verified and ready</span>
+          <div className="mt-2 flex flex-col">
+            <StatusRow label="Business profile" detail={businessName} ok />
+            <StatusRow
+              label="WhatsApp alerts"
+              detail={whatsappVerified ? "Instant updates enabled" : "Verify your number to enable"}
+              ok={whatsappVerified}
+              actionHref={whatsappVerified ? undefined : "/app/integrations"}
+            />
+            <StatusRow
+              label="Business audit"
+              detail={hasAuditReport ? `${Math.round(score)}/100 health score` : "Research in progress"}
+              ok={hasAuditReport}
+              actionHref="/app/audit"
+              last
+            />
+          </div>
+        </div>
       </div>
 
-      {/* PriorityCard — the one thing to do next, spec §5.10 */}
-      {!whatsappVerified ? (
-        <PriorityCard
-          category="Stay reachable"
-          categoryHi="जुड़े रहें"
-          title="Verify your WhatsApp number"
-          body="Customer alerts and audit updates are delivered on WhatsApp — verify your number so nothing is missed."
-          difficulty="Easy"
-          time="2 min"
-          ctaLabel="Verify it"
-          ctaLabelHi="ठीक करें"
-          ctaHref="/app/integrations"
-        />
-      ) : hasAuditReport ? (
-        <PriorityCard
-          category="Grow further"
-          categoryHi="आगे बढ़ें"
-          title="Turn your audit into a plan"
-          body="Your free audit is ready. A plan puts StratXcel to work executing what it found."
-          difficulty="Easy"
-          time="3 min"
-          ctaLabel="Choose a plan"
-          ctaLabelHi="योजना चुनें"
-          ctaHref="/app/billing"
-        />
-      ) : (
-        <PriorityCard
-          category="Get discovered"
-          categoryHi="मिल जाएं"
-          title="Create your business website"
-          body="A website makes it easy for customers to find and trust your business online."
-          difficulty="Easy"
-          time="5 min"
-          ctaLabel="Create website"
-          ctaLabelHi="वेबसाइट बनाएं"
-          ctaHref="/app/website"
-        />
-      )}
+      {priorities.length > 0 && <TodaysPriorities tiles={priorities} />}
 
-      {/* What's verified and ready */}
-      <section aria-labelledby="ready-heading">
-        <h2 id="ready-heading" className="mb-3 flex items-baseline gap-2 text-[19px] font-semibold text-sx-text">
-          What&apos;s ready
-          <span className="sx-hi text-xs font-normal text-sx-text-muted">तैयार है</span>
-        </h2>
-        <div className="rounded-sx-md border border-sx-border bg-sx-surface-1">
-          <StatusRow label="Business profile" detail={businessName} ok />
-          <StatusRow
-            label="WhatsApp alerts"
-            detail={whatsappVerified ? "Instant updates enabled" : "Verify your number to enable"}
-            ok={whatsappVerified}
-            actionHref={whatsappVerified ? undefined : "/app/integrations"}
-          />
-          <StatusRow label="Public presence" detail="Socials & website mapped" ok />
-          <StatusRow
-            label="Business audit"
-            detail={hasAuditReport ? `${Math.round(score)}/100 health score` : "Research in progress"}
-            ok={hasAuditReport}
-            actionHref="/app/audit"
-            last
-          />
-        </div>
-      </section>
+      <QuickTools />
 
       {/* What you can unlock */}
       <section aria-labelledby="unlock-heading">
@@ -335,14 +328,14 @@ function SubscribedUserDashboard({
         </Link>
       </div>
 
-      {/* ScoreSummary + change metrics side by side, spec §7.1 desktop */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-stretch">
-        <div className="flex flex-col items-center justify-center gap-3 rounded-sx-md border border-sx-border bg-sx-surface-1 p-6 text-center sm:w-[40%]">
-          <span className="text-[13px] font-semibold text-sx-text-muted">Business health</span>
+      {/* Health + Pulse row — StratXcel Desktop canvas Row 1 */}
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="flex flex-col items-center justify-center gap-3 rounded-sx-md border border-sx-border bg-sx-surface-1 p-6 text-center">
+          <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-sx-text-subtle">Online Health</span>
           <ScoreRing score={score} />
           <ScoreBandChip band={band} />
         </div>
-        <div className="grid flex-1 grid-cols-2 gap-3">
+        <div className="grid grid-cols-2 gap-3">
           <MetricTile label="Connected sources" value={String(customerState.connectedSourcesCount)} />
           <MetricTile label="Active missions" value={String(activeRunsCount > 0 ? activeRunsCount : 1)} />
           <MetricTile label="Monthly usage" value={`${customerState.monthlyUsagePercent}%`} />
@@ -352,6 +345,33 @@ function SubscribedUserDashboard({
           />
         </div>
       </div>
+
+      {/* Today's Priorities — sourced from the real opportunities the audit
+          report found, falling back to the Copilot recommendation that was
+          previously the only "Next best actions" entry. */}
+      <TodaysPriorities
+        tiles={
+          opportunities.length > 0
+            ? opportunities.slice(0, 3).map((opp) => ({
+                icon: "🎯",
+                iconTint: "accent" as const,
+                title: opp.title,
+                detail: opp.rationale ?? "Execute with Copilot",
+                href: "/app/social/copilot",
+              }))
+            : [
+                {
+                  icon: "💬",
+                  iconTint: "accent" as const,
+                  title: "Ask Copilot for a new growth mission",
+                  detail: "Generate campaign posters, write ad copy, or optimize local rankings.",
+                  href: "/app/social/copilot",
+                },
+              ]
+        }
+      />
+
+      <QuickTools />
 
       {/* StratXcel is working on */}
       <section aria-labelledby="working-heading">
@@ -375,75 +395,88 @@ function SubscribedUserDashboard({
           />
         </div>
       </section>
-
-      {/* Next best actions */}
-      <section aria-labelledby="recommendations-heading">
-        <h2 id="recommendations-heading" className="mb-3 text-[19px] font-semibold text-sx-text">
-          Next best actions
-        </h2>
-        <div className="flex flex-col gap-3">
-          {opportunities.length > 0 ? (
-            opportunities.map((opp, idx) => (
-              <RecommendationCard key={idx} title={opp.title} detail={opp.rationale} />
-            ))
-          ) : (
-            <RecommendationCard
-              title="Ask Copilot for a new growth mission"
-              detail="Your AI copilot can generate campaign posters, write ad copy, or optimize local rankings."
-            />
-          )}
-        </div>
-      </section>
     </div>
   );
 }
 
-/** The single most important card on the screen — spec §5.10. */
-function PriorityCard({
-  category,
-  categoryHi,
-  title,
-  body,
-  difficulty,
-  time,
-  ctaLabel,
-  ctaLabelHi,
-  ctaHref,
-}: {
-  category: string;
-  categoryHi: string;
+type PriorityIconTint = "accent" | "success" | "warning";
+
+interface PriorityTileProps {
+  icon: string;
+  iconTint: PriorityIconTint;
   title: string;
-  body: string;
-  difficulty: string;
-  time: string;
-  ctaLabel: string;
-  ctaLabelHi: string;
-  ctaHref: string;
-}) {
+  detail?: string;
+  href: string;
+}
+
+const PRIORITY_TINT_CLASSES: Record<PriorityIconTint, string> = {
+  accent: "bg-sx-accent-muted",
+  success: "bg-[var(--sx-success-tint)]",
+  warning: "bg-[var(--sx-warning-tint)]",
+};
+
+/**
+ * "Today's Priorities" grid — StratXcel Desktop canvas. Every tile is a
+ * real, personalized signal (WhatsApp verification, audit/plan state,
+ * report opportunities) passed in by the caller; this component never
+ * invents its own content.
+ */
+function TodaysPriorities({ tiles }: { tiles: PriorityTileProps[] }) {
+  if (tiles.length === 0) return null;
   return (
-    <div className="rounded-sx-md border border-sx-border bg-sx-surface-1 p-5 shadow-sm" style={{ borderLeft: "3px solid var(--sx-serious)" }}>
-      <div className="flex items-baseline gap-2">
-        <span className="text-[13px] font-semibold text-sx-text-muted">{category}</span>
-        <span className="sx-hi text-xs text-sx-text-muted">{categoryHi}</span>
+    <section aria-labelledby="priorities-heading">
+      <h2 id="priorities-heading" className="mb-3 flex items-baseline gap-2 text-[19px] font-semibold text-sx-text">
+        Today&apos;s Priorities
+        <span className="sx-hi text-xs font-normal text-sx-text-muted">आज की प्राथमिकताएं</span>
+      </h2>
+      <div className={`grid gap-3 ${tiles.length >= 3 ? "sm:grid-cols-3" : tiles.length === 2 ? "sm:grid-cols-2" : "sm:grid-cols-1"}`}>
+        {tiles.map((tile, idx) => (
+          <Link
+            key={idx}
+            href={tile.href}
+            className="rounded-sx-md border border-sx-border bg-sx-surface-1 p-3.5 transition-colors hover:border-sx-accent/40"
+          >
+            <span className={`flex h-9 w-9 items-center justify-center rounded-sx-sm text-base ${PRIORITY_TINT_CLASSES[tile.iconTint]}`}>
+              {tile.icon}
+            </span>
+            <p className="mt-2 text-[14px] font-semibold text-sx-text">{tile.title}</p>
+            {tile.detail && <p className="mt-1 line-clamp-2 text-xs text-sx-text-subtle">{tile.detail}</p>}
+          </Link>
+        ))}
       </div>
-      <p className="mt-1.5 text-[19px] font-semibold text-sx-text">{title}</p>
-      <p className="mt-1.5 text-[15px] leading-[22px] text-sx-text-muted">{body}</p>
-      <div className="mt-3.5 flex items-center gap-2">
-        <span className="inline-flex h-[26px] items-center rounded-sx-pill bg-sx-surface-2 px-2.5 text-[13px] font-semibold text-sx-text-muted">
-          {difficulty}
-        </span>
-        <span className="text-xs text-sx-text-subtle">{time}</span>
+    </section>
+  );
+}
+
+const QUICK_TOOLS: { icon: string; iconTint: PriorityIconTint; label: string; href: string }[] = [
+  { icon: "🎨", iconTint: "accent", label: "Create Poster", href: "/app/content/studio" },
+  { icon: "💬", iconTint: "success", label: "Ask Copilot", href: "/app/social/copilot" },
+  { icon: "🌐", iconTint: "warning", label: "Manage Website", href: "/app/website" },
+  { icon: "🏪", iconTint: "accent", label: "Shop Profile", href: "/app/brand" },
+];
+
+/** "Quick Tools" grid — StratXcel Desktop canvas. Four real destinations that already exist in the app; nothing here is a placeholder action. */
+function QuickTools() {
+  return (
+    <section aria-labelledby="tools-heading">
+      <h2 id="tools-heading" className="sr-only">
+        Quick tools
+      </h2>
+      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+        {QUICK_TOOLS.map((tool) => (
+          <Link
+            key={tool.href}
+            href={tool.href}
+            className="flex flex-col items-center gap-2 rounded-sx-sm border border-sx-border bg-sx-surface-1 p-3.5 text-center transition-colors hover:border-sx-accent/40"
+          >
+            <span className={`flex h-9 w-9 items-center justify-center rounded-sx-sm text-base ${PRIORITY_TINT_CLASSES[tool.iconTint]}`}>
+              {tool.icon}
+            </span>
+            <span className="text-xs font-semibold text-sx-text">{tool.label}</span>
+          </Link>
+        ))}
       </div>
-      <div className="mt-4 flex items-center gap-1">
-        <Link
-          href={ctaHref}
-          className="inline-flex h-13 items-center justify-center gap-2 rounded-sx-sm bg-sx-accent px-5 text-[15px] font-semibold text-sx-accent-on transition-transform active:scale-95 hover:bg-[color:var(--sx-accent-hover)] md:h-11"
-        >
-          {ctaLabel}
-          <span className="sx-hi text-xs opacity-85">{ctaLabelHi}</span>
-        </Link>
-      </div>
-    </div>
+    </section>
   );
 }
 
@@ -465,7 +498,7 @@ function StatusRow({
     <div className={`flex items-center gap-3 px-5 py-4 ${last ? "" : "border-b border-sx-border"}`}>
       <span
         className="h-2 w-2 shrink-0 rounded-full"
-        style={{ background: ok ? "#0CA30C" : "#B98A2E" }}
+        style={{ background: ok ? "var(--sx-success)" : "var(--sx-warning)" }}
         aria-hidden="true"
       />
       <div className="min-w-0 flex-1">
@@ -510,18 +543,6 @@ function ActivityRow({
       </div>
       <Link href={actionHref} className="shrink-0 self-center text-[13px] font-semibold text-sx-accent hover:underline">
         Manage
-      </Link>
-    </div>
-  );
-}
-
-function RecommendationCard({ title, detail }: { title: string; detail?: string }) {
-  return (
-    <div className="rounded-sx-md border border-sx-border bg-sx-surface-1 p-4">
-      <p className="text-[15px] font-semibold text-sx-text">{title}</p>
-      {detail && <p className="mt-1 line-clamp-2 text-[13px] text-sx-text-muted">{detail}</p>}
-      <Link href="/app/social/copilot" className="mt-2.5 inline-flex items-center text-[13px] font-semibold text-sx-accent hover:underline">
-        Execute with Copilot →
       </Link>
     </div>
   );

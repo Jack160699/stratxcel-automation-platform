@@ -6,12 +6,12 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 interface RouteParams {
-  params: Promise<{ id: string }>;
+  params: Promise<{ projectId: string }>;
 }
 
 export async function POST(request: Request, { params }: RouteParams) {
   try {
-    const { id: siteProjectId } = await params;
+    const { projectId: siteProjectId } = await params;
     const body = await request.json().catch(() => ({}));
     const { tenantId, instruction, confirmed } = body;
 

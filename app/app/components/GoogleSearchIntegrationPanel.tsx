@@ -143,7 +143,7 @@ export function GoogleSearchIntegrationPanel({ tenantId }: { tenantId: string })
       </p>
 
       {successMsg && (
-        <div className="mt-3 rounded-sx-sm border border-emerald-500/30 bg-emerald-500/10 px-3.5 py-2.5 text-xs font-medium text-emerald-300">
+        <div className="mt-3 rounded-sx-sm border border-sx-success/30 bg-sx-success/10 px-3.5 py-2.5 text-xs font-medium text-sx-success">
           {successMsg}
         </div>
       )}

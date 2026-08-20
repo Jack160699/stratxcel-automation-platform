@@ -262,42 +262,45 @@ body {
 /*
  * ————— Customer app v2 design tokens (redesign/customer-app-v2) —————
  *
- * Source of truth: "StratXcel — Customer App Visual Design Specification"
- * (calm, premium, minimal; local Indian shopkeeper audience). Re-points the
- * shared --sx-* namespace *only* inside .sx-customer-app, the wrapper the
- * customer shell (CoreAppShell, product === "App") already applies around
- * the whole /app tree — Sidebar, TopCommandBar, MobileBottomNav, and every
- * page's content. Every component built on the --sx-* tokens (Button, Card,
- * StatusChip, Input, Modal, …) re-skins automatically inside that scope;
- * /admin and the public site read the unscoped :root values and are
- * completely unaffected. html.sx-theme-dark values are left as the dark
- * fallback since the spec ships light-only for v1 (§2.4).
+ * Source of truth: the "StratXcel Desktop" Claude Design canvas (Claude
+ * Design project 6c2ad0a0-c8c8-47d1-a79d-3a1b255a7b01, StratXcel Desktop.dc.html),
+ * refining the earlier "StratXcel — Customer App Visual Design Specification"
+ * (calm, premium, minimal; local Indian shopkeeper audience) with its exact
+ * palette and Outfit type. Re-points the shared --sx-* namespace *only*
+ * inside .sx-customer-app, the wrapper the customer shell (CoreAppShell,
+ * product === "App") already applies around the whole /app tree — Sidebar,
+ * TopCommandBar, MobileBottomNav, and every page's content. Every component
+ * built on the --sx-* tokens (Button, Card, StatusChip, Input, Modal, …)
+ * re-skins automatically inside that scope; /admin and the public site read
+ * the unscoped :root values and are completely unaffected. html.sx-theme-dark
+ * values are left as the dark fallback since the spec ships light-only for
+ * v1 (§2.4).
  */
 .sx-customer-app {
-  --sx-bg: #f6f6f3;
+  --sx-bg: #fbf9f6;
   --sx-surface-1: #ffffff;
-  --sx-surface-2: #f1f1ec;
-  --sx-surface-3: #eceae2;
+  --sx-surface-2: #f3f0ea;
+  --sx-surface-3: #ece8e3;
   --sx-elevated: #ffffff;
-  --sx-border: rgb(22 24 29 / 0.10);
-  --sx-border-strong: rgb(22 24 29 / 0.18);
+  --sx-border: #ece8e3;
+  --sx-border-strong: #ddd7cd;
 
-  --sx-text: #16181d;
-  --sx-text-muted: #565a63;
-  --sx-text-subtle: #8a8e97;
+  --sx-text: #1a1a2e;
+  --sx-text-muted: #5c5a56;
+  --sx-text-subtle: #8b8680;
 
-  --sx-accent: #2a57da;
-  --sx-accent-hover: #1e43ac;
-  --sx-accent-muted: rgb(42 87 218 / 0.1);
+  --sx-accent: #1b5fe3;
+  --sx-accent-hover: #1650c4;
+  --sx-accent-muted: rgb(27 95 227 / 0.06);
   --sx-accent-on: #ffffff;
-  --sx-royal: #2a57da;
-  --sx-ai: #1e43ac;
+  --sx-royal: #1b5fe3;
+  --sx-ai: #1650c4;
 
-  --sx-success: #0ca30c;
-  --sx-warning: #b98a2e;
-  --sx-danger: #d03b3b;
-  --sx-learning: #1e43ac;
-  --sx-offline: #8a8e97;
+  --sx-success: #16a34a;
+  --sx-warning: #d97706;
+  --sx-danger: #dc2626;
+  --sx-learning: #1650c4;
+  --sx-offline: #8b8680;
 
   /* Cards & inputs 16px, buttons 12px, chips/pills 999px (spec §3.3). */
   --sx-radius-xs: 8px;
@@ -317,9 +320,9 @@ body {
   --background: var(--sx-bg);
   --foreground: var(--sx-text);
 
-  /* Inter for Latin UI text (spec §3.1) — overrides the shared
-     Instrument Sans font-sx-sans utility only within this scope. */
-  --font-sx-sans: var(--font-inter), Inter, ui-sans-serif, system-ui, sans-serif;
+  /* Outfit for Latin UI text (StratXcel Desktop canvas) — overrides the
+     shared Instrument Sans font-sx-sans utility only within this scope. */
+  --font-sx-sans: var(--font-outfit), Outfit, ui-sans-serif, system-ui, sans-serif;
   font-family: var(--font-sx-sans);
 }
 

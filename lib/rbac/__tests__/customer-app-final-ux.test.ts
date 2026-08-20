@@ -29,7 +29,12 @@ assert.doesNotMatch(shell, />\s*Sign out\s*</);
 assert.doesNotMatch(read("app", "app", "settings", "page.tsx"), /signOutAction|>\s*Sign out\s*</, "sign out belongs only in the profile sheet");
 
 const nav = read("components", "shell", "navigation", "app-nav-data.ts");
-for (const group of ["Overview", "Growth", "Execution", "Account"]) assert.match(nav, new RegExp(`label: "${group}"`));
+// StratXcel Desktop canvas regrouped the four labeled sections into two
+// (primary: Home/Audit/Growth Assistant/Shop Profile, secondary: Website &
+// Domain/Connected Accounts/Plan & Billing/Staff/Settings) — the sidebar
+// itself never renders these labels for the customer shell; they exist only
+// for the mobile "More" sheet's section headings.
+for (const group of ["Overview", "Account"]) assert.match(nav, new RegExp(`label: "${group}"`));
 
 const mobileNav = read("components", "shell", "MobileBottomNav.tsx");
 assert.match(mobileNav, /text-xs font-medium/);

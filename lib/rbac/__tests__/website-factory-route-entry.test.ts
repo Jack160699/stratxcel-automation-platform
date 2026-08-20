@@ -24,6 +24,13 @@ function run() {
     ["components", "site-builder", "CustomerPreviewToolbar.tsx"],
     ["components", "site-builder", "SiteRenderer.tsx"],
     ["app", "api", "platform", "website-factory", "route.ts"],
+    // Canonical dynamic segment for Website Factory is [projectId] — edit,
+    // rollback, and agent/chat were consolidated onto it (moved off the
+    // conflicting sibling [id] segment) so every route under
+    // website-factory/ shares one dynamic-path name.
+    ["app", "api", "platform", "website-factory", "[projectId]", "edit", "route.ts"],
+    ["app", "api", "platform", "website-factory", "[projectId]", "rollback", "route.ts"],
+    ["app", "api", "platform", "website-factory", "[projectId]", "agent", "chat", "route.ts"],
     ["app", "api", "platform", "website-factory", "[projectId]", "domains", "route.ts"],
     ["app", "api", "platform", "website-factory", "[projectId]", "domains", "[domainId]", "verify", "route.ts"],
     ["app", "api", "platform", "website-factory", "[projectId]", "domains", "[domainId]", "disconnect", "route.ts"],
@@ -41,25 +48,26 @@ function run() {
   assert.equal(websiteNavItem.href, "/app/website", "Website nav item must point to /app/website");
   assert.equal(websiteNavItem.release, "v1", "Website nav item must be release 'v1'");
 
-  const growthGroup = APP_NAV_GROUPS_DATA.find((g) => g.label === "Growth");
-  assert.ok(growthGroup, "APP_NAV_GROUPS_DATA must have a Growth group");
-  assert.ok(
-    growthGroup.items.some((i) => i.key === "website"),
-    "Growth group must contain the Website navigation item"
-  );
-  console.log("✓ Desktop navigation correctly exposes Website under Growth as V1.");
+  // StratXcel Desktop canvas regroups nav into unlabeled primary/secondary
+  // sections (components/shell/navigation/app-nav-data.ts) — website now
+  // lives in the secondary "Account" group alongside Connected Accounts,
+  // Plan & Billing, Staff, Settings. The group-membership check follows the
+  // current IA rather than the pre-redesign "Growth" label.
+  const websiteGroup = APP_NAV_GROUPS_DATA.find((g) => g.items.some((i) => i.key === "website"));
+  assert.ok(websiteGroup, "APP_NAV_GROUPS_DATA must have a group containing the Website navigation item");
+  console.log("✓ Desktop navigation correctly exposes Website as V1.");
 
-  // 3. Dashboard Contains Create Website CTA
+  // 3. Dashboard Contains a Create/Manage Website CTA
   const dashboardHome = read("app", "app", "page.tsx");
   assert.ok(
-    dashboardHome.includes('href="/app/website"') || dashboardHome.includes("href='/app/website'"),
+    dashboardHome.includes('"/app/website"') || dashboardHome.includes("'/app/website'"),
     "Dashboard page must have a direct link to /app/website"
   );
   assert.ok(
-    dashboardHome.includes("Create Website"),
-    "Dashboard banner must display a Create Website action"
+    dashboardHome.includes("Create your business website") || dashboardHome.includes("Manage Website"),
+    "Dashboard must display a website creation/management action"
   );
-  console.log("✓ Customer dashboard contains prominent Create Website CTA.");
+  console.log("✓ Customer dashboard contains a Website CTA.");
 
   // 4. SmartWebsiteCreator is Embedded in /app/website & /app/website/create
   const websitePage = read("app", "app", "website", "page.tsx");

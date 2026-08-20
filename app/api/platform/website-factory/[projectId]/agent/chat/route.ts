@@ -6,7 +6,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 interface RouteParams {
-  params: Promise<{ id: string }>;
+  params: Promise<{ projectId: string }>;
 }
 
 const RATE_LIMIT_WINDOW_MS = 60_000;
@@ -29,7 +29,7 @@ function checkRateLimit(clientIp: string): boolean {
 
 export async function POST(request: Request, { params }: RouteParams) {
   try {
-    const { id: siteProjectId } = await params;
+    const { projectId: siteProjectId } = await params;
 
     // Rate limit check
     const clientIp = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "anonymous";

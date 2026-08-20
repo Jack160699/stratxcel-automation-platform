@@ -180,8 +180,8 @@ export function DigitalPresenceCards({
         <div
           className={`rounded-sx-sm px-3.5 py-2 text-xs font-medium flex items-center justify-between ${
             feedback.type === "success"
-              ? "bg-emerald-500/10 border border-emerald-500/30 text-emerald-300"
-              : "bg-rose-500/10 border border-rose-500/30 text-rose-300"
+              ? "bg-sx-success/10 border border-sx-success/30 text-sx-success"
+              : "bg-sx-danger/10 border border-sx-danger/30 text-sx-danger"
           }`}
         >
           <span>{feedback.message}</span>
@@ -291,7 +291,7 @@ export function DigitalPresenceCards({
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="text-[11px] h-7 px-2 text-rose-400 hover:text-rose-300 hover:bg-rose-500/10"
+                        className="text-[11px] h-7 px-2 text-sx-danger hover:bg-sx-danger/10"
                         onClick={() => handleDisconnect(item.key)}
                         disabled={disconnecting === item.key}
                       >

@@ -8,6 +8,7 @@ import { CurrentTenantProvider } from "./CurrentTenantContext";
 import { ClientAppShell } from "./ClientAppShell";
 import { resolveCustomerPlanSummary } from "@/lib/billing/customer-plan";
 import { resolveCurrentAuditOrderId } from "@/lib/audit/current-pointer";
+import { getTenantDigitalPresence } from "@/lib/connectors/canonical-status";
 
 export const dynamic = "force-dynamic";
 
@@ -36,7 +37,7 @@ export default async function ClientLayout({ children }: { children: ReactNode }
     : identity.tenants.map((tenant) => ({ ...tenant, accessMode: "customer" as const }));
   const active = tenants[0];
   const tenantDb = identity.supabase;
-  const [subscriptionResult, auditResult] = await Promise.all([
+  const [subscriptionResult, auditResult, digitalPresence] = await Promise.all([
     tenantDb
       .from("subscriptions")
       .select("plan_tier, status, provider_status, current_period_end, next_charge_at, price_cents")
@@ -52,6 +53,11 @@ export default async function ClientLayout({ children }: { children: ReactNode }
       else query = query.order("created_at", { ascending: false }).limit(1);
       return query.maybeSingle();
     })(),
+    // Same canonical connector resolver Home/Audit already read (see
+    // lib/connectors/canonical-status.ts) — the sidebar's business-identity
+    // card (StratXcel Desktop canvas) reuses it rather than re-deriving
+    // connection state from raw tables itself.
+    getTenantDigitalPresence(tenantDb, active.tenantId).catch(() => null),
   ]);
   const plan = resolveCustomerPlanSummary(subscriptionResult.data);
   const report = auditResult.data?.report_data;
@@ -74,6 +80,10 @@ export default async function ClientLayout({ children }: { children: ReactNode }
         auditOpportunityCount={auditOpportunityCount}
         staffWorkspace={identity.state === "STAFF_VIEWING_CLIENT" ? { tenantName: identity.staffWorkspace.name } : null}
         isStaff={identity.isStaff}
+        businessName={active.name}
+        role={active.role}
+        googleConnected={digitalPresence?.connections.google_business.connectionState === "CONNECTED"}
+        whatsappConnected={digitalPresence?.connections.whatsapp.connectionState === "CONNECTED"}
       >
         {children}
       </ClientAppShell>

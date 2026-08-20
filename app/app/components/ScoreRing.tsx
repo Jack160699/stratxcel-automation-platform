@@ -15,10 +15,10 @@ export function bandForScore(score: number): ScoreBand {
 }
 
 const BAND_COPY: Record<ScoreBand, { label: string; labelHi: string; ring: string; text: string; tint: string }> = {
-  strong: { label: "Strong", labelHi: "मज़बूत", ring: "#0CA30C", text: "#0A7A0A", tint: "#E7F6E7" },
-  good: { label: "Good", labelHi: "अच्छा", ring: "#2A57DA", text: "#1E43AC", tint: "#EAF0FE" },
-  "needs-work": { label: "Needs work", labelHi: "सुधार चाहिए", ring: "#B98A2E", text: "#8A6100", tint: "#FDF3DD" },
-  "at-risk": { label: "At risk", labelHi: "जोखिम में", ring: "#D03B3B", text: "#B42020", tint: "#F9E6E6" },
+  strong: { label: "Strong", labelHi: "मज़बूत", ring: "#16A34A", text: "#0A7A0A", tint: "#E7F6E7" },
+  good: { label: "Good", labelHi: "अच्छा", ring: "#1B5FE3", text: "#1650C4", tint: "#EAF0FE" },
+  "needs-work": { label: "Needs work", labelHi: "सुधार चाहिए", ring: "#D97706", text: "#8A6100", tint: "#FDF3DD" },
+  "at-risk": { label: "At risk", labelHi: "जोखिम में", ring: "#DC2626", text: "#B42020", tint: "#F9E6E6" },
 };
 
 export function ScoreRing({ score, size = 120 }: { score: number; size?: number }) {

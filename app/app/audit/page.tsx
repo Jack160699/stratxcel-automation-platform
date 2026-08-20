@@ -386,7 +386,7 @@ export default function AuditHubPage() {
                   <span
                     className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
                       isDone
-                        ? "bg-emerald-500/20 text-emerald-400"
+                        ? "bg-sx-success/20 text-sx-success"
                         : isCurrent
                         ? "bg-sx-accent text-sx-accent-on animate-pulse"
                         : "bg-sx-surface-2 text-sx-text-subtle"

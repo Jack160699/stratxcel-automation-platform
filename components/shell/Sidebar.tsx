@@ -39,6 +39,8 @@ export function Sidebar({
   activeKey,
   brand,
   customer = false,
+  businessCard,
+  footer,
 }: {
   groups: SidebarNavGroup[];
   activeKey: string;
@@ -46,6 +48,10 @@ export function Sidebar({
   brand: (collapsed: boolean) => ReactNode;
   /** Customer app (product === "App") visual mode — spec §5.6: 56px rows, icon + English + Hindi label, brand-tint active state, no collapse. /admin never sets this. */
   customer?: boolean;
+  /** Customer-only business identity card under the brand mark (StratXcel Desktop canvas) — business name + live connection status. Rendered as-is; the caller (page) supplies real tenant data, Sidebar never fetches it itself. */
+  businessCard?: ReactNode;
+  /** Customer-only user identity footer (StratXcel Desktop canvas). */
+  footer?: ReactNode;
 }) {
   const [collapsed, setCollapsed] = useState(false);
   const [hydrated, setHydrated] = useState(false);
@@ -68,34 +74,37 @@ export function Sidebar({
 
   if (customer) {
     return (
-      <nav aria-label="Primary" className="sticky top-0 flex h-screen w-60 shrink-0 flex-col overflow-x-hidden border-r border-sx-border bg-sx-bg px-4 py-6">
-        <div className="mb-2 px-1">{brand(false)}</div>
-        <div className="sx-thin-scroll mt-4 flex flex-1 flex-col gap-2 overflow-x-hidden overflow-y-auto">
-          {groups.map((group, gi) =>
-            group.items.map((item) => {
-              const active = item.key === activeKey;
-              return (
-                <Link
-                  key={item.key ?? gi}
-                  href={item.href}
-                  aria-current={active ? "page" : undefined}
-                  className={`relative flex h-14 min-w-0 items-center gap-3 rounded-sx-md px-3.5 transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sx-accent ${
-                    active ? "bg-sx-accent-muted text-sx-accent" : "text-sx-text-muted hover:bg-sx-surface-2 hover:text-sx-text"
-                  }`}
-                >
-                  {active && <span className="absolute inset-y-3 left-0 w-[3px] rounded-full bg-sx-accent" />}
-                  <span className="shrink-0">{item.icon}</span>
-                  <span className="flex min-w-0 flex-col">
-                    <span className="truncate text-[15px] font-semibold">{item.label}</span>
-                    {item.labelHi && <span className="sx-hi truncate text-xs text-sx-text-muted">{item.labelHi}</span>}
-                  </span>
-                  {item.live && <span className="ml-auto h-1.5 w-1.5 shrink-0 animate-sx-pulse rounded-full bg-sx-success" />}
-                </Link>
-              );
-            })
-          )}
+      <nav aria-label="Primary" className="sticky top-0 flex h-screen w-60 shrink-0 flex-col overflow-x-hidden border-r border-sx-border bg-sx-surface-1 px-3 py-5">
+        <div className="mb-1 px-2">{brand(false)}</div>
+        {businessCard}
+        <div className="sx-thin-scroll mt-1 flex flex-1 flex-col gap-0.5 overflow-x-hidden overflow-y-auto">
+          {groups.map((group, gi) => (
+            <div key={group.label ?? gi} className="flex flex-col gap-0.5">
+              {gi > 0 && <div className="mx-3 my-2 h-px bg-sx-border" />}
+              {group.items.map((item) => {
+                const active = item.key === activeKey;
+                return (
+                  <Link
+                    key={item.key}
+                    href={item.href}
+                    aria-current={active ? "page" : undefined}
+                    className={`flex h-11 min-w-0 items-center gap-2.5 rounded-sx-sm px-3 transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sx-accent ${
+                      active ? "bg-sx-accent-muted text-sx-accent" : "text-sx-text-muted hover:bg-sx-surface-2 hover:text-sx-text"
+                    }`}
+                  >
+                    <span className="shrink-0">{item.icon}</span>
+                    <span className="flex min-w-0 flex-col leading-tight">
+                      <span className={`truncate text-[14px] ${active ? "font-semibold" : "font-normal"}`}>{item.label}</span>
+                      {item.labelHi && <span className="sx-hi truncate text-[10.5px] text-sx-text-subtle">{item.labelHi}</span>}
+                    </span>
+                    {item.live && <span className="ml-auto h-1.5 w-1.5 shrink-0 animate-sx-pulse rounded-full bg-sx-success" />}
+                  </Link>
+                );
+              })}
+            </div>
+          ))}
         </div>
-        <p className="px-2 text-xs text-sx-text-subtle">Account settings live under your avatar.</p>
+        {footer}
       </nav>
     );
   }

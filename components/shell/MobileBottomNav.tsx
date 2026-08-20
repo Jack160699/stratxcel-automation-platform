@@ -167,8 +167,8 @@ export function MobileBottomNav({
 function shortLabel(label: string): string {
   if (label === "Command Center" || label === "Home") return "Home";
   if (label === "Business Growth Audit" || label === "Audit") return "Audit";
-  if (label === "Brand Brain" || label === "Business") return "Business";
-  if (label === "Copilot") return "Copilot";
+  if (label === "Brand Brain" || label === "Business" || label === "Shop Profile") return "Shop";
+  if (label === "Copilot" || label === "Growth Assistant") return "Assistant";
   return label;
 }
 

@@ -207,9 +207,13 @@ async function run() {
   assert.match(icons, /WhatsApp/);
   const nav = readFileSync(path.join(root, "components", "shell", "navigation", "app-nav-data.ts"), "utf8");
   assert.match(nav, /\/app\/social\/copilot/);
-  assert.match(nav, /label: "Copilot"/);
-  assert.match(nav, /label: "Connectors"/);
-  assert.match(nav, /APP_MOBILE_NAV_KEYS = \["home", "customer-audit", "copilot", "(crm|integrations)"\]/);
+  // StratXcel Desktop canvas renamed these nav labels (Copilot → Growth
+  // Assistant, Connectors → Connected Accounts); the underlying keys/hrefs
+  // are unchanged (see the key/href/release assertions in
+  // lib/rbac/__tests__/unified-crm-inbox.test.ts).
+  assert.match(nav, /label: "Growth Assistant"/);
+  assert.match(nav, /label: "Connected Accounts"/);
+  assert.match(nav, /APP_MOBILE_NAV_KEYS = \["home", "customer-audit", "copilot", "brand"\]/);
   const settings = readFileSync(path.join(root, "app", "app", "settings", "page.tsx"), "utf8");
   assert.doesNotMatch(settings, /Open Brand Brain/);
   assert.match(settings, /Appearance/);

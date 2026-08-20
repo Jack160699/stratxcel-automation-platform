@@ -73,6 +73,8 @@ export function CoreAppShell({
   userMenu,
   mobileNavItems,
   mobileMoreGroups,
+  sidebarBusinessCard,
+  sidebarFooter,
   children,
 }: {
   product: string;
@@ -84,6 +86,10 @@ export function CoreAppShell({
   userMenu?: ReactNode;
   mobileNavItems: BottomNavItem[];
   mobileMoreGroups: { label: string; items: { key: string; label: string; href: string; icon?: ReactNode }[] }[];
+  /** Customer-only sidebar business-identity card (StratXcel Desktop canvas). /admin never sets this. */
+  sidebarBusinessCard?: ReactNode;
+  /** Customer-only sidebar user-identity footer (StratXcel Desktop canvas). /admin never sets this. */
+  sidebarFooter?: ReactNode;
   children: ReactNode;
 }) {
   const isCustomer = product === "App";
@@ -95,6 +101,8 @@ export function CoreAppShell({
           activeKey={activeKey}
           customer={isCustomer}
           brand={(collapsed) => <BrandMark expanded={!collapsed} product={product} customer={isCustomer} />}
+          businessCard={sidebarBusinessCard}
+          footer={sidebarFooter}
         />
       </div>
       <div className="flex min-h-0 min-w-0 flex-1 flex-col pb-24 md:pb-0">

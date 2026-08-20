@@ -9,6 +9,7 @@ import type { VerifiedReviewSummary } from "@/lib/audit/v1/reviews";
 import { PlatformIcon, PLATFORM_LABELS, type PlatformIconKey } from "@/components/audit/PlatformIcon";
 import { PresenceCards } from "@/components/audit/PresenceCards";
 import type { PresenceLink } from "@/lib/audit/v1/presence";
+import { ScoreRing, ScoreBandChip, bandForScore } from "../components/ScoreRing";
 
 const LABELS: Record<string, string> = {
   brandPositioning: "Brand positioning",
@@ -30,12 +31,12 @@ const CONNECTOR_PROVIDER_LABELS: Record<string, string> = {
 };
 
 const CONNECTOR_STATE_LABELS: Record<string, { label: string; className: string }> = {
-  available: { label: "connected · data used", className: "border-emerald-500/30 bg-emerald-500/10 text-emerald-400" },
+  available: { label: "connected · data used", className: "border-sx-success/30 bg-sx-success/10 text-sx-success" },
   no_data: { label: "connected · no data yet", className: "border-sx-border bg-sx-surface-2/60 text-sx-text-muted" },
   not_connected: { label: "not connected", className: "border-sx-border bg-sx-surface-2/60 text-sx-text-subtle" },
   unavailable: { label: "not set up yet", className: "border-sx-border bg-sx-surface-2/60 text-sx-text-subtle" },
-  permission_required: { label: "reconnect needed", className: "border-amber-500/30 bg-amber-500/10 text-amber-400" },
-  provider_error: { label: "fetch failed", className: "border-amber-500/30 bg-amber-500/10 text-amber-400" },
+  permission_required: { label: "reconnect needed", className: "border-sx-warning/30 bg-sx-warning/10 text-sx-warning" },
+  provider_error: { label: "fetch failed", className: "border-sx-warning/30 bg-sx-warning/10 text-sx-warning" },
 };
 
 const COVERAGE_KEYS: Array<{ key: keyof EvidenceCoverage; icon: PlatformIconKey }> = [
@@ -66,7 +67,7 @@ function StarRating({ rating }: { rating: number }) {
           height="14"
           viewBox="0 0 18 18"
           aria-hidden="true"
-          className={index < filled ? "text-amber-500" : "text-sx-border-strong"}
+          className={index < filled ? "text-sx-warning" : "text-sx-border-strong"}
           fill="currentColor"
         >
           <path d="M9 2.4l1.7 3.46 3.82.56-2.76 2.7.65 3.8L9 11.12 5.59 12.92l.65-3.8-2.76-2.7 3.82-.56L9 2.4z" />
@@ -258,7 +259,7 @@ export function VisualAuditReport({
 
           <div className="rounded-sx-sm border border-sx-border bg-sx-surface-2/60 p-4 space-y-1">
             <span className="font-bold text-sx-text block text-sm">Digital Maturity</span>
-            <p className="text-emerald-400 font-semibold">{isEarlyStage ? "Foundational Launch" : "Active Growth Mode"}</p>
+            <p className="text-sx-success font-semibold">{isEarlyStage ? "Foundational Launch" : "Active Growth Mode"}</p>
             <p className="text-sx-text-subtle">Prioritized for high-leverage business impact</p>
           </div>
 
@@ -315,7 +316,7 @@ export function VisualAuditReport({
           <FindingCard
             title="1. What is Working"
             badge="Strengths"
-            badgeColor="bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
+            badgeColor="bg-sx-success/15 text-sx-success border-sx-success/30"
             icon="✓"
             items={report.strengths.length ? report.strengths : ["Established core business offering", "Identified target customer segment"]}
             emptyFallback="Verified core business offerings."
@@ -323,7 +324,7 @@ export function VisualAuditReport({
           <FindingCard
             title="2. What is Weak / Missing"
             badge="Gaps"
-            badgeColor="bg-amber-500/15 text-amber-400 border-amber-500/30"
+            badgeColor="bg-sx-warning/15 text-sx-warning border-sx-warning/30"
             icon="!"
             items={report.growthProblems?.length ? report.growthProblems : ["Manual response to inbound leads", "Inconsistent publishing schedule"]}
             emptyFallback="Inconsistent digital visibility."
@@ -331,7 +332,7 @@ export function VisualAuditReport({
           <FindingCard
             title="3. What is Blocking Growth"
             badge="Risks"
-            badgeColor="bg-rose-500/15 text-rose-400 border-rose-500/30"
+            badgeColor="bg-sx-danger/15 text-sx-danger border-sx-danger/30"
             icon="⚠"
             items={report.priorityRisks.length ? report.priorityRisks : ["Uncaptured high-intent leads", "Low search discoverability"]}
             emptyFallback="High friction for inbound inquiries."
@@ -347,20 +348,27 @@ export function VisualAuditReport({
         </div>
       </section>
 
-      {/* 4. HEALTH SCORES & CONNECTED CHANNELS */}
+      {/* 4. HEALTH SCORES & CONNECTED CHANNELS — score ring matches the
+          StratXcel Desktop canvas / Home's health card exactly. */}
       <section className="grid gap-4 sm:grid-cols-3">
-        <div className="rounded-sx-md border border-sx-border bg-sx-surface-1 p-5 flex flex-col justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-sx-text-subtle">Digital Health Score</p>
-            <p className="mt-2 font-sx-sans text-4xl font-bold text-sx-text">
-              {healthUnsupported ? "Readiness" : score}
-            </p>
-            <p className="mt-2 text-xs leading-relaxed text-sx-text-muted">
-              {healthUnsupported
-                ? "Full numeric score displayed as additional verified public channels connect."
-                : report.overallHealth?.explanation ?? "Derived from verified channels, search rankings & customer touchpoints."}
-            </p>
-          </div>
+        <div className="rounded-sx-md border border-sx-border bg-sx-surface-1 p-5 flex flex-col items-center text-center gap-2.5">
+          <p className="text-xs font-semibold uppercase tracking-wider text-sx-text-subtle">Digital Health Score</p>
+          {healthUnsupported ? (
+            <>
+              <p className="mt-1 font-sx-sans text-2xl font-bold text-sx-text">Readiness</p>
+              <p className="text-xs leading-relaxed text-sx-text-muted">
+                Full numeric score displayed as additional verified public channels connect.
+              </p>
+            </>
+          ) : (
+            <>
+              <ScoreRing score={score ?? 0} size={104} />
+              <ScoreBandChip band={bandForScore(score ?? 0)} />
+              <p className="text-xs leading-relaxed text-sx-text-muted">
+                {report.overallHealth?.explanation ?? "Derived from verified channels, search rankings & customer touchpoints."}
+              </p>
+            </>
+          )}
         </div>
 
         <div className="rounded-sx-md border border-sx-border bg-sx-surface-1 p-5 sm:col-span-2">
@@ -448,7 +456,7 @@ export function VisualAuditReport({
                 <p className="text-xs text-sx-text-muted leading-relaxed pl-7">{action.why}</p>
               </div>
 
-              <div className="pl-7 pt-2 border-t border-sx-border/40 text-[11.5px] font-medium text-emerald-400 flex items-center gap-1.5">
+              <div className="pl-7 pt-2 border-t border-sx-border/40 text-[11.5px] font-medium text-sx-success flex items-center gap-1.5">
                 <span>✓</span> {action.benefit}
               </div>
             </div>
