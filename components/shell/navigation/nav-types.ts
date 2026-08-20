@@ -19,6 +19,11 @@ export interface NavItemData {
    * Unknown / missing values fail closed in filterNavGroupsByRelease.
    */
   release: ProductRelease;
+  /**
+   * Optional Hindi sub-label shown under the English label in the customer
+   * shell (StratXcel App Design Spec §4.1) — /admin ignores this field.
+   */
+  labelHi?: string;
 }
 
 export interface NavGroupData {

@@ -259,6 +259,105 @@ body {
   }
 }
 
+/*
+ * ————— Customer app v2 design tokens (redesign/customer-app-v2) —————
+ *
+ * Source of truth: "StratXcel — Customer App Visual Design Specification"
+ * (calm, premium, minimal; local Indian shopkeeper audience). Re-points the
+ * shared --sx-* namespace *only* inside .sx-customer-app, the wrapper the
+ * customer shell (CoreAppShell, product === "App") already applies around
+ * the whole /app tree — Sidebar, TopCommandBar, MobileBottomNav, and every
+ * page's content. Every component built on the --sx-* tokens (Button, Card,
+ * StatusChip, Input, Modal, …) re-skins automatically inside that scope;
+ * /admin and the public site read the unscoped :root values and are
+ * completely unaffected. html.sx-theme-dark values are left as the dark
+ * fallback since the spec ships light-only for v1 (§2.4).
+ */
+.sx-customer-app {
+  --sx-bg: #f6f6f3;
+  --sx-surface-1: #ffffff;
+  --sx-surface-2: #f1f1ec;
+  --sx-surface-3: #eceae2;
+  --sx-elevated: #ffffff;
+  --sx-border: rgb(22 24 29 / 0.10);
+  --sx-border-strong: rgb(22 24 29 / 0.18);
+
+  --sx-text: #16181d;
+  --sx-text-muted: #565a63;
+  --sx-text-subtle: #8a8e97;
+
+  --sx-accent: #2a57da;
+  --sx-accent-hover: #1e43ac;
+  --sx-accent-muted: rgb(42 87 218 / 0.1);
+  --sx-accent-on: #ffffff;
+  --sx-royal: #2a57da;
+  --sx-ai: #1e43ac;
+
+  --sx-success: #0ca30c;
+  --sx-warning: #b98a2e;
+  --sx-danger: #d03b3b;
+  --sx-learning: #1e43ac;
+  --sx-offline: #8a8e97;
+
+  /* Cards & inputs 16px, buttons 12px, chips/pills 999px (spec §3.3). */
+  --sx-radius-xs: 8px;
+  --sx-radius-sm: 12px;
+  --sx-radius-md: 16px;
+  --sx-radius-lg: 20px;
+  --sx-radius-pill: 999px;
+
+  --sx-control-h: 44px;
+  --sx-input-h: 52px;
+  --sx-row-h: 52px;
+
+  --sx-shadow-lg: 0 8px 28px rgb(16 18 24 / 0.12);
+  --sx-shadow-xl: 0 8px 28px rgb(16 18 24 / 0.16);
+  --sx-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  --background: var(--sx-bg);
+  --foreground: var(--sx-text);
+
+  /* Inter for Latin UI text (spec §3.1) — overrides the shared
+     Instrument Sans font-sx-sans utility only within this scope. */
+  --font-sx-sans: var(--font-inter), Inter, ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--font-sx-sans);
+}
+
+/* Status colour → 8–12% tint chip background (spec §2.2). One extra step
+   the shared --sx-* namespace doesn't carry, so components read it as an
+   inline style var rather than a Tailwind arbitrary literal. */
+.sx-customer-app {
+  --sx-success-tint: #e7f6e7;
+  --sx-warning-tint: #fdf3dd;
+  --sx-danger-tint: #f9e6e6;
+  --sx-serious: #ec835a;
+  --sx-serious-text: #b4552f;
+  --sx-serious-tint: #fbeadf;
+  --sx-success-text: #0a7a0a;
+  --sx-warning-text: #8a6100;
+  --sx-danger-text: #b42020;
+}
+
+/* Hindi sub-label utility — Noto Sans Devanagari, paired under English nav
+   labels, buttons, and status words per spec §4.1. Global (not scoped to
+   .sx-customer-app) since it's an opt-in class with no effect unless used. */
+.sx-hi {
+  font-family: var(--font-noto-devanagari), "Noto Sans Devanagari", system-ui, sans-serif;
+}
+
+/* Body copy floor: min 15px, prefer 17px for primary reading text (spec
+   §3.1) — comfortably larger than Core's dense dashboard scale. */
+.sx-customer-app {
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+/* Calm ambient "StratXcel is working on it" pulse — reuses the existing
+   sx-pulse keyframes (defined above) at the spec's dot scale. */
+.sx-customer-app .sx-status-pulse {
+  animation: sx-pulse 1.6s ease-in-out infinite;
+}
+
 ::selection {
   background: color-mix(in srgb, var(--sx-accent) 30%, transparent);
   color: #fff;

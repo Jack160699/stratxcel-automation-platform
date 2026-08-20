@@ -1,7 +1,7 @@
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 
 type Variant = "primary" | "secondary" | "ghost" | "danger";
-type Size = "sm" | "default" | "lg" | "touch";
+type Size = "sm" | "default" | "lg" | "touch" | "cta";
 
 const VARIANT_CLASSES: Record<Variant, string> = {
   primary: "bg-sx-accent text-sx-accent-on font-semibold hover:bg-[color:var(--sx-accent-hover)]",
@@ -16,6 +16,8 @@ const SIZE_CLASSES: Record<Size, string> = {
   lg: "h-9 px-4 text-[13.5px]",
   /** ~44px min touch target — mobile-first flows (e.g. onboarding) that need real tap targets, not the desktop-dense default. */
   touch: "h-11 px-4 text-[13.5px]",
+  /** Customer app primary-action size — 52px mobile / 44px desktop, spec §5.1. */
+  cta: "h-13 md:h-11 px-5 text-[15px] font-semibold",
 };
 
 /**

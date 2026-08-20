@@ -19,29 +19,29 @@ import type { NavGroupData } from "./nav-types";
 export const APP_NAV_GROUPS_DATA: NavGroupData[] = [
   {
     label: "Overview",
-    items: [{ key: "home", label: "Home", href: "/app", release: "v1" }],
+    items: [{ key: "home", label: "Home", href: "/app", release: "v1", labelHi: "होम" }],
   },
   {
     label: "Growth",
     items: [
-      { key: "website", label: "Website", href: "/app/website", release: "v1" },
-      { key: "customer-audit", label: "Audit", href: "/app/audit", release: "v1" },
-      { key: "brand", label: "Business", href: "/app/brand", release: "v1" },
+      { key: "website", label: "Website", href: "/app/website", release: "v1", labelHi: "वेबसाइट" },
+      { key: "customer-audit", label: "Audit", href: "/app/audit", release: "v1", labelHi: "जाँच" },
+      { key: "brand", label: "Business", href: "/app/brand", release: "v1", labelHi: "व्यापार" },
     ],
   },
   {
     label: "Execution",
     items: [
-      { key: "copilot", label: "Copilot", href: "/app/social/copilot", release: "v1" },
-      { key: "integrations", label: "Connectors", href: "/app/integrations", release: "v1" },
+      { key: "copilot", label: "Copilot", href: "/app/social/copilot", release: "v1", labelHi: "सहायक" },
+      { key: "integrations", label: "Connectors", href: "/app/integrations", release: "v1", labelHi: "कनेक्शन" },
     ],
   },
   {
     label: "Account",
     items: [
-      { key: "billing", label: "Billing & Plans", href: "/app/billing", release: "v1" },
-      { key: "team", label: "Team", href: "/app/team", release: "v1" },
-      { key: "settings", label: "Settings", href: "/app/settings", release: "v1" },
+      { key: "billing", label: "Billing & Plans", href: "/app/billing", release: "v1", labelHi: "भुगतान" },
+      { key: "team", label: "Team", href: "/app/team", release: "v1", labelHi: "टीम" },
+      { key: "settings", label: "Settings", href: "/app/settings", release: "v1", labelHi: "सेटिंग्स" },
     ],
   },
 ];

@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono, Instrument_Sans } from "next/font/google";
+import { Geist, Geist_Mono, Instrument_Sans, Inter, Noto_Sans_Devanagari } from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
 import { GoogleAnalytics } from "@/app/components/GoogleAnalytics";
 import { ScrollRestoration } from "@/app/components/ScrollRestoration";
@@ -32,6 +32,26 @@ const instrumentSans = Instrument_Sans({
   variable: "--font-instrument-sans",
   subsets: ["latin"],
   weight: ["400", "500", "600", "700"],
+  display: "swap",
+});
+
+/**
+ * Customer app ("StratXcel App Design Spec" — redesign/customer-app-v2)
+ * typefaces: Inter for Latin UI text, Noto Sans Devanagari for the bilingual
+ * Hindi sub-labels. Scoped to .sx-customer-app in globals.css so the public
+ * site, /admin, and Social Autopilot keep their existing fonts untouched.
+ */
+const inter = Inter({
+  variable: "--font-inter",
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  display: "swap",
+});
+
+const notoSansDevanagari = Noto_Sans_Devanagari({
+  variable: "--font-noto-devanagari",
+  subsets: ["devanagari"],
+  weight: ["400", "500", "600"],
   display: "swap",
 });
 
@@ -123,7 +143,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} ${instrumentSans.variable} h-full antialiased sx-theme-light`}
+      className={`${geistSans.variable} ${geistMono.variable} ${instrumentSans.variable} ${inter.variable} ${notoSansDevanagari.variable} h-full antialiased sx-theme-light`}
       suppressHydrationWarning
     >
       <head>

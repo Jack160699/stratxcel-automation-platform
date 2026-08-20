@@ -8,6 +8,7 @@ export function TopCommandBar({
   staffBadge,
   userMenu,
   showSearch = true,
+  customer = false,
 }: {
   brand?: ReactNode;
   context: ReactNode;
@@ -15,7 +16,29 @@ export function TopCommandBar({
   staffBadge?: ReactNode;
   userMenu?: ReactNode;
   showSearch?: boolean;
+  /** Customer app (product === "App") visual mode — spec §5.5: taller bar, a Help affordance, more breathing room. /admin never sets this. */
+  customer?: boolean;
 }) {
+  if (customer) {
+    return (
+      <header className="flex h-14 shrink-0 items-center gap-3 border-b border-sx-border px-4 sm:h-16 sm:px-6">
+        {brand && <div className="shrink-0 md:hidden">{brand}</div>}
+        <div className="min-w-0 truncate text-[17px] font-semibold text-sx-text">{context}</div>
+        <div className="flex-1" />
+        <a
+          href="/contact"
+          className="hidden items-center gap-1.5 rounded-sx-sm px-3 py-2 text-sm font-semibold text-sx-text-muted transition-colors hover:bg-sx-surface-2 sm:inline-flex"
+        >
+          <HelpIcon />
+          Help
+        </a>
+        {agentStatus}
+        {staffBadge}
+        {userMenu}
+      </header>
+    );
+  }
+
   return (
     <header className="flex h-14 shrink-0 items-center gap-3.5 border-b border-sx-border px-5">
       {brand && <div className="shrink-0 md:hidden">{brand}</div>}
@@ -26,6 +49,16 @@ export function TopCommandBar({
       {staffBadge}
       {userMenu}
     </header>
+  );
+}
+
+function HelpIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="9" />
+      <path d="M9.7 9.4a2.4 2.4 0 1 1 3.4 2.2c-.7.4-1.1.9-1.1 1.7" />
+      <path d="M12 16.5h.01" />
+    </svg>
   );
 }
 
