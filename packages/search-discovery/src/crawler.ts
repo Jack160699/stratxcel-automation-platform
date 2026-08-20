@@ -44,7 +44,7 @@ export function normalizeCrawlUrl(value: string, root?: URL): URL {
   // Strip common tracking parameters but keep path intact
   const searchParams = new URLSearchParams(url.search);
   for (const key of [...searchParams.keys()]) {
-    if (/^(utm_|fbclid|gclid|msclkid|ref|source|_ga)/i.test(key)) {
+    if (/^(utm(_|$)|fbclid|gclid|msclkid|ref|source|_ga)/i.test(key)) {
       searchParams.delete(key);
     }
   }
@@ -340,15 +340,18 @@ export interface CanonicalCrawlResult {
 export async function parseSitemapXml(
   sitemapUrl: URL,
   fetcher: typeof fetch,
-  options: { signal?: AbortSignal; resolver?: typeof lookup; maxDepth?: number } = {},
+  options: { signal?: AbortSignal; resolver?: typeof lookup; maxDepth?: number; timeoutMs?: number } = {},
   currentDepth = 0,
 ): Promise<string[]> {
   if (currentDepth > 2) return [];
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), options.timeoutMs ?? 8000);
+  const signal = options.signal ? AbortSignal.any([options.signal, controller.signal]) : controller.signal;
   try {
     await assertPublicHttpTarget(sitemapUrl, options.resolver);
     const res = await fetcher(sitemapUrl.href, {
       headers: { "User-Agent": "StratxcelSearchAudit/1.0 (+https://stratxcel.in/support)", Accept: "application/xml, text/xml, */*" },
-      signal: options.signal,
+      signal,
     });
     if (!res.ok) return [];
     const xml = await res.text();
@@ -378,6 +381,8 @@ export async function parseSitemapXml(
     return urls;
   } catch {
     return [];
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -421,11 +426,19 @@ export async function crawlWebsite(
   // 1. Robots.txt discovery & parsing
   try {
     const robotsUrl = new URL("/robots.txt", root);
-    const robotsResponse = await fetcher(robotsUrl.href, {
-      redirect: "manual",
-      headers: { "User-Agent": "StratxcelSearchAudit/1.0 (+https://stratxcel.in/support)" },
-      signal: options.signal,
-    });
+    const robotsController = new AbortController();
+    const robotsTimer = setTimeout(() => robotsController.abort(), limits.requestTimeoutMs);
+    const robotsSignal = options.signal ? AbortSignal.any([options.signal, robotsController.signal]) : robotsController.signal;
+    let robotsResponse;
+    try {
+      robotsResponse = await fetcher(robotsUrl.href, {
+        redirect: "manual",
+        headers: { "User-Agent": "StratxcelSearchAudit/1.0 (+https://stratxcel.in/support)" },
+        signal: robotsSignal,
+      });
+    } finally {
+      clearTimeout(robotsTimer);
+    }
     if (robotsResponse.ok) {
       const contentType = robotsResponse.headers.get("content-type") ?? "";
       const robotsText = (await robotsResponse.text()).slice(0, 200_000);
@@ -466,6 +479,7 @@ export async function crawlWebsite(
         const sitemapEntries = await parseSitemapXml(parsed, fetcher, {
           signal: options.signal,
           resolver: options.resolver,
+          timeoutMs: limits.requestTimeoutMs,
         });
         if (sitemapEntries.length > 0) {
           sitemapPresent = true;
@@ -523,15 +537,20 @@ export async function crawlWebsite(
       await assertPublicHttpTarget(normalized, options.resolver);
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), limits.requestTimeoutMs);
-      const response = await fetcher(normalized.href, {
-        redirect: "manual",
-        headers: {
-          "User-Agent": "StratxcelSearchAudit/1.0 (+https://stratxcel.in/support)",
-          Accept: "text/html,application/xhtml+xml",
-        },
-        signal: options.signal ?? controller.signal,
-      });
-      clearTimeout(timer);
+      const signal = options.signal ? AbortSignal.any([options.signal, controller.signal]) : controller.signal;
+      let response;
+      try {
+        response = await fetcher(normalized.href, {
+          redirect: "manual",
+          headers: {
+            "User-Agent": "StratxcelSearchAudit/1.0 (+https://stratxcel.in/support)",
+            Accept: "text/html,application/xhtml+xml",
+          },
+          signal,
+        });
+      } finally {
+        clearTimeout(timer);
+      }
 
       // Handle redirects
       if (response.status >= 300 && response.status < 400) {
@@ -542,14 +561,22 @@ export async function crawlWebsite(
         for (let redirects = 0; redirects < limits.maxRedirects; redirects++) {
           if (next.origin !== root.origin) throw new Error("CROSS_ORIGIN_REDIRECT_BLOCKED");
           await assertPublicHttpTarget(next, options.resolver);
-          const redirected = await fetcher(next.href, {
-            redirect: "manual",
-            headers: {
-              "User-Agent": "StratxcelSearchAudit/1.0 (+https://stratxcel.in/support)",
-              Accept: "text/html,application/xhtml+xml",
-            },
-            signal: options.signal,
-          });
+          const redirController = new AbortController();
+          const redirTimer = setTimeout(() => redirController.abort(), limits.requestTimeoutMs);
+          const redirSignal = options.signal ? AbortSignal.any([options.signal, redirController.signal]) : redirController.signal;
+          let redirected;
+          try {
+            redirected = await fetcher(next.href, {
+              redirect: "manual",
+              headers: {
+                "User-Agent": "StratxcelSearchAudit/1.0 (+https://stratxcel.in/support)",
+                Accept: "text/html,application/xhtml+xml",
+              },
+              signal: redirSignal,
+            });
+          } finally {
+            clearTimeout(redirTimer);
+          }
 
           if (!(redirected.status >= 300 && redirected.status < 400)) {
             const type = redirected.headers.get("content-type") ?? "";

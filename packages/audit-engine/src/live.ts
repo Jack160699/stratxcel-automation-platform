@@ -176,6 +176,71 @@ const REPORT_SCHEMA: Record<string, unknown> = {
       },
     },
     limitations: { type: "array", items: { type: "string" } },
+    executiveSearchHealth: {
+      type: "object",
+      properties: {
+        searchAuthorityScore: { type: "number" },
+        confidence: { type: "string", enum: ["HIGH", "MEDIUM", "LOW"] },
+        dataCoverage: { type: "string" },
+      },
+    },
+    organicSearchPerformance: {
+      type: "object",
+      properties: {
+        totalClicks: { anyOf: [{ type: "number" }, { type: "null" }] },
+        totalImpressions: { anyOf: [{ type: "number" }, { type: "null" }] },
+        averageCtr: { anyOf: [{ type: "number" }, { type: "null" }] },
+        averagePosition: { anyOf: [{ type: "number" }, { type: "null" }] },
+        topQueries: { type: "array", items: { type: "object" } },
+        topLandingPages: { type: "array", items: { type: "object" } },
+        performanceSummary: { type: "string" },
+      },
+    },
+    technicalSeoFindings: {
+      type: "object",
+      properties: {
+        score: { type: "number" },
+        issuesCount: { type: "number" },
+        criticalIssues: { type: "array", items: { type: "string" } },
+        recommendations: { type: "array", items: { type: "string" } },
+      },
+    },
+    contentCoverage: {
+      type: "object",
+      properties: {
+        missingServices: { type: "array", items: { type: "string" } },
+        missingLocations: { type: "array", items: { type: "string" } },
+        weakPages: { type: "array", items: { type: "string" } },
+        recommendations: { type: "array", items: { type: "string" } },
+      },
+    },
+    competitorSignals: {
+      type: "object",
+      properties: {
+        knownCompetitors: { type: "array", items: { type: "string" } },
+        comparativeInsights: { type: "array", items: { type: "string" } },
+        verifiedFindings: { type: "array", items: { type: "string" } },
+        unknownAreas: { type: "array", items: { type: "string" } },
+      },
+    },
+    localAndEntity: {
+      type: "object",
+      properties: {
+        gbpStatus: { type: "string" },
+        entityConsistency: { type: "string" },
+        localOpportunities: { type: "array", items: { type: "string" } },
+      },
+    },
+    aiSearchReadiness: {
+      type: "object",
+      properties: {
+        citationScore: { type: "number" },
+        entityCompleteness: { type: "string" },
+        recommendations: { type: "array", items: { type: "string" } },
+      },
+    },
+    priorityOpportunities: { type: "array", items: { type: "object" } },
+    whatStratxcelWouldDo: { type: "array", items: { type: "object" } },
   },
 };
 

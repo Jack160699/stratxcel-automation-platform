@@ -5,9 +5,16 @@
  * without making any modifications.
  */
 
-import dns from "node:dns/promises";
 import type { DomainInspectionResult } from "./types.ts";
 import { normalizeDomainInput } from "./normalizer.ts";
+
+async function getDefaultDnsResolver() {
+  if (typeof window !== "undefined") {
+    throw new Error("DNS resolution cannot run in browser context");
+  }
+  const dnsModule = await import("node:dns/promises");
+  return dnsModule.default || dnsModule;
+}
 
 export interface InspectDomainOptions {
   domain: string;
@@ -31,7 +38,7 @@ export async function inspectDomainDns(
   }
 
   const domain = norm.domain;
-  const resolver = options.dnsResolver || dns;
+  const resolver = options.dnsResolver || (await getDefaultDnsResolver());
 
   let currentA: string[] = [];
   let currentCNAME: string[] = [];

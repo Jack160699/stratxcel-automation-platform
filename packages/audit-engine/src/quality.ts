@@ -269,6 +269,103 @@ export function normalizeAuditReport(
     })),
     limitations,
     researchLimitations: limitations,
+    executiveSearchHealth: value.executiveSearchHealth && typeof value.executiveSearchHealth === "object"
+      ? {
+          searchAuthorityScore: scoreRequired((value.executiveSearchHealth as any).searchAuthorityScore, overallScore),
+          confidence: (value.executiveSearchHealth as any).confidence === "HIGH" || (value.executiveSearchHealth as any).confidence === "LOW" ? (value.executiveSearchHealth as any).confidence : "MEDIUM",
+          dataCoverage: text((value.executiveSearchHealth as any).dataCoverage) || "Standard Data Coverage",
+        }
+      : undefined,
+    organicSearchPerformance: value.organicSearchPerformance && typeof value.organicSearchPerformance === "object"
+      ? {
+          totalClicks: scoreOrNull((value.organicSearchPerformance as any).totalClicks),
+          totalImpressions: scoreOrNull((value.organicSearchPerformance as any).totalImpressions),
+          averageCtr: typeof (value.organicSearchPerformance as any).averageCtr === "number" ? (value.organicSearchPerformance as any).averageCtr : null,
+          averagePosition: typeof (value.organicSearchPerformance as any).averagePosition === "number" ? (value.organicSearchPerformance as any).averagePosition : null,
+          topQueries: Array.isArray((value.organicSearchPerformance as any).topQueries) ? (value.organicSearchPerformance as any).topQueries.slice(0, 10) : [],
+          topLandingPages: Array.isArray((value.organicSearchPerformance as any).topLandingPages) ? (value.organicSearchPerformance as any).topLandingPages.slice(0, 10) : [],
+          performanceSummary: text((value.organicSearchPerformance as any).performanceSummary) || "Organic search diagnostics evaluated.",
+        }
+      : undefined,
+    technicalSeoFindings: value.technicalSeoFindings && typeof value.technicalSeoFindings === "object"
+      ? {
+          score: scoreRequired((value.technicalSeoFindings as any).score, 75),
+          issuesCount: scoreRequired((value.technicalSeoFindings as any).issuesCount, 0),
+          criticalIssues: textList((value.technicalSeoFindings as any).criticalIssues, 8),
+          recommendations: textList((value.technicalSeoFindings as any).recommendations, 8),
+        }
+      : undefined,
+    contentCoverage: value.contentCoverage && typeof value.contentCoverage === "object"
+      ? {
+          missingServices: textList((value.contentCoverage as any).missingServices, 8),
+          missingLocations: textList((value.contentCoverage as any).missingLocations, 8),
+          weakPages: textList((value.contentCoverage as any).weakPages, 8),
+          recommendations: textList((value.contentCoverage as any).recommendations, 8),
+        }
+      : undefined,
+    competitorSignals: value.competitorSignals && typeof value.competitorSignals === "object"
+      ? {
+          knownCompetitors: textList((value.competitorSignals as any).knownCompetitors, 8),
+          comparativeInsights: textList((value.competitorSignals as any).comparativeInsights, 8),
+          verifiedFindings: textList((value.competitorSignals as any).verifiedFindings, 8),
+          unknownAreas: textList((value.competitorSignals as any).unknownAreas, 8),
+        }
+      : undefined,
+    whyTheyWin: Array.isArray(value.whyTheyWin)
+      ? (value.whyTheyWin as any[]).map((wtw) => ({
+          competitorDomain: text(wtw.competitorDomain) || "competitor.com",
+          competitorName: text(wtw.competitorName) || "Competitor",
+          query: text(wtw.query) || "target search query",
+          gap: text(wtw.gap) || "Competitor ranks ahead in search results",
+          evidence: textList(wtw.evidence, 6),
+          sources: textList(wtw.sources, 4),
+          confidence: wtw.confidence === "HIGH" || wtw.confidence === "LOW" ? wtw.confidence : "MEDIUM",
+          likelyReasons: textList(wtw.likelyReasons, 6),
+          unknowns: textList(wtw.unknowns, 4),
+          recommendedAction: text(wtw.recommendedAction) || "Optimize dedicated content and technical signals",
+        })).slice(0, 10)
+      : undefined,
+    localAndEntity: value.localAndEntity && typeof value.localAndEntity === "object"
+      ? {
+          gbpStatus: text((value.localAndEntity as any).gbpStatus) || "Not connected",
+          entityConsistency: text((value.localAndEntity as any).entityConsistency) || "Baseline verified",
+          localOpportunities: textList((value.localAndEntity as any).localOpportunities, 8),
+        }
+      : undefined,
+    aiSearchReadiness: value.aiSearchReadiness && typeof value.aiSearchReadiness === "object"
+      ? {
+          citationScore: scoreRequired((value.aiSearchReadiness as any).citationScore, 50),
+          entityCompleteness: text((value.aiSearchReadiness as any).entityCompleteness) || "Heuristic entity check",
+          recommendations: textList((value.aiSearchReadiness as any).recommendations, 8),
+        }
+      : undefined,
+    priorityOpportunities: Array.isArray(value.priorityOpportunities)
+      ? (value.priorityOpportunities as any[]).map((opp, idx) => ({
+          id: text(opp.id) || `opp_${idx + 1}`,
+          category: text(opp.category) || "Search Opportunity",
+          problem: text(opp.problem) || text(opp.title) || "Opportunity identified",
+          evidence: text(opp.evidence) || text(opp.rationale) || "Based on audit data",
+          source: text(opp.source) || "Search Discovery",
+          affectedUrl: text(opp.affectedUrl) || undefined,
+          affectedQuery: text(opp.affectedQuery) || undefined,
+          businessImpact: text(opp.businessImpact) || "High potential growth",
+          searchImpact: text(opp.searchImpact) || "Improves organic impressions",
+          confidence: opp.confidence === "HIGH" || opp.confidence === "LOW" ? opp.confidence : "MEDIUM",
+          difficulty: opp.difficulty === "HARD" || opp.difficulty === "EASY" ? opp.difficulty : "MEDIUM",
+          priority: typeof opp.priority === "number" ? opp.priority : idx + 1,
+          proposedAction: text(opp.proposedAction) || text(opp.nextStep) || "Execute recommended optimization",
+        })).slice(0, 10)
+      : undefined,
+    whatStratxcelWouldDo: Array.isArray(value.whatStratxcelWouldDo)
+      ? (value.whatStratxcelWouldDo as any[]).map((act, idx) => ({
+          opportunityId: text(act.opportunityId) || `act_${idx + 1}`,
+          title: text(act.title) || "Search Action Plan",
+          actionPlan: text(act.actionPlan) || "Automated optimization execution",
+          executionType: text(act.executionType) || "Technical & Content Optimization",
+          status: "LOCKED_ACTIVATION_REQUIRED" as const,
+          lockReason: "Activate Search Growth OS subscription to authorize StratXcel autonomous execution.",
+        })).slice(0, 10)
+      : undefined,
     generation: {
       method: "automatic_audit_v1",
       brandBrainVersion: args.brandBrainVersion,
