@@ -1,1 +1,6 @@
-export { NotV1CustomerRoute as default } from "../components/NotV1CustomerRoute";
+import type { ReactNode } from "react";
+
+export default function WebsiteLayout({ children }: { children: ReactNode }) {
+  return <>{children}</>;
+}
+
