@@ -251,7 +251,7 @@ export default function BillingPage() {
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <div data-sx-ui="new-billing" className="flex flex-col gap-6">
       <ModulePageHeader title="Billing" tenantName={active?.name} description="Your current plan, included capabilities, wallet, and payment history." />
 
       {error && <ErrorState message={error} onRetry={load} />}
@@ -460,84 +460,96 @@ export default function BillingPage() {
       )}
 
       {/* GST invoice details */}
-      {!loading && !error && <Card className="p-6">
-        <h2 className="font-sx-sans text-sm font-semibold text-sx-text">GST invoice details</h2>
-        <p className="mt-1 text-xs text-sx-text-subtle">Optional — used only to print on your invoices. GST is already included in every price shown above.</p>
-        <div className="mt-4 grid gap-3 sm:grid-cols-2">
-          <input
-            className="rounded-sx-sm border border-sx-border-strong bg-sx-surface-2 px-3 py-2 text-xs text-sx-text"
-            placeholder="Legal business name"
+      {!loading && !error && <Card className="p-5 sm:p-6">
+        <h2 className="font-sx-sans text-[17px] font-semibold text-sx-text">GST invoice details</h2>
+        <p className="mt-1 text-sm text-sx-text-subtle">Optional — used only to print on your invoices. GST is already included in every price shown above.</p>
+        <div className="mt-4 grid gap-3.5 sm:grid-cols-2">
+          <BillingField
+            label="Legal business name"
             value={profileForm.legal_business_name ?? ""}
-            onChange={(e) => setProfileForm((f) => ({ ...f, legal_business_name: e.target.value }))}
+            onChange={(v) => setProfileForm((f) => ({ ...f, legal_business_name: v }))}
           />
-          <input
-            className="rounded-sx-sm border border-sx-border-strong bg-sx-surface-2 px-3 py-2 text-xs text-sx-text"
-            placeholder="GSTIN"
+          <BillingField
+            label="GSTIN"
             value={profileForm.gstin ?? ""}
-            onChange={(e) => setProfileForm((f) => ({ ...f, gstin: e.target.value }))}
+            onChange={(v) => setProfileForm((f) => ({ ...f, gstin: v }))}
           />
-          <input
-            className="rounded-sx-sm border border-sx-border-strong bg-sx-surface-2 px-3 py-2 text-xs text-sx-text sm:col-span-2"
-            placeholder="Billing address"
+          <BillingField
+            label="Billing address"
             value={profileForm.billing_address ?? ""}
-            onChange={(e) => setProfileForm((f) => ({ ...f, billing_address: e.target.value }))}
+            onChange={(v) => setProfileForm((f) => ({ ...f, billing_address: v }))}
+            className="sm:col-span-2"
           />
-          <input
-            className="rounded-sx-sm border border-sx-border-strong bg-sx-surface-2 px-3 py-2 text-xs text-sx-text"
-            placeholder="State"
+          <BillingField
+            label="State"
             value={profileForm.billing_state ?? ""}
-            onChange={(e) => setProfileForm((f) => ({ ...f, billing_state: e.target.value }))}
+            onChange={(v) => setProfileForm((f) => ({ ...f, billing_state: v }))}
           />
-          <input
-            className="rounded-sx-sm border border-sx-border-strong bg-sx-surface-2 px-3 py-2 text-xs text-sx-text"
-            placeholder="PIN code"
+          <BillingField
+            label="PIN code"
             value={profileForm.pin_code ?? ""}
-            onChange={(e) => setProfileForm((f) => ({ ...f, pin_code: e.target.value }))}
+            onChange={(v) => setProfileForm((f) => ({ ...f, pin_code: v }))}
           />
         </div>
-        <Button className="mt-3" variant="primary" size="sm" disabled={busy} onClick={saveBillingProfile}>
+        <Button className="mt-4" variant="primary" size="cta" disabled={busy} onClick={saveBillingProfile}>
           Save GST details
         </Button>
       </Card>}
 
-      {/* Invoices */}
-      {!loading && !error && <Card className="p-6">
-        <h2 className="font-sx-sans text-sm font-semibold text-sx-text">Invoices</h2>
+      {/* Invoices — mobile-first row cards, not a desktop data table */}
+      {!loading && !error && <Card className="p-5 sm:p-6">
+        <h2 className="font-sx-sans text-[17px] font-semibold text-sx-text">Invoices</h2>
         {invoices.length === 0 ? (
           <div className="mt-4">
             <EmptyState title="No invoices yet" subtitle="Invoices appear here automatically after each payment." />
           </div>
         ) : (
-          <div className="mt-4 overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead>
-                <tr className="text-sx-text-subtle">
-                  <th className="pb-2 pr-4">Invoice</th>
-                  <th className="pb-2 pr-4">Date</th>
-                  <th className="pb-2 pr-4">Type</th>
-                  <th className="pb-2 pr-4">Taxable</th>
-                  <th className="pb-2 pr-4">GST</th>
-                  <th className="pb-2 pr-4">Total</th>
-                  <th className="pb-2">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {invoices.map((inv) => (
-                  <tr key={inv.id} className="border-t border-sx-border">
-                    <td className="py-2 pr-4 font-mono text-[11px]">{inv.invoice_number}</td>
-                    <td className="py-2 pr-4">{new Date(inv.created_at).toLocaleDateString()}</td>
-                    <td className="py-2 pr-4 capitalize">{inv.invoice_type.replace("_", " ")}</td>
-                    <td className="py-2 pr-4">{money(inv.taxable_value_cents)}</td>
-                    <td className="py-2 pr-4">{money(inv.gst_cents)}</td>
-                    <td className="py-2 pr-4 font-semibold">{money(inv.total_cents)}</td>
-                    <td className="py-2 capitalize">{inv.status}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="mt-3 flex flex-col">
+            {invoices.map((inv, idx) => (
+              <div
+                key={inv.id}
+                className={`flex items-center justify-between gap-3 py-3.5 ${idx === 0 ? "" : "border-t border-sx-border"}`}
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-[15px] font-semibold text-sx-text">
+                    {money(inv.total_cents)} <span className="font-normal text-sx-text-muted">· {inv.invoice_type.replace("_", " ")}</span>
+                  </p>
+                  <p className="mt-0.5 text-xs text-sx-text-subtle">
+                    {new Date(inv.created_at).toLocaleDateString()} · {inv.invoice_number} · GST {money(inv.gst_cents)}
+                  </p>
+                </div>
+                <StatusChip state={inv.status === "paid" || inv.status === "issued" ? "success" : "neutral"} className="shrink-0 capitalize">
+                  {inv.status}
+                </StatusChip>
+              </div>
+            ))}
           </div>
         )}
       </Card>}
     </div>
+  );
+}
+
+/** Labeled input matching the customer app's touch-friendly field sizing (spec §5.1) — used only on this page since Billing is the one surface here still collecting free-text profile data. */
+function BillingField({
+  label,
+  value,
+  onChange,
+  className = "",
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  className?: string;
+}) {
+  return (
+    <label className={`block ${className}`}>
+      <span className="mb-1.5 block text-xs font-medium text-sx-text-muted">{label}</span>
+      <input
+        className="h-11 w-full rounded-sx-sm border border-sx-border-strong bg-sx-surface-2 px-3.5 text-[15px] text-sx-text outline-none transition-colors focus-visible:border-sx-accent"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      />
+    </label>
   );
 }

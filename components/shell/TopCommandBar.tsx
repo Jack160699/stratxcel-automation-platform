@@ -21,7 +21,7 @@ export function TopCommandBar({
 }) {
   if (customer) {
     return (
-      <header className="flex h-14 shrink-0 items-center gap-3 border-b border-sx-border px-4 sm:h-16 sm:px-6">
+      <header data-sx-ui="new-header" className="flex h-14 shrink-0 items-center gap-3 border-b border-sx-border px-4 sm:h-16 sm:px-6">
         {brand && <div className="shrink-0 md:hidden">{brand}</div>}
         <div className="min-w-0 truncate text-[17px] font-semibold text-sx-text">{context}</div>
         <div className="flex-1" />

@@ -463,7 +463,7 @@ export default function AuditHubPage() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-full sm:max-w-5xl lg:max-w-6xl xl:max-w-7xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
+    <div data-sx-ui="new-audit" className="mx-auto w-full max-w-full sm:max-w-5xl lg:max-w-6xl xl:max-w-7xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
       <VisualAuditReport
         report={report}
         onDownload={() => {
