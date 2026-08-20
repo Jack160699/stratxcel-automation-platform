@@ -8,6 +8,7 @@ import {
 } from "@stratxcel/websites-and-domains";
 import type { AuthorizedConnectorContext, BriefVisualStyle } from "@stratxcel/websites-and-domains";
 import { SiteRenderer } from "./SiteRenderer";
+import { CustomerDomainManager } from "./CustomerDomainManager";
 
 interface SmartWebsiteCreatorProps {
   tenantId: string;
@@ -497,6 +498,15 @@ export function SmartWebsiteCreator({
             }`}
           >
             <SiteRenderer project={state.generatedSite.siteModel} />
+          </div>
+
+          {/* Customer-Owned Domain Connection Flow */}
+          <div className="pt-2">
+            <CustomerDomainManager
+              tenantId={tenantId}
+              projectId={state.projectId || "prj_latest"}
+              projectName={state.generatedSite.siteModel.name}
+            />
           </div>
 
           {/* Footer Actions */}

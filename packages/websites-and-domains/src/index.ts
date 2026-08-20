@@ -21,6 +21,7 @@ export * from "./ecommerce/index.ts";
 export * from "./agent/index.ts";
 export * from "./brief/index.ts";
 export * from "./creator/index.ts";
+export * from "./domains/index.ts";
 
 
 

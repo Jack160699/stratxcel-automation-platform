@@ -20,9 +20,13 @@ function run() {
     ["app", "app", "website", "[siteId]", "preview", "[[...slug]]", "page.tsx"],
     ["app", "app", "website", "[siteId]", "preview", "PreviewClientWrapper.tsx"],
     ["components", "site-builder", "SmartWebsiteCreator.tsx"],
+    ["components", "site-builder", "CustomerDomainManager.tsx"],
     ["components", "site-builder", "CustomerPreviewToolbar.tsx"],
     ["components", "site-builder", "SiteRenderer.tsx"],
     ["app", "api", "platform", "website-factory", "route.ts"],
+    ["app", "api", "platform", "website-factory", "[projectId]", "domains", "route.ts"],
+    ["app", "api", "platform", "website-factory", "[projectId]", "domains", "[domainId]", "verify", "route.ts"],
+    ["app", "api", "platform", "website-factory", "[projectId]", "domains", "[domainId]", "disconnect", "route.ts"],
   ];
 
   for (const p of requiredPaths) {

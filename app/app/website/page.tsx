@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/Input";
 import { StatusChip } from "@/components/ui/StatusChip";
 import { ErrorState } from "@/components/ui/Feedback";
 import { SmartWebsiteCreator } from "@/components/site-builder/SmartWebsiteCreator";
+import { CustomerDomainManager } from "@/components/site-builder/CustomerDomainManager";
 
 interface WebsiteProject {
   id: string;
@@ -272,6 +273,17 @@ export default function WebsitePage() {
                   detail={agent ? `${agent.name} (${agent.conversation_count || 0} chats)` : "No agent attached"}
                 />
               </div>
+
+              {/* Domain & Publishing Management */}
+              {tenantId && (
+                <CustomerDomainManager
+                  tenantId={tenantId}
+                  projectId={proj.id}
+                  projectName={proj.name}
+                  existingDomain={proj.custom_domain}
+                  onDomainUpdated={() => loadProjects()}
+                />
+              )}
 
               {/* Natural Language Edit Bar */}
               <div className="rounded-sx-md border border-sx-border bg-sx-surface-2 p-4">
