@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useCurrentTenant } from "../CurrentTenantContext";
-import { ModulePageHeader } from "../components/ModulePageHeader";
 import { Card, CardHeading } from "@/components/ui/Card";
 import { StatusChip, type ChipState } from "@/components/ui/StatusChip";
 import { Button } from "@/components/ui/Button";
@@ -17,6 +16,7 @@ interface TeamMember {
   createdAt: string;
 }
 
+/** Real 4-tier permission system — the StratXcel App reference's simpler Owner/Manager/Staff labels don't map 1:1 onto this, so the actual role names/permissions stay exactly as implemented rather than being renamed to match. */
 const ROLE_CHIP: Record<string, { label: string; state: ChipState }> = {
   owner: { label: "Owner", state: "accent" },
   admin: { label: "Admin", state: "ai" },
@@ -31,10 +31,18 @@ const ROLE_EXPLANATION: Record<string, string> = {
   viewer: "Read-only access to Brand Brain, missions, and wallet balance.",
 };
 
+function initialsFor(email: string | null): string {
+  const source = email ?? "?";
+  return source.slice(0, 2).toUpperCase();
+}
+
 /**
  * Real tenant_members for this workspace. Invites are tenant-scoped,
  * hashed, expiring, single-use, and role-constrained. Email delivery is
- * optional; the invite link can be copied.
+ * optional; the invite link can be copied — the reference's "Invite Staff
+ * on WhatsApp" CTA isn't a real channel this system has, so the CTA stays
+ * visually prominent (matching the reference) but honestly describes the
+ * real copyable-link mechanism.
  */
 export default function TeamPage() {
   const { active } = useCurrentTenant();
@@ -44,6 +52,7 @@ export default function TeamPage() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState("viewer");
   const [inviteUrl, setInviteUrl] = useState<string | null>(null);
@@ -98,69 +107,97 @@ export default function TeamPage() {
   }, [tenantId]);
 
   return (
-    <div className="flex flex-col gap-6">
-      <ModulePageHeader title="Team" tenantName={active?.name} description="Everyone with access to this workspace." />
+    <div data-sx-ui="new-staff" className="sx-customer-app mx-auto flex w-full max-w-[720px] flex-col gap-6 pb-20 md:pb-8">
+      <div>
+        <h1 className="text-2xl font-semibold text-sx-text">Staff{active ? ` · ${active.name}` : ""}</h1>
+        <p className="sx-hi text-xs text-sx-text-subtle">कर्मचारी</p>
+        <p className="mt-1 text-sm text-sx-text-muted">Everyone with access to this workspace.</p>
+      </div>
 
       {error && <ErrorState message={error} onRetry={load} />}
 
-      <section className="flex flex-col gap-3">
+      {/* Invite CTA — reference's prominent bar, real copyable-link invite behind it */}
+      <button
+        type="button"
+        onClick={() => setInviteOpen((v) => !v)}
+        className="flex h-12 items-center justify-center gap-2 rounded-sx-md bg-sx-success text-[15px] font-semibold text-white transition-opacity hover:opacity-90"
+      >
+        <span className="text-lg leading-none">+</span> Invite a team member
+      </button>
+
+      {inviteOpen && (
+        <Card className="p-4">
+          <CardHeading>Invite a team member</CardHeading>
+          <p className="mt-1 text-xs text-sx-text-muted">Creates a secure, expiring, single-use invite link. Share it however works for you — WhatsApp, email, SMS.</p>
+          <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+            <Input value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} placeholder="teammate@company.com" className="sm:flex-1" />
+            <select
+              value={inviteRole}
+              onChange={(e) => setInviteRole(e.target.value)}
+              className="min-h-11 rounded-sx-sm border border-sx-border-strong bg-sx-surface-1 px-2 text-sm"
+            >
+              <option value="viewer">Viewer</option>
+              <option value="operator">Operator</option>
+              <option value="admin">Admin</option>
+            </select>
+            <Button className="min-h-11 text-sm" type="button" onClick={() => void createInvite()} disabled={!tenantId || inviting || !inviteEmail.trim()}>
+              {inviting ? "Creating…" : "Generate invite"}
+            </Button>
+          </div>
+          {inviteUrl && (
+            <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+              <Input readOnly value={inviteUrl} className="sm:flex-1" />
+              <Button className="min-h-11 text-sm" type="button" onClick={() => void navigator.clipboard.writeText(inviteUrl)}>Copy invite link</Button>
+            </div>
+          )}
+        </Card>
+      )}
+
+      {/* Member rows — StratXcel App reference row treatment */}
+      <section className="flex flex-col gap-2.5">
         {tenantId && loading && <p className="text-sm text-sx-text-subtle">Loading…</p>}
         {!loading && !error && members?.length === 0 && (
           <EmptyState title="No team members found." subtitle="Your workspace membership is active, but no member directory entries were returned." />
         )}
-        {members && members.length > 0 && (
-          <div className="flex flex-col gap-2">
-            {members.map((m) => {
-              const chip = ROLE_CHIP[m.role] ?? { label: m.role, state: "neutral" as ChipState };
-              return (
-                <Card key={m.userId} variant="nested">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex min-w-0 items-center gap-3">
-                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sx-surface-3 text-xs font-semibold text-sx-text">
-                        {(m.email ?? "?").slice(0, 1).toUpperCase()}
-                      </span>
-                      <div className="min-w-0">
-                      <p className="truncate text-[13px] font-medium text-sx-text">
-                        {m.email ?? "Email not available"}
-                        {m.userId === currentUserId && <span className="ml-1.5 text-xs text-sx-text-subtle">(you)</span>}
-                      </p>
-                      <p className="mt-0.5 text-xs text-sx-text-subtle">{ROLE_EXPLANATION[m.role] ?? "—"}</p>
-                      <p className="mt-0.5 text-[10.5px] text-sx-text-subtle">Joined {new Date(m.createdAt).toLocaleDateString()}</p>
-                      </div>
-                    </div>
-                    <StatusChip state={chip.state}>{chip.label}</StatusChip>
-                  </div>
-                </Card>
-              );
-            })}
-          </div>
-        )}
+        {members?.map((m) => {
+          const chip = ROLE_CHIP[m.role] ?? { label: m.role, state: "neutral" as ChipState };
+          const isOwner = m.role === "owner";
+          return (
+            <Card key={m.userId} className="p-3.5">
+              <div className="flex items-center gap-3">
+                <span
+                  className="flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-full text-[15px] font-bold text-white"
+                  style={isOwner ? { background: "linear-gradient(135deg, var(--sx-accent), #3b82f6)" } : { background: "var(--sx-surface-3)", color: "var(--sx-text-muted)" }}
+                >
+                  {initialsFor(m.email)}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[15px] font-semibold text-sx-text">
+                    {m.email ?? "Email not available"}
+                    {m.userId === currentUserId && <span className="ml-1.5 text-xs font-normal text-sx-text-subtle">(you)</span>}
+                  </p>
+                  <p className="truncate text-xs text-sx-text-subtle">Joined {new Date(m.createdAt).toLocaleDateString()}</p>
+                </div>
+                <StatusChip state={chip.state}>{chip.label}</StatusChip>
+              </div>
+            </Card>
+          );
+        })}
       </section>
 
-      <Card>
-        <CardHeading>Invite a team member</CardHeading>
-        <p className="mt-1 text-xs text-sx-text-muted">Creates a secure, expiring, single-use invite link. Copy it if email delivery is unavailable.</p>
-        <div className="mt-2 flex flex-col gap-2 sm:flex-row">
-          <Input value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} placeholder="teammate@company.com" className="sm:flex-1" />
-          <select
-            value={inviteRole}
-            onChange={(e) => setInviteRole(e.target.value)}
-            className="min-h-11 rounded-sx-sm border border-sx-border-strong bg-sx-surface-1 px-2 text-sm"
-          >
-            <option value="viewer">Viewer</option>
-            <option value="operator">Operator</option>
-            <option value="admin">Admin</option>
-          </select>
-          <Button className="min-h-11 text-sm" type="button" onClick={() => void createInvite()} disabled={!tenantId || inviting || !inviteEmail.trim()}>
-            {inviting ? "Creating…" : "Generate invite"}
-          </Button>
+      {/* Roles legend — StratXcel App reference */}
+      <Card className="p-4">
+        <p className="mb-2.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-sx-text-subtle">Roles</p>
+        <div className="flex flex-col gap-2">
+          {(["owner", "admin", "operator", "viewer"] as const).map((role) => (
+            <div key={role} className="flex items-start gap-2">
+              <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-sx-accent" />
+              <p className="text-[13px] text-sx-text">
+                <span className="font-semibold capitalize">{role}</span> — {ROLE_EXPLANATION[role]}
+              </p>
+            </div>
+          ))}
         </div>
-        {inviteUrl && (
-          <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-            <Input readOnly value={inviteUrl} className="sm:flex-1" />
-            <Button className="min-h-11 text-sm" type="button" onClick={() => void navigator.clipboard.writeText(inviteUrl)}>Copy invite link</Button>
-          </div>
-        )}
       </Card>
 
       <Card variant="alert">
