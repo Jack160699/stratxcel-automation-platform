@@ -2,13 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { useCurrentTenant } from "../CurrentTenantContext";
-import { Card, CardHeading } from "@/components/ui/Card";
+import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import { StatusChip } from "@/components/ui/StatusChip";
 import { ErrorState } from "@/components/ui/Feedback";
 import { PlatformIcon, type PlatformIconKey } from "@/components/audit/PlatformIcon";
 import { GoogleSearchIntegrationPanel } from "../components/GoogleSearchIntegrationPanel";
-import { ModulePageHeader } from "../components/ModulePageHeader";
 
 export type ConnectorState =
   | "checking"
@@ -39,7 +37,8 @@ interface CustomerIntegrationStatus {
   selfService?: { google?: boolean; social?: boolean; whatsapp?: boolean };
 }
 
-function BusinessStatus({
+/** Dot + label matching the Connected Accounts reference's visual language (green/Active, amber/Needs attention, gray/Not connected — exact wording kept from the tested product copy) — status is never colour alone, the label always says it too. */
+function ConnectionBadge({
   state,
   canConnect,
   isDiscovered,
@@ -48,12 +47,32 @@ function BusinessStatus({
   canConnect: boolean;
   isDiscovered: boolean;
 }) {
-  if (state === "checking") return <StatusChip state="neutral">Checking</StatusChip>;
-  if (state === "connected") return <StatusChip state="success">Connected</StatusChip>;
-  if (state === "action_required") return <StatusChip state="warning">Needs attention</StatusChip>;
-  if (isDiscovered) return <StatusChip state="accent">Found publicly</StatusChip>;
-  if (!canConnect) return <StatusChip state="neutral">Testing access required</StatusChip>;
-  return <StatusChip state="neutral">Not connected</StatusChip>;
+  if (state === "checking") {
+    return <span className="shrink-0 rounded-lg bg-sx-surface-2 px-2.5 py-1 text-[11px] font-semibold text-sx-text-subtle">Checking</span>;
+  }
+  if (state === "connected") {
+    return (
+      <span className="flex shrink-0 items-center gap-1.5 rounded-lg bg-sx-success/10 px-2.5 py-1">
+        <span className="h-[5px] w-[5px] rounded-full bg-sx-success" />
+        <span className="text-[11px] font-semibold text-sx-success">Active</span>
+      </span>
+    );
+  }
+  if (state === "action_required") {
+    return (
+      <span className="flex shrink-0 items-center gap-1.5 rounded-lg bg-sx-warning/10 px-2.5 py-1">
+        <span className="h-[5px] w-[5px] rounded-full bg-sx-warning" />
+        <span className="text-[11px] font-semibold text-sx-warning">Needs attention</span>
+      </span>
+    );
+  }
+  if (isDiscovered) {
+    return <span className="shrink-0 rounded-lg bg-sx-accent-muted px-2.5 py-1 text-[11px] font-semibold text-sx-accent">Found publicly</span>;
+  }
+  if (!canConnect) {
+    return <span className="shrink-0 rounded-lg bg-sx-surface-2 px-2.5 py-1 text-[11px] font-semibold text-sx-text-subtle">Testing access required</span>;
+  }
+  return <span className="shrink-0 rounded-lg bg-sx-surface-2 px-2.5 py-1 text-[11px] font-semibold text-sx-text-subtle">Not connected</span>;
 }
 
 export default function IntegrationsPage() {
@@ -139,49 +158,60 @@ export default function IntegrationsPage() {
     state: ConnectorState;
     copy: string;
     isOAuth: boolean;
+    /** Reference groups connectors into "Primary Channels" vs "Analytics & Other". */
+    tier: "primary" | "analytics";
   }> = [
     {
       key: "google_business",
       title: "Google Business",
       state: status?.google ?? "setup_required",
-      copy: "Connect your Google Business Profile to boost local ranking, sync reviews, and manage business details.",
+      copy: "Helps customers find your shop on Google Maps & Search.",
       isOAuth: true,
+      tier: "primary",
+    },
+    {
+      key: "whatsapp",
+      // Deliberately not the reference's literal connector name — this
+      // verifies the phone number for OTP-based notifications only, not a
+      // full messaging-platform API integration (v1-customer-boundaries.test.ts /
+      // p0-product-boundaries.test.ts guard this distinction explicitly).
+      title: "WhatsApp Number",
+      state: status?.whatsapp ?? "setup_required",
+      copy: status?.whatsapp === "connected"
+        ? "Phone number verified for instant lead notifications and audit alerts."
+        : "Verify the phone number you use for WhatsApp to receive instant customer enquiries & auto-replies.",
+      isOAuth: false,
+      tier: "primary",
     },
     {
       key: "instagram",
       title: "Instagram",
       state: status?.instagram ?? "checking",
       copy: status?.instagram === "connected"
-        ? "Connected to Meta for direct publishing, audience growth, and insights."
-        : "Connect your Instagram Business account to automate publishing, creative stories, and track insights.",
+        ? "Connected — direct publishing, audience growth, and insights."
+        : "Share offers & reach local customers with automated publishing.",
       isOAuth: true,
+      tier: "primary",
     },
     {
       key: "facebook",
       title: "Facebook",
       state: status?.facebook ?? "checking",
       copy: status?.facebook === "connected"
-        ? "Connected to Meta for Facebook Page management."
-        : "Connect your Facebook Business Page for automated content distribution and community engagement.",
+        ? "Connected — Facebook Page management active."
+        : "Page updates & local community reach.",
       isOAuth: true,
+      tier: "primary",
     },
     {
       key: "youtube",
       title: "YouTube",
       state: status?.youtube ?? "checking",
       copy: status?.youtube === "connected"
-        ? "Connected to YouTube for video uploads and analytics."
-        : "Connect your YouTube channel for video publishing, shorts distribution, and performance tracking.",
+        ? "Connected — video uploads and analytics active."
+        : "Video publishing, shorts distribution, and performance tracking.",
       isOAuth: true,
-    },
-    {
-      key: "whatsapp",
-      title: "WhatsApp Number",
-      state: status?.whatsapp ?? "setup_required",
-      copy: status?.whatsapp === "connected"
-        ? "Phone number verified for instant lead notifications and audit alerts."
-        : "Verify the phone number you use for WhatsApp to receive instant updates and audit alerts.",
-      isOAuth: false,
+      tier: "primary",
     },
   ];
 
@@ -267,13 +297,15 @@ export default function IntegrationsPage() {
     }
   }
 
+  const primaryCards = cards.filter((c) => c.tier === "primary");
+
   return (
-    <div className="flex flex-col gap-6">
-      <ModulePageHeader
-        title="Connectors"
-        tenantName={active?.name}
-        description="Real connection status and verified business destinations. One-tap connect begins the real provider authorization."
-      />
+    <div data-sx-ui="new-integrations" className="sx-customer-app mx-auto flex w-full max-w-[720px] flex-col gap-6 pb-20 md:pb-8">
+      <div>
+        <h1 className="text-2xl font-semibold text-sx-text">Connected Accounts{active ? ` · ${active.name}` : ""}</h1>
+        <p className="sx-hi text-xs text-sx-text-subtle">जुड़े हुए खाते</p>
+        <p className="mt-1 text-sm text-sx-text-muted">Real connection status. One-tap connect begins the real provider authorization.</p>
+      </div>
 
       {whatsappSuccessMsg && (
         <div className="rounded-sx-sm border border-sx-success/30 bg-sx-success/10 px-4 py-3 text-sm font-medium text-sx-success flex items-center justify-between">
@@ -295,44 +327,41 @@ export default function IntegrationsPage() {
         />
       )}
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-        {cards.map((card) => {
-          const presence = presenceFor(card.key);
-          const canConnect = card.isOAuth ? Boolean(status?.selfService?.social) : true;
-          const isDiscovered = Boolean(presence?.href && card.state !== "connected");
-          const connectHref = tenantId && card.isOAuth
-            ? `/api/social/oauth/${card.key}/connect?redirectTo=${encodeURIComponent("/app/integrations")}&tenantId=${encodeURIComponent(tenantId)}`
-            : null;
+      {/* Primary Channels — StratXcel App reference row-list */}
+      <section>
+        <p className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-[0.06em] text-sx-text-subtle">Primary Channels</p>
+        <div className="flex flex-col gap-2.5">
+          {primaryCards.map((card) => {
+            const presence = presenceFor(card.key);
+            const canConnect = card.isOAuth ? Boolean(status?.selfService?.social) : true;
+            const isDiscovered = Boolean(presence?.href && card.state !== "connected");
+            const connectHref = tenantId && card.isOAuth
+              ? `/api/social/oauth/${card.key}/connect?redirectTo=${encodeURIComponent("/app/integrations")}&tenantId=${encodeURIComponent(tenantId)}`
+              : null;
 
-          return (
-            <Card key={card.key} className="flex flex-col justify-between p-5">
-              <div>
-                <div className="flex items-start justify-between gap-3">
-                  <CardHeading>
-                    <span className="inline-flex items-center gap-2">
-                      <PlatformIcon name={card.key} /> {card.title}
-                    </span>
-                  </CardHeading>
-                  <BusinessStatus
-                    state={card.state}
-                    canConnect={card.isOAuth ? canConnect : true}
-                    isDiscovered={isDiscovered}
-                  />
+            return (
+              <Card key={card.key} className="p-4">
+                <div className="flex items-center gap-3">
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-sx-sm bg-sx-accent-muted">
+                    <PlatformIcon name={card.key} />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[15px] font-semibold text-sx-text">{card.title}</p>
+                    <p className="truncate text-xs text-sx-text-subtle">{card.copy}</p>
+                  </div>
+                  <ConnectionBadge state={card.state} canConnect={card.isOAuth ? canConnect : true} isDiscovered={isDiscovered} />
                 </div>
-                <p className="mt-2 text-sm text-sx-text-muted">{card.copy}</p>
 
                 {presence?.href && (
                   <div className="mt-3 rounded-sx-sm bg-sx-surface-2 p-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <a
-                        href={presence.href}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="block text-sm font-semibold text-sx-accent hover:underline break-all"
-                      >
-                        {presence.handle || presence.href}
-                      </a>
-                    </div>
+                    <a
+                      href={presence.href}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="block text-sm font-semibold text-sx-accent hover:underline break-all"
+                    >
+                      {presence.handle || presence.href}
+                    </a>
                     <p className="mt-1 text-xs text-sx-text-subtle">
                       {card.state === "connected"
                         ? "Authenticated account · direct publishing & analytics active"
@@ -341,71 +370,64 @@ export default function IntegrationsPage() {
                     </p>
                   </div>
                 )}
-              </div>
 
-              {card.isOAuth && tenantId && (
-                <div className="mt-5 pt-3 border-t border-sx-border/40 flex items-center justify-between gap-3">
-                  {card.state === "connected" && (
-                    <div className="flex w-full items-center justify-between gap-2">
-                      {connectHref ? (
-                        <a href={connectHref}>
-                          <Button variant="secondary" size="sm">
-                            Reconnect
-                          </Button>
-                        </a>
-                      ) : <span />}
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="text-sx-danger hover:bg-sx-danger/10"
-                        onClick={() => handleDisconnect(card.key)}
-                      >
-                        Disconnect
-                      </Button>
-                    </div>
-                  )}
-
-                  {card.state === "action_required" && connectHref && (
-                    <a href={connectHref}>
-                      <Button variant="primary" size="sm">
-                        Reconnect account
-                      </Button>
-                    </a>
-                  )}
-
-                  {card.state !== "connected" && card.state !== "action_required" && (
-                    canConnect && connectHref ? (
-                      <a href={connectHref}>
-                        <Button variant="primary" size="sm">
-                          Connect {card.title}
-                        </Button>
-                      </a>
-                    ) : (
+                {card.isOAuth && tenantId && (
+                  <div className="mt-3 flex items-center justify-between gap-3 border-t border-sx-border pt-3">
+                    {card.state === "connected" && (
                       <div className="flex w-full items-center justify-between gap-2">
-                        <span className="text-xs text-sx-text-subtle">Testing access required</span>
+                        {connectHref ? (
+                          <a href={connectHref}>
+                            <Button variant="secondary" size="sm">Reconnect</Button>
+                          </a>
+                        ) : <span />}
                         <Button
-                          variant="secondary"
+                          variant="ghost"
                           size="sm"
-                          onClick={() => {
-                            setRequestModalProvider({ key: card.key, title: card.title });
-                            setRequestReason("");
-                            setRequestFeedback(null);
-                          }}
+                          className="text-sx-danger hover:bg-sx-danger/10"
+                          onClick={() => handleDisconnect(card.key)}
                         >
-                          Request access
+                          Disconnect
                         </Button>
                       </div>
-                    )
-                  )}
-                </div>
-              )}
+                    )}
 
-              {!card.isOAuth && card.key === "whatsapp" && (
-                <div className="mt-5 pt-3 border-t border-sx-border/40 flex items-center justify-between gap-3">
-                  {card.state === "connected" ? (
+                    {card.state === "action_required" && connectHref && (
+                      <a href={connectHref} className="w-full">
+                        <Button variant="primary" size="sm" className="w-full">Reconnect account</Button>
+                      </a>
+                    )}
+
+                    {card.state !== "connected" && card.state !== "action_required" && (
+                      canConnect && connectHref ? (
+                        <a href={connectHref} className="w-full">
+                          <Button variant="primary" size="sm" className="w-full">Connect {card.title}</Button>
+                        </a>
+                      ) : (
+                        <div className="flex w-full items-center justify-between gap-2">
+                          <span className="text-xs text-sx-text-subtle">Testing access required</span>
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => {
+                              setRequestModalProvider({ key: card.key, title: card.title });
+                              setRequestReason("");
+                              setRequestFeedback(null);
+                            }}
+                          >
+                            Request access
+                          </Button>
+                        </div>
+                      )
+                    )}
+                  </div>
+                )}
+
+                {!card.isOAuth && card.key === "whatsapp" && (
+                  <div className="mt-3 border-t border-sx-border pt-3">
                     <Button
-                      variant="secondary"
+                      variant={card.state === "connected" ? "secondary" : "primary"}
                       size="sm"
+                      className="w-full"
                       onClick={() => {
                         setWhatsappModalOpen(true);
                         setOtpSent(false);
@@ -413,43 +435,35 @@ export default function IntegrationsPage() {
                         setOtpError(null);
                       }}
                     >
-                      Update Number
+                      {card.state === "connected" ? "Update Number" : "Verify Number"}
                     </Button>
-                  ) : (
-                    <Button
-                      variant="primary"
-                      size="sm"
-                      onClick={() => {
-                        setWhatsappModalOpen(true);
-                        setOtpSent(false);
-                        setWhatsappOtp("");
-                        setOtpError(null);
-                      }}
-                    >
-                      Verify Number
-                    </Button>
-                  )}
-                </div>
-              )}
-            </Card>
-          );
-        })}
-      </div>
+                  </div>
+                )}
+              </Card>
+            );
+          })}
+        </div>
+      </section>
 
+      {/* Analytics & Other — StratXcel App reference row-list */}
       {tenantId && (
-        <Card className="p-5">
-          <CardHeading>
-            <span className="inline-flex items-center gap-2">
-              <PlatformIcon name="google" />
-              <PlatformIcon name="analytics" />
-              Search Console &amp; GA4
-            </span>
-          </CardHeading>
-          <p className="mb-4 mt-2 text-sm text-sx-text-muted">
-            Connect Google Search Console and GA4 properties for this workspace via read-only Google OAuth.
-          </p>
-          <GoogleSearchIntegrationPanel tenantId={tenantId} />
-        </Card>
+        <section>
+          <p className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-[0.06em] text-sx-text-subtle">Analytics & Other</p>
+          <Card className="p-4">
+            <div className="flex items-center gap-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-sx-sm bg-sx-accent-muted">
+                <PlatformIcon name="analytics" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="text-[15px] font-semibold text-sx-text">Search Console &amp; GA4</p>
+                <p className="text-xs text-sx-text-subtle">Track rankings, visitors & behaviour via read-only Google OAuth.</p>
+              </div>
+            </div>
+            <div className="mt-3 border-t border-sx-border pt-3">
+              <GoogleSearchIntegrationPanel tenantId={tenantId} />
+            </div>
+          </Card>
+        </section>
       )}
 
       {/* WhatsApp OTP Modal */}
