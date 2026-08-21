@@ -11,14 +11,14 @@ export default function WebsiteCreatePage() {
 
   if (!tenantId) {
     return (
-      <div className="p-8 text-center text-white/60">
+      <div className="p-8 text-center text-sx-text-muted">
         Please select or switch to an active tenant to create a website.
       </div>
     );
   }
 
   return (
-    <div className="py-6 px-2 md:px-6 max-w-5xl mx-auto">
+    <div data-sx-ui="new-website-create" className="sx-customer-app py-6 px-2 md:px-6 max-w-5xl mx-auto">
       <SmartWebsiteCreator
         tenantId={tenantId}
         onClose={() => router.push("/app/website")}

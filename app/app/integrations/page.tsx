@@ -82,6 +82,12 @@ export default function IntegrationsPage() {
   const [error, setError] = useState<string | null>(null);
 
   // Request Access Dialog State
+  // Connect Google Business — StratXcel App reference pre-connect intro.
+  // The actual OAuth authorization is Google's hosted consent screen (not
+  // recreated here); this is the real StratXcel-owned screen shown before
+  // that redirect, matching the reference's benefits-list intro.
+  const [googleIntroOpen, setGoogleIntroOpen] = useState(false);
+
   const [requestModalProvider, setRequestModalProvider] = useState<{ key: string; title: string } | null>(null);
   const [requestReason, setRequestReason] = useState("");
   const [requestSubmitting, setRequestSubmitting] = useState(false);
@@ -403,9 +409,21 @@ export default function IntegrationsPage() {
 
                     {card.state !== "connected" && card.state !== "action_required" && (
                       canConnect && connectHref ? (
-                        <a href={connectHref} className="w-full">
-                          <Button variant="primary" size="sm" className="w-full">Connect {card.title}</Button>
-                        </a>
+                        card.key === "google_business" ? (
+                          <Button
+                            type="button"
+                            variant="primary"
+                            size="sm"
+                            className="w-full"
+                            onClick={() => setGoogleIntroOpen(true)}
+                          >
+                            Connect {card.title}
+                          </Button>
+                        ) : (
+                          <a href={connectHref} className="w-full">
+                            <Button variant="primary" size="sm" className="w-full">Connect {card.title}</Button>
+                          </a>
+                        )
                       ) : (
                         <div className="flex w-full items-center justify-between gap-2">
                           <span className="text-xs text-sx-text-subtle">Testing access required</span>
@@ -651,6 +669,65 @@ export default function IntegrationsPage() {
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Connect Google Business — StratXcel App reference pre-connect intro.
+          Real StratXcel-owned screen shown before Google's own hosted OAuth
+          consent screen (not recreated here); "Sign in with Google" performs
+          the actual redirect to /api/social/oauth/google_business/connect. */}
+      {googleIntroOpen && tenantId && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="google-intro-dialog-title"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-xs"
+        >
+          <div className="w-full max-w-md rounded-sx-lg border border-sx-border bg-sx-surface-1 p-6 shadow-2xl">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <PlatformIcon name="google_business" className="h-5 w-5" />
+                <h4 id="google-intro-dialog-title" className="font-sx-sans text-base font-bold text-sx-text">
+                  Connect Google Business
+                </h4>
+              </div>
+              <button
+                type="button"
+                onClick={() => setGoogleIntroOpen(false)}
+                className="text-sx-text-muted hover:text-sx-text text-sm"
+              >
+                ✕
+              </button>
+            </div>
+
+            <p className="mt-3 text-sm text-sx-text-muted">
+              You&rsquo;ll sign in with Google and grant StratXcel access to your Business Profile. We only request the permissions needed for these:
+            </p>
+
+            <div className="mt-3 rounded-sx-md bg-sx-surface-2 p-3.5">
+              <div className="flex flex-col gap-2">
+                {["Appear on Google Maps & Search", "Sync your reviews and ratings", "Keep your business info accurate"].map((benefit) => (
+                  <div key={benefit} className="flex items-center gap-2">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--sx-success)" strokeWidth="2" className="shrink-0"><path d="M20 6L9 17l-5-5" /></svg>
+                    <span className="text-[13px] text-sx-text">{benefit}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="mt-5 flex items-center justify-end gap-2.5">
+              <Button type="button" variant="ghost" size="sm" onClick={() => setGoogleIntroOpen(false)}>
+                Cancel
+              </Button>
+              <a
+                href={`/api/social/oauth/google_business/connect?redirectTo=${encodeURIComponent("/app/integrations")}&tenantId=${encodeURIComponent(tenantId)}`}
+              >
+                <Button type="button" variant="primary" size="sm">
+                  Sign in with Google
+                </Button>
+              </a>
+            </div>
           </div>
         </div>
       )}
