@@ -2,13 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { useCurrentTenant } from "../CurrentTenantContext";
-import { ModulePageHeader } from "../components/ModulePageHeader";
 import { IntegrationStatus } from "../components/IntegrationStatus";
 import { DisconnectedState } from "../components/DisconnectedState";
-import { Card, CardHeading } from "@/components/ui/Card";
+import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
-import { StatusChip } from "@/components/ui/StatusChip";
 import { ErrorState } from "@/components/ui/Feedback";
 import { SmartWebsiteCreator } from "@/components/site-builder/SmartWebsiteCreator";
 import { CustomerDomainManager } from "@/components/site-builder/CustomerDomainManager";
@@ -134,20 +132,15 @@ export default function WebsitePage() {
   const primaryProject = projects?.[0] || null;
 
   return (
-    <div className="flex flex-col gap-8 pb-16">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <ModulePageHeader
-          title="AI Website Factory"
-          tenantName={active?.name}
-          description="Autonomous AI website generation, custom domain registration, e-commerce catalog, and embedded business agent."
-        />
-        {tenantId && (
-          <Button
-            variant="primary"
-            onClick={() => setShowSmartCreator(true)}
-            className="shadow-lg font-bold"
-          >
-            ✨ Create Website
+    <div data-sx-ui="new-website" className="sx-customer-app mx-auto flex w-full max-w-[720px] flex-col gap-6 pb-20 md:pb-8">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold text-sx-text">Website & Domain{active ? ` · ${active.name}` : ""}</h1>
+          <p className="sx-hi text-xs text-sx-text-subtle">वेबसाइट और डोमेन</p>
+        </div>
+        {tenantId && projects && projects.length > 0 && (
+          <Button variant="primary" size="sm" onClick={() => setShowSmartCreator(true)}>
+            + Create Another Site
           </Button>
         )}
       </div>
@@ -156,10 +149,10 @@ export default function WebsitePage() {
 
       {/* Smart Website Creator Flow */}
       {(showSmartCreator || (!loading && (!projects || projects.length === 0))) && tenantId && (
-        <div className="rounded-sx-lg border border-sx-accent/30 bg-sx-surface-1 p-2 sm:p-6 shadow-sm">
-          <div className="flex items-center justify-between mb-4 border-b border-sx-border pb-3">
+        <Card className="p-2 sm:p-5">
+          <div className="mb-3 flex items-center justify-between border-b border-sx-border px-2 pb-3 pt-1 sm:px-0">
             <div>
-              <h2 className="font-sx-sans text-lg font-bold text-sx-text">Smart Website Creator</h2>
+              <h2 className="text-[15px] font-semibold text-sx-text">Smart Website Creator</h2>
               <p className="text-xs text-sx-text-muted">Type what you want in Hindi, Hinglish, or English. Stratxcel will ask smart questions and build your site.</p>
             </div>
             {projects && projects.length > 0 && (
@@ -179,31 +172,11 @@ export default function WebsitePage() {
               await loadProjects();
             }}
           />
-        </div>
+        </Card>
       )}
 
-      <Card variant="alert">
-        <CardHeading>Production promotion requires approval</CardHeading>
-        <p className="mt-1 text-xs text-sx-text-muted">
-          Publishing a website always requires your explicit approval, verified payment confirmation, and passing automated QA checks.
-        </p>
-      </Card>
-
       {/* Projects List */}
-      <section className="flex flex-col gap-6">
-        <div className="flex items-center justify-between">
-          <h2 className="font-sx-sans text-xl font-bold text-sx-text">Your Website Projects</h2>
-          {projects && projects.length > 0 && !showSmartCreator && tenantId && (
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => setShowSmartCreator(true)}
-            >
-              + Create Another Site
-            </Button>
-          )}
-        </div>
-
+      <section className="flex flex-col gap-5">
         {loading && <p className="text-sm text-sx-text-subtle">Loading website projects…</p>}
 
         {!loading && (!projects || projects.length === 0) && (
@@ -217,46 +190,76 @@ export default function WebsitePage() {
           const isLive = proj.status === "live" || proj.deployment_status === "LIVE";
           const agent = proj.website_agents?.[0];
 
+          const domainLabel = proj.custom_domain || `${proj.slug}.stratxcel.site`;
           return (
-            <div key={proj.id} className="rounded-sx-lg border border-sx-border bg-sx-surface-1 p-6 shadow-sm flex flex-col gap-6">
-              {/* Header */}
-              <div className="flex flex-wrap items-start justify-between gap-4 border-b border-sx-border pb-4">
-                <div>
-                  <div className="flex items-center gap-3">
-                    <h3 className="font-sx-sans text-xl font-extrabold text-sx-text">{proj.name}</h3>
-                    <StatusChip state={isLive ? "success" : "neutral"}>
-                      {isLive ? "LIVE" : proj.status.toUpperCase()}
-                    </StatusChip>
+            <div key={proj.id} className="flex flex-col gap-4">
+              {/* Website Live Card — StratXcel App reference hero treatment */}
+              <Card className="overflow-hidden p-0">
+                <div className="bg-gradient-to-br from-sx-accent-muted to-sx-accent/10 px-6 py-7 text-center">
+                  <div className="mx-auto flex h-[60px] w-[60px] items-center justify-center rounded-sx-md bg-sx-surface-1 shadow-sm">
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--sx-accent)" strokeWidth="2">
+                      <path d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9" />
+                    </svg>
                   </div>
-                  <p className="mt-1 text-xs text-sx-text-muted">
-                    Type: <span className="font-medium text-sx-text">{proj.website_type}</span> · Created: {new Date(proj.created_at).toLocaleDateString()}
-                  </p>
+                  <p className="mt-3 text-[16px] font-bold text-sx-text">{domainLabel}</p>
+                  <div className="mt-1.5 flex items-center justify-center gap-1.5">
+                    <span className={`h-1.5 w-1.5 rounded-full ${isLive ? "bg-sx-success" : "bg-sx-text-subtle"}`} />
+                    <span className={`text-xs font-semibold ${isLive ? "text-sx-success" : "text-sx-text-subtle"}`}>
+                      {isLive ? "Live & Active" : proj.status.replace(/_/g, " ")}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-xs text-sx-text-subtle">Created {new Date(proj.created_at).toLocaleDateString()}</p>
                 </div>
 
-                <div className="flex items-center gap-3">
+                {/* Quick actions — real starter prompts for the natural-language edit flow below, not decorative */}
+                <div className="flex flex-col gap-1.5 p-4">
+                  {[
+                    { label: "Add Photos", prompt: "Add a photo gallery section showcasing the shop and products" },
+                    { label: "Update Business Hours", prompt: "Update the business hours shown on the site" },
+                    { label: "Edit Menu & Prices", prompt: "Update the products/services list and prices" },
+                    { label: "Update WhatsApp Button", prompt: "Update the WhatsApp contact button" },
+                  ].map((action) => (
+                    <button
+                      key={action.label}
+                      type="button"
+                      onClick={() => {
+                        setEditingProjectId(proj.id);
+                        setEditInstruction(action.prompt);
+                        document.getElementById(`edit-instruction-${proj.id}`)?.focus();
+                      }}
+                      className="flex items-center justify-between rounded-sx-sm bg-sx-accent-muted px-3 py-2.5 text-left transition-colors hover:bg-sx-accent/15"
+                    >
+                      <span className="text-[14px] font-semibold text-sx-text">{action.label}</span>
+                      <span className="text-sx-text-subtle">→</span>
+                    </button>
+                  ))}
+                </div>
+
+                <div className="flex flex-col gap-2 p-4 pt-0 sm:flex-row">
                   <a
                     href={`/app/website/${proj.id}/preview`}
                     target="_blank"
                     rel="noreferrer"
-                    className="rounded-sx-sm border border-sx-border bg-sx-surface-2 px-4 py-2 text-xs font-semibold text-sx-text hover:bg-sx-surface-1 transition-colors"
+                    className="flex-1 rounded-sx-sm border border-sx-border bg-sx-surface-2 px-4 py-2.5 text-center text-xs font-semibold text-sx-text hover:bg-sx-surface-1 transition-colors"
                   >
                     Open Live Preview ↗
                   </a>
-                  {isLive && (
-                    <a
-                      href={proj.production_url || `https://${proj.custom_domain || proj.slug + ".stratxcel.site"}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="rounded-sx-sm bg-sx-accent px-4 py-2 text-xs font-bold text-sx-accent-on hover:opacity-90 transition-opacity"
-                    >
-                      Visit Live Site 🌐
-                    </a>
-                  )}
+                  <a
+                    href={proj.production_url || `https://${domainLabel}`}
+                    target={isLive ? "_blank" : undefined}
+                    rel="noreferrer"
+                    aria-disabled={!isLive}
+                    className={`flex flex-1 items-center justify-center gap-1.5 rounded-sx-sm px-4 py-2.5 text-center text-xs font-bold transition-opacity ${
+                      isLive ? "bg-sx-accent text-sx-accent-on hover:opacity-90" : "pointer-events-none bg-sx-surface-3 text-sx-text-subtle"
+                    }`}
+                  >
+                    Visit Website 🌐
+                  </a>
                 </div>
-              </div>
+              </Card>
 
               {/* Status Grid */}
-              <div className="grid gap-4 sm:grid-cols-3">
+              <div className="grid gap-3 sm:grid-cols-3">
                 <IntegrationStatus
                   name="Live Domain"
                   state={proj.custom_domain ? "connected" : "disconnected"}
@@ -286,12 +289,13 @@ export default function WebsitePage() {
               )}
 
               {/* Natural Language Edit Bar */}
-              <div className="rounded-sx-md border border-sx-border bg-sx-surface-2 p-4">
-                <label className="block text-xs font-semibold text-sx-text-muted mb-1.5">
+              <Card className="p-4">
+                <label htmlFor={`edit-instruction-${proj.id}`} className="block text-xs font-semibold text-sx-text-muted mb-1.5">
                   Natural Language Website Editing
                 </label>
                 <div className="flex flex-col sm:flex-row gap-2">
                   <Input
+                    id={`edit-instruction-${proj.id}`}
                     value={editingProjectId === proj.id ? editInstruction : ""}
                     onChange={(e) => {
                       setEditingProjectId(proj.id);
@@ -309,11 +313,11 @@ export default function WebsitePage() {
                     {editingProjectId === proj.id ? "Applying Revision…" : "Apply Edit 🪄"}
                   </Button>
                 </div>
-              </div>
+              </Card>
 
               {/* AI Agent Chat Modal / Accordion */}
               {agent && (
-                <div className="border-t border-sx-border pt-4">
+                <Card className="p-4">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-semibold text-sx-text">Embedded AI Business Agent ({agent.name})</span>
                     <Button
@@ -355,8 +359,12 @@ export default function WebsitePage() {
                       </div>
                     </div>
                   )}
-                </div>
+                </Card>
               )}
+
+              <p className="px-1 text-[11px] text-sx-text-subtle">
+                Production promotion requires approval — publishing always requires your explicit approval, verified payment confirmation, and passing automated QA checks.
+              </p>
             </div>
           );
         })}
