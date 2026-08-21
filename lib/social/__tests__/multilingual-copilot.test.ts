@@ -12,7 +12,30 @@ async function run() {
   console.log("Running Multilingual Intent, Content, and Generation Test Suite...");
 
   // -------------------------------------------------------------------------
-  // 1. Hindi (Devanagari) Intent & Mode Classification
+  // 1. Live Production Regression Prompts
+  // -------------------------------------------------------------------------
+  const liveBugPrompt = "अभी राखी के लिए पोस्ट बना दो";
+  assert.equal(classifySocialCopilotIntent(liveBugPrompt), "PREPARE_CONTENT", "Short Hindi request -> PREPARE_CONTENT");
+  assert.equal(classifyCreativeRequestMode(liveBugPrompt, false), "EXECUTE", "Short Hindi request -> EXECUTE mode");
+  assert.equal(classifySocialPromptIntent(liveBugPrompt), "CREATIVE", "Short Hindi request -> CREATIVE intent");
+
+  const promoPrompt = "अभी राखी के लिए promotional post बना दो";
+  assert.equal(classifySocialCopilotIntent(promoPrompt), "PREPARE_CONTENT", "Hindi promotional post -> PREPARE_CONTENT");
+
+  const posterPrompt = "अभी राखी के लिए पोस्टर बना दो";
+  assert.equal(classifySocialCopilotIntent(posterPrompt), "PREPARE_CONTENT", "Hindi poster prompt -> PREPARE_CONTENT");
+
+  const hinglishPost = "Rakhi ke liye ek post bana do";
+  assert.equal(classifySocialCopilotIntent(hinglishPost), "PREPARE_CONTENT", "Hinglish post prompt -> PREPARE_CONTENT");
+
+  const hinglishPoster = "Rakhi ke liye ek poster bana do";
+  assert.equal(classifySocialCopilotIntent(hinglishPoster), "PREPARE_CONTENT", "Hinglish poster prompt -> PREPARE_CONTENT");
+
+  const salonOffer = "Mere salon ke liye Rakhi ka offer post bana do";
+  assert.equal(classifySocialCopilotIntent(salonOffer), "PREPARE_CONTENT", "Salon offer prompt -> PREPARE_CONTENT");
+
+  // -------------------------------------------------------------------------
+  // 2. Hindi (Devanagari) Intent & Mode Classification
   // -------------------------------------------------------------------------
   const hindiPrompt1 = "अभी राखी आ रही है तो मेरे बिजनेस के लिए एक promotional post बना दो";
   assert.equal(classifySocialCopilotIntent(hindiPrompt1), "PREPARE_CONTENT", "Hindi festive post request -> PREPARE_CONTENT");
@@ -32,7 +55,7 @@ async function run() {
   assert.equal(classifySocialCopilotIntent(hindiPostNow), "POST_NOW_REQUEST", "Hindi post now -> POST_NOW_REQUEST");
 
   // -------------------------------------------------------------------------
-  // 2. Hinglish & Romanized Hindi Intent & Mode Classification
+  // 3. Hinglish & Romanized Hindi Intent & Mode Classification
   // -------------------------------------------------------------------------
   const hinglishPrompt1 = "Rakhi ke liye mere salon ke liye ek offer post bana do";
   assert.equal(classifySocialCopilotIntent(hinglishPrompt1), "PREPARE_CONTENT", "Hinglish salon offer -> PREPARE_CONTENT");
@@ -58,7 +81,7 @@ async function run() {
   assert.equal(classifySocialPromptIntent(brandQuery), "GENERAL", "Hinglish brand query -> GENERAL");
 
   // -------------------------------------------------------------------------
-  // 3. Conversational Spelling & Colloquial Variations
+  // 4. Conversational Spelling & Colloquial Variations
   // -------------------------------------------------------------------------
   const variations = [
     "poster bna do",
@@ -74,7 +97,7 @@ async function run() {
   }
 
   // -------------------------------------------------------------------------
-  // 4. Follow-up & Revisions in Hindi / Hinglish
+  // 5. Follow-up & Revisions in Hindi / Hinglish
   // -------------------------------------------------------------------------
   const reviseHindi = "Isko Hindi mein kar do";
   assert.equal(classifySocialCopilotIntent(reviseHindi), "REVISE_CURRENT_ARTIFACT", "Language switch -> REVISE_CURRENT_ARTIFACT");
@@ -89,7 +112,7 @@ async function run() {
   assert.equal(classifySocialCopilotIntent(reviseDevanagari), "REVISE_CURRENT_ARTIFACT", "Devanagari revision -> REVISE_CURRENT_ARTIFACT");
 
   // -------------------------------------------------------------------------
-  // 5. Image & Poster Generation Language Context
+  // 6. Image & Poster Generation Language Context
   // -------------------------------------------------------------------------
   const hindiImagePrompt = buildProviderReadyImagePrompt({
     brief: "राखी के लिए स्पेशल मिठाई बॉक्स का आकर्षक पोस्टर",
@@ -107,7 +130,7 @@ async function run() {
   assert.ok(hindiImagePrompt.includes("Business: रॉयल स्वीट्स (Royal Sweets)"), "Brand context preserved in image prompt");
 
   // -------------------------------------------------------------------------
-  // 6. Brand Trust Hard Gate Multilingual Preservation
+  // 7. Brand Trust Hard Gate Multilingual Preservation
   // -------------------------------------------------------------------------
   const safeHindiCaption = "इस रक्षाबंधन पर अपने परिवार को दीजिए शुद्ध देसी घी की मिठाइयों की मिठास। आज ही ऑर्डर करें!";
   const trustPass = evaluateBrandTrustHardGate({
@@ -125,7 +148,7 @@ async function run() {
   assert.equal(trustBlock.decision, "BLOCK", "Forbidden claims in Hindi/English mix are blocked by Brand Trust Hard Gate");
 
   // -------------------------------------------------------------------------
-  // 7. Sanitization Preserves Multilingual Text
+  // 8. Sanitization Preserves Multilingual Text
   // -------------------------------------------------------------------------
   const rawHindiOutput = "मैंने आपके बेकरी के लिए रक्षाबंधन का स्पेशल पोस्ट तैयार कर दिया है।\nmaster id: a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d\nकृपया नीचे अप्रूव करें।";
   const sanitized = sanitizeUserFacingText(rawHindiOutput);
@@ -134,7 +157,7 @@ async function run() {
   assert.ok(!sanitized.includes("a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d"), "Internal UUID redacted");
   assert.ok(!sanitized.includes("master id:"), "Internal metadata label redacted");
 
-  console.log("multilingual-copilot.test.ts: ALL PASS (Hindi, Hinglish, Romanized Hindi, Variations, Revisions, Image Generation, Trust Gate, Sanitization)");
+  console.log("multilingual-copilot.test.ts: ALL PASS (Hindi, Hinglish, Romanized Hindi, Live Bug Test Cases, Revisions, Image Generation, Trust Gate, Sanitization)");
 }
 
 run().catch((err) => {

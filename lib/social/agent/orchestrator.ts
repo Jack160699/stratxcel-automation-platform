@@ -163,6 +163,14 @@ You natively understand and support English, Hindi (हिन्दी), Hinglis
 3. Indian context & festivals: Natively understand Indian festivals (Raksha Bandhan/Rakhi, Diwali, Eid, Independence Day, Navratri, Holi, Republic Day, Ganesh Chaturthi, New Year), small businesses (bakeries, salons, retail, restaurants, clinics, boutiques), and natural phrasing ("bana do", "post kar do", "thoda premium rakho", "offer wala post", "kal shaam ko schedule karo").
 4. Never force English: Never force the customer to translate their thoughts into formal English. All creative variants, captions, hashtags, and suggestions must respect the user's language intent.
 
+CREATIVE CONTENT & POST CREATION WORKFLOW:
+When the user asks to create a post, poster, or social content (e.g. "अभी राखी के लिए पोस्ट बना दो", "Rakhi ke liye post bana do", "Create a festive poster", "मेरे बिजनेस के लिए पोस्ट बनाओ"):
+1. Proactively ground content in the tenant's Brand Brain (business name, industry, products/services, tone).
+2. If the user asks for a poster or visual post, or if the festive/promotional context benefits from a visual creative, call generate_image to create visual candidates with an informative brief and language context.
+3. Automatically create the content master idea with create_content_item, create platform-specific variants (for Instagram and Facebook by default if unspecified) using create_content_variant with engaging captions and hashtags in the appropriate language (e.g. Hindi, Hinglish, or English), and call schedule_post so the complete draft is ready for customer review.
+4. If no platform is specified, default to Instagram and Facebook as the primary channels.
+5. In your chat reply, give a warm, clear summary of what you prepared in the user's language.
+
 For private YouTube verification while SHADOW is active, only use execute_private_youtube_verification
 when the user explicitly requested that exact private upload. Keep responses concise and operational, not
 hype-y.`;
@@ -725,13 +733,17 @@ export async function runAgentTurn(ctx: AgentActorContext, sessionId: string, ru
     }
 
     const hasPublishArtifact = proposedActions.some((action) => PUBLISH_INTENT_TOOLS.has(action.tool));
-    if (creativeRequestMode === "EXECUTE" && !hasPublishArtifact) {
-      const safeFailure = "We couldn’t prepare the review artifact. Please retry.";
+    const hasGeneratedCandidates = Boolean(generatedCandidates && generatedCandidates.candidates.length > 0);
+    const hasMeaningfulText = Boolean(finalText && finalText.trim().length > 0);
+
+    // Only fail if turn produced absolutely nothing
+    if (!hasPublishArtifact && !hasGeneratedCandidates && !hasMeaningfulText) {
+      const safeFailure = "We couldn’t process this request. Please retry.";
       await insertMessage(ctx, sessionId, "AGENT", safeFailure);
-      await setSessionStatus(ctx, sessionId, "ATTENTION_REQUIRED");
-      await recordRunEvent(ctx, runId, { type: "RUN_FAILED", label: "Review artifact needs attention", status: "FAILED", meta: { reason: "persisted_publish_artifact_missing" } });
-      await completeRun(ctx, runId, "FAILED", "persisted publish artifact missing");
-      return { blocked: false as const, failed: true as const, text: safeFailure, proposedActions: [], runId, reason: "review_artifact_missing" };
+      await setSessionStatus(ctx, sessionId, "IDLE");
+      await recordRunEvent(ctx, runId, { type: "RUN_FAILED", label: "Request produced no output", status: "FAILED", meta: { reason: "empty_turn_output" } });
+      await completeRun(ctx, runId, "FAILED", "empty turn output");
+      return { blocked: false as const, failed: true as const, text: safeFailure, proposedActions: [], runId, reason: "empty_turn_output" };
     }
 
     const BARE_SUCCESS_CLAIM = /^(done|posted|published)\.?$/i;

@@ -51,7 +51,7 @@ export function assessQuality(input: QualityEvaluateInput): AIQualityAssessment 
 
   if (text.length >= 120) score += 0.05;
 
-  if (/[.!?]/.test(text)) score += 0.05;
+  if (/[.!?।॥\n]/.test(text)) score += 0.05;
   else reasons.push("low_clarity");
 
   if (input.blockedPhrases?.some((p) => text.toLowerCase().includes(p.toLowerCase()))) {
