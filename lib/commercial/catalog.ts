@@ -55,6 +55,7 @@ export interface IntegrationEntry {
 }
 
 export const INTEGRATIONS: IntegrationEntry[] = [
+  { id: "google_business", name: "Google Business Profile", category: "search", status: "connected", note: "Manage profile, posts, and reviews.", evidence: "lib/social/providers/google-business.ts" },
   { id: "instagram", name: "Instagram", category: "social", status: "connected", note: "Publishing waits for approval.", evidence: "lib/social/providers/instagram.ts" },
   { id: "facebook", name: "Facebook", category: "social", status: "connected", evidence: "lib/social/providers/facebook.ts" },
   { id: "threads", name: "Threads", category: "social", status: "connected", evidence: "lib/social/providers/threads.ts" },
@@ -68,6 +69,20 @@ export const INTEGRATIONS: IntegrationEntry[] = [
   { id: "meta_ads", name: "Meta Ads", category: "social", status: "coming_soon", note: "Planning workflows exist; direct connect not self-serve yet.", evidence: "workforce capabilities" },
   { id: "domain_registrar", name: "Domain registrar search", category: "search", status: "coming_soon", note: "Public registration not yet available.", evidence: "app/api/platform/domains/search/route.ts" },
 ];
+
+/**
+ * Public marketing copy sticks to the approved connector ecosystem (Google
+ * Business Profile, Instagram, Facebook, YouTube, WhatsApp, GA4, Search
+ * Console) — see AGENTS §15. LinkedIn and Threads are real, shipped
+ * providers used by the authenticated app (kept in INTEGRATIONS above so
+ * that stays accurate), but are not surfaced on public pages until the
+ * product team explicitly expands this public-facing scope.
+ */
+const PUBLIC_EXCLUDED_INTEGRATION_IDS = new Set(["linkedin", "threads", "x"]);
+
+export function getPublicIntegrations(): IntegrationEntry[] {
+  return INTEGRATIONS.filter((integration) => !PUBLIC_EXCLUDED_INTEGRATION_IDS.has(integration.id));
+}
 
 export interface TrustClaim {
   id: string;

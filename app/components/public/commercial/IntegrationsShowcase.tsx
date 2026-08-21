@@ -1,4 +1,4 @@
-import { INTEGRATIONS, type IntegrationStatus } from "@/lib/commercial/catalog";
+import { getPublicIntegrations, type IntegrationStatus } from "@/lib/commercial/catalog";
 import { Card } from "@/components/ui/Card";
 
 const STATUS_LABEL: Record<IntegrationStatus, string> = { connected: "Connected", available: "Available", coming_soon: "Coming soon" };
@@ -9,7 +9,8 @@ const STATUS_STYLE: Record<IntegrationStatus, string> = {
 };
 
 export function IntegrationsShowcase({ showComingSoon = true, className = "" }: { showComingSoon?: boolean; className?: string }) {
-  const items = showComingSoon ? INTEGRATIONS : INTEGRATIONS.filter((i) => i.status !== "coming_soon");
+  const publicIntegrations = getPublicIntegrations();
+  const items = showComingSoon ? publicIntegrations : publicIntegrations.filter((i) => i.status !== "coming_soon");
   const groups: { title: string; desc: string; status: IntegrationStatus }[] = [
     { title: "Connected", desc: "Live provider implementations.", status: "connected" },
     { title: "Available", desc: "Staff-assisted or scoped setup.", status: "available" },
