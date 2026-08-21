@@ -126,23 +126,29 @@ export function MobileBottomNav({
                 {group.label}
               </div>
               <div className="grid grid-cols-1 gap-1">
-                {group.items.map((item) => (
-                  <Link
-                    key={item.key}
-                    href={item.href}
-                    onClick={() => setMoreOpen(false)}
-                    className={
-                      customer
-                        ? "flex min-h-[52px] items-center gap-3.5 rounded-sx-md px-3 text-[15px] font-medium text-sx-text hover:bg-sx-surface-2 active:bg-sx-surface-3 transition-colors"
-                        : "flex min-h-[48px] items-center gap-3.5 rounded-sx-md px-3 text-[15px] font-medium text-sx-text hover:bg-sx-surface-2 active:bg-sx-surface-3 transition-colors"
-                    }
-                  >
-                    <span className="flex h-8 w-8 items-center justify-center rounded-sx-sm bg-sx-surface-2 text-sx-text-muted">
-                      {item.icon}
-                    </span>
-                    <span className="truncate">{item.label}</span>
-                  </Link>
-                ))}
+                {group.items.map((item) => {
+                  const description = customer ? MORE_SHEET_DESCRIPTIONS[item.key] : undefined;
+                  return (
+                    <Link
+                      key={item.key}
+                      href={item.href}
+                      onClick={() => setMoreOpen(false)}
+                      className={
+                        customer
+                          ? "flex min-h-[52px] items-center gap-3.5 rounded-sx-md px-3 py-2 text-[15px] font-medium text-sx-text hover:bg-sx-surface-2 active:bg-sx-surface-3 transition-colors"
+                          : "flex min-h-[48px] items-center gap-3.5 rounded-sx-md px-3 text-[15px] font-medium text-sx-text hover:bg-sx-surface-2 active:bg-sx-surface-3 transition-colors"
+                      }
+                    >
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-sx-sm bg-sx-surface-2 text-sx-text-muted">
+                        {item.icon}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate">{item.label}</span>
+                        {description && <span className="block truncate text-xs font-normal text-sx-text-subtle">{description}</span>}
+                      </span>
+                    </Link>
+                  );
+                })}
               </div>
             </div>
           ))}
@@ -163,6 +169,15 @@ export function MobileBottomNav({
     </>
   );
 }
+
+/** Real, one-line descriptions for the customer "More" sheet — StratXcel App reference row pattern (icon + title + subtitle). Text describes the actual destination, not fabricated content. */
+const MORE_SHEET_DESCRIPTIONS: Record<string, string> = {
+  website: "Manage your live business site",
+  integrations: "Google, WhatsApp, Instagram, Facebook",
+  billing: "Plan, wallet, and invoices",
+  team: "Invite staff and manage roles",
+  settings: "Profile, appearance, support",
+};
 
 function shortLabel(label: string): string {
   if (label === "Command Center" || label === "Home") return "Home";
