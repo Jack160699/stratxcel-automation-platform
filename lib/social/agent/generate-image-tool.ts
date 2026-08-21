@@ -220,11 +220,13 @@ export async function executeGenerateImageTool(
     : { version: null, snapshot: {} };
 
   const aspectRatio = str(args, "aspectRatio", "1:1");
+  const language = str(args, "language");
   const providerPrompt = buildProviderReadyImagePrompt({
     brief: briefText,
     brandContext: brand.snapshot,
     intendedUse: "social_post",
     aspectRatio,
+    language: language || undefined,
   });
 
   const generationJobId = crypto.randomUUID();

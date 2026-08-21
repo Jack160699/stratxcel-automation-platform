@@ -36,7 +36,6 @@ function line(label: string, value: unknown): string | null {
   return null;
 }
 
-/** One prompt contract shared by Studio, Social Copilot, and Workforce. */
 export function buildProviderReadyImagePrompt(input: {
   brief: string;
   intendedUse: string;
@@ -44,6 +43,7 @@ export function buildProviderReadyImagePrompt(input: {
   styleDirection?: string | null;
   brandContext: Record<string, unknown>;
   revisionInstruction?: string | null;
+  language?: string | null;
 }): string {
   const brand = input.brandContext;
   const lines = [
@@ -60,6 +60,7 @@ export function buildProviderReadyImagePrompt(input: {
     line("Brand rules", brand.rules),
     line("Approved claims", brand.approved_claims),
     line("Never include these claims", brand.prohibited_claims),
+    input.language?.trim() ? `Language / Cultural Context: ${input.language.trim()}` : null,
     input.styleDirection?.trim() ? `Creative direction: ${input.styleDirection.trim()}` : null,
     input.revisionInstruction?.trim() ? `Revision request: ${input.revisionInstruction.trim()}` : null,
     "Do not invent business facts, awards, prices, testimonials, product details, or readable logo/text not supplied in the brief.",

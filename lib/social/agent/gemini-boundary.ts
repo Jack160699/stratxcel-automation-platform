@@ -175,8 +175,10 @@ export function buildGeminiRequest(input: GeminiBoundaryInput): GeminiGenerateCo
 export type SocialPromptIntent = "LOCAL_PLATFORM_DATA" | "CREATIVE" | "MIXED" | "GENERAL";
 export type CreativeRequestMode = "EXECUTE" | "EXPLORE" | "UNSPECIFIED";
 
-const CREATIVE_EXECUTION_REQUEST = /\b(?:best\s+(?:use|post|content)|make\s+the\s+best|prepare(?:\s+(?:this|it))?|ready\s+(?:kar|karo|kar\s+do)|(?:post|content|caption)\s+bana(?:o|na|\s+do)?|bana\s+do|kar\s+do|final\s+karo|done\s+karo|go\s+ahead|proceed|make\s+(?:it|this)(?:\s+final)?|use\s+this\s+for\s+(?:my|the)\s+brand|jahan\s+sahi\s+lage|best\s+output|taiyar\s+kar|use\s+karo)\b/i;
-const CREATIVE_EXPLORATION_REQUEST = /\b(?:what\s+can\s+i\s+do|what\s+could\s+i\s+do|what\s+are\s+(?:my|the)\s+options|kya\s+kya\s+kar\s+sakte|options?\s+(?:dikhao|batao)|ideas?\s+(?:do|batao))\b/i;
+const CREATIVE_EXECUTION_REQUEST =
+  /\b(?:best\s+(?:use|post|content)|make\s+the\s+best|prepare(?:\s+(?:this|it))?|ready\s+(?:kar|karo|kar\s+do)|(?:post|content|caption|poster|banner|graphic)\s+bana(?:o|na|do|\s+do|\s+dena|iye)?|bana\s+do|bna\s+do|bnado|banao|kar\s+do|kar\s+dena|daal\s+do|likh\s+do|likho|final\s+karo|done\s+karo|go\s+ahead|proceed|make\s+(?:it|this)(?:\s+final)?|use\s+this\s+for\s+(?:my|the)\s+brand|jahan\s+sahi\s+lage|best\s+output|taiyar\s+kar(?:o|na)?|use\s+karo)\b|(?:बना\s*दो|बनाओ|बनाएं|लिख\s*दो|लिखो|तैयार\s*करो|पोस्ट\s*बना|पोस्टर\s*बना)/i;
+const CREATIVE_EXPLORATION_REQUEST =
+  /\b(?:what\s+can\s+i\s+do|what\s+could\s+i\s+do|what\s+are\s+(?:my|the)\s+options|kya\s+kya\s+kar\s+sakte|kya\s+bana\s+sakte|options?\s+(?:dikhao|batao)|ideas?\s+(?:do|batao|chahiye)|kuch\s+post\s+karna\s+hai)\b|(?:क्या\s*बना\s*सकते|आइडिया|सुझाव)/i;
 
 /** Creative ambiguity is not execution ambiguity: an explicit prepare/best-use
  * instruction authorizes safe draft creation, while a question about options
@@ -190,15 +192,15 @@ export function classifyCreativeRequestMode(prompt: string, hasCreativeMedia: bo
 }
 
 const ANALYTICS_DATA_SUBJECT =
-  /\b(?:insights?|analytics|metrics?|performance|reach|impressions?|engagement|followers?|comments?|messages?|inbox)\b/i;
+  /\b(?:insights?|analytics|metrics?|performance|reach|impressions?|engagement|followers?|comments?|messages?|inbox|perform(?:ed)?|kaisa\s+perform|reach\s+kaisi|results?)\b|(?:परफॉरमेंस|रीच|परिणाम|कैसा\s*रहा)/i;
 const ACCOUNT_DATA_SUBJECT =
-  /\b(?:connected\s+(?:accounts?|platforms?)|connections?|connection\s+status|account\s+(?:status|health)|page\s+id|account\s+id|user\s+id|username|display\s+name|permissions?|access\s+tokens?)\b/i;
+  /\b(?:connected\s+(?:accounts?|platforms?)|connections?|connection\s+status|account\s+(?:status|health)|page\s+id|account\s+id|user\s+id|username|display\s+name|permissions?|access\s+tokens?)\b|(?:अकाउंट|कनेक्टेड)/i;
 const PLATFORM_READ_ACTION =
-  /\b(?:show|list|read|check|compare|analy[sz]e|summari[sz]e|review|report|tell|give|what|which|how(?:\s+many|\s+is|\s+are)|based\s+on|dikha|bata|dekho?|dekhna|check\s+karo|compare\s+karo)\b/i;
+  /\b(?:show|list|read|check|compare|analy[sz]e|summari[sz]e|review|report|tell|give|what|which|how(?:\s+many|\s+is|\s+are)|based\s+on|dikha|bata|batao|dekho?|dekhna|check\s+karo|compare\s+karo|kaisa|kaisi|kya\s+raha)\b|(?:दिखाओ|बताओ|कैसा|कैसी|देखना)/i;
 const ACCOUNT_READ_ACTION =
-  /\b(?:show|list|read|check|status|health|how\s+many|what\s+is|tell\s+me|dikha|check\s+karo)\b/i;
+  /\b(?:show|list|read|check|status|health|how\s+many|what\s+is|tell\s+me|dikha|check\s+karo|batao)\b|(?:दिखाओ|बताओ|स्टेटस)/i;
 const CREATIVE_ACTION =
-  /\b(?:create|make|draft|write|prepare|generate|suggest|recommend|adapt|caption|content|posts?|posting|publish|schedule|preview|version|variant|suitable|relevant|ready|bana(?:o|na|do|dena)?|likh(?:o|na|do)?|taiyar|alag|caption\s+bana|post\s+karo)\b/i;
+  /\b(?:create|make|draft|write|prepare|generate|suggest|recommend|adapt|caption|content|posting|publish|schedule|preview|version|variant|suitable|relevant|ready|poster|graphic|visual|flyer|banner|bana(?:o|na|do|dena|iye)?|bna(?:o|do)?|bnado|likh(?:o|na|do|iye)?|daal(?:o|do|na)?|taiyar|alag|caption\s+bana|post\s+(?:this|it|now|karo|bana|karna|karen|karein)|(?:new|next|fresh)\s+posts?)\b|(?:बना\s*दो|बनाओ|बनाएं|लिख\s*दो|लिखो|तैयार\s*करो|पोस्ट\s*बना|पोस्टर\s*बना)/i;
 
 /**
  * Routes by the user's mission, not by isolated nouns. Platform names and

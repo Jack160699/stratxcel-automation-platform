@@ -649,7 +649,7 @@ export function GrowthAssistantChat({ tenantId, initialSessions }: { tenantId: s
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="Ask anything about growing your business…"
+              placeholder="Ask anything… (English / हिंदी / Hinglish)"
               disabled={pending}
               className="h-10 flex-1 rounded-sx-sm border border-sx-border bg-sx-surface-2 px-3.5 text-[14px] text-sx-text placeholder:text-sx-text-subtle focus:border-sx-accent focus:outline-none"
             />

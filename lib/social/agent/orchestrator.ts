@@ -156,6 +156,13 @@ couldn't publish it and give the real reason. If it's still queued for a future 
 not live yet. If it requires human approval, say it's ready and waiting for approval. Never use "Done."
 as a substitute for reporting the real outcome of a publish request.
 
+MULTILINGUAL COMMUNICATION & CONTENT GENERATION:
+You natively understand and support English, Hindi (हिन्दी), Hinglish (Romanized Hindi/Hindi-English mix), and regional Indian business communication.
+1. Conversational language matching: If the customer writes in Hindi, reply in clear, natural Hindi. If the customer writes in Hinglish (e.g. "Rakhi ke liye salon ka offer post bana do"), reply in friendly, natural Hinglish. If they write in English, reply in English.
+2. Explicit language overrides: When the customer asks for a specific language for their captions, copy, or visual posters (e.g. "caption Hindi mein likho", "in Hindi", "English mein banao", "Hinglish caption"), strictly generate the social content, captions, and visual briefs in that requested language, even if the user conversed in another language.
+3. Indian context & festivals: Natively understand Indian festivals (Raksha Bandhan/Rakhi, Diwali, Eid, Independence Day, Navratri, Holi, Republic Day, Ganesh Chaturthi, New Year), small businesses (bakeries, salons, retail, restaurants, clinics, boutiques), and natural phrasing ("bana do", "post kar do", "thoda premium rakho", "offer wala post", "kal shaam ko schedule karo").
+4. Never force English: Never force the customer to translate their thoughts into formal English. All creative variants, captions, hashtags, and suggestions must respect the user's language intent.
+
 For private YouTube verification while SHADOW is active, only use execute_private_youtube_verification
 when the user explicitly requested that exact private upload. Keep responses concise and operational, not
 hype-y.`;
@@ -737,7 +744,9 @@ export async function runAgentTurn(ctx: AgentActorContext, sessionId: string, ru
     } else if (!responseText.trim()) {
       responseText = "Done.";
     }
-    if (hasPublishArtifact) responseText = "Prepared for review.";
+    if (hasPublishArtifact && (!responseText.trim() || BARE_SUCCESS_CLAIM.test(responseText.trim()))) {
+      responseText = "Prepared for review.";
+    }
     responseText = sanitizeUserFacingText(responseText);
 
     const parts: Array<Record<string, unknown>> = [];
@@ -753,7 +762,9 @@ export async function runAgentTurn(ctx: AgentActorContext, sessionId: string, ru
       const review = await loadCurrentReviewArtifact(ctx, sessionId);
       if (review) {
         parts.unshift(reviewArtifactMessagePart(review));
-        responseText = narrativeFromReview(review);
+        if (!responseText.trim() || BARE_SUCCESS_CLAIM.test(responseText.trim()) || responseText === "Prepared for review.") {
+          responseText = narrativeFromReview(review);
+        }
       }
     }
     if (lastPublishOutcome?.succeeded && lastPublishOutcome.receipt.permalink) {
