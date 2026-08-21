@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { INTEGRATIONS } from "@/lib/commercial/catalog";
+import { getPublicIntegrations } from "@/lib/commercial/catalog";
 
 const BOUNDARIES = [
   {
@@ -46,15 +46,11 @@ export function HomeConnectBusiness() {
           </p>
         </div>
 
-        {/* Integration Grid */}
+        {/* Integration Grid — approved connector ecosystem only, see AGENTS §15 */}
         <div className="mt-14 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {INTEGRATIONS.map((item) => {
-            const isVerifiedConnected = item.id === "linkedin";
-            const badgeLabel = isVerifiedConnected
-              ? "CONNECTED"
-              : item.status === "connected" || item.status === "available"
-              ? "AVAILABLE"
-              : "PLANNED";
+          {getPublicIntegrations().map((item) => {
+            const badgeLabel =
+              item.status === "connected" || item.status === "available" ? "AVAILABLE" : "PLANNED";
 
             return (
               <div
@@ -68,9 +64,7 @@ export function HomeConnectBusiness() {
                     </h3>
                     <span
                       className={`rounded px-2 py-0.5 font-sx-mono text-[9.5px] font-bold uppercase tracking-wider ${
-                        isVerifiedConnected
-                          ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
-                          : badgeLabel === "AVAILABLE"
+                        badgeLabel === "AVAILABLE"
                           ? "bg-sky-500/10 text-sky-400 border border-sky-500/20"
                           : "bg-white/5 text-white/40 border border-white/10"
                       }`}

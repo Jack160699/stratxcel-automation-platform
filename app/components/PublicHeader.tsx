@@ -3,17 +3,25 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { TrackedCtaLink } from "@/app/components/public/commercial/TrackedCtaLink";
-import { ProductMegaMenu, MobileProductsAccordion } from "@/app/components/public/product-suite/ProductMegaMenu";
 import { PUBLIC_CTAS } from "@/lib/commercial/ctas";
 import { Logo } from "./Logo";
 
+// Shown directly in the desktop bar — kept to two, so the header stays a
+// simple product for a busy business owner, not a SaaS directory.
 const PRIMARY_LINKS: { label: string; href: string }[] = [
-  { label: "AI Workforce", href: "/ai-workforce" },
-  { label: "Solutions", href: "/solutions" },
-  { label: "Integrations", href: "/integrations" },
   { label: "How it works", href: "/how-it-works" },
   { label: "Pricing", href: "/pricing" },
+];
+
+// Everything else lives one tap behind a single compact "More" menu instead
+// of a multi-column mega menu — see AGENTS §2, "do not recreate a
+// complicated SaaS navbar".
+const SECONDARY_LINKS: { label: string; href: string }[] = [
+  { label: "Solutions", href: "/solutions" },
+  { label: "Integrations", href: "/integrations" },
+  { label: "AI Workforce", href: "/ai-workforce" },
   { label: "Resources", href: "/resources" },
+  { label: PUBLIC_CTAS.androidApp.label, href: PUBLIC_CTAS.androidApp.href },
 ];
 
 type PublicHeaderProps = {
@@ -28,9 +36,33 @@ type PublicHeaderProps = {
 
 export function PublicHeader({ logoVariant = "dark", overHeroId }: PublicHeaderProps) {
   const [open, setOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
   const [overHero, setOverHero] = useState(Boolean(overHeroId));
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
+  const moreRef = useRef<HTMLDivElement>(null);
+
+  // Desktop "More" panel — a single compact affordance for secondary nav
+  // (Solutions, Integrations, AI Workforce, Resources) instead of a mega menu.
+  useEffect(() => {
+    if (!moreOpen) return;
+
+    const handlePointerDown = (event: MouseEvent) => {
+      if (moreRef.current && !moreRef.current.contains(event.target as Node)) {
+        setMoreOpen(false);
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMoreOpen(false);
+    };
+
+    document.addEventListener("mousedown", handlePointerDown);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [moreOpen]);
 
   useEffect(() => {
     if (!overHeroId) return;
@@ -115,7 +147,6 @@ export function PublicHeader({ logoVariant = "dark", overHeroId }: PublicHeaderP
           <Logo variant={overHero ? "dark" : logoVariant} priority />
 
           <nav className="hidden items-center gap-7 lg:flex" aria-label="Primary">
-            <ProductMegaMenu />
             {PRIMARY_LINKS.map((link) => (
               <Link
                 key={link.href}
@@ -125,6 +156,32 @@ export function PublicHeader({ logoVariant = "dark", overHeroId }: PublicHeaderP
                 {link.label}
               </Link>
             ))}
+            <div className="relative" ref={moreRef}>
+              <button
+                type="button"
+                className="flex items-center gap-1 font-sx-sans text-[14px] font-semibold text-sx-text-muted transition-colors hover:text-sx-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sx-accent"
+                aria-expanded={moreOpen}
+                aria-haspopup="true"
+                onClick={() => setMoreOpen((v) => !v)}
+              >
+                More
+                <span aria-hidden className={`text-[10px] transition-transform ${moreOpen ? "rotate-180" : ""}`}>▾</span>
+              </button>
+              {moreOpen && (
+                <div className="sx-public-theme absolute right-0 top-full z-50 mt-2 w-56 rounded-sx-md border border-sx-border bg-sx-bg p-2 shadow-lg">
+                  {SECONDARY_LINKS.map((link) => (
+                    <Link
+                      key={link.href}
+                      href={link.href}
+                      onClick={() => setMoreOpen(false)}
+                      className="block rounded-sx-sm px-3 py-2 font-sx-sans text-[13px] font-medium text-sx-text-muted transition-colors hover:bg-sx-surface-2 hover:text-sx-text"
+                    >
+                      {link.label}
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </div>
           </nav>
 
           <div className="hidden items-center gap-3 lg:flex">
@@ -141,7 +198,7 @@ export function PublicHeader({ logoVariant = "dark", overHeroId }: PublicHeaderP
               plan="audit"
               className="rounded-sx-sm border border-sx-border-strong bg-sx-surface-2 px-3.5 py-2 text-[13px] font-semibold text-sx-text transition-colors hover:bg-sx-surface-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sx-accent"
             >
-              Free Business Audit
+              Start Free Audit
             </TrackedCtaLink>
             <TrackedCtaLink
               href={PUBLIC_CTAS.primary.href}
@@ -153,24 +210,42 @@ export function PublicHeader({ logoVariant = "dark", overHeroId }: PublicHeaderP
             </TrackedCtaLink>
           </div>
 
-          <button
-            ref={menuButtonRef}
-            type="button"
-            className="inline-flex h-11 w-11 items-center justify-center rounded-sx-sm border border-sx-border-strong lg:hidden focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sx-accent"
-            aria-expanded={open}
-            aria-label={open ? "Close menu" : "Open menu"}
-            onClick={() => (open ? closeMenu() : setOpen(true))}
-          >
-            {open ? (
-              <span className="text-xl leading-none">×</span>
-            ) : (
-              <span className="flex flex-col gap-1" aria-hidden>
-                <span className="block h-0.5 w-4 rounded-full bg-sx-text" />
-                <span className="block h-0.5 w-4 rounded-full bg-sx-text" />
-                <span className="block h-0.5 w-4 rounded-full bg-sx-text" />
-              </span>
-            )}
-          </button>
+          {/* Mobile: Log in / Sign up must be visible in the bar itself, not
+              hidden inside the hamburger — see AGENTS §2. */}
+          <div className="flex items-center gap-1.5 lg:hidden">
+            <Link
+              href={PUBLIC_CTAS.signIn.href}
+              className="rounded-sx-sm px-2 py-1.5 text-[12.5px] font-semibold text-sx-text-subtle transition-colors hover:text-sx-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sx-accent"
+            >
+              {PUBLIC_CTAS.signIn.label}
+            </Link>
+            <TrackedCtaLink
+              href={PUBLIC_CTAS.primary.href}
+              event={PUBLIC_CTAS.primary.event}
+              surface="public_header_mobile_bar"
+              className="rounded-sx-sm bg-sx-accent px-3 py-1.5 text-[12.5px] font-bold text-sx-accent-on shadow-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sx-accent"
+            >
+              {PUBLIC_CTAS.primary.label}
+            </TrackedCtaLink>
+            <button
+              ref={menuButtonRef}
+              type="button"
+              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-sx-sm border border-sx-border-strong focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sx-accent"
+              aria-expanded={open}
+              aria-label={open ? "Close menu" : "Open menu"}
+              onClick={() => (open ? closeMenu() : setOpen(true))}
+            >
+              {open ? (
+                <span className="text-xl leading-none">×</span>
+              ) : (
+                <span className="flex flex-col gap-1" aria-hidden>
+                  <span className="block h-0.5 w-4 rounded-full bg-sx-text" />
+                  <span className="block h-0.5 w-4 rounded-full bg-sx-text" />
+                  <span className="block h-0.5 w-4 rounded-full bg-sx-text" />
+                </span>
+              )}
+            </button>
+          </div>
         </div>
       </header>
 
@@ -195,8 +270,20 @@ export function PublicHeader({ logoVariant = "dark", overHeroId }: PublicHeaderP
           </div>
 
           <nav className="flex flex-1 flex-col gap-2 overflow-y-auto p-4 sm:p-6" aria-label="Mobile Navigation">
-            <MobileProductsAccordion onNavigate={closeMenu} />
             {PRIMARY_LINKS.map((link) => (
+              <Link
+                key={link.href}
+                href={link.href}
+                onClick={closeMenu}
+                className="rounded-sx-sm border border-sx-border p-4 font-sx-sans text-sm font-semibold text-sx-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sx-accent"
+              >
+                {link.label}
+              </Link>
+            ))}
+            <p className="mt-2 px-1 font-sx-mono text-[10px] font-bold uppercase tracking-[0.14em] text-sx-text-subtle">
+              More
+            </p>
+            {SECONDARY_LINKS.map((link) => (
               <Link
                 key={link.href}
                 href={link.href}
@@ -224,7 +311,7 @@ export function PublicHeader({ logoVariant = "dark", overHeroId }: PublicHeaderP
               onClick={closeMenu}
               className="rounded-sx-sm border border-sx-border-strong bg-sx-surface-2 px-4 py-3 text-center text-sm font-semibold text-sx-text"
             >
-              Get Free Instant Audit
+              Start Free Audit
             </TrackedCtaLink>
             <TrackedCtaLink
               href={PUBLIC_CTAS.primary.href}

@@ -1,22 +1,10 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import Image from "next/image";
-import { OFFICIAL_LOGO } from "@/lib/brand";
 import { TrackedCtaLink } from "@/app/components/public/commercial/TrackedCtaLink";
 import { FluidRibbonsCanvas, OutcomeType } from "@/app/components/public/motion/FluidRibbonsCanvas";
-import {
-  GlobeIcon,
-  SearchIcon,
-  DocumentTextIcon,
-  ShareNodesIcon,
-  UsersGroupIcon,
-  ChartBarIcon,
-  LockClosedIcon,
-  ShieldCheckIcon,
-  CheckIcon,
-  ArrowRightIcon,
-} from "../icons/FeatureIcons";
+import { LockClosedIcon, ShieldCheckIcon, ArrowRightIcon } from "../icons/FeatureIcons";
 
 const OUTCOMES: { phrase: OutcomeType; subtext: string }[] = [
   { phrase: "MORE TIME", subtext: "Automate repetitive daily digital routines" },
@@ -28,148 +16,60 @@ const OUTCOMES: { phrase: OutcomeType; subtext: string }[] = [
   { phrase: "FASTER GROWTH", subtext: "Consistent compounding digital presence" },
 ];
 
-interface CapabilityView {
+// Real product screenshots — same screens shown in HomeProductEvidence. No
+// invented dashboards, metrics, or telemetry: what you see here is what the
+// app actually renders. See AGENTS §4/§6/§10.
+interface HeroScreen {
   id: string;
-  name: string;
-  badge: string;
-  icon: React.ReactNode;
-  headline: string;
-  description: string;
-  keyPoints: string[];
-  metrics: { label: string; value: string; trend?: string }[];
-  liveStatus: string;
+  step: string;
+  label: string;
+  src: string;
+  alt: string;
+  caption: string;
 }
 
-const CAPABILITY_VIEWS: CapabilityView[] = [
+const HERO_SCREENS: HeroScreen[] = [
   {
-    id: "website",
-    name: "Website & UX",
-    badge: "SITE & MOBILE",
-    icon: <GlobeIcon className="w-4 h-4 text-blue-600" />,
-    headline: "Fast, high-converting pages updated without developers.",
-    description:
-      "Keeps your mobile layouts sharp, fixes broken links, updates service pricing, and ensures fast Core Web Vitals automatically.",
-    keyPoints: [
-      "Continuous mobile layout & responsive audit",
-      "Instant copy and pricing updates staged for approval",
-      "Sub-second page load times with asset optimization",
-    ],
-    metrics: [
-      { label: "Core Web Vitals", value: "99 / 100", trend: "+12%" },
-      { label: "Average Load Time", value: "0.8s", trend: "Fast" },
-      { label: "Mobile Readiness", value: "100%", trend: "Optimal" },
-    ],
-    liveStatus: "Live Domain Connected",
+    id: "audit",
+    step: "1. AUDIT",
+    label: "Free Audit",
+    src: "/product-evidence/01-free-audit.png",
+    alt: "Starting a free Stratxcel business audit",
+    caption: "Tell us your website or Google Business link — that's enough to start.",
   },
   {
-    id: "seo",
-    name: "Google & Search",
-    badge: "DISCOVERY",
-    icon: <SearchIcon className="w-4 h-4 text-blue-600" />,
-    headline: "Help more people find your business on Google.",
-    description:
-      "Analyzes top local competitor keyword gaps, audits indexation status, and writes targeted search content to capture real customer demand.",
-    keyPoints: [
-      "Top 10 competitor keyword gap detection",
-      "Google Search Console sitemap & indexation tracking",
-      "Structured search content that compounds over time",
-    ],
-    metrics: [
-      { label: "Tracked Keywords", value: "+14 Ranked", trend: "Top 5" },
-      { label: "Search Visibility", value: "+38.4%", trend: "30-Day" },
-      { label: "SERP Competitor Gaps", value: "8 Found", trend: "Targeted" },
-    ],
-    liveStatus: "GSC Sync Active",
+    id: "findings",
+    step: "2. UNDERSTAND",
+    label: "Findings",
+    src: "/product-evidence/02-audit-findings.png",
+    alt: "Stratxcel audit findings and growth diagnosis",
+    caption: "An evidence-backed diagnosis of your online presence, in plain language.",
   },
   {
-    id: "content",
-    name: "Content & Copy",
-    badge: "BRAND VOICE",
-    icon: <DocumentTextIcon className="w-4 h-4 text-blue-600" />,
-    headline: "Compelling articles and marketing copy tailored to your brand.",
-    description:
-      "Grounded strictly in your business rules and Brand Brain. Produces insightful case studies, service guides, and customer briefs with zero fabricated claims.",
-    keyPoints: [
-      "Strict Brand Brain guidelines adherence",
-      "Zero false claims or unsupported promises",
-      "Full human review before any publication",
-    ],
-    metrics: [
-      { label: "Brand Voice Accuracy", value: "100%", trend: "Grounded" },
-      { label: "Articles Staged", value: "4 Drafted", trend: "Awaiting Sign-off" },
-      { label: "Review Time Saved", value: "6.5 hrs/wk", trend: "Automated" },
-    ],
-    liveStatus: "Brand Brain Synced",
+    id: "profile",
+    step: "3. UNDERSTAND",
+    label: "Business Profile",
+    src: "/product-evidence/03-business-profile.png",
+    alt: "Confirming business and brand details in Stratxcel",
+    caption: "Confirm your business details once — Stratxcel reuses them everywhere.",
   },
   {
-    id: "social",
-    name: "Social Media",
-    badge: "CONSISTENCY",
-    icon: <ShareNodesIcon className="w-4 h-4 text-blue-600" />,
-    headline: "Weekly multi-channel calendars and platform-native captions.",
-    description:
-      "Maintains your professional presence across LinkedIn, Instagram, Facebook, and Threads without spending hours every week brainstorming posts.",
-    keyPoints: [
-      "Platform-tailored formatting and hashtags",
-      "Visual asset staging with approved templates",
-      "1-click calendar approval or scheduled publishing",
-    ],
-    metrics: [
-      { label: "Scheduled Posts", value: "5 This Week", trend: "Multi-Channel" },
-      { label: "Active Channels", value: "LinkedIn, IG, FB", trend: "Connected" },
-      { label: "Consistency Score", value: "98%", trend: "Active" },
-    ],
-    liveStatus: "Publishing Queue Ready",
-  },
-  {
-    id: "crm",
-    name: "Customer Leads",
-    badge: "INQUIRIES & CRM",
-    icon: <UsersGroupIcon className="w-4 h-4 text-blue-600" />,
-    headline: "Never lose a high-value customer inquiry to slow replies.",
-    description:
-      "Organizes incoming WhatsApp inquiries, website form fills, and quote requests into a single clean pipeline with intelligent draft responses.",
-    keyPoints: [
-      "Instant WhatsApp & web lead intake",
-      "Automated follow-up reminders and stage tracking",
-      "Customer contact normalization and deduplication",
-    ],
-    metrics: [
-      { label: "Inquiries Handled", value: "24 This Week", trend: "100% Routed" },
-      { label: "Avg Response Speed", value: "< 2 Mins", trend: "Instant" },
-      { label: "Lost Leads", value: "0", trend: "Zero Leakage" },
-    ],
-    liveStatus: "WhatsApp Bridge Connected",
-  },
-  {
-    id: "analytics",
-    name: "Weekly Insights",
-    badge: "REPORTING",
-    icon: <ChartBarIcon className="w-4 h-4 text-blue-600" />,
-    headline: "Clear executive briefings on what is working and what to do next.",
-    description:
-      "Translates messy web analytics and campaign metrics into plain-English takeaways showing where your traffic and customers actually come from.",
-    keyPoints: [
-      "Plain-English weekly business digest",
-      "Identifies highest-ROI channels and bottlenecks",
-      "Actionable 7-day recommendations for your team",
-    ],
-    metrics: [
-      { label: "Pipeline Value", value: "₹4.8L Active", trend: "+22%" },
-      { label: "High-Intent Visits", value: "1,420", trend: "+18%" },
-      { label: "Executive Digest", value: "Ready (Mon 9 AM)", trend: "Weekly" },
-    ],
-    liveStatus: "Telemetry Engine Active",
+    id: "connected",
+    step: "4. CONNECT",
+    label: "Connected Accounts",
+    src: "/product-evidence/04-connected-accounts.png",
+    alt: "Connecting business accounts in Stratxcel",
+    caption: "Connect the accounts you already use, or skip and add them later.",
   },
 ];
 
 export function HomeHeroLight() {
   const [outcomeIndex, setOutcomeIndex] = useState(0);
   const [isTransitioning, setIsTransitioning] = useState(false);
-  const [activeId, setActiveId] = useState<string>("website");
+  const [activeId, setActiveId] = useState<string>(HERO_SCREENS[0].id);
 
   const currentOutcome = OUTCOMES[outcomeIndex];
-  const active = CAPABILITY_VIEWS.find((v) => v.id === activeId) || CAPABILITY_VIEWS[0];
+  const active = HERO_SCREENS.find((v) => v.id === activeId) || HERO_SCREENS[0];
 
   useEffect(() => {
     // 3500ms total loop: 2400ms hold + 550ms transition
@@ -259,7 +159,7 @@ export function HomeHeroLight() {
               plan="audit"
               className="inline-flex min-h-12 w-full sm:w-auto items-center justify-center rounded-xl bg-blue-600 px-8 py-3.5 font-sx-sans text-sm font-bold text-white shadow-md transition-all hover:bg-blue-700 hover:shadow-lg"
             >
-              <span>GET YOUR FREE INSTANT AUDIT</span>
+              <span>START FREE AUDIT</span>
               <ArrowRightIcon className="ml-2 w-4 h-4" />
             </TrackedCtaLink>
 
@@ -276,7 +176,7 @@ export function HomeHeroLight() {
           </p>
         </div>
 
-        {/* Living SaaS Workstation Window */}
+        {/* Real Product Screenshots — Audit → Understand → Connect */}
         <div className="mt-12 sm:mt-18">
           <div className="relative mx-auto max-w-5xl rounded-2xl border border-slate-200/90 bg-white shadow-2xl shadow-slate-200/60 overflow-hidden">
             {/* Window Chrome Header Bar */}
@@ -289,25 +189,18 @@ export function HomeHeroLight() {
                 </div>
                 <div className="ml-3 hidden sm:flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-1 text-xs text-slate-600 font-mono">
                   <LockClosedIcon className="w-3 h-3 text-emerald-600" />
-                  <span>https://agent.stratxcel.in/workspace/live</span>
+                  <span>app.stratxcel.in</span>
                 </div>
               </div>
-
-              <div className="flex items-center gap-3">
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700">
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                  {active.liveStatus}
-                </span>
-                <span className="hidden md:inline-block font-sx-mono text-[10px] uppercase tracking-wider text-slate-400">
-                  Human Approval Active
-                </span>
-              </div>
+              <span className="font-sx-mono text-[10px] font-bold uppercase tracking-[0.16em] text-blue-600">
+                {active.step}
+              </span>
             </div>
 
-            {/* Interactive Capability Switcher Tabs */}
+            {/* Screen Switcher Tabs */}
             <div className="border-b border-slate-200/80 bg-slate-50/50 p-2 sm:px-6">
               <div className="flex flex-wrap gap-1.5 sm:gap-2">
-                {CAPABILITY_VIEWS.map((tab) => {
+                {HERO_SCREENS.map((tab) => {
                   const isSelected = tab.id === activeId;
                   return (
                     <button
@@ -320,109 +213,29 @@ export function HomeHeroLight() {
                           : "text-slate-600 hover:bg-slate-100 hover:text-slate-900 border border-transparent"
                       }`}
                     >
-                      <span>{tab.icon}</span>
-                      <span>{tab.name}</span>
+                      {tab.label}
                     </button>
                   );
                 })}
               </div>
             </div>
 
-            {/* Interactive Living Showcase Body */}
-            <div className="grid gap-8 p-6 sm:p-8 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)] lg:items-center">
-              {/* Left Column: Context & Key Deliverables */}
-              <div>
-                <span className="font-sx-mono text-[10.5px] font-bold uppercase tracking-[0.16em] text-blue-600">
-                  {active.badge}
-                </span>
+            {/* Real Screenshot */}
+            <div className="relative aspect-[16/10] w-full bg-slate-100 sm:aspect-[16/9.5]">
+              <Image
+                key={active.id}
+                src={active.src}
+                alt={active.alt}
+                fill
+                sizes="(min-width: 1024px) 960px, 100vw"
+                className="object-cover object-top"
+                priority={active.id === HERO_SCREENS[0].id}
+              />
+            </div>
 
-                <h2 className="mt-2 font-sx-sans text-xl sm:text-2xl font-bold tracking-tight text-slate-900 leading-snug">
-                  {active.headline}
-                </h2>
-
-                <p className="mt-3 font-sx-sans text-sm leading-relaxed text-slate-600">
-                  {active.description}
-                </p>
-
-                {/* Key Points Checklist */}
-                <div className="mt-6 space-y-2.5 border-t border-slate-100 pt-5">
-                  {active.keyPoints.map((point) => (
-                    <div key={point} className="flex items-start gap-2.5 text-xs sm:text-sm text-slate-700">
-                      <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-700 font-bold">
-                        <CheckIcon className="w-3 h-3 text-blue-700" />
-                      </span>
-                      <span>{point}</span>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="mt-7 flex items-center gap-4">
-                  <TrackedCtaLink
-                    href="/audit"
-                    event="start_audit"
-                    surface="hero_showcase_inline"
-                    plan="audit"
-                    className="inline-flex items-center gap-1.5 font-sx-sans text-xs sm:text-sm font-bold text-blue-600 hover:text-blue-800"
-                  >
-                    <span>Audit your {active.name.toLowerCase()} with the Free Instant Audit</span>
-                    <ArrowRightIcon className="w-3.5 h-3.5" />
-                  </TrackedCtaLink>
-                </div>
-              </div>
-
-              {/* Right Column: Dynamic Live Telemetry Card */}
-              <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-5 shadow-xs">
-                <div className="flex items-center justify-between border-b border-slate-200/80 pb-3">
-                  <div className="flex items-center gap-2">
-                    <div className="h-6 w-6 relative">
-                      <Image
-                        src={OFFICIAL_LOGO.src}
-                        alt="Stratxcel"
-                        width={OFFICIAL_LOGO.width}
-                        height={OFFICIAL_LOGO.height}
-                        className="object-contain"
-                        unoptimized
-                      />
-                    </div>
-                    <span className="font-sx-mono text-xs font-bold text-slate-800">
-                      LIVE OPERATING STATUS
-                    </span>
-                  </div>
-                  <span className="rounded bg-blue-100 text-blue-800 font-mono text-[10px] font-bold px-2 py-0.5 uppercase">
-                    Autonomous Guard Active
-                  </span>
-                </div>
-
-                {/* 3 Metric Tiles */}
-                <div className="mt-4 grid grid-cols-3 gap-2.5">
-                  {active.metrics.map((m) => (
-                    <div key={m.label} className="rounded-lg border border-slate-200 bg-white p-3 text-center">
-                      <p className="font-sx-mono text-[9px] uppercase tracking-wider text-slate-500 truncate">
-                        {m.label}
-                      </p>
-                      <p className="mt-1 font-sx-sans text-sm font-bold text-slate-900 truncate">
-                        {m.value}
-                      </p>
-                      {m.trend && (
-                        <span className="mt-1 inline-block rounded-full bg-emerald-50 px-1.5 py-0.2 text-[9px] font-semibold text-emerald-700">
-                          {m.trend}
-                        </span>
-                      )}
-                    </div>
-                  ))}
-                </div>
-
-                {/* Micro Action Terminal / Simulation */}
-                <div className="mt-4 rounded-lg border border-slate-200 bg-white p-3.5 space-y-2 text-xs">
-                  <div className="flex items-center justify-between text-[11px] font-mono text-slate-500">
-                    <span>Recent Agent Action</span>
-                    <span className="text-emerald-600 font-semibold">Verified Safe</span>
-                  </div>
-                  <p className="font-sans text-slate-800 text-xs leading-relaxed">
-                    Staged review draft for your approval. No changes go live without your confirmation.
-                  </p>
-                </div>
-              </div>
+            {/* Caption */}
+            <div className="border-t border-slate-200/80 bg-white px-6 py-4 text-sm text-slate-700 sm:px-8">
+              {active.caption}
             </div>
 
             {/* Bottom Guarantee Banner */}

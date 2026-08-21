@@ -66,7 +66,7 @@ const QUICK_ACTIONS: { icon: React.ReactNode; tint: string; label: string; promp
   },
 ];
 
-function BotAvatar({ pulsing = false }: { pulsing?: boolean }) {
+export function BotAvatar({ pulsing = false }: { pulsing?: boolean }) {
   return (
     <span
       className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-sx-sm ${pulsing ? "sx-status-pulse" : ""}`}
@@ -116,7 +116,7 @@ function WorkingIndicator({ run, runEvents }: { run: { status: string } | null; 
   );
 }
 
-function ReceiptCard({ receipt }: { receipt: { platform?: string; accountLabel?: string; permalink?: string; publishedAt?: string | null } }) {
+export function ReceiptCard({ receipt }: { receipt: { platform?: string; accountLabel?: string; permalink?: string; publishedAt?: string | null } }) {
   const when = receipt.publishedAt ? new Date(receipt.publishedAt) : null;
   return (
     <div className="overflow-hidden rounded-sx-lg border border-sx-success/25 bg-sx-surface-1">
@@ -152,7 +152,7 @@ function ReceiptCard({ receipt }: { receipt: { platform?: string; accountLabel?:
   );
 }
 
-interface CandidateItem {
+export interface CandidateItem {
   candidateId: string;
   storedAssetId?: string;
   previewUrl?: string | null;
@@ -160,7 +160,7 @@ interface CandidateItem {
   status?: string;
 }
 
-function CandidateCarousel({
+export function CandidateCarousel({
   jobId,
   candidates,
   onSelectCandidate,
