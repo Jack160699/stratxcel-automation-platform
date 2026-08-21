@@ -125,7 +125,7 @@ function run() {
   // --- 7. No service-role key leaks into any client-shipped file -------------
   for (const file of [
     ["app", "audit", "page.tsx"],
-    ["app", "audit", "AuditCheckoutCta.tsx"],
+    ["app", "audit", "AuditStartCta.tsx"],
     ["app", "audit", "checkout", "CheckoutRedirect.tsx"],
     ["app", "audit", "checkout", "GuestCheckoutForm.tsx"],
     ["app", "audit", "access", "ClaimEmailOtpForm.tsx"],
