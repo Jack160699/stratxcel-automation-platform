@@ -2,17 +2,12 @@ import { redirect } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createSupabaseServiceClient } from "@/lib/supabase/service";
 import { getActionPreview } from "@/lib/social/agent/action-preview";
-import { getSessionDetail, listSessions } from "@/lib/social/repositories/agent";
-import { listRecentVariants } from "@/lib/social/repositories/content";
-import { resolveEffectiveProviderIdentity } from "@/lib/social/agent/provider";
+import { getSessionDetail } from "@/lib/social/repositories/agent";
 import type { OwnerContext } from "@/lib/social/db-context";
 import { requireClientContext } from "@/lib/tenants/client-context";
-import { requireAgentTenantContext } from "@/lib/social/agent-tenant-context";
 import { signWhatsAppSocialHandoff, verifyWhatsAppSocialHandoff } from "@/lib/social/whatsapp-bridge";
 import { WhatsAppSocialReview } from "./WhatsAppSocialReview";
-import { TenantCopilotFullPage } from "./TenantCopilotFullPage";
-import { CopilotProvider } from "../../../admin/(shell)/social/copilot/CopilotContext";
-import "../../../admin/(shell)/social/social-components.css";
+import { GrowthAssistantComingSoon } from "./GrowthAssistantComingSoon";
 
 /**
  * The customer-facing Social Copilot — the tenant-scoped counterpart of
@@ -22,6 +17,17 @@ import "../../../admin/(shell)/social/social-components.css";
  * tenantId, and never shares a database row with the admin/owner-scoped
  * Social Copilot (mutually exclusive owner_id/tenant_id by CHECK
  * constraint).
+ *
+ * TEMPORARY (Growth Assistant freeze): the real agentic workspace
+ * (TenantCopilotFullPage.tsx — session rail, execution traces, approvals,
+ * saut-* shared chrome) is intentionally not rendered for customers here.
+ * It is untouched in the repo and still fully wired to its real APIs;
+ * only this page's render branch was changed, to show
+ * GrowthAssistantComingSoon.tsx instead until the dedicated Growth
+ * Assistant visual redesign ships. See GrowthAssistantComingSoon.tsx for
+ * the full list of what's preserved. The WhatsApp mission-handoff review
+ * flow below is a separate, minimal, already-functional surface — not the
+ * complex workspace — and is left running as-is.
  */
 export default async function ClientSocialCopilotPage({ searchParams }: { searchParams: Promise<{ handoff?: string }> }) {
   const { handoff = "" } = await searchParams;
@@ -60,20 +66,5 @@ export default async function ClientSocialCopilotPage({ searchParams }: { search
     );
   }
 
-  const tenantId = clientCtx.workspaceTenant.tenantId;
-  const ctx = await requireAgentTenantContext(tenantId);
-  if (!ctx.ok) return null;
-
-  const [sessions, variants] = await Promise.all([listSessions(ctx, 30), listRecentVariants(ctx, 8)]);
-
-  return (
-    <CopilotProvider>
-      <TenantCopilotFullPage
-        tenantId={tenantId}
-        initialSessions={sessions}
-        initialVariants={variants}
-        provider={resolveEffectiveProviderIdentity()}
-      />
-    </CopilotProvider>
-  );
+  return <GrowthAssistantComingSoon />;
 }
