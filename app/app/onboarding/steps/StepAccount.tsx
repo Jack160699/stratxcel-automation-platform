@@ -133,7 +133,7 @@ export function StepAccount({
                   <span className="font-sx-sans text-xs text-sx-text-muted truncate">
                     {account.email ?? "—"}
                   </span>
-                  <span className="inline-flex items-center gap-1 rounded-sx-pill px-1.5 py-0.5 font-sx-mono text-[9px] uppercase tracking-wider bg-emerald-500/15 text-emerald-400">
+                  <span className="inline-flex items-center gap-1 rounded-sx-pill px-1.5 py-0.5 font-sx-mono text-[9px] uppercase tracking-wider bg-sx-success/15 text-sx-success">
                     <span>✓</span> Google account connected
                   </span>
                 </div>

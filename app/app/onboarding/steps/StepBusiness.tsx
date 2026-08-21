@@ -96,7 +96,7 @@ export function StepBusiness({
           <span>Analyzing your business signals in the background…</span>
         </div>
       ) : hasIntelligence ? (
-        <div className="flex items-center gap-2 rounded-sx-md bg-emerald-500/10 border border-emerald-500/20 px-3.5 py-2.5 text-xs text-emerald-400 font-medium">
+        <div className="flex items-center gap-2 rounded-sx-md bg-sx-success/10 border border-sx-success/20 px-3.5 py-2.5 text-xs text-sx-success font-medium">
           <span>✓</span>
           <span>Business signals analyzed. Relevant details pre-filled for your review.</span>
         </div>

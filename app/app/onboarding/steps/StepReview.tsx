@@ -63,7 +63,7 @@ export function StepReview({
             <span className="text-[11px] font-bold uppercase tracking-wider text-sx-text-subtle">
               Account & Channels
             </span>
-            <span className="text-xs text-emerald-400 font-medium flex items-center gap-1">
+            <span className="text-xs text-sx-success font-medium flex items-center gap-1">
               <span>✓</span> Authenticated
             </span>
           </div>
@@ -80,11 +80,11 @@ export function StepReview({
                   {verifiedChannels.map((c) => (
                     <span
                       key={c.platform}
-                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-sx-sm bg-emerald-500/10 border border-emerald-500/20 text-[11px] font-medium text-emerald-400"
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-sx-sm bg-sx-success/10 border border-sx-success/20 text-[11px] font-medium text-sx-success"
                     >
                       <PlatformIcon name={c.platform} className="h-3 w-3" />
                       <span>✓ {c.displayName || c.handle || c.platform}</span>
-                      {c.providerLabel && <span className="text-emerald-400/60">via {c.providerLabel}</span>}
+                      {c.providerLabel && <span className="text-sx-success/60">via {c.providerLabel}</span>}
                     </span>
                   ))}
                 </div>
@@ -96,7 +96,7 @@ export function StepReview({
                   {publicChannels.map((c) => (
                     <span
                       key={c.platform}
-                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-sx-sm bg-amber-500/5 border border-amber-500/20 text-[11px] font-medium text-amber-400"
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-sx-sm bg-sx-warning/5 border border-sx-warning/20 text-[11px] font-medium text-sx-warning"
                     >
                       <PlatformIcon name={c.platform} className="h-3 w-3" />
                       <span>○ {c.displayName || c.handle || c.platform} (Found publicly)</span>

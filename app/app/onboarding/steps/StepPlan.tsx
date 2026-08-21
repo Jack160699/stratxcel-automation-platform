@@ -31,7 +31,7 @@ export function StepPlan({
 
         <div className="mt-3 grid gap-3 sm:grid-cols-2 text-xs">
           <div className="rounded-sx-sm bg-sx-surface-1 p-3 border border-sx-border/60">
-            <span className="font-semibold text-rose-400 block mb-1">CURRENT GAPS</span>
+            <span className="font-semibold text-sx-danger block mb-1">CURRENT GAPS</span>
             <ul className="list-disc pl-4 space-y-1 text-sx-text-muted">
               {isEarlyStage ? (
                 <>
@@ -51,8 +51,8 @@ export function StepPlan({
             </ul>
           </div>
 
-          <div className="rounded-sx-sm bg-sx-surface-1 p-3 border border-emerald-500/30">
-            <span className="font-semibold text-emerald-400 block mb-1">30-DAY TARGET</span>
+          <div className="rounded-sx-sm bg-sx-surface-1 p-3 border border-sx-success/30">
+            <span className="font-semibold text-sx-success block mb-1">30-DAY TARGET</span>
             <ul className="list-disc pl-4 space-y-1 text-sx-text-muted">
               {isEarlyStage ? (
                 <>

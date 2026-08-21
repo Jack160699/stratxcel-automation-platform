@@ -392,10 +392,10 @@ export function StepConnectors({
         <div
           className={`flex items-center justify-between rounded-sx-sm px-3.5 py-2.5 text-xs font-medium ${
             notification.type === "success"
-              ? "border border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
+              ? "border border-sx-success/30 bg-sx-success/10 text-sx-success"
               : notification.type === "error"
-              ? "border border-rose-400/30 bg-rose-500/10 text-rose-300"
-              : "border border-amber-500/30 bg-amber-500/10 text-amber-300"
+              ? "border border-sx-danger/30 bg-sx-danger/10 text-sx-danger"
+              : "border border-sx-warning/30 bg-sx-warning/10 text-sx-warning"
           }`}
         >
           <span>{notification.message}</span>
@@ -410,7 +410,7 @@ export function StepConnectors({
       )}
 
       {googleSaveSuccess && (
-        <div className="rounded-sx-sm border border-emerald-500/30 bg-emerald-500/10 px-3.5 py-2.5 text-xs font-medium text-emerald-300">
+        <div className="rounded-sx-sm border border-sx-success/30 bg-sx-success/10 px-3.5 py-2.5 text-xs font-medium text-sx-success">
           {googleSaveSuccess}
         </div>
       )}
@@ -424,13 +424,13 @@ export function StepConnectors({
             <span className="text-[11px] font-bold uppercase tracking-wider text-sx-text-subtle">
               GOOGLE
             </span>
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 font-medium">
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-sx-accent/10 text-sx-accent font-medium">
               Search & Local Discovery
             </span>
           </div>
           <span className="text-[11px] text-sx-text-subtle">
             {isGbpConnected || isGscConnected || isGa4Connected ? (
-              <span className="text-emerald-400 font-medium">✓ Connected</span>
+              <span className="text-sx-success font-medium">✓ Connected</span>
             ) : (
               "Optional"
             )}
@@ -442,7 +442,7 @@ export function StepConnectors({
           <div
             data-platform="google_business"
             className={`flex flex-col justify-between p-3.5 rounded-sx-sm border transition-colors ${
-              isGbpConnected ? "border-emerald-500/30 bg-emerald-950/10" : "border-sx-border bg-sx-surface-1/80"
+              isGbpConnected ? "border-sx-success/30 bg-sx-success/10" : "border-sx-border bg-sx-surface-1/80"
             }`}
           >
             <div className="flex items-start justify-between gap-2.5">
@@ -454,11 +454,11 @@ export function StepConnectors({
                   <p className="font-sx-sans text-xs font-bold text-sx-text truncate">Google Business Profile</p>
                   {isGbpConnected ? (
                     <div>
-                      <p className="font-sx-sans text-[11px] font-medium text-emerald-400 truncate flex items-center gap-1 mt-0.5">
+                      <p className="font-sx-sans text-[11px] font-medium text-sx-success truncate flex items-center gap-1 mt-0.5">
                         <span>✓</span>
                         <span className="truncate">{gbpConn?.displayName || gbpConn?.handle || "Connected"}</span>
                       </p>
-                      <p className="text-[10px] text-emerald-400/70 font-medium mt-0.5">
+                      <p className="text-[10px] text-sx-success/70 font-medium mt-0.5">
                         ✓ Connected via {gbpConn?.providerLabel || "Google"}
                       </p>
                     </div>
@@ -475,7 +475,7 @@ export function StepConnectors({
                   <button
                     type="button"
                     onClick={() => handleDisconnect("google_business")}
-                    className="px-2.5 py-1 text-[11px] font-medium rounded-sx-sm text-sx-text-muted hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
+                    className="px-2.5 py-1 text-[11px] font-medium rounded-sx-sm text-sx-text-muted hover:text-sx-danger hover:bg-sx-danger/10 transition-colors"
                   >
                     Disconnect
                   </button>
@@ -498,7 +498,7 @@ export function StepConnectors({
           <div
             data-platform="google_search_console"
             className={`flex flex-col justify-between p-3.5 rounded-sx-sm border transition-colors ${
-              isGscConnected ? "border-emerald-500/30 bg-emerald-950/10" : "border-sx-border bg-sx-surface-1/80"
+              isGscConnected ? "border-sx-success/30 bg-sx-success/10" : "border-sx-border bg-sx-surface-1/80"
             }`}
           >
             <div className="flex items-start justify-between gap-2.5">
@@ -509,7 +509,7 @@ export function StepConnectors({
                 <div className="min-w-0">
                   <p className="font-sx-sans text-xs font-bold text-sx-text truncate">Google Search Console</p>
                   {isGscConnected ? (
-                    <p className="font-sx-sans text-[11px] font-medium text-emerald-400 truncate flex items-center gap-1 mt-0.5">
+                    <p className="font-sx-sans text-[11px] font-medium text-sx-success truncate flex items-center gap-1 mt-0.5">
                       <span>✓</span>
                       <span className="truncate">{googleResources?.searchConsoleSiteUrl || gscConn?.displayName || "Connected"}</span>
                     </p>
@@ -533,7 +533,7 @@ export function StepConnectors({
                     Connect
                   </Button>
                 ) : (
-                  <span className="text-[11px] text-emerald-400 font-medium px-2 py-0.5 rounded bg-emerald-500/10">
+                  <span className="text-[11px] text-sx-success font-medium px-2 py-0.5 rounded bg-sx-success/10">
                     Google Connected
                   </span>
                 )}
@@ -584,7 +584,7 @@ export function StepConnectors({
           <div
             data-platform="google_analytics"
             className={`flex flex-col justify-between p-3.5 rounded-sx-sm border transition-colors ${
-              isGa4Connected ? "border-emerald-500/30 bg-emerald-950/10" : "border-sx-border bg-sx-surface-1/80"
+              isGa4Connected ? "border-sx-success/30 bg-sx-success/10" : "border-sx-border bg-sx-surface-1/80"
             }`}
           >
             <div className="flex items-start justify-between gap-2.5">
@@ -595,7 +595,7 @@ export function StepConnectors({
                 <div className="min-w-0">
                   <p className="font-sx-sans text-xs font-bold text-sx-text truncate">Google Analytics (GA4)</p>
                   {isGa4Connected ? (
-                    <p className="font-sx-sans text-[11px] font-medium text-emerald-400 truncate flex items-center gap-1 mt-0.5">
+                    <p className="font-sx-sans text-[11px] font-medium text-sx-success truncate flex items-center gap-1 mt-0.5">
                       <span>✓</span>
                       <span className="truncate">
                         {googleResources?.ga4PropertyDisplayName || ga4Conn?.displayName || `Property ${googleResources?.ga4PropertyId}`}
@@ -621,7 +621,7 @@ export function StepConnectors({
                     Connect
                   </Button>
                 ) : (
-                  <span className="text-[11px] text-emerald-400 font-medium px-2 py-0.5 rounded bg-emerald-500/10">
+                  <span className="text-[11px] text-sx-success font-medium px-2 py-0.5 rounded bg-sx-success/10">
                     Google Connected
                   </span>
                 )}
@@ -685,7 +685,7 @@ export function StepConnectors({
           </div>
           <span className="text-[11px] text-sx-text-subtle">
             {isFbConnected || isIgConnected ? (
-              <span className="text-emerald-400 font-medium">✓ Connected</span>
+              <span className="text-sx-success font-medium">✓ Connected</span>
             ) : (
               "Optional"
             )}
@@ -697,7 +697,7 @@ export function StepConnectors({
           <div
             data-platform="instagram"
             className={`flex flex-col justify-between p-3.5 rounded-sx-sm border transition-colors ${
-              isIgConnected ? "border-emerald-500/30 bg-emerald-950/10" : "border-sx-border bg-sx-surface-1/80"
+              isIgConnected ? "border-sx-success/30 bg-sx-success/10" : "border-sx-border bg-sx-surface-1/80"
             }`}
           >
             <div className="flex items-start justify-between gap-2.5">
@@ -709,11 +709,11 @@ export function StepConnectors({
                   <p className="font-sx-sans text-xs font-bold text-sx-text truncate">Instagram Business</p>
                   {isIgConnected ? (
                     <div>
-                      <p className="font-sx-sans text-[11px] font-medium text-emerald-400 truncate flex items-center gap-1 mt-0.5">
+                      <p className="font-sx-sans text-[11px] font-medium text-sx-success truncate flex items-center gap-1 mt-0.5">
                         <span>✓</span>
                         <span className="truncate">{igConn?.displayName || igConn?.handle || "Connected"}</span>
                       </p>
-                      <p className="text-[10px] text-emerald-400/70 font-medium mt-0.5">
+                      <p className="text-[10px] text-sx-success/70 font-medium mt-0.5">
                         ✓ Connected via {igConn?.providerLabel || "Meta"}
                       </p>
                     </div>
@@ -730,7 +730,7 @@ export function StepConnectors({
                   <button
                     type="button"
                     onClick={() => handleDisconnect("instagram")}
-                    className="px-2.5 py-1 text-[11px] font-medium rounded-sx-sm text-sx-text-muted hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
+                    className="px-2.5 py-1 text-[11px] font-medium rounded-sx-sm text-sx-text-muted hover:text-sx-danger hover:bg-sx-danger/10 transition-colors"
                   >
                     Disconnect
                   </button>
@@ -769,7 +769,7 @@ export function StepConnectors({
           <div
             data-platform="facebook"
             className={`flex flex-col justify-between p-3.5 rounded-sx-sm border transition-colors ${
-              isFbConnected ? "border-emerald-500/30 bg-emerald-950/10" : "border-sx-border bg-sx-surface-1/80"
+              isFbConnected ? "border-sx-success/30 bg-sx-success/10" : "border-sx-border bg-sx-surface-1/80"
             }`}
           >
             <div className="flex items-start justify-between gap-2.5">
@@ -781,11 +781,11 @@ export function StepConnectors({
                   <p className="font-sx-sans text-xs font-bold text-sx-text truncate">Facebook Page</p>
                   {isFbConnected ? (
                     <div>
-                      <p className="font-sx-sans text-[11px] font-medium text-emerald-400 truncate flex items-center gap-1 mt-0.5">
+                      <p className="font-sx-sans text-[11px] font-medium text-sx-success truncate flex items-center gap-1 mt-0.5">
                         <span>✓</span>
                         <span className="truncate">{fbConn?.displayName || fbConn?.handle || "Connected"}</span>
                       </p>
-                      <p className="text-[10px] text-emerald-400/70 font-medium mt-0.5">
+                      <p className="text-[10px] text-sx-success/70 font-medium mt-0.5">
                         ✓ Connected via {fbConn?.providerLabel || "Meta"}
                       </p>
                     </div>
@@ -802,7 +802,7 @@ export function StepConnectors({
                   <button
                     type="button"
                     onClick={() => handleDisconnect("facebook")}
-                    className="px-2.5 py-1 text-[11px] font-medium rounded-sx-sm text-sx-text-muted hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
+                    className="px-2.5 py-1 text-[11px] font-medium rounded-sx-sm text-sx-text-muted hover:text-sx-danger hover:bg-sx-danger/10 transition-colors"
                   >
                     Disconnect
                   </button>
@@ -853,14 +853,14 @@ export function StepConnectors({
             </span>
           </div>
           <span className="text-[11px] text-sx-text-subtle">
-            {isYtConnected ? <span className="text-emerald-400 font-medium">✓ Connected</span> : "Optional"}
+            {isYtConnected ? <span className="text-sx-success font-medium">✓ Connected</span> : "Optional"}
           </span>
         </div>
 
         <div
           data-platform="youtube"
           className={`flex flex-col justify-between p-3.5 rounded-sx-sm border transition-colors ${
-            isYtConnected ? "border-emerald-500/30 bg-emerald-950/10" : "border-sx-border bg-sx-surface-1/80"
+            isYtConnected ? "border-sx-success/30 bg-sx-success/10" : "border-sx-border bg-sx-surface-1/80"
           }`}
         >
           <div className="flex items-start justify-between gap-2.5">
@@ -872,11 +872,11 @@ export function StepConnectors({
                 <p className="font-sx-sans text-xs font-bold text-sx-text truncate">YouTube Channel</p>
                 {isYtConnected ? (
                   <div>
-                    <p className="font-sx-sans text-[11px] font-medium text-emerald-400 truncate flex items-center gap-1 mt-0.5">
+                    <p className="font-sx-sans text-[11px] font-medium text-sx-success truncate flex items-center gap-1 mt-0.5">
                       <span>✓</span>
                       <span className="truncate">{ytConn?.displayName || ytConn?.handle || "Connected"}</span>
                     </p>
-                    <p className="text-[10px] text-emerald-400/70 font-medium mt-0.5">
+                    <p className="text-[10px] text-sx-success/70 font-medium mt-0.5">
                       ✓ Connected via {ytConn?.providerLabel || "Google"}
                     </p>
                   </div>
@@ -893,7 +893,7 @@ export function StepConnectors({
                 <button
                   type="button"
                   onClick={() => handleDisconnect("youtube")}
-                  className="px-2.5 py-1 text-[11px] font-medium rounded-sx-sm text-sx-text-muted hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
+                  className="px-2.5 py-1 text-[11px] font-medium rounded-sx-sm text-sx-text-muted hover:text-sx-danger hover:bg-sx-danger/10 transition-colors"
                 >
                   Disconnect
                 </button>
@@ -938,19 +938,19 @@ export function StepConnectors({
             <span className="text-[11px] font-bold uppercase tracking-wider text-sx-text-subtle">
               WHATSAPP
             </span>
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 font-medium">
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-sx-success/10 text-sx-success font-medium">
               Direct Communication & Alerts
             </span>
           </div>
           <span className="text-[11px] text-sx-text-subtle">
-            {isWaConnected ? <span className="text-emerald-400 font-medium">✓ Verified</span> : "Optional"}
+            {isWaConnected ? <span className="text-sx-success font-medium">✓ Verified</span> : "Optional"}
           </span>
         </div>
 
         <div
           data-platform="whatsapp"
           className={`flex flex-col justify-between p-3.5 rounded-sx-sm border transition-colors ${
-            isWaConnected ? "border-emerald-500/30 bg-emerald-950/10" : "border-sx-border bg-sx-surface-1/80"
+            isWaConnected ? "border-sx-success/30 bg-sx-success/10" : "border-sx-border bg-sx-surface-1/80"
           }`}
         >
           <div className="flex items-start justify-between gap-2.5">
@@ -961,9 +961,9 @@ export function StepConnectors({
               <div className="min-w-0">
                 <p className="font-sx-sans text-xs font-bold text-sx-text truncate">WhatsApp Number</p>
                 {isWaConnected ? (
-                  <p className="font-sx-sans text-[11px] font-medium text-emerald-400 truncate flex items-center gap-1 mt-0.5">
+                  <p className="font-sx-sans text-[11px] font-medium text-sx-success truncate flex items-center gap-1 mt-0.5">
                     <span>✓ Verified</span>
-                    <span className="truncate ml-1 font-mono text-[10px] text-emerald-300">
+                    <span className="truncate ml-1 font-mono text-[10px] text-sx-success">
                       ({waConn?.handle || waConn?.displayName})
                     </span>
                   </p>
@@ -980,7 +980,7 @@ export function StepConnectors({
                 <button
                   type="button"
                   onClick={() => handleDisconnect("whatsapp")}
-                  className="px-2.5 py-1 text-[11px] font-medium rounded-sx-sm text-sx-text-muted hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
+                  className="px-2.5 py-1 text-[11px] font-medium rounded-sx-sm text-sx-text-muted hover:text-sx-danger hover:bg-sx-danger/10 transition-colors"
                 >
                   Disconnect
                 </button>
@@ -1039,7 +1039,7 @@ export function StepConnectors({
             </p>
 
             {otpError && (
-              <div className="rounded-sx-sm border border-rose-400/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">
+              <div className="rounded-sx-sm border border-sx-danger/30 bg-sx-danger/10 px-3 py-2 text-xs text-sx-danger">
                 {otpError}
               </div>
             )}
@@ -1079,9 +1079,9 @@ export function StepConnectors({
               </div>
             ) : (
               <div className="space-y-4">
-                <div className="rounded-sx-sm bg-emerald-500/10 border border-emerald-500/20 p-2.5 text-xs text-emerald-300">
+                <div className="rounded-sx-sm bg-sx-success/10 border border-sx-success/20 p-2.5 text-xs text-sx-success">
                   <p className="font-semibold">WhatsApp code sent to {whatsappPhone}</p>
-                  <p className="text-[11px] text-emerald-400/80 mt-0.5">
+                  <p className="text-[11px] text-sx-success/80 mt-0.5">
                     Check your WhatsApp for the 6-digit verification code.
                   </p>
                 </div>
@@ -1177,7 +1177,7 @@ export function StepConnectors({
             </p>
 
             {publicProfileError && (
-              <div className="rounded-sx-sm border border-rose-400/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">
+              <div className="rounded-sx-sm border border-sx-danger/30 bg-sx-danger/10 px-3 py-2 text-xs text-sx-danger">
                 {publicProfileError}
               </div>
             )}

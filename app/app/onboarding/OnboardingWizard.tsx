@@ -599,7 +599,7 @@ export function OnboardingWizard({ isStaff = false }: { isStaff?: boolean }) {
               <span
                 key={label}
                 className={`text-[10px] font-medium transition-colors ${
-                  isCurrent ? "text-sx-text font-bold" : isDone ? "text-emerald-400" : "text-sx-text-subtle"
+                  isCurrent ? "text-sx-text font-bold" : isDone ? "text-sx-success" : "text-sx-text-subtle"
                 }`}
               >
                 {label}
