@@ -132,7 +132,7 @@ export default function WebsitePage() {
   const primaryProject = projects?.[0] || null;
 
   return (
-    <div data-sx-ui="new-website" className="sx-customer-app mx-auto flex w-full max-w-[720px] flex-col gap-6 pb-20 md:pb-8">
+    <div className="sx-customer-app mx-auto flex w-full max-w-[720px] flex-col gap-6 pb-20 md:pb-8">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold text-sx-text">Website & Domain{active ? ` · ${active.name}` : ""}</h1>

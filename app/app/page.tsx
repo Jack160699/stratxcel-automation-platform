@@ -156,7 +156,7 @@ export default async function ClientCommandCenterPage() {
   const opportunities: AuditOpportunity[] = report?.opportunities?.slice(0, 3) ?? [];
 
   return (
-    <div data-sx-ui="new-home" className="sx-customer-app mx-auto flex w-full max-w-[720px] flex-col gap-6 pb-20 md:pb-8">
+    <div className="sx-customer-app mx-auto flex w-full max-w-[720px] flex-col gap-6 pb-20 md:pb-8">
       {customerState.isSubscribed ? (
         <SubscribedUserDashboard
           businessName={businessName}

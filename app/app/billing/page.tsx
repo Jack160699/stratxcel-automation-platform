@@ -251,7 +251,7 @@ export default function BillingPage() {
   }
 
   return (
-    <div data-sx-ui="new-billing" className="flex flex-col gap-6">
+    <div className="flex flex-col gap-6">
       <ModulePageHeader title="Billing" tenantName={active?.name} description="Your current plan, included capabilities, wallet, and payment history." />
 
       {error && <ErrorState message={error} onRetry={load} />}

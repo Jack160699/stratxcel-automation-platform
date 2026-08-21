@@ -310,7 +310,7 @@ export default function IntegrationsPage() {
   const primaryCards = cards.filter((c) => c.tier === "primary");
 
   return (
-    <div data-sx-ui="new-integrations" className="sx-customer-app mx-auto flex w-full max-w-[720px] flex-col gap-6 pb-20 md:pb-8">
+    <div className="sx-customer-app mx-auto flex w-full max-w-[720px] flex-col gap-6 pb-20 md:pb-8">
       <div>
         <h1 className="text-2xl font-semibold text-sx-text">Connected Accounts{active ? ` · ${active.name}` : ""}</h1>
         <p className="sx-hi text-xs text-sx-text-subtle">जुड़े हुए खाते</p>

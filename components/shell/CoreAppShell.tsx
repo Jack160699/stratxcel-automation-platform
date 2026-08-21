@@ -58,30 +58,6 @@ function AskCopilotButton() {
 }
 
 /**
- * TEMPORARY debug signal — components/shell/CoreAppShell.tsx is the one
- * shell /app and /admin both compose (see client-app-shell.test.ts §4), so
- * this renders on every authenticated customer page. It proves, in the
- * literal DOM a real signed-in browser receives, which commit/shell built
- * the page — an HTML comment (view-source only, not a visual element) plus
- * a barely-visible corner tag a human can screenshot without needing to
- * read source. Zero behavior change; safe to leave, remove once the
- * "authenticated session still shows old UI" report is confirmed resolved
- * or a real divergence is found.
- */
-function RenderTraceMarker() {
-  const sha = (process.env.VERCEL_GIT_COMMIT_SHA ?? "local-dev").slice(0, 7);
-  return (
-    <div
-      aria-hidden="true"
-      data-sx-render-trace={`shell=sx-customer-app:CoreAppShell sha=${sha}`}
-      className="pointer-events-none fixed bottom-1 left-1 z-50 select-none rounded-sm bg-black/40 px-1 py-0.5 font-mono text-[8px] leading-none text-white/70"
-    >
-      sx:{sha}
-    </div>
-  );
-}
-
-/**
  * Full Core shell — composes Sidebar + TopCommandBar + MobileBottomNav
  * around one page's content. Used identically by /app and /admin, each
  * configured with a different nav item array (the actual "one product, not
@@ -119,12 +95,6 @@ export function CoreAppShell({
   const isCustomer = product === "App";
   return (
     <div className={`flex min-h-screen bg-sx-bg text-sx-text ${isCustomer ? "sx-customer-app" : ""}`}>
-      {/* TEMPORARY production render-trace — proves which deployment/shell an
-          authenticated session actually rendered, independent of source
-          inspection. Server-rendered from Vercel's own build-time commit env
-          var (never exposed via a client bundle secret). Remove once the
-          "old UI in production" investigation is closed. */}
-      {isCustomer && <RenderTraceMarker />}
       <div className="hidden md:block">
         <Sidebar
           groups={sidebarGroups}

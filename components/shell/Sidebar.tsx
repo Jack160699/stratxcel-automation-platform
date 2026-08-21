@@ -74,7 +74,7 @@ export function Sidebar({
 
   if (customer) {
     return (
-      <nav aria-label="Primary" data-sx-ui="new-sidebar" className="sticky top-0 flex h-screen w-60 shrink-0 flex-col overflow-x-hidden border-r border-sx-border bg-sx-surface-1 px-3 py-5">
+      <nav aria-label="Primary" className="sticky top-0 flex h-screen w-60 shrink-0 flex-col overflow-x-hidden border-r border-sx-border bg-sx-surface-1 px-3 py-5">
         <div className="mb-1 px-2">{brand(false)}</div>
         {businessCard}
         <div className="sx-thin-scroll mt-1 flex flex-1 flex-col gap-0.5 overflow-x-hidden overflow-y-auto">

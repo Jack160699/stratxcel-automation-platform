@@ -211,7 +211,7 @@ export default function BrandPage() {
   const weekendMissing = missingWeekendHours(content?.business_hours);
 
   return (
-    <div data-sx-ui="new-shop-profile" className="sx-customer-app mx-auto flex w-full max-w-[720px] flex-col gap-6 pb-20 md:pb-8">
+    <div className="sx-customer-app mx-auto flex w-full max-w-[720px] flex-col gap-6 pb-20 md:pb-8">
       <header className="flex flex-col gap-1">
         <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>

@@ -18,7 +18,7 @@ export default function WebsiteCreatePage() {
   }
 
   return (
-    <div data-sx-ui="new-website-create" className="sx-customer-app py-6 px-2 md:px-6 max-w-5xl mx-auto">
+    <div className="sx-customer-app py-6 px-2 md:px-6 max-w-5xl mx-auto">
       <SmartWebsiteCreator
         tenantId={tenantId}
         onClose={() => router.push("/app/website")}

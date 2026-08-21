@@ -107,7 +107,7 @@ export default function TeamPage() {
   }, [tenantId]);
 
   return (
-    <div data-sx-ui="new-staff" className="sx-customer-app mx-auto flex w-full max-w-[720px] flex-col gap-6 pb-20 md:pb-8">
+    <div className="sx-customer-app mx-auto flex w-full max-w-[720px] flex-col gap-6 pb-20 md:pb-8">
       <div>
         <h1 className="text-2xl font-semibold text-sx-text">Staff{active ? ` · ${active.name}` : ""}</h1>
         <p className="sx-hi text-xs text-sx-text-subtle">कर्मचारी</p>

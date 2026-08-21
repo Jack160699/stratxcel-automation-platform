@@ -57,7 +57,7 @@ export default function SettingsPage() {
         : emailState.email ?? "Not available";
 
   return (
-    <div data-sx-ui="new-settings" className="sx-customer-app mx-auto flex w-full max-w-[720px] flex-col gap-6 pb-20 md:pb-8">
+    <div className="sx-customer-app mx-auto flex w-full max-w-[720px] flex-col gap-6 pb-20 md:pb-8">
       <div>
         <h1 className="text-2xl font-semibold text-sx-text">Settings{active ? ` · ${active.name}` : ""}</h1>
         <p className="sx-hi text-xs text-sx-text-subtle">सेटिंग्स</p>
