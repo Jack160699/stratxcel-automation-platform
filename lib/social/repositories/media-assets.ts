@@ -11,6 +11,7 @@ export const MEDIA_BUCKET = "social-agent-attachments";
 export interface MediaAssetRow {
   id: string;
   owner_id: string;
+  tenant_id?: string | null;
   source_attachment_id: string | null;
   storage_bucket: typeof MEDIA_BUCKET;
   storage_path: string;
@@ -28,7 +29,7 @@ function safeFileName(name: string) {
   return normalized.slice(0, 120) || "media";
 }
 
-async function storedObjectMetadata(ctx: OwnerContext, path: string) {
+async function storedObjectMetadata(ctx: AgentActorContext, path: string) {
   const parts = path.split("/");
   const objectName = parts.pop();
   if (!objectName) throw new Error("Invalid storage path");
@@ -47,19 +48,22 @@ async function storedObjectMetadata(ctx: OwnerContext, path: string) {
 }
 
 export async function prepareMediaAsset(
-  ctx: OwnerContext,
+  ctx: AgentActorContext,
   input: { name: string; mimeType: string; sizeBytes: number }
 ): Promise<{ asset: MediaAssetRow; path: string; token: string; signedUrl: string }> {
   const errorMessage = validateMediaMetadata(input);
   if (errorMessage) throw new Error(errorMessage);
   const id = crypto.randomUUID();
-  const path = `${ctx.ownerId}/media/${id}-${safeFileName(input.name)}`;
+  const actorId = isTenantAgentContext(ctx) ? ctx.actorUserId : ctx.ownerId;
+  const tenantId = isTenantAgentContext(ctx) ? ctx.tenantId : null;
+  const path = `${actorId}/media/${id}-${safeFileName(input.name)}`;
   const extension = extensionForName(input.name);
   const { data, error } = await ctx.supabase
     .from("social_media_assets")
     .insert({
       id,
-      owner_id: ctx.ownerId,
+      owner_id: actorId,
+      tenant_id: tenantId,
       storage_path: path,
       original_name: input.name.slice(0, 255),
       extension,
@@ -85,14 +89,18 @@ export async function prepareMediaAsset(
   };
 }
 
-export async function finalizeMediaAsset(ctx: OwnerContext, assetId: string): Promise<MediaAssetRow> {
-  const { data } = await ctx.supabase
+export async function finalizeMediaAsset(ctx: AgentActorContext, assetId: string): Promise<MediaAssetRow> {
+  let query = ctx.supabase
     .from("social_media_assets")
     .select("*")
     .eq("id", assetId)
-    .eq("owner_id", ctx.ownerId)
-    .eq("status", "UPLOADING")
-    .maybeSingle();
+    .eq("status", "UPLOADING");
+  if (isTenantAgentContext(ctx)) {
+    query = query.eq("tenant_id", ctx.tenantId);
+  } else {
+    query = query.eq("owner_id", ctx.ownerId);
+  }
+  const { data } = await query.maybeSingle();
   const asset = data as MediaAssetRow | null;
   if (!asset) throw new Error("Pending media asset not found");
   const stored = await storedObjectMetadata(ctx, asset.storage_path);
@@ -117,7 +125,7 @@ export async function finalizeMediaAsset(ctx: OwnerContext, assetId: string): Pr
 }
 
 export async function ensureMediaAssetForAttachment(
-  ctx: OwnerContext,
+  ctx: AgentActorContext,
   attachment: {
     id: string;
     owner_id: string;
@@ -128,7 +136,11 @@ export async function ensureMediaAssetForAttachment(
     media_asset_id?: string | null;
   }
 ): Promise<MediaAssetRow> {
-  if (attachment.owner_id !== ctx.ownerId) throw new Error("Attachment ownership mismatch");
+  const actorId = isTenantAgentContext(ctx) ? ctx.actorUserId : ctx.ownerId;
+  const tenantId = isTenantAgentContext(ctx) ? ctx.tenantId : null;
+  if (attachment.owner_id !== actorId && !isTenantAgentContext(ctx)) {
+    throw new Error("Attachment ownership mismatch");
+  }
   const validationError = validateMediaMetadata({
     name: attachment.original_name,
     mimeType: attachment.mime_type,
@@ -139,11 +151,14 @@ export async function ensureMediaAssetForAttachment(
     const assets = await getMediaAssetsByIds(ctx, [attachment.media_asset_id]);
     if (assets[0]) return assets[0];
   }
-  const { data: existing } = await ctx.supabase
+  let existingQuery = ctx.supabase
     .from("social_media_assets")
     .select("*")
-    .eq("source_attachment_id", attachment.id)
-    .maybeSingle();
+    .eq("source_attachment_id", attachment.id);
+  if (isTenantAgentContext(ctx)) {
+    existingQuery = existingQuery.eq("tenant_id", ctx.tenantId);
+  }
+  const { data: existing } = await existingQuery.maybeSingle();
   if (existing) return existing as MediaAssetRow;
 
   const stored = await storedObjectMetadata(ctx, attachment.storage_path);
@@ -153,7 +168,8 @@ export async function ensureMediaAssetForAttachment(
   const { data, error } = await ctx.supabase
     .from("social_media_assets")
     .insert({
-      owner_id: ctx.ownerId,
+      owner_id: actorId,
+      tenant_id: tenantId,
       source_attachment_id: attachment.id,
       storage_path: attachment.storage_path,
       original_name: attachment.original_name,
@@ -169,14 +185,20 @@ export async function ensureMediaAssetForAttachment(
   return data as MediaAssetRow;
 }
 
-export async function getMediaAssetsByIds(ctx: OwnerContext, ids: string[]): Promise<MediaAssetRow[]> {
+export async function getMediaAssetsByIds(ctx: AgentActorContext, ids: string[]): Promise<MediaAssetRow[]> {
   if (!ids.length) return [];
-  const { data, error } = await ctx.supabase
+  const unique = [...new Set(ids)];
+  let query = ctx.supabase
     .from("social_media_assets")
     .select("*")
-    .eq("owner_id", ctx.ownerId)
     .eq("status", "READY")
-    .in("id", [...new Set(ids)]);
+    .in("id", unique);
+  if (isTenantAgentContext(ctx)) {
+    query = query.eq("tenant_id", ctx.tenantId);
+  } else {
+    query = query.eq("owner_id", ctx.ownerId);
+  }
+  const { data, error } = await query;
   if (error) throw new Error(error.message);
   return (data ?? []) as MediaAssetRow[];
 }
@@ -186,10 +208,9 @@ export async function getMediaAssetsByIds(ctx: OwnerContext, ids: string[]): Pro
  * thumbnail (e.g. in the Copilot "Ready to publish" approval card) — never
  * for publishing itself (that path stays on resolveMediaForPublish's
  * service-role signed URL, minted only while a real job is running). Uses
- * the caller's OWNER-SCOPED client, not the service client, so RLS/ownership
- * is enforced by Postgres/Storage policy, not by this function's logic.
+ * the caller's authenticated client, so RLS/ownership is enforced by Postgres/Storage policy.
  */
-export async function getMediaAssetPreviewUrl(ctx: OwnerContext, assetId: string): Promise<{ url: string; mimeType: string } | null> {
+export async function getMediaAssetPreviewUrl(ctx: AgentActorContext, assetId: string): Promise<{ url: string; mimeType: string } | null> {
   const assets = await getMediaAssetsByIds(ctx, [assetId]);
   const asset = assets[0];
   if (!asset) return null;
@@ -198,13 +219,15 @@ export async function getMediaAssetPreviewUrl(ctx: OwnerContext, assetId: string
   return { url: data.signedUrl, mimeType: asset.mime_type };
 }
 
-export async function ingestAttachmentMedia(ctx: OwnerContext, attachmentId: string) {
-  const { data } = await ctx.supabase
+export async function ingestAttachmentMedia(ctx: AgentActorContext, attachmentId: string) {
+  let query = ctx.supabase
     .from("social_agent_attachments")
     .select("*")
-    .eq("id", attachmentId)
-    .eq("owner_id", ctx.ownerId)
-    .maybeSingle();
+    .eq("id", attachmentId);
+  if (!isTenantAgentContext(ctx)) {
+    query = query.eq("owner_id", ctx.ownerId);
+  }
+  const { data } = await query.maybeSingle();
   if (!data) throw new Error("Media attachment not found or owned by another account.");
   const asset = await ensureMediaAssetForAttachment(ctx, data);
   return {
@@ -217,7 +240,7 @@ export async function ingestAttachmentMedia(ctx: OwnerContext, attachmentId: str
   };
 }
 
-async function requireAssets(ctx: OwnerContext, ids: string[]) {
+async function requireAssets(ctx: AgentActorContext, ids: string[]) {
   const unique = [...new Set(ids)];
   const assets = await getMediaAssetsByIds(ctx, unique);
   if (assets.length !== unique.length) throw new Error("One or more media assets are missing or belong to another owner.");
@@ -225,7 +248,6 @@ async function requireAssets(ctx: OwnerContext, ids: string[]) {
 }
 
 export async function attachMediaToMaster(ctx: AgentActorContext, masterId: string, assetIds: string[], replace = false) {
-  if (isTenantAgentContext(ctx)) throw new Error("Media attachments aren't available in this workspace's Copilot yet.");
   const [{ data: master }, assets] = await Promise.all([
     ctx.supabase.from("content_master").select("id").eq("id", masterId).maybeSingle(),
     requireAssets(ctx, assetIds),
@@ -246,7 +268,6 @@ export async function attachMediaToMaster(ctx: AgentActorContext, masterId: stri
 }
 
 export async function attachMediaToVariant(ctx: AgentActorContext, variantId: string, assetIds: string[], replace = false) {
-  if (isTenantAgentContext(ctx)) throw new Error("Media attachments aren't available in this workspace's Copilot yet.");
   const [{ data: variant }, assets] = await Promise.all([
     ctx.supabase.from("content_variants").select("id, master_id").eq("id", variantId).maybeSingle(),
     requireAssets(ctx, assetIds),
@@ -324,9 +345,6 @@ export async function updateContentVariant(
     youtubePrivacyStatus?: "private" | "unlisted" | "public";
   }
 ) {
-  if (isTenantAgentContext(ctx) && input.mediaAssetIds !== undefined) {
-    throw new Error("Media attachments aren't available in this workspace's Copilot yet.");
-  }
   const { data: current } = await ctx.supabase
     .from("content_variants")
     .select("id, platform, creative_spec")
@@ -389,14 +407,18 @@ export async function resolveMediaForPublish(
   return { urls: signedUrls, assets, inherited };
 }
 
-export async function removeUnattachedMediaAsset(ctx: OwnerContext, assetId: string) {
-  const { data } = await ctx.supabase
+export async function removeUnattachedMediaAsset(ctx: AgentActorContext, assetId: string) {
+  let query = ctx.supabase
     .from("social_media_assets")
     .select("*")
     .eq("id", assetId)
-    .eq("owner_id", ctx.ownerId)
-    .is("source_attachment_id", null)
-    .maybeSingle();
+    .is("source_attachment_id", null);
+  if (isTenantAgentContext(ctx)) {
+    query = query.eq("tenant_id", ctx.tenantId);
+  } else {
+    query = query.eq("owner_id", ctx.ownerId);
+  }
+  const { data } = await query.maybeSingle();
   const asset = data as MediaAssetRow | null;
   if (!asset) throw new Error("Media asset cannot be removed.");
   const [{ count: masterCount }, { count: variantCount }] = await Promise.all([

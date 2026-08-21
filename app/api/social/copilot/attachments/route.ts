@@ -1,4 +1,6 @@
 import { requireOwnerContext } from "@/lib/social/db-context";
+import { requireAgentTenantContext } from "@/lib/social/agent-tenant-context";
+import type { AgentActorContext } from "@/lib/social/agent-tenant-types";
 import { createAgentSession, getSession } from "@/lib/social/repositories/agent";
 import {
   finalizeAgentAttachment,
@@ -9,8 +11,17 @@ import {
 
 export const runtime = "nodejs";
 
+async function resolveActorContext(request: Request, tenantIdFromBody?: string | null): Promise<AgentActorContext | { ok: false; error: string; status: number }> {
+  const url = new URL(request.url);
+  const tenantId = url.searchParams.get("tenantId") || tenantIdFromBody;
+  if (tenantId) {
+    return requireAgentTenantContext(tenantId);
+  }
+  return requireOwnerContext();
+}
+
 export async function GET(request: Request) {
-  const ctx = await requireOwnerContext();
+  const ctx = await resolveActorContext(request);
   if (!ctx.ok) return Response.json({ error: ctx.error }, { status: ctx.status });
   const sessionId = new URL(request.url).searchParams.get("sessionId");
   if (!sessionId || !(await getSession(ctx, sessionId))) {
@@ -20,9 +31,6 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const ctx = await requireOwnerContext();
-  if (!ctx.ok) return Response.json({ error: ctx.error }, { status: ctx.status });
-
   try {
     const body = await request.json() as {
       action?: unknown;
@@ -31,7 +39,11 @@ export async function POST(request: Request) {
       name?: unknown;
       mimeType?: unknown;
       sizeBytes?: unknown;
+      tenantId?: unknown;
     };
+    const ctx = await resolveActorContext(request, typeof body.tenantId === "string" ? body.tenantId : null);
+    if (!ctx.ok) return Response.json({ error: ctx.error }, { status: ctx.status });
+
     if (body.action === "finalize") {
       if (typeof body.attachmentId !== "string") throw new Error("Attachment id is required");
       return Response.json({ attachment: await finalizeAgentAttachment(ctx, body.attachmentId) });
@@ -57,7 +69,7 @@ export async function POST(request: Request) {
 }
 
 export async function DELETE(request: Request) {
-  const ctx = await requireOwnerContext();
+  const ctx = await resolveActorContext(request);
   if (!ctx.ok) return Response.json({ error: ctx.error }, { status: ctx.status });
   const id = new URL(request.url).searchParams.get("id");
   if (!id) return Response.json({ error: "Attachment id is required" }, { status: 400 });

@@ -70,12 +70,7 @@ const inspectJobs: AgentTool = {
     parameters: { type: "object", properties: {} },
   },
   mutating: false,
-  execute: async (ctx) => {
-    // listJobs relies on RLS scoped to owner_id — no tenant_id policy exists
-    // on social_publishing_jobs yet.
-    if (isTenantAgentContext(ctx)) throw new Error("Job inspection isn't available in this workspace's Copilot yet.");
-    return listJobs(ctx);
-  },
+  execute: async (ctx) => listJobs(ctx),
 };
 
 const inspectDeadLetters: AgentTool = {
@@ -85,10 +80,7 @@ const inspectDeadLetters: AgentTool = {
     parameters: { type: "object", properties: {} },
   },
   mutating: false,
-  execute: async (ctx) => {
-    if (isTenantAgentContext(ctx)) throw new Error("Dead-letter inspection isn't available in this workspace's Copilot yet.");
-    return listDeadLetters(ctx);
-  },
+  execute: async (ctx) => listDeadLetters(ctx),
 };
 
 const inspectAccounts: AgentTool = {
@@ -413,10 +405,7 @@ const ingestMedia: AgentTool = {
   // Finalization normally creates the asset before the Agent runs; this is an
   // idempotent identity/access operation, not an external or content mutation.
   mutating: false,
-  execute: async (ctx, args) => {
-    if (isTenantAgentContext(ctx)) throw new Error("Media attachments aren't available in this workspace's Copilot yet.");
-    return ingestAttachmentMedia(ctx, assertAttachmentSlot(args));
-  },
+  execute: async (ctx, args) => ingestAttachmentMedia(ctx, assertAttachmentSlot(args)),
 };
 
 const generateImageTool: AgentTool = {
@@ -440,15 +429,7 @@ const generateImageTool: AgentTool = {
     },
   },
   mutating: true,
-  execute: (ctx, args) => {
-    // generate-image-tool.ts writes to an owner_id-keyed storage path with
-    // no tenant-scoped equivalent yet — same reasoning as attachment
-    // upload above.
-    if (isTenantAgentContext(ctx)) {
-      throw new Error("Image generation isn't available in this workspace's Copilot yet.");
-    }
-    return executeGenerateImageTool(ctx, args);
-  },
+  execute: (ctx, args) => executeGenerateImageTool(ctx, args),
 };
 
 const inspectContentMediaTool: AgentTool = {
@@ -493,7 +474,6 @@ const attachMediaToContentTool: AgentTool = {
   },
   mutating: true,
   execute: async (ctx, args) => {
-    if (isTenantAgentContext(ctx)) throw new Error("Media attachments aren't available in this workspace's Copilot yet.");
     const masterId = optionalUuid(args.masterId, "masterId");
     const variantId = optionalUuid(args.variantId, "variantId");
     if (Boolean(masterId) === Boolean(variantId)) throw new Error("Provide exactly one of masterId or variantId.");

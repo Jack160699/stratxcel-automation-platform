@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { createSupabaseServiceClient } from "../../supabase/service";
 import type { OwnerContext } from "../db-context";
+import type { AgentActorContext } from "../agent-tenant-types";
 
 type ServiceClient = ReturnType<typeof createSupabaseServiceClient>;
 
@@ -61,7 +62,7 @@ export async function cancelJob(service: ServiceClient, id: string) {
   await service.from("social_publishing_jobs").update({ status: "CANCELLED" }).eq("id", id).eq("status", "SCHEDULED");
 }
 
-export async function listJobs(ctx: OwnerContext, limit = 50): Promise<PublishingJobRow[]> {
+export async function listJobs(ctx: AgentActorContext, limit = 50): Promise<PublishingJobRow[]> {
   const { data } = await ctx.supabase.from("social_publishing_jobs").select("*").order("scheduled_at", { ascending: false }).limit(limit);
   return (data ?? []) as PublishingJobRow[];
 }
@@ -132,7 +133,7 @@ export async function moveJobToDeadLetter(service: ServiceClient, jobId: string,
   await service.from("social_dead_letters").insert({ job_id: jobId, payload, error });
 }
 
-export async function listDeadLetters(ctx: OwnerContext, limit = 30) {
+export async function listDeadLetters(ctx: AgentActorContext, limit = 30) {
   const { data } = await ctx.supabase.from("social_dead_letters").select("*").order("created_at", { ascending: false }).limit(limit);
   return data ?? [];
 }

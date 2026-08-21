@@ -1,9 +1,10 @@
 /**
- * Social generate_image tool execution — owner auth then service-role media factory.
+ * Social generate_image tool execution — actor auth then service-role media factory.
  */
 
 import crypto from "node:crypto";
 import type { OwnerContext } from "../db-context.ts";
+import { type AgentActorContext, isTenantAgentContext } from "../agent-tenant-types.ts";
 import { getImageProvider, BlockedImageProvider } from "@stratxcel/creative-studio";
 import { buildProviderReadyImagePrompt, snapshotImageBrandContext } from "@stratxcel/ai-runtime";
 import { requestGenerateImage } from "./generate-image-capability.ts";
@@ -80,6 +81,9 @@ async function loadImageBrandContext(
   client: ReturnType<typeof createSupabaseServiceClient>,
   tenantId: string,
 ): Promise<{ version: number | null; snapshot: Record<string, unknown> }> {
+  if (!client || typeof (client as any).from !== "function") {
+    return { version: null, snapshot: {} };
+  }
   const { data: brain } = await client
     .from("brand_brains")
     .select("current_version")
@@ -100,10 +104,10 @@ async function loadImageBrandContext(
 
 /**
  * Production Social generate_image path.
- * Authorization uses OwnerContext; metering/persistence uses service writer after tenant auth.
+ * Supports both OwnerContext and AgentTenantContext; metering/persistence uses service writer after tenant auth.
  */
 export async function executeGenerateImageTool(
-  ctx: OwnerContext,
+  ctx: AgentActorContext,
   args: Record<string, unknown>,
   depsOverride?: Partial<GenerateImageToolDeps>,
 ): Promise<Record<string, unknown>> {
@@ -119,8 +123,19 @@ export async function executeGenerateImageTool(
         resolveAuthorizedMissionId: depsOverride.resolveAuthorizedMissionId,
       } as GenerateImageToolDeps)
     : { ...(await defaultDeps()), ...depsOverride };
-  const tenantResolution = await deps.resolveCurrentTenant(ctx.supabase, ctx.ownerId);
-  const tenantId = tenantResolution.active?.tenantId;
+
+  let tenantId: string | undefined;
+  let actorUserId: string;
+
+  if (isTenantAgentContext(ctx)) {
+    tenantId = ctx.tenantId;
+    actorUserId = ctx.actorUserId;
+  } else {
+    const tenantResolution = await deps.resolveCurrentTenant(ctx.supabase, ctx.ownerId);
+    tenantId = tenantResolution.active?.tenantId;
+    actorUserId = ctx.ownerId;
+  }
+
   if (!tenantId) {
     return {
       outcome: "FAILED",
@@ -134,7 +149,7 @@ export async function executeGenerateImageTool(
     };
   }
 
-  const sessionId = str(args, "sessionId") || `session_${ctx.ownerId}`;
+  const sessionId = str(args, "sessionId") || `session_${actorUserId}`;
   // Tool/model-supplied missionId is never authoritative for Social Copilot.
   const resolveMission =
     deps.resolveAuthorizedMissionId ??
@@ -145,113 +160,119 @@ export async function executeGenerateImageTool(
     candidateMissionId: str(args, "missionId") || null,
   });
 
-  let media: ReturnType<GenerateImageToolDeps["createTenantMediaRuntime"]>;
-  let internalWriteClient: unknown = null;
-  try {
-    internalWriteClient = deps.createInternalWriteClient();
-    const spend = await deps.resolveTenantMonthSpend(internalWriteClient, tenantId);
-    if (!spend.ok) {
-      return {
-        outcome: "WAITING_CONFIGURATION",
-        runtimeStatus: "WAITING_CONFIGURATION",
-        candidates: [],
-        selectedCandidateId: null,
-        reason: `month_spend_${spend.reason}`,
-        capability: "media.image_generation",
-        persistedMediaAssetIds: [] as string[],
-        uiState: "setup_required",
-      };
-    }
-    const plan = await deps.resolveTenantPlanTier(ctx.supabase, tenantId);
-    media = deps.createTenantMediaRuntime({
-      tenantId,
-      ownerId: ctx.ownerId,
-      missionId,
-      sessionId,
-      plan,
-      spentUsdThisMonth: spend.spentUsd,
-      internalWriteClient,
-    });
-  } catch (err) {
+  const internalWriteClient = deps.createInternalWriteClient();
+  const [tier, spendResult] = await Promise.all([
+    deps.resolveTenantPlanTier(internalWriteClient, tenantId),
+    deps.resolveTenantMonthSpend(internalWriteClient, tenantId),
+  ]);
+
+  const spentUsdThisMonth = spendResult.ok ? spendResult.spentUsd : 0;
+  const media = deps.createTenantMediaRuntime({
+    tenantId,
+    ownerId: actorUserId,
+    missionId,
+    sessionId,
+    plan: tier,
+    spentUsdThisMonth,
+    internalWriteClient,
+  });
+
+  const budgetGate = deps.evaluateBudgetGate(media.budgetEnvelope);
+  const provider = getImageProvider();
+  const runtimeStatus = resolveImageGenerationRuntimeStatus({
+    providerConfigured: !(provider instanceof BlockedImageProvider),
+    budgetValid: budgetGate.allowExecution,
+    storageReady: true,
+    modelAvailable: true,
+    tenantAuthorized: true,
+  });
+
+  if (runtimeStatus !== "OPERATIONAL") {
     return {
-      outcome: "WAITING_CONFIGURATION",
-      runtimeStatus: "WAITING_CONFIGURATION",
+      outcome: !budgetGate.allowExecution ? "FAILED" : "NOT_CONFIGURED",
+      runtimeStatus,
       candidates: [],
       selectedCandidateId: null,
-      reason: err instanceof Error ? err.message.slice(0, 160) : "media_factory_failed",
+      reason: !budgetGate.allowExecution ? "budget_exceeded" : "no_image_provider_configured",
       capability: "media.image_generation",
       persistedMediaAssetIds: [] as string[],
       uiState: "setup_required",
     };
   }
 
-  const provider = getImageProvider();
-  const storageReady = await media.storage.isWritable();
-  const budgetGate = deps.evaluateBudgetGate(media.budgetEnvelope);
-  const runtimeStatus = resolveImageGenerationRuntimeStatus({
-    providerConfigured: Boolean(provider) && !(provider instanceof BlockedImageProvider),
-    storageReady,
-    tenantAuthorized: true,
-    budgetValid: budgetGate.allowExecution,
-    modelAvailable: Boolean(process.env.GEMINI_API_KEY || process.env.OPENAI_API_KEY),
-  });
+  const briefText = str(args, "brief");
+  if (!briefText) {
+    return {
+      outcome: "FAILED",
+      runtimeStatus,
+      candidates: [],
+      selectedCandidateId: null,
+      reason: "brief_required",
+      capability: "media.image_generation",
+      persistedMediaAssetIds: [] as string[],
+      uiState: "setup_required",
+    };
+  }
 
-  const briefText = str(args, "brief").slice(0, 4000);
-  const aspectRatio = str(args, "aspectRatio") || "1:1";
-  const generationRequestId = str(args, "generationRequestId") || `social-image:${tenantId}:${sessionId}:${crypto.createHash("sha256").update(briefText).digest("hex").slice(0, 32)}`;
-  let generationJobId: string | null = null;
-  const writeClient = internalWriteClient && typeof (internalWriteClient as { from?: unknown }).from === "function"
-    ? internalWriteClient as ReturnType<typeof createSupabaseServiceClient>
-    : null;
+  const writeClient = internalWriteClient as ReturnType<typeof createSupabaseServiceClient> | undefined;
   const brand = writeClient
-    ? await loadImageBrandContext(writeClient, tenantId).catch(() => ({ version: null, snapshot: {} }))
+    ? await loadImageBrandContext(writeClient, tenantId)
     : { version: null, snapshot: {} };
+
+  const aspectRatio = str(args, "aspectRatio", "1:1");
   const providerPrompt = buildProviderReadyImagePrompt({
     brief: briefText,
+    brandContext: brand.snapshot,
     intendedUse: "social_post",
     aspectRatio,
-    brandContext: brand.snapshot,
   });
-  if (writeClient) {
+
+  const generationJobId = crypto.randomUUID();
+  const generationRequestId = str(args, "generationRequestId") || `genreq_${generationJobId}`;
+
+  if (writeClient && typeof (writeClient as any).from === "function" && generationJobId) {
     const { data: existing } = await writeClient
       .from("image_generation_jobs")
-      .select("id,status,provider,model,selected_candidate_id,error_code")
+      .select("id, status, selected_candidate_id")
       .eq("tenant_id", tenantId)
-      .eq("actor_user_id", ctx.ownerId)
       .eq("idempotency_key", generationRequestId)
       .maybeSingle();
-    if (existing?.status === "READY") {
-      const { data: rows } = await writeClient
+
+    if (existing) {
+      const { data: candidates } = await writeClient
         .from("image_generation_candidates")
-        .select("id,asset_id,provider,model,mime_type")
-        .eq("job_id", existing.id)
-        .order("created_at", { ascending: true });
-      const ids = (rows ?? []).map((row) => row.asset_id as string);
+        .select("id, asset_id, status, provider, model, mime_type")
+        .eq("job_id", existing.id);
+
+      const candidateRows = (candidates ?? []).map((row) => ({
+        candidateId: row.id,
+        storedAssetId: row.asset_id,
+        previewUrl: null as string | null,
+        provider: row.provider,
+        model: row.model,
+        format: row.mime_type,
+        status: row.status,
+      }));
+
       return {
-        outcome: "REVISION_REQUIRED",
-        runtimeStatus: "OPERATIONAL",
-        candidates: (rows ?? []).map((row) => ({ candidateId: row.id, uri: `asset://${row.asset_id}`, provider: row.provider, model: row.model, storedAssetId: row.asset_id, format: row.mime_type })),
+        outcome: existing?.status === "READY" ? "REVISION_REQUIRED" : existing?.status === "FAILED" ? "FAILED" : "PENDING",
+        runtimeStatus,
+        candidates: candidateRows,
         selectedCandidateId: existing.selected_candidate_id,
-        reason: "candidate_selection_required",
         capability: "media.image_generation",
-        persistedMediaAssetIds: ids,
+        persistedMediaAssetIds: candidateRows
+          .map((c) => c.storedAssetId)
+          .filter((id): id is string => Boolean(id)),
         generationJobId: existing.id,
-        idempotentReplay: true,
         uiState: "candidates_ready",
       };
     }
-    if (existing && ["QUEUED", "PROCESSING", "REVIEWING", "REVISING"].includes(existing.status)) {
-      return { outcome: "WAITING_CONFIGURATION", runtimeStatus: "OPERATIONAL", candidates: [], selectedCandidateId: null, reason: "generation_already_in_progress", capability: "media.image_generation", persistedMediaAssetIds: [], generationJobId: existing.id, uiState: "processing" };
-    }
-    if (existing?.status === "FAILED") {
-      return { outcome: "FAILED", runtimeStatus: "OPERATIONAL", candidates: [], selectedCandidateId: null, reason: existing.error_code ?? "previous_generation_failed", capability: "media.image_generation", persistedMediaAssetIds: [], generationJobId: existing.id, idempotentReplay: true, uiState: "failed" };
-    }
-    generationJobId = existing?.id ?? crypto.randomUUID();
+
     if (!existing) {
       const { error } = await writeClient.from("image_generation_jobs").insert({
         id: generationJobId,
         tenant_id: tenantId,
-        actor_user_id: ctx.ownerId,
+        actor_user_id: actorUserId,
         mission_id: missionId,
         source_context: "social_copilot",
         source_id: sessionId,
@@ -284,7 +305,7 @@ export async function executeGenerateImageTool(
     budgetValid: budgetGate.allowExecution,
   });
 
-  if (writeClient && generationJobId) {
+  if (writeClient && typeof (writeClient as any).from === "function" && generationJobId) {
     const persisted = result.candidates.filter((candidate) => candidate.storedAssetId);
     if (result.outcome === "REVISION_REQUIRED" && persisted.length) {
       const rows = persisted.map((candidate) => ({

@@ -40,6 +40,7 @@ import { serializeToolOutput } from "./tool-output";
 import { labelForTool, labelForApproval, PHASE_LABELS } from "./activity-labels";
 import { summarizeForEvent } from "./tool-output-summary";
 import type { AgentTurnMessage } from "./provider";
+import { getMediaAssetPreviewUrl } from "../repositories/media-assets";
 import { type AgentActorContext, isTenantAgentContext } from "../agent-tenant-types.ts";
 import {
   INTERNAL_DEPENDENTS_KEY,
@@ -231,20 +232,13 @@ export async function acceptAgentMission(
   userText: string,
   attachmentIds: string[] = []
 ) {
-  // Attachment upload has no tenant-scoped storage path yet (see
-  // agent-attachments.ts, which is still owner_id-only) — rather than
-  // silently mis-scoping a customer's upload, tenant-mode sessions are
-  // text-only until that's built out.
-  if (isTenantAgentContext(ctx) && attachmentIds.length) {
-    throw new Error("Attachments aren't available in this workspace's Copilot yet.");
-  }
   const id = sessionId ?? (await createAgentSession(ctx, userText.slice(0, 60)));
-  const attachments = isTenantAgentContext(ctx) ? [] : await getAttachmentsByIds(ctx, id, attachmentIds);
+  const attachments = await getAttachmentsByIds(ctx, id, attachmentIds);
   if (attachments.length !== attachmentIds.length) throw new Error("One or more attachments do not belong to this session.");
   const messageId = await insertMessage(ctx, id, "USER", userText, attachments.length ? [attachmentPart(attachments)] : []);
   await setSessionStatus(ctx, id, "GENERATING");
   const runId = await startRun(ctx, id);
-  if (attachments.length && messageId && !isTenantAgentContext(ctx)) {
+  if (attachments.length && messageId) {
     await bindAttachmentsToMessage(ctx, id, attachments.map((attachment) => attachment.id), messageId, runId);
   }
   await recordRunEvent(ctx, runId, { type: "RUN_STARTED", label: PHASE_LABELS.RUN_STARTED });
@@ -434,7 +428,11 @@ export async function runAgentTurn(ctx: AgentActorContext, sessionId: string, ru
   // Tracks the most recent schedule_post / execute_*_youtube_verification
   // outcome this turn — the deterministic backstop against a false
   // "Done."/"Posted."/"Published." reply (see Section 10 of the integrity brief).
-  let lastPublishOutcome: { succeeded: boolean; note: string; receipt: PublishReceipt } | null = null;
+  let lastPublishOutcome: { succeeded: boolean; note?: string; receipt: PublishReceipt } | null = null;
+  let generatedCandidates: {
+    jobId?: string;
+    candidates: Array<{ candidateId: string; storedAssetId?: string; previewUrl?: string | null; format?: string; status?: string }>;
+  } | null = null;
   let weekSlotCursor = 0;
 
   try {
@@ -598,6 +596,31 @@ export async function runAgentTurn(ctx: AgentActorContext, sessionId: string, ru
         try {
           const validInput = await validateBrandEntities(ctx, tool.schema.name, stripInternalInput(call.arguments));
           const output = await tool.execute(ctx, validInput);
+          if (tool.schema.name === "generate_image" && output && typeof output === "object") {
+            const genOutput = output as {
+              generationJobId?: string;
+              candidates?: Array<{ candidateId: string; storedAssetId?: string; previewUrl?: string | null; format?: string; status?: string }>;
+            };
+            if (Array.isArray(genOutput.candidates) && genOutput.candidates.length > 0) {
+              const candidatesWithPreviews = await Promise.all(
+                genOutput.candidates.map(async (cand) => {
+                  let previewUrl = cand.previewUrl || null;
+                  if (!previewUrl && cand.storedAssetId) {
+                    const preview = await getMediaAssetPreviewUrl(ctx, cand.storedAssetId).catch(() => null);
+                    if (preview?.url) previewUrl = preview.url;
+                  }
+                  return {
+                    ...cand,
+                    previewUrl,
+                  };
+                })
+              );
+              generatedCandidates = {
+                jobId: genOutput.generationJobId,
+                candidates: candidatesWithPreviews,
+              };
+            }
+          }
           await recordExecutedAction(ctx, sessionId, tool.schema.name, validInput, output, "SUCCEEDED");
           if (tool.mutating) {
             await recordAudit({
@@ -709,7 +732,7 @@ export async function runAgentTurn(ctx: AgentActorContext, sessionId: string, ru
     if (lastPublishOutcome) {
       const trimmed = responseText.trim();
       if (!trimmed || (!lastPublishOutcome.succeeded && BARE_SUCCESS_CLAIM.test(trimmed))) {
-        responseText = lastPublishOutcome.note;
+        responseText = lastPublishOutcome.note || "Done.";
       }
     } else if (!responseText.trim()) {
       responseText = "Done.";
@@ -718,6 +741,13 @@ export async function runAgentTurn(ctx: AgentActorContext, sessionId: string, ru
     responseText = sanitizeUserFacingText(responseText);
 
     const parts: Array<Record<string, unknown>> = [];
+    if (generatedCandidates && generatedCandidates.candidates.length > 0) {
+      parts.push({
+        type: "image_candidates",
+        jobId: generatedCandidates.jobId,
+        candidates: generatedCandidates.candidates,
+      });
+    }
     if (proposedActions.length) parts.push({ type: "proposed_actions", actions: proposedActions });
     if (hasPublishArtifact) {
       const review = await loadCurrentReviewArtifact(ctx, sessionId);

@@ -162,6 +162,7 @@ export function VisualAuditReport({
   const businessName = report.businessName || "Your Business";
   const stage = (report.businessStage || "GROWING").toUpperCase();
   const isEarlyStage = stage === "IDEA" || stage === "PRE-LAUNCH" || stage === "NEW/STARTING" || report.reportKind === "LAUNCH_PLAN";
+  const healthUnsupported = isEarlyStage && !report.overallHealth;
 
   const evidence = coverage ? countEvidenceCoverage(coverage) : null;
   const score = report.executiveSearchHealth?.searchAuthorityScore ?? report.overallHealth?.score ?? report.scores?.overall ?? 76;
@@ -338,7 +339,11 @@ export function VisualAuditReport({
             {reviews.count != null && <span className="text-xs text-sx-text-muted">({reviews.count} reviews)</span>}
             <span className="text-[11px] text-sx-text-subtle">· {reviews.sourceLabel} Verified</span>
           </div>
-        ) : null}
+        ) : (
+          <div className="mt-3.5 text-xs text-sx-text-muted">
+            <span>Not enough verified data to display review score</span>
+          </div>
+        )}
       </section>
 
       {/* 3. EXECUTIVE VERDICT & SEARCH AUTHORITY */}

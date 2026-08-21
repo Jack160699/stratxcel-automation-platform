@@ -13,6 +13,10 @@ import { acceptAgentMission, runAgentTurn, approveAgentAction, rejectAgentAction
 import { getActionPreview, editProposedPublishAction } from "@/lib/social/agent/action-preview";
 import { getSessionDetail, getLatestSession, listSessions, getSession } from "@/lib/social/repositories/agent";
 import { getLatestRunWithEvents } from "@/lib/social/repositories/agent-runs";
+import { prepareAgentAttachment, finalizeAgentAttachment } from "@/lib/social/repositories/agent-attachments";
+import { attachMediaToVariant, getMediaAssetPreviewUrl } from "@/lib/social/repositories/media-assets";
+import { selectImageGenerationCandidate } from "@/lib/image-generation/service";
+import { createSupabaseServiceClient } from "@/lib/supabase/service";
 import { toSafeClientError } from "@/lib/social/safe-client-error";
 
 async function requireTenant(tenantId: string) {
@@ -21,10 +25,15 @@ async function requireTenant(tenantId: string) {
   return ctx;
 }
 
-export async function sendTenantAgentMessageAction(tenantId: string, sessionId: string | null, text: string) {
+export async function sendTenantAgentMessageAction(
+  tenantId: string,
+  sessionId: string | null,
+  text: string,
+  attachmentIds: string[] = []
+) {
   const ctx = await requireTenant(tenantId);
   const trimmed = text.trim();
-  if (!trimmed) {
+  if (!trimmed && !attachmentIds.length) {
     return {
       sessionId,
       blocked: false as const,
@@ -34,12 +43,88 @@ export async function sendTenantAgentMessageAction(tenantId: string, sessionId: 
     };
   }
 
-  // Text-only in this pass — attachments have no tenant-scoped storage path
-  // yet (see acceptAgentMission's own guard for the authoritative check).
-  const accepted = await acceptAgentMission(ctx, sessionId, trimmed);
+  const accepted = await acceptAgentMission(ctx, sessionId, trimmed || "(attachment sent)", attachmentIds);
   const result = await runAgentTurn(ctx, accepted.sessionId, accepted.runId);
   revalidatePath("/app/social/copilot");
   return { sessionId: accepted.sessionId, ...result };
+}
+
+export async function prepareTenantAgentAttachmentAction(
+  tenantId: string,
+  sessionId: string,
+  input: { name: string; mimeType: string; sizeBytes: number }
+) {
+  const ctx = await requireTenant(tenantId);
+  return prepareAgentAttachment(ctx, sessionId, input);
+}
+
+export async function finalizeTenantAgentAttachmentAction(tenantId: string, attachmentId: string) {
+  const ctx = await requireTenant(tenantId);
+  return finalizeAgentAttachment(ctx, attachmentId);
+}
+
+export async function selectTenantCandidateAction(
+  tenantId: string,
+  jobId: string,
+  candidateId: string,
+  variantId?: string
+) {
+  try {
+    const ctx = await requireTenant(tenantId);
+    const serviceClient = createSupabaseServiceClient();
+    const result = await selectImageGenerationCandidate({
+      writeClient: serviceClient as any,
+      tenantId,
+      jobId,
+      candidateId,
+      actorUserId: ctx.actorUserId,
+      attachToVariantId: variantId,
+    });
+
+    const selected = result.candidates.find((c) => c.id === candidateId);
+    if (variantId && selected?.asset_id) {
+      await attachMediaToVariant(ctx, variantId, [selected.asset_id], true);
+    }
+
+    revalidatePath("/app/social/copilot");
+    return { ok: true as const, candidate: selected };
+  } catch (err) {
+    console.error("[social.copilot.tenant.selectCandidate]", err);
+    return {
+      ok: false as const,
+      error: toSafeClientError(err, "Could not select candidate image."),
+    };
+  }
+}
+
+export async function attachTenantMediaToVariantAction(
+  tenantId: string,
+  variantId: string,
+  assetIds: string[],
+  replace = true
+) {
+  try {
+    const ctx = await requireTenant(tenantId);
+    const result = await attachMediaToVariant(ctx, variantId, assetIds, replace);
+    revalidatePath("/app/social/copilot");
+    return { ok: true as const, result };
+  } catch (err) {
+    console.error("[social.copilot.tenant.attachMedia]", err);
+    return {
+      ok: false as const,
+      error: toSafeClientError(err, "Could not attach media to content variant."),
+    };
+  }
+}
+
+export async function getTenantMediaAssetPreviewUrlAction(tenantId: string, assetId: string) {
+  try {
+    const ctx = await requireTenant(tenantId);
+    return await getMediaAssetPreviewUrl(ctx, assetId);
+  } catch (err) {
+    console.error("[social.copilot.tenant.mediaPreview]", err);
+    return null;
+  }
 }
 
 export async function approveTenantAgentActionAction(tenantId: string, actionId: string) {

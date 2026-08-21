@@ -13,6 +13,7 @@ import {
   getTenantAgentSessionAction,
   getTenantRunEventsAction,
   getTenantSessionAction,
+  selectTenantCandidateAction,
 } from "./tenant-actions";
 import type { AgentMessageData } from "../../../admin/(shell)/social/agent/AgentMessage";
 import type { AgentRunEventRow, AgentRunRow } from "@/lib/social/repositories/agent-runs";
@@ -30,9 +31,10 @@ interface UseTenantAgentSessionResult {
   run: AgentRunRow | null;
   runEvents: AgentRunEventRow[];
   session: AgentSessionRow | null;
-  send: (text: string) => void;
+  send: (text: string, attachmentIds?: string[]) => void;
   approve: (actionId: string) => void;
   reject: (actionId: string) => void;
+  selectCandidate: (jobId: string, candidateId: string) => Promise<void>;
 }
 
 export function useTenantAgentSession(
@@ -141,14 +143,14 @@ export function useTenantAgentSession(
   }, [sessionId, tenantId, pollRunEvents]);
 
   const send = useCallback(
-    (text: string) => {
+    (text: string, attachmentIds?: string[]) => {
       const trimmed = text.trim();
-      if (!trimmed || pending) return;
+      if ((!trimmed && (!attachmentIds || attachmentIds.length === 0)) || pending) return;
       setBlockedReason(null);
       setFailedReason(null);
       setMessages((prev) => [
         ...(sessionId ? prev : []),
-        { id: `local-${Date.now()}`, role: "user", content: trimmed, parts: [] as AgentMessageData["parts"] },
+        { id: `local-${Date.now()}`, role: "user", content: trimmed || "(Attached media)", parts: [] as AgentMessageData["parts"] },
       ]);
       if (!sessionId) {
         stopPolling();
@@ -160,7 +162,12 @@ export function useTenantAgentSession(
       fetch("/api/platform/social/copilot/runs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tenantId, sessionId, message: trimmed }),
+        body: JSON.stringify({
+          tenantId,
+          sessionId,
+          message: trimmed || "Please review the attached media.",
+          attachmentIds: attachmentIds || [],
+        }),
       })
         .then(async (response) => {
           const accepted = await response.json();
@@ -174,7 +181,7 @@ export function useTenantAgentSession(
             id: accepted.sessionId,
             owner_id: null,
             tenant_id: tenantId,
-            title: trimmed.slice(0, 60),
+            title: (trimmed || "Media attachment").slice(0, 60),
             status: "GENERATING",
             context: {},
             created_at: new Date().toISOString(),
@@ -200,15 +207,34 @@ export function useTenantAgentSession(
             ]);
             return;
           }
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: `agent-${Date.now()}`,
-              role: "agent",
-              content: result.text || "Done.",
-              parts: result.proposedActions?.length ? [{ type: "proposed_actions", actions: result.proposedActions }] : [],
-            },
-          ]);
+
+          // Refresh full messages from database to include generated image candidates, receipts, etc.
+          const detail = await getTenantAgentSessionAction(tenantId, accepted.sessionId).catch(() => null);
+          if (detail) {
+            const proposed = detail.actions.filter((a) => a.status === "PROPOSED");
+            const proposedIds = new Set(proposed.map((action) => action.id));
+            const mapped: AgentMessageData[] = detail.messages.map((m) => ({
+              id: m.id,
+              role: m.role === "USER" ? "user" : m.role === "AGENT" ? "agent" : "system",
+              content: m.content,
+              parts: (m.parts as AgentMessageData["parts"]).map((part) =>
+                part.type === "proposed_actions"
+                  ? { ...part, actions: part.actions?.filter((action) => proposedIds.has(action.id)) }
+                  : part
+              ),
+            }));
+            setMessages(mapped);
+          } else {
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: `agent-${Date.now()}`,
+                role: "agent",
+                content: result.text || "Done.",
+                parts: result.proposedActions?.length ? [{ type: "proposed_actions", actions: result.proposedActions }] : [],
+              },
+            ]);
+          }
           getTenantSessionAction(tenantId, accepted.sessionId).then(setSession).catch(() => {});
         })
         .catch((error) => {
@@ -219,6 +245,38 @@ export function useTenantAgentSession(
         });
     },
     [pending, sessionId, tenantId, onSessionCreated, pollRunEvents, stopPolling]
+  );
+
+  const selectCandidate = useCallback(
+    async (jobId: string, candidateId: string) => {
+      if (!sessionId) return;
+      try {
+        const res = await selectTenantCandidateAction(tenantId, jobId, candidateId);
+        if (!res?.ok) {
+          setFailedReason(res?.error ?? "Could not select candidate.");
+          return;
+        }
+        const detail = await getTenantAgentSessionAction(tenantId, sessionId).catch(() => null);
+        if (detail) {
+          const proposed = detail.actions.filter((a) => a.status === "PROPOSED");
+          const proposedIds = new Set(proposed.map((action) => action.id));
+          const mapped: AgentMessageData[] = detail.messages.map((m) => ({
+            id: m.id,
+            role: m.role === "USER" ? "user" : m.role === "AGENT" ? "agent" : "system",
+            content: m.content,
+            parts: (m.parts as AgentMessageData["parts"]).map((part) =>
+              part.type === "proposed_actions"
+                ? { ...part, actions: part.actions?.filter((action) => proposedIds.has(action.id)) }
+                : part
+            ),
+          }));
+          setMessages(mapped);
+        }
+      } catch (err: any) {
+        setFailedReason(err?.message || "Could not select candidate.");
+      }
+    },
+    [sessionId, tenantId]
   );
 
   const approve = useCallback(
@@ -307,5 +365,6 @@ export function useTenantAgentSession(
     send,
     approve,
     reject,
+    selectCandidate,
   };
 }

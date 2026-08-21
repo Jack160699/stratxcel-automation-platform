@@ -2,7 +2,11 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTenantAgentSession } from "./useTenantAgentSession";
-import { listTenantSessionsAction } from "./tenant-actions";
+import {
+  listTenantSessionsAction,
+  prepareTenantAgentAttachmentAction,
+  finalizeTenantAgentAttachmentAction,
+} from "./tenant-actions";
 import { PublishReviewCard, PublishReviewGroup } from "./PublishReviewCard";
 import { SxAgentMarkdown } from "./SxAgentMarkdown";
 import { sanitizeUserFacingText } from "@/lib/social/agent/user-facing-text";
@@ -22,8 +26,8 @@ const QUICK_ACTIONS: { icon: React.ReactNode; tint: string; label: string; promp
   },
   {
     tint: "rgba(217,119,6,0.06)",
-    label: "What should I post next?",
-    prompt: "What should I post next?",
+    label: "Create a Festival Poster",
+    prompt: "Create an attractive festive discount poster for my business with Hindi and English caption.",
     icon: (
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#d97706" strokeWidth="2"><circle cx="12" cy="12" r="10" /><path d="M12 8v4M12 16h.01" /></svg>
     ),
@@ -45,8 +49,6 @@ const QUICK_ACTIONS: { icon: React.ReactNode; tint: string; label: string; promp
     ),
   },
   {
-    // Real backing: list_content (available to tenants) — not inspect_jobs, which
-    // is hard-blocked for tenant sessions and would always fail.
     tint: "rgba(100,116,139,0.06)",
     label: "What's my content status?",
     prompt: "What's the status of my recent content?",
@@ -75,7 +77,7 @@ function BotAvatar({ pulsing = false }: { pulsing?: boolean }) {
   );
 }
 
-/** Real, grouped "what's happening" progress — derived from actual run events (execution-stages.ts), never invented step text. */
+/** Real, grouped "what's happening" progress — derived from actual run events (execution-stages.ts). */
 function WorkingIndicator({ run, runEvents }: { run: { status: string } | null; runEvents: Parameters<typeof groupEventsIntoStages>[0] }) {
   const stages = useMemo(() => groupEventsIntoStages(runEvents, run?.status), [runEvents, run?.status]);
   const visible = stages.filter((s) => s.id !== "final");
@@ -150,32 +152,165 @@ function ReceiptCard({ receipt }: { receipt: { platform?: string; accountLabel?:
   );
 }
 
+interface CandidateItem {
+  candidateId: string;
+  storedAssetId?: string;
+  previewUrl?: string | null;
+  format?: string;
+  status?: string;
+}
+
+function CandidateCarousel({
+  jobId,
+  candidates,
+  onSelectCandidate,
+}: {
+  jobId: string;
+  candidates: CandidateItem[];
+  onSelectCandidate: (jobId: string, candidateId: string) => void;
+}) {
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [selectingId, setSelectingId] = useState<string | null>(null);
+  const count = candidates.length;
+  const current = candidates[currentIndex] || candidates[0];
+  const isSelected = current?.status === "SELECTED";
+  const isSingle = count === 1;
+
+  if (!current) return null;
+
+  const handleSelect = async () => {
+    setSelectingId(current.candidateId);
+    try {
+      await onSelectCandidate(jobId, current.candidateId);
+    } finally {
+      setSelectingId(null);
+    }
+  };
+
+  return (
+    <div className="overflow-hidden rounded-sx-lg border border-sx-border bg-sx-surface-1 p-3.5 space-y-3">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <span className="text-[13px] font-bold text-sx-text flex items-center gap-1.5">
+          <span>🎨</span> {isSingle ? "AI Generated Visual" : `AI created ${count} options`}
+        </span>
+        {!isSingle && (
+          <span className="text-[11px] font-semibold text-sx-text-muted">
+            IMAGE {currentIndex + 1} / {count}
+          </span>
+        )}
+      </div>
+
+      {/* Main Image Viewport with Carousel Controls */}
+      <div className="relative rounded-sx-md overflow-hidden border border-sx-border bg-black/20 group">
+        {current.previewUrl ? (
+          <img
+            src={current.previewUrl}
+            alt={`Option ${currentIndex + 1}`}
+            className="w-full h-60 sm:h-72 object-contain bg-black/40 transition-opacity duration-200"
+          />
+        ) : (
+          <div className="w-full h-60 sm:h-72 flex flex-col items-center justify-center bg-sx-surface-2 text-xs text-sx-text-muted">
+            <span className="text-3xl mb-2">🎨</span>
+            <span className="font-semibold text-sx-text">Visual Option {currentIndex + 1}</span>
+            <span className="text-[11px] text-sx-text-subtle mt-1">{current.format || "1:1 Social Poster"}</span>
+          </div>
+        )}
+
+        {/* Carousel Navigation Arrows */}
+        {!isSingle && (
+          <>
+            <button
+              type="button"
+              onClick={() => setCurrentIndex((prev) => (prev > 0 ? prev - 1 : count - 1))}
+              className="absolute left-2.5 top-1/2 -translate-y-1/2 rounded-full bg-black/70 hover:bg-black/90 text-white p-2 text-xs shadow-md transition-all backdrop-blur-xs"
+              aria-label="Previous image"
+            >
+              ◀
+            </button>
+            <button
+              type="button"
+              onClick={() => setCurrentIndex((prev) => (prev < count - 1 ? prev + 1 : 0))}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-full bg-black/70 hover:bg-black/90 text-white p-2 text-xs shadow-md transition-all backdrop-blur-xs"
+              aria-label="Next image"
+            >
+              ▶
+            </button>
+          </>
+        )}
+      </div>
+
+      {/* Dot Indicators */}
+      {!isSingle && (
+        <div className="flex items-center justify-center gap-1.5 py-1">
+          {candidates.map((_, idx) => (
+            <button
+              key={idx}
+              type="button"
+              onClick={() => setCurrentIndex(idx)}
+              className={`h-2 rounded-full transition-all ${
+                idx === currentIndex ? "w-6 bg-sx-accent" : "w-2 bg-sx-border-strong hover:bg-sx-text-subtle"
+              }`}
+              aria-label={`Go to image ${idx + 1}`}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* Selection Action Button */}
+      <div className="flex items-center justify-end pt-1">
+        {isSelected ? (
+          <div className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 px-3.5 py-1 text-xs font-bold text-emerald-400">
+            <span>✓</span> Selected for Draft
+          </div>
+        ) : (
+          <button
+            type="button"
+            disabled={selectingId === current.candidateId}
+            onClick={handleSelect}
+            className="h-9 px-4 rounded-sx-sm bg-sx-accent hover:bg-sx-accent/90 text-xs font-bold text-sx-accent-on transition-colors disabled:opacity-50"
+          >
+            {selectingId === current.candidateId ? "Selecting…" : "✓ Use this image"}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /**
- * Growth Assistant — real customer chat surface, StratXcel App reference
- * chrome. Same real data layer as before (useTenantAgentSession,
- * tenant-actions.ts) — only the presentation changed: a calm mobile-first
- * single-thread chat instead of the admin-shared saut-* three-pane
- * workspace, matching the approved "StratXcel Growth Assistant.dc.html"
- * reference screen-for-screen (Empty/Chat/Working/Draft/Publish/Multi/
- * Receipt/Error/Trust/History states).
- *
- * Deliberately NOT implemented: the reference's "Carousel" (multi-image
- * generation) state — generate_image is hard-blocked for tenant sessions
- * (lib/social/agent/tools.ts) and the reference itself labels that state
- * "Design preview · Image generation coming soon", so there is nothing
- * real to wire it to yet.
+ * Growth Assistant — real customer chat surface, StratXcel App reference chrome.
+ * Single-thread, mobile-first conversational AI with real image generation,
+ * candidate selection carousel, file ingestion, and publish approval gates.
  */
 export function GrowthAssistantChat({ tenantId, initialSessions }: { tenantId: string; initialSessions: AgentSessionRow[] }) {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [showHistory, setShowHistory] = useState(false);
   const [sessions, setSessions] = useState<AgentSessionRow[]>(initialSessions);
-  const { messages, pending, loadingHistory, blockedReason, failedReason, run, runEvents, send, approve, reject } = useTenantAgentSession(
-    tenantId,
-    sessionId,
-    setSessionId
-  );
+  const {
+    messages,
+    pending,
+    loadingHistory,
+    blockedReason,
+    failedReason,
+    run,
+    runEvents,
+    send,
+    approve,
+    reject,
+    selectCandidate,
+  } = useTenantAgentSession(tenantId, sessionId, setSessionId);
+
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // File upload state
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [uploadingAttachment, setUploadingAttachment] = useState(false);
+  const [attachmentPreviewUrl, setAttachmentPreviewUrl] = useState<string | null>(null);
+  const [uploadedAttachmentId, setUploadedAttachmentId] = useState<string | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
@@ -188,11 +323,61 @@ export function GrowthAssistantChat({ tenantId, initialSessions }: { tenantId: s
       .catch(() => undefined);
   }
 
+  // Handle local file selection and direct signed upload
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploadError(null);
+    setPendingFile(file);
+    const localUrl = URL.createObjectURL(file);
+    setAttachmentPreviewUrl(localUrl);
+
+    try {
+      setUploadingAttachment(true);
+      const prep = await prepareTenantAgentAttachmentAction(tenantId, sessionId || "new_session", {
+        name: file.name,
+        mimeType: file.type || "image/jpeg",
+        sizeBytes: file.size,
+      });
+
+      const uploadRes = await fetch(prep.signedUrl, {
+        method: "PUT",
+        headers: { "Content-Type": file.type || "application/octet-stream" },
+        body: file,
+      });
+
+      if (!uploadRes.ok) {
+        throw new Error("Failed to upload file to storage.");
+      }
+
+      const finalized = await finalizeTenantAgentAttachmentAction(tenantId, prep.attachment.id);
+      setUploadedAttachmentId(finalized.id);
+    } catch (err: any) {
+      setUploadError(err?.message || "Could not upload image. Please try again.");
+      setPendingFile(null);
+      setAttachmentPreviewUrl(null);
+    } finally {
+      setUploadingAttachment(false);
+    }
+  };
+
+  const clearAttachment = () => {
+    setPendingFile(null);
+    setAttachmentPreviewUrl(null);
+    setUploadedAttachmentId(null);
+    setUploadError(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
   function submit(text: string) {
     const value = text.trim();
-    if (!value) return;
-    send(value);
+    const attachmentId = uploadedAttachmentId;
+    if (!value && !attachmentId) return;
+
+    send(value, attachmentId ? [attachmentId] : undefined);
     setInput("");
+    clearAttachment();
   }
 
   const groups = useMemo(() => groupSessionsByRecency(sessions), [sessions]);
@@ -299,31 +484,60 @@ export function GrowthAssistantChat({ tenantId, initialSessions }: { tenantId: s
             </div>
           )}
 
-          <div className="flex flex-col gap-3">
+          {/* Messages */}
+          <div className="flex flex-col gap-3.5">
             {messages.map((message) => {
               const isUser = message.role === "user";
-              const proposedParts = message.parts.filter((p) => p.type === "proposed_actions" && p.actions?.length);
+              const proposedParts = message.parts.filter((p) => p.type === "proposed_actions");
               const receiptParts = message.parts.filter((p) => p.type === "publish_receipt");
+              const imageCandidateParts = message.parts.filter(
+                (p) => p.type === "image_candidates" || (p as any).candidates
+              );
+
               return (
                 <div key={message.id} className="flex flex-col gap-2">
-                  <div className={`flex items-start gap-2 ${isUser ? "justify-end" : ""}`}>
+                  <div className={`flex items-end gap-2 ${isUser ? "justify-end" : "justify-start"}`}>
                     {!isUser && <BotAvatar />}
                     <div
                       className={
                         isUser
-                          ? "max-w-[260px] rounded-[14px_4px_14px_14px] bg-sx-accent px-3 py-2.5 text-[14px] leading-relaxed text-sx-accent-on"
-                          : "max-w-[290px] rounded-[4px_14px_14px_14px] border border-sx-border bg-sx-surface-1 px-3 py-2.5"
+                          ? "max-w-[280px] sm:max-w-[340px] rounded-[14px_4px_14px_14px] bg-sx-accent px-3.5 py-2.5 text-[14px] leading-relaxed text-sx-accent-on"
+                          : "max-w-[300px] sm:max-w-[420px] rounded-[4px_14px_14px_14px] border border-sx-border bg-sx-surface-1 px-3.5 py-2.5 text-[14px] leading-relaxed"
                       }
                     >
                       {isUser ? message.content : <SxAgentMarkdown content={sanitizeUserFacingText(message.content)} />}
                     </div>
                   </div>
+
+                  {/* Generated Image Candidates Carousel */}
+                  {imageCandidateParts.map((part: any, pIdx) => {
+                    const rawCandidates = part.candidates || [];
+                    const normalizedCandidates: CandidateItem[] = rawCandidates.map((c: any) => ({
+                      candidateId: c.candidateId || c.id,
+                      storedAssetId: c.storedAssetId || c.asset_id,
+                      previewUrl: c.previewUrl,
+                      format: c.format || c.mime_type,
+                      status: c.status,
+                    }));
+
+                    return (
+                      <div key={pIdx} className="ml-9 max-w-md">
+                        <CandidateCarousel
+                          jobId={part.jobId || "gen_job"}
+                          candidates={normalizedCandidates}
+                          onSelectCandidate={selectCandidate}
+                        />
+                      </div>
+                    );
+                  })}
+
+                  {/* Proposed Publish Actions */}
                   {proposedParts.map((part, idx) => {
                     const actions = (part.actions ?? []) as { id: string; tool: string; input: Record<string, unknown> }[];
                     const publishActions = actions.filter((a) => PUBLISH_INTENT_TOOLS.has(a.tool));
                     const otherActions = actions.filter((a) => !PUBLISH_INTENT_TOOLS.has(a.tool));
                     return (
-                      <div key={idx} className="ml-9 flex flex-col gap-2">
+                      <div key={idx} className="ml-9 flex flex-col gap-2 max-w-md">
                         {publishActions.length === 1 && (
                           <PublishReviewCard action={publishActions[0]} tenantId={tenantId} onApprove={approve} onReject={reject} />
                         )}
@@ -343,64 +557,112 @@ export function GrowthAssistantChat({ tenantId, initialSessions }: { tenantId: s
                       </div>
                     );
                   })}
+
+                  {/* Receipts */}
                   {receiptParts.map((part, idx) => (
-                    <div key={idx} className="ml-9">
-                      <ReceiptCard receipt={part as { platform?: string; accountLabel?: string; permalink?: string; publishedAt?: string | null }} />
+                    <div key={idx} className="ml-9 max-w-md">
+                      <ReceiptCard receipt={part as never} />
                     </div>
                   ))}
                 </div>
               );
             })}
 
+            {/* In-progress run indicator */}
             {pending && (
               <div className="flex items-start gap-2">
                 <BotAvatar pulsing />
-                <div className="max-w-[280px] flex-1">
+                <div className="min-w-0 flex-1 max-w-md">
                   <WorkingIndicator run={run} runEvents={runEvents} />
                 </div>
               </div>
             )}
 
-            {(blockedReason || failedReason) && (
-              <div className="flex items-start gap-2">
-                <BotAvatar />
-                <div className="max-w-[290px] rounded-[4px_14px_14px_14px] border-[1.5px] border-sx-danger/20 bg-sx-danger/[0.04] px-3 py-2.5">
-                  <p className="text-[13px] font-semibold text-sx-danger">Something went wrong</p>
-                  <p className="mt-1 text-[13px] leading-relaxed text-sx-text-muted">{blockedReason || failedReason}</p>
-                </div>
+            {blockedReason && (
+              <div className="rounded-sx-md border border-sx-warning/30 bg-sx-warning/5 p-3 text-xs text-sx-warning">
+                {blockedReason}
+              </div>
+            )}
+            {failedReason && (
+              <div className="rounded-sx-md border border-sx-danger/30 bg-sx-danger/5 p-3 text-xs text-sx-danger">
+                {failedReason}
+              </div>
+            )}
+            {uploadError && (
+              <div className="rounded-sx-md border border-sx-danger/30 bg-sx-danger/5 p-3 text-xs text-sx-danger">
+                {uploadError}
               </div>
             )}
           </div>
         </div>
       )}
 
-      {/* Composer */}
+      {/* Input */}
       {!showHistory && (
-        <div className="shrink-0 border-t border-sx-border bg-sx-surface-1 px-4 py-3">
-          <div className="flex items-center gap-2">
+        <div className="shrink-0 border-t border-sx-border bg-sx-surface-1 p-3">
+          {/* Attachment preview chip */}
+          {attachmentPreviewUrl && (
+            <div className="mb-2 flex items-center gap-2 rounded-sx-sm bg-sx-surface-2 border border-sx-border p-2 max-w-sm">
+              <img src={attachmentPreviewUrl} alt="Preview" className="h-10 w-10 object-cover rounded-sx-xs bg-black/20" />
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-medium text-sx-text truncate">{pendingFile?.name}</p>
+                <p className="text-[10px] text-sx-text-muted">
+                  {uploadingAttachment ? "Uploading…" : "Ready to attach"}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={clearAttachment}
+                className="text-sx-text-muted hover:text-sx-text p-1 text-xs"
+              >
+                ✕
+              </button>
+            </div>
+          )}
+
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              submit(input);
+            }}
+            className="flex items-center gap-2"
+          >
             <input
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  submit(input);
-                }
-              }}
-              placeholder="Ask Growth Assistant…"
-              disabled={pending}
-              className="h-11 flex-1 rounded-sx-pill bg-sx-surface-2 px-4 text-[14px] text-sx-text placeholder:text-sx-text-subtle focus:outline-none"
+              type="file"
+              ref={fileInputRef}
+              onChange={handleFileSelect}
+              accept="image/png,image/jpeg,image/webp,video/mp4,application/pdf"
+              className="hidden"
             />
+
             <button
               type="button"
-              onClick={() => submit(input)}
-              disabled={pending || !input.trim()}
-              aria-label="Send message"
-              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-sx-accent text-white disabled:opacity-50"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={pending || uploadingAttachment}
+              title="Attach an image or photo"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-sx-sm border border-sx-border bg-sx-surface-2 text-sx-text-muted hover:text-sx-text disabled:opacity-40"
             >
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" /></svg>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8.5" cy="8.5" r="1.5" /><polyline points="21 15 16 10 5 21" /></svg>
             </button>
-          </div>
+
+            <input
+              type="text"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder="Ask anything about growing your business…"
+              disabled={pending}
+              className="h-10 flex-1 rounded-sx-sm border border-sx-border bg-sx-surface-2 px-3.5 text-[14px] text-sx-text placeholder:text-sx-text-subtle focus:border-sx-accent focus:outline-none"
+            />
+
+            <button
+              type="submit"
+              disabled={pending || uploadingAttachment || (!input.trim() && !uploadedAttachmentId)}
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-sx-sm bg-sx-accent text-sx-accent-on disabled:opacity-40"
+              aria-label="Send"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M5 12h14M12 5l7 7-7 7" /></svg>
+            </button>
+          </form>
         </div>
       )}
     </div>

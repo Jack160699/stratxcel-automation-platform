@@ -1,4 +1,6 @@
 import { requireOwnerContext } from "@/lib/social/db-context";
+import { requireAgentTenantContext } from "@/lib/social/agent-tenant-context";
+import type { AgentActorContext } from "@/lib/social/agent-tenant-types";
 import {
   finalizeMediaAsset,
   prepareMediaAsset,
@@ -7,9 +9,16 @@ import {
 
 export const runtime = "nodejs";
 
+async function resolveActorContext(request: Request, tenantIdFromBody?: string | null): Promise<AgentActorContext | { ok: false; error: string; status: number }> {
+  const url = new URL(request.url);
+  const tenantId = url.searchParams.get("tenantId") || tenantIdFromBody;
+  if (tenantId) {
+    return requireAgentTenantContext(tenantId);
+  }
+  return requireOwnerContext();
+}
+
 export async function POST(request: Request) {
-  const ctx = await requireOwnerContext();
-  if (!ctx.ok) return Response.json({ error: ctx.error }, { status: ctx.status });
   try {
     const body = await request.json() as {
       action?: unknown;
@@ -17,7 +26,11 @@ export async function POST(request: Request) {
       name?: unknown;
       mimeType?: unknown;
       sizeBytes?: unknown;
+      tenantId?: unknown;
     };
+    const ctx = await resolveActorContext(request, typeof body.tenantId === "string" ? body.tenantId : null);
+    if (!ctx.ok) return Response.json({ error: ctx.error }, { status: ctx.status });
+
     if (body.action === "finalize") {
       if (typeof body.assetId !== "string") throw new Error("Media asset id is required");
       return Response.json({ asset: await finalizeMediaAsset(ctx, body.assetId) });
@@ -38,7 +51,7 @@ export async function POST(request: Request) {
 }
 
 export async function DELETE(request: Request) {
-  const ctx = await requireOwnerContext();
+  const ctx = await resolveActorContext(request);
   if (!ctx.ok) return Response.json({ error: ctx.error }, { status: ctx.status });
   const id = new URL(request.url).searchParams.get("id");
   if (!id) return Response.json({ error: "Media asset id is required" }, { status: 400 });
