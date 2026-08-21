@@ -96,6 +96,12 @@ export default function IntegrationsPage() {
   const [otpError, setOtpError] = useState<string | null>(null);
   const [cooldownSeconds, setCooldownSeconds] = useState(0);
   const [whatsappSuccessMsg, setWhatsappSuccessMsg] = useState<string | null>(null);
+  // StratXcel App reference "Connect WhatsApp" flow — step indicator state.
+  // isFirstConnect gates the benefits intro (only shown before a number has
+  // ever been verified, not on "Update Number"); justVerified shows the
+  // reference's dedicated success screen instead of closing straight to a toast.
+  const [whatsappIsFirstConnect, setWhatsappIsFirstConnect] = useState(true);
+  const [whatsappJustVerified, setWhatsappJustVerified] = useState<string | null>(null);
 
   // Countdown timer for OTP resend cooldown
   useEffect(() => {
@@ -253,12 +259,10 @@ export default function IntegrationsPage() {
         return;
       }
       const verified = data.verifiedNumber || whatsappPhone;
-      setWhatsappModalOpen(false);
-      setOtpSent(false);
-      setWhatsappOtp("");
-      setWhatsappSuccessMsg(`✓ WhatsApp number ${verified} verified successfully!`);
+      // StratXcel App reference "Connect WhatsApp" step 2 — a dedicated
+      // success screen inside the modal, not an immediate close-to-toast.
+      setWhatsappJustVerified(verified);
       reloadStatus();
-      setTimeout(() => setWhatsappSuccessMsg(null), 5000);
     } catch {
       setOtpError("Network error verifying OTP. Please try again.");
     } finally {
@@ -430,6 +434,8 @@ export default function IntegrationsPage() {
                       className="w-full"
                       onClick={() => {
                         setWhatsappModalOpen(true);
+                        setWhatsappIsFirstConnect(card.state !== "connected");
+                        setWhatsappJustVerified(null);
                         setOtpSent(false);
                         setWhatsappOtp("");
                         setOtpError(null);
@@ -466,7 +472,7 @@ export default function IntegrationsPage() {
         </section>
       )}
 
-      {/* WhatsApp OTP Modal */}
+      {/* Connect WhatsApp — StratXcel App reference flow (step bar + benefits intro + digit OTP + success screen), same real OTP send/verify handlers throughout */}
       {whatsappModalOpen && (
         <div
           role="dialog"
@@ -474,35 +480,78 @@ export default function IntegrationsPage() {
           aria-labelledby="whatsapp-dialog-title"
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-xs"
         >
-          <div className="w-full max-w-md rounded-sx-lg border border-sx-border bg-sx-surface-1 p-6 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <PlatformIcon name="whatsapp" className="h-5 w-5" />
-                <h4 id="whatsapp-dialog-title" className="font-sx-sans text-base font-bold text-sx-text">
-                  Verify WhatsApp Number
-                </h4>
-              </div>
-              <button
-                type="button"
-                onClick={() => setWhatsappModalOpen(false)}
-                className="text-sx-text-muted hover:text-sx-text text-sm"
-              >
-                ✕
-              </button>
+          <div className="w-full max-w-md rounded-sx-lg border border-sx-border bg-sx-surface-1 p-6 shadow-2xl">
+            <div className="flex gap-1.5">
+              <span className="h-[3px] flex-1 rounded-full bg-sx-success" />
+              <span className={`h-[3px] flex-1 rounded-full transition-colors ${otpSent || whatsappJustVerified ? "bg-sx-success" : "bg-sx-border"}`} />
+              <span className={`h-[3px] flex-1 rounded-full transition-colors ${whatsappJustVerified ? "bg-sx-success" : "bg-sx-border"}`} />
             </div>
 
-            <p className="text-xs text-sx-text-muted">
-              We&rsquo;ll send a 6-digit verification code directly to your WhatsApp to verify your account.
-            </p>
+            {!whatsappJustVerified && (
+              <div className="mt-4 flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <PlatformIcon name="whatsapp" className="h-5 w-5" />
+                  <h4 id="whatsapp-dialog-title" className="font-sx-sans text-base font-bold text-sx-text">
+                    {otpSent ? "Enter OTP" : "Connect Your WhatsApp Number"}
+                  </h4>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setWhatsappModalOpen(false)}
+                  className="text-sx-text-muted hover:text-sx-text text-sm"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
 
             {otpError && (
-              <div className="rounded-sx-sm border border-sx-danger/30 bg-sx-danger/10 px-3 py-2 text-xs text-sx-danger">
+              <div className="mt-3 rounded-sx-sm border border-sx-danger/30 bg-sx-danger/10 px-3 py-2 text-xs text-sx-danger">
                 {otpError}
               </div>
             )}
 
-            {!otpSent ? (
-              <div className="space-y-4">
+            {whatsappJustVerified ? (
+              /* Step 2 — success, matching the reference's dedicated confirmation screen */
+              <div className="mt-6 text-center">
+                <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-sx-success/10">
+                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--sx-success)" strokeWidth="2"><path d="M20 6L9 17l-5-5" /></svg>
+                </div>
+                <p className="mt-4 text-lg font-bold text-sx-text">WhatsApp Connected!</p>
+                <p className="mt-1.5 text-sm leading-relaxed text-sx-text-muted">
+                  {whatsappJustVerified} is verified. You&rsquo;ll get instant lead notifications and audit alerts here.
+                </p>
+                <Button
+                  type="button"
+                  variant="primary"
+                  className="mt-5 w-full"
+                  onClick={() => {
+                    setWhatsappModalOpen(false);
+                    setOtpSent(false);
+                    setWhatsappOtp("");
+                    setWhatsappSuccessMsg(`✓ WhatsApp number ${whatsappJustVerified} verified successfully!`);
+                    setWhatsappJustVerified(null);
+                    setTimeout(() => setWhatsappSuccessMsg(null), 5000);
+                  }}
+                >
+                  Done
+                </Button>
+              </div>
+            ) : !otpSent ? (
+              /* Step 0 — benefits intro (first connect only) + real phone input */
+              <div className="mt-4 space-y-4">
+                {whatsappIsFirstConnect && (
+                  <div className="rounded-sx-md bg-sx-surface-2 p-3.5">
+                    <div className="flex flex-col gap-2">
+                      {["Instant customer enquiries & auto-replies", "Audit alerts delivered to your phone", "After-hours auto-reply support"].map((benefit) => (
+                        <div key={benefit} className="flex items-center gap-2">
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--sx-success)" strokeWidth="2" className="shrink-0"><path d="M20 6L9 17l-5-5" /></svg>
+                          <span className="text-[13px] text-sx-text">{benefit}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <div>
                   <label htmlFor="integrations-whatsapp-phone" className="block text-xs font-medium text-sx-text mb-1">
                     WhatsApp Phone Number
@@ -518,12 +567,7 @@ export default function IntegrationsPage() {
                 </div>
 
                 <div className="flex items-center justify-end gap-2.5 pt-2">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setWhatsappModalOpen(false)}
-                  >
+                  <Button type="button" variant="ghost" size="sm" onClick={() => setWhatsappModalOpen(false)}>
                     Cancel
                   </Button>
                   <Button
@@ -538,27 +582,35 @@ export default function IntegrationsPage() {
                 </div>
               </div>
             ) : (
-              <div className="space-y-4">
-                <div className="rounded-sx-sm bg-sx-success/10 border border-sx-success/20 p-2.5 text-xs text-sx-success">
-                  <p className="font-semibold">WhatsApp code sent to {whatsappPhone}</p>
-                  <p className="text-[11px] text-sx-success/80 mt-0.5">
-                    Tap <strong>Copy Code</strong> in your WhatsApp message, then paste the 6-digit code below.
-                  </p>
-                </div>
+              /* Step 1 — real OTP, shown as reference-style per-digit boxes */
+              <div className="mt-4 space-y-4">
+                <p className="text-center text-xs text-sx-text-muted">
+                  We sent a 6-digit code to {whatsappPhone}. Tap <strong>Copy Code</strong> in WhatsApp, then paste or type it below.
+                </p>
 
-                <div>
-                  <label htmlFor="integrations-whatsapp-otp" className="block text-xs font-medium text-sx-text mb-1">
-                    Enter 6-Digit Code
-                  </label>
+                <label htmlFor="integrations-whatsapp-otp" className="sr-only">Enter 6-Digit Code</label>
+                <div className="relative">
                   <input
                     id="integrations-whatsapp-otp"
                     value={whatsappOtp}
                     onChange={(e) => setWhatsappOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                    placeholder="123456"
                     autoFocus
+                    inputMode="numeric"
                     maxLength={6}
-                    className="w-full rounded-sx-sm border border-sx-border bg-sx-surface-2 p-3 text-center text-lg font-mono font-bold tracking-widest text-sx-text placeholder:text-sx-text-subtle focus:border-sx-accent focus:outline-none"
+                    className="absolute inset-0 h-[52px] w-full cursor-text opacity-0"
                   />
+                  <div className="flex justify-center gap-2.5" aria-hidden="true">
+                    {Array.from({ length: 6 }, (_, i) => whatsappOtp[i] ?? "").map((digit, i) => (
+                      <span
+                        key={i}
+                        className={`flex h-[52px] w-11 items-center justify-center rounded-sx-sm text-[22px] font-bold text-sx-text ${
+                          digit ? "border-2 border-sx-accent bg-sx-surface-2" : "border border-sx-border bg-sx-surface-2 text-sx-text-subtle"
+                        }`}
+                      >
+                        {digit || "_"}
+                      </span>
+                    ))}
+                  </div>
                 </div>
 
                 <div className="flex items-center justify-between text-xs">
@@ -584,12 +636,7 @@ export default function IntegrationsPage() {
                 </div>
 
                 <div className="flex items-center justify-end gap-2.5 pt-2">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setWhatsappModalOpen(false)}
-                  >
+                  <Button type="button" variant="ghost" size="sm" onClick={() => setWhatsappModalOpen(false)}>
                     Cancel
                   </Button>
                   <Button
@@ -599,7 +646,7 @@ export default function IntegrationsPage() {
                     onClick={handleVerifyWhatsappOtp}
                     disabled={otpLoading || whatsappOtp.length < 6}
                   >
-                    {otpLoading ? "Verifying…" : "Verify & Connect"}
+                    {otpLoading ? "Verifying…" : "Verify"}
                   </Button>
                 </div>
               </div>
