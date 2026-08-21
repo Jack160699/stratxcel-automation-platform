@@ -104,12 +104,21 @@ export interface OnboardingDraft {
 
 export const ONBOARDING_DRAFT_KEY = "stratxcel_onboarding_draft_v1";
 
+/**
+ * StratXcel Onboarding reference (Claude Design project
+ * 6c2ad0a0-c8c8-47d1-a79d-3a1b255a7b01, "StratXcel Onboarding.dc.html")
+ * — index-aligned with its own `step` state (0 = Welcome, no progress bar
+ * shown; 1-4 have labels + a visible progress bar). Connectors is no
+ * longer its own step — the reference reaches account-connection through
+ * an optional bottom sheet from the Brand step (and again from Review),
+ * not a dedicated full-screen step.
+ */
 export const ONBOARDING_STEP_LABELS = [
-  "Account",
-  "Connectors",
+  "Welcome",
   "Business",
-  "Goals",
-  "Review",
+  "Your Goals",
+  "Your Brand",
+  "Review & Launch",
 ] as const;
 
 /** Mandatory V1 connector order: Google Business -> Instagram -> Facebook -> YouTube -> WhatsApp Number */

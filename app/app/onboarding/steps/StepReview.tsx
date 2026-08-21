@@ -1,180 +1,114 @@
 "use client";
 
-import { Button } from "@/components/ui/Button";
 import { ErrorState } from "@/components/ui/Feedback";
-import { PlatformIcon } from "@/components/audit/PlatformIcon";
-import type { AccountInfo } from "./StepAccount";
 import type { OnboardingDraft, V1SocialPlatformKey } from "../types";
-import { V1_CONNECTORS } from "../types";
 
+/**
+ * StratXcel Onboarding reference step 4 (Review & Launch) — a summary the
+ * user can verify before the real launch happens. The Launch button
+ * itself lives in the wizard's shared footer (matching the reference's
+ * footerLaunch pattern), not in this component; this step only surfaces
+ * the real submit error when one occurs.
+ */
 export function StepReview({
-  account,
   draft,
-  submitting,
   error,
-  onSubmit,
+  onEditDetails,
+  onOpenConnector,
 }: {
-  account: AccountInfo;
   draft: OnboardingDraft;
-  submitting: boolean;
   error: string | null;
-  onSubmit: () => void;
+  onEditDetails: () => void;
+  onOpenConnector: () => void;
 }) {
   const businessName = draft.business.name || "My Business";
-  const website = draft.business.website?.trim();
-  const gbp = draft.business.googleMapsUrl?.trim();
-  const location = draft.business.location?.trim() || "Not specified";
   const industry = draft.business.industry?.trim() || "General Business";
-  const model = draft.business.businessModel || "B2B";
+  const location = draft.business.location?.trim() || "Not specified";
+  const goalLabels = draft.goals.length > 0 ? draft.goals.map((g) => g.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase())).join(", ") : "Not specified";
 
-  // Separate verified connections (OAuth / OTP verified) from public-profile-only channels, strictly filtering for V1 connectors
-  const verifiedChannels = (draft.account?.connections || []).filter(
-    (c) =>
-      V1_CONNECTORS.includes(c.platform as V1SocialPlatformKey) &&
-      c.status === "connected" &&
-      (c.connectionType === "oauth" || c.connectionType === "otp_verified")
-  );
-  const publicChannels = (draft.account?.connections || []).filter(
-    (c) =>
-      V1_CONNECTORS.includes(c.platform as V1SocialPlatformKey) &&
-      c.status === "connected" &&
-      c.connectionType === "public_profile"
-  );
-
-  const goals = draft.goals.length > 0
-    ? draft.goals.map((g) => g.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase()))
-    : ["Improve Google Visibility", "Capture WhatsApp Leads", "Stay Active on Social Media"];
+  const connectionFor = (key: V1SocialPlatformKey) =>
+    (draft.account?.connections || []).find(
+      (c) => c.platform === key && c.status === "connected" && (c.connectionType === "oauth" || c.connectionType === "otp_verified")
+    );
+  const googleConnected = Boolean(connectionFor("google_business"));
+  const waConnected = Boolean(connectionFor("whatsapp"));
 
   return (
-    <div className="flex flex-col gap-6 w-full">
-      <div>
-        <h3 className="font-sx-sans text-base font-semibold text-sx-text">Everything looks good?</h3>
-        <p className="font-sx-sans text-xs text-sx-text-muted mt-1">
-          Review your verified details below. We&rsquo;ll use this snapshot to start your free business audit.
-        </p>
-      </div>
+    <div className="flex w-full flex-col gap-1">
+      <h2 className="font-sx-sans text-xl font-bold text-sx-text">Almost ready!</h2>
+      <p className="mb-5 text-sm leading-relaxed text-sx-text-muted">Check your details before we run your free audit.</p>
 
-      {error && <ErrorState message={error} />}
+      {error && <div className="mb-3"><ErrorState message={error} /></div>}
 
-      <div className="flex flex-col gap-4">
-        {/* 1. Account & Connected Channels */}
-        <div className="rounded-sx-md border border-sx-border bg-sx-surface-2/60 p-4 space-y-3">
-          <div className="flex items-center justify-between border-b border-sx-border/60 pb-2.5">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-sx-text-subtle">
-              Account & Channels
-            </span>
-            <span className="text-xs text-sx-success font-medium flex items-center gap-1">
-              <span>✓</span> Authenticated
-            </span>
+      <div className="flex flex-col gap-3">
+        {/* Business summary */}
+        <div className="rounded-sx-lg border border-sx-border bg-sx-surface-1 p-4">
+          <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.06em] text-sx-text-subtle">Your Business</p>
+          <div className="flex flex-col gap-2.5">
+            <SummaryRow label="Name" value={businessName} />
+            <SummaryRow label="Category" value={industry} />
+            <SummaryRow label="Location" value={location} />
+            <SummaryRow label="Goals" value={goalLabels} />
           </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-            <div>
-              <span className="text-sx-text-subtle block">StratXcel Account</span>
-              <span className="font-medium text-sx-text">{account.displayName} ({account.email})</span>
-            </div>
-            <div className="space-y-2">
-              <span className="text-sx-text-subtle block">YOUR AUDIT DATA</span>
-              {verifiedChannels.length > 0 ? (
-                <div className="flex flex-wrap items-center gap-2">
-                  {verifiedChannels.map((c) => (
-                    <span
-                      key={c.platform}
-                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-sx-sm bg-sx-success/10 border border-sx-success/20 text-[11px] font-medium text-sx-success"
-                    >
-                      <PlatformIcon name={c.platform} className="h-3 w-3" />
-                      <span>✓ {c.displayName || c.handle || c.platform}</span>
-                      {c.providerLabel && <span className="text-sx-success/60">via {c.providerLabel}</span>}
-                    </span>
-                  ))}
-                </div>
-              ) : (
-                <span className="text-sx-text-muted italic">No OAuth accounts connected (public web discovery active)</span>
-              )}
-              {publicChannels.length > 0 && (
-                <div className="flex flex-wrap items-center gap-2 mt-1">
-                  {publicChannels.map((c) => (
-                    <span
-                      key={c.platform}
-                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-sx-sm bg-sx-warning/5 border border-sx-warning/20 text-[11px] font-medium text-sx-warning"
-                    >
-                      <PlatformIcon name={c.platform} className="h-3 w-3" />
-                      <span>○ {c.displayName || c.handle || c.platform} (Found publicly)</span>
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
+          <div className="mt-3 flex justify-end border-t border-sx-border pt-2.5">
+            <button type="button" onClick={onEditDetails} className="text-[13px] font-semibold text-sx-accent">
+              Edit details
+            </button>
           </div>
         </div>
 
-        {/* 2. Business Profile */}
-        <div className="rounded-sx-md border border-sx-border bg-sx-surface-2/60 p-4 space-y-3">
-          <div className="flex items-center justify-between border-b border-sx-border/60 pb-2.5">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-sx-text-subtle">
-              Business Identity
-            </span>
-            <span className="font-bold text-xs text-sx-text">{businessName}</span>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-            <div>
-              <span className="text-sx-text-subtle block">Website</span>
-              <span className="font-mono text-sx-text font-medium break-all">
-                {website || "Not connected"}
-              </span>
-            </div>
-            <div>
-              <span className="text-sx-text-subtle block">Google Maps / Business Profile</span>
-              <span className="font-medium text-sx-text">
-                {gbp ? "✓ Profile connected" : "Not connected"}
-              </span>
-            </div>
-            <div>
-              <span className="text-sx-text-subtle block">Operating Location</span>
-              <span className="font-medium text-sx-text">{location}</span>
-            </div>
-            <div>
-              <span className="text-sx-text-subtle block">Industry & Model</span>
-              <span className="font-medium text-sx-text">{industry} ({model})</span>
-            </div>
-          </div>
+        {/* Connected accounts */}
+        <div className="rounded-sx-lg border border-sx-border bg-sx-surface-1 p-4">
+          <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.06em] text-sx-text-subtle">Connected Accounts</p>
+          <ConnStatusRow label="Google Business" connected={googleConnected} />
+          <ConnStatusRow label="WhatsApp Number" connected={waConnected} last />
+          <button
+            type="button"
+            onClick={onOpenConnector}
+            className="mt-2.5 flex h-9 w-full items-center justify-center gap-1.5 rounded-sx-sm border-[1.5px] border-sx-accent/25 text-[13px] font-semibold text-sx-accent"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 5v14M5 12h14" /></svg>
+            Connect accounts
+          </button>
         </div>
 
-        {/* 3. Focus Goals */}
-        <div className="rounded-sx-md border border-sx-border bg-sx-surface-2/60 p-4 space-y-2.5">
-          <span className="text-[11px] font-bold uppercase tracking-wider text-sx-text-subtle block">
-            Focus Priorities
-          </span>
-          <div className="flex flex-wrap gap-2">
-            {goals.map((g) => (
-              <span
-                key={g}
-                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-sx-accent/15 border border-sx-accent/30 text-xs font-semibold text-sx-accent"
-              >
-                <span>✓</span> {g}
-              </span>
+        {/* What happens next */}
+        <div className="rounded-sx-lg border-[1.5px] border-sx-accent/15 bg-sx-accent-muted p-4">
+          <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-sx-accent">What happens when you launch</p>
+          <div className="flex flex-col gap-1.5">
+            {[
+              "We create your StratXcel workspace and save your profile",
+              "Your connected channels are linked and ready",
+              "Your free business health audit begins immediately",
+            ].map((line) => (
+              <div key={line} className="flex items-center gap-2">
+                <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-sx-accent" />
+                <p className="text-[13px] leading-relaxed text-sx-text-muted">{line}</p>
+              </div>
             ))}
           </div>
         </div>
       </div>
+    </div>
+  );
+}
 
-      {/* Action Footer */}
-      <div className="flex flex-col items-center gap-3 pt-3">
-        <Button
-          type="button"
-          variant="primary"
-          size="touch"
-          onClick={onSubmit}
-          disabled={submitting}
-          className="w-full sm:w-auto min-h-12 px-8 text-sm font-bold shadow-md"
-        >
-          {submitting ? "Starting Your Free Audit…" : "GET MY FREE AUDIT →"}
-        </Button>
-        <p className="text-center text-xs text-sx-text-muted">
-          Your information will be used to research your business and prepare your free audit.
-        </p>
-      </div>
+function SummaryRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-start justify-between gap-3">
+      <span className="shrink-0 text-[13px] text-sx-text-subtle">{label}</span>
+      <span className="text-right text-[14px] font-semibold text-sx-text">{value}</span>
+    </div>
+  );
+}
+
+function ConnStatusRow({ label, connected, last = false }: { label: string; connected: boolean; last?: boolean }) {
+  return (
+    <div className={`flex items-center justify-between py-2 ${last ? "" : "border-b border-sx-border"}`}>
+      <span className="text-[14px] text-sx-text">{label}</span>
+      <span className={`text-xs font-semibold ${connected ? "text-sx-success" : "text-sx-text-subtle"}`}>
+        {connected ? "Connected ✓" : "Not connected"}
+      </span>
     </div>
   );
 }

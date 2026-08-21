@@ -1,6 +1,6 @@
 "use client";
 
-import { useId } from "react";
+import { useId, useState } from "react";
 import { Input } from "@/components/ui/Input";
 import { FormField } from "../FormField";
 import { validateAndNormalizeGoogleMapsInput } from "@/lib/identity/google-maps-normalizer";
@@ -22,229 +22,194 @@ const INDUSTRY_OPTIONS = [
   "General Business",
 ];
 
-const MODEL_OPTIONS = [
-  { value: "B2B", label: "B2B (Selling to other businesses)" },
-  { value: "B2C_LOCAL", label: "Local Storefront / Clinic / Dining (Walk-ins & local customers)" },
-  { value: "SERVICE_AGENCY", label: "Service Provider / Agency (Appointments & custom projects)" },
-  { value: "ONLINE_ECOMMERCE", label: "Online E-commerce / D2C (Nationwide / global shipping)" },
-];
+export type DiscoveryState = "idle" | "running" | "done" | "failed";
 
+/**
+ * StratXcel Onboarding reference step 1 (Business) — real business fields
+ * plus a real, user-triggered discovery affordance (not auto-fired on
+ * Continue like the previous implementation): "Find my business info
+ * automatically" calls the real /api/platform/site-discovery/resolve
+ * synthesis, shown as an honest idle → running → done/failed sequence. The
+ * "done" summary shows only fields the real synthesis actually returns
+ * (name/category/location) — no fabricated rating or review count, unlike
+ * the reference's illustrative mockup data.
+ */
 export function StepBusiness({
   draft,
   update,
   errors = {},
-  isSynthesizing = false,
+  discoveryState,
+  onStartDiscovery,
+  onResetDiscovery,
+  errorField,
 }: {
   draft: OnboardingDraft;
   update: (patch: Partial<OnboardingDraft["business"]>) => void;
   errors?: { name?: string };
-  isSynthesizing?: boolean;
+  discoveryState: DiscoveryState;
+  onStartDiscovery: (websiteInput: string, gbpInput: string) => void;
+  onResetDiscovery: () => void;
+  errorField?: string | null;
 }) {
   const nameId = useId();
-  const websiteId = useId();
-  const googleMapsId = useId();
-  const locationId = useId();
   const industryId = useId();
-  const modelId = useId();
-  const servicesId = useId();
+  const locationId = useId();
+  const linkId = useId();
 
-  const hasIntelligence = Boolean(
-    draft.business.name ||
-    draft.business.location ||
-    draft.business.industry ||
-    draft.business.website ||
-    draft.business.googleMapsUrl
-  );
+  const [linkValue, setLinkValue] = useState(draft.business.website || draft.business.googleMapsUrl || "");
+  const [linkError, setLinkError] = useState<string | null>(null);
 
-  function handleGbpChange(val: string) {
-    const trimmed = val.trim();
+  function classifyAndStoreLink(value: string) {
+    const trimmed = value.trim();
     if (!trimmed) {
-      update({ googleMapsUrl: "" });
+      update({ website: "", googleMapsUrl: "" });
       return;
     }
-    const norm = validateAndNormalizeGoogleMapsInput(trimmed);
-    const cleanUrl = norm.success ? norm.data.canonicalUrl : val;
-    const placeName = norm.success ? norm.data.placeName : undefined;
-    update({
-      googleMapsUrl: cleanUrl,
-      name: !draft.business.name && placeName ? placeName : draft.business.name,
-    });
-  }
-
-  function handleWebsiteBlur(val: string) {
-    const trimmed = val.trim();
-    if (!trimmed) return;
-    const norm = normalizeWebsiteUrl(trimmed);
-    if (norm.ok && norm.url) {
-      update({ website: norm.url });
+    const mapsResult = validateAndNormalizeGoogleMapsInput(trimmed);
+    if (mapsResult.success) {
+      update({
+        googleMapsUrl: mapsResult.data.canonicalUrl,
+        website: "",
+        name: !draft.business.name && mapsResult.data.placeName ? mapsResult.data.placeName : draft.business.name,
+      });
+      setLinkError(null);
+      return;
     }
+    const websiteResult = normalizeWebsiteUrl(trimmed);
+    if (websiteResult.ok && websiteResult.url) {
+      update({ website: websiteResult.url, googleMapsUrl: "" });
+      setLinkError(null);
+      return;
+    }
+    // Neither a recognizable Maps link nor a valid website — keep the raw
+    // text as a website candidate (non-blocking; this field is optional)
+    // rather than reject input the user might still complete typing.
+    update({ website: trimmed, googleMapsUrl: "" });
   }
 
   return (
-    <div className="flex flex-col gap-5 w-full">
-      <div>
-        <h3 className="font-sx-sans text-base font-semibold text-sx-text">Your business</h3>
-        <p className="font-sx-sans text-xs text-sx-text-muted mt-1">
-          We found most of this information for you. Check anything that looks wrong.
-        </p>
-      </div>
+    <div className="flex w-full flex-col gap-1">
+      <h2 className="font-sx-sans text-xl font-bold text-sx-text">Tell us about your business</h2>
+      <p className="mb-5 text-sm leading-relaxed text-sx-text-muted">We&rsquo;ll use this to set up your profile and find you online.</p>
 
-      {/* Intelligence Status Banner */}
-      {isSynthesizing ? (
-        <div className="flex items-center gap-2 rounded-sx-md bg-sx-accent/10 border border-sx-accent/20 px-3.5 py-2.5 text-xs text-sx-accent font-medium animate-pulse">
-          <span className="h-2 w-2 rounded-full bg-sx-accent animate-ping" />
-          <span>Analyzing your business signals in the background…</span>
-        </div>
-      ) : hasIntelligence ? (
-        <div className="flex items-center gap-2 rounded-sx-md bg-sx-success/10 border border-sx-success/20 px-3.5 py-2.5 text-xs text-sx-success font-medium">
-          <span>✓</span>
-          <span>Business signals analyzed. Relevant details pre-filled for your review.</span>
-        </div>
-      ) : null}
+      <div className="flex flex-col gap-3.5">
+        <FormField label="Business name" htmlFor={nameId} error={errors.name}>
+          <Input
+            id={nameId}
+            value={draft.business.name}
+            onChange={(e) => update({ name: e.target.value })}
+            placeholder="e.g. Patel Daily Needs"
+            className="h-[46px]"
+            aria-invalid={Boolean(errors.name)}
+            aria-describedby={errors.name ? `${nameId}-error` : undefined}
+            required
+          />
+        </FormField>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        {/* 1. Business Name */}
-        <div className="sm:col-span-2">
-          <FormField
-            label="Business Name"
-            htmlFor={nameId}
-            error={errors.name}
-            hint="The public name of your company, clinic, or store."
+        <FormField label="Type of business" htmlFor={industryId}>
+          <select
+            id={industryId}
+            value={draft.business.industry}
+            onChange={(e) => update({ industry: e.target.value })}
+            className="h-[46px] w-full rounded-sx-sm border border-sx-border bg-sx-surface-2 px-3 text-[15px] text-sx-text focus:border-sx-accent focus:outline-none"
           >
-            <Input
-              id={nameId}
-              value={draft.business.name}
-              onChange={(e) => update({ name: e.target.value })}
-              placeholder="e.g. StratXcel Solutions"
-              className="h-11"
-              aria-invalid={Boolean(errors.name)}
-              aria-describedby={errors.name ? `${nameId}-error` : undefined}
-              required
-            />
-          </FormField>
-        </div>
+            <option value="">Select…</option>
+            {INDUSTRY_OPTIONS.map((opt) => (
+              <option key={opt} value={opt}>
+                {opt}
+              </option>
+            ))}
+          </select>
+        </FormField>
 
-        {/* 2. Industry / Category */}
-        <div>
-          <FormField
-            label="Industry / Category"
-            htmlFor={industryId}
-            hint="Select the closest industry for audit benchmarks."
+        <FormField label="City & area" htmlFor={locationId}>
+          <Input
+            id={locationId}
+            value={draft.business.location}
+            onChange={(e) => update({ location: e.target.value })}
+            placeholder="e.g. Navrangpura, Ahmedabad"
+            className="h-[46px]"
+          />
+        </FormField>
+
+        <FormField label="Website or Google Maps link" htmlFor={linkId} error={linkError ?? undefined} optional>
+          <Input
+            id={linkId}
+            value={linkValue}
+            onChange={(e) => setLinkValue(e.target.value)}
+            onBlur={(e) => classifyAndStoreLink(e.target.value)}
+            placeholder="https://maps.google.com or your website…"
+            className="h-[46px] font-mono text-sm"
+          />
+        </FormField>
+
+        {discoveryState === "idle" && (
+          <button
+            type="button"
+            onClick={() => onStartDiscovery(draft.business.website, draft.business.googleMapsUrl ?? "")}
+            disabled={!draft.business.website && !draft.business.googleMapsUrl}
+            className="flex h-[46px] items-center justify-center gap-2 rounded-sx-md border-[1.5px] border-dashed border-sx-accent/30 bg-sx-accent-muted text-[14px] font-semibold text-sx-accent disabled:opacity-40"
           >
-            <select
-              id={industryId}
-              value={draft.business.industry}
-              onChange={(e) => update({ industry: e.target.value })}
-              className="h-11 w-full rounded-sx-sm border border-sx-border bg-sx-surface-2 px-3 text-sm text-sx-text focus:border-sx-accent focus:outline-hidden"
-            >
-              <option value="">Select an industry…</option>
-              {INDUSTRY_OPTIONS.map((opt) => (
-                <option key={opt} value={opt}>
-                  {opt}
-                </option>
-              ))}
-            </select>
-          </FormField>
-        </div>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8" /><path d="M21 21l-4.35-4.35" /></svg>
+            Find my business info automatically
+          </button>
+        )}
 
-        {/* 3. Location / Operating City */}
-        <div>
-          <FormField
-            label="Location / Operating City"
-            htmlFor={locationId}
-            hint="Where your primary customers or storefront are located."
-          >
-            <Input
-              id={locationId}
-              value={draft.business.location}
-              onChange={(e) => update({ location: e.target.value })}
-              placeholder="e.g. Bhilai, Chhattisgarh, India"
-              className="h-11"
-            />
-          </FormField>
-        </div>
-
-        {/* 4. Canonical Website (Pre-filled from Step 1) */}
-        <div>
-          <FormField
-            label="Website"
-            htmlFor={websiteId}
-            hint="Pre-filled from Step 1. Edit if you need to make corrections."
-          >
-            <Input
-              id={websiteId}
-              type="text"
-              value={draft.business.website}
-              onChange={(e) => update({ website: e.target.value })}
-              onBlur={(e) => handleWebsiteBlur(e.target.value)}
-              placeholder="https://example.com"
-              className="h-11 font-mono text-sm"
-            />
-          </FormField>
-        </div>
-
-        {/* 5. Google Maps / Google Business Profile (Pre-filled from Step 1) */}
-        <div>
-          <FormField
-            label="Google Maps / Business Profile"
-            htmlFor={googleMapsId}
-            hint="Pre-filled from Step 1. Connected to your Google profile."
-          >
-            <Input
-              id={googleMapsId}
-              type="text"
-              value={draft.business.googleMapsUrl ?? ""}
-              onChange={(e) => handleGbpChange(e.target.value)}
-              placeholder="https://maps.app.goo.gl/..."
-              className="h-11 font-mono text-sm"
-            />
-          </FormField>
-        </div>
-
-        {/* 6. Business Model / Operating Type */}
-        <div className="sm:col-span-2">
-          <FormField
-            label="Business Model"
-            htmlFor={modelId}
-            hint="Helps StratXcel tailor customer journey and audit benchmarks."
-          >
-            <select
-              id={modelId}
-              value={draft.business.businessModel ?? "B2B"}
-              onChange={(e) => update({ businessModel: e.target.value })}
-              className="h-11 w-full rounded-sx-sm border border-sx-border bg-sx-surface-2 px-3 text-sm text-sx-text focus:border-sx-accent focus:outline-hidden"
-            >
-              {MODEL_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-          </FormField>
-        </div>
-
-        {/* 7. Key Services / Offerings (if discovered) */}
-        {draft.business.services && draft.business.services.length > 0 && (
-          <div className="sm:col-span-2">
-            <FormField
-              label="Discovered Services / Offerings"
-              htmlFor={servicesId}
-              hint="Key services extracted from your website and profile signals."
-            >
-              <div className="flex flex-wrap gap-2 pt-1">
-                {draft.business.services.map((svc, idx) => (
-                  <span
-                    key={idx}
-                    className="inline-flex items-center px-2.5 py-1 rounded-sx-sm bg-sx-surface-2 border border-sx-border text-xs text-sx-text font-medium"
-                  >
-                    ✓ {svc}
-                  </span>
-                ))}
+        {discoveryState === "running" && (
+          <div className="relative overflow-hidden rounded-sx-md border-[1.5px] border-sx-accent/20 bg-sx-surface-1 p-3.5">
+            <div className="flex items-center gap-2.5">
+              <span className="h-8 w-8 shrink-0 animate-spin rounded-full border-[2.5px] border-sx-border-strong border-t-sx-accent" />
+              <div>
+                <p className="text-[14px] font-semibold text-sx-text">Scanning your business online…</p>
+                <p className="mt-0.5 text-xs text-sx-text-subtle">Checking Google, Maps, and your website</p>
               </div>
-            </FormField>
+            </div>
+          </div>
+        )}
+
+        {discoveryState === "done" && (
+          <div className="rounded-sx-md border-[1.5px] border-sx-success/20 bg-sx-success/[0.04] p-3.5">
+            <div className="mb-3 flex items-center gap-2">
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-sx-sm bg-sx-success/10">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--sx-success)" strokeWidth="2.5"><path d="M20 6L9 17l-5-5" /></svg>
+              </span>
+              <p className="text-[14px] font-semibold text-sx-success">Found your business!</p>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              {draft.business.name && <SummaryRow label="Name" value={draft.business.name} />}
+              {draft.business.industry && <SummaryRow label="Category" value={draft.business.industry} />}
+              {draft.business.location && <SummaryRow label="Location" value={draft.business.location} />}
+            </div>
+            <p className="mt-2.5 text-xs text-sx-text-muted">Anything incorrect? You can update it above.</p>
+          </div>
+        )}
+
+        {discoveryState === "failed" && (
+          <div className="rounded-sx-md border-[1.5px] border-sx-warning/20 bg-sx-warning/[0.04] p-3.5">
+            <div className="mb-2 flex items-center gap-2">
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-sx-sm bg-sx-warning/10">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--sx-warning)" strokeWidth="2"><path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4.5c-.77-.833-2.694-.833-3.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z" /></svg>
+              </span>
+              <p className="text-[14px] font-semibold text-sx-warning">Couldn&rsquo;t find your business automatically</p>
+            </div>
+            <p className="text-[13px] leading-relaxed text-sx-text-muted">
+              {errorField || "That's fine — just fill in your details manually and we'll set everything up for you. You can add your Google Business link later."}
+            </p>
+            <button type="button" onClick={onResetDiscovery} className="mt-2.5 text-[13px] font-semibold text-sx-accent">
+              Try again with a different link →
+            </button>
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function SummaryRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex justify-between gap-3">
+      <span className="text-xs text-sx-text-subtle">{label}</span>
+      <span className="text-[13px] font-semibold text-sx-text">{value}</span>
     </div>
   );
 }

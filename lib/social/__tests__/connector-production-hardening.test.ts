@@ -31,7 +31,7 @@ function run() {
   process.env.META_APP_ID = process.env.META_APP_ID || "test-facebook-app-id";
   process.env.META_APP_SECRET = process.env.META_APP_SECRET || "test-facebook-app-secret";
 
-  const stepConnectors = read("app", "app", "onboarding", "steps", "StepConnectors.tsx");
+  const connectorSheet = read("app", "app", "onboarding", "ConnectorSheet.tsx");
   const platformIcon = read("components", "audit", "PlatformIcon.tsx");
   const adminPlatformIcon = read("app", "admin", "(shell)", "social", "components", "PlatformIcon.tsx");
   const connectRoute = read("app", "api", "social", "oauth", "[provider]", "connect", "route.ts");
@@ -50,12 +50,15 @@ function run() {
     "youtube",
     "whatsapp",
   ];
-  const matches = [...stepConnectors.matchAll(/data-platform="([a-z_]+)"/g)].map((m) => m[1]);
-  assert.equal(matches.length, 7, `StepConnectors must contain exactly 7 cards (found: ${matches.length})`);
+  // ConnectorSheet groups rows by real usage (Primary Channels / Social /
+  // Analytics) rather than the array's literal sequence — a set check, not
+  // a positional one; see v1-customer-boundaries.test.ts for the same reasoning.
+  const matches = [...connectorSheet.matchAll(/key:\s*"([a-z_]+)"/g)].map((m) => m[1]);
+  assert.equal(matches.length, 7, `ConnectorSheet must contain exactly 7 rows (found: ${matches.length})`);
   assert.deepEqual(
-    matches,
-    expectedOrder,
-    `Connectors must appear in mandatory V1 order: ${expectedOrder.join(" -> ")}`
+    [...matches].sort(),
+    [...expectedOrder].sort(),
+    `ConnectorSheet must offer exactly the mandatory V1 connectors: ${expectedOrder.join(", ")}`
   );
 
   // Inactive in V1: X, Threads, LinkedIn
@@ -65,7 +68,7 @@ function run() {
 
   // Google Business must NOT offer "Continue with Google"
   assert.equal(
-    stepConnectors.includes("Continue with Google"),
+    connectorSheet.includes("Continue with Google"),
     false,
     "Google Business must NOT say 'Continue with Google'"
   );

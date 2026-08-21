@@ -1,10 +1,14 @@
 // Run with: node --experimental-strip-types app/app/onboarding/__tests__/onboarding-wizard.test.ts
 //
-// Source-level regression guard for the structured client onboarding wizard
-// (branch feat/stratxcel-core-product-experience). Asserts against source,
-// same reasoning as lib/rbac/__tests__/client-app-shell.test.ts: these are
-// Server Components / client components wired to next/headers and browser
-// APIs that only resolve inside a real Next.js request scope.
+// Source-level regression guard for the structured client onboarding wizard,
+// rebuilt to the approved "StratXcel Onboarding.dc.html" reference (Claude
+// Design project 6c2ad0a0-c8c8-47d1-a79d-3a1b255a7b01): Welcome -> Business
+// -> Your Goals -> Your Brand -> Review & Launch, with account connections
+// moved out of a dedicated step into an optional ConnectorSheet reachable
+// from Brand and Review. Same reasoning as lib/rbac/__tests__/
+// client-app-shell.test.ts: these are Server Components / client components
+// wired to next/headers and browser APIs that only resolve inside a real
+// Next.js request scope.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
@@ -20,10 +24,12 @@ function run() {
   const wizard = read("app", "app", "onboarding", "OnboardingWizard.tsx");
   const route = read("app", "api", "platform", "onboarding", "route.ts");
   const types = read("app", "app", "onboarding", "types.ts");
-  const stepAccount = read("app", "app", "onboarding", "steps", "StepAccount.tsx");
-  const stepConnectors = read("app", "app", "onboarding", "steps", "StepConnectors.tsx");
+  const stepWelcome = read("app", "app", "onboarding", "steps", "StepWelcome.tsx");
   const stepBusiness = read("app", "app", "onboarding", "steps", "StepBusiness.tsx");
+  const stepGoals = read("app", "app", "onboarding", "steps", "StepGoals.tsx");
+  const stepBrand = read("app", "app", "onboarding", "steps", "StepBrand.tsx");
   const stepReview = read("app", "app", "onboarding", "steps", "StepReview.tsx");
+  const connectorSheet = read("app", "app", "onboarding", "ConnectorSheet.tsx");
 
   // --- 1. Onboarding only appears for zero-membership users, unchanged gate --
   assert.ok(layout.includes('identity.state === "NEW_CUSTOMER"') && /<OnboardingPanel[\s/>]/.test(layout), "layout.tsx must gate onboarding on the canonical NEW_CUSTOMER state");
@@ -36,10 +42,12 @@ function run() {
   // --- 3. No raw tenant UUID input anywhere in the wizard --------------------
   for (const [name, source] of [
     ["OnboardingWizard.tsx", wizard],
-    ["StepAccount.tsx", stepAccount],
-    ["StepConnectors.tsx", stepConnectors],
+    ["StepWelcome.tsx", stepWelcome],
     ["StepBusiness.tsx", stepBusiness],
+    ["StepGoals.tsx", stepGoals],
+    ["StepBrand.tsx", stepBrand],
     ["StepReview.tsx", stepReview],
+    ["ConnectorSheet.tsx", connectorSheet],
   ] as const) {
     assert.equal(/name=["']tenantId["']|<input[^>]*tenant\.id/i.test(source), false, `${name} must never expose a raw tenant UUID as user input`);
   }
@@ -55,10 +63,12 @@ function run() {
   // --- 6. No service-role key enters browser code ----------------------------
   const clientFiles = [
     ["OnboardingWizard.tsx", wizard],
-    ["StepAccount.tsx", stepAccount],
-    ["StepConnectors.tsx", stepConnectors],
+    ["StepWelcome.tsx", stepWelcome],
     ["StepBusiness.tsx", stepBusiness],
+    ["StepGoals.tsx", stepGoals],
+    ["StepBrand.tsx", stepBrand],
     ["StepReview.tsx", stepReview],
+    ["ConnectorSheet.tsx", connectorSheet],
     ["OnboardingPanel.tsx", onboardingPanel],
   ] as const;
   for (const [name, source] of clientFiles) {
@@ -70,16 +80,23 @@ function run() {
   assert.ok(route.includes('from "@stratxcel/brand-brain"'), "must import the real Brand Brain package");
   assert.ok(route.includes("saveBrandBrainVersion("), "must write through saveBrandBrainVersion(), the existing versioned repository function");
 
-  // --- 8. Canonical 5-step sequence (Brand removed from wizard) -----------------
-  assert.ok(types.includes('"Account"') && types.includes('"Connectors"') && types.includes('"Business"') && types.includes('"Goals"') && types.includes('"Review"'), "types.ts must define the 5-step sequence");
-  assert.equal(types.includes('"Brand"'), false, "types.ts must NOT include Brand in the customer-facing ONBOARDING_STEP_LABELS");
-  assert.ok(/Website \/ Domain/.test(stepAccount), "StepAccount must render Website input");
-  assert.ok(/Google Maps/.test(stepAccount), "StepAccount must render Google Maps input");
-  assert.equal(/PlatformIcon/.test(stepAccount), false, "StepAccount must NOT render social connectors");
-  assert.ok(/Your business/.test(stepBusiness), "StepBusiness must render clean business headline");
+  // --- 8. Canonical reference 5-step sequence (Welcome now included, Brand now real) --
+  assert.ok(
+    types.includes('"Welcome"') && types.includes('"Business"') && types.includes('"Your Goals"') && types.includes('"Your Brand"') && types.includes('"Review & Launch"'),
+    "types.ts must define the reference's 5-step sequence"
+  );
+  assert.equal(/isStep0.*isStep1.*isStep2.*isStep3.*isStep4/s.test(wizard) || /step === 0/.test(wizard), true, "wizard must use the reference's own 0-4 step numbering");
+  assert.ok(/Website or Google Maps link/.test(stepBusiness), "StepBusiness must render the reference's single combined website/Maps link field");
   assert.equal(/Workspace Slug/i.test(stepBusiness), false, "StepBusiness must NEVER show workspace slug in UI");
-  assert.ok(/Business Identity/.test(stepReview), "StepReview must render Business Identity section");
-  assert.ok(/GET MY FREE AUDIT →/.test(stepReview), "StepReview must render the canonical CTA 'GET MY FREE AUDIT →'");
+  assert.ok(/Tell us about your business/.test(stepBusiness), "StepBusiness must render the reference's headline");
+  assert.ok(/Your Business/.test(stepReview), "StepReview must render a Your Business summary section");
+  assert.ok(/Connected Accounts/.test(stepReview), "StepReview must render a Connected Accounts summary section");
+
+  // --- 8b. Brand step must be real and must never fabricate content ----------
+  assert.ok(/What do you sell or offer/.test(stepBrand), "StepBrand must render the reference's real 'what do you sell' question");
+  assert.ok(/Anything StratXcel should avoid saying/.test(stepBrand), "StepBrand must render the reference's real restrictions question");
+  assert.equal(/useEffect/.test(stepBrand), false, "StepBrand must never auto-fill brand fields with generated placeholder text on mount — every field must start genuinely empty");
+  assert.equal(/Do not guarantee specific revenue/.test(stepBrand), false, "StepBrand must not reintroduce the fabricated canned-restrictions boilerplate");
 
   // --- 9. Post-creation active-tenant selection reuses the existing action ---
   assert.ok(/import\s*\{\s*setActiveTenantAction\s*\}\s*from ["']\.\.\/tenant-actions["']/.test(wizard), "must reuse the existing setActiveTenantAction, not a new cookie-writing path");
@@ -87,8 +104,8 @@ function run() {
   assert.ok(/router\.push\(["']\/app\/audit["']\)/.test(wizard), "must redirect to /app/audit after creation");
 
   // --- 10. Double-submission protection ---------------------------------------
-  assert.ok(/if \(submitting\) return;/.test(wizard), "handleCreateWorkspace must guard against double-submit");
-  assert.ok(/disabled=\{submitting\}/.test(stepReview), "the create-workspace button must be disabled while submitting");
+  assert.ok(/if \(launchState === ["']launching["']\) return;/.test(wizard), "launch() must guard against double-submit");
+  assert.ok(/disabled=\{launchState === ["']launching["']\}/.test(wizard), "the launch control must disable itself while launching");
   assert.ok(existing_users_short_circuit(route), "the API route must detect an existing membership and skip creating a second tenant");
 
   function existing_users_short_circuit(source: string): boolean {
@@ -101,9 +118,9 @@ function run() {
   }
 
   // --- 12. Mobile structure and accessibility ---------------------------------
-  assert.ok(/role="status"/.test(wizard), "wizard must expose an accessible 'step X of N' status region");
-  assert.ok(/size="touch"/.test(wizard), "primary Back/Continue controls must use the ~44px touch target size");
-  assert.ok(/aria-pressed=\{isSelected\}/.test(read("app", "app", "onboarding", "steps", "StepGoals.tsx")), "goal chips must expose pressed state to assistive tech");
+  assert.ok(/role="status"/.test(wizard), "wizard must expose an accessible autosave status region");
+  assert.ok(/h-\[52px\]/.test(wizard), "primary Continue/Launch controls must meet the ~44px+ touch target size (reference spec: 52px)");
+  assert.ok(/aria-pressed=\{isSelected\}/.test(stepGoals), "goal cards must expose pressed state to assistive tech");
   assert.ok(/role="radio"|role="radiogroup"/.test(read("app", "app", "audit", "VisualAuditReport.tsx")), "plan tier selection in audit report must use radio semantics for assistive tech");
   assert.ok(/max-w-(full|xl|2xl|3xl|4xl|5xl|6xl|7xl)/.test(wizard), "wizard container must be a single-column, mobile-first layout");
   assert.ok(/aria-invalid/.test(stepBusiness), "form fields must expose aria-invalid on validation errors");
@@ -117,16 +134,13 @@ function run() {
   assert.ok(/method: "PATCH"/.test(wizard), "wizard must save draft progress to the server");
   assert.ok(/fetch\("\/api\/platform\/onboarding", \{ cache: "no-store" \}\)/.test(wizard), "wizard must restore server-saved progress");
 
-  // --- 14. Step 2 Dedicated OAuth connector architecture ----------------------
+  // --- 14. Account connections now live in ConnectorSheet, not a dedicated step ---
   const connectRoute = read("app", "api", "social", "oauth", "[provider]", "connect", "route.ts");
   const callbackRoute = read("app", "api", "social", "oauth", "[provider]", "callback", "route.ts");
 
-  // StepConnectors must redirect to the real OAuth flow, not ask for a URL/handle
-  assert.ok(/window\.location\.href\s*=\s*[`"']\/api\/social\/oauth\//.test(stepConnectors), "Connect button must redirect to the real OAuth endpoint, not open a URL input form");
-  assert.ok(/connectionType/.test(stepConnectors), "StepConnectors must track connection type (oauth vs public_profile)");
-  assert.equal(/Authorize\s+\w+/.test(stepConnectors), false, "StepConnectors must NOT have a fake 'Authorize {Provider}' button that just saves a URL");
-  assert.ok(/public.profile.manually/.test(stepConnectors), "StepConnectors must offer 'Add public profile manually' as a secondary action");
-  assert.ok(/not.an.authorized.connection/i.test(stepConnectors), "Public profile must be clearly labeled as NOT an authorized connection");
+  assert.ok(/window\.location\.href\s*=\s*[`"']\/api\/social\/oauth\//.test(connectorSheet), "ConnectorSheet's Connect button must redirect to the real OAuth endpoint, not open a URL input form");
+  assert.ok(/connectionType/.test(connectorSheet), "ConnectorSheet must track connection type (oauth vs otp_verified)");
+  assert.ok(/send-otp/.test(connectorSheet) && /verify-otp/.test(connectorSheet), "ConnectorSheet's WhatsApp connect must use the real send-otp/verify-otp endpoints, not a fake instant toggle");
 
   // Connect route must use canonical provider infrastructure, not a parallel system
   assert.ok(/from\s*["']@\/lib\/social\/providers["']/.test(connectRoute), "onboarding connect route must reuse canonical provider registry");
@@ -140,13 +154,12 @@ function run() {
   assert.ok(/verifySignedState/.test(callbackRoute), "callback must verify signed state to prevent CSRF");
   assert.equal(/accessToken/.test(callbackRoute.split("user_metadata")[1] || ""), false, "callback must NOT store access tokens in user metadata");
 
-  // Review step must distinguish OAuth/verified vs public profile connections
-  assert.ok(/verifiedChannels|oauthChannels/.test(stepReview), "StepReview must separate verified channels from public profile channels");
-  assert.ok(/publicChannels/.test(stepReview), "StepReview must show public profile channels separately");
-  assert.ok(/via\s*\{c\.providerLabel\}/.test(stepReview), "StepReview must show provider attribution for OAuth connections");
+  // --- 15. Review step must distinguish real connected-account state ---------
+  assert.ok(/googleConnected/.test(stepReview) && /waConnected/.test(stepReview), "StepReview must derive real Google/WhatsApp connection state, not a static label");
+  assert.ok(/Connected ✓/.test(stepReview) && /Not connected/.test(stepReview), "StepReview must show the real connected/not-connected wording");
 
   console.log(
-    "onboarding-wizard.test.ts: ALL PASS (canonical 5-step sequence, Step 1 discovery sources, Step 2 dedicated OAuth connectors, Step 3 prefilled verification without slug, Step 4 AI goals, Step 5 review, GET MY FREE AUDIT CTA, zero-membership gating, server-resumable draft, real Brand Brain persistence, direct audit handoff)"
+    "onboarding-wizard.test.ts: ALL PASS (reference 5-step sequence — Welcome/Business/Your Goals/Your Brand/Review & Launch, real single-field business discovery, real never-fabricated Brand step, optional ConnectorSheet with real OAuth + WhatsApp OTP, zero-membership gating, server-resumable draft, real Brand Brain persistence, direct audit handoff)"
   );
 }
 

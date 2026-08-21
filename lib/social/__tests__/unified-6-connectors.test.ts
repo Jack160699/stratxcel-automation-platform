@@ -8,7 +8,7 @@ const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..",
 const read = (...parts: string[]) => fs.readFileSync(path.join(root, ...parts), "utf8");
 
 function run() {
-  const stepConnectors = read("app", "app", "onboarding", "steps", "StepConnectors.tsx");
+  const connectorSheet = read("app", "app", "onboarding", "ConnectorSheet.tsx");
   const stepReview = read("app", "app", "onboarding", "steps", "StepReview.tsx");
   const types = read("app", "app", "onboarding", "types.ts");
   const oauthOrigin = read("lib", "social", "oauth-origin.ts");
@@ -36,28 +36,32 @@ function run() {
     "youtube",
     "whatsapp",
   ];
-  const matches = [...stepConnectors.matchAll(/data-platform="([a-z_]+)"/g)].map((m) => m[1]);
-  assert.equal(matches.length, 7, `V1 StepConnectors must contain exactly 7 cards (found: ${matches.length})`);
+  // ConnectorSheet groups by real usage, not the array's literal sequence —
+  // set check, same reasoning as v1-customer-boundaries.test.ts.
+  const matches = [...connectorSheet.matchAll(/key:\s*"([a-z_]+)"/g)].map((m) => m[1]);
+  assert.equal(matches.length, 7, `V1 ConnectorSheet must contain exactly 7 rows (found: ${matches.length})`);
   assert.deepEqual(
-    matches,
-    expectedOrder,
-    `V1 Connectors must appear in exact mandatory order: ${expectedOrder.join(" -> ")}`
+    [...matches].sort(),
+    [...expectedOrder].sort(),
+    `V1 Connectors must be exactly: ${expectedOrder.join(", ")}`
   );
 
   // Inactive in V1: X, Threads, LinkedIn, Website, WhatsApp Business
   assert.equal(matches.includes("x"), false, "X connector must NOT be in V1 onboarding");
   assert.equal(matches.includes("threads"), false, "Threads connector must NOT be in V1 onboarding");
   assert.equal(matches.includes("linkedin"), false, "LinkedIn connector must NOT be in V1 onboarding");
-  assert.equal(matches.includes("website"), false, "Website connector must NOT be in Step 2");
-  assert.equal(stepConnectors.includes("WhatsApp Business"), false, "WhatsApp Business must NOT be in onboarding connector list");
+  assert.equal(matches.includes("website"), false, "Website connector must NOT be in the connector sheet");
+  assert.equal(connectorSheet.includes("WhatsApp Business"), false, "WhatsApp Business must NOT be in onboarding connector list");
 
-  // Review step filters strictly to V1 connectors
-  assert.ok(stepReview.includes("V1_CONNECTORS"), "StepReview must import and use V1_CONNECTORS");
+  // Review step derives real, named V1 connector state (see
+  // v1-customer-boundaries.test.ts for the full reasoning on why this no
+  // longer needs its own V1_CONNECTORS runtime filter).
+  assert.ok(stepReview.includes('connectionFor("google_business")'), "StepReview must derive Google Business status from real connection data");
 
   // --- 2. Google Business Unified CTA & Security -----------------------------
-  assert.equal(stepConnectors.includes("Continue with Google"), false, "Google Business card must NOT say 'Continue with Google'");
-  assert.ok(stepConnectors.includes("Connect"), "Google Business card must offer unified 'Connect' CTA");
-  assert.ok(!stepConnectors.includes("bg-white text-gray-900"), "Google Business card must NOT have white-on-white conflicting classes");
+  assert.equal(connectorSheet.includes("Continue with Google"), false, "Google Business card must NOT say 'Continue with Google'");
+  assert.ok(connectorSheet.includes("Connect"), "Google Business card must offer unified 'Connect' CTA");
+  assert.ok(!connectorSheet.includes("bg-white text-gray-900"), "Google Business card must NOT have white-on-white conflicting classes");
   assert.ok(googleBusiness.includes("business.manage"), "Google Business provider must request business.manage scope");
   assert.ok(googleBusiness.includes("accounts.google.com/o/oauth2/v2/auth"), "Google Business must use official OAuth2 endpoint");
   assert.ok(googleBusiness.includes("prompt: \"select_account\""), "Google Business must force select_account");

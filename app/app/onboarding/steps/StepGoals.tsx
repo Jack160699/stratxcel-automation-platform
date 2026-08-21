@@ -63,22 +63,12 @@ export function StepGoals({
     : ["google_visibility", "whatsapp_leads", "social_presence"];
 
   return (
-    <div className="flex flex-col gap-5 w-full">
-      <div>
-        <h3 className="font-sx-sans text-base font-semibold text-sx-text">What do you want StratXcel to help you improve?</h3>
-        <p className="font-sx-sans text-xs text-sx-text-muted mt-1">
-          Pick your top priorities. We will focus your audit analysis and recommendations around these goals.
-        </p>
-      </div>
+    <div className="flex w-full flex-col gap-1">
+      <h2 className="font-sx-sans text-xl font-bold text-sx-text">What matters most to your business?</h2>
+      <p className="mb-1.5 text-sm leading-relaxed text-sx-text-muted">Pick the goals you care about — we&rsquo;ll focus on these first.</p>
+      <p className="mb-5 text-xs font-semibold text-sx-accent">Recommended for {industryLabel} businesses</p>
 
-      <div className="flex items-center gap-2 rounded-sx-md bg-sx-accent/10 border border-sx-accent/20 px-3.5 py-2.5 text-xs text-sx-accent font-medium">
-        <span>✨</span>
-        <span>
-          Recommended goals highlighted for your <strong>{industryLabel}</strong> profile. You can change them anytime.
-        </span>
-      </div>
-
-      <div role="group" aria-label="Business Goals" className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      <div role="group" aria-label="Business Goals" className="flex flex-col gap-2.5">
         {BUSINESS_GOALS.map((goal) => {
           const isSelected = selected.includes(goal.key);
           const isRecommended = recommendedKeys.includes(goal.key);
@@ -89,35 +79,26 @@ export function StepGoals({
               type="button"
               aria-pressed={isSelected}
               onClick={() => onToggle(goal.key)}
-              className={`flex items-start gap-3.5 p-4 rounded-sx-md border text-left transition-all ${
-                isSelected
-                  ? "border-sx-accent bg-sx-accent/10 shadow-xs ring-1 ring-sx-accent/40"
-                  : "border-sx-border bg-sx-surface-2/60 hover:bg-sx-surface-2"
+              className={`flex items-center gap-3 rounded-sx-md border-[1.5px] p-3.5 text-left transition-colors ${
+                isSelected ? "border-sx-accent bg-sx-accent-muted" : "border-sx-border bg-sx-surface-1"
               }`}
             >
-              <span className="text-xl shrink-0 mt-0.5" aria-hidden="true">
-                {goal.icon}
-              </span>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="font-sx-sans text-sm font-semibold text-sx-text">{goal.title}</span>
-                  {isRecommended && (
-                    <span className="rounded-full bg-sx-accent/20 px-2 py-0.5 text-[9.5px] font-bold uppercase tracking-wider text-sx-accent shrink-0">
-                      Recommended
-                    </span>
-                  )}
-                </div>
-                <p className="font-sx-sans text-xs text-sx-text-muted mt-1 leading-relaxed">{goal.description}</p>
-              </div>
-              <div
-                className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-sx-sm border transition-colors mt-0.5 ${
-                  isSelected
-                    ? "border-sx-accent bg-sx-accent text-sx-accent-on"
-                    : "border-sx-border-strong bg-sx-surface-1 text-transparent"
+              <span
+                className={`flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-sx-xs border-[1.5px] transition-colors ${
+                  isSelected ? "border-sx-accent bg-sx-accent" : "border-sx-border-strong bg-sx-surface-1"
                 }`}
               >
-                ✓
+                {isSelected && (
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3"><path d="M20 6L9 17l-5-5" /></svg>
+                )}
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="text-[15px] font-semibold text-sx-text">{goal.title}</p>
+                <p className="mt-0.5 text-xs text-sx-text-subtle">{goal.description}</p>
               </div>
+              {isRecommended && (
+                <span className="shrink-0 rounded-sx-xs bg-sx-accent/10 px-2 py-1 text-[10px] font-bold tracking-wide text-sx-accent">REC</span>
+              )}
             </button>
           );
         })}

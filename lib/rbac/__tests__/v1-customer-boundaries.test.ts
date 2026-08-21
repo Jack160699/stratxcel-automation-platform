@@ -30,26 +30,32 @@ function run() {
   );
   assert.equal(V1_CONNECTORS.length, 7, "V1_CONNECTORS must have length 7");
 
-  // StepConnectors cards
-  const stepConnectors = read("app", "app", "onboarding", "steps", "StepConnectors.tsx");
+  // Connector sheet rows (account connections moved from a dedicated
+  // StepConnectors step into an optional ConnectorSheet reachable from the
+  // Brand/Review steps — same real connectors, real order changed to match
+  // the reference's own visual grouping: Primary Channels (Google Business,
+  // WhatsApp) -> Social -> Analytics, rather than the old array's literal
+  // sequence, so this is a set check, not a positional one.
+  const connectorSheet = read("app", "app", "onboarding", "ConnectorSheet.tsx");
   const integrationsPage = read("app", "app", "integrations", "page.tsx");
-  const stepMatches = [...stepConnectors.matchAll(/data-platform="([a-z_]+)"/g)].map((m) => m[1]);
+  const sheetMatches = [...connectorSheet.matchAll(/key:\s*"([a-z_]+)"/g)].map((m) => m[1]);
   assert.deepEqual(
-    stepMatches,
-    expectedConnectors,
-    "StepConnectors must render the V1 connectors in mandatory order"
+    [...sheetMatches].sort(),
+    [...expectedConnectors].sort(),
+    "ConnectorSheet must render exactly the V1 connectors, no more, no fewer"
   );
+  assert.ok(/data-platform=\{row\.key\}/.test(connectorSheet), "ConnectorSheet rows must expose their real platform key in the DOM");
 
-  // Assert all StepConnectors buttons offer Connect/Verify
-  assert.ok(stepConnectors.includes("Connect"), "StepConnectors cards must have Connect CTA");
+  // Assert all ConnectorSheet buttons offer Connect/Verify
+  assert.ok(connectorSheet.includes("Connect"), "ConnectorSheet cards must have Connect CTA");
 
   // =========================================================================
   // 2. Removal of WhatsApp Business from Client Panel
   // =========================================================================
   assert.equal(
-    stepConnectors.includes("WhatsApp Business"),
+    connectorSheet.includes("WhatsApp Business"),
     false,
-    "StepConnectors must NOT mention WhatsApp Business"
+    "ConnectorSheet must NOT mention WhatsApp Business"
   );
   assert.equal(
     integrationsPage.includes("WhatsApp Business"),
@@ -57,19 +63,19 @@ function run() {
     "IntegrationsPage must NOT mention WhatsApp Business"
   );
   assert.equal(
-    stepConnectors.includes("WhatsApp Receptionist"),
+    connectorSheet.includes("WhatsApp Receptionist"),
     false,
-    "StepConnectors must NOT mention WhatsApp Receptionist"
+    "ConnectorSheet must NOT mention WhatsApp Receptionist"
   );
 
   // WhatsApp connector must represent phone-number OTP verification only
   assert.ok(
-    stepConnectors.includes("Verify WhatsApp Number"),
-    "WhatsApp connector modal must be titled 'Verify WhatsApp Number'"
+    connectorSheet.includes("Verify WhatsApp Number"),
+    "ConnectorSheet's WhatsApp step must be titled 'Verify WhatsApp Number'"
   );
   assert.ok(
-    stepConnectors.includes("Verify the phone number you use for WhatsApp"),
-    "WhatsApp connector description must describe phone verification"
+    connectorSheet.includes("Verify the phone number you use for WhatsApp"),
+    "ConnectorSheet's WhatsApp step must describe phone verification"
   );
   assert.ok(
     integrationsPage.includes("Verify the phone number you use for WhatsApp"),
@@ -108,22 +114,22 @@ function run() {
   const wizard = read("app", "app", "onboarding", "OnboardingWizard.tsx");
   assert.ok(
     wizard.includes("V1_CONNECTORS.includes"),
-    "OnboardingWizard must filter rehydrated OAuth connections with V1_CONNECTORS"
-  );
-  assert.ok(
-    stepConnectors.includes("V1_CONNECTORS.includes"),
-    "StepConnectors must filter rehydrated OAuth connections with V1_CONNECTORS"
+    "OnboardingWizard must filter rehydrated OAuth connections with V1_CONNECTORS — the one place this filtering happens now that ConnectorSheet only ever renders a fixed, already-V1 set of rows"
   );
 
+  // StepReview no longer renders an open-ended list of "whatever got
+  // connected" (which needed its own V1_CONNECTORS filter to stay safe) —
+  // it shows exactly two fixed, known-V1 rows (Google Business, WhatsApp)
+  // derived directly from real connection state, so there is no unfiltered
+  // list for a non-V1 connector to leak into.
   const stepReview = read("app", "app", "onboarding", "steps", "StepReview.tsx");
   assert.ok(
-    stepReview.includes("V1_CONNECTORS.includes"),
-    "StepReview must filter verified channels with V1_CONNECTORS"
+    stepReview.includes('connectionFor("google_business")') && stepReview.includes('connectionFor("whatsapp")'),
+    "StepReview must derive its two connected-account rows from real, named V1 connector keys"
   );
-  assert.equal(
-    stepConnectors.includes('isOtpVerified || card.key === "whatsapp"'),
-    false,
-    "StepConnectors must never unconditionally display 'WhatsApp number verified' for unverified WhatsApp card"
+  assert.ok(
+    connectorSheet.includes("isConnected(row.key)"),
+    "ConnectorSheet must derive each row's Connected state from real connection data, never a hardcoded true"
   );
 
   // =========================================================================

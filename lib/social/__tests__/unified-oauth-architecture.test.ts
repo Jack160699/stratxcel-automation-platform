@@ -12,7 +12,7 @@ function run() {
   const callbackRoute = read("app", "api", "social", "oauth", "[provider]", "callback", "route.ts");
   const onboardingRoute = read("app", "api", "platform", "onboarding", "route.ts");
   const oauthOrigin = read("lib", "social", "oauth-origin.ts");
-  const stepConnectors = read("app", "app", "onboarding", "steps", "StepConnectors.tsx");
+  const connectorSheet = read("app", "app", "onboarding", "ConnectorSheet.tsx");
   const wizard = read("app", "app", "onboarding", "OnboardingWizard.tsx");
   const instagramProvider = read("lib", "social", "providers", "instagram.ts");
   const facebookProvider = read("lib", "social", "providers", "facebook.ts");
@@ -38,8 +38,8 @@ function run() {
 
   // --- 2. Onboarding wires to canonical OAuth route ------------------------
   assert.ok(
-    stepConnectors.includes("`/api/social/oauth/${routePlatform}/connect?redirectTo=/app`"),
-    "StepConnectors must initiate OAuth using the canonical connect route with redirectTo=/app"
+    connectorSheet.includes("`/api/social/oauth/${platform}/connect?redirectTo=/app`"),
+    "ConnectorSheet must initiate OAuth using the canonical connect route with redirectTo=/app"
   );
 
   // --- 3. Unified callback handles both onboarding and admin flows --------
@@ -70,8 +70,8 @@ function run() {
     "OnboardingWizard must merge server-verified OAuth connections into draft state"
   );
   assert.ok(
-    stepConnectors.includes("Connected via"),
-    "StepConnectors must render the authorized provider attribution badge (e.g. Connected via Meta)"
+    connectorSheet.includes("Connected ✓"),
+    "ConnectorSheet must render a real connected-state badge, not a static 'Connect' label regardless of status"
   );
 
   // --- 5. Canonical Providers Configuration Integrity ----------------------

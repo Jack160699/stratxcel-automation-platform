@@ -80,26 +80,34 @@ async function run() {
   // Test 1: Code Contract & Layout Architecture Verification
   // =========================================================================
   console.log("Test 1: Code Contract & Layout Architecture...");
-  const stepConnectors = read("app", "app", "onboarding", "steps", "StepConnectors.tsx");
+  // StepConnectors.tsx was retired when onboarding was rebuilt to the
+  // "StratXcel Onboarding.dc.html" reference — account connections now live
+  // in the optional ConnectorSheet reachable from the Brand/Review steps,
+  // not a dedicated full-screen step.
+  const connectorSheet = read("app", "app", "onboarding", "ConnectorSheet.tsx");
   const stepReview = read("app", "app", "onboarding", "steps", "StepReview.tsx");
   const types = read("app", "app", "onboarding", "types.ts");
   const connectRoute = read("app", "api", "platform", "search", "google", "connect", "route.ts");
   const callbackRoute = read("app", "api", "platform", "search", "google", "callback", "route.ts");
   const resourcesRoute = read("app", "api", "platform", "search", "google", "resources", "route.ts");
   const configRoute = read("app", "api", "platform", "search", "google", "config", "route.ts");
+  const googleSearchPanel = read("app", "app", "components", "GoogleSearchIntegrationPanel.tsx");
 
-  // Verify 4 provider groups exist in StepConnectors
-  assert.ok(stepConnectors.includes("GOOGLE"), "StepConnectors must display GOOGLE provider group");
-  assert.ok(stepConnectors.includes("META"), "StepConnectors must display META provider group");
-  assert.ok(stepConnectors.includes("YOUTUBE"), "StepConnectors must display YOUTUBE provider group");
-  assert.ok(stepConnectors.includes("WHATSAPP"), "StepConnectors must display WHATSAPP provider group");
+  // Verify all real connector platforms are offered in the sheet
+  assert.ok(connectorSheet.includes("google_business"), "ConnectorSheet must offer google_business");
+  assert.ok(connectorSheet.includes("instagram"), "ConnectorSheet must offer instagram");
+  assert.ok(connectorSheet.includes("facebook"), "ConnectorSheet must offer facebook");
+  assert.ok(connectorSheet.includes("youtube"), "ConnectorSheet must offer youtube");
+  assert.ok(connectorSheet.includes("whatsapp"), "ConnectorSheet must offer whatsapp");
+  assert.ok(connectorSheet.includes("google_analytics"), "ConnectorSheet must offer google_analytics");
+  assert.ok(connectorSheet.includes("google_search_console"), "ConnectorSheet must offer google_search_console");
 
-  // Verify property selectors for Search Console and GA4 are embedded in StepConnectors
-  assert.ok(stepConnectors.includes("google_search_console"), "StepConnectors must include google_search_console");
-  assert.ok(stepConnectors.includes("google_analytics"), "StepConnectors must include google_analytics");
-  assert.ok(stepConnectors.includes("Select Search Console Property"), "StepConnectors must include Search Console property selector");
-  assert.ok(stepConnectors.includes("Select GA4 Property"), "StepConnectors must include GA4 property selector");
-  assert.ok(stepConnectors.includes("Save Selection"), "StepConnectors must include Save Selection button");
+  // Property selection (which exact Search Console site / GA4 property) is
+  // real, but deliberately lives post-onboarding on /app/integrations —
+  // the reference's onboarding sheet only establishes the OAuth connection,
+  // never a property picker. Verify that real capability still exists there.
+  assert.ok(googleSearchPanel.includes("Search Console property"), "GoogleSearchIntegrationPanel must include Search Console property selector");
+  assert.ok(googleSearchPanel.includes("GA4 property"), "GoogleSearchIntegrationPanel must include GA4 property selector");
 
   // Verify connect route accepts redirectTo
   assert.ok(connectRoute.includes("redirectTo"), "connect route must support redirectTo query parameter");

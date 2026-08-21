@@ -3,14 +3,13 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
-import { Button } from "@/components/ui/Button";
-import { ErrorState } from "@/components/ui/Feedback";
 import { setActiveTenantAction } from "../tenant-actions";
-import { StepAccount, type AccountInfo } from "./steps/StepAccount";
-import { StepConnectors } from "./steps/StepConnectors";
-import { StepBusiness } from "./steps/StepBusiness";
+import { StepWelcome } from "./steps/StepWelcome";
+import { StepBusiness, type DiscoveryState } from "./steps/StepBusiness";
 import { StepGoals } from "./steps/StepGoals";
+import { StepBrand } from "./steps/StepBrand";
 import { StepReview } from "./steps/StepReview";
+import { ConnectorSheet } from "./ConnectorSheet";
 import {
   EMPTY_DRAFT,
   ONBOARDING_DRAFT_KEY,
@@ -27,7 +26,7 @@ import { normalizeWebsiteUrl } from "@/lib/identity/smart-url";
 import { validateAndNormalizeGoogleMapsInput } from "@/lib/identity/google-maps-normalizer";
 import { ContextSwitcher } from "@/components/shell/ContextSwitcher";
 
-const TOTAL_STEPS = ONBOARDING_STEP_LABELS.length;
+const TOTAL_STEPS = ONBOARDING_STEP_LABELS.length; // 5 — index-aligned with the reference's own step state (0-4)
 
 const PROVIDER_LABELS: Record<string, string> = {
   google_business: "Google",
@@ -39,14 +38,14 @@ const PROVIDER_LABELS: Record<string, string> = {
 };
 
 function loadDraft(): { step: number; draft: OnboardingDraft } {
-  if (typeof window === "undefined") return { step: 1, draft: EMPTY_DRAFT };
+  if (typeof window === "undefined") return { step: 0, draft: EMPTY_DRAFT };
   try {
     const raw = window.sessionStorage.getItem(ONBOARDING_DRAFT_KEY);
-    if (!raw) return { step: 1, draft: EMPTY_DRAFT };
+    if (!raw) return { step: 0, draft: EMPTY_DRAFT };
     const parsed = JSON.parse(raw) as { step: number; draft: OnboardingDraft };
-    if (!parsed?.draft) return { step: 1, draft: EMPTY_DRAFT };
+    if (!parsed?.draft) return { step: 0, draft: EMPTY_DRAFT };
     return {
-      step: Math.min(Math.max(parsed.step ?? 1, 1), TOTAL_STEPS),
+      step: Math.min(Math.max(parsed.step ?? 0, 0), TOTAL_STEPS - 1),
       draft: {
         ...EMPTY_DRAFT,
         ...parsed.draft,
@@ -58,7 +57,7 @@ function loadDraft(): { step: number; draft: OnboardingDraft } {
       },
     };
   } catch {
-    return { step: 1, draft: EMPTY_DRAFT };
+    return { step: 0, draft: EMPTY_DRAFT };
   }
 }
 
@@ -166,28 +165,25 @@ export function OnboardingWizard({ isStaff = false }: { isStaff?: boolean }) {
   const initial = useRef(loadDraft());
   const [step, setStep] = useState(initial.current.step);
   const [draft, setDraft] = useState<OnboardingDraft>(initial.current.draft);
-  const [account, setAccount] = useState<AccountInfo>({
-    displayName: "StratXcel Account",
-    email: "hello@stratxcel.com",
-    emailVerified: true,
-  });
-  const [accountLoading, setAccountLoading] = useState(true);
+  const [accountName, setAccountName] = useState<string | null>(null);
   const [draftHydrated, setDraftHydrated] = useState(false);
-  const [draftSaveError, setDraftSaveError] = useState<string | null>(null);
+  const [autoSave, setAutoSave] = useState<"saved" | "saving" | "failed">("saved");
   const [stepError, setStepError] = useState<string | null>(null);
   const [businessErrors, setBusinessErrors] = useState<{ name?: string }>({});
-  const [submitting, setSubmitting] = useState(false);
+  const [discoveryState, setDiscoveryState] = useState<DiscoveryState>("idle");
+  const [discoveryError, setDiscoveryError] = useState<string | null>(null);
+  const [connectorOpen, setConnectorOpen] = useState(false);
+  const [launchState, setLaunchState] = useState<"idle" | "launching" | "success">("idle");
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [isSynthesizing, setIsSynthesizing] = useState(false);
 
-  // Handle popup window communication or URL query parameters
+  // Handle OAuth popup/redirect return — reopen the connector sheet on the
+  // step where it lives (Brand) instead of the old dedicated Connectors step.
   useEffect(() => {
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
     const oauthStatus = params.get("oauth");
     const provider = params.get("provider") || params.get("connected");
 
-    // If running in a popup OAuth window, notify opener and close
     if (window.opener && window.opener !== window) {
       if (oauthStatus === "success" || params.get("connected")) {
         try {
@@ -201,11 +197,11 @@ export function OnboardingWizard({ isStaff = false }: { isStaff?: boolean }) {
     }
 
     if (params.get("connected") || params.get("connect_error") || oauthStatus) {
-      setStep(2);
+      setStep(3);
+      setConnectorOpen(true);
     }
   }, []);
 
-  // Listen for popup OAuth messages in main tab
   useEffect(() => {
     function handleMessage(e: MessageEvent) {
       if (e.origin === window.location.origin && e.data?.type === "STRATXCEL_OAUTH_SUCCESS") {
@@ -224,14 +220,11 @@ export function OnboardingWizard({ isStaff = false }: { isStaff?: boolean }) {
           saved?: { step?: number; draft?: Partial<OnboardingDraft> } | null;
           oauthConnections?: Record<string, any>;
         };
-
         setDraft((prevDraft) => {
           let merged = body.saved?.draft ? mergeDraft(body.saved.draft) : prevDraft;
-          if (body.oauthConnections) {
-            merged = mergeOAuthConnectionsIntoDraft(merged, body.oauthConnections);
-          }
+          if (body.oauthConnections) merged = mergeOAuthConnectionsIntoDraft(merged, body.oauthConnections);
           if (typeof window !== "undefined") {
-            window.sessionStorage.setItem(ONBOARDING_DRAFT_KEY, JSON.stringify({ step: 2, draft: merged }));
+            window.sessionStorage.setItem(ONBOARDING_DRAFT_KEY, JSON.stringify({ step, draft: merged }));
           }
           return merged;
         });
@@ -239,11 +232,12 @@ export function OnboardingWizard({ isStaff = false }: { isStaff?: boolean }) {
     } catch {
       // Non-blocking trace
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }
 
   useEffect(() => {
     const clientDraft = loadDraft();
-    if (clientDraft.step > 1 || clientDraft.draft.business.name || clientDraft.draft.business.website) {
+    if (clientDraft.step > 0 || clientDraft.draft.business.name || clientDraft.draft.business.website) {
       setStep(clientDraft.step);
       setDraft(clientDraft.draft);
     }
@@ -274,23 +268,18 @@ export function OnboardingWizard({ isStaff = false }: { isStaff?: boolean }) {
 
               const urlParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
               const hasOAuthReturn = urlParams?.get("connected") || urlParams?.get("oauth") || urlParams?.get("googleConnected");
-              const nextStep = hasOAuthReturn ? 2 : Math.min(Math.max(body.saved?.step ?? 1, 1), TOTAL_STEPS);
+              const nextStep = hasOAuthReturn ? 3 : Math.min(Math.max(body.saved?.step ?? 0, 0), TOTAL_STEPS - 1);
 
               setStep(nextStep);
               setDraft(merged);
             }
           }
-          setAccount({
-            displayName: (user.user_metadata?.full_name as string | undefined) ?? user.email?.split("@")[0] ?? "User",
-            email: user.email ?? null,
-            emailVerified: Boolean(user.email_confirmed_at),
-          });
-          setDraftHydrated(true);
+          setAccountName((user.user_metadata?.full_name as string | undefined) ?? user.email?.split("@")[0] ?? null);
         }
       } catch {
         // Fallback gracefully on unauthenticated or network error
       } finally {
-        if (!cancelled) setAccountLoading(false);
+        if (!cancelled) setDraftHydrated(true);
       }
       trackFunnel("onboarding_started", { surface: "app" });
     }
@@ -303,6 +292,7 @@ export function OnboardingWizard({ isStaff = false }: { isStaff?: boolean }) {
   useEffect(() => {
     if (typeof window === "undefined" || !draftHydrated) return;
     window.sessionStorage.setItem(ONBOARDING_DRAFT_KEY, JSON.stringify({ step, draft }));
+    setAutoSave("saving");
     const timeout = window.setTimeout(async () => {
       try {
         const response = await fetch("/api/platform/onboarding", {
@@ -310,9 +300,9 @@ export function OnboardingWizard({ isStaff = false }: { isStaff?: boolean }) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ step, draft }),
         });
-        setDraftSaveError(response.ok ? null : "Progress could not be saved. Keep this page open and retry.");
+        setAutoSave(response.ok ? "saved" : "failed");
       } catch {
-        setDraftSaveError("Progress could not be saved. Keep this page open and retry.");
+        setAutoSave("failed");
       }
     }, 500);
     return () => window.clearTimeout(timeout);
@@ -332,48 +322,27 @@ export function OnboardingWizard({ isStaff = false }: { isStaff?: boolean }) {
         primaryOffer: intel.business?.primaryOffer || d.business.primaryOffer,
         stage: intel.business?.stage || d.business.stage,
       };
-
-      const nextBrand = {
-        ...d.brand,
-        businessName: d.brand.businessName || intel.brand?.businessName || nextBusiness.name,
-        description: d.brand.description || intel.brand?.description || "",
-        audience: d.brand.audience || intel.brand?.audience || "",
-        tone: d.brand.tone || intel.brand?.tone || "",
-        offers: d.brand.offers || intel.brand?.offers || "",
-        restrictions: d.brand.restrictions || intel.brand?.restrictions || "",
-      };
-
       const recommendedKeys = Array.isArray(intel.goals?.recommendedKeys) ? intel.goals.recommendedKeys : [];
       const nextGoals = d.goals.length > 0 ? d.goals : recommendedKeys.slice(0, 3);
-
-      return {
-        ...d,
-        business: nextBusiness,
-        brand: nextBrand,
-        goals: nextGoals,
-        recommendedGoals: recommendedKeys,
-      };
+      return { ...d, business: nextBusiness, goals: nextGoals, recommendedGoals: recommendedKeys };
     });
   }
 
-  async function triggerDiscoverySynthesis(websiteInput?: string, gbpInput?: string) {
-    const rawWebsite = websiteInput || draft.business.website || "";
-    const rawGbp = gbpInput || draft.business.googleMapsUrl || "";
-    if (!rawWebsite && !rawGbp) return;
-
-    let cleanWebsite = rawWebsite.trim();
+  async function startDiscovery(websiteInput: string, gbpInput: string) {
+    let cleanWebsite = (websiteInput || "").trim();
     if (cleanWebsite) {
       const norm = normalizeWebsiteUrl(cleanWebsite);
       if (norm.ok && norm.url) cleanWebsite = norm.url;
     }
-
-    let cleanGbp = rawGbp.trim();
+    let cleanGbp = (gbpInput || "").trim();
     if (cleanGbp) {
       const norm = validateAndNormalizeGoogleMapsInput(cleanGbp);
       if (norm.success) cleanGbp = norm.data.canonicalUrl;
     }
+    if (!cleanWebsite && !cleanGbp) return;
 
-    setIsSynthesizing(true);
+    setDiscoveryState("running");
+    setDiscoveryError(null);
     try {
       const res = await fetch("/api/platform/site-discovery/resolve", {
         method: "POST",
@@ -382,23 +351,23 @@ export function OnboardingWizard({ isStaff = false }: { isStaff?: boolean }) {
           websiteUrl: cleanWebsite || undefined,
           googleMapsUrl: cleanGbp || undefined,
           industry: draft.business.industry || undefined,
-          existingDraft: {
-            businessName: draft.business.name,
-            location: draft.business.location,
-          },
+          existingDraft: { businessName: draft.business.name, location: draft.business.location },
         }),
       });
-
-      if (res.ok) {
-        const data = await res.json();
-        if (data.intelligence) {
-          applySynthesizedIntelligence(data.intelligence);
-        }
+      if (!res.ok) {
+        setDiscoveryState("failed");
+        return;
+      }
+      const data = await res.json();
+      if (data.intelligence) {
+        applySynthesizedIntelligence(data.intelligence);
+        setDiscoveryState("done");
+      } else {
+        setDiscoveryState("failed");
       }
     } catch {
-      // Non-blocking background intelligence trace
-    } finally {
-      setIsSynthesizing(false);
+      setDiscoveryError("Network error — please try again.");
+      setDiscoveryState("failed");
     }
   }
 
@@ -424,75 +393,35 @@ export function OnboardingWizard({ isStaff = false }: { isStaff?: boolean }) {
     setDraft((d) => ({ ...d, business: { ...d.business, ...patch } }));
   }
 
-  function toggleGoal(key: string) {
-    setDraft((d) => ({
-      ...d,
-      goals: d.goals.includes(key) ? d.goals.filter((g) => g !== key) : [...d.goals, key],
-    }));
+  function updateBrand(patch: Partial<OnboardingDraft["brand"]>) {
+    setDraft((d) => ({ ...d, brand: { ...d.brand, ...patch } }));
   }
 
-  function validateCurrentStep(): boolean {
-    setStepError(null);
-    setBusinessErrors({});
-    if (step === 1) {
-      if (!account.displayName.trim()) {
-        setStepError("Enter your name to continue.");
-        return false;
-      }
-    }
-    if (step === 3) {
-      if (!draft.business.name.trim()) {
-        setBusinessErrors({ name: "Business name is required." });
-        return false;
-      }
-    }
-    return true;
+  function toggleGoal(key: string) {
+    setDraft((d) => ({ ...d, goals: d.goals.includes(key) ? d.goals.filter((g) => g !== key) : [...d.goals, key] }));
   }
 
   function handleContinue() {
-    if (!validateCurrentStep()) return;
-
-    if (step === 1) {
-      let normalizedWebsite = draft.business.website.trim();
-      if (normalizedWebsite) {
-        const norm = normalizeWebsiteUrl(normalizedWebsite);
-        if (norm.ok && norm.url) {
-          normalizedWebsite = norm.url;
-          updateBusiness({ website: norm.url });
-        }
-      }
-
-      let normalizedGbp = (draft.business.googleMapsUrl ?? "").trim();
-      if (normalizedGbp) {
-        const norm = validateAndNormalizeGoogleMapsInput(normalizedGbp);
-        if (norm.success) {
-          normalizedGbp = norm.data.canonicalUrl;
-          updateBusiness({
-            googleMapsUrl: norm.data.canonicalUrl,
-            name: !draft.business.name && norm.data.placeName ? norm.data.placeName : draft.business.name,
-          });
-        }
-      }
-
-      void triggerDiscoverySynthesis(normalizedWebsite, normalizedGbp);
+    setStepError(null);
+    setBusinessErrors({});
+    if (step === 1 && !draft.business.name.trim()) {
+      setBusinessErrors({ name: "Please enter your business name" });
+      return;
     }
-
-    setStep((s) => Math.min(s + 1, TOTAL_STEPS));
+    setStep((s) => Math.min(s + 1, TOTAL_STEPS - 1));
   }
 
   function handleBack() {
     setStepError(null);
-    setBusinessErrors({});
-    setStep((s) => Math.max(s - 1, 1));
+    setStep((s) => Math.max(0, s - 1));
   }
 
-  async function handleCreateWorkspace() {
-    if (submitting) return;
-    setSubmitting(true);
+  async function launch() {
+    if (launchState === "launching") return;
+    setLaunchState("launching");
     setSubmitError(null);
 
     const generatedSlug = slugify(draft.business.name) || "workspace";
-
     const confirmedSocials = (draft.account?.connections || [])
       .filter((c) => c.status === "connected")
       .map((c) => ({
@@ -520,7 +449,7 @@ export function OnboardingWizard({ isStaff = false }: { isStaff?: boolean }) {
             socials: confirmedSocials,
           },
           brand: {
-            businessName: draft.brand.businessName.trim() || undefined,
+            businessName: draft.business.name.trim() || undefined,
             description: draft.brand.description.trim() || undefined,
             audience: draft.brand.audience.trim() || undefined,
             tone: draft.brand.tone.trim() || undefined,
@@ -534,6 +463,7 @@ export function OnboardingWizard({ isStaff = false }: { isStaff?: boolean }) {
       const body = await res.json();
 
       if (!res.ok) {
+        setLaunchState("idle");
         if (res.status === 401) {
           setSubmitError("Your session expired — sign in again to continue.");
           return;
@@ -546,162 +476,169 @@ export function OnboardingWizard({ isStaff = false }: { isStaff?: boolean }) {
       trackFunnel("business_profile_completed", { surface: "onboarding" });
       await setActiveTenantAction(tenant.id);
       if (typeof window !== "undefined") window.sessionStorage.removeItem(ONBOARDING_DRAFT_KEY);
-      router.push("/app/audit");
-      router.refresh();
+      setLaunchState("success");
     } catch {
+      setLaunchState("idle");
       setSubmitError("Network error — check your connection and try again.");
-    } finally {
-      setSubmitting(false);
     }
   }
 
-  const currentStepName = ONBOARDING_STEP_LABELS[step - 1];
+  function goToDashboard() {
+    router.push("/app/audit");
+    router.refresh();
+  }
+
+  const currentStepName = ONBOARDING_STEP_LABELS[step];
+  const progressPercent = step === 0 ? 0 : Math.round((step / (TOTAL_STEPS - 1)) * 100);
+
+  if (launchState === "success") {
+    return (
+      <div className="sx-customer-app flex min-h-screen items-center justify-center bg-sx-bg p-8">
+        <div className="flex w-full max-w-md flex-col items-center text-center">
+          <span className="flex h-20 w-20 items-center justify-center rounded-full bg-sx-success/10">
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--sx-success)" strokeWidth="2"><path d="M22 11.08V12a10 10 0 11-5.93-9.14" /><path d="M22 4L12 14.01l-3-3" /></svg>
+          </span>
+          <h1 className="mt-6 text-2xl font-bold text-sx-text">You&rsquo;re all set{accountName ? `, ${accountName}` : ""}!</h1>
+          <p className="mt-2.5 max-w-[280px] text-sm leading-relaxed text-sx-text-muted">
+            StratXcel is scanning your business online and preparing your free growth audit. This usually takes about 30 seconds.
+          </p>
+          <div className="mt-7 flex w-full flex-col gap-2.5 rounded-sx-lg bg-sx-surface-2 p-4 text-left">
+            {["Scanning Google Business Profile…", "Checking nearby competitors", "Building your health score"].map((line) => (
+              <div key={line} className="flex items-center gap-2.5">
+                <span className="h-[18px] w-[18px] shrink-0 rounded-full bg-sx-accent sx-status-pulse" />
+                <p className="text-sm font-medium text-sx-text">{line}</p>
+              </div>
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={goToDashboard}
+            className="mt-6 flex h-[52px] w-full items-center justify-center rounded-sx-md bg-sx-accent text-[16px] font-bold text-sx-accent-on"
+          >
+            Go to my dashboard →
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="mx-auto flex min-h-screen w-full max-w-full sm:max-w-2xl lg:max-w-3xl flex-col gap-6 px-4 py-8 sm:px-6 pb-[max(2rem,env(safe-area-inset-bottom))]">
+    <div className="sx-customer-app mx-auto flex min-h-screen w-full max-w-full flex-col sm:max-w-2xl lg:max-w-3xl">
       {isStaff && (
-        <div className="flex items-center justify-between rounded-sx-md border border-sx-accent/30 bg-sx-accent/10 px-3.5 py-2 text-xs">
+        <div className="flex items-center justify-between rounded-sx-md border border-sx-accent/30 bg-sx-accent/10 px-3.5 py-2 text-xs mx-4 mt-4">
           <span className="font-medium text-sx-text">🛡 Testing Customer Onboarding (Staff Account)</span>
           <ContextSwitcher currentContext="user" compact />
         </div>
       )}
 
-      {/* Header */}
-      <div className="text-center">
-        <h1 className="font-sx-sans text-xl sm:text-2xl font-bold text-sx-text">Welcome to StratXcel</h1>
-        <p className="mt-1 font-sx-sans text-xs sm:text-sm text-sx-text-muted">Set up your business workspace and start your free audit.</p>
-      </div>
-
-      {/* Progress Indicator */}
-      <div className="w-full">
-        <div className="flex items-center justify-between text-xs font-semibold text-sx-text-muted mb-2">
-          <span className="uppercase tracking-wider text-sx-accent">
-            Step {step} of {TOTAL_STEPS} · {currentStepName}
-          </span>
-          <span className="text-sx-text-subtle font-mono text-[11px]">
-            {Math.round((step / TOTAL_STEPS) * 100)}%
-          </span>
+      {/* Progress bar — hidden on Welcome */}
+      {step > 0 && (
+        <div className="shrink-0 border-b border-sx-border bg-sx-surface-1 px-4 py-2.5">
+          <div className="mb-1.5 flex items-center justify-between">
+            <p className="max-w-[200px] truncate text-xs font-medium text-sx-text-subtle">
+              Step {step} of {TOTAL_STEPS - 1} · {currentStepName}
+            </p>
+            <p role="status" className={`shrink-0 text-[11px] font-semibold ${autoSave === "saved" ? "text-sx-success" : autoSave === "failed" ? "text-sx-danger" : "text-sx-text-subtle"}`}>
+              {autoSave === "saved" ? "Saved ✓" : autoSave === "saving" ? "Saving…" : "Save failed"}
+            </p>
+          </div>
+          <div className="h-1 overflow-hidden rounded-full bg-sx-border">
+            <div className="h-full rounded-full bg-sx-accent transition-all duration-300" style={{ width: `${progressPercent}%` }} />
+          </div>
         </div>
+      )}
 
-        <div className="h-1.5 w-full overflow-hidden rounded-full bg-sx-surface-2">
-          <div
-            className="h-full bg-sx-accent transition-all duration-300 ease-out"
-            style={{ width: `${(step / TOTAL_STEPS) * 100}%` }}
-          />
-        </div>
+      <div className="flex-1 px-4 py-6 sm:px-6">
+        {stepError && <p className="mb-3 text-sm text-sx-danger">{stepError}</p>}
 
-        <div className="flex justify-between items-center mt-2 px-1">
-          {ONBOARDING_STEP_LABELS.map((label, idx) => {
-            const stepNum = idx + 1;
-            const isDone = stepNum < step;
-            const isCurrent = stepNum === step;
-            return (
-              <span
-                key={label}
-                className={`text-[10px] font-medium transition-colors ${
-                  isCurrent ? "text-sx-text font-bold" : isDone ? "text-sx-success" : "text-sx-text-subtle"
-                }`}
-              >
-                {label}
-              </span>
-            );
-          })}
-        </div>
-
-        <p className="mt-2 text-center text-xs text-sx-text-subtle" role="status">
-          {draftSaveError ?? (draftHydrated ? "Progress saves to your account automatically." : "Loading saved progress…")}
-        </p>
-      </div>
-
-      {/* Main Wizard Form Card */}
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (step < TOTAL_STEPS) handleContinue();
-        }}
-        className="flex flex-col gap-6 rounded-sx-lg border border-sx-border bg-sx-surface-1 p-5 sm:p-7 shadow-sm w-full"
-      >
-        <div aria-live="polite">
-          {stepError && <ErrorState message={stepError} />}
-        </div>
-
-        {accountLoading && step === 1 ? (
-          <div className="py-12 text-center">
-            <div className="mx-auto h-8 w-8 animate-spin rounded-full border-3 border-sx-accent border-t-transparent" />
-            <p className="mt-3 font-sx-sans text-xs text-sx-text-subtle">Loading your account…</p>
+        {!draftHydrated && step === 0 ? (
+          <div className="py-16 text-center">
+            <div className="mx-auto h-8 w-8 animate-spin rounded-full border-[3px] border-sx-accent border-t-transparent" />
           </div>
         ) : (
           <>
+            {step === 0 && <StepWelcome onGetStarted={() => setStep(1)} />}
             {step === 1 && (
-              <StepAccount
-                account={account}
-                draft={draft}
-                onAccountChange={setAccount}
-                onBusinessChange={updateBusiness}
-              />
-            )}
-            {step === 2 && (
-              <StepConnectors
-                connections={draft.account?.connections || []}
-                onConnectionsChange={updateConnections}
-              />
-            )}
-            {step === 3 && (
               <StepBusiness
                 draft={draft}
                 update={updateBusiness}
                 errors={businessErrors}
-                isSynthesizing={isSynthesizing}
+                discoveryState={discoveryState}
+                onStartDiscovery={(w, g) => void startDiscovery(w, g)}
+                onResetDiscovery={() => setDiscoveryState("idle")}
+                errorField={discoveryError}
               />
             )}
-            {step === 4 && <StepGoals draft={draft} selected={draft.goals} onToggle={toggleGoal} />}
-            {step === 5 && (
+            {step === 2 && <StepGoals draft={draft} selected={draft.goals} onToggle={toggleGoal} />}
+            {step === 3 && <StepBrand draft={draft} update={updateBrand} onOpenConnector={() => setConnectorOpen(true)} />}
+            {step === 4 && (
               <StepReview
-                account={account}
                 draft={draft}
-                submitting={submitting}
                 error={submitError}
-                onSubmit={handleCreateWorkspace}
+                onEditDetails={() => setStep(1)}
+                onOpenConnector={() => setConnectorOpen(true)}
               />
             )}
           </>
         )}
+      </div>
 
-        {/* Action Buttons */}
-        {step < TOTAL_STEPS && (
-          <div className="flex items-center justify-between gap-3 pt-4 border-t border-sx-border/60">
-            <Button
+      {/* Footer — hidden on Welcome (its CTA is inline in StepWelcome) */}
+      {step > 0 && (
+        <div className="shrink-0 border-t border-sx-border bg-sx-surface-1 px-4 py-3">
+          {step === 1 && (
+            <button
               type="button"
-              variant="ghost"
-              size="touch"
-              onClick={handleBack}
-              disabled={step === 1}
-              className="text-xs font-semibold"
+              onClick={handleContinue}
+              className="flex h-[52px] w-full items-center justify-center gap-1.5 rounded-sx-md bg-sx-accent text-[16px] font-bold text-sx-accent-on"
             >
-              Back
-            </Button>
-            <Button type="submit" variant="primary" size="touch" className="min-w-28 text-xs font-bold shadow-xs">
-              {step === 2 && (draft.account?.connections || []).every((c) => c.status !== "connected")
-                ? "Skip for now →"
-                : "Continue →"}
-            </Button>
-          </div>
-        )}
-        {step === TOTAL_STEPS && (
-          <div className="flex items-center justify-start pt-2">
-            <Button
-              type="button"
-              variant="ghost"
-              size="touch"
-              onClick={handleBack}
-              disabled={submitting}
-              className="text-xs font-semibold"
-            >
-              ← Back to Edit
-            </Button>
-          </div>
-        )}
-      </form>
+              Continue
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M5 12h14M12 5l7 7-7 7" /></svg>
+            </button>
+          )}
+          {(step === 2 || step === 3) && (
+            <div className="flex gap-2.5">
+              <button type="button" onClick={handleBack} className="flex h-[52px] w-12 shrink-0 items-center justify-center rounded-sx-md border-[1.5px] border-sx-border">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--sx-text-muted)" strokeWidth="2"><path d="M19 12H5M12 19l-7-7 7-7" /></svg>
+              </button>
+              <button
+                type="button"
+                onClick={handleContinue}
+                className="flex h-[52px] flex-1 items-center justify-center gap-1.5 rounded-sx-md bg-sx-accent text-[16px] font-bold text-sx-accent-on"
+              >
+                Continue
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M5 12h14M12 5l7 7-7 7" /></svg>
+              </button>
+            </div>
+          )}
+          {step === 4 && (
+            <div className="flex gap-2.5">
+              <button type="button" onClick={handleBack} disabled={launchState === "launching"} className="flex h-[52px] w-12 shrink-0 items-center justify-center rounded-sx-md border-[1.5px] border-sx-border disabled:opacity-50">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--sx-text-muted)" strokeWidth="2"><path d="M19 12H5M12 19l-7-7 7-7" /></svg>
+              </button>
+              <button
+                type="button"
+                onClick={() => void launch()}
+                disabled={launchState === "launching"}
+                className="flex h-[52px] flex-1 items-center justify-center gap-1.5 rounded-sx-md bg-sx-accent text-[15px] font-bold uppercase tracking-wide text-sx-accent-on disabled:opacity-70"
+              >
+                {launchState === "launching" ? "Setting up your workspace…" : "Get my free audit"}
+                {launchState !== "launching" && (
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M5 12h14M12 5l7 7-7 7" /></svg>
+                )}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {connectorOpen && (
+        <ConnectorSheet
+          connections={draft.account?.connections || []}
+          onConnectionsChange={updateConnections}
+          onClose={() => setConnectorOpen(false)}
+        />
+      )}
     </div>
   );
 }
