@@ -4,6 +4,7 @@ import { usePathname } from "next/navigation";
 import { returnToAdminAction } from "./staff-workspace-actions";
 import { CoreAppShell } from "@/components/shell/CoreAppShell";
 import { APP_SIDEBAR_GROUPS, APP_MOBILE_NAV, resolveAppActiveKey } from "@/components/shell/navigation/app-navigation";
+import { APP_MOBILE_NAV_KEYS } from "@/components/shell/navigation/app-nav-data";
 import { ClientTenantSwitcher } from "./ClientTenantSwitcher";
 import type { CustomerPlanSummary } from "@/lib/billing/customer-plan";
 import { CustomerHeaderActions } from "./components/CustomerHeaderActions";
@@ -30,6 +31,7 @@ export function ClientAppShell({
   role,
   googleConnected,
   whatsappConnected,
+  notifications,
   children,
 }: {
   tenantId: string;
@@ -45,6 +47,8 @@ export function ClientAppShell({
   role: string | null;
   googleConnected: boolean;
   whatsappConnected: boolean;
+  /** Real notification rows — StratXcel App reference Notifications screen, surfaced from the header bell. */
+  notifications: { key: string; title: string; detail: string; href: string; tone: "warning" | "accent" }[];
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -56,10 +60,20 @@ export function ClientAppShell({
       sidebarGroups={APP_SIDEBAR_GROUPS}
       activeKey={activeKey}
       mobileNavItems={APP_MOBILE_NAV}
+      // StratXcel App reference More sheet shows only the destinations NOT
+      // already on the bottom dock (Home/Audit/Growth Assistant/Shop
+      // Profile) — mapping every sidebar group in verbatim (the previous
+      // version) duplicated those 4 into the sheet a second time, which the
+      // reference's grouping never does. Still built directly from
+      // APP_SIDEBAR_GROUPS (client-modules-completion.test.ts requires
+      // this exact derivation, not a hand-maintained list) — only filtered
+      // down to non-primary items per group.
       mobileMoreGroups={APP_SIDEBAR_GROUPS.map((g) => ({
         label: g.label ?? "Overview",
-        items: g.items.map((i) => ({ key: i.key, label: i.label, href: i.href, icon: i.icon })),
-      }))}
+        items: g.items
+          .filter((i) => !(APP_MOBILE_NAV_KEYS as readonly string[]).includes(i.key))
+          .map((i) => ({ key: i.key, label: i.label, href: i.href, icon: i.icon })),
+      })).filter((g) => g.items.length > 0)}
       topBarContext={<ClientTenantSwitcher />}
       sidebarBusinessCard={
         <SidebarBusinessCard
@@ -78,6 +92,7 @@ export function ClientAppShell({
           showPlanPrompt={showPlanPrompt}
           auditOpportunityCount={auditOpportunityCount}
           isStaff={isStaff}
+          notifications={notifications}
         />
       }
     >

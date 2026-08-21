@@ -16,6 +16,8 @@ interface BrandBrainContent {
   industry?: string;
   website_url?: string;
   location?: string;
+  /** Shop-facing contact number — StratXcel App reference's Location & Hours row. Distinct from the WhatsApp OTP-verified number (Connected Accounts); this is a plain display field for the shop's public phone line, no verification. */
+  business_phone?: string;
   /** Weekly hours as one free-text line (e.g. "Mon–Sat: 8:00 AM – 9:30 PM") — kept as a single field like every other Brand Brain string, not a structured per-day schema. */
   business_hours?: string;
   /** Short catalog/service tags — Shop Profile's "Catalog & Services" chips. */
@@ -259,6 +261,9 @@ export default function BrandPage() {
             <div className="mt-3 grid gap-3.5">
               <Field label="Address">
                 <Textarea value={content.location ?? ""} placeholder="12, Main Road, Near HDFC Bank, Ahmedabad 380009" onChange={(e) => field("location", e.target.value)} />
+              </Field>
+              <Field label="Phone number">
+                <Input value={content.business_phone ?? ""} placeholder="+91 98250 12345" onChange={(e) => field("business_phone", e.target.value)} />
               </Field>
               <Field label="Business hours">
                 <Input

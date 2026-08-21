@@ -416,10 +416,11 @@ const PRIORITY_TINT_CLASSES: Record<PriorityIconTint, string> = {
 };
 
 /**
- * "Today's Priorities" grid — StratXcel Desktop canvas. Every tile is a
- * real, personalized signal (WhatsApp verification, audit/plan state,
- * report opportunities) passed in by the caller; this component never
- * invents its own content.
+ * "Today's Priorities" — StratXcel App reference: ONE card containing
+ * list-rows (icon square → title → subtitle → chevron), not a grid of
+ * separate tile-cards. Every row is a real, personalized signal (WhatsApp
+ * verification, audit/plan state, report opportunities) passed in by the
+ * caller; this component never invents its own content.
  */
 function TodaysPriorities({ tiles }: { tiles: PriorityTileProps[] }) {
   if (tiles.length === 0) return null;
@@ -429,22 +430,35 @@ function TodaysPriorities({ tiles }: { tiles: PriorityTileProps[] }) {
         Today&apos;s Priorities
         <span className="sx-hi text-xs font-normal text-sx-text-muted">आज की प्राथमिकताएं</span>
       </h2>
-      <div className={`grid gap-3 ${tiles.length >= 3 ? "sm:grid-cols-3" : tiles.length === 2 ? "sm:grid-cols-2" : "sm:grid-cols-1"}`}>
+      <div className="rounded-sx-md border border-sx-border bg-sx-surface-1 p-4">
         {tiles.map((tile, idx) => (
           <Link
             key={idx}
             href={tile.href}
-            className="rounded-sx-md border border-sx-border bg-sx-surface-1 p-3.5 transition-colors hover:border-sx-accent/40"
+            className={`flex items-center gap-2.5 py-2.5 transition-opacity hover:opacity-80 ${
+              idx < tiles.length - 1 ? "border-b border-sx-border" : ""
+            }`}
           >
-            <span className={`flex h-9 w-9 items-center justify-center rounded-sx-sm text-base ${PRIORITY_TINT_CLASSES[tile.iconTint]}`}>
+            <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-sx-sm text-base ${PRIORITY_TINT_CLASSES[tile.iconTint]}`}>
               {tile.icon}
             </span>
-            <p className="mt-2 text-[14px] font-semibold text-sx-text">{tile.title}</p>
-            {tile.detail && <p className="mt-1 line-clamp-2 text-xs text-sx-text-subtle">{tile.detail}</p>}
+            <span className="min-w-0 flex-1">
+              <span className="block text-[14px] font-semibold text-sx-text">{tile.title}</span>
+              {tile.detail && <span className="mt-0.5 block truncate text-xs text-sx-text-subtle">{tile.detail}</span>}
+            </span>
+            <ChevronIcon />
           </Link>
         ))}
       </div>
     </section>
+  );
+}
+
+function ChevronIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--sx-text-subtle)" strokeWidth="2" className="shrink-0">
+      <path d="M9 18l6-6-6-6" />
+    </svg>
   );
 }
 
@@ -455,24 +469,24 @@ const QUICK_TOOLS: { icon: string; iconTint: PriorityIconTint; label: string; hr
   { icon: "🏪", iconTint: "accent", label: "Shop Profile", href: "/app/brand" },
 ];
 
-/** "Quick Tools" grid — StratXcel Desktop canvas. Four real destinations that already exist in the app; nothing here is a placeholder action. */
+/** "Quick Tools" grid — StratXcel App reference: a fixed 4-column icon grid at every width. Four real destinations that already exist in the app; nothing here is a placeholder action. */
 function QuickTools() {
   return (
     <section aria-labelledby="tools-heading">
       <h2 id="tools-heading" className="sr-only">
         Quick tools
       </h2>
-      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+      <div className="grid grid-cols-4 gap-2">
         {QUICK_TOOLS.map((tool) => (
           <Link
             key={tool.href}
             href={tool.href}
-            className="flex flex-col items-center gap-2 rounded-sx-sm border border-sx-border bg-sx-surface-1 p-3.5 text-center transition-colors hover:border-sx-accent/40"
+            className="flex flex-col items-center gap-1.5 rounded-sx-sm border border-sx-border bg-sx-surface-1 px-1.5 py-3 text-center transition-colors hover:border-sx-accent/40"
           >
             <span className={`flex h-9 w-9 items-center justify-center rounded-sx-sm text-base ${PRIORITY_TINT_CLASSES[tool.iconTint]}`}>
               {tool.icon}
             </span>
-            <span className="text-xs font-semibold text-sx-text">{tool.label}</span>
+            <span className="text-[11px] font-semibold leading-tight text-sx-text">{tool.label}</span>
           </Link>
         ))}
       </div>

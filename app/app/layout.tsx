@@ -61,10 +61,44 @@ export default async function ClientLayout({ children }: { children: ReactNode }
   ]);
   const plan = resolveCustomerPlanSummary(subscriptionResult.data);
   const report = auditResult.data?.report_data;
-  const auditOpportunityCount =
+  const reportOpportunities =
     report && typeof report === "object" && Array.isArray((report as { opportunities?: unknown }).opportunities)
-      ? (report as { opportunities: unknown[] }).opportunities.length
-      : null;
+      ? ((report as { opportunities: Array<{ title?: string; rationale?: string }> }).opportunities)
+      : [];
+  const auditOpportunityCount = reportOpportunities.length > 0 ? reportOpportunities.length : null;
+  // Real signals for the header notification bell (StratXcel App reference
+  // Notifications screen) — the same audit opportunities and connector
+  // states every other screen already reads, re-surfaced as rows. No
+  // fabricated review counts, view counts, or timestamps.
+  const notificationSignals: { key: string; title: string; detail: string; href: string; tone: "warning" | "accent" }[] = [];
+  if (digitalPresence?.connections.whatsapp.connectionState !== "CONNECTED") {
+    notificationSignals.push({
+      key: "whatsapp",
+      title: "Verify your WhatsApp number",
+      detail: "Get instant customer alerts and audit updates here.",
+      href: "/app/integrations",
+      tone: "warning",
+    });
+  }
+  if (digitalPresence?.connections.google_business.connectionState !== "CONNECTED") {
+    notificationSignals.push({
+      key: "google_business",
+      title: "Connect Google Business",
+      detail: "Help customers find your shop on Google Maps & Search.",
+      href: "/app/integrations",
+      tone: "warning",
+    });
+  }
+  for (const opp of reportOpportunities.slice(0, 3)) {
+    if (!opp?.title) continue;
+    notificationSignals.push({
+      key: `opportunity-${opp.title}`,
+      title: opp.title,
+      detail: opp.rationale || "Found in your Business Growth Audit.",
+      href: "/app/audit",
+      tone: "accent",
+    });
+  }
   // Commercial recommendation is presented downstream after the audit report on VisualAuditReport.tsx
   // and /app/billing rather than an intrusive modal popup before the user has seen their audit.
   const showPlanPrompt = false;
@@ -78,6 +112,7 @@ export default async function ClientLayout({ children }: { children: ReactNode }
         plan={plan}
         showPlanPrompt={showPlanPrompt}
         auditOpportunityCount={auditOpportunityCount}
+        notifications={notificationSignals}
         staffWorkspace={identity.state === "STAFF_VIEWING_CLIENT" ? { tenantName: identity.staffWorkspace.name } : null}
         isStaff={identity.isStaff}
         businessName={active.name}

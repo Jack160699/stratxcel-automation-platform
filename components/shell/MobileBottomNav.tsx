@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState, type ReactNode } from "react";
 import { Modal } from "@/components/ui/Overlay";
+import { WHATSAPP_NUMBER } from "@/lib/constants";
 
 export interface BottomNavItem {
   key: string;
@@ -153,16 +154,31 @@ export function MobileBottomNav({
             </div>
           ))}
           <div className="pt-2 border-t border-sx-border/60">
-            <Link
-              href="/contact"
-              onClick={() => setMoreOpen(false)}
-              className="flex min-h-[48px] items-center gap-3.5 rounded-sx-md px-3 text-[15px] font-medium text-sx-text-muted hover:bg-sx-surface-2 transition-colors"
-            >
-              <span className="flex h-8 w-8 items-center justify-center rounded-sx-sm bg-sx-surface-2 text-sx-text-muted">
-                💬
-              </span>
-              <span>Help & Support</span>
-            </Link>
+            {customer ? (
+              <a
+                href={`https://wa.me/${WHATSAPP_NUMBER}`}
+                target="_blank"
+                rel="noreferrer"
+                onClick={() => setMoreOpen(false)}
+                className="flex min-h-[48px] items-center gap-3.5 rounded-sx-md px-3 text-[15px] font-medium text-sx-text hover:bg-sx-surface-2 transition-colors"
+              >
+                <span className="flex h-8 w-8 items-center justify-center rounded-sx-sm bg-sx-surface-2 text-sx-text-muted">
+                  💬
+                </span>
+                <span>WhatsApp Help & Support</span>
+              </a>
+            ) : (
+              <Link
+                href="/contact"
+                onClick={() => setMoreOpen(false)}
+                className="flex min-h-[48px] items-center gap-3.5 rounded-sx-md px-3 text-[15px] font-medium text-sx-text-muted hover:bg-sx-surface-2 transition-colors"
+              >
+                <span className="flex h-8 w-8 items-center justify-center rounded-sx-sm bg-sx-surface-2 text-sx-text-muted">
+                  💬
+                </span>
+                <span>Help & Support</span>
+              </Link>
+            )}
           </div>
         </div>
       </Modal>

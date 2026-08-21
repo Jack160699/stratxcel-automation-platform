@@ -8,6 +8,14 @@ import { ContextSwitcher } from "@/components/shell/ContextSwitcher";
 import { useTheme } from "@/components/theme/ThemeProvider";
 import { signOutAction } from "../actions";
 
+interface NotificationSignal {
+  key: string;
+  title: string;
+  detail: string;
+  href: string;
+  tone: "warning" | "accent";
+}
+
 interface CustomerHeaderActionsProps {
   tenantId: string;
   name: string | null;
@@ -16,6 +24,8 @@ interface CustomerHeaderActionsProps {
   showPlanPrompt: boolean;
   auditOpportunityCount: number | null;
   isStaff?: boolean;
+  /** Real signals only — StratXcel App reference Notifications screen. */
+  notifications: NotificationSignal[];
 }
 
 export function CustomerHeaderActions({
@@ -26,6 +36,7 @@ export function CustomerHeaderActions({
   showPlanPrompt,
   auditOpportunityCount,
   isStaff = false,
+  notifications,
 }: CustomerHeaderActionsProps) {
   const [profileOpen, setProfileOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
@@ -56,10 +67,13 @@ export function CustomerHeaderActions({
         <button
           type="button"
           onClick={() => setNotificationsOpen(true)}
-          aria-label="Notifications"
+          aria-label={notifications.length > 0 ? `Notifications (${notifications.length} new)` : "Notifications"}
           className="relative flex h-9 w-9 items-center justify-center rounded-full text-sx-text-muted hover:bg-sx-surface-2 hover:text-sx-text transition-colors"
         >
           <BellIcon />
+          {notifications.length > 0 && (
+            <span className="absolute right-1.5 top-1.5 h-[7px] w-[7px] rounded-full border-[1.5px] border-sx-surface-1 bg-sx-danger" aria-hidden="true" />
+          )}
         </button>
         <button
           type="button"
@@ -71,17 +85,42 @@ export function CustomerHeaderActions({
         </button>
       </div>
 
-      {/* Notifications Modal */}
+      {/* Notifications — StratXcel App reference row structure (icon square, title, subtitle, chevron), real signals only */}
       <Modal open={notificationsOpen} onClose={() => setNotificationsOpen(false)} title="Notifications">
-        <div className="py-6 text-center">
-          <span className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-sx-surface-2 text-sx-text-subtle">
-            <BellIcon />
-          </span>
-          <p className="mt-3 text-[15px] font-semibold text-sx-text">You&apos;re all caught up</p>
-          <p className="mx-auto mt-1 max-w-xs text-[13px] leading-relaxed text-sx-text-muted">
-            There are no unread notifications. Real-time updates on your audit and campaigns will appear here.
-          </p>
-        </div>
+        {notifications.length === 0 ? (
+          <div className="py-6 text-center">
+            <span className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-sx-surface-2 text-sx-text-subtle">
+              <BellIcon />
+            </span>
+            <p className="mt-3 text-[15px] font-semibold text-sx-text">You&apos;re all caught up</p>
+            <p className="mx-auto mt-1 max-w-xs text-[13px] leading-relaxed text-sx-text-muted">
+              There are no unread notifications. Real-time updates on your audit and campaigns will appear here.
+            </p>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-2 py-1">
+            {notifications.map((n) => (
+              <Link
+                key={n.key}
+                href={n.href}
+                onClick={() => setNotificationsOpen(false)}
+                className="flex items-start gap-3 rounded-sx-md border border-sx-border bg-sx-surface-1 p-3.5 transition-colors hover:border-sx-accent/40"
+              >
+                <span
+                  className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-sx-sm ${
+                    n.tone === "warning" ? "bg-[var(--sx-warning-tint)] text-sx-warning" : "bg-sx-accent-muted text-sx-accent"
+                  }`}
+                >
+                  {n.tone === "warning" ? <AlertIcon /> : <TargetIcon />}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[14px] font-semibold text-sx-text">{n.title}</span>
+                  <span className="mt-0.5 block text-xs text-sx-text-subtle">{n.detail}</span>
+                </span>
+              </Link>
+            ))}
+          </div>
+        )}
       </Modal>
 
       {/* Compact App-Style Profile Sheet */}
@@ -255,6 +294,22 @@ function BellIcon() {
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
       <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9" strokeLinecap="round" strokeLinejoin="round" />
       <path d="M10 21h4" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function AlertIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+      <path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4.5c-.77-.833-2.694-.833-3.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z" />
+    </svg>
+  );
+}
+
+function TargetIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+      <path d="M13 10V3L4 14h7v7l9-11h-7z" />
     </svg>
   );
 }

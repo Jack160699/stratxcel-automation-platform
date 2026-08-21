@@ -260,12 +260,36 @@ export default function BillingPage() {
       )}
       {loading && !error && <p className="text-sm text-sx-text-subtle">Loading…</p>}
 
+      {/* Current Plan — StratXcel App reference gradient hero treatment for an active paid plan; the Free state keeps the existing upgrade-focused card since the reference doesn't specify a "no plan" composition. */}
+      {!loading && !error && hasActivePaidPlan && subscription && (
+        <div
+          className="rounded-sx-md p-5"
+          style={{ background: "linear-gradient(135deg, var(--sx-accent), #3b82f6)" }}
+        >
+          <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-white/70">Current Plan</p>
+          <p className="mt-1.5 text-[22px] font-bold capitalize text-white">{subscription.plan_tier.replace("_", " ")} Plan</p>
+          {priceBreakdown && (
+            <div className="mt-1 flex items-baseline gap-1.5">
+              <span className="text-[28px] font-bold text-white">{money(priceBreakdown.totalCents)}</span>
+              <span className="text-sm text-white/70">/ month</span>
+            </div>
+          )}
+          {(subscription.next_charge_at || subscription.current_period_end) && (
+            <p className="mt-1.5 text-[13px] text-white/70">
+              Next billing: {new Date((subscription.next_charge_at ?? subscription.current_period_end)!).toLocaleDateString()}
+            </p>
+          )}
+        </div>
+      )}
+
       {/* Subscription plan & status */}
       {!loading && !error && <Card className="border-sx-accent/25 p-6">
-        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-sx-accent">Current plan</p>
-        <h2 className="mt-1 font-sx-sans text-2xl font-semibold text-sx-text">
-          {hasActivePaidPlan && subscription ? `You’re on ${subscription.plan_tier.replace("_", " ")}` : "Free"}
-        </h2>
+        {!hasActivePaidPlan && (
+          <>
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-sx-accent">Current plan</p>
+            <h2 className="mt-1 font-sx-sans text-2xl font-semibold text-sx-text">Free</h2>
+          </>
+        )}
 
         {!hasActivePaidPlan && (
           <div className="mt-4 flex flex-col gap-4">
