@@ -20,7 +20,7 @@ export default async function ContentCalendarPage() {
         <p className="mt-1 text-sm text-sx-text-muted">Scheduled and upcoming content, by date.</p>
       </header>
 
-      <StaffScopedNotice what="Calendar" />
+      <StaffScopedNotice what="Calendar" accessMode={ctx.accessMode} />
 
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-7">
         {days.map((d) => (

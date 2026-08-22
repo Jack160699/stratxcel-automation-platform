@@ -191,7 +191,10 @@ async function run() {
   }
 
   const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
-  const page = readFileSync(path.join(root, "app", "app", "audit", "page.tsx"), "utf8");
+  // AuditHubPage's rendering (including AuditShareDialog) moved into
+  // AuditHubClient.tsx during fix(perf): eliminate client-side fetch
+  // waterfall on Audit Hub — page.tsx is now just the server-side data loader.
+  const page = readFileSync(path.join(root, "app", "app", "audit", "AuditHubClient.tsx"), "utf8");
   assert.match(page, /AuditShareDialog/);
   assert.doesNotMatch(page, /clipboard\.writeText/);
   assert.match(page, /navigator\.share|AuditShareDialog/);
@@ -206,14 +209,16 @@ async function run() {
   assert.match(icons, /Instagram/);
   assert.match(icons, /WhatsApp/);
   const nav = readFileSync(path.join(root, "components", "shell", "navigation", "app-nav-data.ts"), "utf8");
-  assert.match(nav, /\/app\/social\/copilot/);
-  // StratXcel Desktop canvas renamed these nav labels (Copilot → Growth
-  // Assistant, Connectors → Connected Accounts); the underlying keys/hrefs
-  // are unchanged (see the key/href/release assertions in
-  // lib/rbac/__tests__/unified-crm-inbox.test.ts).
-  assert.match(nav, /label: "Growth Assistant"/);
+  // The canonical customer IA (feat(ia): implement canonical customer IA
+  // (Home | Audit | Content | Growth | More) + full-screen multimodal Growth
+  // Assistant) superseded the earlier "Growth Assistant" nav-data entry:
+  // Growth Assistant is now a full-screen work mode entered from Home action
+  // cards/quick tools, not a bottom-dock/nav-data href — verified below via
+  // app/app/page.tsx instead. "Connected Accounts" is unchanged.
   assert.match(nav, /label: "Connected Accounts"/);
-  assert.match(nav, /APP_MOBILE_NAV_KEYS = \["home", "customer-audit", "copilot", "brand"\]/);
+  assert.match(nav, /APP_MOBILE_NAV_KEYS = \["home", "customer-audit", "content", "growth"\]/);
+  const home = readFileSync(path.join(root, "app", "app", "page.tsx"), "utf8");
+  assert.match(home, /\/app\/social\/copilot/);
   const settings = readFileSync(path.join(root, "app", "app", "settings", "page.tsx"), "utf8");
   assert.doesNotMatch(settings, /Open Brand Brain/);
   assert.match(settings, /Appearance/);

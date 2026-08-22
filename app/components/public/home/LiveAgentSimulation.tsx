@@ -62,7 +62,7 @@ const SIMULATION_SCENARIOS = [
   {
     id: "b2b",
     business: "Apex Engineering Services",
-    goal: "Capture & qualify inbound inquiries into CRM",
+    goal: "Capture & organize inbound WhatsApp and web inquiries",
     steps: [
       {
         id: 1,
@@ -82,10 +82,10 @@ const SIMULATION_SCENARIOS = [
       },
       {
         id: 3,
-        stage: "Pipeline Routing",
-        agent: "CRM Agent",
-        action: "Lead assigned to sector specialist with SLA timer",
-        detail: "Staged qualified lead in active sales pipeline with deal estimate.",
+        stage: "Contact Organized",
+        agent: "WhatsApp & Web",
+        action: "Inquiry matched to existing contact history",
+        detail: "Repeat inquiries from the same customer are linked automatically — nothing gets lost or duplicated.",
         status: "Completed" as const,
       },
       {

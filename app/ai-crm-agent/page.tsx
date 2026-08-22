@@ -4,18 +4,18 @@ import { PublicPageShell } from "@/app/components/public/PublicPageShell";
 import { TrackedCtaLink } from "@/app/components/public/commercial/TrackedCtaLink";
 
 export const metadata: Metadata = {
-  title: "AI CRM Agent — Inbound Lead Routing & Pipeline Hygiene | Stratxcel",
+  title: "Never Miss a WhatsApp or Website Inquiry — Stratxcel",
   description:
-    "Stratxcel AI CRM Agent normalizes customer contacts, syncs WhatsApp inquiries, updates deal stages, and prevents leads from dropping out of pipeline views.",
+    "Stratxcel makes sure every WhatsApp and website inquiry to your business gets seen and answered — no self-service CRM to manage, just faster response times.",
   alternates: {
     canonical: "https://www.stratxcel.in/ai-crm-agent",
   },
   openGraph: {
-    title: "AI CRM Agent — Stratxcel",
-    description: "Inbound inquiry capture, phone normalization, and pipeline hygiene for growing businesses.",
+    title: "Never Miss a WhatsApp or Website Inquiry — Stratxcel",
+    description: "Every WhatsApp and website inquiry captured, organized, and followed up on — so nothing falls through the cracks.",
     url: "https://www.stratxcel.in/ai-crm-agent",
     siteName: "Stratxcel",
-    images: [{ url: "/logo-v2.png", width: 641, height: 641, alt: "Stratxcel AI CRM Agent" }],
+    images: [{ url: "/logo-v2.png", width: 641, height: 641, alt: "Stratxcel" }],
     type: "article",
   },
 };
@@ -25,14 +25,15 @@ export default function AiCrmAgentPage() {
     <PublicPageShell>
       <section className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-24 lg:px-8">
         <p className="font-sx-mono text-[11px] font-semibold uppercase tracking-[0.24em] text-sx-accent">
-          SPECIALIST AGENT · PIPELINE & LEAD MANAGEMENT
+          GOOGLE GROWTH · CUSTOMER RESPONSE
         </p>
         <h1 className="mt-4 max-w-3xl font-sx-sans text-[clamp(2.2rem,4.5vw+0.3rem,3.4rem)] font-bold leading-tight tracking-tight text-sx-text">
-          AI CRM Agent that stops lead leaks across inquiries.
+          Never miss a WhatsApp or website inquiry again.
         </h1>
         <p className="mt-6 max-w-2xl font-sx-sans text-[16px] leading-relaxed text-sx-text-muted sm:text-[18px]">
-          Centralize WhatsApp chats, website enquiries, and outreach into one clean pipeline. The CRM Agent normalizes
-          contacts, assigns ownership, and stages follow-up responses.
+          Stratxcel keeps track of every WhatsApp and website inquiry to your business, so nothing gets missed while
+          you're busy running your shop. There's no separate CRM software to learn — it's part of how Stratxcel
+          works for you.
         </p>
 
         <div className="mt-8 flex flex-wrap items-center gap-3.5">
@@ -43,13 +44,13 @@ export default function AiCrmAgentPage() {
             plan="audit"
             className="rounded-sx-sm bg-sx-accent px-7 py-3.5 font-sx-sans text-sm font-bold text-sx-accent-on transition-colors hover:bg-[color:var(--sx-accent-hover)]"
           >
-            Audit Your Lead Flow in Free Growth Audit
+            Check Your Response Speed in a Free Growth Audit
           </TrackedCtaLink>
           <Link
-            href="/solutions"
+            href="/pricing"
             className="rounded-sx-sm border border-sx-border-strong bg-sx-bg px-6 py-3.5 font-sx-sans text-sm font-semibold text-sx-text transition-colors hover:bg-sx-surface-2"
           >
-            View CRM solutions
+            See plans
           </Link>
         </div>
       </section>
@@ -57,25 +58,25 @@ export default function AiCrmAgentPage() {
       <section className="border-t border-sx-border bg-sx-surface-1 py-16 sm:py-20">
         <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
           <h2 className="font-sx-sans text-2xl font-bold tracking-tight text-sx-text sm:text-3xl">
-            Lead Capture & Pipeline Operations
+            How Stratxcel keeps your inquiries organized
           </h2>
           <div className="mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
             <div className="rounded-xl border border-sx-border bg-sx-bg p-6">
-              <h3 className="font-sx-sans text-base font-bold text-sx-text">WhatsApp & Web Sync</h3>
+              <h3 className="font-sx-sans text-base font-bold text-sx-text">WhatsApp & Web Capture</h3>
               <p className="mt-2 font-sx-sans text-sm leading-relaxed text-sx-text-muted">
-                Captures incoming inquiries from WhatsApp Business and web forms, ensuring no conversation is lost.
+                Every WhatsApp and website inquiry to your business is captured, so no conversation gets lost.
               </p>
             </div>
             <div className="rounded-xl border border-sx-border bg-sx-bg p-6">
-              <h3 className="font-sx-sans text-base font-bold text-sx-text">Phone Normalization & Hygiene</h3>
+              <h3 className="font-sx-sans text-base font-bold text-sx-text">One Organized Record</h3>
               <p className="mt-2 font-sx-sans text-sm leading-relaxed text-sx-text-muted">
-                Cleans and normalizes E.164 phone formats, deduplicating contacts and linking inquiry history automatically.
+                Repeat inquiries from the same customer are matched automatically, so their history stays together.
               </p>
             </div>
             <div className="rounded-xl border border-sx-border bg-sx-bg p-6">
-              <h3 className="font-sx-sans text-base font-bold text-sx-text">Automated SLA Tracking</h3>
+              <h3 className="font-sx-sans text-base font-bold text-sx-text">Faster Response</h3>
               <p className="mt-2 font-sx-sans text-sm leading-relaxed text-sx-text-muted">
-                Monitors response speed, alerts owners when deals stall, and prepares draft follow-ups for approval.
+                Draft replies are prepared for review, so you can respond quickly without typing every message from scratch.
               </p>
             </div>
           </div>

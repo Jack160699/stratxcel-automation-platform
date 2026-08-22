@@ -62,7 +62,14 @@ async function run() {
   const globalsCss = read("app", "globals.css");
   const themeProvider = read("components", "theme", "ThemeProvider.tsx");
   assert.ok(globalsCss.includes("sx-theme-dark") || globalsCss.includes(".dark"), "globals.css must define dark mode CSS tokens");
-  assert.ok(globalsCss.includes("--sx-bg: #090d16"), "globals.css must specify dark background token");
+  // The dark background token used to be declared twice (an early, pre-@theme
+  // block and this later, correctly-ordered one — see the html.sx-theme-dark
+  // comment in globals.css); both targeted the same element at equal
+  // specificity, so the later declaration (#06080c) already won the cascade
+  // and was the only one ever actually rendered. The duplicate, wrongly
+  // ordered #090d16 block has been removed as the fix for that documented
+  // production bug — this now checks the one real, active token.
+  assert.ok(globalsCss.includes("--sx-bg: #06080c"), "globals.css must specify dark background token");
   assert.ok(themeProvider.includes('classList.toggle("dark"'), "ThemeProvider must toggle dark class");
   assert.ok(themeProvider.includes('setAttribute("data-theme"'), "ThemeProvider must set data-theme attribute");
   console.log("✓ Issue G: Dark mode CSS variables, theme provider class toggles, and token mappings verified.");

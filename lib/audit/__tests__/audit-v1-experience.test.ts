@@ -140,14 +140,20 @@ const globalsCss = readFileSync(new URL("../../../app/globals.css", import.meta.
 assert.match(globalsCss, /html\.sx-theme-dark/);
 assert.match(globalsCss, /html\.sx-theme-light/);
 assert.ok(globalsCss.indexOf("@theme inline") < globalsCss.indexOf("html.sx-theme-dark"));
-const checkout = readFileSync(new URL("../../../app/api/platform/audit/checkout/route.ts", import.meta.url), "utf8");
-assert.match(checkout, /freshAuditEligible/);
-assert.match(checkout, /generation/);
-assert.doesNotMatch(checkout, /fulfilment_source: "product_grant"/);
+// freshAuditEligible/generation moved from the checkout route into
+// lib/audit/load-hub-data.ts during the Audit Hub fetch-waterfall
+// elimination (fix(perf): eliminate client-side fetch waterfall on Audit
+// Hub) — same behavior, different file.
+const auditHubData = readFileSync(new URL("../load-hub-data.ts", import.meta.url), "utf8");
+assert.match(auditHubData, /freshAuditEligible/);
+assert.match(auditHubData, /generation/);
+assert.doesNotMatch(auditHubData, /fulfilment_source: "product_grant"/);
 const onboarding = readFileSync(new URL("../../../app/api/platform/audit/onboarding/route.ts", import.meta.url), "utf8");
 assert.match(onboarding, /discoverPublicBusiness/);
 assert.match(onboarding, /start_automatic_audit_generation_v1/);
-const auditHub = readFileSync(new URL("../../../app/app/audit/page.tsx", import.meta.url), "utf8");
+// AuditHubPage's rendering moved into AuditHubClient.tsx during the same
+// perf refactor — page.tsx is now just the server-side data loader.
+const auditHub = readFileSync(new URL("../../../app/app/audit/AuditHubClient.tsx", import.meta.url), "utf8");
 assert.match(auditHub, /Your Free Business Audit is underway/);
 assert.match(auditHub, /VisualAuditReport/);
 assert.match(auditHub, /PROCESSING_STAGES/);

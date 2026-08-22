@@ -99,7 +99,7 @@ assert.ok(pageFile.includes("FreeUserDashboard"), "Page must have dedicated Free
 assert.ok(pageFile.includes("SubscribedUserDashboard"), "Page must have dedicated SubscribedUserDashboard component");
 assert.ok(pageFile.includes("What's verified and ready") || pageFile.includes("What&apos;s verified and ready"), "Free dashboard must present verified foundation checklist");
 assert.ok(pageFile.includes("What you can unlock"), "Free dashboard must highlight unlockable value");
-assert.ok(pageFile.includes("Running now"), "Subscribed dashboard must present operational running work");
+assert.ok(pageFile.includes("StratXcel is working on"), "Subscribed dashboard must present operational running work");
 assert.ok(!pageFile.includes("Awaiting funds"), "Dashboard must NOT show misleading awaiting funds text");
 
 console.log("✓ Free vs Subscribed dashboard architecture verified.");

@@ -417,7 +417,7 @@ export default function BrandPage() {
             <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-sx-text-subtle">Products & Services</p>
             {(content.products ?? []).length === 0 ? (
               <div className="mt-3">
-                <EmptyState title="No products listed." subtitle="Product/service editing is a follow-up to this pass." />
+                <EmptyState title="No products listed yet." subtitle="Products and services added during onboarding will show up here." />
               </div>
             ) : (
               <div className="mt-3 grid gap-3 sm:grid-cols-2">

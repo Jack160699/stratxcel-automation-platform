@@ -10,6 +10,13 @@ export interface PlanGrowthHandlerResult {
   text?: string;
 }
 
+/** GST-inclusive monthly price as "₹X,XXX/mo", read from the canonical catalog — never hardcoded here. */
+function monthlyPrice(tier: PlanTier): string {
+  const cents = PLAN_DEFINITIONS[tier].priceCents;
+  if (cents == null) return "custom pricing";
+  return `₹${(cents / 100).toLocaleString("en-IN", { maximumFractionDigits: 0 })}/mo`;
+}
+
 /**
  * Deterministic, plan-aware response handler for "What's my free plan include?",
  * "What plan am I on?", "Can you publish to Instagram?", and related subscription questions.
@@ -53,8 +60,8 @@ export async function handleAccountPlanInquiryTurn(
 You can still use **Growth Assistant** and **Content Studio** to create, edit, customize, and download high-resolution posters and captions.
 
 **To automate live publishing:**
-• **Growth Plan** (₹9,999/mo) includes **25 scheduled posts/mo** across Instagram, Facebook, and YouTube, plus 1 Meta Ad campaign.
-• **Business Plan** (₹19,999/mo) includes **50 scheduled posts/mo**, 3 Meta Ad campaigns, and 1,500 WhatsApp contacts.
+• **Growth Plan** (${monthlyPrice("growth")}) includes **25 scheduled posts/mo** across Instagram, Facebook, and YouTube, plus 1 Meta Ad campaign.
+• **Business Plan** (${monthlyPrice("business")}) includes **50 scheduled posts/mo**, 3 Meta Ad campaigns, and 1,500 WhatsApp contacts.
 
 [Upgrade to Growth →](/app/billing) · [Open Content Studio →](/app/content)`;
   } else if (activeTier === "free") {
@@ -64,14 +71,14 @@ You can still use **Growth Assistant** and **Content Studio** to create, edit, c
 • **Business Growth Audit**: 100-point local search, Google profile, and website audit
 • **My Shop**: Store identity, logo management, operating hours, and business voice
 • **Content Studio**: AI creative poster design, multilingual caption generation, and draft library
-• **WhatsApp CRM**: WhatsApp phone number pairing and customer contact inbox
+• **WhatsApp**: Phone number pairing so customers can reach you on WhatsApp
 • **Website**: Instant \`.stratxcel.in\` live mobile website preview
 
 **Current Usage:**
 • Automated Social Publishing: **0 of 0** posts used (Draft & Manual Download active)
 • Meta Ad Campaigns: **0 of 0** active
 
-**Available with Growth Upgrade (₹9,999/mo):**
+**Available with Growth Upgrade (${monthlyPrice("growth")}):**
 • **25 automated scheduled posts/mo** on Instagram, Facebook & YouTube
 • **1 automated Meta Ad campaign** with budget management
 • **500 WhatsApp customer contacts**

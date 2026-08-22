@@ -19,8 +19,15 @@ export type SocialCopilotIntent =
   | "NATURAL_AFFIRMATION"
   | "GENERAL_CONVERSATION";
 
+// "plan" alone is ambiguous with WEEK_PLAN's action verbs ("plan this week",
+// "plan my content") — every branch that can match on the bare word "plan"
+// must require a real possessive/query word directly attached to it (my,
+// the, what's, what...am i on), never an optional prefix, or "Plan this
+// week" false-positives into an account-plan inquiry instead of
+// PREPARE_WEEK_PLAN. subscription/entitlements/pricing/limits are
+// unambiguous on their own and stay prefix-optional.
 const PLAN_INQUIRY =
-  /\b(?:(?:what(?:'s| does)?|show|tell me)?\s*(?:my|the|about)?\s*(?:free\s+plan|plan|subscription|entitlements?|pricing|limits?)|what\s+(?:plan|tier)\s+(?:am\s+i|are\s+we)\s+on|free\s+plan\s+include|mera\s+plan|free\s+plan\s+mein\s+kya|can\s+you\s+(?:publish|post)\s+(?:this\s+)?to\s+instagram)\b|(?:फ्री\s*प्लान|मेरा\s*प्लान|प्लान\s*की\s*जानकारी)/i;
+  /\b(?:what(?:'s| does)?\s+(?:my\s+)?(?:free\s+)?plan|what\s+(?:plan|tier)\s+(?:am\s+i|are\s+we)\s+on|show\s+(?:me\s+)?my\s+plan|tell\s+me\s+about\s+my\s+plan|my\s+(?:free\s+)?plan|free\s+plan\s+include|free\s+plan\s+mein\s+kya|mera\s+plan|subscription|entitlements?|pricing|limits?|can\s+you\s+(?:publish|post)\s+(?:this\s+)?to\s+instagram)\b|(?:फ्री\s*प्लान|मेरा\s*प्लान|प्लान\s*की\s*जानकारी)/i;
 
 const GROWTH_ADVICE =
   /\b(?:what\s+should\s+i\s+do\s+(?:this\s+week|now|today)|what\s+to\s+do\s+this\s+week|is\s+hafte\s+kya\s+(?:karein|karna\s+chahiye|karun)|top\s+actions?\s+this\s+week|growth\s+(?:advice|tips|recommendations?)|how\s+(?:to|can\s+i)\s+grow\s+(?:my\s+)?business)\b|(?:इस\s*हफ्ते\s*क्या\s*करें|ग्रोथ\s*सलाह|बिजनेस\s*ग्रो)/i;

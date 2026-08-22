@@ -14,7 +14,7 @@ export default async function ContentInboxPage() {
         <p className="mt-1 text-sm text-sx-text-muted">Comments and messages across connected channels.</p>
       </header>
 
-      <StaffScopedNotice what="Content Inbox" />
+      <StaffScopedNotice what="Content Inbox" accessMode={ctx.accessMode} />
 
       <div className="flex flex-wrap gap-2">
         {["All", "Unread", "Instagram", "Facebook", "YouTube"].map((f) => (

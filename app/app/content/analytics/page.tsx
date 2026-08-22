@@ -14,7 +14,7 @@ export default async function ContentAnalyticsPage() {
         <p className="mt-1 text-sm text-sx-text-muted">Reach, engagement and publishing performance across channels.</p>
       </header>
 
-      <StaffScopedNotice what="Content analytics" />
+      <StaffScopedNotice what="Content analytics" accessMode={ctx.accessMode} />
 
       <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Metric label="Posts published" value="—" />

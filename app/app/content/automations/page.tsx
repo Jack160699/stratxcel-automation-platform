@@ -20,7 +20,7 @@ export default async function ContentAutomationsPage() {
         </Button>
       </header>
 
-      <StaffScopedNotice what="Automations" />
+      <StaffScopedNotice what="Automations" accessMode={ctx.accessMode} />
 
       <EmptyState title="No rules yet." subtitle="Rules will list here once this workspace can create them." />
     </div>

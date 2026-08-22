@@ -29,7 +29,16 @@ const artifact = fs.readFileSync(path.join(root, "app/admin/(shell)/social/agent
 const attachmentRepo = fs.readFileSync(path.join(root, "lib/social/repositories/agent-attachments.ts"), "utf8");
 
 assert.ok(!orchestrator.includes("processingStatus=${attachment.processingStatus}"), "processing enum must not reach the model");
-assert.ok(orchestrator.includes("persisted_publish_artifact_missing"), "missing persisted artifact must fail truthfully");
+// fix(growth-assistant): unblock creative post execution and eliminate false
+// review_artifact_missing human review error — the named
+// persisted_publish_artifact_missing failure was replaced by a narrower,
+// correct rule: only fail when the turn produced *nothing at all* (no
+// publish artifact, no generated candidates, no meaningful text). A turn
+// that legitimately produced candidates/text without a publish artifact no
+// longer false-positives; a genuinely empty turn still fails truthfully via
+// hasPublishArtifact/hasGeneratedCandidates/hasMeaningfulText below.
+assert.ok(orchestrator.includes("hasPublishArtifact") && orchestrator.includes("hasGeneratedCandidates") && orchestrator.includes("hasMeaningfulText"), "empty turns must still fail truthfully");
+assert.ok(orchestrator.includes("Only fail if turn produced absolutely nothing"), "failure must remain scoped to genuinely empty turns, not merely missing a publish artifact");
 assert.ok(orchestrator.includes('proposeAction(ctx, sessionId, "schedule_post"'), "persisted variants must deterministically become review actions");
 assert.ok(orchestrator.includes("PUBLISH_INTENT_TOOLS.has(tool.schema.name) ||"), "manual publish always requires explicit control");
 assert.ok(rail.includes("activePublishActions") && rail.includes("{platform}"), "Working With must distinguish active platforms");

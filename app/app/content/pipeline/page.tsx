@@ -40,7 +40,7 @@ export default async function ContentPipelinePage({ searchParams }: { searchPara
         <p className="mt-1 text-sm text-sx-text-muted">Every piece of content, from draft to published.</p>
       </header>
 
-      <StaffScopedNotice what="Pipeline" />
+      <StaffScopedNotice what="Pipeline" accessMode={ctx.accessMode} />
 
       {generated ? <UseGeneratedAsset generated={generated} variants={variants} /> : null}
 

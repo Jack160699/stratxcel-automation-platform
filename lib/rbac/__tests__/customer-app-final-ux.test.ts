@@ -37,11 +37,16 @@ assert.match(styles, /0\.9375rem/);
 
 const walletRoute = read("app", "api", "platform", "wallet", "route.ts");
 assert.match(walletRoute, /requireTenantReadPermission/);
-assert.match(walletRoute, /getTenantServiceContext\(\)\.supabase/);
+// getTenantServiceContext().supabase (service-role) was replaced by the
+// tenant-scoped, RLS-respecting ctx.supabase client — the service-role read
+// was itself the bug (crossed the customer-read RLS boundary; see
+// tenant-dashboard-no-service-role.test.ts) and is fixed by the
+// wallet_accounts_tenant_insert migration's zero-balance INSERT policy.
+assert.match(walletRoute, /getWalletAccount\(ctx\.supabase, tenantId\)/);
 
 const billing = read("app", "app", "billing", "page.tsx");
 assert.match(billing, /Current plan/);
-assert.match(billing, /Start Growth/);
+assert.match(billing, /Request \{p\.name\} activation/);
 assert.match(billing, /Included each month/);
 assert.match(billing, /walletError/);
 assert.doesNotMatch(billing, /createPayment|capturePayment/);
@@ -57,7 +62,7 @@ assert.deepEqual(
     billingStatus: "Active",
     billingCycle: "Monthly",
     nextRenewalAt: "2026-09-01",
-    priceCents: 999_900,
+    priceCents: 799_900,
     activePaid: true,
   },
 );
