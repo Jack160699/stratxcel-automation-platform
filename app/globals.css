@@ -60,6 +60,45 @@
   --foreground: var(--sx-text);
 }
 
+:root.sx-theme-dark,
+:root.dark,
+:root[data-theme="dark"],
+html.sx-theme-dark,
+html.dark,
+html[data-theme="dark"] {
+  --sx-bg: #090d16;
+  --sx-surface-1: #111827;
+  --sx-surface-2: #1f2937;
+  --sx-surface-3: #374151;
+  --sx-elevated: #1a2234;
+  --sx-border: #1f2937;
+  --sx-border-strong: #374151;
+
+  --sx-text: #f9fafb;
+  --sx-text-muted: #9ca3af;
+  --sx-text-subtle: #6b7280;
+
+  --sx-accent: #3b82f6;
+  --sx-accent-hover: #60a5fa;
+  --sx-accent-muted: rgba(59, 130, 246, 0.15);
+  --sx-accent-on: #ffffff;
+  --sx-royal: #6366f1;
+  --sx-ai: #14b8a6;
+
+  --sx-success: #22c55e;
+  --sx-warning: #f59e0b;
+  --sx-danger: #ef4444;
+  --sx-learning: #8b5cf6;
+  --sx-offline: #9ca3af;
+
+  --sx-shadow-lg: 0 12px 32px -12px rgba(0, 0, 0, 0.5);
+  --sx-shadow-xl: 0 32px 64px -24px rgba(0, 0, 0, 0.6);
+
+  --background: var(--sx-bg);
+  --foreground: var(--sx-text);
+  color-scheme: dark;
+}
+
 .sx-public-theme {
   --sx-bg: #fafbfc;
   --sx-surface-1: #ffffff;

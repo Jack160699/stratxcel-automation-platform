@@ -295,7 +295,55 @@ export default function BrandPage() {
             placeholder="e.g. Free delivery within 3 km"
           />
 
-          {/* Photos & Logo */}
+          {/* Brand Logo & Business Mark */}
+          <Card className="p-5">
+            <div className="flex items-center justify-between">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-sx-text-subtle">Business Logo & Brand Mark</p>
+              {typeof content.logo_url === "string" && content.logo_url && !readOnly && (
+                <button
+                  type="button"
+                  onClick={() => field("logo_url", undefined)}
+                  className="text-xs font-semibold text-sx-danger hover:underline"
+                >
+                  Remove Logo
+                </button>
+              )}
+            </div>
+            <div className="mt-3 flex items-center gap-4">
+              {typeof content.logo_url === "string" && content.logo_url ? (
+                <div className="relative h-16 w-16 overflow-hidden rounded-sx-md border border-sx-border bg-sx-surface-2">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={content.logo_url} alt="Business logo" className="h-full w-full object-cover" />
+                </div>
+              ) : (
+                <div className="flex h-16 w-16 items-center justify-center rounded-sx-md border border-dashed border-sx-border bg-sx-surface-2 text-lg font-bold text-sx-accent">
+                  {String(content.business_name || active?.name || "SX").slice(0, 2).toUpperCase()}
+                </div>
+              )}
+              <div className="flex flex-col gap-1">
+                <p className="text-xs font-medium text-sx-text">
+                  {typeof content.logo_url === "string" && content.logo_url ? "Custom logo uploaded" : "No custom logo set — using business initials"}
+                </p>
+                <p className="text-[11px] text-sx-text-subtle">
+                  This logo appears in your customer header, social creatives, and audit reports.
+                </p>
+                {!readOnly && (
+                  <div className="mt-1 flex items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={uploadingPhoto}
+                      onClick={() => fileInputRef.current?.click()}
+                      className="rounded-sx-xs bg-sx-surface-2 border border-sx-border px-2.5 py-1 text-xs font-semibold text-sx-text hover:bg-sx-surface-3 transition-colors"
+                    >
+                      {typeof content.logo_url === "string" && content.logo_url ? "Replace Logo" : "Upload Logo"}
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </Card>
+
+          {/* Photos & Gallery */}
           <Card className="p-5">
             <div className="flex items-center justify-between">
               <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-sx-text-subtle">Photos & Logo</p>

@@ -4,10 +4,16 @@ import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { useCurrentTenant } from "./CurrentTenantContext";
 
+function getInitials(name: string): string {
+  const parts = name.trim().split(/\s+/);
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[1][0]).toUpperCase();
+}
+
 /**
- * Brand & Workspace Selector in the customer top header.
- * Provides instant access to the canonical Brand/Business Center (/app/brand)
- * and allows seamless switching when multiple client workspaces exist.
+ * Interactive Brand & Workspace Selector in the customer top header.
+ * Replaces random decorative icons with real brand identity/initials and
+ * provides instant access to the canonical Brand Center (/app/brand).
  */
 export function ClientTenantSwitcher() {
   const { tenants, active, switching, switchTenant } = useCurrentTenant();
@@ -24,6 +30,7 @@ export function ClientTenantSwitcher() {
   }, [open]);
 
   const businessName = active?.name ?? "Your Business";
+  const initials = getInitials(businessName);
 
   return (
     <div ref={rootRef} className="relative">
@@ -34,34 +41,43 @@ export function ClientTenantSwitcher() {
         aria-expanded={open}
         disabled={switching}
         aria-label={`Current brand: ${businessName}. Open brand menu`}
-        className="flex min-h-9 min-w-0 items-center gap-1.5 sm:gap-2 rounded-sx-sm border border-sx-border bg-sx-surface-2 px-2 sm:px-3 text-xs sm:text-[13px] font-semibold text-sx-text hover:border-sx-border-strong hover:bg-sx-surface-3 transition-colors disabled:opacity-60"
+        className="flex min-h-10 min-w-0 items-center gap-2 rounded-sx-sm border border-sx-border bg-sx-surface-1 px-2.5 sm:px-3 text-xs sm:text-[13px] font-semibold text-sx-text hover:border-sx-border-strong hover:bg-sx-surface-2 transition-colors disabled:opacity-60 shadow-xs"
       >
-        <span className="text-sm">🏪</span>
-        <span className="min-w-0 max-w-[8rem] sm:max-w-[12rem] truncate font-bold">
+        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-sx-accent/15 text-[11px] font-bold text-sx-accent">
+          {initials}
+        </span>
+        <span className="min-w-0 max-w-[8rem] sm:max-w-[14rem] truncate font-bold text-sx-text">
           {switching ? "Switching…" : businessName}
         </span>
-        <span aria-hidden className="text-sx-text-subtle text-[10px] sm:text-xs">▾</span>
+        <span aria-hidden className="text-sx-text-subtle text-[11px] sm:text-xs">▾</span>
       </button>
 
       {open && (
         <div
           role="listbox"
-          className="absolute left-0 z-50 mt-1.5 w-72 overflow-hidden rounded-sx-md border border-sx-border bg-sx-surface-1 shadow-[var(--sx-shadow-lg)] divide-y divide-sx-border/60"
+          className="absolute left-0 z-50 mt-1.5 w-76 overflow-hidden rounded-sx-md border border-sx-border bg-sx-surface-1 shadow-[var(--sx-shadow-lg)] divide-y divide-sx-border/60"
         >
           {/* Active Brand Details & Brand Center CTA */}
-          <div className="p-3 bg-sx-surface-2/60">
+          <div className="p-3.5 bg-sx-surface-2/70">
             <div className="flex items-center justify-between">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-sx-text-subtle">Active Business</span>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-sx-text-subtle">Active Business Identity</span>
               <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-500">Live</span>
             </div>
-            <p className="mt-1 text-[14px] font-bold text-sx-text truncate">{businessName}</p>
-            <p className="text-[11px] text-sx-text-muted">{active?.role === "owner" ? "Owner Workspace" : "Team Member"}</p>
+            <div className="mt-2 flex items-center gap-2.5">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-sx-accent/20 text-xs font-bold text-sx-accent">
+                {initials}
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="text-[14px] font-bold text-sx-text truncate">{businessName}</p>
+                <p className="text-[11px] text-sx-text-muted">{active?.role === "owner" ? "Owner Workspace" : "Team Member"}</p>
+              </div>
+            </div>
 
-            <div className="mt-3 flex flex-col gap-1.5">
+            <div className="mt-3.5 flex flex-col gap-1.5">
               <Link
                 href="/app/brand"
                 onClick={() => setOpen(false)}
-                className="flex items-center justify-between rounded-sx-sm bg-sx-accent/10 hover:bg-sx-accent/15 px-2.5 py-1.5 text-xs font-bold text-sx-accent transition-colors"
+                className="flex items-center justify-between rounded-sx-sm bg-sx-accent hover:bg-sx-accent-hover px-3 py-2 text-xs font-bold text-sx-accent-on transition-colors shadow-xs"
               >
                 <span>Open Brand Center & Brain</span>
                 <span>→</span>
@@ -69,7 +85,7 @@ export function ClientTenantSwitcher() {
               <Link
                 href="/app/integrations"
                 onClick={() => setOpen(false)}
-                className="flex items-center justify-between rounded-sx-sm bg-sx-surface-1 hover:bg-sx-surface-3 px-2.5 py-1.5 text-xs font-semibold text-sx-text transition-colors"
+                className="flex items-center justify-between rounded-sx-sm bg-sx-surface-1 hover:bg-sx-surface-3 px-3 py-2 text-xs font-semibold text-sx-text transition-colors border border-sx-border"
               >
                 <span>Connected Accounts</span>
                 <span className="text-sx-text-muted">›</span>
@@ -99,7 +115,7 @@ export function ClientTenantSwitcher() {
                       <span className="block truncate">{t.name}</span>
                       <span className="block truncate text-[10px] text-sx-text-subtle">{t.role ?? "Staff support"}</span>
                     </span>
-                    {active?.tenantId === t.tenantId && <span aria-hidden className="shrink-0 text-sx-accent font-bold">✓</span>}
+                    {active?.tenantId === t.tenantId && <span className="text-sx-accent font-bold">✓</span>}
                   </button>
                 ))}
               </div>

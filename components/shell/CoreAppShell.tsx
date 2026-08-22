@@ -1,5 +1,4 @@
 import type { ReactNode } from "react";
-import Link from "next/link";
 import Image from "next/image";
 import { Sidebar, type SidebarNavGroup } from "@/components/shell/Sidebar";
 import { MobileBottomNav, type BottomNavItem } from "@/components/shell/MobileBottomNav";
@@ -29,30 +28,6 @@ export function BrandMark({ expanded = false, product, customer = false }: { exp
         </span>
       )}
     </div>
-  );
-}
-
-/**
- * Persistent floating "Ask / पूछें" button — spec §6, §7.7. Never a nav tab;
- * opens the Copilot surface from anywhere in the customer app. Bottom-right,
- * above the mobile bottom nav; bottom-right of content on desktop.
- */
-function AskCopilotButton() {
-  return (
-    <Link
-      href="/app/social/copilot"
-      className="fixed bottom-24 right-4 z-20 flex h-13 items-center gap-2 rounded-sx-pill bg-sx-accent pl-4 pr-5 text-sx-accent-on shadow-[var(--sx-shadow-xl)] transition-transform active:scale-95 hover:bg-[color:var(--sx-accent-hover)] md:bottom-8 md:right-8"
-      style={{ height: 52 }}
-      aria-label="Ask StratXcel"
-    >
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M12 3.5l1.9 5.6L19.5 11l-5.6 1.9L12 18.5l-1.9-5.6L4.5 11l5.6-1.9z" />
-      </svg>
-      <span className="flex flex-col items-start leading-none">
-        <span className="text-[15px] font-semibold">Ask</span>
-        <span className="sx-hi text-[11px] opacity-85">पूछें</span>
-      </span>
-    </Link>
   );
 }
 
@@ -117,7 +92,6 @@ export function CoreAppShell({
         <main className="min-h-0 min-w-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6 sm:py-6 lg:px-8 lg:py-8 w-full max-w-full">{children}</main>
       </div>
       <MobileBottomNav items={mobileNavItems} activeKey={activeKey} moreGroups={mobileMoreGroups} customer={isCustomer} />
-      {isCustomer && <AskCopilotButton />}
     </div>
   );
 }

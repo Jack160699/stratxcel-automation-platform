@@ -25,7 +25,9 @@ function subscribe(onChange: () => void) {
 
 function applyTheme(theme: Theme) {
   document.documentElement.classList.toggle("sx-theme-dark", theme === "dark");
+  document.documentElement.classList.toggle("dark", theme === "dark");
   document.documentElement.classList.toggle("sx-theme-light", theme === "light");
+  document.documentElement.setAttribute("data-theme", theme);
   document.cookie = `${STORAGE_KEY}=${theme}; path=/; max-age=31536000; samesite=lax`;
 }
 

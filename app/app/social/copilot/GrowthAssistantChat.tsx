@@ -444,7 +444,7 @@ export function GrowthAssistantChat({ tenantId, initialSessions }: { tenantId: s
   const groups = useMemo(() => groupSessionsByRecency(sessions), [sessions]);
 
   return (
-    <div className="flex h-screen w-full flex-col overflow-hidden bg-sx-bg">
+    <div className="flex h-[100dvh] max-h-[100dvh] w-full flex-col overflow-hidden bg-sx-bg text-sx-text">
       {/* Hidden file inputs for Camera, Gallery, and Documents */}
       <input
         type="file"
@@ -482,12 +482,9 @@ export function GrowthAssistantChat({ tenantId, initialSessions }: { tenantId: s
             </svg>
           </Link>
           <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-[15px] sm:text-[16px] font-bold text-sx-text leading-none">Growth Assistant</h1>
-              <span className="rounded-full bg-sx-accent/15 px-2 py-0.5 text-[10px] font-bold text-sx-accent">AI</span>
-            </div>
-            <p className="mt-0.5 text-[10.5px] sm:text-[11px] text-sx-text-subtle leading-none">
-              व्यापार सहायक · Ask anything to grow your business
+            <h1 className="text-[15px] sm:text-[16px] font-bold text-sx-text leading-tight">Growth Assistant</h1>
+            <p className="text-[11px] sm:text-[12px] text-sx-text-subtle leading-tight">
+              Ask anything to grow your business
             </p>
           </div>
         </div>
@@ -506,18 +503,22 @@ export function GrowthAssistantChat({ tenantId, initialSessions }: { tenantId: s
           <button
             type="button"
             onClick={() => (showHistory ? setShowHistory(false) : openHistory())}
-            aria-label="Conversation history"
+            aria-label="Chat history"
+            title="Chat history"
             className={`flex h-9 w-9 items-center justify-center rounded-sx-sm transition-colors ${
               showHistory ? "bg-sx-accent text-sx-accent-on" : "bg-sx-surface-2 text-sx-text-muted hover:text-sx-text"
             }`}
           >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 12h18M3 6h18M3 18h12" /></svg>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10" />
+              <polyline points="12 6 12 12 16 14" />
+            </svg>
           </button>
         </div>
       </header>
 
       {/* SCROLLABLE CONVERSATION AREA */}
-      <div className="flex flex-1 overflow-hidden relative">
+      <div className="flex flex-1 min-h-0 overflow-hidden relative">
         {showHistory ? (
           <div className="h-full w-full overflow-y-auto p-4 max-w-2xl mx-auto">
             <div className="mb-4 flex items-center justify-between">
@@ -562,35 +563,35 @@ export function GrowthAssistantChat({ tenantId, initialSessions }: { tenantId: s
             ))}
           </div>
         ) : (
-          <div ref={scrollRef} className="h-full w-full overflow-y-auto px-4 py-6 max-w-3xl mx-auto space-y-4">
+          <div ref={scrollRef} className="h-full w-full overflow-y-auto px-4 py-4 max-w-3xl mx-auto space-y-4">
             {loadingHistory && <p className="text-xs text-sx-text-subtle">Loading conversation…</p>}
 
             {/* Empty State with Suggested Actions */}
             {!loadingHistory && messages.length === 0 && (
-              <div className="flex flex-col items-center pt-2 pb-6 text-center">
+              <div className="flex flex-col items-center pt-2 pb-4 text-center max-w-lg mx-auto">
                 <span
-                  className="flex h-14 w-14 items-center justify-center rounded-sx-lg shadow-lg text-2xl"
+                  className="flex h-11 w-11 items-center justify-center rounded-sx-md shadow-md text-xl"
                   style={{ background: "linear-gradient(135deg, var(--sx-accent), #3b82f6)" }}
                 >
                   ✨
                 </span>
-                <h2 className="mt-4 text-xl font-bold text-sx-text">How can I help your business grow today?</h2>
-                <p className="mt-1 text-xs text-sx-text-muted">
+                <h2 className="mt-2.5 text-base sm:text-lg font-bold text-sx-text">How can I help your business grow today?</h2>
+                <p className="mt-0.5 text-xs text-sx-text-muted">
                   Ask me to create posters, write captions, analyze reviews, or suggest growth strategies.
                 </p>
 
-                <div className="mt-6 grid w-full grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <div className="mt-4 grid w-full grid-cols-1 sm:grid-cols-2 gap-2">
                   {QUICK_ACTIONS.map((qa) => (
                     <button
                       key={qa.label}
                       type="button"
                       onClick={() => submit(qa.prompt)}
-                      className="flex items-center gap-3 rounded-sx-md border border-sx-border bg-sx-surface-1 p-3 text-left transition-colors hover:border-sx-accent/50"
+                      className="flex items-center gap-2.5 rounded-sx-md border border-sx-border bg-sx-surface-1 p-2.5 text-left transition-colors hover:border-sx-accent/50"
                     >
-                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-sx-sm" style={{ background: qa.tint }}>
+                      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-sx-sm text-xs" style={{ background: qa.tint }}>
                         {qa.icon}
                       </span>
-                      <span className="text-[13px] font-semibold leading-snug text-sx-text">{qa.label}</span>
+                      <span className="text-[12.5px] font-semibold leading-snug text-sx-text">{qa.label}</span>
                     </button>
                   ))}
                 </div>
