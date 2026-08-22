@@ -14,8 +14,8 @@ import { GrowthAssistantChat } from "./GrowthAssistantChat";
  * Customer Growth Assistant (Social Copilot) — mobile-first, tenant-scoped chat
  * interface for content generation, AI posters, and automated publishing.
  */
-export default async function ClientSocialCopilotPage({ searchParams }: { searchParams: Promise<{ handoff?: string; goal?: string }> }) {
-  const { handoff = "", goal = "" } = await searchParams;
+export default async function ClientSocialCopilotPage({ searchParams }: { searchParams: Promise<{ handoff?: string }> }) {
+  const { handoff = "" } = await searchParams;
 
   // WhatsApp handoff path
   if (handoff) {
@@ -51,5 +51,5 @@ export default async function ClientSocialCopilotPage({ searchParams }: { search
   if (!ctx.ok) return null;
   const sessions = await listSessions(ctx, 30);
 
-  return <GrowthAssistantChat tenantId={tenantId} initialSessions={sessions} initialInput={goal} />;
+  return <GrowthAssistantChat tenantId={tenantId} initialSessions={sessions} />;
 }
