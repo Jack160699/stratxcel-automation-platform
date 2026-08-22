@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { useCurrentTenant } from "../CurrentTenantContext";
 import { ModulePageHeader, ModuleStatusSummary } from "../components/ModulePageHeader";
 import { MetricUnavailable } from "../components/MetricUnavailable";
@@ -20,13 +20,6 @@ const RANGE_OPTIONS = [
   { value: "all", label: "All time" },
 ];
 
-/**
- * Reports over real data only: missions, approvals, leads, wallet balance.
- * Anything without a real source (ad performance, historical usage/cost
- * ledger, content/social metrics) renders MetricUnavailable — never a
- * fabricated 0 or invented delta. Export and scheduling stay disabled;
- * neither has a backing model yet.
- */
 export default function ReportsPage() {
   const { active } = useCurrentTenant();
   const tenantId = active?.tenantId;
@@ -67,8 +60,12 @@ export default function ReportsPage() {
     if (auditRes.ok) setAuditEvents(auditBody.events);
   }
 
+  const initialTenantRef = useRef(tenantId);
   useEffect(() => {
-    load();
+    if (tenantId) {
+      initialTenantRef.current = tenantId;
+      load();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenantId]);
 

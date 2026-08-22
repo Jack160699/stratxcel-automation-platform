@@ -181,6 +181,16 @@ export async function editTenantProposedPublishActionAction(
   }
 }
 
+export async function getTenantSessionHydrationAction(tenantId: string, sessionId: string) {
+  const ctx = await requireTenant(tenantId);
+  const [detail, runWithEvents, session] = await Promise.all([
+    getSessionDetail(ctx, sessionId),
+    getLatestRunWithEvents(ctx, sessionId),
+    getSession(ctx, sessionId),
+  ]);
+  return { detail, runWithEvents, session };
+}
+
 export async function getTenantAgentSessionAction(tenantId: string, sessionId: string) {
   const ctx = await requireTenant(tenantId);
   return getSessionDetail(ctx, sessionId);

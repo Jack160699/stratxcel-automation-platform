@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { useCurrentTenant } from "../CurrentTenantContext";
 import { ModulePageHeader } from "../components/ModulePageHeader";
 import { IntegrationStatus } from "../components/IntegrationStatus";
@@ -54,12 +54,6 @@ function formatSize(bytes: number | null): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-/**
- * Real, tenant-scoped Files & Artifacts view over @stratxcel/storage's
- * storage_file_references table (see app/api/platform/artifacts/route.ts —
- * the first route consuming it). Upload stays disabled: it requires a
- * connected provider, and this build phase does not activate integrations.
- */
 export default function FilesPage() {
   const { active } = useCurrentTenant();
   const tenantId = active?.tenantId;
@@ -84,8 +78,12 @@ export default function FilesPage() {
     setConnection(body.connection);
   }
 
+  const initialTenantRef = useRef(tenantId);
   useEffect(() => {
-    load();
+    if (tenantId) {
+      initialTenantRef.current = tenantId;
+      load();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenantId]);
 

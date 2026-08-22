@@ -1,43 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useCurrentTenant } from "../CurrentTenantContext";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { ErrorState } from "@/components/ui/Feedback";
 import { PlatformIcon, type PlatformIconKey } from "@/components/audit/PlatformIcon";
 import { GoogleSearchIntegrationPanel } from "../components/GoogleSearchIntegrationPanel";
+import type { ConnectorState, CustomerIntegrationStatus } from "@/lib/connectors/load-integrations-data";
 
-export type ConnectorState =
-  | "checking"
-  | "connected"
-  | "action_required"
-  | "setup_required"
-  | "discovered_public"
-  | "testing_access_required";
-
-interface CustomerIntegrationStatus {
-  whatsapp: ConnectorState;
-  facebook: ConnectorState;
-  instagram: ConnectorState;
-  youtube: ConnectorState;
-  google: ConnectorState;
-  google_analytics?: ConnectorState;
-  google_search_console?: ConnectorState;
-  threads?: ConnectorState;
-  linkedin?: ConnectorState;
-  presence?: Array<{
-    key: PlatformIconKey;
-    label: string;
-    handle: string | null;
-    href: string | null;
-    provenance: string;
-    lastSync: string | null;
-  }>;
-  selfService?: { google?: boolean; social?: boolean; whatsapp?: boolean };
-}
-
-/** Dot + label matching the Connected Accounts reference's visual language (green/Active, amber/Needs attention, gray/Not connected — exact wording kept from the tested product copy) — status is never colour alone, the label always says it too. */
 function ConnectionBadge({
   state,
   canConnect,
@@ -81,19 +52,12 @@ export default function IntegrationsPage() {
   const [status, setStatus] = useState<CustomerIntegrationStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Request Access Dialog State
-  // Connect Google Business — StratXcel App reference pre-connect intro.
-  // The actual OAuth authorization is Google's hosted consent screen (not
-  // recreated here); this is the real StratXcel-owned screen shown before
-  // that redirect, matching the reference's benefits-list intro.
   const [googleIntroOpen, setGoogleIntroOpen] = useState(false);
-
   const [requestModalProvider, setRequestModalProvider] = useState<{ key: string; title: string } | null>(null);
   const [requestReason, setRequestReason] = useState("");
   const [requestSubmitting, setRequestSubmitting] = useState(false);
   const [requestFeedback, setRequestFeedback] = useState<string | null>(null);
 
-  // WhatsApp Verification Modal State
   const [whatsappModalOpen, setWhatsappModalOpen] = useState(false);
   const [whatsappPhone, setWhatsappPhone] = useState("");
   const [whatsappOtp, setWhatsappOtp] = useState("");
@@ -102,14 +66,9 @@ export default function IntegrationsPage() {
   const [otpError, setOtpError] = useState<string | null>(null);
   const [cooldownSeconds, setCooldownSeconds] = useState(0);
   const [whatsappSuccessMsg, setWhatsappSuccessMsg] = useState<string | null>(null);
-  // StratXcel App reference "Connect WhatsApp" flow — step indicator state.
-  // isFirstConnect gates the benefits intro (only shown before a number has
-  // ever been verified, not on "Update Number"); justVerified shows the
-  // reference's dedicated success screen instead of closing straight to a toast.
   const [whatsappIsFirstConnect, setWhatsappIsFirstConnect] = useState(true);
   const [whatsappJustVerified, setWhatsappJustVerified] = useState<string | null>(null);
 
-  // Countdown timer for OTP resend cooldown
   useEffect(() => {
     if (cooldownSeconds <= 0) return;
     const timer = setInterval(() => {
@@ -157,10 +116,14 @@ export default function IntegrationsPage() {
     }
   }
 
+  const initialTenantRef = useRef(tenantId);
   useEffect(() => {
-    if (!tenantId) return;
-    reloadStatus();
-  }, [tenantId]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (tenantId) {
+      initialTenantRef.current = tenantId;
+      reloadStatus();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenantId]);
 
   const presenceFor = (key: PlatformIconKey) => status?.presence?.find((entry) => entry.key === key);
 
@@ -170,7 +133,6 @@ export default function IntegrationsPage() {
     state: ConnectorState;
     copy: string;
     isOAuth: boolean;
-    /** Reference groups connectors into "Primary Channels" vs "Analytics & Other". */
     tier: "primary" | "analytics";
   }> = [
     {
@@ -183,10 +145,6 @@ export default function IntegrationsPage() {
     },
     {
       key: "whatsapp",
-      // Deliberately not the reference's literal connector name — this
-      // verifies the phone number for OTP-based notifications only, not a
-      // full messaging-platform API integration (v1-customer-boundaries.test.ts /
-      // p0-product-boundaries.test.ts guard this distinction explicitly).
       title: "WhatsApp Number",
       state: status?.whatsapp ?? "setup_required",
       copy: status?.whatsapp === "connected"
@@ -265,8 +223,6 @@ export default function IntegrationsPage() {
         return;
       }
       const verified = data.verifiedNumber || whatsappPhone;
-      // StratXcel App reference "Connect WhatsApp" step 2 — a dedicated
-      // success screen inside the modal, not an immediate close-to-toast.
       setWhatsappJustVerified(verified);
       reloadStatus();
     } catch {
@@ -337,7 +293,7 @@ export default function IntegrationsPage() {
         />
       )}
 
-      {/* Primary Channels — StratXcel App reference row-list */}
+      {/* Primary Channels */}
       <section>
         <p className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-[0.06em] text-sx-text-subtle">Primary Channels</p>
         <div className="flex flex-col gap-2.5">
@@ -469,7 +425,7 @@ export default function IntegrationsPage() {
         </div>
       </section>
 
-      {/* Analytics & Other — StratXcel App reference row-list */}
+      {/* Analytics & Other */}
       {tenantId && (
         <section>
           <p className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-[0.06em] text-sx-text-subtle">Analytics & Other</p>
@@ -490,7 +446,7 @@ export default function IntegrationsPage() {
         </section>
       )}
 
-      {/* Connect WhatsApp — StratXcel App reference flow (step bar + benefits intro + digit OTP + success screen), same real OTP send/verify handlers throughout */}
+      {/* Connect WhatsApp */}
       {whatsappModalOpen && (
         <div
           role="dialog"
@@ -530,7 +486,6 @@ export default function IntegrationsPage() {
             )}
 
             {whatsappJustVerified ? (
-              /* Step 2 — success, matching the reference's dedicated confirmation screen */
               <div className="mt-6 text-center">
                 <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-sx-success/10">
                   <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--sx-success)" strokeWidth="2"><path d="M20 6L9 17l-5-5" /></svg>
@@ -556,7 +511,6 @@ export default function IntegrationsPage() {
                 </Button>
               </div>
             ) : !otpSent ? (
-              /* Step 0 — benefits intro (first connect only) + real phone input */
               <div className="mt-4 space-y-4">
                 {whatsappIsFirstConnect && (
                   <div className="rounded-sx-md bg-sx-surface-2 p-3.5">
@@ -600,7 +554,6 @@ export default function IntegrationsPage() {
                 </div>
               </div>
             ) : (
-              /* Step 1 — real OTP, shown as reference-style per-digit boxes */
               <div className="mt-4 space-y-4">
                 <p className="text-center text-xs text-sx-text-muted">
                   We sent a 6-digit code to {whatsappPhone}. Tap <strong>Copy Code</strong> in WhatsApp, then paste or type it below.
@@ -673,10 +626,7 @@ export default function IntegrationsPage() {
         </div>
       )}
 
-      {/* Connect Google Business — StratXcel App reference pre-connect intro.
-          Real StratXcel-owned screen shown before Google's own hosted OAuth
-          consent screen (not recreated here); "Sign in with Google" performs
-          the actual redirect to /api/social/oauth/google_business/connect. */}
+      {/* Connect Google Business */}
       {googleIntroOpen && tenantId && (
         <div
           role="dialog"

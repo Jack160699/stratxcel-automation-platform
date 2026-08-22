@@ -396,10 +396,7 @@ export default function BrandPage() {
             )}
           </Card>
 
-          {/* AI & Growth Context — the deeper fields missions/agents execute
-              against. Not part of the reference's Shop Profile mockup, but
-              real, working, and preserved in full — just moved below the
-              identity content the reference actually specifies. */}
+          {/* AI & Growth Context */}
           <section className="flex flex-col gap-3 pt-2">
             <h2 className="flex items-baseline gap-2 text-[19px] font-semibold text-sx-text">
               AI & Growth Context
@@ -480,7 +477,6 @@ export default function BrandPage() {
   );
 }
 
-/** Chip-style tag list — Shop Profile's "Catalog & Services". */
 function TagListCard({
   title,
   values,
@@ -531,7 +527,6 @@ function TagListCard({
   );
 }
 
-/** One-line-per-item list — Shop Profile's "Business Highlights". */
 function ListLinesCard({
   title,
   values,

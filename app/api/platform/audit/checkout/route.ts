@@ -162,6 +162,8 @@ export async function POST(request: Request) {
   }
 }
 
+import { loadAuditHubData } from "@/lib/audit/load-hub-data";
+
 export async function GET() {
   const supabase = await createSupabaseServerClient();
   const {
@@ -175,87 +177,7 @@ export async function GET() {
   const tenantId = memberships[0]!.tenant.id;
   const { supabase: service } = getTenantServiceContext();
 
-  const [currentOrderId, eligibilityResult, destination, brandBrain, googleStatus] = await Promise.all([
-    resolveCurrentAuditOrderId(service, tenantId),
-    service.rpc("tenant_has_fresh_audit_grant", { p_tenant_id: tenantId }),
-    loadAuditWhatsAppDestination(service, tenantId),
-    getCurrentBrandBrain(service, tenantId).catch(() => null),
-    getBusinessConnectionStatus(service, tenantId, "google_business")
-      .then((status) => status.connectionState)
-      .catch(() => "NOT_CONNECTED" as const),
-  ]);
+  const data = await loadAuditHubData(supabase, tenantId, service);
 
-  let visibleOrder: CheckoutOrder | null = null;
-  if (currentOrderId !== null) {
-    let orderQuery = service
-      .from("audit_orders")
-      .select(
-        "id, status, business_name, industry, website_url, social_links, goals, deep_dive_answers, goals_answers, report_data, audit_completed_at, payment_link_id, fulfilment_source, actual_paid_cents, discount_cents"
-      )
-      .eq("tenant_id", tenantId);
-    if (typeof currentOrderId === "string") {
-      orderQuery = orderQuery.eq("id", currentOrderId);
-    } else {
-      orderQuery = orderQuery.order("created_at", { ascending: false }).limit(1);
-    }
-    const { data: order } = await orderQuery.maybeSingle();
-    visibleOrder = (order as CheckoutOrder | null) ?? null;
-  }
-
-  let paymentUrl: string | null = null;
-  if (visibleOrder?.status === "pending_payment" && visibleOrder.payment_link_id) {
-    const { data: link } = await supabase.from("payment_links").select("short_url, status").eq("id", visibleOrder.payment_link_id).maybeSingle();
-    if (link?.status === "created") paymentUrl = link.short_url;
-  }
-
-  let generation: Record<string, unknown> | null = null;
-  if (visibleOrder?.id) {
-    let { data: run } = await service
-      .from("audit_generation_runs")
-      .select("id, status, stage, quality_outcome, confidence_band, failure_message_safe, stage_updated_at, heartbeat_at")
-      .eq("audit_order_id", visibleOrder.id)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    // If order is in_review or paid but no generation run exists yet, start one automatically
-    if (!run && (visibleOrder.status === "in_review" || visibleOrder.status === "paid")) {
-      if (brandBrain) {
-        try {
-          const started = await service.rpc("start_automatic_audit_generation_v1", {
-            p_audit_order_id: visibleOrder.id,
-            p_expected_tenant_id: tenantId,
-            p_brand_brain_version: brandBrain.current_version,
-            p_budget_limit_usd: resolveAuditBudgetLimitUsd(),
-          });
-          const result = started.data as { success?: boolean; run_id?: string } | null;
-          if (result?.run_id) {
-            const { data: newRun } = await service
-              .from("audit_generation_runs")
-              .select("id, status, stage, quality_outcome, confidence_band, failure_message_safe, stage_updated_at, heartbeat_at")
-              .eq("id", result.run_id)
-              .maybeSingle();
-            run = newRun;
-          }
-        } catch (startErr) {
-          console.warn("audit checkout: auto-start generation run trace", startErr);
-        }
-      }
-    }
-
-    generation = run ?? null;
-  }
-
-  const eligible = isMissingRelation(eligibilityResult.error) ? false : eligibilityResult.data === true;
-
-  return Response.json({
-    order: visibleOrder ?? null,
-    tenantId,
-    paymentUrl,
-    generation,
-    freshAuditEligible: eligible === true,
-    whatsappDestination: destination ? toPublicDestination(destination) : null,
-    brandBrain: brandBrain?.content ?? null,
-    googleBusinessConnectionState: googleStatus,
-  }, { headers: { "Cache-Control": "no-store" } });
+  return Response.json(data, { headers: { "Cache-Control": "no-store" } });
 }

@@ -10,8 +10,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   approveTenantAgentActionAction,
   rejectTenantAgentActionAction,
+  getTenantSessionHydrationAction,
   getTenantAgentSessionAction,
-  getTenantRunEventsAction,
   getTenantSessionAction,
   selectTenantCandidateAction,
 } from "./tenant-actions";
@@ -98,15 +98,13 @@ export function useTenantAgentSession(
       setSession(null);
       let timeoutId: ReturnType<typeof setTimeout> | null = null;
       try {
-        const history = Promise.all([
-          getTenantAgentSessionAction(tenantId, sid),
-          getTenantRunEventsAction(tenantId, sid),
-          getTenantSessionAction(tenantId, sid),
-        ]);
+        const history = getTenantSessionHydrationAction(tenantId, sid);
         const timeout = new Promise<never>((_, reject) => {
           timeoutId = setTimeout(() => reject(new Error("SESSION_HISTORY_TIMEOUT")), SESSION_HISTORY_TIMEOUT_MS);
         });
-        const [{ messages: rows, actions }, { run: latestRun, events }, sessionRow] = await Promise.race([history, timeout]);
+        const { detail, runWithEvents, session: sessionRow } = await Promise.race([history, timeout]);
+        const { messages: rows, actions } = detail;
+        const { run: latestRun, events } = runWithEvents;
         const stillProposed = new Set(actions.filter((a) => a.status === "PROPOSED").map((a) => a.id));
         const mapped: AgentMessageData[] = rows.map((m) => ({
           id: m.id,
