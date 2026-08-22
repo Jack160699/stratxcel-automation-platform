@@ -15,7 +15,7 @@ import {
   normalizeAuditDeliveryReport,
 } from "@/lib/audit/customer-state";
 
-interface IntakeOrder {
+export interface IntakeOrder {
   business_name?: string | null;
   industry?: string | null;
   website_url?: string | null;
@@ -23,13 +23,13 @@ interface IntakeOrder {
   goals_answers?: Record<string, unknown> | null;
 }
 
-interface AuditOrder extends IntakeOrder {
+export interface AuditOrder extends IntakeOrder {
   id: string;
   status: "pending_payment" | "paid" | "in_review" | "completed" | "refunded" | "cancelled";
   report_data: Record<string, unknown> | null;
 }
 
-interface AuditGeneration {
+export interface AuditGeneration {
   id: string;
   status: "QUEUED" | "RUNNING" | "NEEDS_REVIEW" | "COMPLETED" | "STOPPED" | "FAILED";
   stage: "QUEUED" | "RESEARCH" | "ANALYSIS" | "QUALITY_GATE" | "DELIVERY" | "COMPLETE" | "REVIEW" | "STOPPED";
@@ -154,8 +154,14 @@ export default function AuditHubPage() {
 
   if (order === undefined) {
     return (
-      <div className="mx-auto max-w-3xl px-4 py-16 text-center">
-        <div className="mx-auto h-10 w-10 animate-spin rounded-full border-4 border-sx-accent border-t-transparent" />
+      <div className="mx-auto flex w-full max-w-[720px] animate-pulse flex-col gap-6 px-4 py-6 pb-20 md:pb-8">
+        <div className="flex flex-col items-center gap-3 rounded-sx-md border border-sx-border bg-sx-surface-1 p-6 text-center">
+          <div className="h-3 w-32 rounded bg-sx-surface-2" />
+          <div className="my-3 h-32 w-32 rounded-full border-4 border-sx-surface-2" />
+          <div className="h-6 w-28 rounded-full bg-sx-surface-2" />
+          <div className="h-4 w-64 rounded bg-sx-surface-2" />
+          <div className="mt-2 h-11 w-full max-w-sm rounded-sx-sm bg-sx-surface-2" />
+        </div>
       </div>
     );
   }
@@ -180,9 +186,6 @@ export default function AuditHubPage() {
     if (hasBrandBrain) {
       const bName = (brandBrain?.business_name as string) || "Your Business";
       const bWebsite = (brandBrain?.website_url as string) || "Not connected";
-      // Real canonical connection state (not a raw "did onboarding see a Maps
-      // URL" guess) -- a publicly discovered profile must read as discovered,
-      // never as an authenticated connection that doesn't actually exist.
       const bGoogle =
         googleBusinessConnectionState === "CONNECTED"
           ? "Connected"
@@ -200,122 +203,78 @@ export default function AuditHubPage() {
       const bIndustry = (brandBrain?.industry as string) || "General Business";
 
       return (
-        <div className="mx-auto max-w-2xl px-4 py-12">
-          <div className="text-center">
-            <span className="inline-block rounded-full bg-sx-accent/15 px-3 py-1 text-xs font-bold uppercase tracking-wider text-sx-accent">
-              Free Business Audit
-            </span>
-            <h1 className="mt-3 font-sx-sans text-2xl font-bold text-sx-text sm:text-3xl">
-              Your business is connected
-            </h1>
-            <p className="mt-2 text-sm text-sx-text-muted">
-              We have your verified business details from onboarding. We&rsquo;ll now analyze them and prepare your growth report.
+        <div className="mx-auto max-w-xl px-4 py-8">
+          <Card className="p-6">
+            <h1 className="text-xl font-bold text-sx-text">Your business is connected</h1>
+            <p className="mt-1 text-sm text-sx-text-muted">
+              We found your business details during onboarding. Start your free AI Growth Audit to see your visibility score, competitor gaps, and actionable recommendations.
             </p>
-          </div>
-
-          <div className="mt-6 rounded-sx-md border border-sx-border bg-sx-surface-1 p-5 space-y-3.5 shadow-sm">
-            <div className="flex items-center justify-between border-b border-sx-border/60 pb-3">
-              <span className="text-xs font-semibold uppercase text-sx-text-subtle">Business Identity</span>
-              <span className="font-bold text-sm text-sx-text">{bName}</span>
-            </div>
-            <div className="grid grid-cols-2 gap-3.5 text-xs">
-              <div>
-                <span className="text-sx-text-subtle block">Website</span>
-                <span className="font-mono text-sx-text font-medium break-all">{bWebsite}</span>
+            <div className="mt-6 divide-y divide-sx-border rounded-sx-sm border border-sx-border bg-sx-surface-2 p-4 text-sm">
+              <div className="flex justify-between py-2">
+                <span className="text-sx-text-muted">Business Name</span>
+                <span className="font-medium text-sx-text">{bName}</span>
               </div>
-              <div>
-                <span className="text-sx-text-subtle block">Google Business Profile</span>
-                <span className="font-medium text-sx-text">{bGoogle}</span>
-              </div>
-              <div>
-                <span className="text-sx-text-subtle block">Industry</span>
+              <div className="flex justify-between py-2">
+                <span className="text-sx-text-muted">Industry</span>
                 <span className="font-medium text-sx-text">{bIndustry}</span>
               </div>
-              <div>
-                <span className="text-sx-text-subtle block">Connected Channels</span>
+              <div className="flex justify-between py-2">
+                <span className="text-sx-text-muted">Website</span>
+                <span className="font-medium text-sx-text">{bWebsite}</span>
+              </div>
+              <div className="flex justify-between py-2">
+                <span className="text-sx-text-muted">Google Profile</span>
+                <span className="font-medium text-sx-text">{bGoogle}</span>
+              </div>
+              <div className="flex justify-between py-2">
+                <span className="text-sx-text-muted">Social Channels</span>
                 <span className="font-medium text-sx-text">{bSocials}</span>
               </div>
             </div>
-          </div>
-
-          <div className="mt-6 flex justify-center">
-            <button
-              type="button"
-              disabled={starting}
-              onClick={() => {
-                setStarting(true);
-                void fetch("/api/platform/audit/onboarding", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ action: "start_fresh" }),
-                }).then(async (response) => {
-                  if (!response.ok) {
-                    const json = await response.json().catch(() => ({})) as { error?: string };
-                    setError(json.error ?? "Could not start your free Audit.");
-                    return;
-                  }
-                  await load();
-                }).finally(() => setStarting(false));
-              }}
-              className="inline-flex min-h-12 w-full sm:w-auto items-center justify-center rounded-sx-sm bg-sx-accent px-8 font-sx-sans text-sm font-bold text-sx-accent-on shadow-sm hover:bg-[color:var(--sx-accent-hover)] transition-colors"
-            >
-              {starting ? "Starting Your Free Audit…" : "Start Free Audit →"}
-            </button>
-          </div>
+            <div className="mt-6 flex flex-col gap-3">
+              <button
+                type="button"
+                onClick={startAudit}
+                disabled={starting}
+                className="inline-flex h-11 w-full items-center justify-center rounded-sx-sm bg-sx-accent text-sm font-semibold text-sx-accent-on transition-transform active:scale-95 hover:bg-[color:var(--sx-accent-hover)] disabled:opacity-50"
+              >
+                {starting ? "Starting your audit…" : "Run My Free Business Audit"}
+              </button>
+              <Link
+                href="/app/brand"
+                className="inline-flex h-9 w-full items-center justify-center text-xs font-semibold text-sx-text-muted hover:text-sx-text"
+              >
+                Edit business details first
+              </Link>
+            </div>
+          </Card>
         </div>
       );
     }
 
     return (
-      <div className="mx-auto max-w-2xl px-4 py-16 text-center">
-        <h1 className="font-sx-sans text-xl font-semibold text-sx-text">
-          Start your free business audit
-        </h1>
-        <p className="mt-2 text-sm text-sx-text-muted">
-          Complete the quick setup to connect your business and generate your growth report — 100% free.
-        </p>
-        <Link
-          href="/app"
-          className="mt-6 inline-flex min-h-11 items-center rounded-sx-sm bg-sx-accent px-6 font-sx-sans text-xs font-bold text-sx-accent-on hover:bg-[color:var(--sx-accent-hover)]"
-        >
-          Start Onboarding →
-        </Link>
+      <div className="mx-auto max-w-xl px-4 py-8">
+        <Card className="p-6 text-center">
+          <h1 className="text-xl font-bold text-sx-text">No active audit found</h1>
+          <p className="mt-2 text-sm text-sx-text-muted">
+            You don&apos;t have an active audit yet. Start your free AI Growth Audit to discover online visibility, gaps, and recommendations.
+          </p>
+          <div className="mt-6">
+            <button
+              type="button"
+              onClick={startAudit}
+              disabled={starting}
+              className="inline-flex h-11 items-center justify-center rounded-sx-sm bg-sx-accent px-6 text-sm font-semibold text-sx-accent-on transition-transform active:scale-95 hover:bg-[color:var(--sx-accent-hover)] disabled:opacity-50"
+            >
+              {starting ? "Starting your audit…" : "Start Free Audit"}
+            </button>
+          </div>
+        </Card>
       </div>
     );
   }
 
   const customerState = deriveAuditCustomerState(order);
-
-  if (customerState === "PAYMENT_PENDING") {
-    return (
-      <div className="mx-auto max-w-2xl px-4 py-16 text-center">
-        <h1 className="font-sx-sans text-xl font-semibold text-sx-text">Start Your Free Business Audit</h1>
-        <p className="mt-2 text-sm text-sx-text-muted">The audit is 100% free. Click below to begin research.</p>
-        <button
-          type="button"
-          disabled={starting}
-          onClick={() => {
-            setStarting(true);
-            void fetch("/api/platform/audit/onboarding", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ action: "start_fresh" }),
-            }).then(async (response) => {
-              if (!response.ok) {
-                const json = await response.json().catch(() => ({})) as { error?: string };
-                setError(json.error ?? "Could not start your free Audit.");
-                return;
-              }
-              await load();
-            }).finally(() => setStarting(false));
-          }}
-          className="mt-6 inline-flex min-h-11 items-center rounded-sx-sm bg-sx-accent px-6 font-sx-sans text-xs font-bold text-sx-accent-on hover:bg-[color:var(--sx-accent-hover)]"
-        >
-          {starting ? "Starting…" : "Start Free Audit →"}
-        </button>
-      </div>
-    );
-  }
 
   if (customerState === "CLOSED") {
     return (

@@ -7,8 +7,7 @@ import { resolveCanonicalIdentity } from "@/lib/identity/resolve-identity";
 import { ensurePendingAuditOrder, AUDIT_FEE_CENTS } from "@/lib/audit/ensure-pending-order";
 import { isMissingRelation, resolveCurrentAuditOrderId } from "@/lib/audit/current-pointer";
 import { loadAuditWhatsAppDestination, toPublicDestination } from "@/lib/audit/v1/whatsapp-destination";
-import { createLiveAutomaticAuditExecutor, resolveAuditBudgetLimitUsd } from "@stratxcel/audit-engine";
-import { createSocialAuditConnectorInsightsProvider } from "@/lib/social/audit-connector-insights";
+import { resolveAuditBudgetLimitUsd } from "@stratxcel/audit-engine";
 import { getBusinessConnectionStatus } from "@/lib/connectors/canonical-status";
 
 export const runtime = "nodejs";
@@ -175,7 +174,16 @@ export async function GET() {
 
   const tenantId = memberships[0]!.tenant.id;
   const { supabase: service } = getTenantServiceContext();
-  const currentOrderId = await resolveCurrentAuditOrderId(service, tenantId);
+
+  const [currentOrderId, eligibilityResult, destination, brandBrain, googleStatus] = await Promise.all([
+    resolveCurrentAuditOrderId(service, tenantId),
+    service.rpc("tenant_has_fresh_audit_grant", { p_tenant_id: tenantId }),
+    loadAuditWhatsAppDestination(service, tenantId),
+    getCurrentBrandBrain(service, tenantId).catch(() => null),
+    getBusinessConnectionStatus(service, tenantId, "google_business")
+      .then((status) => status.connectionState)
+      .catch(() => "NOT_CONNECTED" as const),
+  ]);
 
   let visibleOrder: CheckoutOrder | null = null;
   if (currentOrderId !== null) {
@@ -212,13 +220,12 @@ export async function GET() {
 
     // If order is in_review or paid but no generation run exists yet, start one automatically
     if (!run && (visibleOrder.status === "in_review" || visibleOrder.status === "paid")) {
-      const brain = await getCurrentBrandBrain(service, tenantId).catch(() => null);
-      if (brain) {
+      if (brandBrain) {
         try {
           const started = await service.rpc("start_automatic_audit_generation_v1", {
             p_audit_order_id: visibleOrder.id,
             p_expected_tenant_id: tenantId,
-            p_brand_brain_version: brain.current_version,
+            p_brand_brain_version: brandBrain.current_version,
             p_budget_limit_usd: resolveAuditBudgetLimitUsd(),
           });
           const result = started.data as { success?: boolean; run_id?: string } | null;
@@ -237,66 +244,9 @@ export async function GET() {
     }
 
     generation = run ?? null;
-
-    // Check if run needs advancement or stalled-run recovery in serverless environments
-    const isQueued = generation?.id && (generation.status === "QUEUED" || generation.stage === "QUEUED");
-    const isStalledRunning = Boolean(
-      generation?.id &&
-      generation.status === "RUNNING" &&
-      (!generation.heartbeat_at || Date.now() - new Date(generation.heartbeat_at as string).getTime() > 25_000)
-    );
-
-    if (isQueued || isStalledRunning) {
-      const executor = createLiveAutomaticAuditExecutor(service, {
-        socialInsights: createSocialAuditConnectorInsightsProvider(),
-      });
-      try {
-        // Execute synchronously within request lifecycle up to 20s
-        const executionPromise = executor.execute({
-          runId: generation!.id as string,
-          attemptNumber: 1,
-          maxAttempts: 3,
-          expectedTenantId: tenantId,
-        });
-        const timeoutPromise = new Promise<{ kind: string }>((resolve) =>
-          setTimeout(() => resolve({ kind: "TIMEOUT_SLICE" }), 20_000)
-        );
-        await Promise.race([executionPromise, timeoutPromise]);
-
-        // Re-read latest state to return freshest truth to the polling client
-        const { data: refreshedRun } = await service
-          .from("audit_generation_runs")
-          .select("id, status, stage, quality_outcome, confidence_band, failure_message_safe, stage_updated_at, heartbeat_at")
-          .eq("id", generation!.id as string)
-          .maybeSingle();
-        if (refreshedRun) generation = refreshedRun;
-
-        const { data: refreshedOrder } = await service
-          .from("audit_orders")
-          .select("id, status, business_name, industry, website_url, social_links, goals, deep_dive_answers, goals_answers, report_data, audit_completed_at, payment_link_id, fulfilment_source, actual_paid_cents, discount_cents")
-          .eq("id", visibleOrder.id)
-          .maybeSingle();
-        if (refreshedOrder) visibleOrder = refreshedOrder as CheckoutOrder;
-      } catch (err) {
-        console.warn("audit checkout: serverless execution trace", err);
-      }
-    }
   }
 
-  const eligibility = await service.rpc("tenant_has_fresh_audit_grant", { p_tenant_id: tenantId });
-  const eligible = isMissingRelation(eligibility.error) ? false : eligibility.data === true;
-  const destination = await loadAuditWhatsAppDestination(service, tenantId);
-  const brandBrain = await getCurrentBrandBrain(service, tenantId).catch(() => null);
-  // The pre-order "Your business is connected" summary used to derive its
-  // Google Business Profile label purely from brandBrain.google_maps_url --
-  // true whenever onboarding merely *discovered* a public Maps URL, which is
-  // not the same claim as "your Google account is OAuth-connected". Give the
-  // client the real canonical state (lib/connectors/canonical-status.ts, the
-  // same ground truth every other surface reads) so it can say "Connected"
-  // only when that's actually true.
-  const googleBusinessConnectionState = await getBusinessConnectionStatus(service, tenantId, "google_business")
-    .then((status) => status.connectionState)
-    .catch(() => "NOT_CONNECTED" as const);
+  const eligible = isMissingRelation(eligibilityResult.error) ? false : eligibilityResult.data === true;
 
   return Response.json({
     order: visibleOrder ?? null,
@@ -306,6 +256,6 @@ export async function GET() {
     freshAuditEligible: eligible === true,
     whatsappDestination: destination ? toPublicDestination(destination) : null,
     brandBrain: brandBrain?.content ?? null,
-    googleBusinessConnectionState,
+    googleBusinessConnectionState: googleStatus,
   }, { headers: { "Cache-Control": "no-store" } });
 }

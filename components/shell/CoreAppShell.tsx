@@ -13,10 +13,9 @@ export function BrandMark({ expanded = false, product, customer = false }: { exp
         src="/logo-v2.png"
         alt="StratXcel"
         role="presentation"
-        width={OFFICIAL_LOGO.width}
-        height={OFFICIAL_LOGO.height}
-        sizes="28px"
-        unoptimized
+        width={28}
+        height={28}
+        priority
         className="h-7 w-7 shrink-0 object-contain"
       />
       {expanded && (

@@ -1,4 +1,5 @@
 import "server-only";
+import { cache } from "react";
 
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { listMyTenants, type TenantMembership } from "@/lib/tenants/current-tenant";
@@ -39,48 +40,55 @@ function workspaceModeForRoute(surface: RouteSurface | undefined, cookieMode: "c
   return cookieMode;
 }
 
-export async function resolveCanonicalIdentity(options?: { routeSurface?: RouteSurface }): Promise<CanonicalIdentity> {
-  const supabase = await createSupabaseServerClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return { state: "NO_SESSION", supabase };
+const resolveCanonicalIdentityCached = cache(
+  async (surface: RouteSurface | "none"): Promise<CanonicalIdentity> => {
+    const routeSurface = surface === "none" ? undefined : surface;
+    const supabase = await createSupabaseServerClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return { state: "NO_SESSION", supabase };
 
-  const [{ data: adminRow }, tenants] = await Promise.all([
-    supabase.from("stratxcel_admins").select("user_id").eq("user_id", user.id).maybeSingle(),
-    listMyTenants(supabase, user.id),
-  ]);
-  const isStaff = Boolean(adminRow);
-  const cookieWorkspaceMode = await readWorkspaceMode(user.id);
-  const workspaceMode = workspaceModeForRoute(options?.routeSurface, cookieWorkspaceMode);
-  const requestedTenantId = isStaff ? await readStaffWorkspaceTenantId(user.id) : null;
-  const staffWorkspace = requestedTenantId ? await getAgencyTenant(requestedTenantId) : null;
-  const state = decideIdentityState({
-    hasSession: true,
-    isStaff,
-    membershipCount: tenants.length,
-    hasValidStaffWorkspace: Boolean(staffWorkspace),
-    workspaceMode,
-  });
-  const profileName =
-    typeof user.user_metadata?.full_name === "string"
-      ? user.user_metadata.full_name.trim() || null
-      : typeof user.user_metadata?.name === "string"
-        ? user.user_metadata.name.trim() || null
-        : null;
-  const avatarUrl = typeof user.user_metadata?.avatar_url === "string" ? user.user_metadata.avatar_url : null;
-  const planPromptSeenTenantIds = Array.isArray(user.user_metadata?.stratxcel_plan_prompt_seen)
-    ? user.user_metadata.stratxcel_plan_prompt_seen.filter((value: unknown): value is string => typeof value === "string")
-    : [];
-  const base = {
-    userId: user.id,
-    email: user.email ?? null,
-    profileName,
-    avatarUrl,
-    planPromptSeenTenantIds,
-    isStaff,
-    workspaceMode,
-    tenants,
-    supabase,
-  };
-  if (state === "STAFF_VIEWING_CLIENT") return { ...base, state, staffWorkspace: staffWorkspace! };
-  return { ...base, state } as CanonicalIdentity;
+    const [{ data: adminRow }, tenants] = await Promise.all([
+      supabase.from("stratxcel_admins").select("user_id").eq("user_id", user.id).maybeSingle(),
+      listMyTenants(supabase, user.id),
+    ]);
+    const isStaff = Boolean(adminRow);
+    const cookieWorkspaceMode = await readWorkspaceMode(user.id);
+    const workspaceMode = workspaceModeForRoute(routeSurface, cookieWorkspaceMode);
+    const requestedTenantId = isStaff ? await readStaffWorkspaceTenantId(user.id) : null;
+    const staffWorkspace = requestedTenantId ? await getAgencyTenant(requestedTenantId) : null;
+    const state = decideIdentityState({
+      hasSession: true,
+      isStaff,
+      membershipCount: tenants.length,
+      hasValidStaffWorkspace: Boolean(staffWorkspace),
+      workspaceMode,
+    });
+    const profileName =
+      typeof user.user_metadata?.full_name === "string"
+        ? user.user_metadata.full_name.trim() || null
+        : typeof user.user_metadata?.name === "string"
+          ? user.user_metadata.name.trim() || null
+          : null;
+    const avatarUrl = typeof user.user_metadata?.avatar_url === "string" ? user.user_metadata.avatar_url : null;
+    const planPromptSeenTenantIds = Array.isArray(user.user_metadata?.stratxcel_plan_prompt_seen)
+      ? user.user_metadata.stratxcel_plan_prompt_seen.filter((value: unknown): value is string => typeof value === "string")
+      : [];
+    const base = {
+      userId: user.id,
+      email: user.email ?? null,
+      profileName,
+      avatarUrl,
+      planPromptSeenTenantIds,
+      isStaff,
+      workspaceMode,
+      tenants,
+      supabase,
+    };
+    if (state === "STAFF_VIEWING_CLIENT") return { ...base, state, staffWorkspace: staffWorkspace! };
+    return { ...base, state } as CanonicalIdentity;
+  }
+);
+
+export async function resolveCanonicalIdentity(options?: { routeSurface?: RouteSurface }): Promise<CanonicalIdentity> {
+  return resolveCanonicalIdentityCached(options?.routeSurface ?? "none");
 }

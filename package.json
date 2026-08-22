@@ -73,8 +73,6 @@
     "test:workforce-server": "node --experimental-strip-types lib/workforce/__tests__/authorization-scope.test.ts && node --experimental-strip-types lib/workforce/__tests__/server-capability-execution.test.ts"
   },
   "dependencies": {
-    "@react-three/drei": "^10.7.7",
-    "@react-three/fiber": "^9.6.1",
     "@stratxcel/agent-core": "*",
     "@stratxcel/ai-runtime": "*",
     "@stratxcel/approvals": "*",
@@ -98,15 +96,11 @@
     "@supabase/ssr": "^0.12.3",
     "@supabase/supabase-js": "^2.110.7",
     "@vercel/analytics": "^2.0.1",
-    "gsap": "^3.15.0",
-    "lenis": "^1.3.25",
-    "motion": "^12.42.2",
     "next": "16.3.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "react-markdown": "^10.1.0",
-    "server-only": "^0.0.1",
-    "three": "^0.185.1"
+    "server-only": "^0.0.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

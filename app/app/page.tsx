@@ -6,12 +6,13 @@ import { hasValidAuditReport, type AuditDeliveryReport } from "@/lib/audit/custo
 import { resolveCustomerPlanSummary } from "@/lib/billing/customer-plan";
 import { deriveGlobalCustomerState, type GlobalCustomerState } from "@/lib/billing/customer-entitlement";
 import { getCurrentBrandBrain } from "@stratxcel/brand-brain";
+import { getTenantDigitalPresence } from "@/lib/connectors/canonical-status";
 import { ScoreRing, ScoreBandChip, bandForScore } from "./components/ScoreRing";
 
 type AuditOpportunity = { title: string; rationale?: string };
 
 async function loadCommandCenter(tenantDb: SupabaseClient, tenantId: string) {
-  const [order, subscription, brandBrain, socialAccountsCount, whatsappBinding, activeRunsCount, wallet] =
+  const [order, subscription, brandBrain, digitalPresence, activeRunsCount, wallet] =
     await Promise.all([
       (async () => {
         try {
@@ -44,43 +45,7 @@ async function loadCommandCenter(tenantDb: SupabaseClient, tenantId: string) {
         }
       })(),
       getCurrentBrandBrain(tenantDb, tenantId).catch(() => null),
-      (async () => {
-        try {
-          // Only rows the canonical connector resolver (lib/connectors/canonical-status.ts)
-          // would also call CONNECTED -- a DISCONNECTED/ERROR/RECONNECT_REQUIRED row must
-          // not inflate this count, or Home disagrees with every other surface about how
-          // many sources are actually connected.
-          const { count } = await tenantDb
-            .from("social_accounts")
-            .select("id", { count: "exact", head: true })
-            .eq("tenant_id", tenantId)
-            .eq("status", "CONNECTED");
-          return count ?? 0;
-        } catch {
-          return 0;
-        }
-      })(),
-      (async () => {
-        try {
-          // whatsapp_phone_bindings has no phone_number column (it's
-          // display_phone_number) and a tenant can legitimately have more than
-          // one row (pending attempts, a prior revoked number, etc.) -- the old
-          // .select("status, phone_number").maybeSingle() query therefore always
-          // errored (unknown column, and would also reject on >1 row) and was
-          // silently swallowed by this try/catch, so Home always treated
-          // WhatsApp as not connected even when a real active binding existed.
-          // Mirror the same ground truth read canonical-status.ts uses: fetch
-          // every row for the tenant and prefer the active one.
-          const { data } = await tenantDb
-            .from("whatsapp_phone_bindings")
-            .select("status, display_phone_number")
-            .eq("tenant_id", tenantId)
-            .order("created_at", { ascending: false });
-          return (data ?? []).find((row) => row.status === "active") ?? null;
-        } catch {
-          return null;
-        }
-      })(),
+      getTenantDigitalPresence(tenantDb, tenantId).catch(() => null),
       (async () => {
         try {
           const { count } = await tenantDb
@@ -109,6 +74,13 @@ async function loadCommandCenter(tenantDb: SupabaseClient, tenantId: string) {
   const planSummary = resolveCustomerPlanSummary(subscription);
   const report = hasValidAuditReport(order?.report_data) ? (order?.report_data as AuditDeliveryReport) : null;
   const sources = report?.sources ?? [];
+  const whatsappConnected = digitalPresence?.connections.whatsapp.connectionState === "CONNECTED";
+  const whatsappBinding = whatsappConnected ? { status: "active" as const } : null;
+  const socialAccountsCount = digitalPresence
+    ? Object.entries(digitalPresence.connections).filter(
+        ([p, c]) => ["instagram", "facebook", "youtube"].includes(p) && c.connectionState === "CONNECTED"
+      ).length
+    : 0;
 
   const customerState = deriveGlobalCustomerState({
     planSummary,
@@ -117,7 +89,7 @@ async function loadCommandCenter(tenantDb: SupabaseClient, tenantId: string) {
     runningServicesCount: activeRunsCount,
     auditStatus: order?.status ?? null,
     hasReportData: Boolean(report),
-    connectedSourcesCount: socialAccountsCount + (whatsappBinding ? 1 : 0) + sources.length,
+    connectedSourcesCount: (digitalPresence?.connectedCount ?? 0) + sources.length,
     monthlyUsagePercent: planSummary.activePaid ? 35 : 0,
     monthlyLimit: 100,
   });

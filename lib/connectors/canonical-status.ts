@@ -1,3 +1,4 @@
+import { cache } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getCurrentBrandBrain } from "@stratxcel/brand-brain";
 import type { PlatformIconKey } from "@/components/audit/PlatformIcon";
@@ -120,7 +121,7 @@ function extractPublicProfile(provider: V1DigitalPresencePlatform, profiles: str
   const matched = profiles.find((item) => typeof item === "string" && item.toLowerCase().includes(needle));
   if (!matched) return { url: null, handle: null };
 
-  const url = isSafeHttpUrl(matched) ? (matched.startsWith("http") ? matched : `https://${matched}`) : null;
+  const url = isSafeHttpUrl(matched) ? matched : null;
   return {
     url,
     handle: cleanHandle(matched),
@@ -137,7 +138,7 @@ function extractPublicProfile(provider: V1DigitalPresencePlatform, profiles: str
  * 3. PUBLICLY_DISCOVERED is only set when no valid OAuth connection exists.
  * 4. LinkedIn, X, and Threads are excluded from this V1.5 canonical model.
  */
-export async function getTenantDigitalPresence(
+export const getTenantDigitalPresence = cache(async function getTenantDigitalPresence(
   supabase: SupabaseClient,
   tenantId: string
 ): Promise<TenantDigitalPresenceSummary> {
@@ -479,7 +480,7 @@ export async function getTenantDigitalPresence(
     discoveredCount,
     lastUpdated: now,
   };
-}
+});
 
 /**
  * Resolves a single provider's connection status.
