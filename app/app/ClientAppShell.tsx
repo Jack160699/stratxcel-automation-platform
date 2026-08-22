@@ -49,9 +49,13 @@ export function ClientAppShell({
 }) {
   const pathname = usePathname();
   const activeKey = resolveAppActiveKey(pathname);
-  const isCopilotFullScreen = pathname === "/app/social/copilot" || pathname.startsWith("/app/social/copilot");
+  const isFullScreenCreationMode =
+    pathname === "/app/social/copilot" ||
+    pathname.startsWith("/app/social/copilot") ||
+    pathname === "/app/website/create" ||
+    pathname.startsWith("/app/website/create");
 
-  if (isCopilotFullScreen) {
+  if (isFullScreenCreationMode) {
     return (
       <div className="h-[100dvh] w-full overflow-hidden bg-sx-bg text-sx-text sx-customer-app">
         {staffWorkspace && (

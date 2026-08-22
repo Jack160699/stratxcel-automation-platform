@@ -95,7 +95,7 @@ export default function BrandPage() {
     setVersion(null);
     const result = await loadCustomerJson<{ brandBrain?: { content?: BrandBrainContent; current_version?: number } | null }>(
       () => fetch(`/api/platform/brand?tenantId=${encodeURIComponent(tenantId)}`),
-      "We couldn't load your Brand details right now."
+      "We couldn't load your shop details right now."
     );
     if (requestId !== loadSequence.current) return;
     setLoading(false);
@@ -112,7 +112,7 @@ export default function BrandPage() {
     setPhotosError(null);
     const result = await loadCustomerJson<{ photos: ShopPhoto[] }>(
       () => fetch(`/api/platform/brand/photos?tenantId=${encodeURIComponent(tenantId)}`),
-      "We couldn't load your brand photos right now."
+      "We couldn't load your shop photos right now."
     );
     if (result.status === "error") {
       setPhotosError(result.message);
@@ -144,7 +144,7 @@ export default function BrandPage() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ content }),
           }),
-        "We couldn't save your Brand details right now."
+        "We couldn't save your shop details right now."
       );
       if (result.status === "error") {
         setError(result.message);
@@ -204,8 +204,8 @@ export default function BrandPage() {
       <header className="flex flex-col gap-1">
         <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h1 className="text-2xl font-semibold text-sx-text">Brand Center{active ? ` · ${active.name}` : ""}</h1>
-            <p className="text-xs text-sx-text-subtle">Manage your business profile, operating hours, brand voice, and logo mark</p>
+            <h1 className="text-2xl font-bold tracking-tight text-sx-text">My Shop{active ? ` · ${active.name}` : ""}</h1>
+            <p className="text-xs text-sx-text-muted">Manage your shop profile, logo, operating hours, and business voice</p>
           </div>
           <Button variant="primary" size="cta" onClick={save} disabled={readOnly || saving || !content}>
             {saving ? "Saving…" : saved ? "Saved ✓" : "Save Changes"}

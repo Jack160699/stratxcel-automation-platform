@@ -28,7 +28,7 @@ export const APP_NAV_GROUPS_DATA: NavGroupData[] = [
     // Secondary destinations — surfaced in the mobile "More" sheet and desktop sidebar secondary group
     label: "More",
     items: [
-      { key: "brand", label: "Brand", href: "/app/brand", release: "v1", labelHi: "व्यापार" },
+      { key: "brand", label: "My Shop", href: "/app/brand", release: "v1", labelHi: "मेरी दुकान" },
       { key: "website", label: "Website & Domain", href: "/app/website", release: "v1", labelHi: "वेबसाइट" },
       { key: "integrations", label: "Connected Accounts", href: "/app/integrations", release: "v1", labelHi: "कनेक्शन" },
       { key: "billing", label: "Plan & Billing", href: "/app/billing", release: "v1", labelHi: "भुगतान" },

@@ -62,7 +62,7 @@ You can still use **Growth Assistant** and **Content Studio** to create, edit, c
 
 **Included with your Free plan:**
 • **Business Growth Audit**: 100-point local search, Google profile, and website audit
-• **Brand Center & Brain**: Store identity, logo management, operating hours, and brand voice
+• **My Shop**: Store identity, logo management, operating hours, and business voice
 • **Content Studio**: AI creative poster design, multilingual caption generation, and draft library
 • **WhatsApp CRM**: WhatsApp phone number pairing and customer contact inbox
 • **Website**: Instant \`.stratxcel.in\` live mobile website preview
@@ -134,9 +134,9 @@ export async function handleWeeklyGrowthAdviceTurn(
    }
    [Create New Poster →](/app/content) · [Plan Weekly Posts →](/app/social/copilot)
 
-3. **Verify Brand Details & Logo in Brand Center**
+3. **Verify Shop Details & Logo in My Shop**
    Ensure your business category, phone number, operating hours, and logo are up to date so AI generates accurate creatives.
-   [Open Brand Center →](/app/brand)
+   [Open My Shop →](/app/brand)
 
 Need help drafting any of these? Just type **"Create a weekend offer poster"** or **"Plan this week's posts"**!`;
 
