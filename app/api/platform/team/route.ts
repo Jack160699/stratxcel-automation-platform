@@ -41,11 +41,15 @@ export async function GET(request: Request) {
   const members: TeamMember[] = await Promise.all(
     (rows ?? []).map(async (row) => {
       let email: string | null = null;
-      try {
-        const { data } = await supabase.auth.admin.getUserById(row.user_id);
-        email = data.user?.email ?? null;
-      } catch {
-        email = null;
+      if (row.user_id === ctx.userId && ctx.userEmail) {
+        email = ctx.userEmail;
+      } else {
+        try {
+          const { data } = await supabase.auth.admin.getUserById(row.user_id);
+          email = data.user?.email ?? null;
+        } catch {
+          email = null;
+        }
       }
       return { userId: row.user_id, role: row.role, email, createdAt: row.created_at };
     })

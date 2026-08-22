@@ -53,7 +53,7 @@ const ACTIVE_SESSION_STATUSES = new Set(["GENERATING", "RUNNING", "IN_PROGRESS",
 export async function getLatestSession(ctx: AgentReadContext): Promise<AgentSessionRow | null> {
   const { data } = await ctx.supabase
     .from("social_agent_sessions")
-    .select("*")
+    .select("id, owner_id, tenant_id, title, status, context, created_at, updated_at")
     .order("updated_at", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -64,7 +64,7 @@ export async function getLatestSession(ctx: AgentReadContext): Promise<AgentSess
 export async function getCurrentMissionSession(ctx: AgentReadContext): Promise<AgentSessionRow | null> {
   const { data } = await ctx.supabase
     .from("social_agent_sessions")
-    .select("*")
+    .select("id, owner_id, tenant_id, title, status, context, created_at, updated_at")
     .in("status", Array.from(ACTIVE_SESSION_STATUSES))
     .order("updated_at", { ascending: false })
     .limit(1)
@@ -75,14 +75,18 @@ export async function getCurrentMissionSession(ctx: AgentReadContext): Promise<A
 export async function getRecentMissionSessions(ctx: AgentReadContext, limit = 5): Promise<AgentSessionRow[]> {
   const { data } = await ctx.supabase
     .from("social_agent_sessions")
-    .select("*")
+    .select("id, owner_id, tenant_id, title, status, context, created_at, updated_at")
     .order("updated_at", { ascending: false })
     .limit(limit);
   return (data ?? []) as AgentSessionRow[];
 }
 
 export async function getSession(ctx: AgentReadContext, sessionId: string): Promise<AgentSessionRow | null> {
-  const { data } = await ctx.supabase.from("social_agent_sessions").select("*").eq("id", sessionId).maybeSingle();
+  const { data } = await ctx.supabase
+    .from("social_agent_sessions")
+    .select("id, owner_id, tenant_id, title, status, context, created_at, updated_at")
+    .eq("id", sessionId)
+    .maybeSingle();
   return data as AgentSessionRow | null;
 }
 
@@ -113,8 +117,16 @@ export async function loadHistory(ctx: AgentReadContext, sessionId: string, limi
 
 export async function getSessionDetail(ctx: AgentReadContext, sessionId: string) {
   const [{ data: messages }, { data: actions }] = await Promise.all([
-    ctx.supabase.from("social_agent_messages").select("*").eq("session_id", sessionId).order("created_at", { ascending: true }),
-    ctx.supabase.from("social_agent_actions").select("*").eq("session_id", sessionId).order("created_at", { ascending: true }),
+    ctx.supabase
+      .from("social_agent_messages")
+      .select("id, session_id, role, content, parts, created_at")
+      .eq("session_id", sessionId)
+      .order("created_at", { ascending: true }),
+    ctx.supabase
+      .from("social_agent_actions")
+      .select("id, session_id, message_id, tool_name, input, output, status, reason, created_at, updated_at")
+      .eq("session_id", sessionId)
+      .order("created_at", { ascending: true }),
   ]);
   return { messages: (messages ?? []) as AgentMessageRow[], actions: (actions ?? []) as AgentActionRow[] };
 }
@@ -155,7 +167,11 @@ export async function recordExecutedAction(ctx: AgentReadContext, sessionId: str
 }
 
 export async function getAction(ctx: AgentReadContext, actionId: string): Promise<AgentActionRow | null> {
-  const { data } = await ctx.supabase.from("social_agent_actions").select("*").eq("id", actionId).maybeSingle();
+  const { data } = await ctx.supabase
+    .from("social_agent_actions")
+    .select("id, session_id, message_id, tool_name, input, output, status, reason, created_at, updated_at")
+    .eq("id", actionId)
+    .maybeSingle();
   return data as AgentActionRow | null;
 }
 

@@ -327,7 +327,7 @@ export async function listMissionsByState(supabase: ServiceClient, state: Missio
 export async function listMissionsForTenant(supabase: ServiceClient, tenantId: string, limit = 50): Promise<MissionRow[]> {
   const { data, error } = await supabase
     .from("missions")
-    .select("*")
+    .select("id, tenant_id, created_by, goal_text, service_key, state, estimated_cost_cents, hermes_profile, hermes_run_id, brand_brain_version, version, idempotency_key, actual_cost_cents, created_at, updated_at")
     .eq("tenant_id", tenantId)
     .order("created_at", { ascending: false })
     .limit(limit);

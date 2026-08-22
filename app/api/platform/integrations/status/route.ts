@@ -15,8 +15,7 @@ export async function GET(request: Request) {
   const service = createSupabaseServiceClient();
 
   // 1. Safe Auto-Reconciliation for onboarding metadata if relational tables are not yet provisioned
-  const { data: authUserData } = await ctx.supabase.auth.getUser();
-  const userMetadata = authUserData?.user?.user_metadata as Record<string, unknown> | undefined;
+  const userMetadata = ctx.userMetadata;
   const oauthConnections = (userMetadata?.onboarding_oauth_connections ?? {}) as Record<string, unknown>;
 
   const userRole = "role" in ctx ? ctx.role : null;

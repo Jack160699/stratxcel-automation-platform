@@ -110,7 +110,7 @@ export async function findLeadByNormalizedPhone(
 export async function listLeads(supabase: ServiceClient, tenantId: string, limit = 100): Promise<LeadRow[]> {
   const { data, error } = await supabase
     .from("crm_leads")
-    .select("*")
+    .select("id, tenant_id, source, contact_name, contact_phone, contact_email, status, metadata, tags, assigned_to, last_interaction_at, next_follow_up_at, notes, normalized_phone, created_at, updated_at")
     .eq("tenant_id", tenantId)
     .order("created_at", { ascending: false })
     .limit(limit);

@@ -167,7 +167,11 @@ export async function GET(request: Request) {
   if (!ctx.ok) return Response.json({ error: ctx.error }, { status: ctx.status });
 
   const { supabase: serviceDb } = getTenantServiceContext();
-  const { data: sites, error } = await serviceDb.from("site_projects").select("*").eq("tenant_id", tenantId).order("created_at", { ascending: false });
+  const { data: sites, error } = await serviceDb
+    .from("site_projects")
+    .select("id, tenant_id, name, slug, status, custom_domain, framework, template, created_at, updated_at")
+    .eq("tenant_id", tenantId)
+    .order("created_at", { ascending: false });
   if (error) return Response.json({ error: error.message }, { status: 500 });
 
   return Response.json({ sites: sites ?? [] }, { headers: { "Cache-Control": "no-store" } });

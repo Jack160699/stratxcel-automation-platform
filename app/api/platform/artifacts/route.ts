@@ -40,8 +40,10 @@ export async function GET(request: Request) {
   const ctx = await requireTenantReadContext(tenantId);
   if (!ctx.ok) return Response.json({ error: ctx.error }, { status: ctx.status });
 
-  const artifacts = await listFileReferences(ctx.supabase, tenantId, folderCategoryParam as FolderCategory | undefined);
-  const connection = await getConnection(ctx.supabase, tenantId, "google_drive" as StorageProviderKey);
+  const [artifacts, connection] = await Promise.all([
+    listFileReferences(ctx.supabase, tenantId, folderCategoryParam as FolderCategory | undefined),
+    getConnection(ctx.supabase, tenantId, "google_drive" as StorageProviderKey),
+  ]);
 
   return Response.json({ artifacts, connection }, { headers: { "Cache-Control": "no-store" } });
 }

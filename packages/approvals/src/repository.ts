@@ -115,7 +115,7 @@ export async function decideApproval(
 export async function listPendingApprovals(supabase: ServiceClient, tenantId: string): Promise<ApprovalRow[]> {
   const { data, error } = await supabase
     .from("approvals")
-    .select("*")
+    .select("id, tenant_id, mission_id, kind, status, subject, requested_by, decided_by, decided_at, created_at")
     .eq("tenant_id", tenantId)
     .eq("status", "PENDING")
     .order("created_at", { ascending: true });

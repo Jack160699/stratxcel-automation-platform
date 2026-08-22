@@ -8,7 +8,7 @@ export async function getConnection(
 ): Promise<StorageConnectionRow | null> {
   const { data, error } = await supabase
     .from("storage_connections")
-    .select("*")
+    .select("id, tenant_id, provider, status, account_email, scopes, root_folder_id, last_error, connected_at, updated_at")
     .eq("tenant_id", tenantId)
     .eq("provider", provider)
     .maybeSingle();
@@ -46,7 +46,7 @@ export async function upsertConnectionStatus(
       },
       { onConflict: "tenant_id,provider" }
     )
-    .select("*")
+    .select("id, tenant_id, provider, status, account_email, scopes, root_folder_id, last_error, connected_at, updated_at")
     .single();
   if (error) throw new Error(`upsertConnectionStatus: ${error.message}`);
   return data as StorageConnectionRow;
@@ -86,7 +86,7 @@ export async function recordFileReference(
       size_bytes: input.sizeBytes ?? null,
       metadata: input.metadata ?? {},
     })
-    .select("*")
+    .select("id, tenant_id, storage_connection_id, provider_file_id, folder_category, file_name, mime_type, size_bytes, metadata, created_at, updated_at")
     .single();
   if (error) throw new Error(`recordFileReference: ${error.message}`);
   return data as StorageFileReferenceRow;
@@ -97,7 +97,10 @@ export async function listFileReferences(
   tenantId: string,
   folderCategory?: FolderCategory
 ): Promise<StorageFileReferenceRow[]> {
-  let query = supabase.from("storage_file_references").select("*").eq("tenant_id", tenantId);
+  let query = supabase
+    .from("storage_file_references")
+    .select("id, tenant_id, storage_connection_id, provider_file_id, folder_category, file_name, mime_type, size_bytes, metadata, created_at, updated_at")
+    .eq("tenant_id", tenantId);
   if (folderCategory) query = query.eq("folder_category", folderCategory);
   const { data, error } = await query.order("created_at", { ascending: false });
   if (error) throw new Error(`listFileReferences: ${error.message}`);

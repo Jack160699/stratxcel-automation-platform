@@ -23,6 +23,8 @@ export interface TenantContext {
   accessMode: "customer";
   tenantId: string;
   userId: string;
+  userEmail?: string | null;
+  userMetadata?: Record<string, unknown>;
   role: TenantRole;
   supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>;
 }
@@ -32,6 +34,8 @@ export interface StaffSupportTenantContext {
   accessMode: "staff_support";
   tenantId: string;
   userId: string;
+  userEmail?: string | null;
+  userMetadata?: Record<string, unknown>;
   role: null;
   tenant: AgencyTenant;
   supabase: ReturnType<typeof createSupabaseServiceClient>;
@@ -69,7 +73,16 @@ export async function requireTenantContext(
 
   if (!memberRow) return { ok: false, status: 403, error: "Not a member of this tenant" };
 
-  return { ok: true, accessMode: "customer", tenantId, userId: user.id, role: memberRow.role as TenantRole, supabase };
+  return {
+    ok: true,
+    accessMode: "customer",
+    tenantId,
+    userId: user.id,
+    userEmail: user.email ?? null,
+    userMetadata: (user.user_metadata as Record<string, unknown>) ?? {},
+    role: memberRow.role as TenantRole,
+    supabase,
+  };
 }
 
 /**
@@ -117,6 +130,8 @@ export async function requireTenantReadContext(
       accessMode: "customer",
       tenantId,
       userId: user.id,
+      userEmail: user.email ?? null,
+      userMetadata: (user.user_metadata as Record<string, unknown>) ?? {},
       role: memberRow.role as TenantRole,
       supabase,
     };
@@ -130,6 +145,8 @@ export async function requireTenantReadContext(
       accessMode: "staff_support",
       tenantId,
       userId: user.id,
+      userEmail: user.email ?? null,
+      userMetadata: (user.user_metadata as Record<string, unknown>) ?? {},
       role: null,
       tenant,
       supabase: createSupabaseServiceClient(),

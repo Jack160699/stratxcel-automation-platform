@@ -50,7 +50,11 @@ export async function startRun(ctx: AgentReadContext, sessionId: string): Promis
 }
 
 export async function getRun(ctx: AgentReadContext, runId: string): Promise<AgentRunRow | null> {
-  const { data } = await ctx.supabase.from("social_agent_runs").select("*").eq("id", runId).maybeSingle();
+  const { data } = await ctx.supabase
+    .from("social_agent_runs")
+    .select("id, session_id, status, error_reason, started_at, completed_at")
+    .eq("id", runId)
+    .maybeSingle();
   return data as AgentRunRow | null;
 }
 
@@ -79,7 +83,7 @@ export async function recordRunEvent(
 export async function getLatestRun(ctx: AgentReadContext, sessionId: string): Promise<AgentRunRow | null> {
   const { data } = await ctx.supabase
     .from("social_agent_runs")
-    .select("*")
+    .select("id, session_id, status, error_reason, started_at, completed_at")
     .eq("session_id", sessionId)
     .order("started_at", { ascending: false })
     .limit(1)
@@ -90,7 +94,7 @@ export async function getLatestRun(ctx: AgentReadContext, sessionId: string): Pr
 export async function getRunEvents(ctx: AgentReadContext, runId: string): Promise<AgentRunEventRow[]> {
   const { data } = await ctx.supabase
     .from("social_agent_run_events")
-    .select("*")
+    .select("id, run_id, type, label, tool_name, status, meta, created_at")
     .eq("run_id", runId)
     .order("created_at", { ascending: true });
   return (data ?? []) as AgentRunEventRow[];
@@ -101,16 +105,20 @@ export async function getRunWithEvents(
   runId: string,
   after?: string | null
 ): Promise<{ run: AgentRunRow | null; events: AgentRunEventRow[] }> {
-  const run = await getRun(ctx, runId);
-  if (!run) return { run: null, events: [] };
-  let query = ctx.supabase
+  let eventsQuery = ctx.supabase
     .from("social_agent_run_events")
-    .select("*")
+    .select("id, run_id, type, label, tool_name, status, meta, created_at")
     .eq("run_id", runId)
     .order("created_at", { ascending: true });
-  if (after) query = query.gt("created_at", after);
-  const { data } = await query;
-  return { run, events: (data ?? []) as AgentRunEventRow[] };
+  if (after) eventsQuery = eventsQuery.gt("created_at", after);
+
+  const [run, eventsRes] = await Promise.all([
+    getRun(ctx, runId),
+    eventsQuery,
+  ]);
+
+  if (!run) return { run: null, events: [] };
+  return { run, events: (eventsRes.data ?? []) as AgentRunEventRow[] };
 }
 
 export async function getLatestRunWithEvents(ctx: AgentReadContext, sessionId: string): Promise<{ run: AgentRunRow | null; events: AgentRunEventRow[] }> {

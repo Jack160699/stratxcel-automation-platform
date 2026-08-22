@@ -5,10 +5,15 @@ import { useCurrentTenant } from "../CurrentTenantContext";
 import { ModulePageHeader } from "../components/ModulePageHeader";
 import { IntegrationStatus } from "../components/IntegrationStatus";
 import { EmptyModuleState } from "../components/EmptyModuleState";
-import { DetailPanel } from "../components/DetailPanel";
 import { Input } from "@/components/ui/Input";
 import { Card, CardRow } from "@/components/ui/Card";
 import { ErrorState } from "@/components/ui/Feedback";
+import dynamic from "next/dynamic";
+
+const DetailPanel = dynamic(
+  () => import("../components/DetailPanel").then((mod) => mod.DetailPanel),
+  { ssr: false }
+);
 
 export interface ArtifactRow {
   id: string;

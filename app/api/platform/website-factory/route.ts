@@ -267,23 +267,24 @@ export async function GET(request: Request) {
 
   const serviceDb = createSupabaseServiceClient();
 
-  const { data: projects, error } = await serviceDb
-    .from("site_projects")
-    .select("*, website_agents(id, name, enabled, conversation_count)")
-    .eq("tenant_id", tenantId)
-    .order("created_at", { ascending: false });
+  const [projectsRes, domainsRes] = await Promise.all([
+    serviceDb
+      .from("site_projects")
+      .select("id, tenant_id, name, slug, status, custom_domain, framework, template, created_at, updated_at, website_agents(id, name, enabled, conversation_count)")
+      .eq("tenant_id", tenantId)
+      .order("created_at", { ascending: false }),
+    serviceDb
+      .from("domains")
+      .select("id, tenant_id, domain, status, verification_status, ssl_status, auto_renew, expires_at, site_project_id, created_at, updated_at")
+      .eq("tenant_id", tenantId)
+      .order("created_at", { ascending: false }),
+  ]);
 
-  if (error) return Response.json({ error: error.message }, { status: 500 });
-
-  // Also fetch domains linked to these projects
-  const projectIds = (projects ?? []).map((p: Record<string, unknown>) => p.id);
-  const { data: domains } = projectIds.length > 0
-    ? await serviceDb.from("domains").select("*").in("site_project_id", projectIds)
-    : { data: [] };
+  if (projectsRes.error) return Response.json({ error: projectsRes.error.message }, { status: 500 });
 
   return Response.json({
-    projects: projects ?? [],
-    domains: domains ?? [],
+    projects: projectsRes.data ?? [],
+    domains: domainsRes.data ?? [],
   }, { headers: { "Cache-Control": "no-store" } });
 }
 
