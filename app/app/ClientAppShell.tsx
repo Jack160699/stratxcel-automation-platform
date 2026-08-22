@@ -10,13 +10,11 @@ import type { CustomerPlanSummary } from "@/lib/billing/customer-plan";
 import { CustomerHeaderActions } from "./components/CustomerHeaderActions";
 
 /**
- * /app's own shell — the client/workspace product's information
- * architecture (components/shell/navigation/app-navigation.tsx), visually
- * built from the same shared CoreAppShell/Sidebar components /admin uses,
- * but a deliberately separate destination list — see app-navigation.tsx's
- * header comment. /app never renders agency-only destinations (Clients,
- * Operations Queue, System Health, Audit Log, internal Human Handoffs);
- * those exist only in /admin.
+ * /app's own shell — canonical customer information architecture.
+ * Primary Navigation: Home | Audit | Content | Growth | More.
+ *
+ * Growth Assistant (/app/social/copilot) is a dedicated full-screen work mode
+ * with its own fixed header, scrollable conversation, and fixed composer.
  */
 export function ClientAppShell({
   tenantId,
@@ -42,17 +40,34 @@ export function ClientAppShell({
   auditOpportunityCount: number | null;
   staffWorkspace: { tenantName: string } | null;
   isStaff?: boolean;
-  /** Tenant/business name — StratXcel Desktop canvas sidebar business card. */
   businessName: string;
   role: string | null;
   googleConnected: boolean;
   whatsappConnected: boolean;
-  /** Real notification rows — StratXcel App reference Notifications screen, surfaced from the header bell. */
   notifications: { key: string; title: string; detail: string; href: string; tone: "warning" | "accent" }[];
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
   const activeKey = resolveAppActiveKey(pathname);
+  const isCopilotFullScreen = pathname === "/app/social/copilot" || pathname.startsWith("/app/social/copilot");
+
+  if (isCopilotFullScreen) {
+    return (
+      <div className="h-[100dvh] w-full overflow-hidden bg-sx-bg text-sx-text sx-customer-app">
+        {staffWorkspace && (
+          <div className="flex items-center justify-between gap-3 border-b border-sx-accent/40 bg-sx-accent/10 px-4 py-2 text-xs" role="status">
+            <p className="font-medium text-sx-text">Viewing as Stratxcel staff · {staffWorkspace.tenantName}</p>
+            <form action={returnToAdminAction}>
+              <button type="submit" className="rounded-sx-xs border border-sx-border-strong bg-sx-surface-2 px-2 py-1 text-xs font-semibold text-sx-text hover:bg-sx-elevated">
+                Return to Admin
+              </button>
+            </form>
+          </div>
+        )}
+        {children}
+      </div>
+    );
+  }
 
   return (
     <CoreAppShell
@@ -60,14 +75,6 @@ export function ClientAppShell({
       sidebarGroups={APP_SIDEBAR_GROUPS}
       activeKey={activeKey}
       mobileNavItems={APP_MOBILE_NAV}
-      // StratXcel App reference More sheet shows only the destinations NOT
-      // already on the bottom dock (Home/Audit/Growth Assistant/Shop
-      // Profile) — mapping every sidebar group in verbatim (the previous
-      // version) duplicated those 4 into the sheet a second time, which the
-      // reference's grouping never does. Still built directly from
-      // APP_SIDEBAR_GROUPS (client-modules-completion.test.ts requires
-      // this exact derivation, not a hand-maintained list) — only filtered
-      // down to non-primary items per group.
       mobileMoreGroups={APP_SIDEBAR_GROUPS.map((g) => ({
         label: g.label ?? "Overview",
         items: g.items
@@ -111,12 +118,6 @@ export function ClientAppShell({
   );
 }
 
-/**
- * Business-identity card under the brand mark — StratXcel Desktop canvas.
- * Connection state comes from the same canonical connector resolver
- * Home/Audit already read (lib/connectors/canonical-status.ts via
- * app/app/layout.tsx), never re-derived here.
- */
 function SidebarBusinessCard({
   businessName,
   googleConnected,
@@ -147,7 +148,6 @@ const ROLE_LABELS: Record<string, string> = {
   viewer: "Viewer",
 };
 
-/** User identity footer at the bottom of the sidebar — StratXcel Desktop canvas. The real account menu (profile, billing, sign out) stays in the top bar via CustomerHeaderActions; this is identity display only. */
 function SidebarUserFooter({ name, email, role }: { name: string | null; email: string; role: string | null }) {
   const initials = (name?.trim() || email.split("@")[0] || "S")
     .split(/\s+/)

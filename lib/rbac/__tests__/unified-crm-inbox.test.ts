@@ -67,7 +67,8 @@ function run() {
   // --- 6/7/8. Active-route highlighting resolves independently, real calls
   assert.equal(resolveActiveKey("/app", APP_NAV_GROUPS_DATA), "home", "app Command Center must resolve /app");
   assert.equal(resolveActiveKey("/app/audit", APP_NAV_GROUPS_DATA), "customer-audit", "app Audit must resolve /app/audit");
-  assert.equal(resolveActiveKey("/app/social/copilot", APP_NAV_GROUPS_DATA), "copilot", "app Copilot must resolve /app/social/copilot");
+  assert.equal(resolveActiveKey("/app/content", APP_NAV_GROUPS_DATA), "content", "app Content must resolve /app/content");
+  assert.equal(resolveActiveKey("/app/growth", APP_NAV_GROUPS_DATA), "growth", "app Growth must resolve /app/growth");
   assert.equal(resolveActiveKey("/app/integrations", APP_NAV_GROUPS_DATA), "integrations", "app Connectors must resolve /app/integrations");
   assert.equal(resolveActiveKey("/admin/leads", ADMIN_NAV_GROUPS_DATA), "leads", "admin CRM must resolve /admin/leads");
   assert.equal(resolveActiveKey("/admin", ADMIN_NAV_GROUPS_DATA), "overview");

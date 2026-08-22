@@ -73,8 +73,8 @@ console.log("\nTest 2: Mobile Bottom Navigation Dock & Top Command Bar...");
 
 assert.deepEqual(
   APP_MOBILE_NAV_KEYS,
-  ["home", "customer-audit", "copilot", "brand"],
-  "Mobile dock primary keys must be home, audit, copilot, business"
+  ["home", "customer-audit", "content", "growth"],
+  "Mobile dock primary keys must be home, audit, content, growth"
 );
 
 const mobileNavFile = read("components", "shell", "MobileBottomNav.tsx");

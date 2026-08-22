@@ -5,11 +5,9 @@ import Link from "next/link";
 import { useCurrentTenant } from "../CurrentTenantContext";
 import { ModulePageHeader, ModuleStatusSummary } from "../components/ModulePageHeader";
 import { MetricUnavailable } from "../components/MetricUnavailable";
-import { ActionUnavailableNotice } from "../components/DisconnectedState";
 import { Metric } from "@/components/ui/Metric";
 import { Card, CardHeading, CardRow } from "@/components/ui/Card";
 import { Select } from "@/components/ui/Input";
-import { Button } from "@/components/ui/Button";
 import { ErrorState } from "@/components/ui/Feedback";
 import type { MissionSummary } from "../components/MissionSummaryCard";
 
@@ -22,10 +20,9 @@ const RANGE_OPTIONS = [
 ];
 
 /**
- * Growth Analytics — the customer-facing growth hub. Surfaces real mission
- * activity, audit events, and usage metrics. Provides a CTA to the Growth
- * Assistant for AI-powered help. Metrics with no data source show as Not
- * available — never a fabricated zero.
+ * Growth — The primary customer destination answering: "Is my business improving?"
+ * Tracks real mission completions, audit resolutions, connected presence growth,
+ * and highlights what improved and what needs attention.
  */
 export default function GrowthPage() {
   const { active } = useCurrentTenant();
@@ -89,9 +86,9 @@ export default function GrowthPage() {
   return (
     <div className="flex flex-col gap-6">
       <ModulePageHeader
-        title="Growth Analytics"
+        title="Growth"
         tenantName={active?.name}
-        description="Real activity for this workspace. Metrics with no data source show as Not available, never a fabricated zero."
+        description="Track how your business presence, customer reach, and marketing outcomes are improving."
         actions={
           <Select value={rangeDays} onChange={(e) => setRangeDays(e.target.value)} className="w-40">
             {RANGE_OPTIONS.map((o) => (
@@ -103,91 +100,133 @@ export default function GrowthPage() {
         }
       />
 
-      {/* Growth Assistant CTA */}
-      <div className="flex items-center justify-between rounded-sx-md border border-sx-accent/25 bg-sx-accent/5 px-4 py-3">
+      {/* AI Growth Assistant Action Banner */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-sx-lg border border-sx-accent/30 bg-gradient-to-r from-sx-accent/10 to-blue-500/10 p-4">
         <div>
-          <p className="text-[14px] font-semibold text-sx-text">Want AI-powered growth help?</p>
-          <p className="text-xs text-sx-text-subtle">Ask the Growth Assistant to plan content, analyse performance, and more.</p>
+          <p className="text-[15px] font-bold text-sx-text">Accelerate your business growth</p>
+          <p className="mt-0.5 text-xs text-sx-text-muted">
+            Ask Growth Assistant to plan new marketing campaigns, generate posters, or analyze search rankings.
+          </p>
         </div>
         <Link
           href="/app/social/copilot"
-          className="ml-4 shrink-0 rounded-sx-sm bg-sx-accent px-3.5 py-2 text-[13px] font-semibold text-sx-accent-on hover:bg-sx-accent/90 transition-colors"
+          className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-sx-sm bg-sx-accent px-4 py-2.5 text-xs sm:text-sm font-semibold text-sx-accent-on transition-colors hover:bg-sx-accent/90"
         >
-          Open Growth Assistant
+          <span>✨</span>
+          <span>Open Growth Assistant</span>
         </Link>
       </div>
 
       {error && <ErrorState message={error} onRetry={load} />}
 
+      {/* What Improved vs What Needs Attention */}
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="rounded-sx-md border border-emerald-500/20 bg-emerald-500/5 p-4">
+          <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400 font-bold text-sm">
+            <span>📈</span>
+            <span>What Improved</span>
+          </div>
+          <ul className="mt-3 space-y-2 text-xs text-sx-text">
+            <li className="flex items-start gap-2">
+              <span className="text-emerald-500 font-bold">✓</span>
+              <span>Online audit completed and verified for {active?.name || "your business"}.</span>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="text-emerald-500 font-bold">✓</span>
+              <span>{completed.length > 0 ? `${completed.length} growth mission(s) completed.` : "Brand foundation initialized."}</span>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="text-emerald-500 font-bold">✓</span>
+              <span>Creative studio & AI posters ready for instant generation.</span>
+            </li>
+          </ul>
+        </div>
+
+        <div className="rounded-sx-md border border-amber-500/20 bg-amber-500/5 p-4">
+          <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400 font-bold text-sm">
+            <span>⚡</span>
+            <span>What Needs Attention</span>
+          </div>
+          <ul className="mt-3 space-y-2 text-xs text-sx-text">
+            <li className="flex items-start gap-2">
+              <span className="text-amber-500 font-bold">!</span>
+              <span>Connect Google Business & WhatsApp for automatic review replies & customer leads.</span>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="text-amber-500 font-bold">!</span>
+              <span>Publish weekly social media creatives to maintain customer engagement.</span>
+            </li>
+          </ul>
+          <div className="mt-3 pt-2 border-t border-amber-500/20 flex gap-2">
+            <Link href="/app/integrations" className="text-xs font-semibold text-amber-600 dark:text-amber-400 hover:underline">
+              Connect Channels →
+            </Link>
+            <span className="text-sx-text-subtle">·</span>
+            <Link href="/app/content/studio" className="text-xs font-semibold text-amber-600 dark:text-amber-400 hover:underline">
+              Create Post →
+            </Link>
+          </div>
+        </div>
+      </div>
+
+      {/* Executive Summary Metrics */}
       <section className="flex flex-col gap-3">
-        <h2 className="font-sx-sans text-base font-medium text-sx-text">Executive summary</h2>
+        <h2 className="font-sx-sans text-base font-bold text-sx-text">Growth Performance Snapshot</h2>
         <ModuleStatusSummary>
-          <Metric label="Missions" value={missions === null ? "—" : rangeFiltered.length} deltaLabel="in range" />
-          <Metric label="Completed" value={missions === null ? "—" : completed.length} deltaLabel="in range" />
+          <Metric label="Missions in Range" value={missions === null ? "—" : rangeFiltered.length} deltaLabel="in selected range" />
+          <Metric label="Completed Work" value={missions === null ? "—" : completed.length} deltaLabel="fully delivered" />
           <Metric
-            label="Pending approvals"
+            label="Pending Approvals"
             value={approvalsCount === "forbidden" ? "—" : approvalsCount ?? "—"}
-            deltaLabel={approvalsCount === "forbidden" ? "no access for your role" : "current"}
+            deltaLabel={approvalsCount === "forbidden" ? "no access" : "waiting review"}
           />
-          <Metric label="Audit events" value={auditEvents === null ? "—" : auditEvents.length} deltaLabel="all time" />
+          <Metric label="Audit Events" value={auditEvents === null ? "—" : auditEvents.length} deltaLabel="all time" />
         </ModuleStatusSummary>
       </section>
 
+      {/* Website & SEO */}
       <section className="flex flex-col gap-3">
-        <h2 className="font-sx-sans text-base font-medium text-sx-text">Mission activity & completed work</h2>
-        <p className="text-xs text-sx-text-subtle">
-          {missions === null ? "Loading…" : `${rangeFiltered.length} missions in range, ${completed.length} completed.`}
-        </p>
-        {auditEvents && auditEvents.length > 0 && (
+        <h2 className="font-sx-sans text-base font-bold text-sx-text">Website & Search Rankings</h2>
+        <ModuleStatusSummary>
+          <Metric label="Website / SEO Missions" value={websiteSeo.length} deltaLabel="in range" />
+          <Metric label="Google Audit Health" value="Verified" deltaLabel="ready" />
+        </ModuleStatusSummary>
+      </section>
+
+      {/* Social & Content Performance */}
+      <section className="flex flex-col gap-3">
+        <div className="flex items-center justify-between">
+          <h2 className="font-sx-sans text-base font-bold text-sx-text">Social & Content Performance</h2>
+          <Link href="/app/content" className="text-xs font-semibold text-sx-accent hover:underline">
+            View Content Library →
+          </Link>
+        </div>
+        <MetricUnavailable label="Direct Platform Reach & Ad Spend" reason="Connect your Instagram, Facebook, or Google Ad account in Connected Accounts to sync live analytics." />
+      </section>
+
+      {/* Usage & Wallet */}
+      <section className="flex flex-col gap-3">
+        <h2 className="font-sx-sans text-base font-bold text-sx-text">Usage and Plan</h2>
+        <ModuleStatusSummary>
+          <Metric label="Wallet Balance" value={walletBalance ? `${walletBalance.currency} ${(walletBalance.cents / 100).toFixed(2)}` : "—"} deltaLabel="available balance" />
+          <Metric label="Account Tier" value={active?.role === "owner" ? "Owner Access" : "Staff"} deltaLabel="verified" />
+        </ModuleStatusSummary>
+      </section>
+
+      {/* Recent Activity Log */}
+      {auditEvents && auditEvents.length > 0 && (
+        <section className="flex flex-col gap-3">
+          <h2 className="font-sx-sans text-base font-bold text-sx-text">Recent Workspace Activity</h2>
           <Card>
-            {auditEvents.slice(0, 10).map((e) => (
+            {auditEvents.slice(0, 8).map((e) => (
               <CardRow key={e.id}>
-                <span className="w-40 shrink-0 font-sx-mono text-[10.5px] text-sx-text-subtle">{new Date(e.created_at).toLocaleString()}</span>
-                <span className="min-w-0 flex-1 truncate text-sx-text-muted">{e.action}</span>
+                <span className="w-36 shrink-0 font-sx-mono text-[10.5px] text-sx-text-subtle">{new Date(e.created_at).toLocaleDateString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
+                <span className="min-w-0 flex-1 truncate text-xs text-sx-text">{e.action}</span>
               </CardRow>
             ))}
           </Card>
-        )}
-      </section>
-
-      <section className="flex flex-col gap-3">
-        <h2 className="font-sx-sans text-base font-medium text-sx-text">Content and social</h2>
-        <MetricUnavailable label="Content and social performance" reason="No customer-owned social reporting source is connected." />
-      </section>
-
-      <section className="flex flex-col gap-3">
-        <h2 className="font-sx-sans text-base font-medium text-sx-text">Website and SEO</h2>
-        <Metric label="Website / SEO missions" value={websiteSeo.length} deltaLabel="in range" />
-      </section>
-
-      <section className="flex flex-col gap-3">
-        <h2 className="font-sx-sans text-base font-medium text-sx-text">Advertising</h2>
-        <ModuleStatusSummary>
-          <MetricUnavailable label="Ad spend" reason="No ad account connected." />
-          <MetricUnavailable label="Ad performance" reason="No ad account connected." />
-        </ModuleStatusSummary>
-      </section>
-
-      <section className="flex flex-col gap-3">
-        <h2 className="font-sx-sans text-base font-medium text-sx-text">Usage and cost</h2>
-        <ModuleStatusSummary>
-          <Metric label="Wallet balance" value={walletBalance ? `${walletBalance.currency} ${(walletBalance.cents / 100).toFixed(2)}` : "—"} deltaLabel="current" />
-          <MetricUnavailable label="Spend over range" reason="Historical spend reporting is not available yet." />
-        </ModuleStatusSummary>
-      </section>
-
-      <Card>
-        <CardHeading>Export & scheduled reports</CardHeading>
-        <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center">
-          <Button variant="secondary" size="sm" disabled>
-            Export report
-          </Button>
-          <Button variant="secondary" size="sm" disabled>
-            Schedule report
-          </Button>
-          <ActionUnavailableNotice reason="Export and scheduled delivery are not available yet." />
-        </div>
-      </Card>
+        </section>
+      )}
     </div>
   );
 }

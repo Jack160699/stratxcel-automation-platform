@@ -436,9 +436,9 @@ function ChevronIcon() {
 
 const QUICK_TOOLS: { icon: string; iconTint: PriorityIconTint; label: string; href: string }[] = [
   { icon: "🎨", iconTint: "accent", label: "Create Poster", href: "/app/content/studio" },
-  { icon: "💬", iconTint: "success", label: "Ask Copilot", href: "/app/social/copilot" },
-  { icon: "🌐", iconTint: "warning", label: "Manage Website", href: "/app/website" },
-  { icon: "🏪", iconTint: "accent", label: "Shop Profile", href: "/app/brand" },
+  { icon: "✨", iconTint: "success", label: "Growth Assistant", href: "/app/social/copilot" },
+  { icon: "📁", iconTint: "warning", label: "Content Library", href: "/app/content" },
+  { icon: "📈", iconTint: "accent", label: "Growth Hub", href: "/app/growth" },
 ];
 
 /** "Quick Tools" grid — StratXcel App reference: a fixed 4-column icon grid at every width. Four real destinations that already exist in the app; nothing here is a placeholder action. */

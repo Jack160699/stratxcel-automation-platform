@@ -190,20 +190,20 @@ export function MobileBottomNav({
 
 /** Real, one-line descriptions for the customer "More" sheet — StratXcel App reference row pattern (icon + title + subtitle). Text describes the actual destination, not fabricated content. */
 const MORE_SHEET_DESCRIPTIONS: Record<string, string> = {
-  "growth-analytics": "Reach, performance and growth trends",
-  website: "Manage your live business site",
+  brand: "Your business profile, hours, and Brand Brain",
+  website: "Manage your live business site and domains",
   integrations: "Google, WhatsApp, Instagram, Facebook",
   billing: "Plan, wallet, and invoices",
   team: "Invite staff and manage roles",
   settings: "Profile, appearance, support",
-  brand: "Your business profile and Brand Brain",
 };
 
 function shortLabel(label: string): string {
   if (label === "Command Center" || label === "Home") return "Home";
   if (label === "Business Growth Audit" || label === "Audit") return "Audit";
-  if (label === "Brand" || label === "Shop Profile") return "Brand";
-  if (label === "Growth" || label === "Growth Assistant" || label === "Copilot") return "Growth";
+  if (label === "Content" || label === "Content & Media") return "Content";
+  if (label === "Growth" || label === "Growth Analytics" || label === "Reports") return "Growth";
+  if (label === "Brand" || label === "Shop Profile" || label === "Brand Brain") return "Brand";
   return label;
 }
 
