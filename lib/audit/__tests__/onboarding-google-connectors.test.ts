@@ -23,13 +23,21 @@ function createMockSupabase(initialState: {
 
   return {
     from: (table: keyof typeof store) => ({
-      select: (_cols?: string) => ({
-        eq: (_field: string, val: string) => {
+      select: (_cols?: string) => {
+        // Chainable .eq(...).eq(...) matching real supabase-js query-builder
+        // semantics -- production code (lib/social/provisioning.ts) filters
+        // by both tenant_id and platform, so a single-filter mock silently
+        // swallowed that second .eq() as "not a function" and the caught
+        // error made the test believe the path it claims to cover ran clean.
+        const buildFilterChain = (filters: Record<string, string>): any => {
           const resolveMatch = () => {
-            const match = store[table]?.find((r) => r.tenant_id === val || r.id === val);
+            const match = store[table]?.find((r) =>
+              Object.entries(filters).every(([field, val]) => r[field] === val || (field === "tenant_id" && r.id === val)),
+            );
             return { data: match ? { ...match } : null, error: null };
           };
           return {
+            eq: (field: string, val: string) => buildFilterChain({ ...filters, [field]: val }),
             maybeSingle: async () => resolveMatch(),
             single: async () => {
               const res = resolveMatch();
@@ -42,8 +50,9 @@ function createMockSupabase(initialState: {
               }),
             }),
           };
-        },
-      }),
+        };
+        return { eq: (field: string, val: string) => buildFilterChain({ [field]: val }) };
+      },
       insert: async (record: any) => {
         store[table].push({ id: `id_${Date.now()}`, ...record });
         return { data: { ...record }, error: null };

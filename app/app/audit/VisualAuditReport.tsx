@@ -8,6 +8,14 @@ import type { VerifiedReviewSummary } from "@/lib/audit/v1/reviews";
 import { PlatformIcon, type PlatformIconKey } from "@/components/audit/PlatformIcon";
 import { PresenceCards } from "@/components/audit/PresenceCards";
 import type { PresenceLink } from "@/lib/audit/v1/presence";
+import { deriveSignalsFromReport, recommendPlan, type RecommendedPlanTier } from "@/lib/audit/plan-recommendation";
+import { PRICING_TIERS } from "@/lib/commercial/catalog";
+
+const PLAN_CARD_META: Record<RecommendedPlanTier, { name: string; priceLabel: string }> = {
+  starter: { name: "Starter", priceLabel: PRICING_TIERS.find((t) => t.planKey === "starter")?.price ?? "₹2,999" },
+  growth: { name: "Growth", priceLabel: PRICING_TIERS.find((t) => t.planKey === "growth")?.price ?? "₹7,999" },
+  business: { name: "Business", priceLabel: PRICING_TIERS.find((t) => t.planKey === "business")?.price ?? "₹15,999" },
+};
 
 const ALL_CONNECTOR_PROVIDERS = [
   { key: "google_search_console", label: "Google Search Console", icon: "analytics" as PlatformIconKey },
@@ -23,12 +31,66 @@ const ALL_CONNECTOR_PROVIDERS = [
 const CONNECTOR_STATE_META: Record<string, { label: string; className: string; badge: string }> = {
   available: { label: "Connected · Data Used", className: "border-sx-success/30 bg-sx-success/10 text-sx-success", badge: "DATA USED" },
   connected: { label: "Connected · Data Used", className: "border-sx-success/30 bg-sx-success/10 text-sx-success", badge: "DATA USED" },
+  connected_only: { label: "Connected", className: "border-sx-success/30 bg-sx-success/10 text-sx-success", badge: "CONNECTED" },
   no_data: { label: "Connected · No Data Yet", className: "border-sx-border bg-sx-surface-2/60 text-sx-text-muted", badge: "NO DATA" },
   not_connected: { label: "Not Connected", className: "border-sx-border bg-sx-surface-2/60 text-sx-text-subtle", badge: "OPTIONAL" },
   unavailable: { label: "Not Connected", className: "border-sx-border bg-sx-surface-2/60 text-sx-text-subtle", badge: "OPTIONAL" },
   permission_required: { label: "Reconnect Needed", className: "border-sx-warning/30 bg-sx-warning/10 text-sx-warning", badge: "REAUTH REQUIRED" },
   provider_error: { label: "Temporary Error", className: "border-sx-warning/30 bg-sx-warning/10 text-sx-warning", badge: "ERROR" },
 };
+
+/** Canonical per-platform connection state, as returned by the single source
+ * of truth at /api/platform/integrations/status (lib/connectors/canonical-status.ts).
+ * Keyed by the same platform ids used across Home, Shop, Connections and Settings. */
+export type CanonicalConnectionsMap = Record<string, { connectionState: string }>;
+
+// Maps this panel's local provider keys (kept for backwards-compatible
+// connectorAvailability lookups) to the canonical platform id used by
+// getTenantDigitalPresence -- "ga4" here is "google_analytics" everywhere else.
+const CANONICAL_KEY_BY_PROVIDER: Record<string, string> = {
+  google_search_console: "google_search_console",
+  ga4: "google_analytics",
+  google_business: "google_business",
+  website: "website",
+  instagram: "instagram",
+  facebook: "facebook",
+  youtube: "youtube",
+  whatsapp: "whatsapp",
+};
+
+/**
+ * Resolves the badge state for one connector card. Canonical DB-truth
+ * (connected/reauth/error) always wins over a one-off live-data-fetch
+ * hiccup from this specific audit run -- a transient Graph API timeout while
+ * generating the report must never relabel an actually-connected, healthy
+ * account as broken (see STRATEXCEL_AI_MASTER_BUILD_BRIEF connector
+ * consistency requirement). It also covers providers this audit run never
+ * live-fetches at all (YouTube, WhatsApp), which previously always fell
+ * through to "Not Connected" regardless of real state.
+ */
+function resolveConnectorBadgeKey(
+  canonical: CanonicalConnectionsMap[string] | undefined,
+  live: { state: string; reason?: string | null } | undefined,
+): string {
+  if (!canonical) {
+    // No canonical data available (fetch failed / not loaded yet) -- fall
+    // back to the audit run's own baked-in live-fetch result, unchanged.
+    return live?.state || "not_connected";
+  }
+  const state = canonical.connectionState;
+  if (state === "REAUTH_REQUIRED") return "permission_required";
+  if (state === "ERROR") return "provider_error";
+  if (state === "CONNECTED") {
+    if (live?.state === "no_data") return "no_data";
+    if (live?.state === "available") return "connected";
+    // Connected per ground truth but no fresh read this run (never checked,
+    // or a transient failure) -- still genuinely connected, so say so.
+    return "connected_only";
+  }
+  // NOT_CONNECTED / DISCOVERED_PUBLICLY -- discovered-but-unauthenticated
+  // profiles are not an authenticated connection; keep the honest "optional".
+  return "not_connected";
+}
 
 function StarRating({ rating }: { rating: number }) {
   const filled = Math.round(rating);
@@ -56,6 +118,7 @@ export function VisualAuditReport({
   coverage,
   reviews,
   presence,
+  connections,
   onDownload,
   onShare,
   onWhatsApp,
@@ -63,6 +126,9 @@ export function VisualAuditReport({
   whatsAppMasked,
   whatsAppSent,
 }: {
+  /** Canonical connector ground truth (see resolveConnectorBadgeKey). Optional
+   * so the report still renders correctly before it loads or if it fails. */
+  connections?: CanonicalConnectionsMap | null;
   report: AuditDeliveryReport & {
     reportKind?: "AUDIT" | "LAUNCH_PLAN" | "FOUNDATION_PLAN";
     businessStage?: string;
@@ -168,7 +234,14 @@ export function VisualAuditReport({
   const score = report.executiveSearchHealth?.searchAuthorityScore ?? report.overallHealth?.score ?? report.scores?.overall ?? 76;
   const confidence = report.executiveSearchHealth?.confidence ?? (evidence?.ratio && evidence.ratio >= 0.7 ? "HIGH" : "MEDIUM");
 
-  const [selectedPlanTier, setSelectedPlanTier] = useState<string>(isEarlyStage ? "Starter" : "Growth");
+  // Brief §9-§11: evidence-based recommendation from real audit signals — the
+  // smallest plan that covers the detected opportunities, not a default
+  // upsell. Falls back sensibly for early-stage businesses with little audit
+  // evidence yet (isEarlyStage), which still biases toward Starter.
+  const recommendation = recommendPlan(deriveSignalsFromReport(report));
+  const [selectedPlanTier, setSelectedPlanTier] = useState<RecommendedPlanTier>(
+    isEarlyStage ? "starter" : recommendation.tier,
+  );
 
   // Map connector availability
   const availabilityMap = new Map<string, { state: string; reason?: string | null }>();
@@ -302,7 +375,9 @@ export function VisualAuditReport({
         <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
           {ALL_CONNECTOR_PROVIDERS.map((provider) => {
             const current = availabilityMap.get(provider.key);
-            const stateKey = current?.state || "not_connected";
+            const canonicalKey = CANONICAL_KEY_BY_PROVIDER[provider.key];
+            const canonical = canonicalKey ? connections?.[canonicalKey] : undefined;
+            const stateKey = resolveConnectorBadgeKey(canonical, current);
             const meta = CONNECTOR_STATE_META[stateKey] ?? CONNECTOR_STATE_META.not_connected;
 
             return (
@@ -669,31 +744,37 @@ export function VisualAuditReport({
         </div>
 
         <div className="mt-6 space-y-3.5">
-          {actionsToFix.map((action, idx) => (
-            <div
-              key={idx}
-              className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 rounded-sx-md border border-sx-border bg-sx-surface-1 p-4 shadow-2xs"
-            >
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <span className="inline-flex items-center gap-1 rounded bg-sx-warning/15 border border-sx-warning/30 px-2 py-0.5 text-[10px] font-bold text-sx-warning">
-                    🔒 LOCKED
+          {actionsToFix.map((action, idx) => {
+            const goal = `${action.title}. ${action.actionPlan}`;
+            return (
+              <div
+                key={idx}
+                className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 rounded-sx-md border border-sx-border bg-sx-surface-1 p-4 shadow-2xs"
+              >
+                <div className="space-y-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-semibold text-sm text-sx-text">{action.title}</h3>
+                  </div>
+                  <p className="text-xs text-sx-text-muted leading-relaxed">{action.actionPlan}</p>
+                  <span className="text-[11px] font-medium text-sx-text-subtle block">
+                    {action.executionType}
                   </span>
-                  <h3 className="font-semibold text-sm text-sx-text">{action.title}</h3>
                 </div>
-                <p className="text-xs text-sx-text-muted leading-relaxed pl-0.5">{action.actionPlan}</p>
-              </div>
 
-              <div className="text-right shrink-0">
-                <span className="text-[11px] font-medium text-sx-text-subtle block">
-                  {action.executionType}
-                </span>
-                <span className="text-[10px] text-sx-warning font-semibold mt-0.5 block">
-                  Requires Paid Activation
-                </span>
+                <div className="flex flex-col items-stretch sm:items-end gap-1.5 shrink-0 w-full sm:w-auto">
+                  <Link
+                    href={`/app/social/copilot?goal=${encodeURIComponent(goal)}`}
+                    className="inline-flex min-h-[38px] items-center justify-center rounded-sx-sm bg-sx-accent px-4 text-xs font-bold text-sx-accent-on transition-colors hover:bg-[color:var(--sx-accent-hover)]"
+                  >
+                    Fix this for me →
+                  </Link>
+                  <span className="text-[10px] text-sx-text-subtle text-center sm:text-right">
+                    Autonomous execution needs an active plan
+                  </span>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         {/* Unlocked Capabilities Summary */}
@@ -714,120 +795,85 @@ export function VisualAuditReport({
         </div>
       </section>
 
-      {/* 9. SUBSCRIPTION PLANS (Starter, Growth, Business) */}
+      {/* 9. YOUR BIGGEST OPPORTUNITY + PACKAGE RECOMMENDATION (brief §11) */}
       <section className="rounded-[1.25rem] border border-sx-border bg-sx-surface-1 p-6 sm:p-8 shadow-xs">
         <div className="max-w-3xl">
           <span className="inline-block rounded-full bg-sx-accent/20 px-3 py-0.5 text-xs font-bold uppercase tracking-wider text-sx-accent">
-            Subscription Activation
+            Your Biggest Opportunity
           </span>
           <h2 className="mt-2 font-sx-sans text-2xl font-bold text-sx-text sm:text-3xl">
-            Choose your Search Growth OS Plan
+            {recommendation.biggestOpportunity.title}
           </h2>
           <p className="mt-2 text-xs leading-relaxed text-sx-text-muted sm:text-sm">
-            All plans execute on the same continuous 3-day Growth Engine cadence (~10 cycles/month). Choose your monitoring scale:
+            {recommendation.biggestOpportunity.body}
           </p>
         </div>
 
-        <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {/* Starter Card */}
-          <div
-            role="radio"
-            aria-checked={selectedPlanTier === "Starter"}
-            onClick={() => setSelectedPlanTier("Starter")}
-            className={`flex flex-col justify-between rounded-sx-md border p-5 cursor-pointer transition-all ${
-              selectedPlanTier === "Starter"
-                ? "border-sx-accent bg-sx-surface-1 ring-1 ring-sx-accent shadow-sm"
-                : "border-sx-border bg-sx-surface-2/60 hover:bg-sx-surface-1"
-            }`}
-          >
-            <div>
-              <div className="flex items-center justify-between gap-1 mb-2">
-                <h3 className="font-bold text-base text-sx-text">Starter</h3>
-                <span className="text-xs font-bold text-sx-text">₹4,999<span className="text-[10px] text-sx-text-muted">/mo</span></span>
-              </div>
-              <p className="text-xs text-sx-text-muted leading-relaxed">
-                Foundational SEO crawling, Google Search Console sync, and essential website fixes.
-              </p>
-              <ul className="mt-4 space-y-2 text-xs text-sx-text-muted">
-                <li className="flex items-center gap-1.5"><span className="text-sx-accent font-bold">✓</span> 3-Day growth cycle frequency</li>
-                <li className="flex items-center gap-1.5"><span className="text-sx-accent font-bold">✓</span> Up to 30 pages crawled & monitored</li>
-                <li className="flex items-center gap-1.5"><span className="text-sx-accent font-bold">✓</span> Meta title & schema fix execution</li>
-              </ul>
-            </div>
-            <Link
-              href="/app/billing"
-              className="mt-6 inline-flex min-h-9 w-full items-center justify-center rounded-sx-sm border border-sx-border-strong px-4 text-xs font-semibold text-sx-text hover:bg-sx-accent hover:text-sx-accent-on transition-colors text-center"
-            >
-              Select Starter →
-            </Link>
-          </div>
+        <div className="mt-5">
+          <p className="text-xs font-bold uppercase tracking-wider text-sx-text">What StratXcel can do</p>
+          <ul className="mt-2 grid gap-1.5 text-xs text-sx-text-muted sm:grid-cols-2">
+            {recommendation.whatStratxcelCanDo.map((item) => (
+              <li key={item} className="flex items-center gap-1.5"><span className="text-sx-accent font-bold">✓</span> {item}</li>
+            ))}
+          </ul>
+        </div>
 
-          {/* Growth Card */}
-          <div
-            role="radio"
-            aria-checked={selectedPlanTier === "Growth"}
-            onClick={() => setSelectedPlanTier("Growth")}
-            className={`flex flex-col justify-between rounded-sx-md border p-5 cursor-pointer transition-all ${
-              selectedPlanTier === "Growth"
-                ? "border-sx-accent bg-sx-surface-1 ring-1 ring-sx-accent shadow-sm"
-                : "border-sx-border bg-sx-surface-2/60 hover:bg-sx-surface-1"
-            }`}
+        <div className="mt-6 rounded-sx-md border border-sx-accent/40 bg-sx-accent/10 p-4">
+          <p className="text-[11px] font-bold uppercase tracking-wide text-sx-accent">Recommended plan</p>
+          <p className="mt-1 font-sx-sans text-xl font-bold text-sx-text">
+            {PLAN_CARD_META[recommendation.tier].name} — {PLAN_CARD_META[recommendation.tier].priceLabel}/mo
+          </p>
+          <p className="mt-1.5 text-xs leading-relaxed text-sx-text-muted"><span className="font-semibold text-sx-text">Why this plan? </span>{recommendation.why}</p>
+          <Link
+            href={`/app/billing?recommended=${recommendation.tier}`}
+            className="mt-3 inline-flex min-h-9 items-center justify-center rounded-sx-sm bg-sx-accent px-4 text-xs font-bold text-sx-accent-on hover:bg-[color:var(--sx-accent-hover)] transition-colors"
           >
-            <div>
-              <div className="flex items-center justify-between gap-1 mb-2">
-                <h3 className="font-bold text-base text-sx-text">Growth</h3>
-                <span className="text-xs font-bold text-sx-accent font-mono">₹9,999<span className="text-[10px] text-sx-text-muted">/mo</span></span>
-              </div>
-              <p className="text-xs text-sx-text-muted leading-relaxed">
-                Autonomous Search Growth OS: 3-day rank tracking, competitor defense, and 1-tap action execution.
-              </p>
-              <ul className="mt-4 space-y-2 text-xs text-sx-text-muted">
-                <li className="flex items-center gap-1.5"><span className="text-sx-accent font-bold">✓</span> 3-Day growth cycle frequency</li>
-                <li className="flex items-center gap-1.5"><span className="text-sx-accent font-bold">✓</span> 100 pages crawled & monitored</li>
-                <li className="flex items-center gap-1.5"><span className="text-sx-accent font-bold">✓</span> Automated competitor delta analysis</li>
-                <li className="flex items-center gap-1.5"><span className="text-sx-accent font-bold">✓</span> Autonomous SEO action execution</li>
-              </ul>
-            </div>
-            <Link
-              href="/app/billing"
-              className="mt-6 inline-flex min-h-9 w-full items-center justify-center rounded-sx-sm bg-sx-accent px-4 text-xs font-bold text-sx-accent-on hover:bg-[color:var(--sx-accent-hover)] transition-colors text-center"
-            >
-              Select Growth →
-            </Link>
-          </div>
+            Start with {PLAN_CARD_META[recommendation.tier].name} →
+          </Link>
+        </div>
 
-          {/* Business Card */}
-          <div
-            role="radio"
-            aria-checked={selectedPlanTier === "Business"}
-            onClick={() => setSelectedPlanTier("Business")}
-            className={`flex flex-col justify-between rounded-sx-md border p-5 cursor-pointer transition-all ${
-              selectedPlanTier === "Business"
-                ? "border-sx-accent bg-sx-surface-1 ring-1 ring-sx-accent shadow-sm"
-                : "border-sx-border bg-sx-surface-2/60 hover:bg-sx-surface-1"
-            }`}
-          >
-            <div>
-              <div className="flex items-center justify-between gap-1 mb-2">
-                <h3 className="font-bold text-base text-sx-text">Business</h3>
-                <span className="text-xs font-bold text-sx-text">₹19,999<span className="text-[10px] text-sx-text-muted">/mo</span></span>
+        <p className="mt-6 text-xs font-semibold text-sx-text-muted">Other plans</p>
+        <div className="mt-2 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {(Object.keys(PLAN_CARD_META) as RecommendedPlanTier[]).map((tier) => {
+            const catalogTier = PRICING_TIERS.find((t) => t.planKey === tier);
+            const isRecommended = tier === recommendation.tier;
+            return (
+              <div
+                key={tier}
+                role="radio"
+                aria-checked={selectedPlanTier === tier}
+                onClick={() => setSelectedPlanTier(tier)}
+                className={`flex flex-col justify-between rounded-sx-md border p-5 cursor-pointer transition-all ${
+                  selectedPlanTier === tier
+                    ? "border-sx-accent bg-sx-surface-1 ring-1 ring-sx-accent shadow-sm"
+                    : "border-sx-border bg-sx-surface-2/60 hover:bg-sx-surface-1"
+                }`}
+              >
+                <div>
+                  <div className="flex items-center justify-between gap-1 mb-2">
+                    <h3 className="font-bold text-base text-sx-text">{PLAN_CARD_META[tier].name}</h3>
+                    <span className="text-xs font-bold text-sx-text">{PLAN_CARD_META[tier].priceLabel}<span className="text-[10px] text-sx-text-muted">/mo</span></span>
+                  </div>
+                  <p className="text-xs text-sx-text-muted leading-relaxed">{catalogTier?.pitch}</p>
+                  <ul className="mt-4 space-y-2 text-xs text-sx-text-muted">
+                    {(catalogTier?.scope ?? []).slice(0, 3).map((line) => (
+                      <li key={line} className="flex items-center gap-1.5"><span className="text-sx-accent font-bold">✓</span> {line}</li>
+                    ))}
+                  </ul>
+                </div>
+                <Link
+                  href={`/app/billing?recommended=${isRecommended ? tier : recommendation.tier}`}
+                  className={`mt-6 inline-flex min-h-9 w-full items-center justify-center rounded-sx-sm px-4 text-xs font-semibold text-center transition-colors ${
+                    isRecommended
+                      ? "bg-sx-accent text-sx-accent-on hover:bg-[color:var(--sx-accent-hover)] font-bold"
+                      : "border border-sx-border-strong text-sx-text hover:bg-sx-accent hover:text-sx-accent-on"
+                  }`}
+                >
+                  Select {PLAN_CARD_META[tier].name} →
+                </Link>
               </div>
-              <p className="text-xs text-sx-text-muted leading-relaxed">
-                Full-scale multi-location search defense, AEO generative visibility, and custom CMS automation.
-              </p>
-              <ul className="mt-4 space-y-2 text-xs text-sx-text-muted">
-                <li className="flex items-center gap-1.5"><span className="text-sx-accent font-bold">✓</span> 3-Day growth cycle frequency</li>
-                <li className="flex items-center gap-1.5"><span className="text-sx-accent font-bold">✓</span> 250 pages crawled & monitored</li>
-                <li className="flex items-center gap-1.5"><span className="text-sx-accent font-bold">✓</span> Generative AI (AEO) search readiness</li>
-              </ul>
-            </div>
-            <Link
-              href="/app/billing"
-              className="mt-6 inline-flex min-h-9 w-full items-center justify-center rounded-sx-sm border border-sx-border-strong px-4 text-xs font-semibold text-sx-text hover:bg-sx-accent hover:text-sx-accent-on transition-colors text-center"
-            >
-              Select Business →
-            </Link>
-          </div>
+            );
+          })}
         </div>
       </section>
     </div>

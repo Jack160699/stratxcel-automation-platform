@@ -8,6 +8,7 @@ import {
   resolveTenantPlanTier,
   type ImageGenerationOutcome,
 } from "@stratxcel/ai-runtime";
+import { hasEntitlement, recordMetricUsage, type ServiceClient } from "@stratxcel/payments-and-wallet";
 import { buildProviderReadyImagePrompt, createAdvisoryImageCritique, snapshotImageBrandContext } from "./prompt";
 import {
   IMAGE_ASPECT_RATIOS,
@@ -101,6 +102,30 @@ async function assertReferencesAuthorized(
   }
 }
 
+/**
+ * Reusable Brand Kit logo lookup (brief §1) — the most recently uploaded,
+ * ready logo asset for this tenant. Reuses the exact storage shape the
+ * Website Factory logo upload already writes (social_media_assets,
+ * provenance.purpose = "website_logo"; see
+ * app/api/platform/website-factory/assets/route.ts) rather than a second
+ * logo table — one upload, reused everywhere. Best-effort: a lookup failure
+ * or missing logo silently yields no auto-reference rather than blocking
+ * generation.
+ */
+async function resolveBrandLogoAssetId(authorizationClient: SupabaseClient, tenantId: string): Promise<string | null> {
+  const { data } = await authorizationClient
+    .from("social_media_assets")
+    .select("id, provenance")
+    .eq("tenant_id", tenantId)
+    .eq("status", "READY")
+    .order("created_at", { ascending: false })
+    .limit(20);
+  const logo = (data ?? []).find(
+    (row) => (row.provenance as { purpose?: string } | null)?.purpose === "website_logo",
+  );
+  return logo?.id ?? null;
+}
+
 export async function createImageGenerationJob(args: {
   authorizationClient: SupabaseClient;
   writeClient: SupabaseClient;
@@ -117,7 +142,18 @@ export async function createImageGenerationJob(args: {
   const aspectRatio = input.aspectRatio ?? "1:1";
   if (!IMAGE_ASPECT_RATIOS.includes(aspectRatio)) throw new ImageGenerationServiceError("INVALID_ASPECT_RATIO", "Choose a supported aspect ratio.");
   const candidateCount = Math.max(1, Math.min(Math.floor(input.candidateCount ?? 2), 4));
-  const referenceAssetIds = [...new Set(input.referenceAssetIds ?? [])];
+  let referenceAssetIds = [...new Set(input.referenceAssetIds ?? [])];
+
+  // Brand Kit (brief §1: "every plan must include a reusable Brand Kit" —
+  // upload the logo once, generated content automatically uses it). Reuses
+  // the same logo asset the website builder stores, auto-included as a
+  // reference unless the caller already supplied 5 (the hard cap).
+  if (referenceAssetIds.length < 5) {
+    const brandLogoAssetId = await resolveBrandLogoAssetId(args.authorizationClient, input.tenantId);
+    if (brandLogoAssetId && !referenceAssetIds.includes(brandLogoAssetId)) {
+      referenceAssetIds = [...referenceAssetIds, brandLogoAssetId];
+    }
+  }
   await assertReferencesAuthorized(args.authorizationClient, input.tenantId, input.actorUserId, referenceAssetIds);
 
   const { data: existing } = await args.writeClient
@@ -128,6 +164,23 @@ export async function createImageGenerationJob(args: {
     .eq("idempotency_key", input.idempotencyKey)
     .maybeSingle();
   if (existing) return existing as ImageGenerationJobRow;
+
+  // Brief §7: customer-facing generation quota ("N of M generations this
+  // month") — a distinct, new-generation-only pool from the internal AI-cost
+  // budget envelope enforced further down. Autopilot's system-researched
+  // content draws from automated_content_monthly; everything else
+  // (Creative Studio, Copilot-requested generations) draws from
+  // content_generation_monthly. Fails closed like every other entitlement
+  // check in this codebase — no row means no entitlement.
+  const generationMetric = input.sourceContext === "social_autopilot" ? "automated_content_monthly" : "content_generation_monthly";
+  const entitled = await hasEntitlement(args.writeClient as unknown as ServiceClient, input.tenantId, generationMetric, 1);
+  if (!entitled) {
+    throw new ImageGenerationServiceError(
+      "GENERATION_LIMIT_REACHED",
+      "This workspace has used all of its included generations for this month.",
+      403,
+    );
+  }
 
   const brandBrain = await getCurrentBrandBrain(args.writeClient as never, input.tenantId);
   const brandSnapshot = snapshotImageBrandContext(brandBrain?.content);
@@ -178,6 +231,10 @@ export async function createImageGenerationJob(args: {
       throw new ImageGenerationServiceError("REFERENCE_BIND_FAILED", "References could not be attached to the job.", 500, true);
     }
   }
+  // Best-effort — a metrics-recording hiccup must never fail an otherwise
+  // successful job creation; the entitlement check above already fails
+  // closed on the way in.
+  await recordMetricUsage(args.writeClient as unknown as ServiceClient, input.tenantId, generationMetric, 1).catch(() => {});
   return inserted as ImageGenerationJobRow;
 }
 
@@ -226,7 +283,9 @@ export async function processImageGenerationJob(args: {
   }
 
   const revisionNumber = args.revisionInstruction ? job.revision_count + 1 : job.revision_count;
-  if (revisionNumber > 3) throw new ImageGenerationServiceError("REVISION_LIMIT", "This generation has reached the three-revision limit.");
+  // Brief §1: "up to 2 regenerations per generated asset" — an alternate version of
+  // an existing creative, distinct from a materially new generation.
+  if (revisionNumber > 2) throw new ImageGenerationServiceError("REVISION_LIMIT", "This generation has reached the two-regeneration limit.");
   const fromStatuses = args.revisionInstruction ? ["READY", "FAILED"] : ["QUEUED", "FAILED"];
   const targetStatus = args.revisionInstruction ? "REVISING" : "PROCESSING";
   const prompt = buildProviderReadyImagePrompt({
@@ -466,15 +525,29 @@ export async function selectImageGenerationCandidate(args: {
     }
   }
   if (args.attachToVariantId) {
+    // Tenant-scoped: content_variants carries no tenant_id of its own, only
+    // master_id -> content_master.tenant_id, so the master lookup must be
+    // filtered on args.tenantId explicitly. Checking owner_id alone (as this
+    // previously did) is an owner-only check on tenant-shared data — a user
+    // who happens to own a content_master row in a *different* tenant they
+    // also belong to could otherwise attach this workspace's generated
+    // image to it via a guessed/leaked variant id. Tenant scoping is the
+    // actual authorization boundary here; the owner check is kept as
+    // defense-in-depth on top of it.
     const { data: variant } = await args.writeClient
       .from("content_variants")
       .select("id,master_id")
       .eq("id", args.attachToVariantId)
       .maybeSingle();
     const { data: master } = variant
-      ? await args.writeClient.from("content_master").select("owner_id").eq("id", variant.master_id).maybeSingle()
+      ? await args.writeClient
+          .from("content_master")
+          .select("owner_id,tenant_id")
+          .eq("id", variant.master_id)
+          .eq("tenant_id", args.tenantId)
+          .maybeSingle()
       : { data: null };
-    if (!variant || master?.owner_id !== args.actorUserId) {
+    if (!variant || !master || master.owner_id !== args.actorUserId) {
       throw new ImageGenerationServiceError("SOCIAL_TARGET_FORBIDDEN", "The Social post is not available to this account.", 403);
     }
     const { error: attachError } = await args.writeClient.from("social_content_variant_media").upsert(

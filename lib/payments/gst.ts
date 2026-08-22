@@ -1,6 +1,7 @@
 /**
  * GST-inclusive price breakdown for checkout display. Every price in this
- * product (₹999 audit, ₹9,499/₹18,999/₹23,999 plans) is quoted GST-inclusive
+ * product (the free audit, and the Starter/Growth/Business subscription
+ * plans in packages/payments-and-wallet/src/plans.ts) is quoted GST-inclusive
  * — this only decomposes that total for display; it never adds 18% on top
  * of what the customer is actually charged. The amount charged is always
  * `totalCents`, unchanged, computed nowhere near this function.

@@ -24,7 +24,7 @@ import {
   type WebsiteSpecification,
   type SiteProjectInput,
 } from "@stratxcel/websites-and-domains";
-import { hasEntitlement } from "@stratxcel/payments-and-wallet";
+import { hasEntitlement, hasCapability, isPlanTier } from "@stratxcel/payments-and-wallet";
 import { getCurrentBrandBrain } from "@stratxcel/brand-brain";
 import { createTenantAIRuntime, resolveTenantMonthSpendUsd, resolveTenantPlanTier } from "@stratxcel/ai-runtime";
 import { recordAuditEvent } from "@stratxcel/audit";
@@ -49,7 +49,7 @@ export const dynamic = "force-dynamic";
 export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => ({}));
-    const { tenantId, prompt, websiteType, businessName } = body;
+    const { tenantId, prompt, websiteType, businessName, logoUrl, imageUrls } = body;
 
     if (!tenantId || !prompt) {
       return Response.json({ error: "tenantId and prompt are required" }, { status: 400 });
@@ -60,17 +60,28 @@ export async function POST(request: Request) {
 
     const serviceDb = createSupabaseServiceClient();
 
-    // Entitlement check (currently soft-gated — see WEBSITE_ENTITLEMENT_ENFORCED)
-    const entitled = await hasEntitlement(serviceDb, tenantId, "website_maintenance", 1);
-    if (WEBSITE_ENTITLEMENT_ENFORCED && !entitled) {
-      return Response.json({ error: "This plan does not include website generation." }, { status: 403 });
-    }
-
     // Resolve AI runtime dependencies
     const [planTier, spentUsd] = await Promise.all([
       resolveTenantPlanTier(serviceDb as any, tenantId),
       resolveTenantMonthSpendUsd(serviceDb as any, tenantId),
     ]);
+
+    // Entitlement check — brief §1/§2/§3: website inclusion is landing_page
+    // (Growth) or website_included (Business); Starter has no automatic
+    // inclusion and must go through a separate paid add-on purchase. Only
+    // enforced for a tenant with a real resolved plan tier (WEBSITE_ENTITLEMENT_ENFORCED
+    // stays the global kill switch for the legacy free/no-subscription case
+    // where no usage_entitlements rows exist at all — see entitlement.ts).
+    const entitled = await hasEntitlement(serviceDb, tenantId, "website_maintenance", 1);
+    const tierCapabilities = isPlanTier(planTier) ? planTier : null;
+    const websiteIncludedByCapability = tierCapabilities
+      ? hasCapability(tierCapabilities, "landing_page") || hasCapability(tierCapabilities, "website_included")
+      : false;
+    if (WEBSITE_ENTITLEMENT_ENFORCED && !entitled && !websiteIncludedByCapability) {
+      return Response.json({
+        error: "This plan doesn't include a website. Growth includes a landing page and Business includes a full professional website — or purchase a website as a one-time add-on.",
+      }, { status: 403 });
+    }
 
     const { runtime: aiRuntime, budgetEnvelope } = createTenantAIRuntime({
       tenantId,
@@ -150,7 +161,13 @@ export async function POST(request: Request) {
         generation_spec: specResult.specification,
         prompt,
         plan: spec.websiteType,
-        theme_config: spec.visualStyle,
+        theme_config: {
+          ...spec.visualStyle,
+          ...(typeof logoUrl === "string" && logoUrl ? { logoUrl } : {}),
+          ...(Array.isArray(imageUrls) && imageUrls.length > 0
+            ? { imageUrls: imageUrls.filter((u: unknown): u is string => typeof u === "string").slice(0, 12) }
+            : {}),
+        },
         custom_domain: spec.domain.requested ?? null,
       })
       .select("*")

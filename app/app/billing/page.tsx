@@ -11,6 +11,22 @@ import { ErrorState, EmptyState } from "@/components/ui/Feedback";
 import { isActivePaidSubscription } from "@/lib/billing/plan-state";
 import { loadCustomerJson } from "@/lib/customer-app/load-result";
 import { ModulePageHeader } from "../components/ModulePageHeader";
+import { PRICING_TIERS } from "@/lib/commercial/catalog";
+
+interface EntitlementStatus {
+  metric:
+    | "social_posts"
+    | "meta_ad_campaigns"
+    | "whatsapp_contacts"
+    | "website_maintenance"
+    | "content_generation_monthly"
+    | "automated_content_monthly";
+  limit: number;
+  currentUsage: number;
+  remaining: number;
+  isPaused: boolean;
+  hasCapacity: boolean;
+}
 
 interface WalletAccount {
   tenant_id: string;
@@ -52,6 +68,16 @@ interface PlanDefinition {
     meta_ad_campaigns: number;
     whatsapp_contacts: number;
     website_maintenance: number;
+    content_generation_monthly: number;
+    automated_content_monthly: number;
+  };
+  capabilities?: {
+    google_growth_level: "basic" | "advanced" | "maximum";
+    social_autopilot: boolean;
+    landing_page: boolean;
+    website_included: boolean;
+    website_commitment_months: number;
+    whatsapp_assistant_access: boolean;
   };
 }
 
@@ -93,11 +119,28 @@ function isAutoPay(sub: Subscription) {
   return sub.billing_provider === "razorpay_subscription";
 }
 
-const SELF_SERVICE_PLANS: Array<{ tier: "starter" | "growth" | "business"; name: string; priceCents: number; blurb: string }> = [
-  { tier: "starter", name: "Starter", priceCents: 499_900, blurb: "A complete entry system for one small or local business." },
-  { tier: "growth", name: "Growth", priceCents: 999_900, blurb: "The serious SMB plan for recurring execution and follow-up." },
-  { tier: "business", name: "Business", priceCents: 1_999_900, blurb: "Advanced Search, CRM, publishing, ads support, and priority execution." },
-];
+/**
+ * The exact three self-service packages, sourced from the single shared
+ * catalog (lib/commercial/catalog.ts) the public /pricing page also reads —
+ * same positioning line, price, and feature bullets everywhere, no drift
+ * between what a prospect sees pre-signup and what a customer sees here.
+ * Price comes straight off the catalog's priceCents field (mirrors
+ * packages/payments-and-wallet/src/plans.ts) rather than a second literal map.
+ */
+const SELF_SERVICE_PLANS = PRICING_TIERS.filter(
+  (t): t is typeof PRICING_TIERS[number] & { planKey: "starter" | "growth" | "business"; priceCents: number } =>
+    (t.planKey === "starter" || t.planKey === "growth" || t.planKey === "business") && t.priceCents != null
+).map((t) => ({
+  tier: t.planKey,
+  name: t.name,
+  priceCents: t.priceCents,
+  pitch: t.pitch,
+  whoItsFor: t.whoItsFor,
+  scope: t.scope,
+  popular: t.popular,
+}));
+
+const SCALE_TIER = PRICING_TIERS.find((t) => t.planKey === "scale");
 
 export default function BillingPage() {
   const { active } = useCurrentTenant();
@@ -109,12 +152,22 @@ export default function BillingPage() {
   const [paymentUrl, setPaymentUrl] = useState<string | null>(null);
   const [billingProfile, setBillingProfile] = useState<BillingProfile | null>(null);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [entitlements, setEntitlements] = useState<EntitlementStatus[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [walletError, setWalletError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [recommendedTier, setRecommendedTier] = useState<string | null>(null);
   const loadSequence = useRef(0);
+
+  // Deep-linked from EntitlementGate / the Growth Assistant / the audit
+  // recommendation (brief §13) — "?recommended=growth" highlights that plan
+  // with why it's needed instead of a flat, unexplained grid.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    setRecommendedTier(new URLSearchParams(window.location.search).get("recommended"));
+  }, []);
   const [profileForm, setProfileForm] = useState<BillingProfile>({
     legal_business_name: "",
     gstin: "",
@@ -137,8 +190,9 @@ export default function BillingPage() {
     setPaymentUrl(null);
     setBillingProfile(null);
     setInvoices([]);
+    setEntitlements([]);
     try {
-      const [walletResult, subscriptionResult] = await Promise.all([
+      const [walletResult, subscriptionResult, entitlementResult] = await Promise.all([
         loadCustomerJson<{ account: WalletAccount | null }>(
           () => fetch(`/api/platform/wallet?tenantId=${encodeURIComponent(tenantId)}`),
           "We couldn't load your wallet. Please try again."
@@ -154,6 +208,10 @@ export default function BillingPage() {
           () => fetch(`/api/platform/subscriptions?tenantId=${encodeURIComponent(tenantId)}`),
           "We couldn't load your billing details. Please try again."
         ),
+        loadCustomerJson<{ entitlements: EntitlementStatus[] }>(
+          () => fetch(`/api/platform/entitlements?tenantId=${encodeURIComponent(tenantId)}`),
+          "We couldn't load your usage. Please try again."
+        ),
       ]);
       if (requestId !== loadSequence.current) return;
       if (subscriptionResult.status === "error") {
@@ -168,6 +226,10 @@ export default function BillingPage() {
       setPaymentUrl(subscriptionResult.data.paymentUrl);
       setBillingProfile(subscriptionResult.data.billingProfile);
       setInvoices(subscriptionResult.data.invoices ?? []);
+      // Usage is a nice-to-have display, not blocking — a failure here never
+      // surfaces the page-level error state, it just leaves the credits
+      // card showing plan defaults instead of live usage.
+      if (entitlementResult.status === "success") setEntitlements(entitlementResult.data.entitlements ?? []);
       if (subscriptionResult.data.billingProfile) {
         setProfileForm({
           legal_business_name: subscriptionResult.data.billingProfile.legal_business_name ?? "",
@@ -294,42 +356,54 @@ export default function BillingPage() {
         {!hasActivePaidPlan && (
           <div className="mt-4 flex flex-col gap-4">
             <p className="max-w-2xl text-sm leading-6 text-sx-text-muted" title="Free">
-              No active paid plan. Your Audit and saved business context remain available. Start Growth when you want ongoing execution, Copilot-led planning, and recurring improvement.
+              No active paid plan. Your Audit and saved business context remain available. Pick a plan below when you want ongoing execution and recurring improvement.
             </p>
-            <div className="rounded-sx-md border border-sx-accent/30 bg-sx-accent/10 p-4">
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <p className="text-lg font-semibold text-sx-text">Start Growth</p>
-                  <p className="mt-1 text-sm text-sx-text-muted">Best for Audit-led businesses ready to turn findings into ongoing action.</p>
-                  <p className="mt-2 text-sm font-semibold text-sx-text">{money(999_900)}/month <span className="font-normal text-sx-text-muted">· GST included</span></p>
-                </div>
-                <Link href="/contact?intent=growth" className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-sx-sm bg-sx-accent px-5 text-sm font-bold text-sx-accent-on">
-                  Request Growth activation
-                </Link>
-              </div>
-              <ul className="mt-4 grid gap-2 text-sm text-sx-text-muted sm:grid-cols-2">
-                <li>✓ Ongoing growth missions</li>
-                <li>✓ Copilot planning and execution</li>
-                <li>✓ Managed AI capacity</li>
-                <li>✓ Business connector support</li>
-              </ul>
-            </div>
             {subscription && subscription.status !== "active" && (
               <div className="rounded-sx-md border border-sx-border bg-sx-surface-2 p-3">
                 <p className="text-xs font-semibold text-sx-text">Previous payment attempt: {STATUS_CHIP[subscription.status]?.label ?? subscription.status}</p>
                 <p className="mt-1 text-xs text-sx-text-muted">This attempt does not activate a paid plan or paid entitlements.</p>
               </div>
             )}
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {recommendedTier && SELF_SERVICE_PLANS.some((p) => p.tier === recommendedTier) && (
+              <div className="rounded-sx-md border border-sx-accent/40 bg-sx-accent/10 p-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-sx-accent">Recommended for you</p>
+                <p className="mt-1 text-sm text-sx-text">
+                  Based on what StratXcel found, the <span className="font-semibold capitalize">{recommendedTier}</span> plan is the smallest plan that covers what your business needs right now.
+                </p>
+              </div>
+            )}
+            {/* Mobile-first: one column, price -> who it's for -> what it gives -> CTA. Grows to 3 columns only once there's room. */}
+            <div className="grid gap-4 sm:grid-cols-3">
               {SELF_SERVICE_PLANS.map((p) => (
-                <div key={p.tier} className="rounded-sx-md border border-sx-border p-4">
-                  <p className="font-sx-sans text-sm font-bold text-sx-text">{p.name}</p>
-                  <p className="mt-1 font-sx-sans text-lg font-extrabold text-sx-text">{money(p.priceCents)}/mo</p>
+                <div
+                  key={p.tier}
+                  className={`flex flex-col rounded-sx-md border p-4 ${p.tier === recommendedTier ? "border-sx-accent ring-2 ring-sx-accent/50" : p.popular ? "border-sx-accent ring-1 ring-sx-accent/40" : "border-sx-border"}`}
+                >
+                  {p.tier === recommendedTier ? (
+                    <span className="mb-2 inline-flex w-fit items-center rounded-sx-xs bg-sx-accent px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sx-accent-on">
+                      Recommended
+                    </span>
+                  ) : p.popular && (
+                    <span className="mb-2 inline-flex w-fit items-center rounded-sx-xs bg-sx-accent px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sx-accent-on">
+                      Most popular
+                    </span>
+                  )}
+                  <p className="font-sx-sans text-lg font-extrabold text-sx-text">{money(p.priceCents)}<span className="text-xs font-normal text-sx-text-subtle">/mo</span></p>
                   <p className="text-[11px] text-sx-text-subtle">GST included</p>
-                  <p className="mt-2 text-xs text-sx-text-muted">{p.blurb}</p>
+                  <p className="mt-2 font-sx-sans text-sm font-bold text-sx-text">{p.name}</p>
+                  <p className="mt-0.5 text-xs text-sx-text-muted">{p.pitch}</p>
+                  <p className="mt-2 text-[11px] italic text-sx-text-subtle">{p.whoItsFor}</p>
+                  <ul className="mt-3 flex-1 space-y-1.5 text-xs text-sx-text-muted">
+                    {p.scope.slice(0, 4).map((line) => (
+                      <li key={line} className="flex gap-1.5">
+                        <span className="text-sx-accent">✓</span>
+                        <span>{line}</span>
+                      </li>
+                    ))}
+                  </ul>
                   <Link
                     href={`/contact?intent=${p.tier}`}
-                    className="mt-3 block rounded-sx-sm bg-sx-accent px-4 py-2.5 text-center text-xs font-bold text-sx-accent-on hover:bg-[color:var(--sx-accent-hover)]"
+                    className="mt-4 block rounded-sx-sm bg-sx-accent px-4 py-3 text-center text-xs font-bold text-sx-accent-on hover:bg-[color:var(--sx-accent-hover)]"
                   >
                     Request {p.name} activation
                   </Link>
@@ -337,7 +411,7 @@ export default function BillingPage() {
               ))}
             </div>
             <p className="text-xs text-sx-text-subtle">
-              Scale / Custom starts at {money(3_499_900)}/mo and is scoped with our team. Recurring production subscriptions are not enabled in this environment — request activation rather than charging a live monthly plan here.
+              {SCALE_TIER?.price ?? "Scale / Custom"}/mo and is scoped with our team for multi-location or high-volume needs.
             </p>
           </div>
         )}
@@ -376,11 +450,13 @@ export default function BillingPage() {
               <div>
                 <p className="text-sm font-semibold text-sx-text">Included each month</p>
                 <div className="mt-2 grid gap-2 text-sm text-sx-text-muted sm:grid-cols-2">
-                  <p className="rounded-sx-sm bg-sx-surface-2 p-3">{planDefinition.entitlements.social_posts} social posts</p>
-                  <p className="rounded-sx-sm bg-sx-surface-2 p-3">{planDefinition.entitlements.meta_ad_campaigns} Meta ad campaigns</p>
-                  <p className="rounded-sx-sm bg-sx-surface-2 p-3">{planDefinition.entitlements.whatsapp_contacts.toLocaleString("en-IN")} WhatsApp contacts</p>
+                  <p className="rounded-sx-sm bg-sx-surface-2 p-3">{planDefinition.entitlements.content_generation_monthly} image creations</p>
+                  {planDefinition.entitlements.automated_content_monthly > 0 && (
+                    <p className="rounded-sx-sm bg-sx-surface-2 p-3">+{planDefinition.entitlements.automated_content_monthly} StratXcel-researched creatives</p>
+                  )}
+                  <p className="rounded-sx-sm bg-sx-surface-2 p-3 capitalize">{planDefinition.capabilities?.google_growth_level ?? "basic"} Google Growth</p>
                   <p className="rounded-sx-sm bg-sx-surface-2 p-3">
-                    {planDefinition.entitlements.website_maintenance > 0 ? "Website maintenance included" : "Website maintenance not included"}
+                    {planDefinition.capabilities?.social_autopilot ? "Social Autopilot included" : "Direct posting & scheduling (Social Autopilot not included)"}
                   </p>
                 </div>
               </div>
@@ -464,15 +540,96 @@ export default function BillingPage() {
         )}
       </Card>}
 
+      {/* What you have — natural-language usage per brief §6 ("10 image creations this month, 8 remaining"), never "credits remaining" as the headline framing. */}
+      {!loading && !error && hasActivePaidPlan && entitlements.length > 0 && (
+        <Card className="p-5 sm:p-6">
+          <h2 className="font-sx-sans text-[17px] font-semibold text-sx-text">What you have</h2>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            {entitlements.find((e) => e.metric === "content_generation_monthly") && (() => {
+              const e = entitlements.find((x) => x.metric === "content_generation_monthly")!;
+              return (
+                <div className="rounded-sx-sm bg-sx-surface-2 p-3.5">
+                  <p className="text-sm font-semibold text-sx-text">{e.limit} image creations this month</p>
+                  <p className="mt-0.5 text-xs text-sx-text-subtle">{e.remaining} remaining — posters, offers, and festival creatives.</p>
+                </div>
+              );
+            })()}
+            {entitlements.find((e) => e.metric === "automated_content_monthly" && e.limit > 0) && (() => {
+              const e = entitlements.find((x) => x.metric === "automated_content_monthly")!;
+              return (
+                <div className="rounded-sx-sm bg-sx-surface-2 p-3.5">
+                  <p className="text-sm font-semibold text-sx-text">{e.limit} researched creatives StratXcel makes for you</p>
+                  <p className="mt-0.5 text-xs text-sx-text-subtle">{e.remaining} remaining this month — on top of what you request yourself.</p>
+                </div>
+              );
+            })()}
+            {entitlements.find((e) => e.metric === "website_maintenance") && (
+              <div className="rounded-sx-sm bg-sx-surface-2 p-3.5">
+                <p className="text-sm font-semibold text-sx-text">
+                  {planDefinition?.capabilities?.website_included
+                    ? "Professional website included"
+                    : planDefinition?.capabilities?.landing_page
+                      ? "Landing page included"
+                      : "Website not included — available as an add-on"}
+                </p>
+                <p className="mt-0.5 text-xs text-sx-text-subtle">Hosting and upkeep for your site.</p>
+              </div>
+            )}
+            {planDefinition?.capabilities && (
+              <div className="rounded-sx-sm bg-sx-surface-2 p-3.5">
+                <p className="text-sm font-semibold text-sx-text capitalize">{planDefinition.capabilities.google_growth_level} Google Growth</p>
+                <p className="mt-0.5 text-xs text-sx-text-subtle">Google Business optimization, local SEO, and review monitoring.</p>
+              </div>
+            )}
+          </div>
+        </Card>
+      )}
+
+      {/* What your plan unlocks — outcome-based, not a feature matrix. No CRM/lead-capture card: not part of this offer. */}
+      {!loading && !error && (
+        <Card className="p-5 sm:p-6">
+          <h2 className="font-sx-sans text-[17px] font-semibold text-sx-text">What your plan unlocks</h2>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <UnlockCard
+              title="Content creation & publishing"
+              items={["Posters", "Festival creatives", "Offers", "Hindi + English", "Direct posting & scheduling"]}
+              unlocked={hasActivePaidPlan}
+            />
+            <UnlockCard
+              title="Social Autopilot"
+              items={["Research", "Plan", "Create", "Schedule", "Publish", "Analyze"]}
+              unlocked={Boolean(planDefinition?.capabilities?.social_autopilot)}
+            />
+            <UnlockCard
+              title="Google Growth"
+              items={["Google Business optimization", "Local SEO", "Competitor research"]}
+              unlocked={hasActivePaidPlan}
+            />
+            <UnlockCard
+              title="Website"
+              items={planDefinition?.capabilities?.website_included
+                ? ["Professional website included", `${planDefinition.capabilities.website_commitment_months}-month commitment`]
+                : planDefinition?.capabilities?.landing_page
+                  ? ["High-quality landing page included"]
+                  : ["Available as a separate add-on"]}
+              unlocked={Boolean(planDefinition?.capabilities?.website_included || planDefinition?.capabilities?.landing_page)}
+            />
+          </div>
+        </Card>
+      )}
+
       {!loading && !error && (
         <Card className="p-6">
           <h2 className="font-sx-sans text-base font-semibold text-sx-text">Managed AI wallet</h2>
+          <p className="mt-1 text-xs text-sx-text-subtle">
+            Separate from your monthly plan above — this wallet is only spent when you run paid Meta or Google ads on your behalf.
+          </p>
           {walletError ? (
             <div className="mt-3"><ErrorState message={walletError} onRetry={load} /></div>
           ) : account ? (
             <div className="mt-3">
               <Metric
-                label="Wallet balance"
+                label="Ad wallet balance"
                 value={`${account.currency} ${(account.balance_cents / 100).toFixed(2)}`}
                 deltaLabel={`last updated ${new Date(account.updated_at).toLocaleString()}`}
               />
@@ -550,6 +707,23 @@ export default function BillingPage() {
           </div>
         )}
       </Card>}
+    </div>
+  );
+}
+
+/** One outcome card in "What your plan unlocks" — locked cards link to the plan grid above instead of hiding the capability entirely, so a Free/Starter user can see what upgrading actually gives them. */
+function UnlockCard({ title, items, unlocked }: { title: string; items: string[]; unlocked: boolean }) {
+  return (
+    <div className={`rounded-sx-sm border p-3.5 ${unlocked ? "border-sx-border bg-sx-surface-2" : "border-sx-border bg-sx-surface-1 opacity-70"}`}>
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-sm font-semibold text-sx-text">{title}</p>
+        {!unlocked && <StatusChip state="neutral">Locked</StatusChip>}
+      </div>
+      <ul className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-xs text-sx-text-muted">
+        {items.map((item) => (
+          <li key={item}>{unlocked ? "✓" : "·"} {item}</li>
+        ))}
+      </ul>
     </div>
   );
 }

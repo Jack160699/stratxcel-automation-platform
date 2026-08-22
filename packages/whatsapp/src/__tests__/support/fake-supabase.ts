@@ -102,17 +102,33 @@ export function createFakeSupabase(seed: Tables = {}, options: FakeSupabaseOptio
   const fromCalls: string[] = [];
   const failRpc = new Set(options.failRpc ?? []);
 
+  function resolveUpsert(): { data: Record<string, unknown>; error: null } {
+    const rows = (tables[chain._table] ??= []);
+    const keys = chain._upsertKeys as string[];
+    const payload = chain._payload as Record<string, unknown>;
+    const existing = rows.find((row) => keys.length > 0 && keys.every((key) => row[key] === payload[key]));
+    if (existing) {
+      Object.assign(existing, payload);
+      return { data: existing, error: null };
+    }
+    const row = { id: nextId(chain._table), ...payload };
+    rows.push(row);
+    return { data: row, error: null };
+  }
+
   const chain: any = {
     _table: "",
     _filters: {} as Record<string, unknown>,
     _mode: "select" as "select" | "insert" | "update" | "upsert",
     _payload: null as Record<string, unknown> | null,
+    _upsertKeys: [] as string[],
     from(table: string) {
       fromCalls.push(table);
       chain._table = table;
       chain._filters = {};
       chain._mode = "select";
       chain._payload = null;
+      chain._upsertKeys = [];
       return chain;
     },
     select() {
@@ -131,12 +147,10 @@ export function createFakeSupabase(seed: Tables = {}, options: FakeSupabaseOptio
     upsert(payload: Record<string, unknown>, options?: { onConflict?: string }) {
       chain._mode = "upsert";
       chain._payload = payload;
-      const keys = options?.onConflict?.split(",") ?? [];
-      const rows = (tables[chain._table] ??= []);
-      const existing = rows.find((row) => keys.length > 0 && keys.every((key) => row[key] === payload[key]));
-      if (existing) Object.assign(existing, payload);
-      else rows.push({ id: nextId(chain._table), ...payload });
-      return Promise.resolve({ data: existing ?? payload, error: null });
+      chain._upsertKeys = options?.onConflict?.split(",") ?? [];
+      // Chainable (like real supabase-js): a caller may await this directly
+      // (resolved via .then() below) or chain .select().single() first.
+      return chain;
     },
     eq(col: string, val: unknown) {
       chain._filters[col] = val;
@@ -165,6 +179,7 @@ export function createFakeSupabase(seed: Tables = {}, options: FakeSupabaseOptio
         (tables[chain._table] ??= []).push(row);
         return { data: row, error: null };
       }
+      if (chain._mode === "upsert") return resolveUpsert();
       const rows = tables[chain._table] ?? [];
       const match = rows.find((r) => matches(r, chain._filters));
       if (chain._mode === "update" && match) Object.assign(match, chain._payload);
@@ -172,9 +187,18 @@ export function createFakeSupabase(seed: Tables = {}, options: FakeSupabaseOptio
     },
     // supabase-js query builders are themselves thenable — awaiting the
     // chain directly (no .single()/.maybeSingle()) is how outbound.ts's
-    // final status-backfill `.update().eq().eq()` call resolves.
+    // final status-backfill `.update().eq().eq()` call resolves, and how a
+    // bare `.insert(payload)` (no `.select()`) — e.g. recordShadowResponse,
+    // recordAuditEvent, createHumanHandoff — actually persists in real
+    // Postgres/PostgREST too.
     then(resolve: (v: { data: unknown; error: null }) => void) {
-      if (chain._mode === "update") {
+      if (chain._mode === "insert") {
+        const row = { id: nextId(chain._table), ...chain._payload };
+        (tables[chain._table] ??= []).push(row);
+        resolve({ data: row, error: null });
+      } else if (chain._mode === "upsert") {
+        resolve(resolveUpsert());
+      } else if (chain._mode === "update") {
         const rows = tables[chain._table] ?? [];
         const affected = rows.filter((r) => matches(r, chain._filters));
         affected.forEach((r) => Object.assign(r, chain._payload));

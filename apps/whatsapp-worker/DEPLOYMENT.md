@@ -102,6 +102,13 @@ WHATSAPP_VERIFY_TOKEN
 WHATSAPP_GRAPH_API_VERSION
 PORT
 WHATSAPP_PROCESSOR_PORT
+# WHATSAPP_AUTO_REPLY_ENABLED=true — NOT set above and not documented until now.
+# Without it, maybeSendAutomaticReply() (processor.ts) never sends anything —
+# including the "Hi! 👋 StratXcel Support here. How can we help?" greeting
+# shortcut for a bare "Hello" — even though the rest of the pipeline (lead
+# upsert, response generation) runs normally. This is very likely OFF in the
+# current deployment; confirm and set deliberately, it is not something a
+# code change can verify or flip from the repo.
 WHATSAPP_PROCESSOR_POLL_INTERVAL_MS
 ```
 

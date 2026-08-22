@@ -75,7 +75,7 @@ function testPlanMappingEnvFailClosed() {
   // No hardcoded live IDs in source
   const plansSrc = read("packages", "payments-and-wallet", "src", "razorpay", "recurring-plans.ts");
   assert.equal(/plan_TO6KM4Y5ggnUtl|plan_TO6Qj9RS4GjW5A|plan_TO6STE2U2cmmrf/.test(plansSrc), false);
-  assert.equal(PLAN_DEFINITIONS.starter.priceCents, 499_900);
+  assert.equal(PLAN_DEFINITIONS.starter.priceCents, 299_900);
 }
 
 function testAuditCreditHandling() {
@@ -83,11 +83,11 @@ function testAuditCreditHandling() {
     const deferred = resolveRecurringAuditCreditHandling({
       eligible: true,
       creditAmountCents: 99_900,
-      catalogPriceCents: 499_900,
+      catalogPriceCents: 299_900,
       mode: "test",
     });
     assert.equal(deferred.creditMode, "deferred_wallet");
-    assert.equal(deferred.chargePriceCents, 499_900);
+    assert.equal(deferred.chargePriceCents, 299_900);
     assert.equal(deferred.auditCreditDeferredCents, 99_900);
     assert.equal(deferred.auditCreditAppliedCents, 0);
   });
@@ -96,11 +96,11 @@ function testAuditCreditHandling() {
     const offered = resolveRecurringAuditCreditHandling({
       eligible: true,
       creditAmountCents: 99_900,
-      catalogPriceCents: 499_900,
+      catalogPriceCents: 299_900,
       mode: "test",
     });
     assert.equal(offered.creditMode, "provider_offer");
-    assert.equal(offered.chargePriceCents, 400_000);
+    assert.equal(offered.chargePriceCents, 200_000);
     assert.equal(offered.offerId, "offer_test_999");
     assert.equal(offered.auditCreditAppliedCents, 99_900);
   });
@@ -138,7 +138,7 @@ async function testSubscriptionChargedRequiresPlanEvidence() {
                     plan_tier: "starter",
                     provider_plan_id: "plan_test_starter",
                     provider_subscription_id: "sub_rzp_1",
-                    price_cents: 499900,
+                    price_cents: 299900,
                     pending_plan_tier: null,
                   },
                   error: null,
@@ -172,7 +172,7 @@ async function testSubscriptionChargedRequiresPlanEvidence() {
       event: "subscription.charged",
       payload: {
         subscription: { entity: { id: "sub_rzp_1", status: "active" } },
-        payment: { entity: { id: "pay_1", amount: 499900, currency: "INR", status: "captured" } },
+        payment: { entity: { id: "pay_1", amount: 299900, currency: "INR", status: "captured" } },
       },
     },
   });
@@ -193,7 +193,7 @@ async function testSubscriptionChargedRequiresPlanEvidence() {
             notes: { tenant_id: "tenant-1", subscription_id: "sub-local-1" },
           },
         },
-        payment: { entity: { id: "pay_1", amount: 499900, currency: "INR", status: "captured", order_id: "order_1" } },
+        payment: { entity: { id: "pay_1", amount: 299900, currency: "INR", status: "captured", order_id: "order_1" } },
       },
     },
   });
@@ -221,7 +221,7 @@ async function testSubscriptionChargedRequiresPlanEvidence() {
             notes: { tenant_id: "tenant-1", subscription_id: "sub-local-1" },
           },
         },
-        payment: { entity: { id: "pay_1", amount: 499900, currency: "INR", status: "captured", order_id: "order_1" } },
+        payment: { entity: { id: "pay_1", amount: 299900, currency: "INR", status: "captured", order_id: "order_1" } },
       },
     },
   });

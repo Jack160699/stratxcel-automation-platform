@@ -15,6 +15,7 @@ import { CONTENT_OBJECTIVE_VALUES } from "./content-options.ts";
 import { validatePackageComposition, compositionMediaTypeForUnit, resolvePurchasedPackageComposition, type PackageComposition } from "./package-composition.ts";
 import { selectPackageMediaAsset } from "./package-media.ts";
 import { recordAudit } from "./repositories/system.ts";
+import { hasCapability, isPlanTier } from "@stratxcel/payments-and-wallet";
 
 export {
   assignBrandProfileToTenant,
@@ -144,6 +145,12 @@ export async function activatePackageAutopilot(
   if (!subscription || subscription.status !== "active" || new Date(subscription.current_period_end).getTime() <= Date.now()) {
     throw new Error("prerequisite_missing: subscription is not active");
   }
+  // Brief §1/§2: Social Autopilot is a Growth+ capability — Starter keeps
+  // direct posting/scheduling/publishing but not the autonomous workflow.
+  const planTier = isPlanTier(subscription.plan_tier) ? subscription.plan_tier : null;
+  if (!planTier || !hasCapability(planTier, "social_autopilot")) {
+    throw new Error("prerequisite_missing: Social Autopilot is not included in the current plan");
+  }
   if (!entitlement || entitlement.metric !== "social_posts" || entitlement.is_paused) {
     throw new Error("prerequisite_missing: plan does not include an active social_posts entitlement");
   }
@@ -219,12 +226,16 @@ async function validatePackageResumePrerequisites(service: ServiceClient, author
     .eq("id", authorizationId).eq("tenant_id", tenantId).eq("client_user_id", clientUserId).maybeSingle();
   if (!auth) throw new Error("authorization_not_found");
   const [{ data: subscription }, { data: entitlement }, { data: brand }, { data: accounts }] = await Promise.all([
-    service.from("subscriptions").select("status,current_period_end").eq("id", auth.subscription_id).eq("tenant_id", tenantId).maybeSingle(),
+    service.from("subscriptions").select("status,current_period_end,plan_tier").eq("id", auth.subscription_id).eq("tenant_id", tenantId).maybeSingle(),
     service.from("usage_entitlements").select("metric,is_paused,limit_amount,current_usage").eq("id", auth.entitlement_id).eq("tenant_id", tenantId).eq("subscription_id", auth.subscription_id).maybeSingle(),
     service.from("social_brand_profiles").select("id,owner_id,tenant_id").eq("id", auth.brand_profile_id).eq("tenant_id", tenantId).maybeSingle(),
     service.from("social_accounts").select("platform").eq("tenant_id", tenantId).eq("status", "CONNECTED").in("platform", auth.allowed_platforms),
   ]);
   if (!subscription || subscription.status !== "active" || new Date(subscription.current_period_end).getTime() <= Date.now()) throw new Error("subscription_inactive");
+  // Defense in depth: a resumed authorization must still belong to a plan that
+  // currently includes Social Autopilot (e.g. after a downgrade to Starter).
+  const resumePlanTier = isPlanTier(subscription.plan_tier) ? subscription.plan_tier : null;
+  if (!resumePlanTier || !hasCapability(resumePlanTier, "social_autopilot")) throw new Error("plan_no_longer_includes_social_autopilot");
   if (!entitlement || entitlement.metric !== "social_posts" || entitlement.is_paused || entitlement.current_usage >= entitlement.limit_amount) throw new Error("entitlement_paused_or_exhausted");
   if (!brand) throw new Error("brand_binding_invalid");
   const connected = new Set((accounts ?? []).map((row) => String(row.platform).toLowerCase()));

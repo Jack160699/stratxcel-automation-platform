@@ -20,3 +20,9 @@
  */
 export * from "./creator/index.ts";
 export * from "./brief/types.ts";
+// Pure string synthesis only (no I/O) — safe for the client bundle, same
+// as everything else re-exported here. Needed so the "Create Your Website"
+// workspace can compile the real prompt it sends to the server-side
+// generation endpoint (POST /api/platform/website-factory) instead of
+// invoking WebsiteGenerationEngine locally, which never persists anything.
+export { compileMasterWebsitePrompt } from "./brief/master-prompt.ts";

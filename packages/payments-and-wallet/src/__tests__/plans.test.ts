@@ -4,13 +4,13 @@ import { PLAN_DEFINITIONS, getSelfServicePlan, getPlanDefinition, isPlanTier, SE
 import { splitGstInclusive } from "../../../../lib/payments/gst.ts";
 
 function run() {
-  // --- 1. Canonical Notion v1 commercial prices, exactly as approved ---------
+  // --- 1. Canonical locked v2 commercial prices, exactly as approved ---------
   assert.equal(PLAN_DEFINITIONS.free.priceCents, 0, "Free must be ₹0");
-  assert.equal(PLAN_DEFINITIONS.starter.priceCents, 499_900, "Starter must be ₹4,999.00 GST-inclusive");
-  assert.equal(PLAN_DEFINITIONS.growth.priceCents, 999_900, "Growth must be ₹9,999.00 GST-inclusive");
-  assert.equal(PLAN_DEFINITIONS.business.priceCents, 1_999_900, "Business must be ₹19,999.00 GST-inclusive");
+  assert.equal(PLAN_DEFINITIONS.starter.priceCents, 299_900, "Starter must be ₹2,999.00 GST-inclusive");
+  assert.equal(PLAN_DEFINITIONS.growth.priceCents, 799_900, "Growth must be ₹7,999.00 GST-inclusive");
+  assert.equal(PLAN_DEFINITIONS.business.priceCents, 1_599_900, "Business must be ₹15,999.00 GST-inclusive");
   assert.equal(PLAN_DEFINITIONS.scale.priceCents, null, "Scale / Custom must not have a universal fixed price");
-  assert.equal(PLAN_DEFINITIONS.scale.startingAtCents, 3_499_900, "Scale / Custom must be quoted as starting at ₹34,999.00");
+  assert.equal(PLAN_DEFINITIONS.scale.startingAtCents, 2_999_900, "Scale / Custom must be quoted as starting at ₹29,999.00");
 
   // --- 2. Self-service checkout is Starter/Growth/Business only --------------
   assert.deepEqual([...SELF_SERVICE_PLAN_TIERS].sort(), ["business", "growth", "starter"], "only Starter, Growth, and Business are self-service");
@@ -58,25 +58,40 @@ function run() {
     assert.equal(totalCents, price, `${tier}: split must never change the charged total`);
   }
 
-  // --- 7. Payment-v4 fulfilment entitlement numbers match the applied migration ---
-  // (20260809010000_subscription_v1_catalog_alignment.sql v_limits_starter/
+  // --- 7. Fulfilment entitlement numbers match the applied v2 realignment migration ---
+  // (20260822120000_v2_commercial_model_realignment.sql v_limits_starter/
   // v_limits_growth/v_limits_business arrays — [social_posts, meta_ad_campaigns,
-  // whatsapp_contacts, website_maintenance])
+  // whatsapp_contacts, website_maintenance, content_generation_monthly, automated_content_monthly])
   assert.deepEqual(
-    [PLAN_DEFINITIONS.starter.entitlements.social_posts, PLAN_DEFINITIONS.starter.entitlements.meta_ad_campaigns, PLAN_DEFINITIONS.starter.entitlements.whatsapp_contacts, PLAN_DEFINITIONS.starter.entitlements.website_maintenance],
-    [12, 1, 100, 0],
+    [PLAN_DEFINITIONS.starter.entitlements.social_posts, PLAN_DEFINITIONS.starter.entitlements.meta_ad_campaigns, PLAN_DEFINITIONS.starter.entitlements.whatsapp_contacts, PLAN_DEFINITIONS.starter.entitlements.website_maintenance, PLAN_DEFINITIONS.starter.entitlements.content_generation_monthly, PLAN_DEFINITIONS.starter.entitlements.automated_content_monthly],
+    [12, 1, 100, 0, 10, 0],
     "starter fulfilment limits must match the applied SQL migration exactly"
   );
   assert.deepEqual(
-    [PLAN_DEFINITIONS.growth.entitlements.social_posts, PLAN_DEFINITIONS.growth.entitlements.meta_ad_campaigns, PLAN_DEFINITIONS.growth.entitlements.whatsapp_contacts, PLAN_DEFINITIONS.growth.entitlements.website_maintenance],
-    [25, 1, 500, 1],
+    [PLAN_DEFINITIONS.growth.entitlements.social_posts, PLAN_DEFINITIONS.growth.entitlements.meta_ad_campaigns, PLAN_DEFINITIONS.growth.entitlements.whatsapp_contacts, PLAN_DEFINITIONS.growth.entitlements.website_maintenance, PLAN_DEFINITIONS.growth.entitlements.content_generation_monthly, PLAN_DEFINITIONS.growth.entitlements.automated_content_monthly],
+    [25, 1, 500, 1, 20, 10],
     "growth fulfilment limits must match the applied SQL migration exactly"
   );
   assert.deepEqual(
-    [PLAN_DEFINITIONS.business.entitlements.social_posts, PLAN_DEFINITIONS.business.entitlements.meta_ad_campaigns, PLAN_DEFINITIONS.business.entitlements.whatsapp_contacts, PLAN_DEFINITIONS.business.entitlements.website_maintenance],
-    [50, 3, 1500, 1],
+    [PLAN_DEFINITIONS.business.entitlements.social_posts, PLAN_DEFINITIONS.business.entitlements.meta_ad_campaigns, PLAN_DEFINITIONS.business.entitlements.whatsapp_contacts, PLAN_DEFINITIONS.business.entitlements.website_maintenance, PLAN_DEFINITIONS.business.entitlements.content_generation_monthly, PLAN_DEFINITIONS.business.entitlements.automated_content_monthly],
+    [50, 3, 1500, 1, 30, 0],
     "business fulfilment limits must match the applied SQL migration exactly"
   );
+
+  // --- 8. Plan capability flags (brief §7) -------------------------------------
+  assert.equal(PLAN_DEFINITIONS.starter.capabilities.social_autopilot, false, "Starter must not include Social Autopilot");
+  assert.equal(PLAN_DEFINITIONS.growth.capabilities.social_autopilot, true, "Growth must include Social Autopilot");
+  assert.equal(PLAN_DEFINITIONS.business.capabilities.social_autopilot, true, "Business must include Social Autopilot");
+  assert.equal(PLAN_DEFINITIONS.starter.capabilities.direct_publishing, true, "Starter must still include direct publishing");
+  assert.equal(PLAN_DEFINITIONS.starter.capabilities.website_included, false, "Starter must not include a website");
+  assert.equal(PLAN_DEFINITIONS.growth.capabilities.landing_page, true, "Growth must include a landing page");
+  assert.equal(PLAN_DEFINITIONS.business.capabilities.website_included, true, "Business must include a professional website");
+  assert.equal(PLAN_DEFINITIONS.business.capabilities.website_commitment_months, 3, "Business website requires a 3-month commitment");
+  assert.equal(PLAN_DEFINITIONS.business.capabilities.whatsapp_assistant_access, true, "Business must include WhatsApp assistant access");
+  assert.equal(PLAN_DEFINITIONS.starter.capabilities.whatsapp_assistant_access, false, "Starter must not include WhatsApp assistant access");
+  for (const tier of ["starter", "growth", "business"] as const) {
+    assert.equal(PLAN_DEFINITIONS[tier].capabilities.logo_brand_kit, true, `${tier} must include the reusable Brand Kit`);
+  }
 
   console.log("plans.test.ts (@stratxcel/payments-and-wallet): ALL PASS");
 }

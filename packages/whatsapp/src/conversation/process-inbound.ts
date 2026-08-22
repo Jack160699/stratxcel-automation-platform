@@ -1,4 +1,4 @@
-import { createLead, findLeadByNormalizedPhone, findLeadByPhone, updateLeadStatus } from "@stratxcel/leads-and-crm";
+import { createLead, findLeadByNormalizedPhone, findLeadByPhone } from "@stratxcel/leads-and-crm";
 import { compileGoalToMission } from "@stratxcel/missions";
 import { recordAuditEvent } from "@stratxcel/audit";
 import { createHumanHandoff } from "@stratxcel/human-handoff";
@@ -51,7 +51,7 @@ async function recordShadowResponse(
 
 /**
  * v1 conversation processing: phone-dedupe, opt-out/consent, human
- * escalation, lead upsert, and service-classification-driven response
+ * escalation, contact upsert, and service-classification-driven response
  * drafting. Real inbound messages are now persisted to whatsapp_messages
  * (the actual inbox backing store, idempotent by provider_message_id) in
  * addition to — never instead of — the existing shadow-response log
@@ -62,6 +62,23 @@ async function recordShadowResponse(
  * whatsapp-worker processor calls it after this function returns, gated by
  * WHATSAPP_AUTO_REPLY_ENABLED (see apps/whatsapp-worker/src/processor.ts);
  * nothing in this file ever sends anything itself.
+ *
+ * CRM scope (brief §4/§10 — "this is not CRM, this is not WhatsApp lead
+ * capture"): the `crm_leads` row created/looked up below is StratXcel's
+ * internal contact/conversation-identity record — the FK anchor every
+ * downstream persistence call here (recorded message, shadow response,
+ * human handoff) requires. It backs an internal, admin-only workspace
+ * (app/admin/(shell)/leads) used to operate StratXcel's own service
+ * delivery; no Starter/Growth/Business plan sells or exposes "CRM"/"lead
+ * capture" as a customer-facing capability (see lib/commercial/catalog.ts).
+ * What WAS a real unintended CRM behavior — treating an opt-out as a sales-
+ * pipeline stage change (`status: "LOST"`) rather than a communication
+ * preference — has been removed; opt-out is enforced entirely by
+ * recordOptOut + pausing conversation automation, both independent of lead
+ * status. Fully eliminating the identity/threading record itself would
+ * require a schema change (a new non-CRM contact table) that is real, scoped
+ * follow-up work, not a same-pass fix — see the still-disabled Phase 17
+ * agent-channel-router.ts, whose own doc comment flags exactly this gap.
  */
 export async function processInboundMessage(
   supabase: ServiceClient,
@@ -94,7 +111,10 @@ export async function processInboundMessage(
 
   if (input.message.kind === "text" && isOptOutMessage(input.message.body)) {
     executionTrace.push("opt_out:detected");
-    await updateLeadStatus(supabase, { leadId: lead.id, status: "LOST" });
+    // Brief §4/§10: no unintended CRM/lead-pipeline behavior — opting out of
+    // messages is a communication preference, not a sales-pipeline stage
+    // change. Enforcement is recordOptOut (consent) + pausing conversation
+    // automation below; the contact record itself is untouched.
     await recordOptOut(supabase, { tenantId: input.tenantId, leadId: lead.id, reason: "customer sent an opt-out keyword" });
     if (recorded.conversationId) {
       await setConversationAutomationMode(supabase, { tenantId: input.tenantId, conversationId: recorded.conversationId, mode: "paused" });

@@ -1,5 +1,5 @@
-import type { PlanEntitlementLimits } from "./entitlements.ts";
-import { PLAN_LIMITS } from "./entitlements.ts";
+import type { PlanEntitlementLimits, PlanCapabilities } from "./entitlements.ts";
+import { PLAN_LIMITS, PLAN_CAPABILITIES } from "./entitlements.ts";
 
 /**
  * Canonical public plan tiers. This is the single server-side source of truth for
@@ -11,10 +11,12 @@ import { PLAN_LIMITS } from "./entitlements.ts";
  * authoritative and keep the SQL numbers in sync with it if either ever changes.
  *
  * Notion v1 catalog (approved Tier-1 catalog, production-applied via
- * 20260809010000_subscription_v1_catalog_alignment.sql): free, starter, growth,
- * business, scale. Only starter/growth/business are self-checkout payable —
- * free is not a paid subscription and scale/custom is quote-led, never
- * self-checkout. Prices and limits below MUST match that migration exactly.
+ * 20260809010000_subscription_v1_catalog_alignment.sql, realigned to the
+ * locked commercial model by <timestamp>_v2_commercial_model_realignment.sql):
+ * free, starter, growth, business, scale. Only starter/growth/business are
+ * self-checkout payable — free is not a paid subscription and scale/custom is
+ * quote-led, never self-checkout. Prices and limits below MUST match that
+ * migration exactly.
  *
  * Do NOT revive Signal/Mesh/Fleet — those identifiers may still exist in
  * historical rows and must not be renamed destructively, but they are not part
@@ -35,6 +37,8 @@ export interface PlanDefinition {
   startingAtCents: number | null;
   billingIntervalMonths: 1;
   entitlements: PlanEntitlementLimits;
+  /** Plan-level capability flags (Google Growth depth, Social Autopilot, website tier, etc.) — see entitlements.ts PLAN_CAPABILITIES. */
+  capabilities: PlanCapabilities;
   status: "active" | "legacy";
   /** Whether a customer can buy this plan through the in-app checkout without a human quote. */
   selfServiceCheckout: boolean;
@@ -48,6 +52,7 @@ export const PLAN_DEFINITIONS: Record<PlanTier, PlanDefinition> = {
     startingAtCents: null,
     billingIntervalMonths: 1,
     entitlements: PLAN_LIMITS.launch,
+    capabilities: PLAN_CAPABILITIES.launch,
     status: "legacy",
     selfServiceCheckout: false,
   },
@@ -58,6 +63,7 @@ export const PLAN_DEFINITIONS: Record<PlanTier, PlanDefinition> = {
     startingAtCents: 2_399_900, // "Starting ₹23,999.00/mo", GST-inclusive — historical, display-only
     billingIntervalMonths: 1,
     entitlements: PLAN_LIMITS.custom_growth,
+    capabilities: PLAN_CAPABILITIES.custom_growth,
     status: "legacy",
     selfServiceCheckout: false,
   },
@@ -68,36 +74,40 @@ export const PLAN_DEFINITIONS: Record<PlanTier, PlanDefinition> = {
     startingAtCents: null,
     billingIntervalMonths: 1,
     entitlements: PLAN_LIMITS.free,
+    capabilities: PLAN_CAPABILITIES.free,
     status: "active",
     selfServiceCheckout: false,
   },
   starter: {
     tier: "starter",
     publicName: "Starter",
-    priceCents: 499_900, // ₹4,999.00/mo, GST-inclusive
+    priceCents: 299_900, // ₹2,999.00/mo, GST-inclusive
     startingAtCents: null,
     billingIntervalMonths: 1,
     entitlements: PLAN_LIMITS.starter,
+    capabilities: PLAN_CAPABILITIES.starter,
     status: "active",
     selfServiceCheckout: true,
   },
   growth: {
     tier: "growth",
     publicName: "Growth",
-    priceCents: 999_900, // ₹9,999.00/mo, GST-inclusive
+    priceCents: 799_900, // ₹7,999.00/mo, GST-inclusive
     startingAtCents: null,
     billingIntervalMonths: 1,
     entitlements: PLAN_LIMITS.growth,
+    capabilities: PLAN_CAPABILITIES.growth,
     status: "active",
     selfServiceCheckout: true,
   },
   business: {
     tier: "business",
     publicName: "Business",
-    priceCents: 1_999_900, // ₹19,999.00/mo, GST-inclusive
+    priceCents: 1_599_900, // ₹15,999.00/mo, GST-inclusive
     startingAtCents: null,
     billingIntervalMonths: 1,
     entitlements: PLAN_LIMITS.business,
+    capabilities: PLAN_CAPABILITIES.business,
     status: "active",
     selfServiceCheckout: true,
   },
@@ -106,9 +116,10 @@ export const PLAN_DEFINITIONS: Record<PlanTier, PlanDefinition> = {
     publicName: "Scale / Custom",
     // Genuinely custom — no universal recurring amount exists to charge automatically.
     priceCents: null,
-    startingAtCents: 3_499_900, // "Starting ₹34,999.00/mo", GST-inclusive
+    startingAtCents: 2_999_900, // "Starting ₹29,999.00/mo", GST-inclusive — kept above Business
     billingIntervalMonths: 1,
     entitlements: PLAN_LIMITS.scale,
+    capabilities: PLAN_CAPABILITIES.scale,
     status: "active",
     selfServiceCheckout: false,
   },

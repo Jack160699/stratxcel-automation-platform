@@ -123,19 +123,25 @@ console.log("✓ Copilot mobile structure and plan awareness verified.");
 // =========================================================================
 console.log("\nTest 5: Canonical Billing Plans & Pricing...");
 
-assert.equal(PLAN_DEFINITIONS.starter.priceCents, 499_900, "Starter plan must be ₹4,999/mo (499_900 paise)");
-assert.equal(PLAN_DEFINITIONS.growth.priceCents, 999_900, "Growth plan must be ₹9,999/mo (999_900 paise)");
-assert.equal(PLAN_DEFINITIONS.business.priceCents, 1_999_900, "Business plan must be ₹19,999/mo (1_999_900 paise)");
+assert.equal(PLAN_DEFINITIONS.starter.priceCents, 299_900, "Starter plan must be ₹2,999/mo (299_900 paise)");
+assert.equal(PLAN_DEFINITIONS.growth.priceCents, 799_900, "Growth plan must be ₹7,999/mo (799_900 paise)");
+assert.equal(PLAN_DEFINITIONS.business.priceCents, 1_599_900, "Business plan must be ₹15,999/mo (1_599_900 paise)");
 assert.deepEqual(
   Array.from(SELF_SERVICE_PLAN_TIERS),
   ["starter", "growth", "business"],
   "Self-service payable plans must be starter, growth, and business"
 );
 
+// The billing page sources price cents from the shared catalog
+// (lib/commercial/catalog.ts PRICING_TIERS[].priceCents, kept in lockstep
+// with PLAN_DEFINITIONS) rather than a second hardcoded literal map — assert
+// the duplicate map is gone and the shared source carries the right numbers.
 const billingPageFile = read("app", "app", "billing", "page.tsx");
-assert.ok(billingPageFile.includes("499_900"), "Billing page must use canonical Starter price (499_900)");
-assert.ok(billingPageFile.includes("999_900"), "Billing page must use canonical Growth price (999_900)");
-assert.ok(billingPageFile.includes("1_999_900"), "Billing page must use canonical Business price (1_999_900)");
+assert.ok(!billingPageFile.includes("SELF_SERVICE_TIER_PRICE_CENTS"), "Billing page must not re-declare its own price map");
+const catalogFile = read("lib", "commercial", "catalog.ts");
+assert.ok(catalogFile.includes("299_900"), "Catalog must carry the canonical Starter price (299_900)");
+assert.ok(catalogFile.includes("799_900"), "Catalog must carry the canonical Growth price (799_900)");
+assert.ok(catalogFile.includes("1_599_900"), "Catalog must carry the canonical Business price (1_599_900)");
 
 console.log("✓ Canonical billing plans and pricing verified.");
 

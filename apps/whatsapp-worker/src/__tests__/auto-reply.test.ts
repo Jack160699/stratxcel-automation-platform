@@ -11,10 +11,11 @@ import { createFakeSupabase, type Tables } from "../../../../packages/whatsapp/s
 import type { ParsedInboundWhatsAppMessage, ProcessInboundResult } from "@stratxcel/whatsapp";
 
 Reflect.set(process.env, "NODE_ENV", "test");
-const { maybeSendAutomaticReply } = await import("../processor.ts");
+const { maybeSendAutomaticReply, isBareGreeting } = await import("../processor.ts");
 
 const TENANT = "tenant-1";
 const LEAD_ID = "lead-1";
+const GREETING_TEXT = "Hi! 👋 StratXcel Support here. How can we help?";
 
 function seed(overrides: Partial<Tables> = {}): Tables {
   return {
@@ -25,10 +26,10 @@ function seed(overrides: Partial<Tables> = {}): Tables {
   };
 }
 
-function message(providerMessageId: string): ParsedInboundWhatsAppMessage {
+function message(providerMessageId: string, body = "I need a website"): ParsedInboundWhatsAppMessage {
   return {
     from: "919999000099",
-    body: "I need a website",
+    body,
     kind: "text",
     mediaId: null,
     mimeType: null,
@@ -189,6 +190,45 @@ async function run() {
       assert.equal(tables.whatsapp_shadow_messages?.length, 1, "a redelivery on an already-successfully-sent auto-reply must never invoke the adapter a second time");
       const rows = (tables.whatsapp_messages ?? []).filter((m) => m.idempotency_key === `whatsapp_auto_reply:${msg.providerMessageId}`);
       assert.equal(rows.length, 1);
+    }
+
+    // --- 12. isBareGreeting: matches a plain greeting, nothing else --------
+    {
+      for (const text of ["hi", "Hello", "HEY", "Namaste", "hlo", "hii ", " heya", "hello!", "hi?"]) {
+        assert.equal(isBareGreeting(text), true, `expected "${text}" to be treated as a bare greeting`);
+      }
+      for (const text of ["hi, do you build websites?", "hello I need a website", "I need a website", ""]) {
+        assert.equal(isBareGreeting(text), false, `expected "${text}" to NOT be treated as a bare greeting`);
+      }
+    }
+
+    // --- 13. a bare greeting sends the fixed StratXcel Support text, not proposedResponse ---
+    {
+      process.env.WHATSAPP_INTEGRATION_MODE = "shadow";
+      const { client, tables } = createFakeSupabase(seed());
+      await maybeSendAutomaticReply(client, TENANT, message("wamid.12-greeting", "Hello"), result());
+      const outboundRow = (tables.whatsapp_messages ?? []).find((m) => m.direction === "outbound");
+      assert.equal(outboundRow?.body, GREETING_TEXT, "a bare greeting must send the fixed StratXcel Support greeting");
+    }
+
+    // --- 14. a non-greeting message still sends the real proposedResponse verbatim ---
+    {
+      const { client, tables } = createFakeSupabase(seed());
+      await maybeSendAutomaticReply(client, TENANT, message("wamid.13-real-inquiry", "hi, do you build websites?"), result());
+      const outboundRow = (tables.whatsapp_messages ?? []).find((m) => m.direction === "outbound");
+      assert.equal(outboundRow?.body, "Thanks for reaching out — here's what we offer...", "a real inquiry (even one starting with a greeting word) must still use the classified response");
+    }
+
+    // --- 15. the greeting override still respects every existing gate -----
+    {
+      const { client, fromCalls } = createFakeSupabase(seed());
+      await maybeSendAutomaticReply(client, TENANT, message("wamid.14-greeting-optout", "Hi"), result({ optedOut: true }));
+      assert.equal(fromCalls.length, 0, "an opted-out lead must never receive the greeting either");
+    }
+    {
+      const { client, fromCalls } = createFakeSupabase(seed());
+      await maybeSendAutomaticReply(client, TENANT, message("wamid.15-greeting-escalated", "Hi"), result({ escalated: true }));
+      assert.equal(fromCalls.length, 0, "an escalated lead must never receive the greeting either — a human owns this thread");
     }
 
     console.log("auto-reply.test.ts (@stratxcel/whatsapp-worker): ALL PASS");

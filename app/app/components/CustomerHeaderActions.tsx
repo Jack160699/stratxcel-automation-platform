@@ -3,7 +3,10 @@
 import Link from "next/link";
 import { useState } from "react";
 import type { CustomerPlanSummary } from "@/lib/billing/customer-plan";
+import { PRICING_TIERS } from "@/lib/commercial/catalog";
 import { Modal } from "@/components/ui/Overlay";
+
+const GROWTH_TIER_PRICE = PRICING_TIERS.find((t) => t.planKey === "growth")?.price ?? "₹7,999";
 import { ContextSwitcher } from "@/components/shell/ContextSwitcher";
 import { useTheme } from "@/components/theme/ThemeProvider";
 import { signOutAction } from "../actions";
@@ -233,7 +236,7 @@ export function CustomerHeaderActions({
                 <p className="text-2xl font-semibold text-sx-text">Growth</p>
                 <p className="mt-1 text-sm text-sx-text-muted">Ongoing execution after your Business Growth Audit.</p>
               </div>
-              <p className="shrink-0 text-right text-lg font-semibold text-sx-text">₹9,999<span className="text-xs font-normal text-sx-text-muted">/mo</span></p>
+              <p className="shrink-0 text-right text-lg font-semibold text-sx-text">{GROWTH_TIER_PRICE}<span className="text-xs font-normal text-sx-text-muted">/mo</span></p>
             </div>
           </div>
           <p className="mt-4 text-sm leading-6 text-sx-text-muted">

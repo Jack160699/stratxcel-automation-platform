@@ -1,3 +1,4 @@
+import { customerSafeError } from "../../customer-app/load-result";
 import { recordAudit } from "../repositories/system";
 import { getAutomationSettings, requiresApproval } from "../repositories/automation";
 import {
@@ -162,6 +163,7 @@ You natively understand and support English, Hindi (हिन्दी), Hinglis
 2. Explicit language overrides: When the customer asks for a specific language for their captions, copy, or visual posters (e.g. "caption Hindi mein likho", "in Hindi", "English mein banao", "Hinglish caption"), strictly generate the social content, captions, and visual briefs in that requested language, even if the user conversed in another language.
 3. Indian context & festivals: Natively understand Indian festivals (Raksha Bandhan/Rakhi, Diwali, Eid, Independence Day, Navratri, Holi, Republic Day, Ganesh Chaturthi, New Year), small businesses (bakeries, salons, retail, restaurants, clinics, boutiques), and natural phrasing ("bana do", "post kar do", "thoda premium rakho", "offer wala post", "kal shaam ko schedule karo").
 4. Never force English: Never force the customer to translate their thoughts into formal English. All creative variants, captions, hashtags, and suggestions must respect the user's language intent.
+5. Creative-discretion phrases: "जैसा अच्छा लगे बना दो", "jaise achha lage bana do", "aapki marzi", "jo bhi thik lage", "surprise me", or "use your judgement" are explicit authorization to make the creative call yourself — business type, Brand Brain, recent posts, and the current season/festival calendar decide the angle. This is never ambiguity to clarify away and never grounds to stop; produce the actual content in the same turn.
 
 CREATIVE CONTENT & POST CREATION WORKFLOW:
 When the user asks to create a post, poster, or social content (e.g. "अभी राखी के लिए पोस्ट बना दो", "Rakhi ke liye post bana do", "Create a festive poster", "मेरे बिजनेस के लिए पोस्ट बनाओ"):
@@ -695,18 +697,32 @@ export async function runAgentTurn(ctx: AgentActorContext, sessionId: string, ru
           messages.push({ role: "tool", content: serializeToolOutput(output, tool.outputBudget, tool.schema.name), toolCallId: call.id, toolName: call.name });
         } catch (err) {
           const errorMessage = err instanceof Error ? err.message : "tool execution failed";
+          // Brief §15: when a plan/entitlement gate is the actual reason a
+          // capability failed (content-generation quota exhausted, or a
+          // capability the current plan doesn't include), give the model
+          // concrete material to explain the business reason and point the
+          // user to Billing — never just relay a bare technical error.
+          const errorCode = err && typeof err === "object" && "code" in err ? String((err as { code?: unknown }).code) : undefined;
+          const isPlanGate = errorCode === "GENERATION_LIMIT_REACHED" || errorMessage.startsWith("prerequisite_missing:");
           await recordExecutedAction(ctx, sessionId, tool.schema.name, call.arguments, null, "FAILED", errorMessage);
           await recordRunEvent(ctx, runId, {
             type: "TOOL_FAILED",
             label: toolLabel,
             toolName: tool.schema.name,
             status: "FAILED",
-            meta: { durationMs: Date.now() - toolStarted, reason: errorMessage },
+            meta: { durationMs: Date.now() - toolStarted, reason: errorMessage, ...(isPlanGate ? { upgradeRecommended: true } : {}) },
           });
           if (PUBLISH_INTENT_TOOLS.has(tool.schema.name)) {
             lastPublishOutcome = { succeeded: false, note: `Publishing failed: ${errorMessage}. No post was created.`, receipt: {} };
           }
-          messages.push({ role: "tool", content: `Error: ${errorMessage}`, toolCallId: call.id, toolName: call.name });
+          messages.push({
+            role: "tool",
+            content: isPlanGate
+              ? `Error: ${errorMessage} Explain plainly why this needs a plan upgrade (not a technical error), and point the user to /app/billing to see plans and upgrade.`
+              : `Error: ${errorMessage}`,
+            toolCallId: call.id,
+            toolName: call.name,
+          });
         }
       }
     }
@@ -848,9 +864,16 @@ export async function runAgentTurn(ctx: AgentActorContext, sessionId: string, ru
     const errorMessage = err instanceof Error ? err.message : "Agent run failed unexpectedly.";
     await recordRunEvent(ctx, runId, { type: "RUN_FAILED", label: PHASE_LABELS.RUN_FAILED, status: "FAILED", meta: { reason: errorMessage } });
     await completeRun(ctx, runId, "FAILED", errorMessage);
-    await insertMessage(ctx, sessionId, "AGENT", `I hit an error and couldn't finish: ${errorMessage}`);
+    // Never echo the raw exception into the conversation — it may be a DB
+    // error, a provider SDK message, or an infra leak (RLS/service-role
+    // internals). customerSafeError only lets through text that isn't a
+    // known infra pattern; everything else — and every non-Error throw —
+    // falls back to a plain, actionable message, never "I hit an error and
+    // need human review" (see AGENTS.md Growth Assistant error-handling brief).
+    const safeMessage = customerSafeError(errorMessage, "I couldn't finish this right now. Please try again.");
+    await insertMessage(ctx, sessionId, "AGENT", safeMessage);
     await setSessionStatus(ctx, sessionId, "FAILED");
-    return { blocked: false as const, failed: true as const, text: "", proposedActions: [], runId, reason: errorMessage };
+    return { blocked: false as const, failed: true as const, text: safeMessage, proposedActions: [], runId, reason: errorMessage };
   }
 }
 

@@ -76,6 +76,21 @@ const HEALTH_PORT = Number(process.env.WHATSAPP_PROCESSOR_PORT ?? 8084);
  * (already idempotent) and re-attempt the send with the same key without
  * risk of a duplicate send.
  */
+const GREETING_TEXT = "Hi! 👋 StratXcel Support here. How can we help?";
+
+/**
+ * A bare "hi"/"hello" with nothing else is a greeting, not a real inquiry —
+ * matches the mission's literal minimum bar (Hello -> a StratXcel Support
+ * greeting) without touching the LLM/service-classification pipeline that
+ * produces result.proposedResponse for everything else. Deliberately
+ * narrow: any additional word ("hi, do you build websites") is a real
+ * inquiry and must still go through the normal classified response.
+ */
+export function isBareGreeting(text: string): boolean {
+  const normalized = text.trim().toLowerCase().replace(/[!.,?]+$/g, "");
+  return ["hi", "hello", "hey", "hlo", "namaste", "hii", "heya"].includes(normalized);
+}
+
 export async function maybeSendAutomaticReply(
   supabase: ReturnType<typeof createWhatsAppClient>,
   tenantId: string,
@@ -87,11 +102,18 @@ export async function maybeSendAutomaticReply(
   if (result.optedOut) return;
   if (result.escalated) return;
 
+  // Greeting override: the CRM lead is still upserted and the conversation
+  // still recorded by processInboundMessage above (unchanged) — only the
+  // outbound TEXT changes for this one narrow case, so every existing gate
+  // above (auto-reply enabled, not opted out, not escalated) still applies
+  // exactly as before.
+  const body = message.kind === "text" && isBareGreeting(message.body) ? GREETING_TEXT : result.proposedResponse;
+
   const idempotencyKey = `whatsapp_auto_reply:${message.providerMessageId}`;
   const outcome = await sendOutboundWhatsAppMessage(supabase, {
     tenantId,
     leadId: result.leadId,
-    body: result.proposedResponse,
+    body,
     idempotencyKey,
   });
 

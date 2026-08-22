@@ -5,16 +5,22 @@ export interface PlanEntitlementLimits {
   meta_ad_campaigns: number;
   whatsapp_contacts: number;
   website_maintenance: number;
+  /** Monthly user-requested image/content generation allowance (Starter: single pool of 10; Growth/Business: the user-requested/premium pool). */
+  content_generation_monthly: number;
+  /** Monthly system-generated (autonomously researched) content allowance, ON TOP of content_generation_monthly. Only Growth grants this as a distinct pool today. */
+  automated_content_monthly: number;
 }
 
 /**
  * Notion v1 catalog (free/starter/growth/business/scale), aligned with the
  * production-applied migration 20260809010000_subscription_v1_catalog_alignment.sql,
  * which patched the reconcile_and_fulfill_razorpay_payment_v4() SQL body in place —
- * starter/growth/business are the only self-checkout-payable tiers; their four
+ * starter/growth/business are the only self-checkout-payable tiers; their six
  * numbers here (social_posts, meta_ad_campaigns, whatsapp_contacts,
- * website_maintenance) MUST stay byte-for-byte identical to that migration's
- * v_limits_starter / v_limits_growth / v_limits_business arrays.
+ * website_maintenance, content_generation_monthly, automated_content_monthly)
+ * MUST stay byte-for-byte identical to the v_limits_starter / v_limits_growth /
+ * v_limits_business arrays patched into that RPC by
+ * <timestamp>_v2_commercial_model_realignment.sql.
  *
  * `launch` and `custom_growth` are kept only as historical DB-compatibility
  * identifiers (existing rows may still carry them) — their numbers are
@@ -26,6 +32,13 @@ export interface PlanEntitlementLimits {
  * (`plan_not_self_checkout`) — free grants no paid automation, and scale's
  * entitlements below are a display-only starting figure for a quote-led
  * custom order, not an enforced self-checkout grant.
+ *
+ * social_posts (Social Autopilot's monthly publishing package size, reusing
+ * already-uploaded/generated assets — see lib/social/package-composition.ts)
+ * is intentionally left at its pre-existing values: the locked commercial
+ * model's "image generations/month" figures (content_generation_monthly /
+ * automated_content_monthly) are a separate, new concept governing Creative
+ * Studio / Copilot generation quota, not Autopilot's publish cadence.
  */
 export const PLAN_LIMITS: Record<"launch" | "custom_growth" | "free" | "starter" | "growth" | "business" | "scale", PlanEntitlementLimits> = {
   launch: {
@@ -33,44 +46,196 @@ export const PLAN_LIMITS: Record<"launch" | "custom_growth" | "free" | "starter"
     meta_ad_campaigns: 1,
     whatsapp_contacts: 500,
     website_maintenance: 0,
+    content_generation_monthly: 10,
+    automated_content_monthly: 0,
   },
   custom_growth: {
     social_posts: 60,
     meta_ad_campaigns: 4,
     whatsapp_contacts: 10000,
     website_maintenance: 1,
+    content_generation_monthly: 30,
+    automated_content_monthly: 10,
   },
   free: {
     social_posts: 0,
     meta_ad_campaigns: 0,
     whatsapp_contacts: 0,
     website_maintenance: 0,
+    content_generation_monthly: 0,
+    automated_content_monthly: 0,
   },
   starter: {
     social_posts: 12,
     meta_ad_campaigns: 1,
     whatsapp_contacts: 100,
     website_maintenance: 0,
+    // Single pool of 10 (default allocation: 5 system-generated + 5 user-requested — brief §1).
+    content_generation_monthly: 10,
+    automated_content_monthly: 0,
   },
   growth: {
     social_posts: 25,
     meta_ad_campaigns: 1,
     whatsapp_contacts: 500,
     website_maintenance: 1,
+    // 20 user-requested PLUS 10 system-generated as a distinct pool (brief §2).
+    content_generation_monthly: 20,
+    automated_content_monthly: 10,
   },
   business: {
     social_posts: 50,
     meta_ad_campaigns: 3,
     whatsapp_contacts: 1500,
     website_maintenance: 1,
+    // 30 premium generations/month, single pool (brief §3 — not split like Growth).
+    content_generation_monthly: 30,
+    automated_content_monthly: 0,
   },
   scale: {
     social_posts: 75,
     meta_ad_campaigns: 5,
     whatsapp_contacts: 2500,
     website_maintenance: 1,
+    content_generation_monthly: 40,
+    automated_content_monthly: 15,
   },
 };
+
+export type GoogleGrowthLevel = "basic" | "advanced" | "maximum";
+
+/**
+ * Plan-level capability flags — pure functions of plan_tier, resolved
+ * entirely in code (no usage_entitlements row, no DB write). Anything that
+ * already knows the tenant's active plan_tier (billing page, EntitlementGate,
+ * Growth Assistant, website factory, WhatsApp worker) can resolve these with
+ * zero additional queries via getPlanCapabilities()/hasCapability() below.
+ * Consumable/incrementing quotas live in PLAN_LIMITS + usage_entitlements
+ * instead — these are booleans/levels only.
+ */
+export interface PlanCapabilities {
+  google_growth_level: GoogleGrowthLevel;
+  seo_level: GoogleGrowthLevel;
+  social_autopilot: boolean;
+  direct_publishing: boolean;
+  logo_brand_kit: boolean;
+  landing_page: boolean;
+  website_included: boolean;
+  /** Minimum subscription commitment (months) required to keep an included website. 0 = no commitment. */
+  website_commitment_months: number;
+  premium_content: boolean;
+  advanced_competitor_research: boolean;
+  whatsapp_assistant_access: boolean;
+}
+
+export const PLAN_CAPABILITIES: Record<"launch" | "custom_growth" | "free" | "starter" | "growth" | "business" | "scale", PlanCapabilities> = {
+  free: {
+    google_growth_level: "basic",
+    seo_level: "basic",
+    social_autopilot: false,
+    direct_publishing: false,
+    logo_brand_kit: false,
+    landing_page: false,
+    website_included: false,
+    website_commitment_months: 0,
+    premium_content: false,
+    advanced_competitor_research: false,
+    whatsapp_assistant_access: false,
+  },
+  starter: {
+    google_growth_level: "basic",
+    seo_level: "basic",
+    social_autopilot: false,
+    direct_publishing: true,
+    logo_brand_kit: true,
+    landing_page: false,
+    website_included: false,
+    website_commitment_months: 0,
+    premium_content: false,
+    advanced_competitor_research: false,
+    whatsapp_assistant_access: false,
+  },
+  growth: {
+    google_growth_level: "advanced",
+    seo_level: "advanced",
+    social_autopilot: true,
+    direct_publishing: true,
+    logo_brand_kit: true,
+    landing_page: true,
+    website_included: false,
+    website_commitment_months: 0,
+    premium_content: false,
+    advanced_competitor_research: true,
+    whatsapp_assistant_access: false,
+  },
+  business: {
+    google_growth_level: "maximum",
+    seo_level: "maximum",
+    social_autopilot: true,
+    direct_publishing: true,
+    logo_brand_kit: true,
+    landing_page: true,
+    website_included: true,
+    website_commitment_months: 3,
+    premium_content: true,
+    advanced_competitor_research: true,
+    whatsapp_assistant_access: true,
+  },
+  // Legacy/quote-led tiers — not part of the current commercial offer, kept for
+  // historical rows and Scale display only. Mirrors the closest active tier.
+  launch: {
+    google_growth_level: "basic",
+    seo_level: "basic",
+    social_autopilot: false,
+    direct_publishing: true,
+    logo_brand_kit: true,
+    landing_page: false,
+    website_included: false,
+    website_commitment_months: 0,
+    premium_content: false,
+    advanced_competitor_research: false,
+    whatsapp_assistant_access: false,
+  },
+  custom_growth: {
+    google_growth_level: "maximum",
+    seo_level: "maximum",
+    social_autopilot: true,
+    direct_publishing: true,
+    logo_brand_kit: true,
+    landing_page: true,
+    website_included: true,
+    website_commitment_months: 0,
+    premium_content: true,
+    advanced_competitor_research: true,
+    whatsapp_assistant_access: true,
+  },
+  scale: {
+    google_growth_level: "maximum",
+    seo_level: "maximum",
+    social_autopilot: true,
+    direct_publishing: true,
+    logo_brand_kit: true,
+    landing_page: true,
+    website_included: true,
+    website_commitment_months: 0,
+    premium_content: true,
+    advanced_competitor_research: true,
+    whatsapp_assistant_access: true,
+  },
+};
+
+export function getPlanCapabilities(
+  tier: "launch" | "custom_growth" | "free" | "starter" | "growth" | "business" | "scale"
+): PlanCapabilities {
+  return PLAN_CAPABILITIES[tier];
+}
+
+export function hasCapability<K extends keyof PlanCapabilities>(
+  tier: "launch" | "custom_growth" | "free" | "starter" | "growth" | "business" | "scale",
+  key: K
+): PlanCapabilities[K] {
+  return PLAN_CAPABILITIES[tier][key];
+}
 
 export interface CheckUsageResult {
   metric: string;
@@ -81,7 +246,13 @@ export interface CheckUsageResult {
   notificationTriggered: "80" | "90" | "100" | null;
 }
 
-export type EntitlementMetric = "social_posts" | "meta_ad_campaigns" | "whatsapp_contacts" | "website_maintenance";
+export type EntitlementMetric =
+  | "social_posts"
+  | "meta_ad_campaigns"
+  | "whatsapp_contacts"
+  | "website_maintenance"
+  | "content_generation_monthly"
+  | "automated_content_monthly";
 
 export interface EntitlementStatus {
   metric: EntitlementMetric;
@@ -140,7 +311,7 @@ export async function getEntitlementSummary(
 export async function recordMetricUsage(
   supabase: ServiceClient,
   tenantId: string,
-  metric: "social_posts" | "meta_ad_campaigns" | "whatsapp_contacts" | "website_maintenance",
+  metric: EntitlementMetric,
   incrementBy = 1
 ): Promise<CheckUsageResult> {
   const { data: entitlement, error } = await supabase
