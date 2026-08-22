@@ -17,6 +17,8 @@ export interface ContentItem {
   createdAt: string;
   publishedAt?: string;
   status: "DRAFT" | "READY" | "PUBLISHED" | "SCHEDULED" | "GENERATED";
+  objective?: string;
+  angle?: "Local & Friendly" | "Festive / Special Offer" | "5-Star Review Spotlight" | "Behind the Scenes";
   metrics?: {
     reach?: number;
     engagement?: number;
@@ -24,6 +26,13 @@ export interface ContentItem {
     clicks?: number;
   };
 }
+
+export const STRATEGIC_ANGLES = [
+  { key: "local", label: "Local & Friendly", icon: "📍", desc: "Warm neighborhood tone with local community appeal" },
+  { key: "offer", label: "Festive / Special Offer", icon: "🎉", desc: "High-conversion discount and festive promotion" },
+  { key: "review", label: "5-Star Review Spotlight", icon: "⭐", desc: "Customer testimonial and trust-building social proof" },
+  { key: "bts", label: "Behind the Scenes", icon: "🎬", desc: "Authentic founder and kitchen/shop craft story" },
+] as const;
 
 const CATEGORY_TABS = [
   { key: "all", label: "All Content" },
@@ -116,6 +125,33 @@ export function ContentLibraryClient({
     }
   };
 
+  const handleRegenerateAngle = (item: ContentItem, angleKey: string) => {
+    const angleObj = STRATEGIC_ANGLES.find((a) => a.key === angleKey) || STRATEGIC_ANGLES[0];
+    const updated = items.map((it) => {
+      if (it.id !== item.id) return it;
+      let newCaption = it.captionText || "";
+      if (angleKey === "local") {
+        newCaption = `Proudly serving our local neighborhood! 📍 Visit ${businessName} this week for specialized care and friendly local service. Drop a comment or message us to book your spot! #SupportLocal #${businessName.replace(/\\s+/g, "")}`;
+      } else if (angleKey === "offer") {
+        newCaption = `Special festive promotion at ${businessName}! 🎉 Enjoy exclusive seasonal benefits for a limited time. Tap the link in bio or DM us to claim yours today! #FestiveOffer #SpecialDeal #${businessName.replace(/\\s+/g, "")}`;
+      } else if (angleKey === "review") {
+        newCaption = `⭐ "Best service in town!" Thank you to our wonderful customers for trusting ${businessName}. We take pride in delivering top-quality results every single day. #CustomerLove #5StarReview #${businessName.replace(/\\s+/g, "")}`;
+      } else if (angleKey === "bts") {
+        newCaption = `Behind the scenes at ${businessName}! 🎬 A sneak peek into how we prepare and craft our services with complete care. What would you like to see next? #BehindTheScenes #Craftsmanship #${businessName.replace(/\\s+/g, "")}`;
+      }
+      return {
+        ...it,
+        angle: angleObj.label as any,
+        captionText: newCaption,
+        status: "READY" as const,
+      };
+    });
+    setItems(updated);
+    if (previewItem && previewItem.id === item.id) {
+      setPreviewItem((prev) => (prev ? { ...prev, angle: angleObj.label as any } : null));
+    }
+  };
+
   return (
     <div className="flex flex-col gap-6">
       {/* Header */}
@@ -174,8 +210,8 @@ export function ContentLibraryClient({
           href="/app/social/copilot"
           className="flex flex-col rounded-sx-md border border-sx-border bg-sx-surface-1 p-3.5 transition-colors hover:border-sx-accent/40"
         >
-          <span className="mb-2 flex h-8 w-8 items-center justify-center rounded-sx-sm bg-purple-500/10 text-base">✨</span>
-          <span className="text-[13px] font-bold text-sx-text">AI Copywriter</span>
+          <span className="mb-2 flex h-8 w-8 items-center justify-center rounded-sx-sm bg-purple-500/10 text-base">💬</span>
+          <span className="text-[13px] font-bold text-sx-text">Growth Copywriter</span>
           <span className="text-[11px] text-sx-text-subtle">Hinglish captions & offers</span>
         </Link>
       </div>
@@ -302,9 +338,22 @@ export function ContentLibraryClient({
               {/* Details & Copy */}
               <div className="flex flex-1 flex-col justify-between p-3.5">
                 <div>
-                  <h3 className="text-[14px] font-bold text-sx-text line-clamp-1">{item.title}</h3>
+                  <div className="flex items-center justify-between gap-2">
+                    <h3 className="text-[14px] font-bold text-sx-text line-clamp-1">{item.title}</h3>
+                    {item.angle && (
+                      <span className="shrink-0 rounded-sx-xs bg-sx-accent-muted px-2 py-0.5 text-[10px] font-bold text-sx-accent">
+                        {item.angle}
+                      </span>
+                    )}
+                  </div>
                   {item.captionText && (
                     <p className="mt-1 text-xs text-sx-text-subtle line-clamp-2">{item.captionText}</p>
+                  )}
+                  {item.objective && (
+                    <p className="mt-1.5 text-[11px] font-medium text-sx-text-muted flex items-center gap-1">
+                      <span>🎯</span>
+                      <span>{item.objective}</span>
+                    </p>
                   )}
                 </div>
 
@@ -384,10 +433,48 @@ export function ContentLibraryClient({
                 <img
                   src={previewItem.imageUrl}
                   alt={previewItem.title}
-                  className="max-h-[60vh] w-full object-contain mx-auto"
+                  className="max-h-[50vh] w-full object-contain mx-auto"
                 />
               </div>
             )}
+
+            {/* Strategic Rationale Banner */}
+            <div className="rounded-sx-md border border-sx-accent/30 bg-sx-accent-muted/40 p-3">
+              <div className="flex items-center gap-1.5 text-xs font-bold text-sx-accent">
+                <span>🎯</span>
+                <span>Why this content?</span>
+              </div>
+              <p className="mt-1 text-xs text-sx-text leading-relaxed">
+                {previewItem.objective || `Tailored specifically for ${businessName} to drive local customer footfall, boost weekend bookings, and increase engagement on connected social platforms.`}
+              </p>
+            </div>
+
+            {/* Strategic Angle Switcher */}
+            <div>
+              <p className="text-[11px] font-bold uppercase tracking-wider text-sx-text-subtle mb-1.5">
+                Regenerate with Angle:
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                {STRATEGIC_ANGLES.map((ang) => (
+                  <button
+                    key={ang.key}
+                    type="button"
+                    onClick={() => handleRegenerateAngle(previewItem, ang.key)}
+                    className={`flex items-start gap-2 rounded-sx-sm border p-2 text-left transition-colors ${
+                      previewItem.angle === ang.label
+                        ? "border-sx-accent bg-sx-accent-muted text-sx-accent"
+                        : "border-sx-border bg-sx-surface-2 hover:bg-sx-surface-3 text-sx-text"
+                    }`}
+                  >
+                    <span className="text-sm">{ang.icon}</span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-semibold leading-none">{ang.label}</p>
+                      <p className="mt-1 text-[10px] text-sx-text-subtle line-clamp-1">{ang.desc}</p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
 
             {previewItem.captionText && (
               <div className="rounded-sx-md border border-sx-border bg-sx-surface-2 p-3">

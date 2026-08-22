@@ -160,6 +160,8 @@ export default async function CustomerContentPage() {
         title: `${businessName} Festive Special Offer`,
         type: "poster",
         category: "draft",
+        angle: "Festive / Special Offer",
+        objective: "Festive footfall & direct WhatsApp orders",
         imageUrl: generatePosterSvg(
           `${businessName} Special Celebration Offer`,
           "Exclusive deals and top quality service. Order on WhatsApp today!",
@@ -177,6 +179,8 @@ export default async function CustomerContentPage() {
         type: "creative",
         category: "published",
         platform: "instagram",
+        angle: "5-Star Review Spotlight",
+        objective: "Customer trust & Google Maps review proof",
         imageUrl: generatePosterSvg(
           `⭐⭐⭐⭐⭐ "Best Experience in Town!"`,
           `Thank you to all our customers for rating ${businessName} 5-stars on Google Maps!`,
@@ -199,6 +203,8 @@ export default async function CustomerContentPage() {
         title: "Behind the Scenes Highlight Reel",
         type: "video",
         category: "draft",
+        angle: "Behind the Scenes",
+        objective: "Community engagement & craft transparency",
         imageUrl: generatePosterSvg(
           `Behind the Scenes at ${businessName}`,
           "Watch our team prepare fresh orders with care and passion. Tap to play.",
@@ -215,6 +221,8 @@ export default async function CustomerContentPage() {
         title: "Hinglish Brand Voice & WhatsApp Invite",
         type: "caption",
         category: "saved",
+        angle: "Local & Friendly",
+        objective: "Multilingual neighborhood outreach",
         createdAt: new Date(Date.now() - 3600000 * 72).toISOString(),
         status: "READY",
         captionText: `नमस्ते! ${businessName} में आपका स्वागत है। हमारे पास आपके लिए स्पेशल डील्स उपलब्ध हैं। डायरेक्ट WhatsApp पर मैसेज करें और बेस्ट रेट्स पाएं। 🙏`,

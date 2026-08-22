@@ -14,8 +14,16 @@ export type SocialCopilotIntent =
   | "REVISE_CURRENT_ARTIFACT"
   | "POST_NOW_REQUEST"
   | "FUTURE_SCHEDULE_REQUEST"
+  | "ACCOUNT_PLAN_INQUIRY"
+  | "WEEKLY_GROWTH_ADVICE"
   | "NATURAL_AFFIRMATION"
   | "GENERAL_CONVERSATION";
+
+const PLAN_INQUIRY =
+  /\b(?:(?:what(?:'s| does)?|show|tell me)?\s*(?:my|the|about)?\s*(?:free\s+plan|plan|subscription|entitlements?|pricing|limits?)|what\s+(?:plan|tier)\s+(?:am\s+i|are\s+we)\s+on|free\s+plan\s+include|mera\s+plan|free\s+plan\s+mein\s+kya|can\s+you\s+(?:publish|post)\s+(?:this\s+)?to\s+instagram)\b|(?:फ्री\s*प्लान|मेरा\s*प्लान|प्लान\s*की\s*जानकारी)/i;
+
+const GROWTH_ADVICE =
+  /\b(?:what\s+should\s+i\s+do\s+(?:this\s+week|now|today)|what\s+to\s+do\s+this\s+week|is\s+hafte\s+kya\s+(?:karein|karna\s+chahiye|karun)|top\s+actions?\s+this\s+week|growth\s+(?:advice|tips|recommendations?)|how\s+(?:to|can\s+i)\s+grow\s+(?:my\s+)?business)\b|(?:इस\s*हफ्ते\s*क्या\s*करें|ग्रोथ\s*सलाह|बिजनेस\s*ग्रो)/i;
 
 const WEEK_PLAN =
   /\b(?:plan(?:\s+(?:this|my|the))?\s+week|prepare(?:\s+(?:this|my|the))?\s+week(?:'s)?(?:\s+(?:posts|content|plan))?|schedule(?:\s+(?:content|posts))?\s+(?:this|for\s+(?:this|the))\s+week|make(?:\s+(?:this|my|the))?\s+week(?:'s)?\s+content(?:\s+plan)?|is\s+hafte(?:\s+ka)?(?:\s+(?:plan|posts?|content))?|hafte\s+ka\s+plan|week\s+ka\s+plan)\b|(?:इस\s*हफ्ते|हफ्ते\s*का\s*प्लान|साप्ताहिक\s*प्लान)/i;
@@ -42,6 +50,8 @@ export function classifySocialCopilotIntent(prompt: string): SocialCopilotIntent
   const value = prompt.trim();
   if (!value) return "GENERAL_CONVERSATION";
 
+  if (PLAN_INQUIRY.test(value)) return "ACCOUNT_PLAN_INQUIRY";
+  if (GROWTH_ADVICE.test(value)) return "WEEKLY_GROWTH_ADVICE";
   if (WEEK_PLAN.test(value)) return "PREPARE_WEEK_PLAN";
   if (SHOW_VARIANTS.test(value)) return "SHOW_VARIANTS";
   if (SHOW_REVIEW.test(value)) return "SHOW_CURRENT_REVIEW";

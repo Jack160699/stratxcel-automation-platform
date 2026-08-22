@@ -16,53 +16,37 @@ import { groupEventsIntoStages } from "../../../admin/(shell)/social/copilot/exe
 import { groupSessionsByRecency } from "../../../admin/(shell)/social/copilot/session-groups";
 import type { AgentSessionRow } from "@/lib/social/repositories/agent";
 
-const QUICK_ACTIONS: { icon: React.ReactNode; tint: string; label: string; prompt: string }[] = [
+const QUICK_ACTIONS = [
   {
-    tint: "rgba(27,95,227,0.06)",
-    label: "Plan my content for this week",
-    prompt: "Plan my social media content for this week",
+    tint: "rgba(99,102,241,0.08)",
+    label: "Plan this week's posts",
+    prompt: "Plan my social posts for this week",
     icon: (
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1B5FE3" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2" /><path d="M16 2v4M8 2v4M3 10h18" /></svg>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
     ),
   },
   {
-    tint: "rgba(217,119,6,0.06)",
-    label: "Create a Festival Poster",
-    prompt: "Create an attractive festive discount poster for my business with Hindi and English caption.",
-    icon: (
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#d97706" strokeWidth="2"><circle cx="12" cy="12" r="10" /><path d="M12 8v4M12 16h.01" /></svg>
-    ),
-  },
-  {
-    tint: "rgba(225,48,108,0.06)",
-    label: "Write an Instagram caption",
-    prompt: "Write an Instagram caption for my latest offer",
+    tint: "rgba(225,48,108,0.08)",
+    label: "Create a festival offer poster",
+    prompt: "Create a festive offer poster for my business",
     icon: (
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#E1306C" strokeWidth="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
     ),
   },
   {
-    tint: "rgba(22,163,74,0.06)",
-    label: "How did my posts perform?",
-    prompt: "How did my recent posts perform?",
+    tint: "rgba(22,163,74,0.08)",
+    label: "What should I do this week?",
+    prompt: "What should I do this week to grow my business?",
     icon: (
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2"><path d="M18 20V10M12 20V4M6 20v-6" /></svg>
     ),
   },
   {
-    tint: "rgba(100,116,139,0.06)",
-    label: "What's my content status?",
-    prompt: "What's the status of my recent content?",
+    tint: "rgba(100,116,139,0.08)",
+    label: "What does my plan include?",
+    prompt: "What's my free plan include?",
     icon: (
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="2"><path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-    ),
-  },
-  {
-    tint: "rgba(139,134,128,0.08)",
-    label: "What is my brand voice?",
-    prompt: "What is my brand voice and tone?",
-    icon: (
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5c5a56" strokeWidth="2"><path d="M12 20h9M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z" /></svg>
     ),
   },
 ];
@@ -570,10 +554,10 @@ export function GrowthAssistantChat({ tenantId, initialSessions }: { tenantId: s
             {!loadingHistory && messages.length === 0 && (
               <div className="flex flex-col items-center pt-2 pb-4 text-center max-w-lg mx-auto">
                 <span
-                  className="flex h-11 w-11 items-center justify-center rounded-sx-md shadow-md text-xl"
+                  className="flex h-11 w-11 items-center justify-center rounded-sx-md shadow-md"
                   style={{ background: "linear-gradient(135deg, var(--sx-accent), #3b82f6)" }}
                 >
-                  ✨
+                  <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M10 2L18 7v6l-8 5-8-5V7l8-5z" stroke="#fff" strokeWidth="1.75" /></svg>
                 </span>
                 <h2 className="mt-2.5 text-base sm:text-lg font-bold text-sx-text">How can I help your business grow today?</h2>
                 <p className="mt-0.5 text-xs text-sx-text-muted">
@@ -675,7 +659,7 @@ export function GrowthAssistantChat({ tenantId, initialSessions }: { tenantId: s
                     {/* Receipts */}
                     {receiptParts.map((part, idx) => (
                       <div key={idx} className="ml-9 max-w-md">
-                        <ReceiptCard receipt={part as never} />
+                        <ReceiptCard receipt={part as any} />
                       </div>
                     ))}
                   </div>
@@ -686,9 +670,7 @@ export function GrowthAssistantChat({ tenantId, initialSessions }: { tenantId: s
               {pending && (
                 <div className="flex items-start gap-2.5">
                   <BotAvatar pulsing />
-                  <div className="min-w-0 flex-1 max-w-md">
-                    <WorkingIndicator run={run} runEvents={runEvents} />
-                  </div>
+                  <WorkingIndicator run={run} runEvents={runEvents} />
                 </div>
               )}
 
@@ -714,22 +696,16 @@ export function GrowthAssistantChat({ tenantId, initialSessions }: { tenantId: s
 
       {/* FIXED COMPOSER FOOTER */}
       {!showHistory && (
-        <footer className="shrink-0 border-t border-sx-border bg-sx-surface-1 p-3 z-20">
-          <div className="max-w-3xl mx-auto relative">
+        <footer className="shrink-0 border-t border-sx-border bg-sx-surface-1 px-2.5 sm:px-4 py-2 sm:py-3 shadow-lg z-20">
+          <div className="max-w-3xl mx-auto relative w-full">
             {/* Attachment preview chip */}
-            {attachmentPreviewUrl && (
-              <div className="mb-2 flex items-center gap-2 rounded-sx-sm bg-sx-surface-2 border border-sx-border p-2 max-w-sm">
-                <img src={attachmentPreviewUrl} alt="Preview" className="h-10 w-10 object-cover rounded-sx-xs bg-black/20" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-semibold text-sx-text truncate">{pendingFile?.name || "Uploaded image"}</p>
-                  <p className="text-[10px] text-sx-text-muted">
-                    {uploadingAttachment ? "Uploading…" : "Ready to send"}
-                  </p>
-                </div>
+            {uploadedAttachmentId && (
+              <div className="mb-2 inline-flex items-center gap-2 rounded-sx-sm border border-sx-accent/30 bg-sx-accent-muted px-2.5 py-1 text-xs text-sx-accent">
+                <span>📎 Attachment ready</span>
                 <button
                   type="button"
-                  onClick={clearAttachment}
-                  className="text-sx-text-muted hover:text-sx-text p-1 text-xs"
+                  onClick={() => setUploadedAttachmentId(null)}
+                  className="font-bold hover:text-sx-danger"
                 >
                   ✕
                 </button>
@@ -792,7 +768,7 @@ export function GrowthAssistantChat({ tenantId, initialSessions }: { tenantId: s
                 e.preventDefault();
                 submit(input);
               }}
-              className="flex items-center gap-2"
+              className="flex items-center gap-1.5 sm:gap-2 w-full"
             >
               {/* Plus Button */}
               <button
@@ -800,7 +776,7 @@ export function GrowthAssistantChat({ tenantId, initialSessions }: { tenantId: s
                 onClick={() => setPlusMenuOpen((o) => !o)}
                 disabled={pending || uploadingAttachment}
                 title="Attach camera photo, image, or document"
-                className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-sx-sm border text-base transition-colors ${
+                className={`flex h-9 w-9 sm:h-10 sm:w-10 shrink-0 items-center justify-center rounded-sx-sm border text-base transition-colors ${
                   plusMenuOpen
                     ? "border-sx-accent bg-sx-accent/10 text-sx-accent"
                     : "border-sx-border bg-sx-surface-2 text-sx-text-muted hover:text-sx-text"
@@ -816,7 +792,7 @@ export function GrowthAssistantChat({ tenantId, initialSessions }: { tenantId: s
                 onChange={(e) => setInput(e.target.value)}
                 placeholder="Ask anything… (English / हिंदी / Hinglish)"
                 disabled={pending}
-                className="h-10 flex-1 rounded-sx-sm border border-sx-border bg-sx-surface-2 px-3.5 text-[14px] text-sx-text placeholder:text-sx-text-subtle focus:border-sx-accent focus:outline-none"
+                className="h-9 sm:h-10 min-w-0 flex-1 rounded-sx-sm border border-sx-border bg-sx-surface-2 px-2.5 sm:px-3.5 text-[13.5px] sm:text-[14px] text-sx-text placeholder:text-sx-text-subtle focus:border-sx-accent focus:outline-none"
               />
 
               {/* Voice Button */}
@@ -825,7 +801,7 @@ export function GrowthAssistantChat({ tenantId, initialSessions }: { tenantId: s
                 onClick={toggleVoiceRecording}
                 disabled={pending}
                 title="Voice Input"
-                className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-sx-sm border transition-colors ${
+                className={`flex h-9 w-9 sm:h-10 sm:w-10 shrink-0 items-center justify-center rounded-sx-sm border transition-colors ${
                   isRecording
                     ? "border-red-500 bg-red-500/15 text-red-500"
                     : "border-sx-border bg-sx-surface-2 text-sx-text-muted hover:text-sx-text"
@@ -841,7 +817,7 @@ export function GrowthAssistantChat({ tenantId, initialSessions }: { tenantId: s
               <button
                 type="submit"
                 disabled={pending || uploadingAttachment || (!input.trim() && !uploadedAttachmentId)}
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-sx-sm bg-sx-accent text-sx-accent-on disabled:opacity-40 hover:bg-sx-accent/90 transition-colors"
+                className="flex h-9 w-9 sm:h-10 sm:w-10 shrink-0 items-center justify-center rounded-sx-sm bg-sx-accent text-sx-accent-on disabled:opacity-40 hover:bg-sx-accent/90 transition-colors"
                 aria-label="Send message"
               >
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M5 12h14M12 5l7 7-7 7" /></svg>

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import ReactMarkdown, { type Components } from "react-markdown";
 
 /**
@@ -18,11 +19,20 @@ const MARKDOWN_COMPONENTS: Components = {
   h2: ({ children }) => <p className="mt-2 text-[14px] font-semibold text-sx-text">{children}</p>,
   h3: ({ children }) => <p className="mt-2 text-[14px] font-semibold text-sx-text">{children}</p>,
   code: ({ children }) => <code className="rounded bg-sx-surface-2 px-1 py-0.5 text-[12px] text-sx-accent">{children}</code>,
-  a: ({ children, href }) => (
-    <a href={href} target="_blank" rel="noreferrer" className="text-sx-accent underline">
-      {children}
-    </a>
-  ),
+  a: ({ children, href }) => {
+    if (href && href.startsWith("/")) {
+      return (
+        <Link href={href} className="inline-flex items-center gap-1 font-semibold text-sx-accent hover:underline">
+          {children}
+        </Link>
+      );
+    }
+    return (
+      <a href={href} target="_blank" rel="noreferrer" className="text-sx-accent underline">
+        {children}
+      </a>
+    );
+  },
 };
 
 export function SxAgentMarkdown({ content }: { content: string }) {

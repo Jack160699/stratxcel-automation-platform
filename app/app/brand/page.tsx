@@ -20,9 +20,9 @@ interface BrandBrainContent {
   business_phone?: string;
   /** Weekly hours as one free-text line (e.g. "Mon–Sat: 8:00 AM – 9:30 PM") — kept as a single field like every other Brand Brain string, not a structured per-day schema. */
   business_hours?: string;
-  /** Short catalog/service tags — Shop Profile's "Catalog & Services" chips. */
+  /** Short catalog/service tags — Brand Center's "Catalog & Services" chips. */
   catalog_tags?: string[];
-  /** Short highlight lines — Shop Profile's "Business Highlights". */
+  /** Short highlight lines — Brand Center's "Business Highlights". */
   highlights?: string[];
   positioning?: string;
   tone_of_voice?: string;
@@ -45,15 +45,15 @@ interface ShopPhoto {
 
 const EMPTY: BrandBrainContent = {};
 
-/** Weekend-hours check for the Shop Profile screen's warning — a real, deterministic read of the business_hours text (no fabricated static warning). */
+/** Weekend-hours check for the Brand Center screen's warning — a real, deterministic read of the business_hours text (no fabricated static warning). */
 function missingWeekendHours(hours: string | undefined): boolean {
   if (!hours || !hours.trim()) return true;
   return !/sat|sun|weekend/i.test(hours);
 }
 
 /**
- * Shop Profile — StratXcel App reference (Claude Design project
- * 6c2ad0a0-c8c8-47d1-a79d-3a1b255a7b01, "Shop Profile" screen). Rebuilt
+ * Brand Center — StratXcel App reference (Claude Design project
+ * 6c2ad0a0-c8c8-47d1-a79d-3a1b255a7b01, "Brand Center" screen). Rebuilt
  * around that reference's card composition (Business Info, Location &
  * Hours, Catalog & Services, Business Highlights, Photos & Logo, Digital
  * Presence) using the real, tenant-scoped Brand Brain content —
@@ -95,7 +95,7 @@ export default function BrandPage() {
     setVersion(null);
     const result = await loadCustomerJson<{ brandBrain?: { content?: BrandBrainContent; current_version?: number } | null }>(
       () => fetch(`/api/platform/brand?tenantId=${encodeURIComponent(tenantId)}`),
-      "We couldn't load your Brand Brain. Please try again."
+      "We couldn't load your Brand details right now."
     );
     if (requestId !== loadSequence.current) return;
     setLoading(false);
@@ -112,7 +112,7 @@ export default function BrandPage() {
     setPhotosError(null);
     const result = await loadCustomerJson<{ photos: ShopPhoto[] }>(
       () => fetch(`/api/platform/brand/photos?tenantId=${encodeURIComponent(tenantId)}`),
-      "We couldn't load your shop photos."
+      "We couldn't load your brand photos right now."
     );
     if (result.status === "error") {
       setPhotosError(result.message);
@@ -139,12 +139,12 @@ export default function BrandPage() {
     try {
       const result = await loadCustomerJson<{ version: { version: number } }>(
         () =>
-          fetch("/api/platform/brand", {
+          fetch(`/api/platform/brand?tenantId=${encodeURIComponent(tenantId)}`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ tenantId, content }),
+            body: JSON.stringify({ content }),
           }),
-        "We couldn't save your Brand Brain. Please try again."
+        "We couldn't save your Brand details right now."
       );
       if (result.status === "error") {
         setError(result.message);
@@ -152,6 +152,7 @@ export default function BrandPage() {
       }
       setVersion(result.data.version.version);
       setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
       trackFunnel("brand_brain_completed", { surface: "app_brand" });
     } finally {
       setSaving(false);
@@ -163,40 +164,26 @@ export default function BrandPage() {
     setUploadingPhoto(true);
     setPhotosError(null);
     try {
-      const prepareResult = await loadCustomerJson<{ assetId: string; signedUrl: string }>(
-        () =>
-          fetch("/api/platform/brand/photos", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ tenantId, action: "prepare", name: file.name, mimeType: file.type, sizeBytes: file.size }),
-          }),
-        "We couldn't start that photo upload."
-      );
-      if (prepareResult.status === "error") {
-        setPhotosError(prepareResult.message);
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("tenantId", tenantId);
+      const res = await fetch("/api/platform/brand/photos", {
+        method: "POST",
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setPhotosError(data.error || "We couldn't upload your photo right now.");
         return;
       }
-      const { assetId, signedUrl } = prepareResult.data;
-      try {
-        await uploadToSignedUrlWithProgress(signedUrl, file, () => undefined);
-      } catch {
-        setPhotosError("The photo upload failed partway through. Please try again.");
-        return;
+      if (data.photo) {
+        setPhotos((prev) => [data.photo, ...prev]);
+        if (!content?.logo_url) {
+          field("logo_url", data.photo.public_url);
+        }
       }
-      const finalizeResult = await loadCustomerJson(
-        () =>
-          fetch("/api/platform/brand/photos", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ tenantId, action: "finalize", assetId }),
-          }),
-        "The photo uploaded but couldn't be confirmed."
-      );
-      if (finalizeResult.status === "error") {
-        setPhotosError(finalizeResult.message);
-        return;
-      }
-      await loadPhotos();
+    } catch {
+      setPhotosError("We couldn't upload your photo right now.");
     } finally {
       setUploadingPhoto(false);
     }
@@ -217,8 +204,8 @@ export default function BrandPage() {
       <header className="flex flex-col gap-1">
         <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h1 className="text-2xl font-semibold text-sx-text">Shop Profile{active ? ` · ${active.name}` : ""}</h1>
-            <p className="sx-hi text-xs text-sx-text-subtle">दुकान की जानकारी</p>
+            <h1 className="text-2xl font-semibold text-sx-text">Brand Center{active ? ` · ${active.name}` : ""}</h1>
+            <p className="text-xs text-sx-text-subtle">Manage your business profile, operating hours, brand voice, and logo mark</p>
           </div>
           <Button variant="primary" size="cta" onClick={save} disabled={readOnly || saving || !content}>
             {saving ? "Saving…" : saved ? "Saved ✓" : "Save Changes"}
