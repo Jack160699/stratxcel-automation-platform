@@ -24,11 +24,17 @@ type EmailState =
  * are real (lib/constants.js's WHATSAPP_NUMBER, the existing /contact route).
  */
 export default function SettingsPage() {
-  const { active } = useCurrentTenant();
+  const { active, userEmail } = useCurrentTenant();
   const { theme, setTheme } = useTheme();
-  const [emailState, setEmailState] = useState<EmailState>({ status: "loading", email: null });
+  const [emailState, setEmailState] = useState<EmailState>(() =>
+    userEmail ? { status: "success", email: userEmail } : { status: "loading", email: null }
+  );
 
   useEffect(() => {
+    if (userEmail) {
+      setEmailState({ status: "success", email: userEmail });
+      return;
+    }
     let current = true;
     async function loadEmail() {
       try {
@@ -47,7 +53,7 @@ export default function SettingsPage() {
     return () => {
       current = false;
     };
-  }, []);
+  }, [userEmail]);
 
   const emailLabel =
     emailState.status === "loading"

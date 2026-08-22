@@ -85,11 +85,13 @@ export default function CopilotPage() {
       }
     }
 
-    loadSubscription();
-    loadWallet();
-    loadMissions();
-    loadApprovals();
-    loadArtifacts();
+    void Promise.all([
+      loadSubscription(),
+      loadWallet(),
+      loadMissions(),
+      loadApprovals(),
+      loadArtifacts(),
+    ]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenantId]);
 

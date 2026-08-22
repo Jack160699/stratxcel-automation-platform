@@ -274,13 +274,21 @@ export async function GET(request: Request) {
 
   const { supabase: serviceDb } = getTenantServiceContext();
 
-  const { data: subscription } = await serviceDb
-    .from("subscriptions")
-    .select("*")
-    .eq("tenant_id", tenantId)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  const [
+    { data: subscription },
+    billingProfile,
+    invoices,
+  ] = await Promise.all([
+    serviceDb
+      .from("subscriptions")
+      .select("id, plan_tier, price_cents, status, current_period_start, current_period_end, cancel_at_period_end, pending_plan_tier, grace_period_end, billing_provider, provider_status, provider_short_url, next_charge_at, last_charged_at, payment_link_id, next_renewal_link_id")
+      .eq("tenant_id", tenantId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    getBillingProfile(serviceDb, tenantId),
+    listInvoicesForTenant(serviceDb, tenantId),
+  ]);
 
   let paymentUrl: string | null = null;
   if (subscription && isProviderManagedSubscription(subscription)) {
@@ -297,11 +305,6 @@ export async function GET(request: Request) {
     const { data: link } = await serviceDb.from("payment_links").select("short_url, status").eq("id", subscription.next_renewal_link_id).maybeSingle();
     if (link?.status === "created") paymentUrl = link.short_url;
   }
-
-  const [billingProfile, invoices] = await Promise.all([
-    getBillingProfile(serviceDb, tenantId),
-    listInvoicesForTenant(serviceDb, tenantId),
-  ]);
 
   return Response.json(
     {

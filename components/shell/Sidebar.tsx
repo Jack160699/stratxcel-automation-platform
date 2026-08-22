@@ -87,6 +87,7 @@ export function Sidebar({
                   <Link
                     key={item.key}
                     href={item.href}
+                    prefetch={true}
                     aria-current={active ? "page" : undefined}
                     className={`flex h-11 min-w-0 items-center gap-2.5 rounded-sx-sm px-3 transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sx-accent ${
                       active ? "bg-sx-accent-muted text-sx-accent" : "text-sx-text-muted hover:bg-sx-surface-2 hover:text-sx-text"

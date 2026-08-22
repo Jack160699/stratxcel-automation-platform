@@ -8,55 +8,75 @@ export async function getSearchGrowthDashboardData(
 ): Promise<SearchGrowthDashboardData> {
   const now = new Date().toISOString();
 
-  // 1. Fetch Tenant Project
-  const { data: project } = await db
-    .from("search_projects")
-    .select("*")
-    .eq("tenant_id", tenantId)
-    .maybeSingle();
+  // Parallel fetch of all independent project and measurement state
+  const [
+    { data: project },
+    { data: subscription },
+    { data: compSnapshotRow },
+    { data: gscSnapshotRow },
+    { data: strategyState },
+    { data: actionRows },
+  ] = await Promise.all([
+    // 1. Fetch Tenant Project
+    db
+      .from("search_projects")
+      .select("name, property_url")
+      .eq("tenant_id", tenantId)
+      .maybeSingle(),
+    // 2. Fetch Subscription & Entitlements
+    db
+      .from("subscriptions")
+      .select("plan_tier, status")
+      .eq("tenant_id", tenantId)
+      .eq("status", "active")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    // 3. Fetch Latest Competitor Intelligence Snapshot
+    db
+      .from("search_measurement_snapshots")
+      .select("values, dimensions, availability_state, unavailable_reason, created_at")
+      .eq("tenant_id", tenantId)
+      .eq("source", "competitor_intelligence")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    // 4. Fetch GSC Telemetry Snapshot
+    db
+      .from("search_measurement_snapshots")
+      .select("values, availability_state, created_at")
+      .eq("tenant_id", tenantId)
+      .eq("source", "search_console")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    // 5. Fetch Strategy State
+    db
+      .from("search_strategy_states")
+      .select("current_mode, movement_status, active_alerts, last_evaluated_at, growth_timeline")
+      .eq("tenant_id", tenantId)
+      .maybeSingle(),
+    // 6. Fetch Actions & Opportunities
+    db
+      .from("search_actions")
+      .select("id, execution_state, target_url, before_evidence, after_evidence, verification_result, updated_at, search_recommendations(proposed_change, search_opportunities(business_rationale, category, severity, affected_url))")
+      .eq("tenant_id", tenantId)
+      .order("created_at", { ascending: false })
+      .limit(10),
+  ]);
 
   const propertyName = project?.name || "Local Business";
   const propertyUrl = project?.property_url || "https://example.com";
 
-  // 2. Fetch Subscription & Entitlements
-  const { data: subscription } = await db
-    .from("subscriptions")
-    .select("plan_tier, status")
-    .eq("tenant_id", tenantId)
-    .eq("status", "active")
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
   const planTier = subscription?.plan_tier || "free";
   const isPaidTenant = planTier !== "free" && subscription?.status === "active";
   const canExecute = isPaidTenant;
-
-  // 3. Fetch Latest Competitor Intelligence Snapshot
-  const { data: compSnapshotRow } = await db
-    .from("search_measurement_snapshots")
-    .select("values, dimensions, availability_state, unavailable_reason, created_at")
-    .eq("tenant_id", tenantId)
-    .eq("source", "competitor_intelligence")
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
 
   const compValues = (compSnapshotRow?.values as any) || {};
   const whyTheyWin = compValues.whyTheyWin || [];
   const competitors = compValues.competitors || [];
   const targetQueries = compValues.targetQueries || [];
   const authorityScoreBreakdown = compValues.authorityScore || {};
-
-  // 4. Fetch GSC Telemetry Snapshot
-  const { data: gscSnapshotRow } = await db
-    .from("search_measurement_snapshots")
-    .select("values, availability_state")
-    .eq("tenant_id", tenantId)
-    .eq("source", "search_console")
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
 
   const gscRows: any[] = (gscSnapshotRow?.values as any)?.rows || [];
   const gscTotalClicks = gscRows.reduce((sum: number, r: any) => sum + (r.clicks || 0), 0);
@@ -65,21 +85,6 @@ export async function getSearchGrowthDashboardData(
     gscRows.length > 0
       ? Number((gscRows.reduce((sum: number, r: any) => sum + (r.position || 0), 0) / gscRows.length).toFixed(1))
       : null;
-
-  // 5. Fetch Strategy State
-  const { data: strategyState } = await db
-    .from("search_strategy_states")
-    .select("*")
-    .eq("tenant_id", tenantId)
-    .maybeSingle();
-
-  // 6. Fetch Actions & Opportunities
-  const { data: actionRows } = await db
-    .from("search_actions")
-    .select("*, search_recommendations(*, search_opportunities(*))")
-    .eq("tenant_id", tenantId)
-    .order("created_at", { ascending: false })
-    .limit(10);
 
   const actions = (actionRows || []).map((a: any) => {
     const opp = a.search_recommendations?.search_opportunities;

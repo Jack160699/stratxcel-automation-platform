@@ -1,3 +1,5 @@
+import { cache } from "react";
+
 export function isMissingRelation(error: { message?: string; code?: string } | null | undefined): boolean {
   if (!error) return false;
   return error.code === "PGRST205"
@@ -9,7 +11,7 @@ export function isMissingRelation(error: { message?: string; code?: string } | n
  * null = this tenant's current Audit was archived and must not be shown as current.
  * string = current order id.
  */
-export async function resolveCurrentAuditOrderId(
+export const resolveCurrentAuditOrderId = cache(async function resolveCurrentAuditOrderId(
   service: { from: (table: string) => unknown },
   tenantId: string,
 ): Promise<string | null | undefined> {
@@ -29,4 +31,5 @@ export async function resolveCurrentAuditOrderId(
     .maybeSingle();
   if (error || !data) return undefined;
   return data.current_audit_order_id ?? null;
-}
+});
+

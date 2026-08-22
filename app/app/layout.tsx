@@ -104,7 +104,12 @@ export default async function ClientLayout({ children }: { children: ReactNode }
   const showPlanPrompt = false;
 
   return (
-    <CurrentTenantProvider initialTenants={tenants} initialActive={active}>
+    <CurrentTenantProvider
+      initialTenants={tenants}
+      initialActive={active}
+      userEmail={identity.email ?? null}
+      userName={identity.profileName ?? null}
+    >
       <ClientAppShell
         tenantId={active.tenantId}
         email={identity.email ?? ""}

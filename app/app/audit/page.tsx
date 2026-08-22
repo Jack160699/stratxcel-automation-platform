@@ -129,7 +129,10 @@ export default function AuditHubPage() {
   useEffect(() => {
     if (!order || order.status !== "in_review") return;
     if (generation && ["COMPLETED", "NEEDS_REVIEW", "FAILED", "STOPPED"].includes(generation.status)) return;
-    const timer = window.setInterval(() => void load(), 5_000);
+    const timer = window.setInterval(() => {
+      if (typeof document !== "undefined" && document.hidden) return;
+      void load();
+    }, 5_000);
     return () => window.clearInterval(timer);
   }, [order, generation, load]);
 

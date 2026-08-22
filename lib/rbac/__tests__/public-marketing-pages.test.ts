@@ -86,10 +86,10 @@ function run() {
   );
 
   const headerSource = read("app", "components", "PublicHeader.tsx");
-  assert.ok(/ProductMegaMenu/.test(headerSource), "PublicHeader must mount ProductMegaMenu");
-  assert.ok(/MobileProductsAccordion/.test(headerSource), "PublicHeader must mount MobileProductsAccordion");
-  assert.ok(/aria-haspopup="true"/.test(read("app", "components", "public", "product-suite", "ProductMegaMenu.tsx")));
+  assert.ok(/SECONDARY_LINKS/.test(headerSource), "PublicHeader must have SECONDARY_LINKS");
   assert.ok(/href:\s*["']\/solutions["']/.test(headerSource), "PublicHeader must link Solutions to /solutions");
+  assert.ok(/href:\s*["']\/pricing["']/.test(headerSource), "PublicHeader must link Pricing to /pricing");
+  assert.ok(/href:\s*["']\/how-it-works["']/.test(headerSource), "PublicHeader must link How it works to /how-it-works");
   assert.ok(/inert=\{open \|\| undefined\}/.test(headerSource));
   assert.ok(/event\.key !== "Tab"/.test(headerSource));
 

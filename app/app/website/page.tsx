@@ -8,8 +8,17 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { ErrorState } from "@/components/ui/Feedback";
-import { SmartWebsiteCreator } from "@/components/site-builder/SmartWebsiteCreator";
-import { CustomerDomainManager } from "@/components/site-builder/CustomerDomainManager";
+import dynamic from "next/dynamic";
+
+const SmartWebsiteCreator = dynamic(
+  () => import("@/components/site-builder/SmartWebsiteCreator").then((mod) => mod.SmartWebsiteCreator),
+  { loading: () => <div className="p-6 text-center text-xs text-sx-text-subtle">Loading Website Creator…</div> }
+);
+
+const CustomerDomainManager = dynamic(
+  () => import("@/components/site-builder/CustomerDomainManager").then((mod) => mod.CustomerDomainManager),
+  { loading: () => <div className="p-4 text-xs text-sx-text-subtle">Loading domain settings…</div> }
+);
 
 interface WebsiteProject {
   id: string;

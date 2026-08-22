@@ -89,7 +89,7 @@ export async function getSession(ctx: AgentReadContext, sessionId: string): Prom
 export async function listSessions(ctx: AgentReadContext, limit = 30): Promise<AgentSessionRow[]> {
   const { data } = await ctx.supabase
     .from("social_agent_sessions")
-    .select("*")
+    .select("id, owner_id, tenant_id, title, status, context, created_at, updated_at")
     .order("updated_at", { ascending: false })
     .limit(limit);
   return (data ?? []) as AgentSessionRow[];
@@ -104,7 +104,7 @@ export async function insertMessage(ctx: AgentReadContext, sessionId: string, ro
 export async function loadHistory(ctx: AgentReadContext, sessionId: string, limit = 40): Promise<AgentMessageRow[]> {
   const { data } = await ctx.supabase
     .from("social_agent_messages")
-    .select("*")
+    .select("id, session_id, role, content, parts, created_at")
     .eq("session_id", sessionId)
     .order("created_at", { ascending: true })
     .limit(limit);

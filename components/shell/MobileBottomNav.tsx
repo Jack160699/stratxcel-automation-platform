@@ -85,6 +85,7 @@ export function MobileBottomNav({
               <Link
                 key={item.key}
                 href={item.href}
+                prefetch={true}
                 aria-current={active ? "page" : undefined}
                 className={`relative flex min-h-11 min-h-[48px] flex-col items-center justify-center gap-1 ${customer ? "active:scale-95 transition-transform" : ""}`}
               >
@@ -133,6 +134,7 @@ export function MobileBottomNav({
                     <Link
                       key={item.key}
                       href={item.href}
+                      prefetch={true}
                       onClick={() => setMoreOpen(false)}
                       className={
                         customer

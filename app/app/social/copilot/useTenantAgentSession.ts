@@ -64,6 +64,7 @@ export function useTenantAgentSession(
     (runId: string) => {
       stopPolling();
       const poll = () => {
+        if (typeof document !== "undefined" && document.hidden) return;
         fetch(`/api/platform/social/copilot/runs/${encodeURIComponent(runId)}?tenantId=${encodeURIComponent(tenantId)}`, { cache: "no-store" })
           .then((response) => {
             if (!response.ok) throw new Error("Could not load run");

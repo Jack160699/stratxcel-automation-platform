@@ -66,9 +66,8 @@ export default function AdsPage() {
   }
 
   useEffect(() => {
-    loadMissions();
-    loadApprovals();
-    loadArtifacts();
+    if (!tenantId) return;
+    void Promise.all([loadMissions(), loadApprovals(), loadArtifacts()]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenantId]);
 

@@ -9,6 +9,8 @@ interface CurrentTenantContextValue {
   tenants: WorkspaceTenant[];
   active: WorkspaceTenant | null;
   switching: boolean;
+  userEmail?: string | null;
+  userName?: string | null;
   switchTenant: (tenantId: string) => Promise<void>;
 }
 
@@ -26,10 +28,14 @@ const CurrentTenantContext = createContext<CurrentTenantContextValue | null>(nul
 export function CurrentTenantProvider({
   initialTenants,
   initialActive,
+  userEmail = null,
+  userName = null,
   children,
 }: {
   initialTenants: WorkspaceTenant[];
   initialActive: WorkspaceTenant | null;
+  userEmail?: string | null;
+  userName?: string | null;
   children: ReactNode;
 }) {
   const router = useRouter();
@@ -54,7 +60,7 @@ export function CurrentTenantProvider({
   );
 
   return (
-    <CurrentTenantContext.Provider value={{ tenants: initialTenants, active, switching, switchTenant }}>
+    <CurrentTenantContext.Provider value={{ tenants: initialTenants, active, switching, userEmail, userName, switchTenant }}>
       {children}
     </CurrentTenantContext.Provider>
   );
