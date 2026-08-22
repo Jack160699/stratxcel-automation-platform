@@ -18,22 +18,23 @@ import type { NavGroupData } from "./nav-types";
  */
 export const APP_NAV_GROUPS_DATA: NavGroupData[] = [
   {
-    // Primary destinations — StratXcel Desktop canvas shows these four with
-    // no group label in the sidebar (Sidebar's customer branch never renders
-    // group.label), above a divider from the account/settings group below.
-    // The label still exists here for the mobile "More" sheet's section
+    // Primary destinations — StratXcel App canonical IA: Home, Audit, Growth
+    // (the customer-facing Growth Assistant / social copilot), Brand (Shop
+    // Profile). These four form the bottom dock; More sheet holds everything
+    // else. The label still exists here for the mobile "More" sheet's section
     // heading (components/shell/MobileBottomNav.tsx).
     label: "Overview",
     items: [
       { key: "home", label: "Home", href: "/app", release: "v1", labelHi: "होम" },
       { key: "customer-audit", label: "Audit", href: "/app/audit", release: "v1", labelHi: "जाँच" },
-      { key: "copilot", label: "Growth Assistant", href: "/app/social/copilot", release: "v1", labelHi: "सहायक" },
-      { key: "brand", label: "Shop Profile", href: "/app/brand", release: "v1", labelHi: "व्यापार" },
+      { key: "copilot", label: "Growth", href: "/app/social/copilot", release: "v1", labelHi: "ग्रोथ" },
+      { key: "brand", label: "Brand", href: "/app/brand", release: "v1", labelHi: "व्यापार" },
     ],
   },
   {
-    label: "Account",
+    label: "More",
     items: [
+      { key: "growth-analytics", label: "Growth Analytics", href: "/app/growth", release: "v1", labelHi: "विकास" },
       { key: "website", label: "Website & Domain", href: "/app/website", release: "v1", labelHi: "वेबसाइट" },
       { key: "integrations", label: "Connected Accounts", href: "/app/integrations", release: "v1", labelHi: "कनेक्शन" },
       { key: "billing", label: "Plan & Billing", href: "/app/billing", release: "v1", labelHi: "भुगतान" },
@@ -43,5 +44,5 @@ export const APP_NAV_GROUPS_DATA: NavGroupData[] = [
   },
 ];
 
-/** Mobile primary dock: Home, Audit, Copilot, Business — More sheet holds Website, Connectors, Billing, Team, Settings. */
+/** Mobile primary dock: Home | Audit | Growth | Brand — More sheet holds Growth Analytics, Website, Connectors, Billing, Staff, Settings. */
 export const APP_MOBILE_NAV_KEYS = ["home", "customer-audit", "copilot", "brand"];

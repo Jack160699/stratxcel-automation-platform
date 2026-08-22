@@ -3,7 +3,7 @@ import type { SidebarNavGroup, SidebarNavItem } from "@/components/shell/Sidebar
 import { APP_NAV_GROUPS_DATA, APP_MOBILE_NAV_KEYS } from "./app-nav-data";
 import { flattenNavGroups, resolveActiveKey as resolveActiveKeyGeneric } from "./active-route";
 import { NAV_ICONS, DocIcon } from "./shared-icons";
-import { HouseIcon, AuditCheckIcon, ChatDotsIcon, StorefrontIcon } from "./app-nav-icons";
+import { HouseIcon, AuditCheckIcon, GrowthIcon, StorefrontIcon } from "./app-nav-icons";
 
 /**
  * Icon overrides for keys that only exist in /app's own nav (never shared
@@ -15,7 +15,7 @@ import { HouseIcon, AuditCheckIcon, ChatDotsIcon, StorefrontIcon } from "./app-n
 const APP_ICON_OVERRIDES: Record<string, ReactNode> = {
   home: <HouseIcon />,
   "customer-audit": <AuditCheckIcon />,
-  copilot: <ChatDotsIcon />,
+  copilot: <GrowthIcon />,
   brand: <StorefrontIcon />,
 };
 

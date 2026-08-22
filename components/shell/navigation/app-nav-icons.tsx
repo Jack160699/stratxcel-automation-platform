@@ -1,10 +1,9 @@
 /**
- * Icons for the four primary /app nav destinations, matching the StratXcel
- * Desktop Claude Design canvas (Claude Design project
- * 6c2ad0a0-c8c8-47d1-a79d-3a1b255a7b01) exactly. Deliberately separate from
- * shared-icons.tsx's NAV_ICONS record — those icons are shared with /admin,
- * and none of these four keys (home, customer-audit, copilot, brand) carry
- * the same meaning there, so this file stays app-navigation.tsx-only.
+ * Icons for the four primary /app nav destinations.
+ * Matches the StratXcel App canonical IA: Home, Audit, Growth, Brand.
+ * Deliberately separate from shared-icons.tsx's NAV_ICONS record — those
+ * icons are shared with /admin, and none of these keys carry the same
+ * meaning there.
  */
 export function HouseIcon() {
   return (
@@ -22,6 +21,16 @@ export function AuditCheckIcon() {
   );
 }
 
+/** Growth / Growth Assistant — upward chart icon reflecting the Growth IA label. */
+export function GrowthIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
+    </svg>
+  );
+}
+
+/** Kept for any legacy imports. */
 export function ChatDotsIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
