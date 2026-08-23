@@ -286,21 +286,15 @@ export function VisualAuditReport({
         lockReason: "Activate Search Growth OS to authorize autonomous execution every 3 days.",
       }));
 
-  // Competitor Why They Win data
-  const competitorsList = report.whyTheyWin && report.whyTheyWin.length > 0
-    ? report.whyTheyWin
-    : [
-        {
-          competitorDomain: "topcompetitor.in",
-          competitorName: "Market Leader",
-          gap: "Maintains dedicated location service landing pages and structured JSON-LD schema.",
-          evidence: ["3x more indexed service keywords", "Active schema on all primary landing pages"],
-          confidence: "HIGH" as const,
-          likelyReasons: ["Dedicated pages target high-intent local queries", "Rich snippet presence in Google Search"],
-          unknowns: ["Internal linking velocity", "Exact Google Ads spend"],
-          recommendedAction: "Deploy autonomous service page generator and inject LocalBusiness schema.",
-        },
-      ];
+  // Competitor Why They Win data. Previously fell back to a hardcoded
+  // placeholder-domain "Market Leader" mock entry (styled identically to a
+  // real HIGH CONFIDENCE finding) whenever the audit had no real competitor
+  // data -- found live during E2E testing: report_data.whyTheyWin was
+  // genuinely null (matching the report's own "zero grounded evidence
+  // sources" executive summary), yet the UI still presented a fabricated
+  // named competitor as verified research. Now shows nothing fake; the
+  // empty-state message below is rendered instead when this is empty.
+  const competitorsList = report.whyTheyWin ?? [];
 
   return (
     <div className="mx-auto w-full max-w-5xl lg:max-w-6xl xl:max-w-7xl space-y-8 px-4 py-6 sm:px-6 sm:py-8 lg:px-8 font-sans">
@@ -558,113 +552,161 @@ export function VisualAuditReport({
           </p>
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-2">
-          {competitorsList.map((wtw, idx) => (
-            <div
-              key={idx}
-              className="rounded-sx-md border border-sx-border bg-sx-surface-1 p-5 flex flex-col justify-between space-y-4"
-            >
-              <div>
-                <div className="flex items-center justify-between gap-2 mb-2">
-                  <span className="text-xs font-bold text-sx-danger font-mono">{wtw.competitorDomain}</span>
-                  <span className="rounded bg-sx-danger/10 px-2 py-0.5 text-[10px] font-bold text-sx-danger">
-                    {wtw.confidence || "HIGH"} CONFIDENCE
-                  </span>
-                </div>
-                <h3 className="font-semibold text-sm text-sx-text">{wtw.competitorName}</h3>
-                <div className="mt-2 text-xs font-medium text-sx-text">
-                  <span className="text-sx-danger font-bold">{wtw.competitorName} appears ahead because: </span>
-                  {wtw.gap || wtw.summary || "They maintain dedicated location-specific landing pages and deeper schema coverage."}
-                </div>
-
-                {/* Evidence Points */}
-                {wtw.evidence && wtw.evidence.length > 0 && (
-                  <div className="mt-3 space-y-1.5 text-xs text-sx-text-muted bg-sx-surface-2/60 p-3 rounded-sx-sm border border-sx-border/60">
-                    <div className="text-[11px] font-bold uppercase tracking-wider text-sx-text-subtle">Observed Evidence</div>
-                    {wtw.evidence.map((ev, evIdx) => (
-                      <div key={evIdx} className="flex items-start gap-1.5">
-                        <span className="text-sx-accent font-bold">•</span>
-                        <span>{ev}</span>
-                      </div>
-                    ))}
+        {competitorsList.length > 0 ? (
+          <div className="grid gap-4 sm:grid-cols-2">
+            {competitorsList.map((wtw, idx) => (
+              <div
+                key={idx}
+                className="rounded-sx-md border border-sx-border bg-sx-surface-1 p-5 flex flex-col justify-between space-y-4"
+              >
+                <div>
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <span className="text-xs font-bold text-sx-danger font-mono">{wtw.competitorDomain}</span>
+                    <span className="rounded bg-sx-danger/10 px-2 py-0.5 text-[10px] font-bold text-sx-danger">
+                      {wtw.confidence || "HIGH"} CONFIDENCE
+                    </span>
                   </div>
-                )}
-
-                {/* Explicit Unknowns */}
-                {wtw.unknowns && wtw.unknowns.length > 0 && (
-                  <div className="mt-3 rounded-sx-sm border border-sx-border/60 bg-sx-surface-2/40 p-2.5 space-y-1 text-[11px] text-sx-text-subtle">
-                    <span className="font-semibold text-sx-text-muted">Unmeasured / Unknowns:</span>
-                    {wtw.unknowns.map((un, unIdx) => (
-                      <p key={unIdx}>· {un}</p>
-                    ))}
+                  <h3 className="font-semibold text-sm text-sx-text">{wtw.competitorName}</h3>
+                  <div className="mt-2 text-xs font-medium text-sx-text">
+                    <span className="text-sx-danger font-bold">{wtw.competitorName} appears ahead because: </span>
+                    {wtw.gap || wtw.summary || "They maintain dedicated location-specific landing pages and deeper schema coverage."}
                   </div>
-                )}
-              </div>
 
-              {/* Recommended Action */}
-              <div className="pt-3 border-t border-sx-border/60 text-xs">
-                <span className="font-semibold text-sx-text">Recommended Counter-Action:</span>
-                <p className="mt-1 text-xs text-sx-success leading-relaxed">{wtw.recommendedAction}</p>
+                  {/* Evidence Points */}
+                  {wtw.evidence && wtw.evidence.length > 0 && (
+                    <div className="mt-3 space-y-1.5 text-xs text-sx-text-muted bg-sx-surface-2/60 p-3 rounded-sx-sm border border-sx-border/60">
+                      <div className="text-[11px] font-bold uppercase tracking-wider text-sx-text-subtle">Observed Evidence</div>
+                      {wtw.evidence.map((ev, evIdx) => (
+                        <div key={evIdx} className="flex items-start gap-1.5">
+                          <span className="text-sx-accent font-bold">•</span>
+                          <span>{ev}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Explicit Unknowns */}
+                  {wtw.unknowns && wtw.unknowns.length > 0 && (
+                    <div className="mt-3 rounded-sx-sm border border-sx-border/60 bg-sx-surface-2/40 p-2.5 space-y-1 text-[11px] text-sx-text-subtle">
+                      <span className="font-semibold text-sx-text-muted">Unmeasured / Unknowns:</span>
+                      {wtw.unknowns.map((un, unIdx) => (
+                        <p key={unIdx}>· {un}</p>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Recommended Action */}
+                <div className="pt-3 border-t border-sx-border/60 text-xs">
+                  <span className="font-semibold text-sx-text">Recommended Counter-Action:</span>
+                  <p className="mt-1 text-xs text-sx-success leading-relaxed">{wtw.recommendedAction}</p>
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        ) : (
+          <div className="rounded-sx-sm border border-dashed border-sx-border p-4 text-center bg-sx-surface-2/40">
+            <p className="text-xs text-sx-text-muted">
+              Not enough verified data to name specific competitors yet. Connect Search Console and your Google Business Profile so StratXcel can identify who is actually outranking you.
+            </p>
+          </div>
+        )}
       </section>
 
-      {/* 6. TECHNICAL SEO & CONTENT GAPS & AI SEARCH */}
+      {/* 6. TECHNICAL SEO & CONTENT GAPS & AI SEARCH
+          Found live during E2E testing: all three cards below were 100%
+          hardcoded static generic-sounding checklist copy plus hardcoded
+          78/65 score fallbacks -- shown identically for every business
+          regardless of report_data, which was confirmed genuinely null
+          for all three fields on a real completed run (quality_outcome
+          PASS). Now driven by the real typed fields
+          (technicalSeoFindings/contentCoverage/aiSearchReadiness) with an
+          honest empty state matching the Search Console section's
+          pattern when a field has no data yet. */}
       <section className="grid gap-4 sm:grid-cols-3">
         {/* Technical SEO */}
         <div className="rounded-sx-md border border-sx-border bg-sx-surface-1 p-5 space-y-3">
           <div className="flex items-center justify-between">
             <h2 className="font-sx-sans text-sm font-bold text-sx-text">4. Technical SEO</h2>
-            <span className="rounded bg-sx-success/10 px-2 py-0.5 text-xs font-bold text-sx-success">
-              Score: {report.technicalSeoFindings?.score ?? 78}/100
-            </span>
+            {report.technicalSeoFindings && (
+              <span className="rounded bg-sx-success/10 px-2 py-0.5 text-xs font-bold text-sx-success">
+                Score: {report.technicalSeoFindings.score}/100
+              </span>
+            )}
           </div>
           <p className="text-xs text-sx-text-muted">
             Evaluated by StratXcel crawler across meta titles, canonicals, robots.txt, schema, and page speeds.
           </p>
-          <ul className="space-y-1.5 text-xs text-sx-text-muted pt-1">
-            <li className="flex items-center gap-1.5"><span className="text-sx-success font-bold">✓</span> HTTPS & Canonical safety verified</li>
-            <li className="flex items-center gap-1.5"><span className="text-sx-success font-bold">✓</span> Sitemap & Robots.txt accessible</li>
-            <li className="flex items-center gap-1.5"><span className="text-sx-warning font-bold">!</span> JSON-LD structured data missing on subpages</li>
-          </ul>
+          {report.technicalSeoFindings ? (
+            <ul className="space-y-1.5 text-xs text-sx-text-muted pt-1">
+              {report.technicalSeoFindings.criticalIssues.map((issue, i) => (
+                <li key={`issue-${i}`} className="flex items-center gap-1.5"><span className="text-sx-warning font-bold">!</span> {issue}</li>
+              ))}
+              {report.technicalSeoFindings.recommendations.map((rec, i) => (
+                <li key={`rec-${i}`} className="flex items-center gap-1.5"><span className="text-sx-success font-bold">✓</span> {rec}</li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-xs text-sx-text-subtle italic pt-1">Not enough verified data yet to run a technical crawl.</p>
+          )}
         </div>
 
         {/* Content Gaps */}
         <div className="rounded-sx-md border border-sx-border bg-sx-surface-1 p-5 space-y-3">
           <div className="flex items-center justify-between">
             <h2 className="font-sx-sans text-sm font-bold text-sx-text">5. Content & Keywords</h2>
-            <span className="rounded bg-sx-warning/10 px-2 py-0.5 text-xs font-bold text-sx-warning">
-              Gaps Identified
-            </span>
+            {report.contentCoverage && (
+              <span className="rounded bg-sx-warning/10 px-2 py-0.5 text-xs font-bold text-sx-warning">
+                Gaps Identified
+              </span>
+            )}
           </div>
           <p className="text-xs text-sx-text-muted">
             Missing high-intent keywords and target services that competitors currently capture.
           </p>
-          <ul className="space-y-1.5 text-xs text-sx-text-muted pt-1">
-            <li className="flex items-center gap-1.5"><span className="text-sx-warning font-bold">!</span> Missing dedicated service landing pages</li>
-            <li className="flex items-center gap-1.5"><span className="text-sx-warning font-bold">!</span> Low word-count on secondary pages</li>
-            <li className="flex items-center gap-1.5"><span className="text-sx-success font-bold">✓</span> Primary brand terms rank #1</li>
-          </ul>
+          {report.contentCoverage ? (
+            <ul className="space-y-1.5 text-xs text-sx-text-muted pt-1">
+              {report.contentCoverage.missingServices.map((s, i) => (
+                <li key={`svc-${i}`} className="flex items-center gap-1.5"><span className="text-sx-warning font-bold">!</span> Missing service page: {s}</li>
+              ))}
+              {report.contentCoverage.missingLocations.map((l, i) => (
+                <li key={`loc-${i}`} className="flex items-center gap-1.5"><span className="text-sx-warning font-bold">!</span> Missing location page: {l}</li>
+              ))}
+              {report.contentCoverage.weakPages.map((p, i) => (
+                <li key={`weak-${i}`} className="flex items-center gap-1.5"><span className="text-sx-warning font-bold">!</span> {p}</li>
+              ))}
+              {report.contentCoverage.recommendations.map((rec, i) => (
+                <li key={`crec-${i}`} className="flex items-center gap-1.5"><span className="text-sx-success font-bold">✓</span> {rec}</li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-xs text-sx-text-subtle italic pt-1">Not enough verified data yet to map content gaps.</p>
+          )}
         </div>
 
         {/* AI Search & AEO */}
         <div className="rounded-sx-md border border-sx-border bg-sx-surface-1 p-5 space-y-3">
           <div className="flex items-center justify-between">
             <h2 className="font-sx-sans text-sm font-bold text-sx-text">6. AI Search (AEO)</h2>
-            <span className="rounded bg-sx-accent/15 px-2 py-0.5 text-xs font-bold text-sx-accent">
-              Readiness: {report.aiSearchReadiness?.citationScore ?? 65}/100
-            </span>
+            {report.aiSearchReadiness && (
+              <span className="rounded bg-sx-accent/15 px-2 py-0.5 text-xs font-bold text-sx-accent">
+                Readiness: {report.aiSearchReadiness.citationScore}/100
+              </span>
+            )}
           </div>
           <p className="text-xs text-sx-text-muted">
             Checks entity readiness for generative search engines (ChatGPT, Perplexity, Gemini).
           </p>
-          <ul className="space-y-1.5 text-xs text-sx-text-muted pt-1">
-            <li className="flex items-center gap-1.5"><span className="text-sx-success font-bold">✓</span> Core business NAP consistency verified</li>
-            <li className="flex items-center gap-1.5"><span className="text-sx-warning font-bold">!</span> FAQ schema citations needed for LLM answers</li>
-            <li className="flex items-center gap-1.5"><span className="text-sx-success font-bold">✓</span> Public brand mentions discoverable</li>
-          </ul>
+          {report.aiSearchReadiness ? (
+            <ul className="space-y-1.5 text-xs text-sx-text-muted pt-1">
+              <li className="flex items-center gap-1.5"><span className="text-sx-accent font-bold">•</span> Entity completeness: {report.aiSearchReadiness.entityCompleteness}</li>
+              {report.aiSearchReadiness.recommendations.map((rec, i) => (
+                <li key={`aeo-${i}`} className="flex items-center gap-1.5"><span className="text-sx-warning font-bold">!</span> {rec}</li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-xs text-sx-text-subtle italic pt-1">Not enough verified data yet to score AI-search readiness.</p>
+          )}
         </div>
       </section>
 
