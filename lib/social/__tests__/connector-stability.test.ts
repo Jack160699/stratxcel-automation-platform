@@ -581,6 +581,68 @@ function createTestDb() {
   console.log("✓ REAUTH_REQUIRED is reachable via the real enum values, and disconnect still takes precedence.\n");
 }
 
+// -------------------------------------------------------------
+// TEST 8: social_accounts -- "connected" status with NO row at all in
+// social_tokens must report REAUTH_REQUIRED, not CONNECTED
+// -------------------------------------------------------------
+// Regression for a finding from live E2E testing on 2026-08-24: the exact
+// same class of bug already fixed once for search_google_connections
+// (Test 4b) was found again here, one layer over -- every social_accounts
+// row for a real production tenant carried status: CONNECTED and
+// token_health: HEALTHY while social_tokens had zero matching rows for any
+// of them (not merely an expired token; no row at all). isReauthRequired()
+// only ever checked the social_accounts row's own status/token_health
+// columns, which is exactly the value a broken or incomplete OAuth
+// callback would still leave looking healthy. Connected Accounts, Home,
+// and Audit all inherited the false-healthy answer from this one function.
+{
+  console.log("Test 8: social_accounts -- connected row with no social_tokens row at all...");
+  const { client, tables } = createTestDb();
+  const tenantId = "tenant_social_no_token_row";
+
+  // This is the exact real-world row shape found live: status/token_health
+  // both read as healthy, but social_tokens has nothing for this account —
+  // not an expired/revoked token, no token row whatsoever.
+  tables.social_accounts.push({
+    id: "acct_no_token_row",
+    tenant_id: tenantId,
+    owner_id: "owner_no_token_row",
+    platform: "google_business",
+    provider_account_id: "gbp_no_token_row",
+    username: "stratxcel@example.com",
+    display_name: "StratXcel",
+    status: "CONNECTED",
+    token_health: "HEALTHY",
+    last_sync_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  });
+  // Deliberately no push to tables.social_tokens for this account.
+
+  const status = await getBusinessConnectionStatus(client, tenantId, "google_business");
+  assert.equal(status.connectionState, "REAUTH_REQUIRED", "status=CONNECTED with zero social_tokens rows must not report CONNECTED");
+  assert.equal(status.reauthRequired, true);
+  assert.equal(status.healthState, "DEGRADED");
+
+  // A genuinely usable token must still resolve as CONNECTED — this test
+  // must not have just broken the healthy path for every other test above.
+  const tenantIdHealthy = "tenant_social_with_token_row";
+  await upsertConnectedAccount(client, {
+    ownerId: "owner_healthy",
+    tenantId: tenantIdHealthy,
+    platform: "google_business",
+    providerAccountId: "gbp_healthy",
+    username: "healthy@example.com",
+    displayName: "Healthy Business",
+    permissions: ["business.manage"],
+    accessToken: "real_access_token",
+    expiresInSeconds: 3600,
+  });
+  const healthyStatus = await getBusinessConnectionStatus(client, tenantIdHealthy, "google_business");
+  assert.equal(healthyStatus.connectionState, "CONNECTED", "a genuinely stored token must still resolve as CONNECTED");
+
+  console.log("✓ social_accounts rows with no matching social_tokens row correctly report REAUTH_REQUIRED, not a false CONNECTED.\n");
+}
+
 console.log("===============================================================");
-console.log("ALL DIGITAL PRESENCE & CONNECTOR STABILITY TESTS PASSED (7/7)!");
+console.log("ALL DIGITAL PRESENCE & CONNECTOR STABILITY TESTS PASSED (8/8)!");
 console.log("===============================================================\n");

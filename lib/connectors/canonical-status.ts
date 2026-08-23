@@ -76,7 +76,10 @@ function isSafeHttpUrl(value: string | null | undefined): value is string {
 // REAUTH_REQUIRED state was unreachable dead code. Persistence (see
 // lib/social/repositories/accounts.ts markReauthRequired) writes
 // RECONNECT_REQUIRED / EXPIRED; check those real values instead.
-function isReauthRequired(row: { status?: unknown; token_health?: unknown } | null | undefined): boolean {
+function isReauthRequired(
+  row: { id?: unknown; status?: unknown; token_health?: unknown } | null | undefined,
+  hasUsableToken?: (accountId: string) => boolean
+): boolean {
   if (!row) return false;
   const status = String(row.status).toUpperCase();
   // A deliberate customer disconnect is terminal, not broken -- never surface
@@ -88,7 +91,17 @@ function isReauthRequired(row: { status?: unknown; token_health?: unknown } | nu
   if (status === "DISCONNECTED") return false;
   if (status === "RECONNECT_REQUIRED") return true;
   const health = String(row.token_health).toUpperCase();
-  return health === "EXPIRED" || health === "REVOKED";
+  if (health === "EXPIRED" || health === "REVOKED") return true;
+  // Same gap this codebase already fixed once for GA4/Search Console (a
+  // status: "connected" row with no encrypted_refresh_token_ref was reported
+  // healthy) -- found live again here for social_accounts: a row can carry
+  // status: CONNECTED / token_health: HEALTHY with zero matching row in
+  // social_tokens at all, not merely an expired one. Every downstream
+  // consumer (Connected Accounts, Home, Audit) inherited the false-healthy
+  // answer. A CONNECTED row with no real, usable token behind it must fall
+  // through to REAUTH_REQUIRED like every other unusable-token case here.
+  if (status === "CONNECTED" && hasUsableToken && typeof row.id === "string" && !hasUsableToken(row.id)) return true;
+  return false;
 }
 
 function cleanHandle(raw: string | null | undefined): string | null {
@@ -167,6 +180,22 @@ export const getTenantDigitalPresence = cache(async function getTenantDigitalPre
   const waRows = waRes.data ?? [];
   const googleRow = googleRes.data ?? null;
 
+  // 2. Real token presence for the social_accounts-backed providers, checked
+  // separately since it depends on the account ids just resolved above. A
+  // row's own status/token_health columns are not proof a usable token
+  // exists — see isReauthRequired()'s hasUsableToken branch.
+  const accountIdsWithUsableToken = new Set<string>();
+  if (socialRows.length > 0) {
+    const { data: tokenRows } = await supabase
+      .from("social_tokens")
+      .select("account_id, access_token_encrypted")
+      .in("account_id", socialRows.map((r) => r.id));
+    for (const t of tokenRows ?? []) {
+      if (t.access_token_encrypted) accountIdsWithUsableToken.add(t.account_id);
+    }
+  }
+  const hasUsableToken = (accountId: string) => accountIdsWithUsableToken.has(accountId);
+
   const brandContent = (brandBrain?.content ?? {}) as Record<string, unknown>;
   const rawProfiles: string[] = [
     ...(Array.isArray(brandContent.online_profiles) ? brandContent.online_profiles : []),
@@ -209,7 +238,7 @@ export const getTenantDigitalPresence = cache(async function getTenantDigitalPre
   const gbSocial = findSocialRow("google_business") || findSocialRow("google");
   const gbPublic = extractPublicProfile("google_business", onlineProfiles);
   const gbConnected = gbSocial && String(gbSocial.status).toUpperCase() === "CONNECTED";
-  const gbReauth = isReauthRequired(gbSocial);
+  const gbReauth = isReauthRequired(gbSocial, hasUsableToken);
   const gbError = gbSocial && String(gbSocial.status).toUpperCase() === "ERROR";
 
   const googleBusinessStatus: CanonicalConnectionStatus = {
@@ -250,7 +279,7 @@ export const getTenantDigitalPresence = cache(async function getTenantDigitalPre
   const igSocial = findSocialRow("instagram");
   const igPublic = extractPublicProfile("instagram", onlineProfiles);
   const igConnected = igSocial && String(igSocial.status).toUpperCase() === "CONNECTED";
-  const igReauth = isReauthRequired(igSocial);
+  const igReauth = isReauthRequired(igSocial, hasUsableToken);
   const igError = igSocial && String(igSocial.status).toUpperCase() === "ERROR";
 
   const instagramStatus: CanonicalConnectionStatus = {
@@ -286,7 +315,7 @@ export const getTenantDigitalPresence = cache(async function getTenantDigitalPre
   const fbSocial = findSocialRow("facebook");
   const fbPublic = extractPublicProfile("facebook", onlineProfiles);
   const fbConnected = fbSocial && String(fbSocial.status).toUpperCase() === "CONNECTED";
-  const fbReauth = isReauthRequired(fbSocial);
+  const fbReauth = isReauthRequired(fbSocial, hasUsableToken);
   const fbError = fbSocial && String(fbSocial.status).toUpperCase() === "ERROR";
 
   const facebookStatus: CanonicalConnectionStatus = {
@@ -322,7 +351,7 @@ export const getTenantDigitalPresence = cache(async function getTenantDigitalPre
   const ytSocial = findSocialRow("youtube");
   const ytPublic = extractPublicProfile("youtube", onlineProfiles);
   const ytConnected = ytSocial && String(ytSocial.status).toUpperCase() === "CONNECTED";
-  const ytReauth = isReauthRequired(ytSocial);
+  const ytReauth = isReauthRequired(ytSocial, hasUsableToken);
   const ytError = ytSocial && String(ytSocial.status).toUpperCase() === "ERROR";
 
   const youtubeStatus: CanonicalConnectionStatus = {
