@@ -283,11 +283,24 @@ export class SupabaseCanonicalMediaStorage implements CanonicalMediaStorage {
   async isWritable(): Promise<boolean> {
     const probePath = buildCanonicalProbePath({ ownerId: this.ownerId, tenantId: this.tenantId });
     try {
+      // Found live during E2E testing: the probe upload always failed with
+      // "mime type application/octet-stream is not supported" (HTTP 415) --
+      // the social-agent-attachments bucket has a deliberate MIME allowlist
+      // (text/plain, text/markdown, text/csv, application/json,
+      // application/pdf, image/*, video/mp4) that never included
+      // application/octet-stream, so isWritable() returned false 100% of
+      // the time and every image generation request failed with
+      // STORAGE_UNAVAILABLE even though the bucket and credentials were
+      // completely fine. text/plain is on the allowlist and is exactly as
+      // meaningless for a 1-byte throwaway probe.
       const { error } = await this.client.storage.from(this.bucket).upload(probePath, new Uint8Array([1]), {
-        contentType: "application/octet-stream",
+        contentType: "text/plain",
         upsert: true,
       });
-      if (error) return false;
+      if (error) {
+        console.error("SupabaseCanonicalMediaStorage.isWritable: probe upload failed", error);
+        return false;
+      }
       // Best-effort cleanup — non-leaking deterministic probe.
       try {
         await this.client.storage.from(this.bucket).remove?.([probePath]);
@@ -295,7 +308,8 @@ export class SupabaseCanonicalMediaStorage implements CanonicalMediaStorage {
         /* ignore */
       }
       return true;
-    } catch {
+    } catch (err) {
+      console.error("SupabaseCanonicalMediaStorage.isWritable: probe threw", err);
       return false;
     }
   }
