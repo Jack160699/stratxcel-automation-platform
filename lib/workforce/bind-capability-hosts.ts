@@ -75,6 +75,7 @@ async function bindHosts(): Promise<void> {
             requireWebEvidence: input.requireWebEvidence,
             correlationId: input.correlationId ?? input.requestId,
             budgetEnvelope,
+            timeoutMs: input.timeoutMs,
           });
         },
       };

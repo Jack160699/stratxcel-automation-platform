@@ -108,7 +108,16 @@ export const googleBusinessProvider: SocialProvider = {
       // Non-blocking fallback
     }
 
-    // Discover accessible Google Business Profile accounts and locations
+    // Discover accessible Google Business Profile accounts and locations.
+    // Found live during E2E testing: every catch/non-ok branch here used to
+    // discard the real reason silently, so a connection that fell all the
+    // way back to the bare userinfo id as externalAccountId (unusable for
+    // any later Posts/Reviews/profile call, which all need a real
+    // accounts/{id}/locations/{id} resource name) left zero trace of why --
+    // no GBP account for this identity, a scope problem, or an API-access
+    // gap all looked identical afterward. Same principle already applied to
+    // resolveAccessToken's error handling elsewhere in this codebase — log
+    // the real (non-secret) failure reason instead of swallowing it.
     let locationDisplayName = profileData.name || profileData.email || "Google Business Profile";
     let locationExternalId = profileData.id || profileData.email || "google_business_account";
     let gbpAccountFound = false;
@@ -144,16 +153,38 @@ export const googleBusinessProvider: SocialProvider = {
                   const loc = locData.locations[0];
                   if (loc.title) locationDisplayName = loc.title;
                   if (loc.name) locationExternalId = loc.name;
+                } else {
+                  console.warn("google-business OAuth: account has zero locations, falling back to the bare account id", { account: account.name });
                 }
+              } else {
+                console.warn("google-business OAuth: location discovery failed, falling back to the bare account id", {
+                  account: account.name,
+                  status: locationsRes.status,
+                  body: (await locationsRes.text().catch(() => "")).slice(0, 500),
+                });
               }
-            } catch {
-              // Location query non-blocking
+            } catch (locErr) {
+              console.warn("google-business OAuth: location discovery threw, falling back to the bare account id", {
+                account: account.name,
+                error: locErr instanceof Error ? locErr.message : String(locErr),
+              });
             }
           }
+        } else {
+          console.warn("google-business OAuth: zero Business Profile accounts accessible for this identity — falling back to the bare userinfo id, which cannot be used for Posts/Reviews/profile calls", {
+            username: profileData.email,
+          });
         }
+      } else {
+        console.warn("google-business OAuth: account discovery failed, falling back to the bare userinfo id", {
+          status: gbpAccountsRes.status,
+          body: (await gbpAccountsRes.text().catch(() => "")).slice(0, 500),
+        });
       }
-    } catch {
-      // Graceful fallback
+    } catch (acctErr) {
+      console.warn("google-business OAuth: account discovery threw, falling back to the bare userinfo id", {
+        error: acctErr instanceof Error ? acctErr.message : String(acctErr),
+      });
     }
 
     const grantedScopes = tokenData.scope ? tokenData.scope.split(" ") : googleBusinessProvider.requiredScopes;

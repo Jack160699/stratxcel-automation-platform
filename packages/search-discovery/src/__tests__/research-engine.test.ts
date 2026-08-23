@@ -780,6 +780,67 @@ async function run() {
   assert.ok(RESEARCH_TRUSTED_SYSTEM_PREAMBLE.includes("cannot invoke Workforce"));
   assert.ok(RESEARCH_TRUSTED_SYSTEM_PREAMBLE.includes("publish Social"));
 
+  // --- Grounded research must ask for real headroom, not the AI runtime's
+  // generic 45s default. Found live during E2E testing: a real, live,
+  // crawlable website still produced INSUFFICIENT_EVIDENCE because the
+  // grounded web-search call — genuinely slower than a plain completion —
+  // timed out against that generic default, "All provider attempts
+  // exhausted", with zero real search evidence gathered as a result. ---
+  {
+    let capturedTimeoutMs: number | undefined;
+    const ai: ResearchAIExecutor = {
+      isConfigured: () => true,
+      execute: async (input) => {
+        capturedTimeoutMs = input.timeoutMs;
+        return okAiResult(
+          { sources: [{ id: "s0", url: "https://stratxcel.in/about", provider: "google" }], citationSupports: [], searchQueries: ["stratxcel"] },
+          "Real grounded summary.",
+          { summary: "Real grounded summary.", claims: [] },
+        );
+      },
+    };
+    await runGroundedResearch(
+      {
+        tenantId: "tenant-timeout",
+        missionId: "mission-timeout",
+        requestId: "req-timeout",
+        question: "What is Stratxcel's public presence?",
+        requireWebEvidence: true,
+        maxSources: 8,
+        verifyTopSources: false,
+      },
+      { ai, artifacts: memoryArtifacts() },
+    );
+    assert.ok(
+      typeof capturedTimeoutMs === "number" && capturedTimeoutMs > 45_000,
+      `grounded research must request a timeout longer than the AI runtime's 45s default, got ${String(capturedTimeoutMs)}`
+    );
+
+    // A non-grounded request (requireWebEvidence: false) has no reason to
+    // hold the same extended budget — must not be widened unconditionally.
+    let capturedNonGroundedTimeoutMs: number | undefined;
+    const aiNonGrounded: ResearchAIExecutor = {
+      isConfigured: () => true,
+      execute: async (input) => {
+        capturedNonGroundedTimeoutMs = input.timeoutMs;
+        return okAiResult({ sources: [], citationSupports: [], searchQueries: [] }, "No web evidence requested.", { summary: "No web evidence requested.", claims: [] });
+      },
+    };
+    await runGroundedResearch(
+      {
+        tenantId: "tenant-timeout",
+        missionId: "mission-timeout",
+        requestId: "req-no-grounding",
+        question: "Internal-only question, no web evidence required.",
+        requireWebEvidence: false,
+        maxSources: 8,
+        verifyTopSources: false,
+      },
+      { ai: aiNonGrounded, artifacts: memoryArtifacts() },
+    );
+    assert.equal(capturedNonGroundedTimeoutMs, undefined, "a non-grounded request must not be widened — only grounded web research needs the extended budget");
+  }
+
   console.log("research-engine.test.ts: PASS");
 }
 

@@ -25,8 +25,25 @@ export interface ResearchAIExecutor {
     requireWebEvidence: boolean;
     correlationId?: string;
     budgetEnvelope?: AIBudgetEnvelope;
+    timeoutMs?: number;
   }) => Promise<AIExecutionResult>;
 }
+
+// Found live during E2E testing: a real, live, crawlable website
+// (verified — the deterministic crawler step above found and verified it
+// as a PRIMARY source) still produced status: INSUFFICIENT_EVIDENCE, with
+// the AI runtime logging ai_execution_failure / safeErrorCategory:
+// "TIMEOUT" / "All provider attempts exhausted". Grounded web-search
+// research is genuinely slower than a plain completion (the model issues
+// real search queries and retrieves real results before it can answer),
+// so the AI runtime's generic 45s default (AI_PROVIDER_TIMEOUT_MS) is too
+// short for this specific call shape — the same class of bug already
+// fixed once for image generation. Widened here rather than globally,
+// since most other task classes genuinely don't need it. 90s leaves real
+// headroom under the audit worker's maxDuration=270s even at the
+// RESEARCH policy's maxAttempts=2 (180s worst case), with room left for
+// the crawler step before it and the analysis stage after.
+const GROUNDED_RESEARCH_TIMEOUT_MS = 90_000;
 
 export interface ResearchArtifactPersister {
   persist: (input: {
@@ -388,6 +405,7 @@ export async function runGroundedResearch(rawInput: Record<string, unknown>, dep
     requireWebEvidence: request.requireWebEvidence,
     correlationId: request.correlationId ?? request.requestId,
     budgetEnvelope: deps.budgetEnvelope,
+    timeoutMs: request.requireWebEvidence ? GROUNDED_RESEARCH_TIMEOUT_MS : undefined,
     messages: [
       { role: "system", content: RESEARCH_TRUSTED_SYSTEM_PREAMBLE },
       { role: "user", content: userPrompt },
