@@ -1,0 +1,42 @@
+-- Regression fix, found live during E2E testing: app/api/platform/audit
+-- (the customer's own "My Audits" self-lookup, backing /app/growth's
+-- dashboard) started 500ing with "permission denied for table
+-- public_audit_requests" for every authenticated customer.
+--
+-- Root cause: the prior migration
+-- (20260823120000_lock_public_audit_requests_to_service_role.sql) correctly
+-- removed the real vulnerability -- unscoped `USING (true)` policies named
+-- public_audit_requests_auth_read/_auth_update that let any authenticated
+-- user read or modify any prospect's row -- but its `drop policy if exists`
+-- calls targeted those specific (wrong) policy names, which never matched
+-- the policies actually installed on this table:
+--   "Authenticated users can select/update/insert tenant audit requests"
+-- (already correctly scoped: tenant_id IN (caller's tenant_members) OR
+-- user_id = auth.uid()). Those DROPs were therefore harmless no-ops -- the
+-- correctly-scoped policies were never touched and still exist today.
+--
+-- What actually broke everything was `revoke select, update ... from
+-- authenticated`: in Postgres, a table-level GRANT is checked before RLS
+-- policies are ever evaluated, so revoking it blocks all authenticated
+-- access regardless of how well-scoped the policies are -- it wasn't
+-- scoped to only the bad policies because grants aren't policy-specific.
+-- That migration's own justification ("Both API routes that touch this
+-- table already exclusively use the service-role client") was incomplete:
+-- it missed app/api/platform/audit/route.ts, a third, legitimate consumer
+-- that deliberately uses the authenticated (RLS-enforced) client for a
+-- customer's own self-scoped audit lookups.
+--
+-- Fix: restore the base grant. This does not reintroduce the original
+-- vulnerability -- the unscoped USING (true) policies are confirmed gone,
+-- and the only policies now active on this table are the pre-existing,
+-- correctly-scoped ones (tenant_id/user_id-checked), which is exactly the
+-- access app/api/platform/audit/route.ts already assumed it had.
+--
+-- Granting insert too, not just select/update: information_schema shows
+-- `authenticated` currently holds zero privileges at all on this table --
+-- including insert, which the prior migration's revoke never even
+-- mentioned -- yet a correctly-scoped "Authenticated users can insert
+-- tenant audit requests" policy already exists and expects it. Restoring
+-- exactly the three privileges (select/insert/update) that this table's
+-- three existing scoped policies were built for.
+grant select, insert, update on public.public_audit_requests to authenticated;

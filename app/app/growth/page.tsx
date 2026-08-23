@@ -46,62 +46,80 @@ export default function GrowthPage() {
     setLoading(true);
     setError(null);
 
+    // Found live during E2E testing: these 4 independent reads used to run
+    // one after another (await, then await, then await...) instead of
+    // concurrently, so this page's loading skeleton stayed up for the sum
+    // of all 4 request times (~5.5-9s observed live) instead of the
+    // slowest single one (~1.8s observed live) -- easily long enough that
+    // a real customer would reasonably believe the page was stuck, not
+    // just slow. None of the 4 depend on each other's result, so there's
+    // no reason they can't share the same wall-clock window.
     try {
-      // 1. Missions loader (Primary)
-      try {
-        const missionsRes = await fetch(`/api/platform/missions?tenantId=${encodeURIComponent(tId)}`);
-        if (missionsRes.ok) {
-          const body = await missionsRes.json().catch(() => ({ missions: [] }));
-          setMissions(Array.isArray(body.missions) ? body.missions : []);
-        } else {
-          // If 403 or not found, treat gracefully as empty rather than crashing
-          setMissions([]);
-        }
-      } catch {
-        setMissions([]);
-      }
-
-      // 2. Approvals loader (Optional)
-      try {
-        const approvalsRes = await fetch(`/api/platform/approvals?tenantId=${encodeURIComponent(tId)}`);
-        if (approvalsRes.status === 403) {
-          setApprovalsCount("forbidden");
-        } else if (approvalsRes.ok) {
-          const body = await approvalsRes.json().catch(() => ({ approvals: [] }));
-          setApprovalsCount(Array.isArray(body.approvals) ? body.approvals.length : 0);
-        } else {
-          setApprovalsCount(0);
-        }
-      } catch {
-        setApprovalsCount(0);
-      }
-
-      // 3. Wallet loader (Optional)
-      try {
-        const walletRes = await fetch(`/api/platform/wallet?tenantId=${encodeURIComponent(tId)}`);
-        if (walletRes.ok) {
-          const body = await walletRes.json().catch(() => ({}));
-          if (body?.account) {
-            setWalletBalance({
-              cents: typeof body.account.balance_cents === "number" ? body.account.balance_cents : 0,
-              currency: body.account.currency || "INR",
-            });
+      await Promise.all([
+        // 1. Missions loader (Primary)
+        (async () => {
+          try {
+            const missionsRes = await fetch(`/api/platform/missions?tenantId=${encodeURIComponent(tId)}`);
+            if (missionsRes.ok) {
+              const body = await missionsRes.json().catch(() => ({ missions: [] }));
+              setMissions(Array.isArray(body.missions) ? body.missions : []);
+            } else {
+              // If 403 or not found, treat gracefully as empty rather than crashing
+              setMissions([]);
+            }
+          } catch {
+            setMissions([]);
           }
-        }
-      } catch {
-        // Wallet unavailable - non-fatal
-      }
+        })(),
 
-      // 4. Audit loader (Optional)
-      try {
-        const auditRes = await fetch(`/api/platform/audit?tenantId=${encodeURIComponent(tId)}`);
-        if (auditRes.ok) {
-          const body = await auditRes.json().catch(() => ({ audits: [] }));
-          setAuditItems(Array.isArray(body.audits) ? body.audits : []);
-        }
-      } catch {
-        // Audit unavailable - non-fatal
-      }
+        // 2. Approvals loader (Optional)
+        (async () => {
+          try {
+            const approvalsRes = await fetch(`/api/platform/approvals?tenantId=${encodeURIComponent(tId)}`);
+            if (approvalsRes.status === 403) {
+              setApprovalsCount("forbidden");
+            } else if (approvalsRes.ok) {
+              const body = await approvalsRes.json().catch(() => ({ approvals: [] }));
+              setApprovalsCount(Array.isArray(body.approvals) ? body.approvals.length : 0);
+            } else {
+              setApprovalsCount(0);
+            }
+          } catch {
+            setApprovalsCount(0);
+          }
+        })(),
+
+        // 3. Wallet loader (Optional)
+        (async () => {
+          try {
+            const walletRes = await fetch(`/api/platform/wallet?tenantId=${encodeURIComponent(tId)}`);
+            if (walletRes.ok) {
+              const body = await walletRes.json().catch(() => ({}));
+              if (body?.account) {
+                setWalletBalance({
+                  cents: typeof body.account.balance_cents === "number" ? body.account.balance_cents : 0,
+                  currency: body.account.currency || "INR",
+                });
+              }
+            }
+          } catch {
+            // Wallet unavailable - non-fatal
+          }
+        })(),
+
+        // 4. Audit loader (Optional)
+        (async () => {
+          try {
+            const auditRes = await fetch(`/api/platform/audit?tenantId=${encodeURIComponent(tId)}`);
+            if (auditRes.ok) {
+              const body = await auditRes.json().catch(() => ({ audits: [] }));
+              setAuditItems(Array.isArray(body.audits) ? body.audits : []);
+            }
+          } catch {
+            // Audit unavailable - non-fatal
+          }
+        })(),
+      ]);
     } catch (err: any) {
       setError(err?.message || "Growth data could not be loaded. Please try again.");
     } finally {
