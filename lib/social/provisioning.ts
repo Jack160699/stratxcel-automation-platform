@@ -148,6 +148,29 @@ export async function provisionTenantConnectorsFromMetadata(
           .eq("platform", platform)
           .maybeSingle();
 
+        // Found live during E2E testing: this always fabricated
+        // status: CONNECTED / token_health: HEALTHY from onboarding
+        // metadata alone (username/providerAccountId/scopes), with no
+        // check for whether a real token exists anywhere — confirmed on a
+        // real production tenant, four social_accounts rows all reporting
+        // healthy with zero matching social_tokens rows. The OAuth
+        // callback now persists an owner-scoped row (tenant_id null, same
+        // owner_id + platform) with the real token when this happens
+        // pre-tenant (see app/api/social/oauth/[provider]/callback/
+        // route.ts) — link that row by re-pointing its tenant_id instead
+        // of creating a fresh, tokenless duplicate, so its social_tokens
+        // row comes along for free. Only fabricate a status when no real,
+        // token-bearing row can be found, and even then say so honestly
+        // (RECONNECT_REQUIRED, not CONNECTED) rather than claim health
+        // that was never actually verified.
+        const { data: ownerScopedAccount } = await supabase
+          .from("social_accounts")
+          .select("id")
+          .is("tenant_id", null)
+          .eq("owner_id", userId)
+          .eq("platform", platform)
+          .maybeSingle();
+
         if (existingAccount) {
           await supabase
             .from("social_accounts")
@@ -156,12 +179,20 @@ export async function provisionTenantConnectorsFromMetadata(
               username,
               display_name: displayName,
               permissions,
-              status: "CONNECTED",
-              token_health: "HEALTHY",
-              last_sync_at: now,
               updated_at: now,
             })
             .eq("id", existingAccount.id);
+        } else if (ownerScopedAccount) {
+          await supabase
+            .from("social_accounts")
+            .update({
+              tenant_id: tenantId,
+              username,
+              display_name: displayName,
+              permissions,
+              updated_at: now,
+            })
+            .eq("id", ownerScopedAccount.id);
         } else {
           await supabase.from("social_accounts").insert({
             owner_id: userId,
@@ -172,8 +203,8 @@ export async function provisionTenantConnectorsFromMetadata(
             display_name: displayName,
             avatar_url: (metaConn?.avatarUrl as string) || null,
             permissions,
-            status: "CONNECTED",
-            token_health: "HEALTHY",
+            status: "RECONNECT_REQUIRED",
+            token_health: "UNKNOWN",
             last_sync_at: now,
             updated_at: now,
           });

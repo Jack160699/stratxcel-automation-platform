@@ -334,8 +334,43 @@ export async function GET(
           });
           return failRedirect("error", "missing_tenant");
         }
-        // Pre-workspace onboarding: NEVER write to social_accounts table with tenant_id = NULL.
-        // It will be safely provisioned by provisionTenantConnectorsFromMetadata once tenant is created.
+        // Pre-workspace onboarding: no tenant exists yet, so this cannot
+        // write a tenant-scoped social_accounts row. Found live during E2E
+        // testing: the comment here used to say "NEVER write to
+        // social_accounts... it will be safely provisioned by
+        // provisionTenantConnectorsFromMetadata once tenant is created" —
+        // but that function only ever had display metadata to work with
+        // (username/providerAccountId/scopes, no token), because the real
+        // access/refresh token obtained right here was simply discarded
+        // when this branch did nothing. Every account a customer connected
+        // during onboarding then got fabricated as status: CONNECTED /
+        // token_health: HEALTHY once the tenant was created, with no
+        // usable token behind it anywhere — confirmed live on a real
+        // production tenant (four social_accounts rows, zero social_tokens
+        // rows). upsertConnectedAccount already supports an owner-scoped
+        // row (tenantId omitted) for exactly this pre-tenant case — use it
+        // so the real token is actually persisted, and provisioning can
+        // link this same row (preserving its social_tokens) once the
+        // tenant exists instead of fabricating a fresh, tokenless one.
+        try {
+          await upsertConnectedAccount(service, {
+            ownerId: userId,
+            platform: canonicalPlatformKey as Platform,
+            providerAccountId: result.externalAccountId,
+            username: formattedHandle,
+            displayName: result.displayName || result.username || canonicalPlatformKey,
+            avatarUrl: result.profilePictureUrl || null,
+            permissions: result.scopes ?? [],
+            accessToken: result.accessToken,
+            refreshToken: result.refreshToken,
+            expiresInSeconds: result.expiresInSeconds,
+          });
+        } catch (preTenantErr) {
+          // Non-fatal: the onboarding_oauth_connections metadata write below
+          // still lets the wizard show "Connected" and lets provisioning
+          // retry later — but log the real reason rather than staying silent.
+          console.error("oauth callback: pre-tenant token persistence failed:", preTenantErr instanceof Error ? preTenantErr.message : String(preTenantErr));
+        }
       }
 
       // 3. Always maintain user metadata for seamless cross-device rehydration & audit recovery
