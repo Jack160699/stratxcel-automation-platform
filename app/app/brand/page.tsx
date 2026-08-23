@@ -142,7 +142,11 @@ export default function BrandPage() {
           fetch(`/api/platform/brand?tenantId=${encodeURIComponent(tenantId)}`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ content }),
+            // POST /api/platform/brand requires tenantId in the JSON body
+            // (only GET reads it from the query string) — omitting it here
+            // 400'd "tenantId is required" on every save, found live
+            // during E2E testing.
+            body: JSON.stringify({ tenantId, content }),
           }),
         "We couldn't save your shop details right now."
       );
