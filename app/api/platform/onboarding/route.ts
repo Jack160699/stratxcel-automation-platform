@@ -397,21 +397,27 @@ export async function POST(request: Request) {
 
     if (existingOrder) {
       auditOrderId = existingOrder.id;
-      await serviceClient
+      const { error: updateOrderError } = await serviceClient
         .from("audit_orders")
         .update({
           business_name: name,
           website_url: body.business?.website ?? null,
           industry: body.business?.industry ?? null,
           status: "in_review",
-          fulfilment_source: "free_audit",
+          // audit_orders_fulfilment_source_check only allows
+          // razorpay | promo | product_grant — this is the established
+          // value for a free audit granted as part of the product (not a
+          // payment, not a redeemed promo code), same as
+          // claim_fresh_product_grant_audit_v1 uses elsewhere.
+          fulfilment_source: "product_grant",
           deep_dive_answers: deepDiveAnswers,
           goals: body.goals ?? [],
           updated_at: new Date().toISOString(),
         })
         .eq("id", auditOrderId);
+      if (updateOrderError) console.error("onboarding: failed to update audit_orders", updateOrderError.message);
     } else {
-      const { data: inserted } = await serviceClient
+      const { data: inserted, error: insertOrderError } = await serviceClient
         .from("audit_orders")
         .insert({
           tenant_id: tenant.id,
@@ -422,12 +428,13 @@ export async function POST(request: Request) {
           list_price_cents: 99900,
           discount_cents: 99900,
           status: "in_review",
-          fulfilment_source: "free_audit",
+          fulfilment_source: "product_grant",
           deep_dive_answers: deepDiveAnswers,
           goals: body.goals ?? [],
         })
         .select("id")
         .single();
+      if (insertOrderError) console.error("onboarding: failed to insert audit_orders", insertOrderError.message);
       auditOrderId = inserted?.id ?? null;
     }
 
