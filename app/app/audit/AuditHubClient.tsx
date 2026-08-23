@@ -15,6 +15,8 @@ import {
   normalizeAuditDeliveryReport,
 } from "@/lib/audit/customer-state";
 import type { AuditHubData } from "@/lib/audit/load-hub-data";
+import type { CanonicalConnectionsMap } from "./VisualAuditReport";
+import { useCurrentTenant } from "../CurrentTenantContext";
 
 export interface IntakeOrder {
   business_name?: string | null;
@@ -50,6 +52,18 @@ const PROCESSING_STAGES = [
 ] as const;
 
 export function AuditHubClient({ initialData }: { initialData: AuditHubData }) {
+  const { active } = useCurrentTenant();
+  const tenantId = active?.tenantId;
+  // Canonical connector ground truth (lib/connectors/canonical-status.ts via
+  // /api/platform/integrations/status) -- this was never fetched here at
+  // all, so VisualAuditReport's `connections` prop stayed undefined and it
+  // always fell back to the audit run's own one-off live-fetch result
+  // instead of real ground truth. Found live during E2E testing: every
+  // connector showed "Temporary Error" on the report despite social_accounts
+  // and search_google_connections both being genuinely CONNECTED/HEALTHY in
+  // the database -- exactly the failure mode resolveConnectorBadgeKey's own
+  // comment says canonical truth must prevent.
+  const [connections, setConnections] = useState<CanonicalConnectionsMap | null>(null);
   const [order, setOrder] = useState<AuditOrder | null | undefined>(
     initialData.order ? (initialData.order as unknown as AuditOrder) : null
   );
@@ -105,6 +119,23 @@ export function AuditHubClient({ initialData }: { initialData: AuditHubData }) {
       setWaConsent(destination.consent);
     }
   }, []);
+
+  useEffect(() => {
+    if (!tenantId) return;
+    let cancelled = false;
+    (async () => {
+      const result = await loadCustomerJson<{ connections?: CanonicalConnectionsMap }>(
+        () => fetch(`/api/platform/integrations/status?tenantId=${encodeURIComponent(tenantId)}`),
+        "We couldn't load your connected accounts."
+      );
+      if (!cancelled && result.status !== "error") {
+        setConnections(result.data.connections ?? null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [tenantId]);
 
   const startAudit = useCallback(async () => {
     setStarting(true);
@@ -439,6 +470,7 @@ export function AuditHubClient({ initialData }: { initialData: AuditHubData }) {
     <div className="mx-auto w-full max-w-full sm:max-w-5xl lg:max-w-6xl xl:max-w-7xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
       <VisualAuditReport
         report={report}
+        connections={connections}
         onDownload={() => {
           window.open("/api/platform/audit/report/pdf", "_blank");
         }}
