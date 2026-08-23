@@ -2,7 +2,6 @@ import type {
   OAuthExchangeResult,
   PublishInput,
   PublishResult,
-  InsightsResult,
   SocialProvider,
   ExchangeTokenOptions,
 } from "./types.ts";
@@ -191,16 +190,50 @@ export const googleBusinessProvider: SocialProvider = {
     return { accessToken: data.access_token, expiresInSeconds: data.expires_in };
   },
 
+  // Real Local Posts call — found live during E2E testing that this used to
+  // return a fabricated externalPostId and a non-specific permalink without
+  // ever contacting Google at all, so every "published" Google Post was a
+  // fabricated success (Section 27/31: never claim publication without
+  // provider success). Google gates this endpoint behind a separate manual
+  // access-approval form independent of OAuth consent (a verified,
+  // 60+ day-active profile is the minimum eligibility bar), so a real,
+  // honest failure here is the expected outcome for most tenants right now
+  // — that's a provider/access gap this call must surface accurately, not
+  // paper over with a fake success.
   async publish(input: PublishInput): Promise<PublishResult> {
-    // Google Business Post publishing
+    const { accessToken, externalAccountId, caption, mediaUrls } = input;
+    const res = await fetch(`https://mybusiness.googleapis.com/v4/${externalAccountId}/localPosts`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        languageCode: "en-US",
+        summary: caption,
+        topicType: "STANDARD",
+        ...(mediaUrls.length > 0 ? { media: mediaUrls.map((sourceUrl) => ({ mediaFormat: "PHOTO", sourceUrl })) } : {}),
+      }),
+    });
+    if (!res.ok) {
+      let detail = "";
+      try {
+        detail = await res.text();
+      } catch {
+        // ignore
+      }
+      throw new Error(`Google Business post publish failed (${res.status}): ${detail || "no error body"}`);
+    }
+    const post = (await res.json()) as { name?: string; searchUrl?: string };
+    if (!post.name) throw new Error("Google Business post publish returned no post name — cannot confirm success");
     return {
-      externalPostId: `gbp-post-${Date.now()}`,
-      permalink: `https://business.google.com`,
-      raw: { input },
+      externalPostId: post.name,
+      permalink: post.searchUrl,
+      raw: post,
     };
   },
 
-  async getInsights(accessToken, externalPostId): Promise<InsightsResult> {
-    return { metrics: { views: 0, searches: 0, actions: 0 } };
-  },
+  // No getInsights implementation: Business Profile doesn't expose per-post
+  // metrics the same shape every other provider here does, and this was
+  // never actually called anywhere in the codebase (verified — dead code),
+  // so a fabricated { views: 0, searches: 0, actions: 0 } stub was pure
+  // downside with no real caller to serve. Omitting the optional method
+  // entirely is the honest state: "not available", not a fake zero.
 };
