@@ -540,11 +540,25 @@ export class AIRuntime {
       budgetStatus: extras?.budgetStatus ?? "unknown",
       estimatedCostUsd: 0,
     };
+    // extras.attempts was already collected (each attempt records its own
+    // provider/model/latencyMs/errorCategory) but never reached this log
+    // line, so "All provider attempts exhausted" carried zero information
+    // about which provider actually failed, how long it ran, or what
+    // timeout budget it was given — found live while diagnosing a real
+    // grounded-research timeout that took real tracing across three files
+    // to isolate. Surface the last attempt directly instead.
+    const lastAttempt = extras?.attempts?.[extras.attempts.length - 1];
     safeAiLog({
       event: "ai_execution_failure",
       taskClass: request.taskClass,
       safeErrorCategory: category,
       detail: detail.slice(0, 120),
+      attemptCount: extras?.attempts?.length ?? 0,
+      lastAttemptProvider: lastAttempt?.provider ?? null,
+      lastAttemptModel: lastAttempt?.model ?? null,
+      lastAttemptLatencyMs: lastAttempt?.latencyMs ?? null,
+      lastAttemptErrorCategory: lastAttempt && !lastAttempt.success ? lastAttempt.errorCategory : null,
+      requestedTimeoutMs: request.timeoutMs ?? this.defaultTimeoutMs,
     });
     return {
       ok: false,

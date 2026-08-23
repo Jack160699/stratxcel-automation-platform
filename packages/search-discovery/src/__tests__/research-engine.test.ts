@@ -841,6 +841,61 @@ async function run() {
     assert.equal(capturedNonGroundedTimeoutMs, undefined, "a non-grounded request must not be widened — only grounded web research needs the extended budget");
   }
 
+  // --- A timeout at the lower AI-provider layer must never masquerade as
+  // successful research (Section 10 of the timeout-investigation brief:
+  // "at least one regression specifically proving that a timeout at the
+  // lower provider layer cannot silently masquerade as successful
+  // research"). Exercises the exact shape AIRuntime.execute() actually
+  // returns on "All provider attempts exhausted" / TIMEOUT — ok: false,
+  // no webEvidence at all — not a hypothetical shape. ---
+  {
+    const ai: ResearchAIExecutor = {
+      isConfigured: () => true,
+      execute: async () => ({
+        ok: false,
+        text: "",
+        toolCalls: [],
+        provider: null,
+        model: null,
+        reasoningLevel: "none",
+        inputTokens: 0,
+        cachedInputTokens: 0,
+        outputTokens: 0,
+        totalTokens: 0,
+        latencyMs: 0,
+        estimatedCostUsd: 0,
+        attemptNumber: 2,
+        fallbackUsed: true,
+        fallbackReason: "timeout",
+        qualityScore: null,
+        qualityDecision: "SKIP",
+        requestId: "req-timeout-2",
+        providerRequestId: null,
+        createdAt: new Date().toISOString(),
+        selection: baseSelection(),
+        attempts: [],
+        errorCategory: "TIMEOUT",
+        userSafeError: "AI service temporarily unavailable",
+      }),
+    };
+    const result = await runGroundedResearch(
+      {
+        tenantId: "tenant-timeout-2",
+        missionId: "mission-timeout-2",
+        requestId: "req-timeout-2",
+        question: "Research a real business whose provider call times out.",
+        requireWebEvidence: true,
+        maxSources: 8,
+        verifyTopSources: false,
+      },
+      { ai, artifacts: memoryArtifacts() },
+    );
+    assert.equal(result.status, "INSUFFICIENT_EVIDENCE", "a TIMEOUT-failed AI call must report INSUFFICIENT_EVIDENCE, never PASS");
+    assert.notEqual(result.status, "PASS", "must never report PASS when the underlying provider call never actually completed");
+    assert.equal(result.claims.length, 0, "must not fabricate claims from a call that produced none");
+    assert.equal(result.sources.length, 0, "must not fabricate sources from a call that produced none");
+  }
+
   console.log("research-engine.test.ts: PASS");
 }
 

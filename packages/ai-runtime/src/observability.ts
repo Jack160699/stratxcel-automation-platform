@@ -12,6 +12,15 @@ export interface SafeAiLogEvent {
   escalationLevel?: number;
   safeErrorCategory?: string;
   detail?: string;
+  /** ai_execution_failure diagnostics: which attempt actually failed, not
+   * just that "all attempts" collectively did. Never secrets — provider,
+   * model, and timing metadata only. */
+  attemptCount?: number;
+  lastAttemptProvider?: string | null;
+  lastAttemptModel?: string | null;
+  lastAttemptLatencyMs?: number | null;
+  lastAttemptErrorCategory?: string | null;
+  requestedTimeoutMs?: number;
 }
 
 const SECRET_PATTERN = /(?:sk-[a-zA-Z0-9]{10,}|AIza[0-9A-Za-z_-]{20,}|Bearer\s+[^\s]+)/gi;

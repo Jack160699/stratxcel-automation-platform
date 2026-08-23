@@ -518,6 +518,19 @@ export class LiveAuditResearchProvider implements AuditResearchProvider {
         ai: {
           isConfigured: () => runtime.isAnyProviderConfigured(),
           execute: async (input) => {
+            // Found live during E2E testing: grounded-runtime.ts (in
+            // @stratxcel/search-discovery) requests a widened timeoutMs for
+            // any requireWebEvidence request — but THIS inline executor is
+            // the one the audit pipeline actually uses (LiveAuditResearchProvider
+            // constructs its own `new AIRuntime(...)` directly, entirely
+            // separate from lib/workforce/bind-capability-hosts.ts's
+            // getResearchAIExecutor, which only serves the general workforce
+            // capability-host system, not the audit engine). This call used
+            // to silently drop input.timeoutMs on the floor, so a real fresh
+            // audit against a real, live, crawlable website still hit the
+            // AI runtime's generic default and timed out — confirmed via
+            // runtime logs on the actual production deployment that shipped
+            // the grounded-runtime.ts widening. Forward it here too.
             execution = await runtime.execute({
               tenantId: input.tenantId,
               missionId: null,
@@ -530,6 +543,7 @@ export class LiveAuditResearchProvider implements AuditResearchProvider {
               routingPolicyOverride: boundedPolicy,
               budgetEnvelope: input.budgetEnvelope,
               correlationId: input.correlationId ?? input.requestId,
+              timeoutMs: input.timeoutMs,
               metadata: { sessionId: context.run.id, critical: true },
             });
             return execution;
