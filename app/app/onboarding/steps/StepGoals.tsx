@@ -9,7 +9,7 @@ export interface GoalOption {
   icon: string;
 }
 
-const BUSINESS_GOALS: GoalOption[] = [
+export const BUSINESS_GOALS: GoalOption[] = [
   {
     key: "local_customers",
     title: "Get more local customers",

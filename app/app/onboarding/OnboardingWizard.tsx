@@ -6,7 +6,7 @@ import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { setActiveTenantAction } from "../tenant-actions";
 import { StepWelcome } from "./steps/StepWelcome";
 import { StepBusiness, type DiscoveryState } from "./steps/StepBusiness";
-import { StepGoals } from "./steps/StepGoals";
+import { StepGoals, BUSINESS_GOALS } from "./steps/StepGoals";
 import { StepBrand } from "./steps/StepBrand";
 import { StepReview } from "./steps/StepReview";
 import { ConnectorSheet } from "./ConnectorSheet";
@@ -27,6 +27,11 @@ import { validateAndNormalizeGoogleMapsInput } from "@/lib/identity/google-maps-
 import { ContextSwitcher } from "@/components/shell/ContextSwitcher";
 
 const TOTAL_STEPS = ONBOARDING_STEP_LABELS.length; // 5 — index-aligned with the reference's own step state (0-4)
+
+// The only keys StepGoals can actually render as a checkbox/REC badge — used
+// to filter out the industry-intelligence module's disjoint deliverable-key
+// vocabulary before it reaches draft.goals (see applySynthesizedIntelligence).
+const STEP_GOALS_KEYS = new Set(BUSINESS_GOALS.map((g) => g.key));
 
 const PROVIDER_LABELS: Record<string, string> = {
   google_business: "Google",
@@ -322,7 +327,18 @@ export function OnboardingWizard({ isStaff = false }: { isStaff?: boolean }) {
         primaryOffer: intel.business?.primaryOffer || d.business.primaryOffer,
         stage: intel.business?.stage || d.business.stage,
       };
-      const recommendedKeys = Array.isArray(intel.goals?.recommendedKeys) ? intel.goals.recommendedKeys : [];
+      // intel.goals.recommendedKeys comes from the industry-preset intelligence
+      // module (lib/intelligence/onboarding-business-intelligence.ts), whose
+      // vocabulary (thirty_day_growth_plan, seo_audit, website_landing_page, …)
+      // is a set of audit/deliverable module identifiers — a different
+      // taxonomy from StepGoals' own BUSINESS_GOALS checkbox keys
+      // (google_visibility, whatsapp_leads, social_presence, …). Writing the
+      // raw preset keys into draft.goals silently added goals the user never
+      // saw or could deselect in StepGoals' UI, and they'd resurface as
+      // meaningless Title-Cased text at Review. Only keys StepGoals actually
+      // renders can populate goals/recommendedGoals here.
+      const rawRecommendedKeys = Array.isArray(intel.goals?.recommendedKeys) ? intel.goals.recommendedKeys : [];
+      const recommendedKeys = rawRecommendedKeys.filter((key: string) => STEP_GOALS_KEYS.has(key));
       const nextGoals = d.goals.length > 0 ? d.goals : recommendedKeys.slice(0, 3);
       return { ...d, business: nextBusiness, goals: nextGoals, recommendedGoals: recommendedKeys };
     });
