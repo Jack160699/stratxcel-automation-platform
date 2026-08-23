@@ -392,6 +392,47 @@ function createTestDb() {
 }
 
 // -------------------------------------------------------------
+// TEST 4b: Google Search Console & GA4 -- "connected" status with no
+// usable stored token must report REAUTH_REQUIRED, not CONNECTED
+// -------------------------------------------------------------
+{
+  console.log("Test 4b: Google Search Console & GA4 -- connected row without a usable token...");
+  const { client, tables } = createTestDb();
+  const tenantId = "tenant_google_no_token";
+
+  // Regression for a P1 finding from live E2E testing on 2026-08-23: this
+  // is the exact real-world row shape every tenant's search_google_
+  // connections was left in before the OAuth callback's token-persistence
+  // bug was fixed (status: "connected", but no refresh token was ever
+  // stored). Confirmed live: canonical status here reported CONNECTED
+  // while /api/platform/search/google/resources -- which actually tries
+  // to mint a live access token -- correctly reported disconnected,
+  // producing a direct customer-visible contradiction (Connected Accounts
+  // page said NOT CONNECTED right below a sidebar badge and a Home
+  // dashboard both saying Google was live).
+  tables.search_google_connections.push({
+    tenant_id: tenantId,
+    status: "connected",
+    encrypted_refresh_token_ref: null,
+    granted_scopes: [],
+    search_console_site_url: "https://www.stratxcel.in",
+    ga4_property_id: "111222333",
+    ga4_property_display_name: "StratXcel",
+  });
+
+  const presence = await getTenantDigitalPresence(client, tenantId);
+  const ga4 = presence.connections.google_analytics;
+  const sc = presence.connections.google_search_console;
+
+  assert.equal(ga4.connectionState, "REAUTH_REQUIRED", "GA4 with status=connected but no usable token must not report CONNECTED");
+  assert.equal(ga4.reauthRequired, true);
+  assert.equal(sc.connectionState, "REAUTH_REQUIRED", "Search Console with status=connected but no usable token must not report CONNECTED");
+  assert.equal(sc.reauthRequired, true);
+
+  console.log("✓ Connected-but-tokenless Google rows correctly report REAUTH_REQUIRED, not a false CONNECTED.\n");
+}
+
+// -------------------------------------------------------------
 // TEST 5: Strict Multi-Tenant Isolation
 // -------------------------------------------------------------
 {

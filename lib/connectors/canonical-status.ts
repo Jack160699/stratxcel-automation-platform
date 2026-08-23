@@ -157,7 +157,7 @@ export const getTenantDigitalPresence = cache(async function getTenantDigitalPre
       .eq("tenant_id", tenantId),
     supabase
       .from("search_google_connections")
-      .select("id, status, search_console_site_url, search_console_last_synced_at, ga4_property_id, ga4_property_display_name, ga4_last_synced_at, last_error, updated_at")
+      .select("id, status, encrypted_refresh_token_ref, search_console_site_url, search_console_last_synced_at, ga4_property_id, ga4_property_display_name, ga4_last_synced_at, last_error, updated_at")
       .eq("tenant_id", tenantId)
       .maybeSingle(),
     getCurrentBrandBrain(supabase, tenantId).catch(() => null),
@@ -355,9 +355,23 @@ export const getTenantDigitalPresence = cache(async function getTenantDigitalPre
   };
 
   // 6. Google Analytics (GA4)
-  const ga4Connected = Boolean(googleRow && googleRow.status === "connected" && googleRow.ga4_property_id);
-  const ga4AccountReady = Boolean(googleRow && googleRow.status === "connected");
-  const ga4Reauth = Boolean(googleRow && (googleRow.status === "revoked" || googleRow.status === "error"));
+  // Found live during E2E testing: a row with status "connected" but no
+  // encrypted_refresh_token_ref (the exact state every real customer's
+  // connection was left in before the OAuth callback's token-persistence
+  // bug was fixed -- see the search_google_connections callback fix) used
+  // to report CONNECTED here, contradicting /api/platform/search/google/
+  // resources, which correctly detects it can't actually mint a live
+  // access token and reports disconnected. Treat "connected" status
+  // without a usable stored token the same way every other provider here
+  // already treats an expired/revoked one: REAUTH_REQUIRED, not CONNECTED
+  // -- the customer did authorize once, but the connection isn't usable
+  // until they reconnect.
+  const ga4HasUsableToken = Boolean(googleRow?.encrypted_refresh_token_ref);
+  const ga4Connected = Boolean(googleRow && googleRow.status === "connected" && googleRow.ga4_property_id && ga4HasUsableToken);
+  const ga4AccountReady = Boolean(googleRow && googleRow.status === "connected" && ga4HasUsableToken);
+  const ga4Reauth = Boolean(
+    googleRow && (googleRow.status === "revoked" || googleRow.status === "error" || (googleRow.status === "connected" && !ga4HasUsableToken))
+  );
   const ga4Error = googleRow?.last_error ?? null;
 
   const googleAnalyticsStatus: CanonicalConnectionStatus = {
@@ -387,10 +401,14 @@ export const getTenantDigitalPresence = cache(async function getTenantDigitalPre
     error: ga4Reauth ? (ga4Error || "Google Analytics authorization expired") : null,
   };
 
-  // 7. Google Search Console
-  const scConnected = Boolean(googleRow && googleRow.status === "connected" && googleRow.search_console_site_url);
-  const scAccountReady = Boolean(googleRow && googleRow.status === "connected");
-  const scReauth = Boolean(googleRow && (googleRow.status === "revoked" || googleRow.status === "error"));
+  // 7. Google Search Console -- same fix as GA4 above: "connected" status
+  // without a usable stored refresh token is REAUTH_REQUIRED, not CONNECTED.
+  const scHasUsableToken = Boolean(googleRow?.encrypted_refresh_token_ref);
+  const scConnected = Boolean(googleRow && googleRow.status === "connected" && googleRow.search_console_site_url && scHasUsableToken);
+  const scAccountReady = Boolean(googleRow && googleRow.status === "connected" && scHasUsableToken);
+  const scReauth = Boolean(
+    googleRow && (googleRow.status === "revoked" || googleRow.status === "error" || (googleRow.status === "connected" && !scHasUsableToken))
+  );
   const scError = googleRow?.last_error ?? null;
 
   const googleSearchConsoleStatus: CanonicalConnectionStatus = {
