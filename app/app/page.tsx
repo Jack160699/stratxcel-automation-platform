@@ -74,6 +74,28 @@ async function loadCommandCenter(tenantDb: SupabaseClient, tenantId: string) {
   const planSummary = resolveCustomerPlanSummary(subscription);
   const report = hasValidAuditReport(order?.report_data) ? (order?.report_data as AuditDeliveryReport) : null;
   const sources = report?.sources ?? [];
+
+  // Found live during E2E testing: a tenant with 5 of 7 sources genuinely
+  // connected (confirmed live) saw "Online Health 0/100 · At risk" here,
+  // directly contradicting "Connected sources: 7" two tiles over and the
+  // sidebar's "Live on Google & WhatsApp" badge -- because this score and
+  // the opportunities below it are frozen at audit-generation time, from
+  // whatever the connectors looked like then (report.connectorAvailability),
+  // not what they look like now. Same root defect as the Audit report page
+  // (see VisualAuditReport.tsx's staleConnectorLabels), on a second surface.
+  // Detect the same way: any provider the report recorded as unavailable
+  // that canonical live status now says is CONNECTED means this score and
+  // these opportunities predate that connection and can't be trusted.
+  const reportAvailability = new Map((report?.connectorAvailability ?? []).map((c) => [c.provider, c.state]));
+  const scoreIsStale = Boolean(
+    digitalPresence &&
+      Object.entries(digitalPresence.connections).some(([provider, status]) => {
+        if (status.connectionState !== "CONNECTED") return false;
+        const reportKey = provider === "google_analytics" ? "google_analytics" : provider === "google_search_console" ? "search_console" : provider;
+        const recorded = reportAvailability.get(reportKey) ?? reportAvailability.get(provider);
+        return recorded !== undefined && recorded !== "available";
+      })
+  );
   const whatsappConnected = digitalPresence?.connections.whatsapp.connectionState === "CONNECTED";
   const whatsappBinding = whatsappConnected ? { status: "active" as const } : null;
   const socialAccountsCount = digitalPresence
@@ -103,6 +125,7 @@ async function loadCommandCenter(tenantDb: SupabaseClient, tenantId: string) {
     socialAccountsCount,
     whatsappBinding,
     activeRunsCount,
+    scoreIsStale,
   };
 }
 
@@ -118,6 +141,7 @@ export default async function ClientCommandCenterPage() {
     brandBrain,
     whatsappBinding,
     activeRunsCount,
+    scoreIsStale,
   } = await loadCommandCenter(ctx.supabase, active.tenantId);
 
   const brainContent = brandBrain?.content as Record<string, unknown> | undefined;
@@ -125,7 +149,10 @@ export default async function ClientCommandCenterPage() {
   const businessName =
     (brainContent?.business_name as string | undefined) || identity?.name || active.name || "Your Business";
   const score = report?.overallHealth?.score ?? report?.scores?.overall ?? 72;
-  const opportunities: AuditOpportunity[] = report?.opportunities?.slice(0, 3) ?? [];
+  // A stale score's own opportunities are just as untrustworthy -- they're
+  // the same "connect your data sources" findings that produced the stale
+  // score, for sources that are now actually connected.
+  const opportunities: AuditOpportunity[] = scoreIsStale ? [] : (report?.opportunities?.slice(0, 3) ?? []);
 
   return (
     <div className="sx-customer-app mx-auto flex w-full max-w-[720px] flex-col gap-6 pb-20 md:pb-8">
@@ -134,6 +161,7 @@ export default async function ClientCommandCenterPage() {
           businessName={businessName}
           customerState={customerState}
           score={score}
+          scoreIsStale={scoreIsStale}
           opportunities={opportunities}
           activeRunsCount={activeRunsCount}
         />
@@ -141,6 +169,7 @@ export default async function ClientCommandCenterPage() {
         <FreeUserDashboard
           businessName={businessName}
           score={score}
+          scoreIsStale={scoreIsStale}
           hasAuditReport={Boolean(report)}
           whatsappVerified={Boolean(whatsappBinding && whatsappBinding.status === "active")}
         />
@@ -158,16 +187,20 @@ export default async function ClientCommandCenterPage() {
 function FreeUserDashboard({
   businessName,
   score,
+  scoreIsStale,
   hasAuditReport,
   whatsappVerified,
 }: {
   businessName: string;
   score: number;
+  scoreIsStale: boolean;
   hasAuditReport: boolean;
   whatsappVerified: boolean;
 }) {
   const band = bandForScore(score);
-  const sentence = hasAuditReport
+  const sentence = scoreIsStale
+    ? `${businessName} connected new accounts since this audit ran — refresh it for an accurate score.`
+    : hasAuditReport
     ? band === "strong" || band === "good"
       ? `${businessName} is discoverable. A plan turns this audit into ongoing execution.`
       : `${businessName}'s foundation is verified — your free audit found room to grow.`
@@ -207,8 +240,8 @@ function FreeUserDashboard({
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="flex flex-col items-center gap-3 rounded-sx-md border border-sx-border bg-sx-surface-1 p-5 text-center">
           <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-sx-text-subtle">Online Health</span>
-          <ScoreRing score={score} />
-          <ScoreBandChip band={band} />
+          {scoreIsStale ? <StaleScoreIndicator /> : <ScoreRing score={score} />}
+          {!scoreIsStale && <ScoreBandChip band={band} />}
           <p className="text-[13px] leading-[20px] text-sx-text-muted">{sentence}</p>
           <Link
             href="/app/audit"
@@ -271,12 +304,14 @@ function SubscribedUserDashboard({
   businessName,
   customerState,
   score,
+  scoreIsStale,
   opportunities,
   activeRunsCount,
 }: {
   businessName: string;
   customerState: GlobalCustomerState;
   score: number;
+  scoreIsStale: boolean;
   opportunities: AuditOpportunity[];
   activeRunsCount: number;
 }) {
@@ -304,8 +339,19 @@ function SubscribedUserDashboard({
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="flex flex-col items-center justify-center gap-3 rounded-sx-md border border-sx-border bg-sx-surface-1 p-6 text-center">
           <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-sx-text-subtle">Online Health</span>
-          <ScoreRing score={score} />
-          <ScoreBandChip band={band} />
+          {scoreIsStale ? (
+            <>
+              <StaleScoreIndicator />
+              <p className="max-w-[220px] text-[13px] leading-[20px] text-sx-text-muted">
+                You&apos;ve connected new accounts since this audit ran — refresh it for an accurate score.
+              </p>
+            </>
+          ) : (
+            <>
+              <ScoreRing score={score} />
+              <ScoreBandChip band={band} />
+            </>
+          )}
         </div>
         <div className="grid grid-cols-2 gap-3">
           <MetricTile label="Connected sources" value={String(customerState.connectedSourcesCount)} />
@@ -540,6 +586,24 @@ function UnlockCard({ icon, title, description }: { icon: string; title: string;
       <span className="text-2xl">{icon}</span>
       <h3 className="mt-2 text-[15px] font-semibold text-sx-text">{title}</h3>
       <p className="mt-1 text-[13px] leading-relaxed text-sx-text-muted">{description}</p>
+    </div>
+  );
+}
+
+/**
+ * Honest stand-in for ScoreRing when the audit report predates a
+ * connector that's since come online (see scoreIsStale in
+ * loadCommandCenter) -- a dash, not a number that would either
+ * contradict "Connected sources" two tiles over or overstate a real
+ * business's health from thin, since-outdated evidence.
+ */
+function StaleScoreIndicator() {
+  return (
+    <div className="relative flex h-[120px] w-[120px] items-center justify-center rounded-full border-4 border-dashed border-sx-border">
+      <div className="flex flex-col items-center">
+        <span className="text-[28px] font-semibold leading-[36px] text-sx-text-subtle">—</span>
+        <span className="text-xs text-sx-text-subtle">Refresh needed</span>
+      </div>
     </div>
   );
 }
