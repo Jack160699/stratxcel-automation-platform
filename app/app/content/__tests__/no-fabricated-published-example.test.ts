@@ -57,7 +57,27 @@ function run() {
     "no starter/example content item may carry fabricated engagement metrics -- nothing was ever measured"
   );
 
-  console.log("PASS: no starter/example content item fabricates a published state or engagement metrics");
+  // Found live during E2E testing: the "Google 5-Star Review Spotlight"
+  // starter item's captionText asserted "5-star reviews on Google Maps" as
+  // an established fact about the business, with no check that any such
+  // review exists -- copyable one-click via the card's Copy action, no
+  // edit step required. A brand-new tenant with zero real reviews could
+  // post this as a false claim. It must read as a fill-in-the-blank
+  // template, not a presupposed fact.
+  const reviewItemBlock = starterBlock.split('id: "starter-review"')[1]?.split('id: "starter-reel"')[0] ?? "";
+  assert.ok(reviewItemBlock.length > 0, "could not locate the starter-review item block");
+  assert.doesNotMatch(
+    reviewItemBlock,
+    /Thank you to (all )?our (wonderful )?customers for the love and 5-star reviews on Google Maps/,
+    "the review-spotlight starter item must not assert a specific 5-star Google review as an established fact"
+  );
+  assert.match(
+    reviewItemBlock,
+    /\[.*review.*here\]|\[.*words.*here\]/i,
+    "the review-spotlight starter item must read as a fill-in-the-blank template prompting a real review, not presuppose one exists"
+  );
+
+  console.log("PASS: no starter/example content item fabricates a published state, engagement metrics, or an unverified review claim");
 }
 
 run();

@@ -186,22 +186,33 @@ export default async function CustomerContentPage() {
         // state), but must never claim a real business outcome that never
         // happened -- kept as an unpublished, unmeasured example like the
         // other three starter items below.
+        //
+        // Separately found: the caption text itself asserted "5-star
+        // reviews on Google Maps" as an established fact about this
+        // specific business, with no check that any such review actually
+        // exists. A brand-new tenant with zero real reviews could copy this
+        // caption (via the card's one-click Copy action -- no edit step
+        // required) and post a false claim. Reworded as an explicit,
+        // fill-in-the-blank template that prompts featuring a REAL review
+        // rather than presupposing one, consistent with "clearly marked
+        // placeholder or omit" -- this content idea is genuinely useful
+        // once a business has real reviews, it just can't presume one yet.
         id: "starter-review",
-        title: "Google 5-Star Review Spotlight",
+        title: "Google Review Spotlight (Template)",
         type: "creative",
         category: "draft",
         angle: "5-Star Review Spotlight",
         objective: "Customer trust & Google Maps review proof",
         imageUrl: generatePosterSvg(
-          `⭐⭐⭐⭐⭐ "Best Experience in Town!"`,
-          `Thank you to all our customers for rating ${businessName} 5-stars on Google Maps!`,
+          `⭐⭐⭐⭐⭐ "[Add your customer's words here]"`,
+          `Feature a real 5-star review from your Google Business Profile to build trust with new customers.`,
           "#10b981",
-          "5-STAR RATED"
+          "REVIEW SPOTLIGHT"
         ),
         aspectRatio: "1:1",
         createdAt: new Date(Date.now() - 3600000 * 48).toISOString(),
         status: "READY",
-        captionText: `⭐⭐⭐⭐⭐ "Best experience in town!" Thank you to our wonderful customers for the love and 5-star reviews on Google Maps!`,
+        captionText: `⭐⭐⭐⭐⭐ "[Paste a real review from your Google Business Profile here]" Thank you to our customers -- your trust means everything to us!`,
       },
       {
         id: "starter-reel",
