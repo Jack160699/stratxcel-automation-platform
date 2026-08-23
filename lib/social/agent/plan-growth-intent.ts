@@ -120,7 +120,13 @@ export async function handleWeeklyGrowthAdviceTurn(
   const brand = await getBrandProfile(ctx).catch(() => null);
   const businessName = brand?.identity?.name?.trim() || "your business";
   const accounts = await listAccounts(ctx).catch(() => []);
-  const googleConnected = accounts.some((a) => a.platform === "google" && a.status === "CONNECTED");
+  // Found live during E2E testing: this checked platform === "google", a
+  // value social_accounts never actually stores -- the real row is
+  // platform === "google_business" (confirmed live: Growth Assistant told a
+  // tenant with a genuinely CONNECTED Google Business Profile to "Connect
+  // Google Business Profile"). "google" is kept as a fallback to match the
+  // same two-value lookup canonical-status.ts's findSocialRow already uses.
+  const googleConnected = accounts.some((a) => (a.platform === "google_business" || a.platform === "google") && a.status === "CONNECTED");
   const instagramConnected = accounts.some((a) => a.platform === "instagram" && a.status === "CONNECTED");
 
   const message = `Here are your **Top 3 Recommended Actions** for **${businessName}** this week:
