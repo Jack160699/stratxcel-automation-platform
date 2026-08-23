@@ -8,6 +8,7 @@ import { upsertConnectedAccount, type Platform } from "@/lib/social/repositories
 import { recordAudit } from "@/lib/social/repositories/system";
 import { getCanonicalSocialRedirectUri } from "@/lib/social/oauth-origin";
 import { recordOAuthDiagnostic } from "@/lib/social/oauth-diagnostics";
+import { createDevEncryptedVault } from "@stratxcel/byok";
 
 const PROVIDER_LABELS: Record<string, string> = {
   google_business: "Google",
@@ -276,16 +277,35 @@ export async function GET(
           });
 
           if (provider === "google" || provider === "google_business") {
-            const { error: gErr } = await service.from("search_google_connections").upsert(
-              {
-                tenant_id: targetTenantId,
-                status: "connected",
-                connected_by_user_id: userId,
-                connected_at: new Date().toISOString(),
-                updated_at: new Date().toISOString(),
-              },
-              { onConflict: "tenant_id" }
-            );
+            // Found live during E2E testing: this used to mark status
+            // "connected" without ever storing the refresh token or granted
+            // scopes it already had in `result` (used two lines above for the
+            // social_accounts upsert) -- so every real customer who completed
+            // Google OAuth ended up with a "connected" row that could never
+            // actually mint a live access token. The Search & Discovery UI
+            // then correctly detected the missing token and downgraded the
+            // customer-visible status back to "NOT CONNECTED", contradicting
+            // the DB's own status column and the customer's lived experience
+            // of having just approved the consent screen.
+            // Only overwrite the stored refresh token when Google actually
+            // issued a new one this round (Google omits it on repeat
+            // consents) -- never null out a previously-stored valid token.
+            const googlePatch: Record<string, unknown> = {
+              tenant_id: targetTenantId,
+              status: "connected",
+              connected_by_user_id: userId,
+              connected_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+              granted_scopes: result.scopes ?? [],
+            };
+            if (result.refreshToken) {
+              const vault = createDevEncryptedVault(service);
+              googlePatch.encrypted_refresh_token_ref = await vault.store(result.refreshToken);
+            }
+
+            const { error: gErr } = await service.from("search_google_connections").upsert(googlePatch, {
+              onConflict: "tenant_id",
+            });
             if (gErr) {
               throw new Error(`Google connection upsert failed: ${gErr.message}`);
             }
