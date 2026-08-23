@@ -59,32 +59,46 @@ export function StepBusiness({
   const [linkValue, setLinkValue] = useState(draft.business.website || draft.business.googleMapsUrl || "");
   const [linkError, setLinkError] = useState<string | null>(null);
 
+  /**
+   * Pure classification: given the raw link field text, resolve it to
+   * {website, googleMapsUrl} without touching component/draft state. Used
+   * both by classifyAndStoreLink (on blur, for persistence) and by the
+   * "Find my business info automatically" button's onClick — the button
+   * cannot rely on draft.business.website/googleMapsUrl alone because those
+   * only commit on blur, and clicking the button directly after typing
+   * (without first blurring the field) is a completely normal interaction
+   * that must not leave the button silently non-functional.
+   */
+  function classifyLink(value: string): { website: string; googleMapsUrl: string; placeName?: string } {
+    const trimmed = value.trim();
+    if (!trimmed) return { website: "", googleMapsUrl: "" };
+    const mapsResult = validateAndNormalizeGoogleMapsInput(trimmed);
+    if (mapsResult.success) {
+      return { website: "", googleMapsUrl: mapsResult.data.canonicalUrl, placeName: mapsResult.data.placeName };
+    }
+    const websiteResult = normalizeWebsiteUrl(trimmed);
+    if (websiteResult.ok && websiteResult.url) {
+      return { website: websiteResult.url, googleMapsUrl: "" };
+    }
+    // Neither a recognizable Maps link nor a valid website — keep the raw
+    // text as a website candidate (non-blocking; this field is optional)
+    // rather than reject input the user might still complete typing.
+    return { website: trimmed, googleMapsUrl: "" };
+  }
+
   function classifyAndStoreLink(value: string) {
     const trimmed = value.trim();
     if (!trimmed) {
       update({ website: "", googleMapsUrl: "" });
       return;
     }
-    const mapsResult = validateAndNormalizeGoogleMapsInput(trimmed);
-    if (mapsResult.success) {
-      update({
-        googleMapsUrl: mapsResult.data.canonicalUrl,
-        website: "",
-        name: !draft.business.name && mapsResult.data.placeName ? mapsResult.data.placeName : draft.business.name,
-      });
-      setLinkError(null);
-      return;
-    }
-    const websiteResult = normalizeWebsiteUrl(trimmed);
-    if (websiteResult.ok && websiteResult.url) {
-      update({ website: websiteResult.url, googleMapsUrl: "" });
-      setLinkError(null);
-      return;
-    }
-    // Neither a recognizable Maps link nor a valid website — keep the raw
-    // text as a website candidate (non-blocking; this field is optional)
-    // rather than reject input the user might still complete typing.
-    update({ website: trimmed, googleMapsUrl: "" });
+    const resolved = classifyLink(value);
+    update({
+      googleMapsUrl: resolved.googleMapsUrl,
+      website: resolved.website,
+      name: !draft.business.name && resolved.placeName ? resolved.placeName : draft.business.name,
+    });
+    setLinkError(null);
   }
 
   return (
@@ -146,8 +160,12 @@ export function StepBusiness({
         {discoveryState === "idle" && (
           <button
             type="button"
-            onClick={() => onStartDiscovery(draft.business.website, draft.business.googleMapsUrl ?? "")}
-            disabled={!draft.business.website && !draft.business.googleMapsUrl}
+            onClick={() => {
+              const resolved = classifyLink(linkValue);
+              classifyAndStoreLink(linkValue);
+              onStartDiscovery(resolved.website, resolved.googleMapsUrl);
+            }}
+            disabled={!linkValue.trim() && !draft.business.website && !draft.business.googleMapsUrl}
             className="flex h-[46px] items-center justify-center gap-2 rounded-sx-md border-[1.5px] border-dashed border-sx-accent/30 bg-sx-accent-muted text-[14px] font-semibold text-sx-accent disabled:opacity-40"
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8" /><path d="M21 21l-4.35-4.35" /></svg>
