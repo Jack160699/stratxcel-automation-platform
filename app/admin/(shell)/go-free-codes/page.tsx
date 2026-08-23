@@ -38,12 +38,15 @@ interface RedemptionRow {
   id: string;
   tenant_id: string;
   customer_email: string;
-  audit_order_id: string;
+  audit_order_id: string | null;
+  subscription_id: string | null;
   list_price_cents: number;
   discount_cents: number;
   amount_due_cents: number;
   redeemed_at: string;
 }
+
+type ProductScope = "audit_fee" | "subscription_payment";
 
 function formatWhen(iso: string | null | undefined): string {
   if (!iso) return "Never";
@@ -62,6 +65,8 @@ export default function GoFreeCodesPage() {
   const [created, setCreated] = useState<CreatedCode | null>(null);
   const [redemptionsFor, setRedemptionsFor] = useState<{ id: string; code: string; rows: RedemptionRow[] } | null>(null);
 
+  const [scopeFilter, setScopeFilter] = useState<"all" | ProductScope>("all");
+  const [productScope, setProductScope] = useState<ProductScope>("audit_fee");
   const [generate, setGenerate] = useState(true);
   const [customCode, setCustomCode] = useState("");
   const [maxUses, setMaxUses] = useState("1");
@@ -75,7 +80,7 @@ export default function GoFreeCodesPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/platform/admin/promo-codes");
+      const res = await fetch(`/api/platform/admin/promo-codes?scope=${scopeFilter}`);
       const body = await res.json();
       if (!res.ok) {
         setError(body.error ?? "Could not load Go Free codes");
@@ -88,7 +93,7 @@ export default function GoFreeCodesPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [scopeFilter]);
 
   useEffect(() => {
     void load();
@@ -105,6 +110,7 @@ export default function GoFreeCodesPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           generate,
+          productScope,
           customCode: generate ? undefined : customCode,
           maxRedemptions: Number(maxUses) || 1,
           maxRedemptionsPerCustomer: Number(maxPerCustomer) || 1,
@@ -176,13 +182,30 @@ export default function GoFreeCodesPage() {
           <p className="text-xs font-semibold uppercase tracking-wide text-sx-text-subtle">Billing / Payments</p>
           <h1 className="font-sx-sans text-xl font-semibold text-sx-text">Go Free Codes</h1>
           <p className="mt-1 max-w-2xl text-sm text-sx-text-muted">
-            Create one-time complimentary codes for the ₹999 Business Growth Audit. No Razorpay charge, no subscription, no Audit credit.
+            Create one-time complimentary codes for approved test/trial activation of the ₹999 Business Growth Audit or a self-service
+            subscription plan (Starter / Growth / Business). No Razorpay charge, no revenue, no paid invoice — always classified as a
+            test/trial activation.
           </p>
         </div>
         <Button type="button" variant="primary" size="touch" onClick={() => { setShowCreate(true); setCreated(null); }}>
           + Create Go Free Code
         </Button>
       </header>
+
+      <div className="flex items-center gap-2">
+        <p className="text-xs font-semibold uppercase tracking-wide text-sx-text-subtle">Show</p>
+        {(["all", "audit_fee", "subscription_payment"] as const).map((s) => (
+          <Button
+            key={s}
+            type="button"
+            variant={scopeFilter === s ? "primary" : "secondary"}
+            size="sm"
+            onClick={() => setScopeFilter(s)}
+          >
+            {s === "all" ? "All" : s === "audit_fee" ? "Audit" : "Subscription"}
+          </Button>
+        ))}
+      </div>
 
       {error && <ErrorState message={error} />}
 
@@ -232,13 +255,22 @@ export default function GoFreeCodesPage() {
           <div className="mt-4 grid gap-4">
             <div>
               <p className="text-xs font-semibold uppercase text-sx-text-subtle">Product</p>
-              <p className="mt-1 text-sm text-sx-text">Business Growth Audit — ₹999</p>
+              <div className="mt-2 flex flex-col gap-2">
+                <label className="flex items-center gap-2 text-sm text-sx-text">
+                  <input type="radio" checked={productScope === "audit_fee"} onChange={() => setProductScope("audit_fee")} />
+                  Business Growth Audit — ₹999
+                </label>
+                <label className="flex items-center gap-2 text-sm text-sx-text">
+                  <input type="radio" checked={productScope === "subscription_payment"} onChange={() => setProductScope("subscription_payment")} />
+                  Subscription plan — customer picks Starter (₹2,999) / Growth (₹7,999) / Business (₹15,999) at activation
+                </label>
+              </div>
             </div>
 
             <div className="flex flex-col gap-2">
               <label className="flex items-center gap-2 text-sm text-sx-text">
                 <input type="radio" checked={generate} onChange={() => setGenerate(true)} />
-                Generate code (AUDIT-XXXX-XXXX)
+                Generate code ({productScope === "subscription_payment" ? "SUB-XXXX-XXXX" : "AUDIT-XXXX-XXXX"})
               </label>
               <label className="flex items-center gap-2 text-sm text-sx-text">
                 <input type="radio" checked={!generate} onChange={() => setGenerate(false)} />
@@ -295,7 +327,7 @@ export default function GoFreeCodesPage() {
                 <thead className="text-xs uppercase text-sx-text-subtle">
                   <tr>
                     <th className="py-2 pr-3">Email</th>
-                    <th className="py-2 pr-3">Audit order</th>
+                    <th className="py-2 pr-3">Activated</th>
                     <th className="py-2 pr-3">Discount</th>
                     <th className="py-2 pr-3">Due</th>
                     <th className="py-2">Redeemed</th>
@@ -305,7 +337,9 @@ export default function GoFreeCodesPage() {
                   {redemptionsFor.rows.map((r) => (
                     <tr key={r.id} className="border-t border-sx-border text-sx-text">
                       <td className="py-2 pr-3">{r.customer_email}</td>
-                      <td className="py-2 pr-3 font-mono text-xs">{r.audit_order_id}</td>
+                      <td className="py-2 pr-3 font-mono text-xs">
+                        {r.subscription_id ? `subscription ${r.subscription_id}` : `audit ${r.audit_order_id}`}
+                      </td>
                       <td className="py-2 pr-3">₹{(r.discount_cents / 100).toFixed(0)}</td>
                       <td className="py-2 pr-3">₹{(r.amount_due_cents / 100).toFixed(0)}</td>
                       <td className="py-2">{formatWhen(r.redeemed_at)}</td>

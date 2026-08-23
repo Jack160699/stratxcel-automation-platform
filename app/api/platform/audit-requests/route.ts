@@ -1,12 +1,18 @@
 import { createSupabaseServerClient } from "../../../../lib/supabase/server.ts";
 import { getTenantServiceContext } from "../../../../lib/tenants/tenant-context.ts";
+import { requirePlatformStaff } from "../../../../lib/platform-staff/auth.ts";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
  * Platform Admin visibility for Public Audit Requests.
- * Requires user authentication.
+ * Requires platform-staff authorization (platform_owner / platform_admin /
+ * audit_reviewer) — this table holds prospect PII (name, email, phone,
+ * goals, internal notes) for every visitor who ever submitted the public
+ * free-audit form, so a plain "is logged in" check would let any customer
+ * account read and edit every other lead. See also the matching RLS/grant
+ * fix in supabase/migrations for the direct-PostgREST path.
  */
 export async function GET() {
   const supabase = await createSupabaseServerClient();
@@ -16,6 +22,11 @@ export async function GET() {
 
   if (!user) {
     return Response.json({ error: "Not authenticated" }, { status: 401 });
+  }
+
+  const staffAuth = await requirePlatformStaff(user.id, ["platform_owner", "platform_admin", "audit_reviewer"]);
+  if (!staffAuth.ok) {
+    return Response.json({ error: staffAuth.error }, { status: staffAuth.status });
   }
 
   const { supabase: serviceDb } = getTenantServiceContext();
@@ -41,6 +52,11 @@ export async function PATCH(request: Request) {
 
   if (!user) {
     return Response.json({ error: "Not authenticated" }, { status: 401 });
+  }
+
+  const staffAuth = await requirePlatformStaff(user.id, ["platform_owner", "platform_admin", "audit_reviewer"]);
+  if (!staffAuth.ok) {
+    return Response.json({ error: staffAuth.error }, { status: staffAuth.status });
   }
 
   const body = await request.json().catch(() => ({}));

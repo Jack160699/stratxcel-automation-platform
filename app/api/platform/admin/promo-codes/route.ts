@@ -3,6 +3,7 @@ import { getTenantServiceContext } from "@/lib/tenants/tenant-context";
 import { requirePlatformStaff } from "@/lib/platform-staff/auth";
 import {
   generateAuditGoFreeCode,
+  generateSubscriptionGoFreeCode,
   hashPromoCode,
   isCustomPromoCodeFormat,
   normalizePromoCode,
@@ -23,19 +24,41 @@ async function requireGoFreeAdmin() {
   return { ok: true as const, userId: user.id, role: staff.staff.role };
 }
 
-export async function GET() {
+const PRODUCT_LABELS: Record<string, string> = {
+  audit_fee: "Business Growth Audit — ₹999",
+  subscription_payment: "Subscription plan (Starter / Growth / Business)",
+};
+
+function isValidProductScope(value: unknown): value is "audit_fee" | "subscription_payment" {
+  return value === "audit_fee" || value === "subscription_payment";
+}
+
+export async function GET(request: Request) {
   const auth = await requireGoFreeAdmin();
   if (!auth.ok) return Response.json({ error: auth.error }, { status: auth.status });
 
+  // Defaults to "audit_fee" for backward compatibility with existing callers
+  // of this route; pass ?scope=subscription_payment for GoFree subscription
+  // trial codes, or ?scope=all for both.
+  const scopeParam = new URL(request.url).searchParams.get("scope") ?? "audit_fee";
+
   const { supabase: service } = getTenantServiceContext();
-  const { data: codes, error } = await service
+  let query = service
     .from("promo_codes")
     .select(
       "id, code_display, code_prefix, product_scope, payment_purpose, discount_percent, max_redemptions, max_redemptions_per_customer, valid_from, expires_at, allowed_email, is_active, internal_note, created_by, created_at, updated_at"
     )
-    .eq("payment_purpose", "audit_fee")
     .order("created_at", { ascending: false })
     .limit(200);
+
+  if (scopeParam !== "all") {
+    if (!isValidProductScope(scopeParam)) {
+      return Response.json({ error: "Invalid scope query param" }, { status: 400 });
+    }
+    query = query.eq("payment_purpose", scopeParam);
+  }
+
+  const { data: codes, error } = await query;
 
   if (error) {
     return Response.json({ error: "Could not load Go Free codes" }, { status: 500 });
@@ -54,7 +77,7 @@ export async function GET() {
     {
       codes: (codes ?? []).map((c) => ({
         ...c,
-        productLabel: "Business Growth Audit — ₹999",
+        productLabel: PRODUCT_LABELS[c.payment_purpose] ?? c.payment_purpose,
         redemptionCount: useCounts.get(c.id) ?? 0,
       })),
     },
@@ -65,6 +88,7 @@ export async function GET() {
 interface CreateBody {
   customCode?: string;
   generate?: boolean;
+  productScope?: string;
   maxRedemptions?: number | null;
   maxRedemptionsPerCustomer?: number;
   validFrom?: string | null;
@@ -79,9 +103,15 @@ export async function POST(request: Request) {
   if (!auth.ok) return Response.json({ error: auth.error }, { status: auth.status });
 
   const body = (await request.json().catch(() => ({}))) as CreateBody;
+
+  const productScope = body.productScope ?? "audit_fee";
+  if (!isValidProductScope(productScope)) {
+    return Response.json({ error: "productScope must be audit_fee or subscription_payment." }, { status: 400 });
+  }
+
   let codeDisplay: string;
   if (body.generate || !body.customCode?.trim()) {
-    codeDisplay = generateAuditGoFreeCode();
+    codeDisplay = productScope === "subscription_payment" ? generateSubscriptionGoFreeCode() : generateAuditGoFreeCode();
   } else {
     codeDisplay = normalizePromoCode(body.customCode);
     if (!isCustomPromoCodeFormat(codeDisplay)) {
@@ -124,8 +154,8 @@ export async function POST(request: Request) {
     code_hash: hashPromoCode(codeDisplay),
     code_display: codeDisplay,
     code_prefix: promoCodePrefix(codeDisplay),
-    product_scope: "audit_fee",
-    payment_purpose: "audit_fee",
+    product_scope: productScope,
+    payment_purpose: productScope,
     discount_type: "percent",
     discount_percent: 100,
     max_redemptions: maxRedemptions,
@@ -154,7 +184,7 @@ export async function POST(request: Request) {
     action: "create_promo_code",
     metadata: {
       promo_id: created.id,
-      product: "audit_fee",
+      product: productScope,
       code_prefix: created.code_prefix,
       max_redemptions: created.max_redemptions,
       max_redemptions_per_customer: created.max_redemptions_per_customer,
@@ -171,7 +201,7 @@ export async function POST(request: Request) {
       code: {
         id: created.id,
         codeDisplay: created.code_display,
-        productLabel: "Business Growth Audit",
+        productLabel: PRODUCT_LABELS[productScope],
         discountPercent: 100,
         redemptionCount: 0,
         maxRedemptions: created.max_redemptions,

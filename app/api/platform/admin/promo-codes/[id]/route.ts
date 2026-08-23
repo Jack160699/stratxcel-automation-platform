@@ -62,7 +62,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     action: body.isActive ? "enable_promo_code" : "disable_promo_code",
     metadata: {
       promo_id: updated.id,
-      product: "audit_fee",
+      product: existing.product_scope,
       code_prefix: updated.code_prefix,
       max_redemptions: updated.max_redemptions,
       expires_at: updated.expires_at,
@@ -93,15 +93,20 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
   const { data: redemptions } = await service
     .from("promo_redemptions")
     .select(
-      "id, tenant_id, customer_email, audit_order_id, list_price_cents, discount_cents, amount_due_cents, redeemed_at"
+      "id, tenant_id, customer_email, audit_order_id, subscription_id, list_price_cents, discount_cents, amount_due_cents, metadata, redeemed_at"
     )
     .eq("promo_code_id", id)
     .order("redeemed_at", { ascending: false })
     .limit(500);
 
+  const productLabel =
+    code.product_scope === "subscription_payment"
+      ? "Subscription plan (Starter / Growth / Business)"
+      : "Business Growth Audit — ₹999";
+
   return Response.json(
     {
-      code: { ...code, productLabel: "Business Growth Audit — ₹999" },
+      code: { ...code, productLabel },
       redemptions: redemptions ?? [],
     },
     { headers: { "Cache-Control": "no-store" } }

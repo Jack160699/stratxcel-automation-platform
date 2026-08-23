@@ -58,6 +58,7 @@ export async function POST(request: Request) {
   let linksCreated = 0;
   let skippedExisting = 0;
   let skippedProviderManaged = 0;
+  let skippedGoFreeTrial = 0;
   const failures: Array<{ subscriptionId: string; error: string }> = [];
 
   const processingCandidates = candidates ?? [];
@@ -74,6 +75,17 @@ export async function POST(request: Request) {
       // Provider-managed AutoPay: Razorpay charges — never mint a renewal Payment Link.
       if (isProviderManagedSubscription(sub)) {
         skippedProviderManaged += 1;
+        continue;
+      }
+
+      // GoFree test/trial activations are never real payments and must never
+      // trigger a real Razorpay payment link. run_subscription_lifecycle_cycle
+      // (provider-agnostic) still carries them through the normal
+      // active -> past_due -> expired grace-period lifecycle and revokes their
+      // entitlements exactly like a real subscription that stopped paying —
+      // only the "mint a real payment link" step is skipped here.
+      if (sub.billing_provider === "go_free_trial") {
+        skippedGoFreeTrial += 1;
         continue;
       }
 
@@ -122,6 +134,7 @@ export async function POST(request: Request) {
     linksCreated,
     skippedExisting,
     skippedProviderManaged,
+    skippedGoFreeTrial,
     failures,
   });
 }

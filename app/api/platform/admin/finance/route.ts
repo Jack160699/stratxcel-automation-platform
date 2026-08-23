@@ -58,7 +58,7 @@ export async function GET(request: Request) {
       .order("created_at", { ascending: false }),
     serviceDb
       .from("promo_redemptions")
-      .select("list_price_cents, discount_cents, amount_due_cents, redeemed_at")
+      .select("list_price_cents, discount_cents, amount_due_cents, redeemed_at, payment_purpose")
       .order("redeemed_at", { ascending: false }),
     serviceDb
       .from("payment_refunds")
@@ -207,10 +207,32 @@ export async function GET(request: Request) {
     });
   }
 
-  if (rev.freePromoRedemptionsCount > 0) {
+  // Split complimentary/GoFree redemptions by product for the dashboard — never
+  // revenue either way (rev.freePromoRedemptionsCount / freePromoValueInr already
+  // exclude all of these from grossInr), this is purely a display distinction so
+  // "test/trial subscription activations" doesn't get silently folded into the
+  // Audit complimentary line.
+  const complimentaryAuditCount = promoRedemptions.filter(
+    (p) => (p as { payment_purpose?: string }).payment_purpose !== "subscription_payment" && (Number(p.amount_due_cents) || 0) === 0
+  ).length;
+  const complimentarySubscriptionCount = promoRedemptions.filter(
+    (p) => (p as { payment_purpose?: string }).payment_purpose === "subscription_payment" && (Number(p.amount_due_cents) || 0) === 0
+  ).length;
+
+  if (complimentaryAuditCount > 0) {
     products.push({
       product: "Complimentary Promo Audits (₹0 Paid)",
-      salesCount: rev.freePromoRedemptionsCount,
+      salesCount: complimentaryAuditCount,
+      revenueInr: 0,
+      percentShare: 0,
+      isComplimentary: true,
+    });
+  }
+
+  if (complimentarySubscriptionCount > 0) {
+    products.push({
+      product: "GoFree Test/Trial Subscriptions (₹0 Paid)",
+      salesCount: complimentarySubscriptionCount,
       revenueInr: 0,
       percentShare: 0,
       isComplimentary: true,

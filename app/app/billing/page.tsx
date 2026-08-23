@@ -161,6 +161,18 @@ export default function BillingPage() {
   const [recommendedTier, setRecommendedTier] = useState<string | null>(null);
   const loadSequence = useRef(0);
 
+  // GoFree — internal test/trial 100% discount activation. Not part of the
+  // real-customer checkout flow (that stays "Request activation" via
+  // /contact); this is a separate, always-visible affordance for approved
+  // test accounts holding a code issued from /admin/go-free-codes. The
+  // server independently re-validates eligibility, plan, and price — this
+  // form only ever submits a plan tier and a code string.
+  const [goFreePlan, setGoFreePlan] = useState<"starter" | "growth" | "business">("starter");
+  const [goFreeCode, setGoFreeCode] = useState("");
+  const [goFreeBusy, setGoFreeBusy] = useState(false);
+  const [goFreeError, setGoFreeError] = useState<string | null>(null);
+  const [goFreeSuccess, setGoFreeSuccess] = useState<string | null>(null);
+
   // Deep-linked from EntitlementGate / the Growth Assistant / the audit
   // recommendation (brief §13) — "?recommended=growth" highlights that plan
   // with why it's needed instead of a flat, unexplained grid.
@@ -266,6 +278,33 @@ export default function BillingPage() {
       await load();
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function redeemGoFree(e: React.FormEvent) {
+    e.preventDefault();
+    if (!tenantId || goFreeBusy) return;
+    setGoFreeBusy(true);
+    setGoFreeError(null);
+    setGoFreeSuccess(null);
+    try {
+      const res = await fetch("/api/platform/subscriptions/go-free/redeem", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tenantId, planTier: goFreePlan, promoCode: goFreeCode }),
+      });
+      const body = await res.json();
+      if (!res.ok) {
+        setGoFreeError(body.error ?? "Could not activate this plan.");
+        return;
+      }
+      setGoFreeSuccess(`${goFreePlan[0]!.toUpperCase()}${goFreePlan.slice(1)} activated as a test/trial — ₹0 payable.`);
+      setGoFreeCode("");
+      await load();
+    } catch {
+      setGoFreeError("Network error. Please try again.");
+    } finally {
+      setGoFreeBusy(false);
     }
   }
 
@@ -413,6 +452,36 @@ export default function BillingPage() {
             <p className="text-xs text-sx-text-subtle">
               {SCALE_TIER?.price ?? "Scale / Custom"}/mo and is scoped with our team for multi-location or high-volume needs.
             </p>
+
+            <form onSubmit={redeemGoFree} className="rounded-sx-md border border-sx-border bg-sx-surface-2 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-sx-text-subtle">Have an activation code?</p>
+              <p className="mt-1 text-xs text-sx-text-muted">
+                Approved test/trial codes activate a plan immediately at ₹0 payable for browser testing. This never charges a card and
+                is tracked separately from paying customers.
+              </p>
+              <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                <select
+                  value={goFreePlan}
+                  onChange={(e) => setGoFreePlan(e.target.value as "starter" | "growth" | "business")}
+                  className="rounded-sx-sm border border-sx-border bg-sx-surface-1 px-3 py-2 text-sm text-sx-text"
+                >
+                  <option value="starter">Starter — {money(SELF_SERVICE_PLANS.find((p) => p.tier === "starter")?.priceCents ?? 299900)}/mo</option>
+                  <option value="growth">Growth — {money(SELF_SERVICE_PLANS.find((p) => p.tier === "growth")?.priceCents ?? 799900)}/mo</option>
+                  <option value="business">Business — {money(SELF_SERVICE_PLANS.find((p) => p.tier === "business")?.priceCents ?? 1599900)}/mo</option>
+                </select>
+                <input
+                  value={goFreeCode}
+                  onChange={(e) => setGoFreeCode(e.target.value)}
+                  placeholder="Activation code"
+                  className="flex-1 rounded-sx-sm border border-sx-border bg-sx-surface-1 px-3 py-2 text-sm uppercase text-sx-text placeholder:normal-case"
+                />
+                <Button type="submit" variant="secondary" disabled={goFreeBusy || !goFreeCode.trim()}>
+                  {goFreeBusy ? "Activating…" : "Activate — ₹0"}
+                </Button>
+              </div>
+              {goFreeError && <p className="mt-2 text-xs font-medium text-sx-danger">{goFreeError}</p>}
+              {goFreeSuccess && <p className="mt-2 text-xs font-medium text-sx-success">{goFreeSuccess}</p>}
+            </form>
           </div>
         )}
 
@@ -427,7 +496,13 @@ export default function BillingPage() {
                 <StatusChip state="warning">Cancels at period end</StatusChip>
               )}
               {subscription.pending_plan_tier && <StatusChip state="accent">Switching to {subscription.pending_plan_tier} next renewal</StatusChip>}
+              {subscription.billing_provider === "go_free_trial" && <StatusChip state="accent">Test/trial activation — ₹0</StatusChip>}
             </div>
+            {subscription.billing_provider === "go_free_trial" && (
+              <p className="text-xs text-sx-text-subtle">
+                Activated via GoFree for browser testing. Not a paid subscription — no card was charged and this does not count as revenue.
+              </p>
+            )}
 
             {priceBreakdown && (
               <div className="grid grid-cols-3 gap-3 rounded-sx-md border border-sx-border bg-sx-surface-2 p-3 text-xs">
