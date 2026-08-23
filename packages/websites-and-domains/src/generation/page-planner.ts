@@ -57,14 +57,16 @@ export function planPageArchitecture(
                 { title: "30-Day Hassle-Free Returns", description: "Love it or exchange it with complete peace of mind." },
               ],
             },
-            {
-              type: "testimonials",
-              heading: "Loved by Over 50,000 Customers",
-              items: [
-                { title: "Sophia R.", description: "The quality and fit exceeded all my expectations. Truly world-class." },
-                { title: "Marcus V.", description: "Seamless shopping and express delivery. My favorite brand." },
-              ],
-            },
+            // Found live during E2E testing: this section fabricated a
+            // specific customer count ("Loved by Over 50,000 Customers")
+            // and two named reviewers with invented quotes -- for a website
+            // about to be published live as the customer's own storefront,
+            // with no real review data behind any of it. No testimonials
+            // section is generated here at all now; the mission's own rule
+            // is "real verified data, clearly marked placeholder, or
+            // nothing" -- there is no real data at generation time, and an
+            // invented placeholder quote risks being published unedited
+            // just as easily as the fabricated one it would replace.
           ],
         },
         {
@@ -187,13 +189,15 @@ export function planPageArchitecture(
                 { title: "Technology Modernization", description: "Modern cloud architecture and intelligent automation." },
               ],
             },
-            {
-              type: "testimonials",
-              heading: "Client Success Stories",
-              items: [
-                { title: "David Chen — CEO, NexaTech", description: "Stratxcel helped us 3x our operational efficiency within 6 months." },
-              ],
-            },
+            // Found live during E2E testing: this fabricated a named
+            // reviewer at a fake company ("David Chen — CEO, NexaTech")
+            // whose quote claimed "Stratxcel" (the platform itself,
+            // hardcoded -- not this customer's actual business, which
+            // ${brandName} is used for everywhere else in this file)
+            // helped them, on every SERVICE_BUSINESS site regardless of
+            // who the actual customer is. No testimonials section is
+            // generated here at all now -- see the identical rationale on
+            // the ECOMMERCE case above.
             {
               type: "cta",
               heading: "Ready to accelerate your growth?",
@@ -310,13 +314,12 @@ export function planPageArchitecture(
                 { title: "Excellence", description: "Uncompromising attention to quality." },
               ],
             },
-            {
-              type: "testimonials",
-              heading: "What People Say",
-              items: [
-                { title: "Elena Rostova — Director", description: "Working with them was the best decision we made." },
-              ],
-            },
+            // Found live during E2E testing: this fabricated a named
+            // reviewer ("Elena Rostova — Director") and an invented quote
+            // for every BUSINESS_WEBSITE-type site -- confirmed live on the
+            // real Stratxcel tenant's own generated site. No testimonials
+            // section is generated here at all now -- see the identical
+            // rationale on the ECOMMERCE case above.
           ],
         },
         {
