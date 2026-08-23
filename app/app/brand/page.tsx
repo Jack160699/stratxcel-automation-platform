@@ -103,7 +103,15 @@ export default function BrandPage() {
       setError(result.message);
       return;
     }
-    setContent(result.data.brandBrain?.content ?? EMPTY);
+    const loaded = result.data.brandBrain?.content ?? EMPTY;
+    // Business name has no placeholder (unlike every other field on this
+    // page) because it's always required — so an empty Brand Brain left it
+    // rendering as a genuinely blank box for a business whose name the
+    // platform already knows (tenant.name), found live during E2E testing.
+    // Pre-fill from the known tenant name; still just an in-memory default
+    // until the customer hits Save Changes, same as every other edit here.
+    const businessName = loaded.business_name?.trim() ? loaded.business_name : active?.name;
+    setContent(businessName ? { ...loaded, business_name: businessName } : loaded);
     setVersion(result.data.brandBrain?.current_version ?? 0);
   }
 
