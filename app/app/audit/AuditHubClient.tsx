@@ -110,11 +110,19 @@ export function AuditHubClient({ initialData }: { initialData: AuditHubData }) {
     setStarting(true);
     setError(null);
     try {
+      // "start_fresh" (not "finalize") is the action that actually claims a
+      // new audit order when none exists yet — found live during E2E
+      // testing: this button 404'd with "No Audit in progress" for every
+      // tenant with zero existing audit_orders rows, because the route's
+      // own guard (POST .../onboarding) rejects any action other than
+      // start_fresh when loadCurrentOrder() finds nothing. "finalize" is a
+      // real action, but it's for completing an audit that already has an
+      // order in progress, not for creating one from a cold start.
       const result = await loadCustomerJson<Record<string, unknown>>(
         () => fetch("/api/platform/audit/onboarding", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "finalize" }),
+          body: JSON.stringify({ action: "start_fresh" }),
         }),
         "We couldn't start your Audit. Please try again."
       );
