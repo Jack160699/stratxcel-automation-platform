@@ -174,11 +174,22 @@ export default async function CustomerContentPage() {
         captionText: `🎉 Exclusive Offer from ${businessName}! Get premium quality today. Direct message on WhatsApp to reserve. #specialoffer #${businessName.toLowerCase().replace(/\\s+/g, "")} #trending`,
       },
       {
+        // Found live during E2E testing: this example item claimed
+        // category: "published" / status: "PUBLISHED" with a publishedAt
+        // timestamp and fabricated metrics (reach 840 / engagement 62 /
+        // impressions 1120) -- for a brand-new tenant with zero rows in
+        // content_master, i.e. nothing was ever actually published or
+        // measured. A real customer's very first visit to their Content
+        // page would see what looks like a live Instagram post already
+        // getting real engagement. These "starter curated creatives" are a
+        // reasonable onboarding pattern (example ideas to seed the empty
+        // state), but must never claim a real business outcome that never
+        // happened -- kept as an unpublished, unmeasured example like the
+        // other three starter items below.
         id: "starter-review",
         title: "Google 5-Star Review Spotlight",
         type: "creative",
-        category: "published",
-        platform: "instagram",
+        category: "draft",
         angle: "5-Star Review Spotlight",
         objective: "Customer trust & Google Maps review proof",
         imageUrl: generatePosterSvg(
@@ -189,14 +200,8 @@ export default async function CustomerContentPage() {
         ),
         aspectRatio: "1:1",
         createdAt: new Date(Date.now() - 3600000 * 48).toISOString(),
-        publishedAt: new Date(Date.now() - 3600000 * 40).toISOString(),
-        status: "PUBLISHED",
+        status: "READY",
         captionText: `⭐⭐⭐⭐⭐ "Best experience in town!" Thank you to our wonderful customers for the love and 5-star reviews on Google Maps!`,
-        metrics: {
-          reach: 840,
-          engagement: 62,
-          impressions: 1120,
-        },
       },
       {
         id: "starter-reel",
