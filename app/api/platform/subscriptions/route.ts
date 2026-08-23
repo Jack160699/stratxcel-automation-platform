@@ -310,7 +310,15 @@ export async function GET(request: Request) {
     {
       subscription: subscription ?? null,
       planDefinition: getPlanDefinition(isPlanTier(subscription?.plan_tier) ? subscription.plan_tier : "free"),
-      priceBreakdown: subscription ? splitGstInclusive(subscription.price_cents) : null,
+      // splitGstInclusive() deliberately throws on 0 (see
+      // audit-payment-safety.test.ts: "zero is not a valid charge") -- a
+      // correct guard for real payment/charge call sites, but a legitimate
+      // ₹0 GoFree trial subscription (price_cents: 0) is not a charge at
+      // all. Found live during E2E testing: every GET here 500'd for any
+      // tenant on an active go_free_trial subscription. There is nothing
+      // meaningful to break a ₹0 price into, so priceBreakdown is simply
+      // null for a free subscription, same as no subscription at all.
+      priceBreakdown: subscription && subscription.price_cents > 0 ? splitGstInclusive(subscription.price_cents) : null,
       paymentUrl,
       billingProfile,
       invoices: invoices.slice(0, 12),
