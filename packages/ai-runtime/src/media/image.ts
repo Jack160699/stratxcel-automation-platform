@@ -113,7 +113,18 @@ export class ImageMediaRuntime {
     this.budgetEnvelope = deps.budgetEnvelope;
     this.sessionId = deps.sessionId ?? null;
     this.defaultMissionId = deps.missionId ?? null;
-    this.timeoutMs = Math.max(10_000, Math.min(deps.timeoutMs ?? 90_000, 180_000));
+    // Found live during E2E testing: every image-generation request timed out
+    // consistently around 90-94s with PROVIDER_TIMEOUT_UNKNOWN, matching the
+    // old 90s default exactly -- and no code path here ever logged the real
+    // failure (provider, model, elapsed time), so there was no way to tell
+    // "Gemini is genuinely just slow" from "this request is stuck." The API
+    // route allows up to maxDuration=180s; raise the per-call budget to use
+    // that headroom (170s, leaving 10s for storage/DB/response after the
+    // provider call returns) instead of giving up at 90s. generateGemini()
+    // now issues multi-candidate requests in parallel rather than
+    // sequentially, so requesting N candidates no longer multiplies this
+    // budget by N against the same 180s ceiling.
+    this.timeoutMs = Math.max(10_000, Math.min(deps.timeoutMs ?? 150_000, 170_000));
   }
 
   isConfigured(): boolean {
@@ -230,6 +241,7 @@ export class ImageMediaRuntime {
 
     const enrichedRequest: ImageGenerateRequest = { ...request, missionId, referenceImages };
     let geminiAttempted = false;
+    const geminiAttemptStartedAt = Date.now();
 
     try {
       if (this.geminiKey && !this.circuit.isOpen("google", primaryModel)) {
@@ -286,9 +298,22 @@ export class ImageMediaRuntime {
       }
       const category = classifyProviderError(err);
       this.circuit.recordFailure("google", primaryModel);
+      const geminiAttemptLatencyMs = Date.now() - geminiAttemptStartedAt;
       // A synchronous image request may have completed provider-side before our
       // connection timed out. Do not issue a second paid request automatically.
       if (category === "TIMEOUT") {
+        // Found live during E2E testing: this path used to return silently --
+        // no log of the model, elapsed time, or candidate count -- making a
+        // live browser reproduction the only way to even see this happen.
+        safeAiLog({
+          event: "ai_image_provider_timeout",
+          provider: "google",
+          model: primaryModel,
+          taskClass: "IMAGE",
+          latencyMs: geminiAttemptLatencyMs,
+          safeErrorCategory: category,
+          detail: `candidateCount=${request.candidateCount ?? 1};timeoutBudgetMs=${this.timeoutMs}`,
+        });
         return {
           outcome: "FAILED",
           candidates: [],
@@ -315,6 +340,15 @@ export class ImageMediaRuntime {
         };
       }
       // Fall through to OpenAI when hop-eligible.
+      safeAiLog({
+        event: "ai_image_provider_hop",
+        provider: "google",
+        model: primaryModel,
+        taskClass: "IMAGE",
+        latencyMs: geminiAttemptLatencyMs,
+        safeErrorCategory: category,
+        detail: err instanceof Error ? err.message.slice(0, 160) : "gemini_failed_non_timeout",
+      });
     }
 
     const fallbackModel = resolveModelId("OPENAI_IMAGE_FALLBACK");
@@ -389,6 +423,7 @@ export class ImageMediaRuntime {
       }
     }
 
+    const openaiAttemptStartedAt = Date.now();
     try {
       const candidates = await this.generateOpenAI(enrichedRequest, fallbackModel);
       this.circuit.recordSuccess("openai", fallbackModel);
@@ -426,6 +461,15 @@ export class ImageMediaRuntime {
       };
     } catch (err) {
       this.circuit.recordFailure("openai", fallbackModel);
+      safeAiLog({
+        event: "ai_image_openai_fallback_failed",
+        provider: "openai",
+        model: fallbackModel,
+        taskClass: "IMAGE",
+        latencyMs: Date.now() - openaiAttemptStartedAt,
+        safeErrorCategory: classifyProviderError(err),
+        detail: `geminiAttempted=${geminiAttempted};${err instanceof Error ? err.message.slice(0, 120) : "openai_image_failed"}`,
+      });
       return {
         outcome: "FAILED",
         candidates: [],
@@ -533,63 +577,84 @@ export class ImageMediaRuntime {
     return out;
   }
 
+  private async generateGeminiOne(request: ImageGenerateRequest, model: string): Promise<ImageCandidateResult[]> {
+    const parts: Array<Record<string, unknown>> = [{ text: request.prompt }];
+    for (const ref of request.referenceImages ?? []) {
+      parts.push({ inlineData: { mimeType: ref.mimeType, data: ref.data } });
+    }
+    const body = {
+      contents: [{ role: "user", parts }],
+      generationConfig: {
+        responseModalities: ["TEXT", "IMAGE"],
+        ...(request.aspectRatio ? { imageConfig: { aspectRatio: request.aspectRatio } } : {}),
+      },
+    };
+    const response = await this.fetchBounded(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+        method: "POST",
+        headers: { "x-goog-api-key": this.geminiKey!, "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    if (!response.ok) {
+      throw new AIProviderError(classifyHttpStatus(response.status), `Gemini image HTTP ${response.status}`, response.status);
+    }
+    const json = (await response.json()) as {
+      candidates?: Array<{ content?: { parts?: Array<{ inlineData?: { mimeType?: string; data?: string }; text?: string }> } }>;
+    };
+    const found: ImageCandidateResult[] = [];
+    for (const cand of json.candidates ?? []) {
+      for (const part of cand.content?.parts ?? []) {
+        if (part.inlineData?.data) {
+          const mime = part.inlineData.mimeType ?? "image/png";
+          found.push({
+            id: crypto.randomUUID(),
+            uri: `data:${mime};base64,${part.inlineData.data}`,
+            mimeType: mime,
+            provider: "google",
+            model,
+            estimatedCostUsd: estimateImageCostUsd(model, 1, {
+              resolution: request.resolution ?? "1K",
+            }),
+          });
+        }
+      }
+    }
+    return found;
+  }
+
+  // Found live during E2E testing: candidates used to be requested one at a
+  // time in a sequential loop, so a 2-candidate request could take up to 2x
+  // this.timeoutMs of real wall-clock time against a fixed maxDuration --
+  // and every candidate after the first ate into the same budget the first
+  // one already spent. Gemini has no problem serving concurrent requests, so
+  // issue them together: total wall time is now bounded by the single
+  // slowest candidate, not their sum.
   private async generateGemini(request: ImageGenerateRequest, model: string): Promise<ImageCandidateResult[]> {
     const count = Math.max(1, Math.min(request.candidateCount ?? 1, 4));
+    const startedAt = Date.now();
+    const settled = await Promise.allSettled(
+      Array.from({ length: count }, () => this.generateGeminiOne(request, model)),
+    );
     const out: ImageCandidateResult[] = [];
-    for (let i = 0; i < count; i++) {
-      const parts: Array<Record<string, unknown>> = [{ text: request.prompt }];
-      for (const ref of request.referenceImages ?? []) {
-        parts.push({ inlineData: { mimeType: ref.mimeType, data: ref.data } });
+    let firstError: unknown = null;
+    for (const result of settled) {
+      if (result.status === "fulfilled") {
+        out.push(...result.value);
+      } else if (!firstError) {
+        firstError = result.reason;
       }
-      const body = {
-        contents: [{ role: "user", parts }],
-        generationConfig: {
-          responseModalities: ["TEXT", "IMAGE"],
-          ...(request.aspectRatio ? { imageConfig: { aspectRatio: request.aspectRatio } } : {}),
-        },
-      };
-      try {
-        const response = await this.fetchBounded(
-          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
-            method: "POST",
-            headers: { "x-goog-api-key": this.geminiKey!, "Content-Type": "application/json" },
-            body: JSON.stringify(body),
-          });
-        if (!response.ok) {
-          throw new AIProviderError(classifyHttpStatus(response.status), `Gemini image HTTP ${response.status}`, response.status);
-        }
-        const json = (await response.json()) as {
-          candidates?: Array<{ content?: { parts?: Array<{ inlineData?: { mimeType?: string; data?: string }; text?: string }> } }>;
-        };
-        for (const cand of json.candidates ?? []) {
-          for (const part of cand.content?.parts ?? []) {
-            if (part.inlineData?.data) {
-              const mime = part.inlineData.mimeType ?? "image/png";
-              out.push({
-                id: crypto.randomUUID(),
-                uri: `data:${mime};base64,${part.inlineData.data}`,
-                mimeType: mime,
-                provider: "google",
-                model,
-                estimatedCostUsd: estimateImageCostUsd(model, 1, {
-                  resolution: request.resolution ?? "1K",
-                }),
-              });
-            }
-          }
-        }
-      } catch (error) {
-        if (!out.length) throw error;
-        safeAiLog({
-          event: "ai_image_partial_candidates",
-          provider: "google",
-          model,
-          taskClass: "IMAGE",
-          safeErrorCategory: classifyProviderError(error),
-          detail: `completed=${out.length};requested=${count}`,
-        });
-        break;
-      }
+    }
+    if (!out.length && firstError) throw firstError;
+    if (out.length < count) {
+      safeAiLog({
+        event: "ai_image_partial_candidates",
+        provider: "google",
+        model,
+        taskClass: "IMAGE",
+        latencyMs: Date.now() - startedAt,
+        safeErrorCategory: firstError ? classifyProviderError(firstError) : undefined,
+        detail: `completed=${out.length};requested=${count}`,
+      });
     }
     return out.slice(0, count);
   }

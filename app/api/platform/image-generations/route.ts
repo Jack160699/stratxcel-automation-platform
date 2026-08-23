@@ -50,7 +50,17 @@ export async function POST(request: Request) {
         const service = createSupabaseServiceClient();
         try {
           await processImageGenerationJob({ writeClient: service, jobId: job.id });
-        } catch {
+        } catch (err) {
+          // Found live during E2E testing: this discarded the real error
+          // entirely -- no console output, nothing -- so any failure that
+          // wasn't already one of the classified provider outcomes (a bug in
+          // this file, a DB write failing, an unexpected exception anywhere
+          // in the pipeline) left zero trace in the logs.
+          console.error("processImageGenerationJob: unhandled failure", {
+            jobId: job.id,
+            tenantId: ctx.tenantId,
+            error: err instanceof Error ? err.message : String(err),
+          });
           await service.from("image_generation_jobs").update({
             status: "FAILED",
             error_code: "INTERNAL_GENERATION_FAILURE",
