@@ -244,9 +244,16 @@ export class SmartWebsiteCreatorController {
         tenantId: state.tenantId,
         projectId: state.projectId,
         prompt: masterPrompt,
+        // Found live during E2E testing: this brief already resolves websiteType
+        // (from the customer's confirmed answers, shown to them on the summary
+        // screen) but it was never forwarded here, so the engine silently
+        // re-derived its own -- and re-derived it wrong every time. Forward the
+        // brief's own resolution instead of letting the engine guess again.
+        websiteType: state.brief.websiteType.value,
         brandContext: {
           businessName: state.brief.businessName.value,
           businessCategory: state.brief.businessCategory.value,
+          targetAudience: state.brief.targetAudience.value,
           brandAesthetic: state.brief.visualStyle.value === "PREMIUM_LUXURY" ? "luxury" : "modern",
         },
       });

@@ -123,9 +123,14 @@ describe("Customer-Facing Smart Website Creator Experience", () => {
       projectId,
     });
 
+    // Names a real, capitalized brand ("Meridian Consulting") rather than the
+    // original "for my consulting business" phrasing: that lowercase phrasing
+    // used to get misread as the business name itself (a since-fixed bug --
+    // see normalizer.ts's name-pattern comment), which accidentally skipped
+    // the q_business_name question and made q1 always land on q_category.
     let state = smartWebsiteCreatorController.submitInitialMessage(
       initialState,
-      "Need a website for my consulting business.",
+      "Need a website for Meridian Consulting, my consulting business.",
       "english"
     );
 
@@ -184,7 +189,15 @@ describe("Customer-Facing Smart Website Creator Experience", () => {
     assert.equal(result.step, "READY");
     assert.ok(result.generatedSite);
     assert.equal(result.generatedSite.version, 1);
-    assert.equal(result.generatedSite.siteModel.pages.length, 5);
+    // A mithai/sweets shop resolves to BUSINESS_WEBSITE (3 pages: Home, About,
+    // Contact), never ECOMMERCE (5 pages incl. Shop/Journal) -- this used to
+    // assert 5 because every generated prompt always includes the "AI...
+    // Shopping Concierge" feature line, and the engine's website-type
+    // classifier misread that boilerplate "Shopping" text as grounds to force
+    // ECOMMERCE on every single request, regardless of the actual business.
+    // See generation/engine.ts's website-type detection comment for the fix.
+    assert.equal(result.generatedSite.siteModel.websiteType, "BUSINESS_WEBSITE");
+    assert.equal(result.generatedSite.siteModel.pages.length, 3);
     assert.equal(result.completionPercentage, 100);
 
     // Stages completed

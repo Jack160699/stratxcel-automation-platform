@@ -174,7 +174,15 @@ export function normalizeCustomerInput(rawMessage: string): NormalizedInputSigna
   // 5. Inferred Business Name
   let inferredBusinessName: string | undefined;
   const namePatterns = [
-    /(?:for|named|called)\s+([A-Z][A-Za-z0-9\s&'-]+?)(?:\s+with|\s+and|\s+in|\s*,|\.|$)/i,
+    // Found live during E2E testing: this pattern's [A-Z] is meant to require
+    // the captured text look like a proper noun (a real brand name), but the
+    // trailing /i flag made the whole pattern case-insensitive -- including
+    // [A-Z] itself -- so it happily matched ordinary lowercase phrasing too.
+    // A brief like "...growth platform for local businesses in India" matched
+    // "for " + capture-until-"in", producing the literal phrase "local
+    // businesses" as the inferred business name. Dropping /i restores the
+    // capitalization check the [A-Z] was written to enforce.
+    /(?:for|named|called)\s+([A-Z][A-Za-z0-9\s&'-]+?)(?:\s+with|\s+and|\s+in|\s*,|\.|$)/,
     /(?:my|mera|meri)\s+(?:shop|store|business|brand|clinic|restaurant|coaching|company)\s*(?:is|hai|ka naam|naam)?\s*([A-Za-z0-9\s&'-]+?)(?:\s+hai|\s+chahiye|\s+ke|\s*,|\.|$)/i,
     /business (?:is|naam|name)?\s*([A-Za-z0-9\s&'-]+?)(?:\s+hai|\s+chahiye|\s+ke|\s*,|\.|$)/i,
     /^([A-Z][a-z0-9&'-]+(?:\s+[A-Z][a-z0-9&'-]+){0,2})\s+(?:luxury|specialty|saree|apparel|clothing|store|shop|boutique|online|website|coaching|clinic|cafe|restaurant|traders)/,

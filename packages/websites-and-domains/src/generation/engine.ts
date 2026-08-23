@@ -20,34 +20,33 @@ export class WebsiteGenerationEngine {
     const startTime = Date.now();
     const prompt = input.prompt?.trim() || "Build a modern business website";
 
-    // 1. Detect / Infer Website Type
+    // 1. Website Type: trust an explicitly-resolved type over re-inferring one.
+    // Found live during E2E testing: a caller that already knows the type (e.g.
+    // the Smart Website Builder, which resolves it from the customer's
+    // structured brief) was never passing it through, so this classifier
+    // re-derived its own from raw prompt-text keyword scanning every time --
+    // and that scan false-positived on ECOMMERCE for every single request,
+    // because the prompt's "Conversion & Integrations" section always contains
+    // the boilerplate line "AI Business & Shopping Concierge...", and a plain
+    // `.includes("shop")` matches "shopping" too. Only fall back to scanning
+    // when no type was explicitly resolved upstream, and use word-boundary
+    // matches so "shopping"/"restore"/etc. can't collide with unrelated words.
     let websiteType: WebsiteType = input.websiteType || "BUSINESS_WEBSITE";
     const p = prompt.toLowerCase();
 
-    if (
-      input.referenceUnderstanding?.ecommerce?.isEcommerce ||
-      p.includes("ecommerce") ||
-      p.includes("clothing store") ||
-      p.includes("apparel store") ||
-      p.includes("online store") ||
-      p.includes("shop") ||
-      p.includes("store") ||
-      p.includes("boutique")
-    ) {
-      websiteType = "ECOMMERCE";
-    } else if (
-      p.includes("consulting") ||
-      p.includes("agency") ||
-      p.includes("services") ||
-      p.includes("advisory") ||
-      p.includes("law firm") ||
-      p.includes("clinic")
-    ) {
-      websiteType = "SERVICE_BUSINESS";
-    } else if (p.includes("landing page") || p.includes("waitlist") || p.includes("saas") || p.includes("launch")) {
-      websiteType = "LANDING_PAGE";
-    } else if (p.includes("ai agent") || p.includes("ai platform") || p.includes("bot")) {
-      websiteType = "AI_BUSINESS";
+    if (!input.websiteType) {
+      if (
+        input.referenceUnderstanding?.ecommerce?.isEcommerce ||
+        /\b(ecommerce|clothing store|apparel store|online store|shop|store|boutique)\b/.test(p)
+      ) {
+        websiteType = "ECOMMERCE";
+      } else if (/\b(consulting|agency|services|advisory|law firm|clinic)\b/.test(p)) {
+        websiteType = "SERVICE_BUSINESS";
+      } else if (/\b(landing page|waitlist|saas|launch)\b/.test(p)) {
+        websiteType = "LANDING_PAGE";
+      } else if (/\b(ai agent|ai platform|bot)\b/.test(p)) {
+        websiteType = "AI_BUSINESS";
+      }
     }
 
     // 2. Synthesize Business Identity

@@ -10,6 +10,7 @@ import {
   type WebsiteServicePackage,
 } from "@stratxcel/payments-and-wallet";
 import { SmartWebsiteCreator } from "@/components/site-builder/SmartWebsiteCreator";
+import type { AuthorizedConnectorContext } from "@stratxcel/websites-and-domains/client";
 
 export default function WebsiteFactoryPage() {
   const { active } = useCurrentTenant();
@@ -65,6 +66,21 @@ export default function WebsiteFactoryPage() {
   }, [tenantId]);
 
   const recommendedArch = getRecommendedIndustryArchitecture(shopData.industry);
+
+  // Found live during E2E testing: this page already fetches the tenant's
+  // real Brand Brain data above (for the Step 2 pre-fill form) but never
+  // forwarded any of it into <SmartWebsiteCreator>, which accepts a
+  // connectorContext prop specifically to skip asking questions Brand Brain
+  // already answers and to resolve the real business name. Every AI-built
+  // site was therefore generated with no knowledge of the real business at
+  // all, falling through to a regex-guessed or hardcoded placeholder name.
+  const connectorContext: AuthorizedConnectorContext = {
+    brandBrain: {
+      businessName,
+      industry: shopData.industry,
+      logoUrl: shopData.logoUrl || undefined,
+    },
+  };
 
   if (!tenantId) {
     return (
@@ -381,6 +397,7 @@ export default function WebsiteFactoryPage() {
               <div className="rounded-sx-lg border border-sx-border bg-sx-surface-1 p-4 sm:p-5">
                 <SmartWebsiteCreator
                   tenantId={tenantId}
+                  connectorContext={connectorContext}
                   onClose={() => router.push("/app/website")}
                   onPublish={() => router.push("/app/website")}
                 />

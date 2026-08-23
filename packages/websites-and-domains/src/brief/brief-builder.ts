@@ -134,7 +134,15 @@ export function buildStructuredWebsiteBrief(params: {
       whatsappEnquiry: signals.whatsappRequested || primaryGoal.value === "WHATSAPP_ENQUIRIES",
       ecommerceShopping: websiteTypeValue === "ECOMMERCE",
       appointmentBooking: primaryGoal.value === "APPOINTMENT_BOOKINGS",
-      aiShoppingAssistant: true,
+      // Found live during E2E testing: this was hardcoded true for every
+      // business, so a non-ecommerce site (an SaaS platform, a clinic, a
+      // consultancy) would still get "AI Shopping Concierge grounded on public
+      // product data" copy promising a product catalog it doesn't have --
+      // and that same always-present "Shopping" text is what made the website
+      // type classifier in generation/engine.ts misdetect every request as
+      // ECOMMERCE (see engine.ts's website-type detection comment). Only claim
+      // a shopping assistant for businesses that actually sell products.
+      aiShoppingAssistant: websiteTypeValue === "ECOMMERCE",
       bilingualSupport: signals.bilingualRequested,
     },
     siteLanguagePreference,
