@@ -284,20 +284,32 @@ export async function GET(request: Request) {
 
   const serviceDb = createSupabaseServiceClient();
 
+  // Found live during E2E testing: this 500'd every load with "column
+  // site_projects.framework does not exist" -- framework was never a real
+  // column, and "template" should have been "template_id" (confirmed via
+  // information_schema.columns on the live production table). The domains
+  // select had the same drift: "domain" is really "domain_name", and
+  // "verification_status"/"ssl_status" don't exist on domains at all (no
+  // frontend code references either field by name, so they're dropped
+  // rather than mapped to an invented substitute). domainsRes.error was
+  // also silently discarded below (`domains: domainsRes.data ?? []`), so
+  // this same class of bug in the second query would have stayed invisible
+  // even after fixing the first.
   const [projectsRes, domainsRes] = await Promise.all([
     serviceDb
       .from("site_projects")
-      .select("id, tenant_id, name, slug, status, custom_domain, framework, template, created_at, updated_at, website_agents(id, name, enabled, conversation_count)")
+      .select("id, tenant_id, name, slug, status, custom_domain, template_id, created_at, updated_at, website_agents(id, name, enabled, conversation_count)")
       .eq("tenant_id", tenantId)
       .order("created_at", { ascending: false }),
     serviceDb
       .from("domains")
-      .select("id, tenant_id, domain, status, verification_status, ssl_status, auto_renew, expires_at, site_project_id, created_at, updated_at")
+      .select("id, tenant_id, domain:domain_name, status, auto_renew, expires_at, site_project_id, created_at, updated_at")
       .eq("tenant_id", tenantId)
       .order("created_at", { ascending: false }),
   ]);
 
   if (projectsRes.error) return Response.json({ error: projectsRes.error.message }, { status: 500 });
+  if (domainsRes.error) return Response.json({ error: domainsRes.error.message }, { status: 500 });
 
   return Response.json({
     projects: projectsRes.data ?? [],
