@@ -185,10 +185,17 @@ export function useAgentSession(sessionId: string | null, onSessionCreated: (id:
             return;
           }
           if ("failed" in result && result.failed) {
-            setFailedReason(result.reason ?? "The run failed unexpectedly.");
+            // Found live during E2E testing: this rendered result.reason --
+            // the orchestrator's raw internal failure code/exception message
+            // -- directly into the chat bubble, bypassing the
+            // customerSafeError() sanitization the orchestrator already
+            // does for exactly this reason. result.text is that
+            // already-sanitized message; use it (see the same fix in
+            // app/app/social/copilot/useTenantAgentSession.ts).
+            setFailedReason(result.text ?? "The run failed unexpectedly.");
             setMessages((prev) => [
               ...prev,
-              { id: `agent-${Date.now()}`, role: "agent", content: `I hit an error and couldn't finish: ${result.reason ?? "unknown error"}`, parts: [] },
+              { id: `agent-${Date.now()}`, role: "agent", content: result.text ?? "The run failed unexpectedly.", parts: [] },
             ]);
             return;
           }

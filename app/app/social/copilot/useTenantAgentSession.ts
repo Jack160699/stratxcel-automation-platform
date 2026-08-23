@@ -199,10 +199,18 @@ export function useTenantAgentSession(
             return;
           }
           if ("failed" in result && result.failed) {
-            setFailedReason(result.reason ?? "The run failed unexpectedly.");
+            // Found live during E2E testing: this rendered result.reason --
+            // the orchestrator's raw internal failure code/exception message
+            // ("empty_turn_output", or a DB/provider-SDK error string) --
+            // directly into the customer-facing chat bubble, bypassing the
+            // customerSafeError() sanitization the orchestrator already does
+            // for exactly this reason (see orchestrator.ts: "Never echo the
+            // raw exception into the conversation"). result.text is that
+            // already-sanitized, customer-appropriate message; use it.
+            setFailedReason(result.text ?? "We couldn't process this request. Please retry.");
             setMessages((prev) => [
               ...prev,
-              { id: `agent-${Date.now()}`, role: "agent", content: `I hit an error and couldn't finish: ${result.reason ?? "unknown error"}`, parts: [] },
+              { id: `agent-${Date.now()}`, role: "agent", content: result.text ?? "We couldn't process this request. Please retry.", parts: [] },
             ]);
             return;
           }
