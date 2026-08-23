@@ -10,6 +10,7 @@ import { PresenceCards } from "@/components/audit/PresenceCards";
 import type { PresenceLink } from "@/lib/audit/v1/presence";
 import { deriveSignalsFromReport, recommendPlan, type RecommendedPlanTier } from "@/lib/audit/plan-recommendation";
 import { PRICING_TIERS } from "@/lib/commercial/catalog";
+import { WHATSAPP_NUMBER } from "@/lib/constants";
 
 const PLAN_CARD_META: Record<RecommendedPlanTier, { name: string; priceLabel: string }> = {
   starter: { name: "Starter", priceLabel: PRICING_TIERS.find((t) => t.planKey === "starter")?.price ?? "₹2,999" },
@@ -254,6 +255,26 @@ export function VisualAuditReport({
     availabilityMap.set("website", { state: "available" });
   }
 
+  // Found live during E2E testing: this report's own "Data Used" badges
+  // (above) correctly show live canonical connector truth via
+  // resolveConnectorBadgeKey -- but the executive summary, score, and
+  // opportunities below are frozen text/numbers computed once at
+  // generation time from report.connectorAvailability. A tenant who
+  // connected Search Console, GA4, and every social account genuinely saw
+  // "Connected" badges directly above an executive summary reading "zero
+  // grounded evidence sources... category scores cannot be calculated" --
+  // because those accounts were connected after (or the connector-token
+  // read failed during) this specific analysis run, and nothing here ever
+  // told the customer the findings below don't reflect their current
+  // connections. Surface that honestly instead of a silent contradiction.
+  const staleConnectorLabels = ALL_CONNECTOR_PROVIDERS.filter((provider) => {
+    const canonicalKey = CANONICAL_KEY_BY_PROVIDER[provider.key];
+    const canonical = canonicalKey ? connections?.[canonicalKey] : undefined;
+    if (canonical?.connectionState !== "CONNECTED") return false;
+    const usedInThisRun = availabilityMap.get(provider.key);
+    return !usedInThisRun || usedInThisRun.state === "provider_error" || usedInThisRun.state === "unavailable";
+  }).map((provider) => provider.label);
+
   // Top 5 Priority Actions
   const rawOpportunities = report.priorityOpportunities && report.priorityOpportunities.length > 0
     ? report.priorityOpportunities
@@ -414,6 +435,28 @@ export function VisualAuditReport({
           </div>
         )}
       </section>
+
+      {staleConnectorLabels.length > 0 && (
+        <div className="rounded-sx-sm border border-sx-warning/30 bg-sx-warning/10 px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+          <span className="text-xs font-semibold text-sx-warning">
+            {staleConnectorLabels.join(", ")} {staleConnectorLabels.length === 1 ? "was" : "were"} connected after this audit ran, so the findings below don't reflect {staleConnectorLabels.length === 1 ? "it" : "them"} yet.
+          </span>
+          {/* Free-audit re-runs are gated to one grant per tenant
+              (claim_fresh_product_grant_audit_v1) -- a tenant who already
+              used theirs would get a 409 from a self-service "refresh"
+              button, which is worse than no button. Route to a real,
+              always-working human channel instead of a link that can fail
+              for exactly the customers who need it. */}
+          <a
+            href={`https://wa.me/${WHATSAPP_NUMBER}`}
+            target="_blank"
+            rel="noreferrer"
+            className="text-xs font-bold text-sx-accent hover:underline shrink-0"
+          >
+            Ask us to refresh it →
+          </a>
+        </div>
+      )}
 
       {/* 3. EXECUTIVE VERDICT & SEARCH AUTHORITY */}
       <section className="rounded-[1.25rem] border border-sx-border bg-gradient-to-br from-sx-surface-1 via-sx-surface-1 to-sx-surface-2 p-6 sm:p-7 shadow-sm">

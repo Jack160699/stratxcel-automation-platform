@@ -60,7 +60,17 @@ async function resolveAccessToken(
   try {
     const state = await getDecryptedTokenState(service, accountId);
     return { accessToken: state.accessToken, refreshToken: state.refreshToken };
-  } catch {
+  } catch (err) {
+    // Found live during E2E testing: this discarded the real error entirely,
+    // so every account in this state surfaced only as the generic "Could not
+    // read the stored X token." to the customer with zero trace of why --
+    // a genuine decrypt/vault failure and a merely-missing row were
+    // indistinguishable in the logs. Log the real (non-secret) failure
+    // reason; the message itself never contains token material.
+    console.error("audit-connector-insights: resolveAccessToken failed", {
+      accountId,
+      error: err instanceof Error ? err.message : String(err),
+    });
     return null;
   }
 }
