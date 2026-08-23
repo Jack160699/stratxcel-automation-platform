@@ -16,7 +16,7 @@ export async function getCurrentBrandBrain(
 ): Promise<(BrandBrainRow & { content: BrandBrainContent }) | null> {
   const { data: brainRow, error } = await supabase
     .from("brand_brains")
-    .select("id, tenant_id, current_version, updated_at")
+    .select("tenant_id, current_version, updated_at")
     .eq("tenant_id", tenantId)
     .maybeSingle();
   if (error) throw new Error(`getCurrentBrandBrain: ${error.message}`);
@@ -33,7 +33,7 @@ export async function getBrandBrainVersion(
 ): Promise<BrandBrainVersionRow | null> {
   const { data, error } = await supabase
     .from("brand_brain_versions")
-    .select("id, tenant_id, version, content, created_by, created_at")
+    .select("tenant_id, version, content, created_by, created_at")
     .eq("tenant_id", tenantId)
     .eq("version", version)
     .maybeSingle();
@@ -61,7 +61,7 @@ export async function saveBrandBrainVersion(
       content: input.content,
       created_by: input.createdBy,
     })
-    .select("id, tenant_id, version, content, created_by, created_at")
+    .select("tenant_id, version, content, created_by, created_at")
     .single();
   if (versionError) throw new Error(`saveBrandBrainVersion: ${versionError.message}`);
 
