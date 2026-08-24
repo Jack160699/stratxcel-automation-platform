@@ -21,6 +21,10 @@ export interface SafeAiLogEvent {
   lastAttemptLatencyMs?: number | null;
   lastAttemptErrorCategory?: string | null;
   requestedTimeoutMs?: number;
+  /** Compact "provider/model:outcome@latencyMs" per attempt, every attempt
+   * — not just the last. E.g. "google/gemini-3.6-flash:PROVIDER_FAILURE@9ms,
+   * openai/gpt-5.4-mini:RATE_LIMIT@80199ms". */
+  allAttempts?: string | null;
 }
 
 const SECRET_PATTERN = /(?:sk-[a-zA-Z0-9]{10,}|AIza[0-9A-Za-z_-]{20,}|Bearer\s+[^\s]+)/gi;

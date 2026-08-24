@@ -559,6 +559,14 @@ export class AIRuntime {
       lastAttemptLatencyMs: lastAttempt?.latencyMs ?? null,
       lastAttemptErrorCategory: lastAttempt && !lastAttempt.success ? lastAttempt.errorCategory : null,
       requestedTimeoutMs: request.timeoutMs ?? this.defaultTimeoutMs,
+      // Every attempt, not just the last — a fast-failing primary forcing a
+      // fallback that then fails differently (e.g. Google short-circuiting
+      // in ~10s, forcing a fallback to OpenAI that then genuinely
+      // rate-limits at 80s) is itself the real story, and "last attempt
+      // only" hides it. Compact and greppable rather than a nested payload.
+      allAttempts: (extras?.attempts ?? [])
+        .map((a) => `${a.provider}/${a.model}:${a.success ? "ok" : a.errorCategory}@${a.latencyMs}ms`)
+        .join(", ") || null,
     });
     return {
       ok: false,
