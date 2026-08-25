@@ -228,6 +228,18 @@ export async function GET(
           status: "failure",
           reason: "not_authenticated",
         });
+        // Every other failure branch below writes an audit trail on the
+        // success path only (recordAudit's own action.connect); this branch
+        // (and the sibling missing_tenant/persistence_failed branches)
+        // never did, on either success or failure, so a customer-reported
+        // "it failed" had zero queryable trail beyond a Vercel console log
+        // this session has no access to. social_audit_events is already the
+        // real, service-role-writable, staff-readable channel for this.
+        await recordAudit({
+          actorType: "SYSTEM",
+          action: "account.connect_failed",
+          summary: `${provider} connect failed: not_authenticated`,
+        }).catch(() => {});
         return failRedirect("error", "not_authenticated");
       }
 
@@ -327,6 +339,16 @@ export async function GET(
             status: "failure",
             reason: `persistence_failed:${errMsg}`,
           });
+          // See the not_authenticated branch above: this is the queryable
+          // record of the *real* thrown message, not just a generic
+          // "persistence_failed" bucket, for a failure mode that previously
+          // left no trail at all outside inaccessible server logs.
+          await recordAudit({
+            actorType: "SYSTEM",
+            actorId: userId,
+            action: "account.connect_failed",
+            summary: `${provider} connect failed (tenant ${targetTenantId}): ${errMsg}`,
+          }).catch(() => {});
           return failRedirect("error", "persistence_failed");
         }
       } else {
@@ -340,6 +362,12 @@ export async function GET(
             status: "failure",
             reason: "missing_tenant",
           });
+          await recordAudit({
+            actorType: "SYSTEM",
+            actorId: userId,
+            action: "account.connect_failed",
+            summary: `${provider} connect failed: missing_tenant (stateTenantId=${verified.payload.tenantId ?? "none"})`,
+          }).catch(() => {});
           return failRedirect("error", "missing_tenant");
         }
         // Pre-workspace onboarding: no tenant exists yet, so this cannot
