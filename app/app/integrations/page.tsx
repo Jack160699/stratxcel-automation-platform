@@ -68,6 +68,7 @@ export default function IntegrationsPage() {
   const [whatsappSuccessMsg, setWhatsappSuccessMsg] = useState<string | null>(null);
   const [whatsappIsFirstConnect, setWhatsappIsFirstConnect] = useState(true);
   const [whatsappJustVerified, setWhatsappJustVerified] = useState<string | null>(null);
+  const [oauthBanner, setOauthBanner] = useState<{ kind: "success" | "error"; message: string } | null>(null);
 
   useEffect(() => {
     if (cooldownSeconds <= 0) return;
@@ -76,6 +77,49 @@ export default function IntegrationsPage() {
     }, 1000);
     return () => clearInterval(timer);
   }, [cooldownSeconds]);
+
+  // Surface the result of a real OAuth reconnect/connect attempt. The
+  // callback route redirects back here with ?oauth=success|error|denied|
+  // cancelled&provider=...&connect_error=<internal_code> — until this ran,
+  // that result was silently dropped: a customer who clicked "Reconnect
+  // account", completed Google's consent screen, and hit a real backend
+  // failure just landed back on this page with zero indication anything had
+  // gone wrong, looking identical to never having clicked it at all.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const oauthStatus = params.get("oauth");
+    if (!oauthStatus) return;
+
+    const providerLabel = (params.get("provider") || params.get("connected") || "account").replace(/_/g, " ");
+    const connectError = params.get("connect_error");
+
+    if (oauthStatus === "success") {
+      setOauthBanner({ kind: "success", message: `✓ ${providerLabel} connected successfully.` });
+      reloadStatus();
+    } else if (oauthStatus === "denied" || oauthStatus === "cancelled") {
+      setOauthBanner({
+        kind: "error",
+        message: `You didn't finish granting access to ${providerLabel}, so nothing was connected. You can try again anytime.`,
+      });
+    } else {
+      const friendly =
+        connectError === "state_expired" || connectError === "state_already_used" || connectError === "state_not_found"
+          ? `That connection link for ${providerLabel} expired before it finished. Please try connecting again.`
+          : connectError === "missing_tenant"
+          ? `We couldn't confirm your workspace for this connection. Please refresh the page and try again.`
+          : `We couldn't finish connecting ${providerLabel}. Please try again — if it keeps happening, contact support.`;
+      setOauthBanner({ kind: "error", message: friendly });
+      // eslint-disable-next-line no-console
+      console.error("OAuth connect failed", { provider: params.get("provider"), connect_error: connectError });
+    }
+
+    // Strip the query params so a refresh doesn't re-show the banner.
+    const url = new URL(window.location.href);
+    ["oauth", "provider", "connected", "connect_error"].forEach((k) => url.searchParams.delete(k));
+    window.history.replaceState({}, "", url.pathname + url.search);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function reloadStatus() {
     if (!tenantId) return;
@@ -286,6 +330,25 @@ export default function IntegrationsPage() {
         </div>
       )}
 
+      {oauthBanner && (
+        <div
+          className={
+            oauthBanner.kind === "success"
+              ? "rounded-sx-sm border border-sx-success/30 bg-sx-success/10 px-4 py-3 text-sm font-medium text-sx-success flex items-center justify-between"
+              : "rounded-sx-sm border border-sx-warning/30 bg-sx-warning/10 px-4 py-3 text-sm font-medium text-sx-warning flex items-center justify-between"
+          }
+        >
+          <span>{oauthBanner.message}</span>
+          <button
+            type="button"
+            onClick={() => setOauthBanner(null)}
+            className="hover:opacity-70"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {error && (
         <ErrorState
           message={error}
@@ -315,7 +378,11 @@ export default function IntegrationsPage() {
                     <p className="text-[15px] font-semibold text-sx-text">{card.title}</p>
                     <p className="truncate text-xs text-sx-text-subtle">{card.copy}</p>
                   </div>
-                  <ConnectionBadge state={card.state} canConnect={card.isOAuth ? canConnect : true} isDiscovered={isDiscovered} />
+                  <ConnectionBadge
+                    state={!status && card.state !== "connected" ? "checking" : card.state}
+                    canConnect={card.isOAuth ? canConnect : true}
+                    isDiscovered={isDiscovered}
+                  />
                 </div>
 
                 {presence?.href && (
@@ -364,7 +431,19 @@ export default function IntegrationsPage() {
                     )}
 
                     {card.state !== "connected" && card.state !== "action_required" && (
-                      canConnect && connectHref ? (
+                      !status ? (
+                        // Status hasn't loaded yet -- found live during E2E
+                        // testing: canConnect defaulted to
+                        // Boolean(status?.selfService?.social) which is
+                        // Boolean(undefined) === false before this first
+                        // fetch resolves, so every OAuth connector flashed
+                        // "Testing access required" + "Request access" on
+                        // every page load for every eligible tenant owner,
+                        // even though the real eligibility check (a moment
+                        // later) says they can connect fine. Show a neutral
+                        // loading state instead of a false ineligibility claim.
+                        <span className="text-xs text-sx-text-subtle">Checking access…</span>
+                      ) : canConnect && connectHref ? (
                         card.key === "google_business" ? (
                           <Button
                             type="button"

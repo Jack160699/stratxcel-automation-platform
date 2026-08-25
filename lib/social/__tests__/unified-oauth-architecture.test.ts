@@ -43,8 +43,14 @@ function run() {
   );
 
   // --- 3. Unified callback handles both onboarding and admin flows --------
+  // Was: callbackRoute.includes("isOnboarding") -- that variable was dead
+  // code (assigned, never read) that happened to contain this substring;
+  // removing the dead code (found live during E2E testing while fixing the
+  // adjacent fallbackRedirect bug, see resolveOAuthFailureRedirect) broke
+  // this purely textual assertion without changing any real behavior.
+  // isPreWorkspaceOnboarding is the actual, live gate for this capability.
   assert.ok(
-    callbackRoute.includes("isOnboarding") && callbackRoute.includes("onboarding_oauth_connections"),
+    callbackRoute.includes("isPreWorkspaceOnboarding") && callbackRoute.includes("onboarding_oauth_connections"),
     "callback route must handle pre-tenant onboarding connections when redirectTo starts with /app"
   );
   assert.ok(

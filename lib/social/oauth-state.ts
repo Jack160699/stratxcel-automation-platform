@@ -78,3 +78,20 @@ export function verifySignedState(
 }
 
 export const OAUTH_STATE_TTL_MS = TTL_MS;
+
+/**
+ * Where a failed OAuth callback should send the customer back to.
+ *
+ * Found live during E2E testing: the callback route used to collapse any
+ * /app-prefixed redirectTo (e.g. /app/integrations, where a real customer
+ * clicks "Reconnect account") down to the literal string "/app" on failure
+ * — so a real reconnect attempt that hit a genuine backend error (expired
+ * state, token exchange failure, persistence failure) silently bounced the
+ * customer to the dashboard home instead of back to the page they were on,
+ * with no visible error (home never reads the oauth/connect_error query
+ * params). Preserve the actual redirectTo so failures land where the
+ * customer can see what happened.
+ */
+export function resolveOAuthFailureRedirect(redirectTo: string | undefined, fallback = "/admin/social"): string {
+  return redirectTo && redirectTo.startsWith("/app") ? redirectTo : fallback;
+}

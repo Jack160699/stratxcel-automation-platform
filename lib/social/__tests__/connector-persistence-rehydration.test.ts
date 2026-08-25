@@ -56,21 +56,33 @@ function createFakeDb() {
 
       if (table === "social_accounts") {
         return {
+          // A chainable filter builder supporting .eq()/.is() in any order
+          // and any count, matching real supabase-js query semantics --
+          // provisioning.ts filters by .is("tenant_id", null).eq("owner_id",
+          // ...).eq("platform", ...) to find a pre-tenant, owner-scoped row
+          // left behind by an OAuth connection made before the tenant
+          // existed (see lib/social/provisioning.ts). A fixed two-.eq()
+          // chain silently broke ("...is is not a function") the moment
+          // that real filter shape was introduced, without the real
+          // production logic (which uses the real supabase-js client) ever
+          // being wrong -- only this mock was stale.
           select(_cols: string) {
-            return {
-              eq(col1: string, val1: any) {
-                return {
-                  eq(col2: string, val2: any) {
-                    return {
-                      async maybeSingle() {
-                        const found = socialAccounts.find((r) => r[col1] === val1 && r[col2] === val2);
-                        return { data: found || null, error: null };
-                      },
-                    };
-                  },
-                };
+            const filters: Array<[string, any]> = [];
+            const chain: any = {
+              eq(col: string, val: any) {
+                filters.push([col, val]);
+                return chain;
+              },
+              is(col: string, val: any) {
+                filters.push([col, val]);
+                return chain;
+              },
+              async maybeSingle() {
+                const found = socialAccounts.find((r) => filters.every(([col, val]) => r[col] === val));
+                return { data: found || null, error: null };
               },
             };
+            return chain;
           },
           insert(payload: any) {
             socialAccounts.push({ ...payload, id: `soc_${Date.now()}_${Math.random()}` });
@@ -199,9 +211,15 @@ function createFakeDb() {
   assert.equal(whatsappBindings[0].status, "active");
 
   assert.equal(socialAccounts.length, 3);
-  assert.equal(socialAccounts.find((s) => s.platform === "instagram")?.status, "CONNECTED");
-  assert.equal(socialAccounts.find((s) => s.platform === "youtube")?.status, "CONNECTED");
-  assert.equal(socialAccounts.find((s) => s.platform === "google_business")?.status, "CONNECTED");
+  // A fresh row created from metadata alone (no pre-tenant owner-scoped row
+  // carrying a real token to link) has no verified token behind it --
+  // provisioning.ts now honestly marks it RECONNECT_REQUIRED/UNKNOWN rather
+  // than fabricating CONNECTED/HEALTHY (see its own comment above the
+  // insert). This assertion used to expect the fabricated "CONNECTED",
+  // which stopped matching the moment that honesty fix landed.
+  assert.equal(socialAccounts.find((s) => s.platform === "instagram")?.status, "RECONNECT_REQUIRED");
+  assert.equal(socialAccounts.find((s) => s.platform === "youtube")?.status, "RECONNECT_REQUIRED");
+  assert.equal(socialAccounts.find((s) => s.platform === "google_business")?.status, "RECONNECT_REQUIRED");
 
   assert.equal(googleConnections.length, 1);
   assert.equal(googleConnections[0].tenant_id, "tenant_alpha");
@@ -274,9 +292,68 @@ function createFakeDb() {
 
   assert.equal(socialAccounts.length, 1);
   assert.equal(socialAccounts[0].platform, "facebook");
-  assert.equal(socialAccounts[0].status, "CONNECTED");
+  // Same honesty fix as Test 1: a fresh row from metadata alone has no
+  // verified token, so it's RECONNECT_REQUIRED, not a fabricated CONNECTED.
+  assert.equal(socialAccounts[0].status, "RECONNECT_REQUIRED");
 
   console.log("✓ Test 3: Existing user auto-reconciliation verified");
+}
+
+// Test 3b: A real, token-bearing pre-tenant row gets re-pointed, not
+// duplicated -- this is the actual mechanism the "fabricated CONNECTED with
+// no real token" fix (see provisioning.ts's comment above the
+// ownerScopedAccount lookup) depends on: a customer who connects Google
+// Business during pre-workspace onboarding gets a real owner-scoped
+// social_accounts row (tenant_id: null) with a real social_tokens row
+// behind it, persisted directly by the OAuth callback. When the tenant is
+// created moments later, provisioning must find and re-point THAT row
+// (carrying its real token along) rather than creating a second, fresh,
+// tokenless row next to it -- which is exactly the bug that stranded every
+// pre-tenant connection with no path to a usable token.
+{
+  const { fakeClient, socialAccounts } = createFakeDb();
+
+  socialAccounts.push({
+    id: "soc_pretenant_1",
+    owner_id: "user_gamma",
+    tenant_id: null,
+    platform: "google_business",
+    provider_account_id: "accounts/real-gbp-account-id",
+    username: "owner@example.com",
+    display_name: "Owner Name",
+    permissions: ["https://www.googleapis.com/auth/business.manage"],
+    status: "CONNECTED",
+    token_health: "HEALTHY",
+  });
+
+  const userMetadata = {
+    onboarding_oauth_connections: {
+      google_business: {
+        provider: "google_business",
+        providerAccountId: "accounts/real-gbp-account-id",
+        username: "owner@example.com",
+        displayName: "Owner Name",
+        status: "connected",
+      },
+    },
+  };
+
+  await provisionTenantConnectorsFromMetadata(fakeClient, {
+    tenantId: "tenant_gamma",
+    userId: "user_gamma",
+    userMetadata,
+  });
+
+  assert.equal(socialAccounts.length, 1, "Must re-point the existing owner-scoped row, not create a duplicate");
+  assert.equal(socialAccounts[0].id, "soc_pretenant_1", "Must be the same row, not a new one");
+  assert.equal(socialAccounts[0].tenant_id, "tenant_gamma", "Row must now be linked to the real tenant");
+  // Status/token_health are untouched by the re-point -- the real,
+  // previously-verified CONNECTED/HEALTHY state (and its social_tokens row,
+  // linked by this same account id in production) survives the migration.
+  assert.equal(socialAccounts[0].status, "CONNECTED", "A real pre-tenant connection must not be downgraded on re-point");
+  assert.equal(socialAccounts[0].token_health, "HEALTHY");
+
+  console.log("✓ Test 3b: Real pre-tenant token-bearing row re-pointed, not duplicated");
 }
 
 // Test 4: Presence parsing includes verified_social_links deterministically

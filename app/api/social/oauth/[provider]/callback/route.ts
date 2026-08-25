@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireAdmin } from "@/lib/social/admin-guard";
 import { isValidProvider, getProvider } from "@/lib/social/providers";
-import { verifySignedState } from "@/lib/social/oauth-state";
+import { verifySignedState, resolveOAuthFailureRedirect } from "@/lib/social/oauth-state";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createSupabaseServiceClient } from "@/lib/supabase/service";
 import { upsertConnectedAccount, type Platform } from "@/lib/social/repositories/accounts";
@@ -51,14 +51,22 @@ export async function GET(
     details: { hasCode: !!code, hasState: !!state, errorReason },
   });
 
-  // Determine fallback fail destination from state if available
+  // Determine fallback fail destination from state if available.
+  // Found live during E2E testing: this used to collapse ANY /app-prefixed
+  // redirectTo (e.g. /app/integrations, where a real customer clicks
+  // "Reconnect account") down to the literal string "/app" -- so every
+  // callback failure (expired state, token exchange error, persistence
+  // error) silently bounced the customer to the dashboard home instead of
+  // back to the page they were reconnecting from, with no visible reason
+  // (home never reads these query params). The customer sees "nothing
+  // happened" and the connector still shows disconnected -- indistinguishable
+  // from success never having been attempted. Preserve the real redirectTo
+  // so the failure lands back where the customer can see the error banner.
   let fallbackRedirect = "/admin/social";
-  let isOnboarding = false;
   if (state) {
     const v = verifySignedState(state);
-    if (v.valid && v.payload.redirectTo?.startsWith("/app")) {
-      fallbackRedirect = "/app";
-      isOnboarding = true;
+    if (v.valid) {
+      fallbackRedirect = resolveOAuthFailureRedirect(v.payload.redirectTo, fallbackRedirect);
     }
   }
 
