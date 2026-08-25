@@ -43,9 +43,11 @@ async function main() {
   }
 
   // 2. Tenant Members
+  // tenant_members has no `id` column (composite primary key of
+  // tenant_id, user_id) -- selecting it always errored.
   const { data: members, error: mErr } = await supabase
     .from("tenant_members")
-    .select("id, user_id, role, created_at")
+    .select("user_id, role, created_at")
     .eq("tenant_id", tenantId);
 
   console.log(`\n2. TENANT MEMBERS (${members?.length ?? 0}):`);

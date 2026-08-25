@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { requireAdmin } from "@/lib/social/admin-guard";
 import { isValidProvider, getProvider } from "@/lib/social/providers";
 import { verifySignedState, resolveOAuthFailureRedirect } from "@/lib/social/oauth-state";
+import { isTenantMember } from "@/lib/social/tenant-membership";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createSupabaseServiceClient } from "@/lib/supabase/service";
 import { upsertConnectedAccount, type Platform } from "@/lib/social/repositories/accounts";
@@ -266,15 +267,16 @@ export async function GET(
         }
       }
 
-      // If tenantId was supplied in state, verify user membership
+      // If tenantId was supplied in state, verify user membership.
+      // Found live during E2E testing (see isTenantMember's own comment):
+      // this used to select("id") from tenant_members, a table with no id
+      // column, silently discarding the resulting DB error as "not a
+      // member" -- wiping targetTenantId and failing every reconnect from
+      // an existing workspace, for any provider, with a generic
+      // "missing_tenant" error, even for the tenant's real owner.
       if (targetTenantId && verified.payload.tenantId) {
-        const { data: memberCheck } = await service
-          .from("tenant_members")
-          .select("id")
-          .eq("tenant_id", targetTenantId)
-          .eq("user_id", userId)
-          .maybeSingle();
-        if (!memberCheck) {
+        const isMember = await isTenantMember(service, targetTenantId, userId);
+        if (!isMember) {
           targetTenantId = null; // Unverified tenant ID from state ignored
         }
       }
