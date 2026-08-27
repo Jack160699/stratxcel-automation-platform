@@ -21,6 +21,10 @@ import { buildVerifiedBusinessInformation } from "./package-business-facts.ts";
 import { buildCreativeBrief, formatCreativeBriefForPrompt, selectObjective } from "./creative-brief.ts";
 import { runGenerationLoop } from "./generation-loop.ts";
 import { parseGeneratedCopy, type GeneratedCopy } from "./generated-copy-parser.ts";
+import { buildCreativeTreatmentPrompt, validateCreativeTreatment, safeParseJson, type CreativeTreatment } from "./creative-treatment.ts";
+import { deriveBrandVisualDNA } from "./brand-visual-dna.ts";
+import { getIndustryVisualVocabulary } from "./industry-visual-vocabulary.ts";
+import { researchInsightsForIndustry } from "./visual-research-library.ts";
 
 export {
   assignBrandProfileToTenant,
@@ -766,6 +770,55 @@ export async function prepareNearTermPackageItems(service: ServiceClient, author
         audience,
       });
 
+      // Premium Creative Intelligence (build brief Section 2): a real
+      // creative-treatment step BEFORE copy -- business facts -> brand
+      // visual DNA -> industry visual vocabulary -> a real, specific
+      // creative concept and visual direction, not business -> caption
+      // directly. Uses the SAME provider.complete() call convention as
+      // copy generation below -- no bypass of the production
+      // billing/routing layer, no schema-enforcement API this provider
+      // interface doesn't support; parsed the same permissive way
+      // parseGeneratedCopy already parses copy. Strictly non-blocking
+      // (Section 28: a failed intelligence-layer call must never break the
+      // pipeline) -- on any failure, treatment stays null and generation
+      // falls back to exactly today's brief-only behavior.
+      const brandDNA = deriveBrandVisualDNA({
+        brandColors: brandProfile.visual.colors,
+        brandTone: brandProfile.voice.tone,
+        industryCategory: brief.industry,
+      });
+      const visualVocab = getIndustryVisualVocabulary(brief.industry);
+      const researchInsights = researchInsightsForIndustry(brief.industry === "generic" ? "all" : brief.industry);
+
+      let treatment: CreativeTreatment | null = null;
+      if (mediaType !== "text") {
+        try {
+          const treatmentMessages = buildCreativeTreatmentPrompt({
+            brief,
+            businessName: brandProfile.identity.name?.trim() || "",
+            industry: brief.industry,
+            brandDNA,
+            visualVocab,
+            mediaType,
+            researchInsights,
+          });
+          const treatmentResult = await provider.complete(
+            // buildCreativeTreatmentPrompt only ever emits "system"/"user"
+            // roles (see its body) -- AIMessage's broader role union
+            // (includes "developer", which AgentTurnMessage doesn't model)
+            // is why this needs an explicit cast rather than a plain pass.
+            treatmentMessages.map((m) => ({ role: m.role, content: m.content })) as unknown as Parameters<typeof provider.complete>[0],
+            [],
+            { brandInstructions: selectGeminiBrandInstructions(brandProfile), tenantId: authorization.tenant_id, businessInformation }
+          );
+          const parsedTreatment = safeParseJson(treatmentResult.text);
+          const issues = validateCreativeTreatment(parsedTreatment, { concept: brief.concept });
+          if (!issues.length) treatment = parsedTreatment as CreativeTreatment;
+        } catch {
+          treatment = null;
+        }
+      }
+
       // Phase E: generate -> score -> diagnose -> regenerate with targeted
       // corrective instructions, never a blind identical retry. Capped at 2
       // attempts (1 correction) -- each attempt is a real billable AI call
@@ -777,6 +830,16 @@ export async function prepareNearTermPackageItems(service: ServiceClient, author
           const prompt = [
             `Generate ONE ${CANONICAL_PLATFORM_LABEL[platform] ?? platform} post for this brand, item ${item.package_sequence} of an autonomous content package.`,
             formatCreativeBriefForPrompt(brief),
+            treatment
+              ? [
+                  `A REAL CREATIVE CONCEPT HAS ALREADY BEEN DEVELOPED -- write copy that matches it exactly, don't re-derive a different angle:`,
+                  `- Concept: ${treatment.concept}`,
+                  `- Hook: ${treatment.hook}`,
+                  `- Story: ${treatment.story}`,
+                  treatment.textHierarchy.length ? `- Planned on-image text (keep the caption consistent with, not a repeat of, this): ${treatment.textHierarchy.map((e) => `${e.role}: "${e.text}"`).join("; ")}` : "- No on-image text planned -- the caption carries the full message.",
+                  treatment.cta.needed ? `- CTA: ${treatment.cta.text}` : `- No CTA needed for this creative (${treatment.cta.rationale}) -- do not force one into the caption.`,
+                ].join("\n")
+              : "",
             `Respond with ONLY strict JSON: {"title": string, "masterIdea": string, "caption": string, "hashtags": string[]}.`,
             correctiveInstructions.length
               ? `CORRECTIONS FROM A PREVIOUS ATTEMPT -- apply these specifically:\n${correctiveInstructions.map((i) => `- ${i}`).join("\n")}`
@@ -852,6 +915,13 @@ export async function prepareNearTermPackageItems(service: ServiceClient, author
           qualityScore: qualityScore.score,
           qualityBreakdown: qualityScore.breakdown,
           attempts: loopResult.attempts.length,
+          // Premium Creative Intelligence treatment (Section 8), when real
+          // generation succeeded above -- consumed by the image-generation
+          // step to build a visual-director prompt (visual-director-
+          // prompt.ts) instead of the caption text repeated as an image
+          // brief. Absent (undefined) when treatment generation failed or
+          // this is a text-only unit -- never a fabricated placeholder.
+          treatment: treatment ?? undefined,
         },
       });
       if (mediaAsset) {
