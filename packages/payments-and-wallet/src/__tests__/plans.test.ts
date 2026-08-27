@@ -78,6 +78,26 @@ function run() {
     "business fulfilment limits must match the applied SQL migration exactly"
   );
 
+  // --- 7b. Social-Autopilot visual-archetype quotas match the applied
+  // archetype-tier-quotas migration (20260828030000_social_autopilot_archetype_tier_quotas.sql
+  // v_limits_starter/v_limits_growth/v_limits_business — appended
+  // [social_autopilot_automated_monthly, social_autopilot_manual_monthly]) ---
+  assert.deepEqual(
+    [PLAN_DEFINITIONS.starter.entitlements.social_autopilot_automated_monthly, PLAN_DEFINITIONS.starter.entitlements.social_autopilot_manual_monthly],
+    [12, 0],
+    "starter (₹2,999): 12 automated BASIC_ESSENTIAL creatives/month, 0 manual"
+  );
+  assert.deepEqual(
+    [PLAN_DEFINITIONS.growth.entitlements.social_autopilot_automated_monthly, PLAN_DEFINITIONS.growth.entitlements.social_autopilot_manual_monthly],
+    [30, 10],
+    "growth (₹7,999): 30 automated creatives/month cycling saved archetype preferences, 10 manual"
+  );
+  assert.deepEqual(
+    [PLAN_DEFINITIONS.business.entitlements.social_autopilot_automated_monthly, PLAN_DEFINITIONS.business.entitlements.social_autopilot_manual_monthly],
+    [30, 10],
+    "business: mirrors growth (not separately specified by the ₹2,999/₹7,999 brief)"
+  );
+
   // --- 8. Plan capability flags (brief §7) -------------------------------------
   assert.equal(PLAN_DEFINITIONS.starter.capabilities.social_autopilot, false, "Starter must not include Social Autopilot");
   assert.equal(PLAN_DEFINITIONS.growth.capabilities.social_autopilot, true, "Growth must include Social Autopilot");

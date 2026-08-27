@@ -9,6 +9,19 @@ export interface PlanEntitlementLimits {
   content_generation_monthly: number;
   /** Monthly system-generated (autonomously researched) content allowance, ON TOP of content_generation_monthly. Only Growth grants this as a distinct pool today. */
   automated_content_monthly: number;
+  /** Subscription-gated visual-archetype system: monthly automated (cron)
+   * Social Autopilot generation quota. Deliberately a NEW, distinct metric
+   * from automated_content_monthly (Creative Studio/Copilot's own pool) --
+   * see 20260828030000_social_autopilot_archetype_tier_quotas.sql for why
+   * overloading the existing metric would have silently changed every
+   * current subscriber's Creative Studio/Copilot quota. Starter is
+   * BASIC_ESSENTIAL-only automated generation; Growth+ cycles through the
+   * subscriber's 1-3 saved archetype preferences. */
+  social_autopilot_automated_monthly: number;
+  /** Monthly on-demand/manual Social Autopilot generation quota (explicit
+   * archetype choice per generation). Zero for Starter -- manual generation
+   * is a Growth+ capability entirely, not just a smaller allowance. */
+  social_autopilot_manual_monthly: number;
 }
 
 /**
@@ -48,6 +61,11 @@ export const PLAN_LIMITS: Record<"launch" | "custom_growth" | "free" | "starter"
     website_maintenance: 0,
     content_generation_monthly: 10,
     automated_content_monthly: 0,
+    // Legacy tier, fails closed (legacy_plan_not_payable) for any NEW
+    // payment/renewal in the RPCs -- these numbers are never actually
+    // granted by a real transaction, kept only for TS-side completeness.
+    social_autopilot_automated_monthly: 0,
+    social_autopilot_manual_monthly: 0,
   },
   custom_growth: {
     social_posts: 60,
@@ -56,6 +74,9 @@ export const PLAN_LIMITS: Record<"launch" | "custom_growth" | "free" | "starter"
     website_maintenance: 1,
     content_generation_monthly: 30,
     automated_content_monthly: 10,
+    // Same "never actually granted" caveat as launch above.
+    social_autopilot_automated_monthly: 0,
+    social_autopilot_manual_monthly: 0,
   },
   free: {
     social_posts: 0,
@@ -64,6 +85,8 @@ export const PLAN_LIMITS: Record<"launch" | "custom_growth" | "free" | "starter"
     website_maintenance: 0,
     content_generation_monthly: 0,
     automated_content_monthly: 0,
+    social_autopilot_automated_monthly: 0,
+    social_autopilot_manual_monthly: 0,
   },
   starter: {
     social_posts: 12,
@@ -73,6 +96,10 @@ export const PLAN_LIMITS: Record<"launch" | "custom_growth" | "free" | "starter"
     // Single pool of 10 (default allocation: 5 system-generated + 5 user-requested — brief §1).
     content_generation_monthly: 10,
     automated_content_monthly: 0,
+    // ₹2,999 "Automated Core": exactly 12 automated BASIC_ESSENTIAL
+    // creatives/month, zero manual/on-demand access at this tier.
+    social_autopilot_automated_monthly: 12,
+    social_autopilot_manual_monthly: 0,
   },
   growth: {
     social_posts: 25,
@@ -82,6 +109,11 @@ export const PLAN_LIMITS: Record<"launch" | "custom_growth" | "free" | "starter"
     // 20 user-requested PLUS 10 system-generated as a distinct pool (brief §2).
     content_generation_monthly: 20,
     automated_content_monthly: 10,
+    // ₹7,999 "Premium Curation": 30 automated creatives/month cycling the
+    // subscriber's 1-3 saved archetype preferences, plus 10 manual/on-demand
+    // generations/month with an explicit per-generation archetype choice.
+    social_autopilot_automated_monthly: 30,
+    social_autopilot_manual_monthly: 10,
   },
   business: {
     social_posts: 50,
@@ -91,6 +123,12 @@ export const PLAN_LIMITS: Record<"launch" | "custom_growth" | "free" | "starter"
     // 30 premium generations/month, single pool (brief §3 — not split like Growth).
     content_generation_monthly: 30,
     automated_content_monthly: 0,
+    // Not separately specified by the ₹2,999/₹7,999 brief -- mirrors Growth
+    // since Business is a superset of Growth everywhere else in
+    // PLAN_CAPABILITIES (social_autopilot/premium_content both already
+    // true). Revisit if a distinct Business figure is decided later.
+    social_autopilot_automated_monthly: 30,
+    social_autopilot_manual_monthly: 10,
   },
   scale: {
     social_posts: 75,
@@ -99,6 +137,10 @@ export const PLAN_LIMITS: Record<"launch" | "custom_growth" | "free" | "starter"
     website_maintenance: 1,
     content_generation_monthly: 40,
     automated_content_monthly: 15,
+    // Quote-led custom order, no self-checkout grant path -- display-only,
+    // same caveat as the rest of this tier's figures (see class comment above).
+    social_autopilot_automated_monthly: 30,
+    social_autopilot_manual_monthly: 10,
   },
 };
 
@@ -252,7 +294,9 @@ export type EntitlementMetric =
   | "whatsapp_contacts"
   | "website_maintenance"
   | "content_generation_monthly"
-  | "automated_content_monthly";
+  | "automated_content_monthly"
+  | "social_autopilot_automated_monthly"
+  | "social_autopilot_manual_monthly";
 
 export interface EntitlementStatus {
   metric: EntitlementMetric;
