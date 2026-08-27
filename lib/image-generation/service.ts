@@ -435,7 +435,17 @@ export async function processImageGenerationJob(args: {
     overlayContext && resolvedOverlayElements.length
       ? async ({ bytes, mimeType }: { bytes: Uint8Array; mimeType: string }) => {
           const canvas = ASPECT_CANVAS[job.aspect_ratio] ?? ASPECT_CANVAS["1:1"]!;
-          const { businessName, brandDNA } = overlayContext!;
+          const { businessName, brandDNA, treatment: overlayTreatment } = overlayContext!;
+          const snapshot = job.brand_context_snapshot as { locations?: unknown };
+          // Final Production Loop brief constraint #1: never invent contact
+          // info. This real production path has no verified-facts pipeline
+          // wired to the image job today -- only whatever "locations" the
+          // business itself saved to Brand Brain, which snapshotImageBrandContext
+          // (packages/ai-runtime/src/media/image-prompt.ts) already treats
+          // as trustworthy enough to hand to the image prompt unguarded.
+          // phone/website stay null (never guessed) until a real verified-
+          // facts path is wired through job creation.
+          const location = Array.isArray(snapshot.locations) && typeof snapshot.locations[0] === "string" ? snapshot.locations[0] : null;
           const composited = await renderTextOverlay(Buffer.from(bytes), {
             width: canvas.width,
             height: canvas.height,
@@ -444,7 +454,11 @@ export async function processImageGenerationJob(args: {
             textColor: brandDNA.lightDarkPreference === "light" ? "#111111" : "#FFFFFF",
             scrimColor: "#000000",
             accentColor: brandDNA.accentColor,
+            primaryColor: brandDNA.primaryColor,
+            secondaryColor: brandDNA.secondaryColor,
             businessName,
+            layoutArchetype: overlayTreatment.layoutArchetype,
+            contactInfo: { location, phone: null, website: null },
           });
           return { bytes: composited, mimeType: "image/png" };
         }

@@ -33,8 +33,20 @@ export function buildVisualDirectorBrief(input: {
   // there once the overlay actually renders it.
   const overlayElements = resolveOverlayElements(t);
 
+  // Final Production Loop brief Step 3: WHERE that negative space needs to
+  // sit is a direct function of the layout archetype the treatment already
+  // committed to (Step 1) -- the deterministic compositor
+  // (text-overlay-render.ts) renders a genuinely different container per
+  // archetype, so the base photo needs a genuinely different reserved area
+  // per archetype, not one generic "leave some space at the bottom" note.
+  const archetypeSpaceNote: Record<CreativeTreatment["layoutArchetype"], string> = {
+    SPLIT_BANNER: `This creative uses a SPLIT_BANNER layout: a solid, opaque, brand-colored panel will be composited across the full width of the bottom ~30% of the frame after generation, carrying all text and contact info. Compose the photograph so its subject and any critical visual detail live entirely in the TOP ~70% of the frame -- keep the bottom 30% clean, simple, and uncluttered (open floor, wall, sky, or soft out-of-focus background) since it will be fully covered by an opaque panel, not just dimmed.`,
+    FLOATING_CARD: `This creative uses a FLOATING_CARD layout: a padded card will be composited into the BOTTOM-LEFT corner after generation, and a small brand-name label into the top-right corner. Compose the subject weighted toward the right two-thirds and upper portion of the frame, leaving the bottom-left corner as soft, simple, out-of-focus negative space (not the subject's face, hands, or any critical detail) so the card can sit there without covering anything essential.`,
+    EDITORIAL_FRAME: `This creative uses an EDITORIAL_FRAME layout: a thin outer border and a compact, centered text block (in the lower-middle third) will be composited after generation, with a small brand lockup centered at the very top. Compose the subject centered or rule-of-thirds within the frame with generally even, uncluttered negative space around the extreme top-center and lower-middle regions -- avoid placing critical detail there -- while the rest of the frame can be as rich and detailed as the concept calls for.`,
+  };
+
   const textSafeNote = overlayElements.length
-    ? `Leave clean, uncluttered negative space for ${overlayElements.length} overlay text element(s) (${overlayElements.map((e) => e.role).join(", ")}) -- do not compose critical visual detail where on-image text would need to sit.`
+    ? `Leave clean, uncluttered negative space for ${overlayElements.length} overlay text element(s) (${overlayElements.map((e) => e.role).join(", ")}) -- do not compose critical visual detail where on-image text would need to sit. ${archetypeSpaceNote[t.layoutArchetype]}`
     : `No on-image text is planned for this creative -- the photograph itself must carry the entire idea. Compose for maximum visual impact with zero reliance on overlay text.`;
 
   const lines = [

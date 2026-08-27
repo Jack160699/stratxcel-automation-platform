@@ -10,7 +10,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { deriveBrandVisualDNA } from "../lib/social/brand-visual-dna.ts";
 import { renderTextOverlay } from "../lib/social/text-overlay-render.ts";
-import { resolveOverlayElements, type CreativeTreatment } from "../lib/social/creative-treatment.ts";
+import { resolveOverlayElements, extractVerifiedContactInfo, type CreativeTreatment } from "../lib/social/creative-treatment.ts";
+import { buildVerifiedBusinessInformation } from "../lib/social/package-business-facts.ts";
 import { ALL_FIXTURES, type BusinessFixture } from "../lib/social/__tests__/fixtures/business-fixtures.ts";
 
 const RESULTS_PATH = process.argv[2];
@@ -94,6 +95,12 @@ async function main() {
       const width = CANVAS_WIDTH;
       const height = CANVAS_HEIGHT;
       const textColor = brandDNA.lightDarkPreference === "light" ? "#111111" : "#FFFFFF";
+      // Real verified facts, the same pipeline the treatment/copy prompts
+      // already use for this fixture -- extractVerifiedContactInfo never
+      // fabricates, so phone legitimately stays null for most fixtures
+      // (buildVerifiedBusinessInformation deliberately excludes it).
+      const verifiedFacts = buildVerifiedBusinessInformation({ googleBusiness: fixture.googleBusiness, brandBrain: fixture.brandBrain });
+      const contactInfo = extractVerifiedContactInfo(verifiedFacts);
       finalBuffer = await renderTextOverlay(baseImage, {
         width, height,
         elements: [...resolvedElements, { role: "brandLabel", text: fixture.businessName }],
@@ -101,7 +108,11 @@ async function main() {
         textColor,
         scrimColor: "#000000",
         accentColor: brandDNA.accentColor,
+        primaryColor: brandDNA.primaryColor,
+        secondaryColor: brandDNA.secondaryColor,
         businessName: fixture.businessName,
+        layoutArchetype: p.treatment.layoutArchetype,
+        contactInfo,
       });
       overlayApplied = true;
     }
