@@ -100,6 +100,38 @@ async function main() {
     assert.ok(ctaMatch![0].includes('fill="#FFFFFF"'));
   });
 
+  await test("a long CTA wraps into multiple lines and its pill never extends past the canvas edges (regression: found clipped off-canvas in real campaign output)", () => {
+    const width = 1024;
+    const longCta = "Drop your questions below or book a consultation at our Indiranagar clinic";
+    const svg = buildTextOverlaySvg({
+      width, height: 1280,
+      elements: [{ role: "cta", text: longCta }],
+      typographyPersonality: "clean-geometric",
+      textColor: "#FFFFFF", scrimColor: "#000000", accentColor: "#0077B6", businessName: "Test",
+    });
+    const ctaTextElements = [...svg.matchAll(/<text[^>]*>([^<]*)<\/text>/g)].filter((m) => longCta.includes(m[1]!.trim()) || m[1]!.trim().length && longCta.includes(m[1]!.trim()));
+    assert.ok(ctaTextElements.length >= 2, `expected the long CTA to wrap into multiple <text> lines, got ${ctaTextElements.length}`);
+    const rectMatch = svg.match(/<rect x="(-?\d+)" y="[^"]*" width="(\d+)"/);
+    assert.ok(rectMatch, "expected a pill <rect> behind the CTA");
+    const rectX = Number(rectMatch![1]);
+    const rectWidth = Number(rectMatch![2]);
+    assert.ok(rectX >= 0, `pill must not start off the left edge of the canvas, got x=${rectX}`);
+    assert.ok(rectX + rectWidth <= width, `pill must not extend past the right edge of the canvas (x=${rectX}, width=${rectWidth}, canvas=${width})`);
+  });
+
+  await test("the brand label always gets a backing chip, regardless of what's behind it (regression: found nearly invisible over a light photo region in real campaign output)", () => {
+    const svg = buildTextOverlaySvg({
+      width: 1024, height: 1280,
+      elements: [{ role: "headline", text: "Test headline" }],
+      typographyPersonality: "clean-geometric",
+      textColor: "#FFFFFF", scrimColor: "#000000", accentColor: null, businessName: "Sunrise Dental Care",
+    });
+    // Two rects expected: the bottom scrim band and the brand-label chip.
+    const rectCount = (svg.match(/<rect /g) ?? []).length;
+    assert.ok(rectCount >= 2, `expected a scrim rect AND a brand-label backing chip, got ${rectCount} rect(s)`);
+    assert.ok(svg.includes("Sunrise Dental Care"));
+  });
+
   await test("renderTextOverlay produces a real, valid, correctly-sized PNG composited over a base photo", async () => {
     const base = await sharp({ create: { width: 1024, height: 1024, channels: 3, background: { r: 40, g: 40, b: 40 } } }).png().toBuffer();
     const out = await renderTextOverlay(base, {

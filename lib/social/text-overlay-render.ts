@@ -148,10 +148,21 @@ export function buildTextOverlaySvg(input: TextOverlayLayoutInput): string {
   // on-photo text is invisible.
   const ctaTextFill = accentColor ? legibleTextColorFor(accentColor) : textColor;
 
+  // CTA safe width is narrower than the general safeWidth: it renders as a
+  // centered pill, not an edge-to-edge line, so it needs its own margin on
+  // both sides. Bug found on real generated output: a genuinely good, real,
+  // specific CTA ("...book a consultation at our Indiranagar clinic") was
+  // never wrapped -- a single long <text> line simply overflowed past both
+  // canvas edges and got clipped. wrapText below fixes that the same way
+  // headline/supportingLine already wrap.
+  const ctaSafeWidth = width - margin * 2 - Math.round(width * 0.1);
   if (cta?.text.trim()) {
     const fontSize = Math.round(width * 0.032);
-    cursorY -= fontSize + Math.round(height * 0.02);
-    blocks.push({ role: "cta", lines: [cta.text.trim()], fontSize, x: width / 2, yStart: cursorY, lineHeight: fontSize * 1.2, align: "middle", weight: 700, fill: ctaTextFill });
+    const lines = wrapText(cta.text.trim(), ctaSafeWidth, fontSize);
+    const lineHeight = fontSize * 1.2;
+    cursorY -= Math.round(height * 0.02);
+    cursorY -= lines.length * lineHeight;
+    blocks.push({ role: "cta", lines, fontSize, x: width / 2, yStart: cursorY + lineHeight, lineHeight, align: "middle", weight: 700, fill: ctaTextFill });
     cursorY -= Math.round(height * 0.025);
   }
 
@@ -190,24 +201,43 @@ export function buildTextOverlaySvg(input: TextOverlayLayoutInput): string {
     ? (() => {
         const padX = ctaBlock.fontSize * 1.1;
         const padY = ctaBlock.fontSize * 0.55;
-        const textWidthEstimate = ctaBlock.lines[0]!.length * ctaBlock.fontSize * 0.56;
-        const pillWidth = textWidthEstimate + padX * 2;
-        const pillHeight = ctaBlock.fontSize + padY * 2;
+        // Sized from the LONGEST wrapped line and the actual line count --
+        // a single-line estimate here is what let the pill (and the text
+        // inside it) silently clip past the canvas edge on a genuinely
+        // long, real CTA. Width is also hard-capped at the canvas's own
+        // safe area so the pill itself can never extend off-canvas even if
+        // the estimate runs a little wide.
+        const longestLine = ctaBlock.lines.reduce((a, b) => (b.length > a.length ? b : a), "");
+        const textWidthEstimate = longestLine.length * ctaBlock.fontSize * 0.56;
+        const pillWidth = Math.min(textWidthEstimate + padX * 2, width - margin * 2);
+        const pillHeight = ctaBlock.lines.length * ctaBlock.lineHeight + padY * 2 - (ctaBlock.lineHeight - ctaBlock.fontSize);
         const pillX = width / 2 - pillWidth / 2;
         const pillY = ctaBlock.yStart - ctaBlock.fontSize * 0.85 - padY;
-        return `<rect x="${Math.round(pillX)}" y="${Math.round(pillY)}" width="${Math.round(pillWidth)}" height="${Math.round(pillHeight)}" rx="${Math.round(pillHeight / 2)}" fill="${escapeXml(accentColor)}" />`;
+        return `<rect x="${Math.round(pillX)}" y="${Math.round(pillY)}" width="${Math.round(pillWidth)}" height="${Math.round(pillHeight)}" rx="${Math.round(Math.min(pillHeight, ctaBlock.fontSize * 1.6) / 2)}" fill="${escapeXml(accentColor)}" />`;
       })()
     : "";
 
+  // Brand label always gets its own small backing chip -- found on real
+  // generated output: without one, "Sunrise Dental Care" rendered directly
+  // over a light window in the background photo and was nearly invisible;
+  // the thin stroke outline other elements rely on isn't enough contrast
+  // on its own against an arbitrary, unpredictable photo region.
+  const brandLabelFontSize = Math.round(width * 0.026);
+  const brandLabelWidthEstimate = brandLabel.text.trim().length * brandLabelFontSize * 0.58;
+  const brandLabelPadX = brandLabelFontSize * 0.7;
+  const brandLabelPadY = brandLabelFontSize * 0.45;
+  const brandLabelChip = brandLabel.text.trim()
+    ? `<rect x="${Math.round(width - margin - brandLabelWidthEstimate - brandLabelPadX * 2)}" y="${Math.round(margin * 0.9 - brandLabelFontSize - brandLabelPadY)}" width="${Math.round(brandLabelWidthEstimate + brandLabelPadX * 2)}" height="${Math.round(brandLabelFontSize + brandLabelPadY * 2)}" rx="${Math.round(brandLabelFontSize * 0.4)}" fill="${escapeXml(scrimColor)}" fill-opacity="0.45" />`
+    : "";
   const brandLabelSvg = brandLabel.text.trim()
-    ? `<text x="${width - margin}" y="${Math.round(margin * 0.9)}" font-family="${fontFamily}" font-size="${Math.round(width * 0.026)}" font-weight="700" fill="${escapeXml(textColor)}" text-anchor="end" style="paint-order: stroke; stroke: rgba(0,0,0,0.25); stroke-width: 0.5px;">${escapeXml(brandLabel.text.trim())}</text>`
+    ? `<text x="${width - margin}" y="${Math.round(margin * 0.9)}" font-family="${fontFamily}" font-size="${brandLabelFontSize}" font-weight="700" fill="${escapeXml(textColor)}" text-anchor="end" style="paint-order: stroke; stroke: rgba(0,0,0,0.25); stroke-width: 0.5px;">${escapeXml(brandLabel.text.trim())}</text>`
     : "";
 
   const scrimSvg = blocks.length
     ? `<rect x="0" y="${Math.round(scrimTop)}" width="${width}" height="${Math.round(height - scrimTop)}" fill="${escapeXml(scrimColor)}" fill-opacity="0.55" />`
     : "";
 
-  return `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">${scrimSvg}${ctaPill}${textSvgParts.join("")}${brandLabelSvg}</svg>`;
+  return `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">${scrimSvg}${ctaPill}${textSvgParts.join("")}${brandLabelChip}${brandLabelSvg}</svg>`;
 }
 
 export async function renderTextOverlay(baseImage: Buffer, input: TextOverlayLayoutInput): Promise<Buffer> {

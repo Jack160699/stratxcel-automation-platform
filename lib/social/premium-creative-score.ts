@@ -6,6 +6,41 @@
  * never be used to second-guess -- see build brief Section 28: "do not
  * game the scorer").
  *
+ * ============================================================
+ * GATING POLICY DECISION ("FINAL PRODUCTION QUALITY COMPLETION LOOP"
+ * brief Section 16 -- ADVISORY, not enforced, and here is why):
+ *
+ * quality-score.ts's QUALITY_PASS_THRESHOLD (90, text-only, fully
+ * automated) remains the SOLE ENFORCED production gate -- unchanged. A
+ * creative that fails it is never generated as an image at all, exactly
+ * as before this campaign.
+ *
+ * PREMIUM_PASS_THRESHOLD is advisory only and is NOT wired into
+ * package-autopilot.ts's or lib/image-generation/service.ts's pass/fail
+ * decision anywhere. This is a considered decision, not an oversight:
+ * 40 of this rubric's 100 points (Visual Art Direction, Composition,
+ * Typography, Image Quality) are architecturally incapable of being
+ * computed without a human (or a real vision-model judge, which does not
+ * exist in this codebase) actually looking at the rendered image --
+ * exactly the boundary visual-creative-contract.ts already draws for the
+ * same reason. Enforcing PREMIUM_PASS_THRESHOLD as a hard production gate
+ * today would force one of two dishonest choices: block every single
+ * image (since visual dimensions start `null`/PENDING_VISUAL_INSPECTION),
+ * or fabricate visual scores to let generation through -- both violate
+ * the "never fabricate a visual assessment" principle this codebase has
+ * held since quality-score.ts's own VISUAL_QUALITY_NEUTRAL_SCORE was
+ * introduced. The premium score remains genuinely useful as: a benchmark/
+ * QA instrument (this is how the real campaigns were evaluated), and,
+ * once a human reviewer calls recordVisualInspection with real numbers,
+ * a legitimate advisory signal for that reviewer -- but never an
+ * automated gate on its own.
+ *
+ * Revisit this decision if/when a trustworthy automated visual-quality
+ * judge exists for the remaining 40 points; until then, this split
+ * (automated text gate enforced, full creative score advisory) is the
+ * evidence-based policy.
+ * ============================================================
+ *
  * Weights: Strategy 10, Business Specificity 10, Creative Concept 10,
  * Copy 10, Brand Fit 10, Visual Art Direction 15, Composition 10,
  * Typography 5, Image Quality 10, Originality 5, Commercial Usefulness 5.

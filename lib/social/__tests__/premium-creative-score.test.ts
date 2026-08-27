@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
 import { scorePremiumCreative, recordVisualInspection, PREMIUM_DIMENSION_WEIGHTS, PREMIUM_PASS_THRESHOLD } from "../premium-creative-score.ts";
 import { buildCreativeBrief } from "../creative-brief.ts";
 import type { CreativeTreatment } from "../creative-treatment.ts";
@@ -112,6 +114,20 @@ test("weights sum to exactly 100", () => {
 
 test("pass threshold is 90", () => {
   assert.equal(PREMIUM_PASS_THRESHOLD, 90);
+});
+
+test("gating policy (advisory only): the premium score never gates production pass/fail anywhere real generation happens", () => {
+  // Real production quality-completion brief Section 16's decision,
+  // documented in this file's own header: quality-score.ts's automated
+  // text gate stays the sole enforced gate; the premium score (40 of
+  // whose 100 points require a real human/vision-model look at the
+  // rendered image, architecturally impossible to automate honestly
+  // today) stays advisory. This asserts that decision is actually upheld
+  // in the two real places generation happens, not just documented.
+  const packageAutopilot = fs.readFileSync(path.join(import.meta.dirname, "..", "package-autopilot.ts"), "utf8");
+  const imageService = fs.readFileSync(path.join(import.meta.dirname, "..", "..", "image-generation", "service.ts"), "utf8");
+  assert.ok(!packageAutopilot.includes("premium-creative-score"), "package-autopilot.ts must not import the advisory premium scorer to gate anything");
+  assert.ok(!imageService.includes("premium-creative-score") && !imageService.includes("PREMIUM_PASS_THRESHOLD"), "the image-generation service must not gate on the advisory premium score");
 });
 
 console.log("premium-creative-score.test.ts: ALL PASS");
