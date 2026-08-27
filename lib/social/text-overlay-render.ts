@@ -6,11 +6,11 @@
  *
  * This is that overlay layer -- real, working, pixel-level compositing via
  * `sharp` (already a project dependency): build an SVG containing the
- * headline/supporting-line/CTA/brand-label/contact-footer as actual <text>
- * (and vector icon) elements, laid out according to the creative's chosen
- * `layoutArchetype`, then rasterize + composite it onto the AI-generated
- * base photograph. The image model is used ONLY for photography/scene/
- * atmosphere, never for long text rendering.
+ * headline/supporting-line/CTA/brand-label/contact-footer as pre-rendered
+ * glyph-outline `<path>` elements (and vector icons), laid out according
+ * to the creative's chosen `layoutArchetype`, then rasterize + composite
+ * it onto the AI-generated base photograph. The image model is used ONLY
+ * for photography/scene/atmosphere, never for long text rendering.
  *
  * Final Production Loop brief Step 2: this used to have exactly ONE layout
  * (a bottom scrim band + a top-right brand chip) regardless of the
@@ -25,47 +25,83 @@
  * secondary color usage in place of the old generic translucent black/
  * grey everywhere a scrim, chip, or pill needs a fill.
  *
- * HONEST LIMITATION (v1): sharp's SVG rasterizer resolves font-family
- * names against whatever fonts are actually installed on the host running
- * the composite. Locally that's whatever fonts are on this machine; on
- * Vercel's serverless runtime it will fall back to that runtime's base
- * fonts unless real brand font files are embedded as base64 @font-face
- * data in the SVG (not done here -- no brand font files exist for these
- * fixtures). Layout, hierarchy, wrapping, legibility, and exact text
- * content are real and verified; exact typeface fidelity across
- * environments is the natural next step, not claimed as solved here.
+ * WHY GLYPH PATHS, NOT <text> ELEMENTS (real production bug, found and
+ * fixed via the Step 5 E2E staging validation): every earlier version of
+ * this module emitted real `<text>` elements and relied on the SVG
+ * rasterizer (sharp -> libvips -> librsvg) to resolve a font-family name
+ * and shape/rasterize the glyphs itself. That worked perfectly on a local
+ * dev machine but shipped completely invisible text in actual production
+ * (Vercel's serverless runtime) -- confirmed by downloading and visually
+ * inspecting a real generated composite: every shape (bands, pills, accent
+ * lines, icons) rendered correctly, every `<text>` element rendered as
+ * nothing. Embedding a real font as a base64 @font-face data: URI (tried
+ * next, both as WOFF and as raw TTF) measurably progressed the failure --
+ * real layout/kerning/advance-widths started happening -- but every glyph
+ * still rendered as a tofu box (.notdef), meaning that host's text-shaping
+ * layer (Pango/fontconfig, which librsvg's <text> support depends on)
+ * isn't reliably available/initialized in a fresh serverless container,
+ * even with a font's bytes fully embedded in the SVG itself.
+ *
+ * The fix that actually works: don't ask the host to shape or rasterize
+ * text AT ALL. `opentype.js` parses the embedded Inter font
+ * (fonts/inter-embedded.ts) and computes each line's actual glyph outlines
+ * as SVG path data ahead of time, in this module, in pure JS -- the
+ * rasterizer then just fills vector paths, the same primitive operation it
+ * already performs correctly for every rect/circle/line in this file. No
+ * font lookup, no text shaping, no fontconfig dependency of any kind at
+ * render time -- confirmed via a real E2E generation against the live
+ * staging tenant that this renders correctly on the actual Vercel
+ * production runtime.
+ *
+ * HONEST LIMITATION (v1): only Latin-script text is supported (Inter
+ * Regular + Bold, latin subset) -- no RTL, no CJK, no ligature shaping
+ * beyond what opentype.js's own kerning table lookup provides. Every
+ * typography personality currently renders in the same embedded Inter
+ * face (TypographyPersonality is accepted but not yet used to select a
+ * different embedded font) -- a distinct embedded font per personality is
+ * the natural v2, not attempted here.
  */
 
 import sharp from "sharp";
+import * as opentypeNamespace from "opentype.js";
+import type { Font } from "opentype.js";
+
+// opentype.js resolves to genuinely different module shapes depending on
+// the bundler: Next.js/Turbopack (via the package's "module" field) sees
+// dist/opentype.mjs, whose only exports are named (Font, parse, ...) with
+// no default -- `import opentype from "opentype.js"` fails to build there
+// ("Export default doesn't exist"). Plain Node ESM (via the "main" field,
+// no "exports" map) resolves to the UMD dist/opentype.js instead, where
+// Node's CJS/ESM interop puts the whole CJS module.exports object (which
+// DOES carry .parse/.Font as plain properties) on the namespace's own
+// `default` key, and does not reliably synthesize `parse` as a named
+// export of the namespace itself. This -- `ns.default ?? ns` -- resolves
+// correctly under both.
+const opentype = (opentypeNamespace as { default?: typeof opentypeNamespace }).default ?? opentypeNamespace;
+const parseFont = opentype.parse;
 import type { OnImageTextElement } from "./text-density.ts";
 import type { TypographyPersonality } from "./brand-visual-dna.ts";
 import type { LayoutArchetype, VerifiedContactInfo } from "./creative-treatment.ts";
-import { EMBEDDED_FONT_FACE_CSS } from "./fonts/inter-embedded.ts";
+import { INTER_REGULAR_TTF_BASE64, INTER_BOLD_TTF_BASE64 } from "./fonts/inter-embedded.ts";
 
-/**
- * 'StratXcelOverlayInter' is listed FIRST in every stack, deliberately
- * overriding the per-personality typographic distinction below it -- real
- * bug found via the Final Production Loop brief's Step 5 E2E staging
- * validation: on Vercel's actual serverless runtime, sharp's SVG
- * rasterizer (librsvg) cannot resolve ANY of these font-family names --
- * not even the bare "sans-serif" generic keyword -- because that
- * container has zero fonts installed, so every <text> element rendered
- * completely invisible while every non-text shape rendered fine. The
- * embedded Inter font (fonts/inter-embedded.ts, injected into every
- * generated SVG's own <defs><style>) has no external font-lookup
- * dependency at all, so it always resolves regardless of host. The
- * personality-specific names stay listed as a fallback (never actually
- * reached today, since the embedded font always resolves first) rather
- * than removed outright -- a real per-personality embedded font per
- * typography personality is the natural v2, not attempted here.
- */
-const FONT_STACK: Record<TypographyPersonality, string> = {
-  "editorial-serif": "'StratXcelOverlayInter', Georgia, 'Times New Roman', serif",
-  "confident-display": "'StratXcelOverlayInter', 'Arial Black', 'Helvetica Neue', Arial, sans-serif",
-  "clean-geometric": "'StratXcelOverlayInter', 'Segoe UI', Helvetica, Arial, sans-serif",
-  "warm-humanist": "'StratXcelOverlayInter', 'Trebuchet MS', Verdana, sans-serif",
-  "bold-condensed": "'StratXcelOverlayInter', 'Arial Narrow', 'Helvetica Neue', Arial, sans-serif",
-};
+function toArrayBuffer(buf: Buffer): ArrayBuffer {
+  return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer;
+}
+
+let regularFontCache: Font | null = null;
+let boldFontCache: Font | null = null;
+
+/** Regular for weight < 600, Bold otherwise -- matches normal CSS font-
+ * weight-to-face matching for a two-weight family. Parsed once per
+ * process (module-level cache), not once per request. */
+function getFont(weight: number): Font {
+  if (weight >= 600) {
+    if (!boldFontCache) boldFontCache = parseFont(toArrayBuffer(Buffer.from(INTER_BOLD_TTF_BASE64, "base64")));
+    return boldFontCache;
+  }
+  if (!regularFontCache) regularFontCache = parseFont(toArrayBuffer(Buffer.from(INTER_REGULAR_TTF_BASE64, "base64")));
+  return regularFontCache;
+}
 
 /** Relative luminance (0=black..1=white) for a #RRGGBB hex color -- used
  * only to pick a legible text color against a solid fill, not a full
@@ -95,6 +131,9 @@ function legibleTextColorFor(fillHex: string | null): string {
   return luminance > 0.6 ? "#111111" : "#FFFFFF";
 }
 
+/** Defensive attribute-value escaping (colors are always internally
+ * computed hex strings today, but this costs nothing and guards against a
+ * future caller passing something unexpected into a fill/stroke value). */
 function escapeXml(text: string): string {
   return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
@@ -103,24 +142,43 @@ function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
-/** Injected as the first child of every non-empty generated SVG so the
- * embedded font is available with zero external font-lookup dependency --
- * see the FONT_STACK comment above for why this exists. */
-const SVG_FONT_DEFS = `<defs><style>${EMBEDDED_FONT_FACE_CSS}</style></defs>`;
+/** letterSpacing here is always in PIXELS (matching every other pixel-
+ * based measurement in this file); opentype.js's own RenderOptions.
+ * letterSpacing is a fraction of fontSize, so every call site converts. */
+function letterSpacingFraction(letterSpacingPx: number, fontSize: number): number {
+  return fontSize > 0 ? letterSpacingPx / fontSize : 0;
+}
 
-/** Rough word-wrap: no real font-metrics access at SVG-build time, so this
- * estimates average glyph width as a fraction of font size -- calibrated
- * conservatively (wide) so wrapped lines under-fill rather than overflow
- * the safe width. */
-function wrapText(text: string, maxWidthPx: number, fontSizePx: number): string[] {
-  const avgCharWidth = fontSizePx * 0.56;
-  const maxChars = Math.max(4, Math.floor(maxWidthPx / avgCharWidth));
+/** Every measureWidth/glyphPath call below disables GSUB-driven glyph
+ * substitution features (ligatures, contextual alternates, glyph
+ * composition/decomposition) -- real bug found immediately after
+ * switching to glyph-path rendering: opentype.js's own OpenType-layout
+ * engine doesn't support every GSUB lookup type Inter's font actually
+ * uses (specifically a ccmp lookup), and throws rather than skipping it.
+ * None of these features matter for plain marketing captions -- turning
+ * them off trades a font-designer nicety (ligatures) for the engine not
+ * crashing on real, unremarkable business copy. */
+const NO_GSUB_FEATURES = { features: { liga: false, rlig: false, ccmp: false, calt: false } } as const;
+
+/** Real measured glyph-advance width in pixels, with the GSUB-feature
+ * crash worked around and pixel-based letterSpacing converted to
+ * opentype.js's own fontSize-fraction convention in one place. */
+function measureWidth(font: Font, text: string, fontSize: number, letterSpacingPx = 0): number {
+  return font.getAdvanceWidth(text, fontSize, { letterSpacing: letterSpacingFraction(letterSpacingPx, fontSize), ...NO_GSUB_FEATURES });
+}
+
+/** Real font-metric word-wrap (replacing the old average-char-width
+ * estimate now that real glyph advance widths are available from the
+ * parsed font) -- wraps at the actual measured pixel width, never an
+ * approximation. */
+function wrapText(font: Font, text: string, maxWidthPx: number, fontSizePx: number, letterSpacingPx = 0): string[] {
   const words = text.trim().split(/\s+/);
   const lines: string[] = [];
   let current = "";
   for (const word of words) {
     const candidate = current ? `${current} ${word}` : word;
-    if (candidate.length > maxChars && current) {
+    const measured = measureWidth(font, candidate, fontSizePx, letterSpacingPx);
+    if (measured > maxWidthPx && current) {
       lines.push(current);
       current = word;
     } else {
@@ -131,19 +189,50 @@ function wrapText(text: string, maxWidthPx: number, fontSizePx: number): string[
   return lines;
 }
 
-/** Same estimate as wrapText, single line: truncates with an ellipsis
- * instead of wrapping -- used for the contact footer, where a full
- * address or URL wrapping to a second line would push the footer (and
- * potentially the whole card/band) taller than intended. */
-function truncateToWidth(text: string, maxWidthPx: number, fontSizePx: number): string {
-  const avgCharWidth = fontSizePx * 0.56;
-  const maxChars = Math.max(3, Math.floor(maxWidthPx / avgCharWidth));
-  if (text.length <= maxChars) return text;
-  return `${text.slice(0, Math.max(1, maxChars - 1))}…`;
+/** Real font-metric truncation (binary search on the actual measured
+ * width) -- used for the contact footer, where a full address or URL
+ * wrapping to a second line would push the footer (and potentially the
+ * whole card/band) taller than intended, so it truncates instead. */
+function truncateToWidth(font: Font, text: string, maxWidthPx: number, fontSizePx: number): string {
+  if (measureWidth(font, text, fontSizePx) <= maxWidthPx) return text;
+  let lo = 0;
+  let hi = text.length;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    const candidate = `${text.slice(0, mid)}…`;
+    if (measureWidth(font, candidate, fontSizePx) <= maxWidthPx) lo = mid;
+    else hi = mid - 1;
+  }
+  return lo > 0 ? `${text.slice(0, lo)}…` : "…";
+}
+
+/** The one real text-rendering primitive in this file: pre-renders one
+ * line of text as actual glyph-outline SVG path data (opentype.js's own
+ * font.getPath, which already handles kerning and letter-spacing) instead
+ * of emitting a `<text>` element the host would have to shape/rasterize
+ * itself. Returns the line's measured width too, so callers doing their
+ * own centering/underlining math never need a second, separate estimate. */
+function glyphLineSvg(
+  font: Font,
+  text: string,
+  x: number,
+  yBaseline: number,
+  fontSize: number,
+  anchor: "start" | "middle" | "end",
+  letterSpacingPx: number,
+  fill: string
+): { svg: string; width: number } {
+  const width = measureWidth(font, text, fontSize, letterSpacingPx);
+  let startX = x;
+  if (anchor === "middle") startX = x - width / 2;
+  else if (anchor === "end") startX = x - width;
+  const path = font.getPath(text, startX, yBaseline, fontSize, { letterSpacing: letterSpacingFraction(letterSpacingPx, fontSize), ...NO_GSUB_FEATURES });
+  const d = path.toPathData(2);
+  const svg = `<path d="${d}" fill="${escapeXml(fill)}" style="paint-order: stroke; stroke: rgba(0,0,0,0.15); stroke-width: 0.5px;" />`;
+  return { svg, width };
 }
 
 interface TextLineOptions {
-  fontFamily: string;
   fontSize: number;
   weight: number;
   fill: string;
@@ -153,29 +242,27 @@ interface TextLineOptions {
   underline?: boolean;
 }
 
-/** Shared multi-line <text> emitter used by every archetype's headline/
- * supporting/brand-label/CTA-as-text blocks -- keeps the paint-order
- * stroke outline (real legibility fix: thin dark stroke behind every
- * on-photo text glyph so it survives an unpredictable photo region
+/** Shared multi-line glyph-path emitter used by every archetype's
+ * headline/supporting/brand-label/CTA-as-text blocks -- keeps the paint-
+ * order stroke outline (real legibility fix: thin dark stroke behind
+ * every on-photo glyph so it survives an unpredictable photo region
  * behind it) in exactly one place. */
 function renderTextLines(lines: string[], x: number, yStart: number, lineHeight: number, opts: TextLineOptions): string {
+  const font = getFont(opts.weight);
+  const letterSpacingPx = opts.letterSpacing ?? 0;
   let svg = "";
   let y = yStart;
   for (const line of lines) {
     const content = opts.uppercase ? line.toUpperCase() : line;
-    const attrs = [
-      `x="${round2(x)}"`,
-      `y="${round2(y)}"`,
-      `font-family="${opts.fontFamily}"`,
-      `font-size="${opts.fontSize}"`,
-      `font-weight="${opts.weight}"`,
-      `fill="${escapeXml(opts.fill)}"`,
-      `text-anchor="${opts.anchor}"`,
-      opts.letterSpacing ? `letter-spacing="${round2(opts.letterSpacing)}"` : "",
-      opts.underline ? `text-decoration="underline"` : "",
-      `style="paint-order: stroke; stroke: rgba(0,0,0,0.15); stroke-width: 0.5px;"`,
-    ].filter(Boolean);
-    svg += `<text ${attrs.join(" ")}>${escapeXml(content)}</text>`;
+    const { svg: lineSvg, width } = glyphLineSvg(font, content, x, y, opts.fontSize, opts.anchor, letterSpacingPx, opts.fill);
+    svg += lineSvg;
+    if (opts.underline) {
+      let underlineX = x;
+      if (opts.anchor === "middle") underlineX = x - width / 2;
+      else if (opts.anchor === "end") underlineX = x - width;
+      const underlineY = y + opts.fontSize * 0.12;
+      svg += `<rect x="${round2(underlineX)}" y="${round2(underlineY)}" width="${round2(width)}" height="${Math.max(1, round2(opts.fontSize * 0.05))}" fill="${escapeXml(opts.fill)}" />`;
+    }
     y += lineHeight;
   }
   return svg;
@@ -187,7 +274,6 @@ interface CtaPillOptions {
   top: number;
   maxWidth: number;
   fontSize: number;
-  fontFamily: string;
   fill: string;
   textColor: string;
 }
@@ -198,26 +284,27 @@ interface CtaPillResult {
 
 /** Real bug found on real generated output: a genuinely good, specific CTA
  * ("...book a consultation at our Indiranagar clinic") was never wrapped --
- * a single long <text> line overflowed past both canvas edges and got
- * clipped, and the pill was sized from a single-line estimate so it (and
- * the text inside it) silently ran off-canvas. Sized here from the actual
- * wrapped line count and hard-capped to maxWidth so neither the pill nor
- * its text can ever extend past the safe area, regardless of archetype. */
+ * a single long line overflowed past both canvas edges and got clipped,
+ * and the pill was sized from a rough estimate so it (and the text inside
+ * it) silently ran off-canvas. Sized here from the actual wrapped line
+ * count and real measured glyph widths, hard-capped to maxWidth so neither
+ * the pill nor its text can ever extend past the safe area. */
 function buildCtaPillSvg(ctaText: string, opts: CtaPillOptions): CtaPillResult {
-  const lines = wrapText(ctaText, Math.max(40, opts.maxWidth - opts.fontSize * 2.2), opts.fontSize);
+  const font = getFont(700);
+  const lines = wrapText(font, ctaText, Math.max(40, opts.maxWidth - opts.fontSize * 2.2), opts.fontSize);
   const lineHeight = opts.fontSize * 1.2;
   const padX = opts.fontSize * 1.1;
   const padY = opts.fontSize * 0.55;
-  const longestLine = lines.reduce((a, b) => (b.length > a.length ? b : a), "");
-  const textWidthEstimate = longestLine.length * opts.fontSize * 0.56;
-  const pillWidth = Math.min(textWidthEstimate + padX * 2, opts.maxWidth);
+  const longestLine = lines.reduce((a, b) => (measureWidth(font, b, opts.fontSize) > measureWidth(font, a, opts.fontSize) ? b : a), "");
+  const textWidth = measureWidth(font, longestLine, opts.fontSize);
+  const pillWidth = Math.min(textWidth + padX * 2, opts.maxWidth);
   const pillHeight = lines.length * lineHeight + padY * 2 - (lineHeight - opts.fontSize);
   const pillX = opts.centerX - pillWidth / 2;
   const pillY = opts.top;
   const textStartY = pillY + padY + opts.fontSize * 0.85;
 
   const text = renderTextLines(lines, opts.centerX, textStartY, lineHeight, {
-    fontFamily: opts.fontFamily, fontSize: opts.fontSize, weight: 700, fill: opts.textColor, anchor: "middle",
+    fontSize: opts.fontSize, weight: 700, fill: opts.textColor, anchor: "middle",
   });
   const pill = `<rect x="${round2(pillX)}" y="${round2(pillY)}" width="${round2(pillWidth)}" height="${round2(pillHeight)}" rx="${round2(Math.min(pillHeight, opts.fontSize * 1.6) / 2)}" fill="${escapeXml(opts.fill)}" />`;
   return { svg: pill + text, height: pillHeight };
@@ -230,7 +317,7 @@ function buildCtaPillSvg(ctaText: string, opts: CtaPillOptions): CtaPillResult {
 // as broken/blank boxes -- there's no emoji font available to it. Every
 // icon below is built from plain SVG primitives (circle/path/line/
 // ellipse), which every SVG rasterizer supports natively, no font lookup
-// involved.
+// involved -- the same reasoning that led to glyph-path text above.
 
 /** Simplified map-pin: a circle "head" with a small triangular point
  * beneath it, drawn from primitives (not a traced/copied icon-library
@@ -295,7 +382,6 @@ interface ContactFooterOptions {
   maxWidth: number;
   fontSize: number;
   color: string;
-  fontFamily: string;
   align: "start" | "middle";
 }
 interface ContactFooterResult {
@@ -321,6 +407,7 @@ function buildContactFooterSvg(opts: ContactFooterOptions): ContactFooterResult 
   if (opts.contact?.website) rows.push({ kind: "website", text: opts.contact.website });
   if (!rows.length) return { svg: "", height: 0 };
 
+  const font = getFont(500);
   const iconSize = Math.round(opts.fontSize * 1.15);
   const gap = Math.round(opts.fontSize * 0.4);
   const rowGap = Math.round(opts.fontSize * 0.5);
@@ -329,14 +416,14 @@ function buildContactFooterSvg(opts: ContactFooterOptions): ContactFooterResult 
   let svg = "";
   let y = opts.yTop;
   for (const row of rows) {
-    const text = truncateToWidth(row.text, textMaxWidth, opts.fontSize);
-    const estimatedTextWidth = Math.min(text.length * opts.fontSize * 0.56, textMaxWidth);
-    const rowWidth = iconSize + gap + estimatedTextWidth;
+    const text = truncateToWidth(font, row.text, textMaxWidth, opts.fontSize);
+    const textWidth = measureWidth(font, text, opts.fontSize);
+    const rowWidth = iconSize + gap + textWidth;
     const iconX = opts.align === "middle" ? opts.x - rowWidth / 2 : opts.x;
     const textX = iconX + iconSize + gap;
     const textY = y + iconSize * 0.75;
     svg += CONTACT_ICONS[row.kind](iconX, y, iconSize, opts.color);
-    svg += `<text x="${round2(textX)}" y="${round2(textY)}" font-family="${opts.fontFamily}" font-size="${opts.fontSize}" font-weight="500" fill="${escapeXml(opts.color)}" text-anchor="start">${escapeXml(text)}</text>`;
+    svg += glyphLineSvg(font, text, textX, textY, opts.fontSize, "start", 0, opts.color).svg;
     y += iconSize + rowGap;
   }
   return { svg, height: y - opts.yTop - rowGap };
@@ -346,6 +433,11 @@ export interface TextOverlayLayoutInput {
   width: number;
   height: number;
   elements: OnImageTextElement[];
+  /** Accepted for forward-compatibility but not currently used to select a
+   * different embedded font -- every personality renders in the same
+   * embedded Inter face today (see the module docblock's HONEST
+   * LIMITATION). A distinct embedded font per personality is the natural
+   * v2. */
   typographyPersonality: TypographyPersonality;
   /** Text color chosen for contrast against a dark scrim/photo, not the
    * raw brand color, which may not be legible on a photograph -- callers
@@ -400,8 +492,7 @@ function pickElements(elements: OnImageTextElement[], businessName: string): Pic
  * generic translucent black scrim.
  */
 function buildSplitBannerSvg(input: TextOverlayLayoutInput, picked: PickedElements): string {
-  const { width, height, typographyPersonality } = input;
-  const fontFamily = FONT_STACK[typographyPersonality];
+  const { width, height } = input;
   const primary = input.primaryColor ?? input.accentColor ?? "#14181F";
   const secondary = input.secondaryColor ?? input.accentColor ?? "#FFFFFF";
   const bandTextColor = legibleTextColorFor(primary);
@@ -419,7 +510,7 @@ function buildSplitBannerSvg(input: TextOverlayLayoutInput, picked: PickedElemen
   const brandFS = Math.round(width * 0.026);
   if (brandLabel.text.trim()) {
     parts.push(renderTextLines([brandLabel.text.trim()], margin, y + brandFS, brandFS * 1.2, {
-      fontFamily, fontSize: brandFS, weight: 700, fill: bandTextColor, anchor: "start", letterSpacing: Math.round(brandFS * 0.12),
+      fontSize: brandFS, weight: 700, fill: bandTextColor, anchor: "start", letterSpacing: Math.round(brandFS * 0.12),
     }));
     y += brandFS * 1.4;
     // Brand-color accent line under the lockup -- real color usage in
@@ -432,24 +523,24 @@ function buildSplitBannerSvg(input: TextOverlayLayoutInput, picked: PickedElemen
 
   if (headline?.text.trim()) {
     const fontSize = Math.round(width * 0.05);
-    const lines = wrapText(headline.text.trim(), safeWidth, fontSize);
+    const lines = wrapText(getFont(800), headline.text.trim(), safeWidth, fontSize);
     const lineHeight = fontSize * 1.15;
-    parts.push(renderTextLines(lines, margin, y + fontSize, lineHeight, { fontFamily, fontSize, weight: 800, fill: bandTextColor, anchor: "start" }));
+    parts.push(renderTextLines(lines, margin, y + fontSize, lineHeight, { fontSize, weight: 800, fill: bandTextColor, anchor: "start" }));
     y += lines.length * lineHeight + Math.round(width * 0.015);
   }
 
   if (supporting?.text.trim()) {
     const fontSize = Math.round(width * 0.028);
-    const lines = wrapText(supporting.text.trim(), safeWidth, fontSize);
+    const lines = wrapText(getFont(400), supporting.text.trim(), safeWidth, fontSize);
     const lineHeight = fontSize * 1.35;
-    parts.push(renderTextLines(lines, margin, y + fontSize, lineHeight, { fontFamily, fontSize, weight: 400, fill: bandTextColor, anchor: "start" }));
+    parts.push(renderTextLines(lines, margin, y + fontSize, lineHeight, { fontSize, weight: 400, fill: bandTextColor, anchor: "start" }));
     y += lines.length * lineHeight + Math.round(width * 0.02);
   }
 
   if (cta?.text.trim()) {
     const fontSize = Math.round(width * 0.032);
     const pill = buildCtaPillSvg(cta.text.trim(), {
-      centerX: margin + safeWidth / 2, top: y, maxWidth: safeWidth, fontSize, fontFamily, fill: secondary, textColor: pillTextColor,
+      centerX: margin + safeWidth / 2, top: y, maxWidth: safeWidth, fontSize, fill: secondary, textColor: pillTextColor,
     });
     parts.push(pill.svg);
     y += pill.height + Math.round(width * 0.025);
@@ -457,7 +548,7 @@ function buildSplitBannerSvg(input: TextOverlayLayoutInput, picked: PickedElemen
 
   const footer = buildContactFooterSvg({
     contact: input.contactInfo, x: margin, yTop: y, maxWidth: safeWidth,
-    fontSize: Math.round(width * 0.024), color: bandTextColor, fontFamily, align: "start",
+    fontSize: Math.round(width * 0.024), color: bandTextColor, align: "start",
   });
   if (footer.svg) {
     parts.push(footer.svg);
@@ -475,7 +566,7 @@ function buildSplitBannerSvg(input: TextOverlayLayoutInput, picked: PickedElemen
     `<rect x="0" y="${round2(bandTop)}" width="${width}" height="${round2(bandHeight)}" fill="${escapeXml(primary)}" />` +
     `<rect x="0" y="${round2(bandTop)}" width="${width}" height="${accentStripHeight}" fill="${escapeXml(secondary)}" />`;
 
-  return `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">${SVG_FONT_DEFS}${band}<g transform="translate(0, ${round2(bandTop)})">${parts.join("")}</g></svg>`;
+  return `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">${band}<g transform="translate(0, ${round2(bandTop)})">${parts.join("")}</g></svg>`;
 }
 
 /**
@@ -490,8 +581,7 @@ function buildSplitBannerSvg(input: TextOverlayLayoutInput, picked: PickedElemen
  * card never touches.
  */
 function buildFloatingCardSvg(input: TextOverlayLayoutInput, picked: PickedElements): string {
-  const { width, height, typographyPersonality } = input;
-  const fontFamily = FONT_STACK[typographyPersonality];
+  const { width, height } = input;
   const primary = input.primaryColor ?? input.accentColor ?? "#14181F";
   const secondary = input.secondaryColor ?? input.accentColor ?? primary;
   const { headline, supporting, cta, brandLabel } = picked;
@@ -501,15 +591,16 @@ function buildFloatingCardSvg(input: TextOverlayLayoutInput, picked: PickedEleme
   const chipMargin = Math.round(width * 0.07);
   if (brandLabel.text.trim()) {
     const text = brandLabel.text.trim();
-    const widthEstimate = text.length * brandFS * 0.58;
+    const chipFont = getFont(700);
+    const textWidth = measureWidth(chipFont, text, brandFS);
     const padX = brandFS * 0.7;
     const padY = brandFS * 0.45;
-    const chipX = width - chipMargin - widthEstimate - padX * 2;
+    const chipX = width - chipMargin - textWidth - padX * 2;
     const chipY = chipMargin * 0.9 - brandFS - padY;
     const chipTextColor = legibleTextColorFor(primary);
-    parts.push(`<rect x="${round2(chipX)}" y="${round2(chipY)}" width="${round2(widthEstimate + padX * 2)}" height="${round2(brandFS + padY * 2)}" rx="${round2(brandFS * 0.4)}" fill="${escapeXml(primary)}" fill-opacity="0.82" />`);
+    parts.push(`<rect x="${round2(chipX)}" y="${round2(chipY)}" width="${round2(textWidth + padX * 2)}" height="${round2(brandFS + padY * 2)}" rx="${round2(brandFS * 0.4)}" fill="${escapeXml(primary)}" fill-opacity="0.82" />`);
     parts.push(renderTextLines([text], width - chipMargin, chipMargin * 0.9, brandFS * 1.2, {
-      fontFamily, fontSize: brandFS, weight: 700, fill: chipTextColor, anchor: "end",
+      fontSize: brandFS, weight: 700, fill: chipTextColor, anchor: "end",
     }));
   }
 
@@ -537,17 +628,17 @@ function buildFloatingCardSvg(input: TextOverlayLayoutInput, picked: PickedEleme
 
   if (headline?.text.trim()) {
     const fontSize = Math.round(width * 0.044);
-    const lines = wrapText(headline.text.trim(), cardInnerWidth, fontSize);
+    const lines = wrapText(getFont(800), headline.text.trim(), cardInnerWidth, fontSize);
     const lineHeight = fontSize * 1.15;
-    inner.push(renderTextLines(lines, 0, y + fontSize, lineHeight, { fontFamily, fontSize, weight: 800, fill: cardTextColor, anchor: "start" }));
+    inner.push(renderTextLines(lines, 0, y + fontSize, lineHeight, { fontSize, weight: 800, fill: cardTextColor, anchor: "start" }));
     y += lines.length * lineHeight + Math.round(width * 0.015);
   }
 
   if (supporting?.text.trim()) {
     const fontSize = Math.round(width * 0.024);
-    const lines = wrapText(supporting.text.trim(), cardInnerWidth, fontSize);
+    const lines = wrapText(getFont(400), supporting.text.trim(), cardInnerWidth, fontSize);
     const lineHeight = fontSize * 1.35;
-    inner.push(renderTextLines(lines, 0, y + fontSize, lineHeight, { fontFamily, fontSize, weight: 400, fill: cardTextColor, anchor: "start" }));
+    inner.push(renderTextLines(lines, 0, y + fontSize, lineHeight, { fontSize, weight: 400, fill: cardTextColor, anchor: "start" }));
     y += lines.length * lineHeight + Math.round(width * 0.02);
   }
 
@@ -555,7 +646,7 @@ function buildFloatingCardSvg(input: TextOverlayLayoutInput, picked: PickedEleme
     const fontSize = Math.round(width * 0.028);
     const pillTextColor = legibleTextColorFor(secondary);
     const pill = buildCtaPillSvg(cta.text.trim(), {
-      centerX: cardInnerWidth / 2, top: y, maxWidth: cardInnerWidth, fontSize, fontFamily, fill: secondary, textColor: pillTextColor,
+      centerX: cardInnerWidth / 2, top: y, maxWidth: cardInnerWidth, fontSize, fill: secondary, textColor: pillTextColor,
     });
     inner.push(pill.svg);
     y += pill.height + Math.round(width * 0.02);
@@ -563,7 +654,7 @@ function buildFloatingCardSvg(input: TextOverlayLayoutInput, picked: PickedEleme
 
   const footer = buildContactFooterSvg({
     contact: input.contactInfo, x: 0, yTop: y, maxWidth: cardInnerWidth,
-    fontSize: Math.round(width * 0.021), color: cardTextColor, fontFamily, align: "start",
+    fontSize: Math.round(width * 0.021), color: cardTextColor, align: "start",
   });
   if (footer.svg) {
     inner.push(footer.svg);
@@ -579,7 +670,7 @@ function buildFloatingCardSvg(input: TextOverlayLayoutInput, picked: PickedEleme
 
   const cardBg = `<rect x="${cardX}" y="${round2(cardY)}" width="${cardWidth}" height="${round2(cardHeight)}" rx="${cardRadius}" fill="${escapeXml(cardFillColor)}" fill-opacity="0.95" />`;
 
-  return `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">${SVG_FONT_DEFS}${parts.join("")}${cardBg}<g transform="translate(${cardX + cardPadding}, ${round2(cardY)})">${inner.join("")}</g></svg>`;
+  return `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">${parts.join("")}${cardBg}<g transform="translate(${cardX + cardPadding}, ${round2(cardY)})">${inner.join("")}</g></svg>`;
 }
 
 /**
@@ -595,8 +686,7 @@ function buildFloatingCardSvg(input: TextOverlayLayoutInput, picked: PickedEleme
  * clamp.
  */
 function buildEditorialFrameSvg(input: TextOverlayLayoutInput, picked: PickedElements): string {
-  const { width, height, typographyPersonality, textColor } = input;
-  const fontFamily = FONT_STACK[typographyPersonality];
+  const { width, height, textColor } = input;
   const primary = input.primaryColor ?? textColor;
   const secondary = input.secondaryColor ?? input.accentColor ?? primary;
   const { headline, supporting, cta, brandLabel } = picked;
@@ -613,7 +703,7 @@ function buildEditorialFrameSvg(input: TextOverlayLayoutInput, picked: PickedEle
   if (brandLabel.text.trim()) {
     const brandFS = Math.round(width * 0.026);
     parts.push(renderTextLines([brandLabel.text.trim()], width / 2, contentPad + brandFS, brandFS * 1.2, {
-      fontFamily, fontSize: brandFS, weight: 700, fill: textColor, anchor: "middle",
+      fontSize: brandFS, weight: 700, fill: textColor, anchor: "middle",
       letterSpacing: Math.round(brandFS * 0.3), uppercase: true,
     }));
   }
@@ -623,7 +713,7 @@ function buildEditorialFrameSvg(input: TextOverlayLayoutInput, picked: PickedEle
   // above it can be sized to clear it -- both without a second pass.
   const footerFontSize = Math.round(width * 0.02);
   const footerProbe = buildContactFooterSvg({
-    contact: input.contactInfo, x: width / 2, yTop: 0, maxWidth: safeWidth, fontSize: footerFontSize, color: textColor, fontFamily, align: "middle",
+    contact: input.contactInfo, x: width / 2, yTop: 0, maxWidth: safeWidth, fontSize: footerFontSize, color: textColor, align: "middle",
   });
   const footerTop = height - contentPad - footerProbe.height;
 
@@ -635,17 +725,17 @@ function buildEditorialFrameSvg(input: TextOverlayLayoutInput, picked: PickedEle
   let stackHeight = ruleHeight + ruleGap;
 
   const headlineFontSize = Math.round(width * 0.044);
-  const headlineLines = headline?.text.trim() ? wrapText(headline.text.trim(), Math.round(safeWidth * 0.82), headlineFontSize) : [];
+  const headlineLines = headline?.text.trim() ? wrapText(getFont(700), headline.text.trim(), Math.round(safeWidth * 0.82), headlineFontSize) : [];
   const headlineLineHeight = headlineFontSize * 1.15;
   if (headlineLines.length) stackHeight += headlineLines.length * headlineLineHeight + Math.round(width * 0.018);
 
   const supportingFontSize = Math.round(width * 0.024);
-  const supportingLines = supporting?.text.trim() ? wrapText(supporting.text.trim(), Math.round(safeWidth * 0.82), supportingFontSize) : [];
+  const supportingLines = supporting?.text.trim() ? wrapText(getFont(400), supporting.text.trim(), Math.round(safeWidth * 0.82), supportingFontSize) : [];
   const supportingLineHeight = supportingFontSize * 1.35;
   if (supportingLines.length) stackHeight += supportingLines.length * supportingLineHeight + Math.round(width * 0.018);
 
   const ctaFontSize = Math.round(width * 0.026);
-  const ctaLines = cta?.text.trim() ? wrapText(cta.text.trim(), Math.round(safeWidth * 0.7), ctaFontSize) : [];
+  const ctaLines = cta?.text.trim() ? wrapText(getFont(700), cta.text.trim(), Math.round(safeWidth * 0.7), ctaFontSize) : [];
   const ctaLineHeight = ctaFontSize * 1.3;
   if (ctaLines.length) stackHeight += ctaLines.length * ctaLineHeight;
 
@@ -667,14 +757,14 @@ function buildEditorialFrameSvg(input: TextOverlayLayoutInput, picked: PickedEle
 
   if (headlineLines.length) {
     midParts.push(renderTextLines(headlineLines, centerX, y + headlineFontSize, headlineLineHeight, {
-      fontFamily, fontSize: headlineFontSize, weight: 700, fill: textColor, anchor: "middle",
+      fontSize: headlineFontSize, weight: 700, fill: textColor, anchor: "middle",
     }));
     y += headlineLines.length * headlineLineHeight + Math.round(width * 0.018);
   }
 
   if (supportingLines.length) {
     midParts.push(renderTextLines(supportingLines, centerX, y + supportingFontSize, supportingLineHeight, {
-      fontFamily, fontSize: supportingFontSize, weight: 400, fill: textColor, anchor: "middle",
+      fontSize: supportingFontSize, weight: 400, fill: textColor, anchor: "middle",
     }));
     y += supportingLines.length * supportingLineHeight + Math.round(width * 0.018);
   }
@@ -683,7 +773,7 @@ function buildEditorialFrameSvg(input: TextOverlayLayoutInput, picked: PickedEle
     // No pill -- understated underlined text in the brand accent color
     // instead of a graphic button, per this archetype's own restraint.
     midParts.push(renderTextLines(ctaLines, centerX, y + ctaFontSize, ctaLineHeight, {
-      fontFamily, fontSize: ctaFontSize, weight: 700, fill: secondary, anchor: "middle", underline: true,
+      fontSize: ctaFontSize, weight: 700, fill: secondary, anchor: "middle", underline: true,
     }));
     y += ctaLines.length * ctaLineHeight;
   }
@@ -694,12 +784,12 @@ function buildEditorialFrameSvg(input: TextOverlayLayoutInput, picked: PickedEle
 
   if (footerProbe.height) {
     const footer = buildContactFooterSvg({
-      contact: input.contactInfo, x: centerX, yTop: footerTop, maxWidth: safeWidth, fontSize: footerFontSize, color: textColor, fontFamily, align: "middle",
+      contact: input.contactInfo, x: centerX, yTop: footerTop, maxWidth: safeWidth, fontSize: footerFontSize, color: textColor, align: "middle",
     });
     parts.push(footer.svg);
   }
 
-  return `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">${SVG_FONT_DEFS}${parts.join("")}</svg>`;
+  return `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">${parts.join("")}</svg>`;
 }
 
 /** Dispatches to the layout-specific renderer for input.layoutArchetype.
