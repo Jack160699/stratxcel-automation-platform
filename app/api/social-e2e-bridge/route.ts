@@ -6,6 +6,13 @@ import {
   getImageGenerationJob,
 } from "../../../lib/image-generation/service";
 
+// Matches the real production image-generation route's own budget
+// (app/api/platform/image-generations/route.ts) -- without this, the
+// default Next.js function timeout was killing the real OpenAI call
+// before it could finish, which is what produced the first two
+// PROVIDER_TIMEOUT_UNKNOWN failures during this E2E run.
+export const maxDuration = 180;
+
 /**
  * TEMPORARY, one-off bridge for the Final Production Loop Step 5 E2E
  * staging validation. Never merged -- exists only for the duration of one
