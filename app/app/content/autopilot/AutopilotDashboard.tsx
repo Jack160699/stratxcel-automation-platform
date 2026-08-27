@@ -16,6 +16,10 @@ interface UpcomingItem {
   scheduledWall: string;
   status: string;
   contentPillar: string | null;
+  /** The creative concept this post was built around (e.g. "dish spotlight") -- null for content prepared before the quality campaign. */
+  concept: string | null;
+  /** The real quality-gate score this post passed at (0-100), never fabricated -- null when not available. */
+  qualityScore: number | null;
   blockedReason: string | null;
   platform: string | null;
   accountLabel: string | null;
@@ -261,9 +265,14 @@ function UpcomingRow({ item, tenantId, timezone, onChanged }: { item: UpcomingIt
     <CardRow className="flex-col items-start gap-1.5">
       <div className="flex w-full items-center justify-between gap-2">
         <span className="font-medium text-sx-text">Post {item.sequence} · {item.platform ?? "—"}{item.accountLabel ? ` · ${item.accountLabel}` : ""}</span>
-        <StatusChip state={item.status === "BLOCKED" ? "danger" : "accent"}>{STATUS_LABEL[item.status] ?? item.status}</StatusChip>
+        <span className="flex items-center gap-1.5">
+          {item.qualityScore != null && (
+            <StatusChip state={item.qualityScore >= 90 ? "success" : item.qualityScore >= 70 ? "warning" : "danger"}>Quality {item.qualityScore}/100</StatusChip>
+          )}
+          <StatusChip state={item.status === "BLOCKED" ? "danger" : "accent"}>{STATUS_LABEL[item.status] ?? item.status}</StatusChip>
+        </span>
       </div>
-      <span className="text-sx-text-muted">{formatDate(item.scheduledAt, timezone)}{item.contentPillar ? ` · ${item.contentPillar}` : ""}</span>
+      <span className="text-sx-text-muted">{formatDate(item.scheduledAt, timezone)}{item.contentPillar ? ` · ${item.contentPillar}` : ""}{item.concept ? ` · ${item.concept}` : ""}</span>
       {item.blockedReason && <span className="text-[#FF8A90]">{item.blockedReason}</span>}
       {preview && <PackagePublishPreviewCard preview={preview} onClose={() => setPreview(null)} />}
       {rescheduling && (

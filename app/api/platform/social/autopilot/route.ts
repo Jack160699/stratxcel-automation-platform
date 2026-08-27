@@ -134,7 +134,7 @@ export async function GET(req: NextRequest) {
     service.from("social_autopilot_queue_items").select("id", { count: "exact", head: true }).eq("authorization_id", row.id).eq("period_number", row.period_number).eq("status", "PUBLISHED"),
     service
       .from("social_autopilot_queue_items")
-      .select("id, package_sequence, scheduled_at, status, content_pillar, last_error, account_id, variant_id, social_accounts(platform, display_name, username), content_variants(caption, hashtags)")
+      .select("id, package_sequence, scheduled_at, status, content_pillar, last_error, account_id, variant_id, social_accounts(platform, display_name, username), content_variants(caption, hashtags, creative_spec)")
       .eq("authorization_id", row.id)
       .eq("period_number", row.period_number)
       .in("status", ["PLANNED", "PREPARED", "REVIEW_REQUIRED", "SCHEDULED", "BLOCKED"])
@@ -149,19 +149,32 @@ export async function GET(req: NextRequest) {
       .limit(10),
   ]);
 
-  const upcoming = (upcomingRows ?? []).map((item) => ({
-    id: item.id,
-    sequence: item.package_sequence,
-    scheduledAt: item.scheduled_at,
-    scheduledWall: utcIsoToDatetimeLocalValue(item.scheduled_at, row.timezone),
-    status: item.status,
-    contentPillar: item.content_pillar,
-    blockedReason: item.status === "BLOCKED" && item.last_error ? packageErrorForClient(item.last_error) : null,
-    platform: PLATFORM_LABEL[String((item.social_accounts as { platform?: string } | null)?.platform ?? "")] ?? null,
-    accountLabel: (item.social_accounts as { display_name?: string; username?: string } | null)?.display_name || (item.social_accounts as { username?: string } | null)?.username || null,
-    caption: (item.content_variants as { caption?: string } | null)?.caption ?? "",
-    hashtags: (item.content_variants as { hashtags?: string[] } | null)?.hashtags ?? [],
-  }));
+  const upcoming = (upcomingRows ?? []).map((item) => {
+    // creative_spec is populated by prepareNearTermPackageItems (Section 9/B
+    // of the quality campaign) with the concept + real quality score this
+    // post actually passed at -- surfaced here so the dashboard reads as a
+    // content studio with a visible quality state, not a bare AI form.
+    // Never present for content prepared before that change; qualityScore
+    // stays null rather than a fabricated number.
+    const creativeSpec = (item.content_variants as { creative_spec?: Record<string, unknown> } | null)?.creative_spec ?? {};
+    const qualityScore = typeof creativeSpec.qualityScore === "number" ? creativeSpec.qualityScore : null;
+    const concept = typeof creativeSpec.concept === "string" ? creativeSpec.concept : null;
+    return {
+      id: item.id,
+      sequence: item.package_sequence,
+      scheduledAt: item.scheduled_at,
+      scheduledWall: utcIsoToDatetimeLocalValue(item.scheduled_at, row.timezone),
+      status: item.status,
+      contentPillar: item.content_pillar,
+      concept,
+      qualityScore,
+      blockedReason: item.status === "BLOCKED" && item.last_error ? packageErrorForClient(item.last_error) : null,
+      platform: PLATFORM_LABEL[String((item.social_accounts as { platform?: string } | null)?.platform ?? "")] ?? null,
+      accountLabel: (item.social_accounts as { display_name?: string; username?: string } | null)?.display_name || (item.social_accounts as { username?: string } | null)?.username || null,
+      caption: (item.content_variants as { caption?: string } | null)?.caption ?? "",
+      hashtags: (item.content_variants as { hashtags?: string[] } | null)?.hashtags ?? [],
+    };
+  });
   const history = (historyRows ?? []).map((item) => {
     const jobResult = Array.isArray(item.social_publishing_jobs)
       ? (item.social_publishing_jobs[0] as { result?: unknown } | undefined)?.result
