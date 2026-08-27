@@ -132,6 +132,31 @@ async function main() {
     assert.ok(svg.includes("Sunrise Dental Care"));
   });
 
+  await test("safe-zone enforcement: a very long headline+supportingLine+CTA combination never rises into the brand label's zone at the top (Section 19)", () => {
+    const width = 1024, height = 1280;
+    const longText = Array(20).fill("word").join(" ");
+    const svg = buildTextOverlaySvg({
+      width, height,
+      elements: [
+        { role: "headline", text: longText },
+        { role: "supportingLine", text: longText },
+        { role: "cta", text: longText },
+      ],
+      typographyPersonality: "clean-geometric",
+      textColor: "#FFFFFF", scrimColor: "#000000", accentColor: "#0077B6", businessName: "Test Business",
+    });
+    // Extract y= coordinates only from the headline/supportingLine/CTA text
+    // (the "word word word..." content) -- excluding the brand label,
+    // which is INTENDED to sit at the very top and would otherwise look
+    // like a false collision.
+    const bodyTextYs = [...svg.matchAll(/<text[^>]*\by="(-?\d+)"[^>]*>word word/g)].map((m) => Number(m[1]));
+    assert.ok(bodyTextYs.length > 0, "expected to find at least one wrapped body-text line to check");
+    const topSafeZoneFloor = Math.round(height * 0.32);
+    for (const y of bodyTextYs) {
+      assert.ok(y >= topSafeZoneFloor - 5, `expected headline/supportingLine/CTA text to stay below the top safe-zone floor (${topSafeZoneFloor}), got y=${y}`);
+    }
+  });
+
   await test("renderTextOverlay produces a real, valid, correctly-sized PNG composited over a base photo", async () => {
     const base = await sharp({ create: { width: 1024, height: 1024, channels: 3, background: { r: 40, g: 40, b: 40 } } }).png().toBuffer();
     const out = await renderTextOverlay(base, {

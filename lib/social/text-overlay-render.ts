@@ -181,6 +181,21 @@ export function buildTextOverlaySvg(input: TextOverlayLayoutInput): string {
     blocks.push({ role: "headline", lines, fontSize, x: margin, yStart: cursorY, lineHeight: fontSize * 1.15, align: "start", weight: 800, fill: textColor });
   }
 
+  // Explicit safe-zone enforcement (Section 19): the bottom text stack
+  // must never rise into the brand label's zone at the top, regardless of
+  // how many lines a long headline+supportingLine+CTA combination wraps
+  // into. Clamp cursorY to a floor that leaves the top ~32% of the canvas
+  // (where the brand label sits) genuinely clear, shifting the whole
+  // block down (never truncating or overlapping) if it would otherwise
+  // reach that high. In real generated output this rarely triggers --
+  // this is a defensive floor, not the normal layout path.
+  const topSafeZoneFloor = Math.round(height * 0.32);
+  if (blocks.length && cursorY < topSafeZoneFloor) {
+    const shift = topSafeZoneFloor - cursorY;
+    for (const block of blocks) block.yStart += shift;
+    cursorY += shift;
+  }
+
   if (blocks.length) {
     scrimTop = Math.max(0, cursorY - Math.round(height * 0.04));
   }
