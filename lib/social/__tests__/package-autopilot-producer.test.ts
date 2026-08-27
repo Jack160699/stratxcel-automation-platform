@@ -115,6 +115,17 @@ function run() {
   const businessFacts = read("lib", "social", "package-business-facts.ts");
   assert.ok(businessFacts.includes("never invent") || businessFacts.includes("never defaulted"), "the fact-safety module must document the omit-don't-invent rule it enforces");
 
+  // --- Placeholder/template-residue rejection (Section 8, Definition of Done
+  // Section 24): must be a hard-fail gate, not just a style preference, and
+  // must cover the brief's own named examples of unacceptable filler, not
+  // just the old narrow [insert|todo] regex. See placeholder-detection.test.ts
+  // for full behavioral coverage.
+  assert.ok(autopilot.includes("findPlaceholderOrFiller"), "generated captions must be checked against the real placeholder/filler detector, not left to the old narrow inline regex");
+  const placeholderDetection = read("lib", "social", "placeholder-detection.ts");
+  for (const phrase of ["contact us today", "quality you can trust", "best service in town", "we're excited to announce"]) {
+    assert.ok(placeholderDetection.includes(phrase), `the brief's own named generic filler example must be in the ban list: ${phrase}`);
+  }
+
   // --- Late-item policy: never a silent instant burst of overdue items (Section 20/99). ---
   assert.ok(autopilot.includes("applyLateItemPolicy") && autopilot.includes("RESCHEDULE_NEXT_SLOT"));
   assert.ok(!autopilot.includes("for (const row of dueRows ?? [])") || autopilot.includes("lateMs > 5"), "a due item significantly overdue must be policy-checked, not published blindly");

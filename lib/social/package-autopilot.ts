@@ -19,6 +19,7 @@ import { hasCapability, isPlanTier } from "@stratxcel/payments-and-wallet";
 import { getCurrentBrandBrain } from "@stratxcel/brand-brain";
 import { createSocialAuditConnectorInsightsProvider } from "./audit-connector-insights.ts";
 import { buildVerifiedBusinessInformation } from "./package-business-facts.ts";
+import { findPlaceholderOrFiller } from "./placeholder-detection.ts";
 
 export {
   assignBrandProfileToTenant,
@@ -628,22 +629,37 @@ interface GeneratedPost {
   hashtags: string[];
 }
 
-function parseGeneratedPost(text: string): GeneratedPost | null {
+/**
+ * Throws a SPECIFIC reason on any quality-gate failure (matching this
+ * codebase's standing rule that a BLOCKED item gets a diagnosable
+ * last_error, never a generic one) instead of returning null and making
+ * the caller guess why. The old inline check here was
+ * `/\[insert|\btodo\b/i` -- Section 8 of the build brief names a much
+ * longer list of unacceptable template residue ("[Add your custom words
+ * here]", "Contact us today", "Quality you can trust", ...); that full,
+ * tested list now lives in placeholder-detection.ts's
+ * findPlaceholderOrFiller, checked against both caption and title.
+ */
+function parseGeneratedPost(text: string): GeneratedPost {
   const match = text.match(/\{[\s\S]*\}/);
-  if (!match) return null;
+  if (!match) throw new Error("Generated content failed the quality gate: no JSON object found in the model response");
+  let parsed: Record<string, unknown>;
   try {
-    const parsed = JSON.parse(match[0]) as Record<string, unknown>;
-    const contentPillar = typeof parsed.contentPillar === "string" ? parsed.contentPillar.trim() : "";
-    const caption = typeof parsed.caption === "string" ? parsed.caption.trim() : "";
-    const title = typeof parsed.title === "string" ? parsed.title.trim() : "";
-    const masterIdea = typeof parsed.masterIdea === "string" ? parsed.masterIdea.trim() : "";
-    const objective = typeof parsed.objective === "string" ? parsed.objective.trim() : "";
-    const hashtags = Array.isArray(parsed.hashtags) ? parsed.hashtags.map(String).map((tag) => tag.replace(/^#/, "")).filter(Boolean) : [];
-    if (!contentPillar || !caption || caption.length < 10 || /\[insert|\btodo\b/i.test(caption)) return null;
-    return { contentPillar, objective, title: title || caption.slice(0, 60), masterIdea: masterIdea || caption, caption, hashtags };
+    parsed = JSON.parse(match[0]) as Record<string, unknown>;
   } catch {
-    return null;
+    throw new Error("Generated content failed the quality gate: response was not valid JSON");
   }
+  const contentPillar = typeof parsed.contentPillar === "string" ? parsed.contentPillar.trim() : "";
+  const caption = typeof parsed.caption === "string" ? parsed.caption.trim() : "";
+  const title = typeof parsed.title === "string" ? parsed.title.trim() : "";
+  const masterIdea = typeof parsed.masterIdea === "string" ? parsed.masterIdea.trim() : "";
+  const objective = typeof parsed.objective === "string" ? parsed.objective.trim() : "";
+  const hashtags = Array.isArray(parsed.hashtags) ? parsed.hashtags.map(String).map((tag) => tag.replace(/^#/, "")).filter(Boolean) : [];
+  if (!contentPillar) throw new Error("Generated content failed the quality gate: missing contentPillar");
+  if (!caption || caption.length < 10) throw new Error("Generated content failed the quality gate: caption missing or too short");
+  const filler = findPlaceholderOrFiller(caption) ?? (title ? findPlaceholderOrFiller(title) : null);
+  if (filler) throw new Error(`Generated content failed the quality gate: contains placeholder/template text ("${filler}")`);
+  return { contentPillar, objective, title: title || caption.slice(0, 60), masterIdea: masterIdea || caption, caption, hashtags };
 }
 
 /**
@@ -759,7 +775,6 @@ export async function prepareNearTermPackageItems(service: ServiceClient, author
         { brandInstructions: selectGeminiBrandInstructions(brandProfile), tenantId: authorization.tenant_id, businessInformation }
       );
       const generated = parseGeneratedPost(result.text);
-      if (!generated) throw new Error("Generated content failed the quality gate");
       const canonicalPillar = pillarNames.find((name) => name.toLowerCase() === generated.contentPillar.toLowerCase());
       if (!canonicalPillar) throw new Error(`Generated pillar "${generated.contentPillar}" is not a saved Brand Brain pillar`);
       const objective = CONTENT_OBJECTIVE_VALUES.includes(generated.objective as (typeof CONTENT_OBJECTIVE_VALUES)[number])
