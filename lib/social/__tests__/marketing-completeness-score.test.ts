@@ -83,8 +83,15 @@ test("instruction-leakage anywhere in the rendered fields fails no_textual_place
   assert.equal(check.pass, false);
 });
 
-test("more than one brand-label element is flagged as overbranded", () => {
+test("a treatment-provided brandLabel entry is not itself flagged as overbranding (the compositor dedupes -- only the first brandLabel ever renders)", () => {
   const treatment: CreativeTreatment = { ...BASE_TREATMENT, textHierarchy: [{ role: "headline", text: "H" }, { role: "brandLabel", text: "IronCore Fitness" }] };
+  const checks = assessMarketingCompletenessAutomated({ treatment, businessName: "IronCore Fitness", verifiedFacts: [], caption: "C" });
+  const check = checks.find((c) => c.id === "brand_present_not_overused")!;
+  assert.equal(check.pass, true);
+});
+
+test("the business name repeated in the headline/CTA beyond the brand label IS flagged as overbranded (the real watermark-like pattern)", () => {
+  const treatment: CreativeTreatment = { ...BASE_TREATMENT, textHierarchy: [{ role: "headline", text: "IronCore Fitness: Day One Form" }, { role: "cta", text: "Book with IronCore Fitness today" }] };
   const checks = assessMarketingCompletenessAutomated({ treatment, businessName: "IronCore Fitness", verifiedFacts: [], caption: "C" });
   const check = checks.find((c) => c.id === "brand_present_not_overused")!;
   assert.equal(check.pass, false);

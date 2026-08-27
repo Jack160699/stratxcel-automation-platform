@@ -73,12 +73,24 @@ export function assessMarketingCompletenessAutomated(input: {
     detail: "concept/hook present and specific (structural check -- validateCreativeTreatment already enforces non-genericness).",
   });
 
-  const brandLabelCount = overlayElements.filter((e) => e.role === "brandLabel").length + 1; // +1: compositor always appends one
+  // The compositor (text-overlay-render.ts) always appends its own
+  // brandLabel entry but renders via `elements.find(role==="brandLabel")`
+  // -- only the FIRST match ever actually draws, so a treatment that
+  // already included its own brandLabel can never cause a real duplicate
+  // on the rendered image regardless of array length. This check exists
+  // to catch a genuine overbranding pattern instead: the business name
+  // appearing so many times across the on-image text itself that it reads
+  // as a watermark, not the (structurally impossible) duplicate-label case.
+  const businessNameMentions = overlayElements.filter(
+    (e) => e.role !== "brandLabel" && businessName.trim() && e.text.toLowerCase().includes(businessName.trim().toLowerCase())
+  ).length;
   checks.push({
     id: "brand_present_not_overused",
     question: "Is the brand present appropriately (not a giant watermark)?",
-    pass: brandLabelCount === 1,
-    detail: brandLabelCount === 1 ? "exactly one brand label -- restrained, not overbranded." : `${brandLabelCount} brand-label elements -- looks overbranded, not premium.`,
+    pass: businessNameMentions <= 1,
+    detail: businessNameMentions <= 1
+      ? "brand label renders once; the business name isn't repeated across other on-image text -- restrained, not overbranded."
+      : `the business name appears in ${businessNameMentions} on-image text element(s) beyond the brand label -- reads as overbranded.`,
   });
 
   const ctaRendered = !treatment.cta.needed || overlayElements.some((e) => e.role === "cta" && e.text.trim());
