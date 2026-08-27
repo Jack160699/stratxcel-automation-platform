@@ -40,13 +40,31 @@ import sharp from "sharp";
 import type { OnImageTextElement } from "./text-density.ts";
 import type { TypographyPersonality } from "./brand-visual-dna.ts";
 import type { LayoutArchetype, VerifiedContactInfo } from "./creative-treatment.ts";
+import { EMBEDDED_FONT_FACE_CSS } from "./fonts/inter-embedded.ts";
 
+/**
+ * 'StratXcelOverlayInter' is listed FIRST in every stack, deliberately
+ * overriding the per-personality typographic distinction below it -- real
+ * bug found via the Final Production Loop brief's Step 5 E2E staging
+ * validation: on Vercel's actual serverless runtime, sharp's SVG
+ * rasterizer (librsvg) cannot resolve ANY of these font-family names --
+ * not even the bare "sans-serif" generic keyword -- because that
+ * container has zero fonts installed, so every <text> element rendered
+ * completely invisible while every non-text shape rendered fine. The
+ * embedded Inter font (fonts/inter-embedded.ts, injected into every
+ * generated SVG's own <defs><style>) has no external font-lookup
+ * dependency at all, so it always resolves regardless of host. The
+ * personality-specific names stay listed as a fallback (never actually
+ * reached today, since the embedded font always resolves first) rather
+ * than removed outright -- a real per-personality embedded font per
+ * typography personality is the natural v2, not attempted here.
+ */
 const FONT_STACK: Record<TypographyPersonality, string> = {
-  "editorial-serif": "Georgia, 'Times New Roman', serif",
-  "confident-display": "'Arial Black', 'Helvetica Neue', Arial, sans-serif",
-  "clean-geometric": "'Segoe UI', Helvetica, Arial, sans-serif",
-  "warm-humanist": "'Trebuchet MS', Verdana, sans-serif",
-  "bold-condensed": "'Arial Narrow', 'Helvetica Neue', Arial, sans-serif",
+  "editorial-serif": "'StratXcelOverlayInter', Georgia, 'Times New Roman', serif",
+  "confident-display": "'StratXcelOverlayInter', 'Arial Black', 'Helvetica Neue', Arial, sans-serif",
+  "clean-geometric": "'StratXcelOverlayInter', 'Segoe UI', Helvetica, Arial, sans-serif",
+  "warm-humanist": "'StratXcelOverlayInter', 'Trebuchet MS', Verdana, sans-serif",
+  "bold-condensed": "'StratXcelOverlayInter', 'Arial Narrow', 'Helvetica Neue', Arial, sans-serif",
 };
 
 /** Relative luminance (0=black..1=white) for a #RRGGBB hex color -- used
@@ -84,6 +102,11 @@ function escapeXml(text: string): string {
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
+
+/** Injected as the first child of every non-empty generated SVG so the
+ * embedded font is available with zero external font-lookup dependency --
+ * see the FONT_STACK comment above for why this exists. */
+const SVG_FONT_DEFS = `<defs><style>${EMBEDDED_FONT_FACE_CSS}</style></defs>`;
 
 /** Rough word-wrap: no real font-metrics access at SVG-build time, so this
  * estimates average glyph width as a fraction of font size -- calibrated
@@ -452,7 +475,7 @@ function buildSplitBannerSvg(input: TextOverlayLayoutInput, picked: PickedElemen
     `<rect x="0" y="${round2(bandTop)}" width="${width}" height="${round2(bandHeight)}" fill="${escapeXml(primary)}" />` +
     `<rect x="0" y="${round2(bandTop)}" width="${width}" height="${accentStripHeight}" fill="${escapeXml(secondary)}" />`;
 
-  return `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">${band}<g transform="translate(0, ${round2(bandTop)})">${parts.join("")}</g></svg>`;
+  return `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">${SVG_FONT_DEFS}${band}<g transform="translate(0, ${round2(bandTop)})">${parts.join("")}</g></svg>`;
 }
 
 /**
@@ -556,7 +579,7 @@ function buildFloatingCardSvg(input: TextOverlayLayoutInput, picked: PickedEleme
 
   const cardBg = `<rect x="${cardX}" y="${round2(cardY)}" width="${cardWidth}" height="${round2(cardHeight)}" rx="${cardRadius}" fill="${escapeXml(cardFillColor)}" fill-opacity="0.95" />`;
 
-  return `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">${parts.join("")}${cardBg}<g transform="translate(${cardX + cardPadding}, ${round2(cardY)})">${inner.join("")}</g></svg>`;
+  return `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">${SVG_FONT_DEFS}${parts.join("")}${cardBg}<g transform="translate(${cardX + cardPadding}, ${round2(cardY)})">${inner.join("")}</g></svg>`;
 }
 
 /**
@@ -676,7 +699,7 @@ function buildEditorialFrameSvg(input: TextOverlayLayoutInput, picked: PickedEle
     parts.push(footer.svg);
   }
 
-  return `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">${parts.join("")}</svg>`;
+  return `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">${SVG_FONT_DEFS}${parts.join("")}</svg>`;
 }
 
 /** Dispatches to the layout-specific renderer for input.layoutArchetype.
