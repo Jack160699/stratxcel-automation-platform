@@ -20,6 +20,7 @@ import { createSocialAuditConnectorInsightsProvider } from "./audit-connector-in
 import { buildVerifiedBusinessInformation } from "./package-business-facts.ts";
 import { buildCreativeBrief, formatCreativeBriefForPrompt, selectObjective } from "./creative-brief.ts";
 import { runGenerationLoop } from "./generation-loop.ts";
+import { parseGeneratedCopy, type GeneratedCopy } from "./generated-copy-parser.ts";
 
 export {
   assignBrandProfileToTenant,
@@ -620,42 +621,9 @@ const CANONICAL_PLATFORM_LABEL: Record<string, string> = {
   youtube: "YouTube",
 };
 
-/** The AI's copy output only -- contentPillar/objective are decided by
- * CreativeBrief before generation, never parsed from the model response. */
-interface GeneratedCopy {
-  title: string;
-  masterIdea: string;
-  caption: string;
-  hashtags: string[];
-}
-
-/**
- * Parses the model's copy response. Unlike the pre-Creative-Direction-
- * Engine version, this never throws and no longer reads contentPillar or
- * objective from the model at all -- the CreativeBrief already decided
- * both deterministically before this call was made (Phase C: strategy is
- * decided BEFORE copy, never delegated to the copy-writing call). A
- * malformed/empty response simply produces empty fields, which
- * scoreGeneratedContent's MALFORMED_STRUCTURE check catches through the
- * SAME quality gate every other failure goes through -- one diagnosis
- * path, not two.
- */
-function parseGeneratedCopy(text: string): GeneratedCopy {
-  const match = text.match(/\{[\s\S]*\}/);
-  let parsed: Record<string, unknown> = {};
-  if (match) {
-    try {
-      parsed = JSON.parse(match[0]) as Record<string, unknown>;
-    } catch {
-      parsed = {};
-    }
-  }
-  const caption = typeof parsed.caption === "string" ? parsed.caption.trim() : "";
-  const title = typeof parsed.title === "string" ? parsed.title.trim() : "";
-  const masterIdea = typeof parsed.masterIdea === "string" ? parsed.masterIdea.trim() : "";
-  const hashtags = Array.isArray(parsed.hashtags) ? parsed.hashtags.map(String).map((tag) => tag.replace(/^#/, "")).filter(Boolean) : [];
-  return { title: title || caption.slice(0, 60), masterIdea: masterIdea || caption, caption, hashtags };
-}
+// GeneratedCopy / parseGeneratedCopy now live in generated-copy-parser.ts
+// (imported above) so they're importable standalone -- see that file's
+// header comment.
 
 /**
  * The preparation layer (Section 16): turns PLANNED slots inside the
