@@ -112,6 +112,35 @@ function testSelectObjectiveCanPickSalesWithARealOffer() {
   console.log("creative-brief.test.ts: selectObjective can reach SALES when a real offer exists — PASS");
 }
 
+function testPromptExplicitlyRequiresBusinessNameFactAndToneUsage() {
+  // Real evidence (Premium Creative Intelligence campaign): businessSpecificity
+  // and brandConsistency were the two most consistent point losses across
+  // otherwise-strong real captions -- root cause traced to the copy prompt
+  // never explicitly requiring the business name, a concrete fact, or a
+  // brand-tone word to actually appear (brandDirection was computed but
+  // never even included in the prompt at all).
+  const brief = buildCreativeBrief({
+    ...BASE, businessName: "Acme", industryText: "Restaurant",
+    verifiedFacts: ["Business location (as provided by the owner): Andheri, Mumbai"],
+    brandTone: ["warm", "unpretentious"],
+  });
+  const prompt = formatCreativeBriefForPrompt(brief);
+  assert.ok(/naturally mention the business's actual name/i.test(prompt), "prompt must explicitly require the business name to appear");
+  assert.ok(/concretely reference at least one of the verified facts/i.test(prompt), "prompt must explicitly require a concrete fact reference when facts exist");
+  assert.ok(/reflect the brand tone/i.test(prompt), "prompt must explicitly require brand-tone reflection");
+  assert.ok(prompt.includes(brief.brandDirection), "brand direction (tone/colors) must actually be included in the prompt, not just computed and discarded");
+  assert.ok(prompt.includes("warm") && prompt.includes("unpretentious"), "the real brand tone words must be visible in the prompt text");
+  console.log("creative-brief.test.ts: prompt explicitly requires business name, fact, and tone usage — PASS");
+}
+
+function testPromptWithNoFactsStillRequiresNameButNotFacts() {
+  const brief = buildCreativeBrief({ ...BASE, businessName: "Acme", industryText: "Retail", verifiedFacts: [] });
+  const prompt = formatCreativeBriefForPrompt(brief);
+  assert.ok(/naturally mention the business's actual name/i.test(prompt));
+  assert.ok(!/concretely reference at least one of the verified facts/i.test(prompt), "must not demand a fact reference when zero facts are available");
+  console.log("creative-brief.test.ts: zero-facts brief still requires the name but not a fact reference — PASS");
+}
+
 function run() {
   testThrowsWithNoPillars();
   testSelectObjectiveNeverPicksSalesWithoutARealOffer();
@@ -124,6 +153,8 @@ function run() {
   testNoVerifiedFactsStillProducesACoherentBrief();
   testAvoidListIncludesFabricationGuardrail();
   testPromptFormattingIncludesEveryField();
+  testPromptExplicitlyRequiresBusinessNameFactAndToneUsage();
+  testPromptWithNoFactsStillRequiresNameButNotFacts();
   console.log("creative-brief.test.ts: ALL PASS");
 }
 

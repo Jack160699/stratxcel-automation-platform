@@ -165,5 +165,21 @@ export function formatCreativeBriefForPrompt(brief: CreativeBrief): string {
     `- CTA direction: ${brief.cta}`,
     brief.verifiedFacts.length ? `- Verified business facts available to use: ${brief.verifiedFacts.join("; ")}` : "- No additional verified business facts available for this post.",
     `- Avoid: ${brief.avoid.join("; ")}`,
+    // Found against real generated output (Premium Creative Intelligence
+    // campaign, Sections 4/28): businessSpecificity and brandConsistency
+    // were the two most consistent point losses across otherwise-strong
+    // real captions -- not because the copy was generic (industryRelevance
+    // and creativeOriginality scored near-max on the same captions), but
+    // because the business's actual name was simply never mentioned
+    // (confirmed on real output, e.g. a genuinely specific gym caption
+    // that never once said "IronCore Fitness"), and because the caption
+    // rarely happened to literally use one of the brand's own tone words.
+    // Both are directly fixable by asking for them explicitly rather than
+    // leaving them implicit.
+    brief.verifiedFacts.length
+      ? `- MUST: naturally mention the business's actual name at least once (caption or hashtags), and concretely reference at least one of the verified facts above by its specific detail -- not just in spirit.`
+      : `- MUST: naturally mention the business's actual name at least once (caption or hashtags).`,
+    `- MUST: naturally reflect the brand tone described in the brand direction below -- ideally using one of its actual descriptive words where it fits, not just a generic approximation of that mood.`,
+    `- Brand direction: ${brief.brandDirection}`,
   ].join("\n");
 }
