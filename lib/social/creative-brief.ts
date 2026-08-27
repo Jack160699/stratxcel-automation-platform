@@ -181,5 +181,13 @@ export function formatCreativeBriefForPrompt(brief: CreativeBrief): string {
       : `- MUST: naturally mention the business's actual name at least once (caption or hashtags).`,
     `- MUST: naturally reflect the brand tone described in the brand direction below -- ideally using one of its actual descriptive words where it fits, not just a generic approximation of that mood.`,
     `- Brand direction: ${brief.brandDirection}`,
+    // Final Production Loop brief Step 4: the strict text-quality gate's
+    // near-misses (scores 85-89) are consistently copy that's specific
+    // enough to pass industry/business checks but still leans on a
+    // generic AI-marketing register instead of one hyper-specific hook.
+    // The OMISSION principle is the fix -- fewer, stronger words, not more
+    // of them.
+    `- OMISSION PRINCIPLE: premium copy comes from knowing what NOT to include. Write the shortest version that is still specific and complete -- if a sentence, clause, or adjective doesn't add a real, concrete detail, cut it rather than pad the caption with it.`,
+    `- NEVER write generic AI-marketing filler ("Elevate your experience", "Discover the magic", "Unleash your potential", "Experience excellence", or phrases like them). Every claim must be a specific, concrete detail about THIS business -- e.g. "Routine care, right in Indiranagar" not "We care about your teeth."`,
   ].join("\n");
 }

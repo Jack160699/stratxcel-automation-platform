@@ -133,6 +133,17 @@ function testPromptExplicitlyRequiresBusinessNameFactAndToneUsage() {
   console.log("creative-brief.test.ts: prompt explicitly requires business name, fact, and tone usage — PASS");
 }
 
+function testPromptIncludesOmissionPrincipleAndBansFiller() {
+  // Final Production Loop brief Step 4: the strict-gate near-misses were
+  // consistently generic-register copy, not incompleteness -- the fix is
+  // an explicit OMISSION instruction and a named filler-phrase ban.
+  const brief = buildCreativeBrief({ ...BASE, businessName: "Acme", industryText: "Retail" });
+  const prompt = formatCreativeBriefForPrompt(brief);
+  assert.ok(/omission principle/i.test(prompt), "prompt must explicitly invoke the omission principle");
+  assert.ok(/elevate your experience/i.test(prompt) && /unleash your potential/i.test(prompt), "prompt must name the specific banned filler phrases");
+  console.log("creative-brief.test.ts: prompt includes the omission principle and bans named filler phrases — PASS");
+}
+
 function testPromptWithNoFactsStillRequiresNameButNotFacts() {
   const brief = buildCreativeBrief({ ...BASE, businessName: "Acme", industryText: "Retail", verifiedFacts: [] });
   const prompt = formatCreativeBriefForPrompt(brief);
@@ -155,6 +166,7 @@ function run() {
   testPromptFormattingIncludesEveryField();
   testPromptExplicitlyRequiresBusinessNameFactAndToneUsage();
   testPromptWithNoFactsStillRequiresNameButNotFacts();
+  testPromptIncludesOmissionPrincipleAndBansFiller();
   console.log("creative-brief.test.ts: ALL PASS");
 }
 

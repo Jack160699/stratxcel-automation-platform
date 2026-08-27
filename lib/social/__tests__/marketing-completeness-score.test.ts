@@ -38,6 +38,7 @@ const BASE_TREATMENT: CreativeTreatment = {
   whyThisBusiness: "Depicts IronCore's actual coached-session format in Koramangala, not generic gym stock imagery",
   negativeConstraints: ["no unrelated stock gym imagery"],
   intentionallyTextLed: false,
+  layoutArchetype: "FLOATING_CARD",
 };
 
 test("a complete, well-formed treatment passes every automated check", () => {

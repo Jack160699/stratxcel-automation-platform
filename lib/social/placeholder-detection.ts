@@ -70,6 +70,10 @@ const GENERIC_FILLER_PHRASES: string[] = [
   "discover the difference",
   "where quality meets care",
   "making every moment special",
+  // Final Production Loop brief Step 4's own named examples.
+  "elevate your experience",
+  "discover the magic",
+  "unleash your potential",
 ];
 
 /** Returns the exact offending substring if `text` contains placeholder/

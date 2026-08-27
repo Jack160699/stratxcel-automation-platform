@@ -51,6 +51,30 @@ export interface CtaDecision {
   rationale: string;
 }
 
+/**
+ * Final Production Loop brief Section "STEP 1": the deterministic overlay
+ * used to have exactly one layout (bottom scrim band + top-right brand
+ * chip) regardless of the creative -- functional, but reads as "a stock
+ * photo with a video subtitle," not a designed marketing banner. Each
+ * archetype is a genuinely different composition strategy the renderer
+ * (text-overlay-render.ts) implements distinctly, and the visual-director
+ * prompt (visual-director-prompt.ts) reserves different negative space in
+ * the base photo for each:
+ *  - SPLIT_BANNER: ~70% photo / ~30% solid or textured brand-colored
+ *    block carrying text + contact info. Best for promos/offers where the
+ *    business genuinely wants a strong branded block.
+ *  - FLOATING_CARD: a padded, offset card in one corner, leaving the
+ *    photo's subject fully unobstructed elsewhere -- best when the
+ *    photograph itself is the whole story (a face, a dish, a product).
+ *  - EDITORIAL_FRAME: a thin outer frame/border with a top-center brand
+ *    lockup and minimal, highly structured text -- the most restrained,
+ *    magazine-like option.
+ * The treatment model picks one per creative based on the concept, the
+ * same way an art director would choose a layout for a specific shoot,
+ * not a fixed default.
+ */
+export type LayoutArchetype = "SPLIT_BANNER" | "FLOATING_CARD" | "EDITORIAL_FRAME";
+
 export interface CreativeTreatment {
   concept: string;
   hook: string;
@@ -72,6 +96,7 @@ export interface CreativeTreatment {
   whyThisBusiness: string;
   negativeConstraints: string[];
   intentionallyTextLed: boolean;
+  layoutArchetype: LayoutArchetype;
 }
 
 /** Exported so callers that make their own provider.complete() call
@@ -121,12 +146,13 @@ export const TREATMENT_JSON_SCHEMA = {
     whyThisBusiness: { type: "string" },
     negativeConstraints: { type: "array", items: { type: "string" } },
     intentionallyTextLed: { type: "boolean" },
+    layoutArchetype: { type: "string", enum: ["SPLIT_BANNER", "FLOATING_CARD", "EDITORIAL_FRAME"] },
   },
   required: [
     "concept", "hook", "audienceTension", "story", "visualIdea", "subject", "composition",
     "camera", "lighting", "environment", "colorDirection", "typographyDirection",
     "brandApplication", "textHierarchy", "cta", "whyStopScroll", "whyThisBusiness",
-    "negativeConstraints", "intentionallyTextLed",
+    "negativeConstraints", "intentionallyTextLed", "layoutArchetype",
   ],
 } as const;
 
@@ -136,7 +162,9 @@ export function buildCreativeTreatmentPrompt(input: CreativeTreatmentInput): AIM
     `A senior team already decided the strategy for this post -- do not re-derive it. Your job is to turn it into ONE real, specific creative idea and a full visual treatment, the way an agency would brief a photographer before a shoot.`,
     `The final creative must feel business-specific, visually rich, simple, premium, intentional, modern, and clearly NOT generic AI output. Default philosophy: IMAGE/VISUAL IDEA FIRST, message second, supporting text third, brand/CTA last -- never a paragraph of text decorated with a picture.`,
     `Prefer real visual storytelling (photography of the actual business/product/service in use) over text-based graphics. A creative with no on-image text at all is a valid, often stronger, choice -- do not force a headline or CTA onto every creative. Default to ONE primary idea; at most one short supporting line; a CTA only when it genuinely helps.`,
+    `You must also choose a LAYOUT ARCHETYPE -- the actual graphic-design composition, not just what the text says: SPLIT_BANNER (roughly 70% photo / 30% solid or textured brand-colored block carrying the text and any contact info -- pick this for offers/promos or when the business genuinely wants a strong, unmissable branded block), FLOATING_CARD (a padded card offset into one corner, leaving the photograph's subject completely unobstructed everywhere else -- pick this when the photo itself IS the story, e.g. a face, a dish, a product), or EDITORIAL_FRAME (a thin outer frame with a top-center brand lockup and minimal, highly structured text -- pick this for the most restrained, magazine-like result). Choose deliberately based on THIS concept, the way an art director picks a layout for a specific shoot -- do not default to the same archetype every time.`,
     `Never invent a business fact not present in the verified facts given to you. Creative persuasion must never become fabricated business information.`,
+    `Never write generic AI marketing filler ("Elevate your experience", "Discover the magic", "Unleash your potential", and phrases like them) -- every word must be specific to this concept and this business. Premium design also comes from knowing what NOT to include: if a supporting line or CTA doesn't earn its place, omit it.`,
     `Respond with ONLY the JSON object matching the given schema -- no prose, no markdown fences.`,
   ].join(" ");
 
@@ -182,7 +210,8 @@ export function buildCreativeTreatmentPrompt(input: CreativeTreatmentInput): AIM
     `  "cta": { "needed": boolean, "text": string|null, "rationale": string },`,
     `  "whyStopScroll": string, "whyThisBusiness": string,`,
     `  "negativeConstraints": string[],`,
-    `  "intentionallyTextLed": boolean`,
+    `  "intentionallyTextLed": boolean,`,
+    `  "layoutArchetype": "SPLIT_BANNER"|"FLOATING_CARD"|"EDITORIAL_FRAME"`,
     `}`,
     `No prose before or after the JSON. No markdown code fences.`,
   ].join("\n");
@@ -265,6 +294,11 @@ export function validateCreativeTreatment(
     issues.push({ field: "intentionallyTextLed", issue: "missing or not a boolean" });
   }
 
+  const validArchetypes: LayoutArchetype[] = ["SPLIT_BANNER", "FLOATING_CARD", "EDITORIAL_FRAME"];
+  if (typeof t.layoutArchetype !== "string" || !validArchetypes.includes(t.layoutArchetype as LayoutArchetype)) {
+    issues.push({ field: "layoutArchetype", issue: `missing or not one of ${validArchetypes.join(", ")}` });
+  }
+
   return issues;
 }
 
@@ -292,6 +326,44 @@ export function resolveOverlayElements(treatment: CreativeTreatment): CreativeTr
     return [...treatment.textHierarchy, { role: "cta", text: treatment.cta.text.trim() }];
   }
   return treatment.textHierarchy;
+}
+
+export interface VerifiedContactInfo {
+  location: string | null;
+  phone: string | null;
+  website: string | null;
+}
+
+/**
+ * Extraction only, never fabrication (Final Production Loop brief
+ * constraint #1: "Never invent phone numbers, addresses, or prices --
+ * only use data verified in the business context"). Parses the exact
+ * "Label: value" shape buildVerifiedBusinessInformation
+ * (package-business-facts.ts) produces -- e.g. "Verified business address
+ * (Google Business Profile): 14 Princess Street..." or "Business location
+ * (as provided by the owner): Fort Kochi, Kerala". That function
+ * deliberately never includes a phone number for the standard package-
+ * post path (documented there: a stale/wrong phone is exactly the kind of
+ * claim that's a hard-fail risk) -- so `phone` will legitimately stay
+ * null for most real tenants today, and the contact-footer renderer must
+ * render NO phone icon at all in that case, never a placeholder or a
+ * guessed number.
+ */
+export function extractVerifiedContactInfo(verifiedFacts: string[]): VerifiedContactInfo {
+  let location: string | null = null;
+  let phone: string | null = null;
+  let website: string | null = null;
+  for (const fact of verifiedFacts) {
+    const colonIndex = fact.indexOf(":");
+    if (colonIndex < 0) continue;
+    const label = fact.slice(0, colonIndex).toLowerCase();
+    const value = fact.slice(colonIndex + 1).trim();
+    if (!value) continue;
+    if (!location && /location|address/.test(label)) location = value;
+    else if (!phone && /phone|whatsapp/.test(label)) phone = value;
+    else if (!website && /website/.test(label)) website = value;
+  }
+  return { location, phone, website };
 }
 
 export class CreativeTreatmentError extends Error {
