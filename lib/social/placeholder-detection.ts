@@ -27,7 +27,10 @@ const SCAFFOLDING_PATTERNS: RegExp[] = [
   /\bplaceholder\b/i,
 ];
 
-// Verbatim from the build brief's list of unacceptable default content.
+// Verbatim from the build brief's list of unacceptable default content
+// (Section 8), extended with the campaign's Phase H "third-class generic AI
+// copy" examples -- phrases carrying zero business-specific substance
+// regardless of which business they're attached to.
 const GENERIC_FILLER_PHRASES: string[] = [
   "contact us today",
   "amazing products",
@@ -38,6 +41,10 @@ const GENERIC_FILLER_PHRASES: string[] = [
   "we're excited to announce",
   "were excited to announce",
   "visit us today",
+  "grow your business",
+  "your trusted partner",
+  "something special is waiting",
+  "experience excellence",
 ];
 
 /** Returns the exact offending substring if `text` contains placeholder/

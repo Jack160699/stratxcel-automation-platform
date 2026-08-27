@@ -37,6 +37,10 @@ function testBriefsNamedGenericPhrasesRejected() {
     "Don't miss out on this!",
     "We're excited to announce our new store.",
     "Visit us today and see for yourself.",
+    "Grow your business with us this year.",
+    "We are your trusted partner in this industry.",
+    "Something special is waiting for you inside.",
+    "Experience excellence with every visit.",
   ]) {
     assert.notEqual(findPlaceholderOrFiller(bad), null, `must reject: ${bad}`);
   }
