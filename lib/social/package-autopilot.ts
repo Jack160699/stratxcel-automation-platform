@@ -706,10 +706,22 @@ export async function prepareNearTermPackageItems(service: ServiceClient, author
         "The caption must be genuine, specific, platform-appropriate, and contain no placeholder text.",
       ].filter(Boolean).join("\n");
 
+      // tenantId is REQUIRED here: the default provider (AiRuntimeSocialProvider,
+      // used whenever AI_ROUTER_ENABLED !== "0" -- the production default, see
+      // .env.example) throws "tenant_required_for_billable_ai" as the very
+      // first thing it does when context.tenantId is missing (provider.ts).
+      // This call used to omit it entirely, so every single autonomous
+      // Package Autopilot preparation attempt -- for every tenant, on every
+      // cron tick -- failed before generating anything and landed here in the
+      // catch block below as a BLOCKED item with that exact error. The
+      // interactive Copilot orchestrator (orchestrator.ts) already resolves
+      // and passes tenantId correctly; this was the one caller that didn't,
+      // silently making the autonomous package pipeline produce zero content
+      // in any deployment using the real AI Runtime router.
       const result = await provider.complete(
         [{ role: "user", content: prompt }],
         [],
-        { brandInstructions: selectGeminiBrandInstructions(brandProfile) }
+        { brandInstructions: selectGeminiBrandInstructions(brandProfile), tenantId: authorization.tenant_id }
       );
       const generated = parseGeneratedPost(result.text);
       if (!generated) throw new Error("Generated content failed the quality gate");

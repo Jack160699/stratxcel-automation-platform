@@ -80,6 +80,18 @@ function run() {
   assert.ok(autopilot.includes("pillarNames.find((name) => name.toLowerCase() === generated.contentPillar.toLowerCase())"), "a generated pillar must match a REAL saved Brand Brain pillar — invented taxonomy is rejected, matching the existing canonical-validation standard");
   assert.ok(autopilot.includes("status: \"BLOCKED\""), "a quality-gate failure must block the item, never publish garbage (Section 28/48)");
 
+  // --- Regression: the preparation call MUST pass tenantId. Found live: the
+  // default provider (AiRuntimeSocialProvider, used whenever
+  // AI_ROUTER_ENABLED !== "0", the production default) throws
+  // "tenant_required_for_billable_ai" as the very first thing it does when
+  // context.tenantId is missing (provider.ts) -- so without this, every
+  // single autonomous package preparation attempt failed before generating
+  // anything, for every tenant, on every cron tick, landing every queue item
+  // in BLOCKED with that exact error. See provider.test.ts's
+  // testAiRuntimeProviderRequiresTenantId for the same failure reproduced
+  // directly against the real provider class.
+  assert.ok(autopilot.includes("tenantId: authorization.tenant_id"), "prepareNearTermPackageItems must pass tenantId to provider.complete() — its omission silently produced zero content for every Package Autopilot tenant");
+
   // --- Late-item policy: never a silent instant burst of overdue items (Section 20/99). ---
   assert.ok(autopilot.includes("applyLateItemPolicy") && autopilot.includes("RESCHEDULE_NEXT_SLOT"));
   assert.ok(!autopilot.includes("for (const row of dueRows ?? [])") || autopilot.includes("lateMs > 5"), "a due item significantly overdue must be policy-checked, not published blindly");

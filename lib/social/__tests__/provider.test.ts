@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { listProviders, resolveEffectiveProviderIdentity, parseGeminiCompletionParts } from "../agent/provider.ts";
+import { listProviders, resolveEffectiveProviderIdentity, parseGeminiCompletionParts, createAiRuntimeSocialProvider } from "../agent/provider.ts";
 import { GEMINI_GENERATE_CONTENT_URL, GEMINI_MODEL, buildGeminiRequest } from "../agent/gemini-boundary.ts";
 
 function testToolCallParsing() {
@@ -91,6 +91,58 @@ function testConversationAndSystemInstructionRoundTrip() {
   console.log("provider.test.ts: conversation/systemInstruction round-trip — ALL PASS");
 }
 
+/**
+ * Reproduces, against the REAL AiRuntimeSocialProvider (not a fake), the
+ * production bug found in Package Autopilot's preparation loop
+ * (package-autopilot.ts's prepareNearTermPackageItems): that caller used to
+ * call provider.complete() with only `{ brandInstructions }`, omitting
+ * `tenantId` entirely. AiRuntimeSocialProvider.complete() checks
+ * `context.tenantId` as the very first thing it does and throws
+ * "tenant_required_for_billable_ai" -- so every single autonomous package
+ * content-preparation attempt failed before generating anything, for every
+ * tenant, on every cron tick, in any deployment where AiRuntimeSocialProvider
+ * is the resolved provider (AI_ROUTER_ENABLED !== "0" -- the production
+ * default; see provider.ts's PROVIDERS ordering). package-autopilot.ts's own
+ * module graph can't be resolved standalone under `node
+ * --experimental-strip-types` (see package-autopilot-producer.test.ts's
+ * header comment), so this exercises the exact same real class and the exact
+ * same context shape directly instead.
+ */
+async function testAiRuntimeProviderRequiresTenantId() {
+  // No network/DB access happens before the tenantId check -- this branch
+  // returns synchronously on the very first line of complete(), so no env
+  // setup is needed to reproduce the real production failure.
+  await assert.rejects(
+    () => createAiRuntimeSocialProvider().complete([{ role: "user", content: "hi" }], [], { brandInstructions: [] }),
+    /tenant_required_for_billable_ai/,
+    "AiRuntimeSocialProvider.complete() must reject a context with no tenantId -- this is exactly what silently broke Package Autopilot's autonomous preparation loop for every tenant"
+  );
+
+  // With tenantId present, execution must get PAST that gate -- proven by
+  // reaching a different, later failure instead. Supabase env vars are
+  // temporarily cleared so createSupabaseServiceClient() fails
+  // deterministically and locally (no real outbound network call in what
+  // must stay a fast, hermetic unit test).
+  const savedUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const savedServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  try {
+    delete process.env.NEXT_PUBLIC_SUPABASE_URL;
+    delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+    await assert.rejects(
+      () => createAiRuntimeSocialProvider().complete([{ role: "user", content: "hi" }], [], { brandInstructions: [], tenantId: "tenant-under-test" }),
+      /service_metering_writer_unavailable/,
+      "with a real tenantId present, complete() must proceed past the tenantId gate (a later, unrelated failure is expected here since Supabase env vars are deliberately unset for this test)"
+    );
+  } finally {
+    if (savedUrl === undefined) delete process.env.NEXT_PUBLIC_SUPABASE_URL;
+    else process.env.NEXT_PUBLIC_SUPABASE_URL = savedUrl;
+    if (savedServiceKey === undefined) delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+    else process.env.SUPABASE_SERVICE_ROLE_KEY = savedServiceKey;
+  }
+
+  console.log("provider.test.ts: AiRuntimeSocialProvider requires tenantId — ALL PASS (Package Autopilot regression)");
+}
+
 function run() {
   const originalGeminiKey = process.env.GEMINI_API_KEY;
   const originalOpenAIKey = process.env.OPENAI_API_KEY;
@@ -122,4 +174,5 @@ function run() {
 testToolCallParsing();
 testRequestIncludesTools();
 testConversationAndSystemInstructionRoundTrip();
+await testAiRuntimeProviderRequiresTenantId();
 run();
