@@ -113,7 +113,15 @@ const GENERIC_ADJECTIVE_WEIGHTS: Array<[string, number]> = [
   ["unlock", 2], ["unlocks", 2], ["elevate", 2], ["elevates", 2], ["elevated", 2], ["unparalleled", 2],
   ["cutting-edge", 2], ["cutting edge", 2], ["state-of-the-art", 2], ["best-in-class", 2],
   ["second to none", 2], ["unmatched", 2], ["exceptional", 1], ["premium", 1], ["amazing", 1],
-  ["experience", 1], ["journey", 1], ["transform", 1], ["transforms", 1], ["transformative", 1],
+  ["experience", 1], ["journey", 1],
+  // NOT "transform"/"transforms"/"transformative": found against REAL
+  // generated output that this substring-matches "transformation", a
+  // concrete, specific noun that is itself one of this codebase's own
+  // assigned industry concepts (industry-taxonomy.ts's salon/gym
+  // "transformation showcase"/"member transformation") -- penalizing the
+  // model for successfully executing the exact concept it was asked to
+  // write about was a real, evidence-found false positive, not a
+  // legitimate generic-copy signal.
 ];
 
 function genericAdjectiveScore(text: string): { hits: number; weight: number } {
@@ -216,7 +224,20 @@ export function scoreGeneratedContent(input: QualityScoreInput): QualityScoreRes
 
   // --- Scoring dimensions (computed regardless of hard-fail status, so a
   // BLOCKED item's diagnostics still show WHERE it was weak). ---
-  const nameMentioned = caption.toLowerCase().includes(input.businessName.toLowerCase()) || title.toLowerCase().includes(input.businessName.toLowerCase());
+  // Found against REAL generated output (Phase 12 iteration): a genuinely
+  // excellent, business-specific caption often doesn't restate the
+  // business's own name in the caption body -- the account IS the
+  // business, and real social captions commonly carry that identity in a
+  // hashtag instead ("#CoastalKitchen"). Checking hashtags too (compacted,
+  // since a hashtag is one CamelCase token like "#CoastalKitchen" with no
+  // spaces) avoids penalizing that entirely normal, professional pattern.
+  const businessNameLower = input.businessName.toLowerCase();
+  const businessNameCompact = businessNameLower.replace(/[^a-z0-9]/g, "");
+  const hashtagsLower = (input.hashtags ?? []).map((tag) => tag.toLowerCase());
+  const nameMentioned =
+    caption.toLowerCase().includes(businessNameLower) ||
+    title.toLowerCase().includes(businessNameLower) ||
+    (businessNameCompact.length > 0 && hashtagsLower.some((tag) => tag.replace(/[^a-z0-9]/g, "").includes(businessNameCompact)));
   const factTerms = (input.verifiedFacts ?? []).map((f) => f.split(":").slice(1).join(":").trim()).filter(Boolean);
   const referencedFacts = factTerms.filter((term) => tokenWords(term).some((word) => word.length > 3 && caption.toLowerCase().includes(word)));
   const generic = genericAdjectiveScore(caption);
@@ -229,7 +250,10 @@ export function scoreGeneratedContent(input: QualityScoreInput): QualityScoreRes
   if (businessSpecificity === 0) hardFailures.push({ reason: "LOW_BUSINESS_SPECIFICITY", detail: "caption references nothing specific to this business (no name, no verified facts, generic language throughout)" });
 
   const profile = getIndustryProfile(input.industry);
-  const industryHits = profile.relevanceVocabulary.filter((word) => caption.toLowerCase().includes(word)).length;
+  // Same real-evidence reasoning as nameMentioned above: hashtags like
+  // "#KeralaSeafood" or "#BridalStyling" are genuine industry-relevance
+  // signal a human reader would credit, not filler to ignore.
+  const industryHits = profile.relevanceVocabulary.filter((word) => caption.toLowerCase().includes(word) || hashtagsLower.some((tag) => tag.includes(word))).length;
   const conceptTokens = tokenWords(input.concept);
   const conceptOverlap = conceptTokens.filter((token) => token.length > 3 && caption.toLowerCase().includes(token)).length;
   // A caption doesn't need to literally contain its concept LABEL's words
@@ -272,8 +296,19 @@ export function scoreGeneratedContent(input: QualityScoreInput): QualityScoreRes
   const avgWordsPerSentence = sentences.length ? words.length / sentences.length : words.length;
   // Digit-containing tokens (2BHK, 24x7, iOS17) are abbreviations/codes, not
   // shouting -- real estate copy legitimately says "2BHK"/"3BHK" constantly.
-  // Only a pure-letters all-caps word is a genuine shouting signal.
-  const capsWords = caption.split(/\s+/).filter((w) => !/\d/.test(w) && w.length > 2 && w === w.toUpperCase() && /[A-Z]/.test(w)).length;
+  // A quoted word (comment 'VISIT', comment "START") is a deliberate,
+  // common engagement-CTA mechanic, not shouting -- found against REAL
+  // generated output using exactly this pattern. Short (<=5 letter)
+  // all-caps tokens are usually real place/org acronyms (ITPL, NYC, GST),
+  // also found in real output, not emphasis. Only pure-letter, unquoted,
+  // longer all-caps words are counted, and only 3+ of them (one incidental
+  // acronym must not read as "shouting").
+  const capsWords = caption.split(/\s+/).filter((raw) => {
+    const w = raw.replace(/^['"“‘]+|['"”’.,!?]+$/g, "");
+    if (/\d/.test(w) || w.length <= 5) return false;
+    const isQuoted = /['"“”‘’]/.test(raw);
+    return !isQuoted && w === w.toUpperCase() && /[A-Z]/.test(w);
+  }).length;
   const exclamations = (caption.match(/!/g) ?? []).length;
   let readability = DIMENSION_WEIGHTS.readability;
   if (avgWordsPerSentence > 28) readability -= 2; // one sprawling run-on sentence
