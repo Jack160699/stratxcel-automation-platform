@@ -733,7 +733,31 @@ export async function prepareNearTermPackageItems(service: ServiceClient, author
 
       const mediaType = compositionMediaTypeForUnit(authorization.package_composition, contentUnitIndexForRow(item.package_sequence, authorization.counting_policy));
       if (!mediaType) throw new Error("package_composition_exhausted");
-      const mediaAsset = await selectPackageMediaAsset(service, { tenantId: authorization.tenant_id, ownerId: brandProfile.owner_id, mediaType });
+      // Same diversity intent as recentPillarNames above, for media (Section
+      // 11): without this, selectPackageMediaAsset used to always return the
+      // single newest asset, so every post in the package reused the exact
+      // same image/reel. Look up which asset ids this authorization's recent
+      // posts already used so a tenant with multiple uploaded assets
+      // actually rotates through them.
+      let recentAssetIds: string[] = [];
+      if (mediaType !== "text") {
+        const { data: recentVariantRows } = await service
+          .from("social_autopilot_queue_items")
+          .select("variant_id")
+          .eq("authorization_id", authorization.id)
+          .not("variant_id", "is", null)
+          .order("created_at", { ascending: false })
+          .limit(5);
+        const recentVariantIds = [...new Set((recentVariantRows ?? []).map((row) => row.variant_id as string))];
+        if (recentVariantIds.length) {
+          const { data: recentMediaRows } = await service
+            .from("social_content_variant_media")
+            .select("asset_id")
+            .in("variant_id", recentVariantIds);
+          recentAssetIds = [...new Set((recentMediaRows ?? []).map((row) => row.asset_id as string))];
+        }
+      }
+      const mediaAsset = await selectPackageMediaAsset(service, { tenantId: authorization.tenant_id, ownerId: brandProfile.owner_id, mediaType, avoidAssetIds: recentAssetIds });
       const brandCtx: OwnerContext = { ...ownerCtx, ownerId: brandProfile.owner_id };
       const { data: sibling } = item.content_unit_key ? await service.from("social_autopilot_queue_items").select("content_master_id").eq("authorization_id", authorization.id).eq("content_unit_key", item.content_unit_key).not("content_master_id", "is", null).limit(1).maybeSingle() : { data: null };
       const masterId = sibling?.content_master_id ?? await createContentMaster(brandCtx, {

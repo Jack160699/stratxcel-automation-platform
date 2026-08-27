@@ -92,6 +92,16 @@ function run() {
   // directly against the real provider class.
   assert.ok(autopilot.includes("tenantId: authorization.tenant_id"), "prepareNearTermPackageItems must pass tenantId to provider.complete() — its omission silently produced zero content for every Package Autopilot tenant");
 
+  // --- Regression: media selection must rotate, not reuse the same asset on
+  // every post. Found live: selectPackageMediaAsset used to fetch only the
+  // single newest asset unconditionally, so a tenant with several uploaded
+  // photos still got the exact same one on every package post forever
+  // (Section 11, Creative Diversity Engine). See package-media.test.ts for
+  // the full behavioral coverage of the rotation logic itself.
+  assert.ok(autopilot.includes("avoidAssetIds: recentAssetIds"), "preparation must pass recently-used asset ids to selectPackageMediaAsset so the package actually rotates through uploaded media");
+  const media = read("lib", "social", "package-media.ts");
+  assert.ok(media.includes("avoidAssetIds"), "selectPackageMediaAsset must support avoiding recently-used assets, not always return the single newest one");
+
   // --- Late-item policy: never a silent instant burst of overdue items (Section 20/99). ---
   assert.ok(autopilot.includes("applyLateItemPolicy") && autopilot.includes("RESCHEDULE_NEXT_SLOT"));
   assert.ok(!autopilot.includes("for (const row of dueRows ?? [])") || autopilot.includes("lateMs > 5"), "a due item significantly overdue must be policy-checked, not published blindly");
