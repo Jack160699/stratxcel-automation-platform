@@ -165,6 +165,11 @@ const CTA_ACTION_VERBS = [
   "share", "comment", "reserve", "join", "try", "grab", "check out", "learn more", "read more",
   "swipe", "tap", "click", "link in bio", "sign up", "register", "schedule", "come by", "stop by",
   "get in touch", "reach out", "drop by", "walk in", "pre-order",
+  // Found against REAL generated output (quality campaign): "step into
+  // Glow Studio for your consultation" is a genuine visit-style CTA a real
+  // marketer would recognize -- the verb list was missing this common
+  // phrasing entirely.
+  "step into", "come see", "head to", "head over", "stop in", "swing by",
 ];
 
 function hasCtaVerb(text: string): boolean {
