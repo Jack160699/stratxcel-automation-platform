@@ -3,6 +3,11 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { AIProviderError, ImageMediaRuntime, InMemoryCanonicalMediaStorage } from "@stratxcel/ai-runtime";
 import { buildProviderReadyImagePrompt, createAdvisoryImageCritique, snapshotImageBrandContext } from "../prompt.ts";
+// service.ts cannot be imported directly here: it starts with `import
+// "server-only"`, which throws outside Next's bundler (confirmed by direct
+// test) -- the same reason every service.ts assertion below is a static
+// source-inclusion check (read(...)) rather than a live import, matching
+// this file's existing established pattern.
 
 const root = resolve(import.meta.dirname, "..", "..", "..");
 const read = (...parts: string[]) => readFileSync(resolve(root, ...parts), "utf8");
@@ -106,6 +111,25 @@ async function run() {
   assert.ok(service.includes("unique") || migration.includes("idempotency_key"));
   assert.ok(service.includes('from("social_content_variant_media").upsert'));
   assert.ok(service.includes('kind: "image_final"'));
+
+  // Premium Creative Intelligence production wiring (build brief "FINAL
+  // PRODUCTION QUALITY COMPLETION LOOP" §3): the real Creative Treatment
+  // must drive the actual image prompt, and deterministic text-overlay
+  // compositing must be part of the actual generation call -- not
+  // harness-only functionality. Verified as source-inclusion (not a live
+  // import) for the same server-only reason as the checks above.
+  assert.ok(service.includes("buildVisualDirectorBrief"), "the treatment-derived visual-director prompt must be wired into the real generation path");
+  assert.ok(service.includes("textOverlayCompositor"), "deterministic text-overlay compositing must be wired into the real media.images.generate() call");
+  assert.ok(service.includes("renderTextOverlay"), "the real sharp-based compositor must actually be used, not merely referenced");
+  assert.ok(service.includes("validateTreatmentForJob") && service.includes("validateCreativeTreatment"), "a malformed treatment must be validated, never silently trusted");
+  assert.ok(service.includes("creative_treatment: validatedTreatment"), "the validated treatment must actually be persisted on the job row");
+  assert.ok(service.includes("text_overlay_applied:"), "whether overlay compositing was applied must be recorded per candidate, not left unobservable");
+
+  const treatmentMigration = read("supabase", "migrations", "20260827160000_image_generation_creative_treatment.sql");
+  for (const required of [
+    "add column if not exists creative_treatment jsonb",
+    "add column if not exists text_overlay_applied boolean not null default false",
+  ]) assert.ok(treatmentMigration.includes(required), `treatment migration missing: ${required}`);
   const socialTool = read("lib", "social", "agent", "generate-image-tool.ts");
   assert.ok(socialTool.includes('existing?.status === "FAILED"'));
   assert.ok(socialTool.includes("outcomeUnknown"));

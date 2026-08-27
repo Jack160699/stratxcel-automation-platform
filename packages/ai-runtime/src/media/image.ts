@@ -32,6 +32,19 @@ export interface ImageGenerateRequest {
   candidateCount?: number;
   /** Persist candidates to canonical storage (required for production release assets). */
   persistCanonical?: boolean;
+  /**
+   * Optional deterministic post-processing applied to each candidate's raw
+   * bytes BEFORE canonical persistence (Premium Creative Intelligence
+   * Section 9: headline/CTA/brand text must be rendered deterministically,
+   * never left to the image model). Injected rather than imported directly
+   * so this package never takes a hard dependency on a compositing
+   * implementation (e.g. sharp) or on lib/social's types -- callers that
+   * want it (lib/image-generation/service.ts) supply their own compositor.
+   * A compositor failure falls back to the uncomposited original rather
+   * than losing the generation, matching this file's existing
+   * best-effort persistence philosophy.
+   */
+  textOverlayCompositor?: (input: { bytes: Uint8Array; mimeType: string }) => Promise<{ bytes: Uint8Array; mimeType: string }>;
 }
 
 export interface ImageCandidateResult {
@@ -557,12 +570,32 @@ export class ImageMediaRuntime {
         }
         continue;
       }
+      let finalBytes = decoded.bytes;
+      let finalMimeType = decoded.mimeType;
+      if (request.textOverlayCompositor) {
+        try {
+          const composited = await request.textOverlayCompositor({ bytes: decoded.bytes, mimeType: decoded.mimeType });
+          finalBytes = composited.bytes;
+          finalMimeType = composited.mimeType;
+        } catch (err) {
+          // A compositing failure must never lose an otherwise-successful
+          // generation -- persist the uncomposited original instead.
+          safeAiLog({
+            event: "ai_image_text_overlay_failed",
+            provider: cand.provider,
+            model: cand.model,
+            taskClass: "IMAGE",
+            safeErrorCategory: "TEXT_OVERLAY_COMPOSITOR_FAILED",
+            detail: err instanceof Error ? err.message.slice(0, 200) : "text_overlay_compositor_failed",
+          });
+        }
+      }
       try {
         const stored = await this.storage.persistGeneratedImage({
           tenantId: request.tenantId,
           missionId: request.missionId,
-          mimeType: decoded.mimeType,
-          bytes: decoded.bytes,
+          mimeType: finalMimeType,
+          bytes: finalBytes,
           originalName: `${cand.id}.png`,
         });
         out.push({

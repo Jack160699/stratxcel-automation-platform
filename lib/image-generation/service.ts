@@ -17,6 +17,11 @@ import {
   type ImageGenerationJobRow,
   type ImageJobDetail,
 } from "./types";
+import { validateCreativeTreatment, type CreativeTreatment } from "../social/creative-treatment";
+import { buildVisualDirectorBrief } from "../social/visual-director-prompt";
+import { deriveBrandVisualDNA } from "../social/brand-visual-dna";
+import { classifyIndustry } from "../social/industry-taxonomy";
+import { renderTextOverlay } from "../social/text-overlay-render";
 
 const TERMINAL = new Set(["READY", "FAILED"]);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -36,6 +41,22 @@ export class ImageGenerationServiceError extends Error {
 
 function cleanText(value: string, max: number): string {
   return value.normalize("NFKC").replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "").trim().slice(0, max);
+}
+
+/** A malformed treatment is discarded rather than silently trusted -- the
+ * job still proceeds from `brief` alone (exactly today's behavior) when
+ * this returns null. Checks structural validity only (required fields
+ * present, well-formed textHierarchy/cta) -- the "just restates the
+ * category label" check inside validateCreativeTreatment needs the real
+ * label, which only the caller that built the CreativeBrief has; this
+ * service has no brief of its own, so that check is skipped here and left
+ * to the caller (package-autopilot.ts / Copilot) that generated the
+ * treatment in the first place. */
+export function validateTreatmentForJob(treatment: Record<string, unknown> | null | undefined): CreativeTreatment | null {
+  if (!treatment) return null;
+  const issues = validateCreativeTreatment(treatment, { concept: "" }).filter((i) => i.field !== "concept");
+  if (issues.length) return null;
+  return treatment as unknown as CreativeTreatment;
 }
 
 function safeProviderReason(outcome: ImageGenerationOutcome): {
@@ -184,6 +205,12 @@ export async function createImageGenerationJob(args: {
 
   const brandBrain = await getCurrentBrandBrain(args.writeClient as never, input.tenantId);
   const brandSnapshot = snapshotImageBrandContext(brandBrain?.content);
+  // Premium Creative Intelligence: a real structured Creative Treatment
+  // (concept/hook/visual direction/text hierarchy/CTA decision), when the
+  // caller supplied one, drives the actual prompt built at process-time
+  // (see processImageGenerationJob) instead of `brief` alone. A malformed
+  // treatment is discarded here, never silently trusted.
+  const validatedTreatment = validateTreatmentForJob(input.treatment);
   const { data: inserted, error } = await args.writeClient
     .from("image_generation_jobs")
     .insert({
@@ -201,6 +228,7 @@ export async function createImageGenerationJob(args: {
       style_direction: styleDirection,
       brand_brain_version: brandBrain?.current_version ?? null,
       brand_context_snapshot: brandSnapshot,
+      creative_treatment: validatedTreatment,
     })
     .select("*")
     .single();
@@ -288,8 +316,38 @@ export async function processImageGenerationJob(args: {
   if (revisionNumber > 2) throw new ImageGenerationServiceError("REVISION_LIMIT", "This generation has reached the two-regeneration limit.");
   const fromStatuses = args.revisionInstruction ? ["READY", "FAILED"] : ["QUEUED", "FAILED"];
   const targetStatus = args.revisionInstruction ? "REVISING" : "PROCESSING";
+
+  // Premium Creative Intelligence Section 23: when a real Creative
+  // Treatment was supplied at job creation, the actual image prompt is
+  // built FROM it (subject/composition/camera/lighting/color/mood/
+  // negative-constraints/text-safe-areas) instead of the caller's raw
+  // brief string. brandDNA is reconstructed from this job's own already-
+  // stored brand_context_snapshot (color_hints/tone_of_voice/industry) --
+  // no separate brand lookup needed, and it stays consistent with what the
+  // prompt's own brand-context lines already say.
+  const treatment = job.creative_treatment as CreativeTreatment | null;
+  let effectiveBrief = job.brief;
+  let overlayContext: { treatment: CreativeTreatment; businessName: string; brandDNA: ReturnType<typeof deriveBrandVisualDNA> } | null = null;
+  // Both the treatment-derived prompt and deterministic text-overlay
+  // compositing are scoped to the ORIGINAL (non-revision) generation --
+  // a revision works from the human's specific revision instruction
+  // layered onto the free-text brief path, exactly as before, since a
+  // revision may have moved the image away from the original treatment's
+  // intent in ways that would make re-applying its planned on-image text
+  // stale or wrong.
+  if (treatment && !args.revisionInstruction) {
+    const snapshot = job.brand_context_snapshot as { business_name?: string; industry?: string; tone_of_voice?: string; color_hints?: string[] };
+    const businessName = typeof snapshot.business_name === "string" ? snapshot.business_name : "";
+    const brandDNA = deriveBrandVisualDNA({
+      brandColors: Array.isArray(snapshot.color_hints) ? snapshot.color_hints.map(String) : [],
+      brandTone: typeof snapshot.tone_of_voice === "string" ? snapshot.tone_of_voice.split(/,\s*/).filter(Boolean) : [],
+      industryCategory: classifyIndustry(typeof snapshot.industry === "string" ? snapshot.industry : null),
+    });
+    effectiveBrief = buildVisualDirectorBrief({ treatment, businessName, brandDNA });
+    overlayContext = { treatment, businessName, brandDNA };
+  }
   const prompt = buildProviderReadyImagePrompt({
-    brief: job.brief,
+    brief: effectiveBrief,
     intendedUse: job.intended_use,
     aspectRatio: job.aspect_ratio,
     styleDirection: job.style_direction,
@@ -356,6 +414,34 @@ export async function processImageGenerationJob(args: {
     .select("asset_id")
     .eq("job_id", job.id);
   const referenceAssetIds = (references ?? []).map((row) => String(row.asset_id));
+  // Premium Creative Intelligence Section 9: headline/CTA/brand name are
+  // rendered deterministically (real sharp SVG compositing), never left to
+  // the image model's own (typo-prone) text rendering -- only when the
+  // treatment actually has on-image text planned.
+  const ASPECT_CANVAS: Record<string, { width: number; height: number }> = {
+    "1:1": { width: 1024, height: 1024 },
+    "4:5": { width: 1024, height: 1280 },
+    "9:16": { width: 1080, height: 1920 },
+    "16:9": { width: 1920, height: 1080 },
+  };
+  const textOverlayCompositor =
+    overlayContext && overlayContext.treatment.textHierarchy.length
+      ? async ({ bytes, mimeType }: { bytes: Uint8Array; mimeType: string }) => {
+          const canvas = ASPECT_CANVAS[job.aspect_ratio] ?? ASPECT_CANVAS["1:1"]!;
+          const { treatment: t, businessName, brandDNA } = overlayContext!;
+          const composited = await renderTextOverlay(Buffer.from(bytes), {
+            width: canvas.width,
+            height: canvas.height,
+            elements: [...t.textHierarchy, { role: "brandLabel" as const, text: businessName }],
+            typographyPersonality: brandDNA.typographyPersonality,
+            textColor: brandDNA.lightDarkPreference === "light" ? "#111111" : "#FFFFFF",
+            scrimColor: "#000000",
+            accentColor: brandDNA.accentColor,
+            businessName,
+          });
+          return { bytes: composited, mimeType: "image/png" };
+        }
+      : undefined;
   const outcome = await media.images.generate({
     tenantId: job.tenant_id,
     missionId: job.mission_id,
@@ -365,6 +451,7 @@ export async function processImageGenerationJob(args: {
     candidateCount: job.candidate_count,
     referenceAssetIds,
     persistCanonical: true,
+    textOverlayCompositor,
   });
   if (outcome.outcome !== "OK" || !outcome.candidates.length) {
     await failJob(args.writeClient, job.id, safeProviderReason(outcome));
@@ -402,6 +489,7 @@ export async function processImageGenerationJob(args: {
       width: candidate.width ?? null,
       height: candidate.height ?? null,
       estimated_cost_usd: candidate.estimatedCostUsd,
+      text_overlay_applied: Boolean(textOverlayCompositor),
       critique: createAdvisoryImageCritique({
         aspectRatio: job.aspect_ratio,
         intendedUse: job.intended_use,

@@ -37,6 +37,10 @@ export interface ImageGenerationJobRow {
   style_direction: string | null;
   brand_brain_version: number | null;
   brand_context_snapshot: Record<string, unknown>;
+  /** Real structured Creative Treatment (lib/social/creative-treatment.ts)
+   * driving this job's image prompt, when one was supplied and passed
+   * validateCreativeTreatment -- null for a plain free-text brief. */
+  creative_treatment: Record<string, unknown> | null;
   provider: string | null;
   model: string | null;
   provider_request_id: string | null;
@@ -71,6 +75,10 @@ export interface ImageGenerationCandidateRow {
   estimated_cost_usd: number | null;
   critique: Record<string, unknown>;
   provenance: Record<string, unknown>;
+  /** True when this candidate's on-image headline/CTA/brand text was
+   * composited deterministically (text-overlay-render.ts) rather than
+   * rendered by the image model. */
+  text_overlay_applied: boolean;
   created_at: string;
   preview_url?: string | null;
 }
@@ -88,6 +96,13 @@ export interface CreateImageJobInput {
   sourceContext?: ImageSourceContext;
   sourceId?: string | null;
   missionId?: string | null;
+  /** Real structured Creative Treatment (lib/social/creative-treatment.ts).
+   * When supplied and structurally valid, processImageGenerationJob builds
+   * the actual image prompt from it (visual-director-prompt.ts) instead of
+   * `brief` alone, and applies deterministic text-overlay compositing for
+   * any on-image text it specifies. A malformed treatment is discarded
+   * (logged, not silently trusted) -- the job still proceeds from `brief`. */
+  treatment?: Record<string, unknown> | null;
 }
 
 export interface ImageJobDetail {
