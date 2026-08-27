@@ -2,29 +2,42 @@
 //
 // Uses the REAL production generation logic -- creative-brief.ts,
 // quality-score.ts, generation-loop.ts, package-autopilot.ts's
-// parseGeneratedCopy, package-business-facts.ts -- and REAL AI credentials
-// (OpenAITextProvider from @stratxcel/ai-runtime, calling the actual
-// OpenAI API) against the 7 fixtures already used by the test suite.
+// parseGeneratedCopy, package-business-facts.ts -- and the project's REAL,
+// Vercel-configured GEMINI_API_KEY (Preview environment; the same key
+// production's AiRuntimeSocialProvider/ImageMediaRuntime prefer -- Gemini
+// is tried first whenever both providers are configured) against the 7
+// fixtures already used by the test suite. OPENAI_API_KEY is a Vercel
+// "Secret"-type variable and cannot be retrieved via `vercel env pull` at
+// all (Vercel never exposes Secret values after creation, by platform
+// design) -- confirmed via `vercel env pull`, which wrote the literal
+// placeholder "[SENSITIVE]" for it. GEMINI_API_KEY is a "Config"-type
+// variable and WAS retrieved; a live GET against the real
+// generativelanguage.googleapis.com generateContent endpoint (the exact
+// endpoint/model this codebase's GeminiProvider uses) returned HTTP 200
+// with a real completion before this script was relied on for anything.
 //
-// SAFETY: deliberately does NOT touch Supabase. No storage/DB dependency is
-// passed to any provider -- OpenAITextProvider.complete() and
-// ImageMediaRuntime.generate() (used by the companion image script) are
-// both callable standalone, with zero database coupling, by design (see
-// packages/ai-runtime/src/providers/openai.ts and media/image.ts). This is
-// the exact class production uses; only the outer Supabase-backed
-// tenant-billing wrapper (AiRuntimeSocialProvider in
-// lib/social/agent/provider.ts) is bypassed, since it exists purely to
-// meter a REAL tenant's spend against a REAL database row, which is
-// deliberately out of scope here. All fixture/recent-history state lives
-// in-process; nothing is written to any real database.
+// SAFETY:
+//  - Does NOT touch Supabase. No storage/DB dependency is passed to any
+//    provider -- GeminiTextProvider.complete() and ImageMediaRuntime.
+//    generate() are both callable standalone, with zero database coupling,
+//    by design (see packages/ai-runtime/src/providers/gemini.ts and
+//    media/image.ts). These are the exact classes production uses; only
+//    the outer Supabase-backed tenant-billing wrapper
+//    (AiRuntimeSocialProvider in lib/social/agent/provider.ts) is bypassed,
+//    since it exists purely to meter a REAL tenant's spend against a REAL
+//    database row, deliberately out of scope for an experiment that must
+//    never touch production data. All fixture/recent-history state lives
+//    in-process; nothing is written to any real database.
+//  - The credential itself is loaded via scripts/lib/load-vercel-credential.ts,
+//    which sets it directly into process.env and returns only length/prefix
+//    metadata -- it is never printed, logged, written to an output file, or
+//    included in any generated report.
 //
 // Usage: node --experimental-strip-types scripts/quality-campaign-generate.ts [countPerFixture] [outDir]
-// Requires OPENAI_API_KEY in the process environment (already present in
-// this session -- GEMINI_API_KEY is not set here).
 
 import fs from "node:fs";
 import path from "node:path";
-import { OpenAITextProvider, resolveModelId, type AIMessage } from "@stratxcel/ai-runtime";
+import { GeminiTextProvider, resolveModelId, AIProviderError, isTransientFallbackWorthy, type AIMessage } from "@stratxcel/ai-runtime";
 import { buildCreativeBrief, formatCreativeBriefForPrompt, selectObjective } from "../lib/social/creative-brief.ts";
 import { scoreGeneratedContent, type QualityScoreInput } from "../lib/social/quality-score.ts";
 import { runGenerationLoop } from "../lib/social/generation-loop.ts";
@@ -32,20 +45,61 @@ import { buildVerifiedBusinessInformation } from "../lib/social/package-business
 import { parseGeneratedCopy } from "../lib/social/generated-copy-parser.ts";
 import { ALL_FIXTURES, type BusinessFixture } from "../lib/social/__tests__/fixtures/business-fixtures.ts";
 import type { ContentObjective } from "../lib/social/content-options.ts";
+import { loadVercelCredential } from "./lib/load-vercel-credential.ts";
 
 const COUNT_PER_FIXTURE = Number(process.argv[2] ?? "3");
 const OUT_DIR = process.argv[3] ?? path.join(process.cwd(), "scratch", "quality-campaign");
-const MODEL = resolveModelId("OPENAI_STANDARD_FALLBACK");
+// GOOGLE_STANDARD (gemini-3.6-flash) hit a real, concrete free-tier quota
+// wall mid-campaign: confirmed via a direct API call, HTTP 429
+// RESOURCE_EXHAUSTED, quotaId "GenerateRequestsPerDayPerProjectPerModel-
+// FreeTier", quotaValue 20 (a per-day cap, not a burst limit -- retrying
+// with backoff cannot recover from it). GOOGLE_CHEAP (gemini-3.5-flash-lite)
+// has a separate per-model quota bucket and was confirmed live (HTTP 200)
+// after GOOGLE_STANDARD was exhausted -- also the same model
+// lib/social/agent/gemini-boundary.ts's GEMINI_MODEL already defaults to
+// for this codebase's legacy direct Gemini path.
+const MODEL = resolveModelId("GOOGLE_CHEAP");
 const CANONICAL_PLATFORM_LABEL: Record<string, string> = { instagram: "Instagram", facebook: "Facebook", threads: "Threads", linkedin: "LinkedIn", youtube: "YouTube" };
 
-if (!process.env.OPENAI_API_KEY) {
-  console.error("BLOCKED: OPENAI_API_KEY is not set in the process environment. Cannot run real generation.");
-  process.exit(1);
+if (!process.env.GEMINI_API_KEY) {
+  const result = loadVercelCredential(path.join(process.cwd(), ".env.vercel-preview.local"), "GEMINI_API_KEY");
+  if (result.status !== "loaded") {
+    console.error(`BLOCKED: could not load GEMINI_API_KEY (${result.status}). Cannot run real generation.`);
+    process.exit(1);
+  }
+  console.log(`Loaded GEMINI_API_KEY from Vercel Preview env (length=${result.length} chars) -- value itself never logged.`);
 }
 
 fs.mkdirSync(OUT_DIR, { recursive: true });
 
-const provider = new OpenAITextProvider();
+const provider = new GeminiTextProvider();
+const INTER_CALL_DELAY_MS = 4_000; // paces requests to avoid tripping rate limits in the first place
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Retries a transient PROVIDER/transport failure (rate limit, timeout) with
+ * backoff -- deliberately separate from generation-loop.ts's retry, which
+ * is a CONTENT-quality concern (corrective instructions for a bad caption).
+ * A 429 has nothing to do with content quality and must not consume or
+ * pollute that loop's attempt budget/diagnostics. */
+async function withTransientRetry<T>(label: string, maxRetries: number, fn: () => Promise<T>): Promise<T> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      const category = err instanceof AIProviderError ? err.category : undefined;
+      if (!isTransientFallbackWorthy(category) || attempt === maxRetries) throw err;
+      const backoffMs = 5_000 * (attempt + 1);
+      console.log(`    [${label}] transient error (${category}), retrying in ${backoffMs}ms...`);
+      await sleep(backoffMs);
+    }
+  }
+  throw lastErr;
+}
 
 interface AttemptLog {
   attempt: number;
@@ -112,7 +166,9 @@ async function generateOneCreative(fixture: BusinessFixture, index: number, rece
         { role: "system", content: `You are writing a real social media post for ${fixture.businessName}, a real business. Follow the creative brief exactly. Never invent facts not given to you.` },
         { role: "user", content: prompt },
       ];
-      const result = await provider.complete({ model: MODEL, messages, reasoningLevel: "low", timeoutMs: 60_000 });
+      const result = await withTransientRetry(`${fixture.key}#${index + 1}`, 3, () =>
+        provider.complete({ model: MODEL, messages, reasoningLevel: "low", timeoutMs: 60_000 })
+      );
       rawModelText.push(result.text);
       return parseGeneratedCopy(result.text);
     },
@@ -190,6 +246,7 @@ async function main() {
           attempts: [], finalReason: err instanceof Error ? err.message : "generation call failed", rawModelText: [],
         });
       }
+      await sleep(INTER_CALL_DELAY_MS);
     }
   }
 
