@@ -7,11 +7,10 @@ import { getBoundBrandProfile } from "./repositories/brand.ts";
 import { createContentMaster, createContentVariant } from "./repositories/content.ts";
 import { resolveConfiguredProvider } from "./agent/provider.ts";
 import { selectGeminiBrandInstructions } from "./agent/gemini-boundary.ts";
-import { requirePlatform, requireContentObjective } from "./content-options.ts";
+import { requirePlatform, CONTENT_OBJECTIVE_VALUES, type ContentObjective } from "./content-options.ts";
 import { computePackageDistribution, datetimeLocalValueToUtcIso } from "./package-distribution.ts";
 import { notifyPackageEvent } from "./package-whatsapp-notify.ts";
 import type { OwnerContext } from "./db-context.ts";
-import { CONTENT_OBJECTIVE_VALUES } from "./content-options.ts";
 import { validatePackageComposition, compositionMediaTypeForUnit, resolvePurchasedPackageComposition, type PackageComposition } from "./package-composition.ts";
 import { selectPackageMediaAsset } from "./package-media.ts";
 import { recordAudit } from "./repositories/system.ts";
@@ -19,7 +18,8 @@ import { hasCapability, isPlanTier } from "@stratxcel/payments-and-wallet";
 import { getCurrentBrandBrain } from "@stratxcel/brand-brain";
 import { createSocialAuditConnectorInsightsProvider } from "./audit-connector-insights.ts";
 import { buildVerifiedBusinessInformation } from "./package-business-facts.ts";
-import { findPlaceholderOrFiller } from "./placeholder-detection.ts";
+import { buildCreativeBrief, formatCreativeBriefForPrompt, selectObjective } from "./creative-brief.ts";
+import { runGenerationLoop } from "./generation-loop.ts";
 
 export {
   assignBrandProfileToTenant,
@@ -620,9 +620,9 @@ const CANONICAL_PLATFORM_LABEL: Record<string, string> = {
   youtube: "YouTube",
 };
 
-interface GeneratedPost {
-  contentPillar: string;
-  objective: string;
+/** The AI's copy output only -- contentPillar/objective are decided by
+ * CreativeBrief before generation, never parsed from the model response. */
+interface GeneratedCopy {
   title: string;
   masterIdea: string;
   caption: string;
@@ -630,36 +630,31 @@ interface GeneratedPost {
 }
 
 /**
- * Throws a SPECIFIC reason on any quality-gate failure (matching this
- * codebase's standing rule that a BLOCKED item gets a diagnosable
- * last_error, never a generic one) instead of returning null and making
- * the caller guess why. The old inline check here was
- * `/\[insert|\btodo\b/i` -- Section 8 of the build brief names a much
- * longer list of unacceptable template residue ("[Add your custom words
- * here]", "Contact us today", "Quality you can trust", ...); that full,
- * tested list now lives in placeholder-detection.ts's
- * findPlaceholderOrFiller, checked against both caption and title.
+ * Parses the model's copy response. Unlike the pre-Creative-Direction-
+ * Engine version, this never throws and no longer reads contentPillar or
+ * objective from the model at all -- the CreativeBrief already decided
+ * both deterministically before this call was made (Phase C: strategy is
+ * decided BEFORE copy, never delegated to the copy-writing call). A
+ * malformed/empty response simply produces empty fields, which
+ * scoreGeneratedContent's MALFORMED_STRUCTURE check catches through the
+ * SAME quality gate every other failure goes through -- one diagnosis
+ * path, not two.
  */
-function parseGeneratedPost(text: string): GeneratedPost {
+function parseGeneratedCopy(text: string): GeneratedCopy {
   const match = text.match(/\{[\s\S]*\}/);
-  if (!match) throw new Error("Generated content failed the quality gate: no JSON object found in the model response");
-  let parsed: Record<string, unknown>;
-  try {
-    parsed = JSON.parse(match[0]) as Record<string, unknown>;
-  } catch {
-    throw new Error("Generated content failed the quality gate: response was not valid JSON");
+  let parsed: Record<string, unknown> = {};
+  if (match) {
+    try {
+      parsed = JSON.parse(match[0]) as Record<string, unknown>;
+    } catch {
+      parsed = {};
+    }
   }
-  const contentPillar = typeof parsed.contentPillar === "string" ? parsed.contentPillar.trim() : "";
   const caption = typeof parsed.caption === "string" ? parsed.caption.trim() : "";
   const title = typeof parsed.title === "string" ? parsed.title.trim() : "";
   const masterIdea = typeof parsed.masterIdea === "string" ? parsed.masterIdea.trim() : "";
-  const objective = typeof parsed.objective === "string" ? parsed.objective.trim() : "";
   const hashtags = Array.isArray(parsed.hashtags) ? parsed.hashtags.map(String).map((tag) => tag.replace(/^#/, "")).filter(Boolean) : [];
-  if (!contentPillar) throw new Error("Generated content failed the quality gate: missing contentPillar");
-  if (!caption || caption.length < 10) throw new Error("Generated content failed the quality gate: caption missing or too short");
-  const filler = findPlaceholderOrFiller(caption) ?? (title ? findPlaceholderOrFiller(title) : null);
-  if (filler) throw new Error(`Generated content failed the quality gate: contains placeholder/template text ("${filler}")`);
-  return { contentPillar, objective, title: title || caption.slice(0, 60), masterIdea: masterIdea || caption, caption, hashtags };
+  return { title: title || caption.slice(0, 60), masterIdea: masterIdea || caption, caption, hashtags };
 }
 
 /**
@@ -728,8 +723,11 @@ export async function prepareNearTermPackageItems(service: ServiceClient, author
       const pillarNames = brandProfile.content_pillars.map((pillar) => pillar.name);
       if (!pillarNames.length) throw new Error("Brand Brain has no content pillars yet");
 
-      // Avoid obvious repetition (Section 26): tell the model which pillars
-      // were used most recently in this authorization so it varies topics.
+      const mediaType = compositionMediaTypeForUnit(authorization.package_composition, contentUnitIndexForRow(item.package_sequence, authorization.counting_policy));
+      if (!mediaType) throw new Error("package_composition_exhausted");
+
+      // Avoid obvious repetition (Section 26): tell the strategy layer which
+      // pillars were used most recently in this authorization.
       const { data: recentPillars } = await service
         .from("social_autopilot_queue_items")
         .select("content_pillar")
@@ -739,74 +737,122 @@ export async function prepareNearTermPackageItems(service: ServiceClient, author
         .limit(5);
       const recentPillarNames = [...new Set((recentPillars ?? []).map((row) => row.content_pillar as string))];
 
-      const prompt = [
-        `Generate ONE ${CANONICAL_PLATFORM_LABEL[platform] ?? platform} post for this brand, item ${item.package_sequence} of an autonomous content package.`,
-        `Choose exactly one contentPillar from this saved list: ${pillarNames.join(", ")}.`,
-        recentPillarNames.length ? `Recently used pillars (prefer a different one for variety): ${recentPillarNames.join(", ")}.` : "",
-        `Respond with ONLY strict JSON: {"contentPillar": string (must match the list exactly), "objective": one of ${CONTENT_OBJECTIVE_VALUES.join("|")}, "title": string, "masterIdea": string, "caption": string, "hashtags": string[]}.`,
-        "The caption must be genuine, specific, platform-appropriate, and contain no placeholder text.",
-        businessInformation.length
-          ? "Ground the post in the verified business information provided below where it's naturally relevant -- do not force every fact into one caption."
-          : "",
-        // Fact/Claim Safety Layer (Section 5): businessInformation below is the
-        // ONLY source of specific claims this caption may make. No address,
-        // phone number, discount, rating, review count, opening hours, or
-        // guarantee exists anywhere in this prompt unless it appears there --
-        // never invent one, and never state a specific number/fact that isn't
-        // explicitly given.
-        "Never state a specific address, phone number, discount, price, rating, review count, opening hours, or guarantee unless it is explicitly provided in the verified business information below. If none is provided, write generally instead of inventing one.",
-      ].filter(Boolean).join("\n");
-
-      // tenantId is REQUIRED here: the default provider (AiRuntimeSocialProvider,
-      // used whenever AI_ROUTER_ENABLED !== "0" -- the production default, see
-      // .env.example) throws "tenant_required_for_billable_ai" as the very
-      // first thing it does when context.tenantId is missing (provider.ts).
-      // This call used to omit it entirely, so every single autonomous
-      // Package Autopilot preparation attempt -- for every tenant, on every
-      // cron tick -- failed before generating anything and landed here in the
-      // catch block below as a BLOCKED item with that exact error. The
-      // interactive Copilot orchestrator (orchestrator.ts) already resolves
-      // and passes tenantId correctly; this was the one caller that didn't,
-      // silently making the autonomous package pipeline produce zero content
-      // in any deployment using the real AI Runtime router.
-      const result = await provider.complete(
-        [{ role: "user", content: prompt }],
-        [],
-        { brandInstructions: selectGeminiBrandInstructions(brandProfile), tenantId: authorization.tenant_id, businessInformation }
-      );
-      const generated = parseGeneratedPost(result.text);
-      const canonicalPillar = pillarNames.find((name) => name.toLowerCase() === generated.contentPillar.toLowerCase());
-      if (!canonicalPillar) throw new Error(`Generated pillar "${generated.contentPillar}" is not a saved Brand Brain pillar`);
-      const objective = CONTENT_OBJECTIVE_VALUES.includes(generated.objective as (typeof CONTENT_OBJECTIVE_VALUES)[number])
-        ? generated.objective
-        : requireContentObjective("ENGAGEMENT");
-
-      const mediaType = compositionMediaTypeForUnit(authorization.package_composition, contentUnitIndexForRow(item.package_sequence, authorization.counting_policy));
-      if (!mediaType) throw new Error("package_composition_exhausted");
-      // Same diversity intent as recentPillarNames above, for media (Section
-      // 11): without this, selectPackageMediaAsset used to always return the
-      // single newest asset, so every post in the package reused the exact
-      // same image/reel. Look up which asset ids this authorization's recent
-      // posts already used so a tenant with multiple uploaded assets
-      // actually rotates through them.
+      // Creative memory (Section 11/26): recent concept/caption/objective
+      // history for THIS authorization -- steers buildCreativeBrief +
+      // selectObjective toward variety, and lets scoreGeneratedContent
+      // hard-reject a near-duplicate before it's ever persisted (Section 11
+      // Creative Diversity Engine, Phase D of this campaign). Same query
+      // also supplies recentAssetIds, replacing what used to be a separate,
+      // narrower media-only lookup.
+      const { data: recentVariantIdRows } = await service
+        .from("social_autopilot_queue_items")
+        .select("variant_id")
+        .eq("authorization_id", authorization.id)
+        .not("variant_id", "is", null)
+        .order("created_at", { ascending: false })
+        .limit(8);
+      const recentVariantIds = [...new Set((recentVariantIdRows ?? []).map((row) => row.variant_id as string))];
+      const recentConcepts: string[] = [];
+      const recentCaptions: string[] = [];
+      const recentObjectives: ContentObjective[] = [];
       let recentAssetIds: string[] = [];
-      if (mediaType !== "text") {
-        const { data: recentVariantRows } = await service
-          .from("social_autopilot_queue_items")
-          .select("variant_id")
-          .eq("authorization_id", authorization.id)
-          .not("variant_id", "is", null)
-          .order("created_at", { ascending: false })
-          .limit(5);
-        const recentVariantIds = [...new Set((recentVariantRows ?? []).map((row) => row.variant_id as string))];
-        if (recentVariantIds.length) {
-          const { data: recentMediaRows } = await service
-            .from("social_content_variant_media")
-            .select("asset_id")
-            .in("variant_id", recentVariantIds);
-          recentAssetIds = [...new Set((recentMediaRows ?? []).map((row) => row.asset_id as string))];
+      if (recentVariantIds.length) {
+        const [{ data: recentVariants }, { data: recentMediaRows }] = await Promise.all([
+          service.from("content_variants").select("caption, objective, creative_spec").in("id", recentVariantIds),
+          mediaType === "text" ? Promise.resolve({ data: [] as Array<{ asset_id: string }> }) : service.from("social_content_variant_media").select("asset_id").in("variant_id", recentVariantIds),
+        ]);
+        for (const row of (recentVariants ?? []) as Array<{ caption?: unknown; objective?: unknown; creative_spec?: unknown }>) {
+          if (typeof row.caption === "string" && row.caption) recentCaptions.push(row.caption);
+          if (typeof row.objective === "string" && CONTENT_OBJECTIVE_VALUES.includes(row.objective as (typeof CONTENT_OBJECTIVE_VALUES)[number])) recentObjectives.push(row.objective as ContentObjective);
+          const spec = (row.creative_spec ?? {}) as Record<string, unknown>;
+          if (typeof spec.concept === "string" && spec.concept) recentConcepts.push(spec.concept);
         }
+        recentAssetIds = [...new Set((recentMediaRows ?? []).map((row) => row.asset_id as string))];
       }
+
+      // Section 4: prefer Brand Brain's real target_audience fact (from paid
+      // audit intake) over Social's own (often-empty) audiences list.
+      const audienceFact = businessInformation.find((fact) => fact.startsWith("Target audience:"));
+      const audience = brandProfile.audiences[0]?.name?.trim() || audienceFact?.split(":").slice(1).join(":").trim() || null;
+
+      // No structured "current offer/discount" data source exists anywhere
+      // in the business-fact pipeline yet (package-business-facts.ts
+      // deliberately excludes offers -- see its header). hasOffer therefore
+      // stays false until that data model exists: SALES never enters the
+      // objective rotation without a real offer behind it (Section 5) --
+      // documented, honest gap, not a silent invention.
+      const objective = selectObjective({ hasOffer: false, recentObjectives });
+
+      const brief = buildCreativeBrief({
+        businessName: brandProfile.identity.name?.trim() || "",
+        industryText: brandProfile.identity.industry ?? null,
+        descriptionText: brandProfile.identity.description ?? null,
+        platform,
+        mediaType,
+        availablePillars: pillarNames,
+        recentPillars: recentPillarNames,
+        recentConcepts,
+        objective,
+        verifiedFacts: businessInformation,
+        brandTone: brandProfile.voice.tone,
+        audience,
+      });
+
+      // Phase E: generate -> score -> diagnose -> regenerate with targeted
+      // corrective instructions, never a blind identical retry. Capped at 2
+      // attempts (1 correction) -- each attempt is a real billable AI call
+      // inside a cron batch of up to 20 items, so cost/latency are bounded
+      // deliberately rather than exhausting the module's full default.
+      const loopResult = await runGenerationLoop({
+        maxAttempts: 2,
+        generate: async (correctiveInstructions) => {
+          const prompt = [
+            `Generate ONE ${CANONICAL_PLATFORM_LABEL[platform] ?? platform} post for this brand, item ${item.package_sequence} of an autonomous content package.`,
+            formatCreativeBriefForPrompt(brief),
+            `Respond with ONLY strict JSON: {"title": string, "masterIdea": string, "caption": string, "hashtags": string[]}.`,
+            correctiveInstructions.length
+              ? `CORRECTIONS FROM A PREVIOUS ATTEMPT -- apply these specifically:\n${correctiveInstructions.map((i) => `- ${i}`).join("\n")}`
+              : "",
+          ].filter(Boolean).join("\n\n");
+          // tenantId is REQUIRED: AiRuntimeSocialProvider (the production
+          // default whenever AI_ROUTER_ENABLED !== "0") throws
+          // tenant_required_for_billable_ai as the first thing it does when
+          // context.tenantId is missing -- this omission used to make every
+          // autonomous preparation attempt fail before generating anything.
+          const result = await provider.complete(
+            [{ role: "user", content: prompt }],
+            [],
+            { brandInstructions: selectGeminiBrandInstructions(brandProfile), tenantId: authorization.tenant_id, businessInformation }
+          );
+          return parseGeneratedCopy(result.text);
+        },
+        toScoreInput: (copy) => ({
+          caption: copy.caption,
+          title: copy.title,
+          hashtags: copy.hashtags,
+          businessName: brandProfile.identity.name?.trim() ?? "",
+          contentPillar: brief.contentPillar,
+          concept: brief.concept,
+          industry: brief.industry,
+          verifiedFacts: businessInformation,
+          brandTone: brandProfile.voice.tone,
+          blockedPhrases: brandProfile.voice.blocked_phrases,
+          forbiddenClaims: brandProfile.voice.forbidden_claims,
+          audience: brief.audience,
+          objective: brief.objective,
+          recentCaptions,
+          recentConcepts,
+        }),
+      });
+
+      if (!loopResult.success || !loopResult.content || !loopResult.scoreResult) {
+        // Never a bare "quality gate failed" -- finalReason is built from
+        // the actual hard-failure reason codes (Phase B).
+        throw new Error(loopResult.finalReason ?? "Generated content failed the quality gate");
+      }
+      const generated = loopResult.content;
+      const qualityScore = loopResult.scoreResult;
+
       const mediaAsset = await selectPackageMediaAsset(service, { tenantId: authorization.tenant_id, ownerId: brandProfile.owner_id, mediaType, avoidAssetIds: recentAssetIds });
       const brandCtx: OwnerContext = { ...ownerCtx, ownerId: brandProfile.owner_id };
       const { data: sibling } = item.content_unit_key ? await service.from("social_autopilot_queue_items").select("content_master_id").eq("authorization_id", authorization.id).eq("content_unit_key", item.content_unit_key).not("content_master_id", "is", null).limit(1).maybeSingle() : { data: null };
@@ -814,7 +860,7 @@ export async function prepareNearTermPackageItems(service: ServiceClient, author
         title: generated.title,
         masterIdea: generated.masterIdea,
         objective,
-        contentPillar: canonicalPillar,
+        contentPillar: brief.contentPillar,
         campaignId: null,
       });
       const variantId = await createContentVariant(brandCtx, {
@@ -825,6 +871,20 @@ export async function prepareNearTermPackageItems(service: ServiceClient, author
         caption: generated.caption,
         hashtags: generated.hashtags,
         mediaUrls: [],
+        // Reused by the NEXT item's recentConcepts lookup above, and by the
+        // (Phase K) UI to show a real "quality state" per item instead of
+        // just PREPARED/BLOCKED -- no schema migration needed, reusing the
+        // existing extensible creative_spec JSONB column
+        // (content_variants.creative_spec, already used for
+        // youtube_privacy_status/generationKey elsewhere in this codebase).
+        creativeSpec: {
+          concept: brief.concept,
+          hookDirection: brief.hook,
+          ctaDirection: brief.cta,
+          qualityScore: qualityScore.score,
+          qualityBreakdown: qualityScore.breakdown,
+          attempts: loopResult.attempts.length,
+        },
       });
       if (mediaAsset) {
         await service.from("social_content_variant_media").insert({ variant_id: variantId.id, asset_id: mediaAsset.id, position: 0 });
@@ -835,7 +895,7 @@ export async function prepareNearTermPackageItems(service: ServiceClient, author
         .update({
           variant_id: variantId.id,
           content_master_id: masterId,
-          content_pillar: canonicalPillar,
+          content_pillar: brief.contentPillar,
           media_type: mediaType,
           status: authorization.publishing_mode === "AUTO_PUBLISH" ? "PREPARED" : "REVIEW_REQUIRED",
           last_error: null,

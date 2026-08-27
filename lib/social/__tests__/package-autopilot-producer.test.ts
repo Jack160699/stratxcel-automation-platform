@@ -77,7 +77,14 @@ function run() {
   // --- Preparation reuses the EXISTING content pipeline, never a second content generator. ---
   assert.ok(autopilot.includes("createContentMaster") && autopilot.includes("createContentVariant"), "package content must be created through the same repository functions the manual Copilot uses");
   assert.ok(autopilot.includes("getBoundBrandProfile"), "generation must be grounded in the tenant's explicitly bound Brand Brain");
-  assert.ok(autopilot.includes("pillarNames.find((name) => name.toLowerCase() === generated.contentPillar.toLowerCase())"), "a generated pillar must match a REAL saved Brand Brain pillar — invented taxonomy is rejected, matching the existing canonical-validation standard");
+  // Content-Direction Engine campaign: the content pillar is now DECIDED
+  // deterministically by buildCreativeBrief (selectLeastRecentlyUsed over
+  // availablePillars) BEFORE the AI is ever called, rather than parsed back
+  // out of the model's response and validated after the fact -- see
+  // creative-brief.test.ts. selectLeastRecentlyUsed can only return a value
+  // that was IN availablePillars, so invented taxonomy is structurally
+  // impossible, not just checked for.
+  assert.ok(autopilot.includes("buildCreativeBrief") && autopilot.includes("availablePillars: pillarNames"), "the content pillar must be decided by the Creative-Direction Engine from the REAL saved pillar list, not parsed from (and merely validated against) the model's own response");
   assert.ok(autopilot.includes("status: \"BLOCKED\""), "a quality-gate failure must block the item, never publish garbage (Section 28/48)");
 
   // --- Regression: the preparation call MUST pass tenantId. Found live: the
@@ -120,7 +127,13 @@ function run() {
   // must cover the brief's own named examples of unacceptable filler, not
   // just the old narrow [insert|todo] regex. See placeholder-detection.test.ts
   // for full behavioral coverage.
-  assert.ok(autopilot.includes("findPlaceholderOrFiller"), "generated captions must be checked against the real placeholder/filler detector, not left to the old narrow inline regex");
+  // Quality-scoring campaign: placeholder detection now runs INSIDE
+  // scoreGeneratedContent (quality-score.ts), which itself calls
+  // findPlaceholderOrFiller -- a single quality gate, not two parallel
+  // checks. See quality-score.test.ts and generic-content-regression.test.ts.
+  assert.ok(autopilot.includes("scoreGeneratedContent") || autopilot.includes("runGenerationLoop"), "generated captions must go through the real quality-scoring gate (which includes placeholder detection), not a standalone inline check");
+  const qualityScoreSource = read("lib", "social", "quality-score.ts");
+  assert.ok(qualityScoreSource.includes("findPlaceholderOrFiller"), "the quality scorer itself must call the real placeholder/filler detector, not a narrow inline regex");
   const placeholderDetection = read("lib", "social", "placeholder-detection.ts");
   for (const phrase of ["contact us today", "quality you can trust", "best service in town", "we're excited to announce"]) {
     assert.ok(placeholderDetection.includes(phrase), `the brief's own named generic filler example must be in the ban list: ${phrase}`);
