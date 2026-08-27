@@ -87,6 +87,50 @@ export function checkRepetition(candidate: CreativeFingerprint, recent: Creative
   return { isDuplicate: false, reason: null, mostSimilarIndex: best.index >= 0 ? best.index : null, similarity: best.score };
 }
 
+/** Builds the comparable visual-fingerprint string for a Creative
+ * Treatment (Premium Creative Intelligence brief Section 14): diversity
+ * must cover composition/subject/camera/format, not just caption text --
+ * two posts with completely different captions but the same "subject
+ * centered, 35mm, soft key light" visual structure still read as the same
+ * template repeated. */
+export function visualFingerprintFromTreatment(treatment: {
+  subject: string;
+  composition: string;
+  camera: string;
+  environment: string;
+  format?: string;
+}): string {
+  return [treatment.subject, treatment.composition, treatment.camera, treatment.environment, treatment.format ?? ""].join(" ");
+}
+
+export interface VisualRepetitionCheck {
+  isDuplicate: boolean;
+  reason: string | null;
+  mostSimilarIndex: number | null;
+  similarity: number;
+}
+
+/** Same Jaccard-similarity mechanism as caption checkRepetition, applied to
+ * visual-structure fingerprints instead of caption text -- catches
+ * near-duplicate compositions even when the copy is entirely different. */
+export function checkVisualRepetition(candidateFingerprint: string, recentFingerprints: string[]): VisualRepetitionCheck {
+  let best = { index: -1, score: 0 };
+  recentFingerprints.forEach((fp, index) => {
+    if (!fp) return;
+    const score = textSimilarity(candidateFingerprint, fp);
+    if (score > best.score) best = { index, score };
+  });
+  if (best.score >= DUPLICATE_SIMILARITY_THRESHOLD) {
+    return {
+      isDuplicate: true,
+      reason: `visual composition (subject/camera/environment) is ${Math.round(best.score * 100)}% similar to a recent creative -- reads as the same shot repeated`,
+      mostSimilarIndex: best.index,
+      similarity: best.score,
+    };
+  }
+  return { isDuplicate: false, reason: null, mostSimilarIndex: best.index >= 0 ? best.index : null, similarity: best.score };
+}
+
 /** Picks the candidate least represented in recent history, preferring one
  * that appears zero times over one that's merely less frequent. Ties break
  * on input order (stable, deterministic -- no randomness to keep tests and
