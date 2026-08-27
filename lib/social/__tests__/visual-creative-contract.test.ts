@@ -94,8 +94,11 @@ function testRegenerationRequestIsSpecificNotBlind() {
 function testAspectRatioForMediaType() {
   assert.equal(aspectRatioForMediaType("reel"), "9:16");
   assert.equal(aspectRatioForMediaType("video"), "9:16");
-  assert.equal(aspectRatioForMediaType("image"), "4:5");
-  console.log("visual-creative-contract.test.ts: aspectRatioForMediaType maps reel/video to vertical, image to portrait — PASS");
+  // Finished Premium Marketing Creative brief Section 4: the default
+  // Instagram feed creative canvas is 1080x1080 square, not a generic
+  // portrait mechanically cropped afterward.
+  assert.equal(aspectRatioForMediaType("image"), "1:1");
+  console.log("visual-creative-contract.test.ts: aspectRatioForMediaType maps reel/video to vertical, image to the default 1:1 square feed canvas — PASS");
 }
 
 function run() {

@@ -30,6 +30,7 @@ import { summarizeBrandVisualDNA } from "./brand-visual-dna.ts";
 import type { IndustryVisualVocabulary } from "./industry-visual-vocabulary.ts";
 import { summarizeIndustryVisualVocabulary } from "./industry-visual-vocabulary.ts";
 import type { OnImageTextElement } from "./text-density.ts";
+import { findPlaceholderOrFiller } from "./placeholder-detection.ts";
 
 export interface CreativeTreatmentInput {
   brief: CreativeBrief;
@@ -221,7 +222,10 @@ export function validateCreativeTreatment(
     const value = t[field];
     if (typeof value !== "string" || value.trim().length < 8) {
       issues.push({ field, issue: `missing or too short (needs a real, specific sentence, not a placeholder)` });
+      continue;
     }
+    const leak = findPlaceholderOrFiller(value);
+    if (leak) issues.push({ field, issue: `contains implementation-instruction/placeholder leakage: "${leak}"` });
   }
 
   if (t.concept && t.concept.trim().toLowerCase() === context.concept.trim().toLowerCase()) {
@@ -232,12 +236,25 @@ export function validateCreativeTreatment(
     issues.push({ field: "textHierarchy", issue: "missing or not an array" });
   } else if (t.textHierarchy.length > 4) {
     issues.push({ field: "textHierarchy", issue: `${t.textHierarchy.length} on-image text elements -- too many for one primary idea` });
+  } else {
+    // Finished Premium Marketing Creative brief Section 2 (hard failure):
+    // every textHierarchy entry gets rendered as literal pixels by the
+    // deterministic overlay -- an implementation-instruction leak here
+    // ("Add text here", "Logo here") would ship straight onto the actual
+    // published creative, not just live in a caption a human might edit.
+    for (const el of t.textHierarchy) {
+      const leak = el?.text ? findPlaceholderOrFiller(el.text) : null;
+      if (leak) issues.push({ field: "textHierarchy", issue: `"${el.role}" text contains implementation-instruction/placeholder leakage: "${leak}"` });
+    }
   }
 
   if (!t.cta || typeof t.cta !== "object" || typeof t.cta.needed !== "boolean" || typeof t.cta.rationale !== "string") {
     issues.push({ field: "cta", issue: "missing or malformed CTA decision object" });
   } else if (t.cta.needed && (!t.cta.text || !t.cta.text.trim())) {
     issues.push({ field: "cta", issue: "cta.needed is true but cta.text is empty" });
+  } else if (t.cta.text) {
+    const leak = findPlaceholderOrFiller(t.cta.text);
+    if (leak) issues.push({ field: "cta", issue: `cta.text contains implementation-instruction/placeholder leakage: "${leak}"` });
   }
 
   if (!Array.isArray(t.negativeConstraints)) {
@@ -249,6 +266,32 @@ export function validateCreativeTreatment(
   }
 
   return issues;
+}
+
+/**
+ * The single canonical source of "what on-image text actually needs to
+ * render", folding `treatment.cta` into `treatment.textHierarchy` when
+ * needed. This exists because of a real, serious bug found during visual
+ * inspection: the structured-output model frequently set
+ * `cta.needed=true` with a real, specific `cta.text`, WITHOUT also
+ * duplicating a `{role:"cta"}` entry into textHierarchy -- and every
+ * caller that read `textHierarchy` directly (the image-prompt's text-safe-
+ * area reservation, the text-density measurement, and the deterministic
+ * overlay compositor itself) silently treated "not in textHierarchy" as
+ * "no CTA planned". The result: on 8 of 14 real passing creatives in one
+ * benchmark run, a genuinely intended CTA the model clearly wanted never
+ * appeared on the actual rendered image at all -- exactly the "beautiful
+ * but not fully completed" failure this exists to close. Every consumer
+ * of a treatment's on-image text (visual-director-prompt.ts,
+ * text-overlay-render.ts callers, text-density.ts measurement) must use
+ * this function, never `treatment.textHierarchy` directly.
+ */
+export function resolveOverlayElements(treatment: CreativeTreatment): CreativeTreatment["textHierarchy"] {
+  const hasCta = treatment.textHierarchy.some((e) => e.role === "cta" && e.text.trim());
+  if (treatment.cta.needed && treatment.cta.text?.trim() && !hasCta) {
+    return [...treatment.textHierarchy, { role: "cta", text: treatment.cta.text.trim() }];
+  }
+  return treatment.textHierarchy;
 }
 
 export class CreativeTreatmentError extends Error {

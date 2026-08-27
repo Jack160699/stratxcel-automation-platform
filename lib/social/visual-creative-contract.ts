@@ -62,8 +62,14 @@ export function constraintsForAspectRatio(aspectRatio: AspectRatio): VisualTextC
 
 /** Maps a package composition media type to its default aspect ratio.
  * "text" has no visual brief at all. */
+// Finished Premium Marketing Creative brief Section 4: the default social
+// canvas for a standard Instagram feed image is 1080x1080 square -- a
+// creative composed for that canvas, not a generic portrait mechanically
+// cropped afterward. 4:5 remains a real, selectable format elsewhere
+// (Creative Studio's own format picker) for when portrait is genuinely the
+// right choice; it's just no longer the silent default for "image".
 export function aspectRatioForMediaType(mediaType: "image" | "reel" | "video"): AspectRatio {
-  return mediaType === "reel" || mediaType === "video" ? "9:16" : "4:5";
+  return mediaType === "reel" || mediaType === "video" ? "9:16" : "1:1";
 }
 
 export interface VisualBriefValidationIssue {

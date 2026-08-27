@@ -17,7 +17,7 @@ import {
   type ImageGenerationJobRow,
   type ImageJobDetail,
 } from "./types";
-import { validateCreativeTreatment, type CreativeTreatment } from "../social/creative-treatment";
+import { validateCreativeTreatment, resolveOverlayElements, type CreativeTreatment } from "../social/creative-treatment";
 import { buildVisualDirectorBrief } from "../social/visual-director-prompt";
 import { deriveBrandVisualDNA } from "../social/brand-visual-dna";
 import { classifyIndustry } from "../social/industry-taxonomy";
@@ -424,15 +424,22 @@ export async function processImageGenerationJob(args: {
     "9:16": { width: 1080, height: 1920 },
     "16:9": { width: 1920, height: 1080 },
   };
+  // resolveOverlayElements, never treatment.textHierarchy directly -- a
+  // real, serious bug found on real generated output: the model routinely
+  // set cta.needed=true with a genuine, specific cta.text WITHOUT also
+  // duplicating a {role:"cta"} entry into textHierarchy, so the CTA was
+  // silently never rendered on 8 of 14 real passing creatives in one
+  // benchmark run despite the treatment clearly intending one.
+  const resolvedOverlayElements = overlayContext ? resolveOverlayElements(overlayContext.treatment) : [];
   const textOverlayCompositor =
-    overlayContext && overlayContext.treatment.textHierarchy.length
+    overlayContext && resolvedOverlayElements.length
       ? async ({ bytes, mimeType }: { bytes: Uint8Array; mimeType: string }) => {
           const canvas = ASPECT_CANVAS[job.aspect_ratio] ?? ASPECT_CANVAS["1:1"]!;
-          const { treatment: t, businessName, brandDNA } = overlayContext!;
+          const { businessName, brandDNA } = overlayContext!;
           const composited = await renderTextOverlay(Buffer.from(bytes), {
             width: canvas.width,
             height: canvas.height,
-            elements: [...t.textHierarchy, { role: "brandLabel" as const, text: businessName }],
+            elements: [...resolvedOverlayElements, { role: "brandLabel" as const, text: businessName }],
             typographyPersonality: brandDNA.typographyPersonality,
             textColor: brandDNA.lightDarkPreference === "light" ? "#111111" : "#FFFFFF",
             scrimColor: "#000000",

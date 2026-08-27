@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { validateCreativeTreatment, buildCreativeTreatmentPrompt, type CreativeTreatment } from "../creative-treatment.ts";
+import { validateCreativeTreatment, buildCreativeTreatmentPrompt, resolveOverlayElements, type CreativeTreatment } from "../creative-treatment.ts";
 import { RESTAURANT_FIXTURE } from "./fixtures/business-fixtures.ts";
 import { buildCreativeBrief } from "../creative-brief.ts";
 import { deriveBrandVisualDNA } from "../brand-visual-dna.ts";
@@ -112,6 +112,68 @@ test("buildCreativeTreatmentPrompt grounds the prompt in real verified facts and
   assert.ok(combined.includes("14 Princess Street"));
   assert.ok(combined.toLowerCase().includes("never invent a business fact"));
   assert.ok(combined.includes("JSON"));
+});
+
+test("a treatment whose textHierarchy contains AI-instruction leakage is rejected (Finished Premium Marketing Creative brief Section 2/21)", () => {
+  const bad = { ...GOOD_TREATMENT, textHierarchy: [{ role: "headline", text: "Add text here" }] };
+  const issues = validateCreativeTreatment(bad, { concept: "training tip" });
+  assert.ok(issues.some((i) => i.field === "textHierarchy" && i.issue.includes("Add text here")));
+});
+
+test("a treatment whose CTA text contains AI-instruction leakage is rejected", () => {
+  const bad = { ...GOOD_TREATMENT, cta: { needed: true, text: "CTA here", rationale: "x" } };
+  const issues = validateCreativeTreatment(bad, { concept: "training tip" });
+  assert.ok(issues.some((i) => i.field === "cta" && i.issue.includes("CTA here")));
+});
+
+test("a treatment whose concept field itself leaks instruction language is rejected", () => {
+  const bad = { ...GOOD_TREATMENT, concept: "Create for Instagram: a gym promo post" };
+  const issues = validateCreativeTreatment(bad, { concept: "training tip" });
+  assert.ok(issues.some((i) => i.field === "concept" && i.issue.includes("leakage")));
+});
+
+test("resolveOverlayElements folds a needed CTA into the on-image elements when the model didn't duplicate it into textHierarchy (real bug: 8/14 real passing creatives silently rendered with no CTA at all)", () => {
+  const treatment: CreativeTreatment = {
+    ...GOOD_TREATMENT,
+    textHierarchy: [{ role: "headline", text: "Ready for your transformation?" }, { role: "supportingLine", text: "Bridal styling packages." }],
+    cta: { needed: true, text: "Tap to book your bridal consultation.", rationale: "Booking objective" },
+  };
+  const resolved = resolveOverlayElements(treatment);
+  assert.equal(resolved.length, 3);
+  const ctaElement = resolved.find((e) => e.role === "cta");
+  assert.ok(ctaElement, "expected a cta element to be present after resolution");
+  assert.equal(ctaElement!.text, "Tap to book your bridal consultation.");
+});
+
+test("resolveOverlayElements does not duplicate the CTA when the model already included one in textHierarchy", () => {
+  const treatment: CreativeTreatment = {
+    ...GOOD_TREATMENT,
+    textHierarchy: [{ role: "headline", text: "H" }, { role: "cta", text: "Already here" }],
+    cta: { needed: true, text: "Already here", rationale: "x" },
+  };
+  const resolved = resolveOverlayElements(treatment);
+  assert.equal(resolved.filter((e) => e.role === "cta").length, 1);
+});
+
+test("resolveOverlayElements adds nothing when cta.needed is false", () => {
+  const treatment: CreativeTreatment = {
+    ...GOOD_TREATMENT,
+    textHierarchy: [{ role: "headline", text: "H" }],
+    cta: { needed: false, text: null, rationale: "photo carries the idea" },
+  };
+  const resolved = resolveOverlayElements(treatment);
+  assert.equal(resolved.length, 1);
+  assert.equal(resolved.some((e) => e.role === "cta"), false);
+});
+
+test("resolveOverlayElements adds nothing when cta.needed is true but cta.text is empty (nothing real to render)", () => {
+  const treatment: CreativeTreatment = {
+    ...GOOD_TREATMENT,
+    textHierarchy: [{ role: "headline", text: "H" }],
+    cta: { needed: true, text: "", rationale: "x" },
+  };
+  const resolved = resolveOverlayElements(treatment);
+  assert.equal(resolved.length, 1);
 });
 
 console.log("creative-treatment.test.ts: ALL PASS");

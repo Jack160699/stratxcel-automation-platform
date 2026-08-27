@@ -59,6 +59,29 @@ function testReturnsTheOffendingSubstring() {
   console.log("placeholder-detection.test.ts: returns the exact offending match for diagnosability — PASS");
 }
 
+function testAiInstructionLeakageRejected() {
+  // Finished Premium Marketing Creative brief Section 2: implementation
+  // instructions must never survive into customer-facing output --
+  // including on-image text fields, which get rendered as real pixels.
+  const cases = [
+    "Create for Instagram: bridal styling special",
+    "Instagram post about our new menu",
+    "Social media post celebrating our anniversary",
+    "Social media graphic for the weekend sale",
+    "AI generated image of a chef plating food",
+    "Add text here about the offer",
+    "Logo here",
+    "CTA here: book now",
+    "Insert website below",
+    "Contact details available on request",
+    "Your business name goes here",
+  ];
+  for (const text of cases) {
+    assert.ok(findPlaceholderOrFiller(text), `expected instruction-leakage to be caught in: "${text}"`);
+  }
+  console.log("placeholder-detection.test.ts: AI-instruction/designer-instruction leakage rejected — PASS");
+}
+
 function run() {
   testCleanBusinessSpecificCaptionPasses();
   testBracketScaffoldingRejected();
@@ -66,6 +89,7 @@ function run() {
   testBriefsNamedGenericPhrasesRejected();
   testCaseInsensitiveAndSubstringMatch();
   testReturnsTheOffendingSubstring();
+  testAiInstructionLeakageRejected();
   console.log("placeholder-detection.test.ts: ALL PASS (Section 8 placeholder/template rejection)");
 }
 

@@ -17,7 +17,7 @@
  * already produced.
  */
 
-import type { CreativeTreatment } from "./creative-treatment.ts";
+import { resolveOverlayElements, type CreativeTreatment } from "./creative-treatment.ts";
 import type { BrandVisualDNA } from "./brand-visual-dna.ts";
 
 export function buildVisualDirectorBrief(input: {
@@ -26,9 +26,15 @@ export function buildVisualDirectorBrief(input: {
   brandDNA: BrandVisualDNA;
 }): string {
   const { treatment: t, businessName, brandDNA } = input;
+  // resolveOverlayElements, not t.textHierarchy directly -- a CTA the
+  // treatment intends (cta.needed=true) but didn't duplicate into
+  // textHierarchy still needs its own reserved negative space in the base
+  // photo, or it will visually collide with whatever the model composed
+  // there once the overlay actually renders it.
+  const overlayElements = resolveOverlayElements(t);
 
-  const textSafeNote = t.textHierarchy.length
-    ? `Leave clean, uncluttered negative space for ${t.textHierarchy.length} overlay text element(s) (${t.textHierarchy.map((e) => e.role).join(", ")}) -- do not compose critical visual detail where on-image text would need to sit.`
+  const textSafeNote = overlayElements.length
+    ? `Leave clean, uncluttered negative space for ${overlayElements.length} overlay text element(s) (${overlayElements.map((e) => e.role).join(", ")}) -- do not compose critical visual detail where on-image text would need to sit.`
     : `No on-image text is planned for this creative -- the photograph itself must carry the entire idea. Compose for maximum visual impact with zero reliance on overlay text.`;
 
   const lines = [
