@@ -56,6 +56,8 @@ export async function POST(request: NextRequest) {
     tier?: "fast" | "standard" | "premium";
     tenantId?: string;
     forceProvider?: "openai";
+    quality?: "low" | "medium" | "high";
+    size?: "1024x1024" | "1024x1536" | "1536x1024";
   };
   if (!body?.prompt) return NextResponse.json({ error: "missing prompt" }, { status: 400 });
 
@@ -73,6 +75,8 @@ export async function POST(request: NextRequest) {
     aspectRatio: body.aspectRatio ?? "4:5",
     tier: body.tier ?? "standard",
     candidateCount: 1,
+    quality: body.quality,
+    size: body.size,
   });
   return NextResponse.json(outcome);
 }
