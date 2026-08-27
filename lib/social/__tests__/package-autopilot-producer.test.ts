@@ -102,6 +102,19 @@ function run() {
   const media = read("lib", "social", "package-media.ts");
   assert.ok(media.includes("avoidAssetIds"), "selectPackageMediaAsset must support avoiding recently-used assets, not always return the single newest one");
 
+  // --- Fact/Claim Safety Layer (Section 4/5): generation must be grounded in
+  // the tenant's REAL verified business facts (Google Business Profile +
+  // audit-intake Brand Brain), never invented, and never a source of new
+  // failures if that enrichment is unavailable. See
+  // package-business-facts.test.ts for full behavioral coverage of the pure
+  // fact-building function itself.
+  assert.ok(autopilot.includes("buildVerifiedBusinessInformation"), "preparation must ground generation in verified business facts, not brand voice alone");
+  assert.ok(autopilot.includes("getCurrentBrandBrain") && autopilot.includes("createSocialAuditConnectorInsightsProvider"), "verified facts must come from the real Brand Brain and the real (live) Google Business Profile connector, never invented inline");
+  assert.ok(autopilot.includes("Promise.allSettled"), "business-fact enrichment must be best-effort — its failure must never block content preparation, which worked without it");
+  assert.ok(autopilot.includes("businessInformation }"), "the built facts must actually reach provider.complete(), not just be computed and discarded");
+  const businessFacts = read("lib", "social", "package-business-facts.ts");
+  assert.ok(businessFacts.includes("never invent") || businessFacts.includes("never defaulted"), "the fact-safety module must document the omit-don't-invent rule it enforces");
+
   // --- Late-item policy: never a silent instant burst of overdue items (Section 20/99). ---
   assert.ok(autopilot.includes("applyLateItemPolicy") && autopilot.includes("RESCHEDULE_NEXT_SLOT"));
   assert.ok(!autopilot.includes("for (const row of dueRows ?? [])") || autopilot.includes("lateMs > 5"), "a due item significantly overdue must be policy-checked, not published blindly");

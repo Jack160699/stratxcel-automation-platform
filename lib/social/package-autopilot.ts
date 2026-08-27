@@ -16,6 +16,9 @@ import { validatePackageComposition, compositionMediaTypeForUnit, resolvePurchas
 import { selectPackageMediaAsset } from "./package-media.ts";
 import { recordAudit } from "./repositories/system.ts";
 import { hasCapability, isPlanTier } from "@stratxcel/payments-and-wallet";
+import { getCurrentBrandBrain } from "@stratxcel/brand-brain";
+import { createSocialAuditConnectorInsightsProvider } from "./audit-connector-insights.ts";
+import { buildVerifiedBusinessInformation } from "./package-business-facts.ts";
 
 export {
   assignBrandProfileToTenant,
@@ -673,6 +676,28 @@ export async function prepareNearTermPackageItems(service: ServiceClient, author
   let prepared = 0;
   let blocked = 0;
 
+  // Fact/Claim Safety Layer (Section 4/5 of the build brief): ground
+  // generation in the tenant's REAL verified business facts instead of
+  // letting the model write only from brand voice/products. Fetched once
+  // per authorization per run (not per item -- these are constant across
+  // every item this run processes, and gatherGoogleBusiness makes a real
+  // live call to the Google Business Profile API, which must not be
+  // repeated per queue item). Best-effort and strictly additive: any
+  // failure here must never block content preparation, which already
+  // worked without this. buildVerifiedBusinessInformation omits anything
+  // not actually present -- it never invents a fact.
+  let businessInformation: string[] = [];
+  if ((dueItems ?? []).length > 0) {
+    const [brandBrainResult, connectorInsightsResult] = await Promise.allSettled([
+      getCurrentBrandBrain(service as Parameters<typeof getCurrentBrandBrain>[0], authorization.tenant_id),
+      createSocialAuditConnectorInsightsProvider(service as Parameters<typeof createSocialAuditConnectorInsightsProvider>[0]).gather(authorization.tenant_id),
+    ]);
+    const brandBrain = brandBrainResult.status === "fulfilled" ? brandBrainResult.value : null;
+    const insights = connectorInsightsResult.status === "fulfilled" ? connectorInsightsResult.value : null;
+    const googleBusiness = insights?.googleBusiness.state === "available" ? insights.googleBusiness.data : null;
+    businessInformation = buildVerifiedBusinessInformation({ googleBusiness, brandBrain: brandBrain?.content ?? null });
+  }
+
   for (const raw of dueItems ?? []) {
     const item = raw as PackageQueueItemRow;
     try {
@@ -704,6 +729,16 @@ export async function prepareNearTermPackageItems(service: ServiceClient, author
         recentPillarNames.length ? `Recently used pillars (prefer a different one for variety): ${recentPillarNames.join(", ")}.` : "",
         `Respond with ONLY strict JSON: {"contentPillar": string (must match the list exactly), "objective": one of ${CONTENT_OBJECTIVE_VALUES.join("|")}, "title": string, "masterIdea": string, "caption": string, "hashtags": string[]}.`,
         "The caption must be genuine, specific, platform-appropriate, and contain no placeholder text.",
+        businessInformation.length
+          ? "Ground the post in the verified business information provided below where it's naturally relevant -- do not force every fact into one caption."
+          : "",
+        // Fact/Claim Safety Layer (Section 5): businessInformation below is the
+        // ONLY source of specific claims this caption may make. No address,
+        // phone number, discount, rating, review count, opening hours, or
+        // guarantee exists anywhere in this prompt unless it appears there --
+        // never invent one, and never state a specific number/fact that isn't
+        // explicitly given.
+        "Never state a specific address, phone number, discount, price, rating, review count, opening hours, or guarantee unless it is explicitly provided in the verified business information below. If none is provided, write generally instead of inventing one.",
       ].filter(Boolean).join("\n");
 
       // tenantId is REQUIRED here: the default provider (AiRuntimeSocialProvider,
@@ -721,7 +756,7 @@ export async function prepareNearTermPackageItems(service: ServiceClient, author
       const result = await provider.complete(
         [{ role: "user", content: prompt }],
         [],
-        { brandInstructions: selectGeminiBrandInstructions(brandProfile), tenantId: authorization.tenant_id }
+        { brandInstructions: selectGeminiBrandInstructions(brandProfile), tenantId: authorization.tenant_id, businessInformation }
       );
       const generated = parseGeneratedPost(result.text);
       if (!generated) throw new Error("Generated content failed the quality gate");
