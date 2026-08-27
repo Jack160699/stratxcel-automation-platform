@@ -11,6 +11,33 @@ import type {
 } from "../types.ts";
 import { parseGeminiGroundingMetadata } from "./gemini-grounding.ts";
 
+/**
+ * Found live running the Social Autopilot quality campaign: a bare
+ * "Gemini HTTP 429" gave no way to tell a real-time RATE_LIMIT burst
+ * (worth retrying in seconds) apart from a per-day quota exhaustion
+ * (quotaId "GenerateRequestsPerDayPerProjectPerModel-FreeTier" -- retrying
+ * with any short backoff cannot possibly succeed until the day rolls
+ * over). Both throw the identical AIErrorCategory ("RATE_LIMIT") today, so
+ * this is the only signal available to actually distinguish them. Never
+ * throws itself -- a malformed/non-JSON error body must not hide the
+ * original HTTP status.
+ */
+export function extractGeminiErrorDetail(bodyText: string): string | null {
+  try {
+    const parsed = JSON.parse(bodyText) as { error?: { message?: string; status?: string; details?: Array<{ violations?: Array<{ quotaId?: string }> }> } };
+    const quotaId = parsed.error?.details
+      ?.flatMap((d) => d.violations ?? [])
+      .map((v) => v.quotaId)
+      .find((id): id is string => Boolean(id));
+    const message = typeof parsed.error?.message === "string" ? parsed.error.message : null;
+    if (!message && !quotaId) return null;
+    const summary = [quotaId ? `quotaId=${quotaId}` : null, message].filter(Boolean).join(" -- ");
+    return summary.slice(0, 300);
+  } catch {
+    return bodyText ? bodyText.slice(0, 200) : null;
+  }
+}
+
 export interface GeminiAdapterOptions {
   apiKey?: string;
   fetchImpl?: FetchLike;
@@ -160,7 +187,9 @@ export class GeminiTextProvider implements AITextProviderAdapter {
       });
 
       if (!response.ok) {
-        throw new AIProviderError(classifyHttpStatus(response.status), `Gemini HTTP ${response.status}`, response.status);
+        const bodyText = await response.text().catch(() => "");
+        const detail = extractGeminiErrorDetail(bodyText);
+        throw new AIProviderError(classifyHttpStatus(response.status), `Gemini HTTP ${response.status}${detail ? `: ${detail}` : ""}`, response.status);
       }
 
       const json = (await response.json()) as {
