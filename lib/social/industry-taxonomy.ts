@@ -88,7 +88,13 @@ const INDUSTRY_PROFILES: IndustryProfile[] = [
     category: "local_service",
     keywords: ["repair", "plumbing", "electrician", "cleaning", "consultant", "agency", "studio", "law firm", "accounting", "tuition", "coaching", "service"],
     concepts: ["problem/solution", "before/after result", "expertise demonstration", "process transparency", "client outcome", "seasonal reminder"],
-    relevanceVocabulary: ["service", "job", "appointment", "expert", "quote", "problem", "solution", "reliable", "professional", "client"],
+    // Found against REAL generated output (Premium Creative Intelligence
+    // campaign): a genuine, specific plumbing caption ("a sudden leak...
+    // that leaking pipe joint... a technician arrives fast... same-day
+    // emergency callouts") was hard-failed as LOW_INDUSTRY_RELEVANCE --
+    // none of its very real, specific, on-topic vocabulary matched this
+    // list, which was generic enough to miss it entirely.
+    relevanceVocabulary: ["service", "job", "appointment", "expert", "quote", "problem", "solution", "reliable", "professional", "client", "leak", "pipe", "repair", "technician", "plumber", "electrician", "fix", "callout", "emergency"],
     visualStyle: "authentic, on-the-job photography that shows real work being done, not a staged handshake stock photo",
     ctaStyle: "an invitation to get a quote, book a service, or get in touch",
   },

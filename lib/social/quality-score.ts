@@ -170,6 +170,17 @@ const CTA_ACTION_VERBS = [
   // marketer would recognize -- the verb list was missing this common
   // phrasing entirely.
   "step into", "come see", "head to", "head over", "stop in", "swing by",
+  // Found against REAL generated output (Premium Creative Intelligence
+  // campaign): "Drop in for a session at our Koramangala box" was hard-
+  // failed as WEAK_CTA despite being a genuine, specific, actionable
+  // gym-visit CTA -- "drop by"/"walk in" were already covered but "drop
+  // in" (a distinct, extremely common real idiom) was not.
+  "drop in",
+  // Found against REAL generated output (same campaign): "Explore the new
+  // arrivals at Connaught Place or online" -- a genuine, specific retail
+  // browse/shop CTA -- was hard-failed as WEAK_CTA. "Explore" is a common,
+  // real retail/real-estate CTA verb the list was missing entirely.
+  "explore",
 ];
 
 function hasCtaVerb(text: string): boolean {
