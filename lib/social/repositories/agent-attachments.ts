@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import type { OwnerContext } from "../db-context";
+import type { OwnerContext } from "../db-context.ts";
 import { type AgentActorContext, isTenantAgentContext } from "../agent-tenant-types.ts";
 import { validateMediaMetadata } from "../media-validation.ts";
 

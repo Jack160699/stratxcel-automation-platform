@@ -1,5 +1,5 @@
 import { createSupabaseServiceClient } from "../../supabase/service.ts";
-import type { OwnerContext } from "../db-context";
+import type { OwnerContext } from "../db-context.ts";
 import { type AgentReadContext } from "../agent-tenant-types.ts";
 
 type ServiceClient = ReturnType<typeof createSupabaseServiceClient>;

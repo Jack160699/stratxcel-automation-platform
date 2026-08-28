@@ -1,4 +1,4 @@
-import type { MetricsRow } from "./repositories/analytics";
+import type { MetricsRow } from "./repositories/analytics.ts";
 
 export interface LocalMetricsSummary {
   totalReach: number;

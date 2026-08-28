@@ -11,6 +11,7 @@ import { requirePlatform, CONTENT_OBJECTIVE_VALUES, type ContentObjective } from
 import { computePackageDistribution, datetimeLocalValueToUtcIso } from "./package-distribution.ts";
 import { notifyPackageEvent } from "./package-whatsapp-notify.ts";
 import type { OwnerContext } from "./db-context.ts";
+import type { AgentTenantContext } from "./agent-tenant-types.ts";
 import { validatePackageComposition, compositionMediaTypeForUnit, resolvePurchasedPackageComposition, type PackageComposition } from "./package-composition.ts";
 import { selectPackageMediaAsset } from "./package-media.ts";
 import { recordAudit } from "./repositories/system.ts";
@@ -993,7 +994,30 @@ export async function prepareNearTermPackageItems(service: ServiceClient, author
       const qualityScore = loopResult.scoreResult;
 
       const mediaAsset = await selectPackageMediaAsset(service, { tenantId: authorization.tenant_id, ownerId: brandProfile.owner_id, mediaType, avoidAssetIds: recentAssetIds });
-      const brandCtx: OwnerContext = { ...ownerCtx, ownerId: brandProfile.owner_id };
+      // Real gap found live (Fix Main Content UI / Force Publish mission):
+      // content_master/content_variants carry a DB-enforced XOR constraint
+      // -- (owner_id IS NOT NULL) <> (tenant_id IS NOT NULL), see
+      // 20260818230000_social_copilot_tenant_scoping.sql -- and this used
+      // to build an OwnerContext (writes owner_id only). owner_id-scoped
+      // rows are only ever RLS-visible to a real StratXcel staff member
+      // (content_master_admin_owner requires stratxcel_admins membership);
+      // a real customer viewing their OWN tenant's package-autopilot
+      // content can NEVER see it via content_master_tenant_member, which
+      // requires tenant_id IS NOT NULL. Confirmed live: 27 of 28 real
+      // content_master rows had owner_id set and tenant_id null, and a
+      // real customer session (magic-link login, not service role) got
+      // "No content found" on /app/content -- not an image problem, the
+      // rows were completely invisible. Fixed at the source: build a real
+      // AgentTenantContext (mode: "tenant") instead, so every future
+      // package-autopilot post is tenant-scoped and visible to the tenant
+      // that actually paid for it.
+      const brandCtx: AgentTenantContext = {
+        ok: true,
+        mode: "tenant",
+        tenantId: authorization.tenant_id,
+        actorUserId: brandProfile.owner_id,
+        supabase: service as AgentTenantContext["supabase"],
+      };
       const { data: sibling } = item.content_unit_key ? await service.from("social_autopilot_queue_items").select("content_master_id").eq("authorization_id", authorization.id).eq("content_unit_key", item.content_unit_key).not("content_master_id", "is", null).limit(1).maybeSingle() : { data: null };
       const masterId = sibling?.content_master_id ?? await createContentMaster(brandCtx, {
         title: generated.title,

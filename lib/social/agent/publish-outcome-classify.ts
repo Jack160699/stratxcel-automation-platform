@@ -9,7 +9,7 @@
 // turn loop (orchestrator.ts's runAgentTurn) and the human-approval path
 // (orchestrator.ts's approveAgentAction) — see Section 11/13 of the
 // workspace/execution-integrity brief: they must never diverge on wording.
-import type { PublishingJobRow } from "../repositories/publishing";
+import type { PublishingJobRow } from "../repositories/publishing.ts";
 
 /**
  * Tools whose success/failure this turn determines whether a "publish"

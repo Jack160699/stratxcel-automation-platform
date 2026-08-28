@@ -9,8 +9,8 @@ import {
   type SocialScheduleHostResult,
 } from "@stratxcel/workforce-core";
 import { createSupabaseServiceClient } from "../../supabase/service.ts";
-import { scheduleJob } from "../repositories/publishing";
-import { runPublishNow } from "../agent/publish-outcome";
+import { scheduleJob } from "../repositories/publishing.ts";
+import { runPublishNow } from "../agent/publish-outcome.ts";
 import { buildScheduleIntent } from "./schedule.ts";
 import { assertAccountInTenant, assertSameTenant } from "./tenant-scope.ts";
 import { decideManualPublishGate } from "./authorization.ts";

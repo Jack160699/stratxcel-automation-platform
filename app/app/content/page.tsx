@@ -246,7 +246,7 @@ async function loadTextCaptions(supabase: any, tenantId: string) {
 
     const { data: variants } = await supabase
       .from("content_variants")
-      .select("id, master_id, platform, format, caption, hashtags, status, created_at")
+      .select("id, master_id, platform, format, caption, hashtags, status, created_at, published_at")
       .in("master_id", masterIds)
       .order("created_at", { ascending: false })
       .limit(15);
@@ -260,6 +260,7 @@ async function loadTextCaptions(supabase: any, tenantId: string) {
       hashtags: (v.hashtags as string[] | null) ?? [],
       status: v.status as string,
       createdAt: v.created_at,
+      publishedAt: v.published_at as string | null,
       imageUrl: thumbnails.get(v.id) ?? null,
     }));
   } catch {
@@ -339,16 +340,29 @@ export default async function CustomerContentPage() {
   // image job with a missing thumbnail. Kept as its own distinct item type
   // ("caption") so the Captions tab filters real data instead of staying
   // permanently empty.
+  //
+  // Real bug found live (Fix Main Content UI mission): this used to
+  // collapse content_variants.status down to just READY/DRAFT, discarding
+  // any other real value -- so a genuinely PUBLISHED post (confirmed live:
+  // markVariantStatus sets exactly "PUBLISHED" on real publish, and
+  // settle_social_package_post does the same for Package Autopilot posts)
+  // could never show under the Published tab, which filters on
+  // item.status === "PUBLISHED" exactly. content_variants.status's real
+  // production value set is READY | SCHEDULED | PUBLISHED -- all three are
+  // already valid ContentItem["status"] members, so this now passes the
+  // real value through instead of guessing.
   for (const draft of captions) {
+    const realStatus = (draft.status === "PUBLISHED" || draft.status === "SCHEDULED" ? draft.status : draft.status === "READY" ? "READY" : "DRAFT") as ContentItem["status"];
     items.push({
       id: draft.id,
       title: draft.title,
       type: "caption",
-      category: draft.status === "READY" ? "saved" : "draft",
+      category: realStatus === "PUBLISHED" ? "published" : realStatus === "READY" ? "saved" : "draft",
       imageUrl: draft.imageUrl ?? undefined,
       aspectRatio: "1:1",
       createdAt: draft.createdAt,
-      status: (draft.status === "READY" ? "READY" : "DRAFT") as ContentItem["status"],
+      publishedAt: draft.publishedAt ?? undefined,
+      status: realStatus,
       captionText: draft.captionText ?? undefined,
       platform: (draft.platform as ContentItem["platform"]) ?? undefined,
       deleteKind: "content_variant",

@@ -1,4 +1,4 @@
-import type { ToolCallRequest } from "./provider";
+import type { ToolCallRequest } from "./provider.ts";
 
 export const INTERNAL_DEPENDENTS_KEY = "__stratxcelDependents";
 

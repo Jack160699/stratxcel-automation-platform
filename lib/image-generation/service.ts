@@ -9,21 +9,21 @@ import {
   type ImageGenerationOutcome,
 } from "@stratxcel/ai-runtime";
 import { hasEntitlement, recordMetricUsage, type ServiceClient } from "@stratxcel/payments-and-wallet";
-import { buildProviderReadyImagePrompt, createAdvisoryImageCritique, snapshotImageBrandContext } from "./prompt";
+import { buildProviderReadyImagePrompt, createAdvisoryImageCritique, snapshotImageBrandContext } from "./prompt.ts";
 import {
   IMAGE_ASPECT_RATIOS,
   type CreateImageJobInput,
   type ImageGenerationCandidateRow,
   type ImageGenerationJobRow,
   type ImageJobDetail,
-} from "./types";
-import { validateCreativeTreatment, forceArchetypeOntoTreatment, resolveOverlayElements, type CreativeTreatment } from "../social/creative-treatment";
-import { buildVisualDirectorBrief } from "../social/visual-director-prompt";
-import { deriveBrandVisualDNA } from "../social/brand-visual-dna";
-import { classifyIndustry } from "../social/industry-taxonomy";
-import { renderTextOverlay, type LogoVariantBundle } from "../social/text-overlay-render";
-import { resolveManualRouting } from "../social/archetype-routing";
-import { resolveLogoVariantBundle, resolveLegacyLogoImage } from "../brand/logo-variant-resolver";
+} from "./types.ts";
+import { validateCreativeTreatment, forceArchetypeOntoTreatment, resolveOverlayElements, type CreativeTreatment } from "../social/creative-treatment.ts";
+import { buildVisualDirectorBrief } from "../social/visual-director-prompt.ts";
+import { deriveBrandVisualDNA } from "../social/brand-visual-dna.ts";
+import { classifyIndustry } from "../social/industry-taxonomy.ts";
+import { renderTextOverlay, type LogoVariantBundle } from "../social/text-overlay-render.ts";
+import { resolveManualRouting } from "../social/archetype-routing.ts";
+import { resolveLogoVariantBundle, resolveLegacyLogoImage } from "../brand/logo-variant-resolver.ts";
 
 const TERMINAL = new Set(["READY", "FAILED"]);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;

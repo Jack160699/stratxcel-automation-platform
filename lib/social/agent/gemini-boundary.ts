@@ -1,4 +1,4 @@
-import type { BrandProfileRow } from "../repositories/brand";
+import type { BrandProfileRow } from "../repositories/brand.ts";
 
 /** Default Social/Owner-Brain Gemini model — aligned with AI Runtime GOOGLE_CHEAP catalog. */
 export const GEMINI_MODEL = process.env.AI_GOOGLE_CHEAP_MODEL?.trim() || "gemini-3.5-flash-lite";

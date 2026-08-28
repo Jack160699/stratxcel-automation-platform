@@ -1,7 +1,7 @@
-import { createSupabaseServiceClient } from "../supabase/service";
-import { listAccounts } from "./repositories/accounts";
-import { recordHealthChecks } from "./repositories/system";
-import type { OwnerContext } from "./db-context";
+import { createSupabaseServiceClient } from "../supabase/service.ts";
+import { listAccounts } from "./repositories/accounts.ts";
+import { recordHealthChecks } from "./repositories/system.ts";
+import type { OwnerContext } from "./db-context.ts";
 
 export type HealthStatus = "OPERATIONAL" | "DEGRADED" | "PAUSED" | "FAILED" | "NOT_CONFIGURED";
 

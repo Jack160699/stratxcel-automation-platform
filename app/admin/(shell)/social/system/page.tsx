@@ -2,7 +2,7 @@ import { requireOwnerContext } from "@/lib/social/db-context";
 import { runHealthChecks, type HealthStatus } from "@/lib/social/health";
 import { listAuditEvents } from "@/lib/social/repositories/system";
 import { listJobs } from "@/lib/social/repositories/publishing";
-import { runWorkerNowAction, runTenantContentBackfillAction } from "../actions";
+import { runWorkerNowAction, runTenantContentBackfillAction, forceRegeneratePackageItemImageAction, forcePublishQueueItemNowAction } from "../actions";
 
 // Debug Silent Automation Failure mission: real root cause of "clicked
 // Backfill/Run worker now, nothing happened" -- per Next.js's own docs
@@ -79,6 +79,32 @@ export default async function SystemPage() {
             <button className="saut-btn saut-btn-secondary">Run worker now</button>
           </form>
         </div>
+      </div>
+
+      <div className="saut-card flex flex-col gap-3 p-3 text-sm">
+        <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--saut-text-subtle)" }}>
+          Target one queue item
+        </p>
+        <form action={forceRegeneratePackageItemImageAction} className="flex flex-wrap items-center gap-2">
+          <input
+            name="queueItemId"
+            placeholder="social_autopilot_queue_items.id"
+            className="h-9 min-w-[280px] flex-1 rounded-sx-sm border border-sx-border bg-sx-surface-1 px-2.5 font-mono text-xs"
+          />
+          <button className="saut-btn saut-btn-secondary" title="Calls the real image-generation provider for this item and attaches a genuinely new asset — never falls back to an existing one. Fails closed on any generation error.">
+            Force regenerate image (net-new)
+          </button>
+        </form>
+        <form action={forcePublishQueueItemNowAction} className="flex flex-wrap items-center gap-2">
+          <input
+            name="queueItemId"
+            placeholder="social_autopilot_queue_items.id"
+            className="h-9 min-w-[280px] flex-1 rounded-sx-sm border border-sx-border bg-sx-surface-1 px-2.5 font-mono text-xs"
+          />
+          <button className="saut-btn saut-btn-secondary" title="Pulls this exact item's schedule to now (only if PREPARED/SCHEDULED) then runs the real canonical publish batch — same path as the cron.">
+            Force publish this item now
+          </button>
+        </form>
       </div>
 
       {(["core", "workers", "social", "webhooks", "ai", "media"] as const).map((group) => (

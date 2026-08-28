@@ -1,4 +1,4 @@
-import type { BrandProfileRow } from "../repositories/brand";
+import type { BrandProfileRow } from "../repositories/brand.ts";
 
 export const BRAND_SECTIONS = ["summary", "identity", "products", "audiences", "pillars", "sources", "rules", "all"] as const;
 export type BrandSection = (typeof BRAND_SECTIONS)[number];

@@ -1,4 +1,4 @@
-import { getBrandProfile } from "../repositories/brand";
+import { getBrandProfile } from "../repositories/brand.ts";
 import { type AgentActorContext } from "../agent-tenant-types.ts";
 
 function canonicalLabel(value: unknown, labels: string[], field: string): unknown {

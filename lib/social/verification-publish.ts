@@ -1,13 +1,13 @@
-import { createSupabaseServiceClient } from "../supabase/service";
-import type { OwnerContext } from "./db-context";
-import { getAutomationSettings } from "./repositories/automation";
+import { createSupabaseServiceClient } from "../supabase/service.ts";
+import type { OwnerContext } from "./db-context.ts";
+import { getAutomationSettings } from "./repositories/automation.ts";
 import {
   attachMediaToVariant,
   getMediaAssetsByIds,
   updateContentVariant,
-} from "./repositories/media-assets";
-import { getJobService, scheduleJob } from "./repositories/publishing";
-import { runAuthorizedVerificationJob } from "./worker";
+} from "./repositories/media-assets.ts";
+import { getJobService, scheduleJob } from "./repositories/publishing.ts";
+import { runAuthorizedVerificationJob } from "./worker.ts";
 
 export async function executePrivateYoutubeVerification(
   ctx: OwnerContext,

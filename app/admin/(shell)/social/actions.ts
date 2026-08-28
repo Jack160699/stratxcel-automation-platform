@@ -13,6 +13,7 @@ import { recordAudit } from "@/lib/social/repositories/system";
 import { createSupabaseServiceClient } from "@/lib/supabase/service";
 import { runWorkerBatch } from "@/lib/social/worker";
 import { planPackagePeriod, prepareNearTermPackageItems, packageKillSwitchActive, runPackageAutopilotBatch } from "@/lib/social/package-autopilot";
+import { createImageGenerationJob, processImageGenerationJob, selectImageGenerationCandidate } from "@/lib/image-generation/service";
 import { normalizeYouTubePrivacyStatus } from "@/lib/social/providers/youtube-visibility";
 import { attachMediaToMaster, attachMediaToVariant } from "@/lib/social/repositories/media-assets";
 import {
@@ -224,6 +225,179 @@ export async function runWorkerNowAction() {
     });
   } catch (err) {
     console.error("manual worker trigger failed:", err);
+  }
+  revalidatePath("/admin/social", "layout");
+}
+
+/**
+ * Fix Main Content UI / Force Publish A Post Now / Remove Reels mission
+ * (Issue 3 -- net-new image generation): the customer-facing image-
+ * generation route (requireImageGenerationContext, app/api/platform/
+ * image-generations/route.ts) explicitly rejects staff_support access
+ * mode, and this platform's own identity resolution (app/app/layout.tsx)
+ * routes any INTERNAL_STAFF session away from /app/* entirely -- so there
+ * is genuinely no way for a staff-and-tenant-owner dual-role account to
+ * reach that route at all. This is the staff-side equivalent, gated by
+ * the same requireOwnerContext every other admin action here already
+ * uses, wired to the EXACT SAME canonical generation functions Creative
+ * Studio's route calls (createImageGenerationJob -> processImageGeneration
+ * Job -> selectImageGenerationCandidate) -- no parallel implementation.
+ *
+ * Real, hard invariant: if generation does not reach READY with at least
+ * one real candidate, this returns without ever touching
+ * social_content_variant_media -- the previously-attached (possibly
+ * recycled) asset is left exactly as it was, never silently kept as a
+ * disguised "success". Only on a real READY outcome does it attach the
+ * genuinely new asset and then remove every other asset previously linked
+ * to this variant, so the variant ends up pointing at the new generation
+ * alone, never a mix of old and new.
+ */
+export async function forceRegeneratePackageItemImageAction(formData: FormData) {
+  const ctx = await assertOwner();
+  const queueItemId = String(formData.get("queueItemId") ?? "").trim();
+  if (!queueItemId) return;
+  const service = createSupabaseServiceClient();
+  try {
+    const { data: item } = await service
+      .from("social_autopilot_queue_items")
+      .select("id, tenant_id, owner_id, variant_id")
+      .eq("id", queueItemId)
+      .maybeSingle();
+    if (!item || !item.variant_id) throw new Error("Queue item not found, or has no prepared content yet");
+
+    const { data: variant } = await service
+      .from("content_variants")
+      .select("creative_spec")
+      .eq("id", item.variant_id)
+      .maybeSingle();
+    const treatment = ((variant?.creative_spec as Record<string, unknown> | null)?.treatment ?? null) as Record<string, unknown> | null;
+    const briefFromTreatment = treatment && typeof treatment.visualIdea === "string" ? treatment.visualIdea : treatment && typeof treatment.concept === "string" ? treatment.concept : null;
+    const brief = briefFromTreatment ?? "Brand social post creative, on-brand and platform-appropriate.";
+
+    const job = await createImageGenerationJob({
+      authorizationClient: service,
+      writeClient: service,
+      input: {
+        tenantId: item.tenant_id,
+        actorUserId: item.owner_id,
+        brief,
+        treatment,
+        aspectRatio: "1:1",
+        candidateCount: 2,
+        sourceContext: "social_autopilot",
+        sourceId: item.id,
+        idempotencyKey: `admin-force-regen:${item.id}:${Date.now()}`,
+        intendedUse: "social_post",
+      },
+    });
+
+    const processed = await processImageGenerationJob({ writeClient: service, jobId: job.id });
+    if (processed.job.status !== "READY" || !processed.candidates.length) {
+      await recordAudit({
+        actorType: "USER",
+        actorId: ctx.ownerId,
+        action: "social.package.force_regenerate_failed",
+        targetType: "social_autopilot_queue_item",
+        targetId: item.id,
+        summary: `Real image generation failed -- no fallback to an existing asset was used: ${processed.job.safe_error ?? processed.job.error_code ?? "no candidates returned"}`,
+        meta: { jobId: job.id, errorCode: processed.job.error_code },
+      });
+      revalidatePath("/admin/social", "layout");
+      return;
+    }
+
+    const best = processed.candidates.find((c) => c.status !== "REJECTED") ?? processed.candidates[0]!;
+    const { data: priorLinks } = await service.from("social_content_variant_media").select("asset_id").eq("variant_id", item.variant_id);
+
+    await selectImageGenerationCandidate({
+      writeClient: service,
+      tenantId: item.tenant_id,
+      jobId: job.id,
+      candidateId: best.id,
+      actorUserId: item.owner_id,
+      attachToVariantId: item.variant_id,
+    });
+
+    for (const prior of priorLinks ?? []) {
+      if (prior.asset_id !== best.asset_id) {
+        await service.from("social_content_variant_media").delete().eq("variant_id", item.variant_id).eq("asset_id", prior.asset_id);
+      }
+    }
+
+    await recordAudit({
+      actorType: "USER",
+      actorId: ctx.ownerId,
+      action: "social.package.force_regenerated",
+      targetType: "social_autopilot_queue_item",
+      targetId: item.id,
+      summary: `Real net-new image generated and attached (job ${job.id}, asset ${best.asset_id}, provider ${best.provider}/${best.model})`,
+      meta: { jobId: job.id, assetId: best.asset_id, provider: best.provider, model: best.model, replacedAssetIds: (priorLinks ?? []).map((p) => p.asset_id) },
+    });
+  } catch (err) {
+    await recordAudit({
+      actorType: "USER",
+      actorId: ctx.ownerId,
+      action: "social.package.force_regenerate_failed",
+      targetType: "social_autopilot_queue_item",
+      targetId: queueItemId,
+      summary: err instanceof Error ? err.message : "Unknown error during forced regeneration",
+    });
+  }
+  revalidatePath("/admin/social", "layout");
+}
+
+/**
+ * Force Publish A Post Now mission (Issue 4 / Worker Execution
+ * Requirements): "run worker for queueItemId=<TARGET_ID>" -- pulls exactly
+ * ONE named queue item's schedule to now (only if it is genuinely
+ * PREPARED/SCHEDULED; never touches any other item, never creates a
+ * duplicate), then runs the real canonical package-autopilot batch so it
+ * gets claimed and published through the exact same production path the
+ * cron uses. No ad-hoc direct platform-API call.
+ */
+export async function forcePublishQueueItemNowAction(formData: FormData) {
+  const ctx = await assertOwner();
+  const queueItemId = String(formData.get("queueItemId") ?? "").trim();
+  if (!queueItemId) return;
+  const service = createSupabaseServiceClient();
+  try {
+    const { data: pulled } = await service
+      .from("social_autopilot_queue_items")
+      .update({ scheduled_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+      .eq("id", queueItemId)
+      .in("status", ["PREPARED", "SCHEDULED"])
+      .select("id")
+      .maybeSingle();
+    if (!pulled) {
+      await recordAudit({
+        actorType: "USER",
+        actorId: ctx.ownerId,
+        action: "social.package.force_publish_failed",
+        targetType: "social_autopilot_queue_item",
+        targetId: queueItemId,
+        summary: "Item is not currently PREPARED or SCHEDULED -- nothing was published",
+      });
+      revalidatePath("/admin/social", "layout");
+      return;
+    }
+    const result = await runPackageAutopilotBatch(service as Parameters<typeof runPackageAutopilotBatch>[0], 5);
+    await recordAudit({
+      actorType: "USER",
+      actorId: ctx.ownerId,
+      action: "social.package.force_publish",
+      targetType: "social_autopilot_queue_item",
+      targetId: queueItemId,
+      summary: `Force-publish batch ran for this item: ${JSON.stringify(result)}`,
+    });
+  } catch (err) {
+    await recordAudit({
+      actorType: "USER",
+      actorId: ctx.ownerId,
+      action: "social.package.force_publish_failed",
+      targetType: "social_autopilot_queue_item",
+      targetId: queueItemId,
+      summary: err instanceof Error ? err.message : "Unknown error during forced publish",
+    });
   }
   revalidatePath("/admin/social", "layout");
 }

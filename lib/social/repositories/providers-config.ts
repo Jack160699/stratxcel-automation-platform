@@ -1,4 +1,4 @@
-import type { OwnerContext } from "../db-context";
+import type { OwnerContext } from "../db-context.ts";
 
 export interface ProviderConfigRow {
   id: string;

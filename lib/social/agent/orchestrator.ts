@@ -1,6 +1,6 @@
-import { customerSafeError } from "../../customer-app/load-result";
-import { recordAudit } from "../repositories/system";
-import { getAutomationSettings, requiresApproval } from "../repositories/automation";
+import { customerSafeError } from "../../customer-app/load-result.ts";
+import { recordAudit } from "../repositories/system.ts";
+import { getAutomationSettings, requiresApproval } from "../repositories/automation.ts";
 import {
   createAgentSession as createSessionRepo,
   setSessionStatus,
@@ -14,52 +14,52 @@ import {
   hasPendingActions,
   claimAgentAction,
   supersedeProposedActions,
-} from "../repositories/agent";
-import { startRun, completeRun, recordRunEvent, getLatestRun } from "../repositories/agent-runs";
-import { resolveConfiguredProvider } from "./provider";
-import { classifyCreativeRequestMode, classifySocialPromptIntent, requiresLocalMetaHandling, selectGeminiBrandInstructions } from "./gemini-boundary";
+} from "../repositories/agent.ts";
+import { startRun, completeRun, recordRunEvent, getLatestRun } from "../repositories/agent-runs.ts";
+import { resolveConfiguredProvider } from "./provider.ts";
+import { classifyCreativeRequestMode, classifySocialPromptIntent, requiresLocalMetaHandling, selectGeminiBrandInstructions } from "./gemini-boundary.ts";
 import {
   classifySocialCopilotIntent,
   isArtifactDisplayIntent,
   isSafePreparationIntent,
   requiresConcreteFutureSchedule,
-} from "./copilot-intents";
-import { handleLocalArtifactDisplayTurn } from "./local-artifact-turn";
+} from "./copilot-intents.ts";
+import { handleLocalArtifactDisplayTurn } from "./local-artifact-turn.ts";
 import { planWeekSlots } from "../workforce/week-planner.ts";
 import {
   computeSupersedeIdsForNewRevision,
   loadCurrentReviewArtifact,
-} from "./review-session";
-import { reviewFamilyId } from "./action-supersession";
-import { narrativeFromReview, reviewArtifactMessagePart } from "./review-artifact";
-import { calculateLocalMetricsSummary } from "../local-meta-summary";
-import { listRecentMetrics } from "../repositories/analytics";
-import { listAccounts } from "../repositories/accounts";
-import { getBrandProfile } from "../repositories/brand";
-import { getTool, toolSchemas, type AgentTool } from "./tools";
-import { serializeToolOutput } from "./tool-output";
-import { labelForTool, labelForApproval, PHASE_LABELS } from "./activity-labels";
-import { summarizeForEvent } from "./tool-output-summary";
-import type { AgentTurnMessage } from "./provider";
-import { getMediaAssetPreviewUrl } from "../repositories/media-assets";
+} from "./review-session.ts";
+import { reviewFamilyId } from "./action-supersession.ts";
+import { narrativeFromReview, reviewArtifactMessagePart } from "./review-artifact.ts";
+import { calculateLocalMetricsSummary } from "../local-meta-summary.ts";
+import { listRecentMetrics } from "../repositories/analytics.ts";
+import { listAccounts } from "../repositories/accounts.ts";
+import { getBrandProfile } from "../repositories/brand.ts";
+import { getTool, toolSchemas, type AgentTool } from "./tools.ts";
+import { serializeToolOutput } from "./tool-output.ts";
+import { labelForTool, labelForApproval, PHASE_LABELS } from "./activity-labels.ts";
+import { summarizeForEvent } from "./tool-output-summary.ts";
+import type { AgentTurnMessage } from "./provider.ts";
+import { getMediaAssetPreviewUrl } from "../repositories/media-assets.ts";
 import { type AgentActorContext, isTenantAgentContext } from "../agent-tenant-types.ts";
 import {
   INTERNAL_DEPENDENTS_KEY,
   readDeferredActions,
   splitDependentCalls,
   stripInternalInput,
-} from "./dependencies";
-import { validateBrandEntities } from "./brand-validation";
-import { PUBLISH_INTENT_TOOLS, describePublishAttempt, type PublishReceipt } from "./publish-outcome-classify";
-import { sanitizeUserFacingText } from "./user-facing-text";
+} from "./dependencies.ts";
+import { validateBrandEntities } from "./brand-validation.ts";
+import { PUBLISH_INTENT_TOOLS, describePublishAttempt, type PublishReceipt } from "./publish-outcome-classify.ts";
+import { sanitizeUserFacingText } from "./user-facing-text.ts";
 import {
   attachmentPart,
   bindAttachmentsToMessage,
   getAttachmentsByIds,
   loadImageAttachmentsForModel,
-} from "../repositories/agent-attachments";
-import { evaluateBrandTrustHardGate, canShowApprovalControl } from "./trust-hard-gate";
-import { buildProductCapabilityEvidence, resolveImageGenerationRuntimeStatus } from "./capability-evidence";
+} from "../repositories/agent-attachments.ts";
+import { evaluateBrandTrustHardGate, canShowApprovalControl } from "./trust-hard-gate.ts";
+import { buildProductCapabilityEvidence, resolveImageGenerationRuntimeStatus } from "./capability-evidence.ts";
 import { getImageProvider, BlockedImageProvider } from "@stratxcel/creative-studio";
 import { decideManualPublishGate } from "../workforce/authorization.ts";
 

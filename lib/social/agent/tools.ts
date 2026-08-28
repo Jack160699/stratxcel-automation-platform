@@ -1,32 +1,32 @@
-import { runHealthChecks } from "../health";
-import { listAccounts } from "../repositories/accounts";
-import { listJobs, listDeadLetters } from "../repositories/publishing";
-import { listRecentMetrics, listCostEvents } from "../repositories/analytics";
-import { listCampaigns, createCampaign } from "../repositories/campaigns";
-import { getBrandProfile } from "../repositories/brand";
-import { BRAND_SECTIONS, selectBrandSection, type BrandSection } from "./brand-sections";
-import { createContentMaster, createContentVariant, listContentMaster } from "../repositories/content";
-import { scheduleJob, cancelJob } from "../repositories/publishing";
-import { upsertAutomationSettings } from "../repositories/automation";
-import { createSupabaseServiceClient } from "../../supabase/service";
+import { runHealthChecks } from "../health.ts";
+import { listAccounts } from "../repositories/accounts.ts";
+import { listJobs, listDeadLetters } from "../repositories/publishing.ts";
+import { listRecentMetrics, listCostEvents } from "../repositories/analytics.ts";
+import { listCampaigns, createCampaign } from "../repositories/campaigns.ts";
+import { getBrandProfile } from "../repositories/brand.ts";
+import { BRAND_SECTIONS, selectBrandSection, type BrandSection } from "./brand-sections.ts";
+import { createContentMaster, createContentVariant, listContentMaster } from "../repositories/content.ts";
+import { scheduleJob, cancelJob } from "../repositories/publishing.ts";
+import { upsertAutomationSettings } from "../repositories/automation.ts";
+import { createSupabaseServiceClient } from "../../supabase/service.ts";
 import { type AgentActorContext, isTenantAgentContext } from "../agent-tenant-types.ts";
-import type { ToolSchema } from "./provider";
-import { CONTENT_OBJECTIVE_VALUES, platformsMatch } from "../content-options";
+import type { ToolSchema } from "./provider.ts";
+import { CONTENT_OBJECTIVE_VALUES, platformsMatch } from "../content-options.ts";
 import {
   attachMediaToMaster,
   attachMediaToVariant,
   ingestAttachmentMedia,
   inspectContentMedia,
   updateContentVariant,
-} from "../repositories/media-assets";
-import { executePrivateYoutubeVerification, executeYoutubeVerification } from "../verification-publish";
-import { requireUuid, optionalUuid } from "./id-validation";
-import { assertAttachmentSlot, asMediaAssetId } from "./media-identity";
-import { buildVariantGenerationKey } from "./variant-idempotency";
+} from "../repositories/media-assets.ts";
+import { executePrivateYoutubeVerification, executeYoutubeVerification } from "../verification-publish.ts";
+import { requireUuid, optionalUuid } from "./id-validation.ts";
+import { assertAttachmentSlot, asMediaAssetId } from "./media-identity.ts";
+import { buildVariantGenerationKey } from "./variant-idempotency.ts";
 import { validateProposedScheduleAction } from "../workforce/schedule.ts";
-import { executeGenerateImageTool } from "./generate-image-tool";
-import { runPublishNow } from "./publish-outcome";
-import { evaluateBrandTrustHardGate } from "./trust-hard-gate";
+import { executeGenerateImageTool } from "./generate-image-tool.ts";
+import { runPublishNow } from "./publish-outcome.ts";
+import { evaluateBrandTrustHardGate } from "./trust-hard-gate.ts";
 
 export interface AgentTool {
   schema: ToolSchema;

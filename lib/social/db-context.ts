@@ -1,5 +1,5 @@
-import { createSupabaseServerClient } from "../supabase/server";
-import { createSupabaseServiceClient } from "../supabase/service";
+import { createSupabaseServerClient } from "../supabase/server.ts";
+import { createSupabaseServiceClient } from "../supabase/service.ts";
 
 /**
  * Two data-access postures, matching the stratxcel schema's own RLS design:
