@@ -92,6 +92,28 @@ export interface ImageMediaDeps {
   timeoutMs?: number;
 }
 
+/** gpt-image-2 (the OpenAI fallback model) accepts exactly these three
+ * sizes -- unlike Gemini's native `imageConfig.aspectRatio` field
+ * (generateGeminiOne below), OpenAI's /images/generations endpoint has no
+ * aspect-ratio parameter at all. Before this, every OpenAI fallback
+ * request silently defaulted to a square 1024x1024 image regardless of
+ * what aspect ratio the caller actually asked for -- a real bug (Unify
+ * Creative Studio mission Module 1): a 9:16 Story/Reel request rendered as
+ * a plain square whenever Gemini was unconfigured or hopped to this
+ * fallback. Maps to the closest of the three real supported sizes rather
+ * than a fabricated one. */
+const OPENAI_IMAGE_SIZE_BY_ASPECT_RATIO: Record<string, string> = {
+  "1:1": "1024x1024",
+  "4:5": "1024x1536",
+  "9:16": "1024x1536",
+  "16:9": "1536x1024",
+};
+
+function resolveOpenAiImageSize(request: ImageGenerateRequest): string {
+  if (request.size) return request.size;
+  return OPENAI_IMAGE_SIZE_BY_ASPECT_RATIO[request.aspectRatio ?? ""] ?? "1024x1024";
+}
+
 function modelForTier(tier: ImageTier, env = process.env): string {
   if (tier === "fast") return resolveModelId("GOOGLE_IMAGE_FAST", env);
   if (tier === "premium") return resolveModelId("GOOGLE_IMAGE_PREMIUM", env);
@@ -413,7 +435,7 @@ export class ImageMediaRuntime {
     // Recheck budget: accumulated request cost + projected OpenAI + monthly spend.
     const openaiProjected = estimateImageCostUsd(fallbackModel, Math.max(1, request.candidateCount ?? 1), {
       quality: request.quality ?? "high",
-      size: request.size ?? "1024x1024",
+      size: resolveOpenAiImageSize(request),
     });
     if (this.budgetEnvelope) {
       const gate = evaluateBudgetGate({
@@ -694,7 +716,7 @@ export class ImageMediaRuntime {
 
   private async generateOpenAI(request: ImageGenerateRequest, model: string): Promise<ImageCandidateResult[]> {
     const count = Math.max(1, Math.min(request.candidateCount ?? 1, 4));
-    const size = request.size ?? "1024x1024";
+    const size = resolveOpenAiImageSize(request);
     const quality = request.quality ?? "high";
     const body = {
       model,

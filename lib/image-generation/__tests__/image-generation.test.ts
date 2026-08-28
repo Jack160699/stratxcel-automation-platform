@@ -225,6 +225,97 @@ async function run() {
   assert.ok(brandPage.includes("uploadToSignedUrlWithProgress"), "the fixed upload flow must actually use the real signed-upload protocol, not the broken raw-FormData POST it replaced");
   assert.ok(!brandPage.includes('formData.append("file", file)'), "the broken raw-multipart upload path must be fully removed, not left as dead/parallel code");
 
+  // Unify Creative Studio With The Premium Autopilot Pipeline mission.
+  // Module 1: the OpenAI /images/generations fallback has no aspect-ratio
+  // parameter at all -- before this, every fallback request silently
+  // rendered a square 1024x1024 image regardless of the requested aspect
+  // ratio (a real bug: a 9:16 Story/Reel request from Creative Studio came
+  // back square whenever Gemini was unconfigured or hopped to this
+  // fallback). Verified live (not source-inclusion) against the real
+  // OPENAI-fallback request body for each supported aspect ratio.
+  const capturedSizes: string[] = [];
+  const openAiOnlyRuntime = new ImageMediaRuntime({
+    geminiApiKey: undefined,
+    openaiApiKey: "test",
+    fetchImpl: async (_input, init) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as { size?: string };
+      capturedSizes.push(body.size ?? "");
+      return Response.json({ data: [{ b64_json: "AQID" }] });
+    },
+  });
+  await openAiOnlyRuntime.generate({ tenantId: "tenant-a", prompt: "brief", aspectRatio: "9:16" });
+  await openAiOnlyRuntime.generate({ tenantId: "tenant-a", prompt: "brief", aspectRatio: "16:9" });
+  await openAiOnlyRuntime.generate({ tenantId: "tenant-a", prompt: "brief", aspectRatio: "1:1" });
+  await openAiOnlyRuntime.generate({ tenantId: "tenant-a", prompt: "brief" });
+  assert.deepEqual(capturedSizes, ["1024x1536", "1536x1024", "1024x1024", "1024x1024"], "the OpenAI fallback must request the real gpt-image-2 size closest to the caller's aspect ratio, never a hardcoded square regardless of what was asked for");
+
+  // Module 2/3: Creative Studio must generate a real Gemini creative
+  // treatment and thread it through exactly like createImageGenerationJob
+  // already expects (validateTreatmentForJob/creative_treatment above) --
+  // the ONLY thing standing between Creative Studio and the same
+  // BrandBrain-logo + text-overlay-render.ts compositor package-autopilot.ts
+  // already uses was that this route never supplied a treatment at all.
+  const studioTreatment = read("lib", "social", "studio-creative-treatment.ts");
+  assert.ok(studioTreatment.includes("getCurrentBrandBrain"), "the treatment must be built from this tenant's real, current Brand Brain -- not a stale or fabricated context");
+  assert.ok(studioTreatment.includes("resolveConfiguredProvider"), "must call through the same production billing/routing-aware Gemini provider package-autopilot.ts uses, not a bespoke direct fetch");
+  assert.ok(studioTreatment.includes("buildCreativeTreatmentPrompt") && studioTreatment.includes("validateCreativeTreatment"), "must build and validate a real structured CreativeTreatment, never trust an unvalidated AI response");
+  assert.ok(studioTreatment.includes("return null"), "a failed/unconfigured/malformed treatment must degrade to brief-only generation, never block or throw for a manual Studio request");
+  assert.ok(createRoute.includes("generateStudioCreativeTreatment"), "the Creative Studio route must actually call the treatment generator, not just have it available");
+  assert.ok(createRoute.includes("treatment,") || createRoute.includes("treatment:"), "the generated treatment must actually be passed into createImageGenerationJob's input -- generating it and discarding it fixes nothing");
+  assert.ok(createRoute.includes("findExistingImageGenerationJobByIdempotencyKey"), "a duplicate submit/retry must skip the billable treatment call entirely, not pay for a Gemini call that gets discarded when createImageGenerationJob's own idempotency check returns the existing job");
+  assert.ok(service.includes("export async function findExistingImageGenerationJobByIdempotencyKey"), "the idempotency lookup must be a single exported source of truth, not duplicated between the route and createImageGenerationJob");
+
+  // Fix Creative Studio Compositor Bypass & Logo Injection mission: the
+  // Module 1/2 wiring above was correct but insufficient by itself -- these
+  // are the real, independent bugs found tracing the live failure further.
+  //
+  // (1) The compositor -- including the real BrandBrain LOGO, which has
+  // nothing to do with on-image text -- was gated on
+  // resolvedOverlayElements.length, so any treatment that (correctly, per
+  // its own prompt) planned zero on-image text skipped compositing
+  // entirely, logo included.
+  assert.ok(
+    !/overlayContext\s*&&\s*resolvedOverlayElements\.length/.test(service),
+    "the text-overlay compositor (and therefore the real BrandBrain logo) must run whenever a treatment exists, not only when on-image text happens to be planned -- gating on resolvedOverlayElements.length silently skipped the logo for every legitimate zero-text treatment"
+  );
+  assert.match(service, /const textOverlayCompositor\s*=\s*\n\s*overlayContext\s*\n/, "the compositor must be gated on overlayContext alone");
+
+  // (2) Handing the image model the tenant's actual logo FILE as a
+  // "reference" image invites it to redraw its own approximation directly
+  // into the scene -- exactly the hallucinated-logo failure mode -- instead
+  // of leaving that to the deterministic compositor once a real treatment
+  // exists.
+  assert.ok(service.includes("referenceAssetIds.length < 5 && !validatedTreatment"), "the Brand Kit logo must not be auto-included as a reference image once a real Creative Treatment already exists -- the compositor stamps the real logo file directly; handing the raw file to the image model too only risks a hallucinated duplicate");
+
+  // (3) A tenant with only the legacy `logo_url` string (pre-Logo-Engine,
+  // or orphaned logo_variants rows) got zero logo composited at all --
+  // selectLogoVariant's own documented `logoImage` backward-compat fallback
+  // was never actually fed one by the real production caller.
+  const logoResolver = read("lib", "brand", "logo-variant-resolver.ts");
+  assert.ok(logoResolver.includes("export async function resolveLegacyLogoImage"), "a tenant with only the legacy logo_url string (no logo_variants bundle) must still get a real logo composited via the documented logoImage fallback, not silently nothing");
+  assert.ok(service.includes("resolveLegacyLogoImage") && service.includes("logoImage"), "the legacy logo_url fallback must actually reach the real renderTextOverlay call, not just be resolved and discarded");
+
+  // (4) Of the 12 registered layout archetypes, only BASIC_ESSENTIAL and
+  // FLOATING_CARD actually place the real raster logo image today (every
+  // other archetype falls back to text-glyph brand-name only) -- Creative
+  // Studio's treatment must be restricted to those two, or "the real
+  // BrandBrain logo appears" isn't actually guaranteed regardless of every
+  // other fix above.
+  assert.ok(studioTreatment.includes('"BASIC_ESSENTIAL"') && studioTreatment.includes('"FLOATING_CARD"'), "Creative Studio's treatment archetype must be restricted to the two archetypes whose compositor implementation places a real logo image");
+  assert.ok(studioTreatment.includes("routingContext: STUDIO_ARCHETYPE_ROUTING") || studioTreatment.includes("routingContext,"), "the archetype restriction must actually reach buildCreativeTreatmentPrompt, not just exist as an unused constant");
+  assert.ok(studioTreatment.includes("validateCreativeTreatment(parsed, { concept: studioBrief.concept, routingContext"), "validateCreativeTreatment must also enforce the restriction server-side -- an AI that ignores the prompt instruction and returns a different archetype must be rejected, not silently trusted");
+  const overlayRenderSrc = read("lib", "social", "text-overlay-render.ts");
+  for (const archetype of ["BASIC_ESSENTIAL", "FLOATING_CARD"]) {
+    assert.ok(overlayRenderSrc.includes(`"${archetype}"`), `${archetype} must be a real registered archetype (defense against the allowlist drifting from the actual registry)`);
+  }
+
+  // (5) The image model must be explicitly told not to draw its own
+  // text/logo when a treatment (and therefore the real compositor) exists
+  // -- the generic "don't invent facts" line elsewhere isn't specific
+  // enough on its own.
+  const visualDirectorPrompt = read("lib", "social", "visual-director-prompt.ts");
+  assert.match(visualDirectorPrompt, /DO NOT draw any text.*logos/i, "buildVisualDirectorBrief must explicitly instruct the image model to produce a background photograph only, never its own text or logo");
+
   console.log("image-generation.test.ts: ALL PASS");
 }
 
