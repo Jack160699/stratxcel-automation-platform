@@ -26,6 +26,16 @@ import { deriveBrandVisualDNA } from "./brand-visual-dna.ts";
 import { getIndustryVisualVocabulary } from "./industry-visual-vocabulary.ts";
 import { researchInsightsForIndustry } from "./visual-research-library.ts";
 import { resolveAutomatedRouting } from "./archetype-routing.ts";
+import { seasonalContextLine } from "./festival-calendar.ts";
+
+/** Hermes-Orchestrated Content Engine Hardening mission Section 2: how far
+ * ahead of a post's own scheduled date to surface a real upcoming
+ * festival/season -- deliberately distinct from preparation_horizon_days
+ * (which governs WHEN content gets prepared, not how far to look for
+ * occasions relative to the post's own date). One week is enough for a
+ * genuinely upcoming occasion to feel timely without stretching "upcoming"
+ * past the point of relevance. */
+const FESTIVAL_LOOKAHEAD_DAYS = 7;
 
 export {
   assignBrandProfileToTenant,
@@ -788,6 +798,12 @@ export async function prepareNearTermPackageItems(service: ServiceClient, author
         verifiedFacts: businessInformation,
         brandTone: brandProfile.voice.tone,
         audience,
+        // Hermes-Orchestrated Content Engine Hardening mission Section 2:
+        // real, deterministic festival/season awareness, keyed to THIS
+        // post's own scheduled date (not "now") -- a post prepared today
+        // for a slot 4 days out should reflect what's near ITS date, not
+        // the preparation moment's.
+        seasonalContext: seasonalContextLine(new Date(item.scheduled_at), FESTIVAL_LOOKAHEAD_DAYS),
       });
 
       // Premium Creative Intelligence (build brief Section 2): a real
@@ -1148,6 +1164,37 @@ export async function skipPackageQueueItem(service: ServiceClient, input: { queu
     }
   }
   return { skipped: true, countsAgainstQuota };
+}
+
+/**
+ * REVIEW_BEFORE_PUBLISH packages leave every prepared item at
+ * REVIEW_REQUIRED (Section 16) -- a customer-facing "Ready for review"
+ * state. Real, serious bug found live (Hermes-Orchestrated Content Engine
+ * Hardening mission): nothing in this pipeline ever moved a REVIEW_REQUIRED
+ * item onward -- runPackageAutopilotBatch's due-item poll only ever matched
+ * status in ("PREPARED", "SCHEDULED"), so every reviewed customer's
+ * content sat "Ready for review" forever with genuinely no way to actually
+ * publish it, not even manually; the dashboard didn't even render an
+ * action button for it. This is the one real approval action that unblocks
+ * it: moves the item to SCHEDULED (the batch executor's own poll picks it
+ * up from here on, at its existing scheduled_at). When `publishNow` is
+ * set, scheduled_at is also pulled forward to now -- the caller (the API
+ * route) is responsible for triggering a batch run immediately after; this
+ * function only performs the real, guarded status transition, matching
+ * skipPackageQueueItem's own "only a still-pending row" guard above.
+ */
+export async function approvePackageQueueItem(service: ServiceClient, input: { queueItemId: string; publishNow?: boolean }) {
+  const patch: Record<string, unknown> = { status: "SCHEDULED", updated_at: new Date().toISOString() };
+  if (input.publishNow) patch.scheduled_at = new Date().toISOString();
+  const { data, error } = await service
+    .from("social_autopilot_queue_items")
+    .update(patch)
+    .eq("id", input.queueItemId)
+    .eq("status", "REVIEW_REQUIRED")
+    .select("id, scheduled_at")
+    .maybeSingle();
+  if (error || !data) throw new Error("This item is not awaiting review, or was already approved");
+  return { approved: true, scheduledAt: data.scheduled_at as string };
 }
 
 /** Reschedule while preserving the exact caption/media already prepared — never a duplicate row, never a stale second schedule (Section 34).
