@@ -53,6 +53,18 @@ export {
 } from "./package-composition.ts";
 export { utcIsoToDatetimeLocalValue, datetimeLocalValueToUtcIso, utcIsoToZonedWallParts } from "./package-distribution.ts";
 
+/** Finalize Autopilot Pipeline mission: video generation is not supported
+ * yet, so YouTube (a video-only destination) must never be scheduled by
+ * the automatic planning cycle -- only image/text-capable platforms are
+ * eligible. Enforced here, the deepest/most authoritative layer (not just
+ * the UI's default selection), so a client-supplied allowedPlatforms list
+ * can never smuggle youtube back in at activation or scope-change time,
+ * regardless of caller. */
+export const AUTOPILOT_SCHEDULABLE_PLATFORMS = ["facebook", "instagram", "threads", "linkedin"] as const;
+function stripUnschedulablePlatforms(platforms: string[]): string[] {
+  return platforms.filter((platform) => (AUTOPILOT_SCHEDULABLE_PLATFORMS as readonly string[]).includes(platform));
+}
+
 export type PackagePublishingMode = "AUTO_PUBLISH" | "REVIEW_BEFORE_PUBLISH";
 export type PackageAuthorizationState = "ACTIVE" | "PAUSED" | "CANCELLED" | "EXPIRED" | "NEEDS_ATTENTION";
 export type QueueItemStatus =
@@ -174,7 +186,7 @@ export async function activatePackageAutopilot(
   if (!entitlement || entitlement.metric !== "social_posts" || entitlement.is_paused) {
     throw new Error("prerequisite_missing: plan does not include an active social_posts entitlement");
   }
-  const platforms = [...new Set(input.allowedPlatforms.map((value) => value.toLowerCase()).filter(Boolean))];
+  const platforms = stripUnschedulablePlatforms([...new Set(input.allowedPlatforms.map((value) => value.toLowerCase()).filter(Boolean))]);
   if (!platforms.length) throw new Error("prerequisite_missing: at least one allowed platform is required");
 
   // Fail closed rather than silently falling back to a wrong tenant/brand
@@ -285,7 +297,7 @@ export async function setPackageAutopilotState(service: ServiceClient, input: { 
 
 /** Removing a platform from scope must stop future unresolved publications to it (Section 41) without touching other destinations or history. */
 export async function setPackageAutopilotScope(service: ServiceClient, input: { authorizationId: string; tenantId: string; clientUserId: string; allowedPlatforms: string[] }) {
-  const platforms = [...new Set(input.allowedPlatforms.map((value) => value.toLowerCase()).filter(Boolean))];
+  const platforms = stripUnschedulablePlatforms([...new Set(input.allowedPlatforms.map((value) => value.toLowerCase()).filter(Boolean))]);
   if (!platforms.length) throw new Error("At least one allowed platform is required");
   const { data: auth, error } = await service
     .from("social_autopilot_authorizations")

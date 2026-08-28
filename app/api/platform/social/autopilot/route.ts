@@ -21,6 +21,7 @@ import {
   planPackagePeriod,
   prepareNearTermPackageItems,
   runPackageAutopilotBatch,
+  AUTOPILOT_SCHEDULABLE_PLATFORMS,
   type PackageAuthorizationRow,
 } from "@/lib/social/package-autopilot";
 import { packageErrorForClient } from "@/lib/social/package-errors";
@@ -123,7 +124,13 @@ export async function GET(req: NextRequest) {
       : { data: null };
     const { data: connectedAccounts } = await service.from("social_accounts").select("platform").eq("tenant_id", tenantId).eq("status", "CONNECTED");
     const { data: brands } = await service.from("social_brand_profiles").select("id").eq("tenant_id", tenantId).limit(2);
-    const connectedPlatforms = [...new Set((connectedAccounts ?? []).map((row) => String(row.platform).toLowerCase()))];
+    // Finalize Autopilot Pipeline mission: YouTube (video-only, unsupported
+    // by generation yet) must never be offered as an automatic-scheduling
+    // destination -- the real, authoritative filter lives in
+    // activatePackageAutopilot/setPackageAutopilotScope, but this preview
+    // list must agree so the UI never even shows it as selectable.
+    const connectedPlatforms = [...new Set((connectedAccounts ?? []).map((row) => String(row.platform).toLowerCase()))]
+      .filter((platform) => (AUTOPILOT_SCHEDULABLE_PLATFORMS as readonly string[]).includes(platform));
     // Real gap found live (Debug Missing UI Toggle mission): the response
     // never told the client whether the tenant's PLAN even includes Social
     // Autopilot at all (a Growth+ capability -- Starter never gets it,
