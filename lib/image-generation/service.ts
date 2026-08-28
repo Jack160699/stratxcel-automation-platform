@@ -17,11 +17,12 @@ import {
   type ImageGenerationJobRow,
   type ImageJobDetail,
 } from "./types";
-import { validateCreativeTreatment, resolveOverlayElements, type CreativeTreatment } from "../social/creative-treatment";
+import { validateCreativeTreatment, forceArchetypeOntoTreatment, resolveOverlayElements, type CreativeTreatment } from "../social/creative-treatment";
 import { buildVisualDirectorBrief } from "../social/visual-director-prompt";
 import { deriveBrandVisualDNA } from "../social/brand-visual-dna";
 import { classifyIndustry } from "../social/industry-taxonomy";
 import { renderTextOverlay } from "../social/text-overlay-render";
+import { resolveManualRouting } from "../social/archetype-routing";
 
 const TERMINAL = new Set(["READY", "FAILED"]);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -186,14 +187,54 @@ export async function createImageGenerationJob(args: {
     .maybeSingle();
   if (existing) return existing as ImageGenerationJobRow;
 
+  // Subscription-Gated Visual Archetypes brief Section 7 Rule C: a manual
+  // (requestedArchetype-carrying) Social Autopilot generation gets its own
+  // real, server-side tier + saved-preference check BEFORE anything else
+  // -- an unauthorized/unknown/not-in-preferences archetype rejects the
+  // whole job creation with a structured error, never a silent
+  // substitution. Never trusts input.requestedArchetype's mere presence as
+  // proof of anything; tier and preferences are both read fresh here.
+  const isManualArchetypeRequest = input.sourceContext === "social_autopilot" && typeof input.requestedArchetype === "string" && input.requestedArchetype.length > 0;
+  let manualArchetype: string | null = null;
+  if (isManualArchetypeRequest) {
+    // Deliberately NOT resolveTenantPlanTier (an AI-cost BUDGET-tier
+    // helper, imported above for the entirely separate media-runtime
+    // envelope further down) -- real bug caught before it shipped: that
+    // function defaults any tenant with no matching subscription row, or
+    // an unrecognized plan_tier value, to "starter" as a BUDGET fallback,
+    // not an access decision. Using it here would have let a tenant with
+    // literally no subscription get routed as if they were a real Starter
+    // subscriber. This queries the same canonical subscriptions table
+    // directly, matching package-autopilot.ts's own real pattern, so
+    // "no active subscription" stays "no active subscription."
+    const [{ data: subscriptionRow }, { data: visualPreferences }] = await Promise.all([
+      args.writeClient.from("subscriptions").select("plan_tier").eq("tenant_id", input.tenantId).eq("status", "active").order("updated_at", { ascending: false }).limit(1).maybeSingle(),
+      args.writeClient.from("social_autopilot_visual_preferences").select("preferred_archetypes").eq("tenant_id", input.tenantId).maybeSingle(),
+    ]);
+    const routing = resolveManualRouting({
+      tier: (typeof subscriptionRow?.plan_tier === "string" ? subscriptionRow.plan_tier : "free") as Parameters<typeof resolveManualRouting>[0]["tier"],
+      preferredArchetypes: visualPreferences?.preferred_archetypes ?? [],
+      requestedArchetype: input.requestedArchetype,
+    });
+    if (!routing.ok) {
+      throw new ImageGenerationServiceError(`ARCHETYPE_${routing.error.code}`, routing.error.message, 403);
+    }
+    manualArchetype = routing.routingContext.forcedArchetype;
+  }
+
   // Brief §7: customer-facing generation quota ("N of M generations this
   // month") — a distinct, new-generation-only pool from the internal AI-cost
   // budget envelope enforced further down. Autopilot's system-researched
-  // content draws from automated_content_monthly; everything else
-  // (Creative Studio, Copilot-requested generations) draws from
-  // content_generation_monthly. Fails closed like every other entitlement
-  // check in this codebase — no row means no entitlement.
-  const generationMetric = input.sourceContext === "social_autopilot" ? "automated_content_monthly" : "content_generation_monthly";
+  // content draws from automated_content_monthly; a manual Social Autopilot
+  // archetype request draws from its own social_autopilot_manual_monthly
+  // pool (Starter has zero of these -- resolveManualRouting above already
+  // rejected Starter before this point); everything else (Creative Studio,
+  // Copilot-requested generations) draws from content_generation_monthly.
+  // Fails closed like every other entitlement check in this codebase — no
+  // row means no entitlement.
+  const generationMetric = isManualArchetypeRequest
+    ? "social_autopilot_manual_monthly"
+    : input.sourceContext === "social_autopilot" ? "automated_content_monthly" : "content_generation_monthly";
   const entitled = await hasEntitlement(args.writeClient as unknown as ServiceClient, input.tenantId, generationMetric, 1);
   if (!entitled) {
     throw new ImageGenerationServiceError(
@@ -210,7 +251,18 @@ export async function createImageGenerationJob(args: {
   // caller supplied one, drives the actual prompt built at process-time
   // (see processImageGenerationJob) instead of `brief` alone. A malformed
   // treatment is discarded here, never silently trusted.
-  const validatedTreatment = validateTreatmentForJob(input.treatment);
+  let validatedTreatment = validateTreatmentForJob(input.treatment);
+  // The AI must never override a server-forced archetype (Section 6) --
+  // once resolveManualRouting has authorized an exact archetype, it's
+  // force-applied to whatever treatment the caller supplied (or, if no
+  // treatment was supplied at all, the manual archetype is still recorded
+  // via a minimal treatment stub is NOT done here -- an archetype with no
+  // real treatment isn't renderable text-overlay-wise, so a manual request
+  // must supply a real treatment; the forced value simply overwrites
+  // whatever layoutArchetype that treatment claimed).
+  if (manualArchetype && validatedTreatment) {
+    validatedTreatment = forceArchetypeOntoTreatment(validatedTreatment, { forcedArchetype: manualArchetype as CreativeTreatment["layoutArchetype"], allowedArchetypes: [], reason: "manual request" });
+  }
   const { data: inserted, error } = await args.writeClient
     .from("image_generation_jobs")
     .insert({

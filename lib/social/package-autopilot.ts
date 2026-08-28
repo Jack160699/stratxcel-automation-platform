@@ -21,10 +21,11 @@ import { buildVerifiedBusinessInformation } from "./package-business-facts.ts";
 import { buildCreativeBrief, formatCreativeBriefForPrompt, selectObjective } from "./creative-brief.ts";
 import { runGenerationLoop } from "./generation-loop.ts";
 import { parseGeneratedCopy, type GeneratedCopy } from "./generated-copy-parser.ts";
-import { buildCreativeTreatmentPrompt, validateCreativeTreatment, safeParseJson, type CreativeTreatment } from "./creative-treatment.ts";
+import { buildCreativeTreatmentPrompt, validateCreativeTreatment, forceArchetypeOntoTreatment, safeParseJson, type CreativeTreatment, type LayoutArchetype } from "./creative-treatment.ts";
 import { deriveBrandVisualDNA } from "./brand-visual-dna.ts";
 import { getIndustryVisualVocabulary } from "./industry-visual-vocabulary.ts";
 import { researchInsightsForIndustry } from "./visual-research-library.ts";
+import { resolveAutomatedRouting } from "./archetype-routing.ts";
 
 export {
   assignBrandProfileToTenant,
@@ -727,6 +728,12 @@ export async function prepareNearTermPackageItems(service: ServiceClient, author
       const recentConcepts: string[] = [];
       const recentCaptions: string[] = [];
       const recentObjectives: ContentObjective[] = [];
+      // Subscription-Gated Visual Archetypes brief Section 9: real
+      // rotation/diversity for Growth/Business automated generation needs
+      // this tenant's own recently-USED archetypes -- recovered from the
+      // same creative_spec.treatment already stored per generation
+      // (Section "STEP 4" below), not a separate table.
+      const recentArchetypeHistory: LayoutArchetype[] = [];
       let recentAssetIds: string[] = [];
       if (recentVariantIds.length) {
         const [{ data: recentVariants }, { data: recentMediaRows }] = await Promise.all([
@@ -738,6 +745,8 @@ export async function prepareNearTermPackageItems(service: ServiceClient, author
           if (typeof row.objective === "string" && CONTENT_OBJECTIVE_VALUES.includes(row.objective as (typeof CONTENT_OBJECTIVE_VALUES)[number])) recentObjectives.push(row.objective as ContentObjective);
           const spec = (row.creative_spec ?? {}) as Record<string, unknown>;
           if (typeof spec.concept === "string" && spec.concept) recentConcepts.push(spec.concept);
+          const specTreatment = (spec.treatment ?? null) as { layoutArchetype?: unknown } | null;
+          if (specTreatment && typeof specTreatment.layoutArchetype === "string") recentArchetypeHistory.push(specTreatment.layoutArchetype as LayoutArchetype);
         }
         recentAssetIds = [...new Set((recentMediaRows ?? []).map((row) => row.asset_id as string))];
       }
@@ -790,6 +799,36 @@ export async function prepareNearTermPackageItems(service: ServiceClient, author
       const visualVocab = getIndustryVisualVocabulary(brief.industry);
       const researchInsights = researchInsightsForIndustry(brief.industry === "generic" ? "all" : brief.industry);
 
+      // Subscription-Gated Visual Archetypes brief Sections 7 (Rule A/B)
+      // + 9: server-authoritative archetype routing BEFORE the Gemini
+      // strategy/treatment call, exactly as Rule A requires -- the AI is
+      // informed of the constraint via buildCreativeTreatmentPrompt's own
+      // routingContext handling, but forceArchetypeOntoTreatment below is
+      // what actually guarantees it, regardless of what the AI returns.
+      // Never trusts anything client-supplied: plan_tier and preferences
+      // are both read fresh from their own canonical tables here, scoped
+      // to this authorization's own tenant_id.
+      const [{ data: routingSubscription }, { data: visualPreferences }] = await Promise.all([
+        service.from("subscriptions").select("plan_tier").eq("id", authorization.subscription_id).eq("tenant_id", authorization.tenant_id).maybeSingle(),
+        service.from("social_autopilot_visual_preferences").select("preferred_archetypes").eq("tenant_id", authorization.tenant_id).maybeSingle(),
+      ]);
+      const routingTier = (typeof routingSubscription?.plan_tier === "string" ? routingSubscription.plan_tier : "free") as Parameters<typeof resolveAutomatedRouting>[0]["tier"];
+      const { routingContext, fallbackReason } = resolveAutomatedRouting({
+        tier: routingTier,
+        preferredArchetypes: visualPreferences?.preferred_archetypes ?? [],
+        recentArchetypeHistory,
+      });
+      if (fallbackReason) {
+        // Section 22: "the fallback should be documented and safe" --
+        // a real audit trail entry, not just a code comment, so this is
+        // actually observable in production rather than only in theory.
+        await recordAudit({
+          actorType: "SYSTEM", actorId: null, action: "social.archetype.fallback",
+          targetType: "social_autopilot_authorization", targetId: authorization.id,
+          summary: fallbackReason, meta: { tenantId: authorization.tenant_id, tier: routingTier },
+        }).catch(() => {});
+      }
+
       let treatment: CreativeTreatment | null = null;
       if (mediaType !== "text") {
         try {
@@ -801,6 +840,7 @@ export async function prepareNearTermPackageItems(service: ServiceClient, author
             visualVocab,
             mediaType,
             researchInsights,
+            routingContext,
           });
           const treatmentResult = await provider.complete(
             // buildCreativeTreatmentPrompt only ever emits "system"/"user"
@@ -812,8 +852,8 @@ export async function prepareNearTermPackageItems(service: ServiceClient, author
             { brandInstructions: selectGeminiBrandInstructions(brandProfile), tenantId: authorization.tenant_id, businessInformation }
           );
           const parsedTreatment = safeParseJson(treatmentResult.text);
-          const issues = validateCreativeTreatment(parsedTreatment, { concept: brief.concept });
-          if (!issues.length) treatment = parsedTreatment as CreativeTreatment;
+          const issues = validateCreativeTreatment(parsedTreatment, { concept: brief.concept, routingContext });
+          if (!issues.length) treatment = forceArchetypeOntoTreatment(parsedTreatment as CreativeTreatment, routingContext);
         } catch {
           treatment = null;
         }

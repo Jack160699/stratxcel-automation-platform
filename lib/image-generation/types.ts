@@ -103,6 +103,15 @@ export interface CreateImageJobInput {
    * any on-image text it specifies. A malformed treatment is discarded
    * (logged, not silently trusted) -- the job still proceeds from `brief`. */
   treatment?: Record<string, unknown> | null;
+  /** Subscription-Gated Visual Archetypes brief Section 7 Rule C: an
+   * explicit manual archetype choice, ONLY meaningful when
+   * sourceContext === "social_autopilot". createImageGenerationJob
+   * resolves this tenant's real plan tier + saved archetype preferences
+   * and validates the request server-side (lib/social/archetype-routing.ts)
+   * before ever touching `treatment` -- an unauthorized/unknown/not-in-
+   * preferences archetype throws GENERATION_LIMIT-style structured errors,
+   * never a silent substitution. Ignored for every other sourceContext. */
+  requestedArchetype?: string | null;
 }
 
 export interface ImageJobDetail {

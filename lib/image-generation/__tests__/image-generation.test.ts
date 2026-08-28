@@ -139,6 +139,22 @@ async function run() {
   assert.ok(workforce.includes("usageAccountingStatus"));
   assert.ok(workforce.includes("MISSION_ARTIFACT_FAILED"));
 
+  // Subscription-Gated Visual Archetypes brief Section 7 Rule C: manual
+  // (requestedArchetype-carrying) generation must be server-validated
+  // BEFORE the job is created, using tier + saved-preference truth read
+  // fresh from the DB inside this same function -- never trusting the
+  // request body's tier or preference claims. Verified as source-
+  // inclusion for the same server-only reason as every other check above;
+  // resolveManualRouting's own decision logic (the actual security-
+  // critical part) is fully unit-tested in real isolation by
+  // archetype-routing.test.ts.
+  assert.ok(service.includes("resolveManualRouting"), "manual archetype requests must go through the real, shared routing decision -- not a bespoke inline check");
+  assert.ok(service.includes("isManualArchetypeRequest"), "manual-vs-automated must be a real, explicit branch, not inferred implicitly");
+  assert.ok(!service.includes('resolveTenantPlanTier(args.writeClient as never, input.tenantId)'), "the manual-routing tier lookup must NOT reuse resolveTenantPlanTier (a budget-tier helper that silently defaults an unrecognized/missing subscription to \"starter\") -- must query subscriptions.plan_tier directly so \"no subscription\" stays \"no subscription\"");
+  assert.ok(service.includes('.eq("tenant_id", input.tenantId).eq("status", "active")') || service.includes('.from("subscriptions").select("plan_tier").eq("tenant_id", input.tenantId)'), "the manual-routing tier lookup must read the real subscriptions table directly");
+  assert.ok(service.includes("social_autopilot_manual_monthly"), "a manual archetype request must draw from its own dedicated quota metric, not the automated or generic pools");
+  assert.ok(service.includes("forceArchetypeOntoTreatment"), "an authorized manual archetype request must be force-applied to the treatment -- the AI/caller must never have the final say once routing has decided");
+
   console.log("image-generation.test.ts: ALL PASS");
 }
 
