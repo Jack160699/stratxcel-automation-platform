@@ -88,11 +88,14 @@ function run() {
   assert.equal(PLAN_DEFINITIONS.advanced_social.capabilities.whatsapp_assistant_access, false, "Advanced Social must not include WhatsApp");
   assert.equal(PLAN_DEFINITIONS.free.capabilities.whatsapp_assistant_access, false, "Free must not include WhatsApp");
 
-  // Social Autopilot capability strictly for Advanced Social and Advanced Growth
-  assert.equal(PLAN_DEFINITIONS.advanced_social.capabilities.social_autopilot, true, "Advanced Social must include Social Autopilot");
-  assert.equal(PLAN_DEFINITIONS.advanced_growth.capabilities.social_autopilot, true, "Advanced Growth must include Social Autopilot");
-  assert.equal(PLAN_DEFINITIONS.social.capabilities.social_autopilot, false, "Standard Social must not include Social Autopilot");
-  assert.equal(PLAN_DEFINITIONS.seo.capabilities.social_autopilot, false, "SEO Growth must not include Social Autopilot");
+  // Unlock Autopilot For All Plans mission: Social Autopilot is now the
+  // platform's core feature, available on every plan tier -- no longer
+  // gated to Advanced Social/Advanced Growth. Verified across every real
+  // PlanTier, current and legacy, so no tier can silently regress back to
+  // gated.
+  for (const tier of Object.keys(PLAN_DEFINITIONS) as (keyof typeof PLAN_DEFINITIONS)[]) {
+    assert.equal(PLAN_DEFINITIONS[tier].capabilities.social_autopilot, true, `${tier} must include Social Autopilot -- it is now available on every plan`);
+  }
 
   // Landing Page bonus strictly on Advanced Growth
   assert.equal(PLAN_DEFINITIONS.advanced_growth.capabilities.landing_page_bonus, true, "Advanced Growth must include landing page bonus");

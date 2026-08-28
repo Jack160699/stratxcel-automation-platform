@@ -6,20 +6,20 @@ function run() {
   // 1. Free tier limit
   assert.equal(PLAN_LIMITS.free.image_generation_attempts_monthly, 3, "Free trial must allow exactly 3 image attempts/month");
   assert.equal(PLAN_CAPABILITIES.free.seo_execution, false, "Free trial must not execute SEO");
-  assert.equal(PLAN_CAPABILITIES.free.social_autopilot, false, "Free trial must not have Social Autopilot");
+  assert.equal(PLAN_CAPABILITIES.free.social_autopilot, true, "Social Autopilot is now available on every plan, including Free trial (Unlock Autopilot For All Plans mission)");
   assert.equal(PLAN_CAPABILITIES.free.whatsapp_assistant_access, false, "Free trial must not have WhatsApp Autopilot");
   assert.equal(PLAN_CAPABILITIES.free.website_included, false, "Free trial must not include website generation");
 
   // 2. SEO Growth
   assert.equal(PLAN_DEFINITIONS.seo.priceCents, 299_900, "SEO Growth is ₹2,999/mo");
   assert.equal(PLAN_CAPABILITIES.seo.seo_execution, true, "SEO Growth has seo_execution");
-  assert.equal(PLAN_CAPABILITIES.seo.social_autopilot, false, "SEO Growth has no social autopilot");
+  assert.equal(PLAN_CAPABILITIES.seo.social_autopilot, true, "Social Autopilot is now available on every plan, including SEO Growth (Unlock Autopilot For All Plans mission)");
   assert.equal(PLAN_CAPABILITIES.seo.whatsapp_assistant_access, false, "SEO Growth has no whatsapp autopilot");
 
   // 3. Social Content
   assert.equal(PLAN_DEFINITIONS.social.priceCents, 399_900, "Social Content is ₹3,999/mo");
   assert.equal(PLAN_LIMITS.social.social_posts, 28, "Social Content has 28 posts/mo");
-  assert.equal(PLAN_CAPABILITIES.social.social_autopilot, false, "Social Content has no Social Autopilot");
+  assert.equal(PLAN_CAPABILITIES.social.social_autopilot, true, "Social Autopilot is now available on every plan, including Social Content (Unlock Autopilot For All Plans mission)");
 
   // 4. Advanced Social
   assert.equal(PLAN_DEFINITIONS.advanced_social.priceCents, 849_900, "Advanced Social is ₹8,499/mo");

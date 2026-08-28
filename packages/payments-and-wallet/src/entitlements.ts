@@ -235,12 +235,25 @@ export const PLAN_LIMITS: Record<string, PlanEntitlementLimits> = {
   },
 };
 
+// Unlock Autopilot For All Plans mission: Social Autopilot is now the
+// platform's core feature and must be available on every plan, including
+// Starter/free-tier and SEO-only/website-only plans -- previously gated
+// to advanced_social/advanced_growth (and the legacy growth/business/
+// custom_growth/scale tiers) only. Every social_autopilot: false below is
+// deliberately flipped to true; PLAN_LIMITS' numeric quotas (social_posts,
+// social_autopilot_automated_monthly, etc.) are untouched -- a plan with a
+// genuine 0 post quota (e.g. SEO-only/website-only) can now see and
+// activate the toggle, but has nothing to actually schedule until it has
+// a real, non-zero content quota. That's an honest, pre-existing "zero
+// entitlement" state (planPackagePeriod's own blockedReason/
+// NEEDS_ATTENTION handling), not a fabricated quota this mission never
+// asked for.
 export const PLAN_CAPABILITIES: Record<string, PlanCapabilities> = {
   free: {
     google_growth_level: "basic",
     seo_level: "basic",
     seo_execution: false,
-    social_autopilot: false,
+    social_autopilot: true,
     direct_publishing: false,
     logo_brand_kit: false,
     landing_page: false,
@@ -260,7 +273,7 @@ export const PLAN_CAPABILITIES: Record<string, PlanCapabilities> = {
     google_growth_level: "basic",
     seo_level: "basic",
     seo_execution: true,
-    social_autopilot: false,
+    social_autopilot: true,
     direct_publishing: false,
     logo_brand_kit: false,
     landing_page: false,
@@ -280,7 +293,7 @@ export const PLAN_CAPABILITIES: Record<string, PlanCapabilities> = {
     google_growth_level: "basic",
     seo_level: "basic",
     seo_execution: false,
-    social_autopilot: false,
+    social_autopilot: true,
     direct_publishing: true,
     logo_brand_kit: true,
     landing_page: false,
@@ -300,7 +313,7 @@ export const PLAN_CAPABILITIES: Record<string, PlanCapabilities> = {
     google_growth_level: "basic",
     seo_level: "basic",
     seo_execution: true,
-    social_autopilot: false,
+    social_autopilot: true,
     direct_publishing: true,
     logo_brand_kit: true,
     landing_page: false,
@@ -320,7 +333,7 @@ export const PLAN_CAPABILITIES: Record<string, PlanCapabilities> = {
     google_growth_level: "advanced",
     seo_level: "advanced",
     seo_execution: true,
-    social_autopilot: false,
+    social_autopilot: true,
     direct_publishing: false,
     logo_brand_kit: false,
     landing_page: false,
@@ -380,7 +393,7 @@ export const PLAN_CAPABILITIES: Record<string, PlanCapabilities> = {
     google_growth_level: "basic",
     seo_level: "basic",
     seo_execution: false,
-    social_autopilot: false,
+    social_autopilot: true,
     direct_publishing: false,
     logo_brand_kit: true,
     landing_page: true,
@@ -400,7 +413,7 @@ export const PLAN_CAPABILITIES: Record<string, PlanCapabilities> = {
     google_growth_level: "basic",
     seo_level: "basic",
     seo_execution: false,
-    social_autopilot: false,
+    social_autopilot: true,
     direct_publishing: false,
     logo_brand_kit: true,
     landing_page: true,
@@ -420,7 +433,7 @@ export const PLAN_CAPABILITIES: Record<string, PlanCapabilities> = {
     google_growth_level: "basic",
     seo_level: "basic",
     seo_execution: false,
-    social_autopilot: false,
+    social_autopilot: true,
     direct_publishing: false,
     logo_brand_kit: true,
     landing_page: true,
@@ -442,7 +455,7 @@ export const PLAN_CAPABILITIES: Record<string, PlanCapabilities> = {
     google_growth_level: "basic",
     seo_level: "basic",
     seo_execution: true,
-    social_autopilot: false,
+    social_autopilot: true,
     direct_publishing: true,
     logo_brand_kit: true,
     landing_page: false,
@@ -502,7 +515,7 @@ export const PLAN_CAPABILITIES: Record<string, PlanCapabilities> = {
     google_growth_level: "basic",
     seo_level: "basic",
     seo_execution: true,
-    social_autopilot: false,
+    social_autopilot: true,
     direct_publishing: true,
     logo_brand_kit: true,
     landing_page: false,
