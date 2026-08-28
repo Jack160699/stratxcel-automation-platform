@@ -25,6 +25,7 @@ import {
 } from "@/lib/social/package-autopilot";
 import { packageErrorForClient } from "@/lib/social/package-errors";
 import { recordAudit } from "@/lib/social/repositories/system";
+import { hasCapability, isPlanTier } from "@stratxcel/payments-and-wallet";
 
 /**
  * Hermes-Orchestrated Content Engine Hardening mission, Section 1: real gap
@@ -123,6 +124,15 @@ export async function GET(req: NextRequest) {
     const { data: connectedAccounts } = await service.from("social_accounts").select("platform").eq("tenant_id", tenantId).eq("status", "CONNECTED");
     const { data: brands } = await service.from("social_brand_profiles").select("id").eq("tenant_id", tenantId).limit(2);
     const connectedPlatforms = [...new Set((connectedAccounts ?? []).map((row) => String(row.platform).toLowerCase()))];
+    // Real gap found live (Debug Missing UI Toggle mission): the response
+    // never told the client whether the tenant's PLAN even includes Social
+    // Autopilot at all (a Growth+ capability -- Starter never gets it,
+    // regardless of brand/connector setup, per activatePackageAutopilot's
+    // own hasCapability check). Every not-yet-activated tenant, Starter or
+    // Growth+, got the identical "Set up Autopilot" prompt -- misleading
+    // for Starter tenants, who can never actually complete that setup.
+    const planTier = isPlanTier(subscription?.plan_tier) ? subscription!.plan_tier : null;
+    const planEligible = Boolean(planTier) && hasCapability(planTier!, "social_autopilot");
     const composition = resolvePurchasedPackageComposition({
       planTier: typeof subscription?.plan_tier === "string" ? subscription.plan_tier : null,
       allowedPlatforms: connectedPlatforms.length ? connectedPlatforms : ["instagram"],
@@ -151,6 +161,7 @@ export async function GET(req: NextRequest) {
       activated: false,
       eligibility: {
         subscriptionActive,
+        planEligible,
         subscriptionId: subscription?.id ?? null,
         entitlementId: entitlement?.id ?? null,
         entitlementAvailable: Boolean(entitlement) && !entitlement!.is_paused && entitlement!.current_usage < entitlement!.limit_amount,

@@ -9,6 +9,12 @@ type ToggleState =
   | { status: "loading" }
   | { status: "error" }
   | { status: "not_activated" }
+  /** Real gap found live: every not-yet-activated tenant, Starter or
+   * Growth+, previously got the identical "Set up Autopilot" prompt --
+   * misleading for Starter tenants, who can never complete that setup
+   * since Social Autopilot is a Growth+ plan capability. Distinguished
+   * here via eligibility.planEligible (route.ts's GET handler). */
+  | { status: "plan_ineligible" }
   | { status: "ready"; authorizationId: string; publishingMode: PublishingMode };
 
 /**
@@ -34,9 +40,9 @@ export function AutopilotModeToggle({ tenantId, variant }: { tenantId: string | 
     if (!tenantId) return;
     fetch(`/api/platform/social/autopilot?tenantId=${encodeURIComponent(tenantId)}`)
       .then((response) => (response.ok ? response.json() : Promise.reject(new Error("Could not load Autopilot"))))
-      .then((result: { activated: boolean; authorizationId?: string; publishingMode?: PublishingMode }) => {
+      .then((result: { activated: boolean; authorizationId?: string; publishingMode?: PublishingMode; eligibility?: { planEligible?: boolean } }) => {
         if (!result.activated || !result.authorizationId || !result.publishingMode) {
-          setState({ status: "not_activated" });
+          setState(result.eligibility?.planEligible === false ? { status: "plan_ineligible" } : { status: "not_activated" });
           return;
         }
         setState({ status: "ready", authorizationId: result.authorizationId, publishingMode: result.publishingMode });
@@ -71,9 +77,14 @@ export function AutopilotModeToggle({ tenantId, variant }: { tenantId: string | 
   if (!tenantId || state.status === "loading" || state.status === "error") return null;
 
   const heading = "Social Autopilot";
-  const description = state.status === "not_activated"
-    ? "Not set up yet — activate it to auto-generate and post your content."
-    : "Choose whether new posts publish automatically or wait for your review.";
+  const description =
+    state.status === "plan_ineligible"
+      ? "Not included in your current plan — upgrade to Growth to unlock auto-generated, auto-posted content."
+      : state.status === "not_activated"
+        ? "Not set up yet — activate it to auto-generate and post your content."
+        : "Choose whether new posts publish automatically or wait for your review.";
+  const setupHref = state.status === "plan_ineligible" ? "/app/billing" : "/app/content/autopilot";
+  const setupLabel = state.status === "plan_ineligible" ? "Upgrade" : "Set up";
 
   if (variant === "settings") {
     return (
@@ -84,12 +95,12 @@ export function AutopilotModeToggle({ tenantId, variant }: { tenantId: string | 
             <p className="text-[14px] font-semibold text-sx-text">{heading}</p>
             <p className="mt-0.5 text-[13px] text-sx-text-muted">{description}</p>
           </div>
-          {state.status === "not_activated" ? (
-            <Link href="/app/content/autopilot" className="shrink-0 rounded-sx-sm border border-sx-border-strong px-3 py-2 text-[13px] font-semibold text-sx-accent hover:bg-sx-surface-2">
-              Set up
-            </Link>
-          ) : (
+          {state.status === "ready" ? (
             <ModeSegmentedControl mode={state.publishingMode} saving={saving} onChange={setMode} />
+          ) : (
+            <Link href={setupHref} className="shrink-0 rounded-sx-sm border border-sx-border-strong px-3 py-2 text-[13px] font-semibold text-sx-accent hover:bg-sx-surface-2">
+              {setupLabel}
+            </Link>
           )}
         </div>
       </div>
@@ -102,16 +113,16 @@ export function AutopilotModeToggle({ tenantId, variant }: { tenantId: string | 
   return (
     <div className="pt-1">
       <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-sx-text-subtle">{heading}</p>
-      {state.status === "not_activated" ? (
+      {state.status === "ready" ? (
+        <ModeSegmentedControl mode={state.publishingMode} saving={saving} onChange={setMode} compact />
+      ) : (
         <Link
-          href="/app/content/autopilot"
+          href={setupHref}
           className="flex min-h-[40px] items-center justify-between rounded-sx-sm border border-sx-border px-3 text-[13px] font-semibold text-sx-accent hover:bg-sx-surface-2"
         >
-          <span>Set up Autopilot</span>
+          <span>{state.status === "plan_ineligible" ? "Upgrade to unlock Autopilot" : "Set up Autopilot"}</span>
           <span aria-hidden="true">›</span>
         </Link>
-      ) : (
-        <ModeSegmentedControl mode={state.publishingMode} saving={saving} onChange={setMode} compact />
       )}
     </div>
   );
