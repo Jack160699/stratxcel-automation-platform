@@ -1,5 +1,5 @@
-import { createSupabaseServiceClient } from "../../supabase/service";
-import type { OwnerContext } from "../db-context";
+import { createSupabaseServiceClient } from "../../supabase/service.ts";
+import type { OwnerContext } from "../db-context.ts";
 
 type ServiceClient = ReturnType<typeof createSupabaseServiceClient>;
 

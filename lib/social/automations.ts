@@ -1,6 +1,6 @@
-import { createSupabaseServiceClient } from "../supabase/service";
-import { recordAudit } from "./repositories/system";
-import type { OwnerContext } from "./db-context";
+import { createSupabaseServiceClient } from "../supabase/service.ts";
+import { recordAudit } from "./repositories/system.ts";
+import type { OwnerContext } from "./db-context.ts";
 
 export type AutomationTrigger = "post_published" | "job_dead_letter";
 

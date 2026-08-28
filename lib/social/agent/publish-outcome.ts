@@ -1,9 +1,9 @@
-import { createSupabaseServiceClient } from "../../supabase/service";
-import { runWorkerBatch } from "../worker";
-import { getJobService, type PublishingJobRow } from "../repositories/publishing";
-import { outcomeNoteFor } from "./publish-outcome-classify";
+import { createSupabaseServiceClient } from "../../supabase/service.ts";
+import { runWorkerBatch } from "../worker.ts";
+import { getJobService, type PublishingJobRow } from "../repositories/publishing.ts";
+import { outcomeNoteFor } from "./publish-outcome-classify.ts";
 
-export { PUBLISH_INTENT_TOOLS, isProvenLivePublish, describePublishAttempt } from "./publish-outcome-classify";
+export { PUBLISH_INTENT_TOOLS, isProvenLivePublish, describePublishAttempt } from "./publish-outcome-classify.ts";
 
 type ServiceClient = ReturnType<typeof createSupabaseServiceClient>;
 

@@ -1,17 +1,17 @@
 import crypto from "node:crypto";
-import { createSupabaseServiceClient } from "../supabase/service";
-import { getProvider } from "./providers";
-import type { SocialProvider } from "./providers";
-import { MetaApiError } from "./errors";
-import { evaluateAutomations } from "./automations";
+import { createSupabaseServiceClient } from "../supabase/service.ts";
+import { getProvider } from "./providers/index.ts";
+import type { SocialProvider } from "./providers/index.ts";
+import { MetaApiError } from "./errors.ts";
+import { evaluateAutomations } from "./automations.ts";
 import {
   getAccountService,
   getDecryptedTokenState,
   markReauthRequired,
   saveRefreshedAccessToken,
-} from "./repositories/accounts";
-import { accessTokenNeedsRefresh } from "./token-lifecycle";
-import { getVariantForPublish, markVariantStatus } from "./repositories/content";
+} from "./repositories/accounts.ts";
+import { accessTokenNeedsRefresh } from "./token-lifecycle.ts";
+import { getVariantForPublish, markVariantStatus } from "./repositories/content.ts";
 import {
   claimDueJobs,
   tryClaimJob,
@@ -19,13 +19,13 @@ import {
   markJobPublished,
   markJobRetry,
   moveJobToDeadLetter,
-} from "./repositories/publishing";
-import { recordMetrics } from "./repositories/analytics";
-import { externalMutationDecision } from "./shadow-gate";
-import { normalizeYouTubePrivacyStatus } from "./providers/youtube-visibility";
-import { resolveMediaForPublish } from "./repositories/media-assets";
-import { recordAudit } from "./repositories/system";
-import { verificationAuthorizationAllows } from "./verification-policy";
+} from "./repositories/publishing.ts";
+import { recordMetrics } from "./repositories/analytics.ts";
+import { externalMutationDecision } from "./shadow-gate.ts";
+import { normalizeYouTubePrivacyStatus } from "./providers/youtube-visibility.ts";
+import { resolveMediaForPublish } from "./repositories/media-assets.ts";
+import { recordAudit } from "./repositories/system.ts";
+import { verificationAuthorizationAllows } from "./verification-policy.ts";
 
 /**
  * Publishing worker for the stratxcel schema. Called from two places:
