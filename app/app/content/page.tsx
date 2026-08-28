@@ -190,6 +190,43 @@ async function loadImageGenerationCreatives(supabase: any, tenantId: string) {
  * matches on EITHER column, covering both the legacy owner-scoped path
  * real data uses today and the tenant-scoped path forward-compatibly.
  */
+/** Same social_content_variant_media -> social_media_assets -> signed URL
+ * join the Pipeline and Calendar pages use. Package Autopilot content
+ * never populates content_variants.media_urls (prepareNearTermPackage
+ * Items hardcodes it to []) -- the real, generated image only exists as a
+ * link via this join table, so a caption card that skips it renders
+ * text-only even when a real image is attached. */
+async function resolveVariantThumbnails(supabase: any, variantIds: string[]): Promise<Map<string, string>> {
+  const result = new Map<string, string>();
+  if (!variantIds.length) return result;
+  const { data: links } = await supabase
+    .from("social_content_variant_media")
+    .select("variant_id, asset_id, position")
+    .in("variant_id", variantIds)
+    .order("position", { ascending: true });
+  if (!links?.length) return result;
+  const firstAssetByVariant = new Map<string, string>();
+  for (const link of links) {
+    if (!firstAssetByVariant.has(link.variant_id)) firstAssetByVariant.set(link.variant_id, link.asset_id);
+  }
+  const assetIds = [...new Set(firstAssetByVariant.values())];
+  const { data: assets } = await supabase
+    .from("social_media_assets")
+    .select("id, storage_bucket, storage_path")
+    .eq("status", "READY")
+    .in("id", assetIds);
+  const assetById = new Map((assets ?? []).map((a: any) => [a.id, a]));
+  await Promise.all(
+    [...firstAssetByVariant.entries()].map(async ([variantId, assetId]) => {
+      const asset = assetById.get(assetId) as { storage_bucket: string; storage_path: string } | undefined;
+      if (!asset) return;
+      const { data: signed } = await supabase.storage.from(asset.storage_bucket).createSignedUrl(asset.storage_path, 3600);
+      if (signed?.signedUrl) result.set(variantId, signed.signedUrl);
+    })
+  );
+  return result;
+}
+
 async function loadTextCaptions(supabase: any, tenantId: string) {
   try {
     const { data: brandProfile } = await supabase
@@ -213,6 +250,8 @@ async function loadTextCaptions(supabase: any, tenantId: string) {
       .in("master_id", masterIds)
       .order("created_at", { ascending: false })
       .limit(15);
+    const variantIds = (variants ?? []).map((v: any) => v.id);
+    const thumbnails = await resolveVariantThumbnails(supabase, variantIds);
     return (variants ?? []).map((v: any) => ({
       id: v.id,
       title: titleByMasterId.get(v.master_id) || "Untitled draft",
@@ -221,6 +260,7 @@ async function loadTextCaptions(supabase: any, tenantId: string) {
       hashtags: (v.hashtags as string[] | null) ?? [],
       status: v.status as string,
       createdAt: v.created_at,
+      imageUrl: thumbnails.get(v.id) ?? null,
     }));
   } catch {
     return [];
@@ -305,6 +345,8 @@ export default async function CustomerContentPage() {
       title: draft.title,
       type: "caption",
       category: draft.status === "READY" ? "saved" : "draft",
+      imageUrl: draft.imageUrl ?? undefined,
+      aspectRatio: "1:1",
       createdAt: draft.createdAt,
       status: (draft.status === "READY" ? "READY" : "DRAFT") as ContentItem["status"],
       captionText: draft.captionText ?? undefined,

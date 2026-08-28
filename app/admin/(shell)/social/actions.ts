@@ -12,7 +12,7 @@ import { upsertAutomationSettings } from "@/lib/social/repositories/automation";
 import { recordAudit } from "@/lib/social/repositories/system";
 import { createSupabaseServiceClient } from "@/lib/supabase/service";
 import { runWorkerBatch } from "@/lib/social/worker";
-import { planPackagePeriod, prepareNearTermPackageItems, packageKillSwitchActive } from "@/lib/social/package-autopilot";
+import { planPackagePeriod, prepareNearTermPackageItems, packageKillSwitchActive, runPackageAutopilotBatch } from "@/lib/social/package-autopilot";
 import { normalizeYouTubePrivacyStatus } from "@/lib/social/providers/youtube-visibility";
 import { attachMediaToMaster, attachMediaToVariant } from "@/lib/social/repositories/media-assets";
 import {
@@ -196,10 +196,32 @@ export async function cancelScheduledPostAction(formData: FormData) {
 export async function runWorkerNowAction() {
   // Admin-gated server action that runs the SAME batch-claim logic as the
   // cron-triggered route, in-process. No HTTP round trip, no CRON_SECRET.
+  //
+  // Real gap found live (Force Publish Now mission): this only ever called
+  // runWorkerBatch (the generic publishing-job worker), never
+  // runPackageAutopilotBatch -- even though the actual cron route this
+  // button's own doc comment claims to mirror (/api/social/worker)
+  // genuinely runs both on every tick. A Package Autopilot queue item due
+  // for publish is claimed and settled entirely inside
+  // runPackageAutopilotBatch (claim_social_package_post -> settle_social_
+  // package_post); runWorkerBatch alone only advances the underlying
+  // social_publishing_jobs row it doesn't own, so clicking this button did
+  // nothing for a due package item -- confirmed live: a real PREPARED
+  // package item, due now, was untouched by a real click before this fix.
   const ctx = await assertOwner();
   try {
     const result = await runWorkerBatch({ ownerId: ctx.ownerId });
-    await recordAudit({ actorType: "USER", actorId: ctx.ownerId, action: "worker.run", summary: `Worker batch processed ${result.processed} job(s)`, meta: { ...result } });
+    const packageResult = await runPackageAutopilotBatch(createSupabaseServiceClient() as Parameters<typeof runPackageAutopilotBatch>[0]).catch((err) => ({
+      processed: 0,
+      error: err instanceof Error ? err.message : "package batch failed",
+    }));
+    await recordAudit({
+      actorType: "USER",
+      actorId: ctx.ownerId,
+      action: "worker.run",
+      summary: `Worker batch processed ${result.processed} job(s); package autopilot processed ${packageResult.processed}`,
+      meta: { ...result, packageAutopilot: packageResult },
+    });
   } catch (err) {
     console.error("manual worker trigger failed:", err);
   }

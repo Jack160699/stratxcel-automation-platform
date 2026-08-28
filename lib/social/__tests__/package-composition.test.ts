@@ -36,7 +36,11 @@ function run() {
   assert.equal(compositionMediaTypeForUnit(imageOnly!, 29), "image");
   assert.ok(!imageOnly!.items.some((item) => item.mediaType === "text"));
 
-  // Image + reel purchased mix (growth catalog: 20 image + 5 reel).
+  // Remove Reels mission: growth catalog is now all-image (was 20 image + 5
+  // reel) -- the full purchased total (25) is preserved, just as images,
+  // since no real video-generation capability exists anywhere to fulfill a
+  // reel unit (selectPackageMediaAsset fails closed with
+  // media_capability_unavailable for every tenant today).
   const growth = resolvePurchasedPackageComposition({
     planTier: "growth",
     allowedPlatforms: ["instagram", "linkedin"],
@@ -44,14 +48,13 @@ function run() {
     entitlementLimit: 25,
   });
   assert.ok(growth);
-  assert.deepEqual(growth!.items, [
-    { mediaType: "image", quantity: 20 },
-    { mediaType: "reel", quantity: 5 },
-  ]);
+  assert.deepEqual(growth!.items, [{ mediaType: "image", quantity: 25 }]);
   assert.equal(compositionUnitTotal(growth!.items), 25);
-  assert.equal(formatPackageCompositionLabel(growth!.items), "20 image posts + 5 reels");
+  assert.equal(formatPackageCompositionLabel(growth!.items), "25 image posts");
   assert.equal(compositionMediaTypeForUnit(growth!, 19), "image");
-  assert.equal(compositionMediaTypeForUnit(growth!, 20), "reel");
+  assert.equal(compositionMediaTypeForUnit(growth!, 24), "image");
+  assert.equal(compositionMediaTypeForUnit(growth!, 25), null);
+  assert.ok(!growth!.items.some((item) => item.mediaType === "reel"), "the growth catalog must no longer allocate any unit to reel/video");
 
   // Starter / launch mixed 12 units
   const starter = resolvePurchasedPackageComposition({

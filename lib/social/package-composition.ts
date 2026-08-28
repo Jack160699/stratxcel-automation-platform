@@ -16,60 +16,45 @@ export interface PackageComposition {
   servicePeriodDays: number;
 }
 
-/** Catalog mix per paid/legacy plan tier. Totals align with PLAN_LIMITS.social_posts. */
+/**
+ * Catalog mix per paid/legacy plan tier. Totals align with PLAN_LIMITS.social_posts.
+ *
+ * Remove Reels mission: every tier used to carve a slice of its total into
+ * `reel` (video) units. Real gap found live -- selectPackageMediaAsset
+ * (package-media.ts) fails closed with `media_capability_unavailable` for
+ * ANY reel/video unit when the tenant has zero video-type social_media_assets
+ * (mime_type LIKE 'video/%'), which is every tenant today: there is no real
+ * video-generation capability anywhere in this codebase (Creative Studio
+ * only ever produces images), so a reel unit could never have completed
+ * regardless of how many times the producer retried it -- confirmed live: a
+ * real Stratxcel queue item permanently BLOCKED this exact way on the very
+ * first cron tick after activation. Every former reel/video quantity is
+ * folded into that tier's image quantity (never just dropped) so paying
+ * customers keep their full purchased post count -- only the media kind
+ * changes, same treatment YouTube got in the Finalize Autopilot Pipeline
+ * mission (AUTOPILOT_SCHEDULABLE_PLATFORMS) for the analogous "no video
+ * capability" gap at the platform level instead of the content-type level.
+ */
 export const PLAN_PACKAGE_COMPOSITIONS: Readonly<
   Record<string, ReadonlyArray<{ mediaType: PackageMediaKind; quantity: number }>>
 > = {
   // 28 social_posts (canonical commercial model)
-  social: [
-    { mediaType: "image", quantity: 22 },
-    { mediaType: "reel", quantity: 6 },
-  ],
-  social_content: [
-    { mediaType: "image", quantity: 22 },
-    { mediaType: "reel", quantity: 6 },
-  ],
-  seo_and_social: [
-    { mediaType: "image", quantity: 22 },
-    { mediaType: "reel", quantity: 6 },
-  ],
-  advanced_social: [
-    { mediaType: "image", quantity: 20 },
-    { mediaType: "reel", quantity: 8 },
-  ],
-  advanced_growth: [
-    { mediaType: "image", quantity: 20 },
-    { mediaType: "reel", quantity: 8 },
-  ],
+  social: [{ mediaType: "image", quantity: 28 }],
+  social_content: [{ mediaType: "image", quantity: 28 }],
+  seo_and_social: [{ mediaType: "image", quantity: 28 }],
+  advanced_social: [{ mediaType: "image", quantity: 28 }],
+  advanced_growth: [{ mediaType: "image", quantity: 28 }],
   // 12 social_posts (legacy)
-  launch: [
-    { mediaType: "image", quantity: 8 },
-    { mediaType: "reel", quantity: 4 },
-  ],
-  starter: [
-    { mediaType: "image", quantity: 8 },
-    { mediaType: "reel", quantity: 4 },
-  ],
+  launch: [{ mediaType: "image", quantity: 12 }],
+  starter: [{ mediaType: "image", quantity: 12 }],
   // 25 social_posts (legacy)
-  growth: [
-    { mediaType: "image", quantity: 20 },
-    { mediaType: "reel", quantity: 5 },
-  ],
+  growth: [{ mediaType: "image", quantity: 25 }],
   // 50 social_posts (legacy)
-  business: [
-    { mediaType: "image", quantity: 40 },
-    { mediaType: "reel", quantity: 10 },
-  ],
+  business: [{ mediaType: "image", quantity: 50 }],
   // 60 social_posts (legacy)
-  custom_growth: [
-    { mediaType: "image", quantity: 40 },
-    { mediaType: "reel", quantity: 20 },
-  ],
+  custom_growth: [{ mediaType: "image", quantity: 60 }],
   // 75 social_posts (quote-led display baseline)
-  scale: [
-    { mediaType: "image", quantity: 55 },
-    { mediaType: "reel", quantity: 20 },
-  ],
+  scale: [{ mediaType: "image", quantity: 75 }],
   // Explicit all-image catalog entry for image-only purchased packages (tests + special grants).
   image_30: [{ mediaType: "image", quantity: 30 }],
 };
