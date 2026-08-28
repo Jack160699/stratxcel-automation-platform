@@ -8,6 +8,8 @@ import { StatusChip, type ChipState } from "@/components/ui/StatusChip";
 import { ErrorState, EmptyState } from "@/components/ui/Feedback";
 import { PackagePublishPreviewCard } from "./PackagePublishPreview";
 import type { PackagePublishPreview } from "@/lib/social/package-preview";
+import { VisualStyleCard } from "./VisualStyleOnboarding";
+import { ManualArchetypeGeneration } from "./ManualArchetypeGeneration";
 
 interface UpcomingItem {
   id: string;
@@ -377,6 +379,9 @@ export function AutopilotDashboard() {
           {data.state !== "CANCELLED" && <Button size="sm" variant="danger" disabled={busyAction} onClick={() => void runControl("cancel")}>Cancel Autopilot</Button>}
         </div>
       </Card>
+
+      <VisualStyleCard tenantId={tenantId} />
+      <ManualArchetypeGeneration tenantId={tenantId} />
 
       <Card variant="panel">
         <CardHeading>Upcoming</CardHeading>
