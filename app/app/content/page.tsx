@@ -61,17 +61,46 @@ async function loadImageGenerationCreatives(supabase: any, tenantId: string) {
       .limit(15);
     if (!jobs || jobs.length === 0) return [];
 
-    const selectedCandidateIds = jobs.map((j: any) => j.selected_candidate_id).filter(Boolean) as string[];
-    const candidatesById = new Map<string, { asset_id: string; width: number | null; height: number | null }>();
-    if (selectedCandidateIds.length > 0) {
+    // Real bug found live: image_generation_jobs.selected_candidate_id is
+    // only ever populated by an explicit, separate "select a candidate"
+    // action (Creative Studio's multi-candidate review flow) --
+    // Social Autopilot's manual generation never called it, so every one
+    // of its READY jobs had real, generated candidates but a permanently
+    // null selected_candidate_id, and this page's imageUrl lookup came back
+    // empty every time (falling back to the text-only card -- "rendering
+    // the raw text prompt instead of the actual thumbnail"). Fixed at the
+    // source for new jobs (manual-generate now auto-selects), but every
+    // job already sitting in production needs this same defensive fallback
+    // to actually display: fetch EVERY job's candidates, not just the
+    // explicitly-selected one, and fall back to the best available
+    // (SELECTED > oldest non-REJECTED) when no selection was ever made.
+    const jobIds = jobs.map((j: any) => j.id);
+    const candidatesByJobId = new Map<string, Array<{ id: string; asset_id: string; status: string; created_at: string }>>();
+    if (jobIds.length > 0) {
       const { data: candidates } = await supabase
         .from("image_generation_candidates")
-        .select("id, asset_id, width, height")
-        .in("id", selectedCandidateIds);
-      for (const c of candidates ?? []) candidatesById.set(c.id, c);
+        .select("id, job_id, asset_id, status, created_at")
+        .in("job_id", jobIds)
+        .order("created_at", { ascending: true });
+      for (const c of candidates ?? []) {
+        const list = candidatesByJobId.get(c.job_id) ?? [];
+        list.push(c);
+        candidatesByJobId.set(c.job_id, list);
+      }
     }
 
-    const assetIds = [...candidatesById.values()].map((c) => c.asset_id);
+    function pickBestCandidate(job: any) {
+      const list = candidatesByJobId.get(job.id) ?? [];
+      if (job.selected_candidate_id) {
+        const explicit = list.find((c) => c.id === job.selected_candidate_id);
+        if (explicit) return explicit;
+      }
+      const selected = list.find((c) => c.status === "SELECTED");
+      if (selected) return selected;
+      return list.find((c) => c.status !== "REJECTED") ?? null;
+    }
+
+    const assetIds = [...candidatesByJobId.values()].flat().map((c) => c.asset_id);
     const signedUrlByAssetId = new Map<string, string>();
     if (assetIds.length > 0) {
       const { data: assets } = await supabase
@@ -89,12 +118,19 @@ async function loadImageGenerationCreatives(supabase: any, tenantId: string) {
     }
 
     return jobs.map((job: any) => {
-      const candidate = job.selected_candidate_id ? candidatesById.get(job.selected_candidate_id) : null;
+      const candidate = pickBestCandidate(job);
       const imageUrl = candidate ? signedUrlByAssetId.get(candidate.asset_id) ?? null : null;
+      // Real field-name bug found live: this used to read treatment.
+      // ctaDirection, a key that has never existed on CreativeTreatment
+      // (lib/social/creative-treatment.ts) -- the real CTA lives at
+      // treatment.cta.text (a CtaDecision object), so every card's
+      // "objective" line was silently always empty regardless of what the
+      // treatment actually specified.
       const treatment = (job.creative_treatment ?? null) as Record<string, unknown> | null;
       const concept = typeof treatment?.concept === "string" ? treatment.concept : null;
       const layoutArchetype = typeof treatment?.layoutArchetype === "string" ? treatment.layoutArchetype : null;
-      const ctaDirection = typeof treatment?.ctaDirection === "string" ? treatment.ctaDirection : null;
+      const cta = treatment?.cta as { text?: unknown } | undefined;
+      const ctaText = typeof cta?.text === "string" && cta.text.trim() ? cta.text : null;
       return {
         id: job.id,
         title: concept || job.brief || "Untitled creative",
@@ -104,7 +140,7 @@ async function loadImageGenerationCreatives(supabase: any, tenantId: string) {
         createdAt: job.created_at,
         captionText: job.brief || null,
         layoutArchetype,
-        ctaDirection,
+        ctaDirection: ctaText,
         errorMessage: job.status === "FAILED" ? job.safe_error : null,
       };
     });

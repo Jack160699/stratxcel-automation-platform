@@ -10,7 +10,18 @@ import type { CreateImageJobInput } from "@/lib/image-generation/types";
 import { createSupabaseServiceClient } from "@/lib/supabase/service";
 
 export const runtime = "nodejs";
-export const maxDuration = 180;
+// The real Gemini/OpenAI + deterministic text-overlay compositor chain
+// (processImageGenerationJob) has its own internal provider-timeout budget
+// of up to 170s (ImageMediaRuntime's clamp -- packages/ai-runtime/src/
+// media/image.ts). At maxDuration=180 there was only ~10s of margin left
+// for candidate persistence, Supabase Storage upload, and the compositor
+// itself once the provider call returned -- real production timeouts
+// ("The provider timed out") were Vercel killing the function before that
+// work finished, not the provider genuinely taking too long. 300s matches
+// the same budget already used elsewhere in this codebase for long AI
+// chains (app/api/social/copilot/runs/[runId]/execute,
+// app/api/platform/social/copilot/runs/[runId]/execute).
+export const maxDuration = 300;
 
 export async function GET() {
   const ctx = await requireImageGenerationContext();

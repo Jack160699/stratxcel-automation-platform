@@ -2,7 +2,13 @@ import { requireImageGenerationContext } from "@/lib/image-generation/http";
 import { ImageGenerationServiceError, processImageGenerationJob } from "@/lib/image-generation/service";
 
 export const runtime = "nodejs";
-export const maxDuration = 180;
+// See app/api/platform/image-generations/route.ts's comment: 180s left
+// almost no margin over the AI runtime's own up-to-170s provider timeout
+// budget, and this route awaits processImageGenerationJob synchronously
+// (no after() early-return) -- the client-facing request itself needs the
+// full chain to finish. 300s matches this codebase's established budget
+// for long AI chains.
+export const maxDuration = 300;
 
 export async function POST(request: Request, { params }: { params: Promise<{ jobId: string }> }) {
   const ctx = await requireImageGenerationContext();

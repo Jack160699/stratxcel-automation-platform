@@ -155,6 +155,36 @@ async function run() {
   assert.ok(service.includes("social_autopilot_manual_monthly"), "a manual archetype request must draw from its own dedicated quota metric, not the automated or generic pools");
   assert.ok(service.includes("forceArchetypeOntoTreatment"), "an authorized manual archetype request must be force-applied to the treatment -- the AI/caller must never have the final say once routing has decided");
 
+  // Fix Vercel Timeouts & Content Library UI Rendering mission: real bugs
+  // found live. (1) image_generation_jobs.selected_candidate_id is only
+  // ever set by an explicit selectImageGenerationCandidate call -- this
+  // route requested the service-wide default of 2 candidates but never
+  // called it, so every job sat READY with two real candidates and a
+  // permanently null selection, and the Content Library's imageUrl lookup
+  // (keyed on selected_candidate_id) came back empty every time. (2) all
+  // three real generation routes had maxDuration=180 against an AI runtime
+  // that can legitimately take up to 170s on its own, leaving ~10s for the
+  // compositor/storage/DB work that follows -- Vercel was killing the
+  // function before that work finished.
+  const manualGenerateRoute = read("app", "api", "platform", "social", "autopilot", "manual-generate", "route.ts");
+  assert.ok(manualGenerateRoute.includes("candidateCount: 1"), "manual generation must request exactly 1 candidate -- its own UI never offers a choice between multiple, so requesting more only wastes real provider cost with no candidate ever getting selected");
+  assert.ok(manualGenerateRoute.includes("selectImageGenerationCandidate"), "manual generation must auto-select its (only) candidate once ready -- nothing else in this flow ever calls selectImageGenerationCandidate for it");
+  assert.match(manualGenerateRoute, /maxDuration\s*=\s*300/, "manual-generate must have real margin over the AI runtime's own up-to-170s timeout budget, not the 180s that left ~10s for post-generation work");
+  const reviseRoute = read("app", "api", "platform", "image-generations", "[jobId]", "revise", "route.ts");
+  assert.match(reviseRoute, /maxDuration\s*=\s*300/, "the revise route awaits processImageGenerationJob synchronously -- it needs the same real timeout margin as every other real-generation route");
+  assert.match(createRoute, /maxDuration\s*=\s*300/, "the primary generation route needs the same real timeout margin");
+
+  // Display-layer defensive fallback for jobs that already exist in
+  // production with selected_candidate_id: null (unaffected by the
+  // manual-generate fix above, since that only prevents the gap for new
+  // jobs going forward) -- the Content Library must still resolve a real
+  // thumbnail for them instead of permanently falling back to text-only.
+  const contentLibraryPage = read("app", "app", "content", "page.tsx");
+  assert.ok(contentLibraryPage.includes("pickBestCandidate"), "the Content Library must fall back to the best available candidate when no explicit selection was ever made, not just the (possibly-null) selected_candidate_id");
+  assert.ok(contentLibraryPage.includes('c.status === "SELECTED"'), "the fallback must prefer a genuinely SELECTED candidate over an arbitrary one when both exist");
+  assert.ok(!contentLibraryPage.includes("treatment?.ctaDirection"), "must not read the nonexistent CreativeTreatment.ctaDirection field -- the real CTA lives at treatment.cta.text (a CtaDecision object)");
+  assert.ok(contentLibraryPage.includes("cta?.text"), "the CTA line shown on a content card must read the real treatment.cta.text field");
+
   console.log("image-generation.test.ts: ALL PASS");
 }
 
