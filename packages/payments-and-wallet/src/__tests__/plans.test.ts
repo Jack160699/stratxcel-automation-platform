@@ -99,7 +99,15 @@ function run() {
   );
 
   // --- 8. Plan capability flags (brief §7) -------------------------------------
-  assert.equal(PLAN_DEFINITIONS.starter.capabilities.social_autopilot, false, "Starter must not include Social Autopilot");
+  // Starter's social_autopilot flag flipped false -> true as a deliberate
+  // v3 commercial decision (subscription-gated visual-archetype system):
+  // Starter gets automated-only Social Autopilot, BASIC_ESSENTIAL layout
+  // exclusively, 12 automated / 0 manual generations/month -- enforced by
+  // lib/social/archetype-routing.ts, not just this flag. See
+  // archetype-routing.test.ts for the routing-level assertions this
+  // replaces (Starter capability=true, quota=12/0, forced BASIC_ESSENTIAL,
+  // premium archetype selection rejected).
+  assert.equal(PLAN_DEFINITIONS.starter.capabilities.social_autopilot, true, "Starter must include Social Autopilot (automated-only, BASIC_ESSENTIAL, 12/mo)");
   assert.equal(PLAN_DEFINITIONS.growth.capabilities.social_autopilot, true, "Growth must include Social Autopilot");
   assert.equal(PLAN_DEFINITIONS.business.capabilities.social_autopilot, true, "Business must include Social Autopilot");
   assert.equal(PLAN_DEFINITIONS.starter.capabilities.direct_publishing, true, "Starter must still include direct publishing");

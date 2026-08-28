@@ -187,7 +187,13 @@ export const PLAN_CAPABILITIES: Record<"launch" | "custom_growth" | "free" | "st
   starter: {
     google_growth_level: "basic",
     seo_level: "basic",
-    social_autopilot: false,
+    // Real commercial decision (not an oversight): Starter (₹2,999) gets
+    // automated-only Social Autopilot, BASIC_ESSENTIAL layout exclusively,
+    // 12 automated / 0 manual generations per month (see
+    // social_autopilot_automated_monthly / social_autopilot_manual_monthly
+    // in PLAN_LIMITS above, and lib/social/archetype-routing.ts for the
+    // server-side enforcement that makes this real, not just a flag).
+    social_autopilot: true,
     direct_publishing: true,
     logo_brand_kit: true,
     landing_page: false,
