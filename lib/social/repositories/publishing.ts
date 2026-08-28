@@ -108,9 +108,9 @@ export async function tryClaimJob(service: ServiceClient, jobId: string, workerI
     .update({ status: "CLAIMED", locked_at: new Date().toISOString() })
     .eq("id", jobId)
     .eq("status", "SCHEDULED")
-    .select("id, account_id, variant_id, attempts, max_attempts, idempotency_key")
+    .select("id, account_id, variant_id, attempts, max_attempts, idempotency_key, result")
     .maybeSingle();
-  return data as { id: string; account_id: string; variant_id: string; attempts: number; max_attempts: number; idempotency_key: string } | null;
+  return data as { id: string; account_id: string; variant_id: string; attempts: number; max_attempts: number; idempotency_key: string; result?: Record<string, unknown> | null } | null;
 }
 
 export async function markJobRunning(service: ServiceClient, jobId: string) {
@@ -124,8 +124,13 @@ export async function markJobPublished(service: ServiceClient, jobId: string, re
     .eq("id", jobId);
 }
 
-export async function markJobRetry(service: ServiceClient, jobId: string, attempts: number, lastError: string) {
-  await service.from("social_publishing_jobs").update({ status: "SCHEDULED", attempts, last_error: lastError }).eq("id", jobId);
+export async function markJobRetry(service: ServiceClient, jobId: string, attempts: number, lastError: string, result?: Record<string, unknown>) {
+  await service.from("social_publishing_jobs").update({
+    status: "SCHEDULED",
+    attempts,
+    last_error: lastError,
+    ...(result ? { result } : {}),
+  }).eq("id", jobId);
 }
 
 export async function moveJobToDeadLetter(service: ServiceClient, jobId: string, payload: Record<string, unknown>, error: string) {

@@ -5,6 +5,7 @@ import {
   isPlanTier,
   isProviderManagedSubscription,
   updateRazorpaySubscriptionPlan,
+  calculateProration,
 } from "@stratxcel/payments-and-wallet";
 import { requirePermission, PermissionDeniedError } from "@/lib/rbac/policy";
 
@@ -51,7 +52,11 @@ async function markPlanChangeReconciliationRequired(
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const body = await request.json().catch(() => ({}));
-  const { tenantId, targetPlanTier } = body as { tenantId?: string; targetPlanTier?: string };
+  const { tenantId, targetPlanTier, effectiveTiming } = body as {
+    tenantId?: string;
+    targetPlanTier?: string;
+    effectiveTiming?: "immediate" | "cycle_end";
+  };
 
   if (!tenantId || !isPlanTier(targetPlanTier)) {
     return Response.json({ error: "Invalid tenantId or targetPlanTier" }, { status: 400 });
@@ -125,6 +130,21 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       p_target_plan_tier: targetPlanTier,
     });
 
+    let proration = null;
+    if (sub.current_period_start && sub.current_period_end) {
+      try {
+        proration = calculateProration({
+          currentPlanTier: sub.plan_tier,
+          targetPlanTier,
+          periodStartIso: sub.current_period_start,
+          periodEndIso: sub.current_period_end,
+          alreadyPaidCents: typeof sub.price_cents === "number" ? sub.price_cents : undefined,
+        });
+      } catch {
+        proration = null;
+      }
+    }
+
     if (!error && (data as { success?: boolean })?.success === true) {
       await serviceDb
         .from("subscriptions")
@@ -134,7 +154,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
           updated_at: new Date().toISOString(),
         })
         .eq("id", id);
-      return Response.json({ ...(data as object), providerPlanId, providerStatus }, { headers: { "Cache-Control": "no-store" } });
+      return Response.json(
+        { ...(data as object), providerPlanId, providerStatus, proration, effectiveTiming: effectiveTiming ?? "cycle_end" },
+        { headers: { "Cache-Control": "no-store" } }
+      );
     }
 
     // Idempotent direct persistence after provider success.
@@ -159,6 +182,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
           pending_plan_tier: targetPlanTier,
           providerPlanId,
           providerStatus,
+          proration,
+          effectiveTiming: effectiveTiming ?? "cycle_end",
           persistence: "direct_idempotent",
         },
         { headers: { "Cache-Control": "no-store" } }

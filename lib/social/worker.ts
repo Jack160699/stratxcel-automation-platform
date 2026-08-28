@@ -44,6 +44,28 @@ const WORKER_ID = () => `worker-${crypto.randomUUID().slice(0, 8)}`;
 
 type ServiceClient = ReturnType<typeof createSupabaseServiceClient>;
 
+export type DestinationPublishStatus =
+  | "NOT_STARTED"
+  | "MEDIA_UPLOADING"
+  | "MEDIA_UPLOADED"
+  | "PUBLISHING"
+  | "PUBLISHED"
+  | "FAILED_RETRYABLE"
+  | "FAILED_FINAL"
+  | "REAUTH_REQUIRED";
+
+export interface DestinationExecutionState {
+  platform: string;
+  status: DestinationPublishStatus;
+  mediaContainerId?: string | null;
+  uploadId?: string | null;
+  externalPostId?: string | null;
+  permalink?: string | null;
+  lastError?: string | null;
+  retryCount: number;
+  updatedAt: string;
+}
+
 export interface WorkerBatchResult {
   workerId: string;
   processed: number;
@@ -128,13 +150,15 @@ export async function runAuthorizedVerificationJob(input: {
 
 async function processJob(
   service: ServiceClient,
-  job: { id: string; account_id: string; variant_id: string; attempts: number; max_attempts: number; idempotency_key: string },
+  job: { id: string; account_id: string; variant_id: string; attempts: number; max_attempts: number; idempotency_key: string; result?: Record<string, unknown> | null },
   verification?: VerificationExecution
 ): Promise<string> {
   await markJobRunning(service, job.id);
 
   let accountId: string | undefined;
   let accountPlatform: string | undefined;
+  const previousResult = (job.result ?? {}) as Record<string, unknown>;
+  const destinations = { ...((previousResult.destinations as Record<string, DestinationExecutionState>) ?? {}) };
 
   try {
     const variant = await getVariantForPublish(service, job.variant_id);
@@ -142,7 +166,7 @@ async function processJob(
     if (variant.status === "PUBLISHED") {
       // Already-published guard: if a retry somehow re-enters processJob for
       // a variant that already succeeded, don't publish a second time.
-      await markJobPublished(service, job.id, { note: "already published" });
+      await markJobPublished(service, job.id, { ...previousResult, note: "already published" });
       return "already_published";
     }
 
@@ -150,6 +174,13 @@ async function processJob(
     if (!account) throw new Error("social_account not found");
     accountId = account.id;
     accountPlatform = account.platform;
+
+    const priorDest = destinations[account.platform];
+    if (priorDest?.status === "PUBLISHED") {
+      await markJobPublished(service, job.id, { ...previousResult, note: "destination already published" });
+      return "already_published";
+    }
+
     if (account.status !== "CONNECTED") throw new Error(`account status is ${account.status}`);
 
     const { data: settings } = await service
@@ -284,17 +315,33 @@ async function processJob(
       raw = result.raw;
     }
 
+    destinations[account.platform] = {
+      platform: account.platform,
+      status: "PUBLISHED",
+      mediaContainerId: (raw as { mediaContainerId?: string })?.mediaContainerId ?? priorDest?.mediaContainerId ?? null,
+      uploadId: (raw as { uploadId?: string })?.uploadId ?? priorDest?.uploadId ?? null,
+      externalPostId,
+      permalink,
+      lastError: null,
+      retryCount: job.attempts,
+      updatedAt: new Date().toISOString(),
+    };
+
+    const finalResult: Record<string, unknown> = {
+      ...previousResult,
+      mode: isLive ? (verificationUpload ? "verification_live" : "live") : "shadow",
+      external_post_id: externalPostId,
+      ...(permalink ? { permalink } : {}),
+      raw,
+      destinations,
+    };
+
     // Mark the variant published FIRST, inside the same logical step as
     // recording the job result, so a retry that re-enters this job sees
     // status='PUBLISHED' and takes the already_published short-circuit
     // above instead of publishing twice.
     await markVariantStatus(service, job.variant_id, "PUBLISHED", { published_at: new Date().toISOString() });
-    await markJobPublished(service, job.id, {
-      mode: isLive ? (verificationUpload ? "verification_live" : "live") : "shadow",
-      external_post_id: externalPostId,
-      ...(permalink ? { permalink } : {}),
-      raw,
-    });
+    await markJobPublished(service, job.id, finalResult);
     await recordMetrics(service, job.variant_id, externalPostId, {});
 
     await evaluateAutomations("post_published", { provider: account.platform, jobId: job.id }).catch(() => {
@@ -318,11 +365,37 @@ async function processJob(
       (isMetaError && !err.retryable) ||
       nextAttempt >= job.max_attempts;
 
+    const destStatus: DestinationPublishStatus =
+      isMetaError && (err.category === "invalid_token" || err.category === "oauth_denied")
+        ? "REAUTH_REQUIRED"
+        : bounded
+        ? "FAILED_FINAL"
+        : "FAILED_RETRYABLE";
+
+    const platformKey = accountPlatform ?? "unknown";
+    destinations[platformKey] = {
+      platform: platformKey,
+      status: destStatus,
+      mediaContainerId: destinations[platformKey]?.mediaContainerId ?? null,
+      uploadId: destinations[platformKey]?.uploadId ?? null,
+      externalPostId: null,
+      lastError: message,
+      retryCount: nextAttempt,
+      updatedAt: new Date().toISOString(),
+    };
+
+    const updatedResult: Record<string, unknown> = {
+      ...previousResult,
+      destinations,
+      lastError: message,
+      lastAttemptAt: new Date().toISOString(),
+    };
+
     if (bounded) {
-      await moveJobToDeadLetter(service, job.id, { attempts: nextAttempt, errorCategory: isMetaError ? err.category : "generic" }, message);
+      await moveJobToDeadLetter(service, job.id, { attempts: nextAttempt, errorCategory: isMetaError ? err.category : "generic", destinations }, message);
       await evaluateAutomations("job_dead_letter", { jobId: job.id, error: message }).catch(() => {});
     } else {
-      await markJobRetry(service, job.id, nextAttempt, message);
+      await markJobRetry(service, job.id, nextAttempt, message, updatedResult);
     }
 
     if (isMetaError && err.category === "invalid_token" && accountId) {

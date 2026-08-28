@@ -21,3 +21,4 @@ export * from "./entitlements.ts";
 export * from "./plans.ts";
 export * from "./website-services.ts";
 export * from "./invoices.ts";
+export * from "./proration.ts";
