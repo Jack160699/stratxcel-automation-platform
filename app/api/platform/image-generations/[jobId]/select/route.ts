@@ -2,6 +2,7 @@ import { requireImageGenerationContext } from "@/lib/image-generation/http";
 import { ImageGenerationServiceError, selectImageGenerationCandidate } from "@/lib/image-generation/service";
 
 export const runtime = "nodejs";
+export const maxDuration = 300;
 
 export async function POST(request: Request, { params }: { params: Promise<{ jobId: string }> }) {
   const ctx = await requireImageGenerationContext();

@@ -132,12 +132,10 @@ export class ImageMediaRuntime {
     // failure (provider, model, elapsed time), so there was no way to tell
     // "Gemini is genuinely just slow" from "this request is stuck." The API
     // route allows up to maxDuration=180s; raise the per-call budget to use
-    // that headroom (170s, leaving 10s for storage/DB/response after the
-    // provider call returns) instead of giving up at 90s. generateGemini()
-    // now issues multi-candidate requests in parallel rather than
-    // sequentially, so requesting N candidates no longer multiplies this
-    // budget by N against the same 180s ceiling.
-    this.timeoutMs = Math.max(10_000, Math.min(deps.timeoutMs ?? 150_000, 170_000));
+    // Provider timeout budget is aligned to Vercel maxDuration=300s ceiling
+    // allowing up to 250s (capped at 280s), leaving 20s for compositor,
+    // storage persistence, and DB status updates.
+    this.timeoutMs = Math.max(10_000, Math.min(deps.timeoutMs ?? 250_000, 280_000));
   }
 
   isConfigured(): boolean {

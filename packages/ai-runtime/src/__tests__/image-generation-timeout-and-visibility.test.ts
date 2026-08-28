@@ -51,11 +51,11 @@ describe("Image generation: timeout budget, parallelism, and log visibility", ()
     assert.ok(elapsedMs < 300, `expected well under 3x60ms=180ms (parallel), took ${elapsedMs}ms -- looks sequential`);
   });
 
-  it("gives a single Gemini attempt more than the old 90s budget, bounded well under the 180s route ceiling", async () => {
+  it("gives a single Gemini attempt more than the old 90s budget, bounded well under the 300s route ceiling", async () => {
     const runtime = new ImageMediaRuntime({ geminiApiKey: "test", openaiApiKey: "test", fetchImpl: async () => new Response("{}") });
     const timeoutMs = (runtime as unknown as { timeoutMs: number }).timeoutMs;
     assert.ok(timeoutMs > 90_000, `expected more than the old 90s default, got ${timeoutMs}ms`);
-    assert.ok(timeoutMs <= 170_000, `must leave headroom under the route's maxDuration=180s, got ${timeoutMs}ms`);
+    assert.ok(timeoutMs <= 280_000, `must leave headroom under the route's maxDuration=300s, got ${timeoutMs}ms`);
   });
 
   it("logs the real timeout with model, elapsed time, and budget instead of failing silently", async () => {

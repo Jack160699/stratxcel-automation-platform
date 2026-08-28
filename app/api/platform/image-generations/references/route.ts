@@ -6,6 +6,7 @@ import { isBrandOrLogoAsset } from "@/lib/social/brand-asset-filter";
 import { getCurrentBrandBrain } from "@stratxcel/brand-brain";
 
 export const runtime = "nodejs";
+export const maxDuration = 300;
 
 const BUCKET = "social-agent-attachments";
 const REFERENCE_MIME_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
