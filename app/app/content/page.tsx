@@ -4,42 +4,6 @@ import { ContentLibraryClient, type ContentItem } from "./ContentLibraryClient";
 
 export const dynamic = "force-dynamic";
 
-function generatePosterSvg(title: string, subtitle: string, accentColor = "#2563eb", badge = "SPECIAL OFFER") {
-  const safeTitle = title.replace(/[<>&"]/g, "");
-  const safeSubtitle = subtitle.replace(/[<>&"]/g, "");
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="600" viewBox="0 0 600 600">
-    <defs>
-      <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-        <stop offset="0%" stop-color="#0f172a"/>
-        <stop offset="60%" stop-color="#1e293b"/>
-        <stop offset="100%" stop-color="#090d16"/>
-      </linearGradient>
-      <linearGradient id="accentGlow" x1="0%" y1="0%" x2="100%" y2="100%">
-        <stop offset="0%" stop-color="${accentColor}"/>
-        <stop offset="100%" stop-color="#3b82f6"/>
-      </linearGradient>
-    </defs>
-    <rect width="600" height="600" fill="url(#bg)"/>
-    <circle cx="500" cy="100" r="180" fill="${accentColor}" opacity="0.12" filter="blur(40px)"/>
-    <circle cx="100" cy="500" r="160" fill="#3b82f6" opacity="0.1" filter="blur(40px)"/>
-    <rect x="30" y="30" width="540" height="540" rx="20" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="2"/>
-    <rect x="50" y="60" width="140" height="32" rx="16" fill="url(#accentGlow)"/>
-    <text x="120" y="81" fill="#ffffff" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="bold" text-anchor="middle" letter-spacing="1.5">${badge}</text>
-    <text x="50" y="240" fill="#ffffff" font-family="system-ui, -apple-system, sans-serif" font-size="36" font-weight="bold" width="500">
-      <tspan x="50" dy="0">${safeTitle.slice(0, 26)}</tspan>
-      <tspan x="50" dy="48">${safeTitle.slice(26, 52)}</tspan>
-    </text>
-    <text x="50" y="360" fill="#94a3b8" font-family="system-ui, -apple-system, sans-serif" font-size="18">
-      <tspan x="50" dy="0">${safeSubtitle.slice(0, 42)}</tspan>
-      <tspan x="50" dy="28">${safeSubtitle.slice(42, 84)}</tspan>
-    </text>
-    <rect x="50" y="470" width="220" height="48" rx="24" fill="#ffffff"/>
-    <text x="160" y="500" fill="#0f172a" font-family="system-ui, -apple-system, sans-serif" font-size="15" font-weight="bold" text-anchor="middle">Book on WhatsApp →</text>
-    <text x="550" y="510" fill="#64748b" font-family="system-ui, -apple-system, sans-serif" font-size="14" font-weight="600" text-anchor="end">StratXcel AutoCreative</text>
-  </svg>`;
-  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
-}
-
 async function loadTenantMedia(supabase: any, tenantId: string) {
   try {
     const { data: assets } = await supabase
@@ -75,15 +39,75 @@ async function loadTenantMedia(supabase: any, tenantId: string) {
   }
 }
 
-async function loadImageJobs(supabase: any, tenantId: string) {
+/**
+ * Real, production-persisted Social Autopilot / Creative Studio image
+ * generations for this tenant -- replaces the previous generatePosterSvg()
+ * mock generator and its schema-mismatched loadImageJobs() query (which
+ * read `prompt`/`style_preset`, columns that don't exist on
+ * image_generation_jobs; see 20260812104243_image_generation_v1.sql and
+ * the Subscription-Gated Visual Archetypes brief's real schema). Reads the
+ * REAL job/candidate/asset chain: job -> selected_candidate ->
+ * social_media_assets -> a signed preview URL, plus the job's own
+ * creative_treatment for its concept, CTA, and layout archetype -- never a
+ * fabricated poster.
+ */
+async function loadImageGenerationCreatives(supabase: any, tenantId: string) {
   try {
-    const res = await supabase
+    const { data: jobs } = await supabase
       .from("image_generation_jobs")
-      .select("id, prompt, style_preset, aspect_ratio, status, created_at")
+      .select("id, status, brief, creative_treatment, aspect_ratio, selected_candidate_id, safe_error, created_at")
       .eq("tenant_id", tenantId)
       .order("created_at", { ascending: false })
       .limit(15);
-    return res?.data ?? [];
+    if (!jobs || jobs.length === 0) return [];
+
+    const selectedCandidateIds = jobs.map((j: any) => j.selected_candidate_id).filter(Boolean) as string[];
+    const candidatesById = new Map<string, { asset_id: string; width: number | null; height: number | null }>();
+    if (selectedCandidateIds.length > 0) {
+      const { data: candidates } = await supabase
+        .from("image_generation_candidates")
+        .select("id, asset_id, width, height")
+        .in("id", selectedCandidateIds);
+      for (const c of candidates ?? []) candidatesById.set(c.id, c);
+    }
+
+    const assetIds = [...candidatesById.values()].map((c) => c.asset_id);
+    const signedUrlByAssetId = new Map<string, string>();
+    if (assetIds.length > 0) {
+      const { data: assets } = await supabase
+        .from("social_media_assets")
+        .select("id, storage_bucket, storage_path")
+        .in("id", assetIds);
+      for (const asset of assets ?? []) {
+        try {
+          const { data: signed } = await supabase.storage.from(asset.storage_bucket).createSignedUrl(asset.storage_path, 3600);
+          if (signed?.signedUrl) signedUrlByAssetId.set(asset.id, signed.signedUrl);
+        } catch {
+          // storage sign error ignored -- card renders without a preview image
+        }
+      }
+    }
+
+    return jobs.map((job: any) => {
+      const candidate = job.selected_candidate_id ? candidatesById.get(job.selected_candidate_id) : null;
+      const imageUrl = candidate ? signedUrlByAssetId.get(candidate.asset_id) ?? null : null;
+      const treatment = (job.creative_treatment ?? null) as Record<string, unknown> | null;
+      const concept = typeof treatment?.concept === "string" ? treatment.concept : null;
+      const layoutArchetype = typeof treatment?.layoutArchetype === "string" ? treatment.layoutArchetype : null;
+      const ctaDirection = typeof treatment?.ctaDirection === "string" ? treatment.ctaDirection : null;
+      return {
+        id: job.id,
+        title: concept || job.brief || "Untitled creative",
+        status: job.status as string,
+        imageUrl,
+        aspectRatio: job.aspect_ratio || null,
+        createdAt: job.created_at,
+        captionText: job.brief || null,
+        layoutArchetype,
+        ctaDirection,
+        errorMessage: job.status === "FAILED" ? job.safe_error : null,
+      };
+    });
   } catch {
     return [];
   }
@@ -100,11 +124,10 @@ export default async function CustomerContentPage() {
   const tenantId = ctx.workspaceTenant.tenantId;
   const tenantDb = ctx.supabase;
 
-  // Load tenant brain, image jobs, and stored media assets in parallel
-  const [brain, mediaAssets, imageJobs] = await Promise.all([
+  const [brain, mediaAssets, generations] = await Promise.all([
     getCurrentBrandBrain(tenantDb, tenantId).catch(() => null),
     loadTenantMedia(tenantDb, tenantId),
-    loadImageJobs(tenantDb, tenantId),
+    loadImageGenerationCreatives(tenantDb, tenantId),
   ]);
 
   const brainContent = brain?.content as Record<string, unknown> | undefined;
@@ -115,7 +138,7 @@ export default async function CustomerContentPage() {
 
   const items: ContentItem[] = [];
 
-  // 1. Add real uploaded/generated media assets with signed URLs
+  // 1. Real uploaded/generated media assets with signed URLs
   for (const media of mediaAssets) {
     items.push({
       id: media.id,
@@ -130,120 +153,27 @@ export default async function CustomerContentPage() {
     });
   }
 
-  // 2. Add AI generation jobs with visual preview posters
-  for (const job of imageJobs) {
-    const posterUrl = generatePosterSvg(
-      job.prompt ? job.prompt.slice(0, 45) : "AI Generated Promotion",
-      `Created for ${businessName}`,
-      "#6366f1",
-      job.status === "READY" ? "GENERATED" : "IN PROGRESS"
-    );
-
+  // 2. Real image_generation_jobs, with the actual layout archetype and
+  // job status this tenant's own pipeline produced -- no synthetic poster,
+  // no placeholder copy. A job with no selected candidate yet (still
+  // generating, or failed before one was chosen) renders with no preview
+  // image; the card falls back to its text-only presentation rather than
+  // fabricating one.
+  for (const gen of generations) {
     items.push({
-      id: job.id,
-      title: job.prompt ? job.prompt.slice(0, 50) + "..." : "AI Generated Creative",
+      id: gen.id,
+      title: gen.title,
       type: "poster",
-      category: job.status === "READY" ? "published" : "generated",
-      imageUrl: posterUrl,
-      aspectRatio: job.aspect_ratio || "1:1",
-      createdAt: job.created_at,
-      status: job.status as ContentItem["status"],
-      captionText: job.prompt,
+      category: gen.status === "READY" ? "generated" : gen.status === "FAILED" ? "draft" : "generated",
+      imageUrl: gen.imageUrl ?? undefined,
+      aspectRatio: gen.aspectRatio ?? "1:1",
+      createdAt: gen.createdAt,
+      status: gen.status as ContentItem["status"],
+      captionText: gen.captionText ?? undefined,
+      layoutArchetype: gen.layoutArchetype ?? undefined,
+      objective: gen.ctaDirection ?? undefined,
+      errorMessage: gen.errorMessage ?? undefined,
     });
-  }
-
-  // 3. Add starter curated creatives with rich high-res visual posters if needed
-  if (items.length < 5) {
-    items.push(
-      {
-        id: "starter-festive",
-        title: `${businessName} Festive Special Offer`,
-        type: "poster",
-        category: "draft",
-        angle: "Festive / Special Offer",
-        objective: "Festive footfall & direct WhatsApp orders",
-        imageUrl: generatePosterSvg(
-          `${businessName} Special Celebration Offer`,
-          "Exclusive deals and top quality service. Order on WhatsApp today!",
-          "#f59e0b",
-          "FESTIVE DEALS"
-        ),
-        aspectRatio: "1:1",
-        createdAt: new Date(Date.now() - 3600000 * 4).toISOString(),
-        status: "READY",
-        captionText: `🎉 Exclusive Offer from ${businessName}! Get premium quality today. Direct message on WhatsApp to reserve. #specialoffer #${businessName.toLowerCase().replace(/\\s+/g, "")} #trending`,
-      },
-      {
-        // Found live during E2E testing: this example item claimed
-        // category: "published" / status: "PUBLISHED" with a publishedAt
-        // timestamp and fabricated metrics (reach 840 / engagement 62 /
-        // impressions 1120) -- for a brand-new tenant with zero rows in
-        // content_master, i.e. nothing was ever actually published or
-        // measured. A real customer's very first visit to their Content
-        // page would see what looks like a live Instagram post already
-        // getting real engagement. These "starter curated creatives" are a
-        // reasonable onboarding pattern (example ideas to seed the empty
-        // state), but must never claim a real business outcome that never
-        // happened -- kept as an unpublished, unmeasured example like the
-        // other three starter items below.
-        //
-        // Separately found: the caption text itself asserted "5-star
-        // reviews on Google Maps" as an established fact about this
-        // specific business, with no check that any such review actually
-        // exists. A brand-new tenant with zero real reviews could copy this
-        // caption (via the card's one-click Copy action -- no edit step
-        // required) and post a false claim. Reworded as an explicit,
-        // fill-in-the-blank template that prompts featuring a REAL review
-        // rather than presupposing one, consistent with "clearly marked
-        // placeholder or omit" -- this content idea is genuinely useful
-        // once a business has real reviews, it just can't presume one yet.
-        id: "starter-review",
-        title: "Google Review Spotlight (Template)",
-        type: "creative",
-        category: "draft",
-        angle: "5-Star Review Spotlight",
-        objective: "Customer trust & Google Maps review proof",
-        imageUrl: generatePosterSvg(
-          `⭐⭐⭐⭐⭐ "[Add your customer's words here]"`,
-          `Feature a real 5-star review from your Google Business Profile to build trust with new customers.`,
-          "#10b981",
-          "REVIEW SPOTLIGHT"
-        ),
-        aspectRatio: "1:1",
-        createdAt: new Date(Date.now() - 3600000 * 48).toISOString(),
-        status: "READY",
-        captionText: `⭐⭐⭐⭐⭐ "[Paste a real review from your Google Business Profile here]" Thank you to our customers -- your trust means everything to us!`,
-      },
-      {
-        id: "starter-reel",
-        title: "Behind the Scenes Highlight Reel",
-        type: "video",
-        category: "draft",
-        angle: "Behind the Scenes",
-        objective: "Community engagement & craft transparency",
-        imageUrl: generatePosterSvg(
-          `Behind the Scenes at ${businessName}`,
-          "Watch our team prepare fresh orders with care and passion. Tap to play.",
-          "#ec4899",
-          "VIDEO REEL"
-        ),
-        aspectRatio: "9:16",
-        createdAt: new Date(Date.now() - 3600000 * 24).toISOString(),
-        status: "DRAFT",
-        captionText: `Behind the scenes at ${businessName}. Serving our community with love and excellence! Visit us today. ✨`,
-      },
-      {
-        id: "starter-caption",
-        title: "Hinglish Brand Voice & WhatsApp Invite",
-        type: "caption",
-        category: "saved",
-        angle: "Local & Friendly",
-        objective: "Multilingual neighborhood outreach",
-        createdAt: new Date(Date.now() - 3600000 * 72).toISOString(),
-        status: "READY",
-        captionText: `नमस्ते! ${businessName} में आपका स्वागत है। हमारे पास आपके लिए स्पेशल डील्स उपलब्ध हैं। डायरेक्ट WhatsApp पर मैसेज करें और बेस्ट रेट्स पाएं। 🙏`,
-      }
-    );
   }
 
   return (

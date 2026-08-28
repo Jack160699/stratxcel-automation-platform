@@ -154,8 +154,12 @@ export default async function ClientCommandCenterPage() {
   // score, for sources that are now actually connected.
   const opportunities: AuditOpportunity[] = scoreIsStale ? [] : (report?.opportunities?.slice(0, 3) ?? []);
 
+  // No conditional width by subscription status -- every /app visitor (free
+  // or paid) gets the same wide, consistently-padded container; a narrower
+  // reading width for any particular section is that section's own concern
+  // now, not the page shell's.
   return (
-    <div className="sx-customer-app mx-auto flex w-full max-w-[720px] flex-col gap-6 pb-20 md:pb-8">
+    <div className="sx-customer-app mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-6 pb-20 sm:px-6 md:pb-8 lg:px-8">
       {customerState.isSubscribed ? (
         <SubscribedUserDashboard
           businessName={businessName}
@@ -319,8 +323,10 @@ function SubscribedUserDashboard({
 
   return (
     <div className="flex flex-col gap-6">
-      {/* Header — plan status + Ask Copilot */}
-      <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
+      {/* Unified header bar — tenant name, plan badge, and primary action in
+          one aligned row with structured padding, instead of bare text
+          floating at the page margin. */}
+      <div className="flex flex-col items-start gap-3 rounded-sx-md border border-sx-border bg-sx-surface-1 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <span className="inline-flex h-[26px] items-center gap-1.5 rounded-sx-pill bg-[var(--sx-success-tint)] px-2.5 text-[13px] font-semibold text-[color:var(--sx-success-text)]">
             Plan active · {customerState.planName}
@@ -335,8 +341,11 @@ function SubscribedUserDashboard({
         </Link>
       </div>
 
-      {/* Health + Pulse row — StratXcel Desktop canvas Row 1 */}
-      <div className="grid gap-4 sm:grid-cols-2">
+      {/* Health + metrics — a single balanced CSS Grid so laptop viewports
+          (1366-1920px) get 5 evenly-sized, equal-height cards in one row
+          instead of a narrow 2-column split floating in a mostly-empty
+          container. Stacks to 1 column on mobile, 3 on tablet. */}
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-3 lg:grid-cols-5">
         <div className="flex flex-col items-center justify-center gap-3 rounded-sx-md border border-sx-border bg-sx-surface-1 p-6 text-center">
           <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-sx-text-subtle">Online Health</span>
           {scoreIsStale ? (
@@ -353,15 +362,13 @@ function SubscribedUserDashboard({
             </>
           )}
         </div>
-        <div className="grid grid-cols-2 gap-3">
-          <MetricTile label="Connected sources" value={String(customerState.connectedSourcesCount)} />
-          <MetricTile label="Active missions" value={String(activeRunsCount > 0 ? activeRunsCount : 1)} />
-          <MetricTile label="Monthly usage" value={`${customerState.monthlyUsagePercent}%`} />
-          <MetricTile
-            label="Renews"
-            value={customerState.nextBillingDate ? new Date(customerState.nextBillingDate).toLocaleDateString() : "—"}
-          />
-        </div>
+        <MetricTile label="Connected sources" value={String(customerState.connectedSourcesCount)} />
+        <MetricTile label="Active missions" value={String(activeRunsCount > 0 ? activeRunsCount : 1)} />
+        <MetricTile label="Monthly usage" value={`${customerState.monthlyUsagePercent}%`} />
+        <MetricTile
+          label="Renews"
+          value={customerState.nextBillingDate ? new Date(customerState.nextBillingDate).toLocaleDateString() : "—"}
+        />
       </div>
 
       {/* Today's Priorities — sourced from the real opportunities the audit

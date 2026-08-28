@@ -16,9 +16,22 @@ export interface ContentItem {
   aspectRatio?: string;
   createdAt: string;
   publishedAt?: string;
-  status: "DRAFT" | "READY" | "PUBLISHED" | "SCHEDULED" | "GENERATED";
+  // The full set of real image_generation_jobs.status values (Subscription-
+  // Gated Visual Archetypes / image-generation schema) plus the pre-existing
+  // PUBLISHED/SCHEDULED states used by other content sources -- a real job
+  // in progress must render its ACTUAL status, never be squeezed into a
+  // status it isn't in yet.
+  status: "DRAFT" | "QUEUED" | "PROCESSING" | "REVIEWING" | "REVISING" | "READY" | "FAILED" | "PUBLISHED" | "SCHEDULED" | "GENERATED";
   objective?: string;
   angle?: "Local & Friendly" | "Festive / Special Offer" | "5-Star Review Spotlight" | "Behind the Scenes";
+  /** The real layout archetype this creative actually rendered with (e.g.
+   * "SPLIT_BANNER"), read from the job's own creative_treatment -- undefined
+   * for content with no treatment (plain uploads, captions). Never inferred
+   * or guessed client-side. */
+  layoutArchetype?: string;
+  /** The real safe_error persisted on a FAILED job -- shown instead of
+   * silently rendering a card with no explanation. */
+  errorMessage?: string;
   metrics?: {
     reach?: number;
     engagement?: number;
@@ -33,6 +46,24 @@ export const STRATEGIC_ANGLES = [
   { key: "review", label: "5-Star Review Spotlight", icon: "⭐", desc: "Customer testimonial and trust-building social proof" },
   { key: "bts", label: "Behind the Scenes", icon: "🎬", desc: "Authentic founder and kitchen/shop craft story" },
 ] as const;
+
+/** One shared status→color mapping for every status pill on the page --
+ * previously each pill inlined its own PUBLISHED/READY-only ternary, which
+ * silently lumped a real FAILED job in with "still generating" amber and
+ * gave every in-progress state (QUEUED/PROCESSING/REVIEWING/REVISING) the
+ * same "READY" blue as a finished one. */
+function statusPillClass(status: ContentItem["status"]): string {
+  switch (status) {
+    case "PUBLISHED":
+      return "bg-emerald-600";
+    case "READY":
+      return "bg-blue-600";
+    case "FAILED":
+      return "bg-red-600";
+    default:
+      return "bg-amber-600"; // DRAFT, QUEUED, PROCESSING, REVIEWING, REVISING, SCHEDULED, GENERATED -- genuinely in progress or not yet sent
+  }
+}
 
 const CATEGORY_TABS = [
   { key: "all", label: "All Content" },
@@ -61,7 +92,7 @@ export function ContentLibraryClient({
     return items.filter((item) => {
       // Tab filter
       if (activeTab === "creatives" && item.type !== "image" && item.type !== "creative" && item.type !== "poster") return false;
-      if (activeTab === "drafts" && item.status !== "DRAFT" && item.status !== "READY") return false;
+      if (activeTab === "drafts" && !["DRAFT", "READY", "QUEUED", "PROCESSING", "REVIEWING", "REVISING"].includes(item.status)) return false;
       if (activeTab === "published" && item.status !== "PUBLISHED") return false;
       if (activeTab === "captions" && item.type !== "caption") return false;
       if (activeTab === "videos" && item.type !== "video") return false;
@@ -295,18 +326,15 @@ export function ContentLibraryClient({
                     alt={item.title}
                     className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
                   />
-                  <div className="absolute top-2.5 left-2.5 flex items-center gap-1.5">
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-[10px] font-bold tracking-wider uppercase text-white shadow-sm ${
-                        item.status === "PUBLISHED"
-                          ? "bg-emerald-600"
-                          : item.status === "READY"
-                          ? "bg-blue-600"
-                          : "bg-amber-600"
-                      }`}
-                    >
+                  <div className="absolute top-2.5 left-2.5 flex flex-wrap items-center gap-1.5">
+                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold tracking-wider uppercase text-white shadow-sm ${statusPillClass(item.status)}`}>
                       {item.status}
                     </span>
+                    {item.layoutArchetype && (
+                      <span className="rounded-full bg-black/60 px-2 py-0.5 text-[10px] font-bold tracking-wider text-white backdrop-blur-xs">
+                        {item.layoutArchetype}
+                      </span>
+                    )}
                     {item.aspectRatio && (
                       <span className="rounded-full bg-black/60 px-2 py-0.5 text-[10px] font-bold text-white backdrop-blur-xs">
                         {item.aspectRatio}
@@ -319,17 +347,20 @@ export function ContentLibraryClient({
                   className="flex h-36 w-full cursor-pointer flex-col justify-between border-b border-sx-border bg-gradient-to-br from-sx-surface-2 to-sx-surface-3 p-4"
                   onClick={() => setPreviewItem(item)}
                 >
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between gap-1.5">
                     <span className="text-xl">✍️</span>
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-[10px] font-bold tracking-wider uppercase text-white ${
-                        item.status === "PUBLISHED" ? "bg-emerald-600" : "bg-blue-600"
-                      }`}
-                    >
-                      {item.status}
+                    <span className="flex flex-wrap items-center justify-end gap-1.5">
+                      {item.layoutArchetype && (
+                        <span className="rounded-full bg-black/30 px-2 py-0.5 text-[10px] font-bold tracking-wider text-sx-text">
+                          {item.layoutArchetype}
+                        </span>
+                      )}
+                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold tracking-wider uppercase text-white ${statusPillClass(item.status)}`}>
+                        {item.status}
+                      </span>
                     </span>
                   </div>
-                  <p className="line-clamp-3 text-xs italic text-sx-text">
+                  <p className="line-clamp-3 break-words text-xs italic text-sx-text hyphens-none">
                     &ldquo;{item.captionText || item.title}&rdquo;
                   </p>
                 </div>
@@ -339,7 +370,7 @@ export function ContentLibraryClient({
               <div className="flex flex-1 flex-col justify-between p-3.5">
                 <div>
                   <div className="flex items-center justify-between gap-2">
-                    <h3 className="text-[14px] font-bold text-sx-text line-clamp-1">{item.title}</h3>
+                    <h3 className="line-clamp-1 break-words text-[14px] font-bold text-sx-text hyphens-none">{item.title}</h3>
                     {item.angle && (
                       <span className="shrink-0 rounded-sx-xs bg-sx-accent-muted px-2 py-0.5 text-[10px] font-bold text-sx-accent">
                         {item.angle}
@@ -347,12 +378,12 @@ export function ContentLibraryClient({
                     )}
                   </div>
                   {item.captionText && (
-                    <p className="mt-1 text-xs text-sx-text-subtle line-clamp-2">{item.captionText}</p>
+                    <p className="mt-1 line-clamp-2 break-words text-xs text-sx-text-subtle hyphens-none">{item.captionText}</p>
                   )}
                   {item.objective && (
                     <p className="mt-1.5 text-[11px] font-medium text-sx-text-muted flex items-center gap-1">
                       <span>🎯</span>
-                      <span>{item.objective}</span>
+                      <span className="break-words hyphens-none">{item.objective}</span>
                     </p>
                   )}
                 </div>
@@ -372,6 +403,13 @@ export function ContentLibraryClient({
                     ) : (
                       <p className="mt-0.5 text-[10px] text-sx-text-subtle">Analytics syncing from connected accounts</p>
                     )}
+                  </div>
+                )}
+
+                {/* A real, persisted generation failure -- never hidden behind a bare "FAILED" pill with no explanation. */}
+                {item.status === "FAILED" && item.errorMessage && (
+                  <div className="mt-3 rounded-sx-sm border border-red-500/30 bg-red-500/10 p-2 text-[11px] text-red-400">
+                    <p className="break-words hyphens-none">{item.errorMessage}</p>
                   </div>
                 )}
 
@@ -407,12 +445,14 @@ export function ContentLibraryClient({
                     </button>
                   </div>
 
-                  <Link
-                    href={`/app/social/copilot`}
-                    className="text-[11px] font-bold text-sx-accent hover:underline"
-                  >
-                    {item.status === "PUBLISHED" ? "Promote →" : "Publish →"}
-                  </Link>
+                  {item.status !== "FAILED" && (
+                    <Link
+                      href={`/app/social/copilot`}
+                      className="text-[11px] font-bold text-sx-accent hover:underline"
+                    >
+                      {item.status === "PUBLISHED" ? "Promote →" : "Publish →"}
+                    </Link>
+                  )}
                 </div>
               </div>
             </div>
@@ -435,6 +475,19 @@ export function ContentLibraryClient({
                   alt={previewItem.title}
                   className="max-h-[50vh] w-full object-contain mx-auto"
                 />
+              </div>
+            )}
+
+            {previewItem.layoutArchetype && (
+              <div className="flex items-center gap-1.5 text-[11px] font-semibold text-sx-text-muted">
+                <span>Layout:</span>
+                <span className="rounded-sx-xs bg-sx-surface-2 px-2 py-0.5 font-bold tracking-wider text-sx-text">{previewItem.layoutArchetype}</span>
+              </div>
+            )}
+
+            {previewItem.status === "FAILED" && previewItem.errorMessage && (
+              <div className="rounded-sx-md border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-400">
+                <p className="break-words hyphens-none">{previewItem.errorMessage}</p>
               </div>
             )}
 
@@ -479,7 +532,7 @@ export function ContentLibraryClient({
             {previewItem.captionText && (
               <div className="rounded-sx-md border border-sx-border bg-sx-surface-2 p-3">
                 <p className="text-[11px] font-bold uppercase tracking-wider text-sx-text-subtle">Caption / Copy</p>
-                <p className="mt-1 text-sm text-sx-text whitespace-pre-wrap">{previewItem.captionText}</p>
+                <p className="mt-1 whitespace-pre-wrap break-words text-sm text-sx-text hyphens-none">{previewItem.captionText}</p>
               </div>
             )}
 
