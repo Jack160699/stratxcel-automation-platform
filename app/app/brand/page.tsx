@@ -171,29 +171,50 @@ export default function BrandPage() {
     }
   }
 
+  /**
+   * Real bug found live (Content Cleanup / BrandBrain Logo Engine
+   * mission): this used to POST raw multipart FormData directly to
+   * /api/platform/brand/photos, but that route only ever implemented the
+   * two-phase JSON `prepare` (issue a signed upload URL) -> PUT the bytes
+   * -> `finalize` (mark the asset READY) protocol -- request.json() on a
+   * multipart body returns {}, so tenantId was always "missing" and every
+   * upload 400'd immediately, in production, for every tenant. Also: the
+   * old code read data.photo.public_url, a field the real route's
+   * finalize response has never returned (see the real shape below) --
+   * even a successful upload would have set logo_url to undefined.
+   * uploadToSignedUrlWithProgress (imported, previously unused) is the
+   * correct client half of this exact protocol, already established by
+   * Creative Studio's reference-image upload.
+   */
   async function uploadPhoto(file: File) {
     if (!tenantId || readOnly) return;
     setUploadingPhoto(true);
     setPhotosError(null);
     try {
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("tenantId", tenantId);
-      const res = await fetch("/api/platform/brand/photos", {
+      const prepareRes = await fetch("/api/platform/brand/photos", {
         method: "POST",
-        body: formData,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tenantId, action: "prepare", name: file.name, mimeType: file.type, sizeBytes: file.size }),
       });
-      const data = await res.json();
-      if (!res.ok) {
-        setPhotosError(data.error || "We couldn't upload your photo right now.");
+      const prepareData = await prepareRes.json();
+      if (!prepareRes.ok) {
+        setPhotosError(prepareData.error || "We couldn't start your upload right now.");
         return;
       }
-      if (data.photo) {
-        setPhotos((prev) => [data.photo, ...prev]);
-        if (!content?.logo_url) {
-          field("logo_url", data.photo.public_url);
-        }
+      const { assetId, signedUrl } = prepareData as { assetId: string; signedUrl: string };
+      await uploadToSignedUrlWithProgress(signedUrl, file, () => {});
+
+      const finalizeRes = await fetch("/api/platform/brand/photos", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tenantId, action: "finalize", assetId }),
+      });
+      const finalizeData = await finalizeRes.json();
+      if (!finalizeRes.ok) {
+        setPhotosError(finalizeData.error || "We couldn't finish your upload right now.");
+        return;
       }
+      await loadPhotos();
     } catch {
       setPhotosError("We couldn't upload your photo right now.");
     } finally {
