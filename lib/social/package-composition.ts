@@ -20,7 +20,28 @@ export interface PackageComposition {
 export const PLAN_PACKAGE_COMPOSITIONS: Readonly<
   Record<string, ReadonlyArray<{ mediaType: PackageMediaKind; quantity: number }>>
 > = {
-  // 12 social_posts
+  // 28 social_posts (canonical commercial model)
+  social: [
+    { mediaType: "image", quantity: 22 },
+    { mediaType: "reel", quantity: 6 },
+  ],
+  social_content: [
+    { mediaType: "image", quantity: 22 },
+    { mediaType: "reel", quantity: 6 },
+  ],
+  seo_and_social: [
+    { mediaType: "image", quantity: 22 },
+    { mediaType: "reel", quantity: 6 },
+  ],
+  advanced_social: [
+    { mediaType: "image", quantity: 20 },
+    { mediaType: "reel", quantity: 8 },
+  ],
+  advanced_growth: [
+    { mediaType: "image", quantity: 20 },
+    { mediaType: "reel", quantity: 8 },
+  ],
+  // 12 social_posts (legacy)
   launch: [
     { mediaType: "image", quantity: 8 },
     { mediaType: "reel", quantity: 4 },
@@ -29,12 +50,12 @@ export const PLAN_PACKAGE_COMPOSITIONS: Readonly<
     { mediaType: "image", quantity: 8 },
     { mediaType: "reel", quantity: 4 },
   ],
-  // 25 social_posts
+  // 25 social_posts (legacy)
   growth: [
     { mediaType: "image", quantity: 20 },
     { mediaType: "reel", quantity: 5 },
   ],
-  // 50 social_posts
+  // 50 social_posts (legacy)
   business: [
     { mediaType: "image", quantity: 40 },
     { mediaType: "reel", quantity: 10 },

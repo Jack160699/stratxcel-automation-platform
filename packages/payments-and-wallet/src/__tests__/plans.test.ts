@@ -4,122 +4,99 @@ import { PLAN_DEFINITIONS, getSelfServicePlan, getPlanDefinition, isPlanTier, SE
 import { splitGstInclusive } from "../../../../lib/payments/gst.ts";
 
 function run() {
-  // --- 1. Canonical locked v2 commercial prices, exactly as approved ---------
+  // --- 1. Canonical commercial service prices (GST-inclusive) -----------------
   assert.equal(PLAN_DEFINITIONS.free.priceCents, 0, "Free must be ₹0");
-  assert.equal(PLAN_DEFINITIONS.starter.priceCents, 299_900, "Starter must be ₹2,999.00 GST-inclusive");
-  assert.equal(PLAN_DEFINITIONS.growth.priceCents, 799_900, "Growth must be ₹7,999.00 GST-inclusive");
-  assert.equal(PLAN_DEFINITIONS.business.priceCents, 1_599_900, "Business must be ₹15,999.00 GST-inclusive");
-  assert.equal(PLAN_DEFINITIONS.scale.priceCents, null, "Scale / Custom must not have a universal fixed price");
-  assert.equal(PLAN_DEFINITIONS.scale.startingAtCents, 2_999_900, "Scale / Custom must be quoted as starting at ₹29,999.00");
+  assert.equal(PLAN_DEFINITIONS.seo.priceCents, 299_900, "SEO Growth must be ₹2,999.00 GST-inclusive");
+  assert.equal(PLAN_DEFINITIONS.social.priceCents, 399_900, "Social Content must be ₹3,999.00 GST-inclusive");
+  assert.equal(PLAN_DEFINITIONS.seo_and_social.priceCents, 699_800, "SEO + Social must be ₹6,998.00 GST-inclusive");
+  assert.equal(PLAN_DEFINITIONS.advanced_seo.priceCents, 999_900, "Advanced SEO must be ₹9,999.00 GST-inclusive");
+  assert.equal(PLAN_DEFINITIONS.advanced_social.priceCents, 849_900, "Advanced Social must be ₹8,499.00 GST-inclusive");
+  assert.equal(PLAN_DEFINITIONS.advanced_growth.priceCents, 1_849_800, "Advanced Growth must be ₹18,498.00 GST-inclusive");
+  assert.equal(PLAN_DEFINITIONS.website_landing_page.priceCents, 99_900, "Basic Landing Page must be ₹999.00 GST-inclusive");
+  assert.equal(PLAN_DEFINITIONS.website_standard.priceCents, 299_900, "5-6 Page Website must be ₹2,999.00 GST-inclusive");
+  assert.equal(PLAN_DEFINITIONS.website_custom.priceCents, null, "Custom Website must be quote-led");
 
-  // --- 2. Self-service checkout is Starter/Growth/Business only --------------
-  assert.deepEqual([...SELF_SERVICE_PLAN_TIERS].sort(), ["business", "growth", "starter"], "only Starter, Growth, and Business are self-service");
+  // --- 2. Self-service checkout ----------------------------------------------
+  const activeSelfService = [...SELF_SERVICE_PLAN_TIERS].sort();
+  assert.deepEqual(
+    activeSelfService,
+    [
+      "advanced_growth",
+      "advanced_seo",
+      "advanced_social",
+      "seo",
+      "seo_and_social",
+      "social",
+      "website_landing_page",
+      "website_standard",
+    ].sort(),
+    "Active commercial tiers must be self-service"
+  );
   assert.equal(PLAN_DEFINITIONS.free.selfServiceCheckout, false, "Free must not be self-checkout");
-  assert.equal(PLAN_DEFINITIONS.scale.selfServiceCheckout, false, "Scale / Custom must remain quote-led");
-  assert.equal(getSelfServicePlan("free"), null, "getSelfServicePlan must refuse Free (not a paid self-checkout tier)");
-  assert.equal(getSelfServicePlan("scale"), null, "getSelfServicePlan must refuse to hand back a checkout price for Scale / Custom");
-  assert.ok(getSelfServicePlan("starter"), "Starter must be self-service");
-  assert.ok(getSelfServicePlan("growth"), "Growth must be self-service");
-  assert.ok(getSelfServicePlan("business"), "Business must be self-service");
+  assert.equal(PLAN_DEFINITIONS.website_custom.selfServiceCheckout, false, "Custom Website must remain quote-led");
+  assert.equal(getSelfServicePlan("free"), null, "getSelfServicePlan must refuse Free");
+  assert.equal(getSelfServicePlan("website_custom"), null, "getSelfServicePlan must refuse Custom Website without quote");
+  assert.ok(getSelfServicePlan("seo"), "SEO Growth must be self-service");
+  assert.ok(getSelfServicePlan("social"), "Social Content must be self-service");
+  assert.ok(getSelfServicePlan("advanced_social"), "Advanced Social must be self-service");
+  assert.ok(getSelfServicePlan("advanced_growth"), "Advanced Growth must be self-service");
 
-  // --- 3. Legacy tiers remain DB-compat identifiers only and fail closed -----
-  // `launch`/`custom_growth` predate the Notion v1 catalog. They must still be
-  // recognized (existing subscription rows reference them) but must never be
-  // offered as a new self-checkout purchase — matches the hardened SQL
-  // function's `legacy_plan_not_payable` branch (migration
-  // 20260809010000_subscription_v1_catalog_alignment.sql).
-  assert.equal(isPlanTier("launch"), true, "launch must still validate as a known tier (historical rows)");
-  assert.equal(isPlanTier("custom_growth"), true, "custom_growth must still validate as a known tier (historical rows)");
-  assert.equal(getSelfServicePlan("launch"), null, "launch must fail closed for new self-checkout payments");
-  assert.equal(getSelfServicePlan("custom_growth"), null, "custom_growth must fail closed for new self-checkout payments");
-  assert.equal(PLAN_DEFINITIONS.launch.status, "legacy");
-  assert.equal(PLAN_DEFINITIONS.custom_growth.status, "legacy");
+  // --- 3. Legacy DB compatibility tiers remain valid identifiers but fail closed for new self-service ---
+  for (const legacy of ["starter", "growth", "business", "launch", "custom_growth", "scale"] as const) {
+    assert.equal(isPlanTier(legacy), true, `${legacy} must still validate as a known tier (historical rows)`);
+    assert.equal(getSelfServicePlan(legacy), null, `${legacy} must fail closed for new self-checkout payments`);
+    assert.equal(PLAN_DEFINITIONS[legacy].status, "legacy");
+  }
 
-  // --- 4. No revived pre-launch legacy identifiers ----------------------------
+  // --- 4. No revived Signal / Mesh / Fleet -----------------------------------
   const tiers = Object.keys(PLAN_DEFINITIONS);
   for (const legacy of ["signal", "mesh", "fleet"]) {
     assert.equal(tiers.includes(legacy), false, `legacy plan identifier '${legacy}' must not be revived`);
   }
-  assert.deepEqual(tiers.sort(), ["business", "custom_growth", "free", "growth", "launch", "scale", "starter"]);
 
   // --- 5. isPlanTier / getPlanDefinition ---------------------------------------
-  assert.equal(isPlanTier("starter"), true);
-  assert.equal(isPlanTier("business"), true);
+  assert.equal(isPlanTier("seo"), true);
+  assert.equal(isPlanTier("social"), true);
+  assert.equal(isPlanTier("advanced_social"), true);
+  assert.equal(isPlanTier("advanced_growth"), true);
   assert.equal(isPlanTier("signal"), false);
   assert.equal(isPlanTier(undefined), false);
-  assert.equal(getPlanDefinition("growth").publicName, "Growth");
-  assert.equal(getPlanDefinition("business").publicName, "Business");
+  assert.equal(getPlanDefinition("social").publicName, "Social Content");
+  assert.equal(getPlanDefinition("advanced_growth").publicName, "Advanced Growth");
 
-  // --- 6. Every fixed self-checkout plan price survives the GST-inclusive split exactly ---
-  for (const tier of ["starter", "growth", "business"] as const) {
+  // --- 6. GST-inclusive math verification -----------------------------------
+  for (const tier of ["seo", "social", "seo_and_social", "advanced_seo", "advanced_social", "advanced_growth", "website_landing_page", "website_standard"] as const) {
     const price = PLAN_DEFINITIONS[tier].priceCents!;
     const { taxableValueCents, gstCents, totalCents } = splitGstInclusive(price);
     assert.equal(taxableValueCents + gstCents, price, `${tier}: taxable + GST must reconstruct the exact price`);
     assert.equal(totalCents, price, `${tier}: split must never change the charged total`);
   }
 
-  // --- 7. Fulfilment entitlement numbers match the applied v2 realignment migration ---
-  // (20260822120000_v2_commercial_model_realignment.sql v_limits_starter/
-  // v_limits_growth/v_limits_business arrays — [social_posts, meta_ad_campaigns,
-  // whatsapp_contacts, website_maintenance, content_generation_monthly, automated_content_monthly])
-  assert.deepEqual(
-    [PLAN_DEFINITIONS.starter.entitlements.social_posts, PLAN_DEFINITIONS.starter.entitlements.meta_ad_campaigns, PLAN_DEFINITIONS.starter.entitlements.whatsapp_contacts, PLAN_DEFINITIONS.starter.entitlements.website_maintenance, PLAN_DEFINITIONS.starter.entitlements.content_generation_monthly, PLAN_DEFINITIONS.starter.entitlements.automated_content_monthly],
-    [12, 1, 100, 0, 10, 0],
-    "starter fulfilment limits must match the applied SQL migration exactly"
-  );
-  assert.deepEqual(
-    [PLAN_DEFINITIONS.growth.entitlements.social_posts, PLAN_DEFINITIONS.growth.entitlements.meta_ad_campaigns, PLAN_DEFINITIONS.growth.entitlements.whatsapp_contacts, PLAN_DEFINITIONS.growth.entitlements.website_maintenance, PLAN_DEFINITIONS.growth.entitlements.content_generation_monthly, PLAN_DEFINITIONS.growth.entitlements.automated_content_monthly],
-    [25, 1, 500, 1, 20, 10],
-    "growth fulfilment limits must match the applied SQL migration exactly"
-  );
-  assert.deepEqual(
-    [PLAN_DEFINITIONS.business.entitlements.social_posts, PLAN_DEFINITIONS.business.entitlements.meta_ad_campaigns, PLAN_DEFINITIONS.business.entitlements.whatsapp_contacts, PLAN_DEFINITIONS.business.entitlements.website_maintenance, PLAN_DEFINITIONS.business.entitlements.content_generation_monthly, PLAN_DEFINITIONS.business.entitlements.automated_content_monthly],
-    [50, 3, 1500, 1, 30, 0],
-    "business fulfilment limits must match the applied SQL migration exactly"
-  );
+  // --- 7. Entitlement Limits (28 posts/mo for social, 100 images for advanced) ---
+  assert.equal(PLAN_DEFINITIONS.social.entitlements.social_posts, 28, "Social Content must include 28 posts/mo");
+  assert.equal(PLAN_DEFINITIONS.advanced_social.entitlements.social_posts, 28, "Advanced Social must include 28 posts/mo");
+  assert.equal(PLAN_DEFINITIONS.advanced_growth.entitlements.social_posts, 28, "Advanced Growth must include 28 posts/mo");
+  assert.equal(PLAN_DEFINITIONS.free.entitlements.image_generation_attempts_monthly, 3, "Free trial must include 3 image attempts/mo");
+  assert.equal(PLAN_DEFINITIONS.advanced_social.entitlements.image_generation_attempts_monthly, 100, "Advanced Social must include 100 image attempts/mo");
+  assert.equal(PLAN_DEFINITIONS.advanced_growth.entitlements.image_generation_attempts_monthly, 100, "Advanced Growth must include 100 image attempts/mo");
 
-  // --- 7b. Social-Autopilot visual-archetype quotas match the applied
-  // archetype-tier-quotas migration (20260828030000_social_autopilot_archetype_tier_quotas.sql
-  // v_limits_starter/v_limits_growth/v_limits_business — appended
-  // [social_autopilot_automated_monthly, social_autopilot_manual_monthly]) ---
-  assert.deepEqual(
-    [PLAN_DEFINITIONS.starter.entitlements.social_autopilot_automated_monthly, PLAN_DEFINITIONS.starter.entitlements.social_autopilot_manual_monthly],
-    [12, 0],
-    "starter (₹2,999): 12 automated BASIC_ESSENTIAL creatives/month, 0 manual"
-  );
-  assert.deepEqual(
-    [PLAN_DEFINITIONS.growth.entitlements.social_autopilot_automated_monthly, PLAN_DEFINITIONS.growth.entitlements.social_autopilot_manual_monthly],
-    [30, 10],
-    "growth (₹7,999): 30 automated creatives/month cycling saved archetype preferences, 10 manual"
-  );
-  assert.deepEqual(
-    [PLAN_DEFINITIONS.business.entitlements.social_autopilot_automated_monthly, PLAN_DEFINITIONS.business.entitlements.social_autopilot_manual_monthly],
-    [30, 10],
-    "business: mirrors growth (not separately specified by the ₹2,999/₹7,999 brief)"
-  );
+  // --- 8. Plan capability flags (WhatsApp Autopilot strictly for Advanced Growth) ---
+  assert.equal(PLAN_DEFINITIONS.advanced_growth.capabilities.whatsapp_assistant_access, true, "Advanced Growth must include WhatsApp assistant access");
+  assert.equal(PLAN_DEFINITIONS.seo.capabilities.whatsapp_assistant_access, false, "SEO Growth must not include WhatsApp");
+  assert.equal(PLAN_DEFINITIONS.social.capabilities.whatsapp_assistant_access, false, "Social Content must not include WhatsApp");
+  assert.equal(PLAN_DEFINITIONS.advanced_seo.capabilities.whatsapp_assistant_access, false, "Advanced SEO must not include WhatsApp");
+  assert.equal(PLAN_DEFINITIONS.advanced_social.capabilities.whatsapp_assistant_access, false, "Advanced Social must not include WhatsApp");
+  assert.equal(PLAN_DEFINITIONS.free.capabilities.whatsapp_assistant_access, false, "Free must not include WhatsApp");
 
-  // --- 8. Plan capability flags (brief §7) -------------------------------------
-  // Starter's social_autopilot flag flipped false -> true as a deliberate
-  // v3 commercial decision (subscription-gated visual-archetype system):
-  // Starter gets automated-only Social Autopilot, BASIC_ESSENTIAL layout
-  // exclusively, 12 automated / 0 manual generations/month -- enforced by
-  // lib/social/archetype-routing.ts, not just this flag. See
-  // archetype-routing.test.ts for the routing-level assertions this
-  // replaces (Starter capability=true, quota=12/0, forced BASIC_ESSENTIAL,
-  // premium archetype selection rejected).
-  assert.equal(PLAN_DEFINITIONS.starter.capabilities.social_autopilot, true, "Starter must include Social Autopilot (automated-only, BASIC_ESSENTIAL, 12/mo)");
-  assert.equal(PLAN_DEFINITIONS.growth.capabilities.social_autopilot, true, "Growth must include Social Autopilot");
-  assert.equal(PLAN_DEFINITIONS.business.capabilities.social_autopilot, true, "Business must include Social Autopilot");
-  assert.equal(PLAN_DEFINITIONS.starter.capabilities.direct_publishing, true, "Starter must still include direct publishing");
-  assert.equal(PLAN_DEFINITIONS.starter.capabilities.website_included, false, "Starter must not include a website");
-  assert.equal(PLAN_DEFINITIONS.growth.capabilities.landing_page, true, "Growth must include a landing page");
-  assert.equal(PLAN_DEFINITIONS.business.capabilities.website_included, true, "Business must include a professional website");
-  assert.equal(PLAN_DEFINITIONS.business.capabilities.website_commitment_months, 3, "Business website requires a 3-month commitment");
-  assert.equal(PLAN_DEFINITIONS.business.capabilities.whatsapp_assistant_access, true, "Business must include WhatsApp assistant access");
-  assert.equal(PLAN_DEFINITIONS.starter.capabilities.whatsapp_assistant_access, false, "Starter must not include WhatsApp assistant access");
-  for (const tier of ["starter", "growth", "business"] as const) {
-    assert.equal(PLAN_DEFINITIONS[tier].capabilities.logo_brand_kit, true, `${tier} must include the reusable Brand Kit`);
-  }
+  // Social Autopilot capability strictly for Advanced Social and Advanced Growth
+  assert.equal(PLAN_DEFINITIONS.advanced_social.capabilities.social_autopilot, true, "Advanced Social must include Social Autopilot");
+  assert.equal(PLAN_DEFINITIONS.advanced_growth.capabilities.social_autopilot, true, "Advanced Growth must include Social Autopilot");
+  assert.equal(PLAN_DEFINITIONS.social.capabilities.social_autopilot, false, "Standard Social must not include Social Autopilot");
+  assert.equal(PLAN_DEFINITIONS.seo.capabilities.social_autopilot, false, "SEO Growth must not include Social Autopilot");
+
+  // Landing Page bonus strictly on Advanced Growth
+  assert.equal(PLAN_DEFINITIONS.advanced_growth.capabilities.landing_page_bonus, true, "Advanced Growth must include landing page bonus");
+  assert.equal(PLAN_DEFINITIONS.social.capabilities.landing_page_bonus, false, "Social Content must not include landing page bonus");
 
   console.log("plans.test.ts (@stratxcel/payments-and-wallet): ALL PASS");
 }

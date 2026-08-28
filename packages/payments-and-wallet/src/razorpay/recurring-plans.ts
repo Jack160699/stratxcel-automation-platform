@@ -1,9 +1,26 @@
 import { getIntegrationMode, type IntegrationMode } from "../flags.ts";
 import type { PlanTier } from "../plans.ts";
 
-export type RecurringPlanTier = "starter" | "growth" | "business";
+export type RecurringPlanTier =
+  | "seo"
+  | "social"
+  | "seo_and_social"
+  | "advanced_seo"
+  | "advanced_social"
+  | "advanced_growth"
+  // Legacy recurring tiers
+  | "starter"
+  | "growth"
+  | "business";
 
 const PLAN_ENV_KEYS = {
+  seo: "RAZORPAY_SUBSCRIPTION_PLAN_SEO_ID",
+  social: "RAZORPAY_SUBSCRIPTION_PLAN_SOCIAL_ID",
+  seo_and_social: "RAZORPAY_SUBSCRIPTION_PLAN_SEO_AND_SOCIAL_ID",
+  advanced_seo: "RAZORPAY_SUBSCRIPTION_PLAN_ADVANCED_SEO_ID",
+  advanced_social: "RAZORPAY_SUBSCRIPTION_PLAN_ADVANCED_SOCIAL_ID",
+  advanced_growth: "RAZORPAY_SUBSCRIPTION_PLAN_ADVANCED_GROWTH_ID",
+  // Legacy env keys
   starter: "RAZORPAY_SUBSCRIPTION_PLAN_STARTER_ID",
   growth: "RAZORPAY_SUBSCRIPTION_PLAN_GROWTH_ID",
   business: "RAZORPAY_SUBSCRIPTION_PLAN_BUSINESS_ID",
@@ -12,7 +29,17 @@ const PLAN_ENV_KEYS = {
 export const RAZORPAY_AUDIT_CREDIT_OFFER_ENV = "RAZORPAY_SUBSCRIPTION_AUDIT_CREDIT_OFFER_ID";
 
 export function isRecurringPlanTier(value: unknown): value is RecurringPlanTier {
-  return value === "starter" || value === "growth" || value === "business";
+  return (
+    value === "seo" ||
+    value === "social" ||
+    value === "seo_and_social" ||
+    value === "advanced_seo" ||
+    value === "advanced_social" ||
+    value === "advanced_growth" ||
+    value === "starter" ||
+    value === "growth" ||
+    value === "business"
+  );
 }
 
 function readEnvPlanId(tier: RecurringPlanTier): string | null {
@@ -101,8 +128,9 @@ export function resolveRecurringAuditCreditHandling(input: {
 
   const offerId = getRazorpayAuditCreditOfferId(mode);
   if (offerId) {
+    const chargePriceCents = Math.max(0, input.catalogPriceCents - input.creditAmountCents);
     return {
-      chargePriceCents: Math.max(0, input.catalogPriceCents - input.creditAmountCents),
+      chargePriceCents,
       auditCreditAppliedCents: input.creditAmountCents,
       auditCreditDeferredCents: 0,
       offerId,
@@ -110,7 +138,6 @@ export function resolveRecurringAuditCreditHandling(input: {
     };
   }
 
-  // Preserve the ₹999 promise without expecting a discounted Razorpay plan charge.
   return {
     chargePriceCents: input.catalogPriceCents,
     auditCreditAppliedCents: 0,

@@ -266,26 +266,48 @@ export async function createImageGenerationJob(args: {
     manualArchetype = routing.routingContext.forcedArchetype;
   }
 
-  // Brief §7: customer-facing generation quota ("N of M generations this
-  // month") — a distinct, new-generation-only pool from the internal AI-cost
-  // budget envelope enforced further down. Autopilot's system-researched
-  // content draws from automated_content_monthly; a manual Social Autopilot
-  // archetype request draws from its own social_autopilot_manual_monthly
-  // pool (Starter has zero of these -- resolveManualRouting above already
-  // rejected Starter before this point); everything else (Creative Studio,
-  // Copilot-requested generations) draws from content_generation_monthly.
-  // Fails closed like every other entitlement check in this codebase — no
-  // row means no entitlement.
+  // Image generation attempt limit enforcement:
+  // - Free: 3 image attempts/month trial (regenerations count). 4th attempt blocked.
+  // - Advanced Social / Growth: 100 image attempts/month (regenerations count). 101st blocked.
+  const { data: activeSubRow } = await args.writeClient
+    .from("subscriptions")
+    .select("plan_tier, status")
+    .eq("tenant_id", input.tenantId)
+    .eq("status", "active")
+    .order("updated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const activeTier = (activeSubRow?.plan_tier as string) || "free";
+  const maxAllowedAttempts = activeTier === "advanced_social" || activeTier === "advanced_growth" ? 100 : (activeTier === "free" ? 3 : 28);
+
+  const { data: attemptEntitlement } = await args.writeClient
+    .from("usage_entitlements")
+    .select("current_usage, limit_amount, is_paused")
+    .eq("tenant_id", input.tenantId)
+    .eq("metric", "image_generation_attempts_monthly")
+    .maybeSingle();
+
+  if (attemptEntitlement && (attemptEntitlement.is_paused || attemptEntitlement.current_usage >= attemptEntitlement.limit_amount)) {
+    const msg = activeTier === "free"
+      ? "You have used your 3 free image trial attempts this month. Upgrade to Advanced Social or Advanced Growth for up to 100 image generations per month."
+      : "This workspace has used all of its included image-generation attempts for this month.";
+    throw new ImageGenerationServiceError("IMAGE_GENERATION_LIMIT_REACHED", msg, 403);
+  }
+
+  // Quota pool check
   const generationMetric = isManualArchetypeRequest
     ? "social_autopilot_manual_monthly"
     : input.sourceContext === "social_autopilot" ? "automated_content_monthly" : "content_generation_monthly";
-  const entitled = await hasEntitlement(args.writeClient as unknown as ServiceClient, input.tenantId, generationMetric, 1);
-  if (!entitled) {
-    throw new ImageGenerationServiceError(
-      "GENERATION_LIMIT_REACHED",
-      "This workspace has used all of its included generations for this month.",
-      403,
-    );
+  
+  if (activeTier !== "free") {
+    const entitled = await hasEntitlement(args.writeClient as unknown as ServiceClient, input.tenantId, generationMetric, 1);
+    if (!entitled) {
+      throw new ImageGenerationServiceError(
+        "GENERATION_LIMIT_REACHED",
+        "This workspace has used all of its included generations for this month.",
+        403,
+      );
+    }
   }
 
   const brandBrain = await getCurrentBrandBrain(args.writeClient as never, input.tenantId);
@@ -414,6 +436,34 @@ export async function processImageGenerationJob(args: {
   const fromStatuses = args.revisionInstruction ? ["READY", "FAILED"] : ["QUEUED", "FAILED"];
   const targetStatus = args.revisionInstruction ? "REVISING" : "PROCESSING";
 
+  // Enforce attempt limit on revisions / regenerations (regenerations count towards the monthly allowance)
+  if (args.revisionInstruction) {
+    const { data: sub } = await args.writeClient
+      .from("subscriptions")
+      .select("plan_tier, status")
+      .eq("tenant_id", job.tenant_id)
+      .eq("status", "active")
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const tier = (sub?.plan_tier as string) || "free";
+
+    const { data: attemptEnt } = await args.writeClient
+      .from("usage_entitlements")
+      .select("current_usage, limit_amount, is_paused")
+      .eq("tenant_id", job.tenant_id)
+      .eq("metric", "image_generation_attempts_monthly")
+      .maybeSingle();
+
+    if (attemptEnt && (attemptEnt.is_paused || attemptEnt.current_usage >= attemptEnt.limit_amount)) {
+      const msg = tier === "free"
+        ? "You have used your 3 free image trial attempts this month. Upgrade to Advanced Social or Advanced Growth for up to 100 image generations per month."
+        : "This workspace has reached its 100 image-generation monthly limit.";
+      throw new ImageGenerationServiceError("IMAGE_GENERATION_LIMIT_REACHED", msg, 403);
+    }
+    await recordMetricUsage(args.writeClient as unknown as ServiceClient, job.tenant_id, "image_generation_attempts_monthly", 1).catch(() => {});
+  }
+
   // Premium Creative Intelligence Section 23: when a real Creative
   // Treatment was supplied at job creation, the actual image prompt is
   // built FROM it (subject/composition/camera/lighting/color/mood/
@@ -459,13 +509,11 @@ export async function processImageGenerationJob(args: {
     // since went missing) has ONLY the plain logo_url string --
     // resolveLogoVariantBundle correctly returns null for that, but without
     // this fallback the compositor would then stamp zero logo at all rather
-    // than the real backward-compat `logoImage` path selectLogoVariant
-    // already supports. Only attempted when variants are absent -- the real
-    // per-variant bundle is always preferred when it exists.
     const legacyLogoUrl = typeof liveBrandContent?.logo_url === "string" ? liveBrandContent.logo_url : null;
     const logoImage = !logoVariants && legacyLogoUrl ? await resolveLegacyLogoImage(legacyLogoUrl).catch(() => null) : null;
     overlayContext = { treatment, businessName, brandDNA, logoVariants, logoImage };
   }
+
   const prompt = buildProviderReadyImagePrompt({
     brief: effectiveBrief,
     intendedUse: job.intended_use,
@@ -496,12 +544,15 @@ export async function processImageGenerationJob(args: {
 
   const { data: subscription } = await args.writeClient
     .from("subscriptions")
-    .select("id")
+    .select("id, plan_tier, status")
     .eq("tenant_id", job.tenant_id)
     .eq("status", "active")
     .limit(1)
     .maybeSingle();
-  if (!subscription) {
+
+  // Allow active subscriptions or free trial within attempt limits
+  const isFreeTrial = !subscription || subscription.plan_tier === "free";
+  if (!subscription && !isFreeTrial) {
     await failJob(args.writeClient, job.id, {
       code: "ENTITLEMENT_UNAVAILABLE",
       message: "Image generation is unavailable for this workspace subscription.",

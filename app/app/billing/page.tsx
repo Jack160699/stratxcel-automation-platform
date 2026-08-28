@@ -128,19 +128,26 @@ function isAutoPay(sub: Subscription) {
  * packages/payments-and-wallet/src/plans.ts) rather than a second literal map.
  */
 const SELF_SERVICE_PLANS = PRICING_TIERS.filter(
-  (t): t is typeof PRICING_TIERS[number] & { planKey: "starter" | "growth" | "business"; priceCents: number } =>
-    (t.planKey === "starter" || t.planKey === "growth" || t.planKey === "business") && t.priceCents != null
+  (t) =>
+    (t.planKey === "seo" ||
+      t.planKey === "social" ||
+      t.planKey === "advanced_seo" ||
+      t.planKey === "advanced_social" ||
+      t.planKey === "advanced_growth" ||
+      t.planKey === "website_landing_page" ||
+      t.planKey === "website_standard") &&
+    t.priceCents != null
 ).map((t) => ({
-  tier: t.planKey,
+  tier: t.planKey as string,
   name: t.name,
-  priceCents: t.priceCents,
+  priceCents: t.priceCents!,
   pitch: t.pitch,
   whoItsFor: t.whoItsFor,
   scope: t.scope,
   popular: t.popular,
 }));
 
-const SCALE_TIER = PRICING_TIERS.find((t) => t.planKey === "scale");
+const SCALE_TIER = PRICING_TIERS.find((t) => t.planKey === "website_custom");
 
 export default function BillingPage() {
   const { active } = useCurrentTenant();
@@ -308,7 +315,7 @@ export default function BillingPage() {
     }
   }
 
-  async function changePlan(targetPlanTier: "starter" | "growth" | "business") {
+  async function changePlan(targetPlanTier: string) {
     if (!tenantId || !subscription) return;
     setBusy(true);
     setError(null);
