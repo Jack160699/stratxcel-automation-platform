@@ -1,266 +1,323 @@
 /**
- * Audit → package recommendation engine (brief §9–§13).
+ * Audit → Service Recommendation & Upsell Engine
  *
- * Turns audit signals into "what does this business actually need?" and
- * picks the SMALLEST plan capable of addressing the detected opportunities —
- * never a default upsell to Growth or Business. The shape (signal flags →
- * smallest-covering-tier) is inspired by the unwired
- * packages/workforce-core/src/intelligence/recommendations/commercial-fit.ts
- * bottleneck→domain engine, rewired here against the locked v2 catalog
- * (Starter/Growth/Business) and real audit report fields.
- *
- * This is a best-effort, evidence-based scoring model, not a black box: every
- * input is a concrete, inspectable audit signal, and the four worked examples
- * in brief §22 are covered by unit tests in __tests__/plan-recommendation.test.ts.
+ * Translates audit findings into concrete service recommendations, reasons,
+ * interactive demo previews, and strategic upsell pathways:
+ * - Scenario A: Weak SEO + Weak Social -> Recommend SEO + Social (₹6,998/mo), upsell Advanced Growth (₹18,498/mo).
+ * - Scenario B: Strong SEO + Weak Social -> Recommend Social Content (₹3,999/mo), upsell Advanced Social (₹8,499/mo).
+ * - Scenario C: Weak SEO + Strong Social -> Recommend SEO Growth (₹2,999/mo), upsell Advanced SEO (₹9,999/mo).
+ * - Scenario D: Strong SEO + Strong Social -> Recommend Advanced Growth (₹18,498/mo).
+ * - Scenario E: Website issues detected -> Surface Website Add-ons (₹999 / ₹2,999 / Custom Quote).
  */
 
 export type RecommendedPlanTier = "starter" | "growth" | "business";
 
+export type RecommendedServiceKey =
+  | "seo"
+  | "social"
+  | "seo_and_social"
+  | "advanced_seo"
+  | "advanced_social"
+  | "advanced_growth"
+  // Legacy backward compatibility
+  | "starter"
+  | "growth"
+  | "business";
+
+export type AuditScenario = "scenario_a" | "scenario_b" | "scenario_c" | "scenario_d";
+
 export interface PlanRecommendationSignals {
-  /** Is a Google Business Profile connected/found for this tenant? */
   googleBusinessConnected: boolean;
-  /** 0-100 discoverability/SEO category score, null when the audit couldn't score it. */
   discoverabilitySeoScore: number | null;
-  /** Count of named competitors surfaced during research. */
   competitorCount: number;
-  /** 0-100 social/content category score, null when unscored. */
   socialContentScore: number | null;
-  /** Count of visual/content-shaped opportunities surfaced (carousels, seasonal campaigns, etc). */
   visualContentOpportunityCount: number;
-  /** Does the business have a usable website today? */
   hasWebsite: boolean;
-  /** 0-100 trust/reputation category score, null when unscored. */
+  websiteHealthScore?: number | null;
   trustReputationScore: number | null;
-  /** Count of HIGH-impact findings/opportunities across the whole report. */
   highImpactFindingCount: number;
 }
 
+export interface WebsiteRecommendation {
+  needed: boolean;
+  type: "landing_page" | "standard_website" | "custom_website";
+  title: string;
+  price: string;
+  priceCents: number | null;
+  reason: string;
+  cta: string;
+  href: string;
+}
+
+export interface ServiceUpsell {
+  key: "advanced_seo" | "advanced_social" | "advanced_growth";
+  title: string;
+  price: string;
+  priceCents: number;
+  pitch: string;
+  whyUpgrade: string;
+  cta: string;
+  href: string;
+}
+
+export interface InteractiveAuditDemos {
+  socialDemo: {
+    title: string;
+    samplePostHook: string;
+    samplePostCaption: string;
+    samplePillar: string;
+    suggestedVisual: string;
+  };
+  seoDemo: {
+    title: string;
+    targetKeyword: string;
+    projectedMonthlySearches: number;
+    recommendedAction: string;
+  };
+  websiteDemo?: {
+    suggestedLayout: string;
+    keyConversionAction: string;
+  };
+  whatsappDemo?: {
+    previewDialogue: Array<{ sender: "user" | "bot"; text: string }>;
+  };
+}
+
 export interface PlanRecommendation {
-  tier: RecommendedPlanTier;
+  scenario: AuditScenario;
+  serviceKey: RecommendedServiceKey;
+  tier: "starter" | "growth" | "business"; // legacy test compatibility
+  serviceName: string;
+  price: string;
+  priceCents: number;
   biggestOpportunity: { title: string; body: string };
   whatStratxcelCanDo: string[];
   why: string;
+  upsell?: ServiceUpsell;
+  websiteRecommendation?: WebsiteRecommendation;
+  demos: InteractiveAuditDemos;
 }
 
-function googleGapScore(signals: PlanRecommendationSignals): number {
-  if (!signals.googleBusinessConnected) return 3;
-  const seo = signals.discoverabilitySeoScore;
-  if (seo == null) return 1;
-  if (seo < 40) return 3;
-  if (seo < 60) return 2;
-  if (seo < 80) return 1;
-  return 0;
-}
-
-function competitorIntensityScore(count: number): number {
-  if (count >= 11) return 3;
-  if (count >= 6) return 2;
-  if (count >= 3) return 1;
-  return 0;
-}
-
-function contentOpportunityScore(signals: PlanRecommendationSignals): number {
-  const social = signals.socialContentScore;
-  let score = 0;
-  if (social == null) score = 1;
-  else if (social < 35) score = 3;
-  else if (social < 55) score = 2;
-  else if (social < 75) score = 1;
-  if (signals.visualContentOpportunityCount >= 4) score = Math.max(score, 2);
-  if (signals.visualContentOpportunityCount >= 8) score = 3;
-  return score;
-}
-
-function websiteGapScore(signals: PlanRecommendationSignals): number {
-  return signals.hasWebsite ? 0 : 2;
-}
-
-function reputationGapScore(signals: PlanRecommendationSignals): number {
-  const trust = signals.trustReputationScore;
-  if (trust == null) return 0;
-  if (trust < 40) return 2;
-  if (trust < 60) return 1;
-  return 0;
-}
-
-function automationSignalScore(signals: PlanRecommendationSignals): number {
-  if (signals.highImpactFindingCount >= 6) return 2;
-  if (signals.highImpactFindingCount >= 3) return 1;
-  return 0;
-}
-
-/** Total opportunity intensity, 0–15 — used only to rank the "biggest opportunity" headline, not to size the plan (see decideTier). Higher = more evidence of an unaddressed problem. */
-export function opportunityIntensityScore(signals: PlanRecommendationSignals): number {
-  return (
-    googleGapScore(signals) +
-    competitorIntensityScore(signals.competitorCount) +
-    contentOpportunityScore(signals) +
-    websiteGapScore(signals) +
-    reputationGapScore(signals) +
-    automationSignalScore(signals)
+export function deriveSignalsFromReport(report: any): PlanRecommendationSignals {
+  const gbpConnected = Boolean(
+    report?.connectors?.some((c: any) => c.provider === "google_business" && (c.state === "connected" || c.state === "available")) ||
+    report?.presenceLinks?.some((p: any) => p.platform === "google_business" && p.url)
   );
+  const seoScore = report?.discoverability?.score ?? report?.overallScore ?? null;
+  const competitorCount = Array.isArray(report?.competitors) ? report.competitors.length : 0;
+  const socialScore = report?.socialPresence?.score ?? null;
+  const visualOppCount = Array.isArray(report?.contentOpportunities) ? report.contentOpportunities.length : 0;
+  const hasWebsite = Boolean(report?.presenceLinks?.some((p: any) => p.platform === "website" && p.url) || report?.websiteHealth);
+  const websiteHealthScore = report?.websiteHealth?.score ?? null;
+  const trustScore = report?.reputation?.score ?? null;
+  const highImpactCount = Array.isArray(report?.keyFindings) ? report.keyFindings.filter((f: any) => f.severity === "high" || f.priority === "high").length : 0;
+
+  return {
+    googleBusinessConnected: gbpConnected,
+    discoverabilitySeoScore: seoScore,
+    competitorCount,
+    socialContentScore: socialScore,
+    visualContentOpportunityCount: visualOppCount,
+    hasWebsite,
+    websiteHealthScore,
+    trustReputationScore: trustScore,
+    highImpactFindingCount: highImpactCount,
+  };
 }
 
-/**
- * Plan sizing (brief §9–§10): every plan does Google Growth, so Google-gap
- * severity alone never escalates the tier — a pure Google-visibility problem
- * is exactly what Starter is for (§11's worked example). Growth is triggered
- * by real execution load beyond Google alone: real competitive pressure,
- * meaningfully weak content/social presence, or reputation risk. Business
- * requires several severe problems compounding at once (brief §10 Example C
- * lists 5-6 simultaneous issues) — a single severe signal, even a missing
- * website, is not enough on its own.
- */
-function decideTier(signals: PlanRecommendationSignals): RecommendedPlanTier {
-  const severeGoogleGap = googleGapScore(signals) >= 3;
-  const severeCompetition = signals.competitorCount >= 8;
-  const severeContent = contentOpportunityScore(signals) >= 3;
-  const noWebsite = !signals.hasWebsite;
-  const highAutomationDesire = signals.highImpactFindingCount >= 5;
-  const businessFlagCount = [severeGoogleGap, severeCompetition, severeContent, noWebsite, highAutomationDesire].filter(Boolean).length;
-  if (businessFlagCount >= 3) return "business";
+export function evaluateAuditScenario(signals: PlanRecommendationSignals): AuditScenario {
+  const seoScore = signals.discoverabilitySeoScore ?? 50;
+  const socialScore = signals.socialContentScore ?? 50;
+  const isWeakSeo = !signals.googleBusinessConnected || seoScore < 60;
+  const isWeakSocial = socialScore < 60 || signals.visualContentOpportunityCount >= 4;
 
-  const growthTrigger = competitorIntensityScore(signals.competitorCount) >= 1
-    || contentOpportunityScore(signals) >= 2
-    || reputationGapScore(signals) >= 1;
-  return growthTrigger ? "growth" : "starter";
-}
-
-const WHAT_STRATXCEL_CAN_DO: Record<RecommendedPlanTier, string[]> = {
-  starter: [
-    "Optimize your Google Business Profile",
-    "Identify local search opportunities",
-    "Keep your business active with regular Google posts and content",
-    "Monitor and reply to reviews",
-  ],
-  growth: [
-    "Run deeper Google Growth: local SEO, keyword research, competitor monitoring",
-    "Research, create, schedule and publish content on Social Autopilot",
-    "Generate and deploy a high-quality landing page",
-    "Keep website content SEO-driven with Google-focused blogs",
-  ],
-  business: [
-    "Run maximum-depth Google Growth and competitor monitoring",
-    "Produce premium researched content and campaigns across channels",
-    "Run full Social Autopilot with approval workflows where required",
-    "Build and deploy a professional website, SEO-ready from day one",
-  ],
-};
-
-function biggestOpportunityFor(signals: PlanRecommendationSignals): { title: string; body: string } {
-  const google = googleGapScore(signals);
-  const competitor = competitorIntensityScore(signals.competitorCount);
-  const content = contentOpportunityScore(signals);
-  const website = websiteGapScore(signals);
-
-  const candidates: Array<{ title: string; body: string; weight: number }> = [
-    {
-      title: "Google visibility",
-      body: signals.googleBusinessConnected
-        ? "Your Google Business Profile is incomplete and competitors are appearing for searches you're currently missing."
-        : "Google account connected, but no Google Business Profile was found — this is costing you local search visibility.",
-      weight: google,
-    },
-    {
-      title: "Competitive pressure",
-      body: `${signals.competitorCount} competitors were found actively competing for your customers' searches.`,
-      weight: competitor,
-    },
-    {
-      title: "Content consistency",
-      body: "Your content and social presence are inconsistent, which weakens both discovery and trust with customers.",
-      weight: content,
-    },
-    {
-      title: "Web presence",
-      body: "You don't have a website working for you yet — this limits where customers can find and trust your business.",
-      weight: website,
-    },
-  ];
-
-  candidates.sort((a, b) => b.weight - a.weight);
-  return { title: candidates[0].title, body: candidates[0].body };
-}
-
-function whyForTier(tier: RecommendedPlanTier, signals: PlanRecommendationSignals): string {
-  if (tier === "starter") {
-    return "Your primary opportunity is Google visibility. You don't currently need advanced social automation or a website — Starter focuses spend where it matters most.";
-  }
-  if (tier === "growth") {
-    const reasons: string[] = [];
-    if (competitorIntensityScore(signals.competitorCount) >= 1) reasons.push("deeper competitor research");
-    if (googleGapScore(signals) >= 1) reasons.push("more Google SEO work");
-    if (contentOpportunityScore(signals) >= 1) reasons.push("more consistent, researched content");
-    if (!signals.hasWebsite) reasons.push("a landing page and SEO-driven website updates");
-    reasons.push("Social Autopilot");
-    return `Your audit found that you need: ${reasons.join(", ")}. So Growth is recommended.`;
-  }
-  const reasons: string[] = ["deeper ongoing SEO", "premium content", "greater automation"];
-  if (!signals.hasWebsite) reasons.push("a professional website");
-  reasons.push("larger execution capacity");
-  return `Your audit found that you need: ${reasons.join(", ")}. So Business is recommended.`;
+  if (isWeakSeo && isWeakSocial) return "scenario_a";
+  if (!isWeakSeo && isWeakSocial) return "scenario_b";
+  if (isWeakSeo && !isWeakSocial) return "scenario_c";
+  return "scenario_d";
 }
 
 export function recommendPlan(signals: PlanRecommendationSignals): PlanRecommendation {
-  const tier = decideTier(signals);
-  return {
-    tier,
-    biggestOpportunity: biggestOpportunityFor(signals),
-    whatStratxcelCanDo: WHAT_STRATXCEL_CAN_DO[tier],
-    why: whyForTier(tier, signals),
+  const scenario = evaluateAuditScenario(signals);
+  const websiteNeeded = !signals.hasWebsite || (signals.websiteHealthScore != null && signals.websiteHealthScore < 50);
+
+  let websiteRec: WebsiteRecommendation | undefined;
+  if (websiteNeeded) {
+    if (!signals.hasWebsite) {
+      websiteRec = {
+        needed: true,
+        type: "landing_page",
+        title: "Basic Landing Page",
+        price: "₹999 (one-time, GST included)",
+        priceCents: 99_900,
+        reason: "Your business currently lacks a dedicated digital conversion page to capture search and social traffic.",
+        cta: "Get Landing Page (₹999)",
+        href: "/app/billing?addon=landing_page",
+      };
+    } else {
+      websiteRec = {
+        needed: true,
+        type: "standard_website",
+        title: "5–6 Page Business Website",
+        price: "₹2,999 (one-time, GST included)",
+        priceCents: 299_900,
+        reason: "Your current website has discoverability and structure gaps. A fresh 5-6 page AI-generated site provides clean SEO and mobile speed.",
+        cta: "Get Full Website (₹2,999)",
+        href: "/app/billing?addon=website_standard",
+      };
+    }
+  }
+
+  const defaultDemos: InteractiveAuditDemos = {
+    socialDemo: {
+      title: "Sample Brand-Grounded Post Preview",
+      samplePostHook: "3 Things Most Customers Don't Know Before Booking",
+      samplePostCaption: "High standards make all the difference. Discover how our proven approach delivers consistent quality every single time. Comment or DM for details!",
+      samplePillar: "Educational & Trust Building",
+      suggestedVisual: "Brand-aligned clean typography with visual hero overlay",
+    },
+    seoDemo: {
+      title: "Top Keyword Opportunity Preview",
+      targetKeyword: "best service provider near me",
+      projectedMonthlySearches: 1400,
+      recommendedAction: "Optimize Google Business Profile category tags, local schema, and review responses.",
+    },
+    websiteDemo: websiteNeeded
+      ? {
+          suggestedLayout: "Mobile-First Conversion Funnel with WhatsApp Direct Chat",
+          keyConversionAction: "Instant WhatsApp Inquiry & One-Tap Call",
+        }
+      : undefined,
+    whatsappDemo: {
+      previewDialogue: [
+        { sender: "user", text: "Hi, what are your hours and pricing?" },
+        { sender: "bot", text: "Hello! We're open 9am–7pm Mon–Sat. Our services start at ₹2,999. Would you like to view our full catalog or book an appointment?" },
+      ],
+    },
   };
-}
 
-/**
- * Adapter from the loose audit report shape actually produced by the audit
- * pipeline (AuditDeliveryReport plus the extra fields VisualAuditReport.tsx
- * renders — categoryScores, connectorAvailability, competitorSignals,
- * priorityOpportunities, contentCoverage, websiteUrl) into the signal
- * contract above. Deliberately permissive/optional-everything: a report
- * missing a section degrades to a neutral default rather than throwing.
- */
-export function deriveSignalsFromReport(report: {
-  websiteUrl?: string;
-  categoryScores?: {
-    discoverabilitySeo?: { score: number | null };
-    socialContent?: { score: number | null };
-    trustReputation?: { score: number | null };
-  };
-  connectorAvailability?: Array<{ provider: string; state: string }>;
-  competitorSignals?: { knownCompetitors?: string[] };
-  whyTheyWin?: unknown[];
-  priorityOpportunities?: Array<{ confidence?: string; priority?: number }>;
-  opportunities?: unknown[];
-  findings?: Array<{ impact?: string }>;
-  contentCoverage?: { missingServices?: string[]; missingLocations?: string[]; weakPages?: string[] };
-}): PlanRecommendationSignals {
-  const googleAvailability = (report.connectorAvailability ?? []).find((c) => c.provider === "google_business");
-  const googleBusinessConnected = googleAvailability
-    ? googleAvailability.state === "available" || googleAvailability.state === "connected" || googleAvailability.state === "connected_only"
-    : Boolean(report.categoryScores?.discoverabilitySeo?.score != null && report.categoryScores.discoverabilitySeo.score > 0);
+  switch (scenario) {
+    case "scenario_a":
+      return {
+        scenario: "scenario_a",
+        serviceKey: "seo_and_social",
+        tier: "growth",
+        serviceName: "SEO + Social Content",
+        price: "₹6,998/month (GST included)",
+        priceCents: 699_800,
+        biggestOpportunity: {
+          title: "Dual Search Discoverability & Social Presence Gap",
+          body: "Your business has low visibility on Google Search/Maps and an inconsistent social posting rhythm, leaking high-intent local buyers to competitors.",
+        },
+        whatStratxcelCanDo: [
+          "28 premium brand-grounded posts created, scheduled & published every month",
+          "Google Business Profile optimization, ranking tracking & review reply drafting",
+          "Brand Brain positioning to guarantee zero-hallucination quality",
+          "Monthly cross-channel growth & visibility analytics",
+        ],
+        why: "Your audit indicates low Google discoverability and inconsistent social posting. SEO + Social solves both core growth channels immediately. For complete autonomous research and automated operations, explore Advanced Growth.",
+        upsell: {
+          key: "advanced_growth",
+          title: "Advanced Growth",
+          price: "₹18,498/month (GST included)",
+          priceCents: 1_849_800,
+          pitch: "Complete hands-off growth machine across search, social, WhatsApp, and web.",
+          whyUpgrade: "Includes Advanced SEO, Social Autopilot with 100 image generations, autonomous 24/7 WhatsApp reception, and a FREE landing page.",
+          cta: "Upgrade to Advanced Growth (₹18,498)",
+          href: "/app/billing?plan=advanced_growth",
+        },
+        websiteRecommendation: websiteRec,
+        demos: defaultDemos,
+      };
 
-  const competitorCount = Math.max(
-    report.competitorSignals?.knownCompetitors?.length ?? 0,
-    Array.isArray(report.whyTheyWin) ? report.whyTheyWin.length : 0,
-  );
+    case "scenario_b":
+      return {
+        scenario: "scenario_b",
+        serviceKey: "social",
+        tier: "starter",
+        serviceName: "Social Content",
+        price: "₹3,999/month (GST included)",
+        priceCents: 399_900,
+        biggestOpportunity: {
+          title: "Inconsistent Social Brand Presence",
+          body: "While your search baseline is respectable, your social channels lack a consistent, high-converting publishing cadence.",
+        },
+        whatStratxcelCanDo: [
+          "28 brand-aligned posts produced & scheduled monthly",
+          "AI visual creatives tailored with your brand colors & fonts",
+          "Automated publishing across Instagram and Facebook",
+          "Seasonal & festival observance calendar integration",
+        ],
+        why: "Your search presence is solid, but your social presence is underperforming. 28 monthly posts will keep your brand active and top of mind. Upgrade to Advanced Social for full Autopilot and 100 images.",
+        upsell: {
+          key: "advanced_social",
+          title: "Advanced Social",
+          price: "₹8,499/month (GST included)",
+          priceCents: 849_900,
+          pitch: "Autonomous Social Autopilot with deep trend research and creative intelligence.",
+          whyUpgrade: "Unlocks full Social Autopilot, strategic trend research, and up to 100 image-generation attempts per month.",
+          cta: "Upgrade to Advanced Social (₹8,499)",
+          href: "/app/billing?plan=advanced_social",
+        },
+        websiteRecommendation: websiteRec,
+        demos: defaultDemos,
+      };
 
-  const contentGapCount =
-    (report.contentCoverage?.missingServices?.length ?? 0) +
-    (report.contentCoverage?.missingLocations?.length ?? 0) +
-    (report.contentCoverage?.weakPages?.length ?? 0);
+    case "scenario_c":
+      return {
+        scenario: "scenario_c",
+        serviceKey: "seo",
+        tier: "starter",
+        serviceName: "SEO Growth",
+        price: "₹2,999/month (GST included)",
+        priceCents: 299_900,
+        biggestOpportunity: {
+          title: "Uncaptured High-Intent Local Search Demand",
+          body: "Your social engagement is active, but potential customers searching for your services on Google Search and Maps cannot find you.",
+        },
+        whatStratxcelCanDo: [
+          "Continuous local SEO & keyword ranking optimization",
+          "Google Business Profile management & category mapping",
+          "Review monitoring with AI response assistance",
+          "Monthly search traffic and local keyword ranking reports",
+        ],
+        why: "Your social presence is active, but potential customers cannot find you on Google Search or Maps. SEO Growth fixes your local visibility and Google Business profile.",
+        upsell: {
+          key: "advanced_seo",
+          title: "Advanced SEO",
+          price: "₹9,999/month (GST included)",
+          priceCents: 999_900,
+          pitch: "Deep search intelligence, competitor gap conquest, and automated blog workflows.",
+          whyUpgrade: "Unlocks high-intent content gap conquest, long-tail keyword research, and autonomous blog generation.",
+          cta: "Upgrade to Advanced SEO (₹9,999)",
+          href: "/app/billing?plan=advanced_seo",
+        },
+        websiteRecommendation: websiteRec,
+        demos: defaultDemos,
+      };
 
-  const highImpactFindingCount =
-    (report.findings ?? []).filter((f) => f.impact === "HIGH").length +
-    (report.priorityOpportunities ?? []).filter((o) => (o.priority ?? 0) >= 4 || o.confidence === "HIGH").length;
-
-  return {
-    googleBusinessConnected,
-    discoverabilitySeoScore: report.categoryScores?.discoverabilitySeo?.score ?? null,
-    competitorCount,
-    socialContentScore: report.categoryScores?.socialContent?.score ?? null,
-    visualContentOpportunityCount: contentGapCount + (Array.isArray(report.opportunities) ? report.opportunities.length : 0),
-    hasWebsite: Boolean(report.websiteUrl),
-    trustReputationScore: report.categoryScores?.trustReputation?.score ?? null,
-    highImpactFindingCount,
-  };
+    case "scenario_d":
+    default:
+      return {
+        scenario: "scenario_d",
+        serviceKey: "advanced_growth",
+        tier: "business",
+        serviceName: "Advanced Growth",
+        price: "₹18,498/month (GST included)",
+        priceCents: 1_849_800,
+        biggestOpportunity: {
+          title: "Market Leadership & Autonomous Scaling Opportunity",
+          body: "Your baseline presence across search and social is established. Scaling to market leadership requires unified autonomous execution across SEO, social, messaging, and web.",
+        },
+        whatStratxcelCanDo: [
+          "Advanced SEO: deep research, keyword conquest & automated blog workflows",
+          "Advanced Social: 28 posts, full Social Autopilot & 100 image attempts/mo",
+          "WhatsApp Autopilot: 24/7 lead qualification & automated booking",
+          "FREE high-converting landing page included as an active subscriber bonus",
+        ],
+        why: "Your baseline presence is established. Advanced Growth combines Advanced SEO, Social Autopilot, WhatsApp Autopilot, and dedicated growth execution to scale your market position.",
+        websiteRecommendation: websiteRec,
+        demos: defaultDemos,
+      };
+  }
 }

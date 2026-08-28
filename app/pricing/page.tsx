@@ -19,7 +19,7 @@ export const metadata: Metadata = {
     "Business Growth Audit, platform access, growth execution, and enterprise plans — GST-inclusive where published.",
 };
 
-const ORDER: CommercialPillarId[] = ["audit", "platform", "growth_execution", "enterprise"];
+const ORDER: CommercialPillarId[] = ["audit", "platform", "growth_execution", "websites", "enterprise"];
 
 export default function PricingPage() {
   return (

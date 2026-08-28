@@ -15,64 +15,82 @@ function signals(overrides: Partial<PlanRecommendationSignals>): PlanRecommendat
   };
 }
 
-// Brief §22 Test 1 — Kirana store: weak Google, low social need, modest competition. Expected: Starter.
-const kirana = recommendPlan(signals({
+// Scenario A — Weak SEO + Weak Social: Expected SEO + Social (₹6,998) and upsell Advanced Growth (₹18,498)
+const scenarioA = recommendPlan(signals({
   googleBusinessConnected: false,
-  discoverabilitySeoScore: null,
-  competitorCount: 2,
-  socialContentScore: 78,
-  visualContentOpportunityCount: 1,
-  hasWebsite: false,
-  trustReputationScore: 70,
-  highImpactFindingCount: 1,
-}));
-assert.equal(kirana.tier, "starter", `Kirana should recommend Starter, got ${kirana.tier}`);
-
-// Brief §22 Test 2 — Boutique: high competition, strong Instagram/visual opportunity. Expected: Growth.
-const boutique = recommendPlan(signals({
-  googleBusinessConnected: true,
-  discoverabilitySeoScore: 65,
-  competitorCount: 7,
+  discoverabilitySeoScore: 35,
+  competitorCount: 5,
   socialContentScore: 30,
+  visualContentOpportunityCount: 4,
+  hasWebsite: false,
+}));
+assert.equal(scenarioA.scenario, "scenario_a");
+assert.equal(scenarioA.serviceKey, "seo_and_social");
+assert.equal(scenarioA.priceCents, 699_800);
+assert.equal(scenarioA.upsell?.key, "advanced_growth");
+assert.ok(scenarioA.why.includes("SEO + Social solves both core growth channels immediately"));
+
+// Scenario B — Strong SEO + Weak Social: Expected Social Content (₹3,999) and upsell Advanced Social (₹8,499)
+const scenarioB = recommendPlan(signals({
+  googleBusinessConnected: true,
+  discoverabilitySeoScore: 85,
+  competitorCount: 3,
+  socialContentScore: 40,
   visualContentOpportunityCount: 5,
-  hasWebsite: false,
-  trustReputationScore: 65,
-  highImpactFindingCount: 3,
-}));
-assert.equal(boutique.tier, "growth", `Boutique should recommend Growth, got ${boutique.tier}`);
-
-// Brief §22 Test 3 — high competition + high content demand + no website + high automation need. Expected: Business.
-const highCompetition = recommendPlan(signals({
-  googleBusinessConnected: true,
-  discoverabilitySeoScore: 55,
-  competitorCount: 12,
-  socialContentScore: 20,
-  visualContentOpportunityCount: 9,
-  hasWebsite: false,
-  trustReputationScore: 55,
-  highImpactFindingCount: 7,
-}));
-assert.equal(highCompetition.tier, "business", `High-competition business should recommend Business, got ${highCompetition.tier}`);
-
-// Brief §22 Test 4 — strong Google profile, little social demand. Expected: Starter, not an automatic upsell.
-const strongProfile = recommendPlan(signals({
-  googleBusinessConnected: true,
-  discoverabilitySeoScore: 90,
-  competitorCount: 1,
-  socialContentScore: 82,
-  visualContentOpportunityCount: 0,
   hasWebsite: true,
-  trustReputationScore: 88,
-  highImpactFindingCount: 0,
 }));
-assert.equal(strongProfile.tier, "starter", `Strong-profile business should stay on Starter, got ${strongProfile.tier}`);
+assert.equal(scenarioB.scenario, "scenario_b");
+assert.equal(scenarioB.serviceKey, "social");
+assert.equal(scenarioB.priceCents, 399_900);
+assert.equal(scenarioB.upsell?.key, "advanced_social");
+assert.ok(scenarioB.why.includes("28 monthly posts will keep your brand active"));
 
-// Every recommendation carries the full brief §11 UX shape.
-for (const rec of [kirana, boutique, highCompetition, strongProfile]) {
+// Scenario C — Weak SEO + Strong Social: Expected SEO Growth (₹2,999) and upsell Advanced SEO (₹9,999)
+const scenarioC = recommendPlan(signals({
+  googleBusinessConnected: false,
+  discoverabilitySeoScore: 40,
+  competitorCount: 4,
+  socialContentScore: 80,
+  visualContentOpportunityCount: 1,
+  hasWebsite: true,
+}));
+assert.equal(scenarioC.scenario, "scenario_c");
+assert.equal(scenarioC.serviceKey, "seo");
+assert.equal(scenarioC.priceCents, 299_900);
+assert.equal(scenarioC.upsell?.key, "advanced_seo");
+assert.ok(scenarioC.why.includes("SEO Growth fixes your local visibility"));
+
+// Scenario D — Strong SEO + Strong Social: Expected Advanced Growth (₹18,498)
+const scenarioD = recommendPlan(signals({
+  googleBusinessConnected: true,
+  discoverabilitySeoScore: 85,
+  competitorCount: 8,
+  socialContentScore: 85,
+  visualContentOpportunityCount: 2,
+  hasWebsite: true,
+}));
+assert.equal(scenarioD.scenario, "scenario_d");
+assert.equal(scenarioD.serviceKey, "advanced_growth");
+assert.equal(scenarioD.priceCents, 1_849_800);
+assert.ok(scenarioD.why.includes("Advanced Growth combines Advanced SEO, Social Autopilot, WhatsApp Autopilot"));
+
+// Scenario E — Website Issue: Expected websiteRecommendation
+const scenarioE = recommendPlan(signals({
+  hasWebsite: false,
+  websiteHealthScore: null,
+}));
+assert.ok(scenarioE.websiteRecommendation?.needed);
+assert.equal(scenarioE.websiteRecommendation?.type, "landing_page");
+assert.equal(scenarioE.websiteRecommendation?.priceCents, 99_900);
+
+// Demos verification
+for (const rec of [scenarioA, scenarioB, scenarioC, scenarioD, scenarioE]) {
   assert.ok(rec.biggestOpportunity.title, "biggestOpportunity.title is present");
   assert.ok(rec.biggestOpportunity.body, "biggestOpportunity.body is present");
   assert.ok(rec.whatStratxcelCanDo.length > 0, "whatStratxcelCanDo is non-empty");
   assert.ok(rec.why.length > 0, "why is non-empty");
+  assert.ok(rec.demos.socialDemo.samplePostHook, "social demo hook is present");
+  assert.ok(rec.demos.seoDemo.targetKeyword, "seo demo target keyword is present");
 }
 
-console.log("plan-recommendation.test.ts: ALL PASS (brief §22 Test 1-4 worked examples)");
+console.log("plan-recommendation.test.ts: ALL PASS (Commercial Scenarios A-E & Demos)");

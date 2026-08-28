@@ -880,11 +880,11 @@ export function VisualAuditReport({
         </div>
       </section>
 
-      {/* 9. YOUR BIGGEST OPPORTUNITY + PACKAGE RECOMMENDATION (brief §11) */}
+      {/* 9. YOUR BIGGEST OPPORTUNITY + SERVICE RECOMMENDATION */}
       <section className="rounded-[1.25rem] border border-sx-border bg-sx-surface-1 p-6 sm:p-8 shadow-xs">
         <div className="max-w-3xl">
           <span className="inline-block rounded-full bg-sx-accent/20 px-3 py-0.5 text-xs font-bold uppercase tracking-wider text-sx-accent">
-            Your Biggest Opportunity
+            Your Primary Growth Priority
           </span>
           <h2 className="mt-2 font-sx-sans text-2xl font-bold text-sx-text sm:text-3xl">
             {recommendation.biggestOpportunity.title}
@@ -895,7 +895,7 @@ export function VisualAuditReport({
         </div>
 
         <div className="mt-5">
-          <p className="text-xs font-bold uppercase tracking-wider text-sx-text">What StratXcel can do</p>
+          <p className="text-xs font-bold uppercase tracking-wider text-sx-text">What StratXcel will execute</p>
           <ul className="mt-2 grid gap-1.5 text-xs text-sx-text-muted sm:grid-cols-2">
             {recommendation.whatStratxcelCanDo.map((item) => (
               <li key={item} className="flex items-center gap-1.5"><span className="text-sx-accent font-bold">✓</span> {item}</li>
@@ -903,62 +903,91 @@ export function VisualAuditReport({
           </ul>
         </div>
 
-        <div className="mt-6 rounded-sx-md border border-sx-accent/40 bg-sx-accent/10 p-4">
-          <p className="text-[11px] font-bold uppercase tracking-wide text-sx-accent">Recommended plan</p>
-          <p className="mt-1 font-sx-sans text-xl font-bold text-sx-text">
-            {PLAN_CARD_META[recommendation.tier].name} — {PLAN_CARD_META[recommendation.tier].priceLabel}/mo
-          </p>
-          <p className="mt-1.5 text-xs leading-relaxed text-sx-text-muted"><span className="font-semibold text-sx-text">Why this plan? </span>{recommendation.why}</p>
-          <Link
-            href={`/app/billing?recommended=${recommendation.tier}`}
-            className="mt-3 inline-flex min-h-9 items-center justify-center rounded-sx-sm bg-sx-accent px-4 text-xs font-bold text-sx-accent-on hover:bg-[color:var(--sx-accent-hover)] transition-colors"
-          >
-            Start with {PLAN_CARD_META[recommendation.tier].name} →
-          </Link>
+        {/* Primary Recommended Service */}
+        <div role="radiogroup" aria-label="Recommended plans and services" className="mt-6 rounded-sx-md border border-sx-accent/40 bg-sx-accent/10 p-5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p className="text-[11px] font-bold uppercase tracking-wide text-sx-accent">Recommended service</p>
+              <p className="mt-1 font-sx-sans text-xl font-bold text-sx-text">
+                {recommendation.serviceName} — {recommendation.price}
+              </p>
+            </div>
+            <Link
+              href={`/app/billing?plan=${recommendation.serviceKey}`}
+              className="inline-flex min-h-10 items-center justify-center rounded-sx-sm bg-sx-accent px-5 text-xs font-bold text-sx-accent-on hover:bg-[color:var(--sx-accent-hover)] transition-colors shadow-sm"
+            >
+              Activate {recommendation.serviceName} →
+            </Link>
+          </div>
+          <p className="mt-2 text-xs leading-relaxed text-sx-text-muted"><span className="font-semibold text-sx-text">Why this service? </span>{recommendation.why}</p>
         </div>
 
-        <p className="mt-6 text-xs font-semibold text-sx-text-muted">Other plans</p>
-        <div className="mt-2 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {(Object.keys(PLAN_CARD_META) as RecommendedPlanTier[]).map((tier) => {
-            const catalogTier = PRICING_TIERS.find((t) => t.planKey === tier);
-            const isRecommended = tier === recommendation.tier;
-            return (
-              <div
-                key={tier}
-                role="radio"
-                aria-checked={selectedPlanTier === tier}
-                onClick={() => setSelectedPlanTier(tier)}
-                className={`flex flex-col justify-between rounded-sx-md border p-5 cursor-pointer transition-all ${
-                  selectedPlanTier === tier
-                    ? "border-sx-accent bg-sx-surface-1 ring-1 ring-sx-accent shadow-sm"
-                    : "border-sx-border bg-sx-surface-2/60 hover:bg-sx-surface-1"
-                }`}
-              >
-                <div>
-                  <div className="flex items-center justify-between gap-1 mb-2">
-                    <h3 className="font-bold text-base text-sx-text">{PLAN_CARD_META[tier].name}</h3>
-                    <span className="text-xs font-bold text-sx-text">{PLAN_CARD_META[tier].priceLabel}<span className="text-[10px] text-sx-text-muted">/mo</span></span>
-                  </div>
-                  <p className="text-xs text-sx-text-muted leading-relaxed">{catalogTier?.pitch}</p>
-                  <ul className="mt-4 space-y-2 text-xs text-sx-text-muted">
-                    {(catalogTier?.scope ?? []).slice(0, 3).map((line) => (
-                      <li key={line} className="flex items-center gap-1.5"><span className="text-sx-accent font-bold">✓</span> {line}</li>
-                    ))}
-                  </ul>
-                </div>
-                <Link
-                  href={`/app/billing?recommended=${isRecommended ? tier : recommendation.tier}`}
-                  className={`mt-6 inline-flex min-h-9 w-full items-center justify-center rounded-sx-sm px-4 text-xs font-semibold text-center transition-colors ${
-                    isRecommended
-                      ? "bg-sx-accent text-sx-accent-on hover:bg-[color:var(--sx-accent-hover)] font-bold"
-                      : "border border-sx-border-strong text-sx-text hover:bg-sx-accent hover:text-sx-accent-on"
-                  }`}
-                >
-                  Select {PLAN_CARD_META[tier].name} →
-                </Link>
+        {/* Strategic Upsell / Advanced Growth Path */}
+        {recommendation.upsell && (
+          <div className="mt-4 rounded-sx-md border border-sx-border bg-sx-surface-2 p-5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <span className="rounded-full bg-sx-text/10 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-sx-accent">Autonomous Upgrade Option</span>
+                <h3 className="mt-1 font-bold text-base text-sx-text">{recommendation.upsell.title} — {recommendation.upsell.price}</h3>
               </div>
-            );
-          })}
+              <Link
+                href={recommendation.upsell.href}
+                className="inline-flex min-h-9 items-center justify-center rounded-sx-sm border border-sx-accent px-4 text-xs font-bold text-sx-accent hover:bg-sx-accent hover:text-sx-accent-on transition-colors"
+              >
+                {recommendation.upsell.cta} →
+              </Link>
+            </div>
+            <p className="mt-1.5 text-xs text-sx-text-muted">{recommendation.upsell.pitch}</p>
+            <p className="mt-1 text-xs text-sx-text-muted"><strong className="text-sx-text">Why upgrade:</strong> {recommendation.upsell.whyUpgrade}</p>
+          </div>
+        )}
+
+        {/* Website Add-on Recommendation */}
+        {recommendation.websiteRecommendation && (
+          <div className="mt-4 rounded-sx-md border border-sx-warning/30 bg-sx-warning/5 p-5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <span className="rounded-full bg-sx-warning/20 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-sx-warning">Website Priority Add-On</span>
+                <h3 className="mt-1 font-bold text-base text-sx-text">{recommendation.websiteRecommendation.title} — {recommendation.websiteRecommendation.price}</h3>
+              </div>
+              <Link
+                href={recommendation.websiteRecommendation.href}
+                className="inline-flex min-h-9 items-center justify-center rounded-sx-sm bg-sx-warning/20 border border-sx-warning/40 px-4 text-xs font-bold text-sx-text hover:bg-sx-warning/30 transition-colors"
+              >
+                {recommendation.websiteRecommendation.cta} →
+              </Link>
+            </div>
+            <p className="mt-1.5 text-xs text-sx-text-muted">{recommendation.websiteRecommendation.reason}</p>
+          </div>
+        )}
+
+        {/* Interactive Demos / Previews */}
+        <div className="mt-8 border-t border-sx-border pt-6">
+          <h3 className="text-sm font-bold uppercase tracking-wider text-sx-text">Interactive Service Previews</h3>
+          <div className="mt-4 grid gap-4 md:grid-cols-2">
+            {/* Social Post Demo */}
+            <div className="rounded-sx-md border border-sx-border bg-sx-surface-2 p-4">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-sx-accent">Social Content Preview</span>
+              <p className="mt-1 font-semibold text-xs text-sx-text">{recommendation.demos.socialDemo.samplePostHook}</p>
+              <p className="mt-2 text-xs text-sx-text-muted italic border-l-2 border-sx-accent/40 pl-2">
+                &ldquo;{recommendation.demos.socialDemo.samplePostCaption}&rdquo;
+              </p>
+              <div className="mt-3 flex items-center justify-between text-[11px] text-sx-text-subtle">
+                <span>Pillar: {recommendation.demos.socialDemo.samplePillar}</span>
+                <span>28 Posts/Mo Included</span>
+              </div>
+            </div>
+
+            {/* SEO Opportunity Demo */}
+            <div className="rounded-sx-md border border-sx-border bg-sx-surface-2 p-4">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-sx-accent">SEO Ranking Target Preview</span>
+              <p className="mt-1 font-semibold text-xs text-sx-text">Keyword: &ldquo;{recommendation.demos.seoDemo.targetKeyword}&rdquo;</p>
+              <p className="mt-1 text-xs text-sx-text-muted">Est. Searches: ~{recommendation.demos.seoDemo.projectedMonthlySearches}/month</p>
+              <p className="mt-2 text-xs text-sx-text-muted border-l-2 border-sx-accent/40 pl-2">
+                {recommendation.demos.seoDemo.recommendedAction}
+              </p>
+            </div>
+          </div>
         </div>
       </section>
     </div>
