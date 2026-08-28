@@ -4,6 +4,20 @@ import { listAuditEvents } from "@/lib/social/repositories/system";
 import { listJobs } from "@/lib/social/repositories/publishing";
 import { runWorkerNowAction, runTenantContentBackfillAction } from "../actions";
 
+// Debug Silent Automation Failure mission: real root cause of "clicked
+// Backfill/Run worker now, nothing happened" -- per Next.js's own docs
+// (maxDuration.md: "If using Server Actions, set maxDuration at the PAGE
+// level to change the default timeout of all Server Actions used on the
+// page"), this page had no maxDuration at all, so runTenantContentBackfill
+// Action's real AI generation work (confirmed live to need up to ~300s for
+// even one tenant's near-term batch -- see package-producer/route.ts's own
+// comment) was getting killed by Vercel's short platform default long
+// before it could finish, or even write anything -- with zero visible
+// error to the user (a killed Server Action just silently fails the
+// request; "The destination stream closed early" is exactly what a killed
+// mid-stream Server Action looks like from the server's own logs).
+export const maxDuration = 300;
+
 const STATUS_CHIP: Record<HealthStatus, string> = {
   OPERATIONAL: "saut-chip-success",
   DEGRADED: "saut-chip-warning",

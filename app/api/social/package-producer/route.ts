@@ -35,4 +35,16 @@ export async function POST(req: NextRequest) {
 }
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 120;
+// Debug Silent Automation Failure mission: confirmed live via Vercel
+// runtime logs -- this exact route hit "Vercel Runtime Timeout Error:
+// Task timed out after 120 seconds" mid-run, after ~24 successful real
+// Gemini calls (visible ai_execution_success events, real cost/tokens
+// logged) -- genuine progress, just not enough budget to finish preparing
+// a full near-term batch (prepareNearTermPackageItems processes up to 20
+// due items per run, each needing 1-2 real AI calls plus quality-gate
+// retries). Not a crash or a config error -- a real, honest resource
+// budget that was too small for the real workload. Matches the same
+// maxDuration=300 budget this codebase already uses for every other
+// AI-heavy route (see app/api/platform/social/autopilot/route.ts's own
+// comment on this exact pattern).
+export const maxDuration = 300;
