@@ -2,7 +2,7 @@ import { requireOwnerContext } from "@/lib/social/db-context";
 import { runHealthChecks, type HealthStatus } from "@/lib/social/health";
 import { listAuditEvents } from "@/lib/social/repositories/system";
 import { listJobs } from "@/lib/social/repositories/publishing";
-import { runWorkerNowAction } from "../actions";
+import { runWorkerNowAction, runTenantContentBackfillAction } from "../actions";
 
 const STATUS_CHIP: Record<HealthStatus, string> = {
   OPERATIONAL: "saut-chip-success",
@@ -55,9 +55,16 @@ export default async function SystemPage() {
             Health, jobs, and the audit trail — computed live on this page load, from the stratxcel database.
           </p>
         </div>
-        <form action={runWorkerNowAction}>
-          <button className="saut-btn saut-btn-secondary">Run worker now</button>
-        </form>
+        <div className="flex shrink-0 items-center gap-2">
+          <form action={runTenantContentBackfillAction}>
+            <button className="saut-btn saut-btn-secondary" title="Runs the real activate/resume plan+prepare functions for every ACTIVE/NEEDS_ATTENTION tenant — safe to re-run, never double-plans or double-prepares">
+              Backfill existing tenant content
+            </button>
+          </form>
+          <form action={runWorkerNowAction}>
+            <button className="saut-btn saut-btn-secondary">Run worker now</button>
+          </form>
+        </div>
       </div>
 
       {(["core", "workers", "social", "webhooks", "ai", "media"] as const).map((group) => (

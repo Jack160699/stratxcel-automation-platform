@@ -12,6 +12,7 @@ import { upsertAutomationSettings } from "@/lib/social/repositories/automation";
 import { recordAudit } from "@/lib/social/repositories/system";
 import { createSupabaseServiceClient } from "@/lib/supabase/service";
 import { runWorkerBatch } from "@/lib/social/worker";
+import { planPackagePeriod, prepareNearTermPackageItems, packageKillSwitchActive } from "@/lib/social/package-autopilot";
 import { normalizeYouTubePrivacyStatus } from "@/lib/social/providers/youtube-visibility";
 import { attachMediaToMaster, attachMediaToVariant } from "@/lib/social/repositories/media-assets";
 import {
@@ -201,6 +202,77 @@ export async function runWorkerNowAction() {
     await recordAudit({ actorType: "USER", actorId: ctx.ownerId, action: "worker.run", summary: `Worker batch processed ${result.processed} job(s)`, meta: { ...result } });
   } catch (err) {
     console.error("manual worker trigger failed:", err);
+  }
+  revalidatePath("/admin/social", "layout");
+}
+
+/**
+ * Retroactive Tenant Backfill mission: existing tenants whose Social
+ * Autopilot was activated (or last resumed) BEFORE the "instant day-one
+ * content" hardening (app/api/platform/social/autopilot/route.ts's
+ * triggerImmediatePackagePreparation, only called from activate/resume)
+ * never received that on-activation plan+prepare call -- their queue only
+ * ever filled via whatever the hourly package-producer cron happened to
+ * already do. This runs the SAME two idempotent, production-proven
+ * functions the live activate/resume endpoints call for EVERY real
+ * ACTIVE/NEEDS_ATTENTION authorization -- exactly like runWorkerNowAction
+ * above wraps runWorkerBatch, so it inherits real Next.js module
+ * resolution (no standalone-script import-graph issues) and this app's
+ * existing admin-action security/audit model.
+ *
+ * A standalone equivalent lives at scripts/backfill-existing-tenant-
+ * content.ts for read-only dry-run reporting; this server action is the
+ * verified, real execution path -- see that script's own header comment
+ * for why it can only run as a dry run outside this app's Next.js runtime.
+ *
+ * Never aborts the whole run for one tenant's failure -- caught, logged,
+ * counted, continues -- and refuses to do any real work at all if the
+ * package-autopilot kill switch is active (fail closed), exactly like
+ * runPackageAutopilotBatch itself already does.
+ */
+export async function runTenantContentBackfillAction() {
+  const ctx = await assertOwner();
+  const service = createSupabaseServiceClient();
+  try {
+    const kill = await packageKillSwitchActive(service as Parameters<typeof packageKillSwitchActive>[0]);
+    if (kill.active) {
+      console.error(`Retroactive tenant content backfill refused: package autopilot kill switch is active (scope=${kill.scope ?? "unknown"}, reason=${kill.reason ?? "none given"}).`);
+      revalidatePath("/admin/social", "layout");
+      return;
+    }
+
+    const { data: authorizations, error } = await service
+      .from("social_autopilot_authorizations")
+      .select("id, tenant_id")
+      .in("state", ["ACTIVE", "NEEDS_ATTENTION"]);
+    if (error) throw new Error(`Could not query social_autopilot_authorizations: ${error.message}`);
+
+    let planned = 0;
+    let prepared = 0;
+    let blocked = 0;
+    let failures = 0;
+    for (const auth of authorizations ?? []) {
+      try {
+        const planResult = await planPackagePeriod(service as Parameters<typeof planPackagePeriod>[0], auth.id);
+        const prepareResult = await prepareNearTermPackageItems(service as Parameters<typeof prepareNearTermPackageItems>[0], auth.id);
+        planned += planResult.planned;
+        prepared += prepareResult.prepared;
+        blocked += prepareResult.blocked;
+      } catch (err) {
+        failures++;
+        console.error(`Retroactive backfill failed for authorization ${auth.id} (tenant ${auth.tenant_id}):`, err instanceof Error ? err.message : err);
+      }
+    }
+
+    await recordAudit({
+      actorType: "USER",
+      actorId: ctx.ownerId,
+      action: "social.package.retroactive_backfill",
+      summary: `Retroactive tenant content backfill: ${(authorizations ?? []).length} authorization(s) scanned, planned=${planned}, prepared=${prepared}, blocked=${blocked}, failures=${failures}`,
+      meta: { authorizationCount: (authorizations ?? []).length, planned, prepared, blocked, failures },
+    });
+  } catch (err) {
+    console.error("Retroactive tenant content backfill failed:", err);
   }
   revalidatePath("/admin/social", "layout");
 }
