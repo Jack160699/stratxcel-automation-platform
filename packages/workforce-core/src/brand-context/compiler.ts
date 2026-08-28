@@ -1,4 +1,4 @@
-import type { BrandBrainContent } from "@stratxcel/brand-brain";
+import { getActiveServices, type BrandBrainContent } from "@stratxcel/brand-brain";
 
 export type BrandContextSliceKey =
   | "visual_identity"
@@ -51,7 +51,16 @@ export function compileBrandContextSlice(args: {
     content.target_audience = args.brandBrain.target_audience;
   }
   if (sliceKeys.includes("product_facts")) {
-    content.products = args.brandBrain.products;
+    // Single source of truth (Brand Brain Final UX + Data + Save System
+    // Section 7): reads the canonical, normalized services list (the new
+    // structured `services` array, with the legacy `products` array as a
+    // read-only fallback for tenants who haven't re-saved yet) rather than
+    // the raw `products` field directly, so SEO/website/media roles see a
+    // tenant's real structured services (category, price, facts) exactly
+    // like every other real consumer of Brand Brain content now does.
+    const services = getActiveServices(args.brandBrain);
+    content.products = services.map((s) => ({ name: s.name, description: s.shortDescription }));
+    content.services = services;
     content.industry = args.brandBrain.industry;
   }
   if (sliceKeys.includes("campaign_objective") && args.campaignObjective) {

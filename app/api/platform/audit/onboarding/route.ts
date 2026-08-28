@@ -2,7 +2,7 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getTenantServiceContext } from "@/lib/tenants/tenant-context";
 import { listMembershipsForUser } from "@/lib/tenants/repository";
 import { brandBrainPresenceChanged, buildBrandBrainContentFromAuditIntake, isBrandBrainCurrentForAudit } from "@/lib/audit/brand-brain";
-import { getCurrentBrandBrain, saveBrandBrainVersion } from "@stratxcel/brand-brain";
+import { getCurrentBrandBrain, saveBrandBrainVersion, getCanonicalServices, type BrandBrainContent } from "@stratxcel/brand-brain";
 import { resolveAuditBudgetLimitUsd, createLiveAutomaticAuditExecutor } from "@stratxcel/audit-engine";
 import { createSocialAuditConnectorInsightsProvider } from "@/lib/social/audit-connector-insights";
 import { AUDIT_CHANNEL_TYPES, sanitizeChannels, type AuditChannelType } from "@/lib/audit/v1/channels";
@@ -154,7 +154,10 @@ export async function POST(request: Request) {
         name: field(typeof c.business_name === "string" && c.business_name ? c.business_name : "My Business", "CUSTOMER_PROVIDED", undefined, true),
         category: field(typeof c.industry === "string" && c.industry ? c.industry : "General Business", "CUSTOMER_PROVIDED", undefined, true),
         location: typeof c.location === "string" ? field(c.location, "CUSTOMER_PROVIDED", undefined, true) : undefined,
-        offer: Array.isArray(c.products) && c.products.length ? field((c.products as any[]).map((p: any) => p.name || p).join("\n"), "CUSTOMER_PROVIDED", undefined, true) : undefined,
+        // Canonical services (Brand Brain Final UX + Data + Save System
+        // Section 7) — getCanonicalServices reads the new structured
+        // `services` array with the legacy `products` fallback baked in.
+        offer: getCanonicalServices(c as BrandBrainContent).length ? field(getCanonicalServices(c as BrandBrainContent).map((s) => s.name).join("\n"), "CUSTOMER_PROVIDED", undefined, true) : undefined,
         audience: typeof c.target_audience === "string" ? field(c.target_audience, "CUSTOMER_PROVIDED", undefined, true) : undefined,
         positioning: typeof c.description === "string" ? field(c.description, "CUSTOMER_PROVIDED", undefined, true) : undefined,
         websiteUrl: typeof c.website_url === "string" ? c.website_url : "",
@@ -164,7 +167,7 @@ export async function POST(request: Request) {
         biggestGrowthProblem: "lead_response_and_consistency",
         ninetyDayResult: Array.isArray(c.goals) && c.goals[0] ? String(c.goals[0]) : "accelerated_customer_acquisition",
         idealCustomer: typeof c.target_audience === "string" ? c.target_audience : "Target customers",
-        priorityOffering: Array.isArray(c.products) && c.products[0] ? String(c.products[0].name || c.products[0]) : (typeof c.business_name === "string" ? c.business_name : "Core offer"),
+        priorityOffering: getCanonicalServices(c as BrandBrainContent)[0]?.name ?? (typeof c.business_name === "string" ? c.business_name : "Core offer"),
       };
       const channels = Array.isArray(c.verified_social_links)
         ? (c.verified_social_links as any[]).map((s: any) => ({ id: s.platform, type: s.platform, value: s.url, handle: s.handle, notAvailable: false }))
@@ -484,7 +487,10 @@ export async function POST(request: Request) {
             name: field(typeof c.business_name === "string" && c.business_name ? c.business_name : (typeof current.business_name === "string" ? current.business_name : "My Business"), "CUSTOMER_PROVIDED", undefined, true),
             category: field(typeof c.industry === "string" && c.industry ? c.industry : (typeof current.industry === "string" ? current.industry : "General Business"), "CUSTOMER_PROVIDED", undefined, true),
             location: typeof c.location === "string" ? field(c.location, "CUSTOMER_PROVIDED", undefined, true) : undefined,
-            offer: Array.isArray(c.products) && c.products.length ? field((c.products as any[]).map((p: any) => p.name || p).join("\n"), "CUSTOMER_PROVIDED", undefined, true) : undefined,
+            // Canonical services (Brand Brain Final UX + Data + Save System
+        // Section 7) — getCanonicalServices reads the new structured
+        // `services` array with the legacy `products` fallback baked in.
+        offer: getCanonicalServices(c as BrandBrainContent).length ? field(getCanonicalServices(c as BrandBrainContent).map((s) => s.name).join("\n"), "CUSTOMER_PROVIDED", undefined, true) : undefined,
             audience: typeof c.target_audience === "string" ? field(c.target_audience, "CUSTOMER_PROVIDED", undefined, true) : undefined,
             positioning: typeof c.description === "string" ? field(c.description, "CUSTOMER_PROVIDED", undefined, true) : undefined,
             websiteUrl: typeof c.website_url === "string" ? c.website_url : (typeof current.website_url === "string" ? current.website_url : ""),
@@ -494,7 +500,7 @@ export async function POST(request: Request) {
             biggestGrowthProblem: "lead_response_and_consistency",
             ninetyDayResult: Array.isArray(c.goals) && c.goals[0] ? String(c.goals[0]) : "accelerated_customer_acquisition",
             idealCustomer: typeof c.target_audience === "string" ? c.target_audience : "Target customers",
-            priorityOffering: Array.isArray(c.products) && c.products[0] ? String(c.products[0].name || c.products[0]) : (typeof c.business_name === "string" ? c.business_name : "Core offer"),
+            priorityOffering: getCanonicalServices(c as BrandBrainContent)[0]?.name ?? (typeof c.business_name === "string" ? c.business_name : "Core offer"),
           };
           const channels = Array.isArray(c.verified_social_links)
             ? (c.verified_social_links as any[]).map((s: any) => ({ id: s.platform, type: s.platform, value: s.url, handle: s.handle, notAvailable: false }))

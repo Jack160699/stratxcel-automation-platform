@@ -1,7 +1,7 @@
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getTenantServiceContext } from "@/lib/tenants/tenant-context";
 import { createTenant, listMembershipsForUser } from "@/lib/tenants/repository";
-import { getCurrentBrandBrain, saveBrandBrainVersion, type BrandBrainContent } from "@stratxcel/brand-brain";
+import { getCurrentBrandBrain, saveBrandBrainVersion, type BrandBrainContent, type BrandBrainService } from "@stratxcel/brand-brain";
 import { resolveCanonicalIdentity } from "@/lib/identity/resolve-identity";
 import { field } from "@/lib/audit/v1/provenance";
 import { CONNECT_DISCOVER_VERSION } from "@/lib/audit/v1/onboarding-state";
@@ -270,7 +270,26 @@ export async function POST(request: Request) {
   if (body.brand?.description) content.description = body.brand.description;
   if (body.brand?.tone) content.tone_of_voice = body.brand.tone;
   if (body.brand?.audience) content.target_audience = body.brand.audience;
-  if (body.brand?.offers?.length) content.products = body.brand.offers.map((o) => ({ name: o, description: "" }));
+  // Brand Brain Final UX + Data + Save System Section 7: a new tenant's
+  // onboarding-entered offers become real structured Services from day
+  // one, not the old flat {name, description} shape -- the customer never
+  // has to re-enter this on /app/brand for it to be a real, editable
+  // service (each just has an empty short description, category, etc.
+  // ready to fill in). `products` is also still set, purely so a legacy
+  // consumer that hasn't been migrated to getCanonicalServices yet still
+  // sees SOMETHING -- never the sole source of truth.
+  if (body.brand?.offers?.length) {
+    const now = new Date().toISOString();
+    content.services = body.brand.offers.map((name, index): BrandBrainService => ({
+      id: crypto.randomUUID(),
+      name,
+      shortDescription: "",
+      active: true,
+      order: index,
+      updatedAt: now,
+    }));
+    content.products = body.brand.offers.map((o) => ({ name: o, description: "" }));
+  }
   if (body.brand?.restrictions?.length) content.rules = body.brand.restrictions;
   if (body.goals?.length) content.goals = body.goals;
   if (body.business?.socials && body.business.socials.length > 0) {

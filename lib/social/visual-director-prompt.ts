@@ -59,6 +59,16 @@ export function buildVisualDirectorBrief(input: {
     : `No on-image text is planned for this creative -- the photograph itself must carry the entire idea. Compose for maximum visual impact with zero reliance on overlay text.`;
 
   const lines = [
+    // Unify Creative Studio mission: without an explicit instruction here,
+    // image models routinely draw their OWN approximation of a logo and/or
+    // readable headline text directly into the photo -- exactly the
+    // "AI-hallucinated logo and fake text" failure this whole treatment
+    // pipeline exists to prevent. Every genuine piece of on-image text and
+    // the real brand logo are added AFTER this photo is generated, by the
+    // deterministic compositor (text-overlay-render.ts), never by the
+    // image model itself -- so the image model must be told, in plain
+    // terms and first, to produce a clean background photograph only.
+    `DO NOT draw any text, words, letters, numbers, logos, wordmarks, or brand marks anywhere in this image -- not the headline, not a CTA, not the business name, not a stylized/approximated version of the logo. Generate a clean photographic background ONLY. All on-image text and the real brand logo are composited on top of this photo afterward by a separate, deterministic process -- your job is the photograph alone.`,
     `VISUAL CONCEPT: ${t.concept}`,
     `WHY THIS SHOULD STOP THE SCROLL: ${t.whyStopScroll}`,
     `WHY THIS FEELS LIKE ${businessName.toUpperCase()} SPECIFICALLY: ${t.whyThisBusiness}`,

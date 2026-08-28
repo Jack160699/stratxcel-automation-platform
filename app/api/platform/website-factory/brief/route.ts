@@ -6,12 +6,55 @@
  */
 
 import { requireTenantContext } from "@/lib/tenants/tenant-context";
+import { getCurrentBrandBrain, getCanonicalBrandContext } from "@stratxcel/brand-brain";
 import {
   websiteBriefEngine,
   smartWebsiteCreatorController,
   type CustomerAnswer,
   type AuthorizedConnectorContext,
 } from "@stratxcel/websites-and-domains";
+
+/**
+ * Brand Brain Final UX + Data + Save System Section 7: connectorContext
+ * used to come ENTIRELY from the client request body -- the server never
+ * verified or even fetched the tenant's real Brand Brain itself, so
+ * Website's brand awareness depended entirely on whatever the calling
+ * page happened to assemble client-side (and until this mission, that
+ * client assembly didn't even forward services -- see
+ * app/app/website/create/page.tsx). This builds the authoritative
+ * server-side context from the same canonical retrieval layer every other
+ * real consumer (image-generation, Social Autopilot, the workforce
+ * brand-context compiler) now uses, and merges it UNDER whatever the
+ * client sent -- client-supplied fields win when both are present (e.g. a
+ * conversational answer the customer just typed in this exact session),
+ * but a real saved service/business fact is never silently missing just
+ * because the calling page forgot to forward it.
+ */
+async function buildServerAuthoritativeConnectorContext(
+  supabase: unknown,
+  tenantId: string,
+  clientContext: AuthorizedConnectorContext | undefined
+): Promise<AuthorizedConnectorContext> {
+  const brandBrain = await getCurrentBrandBrain(supabase as never, tenantId).catch(() => null);
+  const canonical = getCanonicalBrandContext(brandBrain?.content);
+  const merged: AuthorizedConnectorContext = { ...clientContext };
+  merged.brandBrain = {
+    businessName: canonical.businessName || undefined,
+    industry: canonical.industry ?? undefined,
+    story: canonical.description ?? undefined,
+    brandVoice: canonical.toneOfVoice ?? undefined,
+    primaryColors: canonical.colors.length ? canonical.colors : undefined,
+    logoUrl: canonical.logoUrl ?? undefined,
+    ...clientContext?.brandBrain,
+  };
+  if (canonical.services.length || clientContext?.catalog) {
+    merged.catalog = {
+      existingServices: canonical.services.map((s) => ({ title: s.name })),
+      ...clientContext?.catalog,
+    };
+  }
+  return merged;
+}
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -48,12 +91,17 @@ export async function POST(request: Request) {
 
     // 2. Normal brief processing
     if (message) {
+      const authoritativeContext = await buildServerAuthoritativeConnectorContext(
+        ctx.supabase,
+        tenantId,
+        connectorContext as AuthorizedConnectorContext | undefined
+      );
       const result = await websiteBriefEngine.processCustomerInput({
         tenantId,
         projectId,
         message,
         answers: (answers as CustomerAnswer[]) || [],
-        connectorContext: connectorContext as AuthorizedConnectorContext,
+        connectorContext: authoritativeContext,
       });
 
       return Response.json({ ok: true, result });

@@ -1,6 +1,6 @@
 import { requireTenantContext, requireTenantReadContext, requireTenantReadPermission, getTenantServiceContext } from "@/lib/tenants/tenant-context";
 import { requirePermission, PermissionDeniedError } from "@/lib/rbac/policy";
-import { getCurrentBrandBrain, saveBrandBrainVersion, type BrandBrainContent } from "@stratxcel/brand-brain";
+import { getCurrentBrandBrain, saveBrandBrainVersion, validateBrandBrainContent, type BrandBrainContent } from "@stratxcel/brand-brain";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -45,6 +45,16 @@ export async function POST(request: Request) {
   } catch (err) {
     if (err instanceof PermissionDeniedError) return Response.json({ error: err.message }, { status: 403 });
     throw err;
+  }
+
+  // Server-side validation (Brand Brain Final UX + Data + Save System
+  // Section 8: "validate") — defense in depth behind whatever the client
+  // already enforces. A malformed/over-length highlight or service is
+  // rejected with a real, field-level error rather than silently
+  // persisted or 500ing deeper in the stack.
+  const issues = validateBrandBrainContent(body.content);
+  if (issues.length) {
+    return Response.json({ error: issues[0]!.issue, field: issues[0]!.field, issues }, { status: 400 });
   }
 
   const { supabase } = getTenantServiceContext();

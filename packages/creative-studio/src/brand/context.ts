@@ -1,4 +1,4 @@
-﻿import type { BrandBrainContent } from "@stratxcel/brand-brain";
+﻿import { getActiveServices, type BrandBrainContent } from "@stratxcel/brand-brain";
 import { compileBrandContextSlice } from "@stratxcel/workforce-core";
 import type { CreativeBrandContext } from "../types.ts";
 
@@ -25,7 +25,12 @@ export function compileCreativeBrandContext(args: {
     targetAudience: slice.content.target_audience ?? args.brandBrain.target_audience,
     pillars: slice.content.pillars ?? args.brandBrain.pillars,
     rules: slice.content.rules ?? args.brandBrain.rules,
-    products: slice.content.products ?? args.brandBrain.products,
+    // Canonical services (Section 7) computed directly here, not just from
+    // the slice, so this stays correct even for roles (e.g.
+    // creative_director) whose ROLE_SLICES entry doesn't include
+    // product_facts -- a tenant with only the new structured `services`
+    // field must never silently fall back to an empty legacy `products`.
+    products: getActiveServices(args.brandBrain).map((s) => ({ name: s.name, description: s.shortDescription })),
     approvedClaims:
       args.approvedClaims ??
       (Array.isArray(slice.content.approved_claims)

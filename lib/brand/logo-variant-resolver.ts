@@ -72,6 +72,40 @@ async function measureAspectRatioFallback(file: Blob): Promise<number | null> {
  * a logo before the Logo Engine shipped and only has the legacy
  * `logo_url` string).
  */
+/**
+ * Legacy/backward-compat fallback (Unify Creative Studio mission): a
+ * tenant who saved `logo_url` (a plain remote URL string) but has no
+ * `logo_variants` bundle at all -- either they saved a logo before the
+ * Logo Engine shipped, or their variant assets were later deleted while
+ * the display string stayed -- would otherwise get ZERO logo composited,
+ * even though selectLogoVariant (text-overlay-render.ts) already has a
+ * real `logoImage` fallback path built for exactly this case; the
+ * production caller (lib/image-generation/service.ts) just never fed it
+ * one. Re-fetches and re-encodes the URL itself rather than trusting it to
+ * still be reachable/valid at render time (matching resolveOneVariant's
+ * own "never trust a stored display URL" rule above), and measures its
+ * real aspect ratio so it's never stretched when composited. Best-effort:
+ * any failure (network, non-image response, corrupt file) returns null --
+ * never blocks generation, same as every other logo lookup in this file.
+ */
+export async function resolveLegacyLogoImage(logoUrl: string): Promise<LogoAsset | null> {
+  if (!logoUrl) return null;
+  try {
+    const response = await fetch(logoUrl);
+    if (!response.ok) return null;
+    const mimeType = (response.headers.get("content-type") ?? "").split(";")[0]?.trim();
+    if (!mimeType || !["image/png", "image/jpeg", "image/webp"].includes(mimeType)) return null;
+    const blob = await response.blob();
+    const aspectRatio = await measureAspectRatioFallback(blob);
+    if (!aspectRatio || aspectRatio <= 0) return null;
+    const bytes = Buffer.from(await blob.arrayBuffer());
+    const dataUri = `data:${mimeType};base64,${bytes.toString("base64")}`;
+    return { dataUri, mimeType: mimeType as LogoAsset["mimeType"], aspectRatio };
+  } catch {
+    return null;
+  }
+}
+
 export async function resolveLogoVariantBundle(supabase: SupabaseClient, tenantId: string, storedVariants: unknown): Promise<LogoVariantBundle | null> {
   if (!storedVariants || typeof storedVariants !== "object") return null;
   const stored = storedVariants as StoredLogoVariants;

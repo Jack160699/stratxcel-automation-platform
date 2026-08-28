@@ -1,4 +1,4 @@
-import type { BrandBrainContent } from "@stratxcel/brand-brain";
+import { getCanonicalServices, type BrandBrainContent } from "@stratxcel/brand-brain";
 import type { BrandReadinessAssessment, BrandReadinessLevel } from "../types.ts";
 
 const REQUIRED = ["business_name", "tone_of_voice", "target_audience"] as const;
@@ -19,8 +19,13 @@ export function assessBrandReadiness(brandBrain: BrandBrainContent): BrandReadin
     (ok ? presentFields : missingRequired).push(f);
   }
   const warnings: string[] = [];
-  const products = (brandBrain as { products?: unknown }).products;
-  if (!(Array.isArray(products) && products.length > 0) && !brandBrain.industry?.trim()) {
+  // Canonical services (Brand Brain Final UX + Data + Save System Section
+  // 7) — reads the new structured `services` array with the legacy
+  // `products` fallback baked in, so a tenant who has migrated to real
+  // structured services no longer gets a false "offer context missing"
+  // warning just because the old flat `products` field is now empty.
+  const services = getCanonicalServices(brandBrain);
+  if (services.length === 0 && !brandBrain.industry?.trim()) {
     warnings.push("Offer context missing — do not invent SKUs");
   }
   let level: BrandReadinessLevel = missingRequired.length === REQUIRED.length ? "MISSING_REQUIRED_CONTEXT" : missingRequired.length ? "PARTIAL" : "READY";

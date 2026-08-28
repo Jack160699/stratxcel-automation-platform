@@ -23,7 +23,7 @@ import { deriveBrandVisualDNA } from "../social/brand-visual-dna";
 import { classifyIndustry } from "../social/industry-taxonomy";
 import { renderTextOverlay, type LogoVariantBundle } from "../social/text-overlay-render";
 import { resolveManualRouting } from "../social/archetype-routing";
-import { resolveLogoVariantBundle } from "../brand/logo-variant-resolver";
+import { resolveLogoVariantBundle, resolveLegacyLogoImage } from "../brand/logo-variant-resolver";
 
 const TERMINAL = new Set(["READY", "FAILED"]);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -149,6 +149,32 @@ async function resolveBrandLogoAssetId(authorizationClient: SupabaseClient, tena
   return logo?.id ?? null;
 }
 
+/** Exported so a caller that needs to do real, potentially-billable work
+ * BEFORE createImageGenerationJob (e.g. the Creative Studio route
+ * generating a Gemini creative treatment -- see
+ * lib/social/studio-creative-treatment.ts) can cheaply check "does this
+ * idempotency key already have a job?" first and skip that work entirely
+ * on a duplicate submit/retry, instead of paying for it and then having
+ * createImageGenerationJob's own identical lookup discard the result.
+ * Single source of truth for the lookup -- createImageGenerationJob below
+ * reuses this exact function rather than a second copy of the query. */
+export async function findExistingImageGenerationJobByIdempotencyKey(
+  writeClient: SupabaseClient,
+  tenantId: string,
+  actorUserId: string,
+  idempotencyKey: string,
+): Promise<ImageGenerationJobRow | null> {
+  if (!idempotencyKey) return null;
+  const { data } = await writeClient
+    .from("image_generation_jobs")
+    .select("*")
+    .eq("tenant_id", tenantId)
+    .eq("actor_user_id", actorUserId)
+    .eq("idempotency_key", idempotencyKey)
+    .maybeSingle();
+  return (data as ImageGenerationJobRow | null) ?? null;
+}
+
 export async function createImageGenerationJob(args: {
   authorizationClient: SupabaseClient;
   writeClient: SupabaseClient;
@@ -167,11 +193,29 @@ export async function createImageGenerationJob(args: {
   const candidateCount = Math.max(1, Math.min(Math.floor(input.candidateCount ?? 2), 4));
   let referenceAssetIds = [...new Set(input.referenceAssetIds ?? [])];
 
+  // Hoisted above the Brand Kit reference block below (structural
+  // validation only -- pure/synchronous, no I/O) so that block can tell
+  // whether a real treatment exists yet. validatedTreatment may still be
+  // reassigned (forceArchetypeOntoTreatment) further down; this is the
+  // single computation, not a second pass.
+  let validatedTreatment = validateTreatmentForJob(input.treatment);
+
   // Brand Kit (brief §1: "every plan must include a reusable Brand Kit" —
   // upload the logo once, generated content automatically uses it). Reuses
   // the same logo asset the website builder stores, auto-included as a
-  // reference unless the caller already supplied 5 (the hard cap).
-  if (referenceAssetIds.length < 5) {
+  // reference unless the caller already supplied 5 (the hard cap) --
+  // UNLESS a real Creative Treatment is already driving this job. Real bug
+  // found live (Unify Creative Studio mission): handing the image model
+  // the tenant's actual logo file as a "reference" image doesn't make it
+  // reproduce that logo faithfully -- it invites the model to redraw its
+  // own approximation of it directly into the scene (fake wordmark, wrong
+  // proportions), which is exactly the deterministic
+  // text-overlay-render.ts compositor's job to prevent. When a treatment
+  // exists, the compositor stamps the tenant's REAL logo file pixel-exact
+  // after generation (processImageGenerationJob's textOverlayCompositor) --
+  // handing the raw file to the image model first only adds a chance of a
+  // hallucinated duplicate/near-duplicate logo baked into the photo itself.
+  if (referenceAssetIds.length < 5 && !validatedTreatment) {
     const brandLogoAssetId = await resolveBrandLogoAssetId(args.authorizationClient, input.tenantId);
     if (brandLogoAssetId && !referenceAssetIds.includes(brandLogoAssetId)) {
       referenceAssetIds = [...referenceAssetIds, brandLogoAssetId];
@@ -179,14 +223,13 @@ export async function createImageGenerationJob(args: {
   }
   await assertReferencesAuthorized(args.authorizationClient, input.tenantId, input.actorUserId, referenceAssetIds);
 
-  const { data: existing } = await args.writeClient
-    .from("image_generation_jobs")
-    .select("*")
-    .eq("tenant_id", input.tenantId)
-    .eq("actor_user_id", input.actorUserId)
-    .eq("idempotency_key", input.idempotencyKey)
-    .maybeSingle();
-  if (existing) return existing as ImageGenerationJobRow;
+  const existing = await findExistingImageGenerationJobByIdempotencyKey(
+    args.writeClient,
+    input.tenantId,
+    input.actorUserId,
+    input.idempotencyKey,
+  );
+  if (existing) return existing;
 
   // Subscription-Gated Visual Archetypes brief Section 7 Rule C: a manual
   // (requestedArchetype-carrying) Social Autopilot generation gets its own
@@ -251,8 +294,9 @@ export async function createImageGenerationJob(args: {
   // (concept/hook/visual direction/text hierarchy/CTA decision), when the
   // caller supplied one, drives the actual prompt built at process-time
   // (see processImageGenerationJob) instead of `brief` alone. A malformed
-  // treatment is discarded here, never silently trusted.
-  let validatedTreatment = validateTreatmentForJob(input.treatment);
+  // treatment is discarded here, never silently trusted. (validatedTreatment
+  // itself was already computed above, before the Brand Kit reference
+  // block -- not recomputed here.)
   // The AI must never override a server-forced archetype (Section 6) --
   // once resolveManualRouting has authorized an exact archetype, it's
   // force-applied to whatever treatment the caller supplied (or, if no
@@ -380,7 +424,7 @@ export async function processImageGenerationJob(args: {
   // prompt's own brand-context lines already say.
   const treatment = job.creative_treatment as CreativeTreatment | null;
   let effectiveBrief = job.brief;
-  let overlayContext: { treatment: CreativeTreatment; businessName: string; brandDNA: ReturnType<typeof deriveBrandVisualDNA>; logoVariants: LogoVariantBundle | null } | null = null;
+  let overlayContext: { treatment: CreativeTreatment; businessName: string; brandDNA: ReturnType<typeof deriveBrandVisualDNA>; logoVariants: LogoVariantBundle | null; logoImage: Awaited<ReturnType<typeof resolveLegacyLogoImage>> } | null = null;
   // Both the treatment-derived prompt and deterministic text-overlay
   // compositing are scoped to the ORIGINAL (non-revision) generation --
   // a revision works from the human's specific revision instruction
@@ -406,10 +450,21 @@ export async function processImageGenerationJob(args: {
     // throws the whole generation -- a brand-brain lookup failure or a
     // tenant with no saved logo just means no logo is composited, same as
     // today.
-    const logoVariants = await getCurrentBrandBrain(args.writeClient as never, job.tenant_id)
-      .then((brain) => resolveLogoVariantBundle(args.writeClient as never, job.tenant_id, (brain?.content as Record<string, unknown> | undefined)?.logo_variants))
+    const liveBrandContent = await getCurrentBrandBrain(args.writeClient as never, job.tenant_id)
+      .then((brain) => (brain?.content as Record<string, unknown> | undefined) ?? null)
       .catch(() => null);
-    overlayContext = { treatment, businessName, brandDNA, logoVariants };
+    const logoVariants = await resolveLogoVariantBundle(args.writeClient as never, job.tenant_id, liveBrandContent?.logo_variants).catch(() => null);
+    // Legacy fallback (Unify Creative Studio mission): a tenant who saved a
+    // logo before the Logo Engine shipped (or whose logo_variants rows
+    // since went missing) has ONLY the plain logo_url string --
+    // resolveLogoVariantBundle correctly returns null for that, but without
+    // this fallback the compositor would then stamp zero logo at all rather
+    // than the real backward-compat `logoImage` path selectLogoVariant
+    // already supports. Only attempted when variants are absent -- the real
+    // per-variant bundle is always preferred when it exists.
+    const legacyLogoUrl = typeof liveBrandContent?.logo_url === "string" ? liveBrandContent.logo_url : null;
+    const logoImage = !logoVariants && legacyLogoUrl ? await resolveLegacyLogoImage(legacyLogoUrl).catch(() => null) : null;
+    overlayContext = { treatment, businessName, brandDNA, logoVariants, logoImage };
   }
   const prompt = buildProviderReadyImagePrompt({
     brief: effectiveBrief,
@@ -496,11 +551,22 @@ export async function processImageGenerationJob(args: {
   // silently never rendered on 8 of 14 real passing creatives in one
   // benchmark run despite the treatment clearly intending one.
   const resolvedOverlayElements = overlayContext ? resolveOverlayElements(overlayContext.treatment) : [];
+  // Gated on `overlayContext` alone -- NOT also `resolvedOverlayElements.length`.
+  // Real, serious bug found live (Unify Creative Studio mission): the
+  // treatment prompt explicitly and correctly encourages "no on-image text
+  // planned, the photo alone carries the idea" as a valid, often-stronger
+  // choice (see buildCreativeTreatmentPrompt) -- but requiring
+  // resolvedOverlayElements.length here meant every one of those legitimate
+  // no-text creatives skipped the ENTIRE compositor, including the brand
+  // LOGO, which has nothing to do with whether headline/CTA text exists.
+  // The real BrandBrain logo must still be stamped even when the treatment
+  // correctly chose to plan zero on-image text -- brandLabel below is
+  // always appended to the element list regardless.
   const textOverlayCompositor =
-    overlayContext && resolvedOverlayElements.length
+    overlayContext
       ? async ({ bytes, mimeType }: { bytes: Uint8Array; mimeType: string }) => {
           const canvas = ASPECT_CANVAS[job.aspect_ratio] ?? ASPECT_CANVAS["1:1"]!;
-          const { businessName, brandDNA, treatment: overlayTreatment, logoVariants } = overlayContext!;
+          const { businessName, brandDNA, treatment: overlayTreatment, logoVariants, logoImage } = overlayContext!;
           const snapshot = job.brand_context_snapshot as { locations?: unknown };
           // Final Production Loop brief constraint #1: never invent contact
           // info. This real production path has no verified-facts pipeline
@@ -525,6 +591,7 @@ export async function processImageGenerationJob(args: {
             layoutArchetype: overlayTreatment.layoutArchetype,
             contactInfo: { location, phone: null, website: null },
             logoVariants,
+            logoImage,
           });
           return { bytes: composited, mimeType: "image/png" };
         }
