@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireClientContext } from "@/lib/tenants/client-context";
+import { requireClientContext, type ClientContext } from "@/lib/tenants/client-context";
 import { Card, CardHeading } from "@/components/ui/Card";
 import { StaffScopedNotice } from "../StaffScopedNotice";
 import { UseGeneratedAsset } from "./UseGeneratedAsset";
@@ -28,6 +28,53 @@ interface PipelineCard {
   status: string;
   platform: string | null;
   caption: string;
+  imageUrl: string | null;
+}
+
+/** Resolves a real thumbnail for each queue item's linked media, if any --
+ * same social_content_variant_media -> social_media_assets join and signed
+ * URL pattern getPackageQueueItemPreview (lib/social/package-preview.ts)
+ * already uses to resolve real publish media. Package Autopilot content
+ * never populates content_variants.media_urls directly (see
+ * prepareNearTermPackageItems) -- the real, generated image is only
+ * reachable via this join, so a page that skips it will always look
+ * imageless even when a real AI-generated asset is attached. */
+async function resolveQueueThumbnails(
+  supabase: ClientContext["supabase"],
+  variantIds: string[]
+): Promise<Map<string, { url: string; mimeType: string }>> {
+  const result = new Map<string, { url: string; mimeType: string }>();
+  if (!variantIds.length) return result;
+  const { data: links } = await supabase
+    .from("social_content_variant_media")
+    .select("variant_id, asset_id, position")
+    .in("variant_id", variantIds)
+    .order("position", { ascending: true });
+  if (!links?.length) return result;
+  const firstAssetByVariant = new Map<string, string>();
+  for (const link of links) {
+    if (!firstAssetByVariant.has(link.variant_id as string)) {
+      firstAssetByVariant.set(link.variant_id as string, link.asset_id as string);
+    }
+  }
+  const assetIds = [...new Set(firstAssetByVariant.values())];
+  const { data: assets } = await supabase
+    .from("social_media_assets")
+    .select("id, mime_type, storage_bucket, storage_path")
+    .eq("status", "READY")
+    .in("id", assetIds);
+  const assetById = new Map((assets ?? []).map((a) => [a.id as string, a]));
+  await Promise.all(
+    [...firstAssetByVariant.entries()].map(async ([variantId, assetId]) => {
+      const asset = assetById.get(assetId);
+      if (!asset) return;
+      const { data: signed } = await supabase.storage
+        .from(asset.storage_bucket as string)
+        .createSignedUrl(asset.storage_path as string, 10 * 60);
+      if (signed?.signedUrl) result.set(variantId, { url: signed.signedUrl, mimeType: String(asset.mime_type) });
+    })
+  );
+  return result;
 }
 
 function fmtWhen(iso: string) {
@@ -72,11 +119,13 @@ export default async function ContentPipelinePage({ searchParams }: { searchPara
   const columns = new Map<Stage, PipelineCard[]>(STAGES.map((stage) => [stage, []]));
   const { data: queueRows } = await ctx.supabase
     .from("social_autopilot_queue_items")
-    .select("id, scheduled_at, status, social_accounts(platform), content_variants(caption)")
+    .select("id, scheduled_at, status, variant_id, social_accounts(platform), content_variants(caption)")
     .eq("tenant_id", ctx.workspaceTenant.tenantId)
     .in("status", Object.keys(STAGE_BY_STATUS))
     .order("scheduled_at", { ascending: true })
     .limit(100);
+  const variantIds = [...new Set((queueRows ?? []).map((row) => row.variant_id).filter((id): id is string => Boolean(id)))];
+  const thumbnails = await resolveQueueThumbnails(ctx.supabase, variantIds);
   for (const row of queueRows ?? []) {
     const stage = STAGE_BY_STATUS[row.status as string];
     if (!stage) continue;
@@ -86,6 +135,7 @@ export default async function ContentPipelinePage({ searchParams }: { searchPara
       status: row.status,
       platform: (row.social_accounts as { platform?: string } | null)?.platform ?? null,
       caption: (row.content_variants as { caption?: string } | null)?.caption ?? "",
+      imageUrl: row.variant_id ? thumbnails.get(row.variant_id)?.url ?? null : null,
     });
   }
   const hasAnyContent = [...columns.values()].some((cards) => cards.length > 0);
@@ -124,6 +174,10 @@ export default async function ContentPipelinePage({ searchParams }: { searchPara
                 <div className="mt-3 flex flex-col gap-2">
                   {cards.map((card) => (
                     <div key={card.id} className="rounded-sx-sm border border-sx-border bg-sx-surface-1 p-2 text-xs">
+                      {card.imageUrl && (
+                        // eslint-disable-next-line @next/next/no-img-element -- short-lived signed URL, not worth Next/Image's remote-pattern config for a 10-minute link
+                        <img src={card.imageUrl} alt="" className="mb-2 aspect-square w-full rounded-sx-xs object-cover" />
+                      )}
                       <p className="font-semibold text-sx-text">{card.platform ?? "—"} · {fmtWhen(card.scheduledAt)}</p>
                       {card.caption && <p className="mt-1 truncate text-sx-text-muted">{card.caption}</p>}
                     </div>
