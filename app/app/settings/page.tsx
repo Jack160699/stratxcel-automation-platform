@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/Card";
 import { useTheme } from "@/components/theme/ThemeProvider";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { WHATSAPP_NUMBER } from "@/lib/constants";
+import { AutopilotModeToggle } from "../components/AutopilotModeToggle";
 
 type EmailState =
   | { status: "loading"; email: null }
@@ -85,6 +86,11 @@ export default function SettingsPage() {
             </Link>
           </div>
         </div>
+      </Card>
+
+      {/* Automation */}
+      <Card className="p-5">
+        <AutopilotModeToggle tenantId={active?.tenantId ?? null} variant="settings" />
       </Card>
 
       {/* Appearance */}

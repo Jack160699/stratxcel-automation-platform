@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
-import { createSupabaseServiceClient } from "../../supabase/service";
-import type { OwnerContext } from "../db-context";
-import type { AgentActorContext } from "../agent-tenant-types";
+import { createSupabaseServiceClient } from "../../supabase/service.ts";
+import type { OwnerContext } from "../db-context.ts";
+import type { AgentActorContext } from "../agent-tenant-types.ts";
 
 type ServiceClient = ReturnType<typeof createSupabaseServiceClient>;
 

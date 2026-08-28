@@ -8,6 +8,7 @@ import {
   setPackageAutopilotScope,
   skipPackageQueueItem,
   approvePackageQueueItem,
+  setPackageAutopilotPublishingMode,
   reschedulePackageQueueItemInTimezone,
   editPackageQueueItemContent,
   assignBrandProfileToTenant,
@@ -295,6 +296,21 @@ export async function POST(req: NextRequest) {
         if (publishNow) {
           after(() => runPackageAutopilotBatch(service as Parameters<typeof runPackageAutopilotBatch>[0]).catch(() => {}));
         }
+        return NextResponse.json({ ok: true, result });
+      }
+      case "updatePublishingMode": {
+        const publishingMode = body.publishingMode === "REVIEW_BEFORE_PUBLISH"
+          ? "REVIEW_BEFORE_PUBLISH"
+          : body.publishingMode === "AUTO_PUBLISH"
+            ? "AUTO_PUBLISH"
+            : null;
+        if (!publishingMode) return NextResponse.json({ error: "publishingMode must be AUTO_PUBLISH or REVIEW_BEFORE_PUBLISH" }, { status: 400 });
+        const result = await setPackageAutopilotPublishingMode(service as Parameters<typeof setPackageAutopilotPublishingMode>[0], {
+          authorizationId: String(body.authorizationId ?? ""),
+          tenantId,
+          clientUserId: auth.userId,
+          publishingMode,
+        });
         return NextResponse.json({ ok: true, result });
       }
       case "updateScope": {

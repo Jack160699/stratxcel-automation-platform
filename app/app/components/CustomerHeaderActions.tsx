@@ -10,6 +10,7 @@ const GROWTH_TIER_PRICE = PRICING_TIERS.find((t) => t.planKey === "growth")?.pri
 import { ContextSwitcher } from "@/components/shell/ContextSwitcher";
 import { useTheme } from "@/components/theme/ThemeProvider";
 import { signOutAction } from "../actions";
+import { AutopilotModeToggle } from "./AutopilotModeToggle";
 
 interface NotificationSignal {
   key: string;
@@ -183,6 +184,11 @@ export function CustomerHeaderActions({
               <span className="text-sx-text-muted text-xs">›</span>
             </Link>
           </div>
+
+          {/* Social Autopilot publishing-mode toggle — instant access per
+              the Settings/Profile Autopilot Toggle mission, mirrored in
+              /app/settings so both stay in sync with the same authorization. */}
+          <AutopilotModeToggle tenantId={tenantId} variant="profile" />
 
           {/* Theme Preference */}
           <div className="pt-1">

@@ -316,6 +316,31 @@ export async function setPackageAutopilotScope(service: ServiceClient, input: { 
   return auth;
 }
 
+/**
+ * Settings/Profile Autopilot Toggle mission: publishing_mode was
+ * previously write-once, set only inside activatePackageAutopilot with no
+ * way to change it afterward anywhere in the product -- the dashboard
+ * showed it as read-only text. Only ever affects FUTURE preparation
+ * (prepareNearTermPackageItems reads authorization.publishing_mode at the
+ * moment it prepares each item) -- items already PREPARED/REVIEW_REQUIRED
+ * keep the review state they were assigned under the old mode, the same
+ * "future items only" boundary setPackageAutopilotScope already uses for
+ * destination changes.
+ */
+export async function setPackageAutopilotPublishingMode(service: ServiceClient, input: { authorizationId: string; tenantId: string; clientUserId: string; publishingMode: PackagePublishingMode }) {
+  const { data, error } = await service
+    .from("social_autopilot_authorizations")
+    .update({ publishing_mode: input.publishingMode, updated_at: new Date().toISOString() })
+    .eq("id", input.authorizationId)
+    .eq("tenant_id", input.tenantId)
+    .eq("client_user_id", input.clientUserId)
+    .select("id, publishing_mode")
+    .maybeSingle();
+  if (error || !data) throw new Error("Package authorization was not found for this client");
+  await recordAudit({ actorType: "USER", actorId: input.clientUserId, action: "social.package.publishing_mode_change", targetType: "social_autopilot_authorization", targetId: input.authorizationId, summary: `Changed package Autopilot publishing mode to ${input.publishingMode}`, meta: { tenantId: input.tenantId, publishingMode: input.publishingMode } });
+  return data;
+}
+
 /** The only package auto-publish authorization boundary. It validates the
  * persisted tenant/client/subscription/entitlement/platform/scope tuple and
  * atomically claims one queue item. Chat text never calls this function. */
@@ -456,9 +481,13 @@ export async function executeAuthorizedPackagePost(service: ServiceClient, queue
   }
 }
 
-const PACKAGE_WORKER_TYPE = "package-autopilot-worker" as const;
+export const PACKAGE_WORKER_TYPE = "package-autopilot-worker" as const;
 
-async function packageKillSwitchActive(service: ServiceClient, tenantId?: string) {
+/** Exported so operational scripts (e.g. the retroactive tenant backfill)
+ * that call planPackagePeriod/prepareNearTermPackageItems directly --
+ * outside runPackageAutopilotBatch, which already checks this internally
+ * -- can honor the exact same kill switch before doing any real work. */
+export async function packageKillSwitchActive(service: ServiceClient, tenantId?: string) {
   const checks: Array<{ scope: "global_hermes" | "worker_type" | "tenant"; scopeId?: string }> = [
     { scope: "global_hermes" },
     { scope: "worker_type", scopeId: PACKAGE_WORKER_TYPE },
