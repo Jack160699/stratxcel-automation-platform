@@ -1,6 +1,6 @@
 -- ============================================================================
 -- Migration: 20260829000000_festival_calendar_rules.sql
--- Description: Durable festival calendar rules architecture & tenant override engine
+-- Description: Production-grade festival calendar rules architecture & tenant override engine
 -- ============================================================================
 
 create table if not exists festival_calendar_rules (
@@ -23,6 +23,7 @@ create table if not exists festival_calendar_rules (
 );
 
 alter table festival_calendar_rules enable row level security;
+create index if not exists idx_festival_calendar_rules_active on festival_calendar_rules (active_status, region);
 
 -- Read policy: Authenticated users & tenant members can read canonical festival rules
 create policy festival_calendar_rules_read on festival_calendar_rules
@@ -49,13 +50,14 @@ create table if not exists social_festival_manual_overrides (
   year int not null,
   override_date date not null,
   notes text,
-  actor_id uuid references auth.users(id),
+  actor_id uuid,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique(tenant_id, festival_id, year)
 );
 
 alter table social_festival_manual_overrides enable row level security;
+create index if not exists idx_social_festival_manual_overrides_tenant_year on social_festival_manual_overrides (tenant_id, year);
 
 -- Tenant Isolation: Members of a tenant can read their own tenant overrides
 create policy social_festival_manual_overrides_select on social_festival_manual_overrides
@@ -63,30 +65,30 @@ create policy social_festival_manual_overrides_select on social_festival_manual_
   to authenticated
   using (
     exists (
-      select 1 from tenant_members
-      where tenant_members.tenant_id = social_festival_manual_overrides.tenant_id
-      and tenant_members.user_id = auth.uid()
+      select 1 from tenant_members tm
+      where tm.tenant_id = social_festival_manual_overrides.tenant_id
+        and tm.user_id = (select auth.uid())
     )
   );
 
--- Tenant Isolation: Admin/Owner members of a tenant can insert/update overrides
+-- Tenant Isolation: Admin/Owner members of a tenant can insert/update/delete overrides
 create policy social_festival_manual_overrides_write on social_festival_manual_overrides
   for all
   to authenticated
   using (
     exists (
-      select 1 from tenant_members
-      where tenant_members.tenant_id = social_festival_manual_overrides.tenant_id
-      and tenant_members.user_id = auth.uid()
-      and tenant_members.role in ('owner', 'admin')
+      select 1 from tenant_members tm
+      where tm.tenant_id = social_festival_manual_overrides.tenant_id
+        and tm.user_id = (select auth.uid())
+        and tm.role in ('owner', 'admin')
     )
   )
   with check (
     exists (
-      select 1 from tenant_members
-      where tenant_members.tenant_id = social_festival_manual_overrides.tenant_id
-      and tenant_members.user_id = auth.uid()
-      and tenant_members.role in ('owner', 'admin')
+      select 1 from tenant_members tm
+      where tm.tenant_id = social_festival_manual_overrides.tenant_id
+        and tm.user_id = (select auth.uid())
+        and tm.role in ('owner', 'admin')
     )
   );
 
@@ -96,6 +98,15 @@ create policy social_festival_manual_overrides_service_role on social_festival_m
   to service_role
   using (true)
   with check (true);
+
+-- Revoke public permissions & grant explicit roles
+revoke all on festival_calendar_rules from public, anon;
+grant select, insert, update, delete on festival_calendar_rules to service_role;
+grant select on festival_calendar_rules to authenticated;
+
+revoke all on social_festival_manual_overrides from public, anon;
+grant select, insert, update, delete on social_festival_manual_overrides to service_role;
+grant select, insert, update, delete on social_festival_manual_overrides to authenticated;
 
 -- Seed canonical festival rules
 insert into festival_calendar_rules (
