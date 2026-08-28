@@ -1,3 +1,4 @@
+import { after } from "next/server";
 import { getTenantServiceContext } from "@/lib/tenants/tenant-context";
 import {
   verifyRazorpayWebhookSignature,
@@ -13,6 +14,7 @@ import {
   createPostgresEmailOutboxStore,
   issueEmailNotificationsBestEffort,
 } from "@stratxcel/email-runtime";
+import { attemptAutoActivatePackageAutopilot } from "@/lib/social/package-autopilot";
 
 /**
  * Best-effort GST invoice/credit-note issuance and domain-registration
@@ -42,6 +44,46 @@ async function issueBillingRecordsBestEffort(
 }
 
 /**
+ * Social Autopilot — Complete Repair mission (Part 9/10): the canonical
+ * paid-subscriber flow is "customer pays -> system researches, builds the
+ * 28-day strategy, and schedules it -> publishes daily", with no manual
+ * "Activate Autopilot" click. attemptAutoActivatePackageAutopilot is the
+ * one real, idempotent entry point for that (see its own doc comment for
+ * why: activatePackageAutopilot's real prerequisite checks -- an active
+ * subscription with the capability, a connected platform, a bound brand
+ * profile -- are the single source of truth, and a tenant that already has
+ * an authorization row of any kind is left completely alone). Best-effort
+ * exactly like the invoice/email calls beside it: a Razorpay webhook that
+ * fires on subscription.charged/activated for a plan the customer just
+ * upgraded into (with onboarding already complete) is the FIRST of the two
+ * real trigger moments; the OAuth callback (the customer's LAST onboarding
+ * step for a brand-new subscriber) is the second, wired separately.
+ */
+function attemptAutoActivateSocialAutopilotBestEffort(
+  supabase: ReturnType<typeof getTenantServiceContext>["supabase"],
+  processResult: Awaited<ReturnType<typeof processRazorpayWebhookEvent>>
+) {
+  if (!processResult.subscriptionId) return;
+  // Unlike the fast invoice/email best-effort calls above (plain DB writes),
+  // real activation can run planPackagePeriod + prepareNearTermPackageItems
+  // -- genuine, potentially slow Gemini calls -- so this runs via after(),
+  // never blocking Razorpay's own webhook response.
+  after(async () => {
+    try {
+      const { data: subscription } = await supabase
+        .from("subscriptions")
+        .select("tenant_id")
+        .eq("id", processResult.subscriptionId as string)
+        .maybeSingle();
+      if (!subscription?.tenant_id) return;
+      await attemptAutoActivatePackageAutopilot(supabase, { tenantId: subscription.tenant_id });
+    } catch (err) {
+      console.error("[Social Autopilot] Best-effort auto-activation failed", err);
+    }
+  });
+}
+
+/**
  * Best-effort transactional email enqueue after the webhook's own payment RPC
  * has already committed and the event is marked processed. Never allowed to
  * change `processResult.handled` or undo fulfilment.
@@ -68,6 +110,13 @@ async function issueEmailRecordsBestEffort(
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+// attemptAutoActivateSocialAutopilotBestEffort's after() work (real
+// planPackagePeriod + prepareNearTermPackageItems AI calls) is still bound
+// by the WHOLE invocation's maxDuration, same as every other after()-based
+// AI chain in this codebase (see api/social/package-producer's own comment
+// on this exact pattern) -- the platform default would kill it long before
+// a real batch finishes.
+export const maxDuration = 300;
 
 export async function GET() {
   const mode = process.env.RAZORPAY_INTEGRATION_MODE || "disabled";
@@ -153,6 +202,7 @@ export async function POST(request: Request) {
     // Best-effort — never affects the response below, see the function doc.
     await issueBillingRecordsBestEffort(supabase, processResult);
     await issueEmailRecordsBestEffort(supabase, processResult);
+    attemptAutoActivateSocialAutopilotBestEffort(supabase, processResult);
 
     return Response.json({
       success: true,

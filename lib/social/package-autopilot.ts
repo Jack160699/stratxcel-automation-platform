@@ -253,6 +253,147 @@ export async function activatePackageAutopilot(
   return data as PackageAuthorizationRow;
 }
 
+/**
+ * Social Autopilot — Complete Repair mission: the canonical paid-subscriber
+ * flow is "customer pays -> system researches -> builds the strategy ->
+ * schedules the whole period -> publishes daily", with no requirement to
+ * manually click "Activate Autopilot". That pipeline (planPackagePeriod +
+ * prepareNearTermPackageItems, the real research/personalization/quality-
+ * gate engine already exercised by test:social-quality-campaign) already
+ * exists and is already exhaustively tested -- the real, confirmed gap is
+ * that nothing ever calls activatePackageAutopilot automatically. This is
+ * the one, shared, idempotent entry point for both real trigger moments:
+ *
+ * 1. A subscription becomes active/charged on a plan with the
+ *    social_autopilot capability (packages/payments-and-wallet's Razorpay
+ *    webhook handler) -- covers renewals/upgrades where onboarding
+ *    (brand profile + at least one connected platform) is already done.
+ * 2. A social account finishes connecting (the OAuth callback) -- covers a
+ *    brand-new paying customer whose payment succeeded before onboarding
+ *    was complete, which activatePackageAutopilot's own real prerequisite
+ *    checks (brand_binding_invalid / a missing connected platform) would
+ *    otherwise always reject at payment time.
+ *
+ * Deliberately narrow and fail-silent: activatePackageAutopilot's own
+ * prerequisite checks are the single source of truth for "is this tenant
+ * actually ready" (never duplicated here), and any tenant that already has
+ * an authorization row -- active, paused, or cancelled -- is left
+ * completely alone, so this can never override a customer's own past
+ * pause/cancel choice or fabricate a second parallel package. Combined
+ * with activatePackageAutopilot's own upsert on the real
+ * (tenant_id, subscription_id, entitlement_id) unique constraint, calling
+ * this from a webhook that Razorpay may redeliver, or from a customer who
+ * reconnects an account, is safe to call any number of times -- it never
+ * creates a second campaign for the same subscription.
+ */
+export async function attemptAutoActivatePackageAutopilot(
+  service: ServiceClient,
+  input: { tenantId: string }
+): Promise<
+  | { activated: true; authorizationId: string }
+  | { activated: false; reason: string }
+> {
+  try {
+    const { data: existingAuth } = await service
+      .from("social_autopilot_authorizations")
+      .select("id")
+      .eq("tenant_id", input.tenantId)
+      .limit(1)
+      .maybeSingle();
+    if (existingAuth) return { activated: false, reason: "authorization_already_exists" };
+
+    const { data: subscription } = await service
+      .from("subscriptions")
+      .select("id, plan_tier, status, current_period_end")
+      .eq("tenant_id", input.tenantId)
+      .eq("status", "active")
+      .order("current_period_start", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (!subscription || new Date(subscription.current_period_end).getTime() <= Date.now()) {
+      return { activated: false, reason: "no_active_subscription" };
+    }
+    const planTier = isPlanTier(subscription.plan_tier) ? subscription.plan_tier : null;
+    if (!planTier || !hasCapability(planTier, "social_autopilot")) {
+      return { activated: false, reason: "plan_excludes_social_autopilot" };
+    }
+
+    const { data: entitlement } = await service
+      .from("usage_entitlements")
+      .select("id, is_paused, current_usage, limit_amount")
+      .eq("tenant_id", input.tenantId)
+      .eq("subscription_id", subscription.id)
+      .eq("metric", "social_posts")
+      .maybeSingle();
+    if (!entitlement || entitlement.is_paused || entitlement.current_usage >= entitlement.limit_amount) {
+      return { activated: false, reason: "no_usable_social_posts_entitlement" };
+    }
+
+    const { data: connectedAccounts } = await service
+      .from("social_accounts")
+      .select("platform, owner_id")
+      .eq("tenant_id", input.tenantId)
+      .eq("status", "CONNECTED");
+    const platforms = stripUnschedulablePlatforms([
+      ...new Set((connectedAccounts ?? []).map((row) => String(row.platform).toLowerCase())),
+    ]);
+    if (!platforms.length) return { activated: false, reason: "no_connected_platform_yet" };
+    const clientUserId = connectedAccounts?.[0]?.owner_id as string | undefined;
+
+    const { data: brandProfile } = await service
+      .from("social_brand_profiles")
+      .select("id")
+      .eq("tenant_id", input.tenantId)
+      .limit(1)
+      .maybeSingle();
+    if (!brandProfile || !clientUserId) return { activated: false, reason: "brand_or_owner_not_ready_yet" };
+
+    const authorization = await activatePackageAutopilot(service, {
+      tenantId: input.tenantId,
+      clientUserId,
+      subscriptionId: subscription.id,
+      entitlementId: entitlement.id,
+      publishingMode: "AUTO_PUBLISH",
+      allowedPlatforms: platforms,
+      brandProfileId: brandProfile.id,
+    });
+
+    await recordAudit({
+      actorType: "SYSTEM",
+      action: "social.package.auto_activated",
+      targetType: "social_autopilot_authorization",
+      targetId: authorization.id,
+      summary: "Social Autopilot auto-activated on paid subscription — no manual setup required",
+      meta: { tenantId: input.tenantId, subscriptionId: subscription.id, platforms },
+    }).catch(() => {});
+
+    // Same real, tested, idempotent plan+prepare chain the manual "activate"
+    // API action already triggers on activation -- schedules the full
+    // service period immediately (computePackageDistribution spans the
+    // whole periodStart..periodEnd window) and prepares real, quality-gated
+    // content for the near-term horizon, never a second implementation.
+    try {
+      await planPackagePeriod(service, authorization.id);
+      await prepareNearTermPackageItems(service, authorization.id);
+    } catch (err) {
+      console.error("attemptAutoActivatePackageAutopilot: plan+prepare failed after real activation", {
+        authorizationId: authorization.id,
+        tenantId: input.tenantId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+
+    return { activated: true, authorizationId: authorization.id };
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : "unknown_error";
+    // prerequisite_missing / brand_binding_invalid / package_configuration_required
+    // are expected, ordinary "not ready yet" outcomes for a brand-new
+    // customer -- never surfaced as a failure to the caller (webhook /
+    // OAuth callback), which must never fail its own real response over this.
+    return { activated: false, reason };
+  }
+}
+
 async function validatePackageResumePrerequisites(service: ServiceClient, authorizationId: string, tenantId: string, clientUserId: string) {
   const { data: auth } = await service.from("social_autopilot_authorizations")
     .select("id,subscription_id,entitlement_id,brand_profile_id,allowed_platforms,package_composition")

@@ -1,4 +1,4 @@
-import { NextResponse, type NextRequest } from "next/server";
+import { NextResponse, after, type NextRequest } from "next/server";
 import { requireAdmin } from "@/lib/social/admin-guard";
 import { isValidProvider, getProvider } from "@/lib/social/providers";
 import { verifySignedState, resolveOAuthFailureRedirect } from "@/lib/social/oauth-state";
@@ -10,6 +10,7 @@ import { recordAudit } from "@/lib/social/repositories/system";
 import { getCanonicalSocialRedirectUri } from "@/lib/social/oauth-origin";
 import { recordOAuthDiagnostic } from "@/lib/social/oauth-diagnostics";
 import { createDevEncryptedVault } from "@stratxcel/byok";
+import { attemptAutoActivatePackageAutopilot } from "@/lib/social/package-autopilot";
 
 const PROVIDER_LABELS: Record<string, string> = {
   google_business: "Google",
@@ -448,6 +449,28 @@ export async function GET(
         meta: { provider_account_id: result.externalAccountId, tenant_id: targetTenantId },
       });
 
+      // Social Autopilot — Complete Repair mission: the second of the two
+      // real auto-activation trigger moments (see attemptAutoActivate
+      // PackageAutopilot's own doc comment). A brand-new paying customer's
+      // payment webhook almost always fires BEFORE onboarding (brand
+      // profile + a connected account) is done, so activatePackageAutopilot's
+      // own real prerequisite checks correctly reject it there -- THIS is
+      // typically the actual last onboarding step, so it's the real moment
+      // a fresh subscriber becomes eligible. Fire-and-forget via after():
+      // can run real Gemini calls, must never delay the OAuth redirect.
+      // Only for a real, tenant-scoped connection (targetTenantId set) --
+      // the pre-workspace-onboarding branch below has no tenant yet.
+      if (targetTenantId) {
+        const tenantIdForActivation = targetTenantId;
+        after(async () => {
+          try {
+            await attemptAutoActivatePackageAutopilot(service, { tenantId: tenantIdForActivation });
+          } catch (err) {
+            console.error("[Social Autopilot] Best-effort auto-activation after connect failed", err);
+          }
+        });
+      }
+
       recordOAuthDiagnostic({
         provider,
         stage: "connection_persisted",
@@ -533,3 +556,9 @@ export async function GET(
 }
 
 export const dynamic = "force-dynamic";
+// The auto-activation after() work triggered above (planPackagePeriod +
+// prepareNearTermPackageItems, real AI calls) is still bound by the whole
+// invocation's maxDuration -- same 300s budget this codebase already uses
+// for every other real AI/publish chain (see api/webhook/razorpay's own
+// comment on this exact pattern).
+export const maxDuration = 300;
