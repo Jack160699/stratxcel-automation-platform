@@ -4,13 +4,18 @@ import { useState, useMemo } from "react";
 import Link from "next/link";
 import { Card } from "@/components/ui/Card";
 import { Modal } from "@/components/ui/Overlay";
+import { useCurrentTenant } from "../CurrentTenantContext";
 
 export interface ContentItem {
   id: string;
   title: string;
   type: "image" | "video" | "caption" | "creative" | "poster";
   category: "draft" | "published" | "generated" | "saved";
-  platform?: "instagram" | "facebook" | "google" | "youtube" | "whatsapp" | "all";
+  // Real content_variants.platform values seen in production (threads,
+  // linkedin, facebook, instagram, ...) -- kept as a loose string rather
+  // than a closed union so a real platform this list doesn't yet name
+  // still displays instead of silently failing a type check.
+  platform?: string;
   imageUrl?: string;
   captionText?: string;
   aspectRatio?: string;
@@ -32,6 +37,10 @@ export interface ContentItem {
   /** The real safe_error persisted on a FAILED job -- shown instead of
    * silently rendering a card with no explanation. */
   errorMessage?: string;
+  /** Which real table this item's `id` refers to -- the delete action
+   * needs this to call the right target; an item with no deleteKind (none
+   * currently) simply has no delete affordance. */
+  deleteKind?: "image_generation_job" | "content_variant" | "social_media_asset";
   metrics?: {
     reach?: number;
     engagement?: number;
@@ -82,11 +91,19 @@ export function ContentLibraryClient({
   businessName: string;
   initialItems: ContentItem[];
 }) {
+  const { active } = useCurrentTenant();
+  const tenantId = active?.tenantId ?? null;
   const [activeTab, setActiveTab] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [previewItem, setPreviewItem] = useState<ContentItem | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [items, setItems] = useState<ContentItem[]>(initialItems);
+  // Delete requires clicking twice (arm, then confirm) rather than a
+  // separate modal -- prominent per the mission's own "prominent Delete
+  // action" ask, but a single misclick can't destroy a real record.
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<{ id: string; message: string } | null>(null);
 
   const filteredItems = useMemo(() => {
     return items.filter((item) => {
@@ -180,6 +197,32 @@ export function ContentLibraryClient({
     setItems(updated);
     if (previewItem && previewItem.id === item.id) {
       setPreviewItem((prev) => (prev ? { ...prev, angle: angleObj.label as any } : null));
+    }
+  };
+
+  const handleDelete = async (item: ContentItem) => {
+    if (!item.deleteKind || !tenantId) return;
+    if (confirmDeleteId !== item.id) {
+      setConfirmDeleteId(item.id);
+      setDeleteError(null);
+      return;
+    }
+    setDeletingId(item.id);
+    setDeleteError(null);
+    try {
+      const response = await fetch(
+        `/api/platform/content/${encodeURIComponent(item.id)}?tenantId=${encodeURIComponent(tenantId)}&kind=${encodeURIComponent(item.deleteKind)}`,
+        { method: "DELETE" }
+      );
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error ?? "Could not delete this item.");
+      setItems((current) => current.filter((it) => it.id !== item.id));
+      if (previewItem?.id === item.id) setPreviewItem(null);
+    } catch (err) {
+      setDeleteError({ id: item.id, message: err instanceof Error ? err.message : "Could not delete this item." });
+    } finally {
+      setDeletingId(null);
+      setConfirmDeleteId(null);
     }
   };
 
@@ -443,6 +486,21 @@ export function ContentLibraryClient({
                       <span>📤</span>
                       <span>Share</span>
                     </button>
+                    {item.deleteKind && (
+                      <button
+                        type="button"
+                        onClick={() => void handleDelete(item)}
+                        onBlur={() => confirmDeleteId === item.id && setConfirmDeleteId(null)}
+                        disabled={deletingId === item.id}
+                        title={confirmDeleteId === item.id ? "Click again to permanently delete" : "Delete"}
+                        className={`flex h-7 items-center gap-1 rounded-sx-xs px-2 text-[11px] font-medium transition-colors disabled:opacity-50 ${
+                          confirmDeleteId === item.id ? "bg-red-500/15 text-red-500" : "text-sx-text-muted hover:bg-red-500/10 hover:text-red-500"
+                        }`}
+                      >
+                        <span>🗑️</span>
+                        <span>{deletingId === item.id ? "Deleting…" : confirmDeleteId === item.id ? "Confirm?" : "Delete"}</span>
+                      </button>
+                    )}
                   </div>
 
                   {item.status !== "FAILED" && (
@@ -454,6 +512,7 @@ export function ContentLibraryClient({
                     </Link>
                   )}
                 </div>
+                {deleteError?.id === item.id && <p className="mt-2 text-[11px] text-red-400">{deleteError.message}</p>}
               </div>
             </div>
           ))}
@@ -552,7 +611,20 @@ export function ContentLibraryClient({
                 >
                   <span>📋</span> {copiedId === previewItem.id ? "Copied!" : "Copy Text"}
                 </button>
+                {previewItem.deleteKind && (
+                  <button
+                    type="button"
+                    onClick={() => void handleDelete(previewItem)}
+                    disabled={deletingId === previewItem.id}
+                    className={`inline-flex h-9 items-center gap-1.5 rounded-sx-sm border px-3 text-xs font-semibold disabled:opacity-50 ${
+                      confirmDeleteId === previewItem.id ? "border-red-500/40 bg-red-500/15 text-red-500" : "border-sx-border bg-sx-surface-1 text-sx-text hover:bg-red-500/10 hover:text-red-500"
+                    }`}
+                  >
+                    <span>🗑️</span> {deletingId === previewItem.id ? "Deleting…" : confirmDeleteId === previewItem.id ? "Confirm delete?" : "Delete"}
+                  </button>
+                )}
               </div>
+              {deleteError?.id === previewItem.id && <p className="text-xs text-red-400">{deleteError.message}</p>}
 
               <Link
                 href="/app/social/copilot"

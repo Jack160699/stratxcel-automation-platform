@@ -150,6 +150,49 @@ async function loadImageGenerationCreatives(supabase: any, tenantId: string) {
 }
 
 /**
+ * Real text captions/drafts for this tenant (Content Library Cleanup
+ * mission Task A/B: the mission's guessed table name `social_drafts`
+ * doesn't exist -- confirmed via live schema introspection. The real
+ * table is content_variants, a per-platform text/copy row joined to its
+ * parent content_master idea; content_variants itself has no tenant_id
+ * column, so scoping goes through content_master.tenant_id). Distinct
+ * from image_generation_jobs entirely -- these are copy-only rows with no
+ * image at all, so the "Captions" tab must read from here, not filter
+ * image jobs down to the ones missing a thumbnail.
+ */
+async function loadTextCaptions(supabase: any, tenantId: string) {
+  try {
+    const { data: masters } = await supabase
+      .from("content_master")
+      .select("id, title")
+      .eq("tenant_id", tenantId)
+      .order("created_at", { ascending: false })
+      .limit(30);
+    if (!masters || masters.length === 0) return [];
+    const masterIds = masters.map((m: any) => m.id);
+    const titleByMasterId = new Map(masters.map((m: any) => [m.id, m.title as string | null]));
+
+    const { data: variants } = await supabase
+      .from("content_variants")
+      .select("id, master_id, platform, format, caption, hashtags, status, created_at")
+      .in("master_id", masterIds)
+      .order("created_at", { ascending: false })
+      .limit(15);
+    return (variants ?? []).map((v: any) => ({
+      id: v.id,
+      title: titleByMasterId.get(v.master_id) || "Untitled draft",
+      platform: v.platform as string | null,
+      captionText: v.caption as string | null,
+      hashtags: (v.hashtags as string[] | null) ?? [],
+      status: v.status as string,
+      createdAt: v.created_at,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+/**
  * Primary Content & Media Hub — central workspace for creatives, posters,
  * drafts, and published content for the active tenant.
  */
@@ -160,10 +203,11 @@ export default async function CustomerContentPage() {
   const tenantId = ctx.workspaceTenant.tenantId;
   const tenantDb = ctx.supabase;
 
-  const [brain, mediaAssets, generations] = await Promise.all([
+  const [brain, mediaAssets, generations, captions] = await Promise.all([
     getCurrentBrandBrain(tenantDb, tenantId).catch(() => null),
     loadTenantMedia(tenantDb, tenantId),
     loadImageGenerationCreatives(tenantDb, tenantId),
+    loadTextCaptions(tenantDb, tenantId),
   ]);
 
   const brainContent = brain?.content as Record<string, unknown> | undefined;
@@ -186,6 +230,7 @@ export default async function CustomerContentPage() {
       createdAt: media.createdAt,
       status: "READY",
       captionText: `${media.name} — Asset saved in Brand Library.`,
+      deleteKind: "social_media_asset",
     });
   }
 
@@ -209,6 +254,25 @@ export default async function CustomerContentPage() {
       layoutArchetype: gen.layoutArchetype ?? undefined,
       objective: gen.ctaDirection ?? undefined,
       errorMessage: gen.errorMessage ?? undefined,
+      deleteKind: "image_generation_job",
+    });
+  }
+
+  // 3. Real text captions/drafts (content_variants) -- pure copy, never an
+  // image job with a missing thumbnail. Kept as its own distinct item type
+  // ("caption") so the Captions tab filters real data instead of staying
+  // permanently empty.
+  for (const draft of captions) {
+    items.push({
+      id: draft.id,
+      title: draft.title,
+      type: "caption",
+      category: draft.status === "READY" ? "saved" : "draft",
+      createdAt: draft.createdAt,
+      status: (draft.status === "READY" ? "READY" : "DRAFT") as ContentItem["status"],
+      captionText: draft.captionText ?? undefined,
+      platform: (draft.platform as ContentItem["platform"]) ?? undefined,
+      deleteKind: "content_variant",
     });
   }
 
