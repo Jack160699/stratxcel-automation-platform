@@ -31,6 +31,37 @@ import type { IndustryVisualVocabulary } from "./industry-visual-vocabulary.ts";
 import { summarizeIndustryVisualVocabulary } from "./industry-visual-vocabulary.ts";
 import type { OnImageTextElement } from "./text-density.ts";
 import { findPlaceholderOrFiller } from "./placeholder-detection.ts";
+import { ARCHETYPE_IDS, ARCHETYPE_REGISTRY, isValidArchetype, type LayoutArchetype } from "./archetype-registry.ts";
+
+/**
+ * Subscription-Gated Visual Archetypes brief Section 6: an explicit routing
+ * context the SERVER constructs (archetype-routing.ts) and hands to
+ * treatment generation -- never something the AI or a client can set. Two
+ * shapes:
+ *  - `forcedArchetype` set: the server has ALREADY decided the exact
+ *    archetype (Starter's automated path is always forced to
+ *    BASIC_ESSENTIAL; Growth/Business manual generation is forced to the
+ *    validated requested archetype once routing accepts it). The AI is
+ *    told the decision and asked to design around it, but
+ *    generateCreativeTreatment force-overwrites the returned
+ *    layoutArchetype to this exact value regardless of what the AI
+ *    returns -- defense in depth, never trusting AI compliance alone.
+ *  - `forcedArchetype` null with a real `allowedArchetypes` list: the AI
+ *    may choose freely, but ONLY from this set (Growth/Business automated,
+ *    restricted to the tenant's saved preferences).
+ * archetype-routing.ts is the only real caller expected to construct one
+ * of these; harness/test code may omit routingContext entirely, in which
+ * case every archetype is available (today's fixture-friendly default,
+ * NOT how any real subscription-gated path should call this).
+ */
+export interface ArchetypeRoutingContext {
+  forcedArchetype: LayoutArchetype | null;
+  allowedArchetypes: LayoutArchetype[];
+  /** Surfaced in the prompt purely for the AI's own context/quality (e.g.
+   * "you're on the Starter automated safe-default path") -- never itself
+   * an enforcement mechanism. */
+  reason: string;
+}
 
 export interface CreativeTreatmentInput {
   brief: CreativeBrief;
@@ -43,6 +74,8 @@ export interface CreativeTreatmentInput {
    * qualitative patterns, never fabricated performance numbers. Optional:
    * a treatment must still be generatable with zero research grounding. */
   researchInsights?: string[];
+  /** Server-authoritative archetype constraint -- see ArchetypeRoutingContext. */
+  routingContext?: ArchetypeRoutingContext;
 }
 
 export interface CtaDecision {
@@ -52,28 +85,33 @@ export interface CtaDecision {
 }
 
 /**
- * Final Production Loop brief Section "STEP 1": the deterministic overlay
- * used to have exactly one layout (bottom scrim band + top-right brand
- * chip) regardless of the creative -- functional, but reads as "a stock
- * photo with a video subtitle," not a designed marketing banner. Each
- * archetype is a genuinely different composition strategy the renderer
- * (text-overlay-render.ts) implements distinctly, and the visual-director
- * prompt (visual-director-prompt.ts) reserves different negative space in
- * the base photo for each:
- *  - SPLIT_BANNER: ~70% photo / ~30% solid or textured brand-colored
- *    block carrying text + contact info. Best for promos/offers where the
- *    business genuinely wants a strong branded block.
- *  - FLOATING_CARD: a padded, offset card in one corner, leaving the
- *    photo's subject fully unobstructed elsewhere -- best when the
- *    photograph itself is the whole story (a face, a dish, a product).
- *  - EDITORIAL_FRAME: a thin outer frame/border with a top-center brand
- *    lockup and minimal, highly structured text -- the most restrained,
- *    magazine-like option.
+ * Final Production Loop brief Section "STEP 1", extended by the
+ * Subscription-Gated Visual Archetypes brief Section 5: the deterministic
+ * overlay used to have exactly one layout (bottom scrim band + top-right
+ * brand chip) regardless of the creative -- functional, but reads as "a
+ * stock photo with a video subtitle," not a designed marketing banner.
+ * There are now 12 genuinely different composition strategies -- see
+ * archetype-registry.ts (THE canonical source of truth for what each one
+ * is, its design intent, and which subscription tiers may use it; this
+ * file re-exports its id type rather than redefining the list, per that
+ * registry's own "never duplicate the archetype list" rule) -- each
+ * implemented distinctly by the renderer (text-overlay-render.ts), with
+ * the visual-director prompt (visual-director-prompt.ts) reserving
+ * different negative space in the base photo for each.
+ *
  * The treatment model picks one per creative based on the concept, the
- * same way an art director would choose a layout for a specific shoot,
- * not a fixed default.
+ * same way an art director would choose a layout for a specific shoot --
+ * UNLESS a routing context (archetype-routing.ts) forces a specific
+ * archetype server-side (Starter's automated path is always forced to
+ * BASIC_ESSENTIAL; Growth/Business automated is forced to one drawn from
+ * the tenant's saved preferences; Growth/Business manual generation is
+ * forced to the validated requested archetype). A server-forced archetype
+ * is authoritative -- the AI is informed of the constraint but never gets
+ * the final say once one is forced; see generateCreativeTreatment's
+ * routingContext handling below.
  */
-export type LayoutArchetype = "SPLIT_BANNER" | "FLOATING_CARD" | "EDITORIAL_FRAME";
+export { ARCHETYPE_IDS as LAYOUT_ARCHETYPE_IDS } from "./archetype-registry.ts";
+export type { LayoutArchetype } from "./archetype-registry.ts";
 
 export interface CreativeTreatment {
   concept: string;
@@ -146,7 +184,7 @@ export const TREATMENT_JSON_SCHEMA = {
     whyThisBusiness: { type: "string" },
     negativeConstraints: { type: "array", items: { type: "string" } },
     intentionallyTextLed: { type: "boolean" },
-    layoutArchetype: { type: "string", enum: ["SPLIT_BANNER", "FLOATING_CARD", "EDITORIAL_FRAME"] },
+    layoutArchetype: { type: "string", enum: [...ARCHETYPE_IDS] },
   },
   required: [
     "concept", "hook", "audienceTension", "story", "visualIdea", "subject", "composition",
@@ -156,13 +194,39 @@ export const TREATMENT_JSON_SCHEMA = {
   ],
 } as const;
 
+/** Builds the LAYOUT ARCHETYPE instruction paragraph -- generated from
+ * archetype-registry.ts (never a hand-duplicated description list) and
+ * shaped by the routing context: forced, restricted to a preference set,
+ * or (harness/test default) free choice across everything. */
+function buildArchetypeInstruction(routingContext: ArchetypeRoutingContext | undefined): string {
+  if (routingContext?.forcedArchetype) {
+    const def = ARCHETYPE_REGISTRY[routingContext.forcedArchetype];
+    return `The LAYOUT ARCHETYPE for this creative is ALREADY DECIDED by the server: ${def.id} (${def.description}). Design your visual idea, composition, and text hierarchy around this archetype's real constraints (${def.constraints.join("; ")}) -- you must set "layoutArchetype" to exactly "${def.id}" in your response. Reason this was forced: ${routingContext.reason}`;
+  }
+  const allowed = routingContext?.allowedArchetypes?.length ? routingContext.allowedArchetypes : ARCHETYPE_IDS;
+  const descriptions = allowed.map((id) => {
+    const def = ARCHETYPE_REGISTRY[id];
+    return `${def.id} (${def.description})`;
+  }).join(", ");
+  const restrictionNote = routingContext?.allowedArchetypes?.length
+    ? ` You may choose ONLY from this list -- any other archetype id is invalid for this tenant. ${routingContext.reason}`
+    : "";
+  return `You must also choose a LAYOUT ARCHETYPE -- the actual graphic-design composition, not just what the text says: ${descriptions}.${restrictionNote} Choose deliberately based on THIS concept, the way an art director picks a layout for a specific shoot -- do not default to the same archetype every time.`;
+}
+
 export function buildCreativeTreatmentPrompt(input: CreativeTreatmentInput): AIMessage[] {
+  const allowedForShape = input.routingContext?.forcedArchetype
+    ? [input.routingContext.forcedArchetype]
+    : input.routingContext?.allowedArchetypes?.length
+      ? input.routingContext.allowedArchetypes
+      : ARCHETYPE_IDS;
+
   const system = [
     `You are the creative director and visual art director for a premium social-media agency.`,
     `A senior team already decided the strategy for this post -- do not re-derive it. Your job is to turn it into ONE real, specific creative idea and a full visual treatment, the way an agency would brief a photographer before a shoot.`,
     `The final creative must feel business-specific, visually rich, simple, premium, intentional, modern, and clearly NOT generic AI output. Default philosophy: IMAGE/VISUAL IDEA FIRST, message second, supporting text third, brand/CTA last -- never a paragraph of text decorated with a picture.`,
     `Prefer real visual storytelling (photography of the actual business/product/service in use) over text-based graphics. A creative with no on-image text at all is a valid, often stronger, choice -- do not force a headline or CTA onto every creative. Default to ONE primary idea; at most one short supporting line; a CTA only when it genuinely helps.`,
-    `You must also choose a LAYOUT ARCHETYPE -- the actual graphic-design composition, not just what the text says: SPLIT_BANNER (roughly 70% photo / 30% solid or textured brand-colored block carrying the text and any contact info -- pick this for offers/promos or when the business genuinely wants a strong, unmissable branded block), FLOATING_CARD (a padded card offset into one corner, leaving the photograph's subject completely unobstructed everywhere else -- pick this when the photo itself IS the story, e.g. a face, a dish, a product), or EDITORIAL_FRAME (a thin outer frame with a top-center brand lockup and minimal, highly structured text -- pick this for the most restrained, magazine-like result). Choose deliberately based on THIS concept, the way an art director picks a layout for a specific shoot -- do not default to the same archetype every time.`,
+    buildArchetypeInstruction(input.routingContext),
     `Never invent a business fact not present in the verified facts given to you. Creative persuasion must never become fabricated business information.`,
     `Never write generic AI marketing filler ("Elevate your experience", "Discover the magic", "Unleash your potential", and phrases like them) -- every word must be specific to this concept and this business. Premium design also comes from knowing what NOT to include: if a supporting line or CTA doesn't earn its place, omit it.`,
     `Respond with ONLY the JSON object matching the given schema -- no prose, no markdown fences.`,
@@ -211,7 +275,7 @@ export function buildCreativeTreatmentPrompt(input: CreativeTreatmentInput): AIM
     `  "whyStopScroll": string, "whyThisBusiness": string,`,
     `  "negativeConstraints": string[],`,
     `  "intentionallyTextLed": boolean,`,
-    `  "layoutArchetype": "SPLIT_BANNER"|"FLOATING_CARD"|"EDITORIAL_FRAME"`,
+    `  "layoutArchetype": ${allowedForShape.map((id) => `"${id}"`).join("|")}`,
     `}`,
     `No prose before or after the JSON. No markdown code fences.`,
   ].join("\n");
@@ -234,7 +298,7 @@ export interface CreativeTreatmentValidationIssue {
  * short/empty) sneaking through as if it were real creative work. */
 export function validateCreativeTreatment(
   treatment: unknown,
-  context: { concept: string }
+  context: { concept: string; routingContext?: ArchetypeRoutingContext }
 ): CreativeTreatmentValidationIssue[] {
   const issues: CreativeTreatmentValidationIssue[] = [];
   const t = treatment as Partial<CreativeTreatment> | null | undefined;
@@ -294,9 +358,21 @@ export function validateCreativeTreatment(
     issues.push({ field: "intentionallyTextLed", issue: "missing or not a boolean" });
   }
 
-  const validArchetypes: LayoutArchetype[] = ["SPLIT_BANNER", "FLOATING_CARD", "EDITORIAL_FRAME"];
-  if (typeof t.layoutArchetype !== "string" || !validArchetypes.includes(t.layoutArchetype as LayoutArchetype)) {
-    issues.push({ field: "layoutArchetype", issue: `missing or not one of ${validArchetypes.join(", ")}` });
+  // Two independent checks: (1) is this a real, registered archetype id at
+  // all -- catches a malformed/hallucinated value -- and (2) if a routing
+  // context was supplied, is it actually the one allowed for this tenant.
+  // (2) is the real tier-bypass defense: an AI that ignores its own
+  // instructions and picks an unauthorized premium archetype must be
+  // caught here, not just relied on to have listened.
+  if (!isValidArchetype(t.layoutArchetype)) {
+    issues.push({ field: "layoutArchetype", issue: `missing or not one of ${ARCHETYPE_IDS.join(", ")}` });
+  } else if (context.routingContext) {
+    const { forcedArchetype, allowedArchetypes } = context.routingContext;
+    if (forcedArchetype && t.layoutArchetype !== forcedArchetype) {
+      issues.push({ field: "layoutArchetype", issue: `server forced "${forcedArchetype}" but the treatment returned "${t.layoutArchetype}" -- AI must never override a server-forced archetype` });
+    } else if (!forcedArchetype && allowedArchetypes.length && !allowedArchetypes.includes(t.layoutArchetype)) {
+      issues.push({ field: "layoutArchetype", issue: `"${t.layoutArchetype}" is not in this tenant's allowed set (${allowedArchetypes.join(", ")}) -- tier/preference bypass attempt or model error` });
+    }
   }
 
   return issues;
@@ -397,9 +473,27 @@ export async function generateCreativeTreatment(
   });
 
   const parsed = result.structuredOutput ?? safeParseJson(result.text);
-  const issues = validateCreativeTreatment(parsed, { concept: input.brief.concept });
+  const issues = validateCreativeTreatment(parsed, { concept: input.brief.concept, routingContext: input.routingContext })
+    // A forced-archetype mismatch is real, useful diagnostic signal (the
+    // AI didn't follow instructions) but must never actually block
+    // generation -- forceArchetypeOntoTreatment below corrects it
+    // unconditionally, so this specific issue is filtered out rather than
+    // thrown, while every other validation issue still fails closed.
+    .filter((issue) => !(issue.field === "layoutArchetype" && input.routingContext?.forcedArchetype));
   if (issues.length) throw new CreativeTreatmentError(issues, parsed ?? result.text);
-  return parsed as CreativeTreatment;
+  return forceArchetypeOntoTreatment(parsed as CreativeTreatment, input.routingContext);
+}
+
+/** "The AI must NEVER override a server-forced archetype" (Subscription-
+ * Gated Visual Archetypes brief Section 6) as an actual guarantee, not
+ * just a prompt instruction: when routingContext.forcedArchetype is set,
+ * the returned treatment's layoutArchetype is unconditionally set to it,
+ * regardless of what the AI returned. Exported so callers using a
+ * different provider-call convention (package-autopilot.ts's own
+ * validate-then-use path) apply the exact same guarantee. */
+export function forceArchetypeOntoTreatment(treatment: CreativeTreatment, routingContext: ArchetypeRoutingContext | undefined): CreativeTreatment {
+  if (!routingContext?.forcedArchetype || treatment.layoutArchetype === routingContext.forcedArchetype) return treatment;
+  return { ...treatment, layoutArchetype: routingContext.forcedArchetype };
 }
 
 /** Exported so callers using a different provider-call convention than

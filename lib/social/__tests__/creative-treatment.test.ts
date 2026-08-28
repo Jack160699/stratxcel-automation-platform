@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { validateCreativeTreatment, buildCreativeTreatmentPrompt, resolveOverlayElements, extractVerifiedContactInfo, type CreativeTreatment } from "../creative-treatment.ts";
+import { validateCreativeTreatment, buildCreativeTreatmentPrompt, resolveOverlayElements, extractVerifiedContactInfo, forceArchetypeOntoTreatment, LAYOUT_ARCHETYPE_IDS, type CreativeTreatment } from "../creative-treatment.ts";
 import { RESTAURANT_FIXTURE } from "./fixtures/business-fixtures.ts";
 import { buildCreativeBrief } from "../creative-brief.ts";
 import { deriveBrandVisualDNA } from "../brand-visual-dna.ts";
@@ -145,15 +145,16 @@ test("a treatment with an invalid layoutArchetype value is rejected", () => {
   assert.ok(issues.some((i) => i.field === "layoutArchetype"));
 });
 
-test("each of the three real layout archetypes is accepted", () => {
-  for (const archetype of ["SPLIT_BANNER", "FLOATING_CARD", "EDITORIAL_FRAME"] as const) {
+test("each of the 12 registered layout archetypes is accepted", () => {
+  for (const archetype of LAYOUT_ARCHETYPE_IDS) {
     const good = { ...GOOD_TREATMENT, layoutArchetype: archetype };
     const issues = validateCreativeTreatment(good, { concept: "training tip" });
     assert.deepEqual(issues, [], `expected ${archetype} to be a valid archetype`);
   }
+  assert.equal(LAYOUT_ARCHETYPE_IDS.length, 12, "registry must expose exactly 12 archetypes");
 });
 
-test("buildCreativeTreatmentPrompt explains all three layout archetypes and requires a deliberate choice", () => {
+function buildRestaurantPromptMessages(routingContext?: Parameters<typeof buildCreativeTreatmentPrompt>[0]["routingContext"]) {
   const brief = buildCreativeBrief({
     businessName: RESTAURANT_FIXTURE.businessName, industryText: RESTAURANT_FIXTURE.industryText, descriptionText: RESTAURANT_FIXTURE.descriptionText,
     platform: "instagram", mediaType: "image", availablePillars: RESTAURANT_FIXTURE.contentPillars, objective: "AUTHORITY",
@@ -161,12 +162,66 @@ test("buildCreativeTreatmentPrompt explains all three layout archetypes and requ
   });
   const dna = deriveBrandVisualDNA({ brandColors: RESTAURANT_FIXTURE.brandColors, brandTone: RESTAURANT_FIXTURE.brandTone, industryCategory: "restaurant" });
   const vocab = getIndustryVisualVocabulary("restaurant");
-  const messages = buildCreativeTreatmentPrompt({ brief, businessName: RESTAURANT_FIXTURE.businessName, industry: "restaurant", brandDNA: dna, visualVocab: vocab, mediaType: "image" });
+  return buildCreativeTreatmentPrompt({ brief, businessName: RESTAURANT_FIXTURE.businessName, industry: "restaurant", brandDNA: dna, visualVocab: vocab, mediaType: "image", routingContext });
+}
+
+test("buildCreativeTreatmentPrompt explains all 12 layout archetypes and requires a deliberate choice when unrestricted", () => {
+  const messages = buildRestaurantPromptMessages();
   const combined = messages.map((m) => m.content).join("\n");
-  for (const archetype of ["SPLIT_BANNER", "FLOATING_CARD", "EDITORIAL_FRAME"]) {
+  for (const archetype of LAYOUT_ARCHETYPE_IDS) {
     assert.ok(combined.includes(archetype), `expected the prompt to explain ${archetype}`);
   }
   assert.ok(combined.toLowerCase().includes("layoutarchetype"));
+});
+
+test("routingContext.forcedArchetype: prompt tells the AI the decision is already made and JSON shape only allows that one value", () => {
+  const messages = buildRestaurantPromptMessages({ forcedArchetype: "BASIC_ESSENTIAL", allowedArchetypes: [], reason: "Starter automated path" });
+  const combined = messages.map((m) => m.content).join("\n");
+  assert.ok(/ALREADY DECIDED/.test(combined));
+  assert.ok(combined.includes("BASIC_ESSENTIAL"));
+  assert.ok(combined.includes(`"layoutArchetype": "BASIC_ESSENTIAL"`), "JSON shape block must only offer the forced value");
+  assert.ok(!combined.includes("SPLIT_BANNER"), "must not describe other archetypes as options when one is forced");
+});
+
+test("routingContext.allowedArchetypes (no forced value): prompt restricts the AI to only that preference set", () => {
+  const messages = buildRestaurantPromptMessages({ forcedArchetype: null, allowedArchetypes: ["SPLIT_BANNER", "POLAROID_LIFESTYLE", "CLINICAL_TRUST"], reason: "Growth tenant's saved preferences" });
+  const combined = messages.map((m) => m.content).join("\n");
+  assert.ok(combined.includes("SPLIT_BANNER") && combined.includes("POLAROID_LIFESTYLE") && combined.includes("CLINICAL_TRUST"));
+  assert.ok(/ONLY from this list/.test(combined));
+  assert.ok(!combined.includes("NEON_NIGHTLIFE"), "must not describe an archetype outside the allowed set as an option");
+  assert.ok(combined.includes(`"layoutArchetype": "SPLIT_BANNER"|"POLAROID_LIFESTYLE"|"CLINICAL_TRUST"`), "JSON shape block must match the restricted set");
+});
+
+test("validateCreativeTreatment rejects a forced-archetype mismatch (AI ignored the server's decision)", () => {
+  const bad = { ...GOOD_TREATMENT, layoutArchetype: "SPLIT_BANNER" };
+  const issues = validateCreativeTreatment(bad, { concept: "training tip", routingContext: { forcedArchetype: "BASIC_ESSENTIAL", allowedArchetypes: [], reason: "test" } });
+  assert.ok(issues.some((i) => i.field === "layoutArchetype" && /server forced/.test(i.issue)));
+});
+
+test("validateCreativeTreatment rejects an archetype outside the allowed preference set (tier/preference bypass attempt)", () => {
+  const bad = { ...GOOD_TREATMENT, layoutArchetype: "NEON_NIGHTLIFE" };
+  const issues = validateCreativeTreatment(bad, { concept: "training tip", routingContext: { forcedArchetype: null, allowedArchetypes: ["SPLIT_BANNER", "CLINICAL_TRUST"], reason: "test" } });
+  assert.ok(issues.some((i) => i.field === "layoutArchetype" && /not in this tenant's allowed set/.test(i.issue)));
+});
+
+test("validateCreativeTreatment accepts an archetype that IS in the allowed preference set", () => {
+  const good = { ...GOOD_TREATMENT, layoutArchetype: "CLINICAL_TRUST" };
+  const issues = validateCreativeTreatment(good, { concept: "training tip", routingContext: { forcedArchetype: null, allowedArchetypes: ["SPLIT_BANNER", "CLINICAL_TRUST"], reason: "test" } });
+  assert.deepEqual(issues, []);
+});
+
+test("forceArchetypeOntoTreatment unconditionally corrects a mismatched forced archetype -- the AI never actually gets the final say", () => {
+  const treatment = { ...GOOD_TREATMENT, layoutArchetype: "SPLIT_BANNER" } as const;
+  const corrected = forceArchetypeOntoTreatment(treatment, { forcedArchetype: "BASIC_ESSENTIAL", allowedArchetypes: [], reason: "test" });
+  assert.equal(corrected.layoutArchetype, "BASIC_ESSENTIAL");
+  // Everything else about the treatment is untouched -- only the archetype field is overwritten.
+  assert.equal(corrected.concept, treatment.concept);
+});
+
+test("forceArchetypeOntoTreatment is a no-op when there's no routing context or nothing was forced", () => {
+  const treatment = { ...GOOD_TREATMENT, layoutArchetype: "SPLIT_BANNER" } as const;
+  assert.equal(forceArchetypeOntoTreatment(treatment, undefined).layoutArchetype, "SPLIT_BANNER");
+  assert.equal(forceArchetypeOntoTreatment(treatment, { forcedArchetype: null, allowedArchetypes: ["SPLIT_BANNER"], reason: "test" }).layoutArchetype, "SPLIT_BANNER");
 });
 
 test("extractVerifiedContactInfo pulls location/website from real verified facts, never fabricates a missing phone", () => {

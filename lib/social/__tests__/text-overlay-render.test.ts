@@ -280,6 +280,192 @@ async function main() {
     }
   });
 
+  // ==========================================================================
+  // Subscription-Gated Visual Archetypes brief Section 16: every one of the
+  // 12 registered archetypes, exercised against the same checklist --
+  // render doesn't throw, exact requested canvas dimensions (1080x1080 is
+  // literally what production requests for the 1:1 aspect), headline/
+  // supporting/CTA/brand/contact-footer rendering, long-text wrapping,
+  // extreme lengths, missing optional fields, no clipping past canvas
+  // bounds, and (for the two that support it today) real logo handling.
+  // ==========================================================================
+  const ALL_ARCHETYPES = [
+    "BASIC_ESSENTIAL", "SPLIT_BANNER", "FLOATING_CARD", "EDITORIAL_FRAME",
+    "MINIMAL_FOOTER_STRIP", "ELEVATED_BADGE", "DUAL_TONE_SIDEBAR", "FROSTED_GLASS_CENTER",
+    "TYPOGRAPHIC_HERO", "POLAROID_LIFESTYLE", "CLINICAL_TRUST", "NEON_NIGHTLIFE",
+  ] as const;
+
+  /** Extracts every <rect>/<image> element's x/y/width/height so callers
+   * can assert every container/logo stays within the canvas's own
+   * bounds -- the real, generic "no clipping / respects safe zones" check
+   * that applies identically across all 12 archetypes' very different
+   * geometries, rather than one bespoke assertion per archetype. */
+  function boxes(svg: string): Array<{ x: number; y: number; width: number; height: number }> {
+    return [...svg.matchAll(/<(?:rect|image)[^>]*\bx="(-?[\d.]+)"[^>]*\by="(-?[\d.]+)"[^>]*\bwidth="([\d.]+)"[^>]*\bheight="([\d.]+)"/g)]
+      .map((m) => ({ x: Number(m[1]), y: Number(m[2]), width: Number(m[3]), height: Number(m[4]) }));
+  }
+
+  await test("all 12 archetypes: render does not throw with a full, realistic element set", () => {
+    for (const layoutArchetype of ALL_ARCHETYPES) {
+      assert.doesNotThrow(() => {
+        buildTextOverlaySvg({
+          ...BASE, layoutArchetype,
+          elements: [
+            { role: "headline", text: "The Saturday Thali Special" },
+            { role: "supportingLine", text: "Six coastal dishes, one banana leaf, every weekend." },
+            { role: "cta", text: "Walk in this Saturday" },
+          ],
+          contactInfo: { location: "Fort Kochi, Kerala", phone: "+91 98765 43210", website: "coastalkitchen.in" },
+        });
+      }, `${layoutArchetype}: must not throw`);
+    }
+  });
+
+  await test("all 12 archetypes: renderTextOverlay produces an exact 1080x1080 PNG (the real production canvas size)", async () => {
+    for (const layoutArchetype of ALL_ARCHETYPES) {
+      const base = await sharp({ create: { width: 1080, height: 1080, channels: 3, background: { r: 90, g: 100, b: 80 } } }).png().toBuffer();
+      const out = await renderTextOverlay(base, {
+        ...BASE, layoutArchetype, width: 1080, height: 1080,
+        elements: [{ role: "headline", text: "Weekend Special" }, { role: "cta", text: "Book now" }],
+      });
+      const meta = await sharp(out).metadata();
+      assert.equal(meta.width, 1080, `${layoutArchetype}: width must be exactly 1080`);
+      assert.equal(meta.height, 1080, `${layoutArchetype}: height must be exactly 1080`);
+      assert.equal(meta.format, "png", `${layoutArchetype}: expected PNG output`);
+    }
+  });
+
+  await test("all 12 archetypes: headline, supportingLine, and CTA each render as real glyph paths when present", () => {
+    for (const layoutArchetype of ALL_ARCHETYPES) {
+      const withAll = buildTextOverlaySvg({
+        ...BASE, layoutArchetype,
+        elements: [
+          { role: "headline", text: "Weekend Special" },
+          { role: "supportingLine", text: "Real supporting detail here." },
+          { role: "cta", text: "Book now" },
+        ],
+      });
+      const headlineOnly = buildTextOverlaySvg({ ...BASE, layoutArchetype, elements: [{ role: "headline", text: "Weekend Special" }] });
+      assert.ok(glyphPaths(withAll).length > glyphPaths(headlineOnly).length, `${layoutArchetype}: supportingLine + CTA must add real glyph paths beyond the headline alone`);
+    }
+  });
+
+  await test("all 12 archetypes: brand renders (as glyph-path text, or as a real logo <image> for the two archetypes that support one today)", () => {
+    for (const layoutArchetype of ALL_ARCHETYPES) {
+      const withBrand = buildTextOverlaySvg({ ...BASE, layoutArchetype, elements: [{ role: "headline", text: "X" }], businessName: "Fort Kochi Coastal Kitchen" });
+      const withoutBrand = buildTextOverlaySvg({ ...BASE, layoutArchetype, elements: [{ role: "headline", text: "X" }], businessName: "" });
+      assert.notEqual(withBrand, withoutBrand, `${layoutArchetype}: presence of a business name must change the rendered output`);
+    }
+  });
+
+  await test("all 12 archetypes: real logo image renders with a preserved (never stretched) aspect ratio when supplied (BASIC_ESSENTIAL, FLOATING_CARD); every other archetype falls back to the text brand label without crashing", () => {
+    const logo = { dataUri: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", mimeType: "image/png" as const, aspectRatio: 2.5 };
+    const logoSupported: readonly string[] = ["BASIC_ESSENTIAL", "FLOATING_CARD"];
+    for (const layoutArchetype of ALL_ARCHETYPES) {
+      const svg = buildTextOverlaySvg({ ...BASE, layoutArchetype, elements: [{ role: "headline", text: "X" }], logoImage: logo });
+      const imageMatch = svg.match(/<image[^>]*width="([\d.]+)"[^>]*height="([\d.]+)"/);
+      if (logoSupported.includes(layoutArchetype)) {
+        assert.ok(imageMatch, `${layoutArchetype}: expected a real <image> element for the supplied logo`);
+        const renderedAspect = Number(imageMatch![1]) / Number(imageMatch![2]);
+        assert.ok(Math.abs(renderedAspect - logo.aspectRatio) < 0.05, `${layoutArchetype}: logo aspect ratio must be preserved, got ${renderedAspect} vs expected ${logo.aspectRatio}`);
+      } else {
+        // Not yet wired to place a logo -- must not crash, and must still
+        // fall back to rendering the business name as glyph-path text.
+        assert.ok(glyphPaths(svg).length > 0, `${layoutArchetype}: expected a graceful text fallback when logo isn't wired for this archetype`);
+      }
+    }
+  });
+
+  await test("all 12 archetypes: contact footer renders real icon primitives only for fields actually present, never a placeholder", () => {
+    for (const layoutArchetype of ALL_ARCHETYPES) {
+      const full = buildTextOverlaySvg({
+        ...BASE, layoutArchetype, elements: [{ role: "headline", text: "X" }],
+        contactInfo: { location: "Fort Kochi, Kerala", phone: "+91 98765 43210", website: "coastalkitchen.in" },
+      });
+      const none = buildTextOverlaySvg({ ...BASE, layoutArchetype, elements: [{ role: "headline", text: "X" }], contactInfo: { location: null, phone: null, website: null } });
+      assert.notEqual(full, none, `${layoutArchetype}: contact info presence must change rendered output`);
+      assert.ok(!none.includes("<ellipse"), `${layoutArchetype}: must not render the web icon when no contact info is supplied`);
+    }
+  });
+
+  await test("all 12 archetypes: a very long headline wraps into as many real glyph-path lines as that archetype's own design allows, never silently dropping the overflow (real bug found and fixed in several: wrapText+slice(0,N) discarded wrapped lines beyond N with zero indication -- wrapTextWithEllipsis now keeps N-1 real lines plus one real-font-metric-truncated line instead)", () => {
+    const longHeadline = "This is a genuinely long, realistic headline that any of these twelve archetypes must be able to wrap across several lines without ever overflowing or clipping the frame";
+    // Each archetype's own deliberate max-line design constraint (see the
+    // wrapTextWithEllipsis call sites in text-overlay-render.ts) -- most
+    // have none (wrap as freely as content needs), a few restrain
+    // themselves by design (BASIC_ESSENTIAL/ELEVATED_BADGE: 3,
+    // TYPOGRAPHIC_HERO: 4, POLAROID_LIFESTYLE's caption: 2,
+    // MINIMAL_FOOTER_STRIP: 1 -- truncated, not wrapped, by design).
+    const minExpectedLines: Partial<Record<(typeof ALL_ARCHETYPES)[number], number>> = {
+      MINIMAL_FOOTER_STRIP: 1,
+      POLAROID_LIFESTYLE: 2,
+      BASIC_ESSENTIAL: 3,
+      ELEVATED_BADGE: 3,
+      TYPOGRAPHIC_HERO: 4,
+    };
+    for (const layoutArchetype of ALL_ARCHETYPES) {
+      const svg = buildTextOverlaySvg({ ...BASE, layoutArchetype, width: 800, height: 1000, elements: [{ role: "headline", text: longHeadline }], businessName: "" });
+      const expected = minExpectedLines[layoutArchetype] ?? 3;
+      assert.ok(glyphPaths(svg).length >= expected, `${layoutArchetype}: expected at least ${expected} real glyph-path line(s), got ${glyphPaths(svg).length}`);
+    }
+  });
+
+  await test("all 12 archetypes: extreme text lengths across every field render without throwing and without NaN/Infinity leaking into the SVG", () => {
+    const extreme = "Extremely long realistic marketing copy that keeps going for quite a while to genuinely stress-test the wrapping, safe-zone, and growth logic of every single archetype in the registry without ever actually being truncated by anything other than this module's own deterministic wrapping and truncation logic";
+    for (const layoutArchetype of ALL_ARCHETYPES) {
+      let svg = "";
+      assert.doesNotThrow(() => {
+        svg = buildTextOverlaySvg({
+          ...BASE, layoutArchetype,
+          elements: [
+            { role: "headline", text: extreme },
+            { role: "supportingLine", text: extreme },
+            { role: "cta", text: extreme },
+          ],
+          contactInfo: { location: extreme, phone: "+91 98765 43210", website: extreme },
+        });
+      }, `${layoutArchetype}: extreme text lengths must not throw`);
+      assert.ok(!/NaN|Infinity/.test(svg), `${layoutArchetype}: extreme text lengths must never leak NaN/Infinity into the rendered SVG`);
+    }
+  });
+
+  await test("all 12 archetypes: missing every optional field (no CTA, no supportingLine, no contact info, empty business name) still renders a valid, non-empty result when a headline is present", () => {
+    for (const layoutArchetype of ALL_ARCHETYPES) {
+      const svg = buildTextOverlaySvg({ ...BASE, layoutArchetype, elements: [{ role: "headline", text: "Weekend Special" }], businessName: "", contactInfo: null });
+      assert.ok(svg.startsWith("<svg"), `${layoutArchetype}: expected a valid SVG root`);
+      assert.ok(glyphPaths(svg).length > 0, `${layoutArchetype}: expected the headline to still render with every optional field absent`);
+    }
+  });
+
+  await test("all 12 archetypes: no container rect or logo image ever extends past the canvas's own [0,width]x[0,height] bounds, even under a heavy realistic content stress case (real bug found and fixed: MINIMAL_FOOTER_STRIP clipped a second contact-footer row past its band edge, ELEVATED_BADGE's CTA/footer extended past the right canvas edge)", () => {
+    const logo = { dataUri: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", mimeType: "image/png" as const, aspectRatio: 2.5 };
+    for (const layoutArchetype of ALL_ARCHETYPES) {
+      const width = 1080, height = 1080;
+      const svg = buildTextOverlaySvg({
+        ...BASE, layoutArchetype, width, height,
+        elements: [
+          { role: "headline", text: "The Saturday Thali Special Weekend Edition" },
+          { role: "supportingLine", text: "Six coastal dishes, one banana leaf, every single weekend without fail." },
+          { role: "cta", text: "Walk in this Saturday for lunch or dinner" },
+        ],
+        contactInfo: { location: "14 Princess Street, Fort Kochi, Kerala 682001", phone: "+91 98765 43210", website: "www.coastalkitchen.example.in" },
+        logoImage: logo,
+      });
+      for (const box of boxes(svg)) {
+        assert.ok(box.x >= -0.5, `${layoutArchetype}: a box's x must not start before the canvas's left edge, got x=${box.x}`);
+        assert.ok(box.y >= -0.5, `${layoutArchetype}: a box's y must not start before the canvas's top edge, got y=${box.y}`);
+        assert.ok(box.x + box.width <= width + 0.5, `${layoutArchetype}: a box must not extend past the right edge (x=${box.x}, width=${box.width}, canvas=${width})`);
+        assert.ok(box.y + box.height <= height + 0.5, `${layoutArchetype}: a box must not extend past the bottom edge (y=${box.y}, height=${box.height}, canvas=${height})`);
+      }
+    }
+  });
+
+  await test("an unregistered/malformed archetype value falls back to a real, working render rather than throwing (defense in depth -- validateCreativeTreatment's own enum check is expected to catch this upstream first)", () => {
+    assert.doesNotThrow(() => {
+      buildTextOverlaySvg({ ...BASE, layoutArchetype: "NOT_A_REAL_ARCHETYPE" as unknown as TextOverlayLayoutInput["layoutArchetype"], elements: [{ role: "headline", text: "X" }] });
+    });
+  });
+
   console.log("text-overlay-render.test.ts: ALL PASS");
 }
 

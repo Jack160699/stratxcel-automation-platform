@@ -189,6 +189,26 @@ function wrapText(font: Font, text: string, maxWidthPx: number, fontSizePx: numb
   return lines;
 }
 
+/** wrapText, but for archetypes with a genuine, deliberate max-line-count
+ * design constraint (BASIC_ESSENTIAL's 3-line headline cap, ELEVATED_BADGE's
+ * circular text, TYPOGRAPHIC_HERO's 4-line cap, POLAROID_LIFESTYLE's
+ * 2-line caption, MINIMAL_FOOTER_STRIP's single line). Real bug found and
+ * fixed across several of these: plain `wrapText(...).slice(0, maxLines)`
+ * silently DROPS any wrapped line beyond maxLines with zero indication --
+ * a genuinely long headline could lose its entire second half invisibly.
+ * This wraps normally, and if the result needs more lines than allowed,
+ * keeps the first (maxLines-1) lines as-is and collapses everything from
+ * there into a final real-font-metric-truncated line ending in "…" --
+ * content is shortened, visibly, never silently discarded. */
+function wrapTextWithEllipsis(font: Font, text: string, maxWidthPx: number, fontSizePx: number, maxLines: number, letterSpacingPx = 0): string[] {
+  const lines = wrapText(font, text, maxWidthPx, fontSizePx, letterSpacingPx);
+  if (lines.length <= maxLines) return lines;
+  const kept = lines.slice(0, maxLines - 1);
+  const remainder = lines.slice(maxLines - 1).join(" ");
+  kept.push(truncateToWidth(font, remainder, maxWidthPx, fontSizePx));
+  return kept;
+}
+
 /** Real font-metric truncation (binary search on the actual measured
  * width) -- used for the contact footer, where a full address or URL
  * wrapping to a second line would push the footer (and potentially the
@@ -220,7 +240,14 @@ function glyphLineSvg(
   fontSize: number,
   anchor: "start" | "middle" | "end",
   letterSpacingPx: number,
-  fill: string
+  fill: string,
+  /** NEON_NIGHTLIFE's glow: the same glyph path drawn again underneath with
+   * a wide, low-opacity stroke and no separate blur filter (filter support
+   * is exactly the class of host-dependent feature this file's whole
+   * glyph-path rewrite exists to avoid relying on) -- a real, if simpler,
+   * soft-halo effect using only the fill/stroke primitives every SVG
+   * rasterizer supports natively. */
+  glowColor?: string | null
 ): { svg: string; width: number } {
   const width = measureWidth(font, text, fontSize, letterSpacingPx);
   let startX = x;
@@ -228,7 +255,10 @@ function glyphLineSvg(
   else if (anchor === "end") startX = x - width;
   const path = font.getPath(text, startX, yBaseline, fontSize, { letterSpacing: letterSpacingFraction(letterSpacingPx, fontSize), ...NO_GSUB_FEATURES });
   const d = path.toPathData(2);
-  const svg = `<path d="${d}" fill="${escapeXml(fill)}" style="paint-order: stroke; stroke: rgba(0,0,0,0.15); stroke-width: 0.5px;" />`;
+  const glow = glowColor
+    ? `<path d="${d}" fill="none" stroke="${escapeXml(glowColor)}" stroke-width="${round2(fontSize * 0.09)}" stroke-opacity="0.55" stroke-linejoin="round" />`
+    : "";
+  const svg = `${glow}<path d="${d}" fill="${escapeXml(fill)}" style="paint-order: stroke; stroke: rgba(0,0,0,0.15); stroke-width: 0.5px;" />`;
   return { svg, width };
 }
 
@@ -240,6 +270,13 @@ interface TextLineOptions {
   letterSpacing?: number;
   uppercase?: boolean;
   underline?: boolean;
+  /** NEON_NIGHTLIFE only -- see glyphLineSvg. */
+  glowColor?: string | null;
+  /** POLAROID_LIFESTYLE's caption: a deterministic, vector-only "handwritten"
+   * feel via a cheap italic-style skew transform on the glyph paths --
+   * never a second font file, never an emoji, matches this module's own
+   * "no host-font/emoji dependency" rule. Degrees, negative = right-leaning. */
+  skewDegrees?: number;
 }
 
 /** Shared multi-line glyph-path emitter used by every archetype's
@@ -254,15 +291,24 @@ function renderTextLines(lines: string[], x: number, yStart: number, lineHeight:
   let y = yStart;
   for (const line of lines) {
     const content = opts.uppercase ? line.toUpperCase() : line;
-    const { svg: lineSvg, width } = glyphLineSvg(font, content, x, y, opts.fontSize, opts.anchor, letterSpacingPx, opts.fill);
-    svg += lineSvg;
+    const { svg: lineSvg, width } = glyphLineSvg(font, content, x, y, opts.fontSize, opts.anchor, letterSpacingPx, opts.fill, opts.glowColor);
+    let lineOut = lineSvg;
     if (opts.underline) {
       let underlineX = x;
       if (opts.anchor === "middle") underlineX = x - width / 2;
       else if (opts.anchor === "end") underlineX = x - width;
       const underlineY = y + opts.fontSize * 0.12;
-      svg += `<rect x="${round2(underlineX)}" y="${round2(underlineY)}" width="${round2(width)}" height="${Math.max(1, round2(opts.fontSize * 0.05))}" fill="${escapeXml(opts.fill)}" />`;
+      lineOut += `<rect x="${round2(underlineX)}" y="${round2(underlineY)}" width="${round2(width)}" height="${Math.max(1, round2(opts.fontSize * 0.05))}" fill="${escapeXml(opts.fill)}" />`;
     }
+    if (opts.skewDegrees) {
+      // skewX(deg) maps (px,py) -> (px + py*tan(deg), py) -- a point's
+      // horizontal shift depends on ITS OWN y, not x. Compensating by
+      // translating back -y*tan(deg) keeps this line anchored at its
+      // intended position instead of drifting sideways by that amount.
+      const compensation = -y * Math.tan((opts.skewDegrees * Math.PI) / 180);
+      lineOut = `<g transform="translate(${round2(compensation)}, 0) skewX(${opts.skewDegrees})">${lineOut}</g>`;
+    }
+    svg += lineOut;
     y += lineHeight;
   }
   return svg;
@@ -464,6 +510,36 @@ export interface TextOverlayLayoutInput {
    * optional because not every caller has it wired yet. A missing/null
    * field renders no row for it; nothing here is ever fabricated. */
   contactInfo?: VerifiedContactInfo | null;
+  /** A real raster brand logo (already-uploaded tenant asset), composited
+   * with its aspect ratio preserved -- never stretched. HONEST SCOPE (v1):
+   * no real production caller passes this yet (lib/image-generation/
+   * service.ts has no logo-asset fetch wired into the compositor path
+   * today), and only BASIC_ESSENTIAL and FLOATING_CARD actually place it
+   * when supplied -- every other archetype still falls back to the
+   * text-glyph brand label. Wiring the remaining archetypes and the real
+   * production caller is a real, tracked follow-up, not silently claimed
+   * as complete. When absent (the common case today), every archetype's
+   * existing text-glyph brand label is unaffected. */
+  logoImage?: { dataUri: string; mimeType: "image/png" | "image/jpeg" | "image/webp"; aspectRatio: number } | null;
+}
+
+/** Composites a real raster logo into a bounding box with its aspect
+ * ratio preserved (never stretched to fill) -- `<image>` is a standard
+ * SVG primitive every rasterizer supports natively, the same reasoning
+ * that keeps every icon in this file to primitives rather than filters.
+ * Returns null (render nothing) when no logo was supplied, so callers can
+ * use `logoSvg ?? <text-glyph fallback>` in one expression. */
+function buildLogoImageSvg(logoImage: TextOverlayLayoutInput["logoImage"], boxX: number, boxY: number, boxWidth: number, boxHeight: number): string | null {
+  if (!logoImage || !logoImage.aspectRatio || logoImage.aspectRatio <= 0) return null;
+  let renderWidth = boxWidth;
+  let renderHeight = renderWidth / logoImage.aspectRatio;
+  if (renderHeight > boxHeight) {
+    renderHeight = boxHeight;
+    renderWidth = renderHeight * logoImage.aspectRatio;
+  }
+  const x = boxX + (boxWidth - renderWidth) / 2;
+  const y = boxY + (boxHeight - renderHeight) / 2;
+  return `<image href="${escapeXml(logoImage.dataUri)}" x="${round2(x)}" y="${round2(y)}" width="${round2(renderWidth)}" height="${round2(renderHeight)}" preserveAspectRatio="xMidYMid meet" />`;
 }
 
 interface PickedElements {
@@ -557,8 +633,13 @@ function buildSplitBannerSvg(input: TextOverlayLayoutInput, picked: PickedElemen
 
   const contentHeight = y + paddingBottom;
   const targetBandHeight = Math.round(height * 0.3);
-  const maxBandHeight = Math.round(height * 0.5);
-  const bandHeight = Math.min(Math.max(contentHeight, targetBandHeight), maxBandHeight);
+  // No upper cap: "MUST prevent clipping" is non-negotiable, and a real
+  // combination of headline+supporting+CTA+2-row contact footer can
+  // legitimately need more than a fixed ceiling would allow (found via
+  // real visual inspection of a stress case) -- the band grows to fit its
+  // actual content, never clips it, with only a floor for short content
+  // so the band still reads as a deliberate ~30% block, not a sliver.
+  const bandHeight = Math.max(contentHeight, targetBandHeight);
   const bandTop = height - bandHeight;
   const accentStripHeight = Math.max(3, Math.round(height * 0.006));
 
@@ -589,7 +670,15 @@ function buildFloatingCardSvg(input: TextOverlayLayoutInput, picked: PickedEleme
   const parts: string[] = [];
   const brandFS = Math.round(width * 0.026);
   const chipMargin = Math.round(width * 0.07);
-  if (brandLabel.text.trim()) {
+  if (input.logoImage) {
+    const logoBoxHeight = Math.round(brandFS * 1.9);
+    const logoBoxWidth = Math.round(logoBoxHeight * input.logoImage.aspectRatio);
+    const chipX = width - chipMargin - logoBoxWidth - brandFS * 0.5;
+    const chipY = chipMargin * 0.9 - logoBoxHeight;
+    parts.push(`<rect x="${round2(chipX - brandFS * 0.4)}" y="${round2(chipY - brandFS * 0.35)}" width="${round2(logoBoxWidth + brandFS * 0.8)}" height="${round2(logoBoxHeight + brandFS * 0.7)}" rx="${round2(brandFS * 0.4)}" fill="${escapeXml(primary)}" fill-opacity="0.82" />`);
+    const logoSvg = buildLogoImageSvg(input.logoImage, chipX, chipY, logoBoxWidth, logoBoxHeight);
+    if (logoSvg) parts.push(logoSvg);
+  } else if (brandLabel.text.trim()) {
     const text = brandLabel.text.trim();
     const chipFont = getFont(700);
     const textWidth = measureWidth(chipFont, text, brandFS);
@@ -792,6 +881,771 @@ function buildEditorialFrameSvg(input: TextOverlayLayoutInput, picked: PickedEle
   return `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">${parts.join("")}</svg>`;
 }
 
+/**
+ * BASIC_ESSENTIAL: the Starter (₹2,999) automated-tier safe default and
+ * the ₹7,999+ tenant's own "reliable" pick -- deliberately the simplest
+ * archetype in the registry. A solid brand-colored band (smaller than
+ * SPLIT_BANNER's -- targets ~23% of canvas height, capped at 40%) with
+ * just brand label, headline, and CTA. No accent-strip flourish, no
+ * contact footer complexity by default (still renders one if contact info
+ * is supplied) -- every choice here favors "never fails to render
+ * correctly" over visual richness.
+ */
+function buildBasicEssentialSvg(input: TextOverlayLayoutInput, picked: PickedElements): string {
+  const { width, height } = input;
+  const primary = input.primaryColor ?? input.accentColor ?? "#14181F";
+  const secondary = input.secondaryColor ?? input.accentColor ?? "#FFFFFF";
+  const bandTextColor = legibleTextColorFor(primary);
+  const pillTextColor = legibleTextColorFor(secondary);
+  const { headline, supporting, cta, brandLabel } = picked;
+
+  const margin = Math.round(width * 0.08);
+  const safeWidth = width - margin * 2;
+  const padding = Math.round(width * 0.045);
+
+  const parts: string[] = [];
+  let y = padding;
+
+  const brandFS = Math.round(width * 0.024);
+  const logoBoxHeight = Math.round(brandFS * 1.7);
+  const logoSvg = buildLogoImageSvg(input.logoImage, margin, y, Math.round(logoBoxHeight * (input.logoImage?.aspectRatio ?? 1)), logoBoxHeight);
+  if (logoSvg) {
+    parts.push(logoSvg);
+    y += logoBoxHeight + Math.round(width * 0.012);
+  } else if (brandLabel.text.trim()) {
+    parts.push(renderTextLines([brandLabel.text.trim()], margin, y + brandFS, brandFS * 1.2, {
+      fontSize: brandFS, weight: 700, fill: bandTextColor, anchor: "start",
+    }));
+    y += brandFS * 1.5;
+  }
+
+  if (headline?.text.trim()) {
+    const fontSize = Math.round(width * 0.044);
+    // Conservative wrap width (92% of safeWidth, not the full amount) and
+    // a hard cap at 3 lines -- "minimal risk of rendering failure" means
+    // erring toward MORE headroom than every other archetype, not less.
+    const lines = wrapTextWithEllipsis(getFont(800), headline.text.trim(), Math.round(safeWidth * 0.92), fontSize, 3);
+    const lineHeight = fontSize * 1.18;
+    parts.push(renderTextLines(lines, margin, y + fontSize, lineHeight, { fontSize, weight: 800, fill: bandTextColor, anchor: "start" }));
+    y += lines.length * lineHeight + Math.round(width * 0.018);
+  }
+
+  if (supporting?.text.trim()) {
+    const fontSize = Math.round(width * 0.026);
+    const lines = wrapTextWithEllipsis(getFont(400), supporting.text.trim(), safeWidth, fontSize, 2);
+    const lineHeight = fontSize * 1.35;
+    parts.push(renderTextLines(lines, margin, y + fontSize, lineHeight, { fontSize, weight: 400, fill: bandTextColor, anchor: "start" }));
+    y += lines.length * lineHeight + Math.round(width * 0.02);
+  }
+
+  if (cta?.text.trim()) {
+    const fontSize = Math.round(width * 0.03);
+    const pill = buildCtaPillSvg(cta.text.trim(), {
+      centerX: margin + safeWidth / 2, top: y, maxWidth: safeWidth, fontSize, fill: secondary, textColor: pillTextColor,
+    });
+    parts.push(pill.svg);
+    y += pill.height + Math.round(width * 0.022);
+  }
+
+  const footer = buildContactFooterSvg({
+    contact: input.contactInfo, x: margin, yTop: y, maxWidth: safeWidth,
+    fontSize: Math.round(width * 0.022), color: bandTextColor, align: "start",
+  });
+  if (footer.svg) {
+    parts.push(footer.svg);
+    y += footer.height;
+  }
+
+  const contentHeight = y + padding;
+  const targetBandHeight = Math.round(height * 0.23);
+  // No upper cap -- see SPLIT_BANNER's identical comment; clipping is
+  // never acceptable even in this archetype's normally-compact band.
+  const bandHeight = Math.max(contentHeight, targetBandHeight);
+  const bandTop = height - bandHeight;
+
+  const band = `<rect x="0" y="${round2(bandTop)}" width="${width}" height="${round2(bandHeight)}" fill="${escapeXml(primary)}" />`;
+
+  return `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">${band}<g transform="translate(0, ${round2(bandTop)})">${parts.join("")}</g></svg>`;
+}
+
+/**
+ * MINIMAL_FOOTER_STRIP: full-bleed hero image, a very restrained bottom
+ * utility strip (~15% of canvas, capped 22%) for brand + a single
+ * supporting line/CTA -- premium/luxury feel via what it deliberately
+ * omits. A thin hairline (not a thick accent block) separates strip from
+ * photo.
+ */
+function buildMinimalFooterStripSvg(input: TextOverlayLayoutInput, picked: PickedElements): string {
+  const { width, height } = input;
+  const primary = input.primaryColor ?? input.accentColor ?? "#14181F";
+  const secondary = input.secondaryColor ?? input.accentColor ?? primary;
+  const stripTextColor = legibleTextColorFor(primary);
+  const { headline, supporting, cta, brandLabel } = picked;
+
+  const margin = Math.round(width * 0.07);
+  const safeWidth = width - margin * 2;
+  const padding = Math.round(width * 0.035);
+  const hairlineHeight = Math.max(1, Math.round(width * 0.003));
+
+  const parts: string[] = [];
+  let y = padding + hairlineHeight + Math.round(width * 0.015);
+
+  const brandFS = Math.round(width * 0.024);
+  if (brandLabel.text.trim()) {
+    parts.push(renderTextLines([brandLabel.text.trim()], margin, y + brandFS, brandFS * 1.2, {
+      fontSize: brandFS, weight: 700, fill: stripTextColor, anchor: "start", letterSpacing: Math.round(brandFS * 0.08),
+    }));
+    y += brandFS * 1.4;
+  }
+
+  // Deliberately no headline stack per the registry's own constraint --
+  // at most one short line, rendered small and restrained, never a bold
+  // display headline (that would fight the "full-bleed hero" idea). Real
+  // bug found via testing: wrapping and then keeping only the first line
+  // silently DROPPED the rest of a genuinely long headline with no
+  // indication anything was cut -- truncateToWidth (real font-metric
+  // ellipsis) at least signals "there's more" instead of losing text
+  // invisibly.
+  const short = headline?.text.trim() || supporting?.text.trim();
+  if (short) {
+    const fontSize = Math.round(width * 0.022);
+    const line = truncateToWidth(getFont(400), short, safeWidth, fontSize);
+    parts.push(renderTextLines([line], margin, y + fontSize, fontSize * 1.3, { fontSize, weight: 400, fill: stripTextColor, anchor: "start" }));
+    y += fontSize * 1.3 + Math.round(width * 0.012);
+  }
+
+  if (cta?.text.trim()) {
+    const fontSize = Math.round(width * 0.024);
+    const pillTextColor = legibleTextColorFor(secondary);
+    const pill = buildCtaPillSvg(cta.text.trim(), {
+      centerX: margin + safeWidth / 2, top: y, maxWidth: safeWidth, fontSize, fill: secondary, textColor: pillTextColor,
+    });
+    parts.push(pill.svg);
+    y += pill.height + Math.round(width * 0.012);
+  }
+
+  const footer = buildContactFooterSvg({
+    contact: input.contactInfo, x: margin, yTop: y, maxWidth: safeWidth,
+    fontSize: Math.round(width * 0.02), color: stripTextColor, align: "start",
+  });
+  if (footer.svg) {
+    parts.push(footer.svg);
+    y += footer.height;
+  }
+
+  const contentHeight = y + padding;
+  const targetStripHeight = Math.round(height * 0.15);
+  // No upper cap -- real bug found via visual inspection: a realistic
+  // combination of brand + one short line + CTA + a 2-row contact footer
+  // (both phone and website present) genuinely needed more than a fixed
+  // ~22% ceiling, and the footer's second row was rendering past the
+  // strip's own bottom edge, clipped off-canvas. "Very restrained" is the
+  // common case by construction (this archetype limits itself to one
+  // short line, never a headline+supportingLine stack); it is not worth
+  // clipping the rare case that needs more room.
+  const stripHeight = Math.max(contentHeight, targetStripHeight);
+  const stripTop = height - stripHeight;
+
+  const strip =
+    `<rect x="0" y="${round2(stripTop)}" width="${width}" height="${round2(stripHeight)}" fill="${escapeXml(primary)}" />` +
+    `<rect x="0" y="${round2(stripTop)}" width="${width}" height="${hairlineHeight}" fill="${escapeXml(secondary)}" />`;
+
+  return `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">${strip}<g transform="translate(0, ${round2(stripTop)})">${parts.join("")}</g></svg>`;
+}
+
+/**
+ * ELEVATED_BADGE: photo-dominant with a circular promotional badge
+ * anchored to the top-right corner (a soft layered "shadow" behind it,
+ * simulated with a duplicate offset lower-opacity circle rather than a
+ * filter). A small brand chip lives in the opposite (bottom-left) corner
+ * so it never competes with the badge; CTA (if present) sits as a small
+ * pill just below the badge.
+ */
+function buildElevatedBadgeSvg(input: TextOverlayLayoutInput, picked: PickedElements): string {
+  const { width, height, textColor } = input;
+  const primary = input.primaryColor ?? input.accentColor ?? "#14181F";
+  const secondary = input.secondaryColor ?? input.accentColor ?? primary;
+  const { headline, cta, brandLabel } = picked;
+
+  const parts: string[] = [];
+
+  // Brand chip, bottom-left -- the corner the badge never touches.
+  const brandFS = Math.round(width * 0.024);
+  const chipMargin = Math.round(width * 0.07);
+  if (brandLabel.text.trim()) {
+    const text = brandLabel.text.trim();
+    const chipFont = getFont(700);
+    const textWidth = measureWidth(chipFont, text, brandFS);
+    const padX = brandFS * 0.7;
+    const padY = brandFS * 0.45;
+    const chipY = height - chipMargin * 0.9 - brandFS * 0.3;
+    const chipTextColor = legibleTextColorFor(primary);
+    parts.push(`<rect x="${round2(chipMargin - padX)}" y="${round2(chipY - brandFS - padY)}" width="${round2(textWidth + padX * 2)}" height="${round2(brandFS + padY * 2)}" rx="${round2(brandFS * 0.4)}" fill="${escapeXml(primary)}" fill-opacity="0.82" />`);
+    parts.push(renderTextLines([text], chipMargin, chipY, brandFS * 1.2, { fontSize: brandFS, weight: 700, fill: chipTextColor, anchor: "start" }));
+  }
+
+  // Badge, top-right.
+  const badgeDiameter = Math.round(width * 0.32);
+  const badgeMargin = Math.round(width * 0.08);
+  const badgeCx = width - badgeMargin - badgeDiameter / 2;
+  const badgeCy = badgeMargin + badgeDiameter / 2;
+  const badgeTextColor = legibleTextColorFor(secondary);
+
+  // Layered shadow: a larger, offset, low-opacity dark circle behind the
+  // real badge -- a real (if simple) elevation cue, no filter dependency.
+  const shadowOffset = Math.round(width * 0.01);
+  parts.push(`<circle cx="${round2(badgeCx + shadowOffset)}" cy="${round2(badgeCy + shadowOffset * 1.4)}" r="${round2(badgeDiameter / 2 + width * 0.006)}" fill="#000000" fill-opacity="0.28" />`);
+  parts.push(`<circle cx="${round2(badgeCx)}" cy="${round2(badgeCy)}" r="${round2(badgeDiameter / 2)}" fill="${escapeXml(secondary)}" />`);
+  // Thin inner ring in the primary color -- a deliberate two-tone badge
+  // edge instead of a flat single-color sticker.
+  parts.push(`<circle cx="${round2(badgeCx)}" cy="${round2(badgeCy)}" r="${round2(badgeDiameter / 2 - width * 0.012)}" fill="none" stroke="${escapeXml(primary)}" stroke-width="${round2(width * 0.004)}" />`);
+
+  if (headline?.text.trim()) {
+    const fontSize = Math.round(width * 0.032);
+    const badgeTextWidth = Math.round(badgeDiameter * 0.68);
+    const lines = wrapTextWithEllipsis(getFont(800), headline.text.trim(), badgeTextWidth, fontSize, 3);
+    const lineHeight = fontSize * 1.12;
+    const totalTextHeight = lines.length * lineHeight;
+    const startY = badgeCy - totalTextHeight / 2 + fontSize * 0.85;
+    parts.push(renderTextLines(lines, badgeCx, startY, lineHeight, { fontSize, weight: 800, fill: badgeTextColor, anchor: "middle" }));
+  }
+
+  // Real bug found via visual inspection: centering the CTA pill and the
+  // footer row directly on badgeCx/a right-edge x with a generous maxWidth
+  // let a genuinely long CTA/URL extend past the canvas's right edge --
+  // "middle" anchoring only guarantees symmetry AROUND its center point,
+  // not that the whole shape stays on-canvas. Both are anchored here so
+  // their full possible width (up to maxWidth) is guaranteed to fit
+  // between the margins, not just centered under the badge.
+  const rightSafeMaxWidth = Math.min(Math.round(width * 0.5), width - badgeMargin * 2);
+  const rightSafeCenterX = width - badgeMargin - rightSafeMaxWidth / 2;
+
+  if (cta?.text.trim()) {
+    const fontSize = Math.round(width * 0.026);
+    const pillTextColor = legibleTextColorFor(primary);
+    const pill = buildCtaPillSvg(cta.text.trim(), {
+      centerX: rightSafeCenterX, top: badgeCy + badgeDiameter / 2 + Math.round(width * 0.03), maxWidth: rightSafeMaxWidth, fontSize, fill: primary, textColor: pillTextColor,
+    });
+    parts.push(pill.svg);
+  }
+
+  // Contact footer, bottom-right (mirrors the brand chip's bottom-left
+  // anchor so neither corner competes with the badge above).
+  const footer = buildContactFooterSvg({
+    contact: input.contactInfo, x: rightSafeCenterX, yTop: height - chipMargin * 0.9 - Math.round(width * 0.05),
+    maxWidth: rightSafeMaxWidth, fontSize: Math.round(width * 0.02), color: textColor, align: "middle",
+  });
+  if (footer.svg) parts.push(footer.svg);
+
+  return `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">${parts.join("")}</svg>`;
+}
+
+/**
+ * DUAL_TONE_SIDEBAR: a full-height brand-colored sidebar on the right
+ * (~30% of canvas width, grows if content needs more, capped 42%)
+ * against ~70% image -- strong asymmetrical composition, vertical text
+ * stack instead of a horizontal band.
+ */
+function buildDualToneSidebarSvg(input: TextOverlayLayoutInput, picked: PickedElements): string {
+  const { width, height } = input;
+  const primary = input.primaryColor ?? input.accentColor ?? "#14181F";
+  const secondary = input.secondaryColor ?? input.accentColor ?? "#FFFFFF";
+  const sidebarTextColor = legibleTextColorFor(primary);
+  const pillTextColor = legibleTextColorFor(secondary);
+  const { headline, supporting, cta, brandLabel } = picked;
+
+  const targetSidebarWidth = Math.round(width * 0.3);
+  const padding = Math.round(width * 0.045);
+  const innerWidth = targetSidebarWidth - padding * 2;
+
+  const inner: string[] = [];
+  let y = padding;
+
+  const brandFS = Math.round(width * 0.026);
+  if (brandLabel.text.trim()) {
+    const lines = wrapText(getFont(700), brandLabel.text.trim(), innerWidth, brandFS);
+    inner.push(renderTextLines(lines, 0, y + brandFS, brandFS * 1.25, { fontSize: brandFS, weight: 700, fill: sidebarTextColor, anchor: "start" }));
+    y += lines.length * brandFS * 1.25;
+    const accentLineWidth = Math.round(innerWidth * 0.3);
+    const accentLineHeight = Math.max(2, Math.round(width * 0.006));
+    inner.push(`<rect x="0" y="${round2(y + width * 0.015)}" width="${accentLineWidth}" height="${accentLineHeight}" fill="${escapeXml(secondary)}" />`);
+    y += accentLineHeight + Math.round(width * 0.04);
+  }
+
+  if (headline?.text.trim()) {
+    const fontSize = Math.round(width * 0.036);
+    const lines = wrapText(getFont(800), headline.text.trim(), innerWidth, fontSize);
+    const lineHeight = fontSize * 1.18;
+    inner.push(renderTextLines(lines, 0, y + fontSize, lineHeight, { fontSize, weight: 800, fill: sidebarTextColor, anchor: "start" }));
+    y += lines.length * lineHeight + Math.round(width * 0.02);
+  }
+
+  if (supporting?.text.trim()) {
+    const fontSize = Math.round(width * 0.022);
+    const lines = wrapText(getFont(400), supporting.text.trim(), innerWidth, fontSize);
+    const lineHeight = fontSize * 1.4;
+    inner.push(renderTextLines(lines, 0, y + fontSize, lineHeight, { fontSize, weight: 400, fill: sidebarTextColor, anchor: "start" }));
+    y += lines.length * lineHeight + Math.round(width * 0.025);
+  }
+
+  if (cta?.text.trim()) {
+    const fontSize = Math.round(width * 0.026);
+    const pill = buildCtaPillSvg(cta.text.trim(), {
+      centerX: innerWidth / 2, top: y, maxWidth: innerWidth, fontSize, fill: secondary, textColor: pillTextColor,
+    });
+    inner.push(pill.svg);
+    y += pill.height + Math.round(width * 0.025);
+  }
+
+  const footer = buildContactFooterSvg({
+    contact: input.contactInfo, x: 0, yTop: y, maxWidth: innerWidth,
+    fontSize: Math.round(width * 0.018), color: sidebarTextColor, align: "start",
+  });
+  if (footer.svg) {
+    inner.push(footer.svg);
+    y += footer.height;
+  }
+
+  const contentHeight = y + padding;
+  // Unlike every band/strip/scrim archetype above, the sidebar's HEIGHT is
+  // fixed at the full canvas height by definition (it's a full-height
+  // vertical strip) -- there's no "grow the container" escape valve for
+  // vertical overflow here the way a band can just get taller. The real
+  // safeguard against clipping is a uniform scale-to-fit: if the vertical
+  // stack would exceed the available height, shrink the whole content
+  // group (never crop it) until it fits, with a floor so it never shrinks
+  // into illegibility -- a denser sidebar is an acceptable trade, clipped
+  // text is not.
+  const availableHeight = height - padding * 2;
+  const scale = contentHeight > availableHeight ? Math.max(0.55, availableHeight / contentHeight) : 1;
+  const scaledContentHeight = contentHeight * scale;
+  const sidebarWidth = targetSidebarWidth;
+  const sidebarLeft = width - sidebarWidth;
+  const verticalOffset = Math.max(0, (height - scaledContentHeight) / 2);
+
+  const sidebar =
+    `<rect x="${round2(sidebarLeft)}" y="0" width="${round2(sidebarWidth)}" height="${height}" fill="${escapeXml(primary)}" />` +
+    `<rect x="${round2(sidebarLeft)}" y="0" width="${Math.max(3, Math.round(width * 0.006))}" height="${height}" fill="${escapeXml(secondary)}" />`;
+
+  return `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">${sidebar}<g transform="translate(${round2(sidebarLeft + padding)}, ${round2(verticalOffset)}) scale(${round2(scale)})">${inner.join("")}</g></svg>`;
+}
+
+/**
+ * FROSTED_GLASS_CENTER: an atmospheric photo with a centered translucent
+ * card -- "frost" simulated via a layered semi-opaque fill (never a real
+ * blur filter, which this environment's rasterizer can't be trusted to
+ * support -- the entire reason this file renders text as glyph paths
+ * instead of relying on host font-shaping is exactly this class of
+ * "assume the host supports X" risk). Minimal copy by design.
+ */
+function buildFrostedGlassCenterSvg(input: TextOverlayLayoutInput, picked: PickedElements): string {
+  const { width, height, textColor } = input;
+  const primary = input.primaryColor ?? input.accentColor ?? "#14181F";
+  const secondary = input.secondaryColor ?? input.accentColor ?? primary;
+  const { headline, cta, brandLabel } = picked;
+
+  const cardIsLight = textColor.toUpperCase() !== "#FFFFFF";
+  const cardFillColor = cardIsLight ? "#FFFFFF" : "#14181F";
+  const cardTextColor = cardIsLight ? "#14181F" : "#FFFFFF";
+
+  const cardWidth = Math.round(width * 0.78);
+  const cardPadding = Math.round(width * 0.06);
+  const innerWidth = cardWidth - cardPadding * 2;
+
+  const inner: string[] = [];
+  let y = 0;
+
+  // Whichever of primary/secondary contrasts better against the card's
+  // own fill -- real bug found via visual inspection: primary (a brand
+  // navy) against a near-black card fill was nearly invisible.
+  const tickColor = hexLuminance(primary) !== null && hexLuminance(cardFillColor) !== null && Math.abs((hexLuminance(primary) ?? 0) - (hexLuminance(cardFillColor) ?? 0)) < 0.25 ? secondary : primary;
+  const accentTickWidth = Math.round(innerWidth * 0.16);
+  const accentTickHeight = Math.max(3, Math.round(width * 0.008));
+  inner.push(`<rect x="${round2(innerWidth / 2 - accentTickWidth / 2)}" y="0" width="${accentTickWidth}" height="${accentTickHeight}" rx="${round2(accentTickHeight / 2)}" fill="${escapeXml(tickColor)}" />`);
+  y += accentTickHeight + Math.round(width * 0.03);
+
+  if (headline?.text.trim()) {
+    const fontSize = Math.round(width * 0.04);
+    const lines = wrapText(getFont(700), headline.text.trim(), innerWidth, fontSize);
+    const lineHeight = fontSize * 1.2;
+    inner.push(renderTextLines(lines, innerWidth / 2, y + fontSize, lineHeight, { fontSize, weight: 700, fill: cardTextColor, anchor: "middle" }));
+    y += lines.length * lineHeight + Math.round(width * 0.025);
+  }
+
+  if (cta?.text.trim()) {
+    const fontSize = Math.round(width * 0.026);
+    const pillTextColor = legibleTextColorFor(secondary);
+    const pill = buildCtaPillSvg(cta.text.trim(), {
+      centerX: innerWidth / 2, top: y, maxWidth: innerWidth, fontSize, fill: secondary, textColor: pillTextColor,
+    });
+    inner.push(pill.svg);
+    y += pill.height + Math.round(width * 0.02);
+  }
+
+  if (brandLabel.text.trim()) {
+    const brandFS = Math.round(width * 0.022);
+    inner.push(renderTextLines([brandLabel.text.trim()], innerWidth / 2, y + brandFS, brandFS * 1.2, {
+      fontSize: brandFS, weight: 500, fill: cardTextColor, anchor: "middle", letterSpacing: Math.round(brandFS * 0.1),
+    }));
+    y += brandFS * 1.3 + Math.round(width * 0.015);
+  }
+
+  const footer = buildContactFooterSvg({
+    contact: input.contactInfo, x: innerWidth / 2, yTop: y, maxWidth: innerWidth,
+    fontSize: Math.round(width * 0.018), color: cardTextColor, align: "middle",
+  });
+  if (footer.svg) {
+    inner.push(footer.svg);
+    y += footer.height;
+  }
+
+  const contentHeight = y + cardPadding;
+  // A generous cap, not a tight one -- "minimal copy by design" keeps
+  // realistic content well under this in practice, but the cap itself
+  // must never be tight enough to clip; 0.9 leaves only a small margin
+  // top/bottom on a centered card, which is the true physical limit here.
+  const cardHeight = Math.min(contentHeight, Math.round(height * 0.9));
+  const cardX = (width - cardWidth) / 2;
+  const cardY = (height - cardHeight) / 2;
+  const cardRadius = Math.round(width * 0.02);
+
+  const cardBg = `<rect x="${round2(cardX)}" y="${round2(cardY)}" width="${cardWidth}" height="${round2(cardHeight)}" rx="${cardRadius}" fill="${escapeXml(cardFillColor)}" fill-opacity="0.86" />`;
+
+  return `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">${cardBg}<g transform="translate(${round2(cardX + cardPadding)}, ${round2(cardY + cardPadding)})">${inner.join("")}</g></svg>`;
+}
+
+/**
+ * TYPOGRAPHIC_HERO: typography intentionally dominant, background photo
+ * subdued behind a wash localized to the text band (not the whole canvas
+ * -- the top/bottom stay visible photo). Largest headline font size of
+ * any archetype; minimal supporting text; still a finished branded
+ * creative (real brand mark + optional CTA pill), never a bare text
+ * poster.
+ */
+function buildTypographicHeroSvg(input: TextOverlayLayoutInput, picked: PickedElements): string {
+  const { width, height } = input;
+  const primary = input.primaryColor ?? input.accentColor ?? "#14181F";
+  const secondary = input.secondaryColor ?? input.accentColor ?? "#FFFFFF";
+  const washTextColor = legibleTextColorFor(primary);
+  const pillTextColor = legibleTextColorFor(secondary);
+  const { headline, supporting, cta, brandLabel } = picked;
+
+  const margin = Math.round(width * 0.08);
+  const safeWidth = width - margin * 2;
+
+  const inner: string[] = [];
+  let y = 0;
+
+  if (headline?.text.trim()) {
+    const fontSize = Math.round(width * 0.09);
+    const lines = wrapTextWithEllipsis(getFont(800), headline.text.trim(), safeWidth, fontSize, 4);
+    const lineHeight = fontSize * 1.05;
+    inner.push(renderTextLines(lines, 0, y + fontSize, lineHeight, { fontSize, weight: 800, fill: washTextColor, anchor: "start" }));
+    y += lines.length * lineHeight + Math.round(width * 0.02);
+  }
+
+  if (supporting?.text.trim()) {
+    const fontSize = Math.round(width * 0.024);
+    // truncateToWidth (real ellipsis), not wrapText+slice(0,1) -- see
+    // MINIMAL_FOOTER_STRIP's identical fix: silently dropping wrapped
+    // overflow with no ellipsis loses text with zero visible indication.
+    const line = truncateToWidth(getFont(400), supporting.text.trim(), safeWidth, fontSize);
+    inner.push(renderTextLines([line], 0, y + fontSize, fontSize * 1.3, { fontSize, weight: 400, fill: washTextColor, anchor: "start" }));
+    y += fontSize * 1.3 + Math.round(width * 0.02);
+  }
+
+  if (cta?.text.trim()) {
+    const fontSize = Math.round(width * 0.028);
+    const pill = buildCtaPillSvg(cta.text.trim(), {
+      centerX: safeWidth / 2, top: y, maxWidth: safeWidth, fontSize, fill: secondary, textColor: pillTextColor,
+    });
+    inner.push(pill.svg);
+    y += pill.height + Math.round(width * 0.02);
+  }
+
+  const footer = buildContactFooterSvg({
+    contact: input.contactInfo, x: safeWidth / 2, yTop: y, maxWidth: safeWidth,
+    fontSize: Math.round(width * 0.02), color: washTextColor, align: "middle",
+  });
+  if (footer.svg) {
+    inner.push(footer.svg);
+    y += footer.height;
+  }
+
+  const contentHeight = y;
+  const washPaddingV = Math.round(width * 0.06);
+  // Same "generous cap, not a tight one" reasoning as FROSTED_GLASS_CENTER's
+  // cardHeight -- headline is capped to 4 wrapped lines above, which keeps
+  // realistic content well under this, but the cap itself must never clip.
+  const washHeight = Math.min(contentHeight + washPaddingV * 2, Math.round(height * 0.92));
+  const washTop = (height - washHeight) / 2;
+
+  const parts: string[] = [
+    `<rect x="0" y="${round2(washTop)}" width="${width}" height="${round2(washHeight)}" fill="${escapeXml(primary)}" fill-opacity="0.58" />`,
+  ];
+
+  const brandFS = Math.round(width * 0.024);
+  const chipMargin = Math.round(width * 0.07);
+  if (brandLabel.text.trim()) {
+    const text = brandLabel.text.trim();
+    const chipFont = getFont(700);
+    const textWidth = measureWidth(chipFont, text, brandFS);
+    const padX = brandFS * 0.7;
+    const padY = brandFS * 0.45;
+    parts.push(`<rect x="${round2(width - chipMargin - textWidth - padX * 2)}" y="${round2(chipMargin * 0.9 - brandFS - padY)}" width="${round2(textWidth + padX * 2)}" height="${round2(brandFS + padY * 2)}" rx="${round2(brandFS * 0.4)}" fill="${escapeXml(primary)}" fill-opacity="0.82" />`);
+    parts.push(renderTextLines([text], width - chipMargin, chipMargin * 0.9, brandFS * 1.2, { fontSize: brandFS, weight: 700, fill: legibleTextColorFor(primary), anchor: "end" }));
+  }
+
+  parts.push(`<g transform="translate(${margin}, ${round2(washTop + washPaddingV)})">${inner.join("")}</g>`);
+
+  return `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">${parts.join("")}</svg>`;
+}
+
+/**
+ * POLAROID_LIFESTYLE: a real white polaroid-style border painted over the
+ * photo's own edges (thin on top/left/right, a genuinely thick bottom
+ * margin) with a caption line in that bottom margin rendered with a
+ * deterministic italic-style skew (never a second font file, never
+ * emoji). Social-proof, lifestyle, UGC-adjacent feeling.
+ */
+function buildPolaroidLifestyleSvg(input: TextOverlayLayoutInput, picked: PickedElements): string {
+  const { width, height } = input;
+  const primary = input.primaryColor ?? input.accentColor ?? "#14181F";
+  const { supporting, headline, cta, brandLabel } = picked;
+  const captionSource = supporting?.text.trim() || headline?.text.trim();
+
+  const borderColor = "#FBF9F4"; // warm off-white, real polaroid paper tone
+  const borderTextColor = "#2A2620";
+  const sideBorder = Math.round(width * 0.045);
+  const topBorder = Math.round(width * 0.045);
+
+  const parts: string[] = [];
+
+  const captionFS = Math.round(width * 0.032);
+  const brandFS = Math.round(width * 0.022);
+  // Bottom margin sizes to its real content (caption + brand/CTA row),
+  // targeting a classic ~20% but never shrinking below what the caption
+  // actually needs.
+  const captionLines = captionSource ? wrapTextWithEllipsis(getFont(400), captionSource, width - sideBorder * 2 - Math.round(width * 0.06), captionFS, 2) : [];
+  const captionBlockHeight = captionLines.length ? captionLines.length * captionFS * 1.3 : 0;
+  const footerFS = Math.round(width * 0.018);
+  const footerProbe = buildContactFooterSvg({
+    contact: input.contactInfo, x: sideBorder + Math.round(width * 0.02), yTop: 0, maxWidth: width - sideBorder * 2 - Math.round(width * 0.04),
+    fontSize: footerFS, color: borderTextColor, align: "start",
+  });
+  const bottomContentHeight =
+    Math.round(width * 0.03) + captionBlockHeight
+    + (brandLabel.text.trim() || cta?.text.trim() ? brandFS * 1.8 : 0)
+    + (footerProbe.height ? footerProbe.height + Math.round(width * 0.015) : 0)
+    + Math.round(width * 0.03);
+  const bottomBorder = Math.max(Math.round(width * 0.2), bottomContentHeight);
+
+  // Four border rects painted OVER the photo's own edges -- the compositor
+  // has no way to actually re-crop/resize the already-generated photo, so
+  // the polaroid inset is simulated the same way every other archetype's
+  // "reserved area" is: an opaque overlay covering that margin.
+  parts.push(`<rect x="0" y="0" width="${width}" height="${topBorder}" fill="${escapeXml(borderColor)}" />`);
+  parts.push(`<rect x="0" y="0" width="${sideBorder}" height="${height}" fill="${escapeXml(borderColor)}" />`);
+  parts.push(`<rect x="${width - sideBorder}" y="0" width="${sideBorder}" height="${height}" fill="${escapeXml(borderColor)}" />`);
+  parts.push(`<rect x="0" y="${height - bottomBorder}" width="${width}" height="${bottomBorder}" fill="${escapeXml(borderColor)}" />`);
+
+  let y = height - bottomBorder + Math.round(width * 0.035);
+  if (captionLines.length) {
+    parts.push(renderTextLines(captionLines, sideBorder + Math.round(width * 0.02), y + captionFS, captionFS * 1.3, {
+      fontSize: captionFS, weight: 400, fill: borderTextColor, anchor: "start", skewDegrees: -8,
+    }));
+    y += captionLines.length * captionFS * 1.3 + Math.round(width * 0.02);
+  }
+
+  if (brandLabel.text.trim() || cta?.text.trim()) {
+    if (brandLabel.text.trim()) {
+      parts.push(renderTextLines([brandLabel.text.trim()], sideBorder + Math.round(width * 0.02), y + brandFS, brandFS * 1.2, {
+        fontSize: brandFS, weight: 700, fill: legibleTextColorFor(borderColor) === "#FFFFFF" ? borderTextColor : primary, anchor: "start",
+      }));
+    }
+    if (cta?.text.trim()) {
+      const ctaFS = Math.round(width * 0.02);
+      parts.push(renderTextLines([cta.text.trim()], width - sideBorder - Math.round(width * 0.02), y + ctaFS, ctaFS * 1.2, {
+        fontSize: ctaFS, weight: 700, fill: primary, anchor: "end", underline: true,
+      }));
+    }
+    y += brandFS * 1.8;
+  }
+
+  if (footerProbe.height) {
+    const footer = buildContactFooterSvg({
+      contact: input.contactInfo, x: sideBorder + Math.round(width * 0.02), yTop: y, maxWidth: width - sideBorder * 2 - Math.round(width * 0.04),
+      fontSize: footerFS, color: borderTextColor, align: "start",
+    });
+    parts.push(footer.svg);
+  }
+
+  return `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">${parts.join("")}</svg>`;
+}
+
+/**
+ * CLINICAL_TRUST: healthcare-safe -- a light/white band (never the
+ * photo's own dark tones or a bold brand-primary fill), one restrained
+ * accent line, calm generously-spaced hierarchy, high readability.
+ */
+function buildClinicalTrustSvg(input: TextOverlayLayoutInput, picked: PickedElements): string {
+  const { width, height } = input;
+  // Deliberately does NOT use primary as the band fill (registry
+  // constraint: band is always light) -- primary is reserved for the thin
+  // accent line only, alongside a calm default blue when no brand accent
+  // exists, since "restrained blue/green accents" is the archetype's own
+  // design intent, not an arbitrary brand color.
+  const accent = input.secondaryColor ?? input.accentColor ?? input.primaryColor ?? "#2E6F95";
+  const bandFill = "#FFFFFF";
+  const bandTextColor = "#1B2430";
+  const pillTextColor = legibleTextColorFor(accent);
+  const { headline, supporting, cta, brandLabel } = picked;
+
+  const margin = Math.round(width * 0.075);
+  const safeWidth = width - margin * 2;
+  const paddingTop = Math.round(width * 0.055);
+  const paddingBottom = Math.round(width * 0.055);
+
+  const parts: string[] = [];
+  let y = paddingTop;
+
+  const brandFS = Math.round(width * 0.024);
+  if (brandLabel.text.trim()) {
+    parts.push(renderTextLines([brandLabel.text.trim()], margin, y + brandFS, brandFS * 1.2, {
+      fontSize: brandFS, weight: 700, fill: bandTextColor, anchor: "start",
+    }));
+    y += brandFS * 1.3;
+    const accentLineWidth = Math.round(safeWidth * 0.12);
+    const accentLineHeight = Math.max(2, Math.round(width * 0.005));
+    parts.push(`<rect x="${margin}" y="${round2(y)}" width="${accentLineWidth}" height="${accentLineHeight}" fill="${escapeXml(accent)}" />`);
+    y += accentLineHeight + Math.round(width * 0.03);
+  }
+
+  if (headline?.text.trim()) {
+    const fontSize = Math.round(width * 0.042);
+    const lines = wrapText(getFont(700), headline.text.trim(), safeWidth, fontSize);
+    const lineHeight = fontSize * 1.25;
+    parts.push(renderTextLines(lines, margin, y + fontSize, lineHeight, { fontSize, weight: 700, fill: bandTextColor, anchor: "start" }));
+    y += lines.length * lineHeight + Math.round(width * 0.018);
+  }
+
+  if (supporting?.text.trim()) {
+    const fontSize = Math.round(width * 0.026);
+    const lines = wrapText(getFont(400), supporting.text.trim(), safeWidth, fontSize);
+    const lineHeight = fontSize * 1.4;
+    parts.push(renderTextLines(lines, margin, y + fontSize, lineHeight, { fontSize, weight: 400, fill: "#3A4452", anchor: "start" }));
+    y += lines.length * lineHeight + Math.round(width * 0.025);
+  }
+
+  if (cta?.text.trim()) {
+    const fontSize = Math.round(width * 0.03);
+    const pill = buildCtaPillSvg(cta.text.trim(), {
+      centerX: margin + safeWidth / 2, top: y, maxWidth: safeWidth, fontSize, fill: accent, textColor: pillTextColor,
+    });
+    parts.push(pill.svg);
+    y += pill.height + Math.round(width * 0.025);
+  }
+
+  const footer = buildContactFooterSvg({
+    contact: input.contactInfo, x: margin, yTop: y, maxWidth: safeWidth,
+    fontSize: Math.round(width * 0.022), color: "#3A4452", align: "start",
+  });
+  if (footer.svg) {
+    parts.push(footer.svg);
+    y += footer.height;
+  }
+
+  const contentHeight = y + paddingBottom;
+  const targetBandHeight = Math.round(height * 0.28);
+  // No upper cap -- see SPLIT_BANNER's identical comment.
+  const bandHeight = Math.max(contentHeight, targetBandHeight);
+  const bandTop = height - bandHeight;
+
+  const band =
+    `<rect x="0" y="${round2(bandTop)}" width="${width}" height="${round2(bandHeight)}" fill="${escapeXml(bandFill)}" />` +
+    `<rect x="0" y="${round2(bandTop)}" width="${width}" height="${Math.max(2, Math.round(width * 0.004))}" fill="${escapeXml(accent)}" />`;
+
+  return `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">${band}<g transform="translate(0, ${round2(bandTop)})">${parts.join("")}</g></svg>`;
+}
+
+/**
+ * NEON_NIGHTLIFE: a dark scrim over the bottom of the frame with glowing
+ * brand-accent-colored headline/CTA text -- glow simulated with a wide
+ * low-opacity stroke behind the crisp fill (see glyphLineSvg), never a
+ * blur filter. Base text stays white/near-white for legibility even with
+ * the glow layered on.
+ */
+function buildNeonNightlifeSvg(input: TextOverlayLayoutInput, picked: PickedElements): string {
+  const { width, height } = input;
+  const accent = input.secondaryColor ?? input.accentColor ?? input.primaryColor ?? "#FF2E88";
+  const { headline, supporting, cta, brandLabel } = picked;
+
+  const margin = Math.round(width * 0.08);
+  const safeWidth = width - margin * 2;
+  const padding = Math.round(width * 0.05);
+
+  const parts: string[] = [];
+  let y = padding;
+
+  const brandFS = Math.round(width * 0.024);
+  if (brandLabel.text.trim()) {
+    parts.push(renderTextLines([brandLabel.text.trim()], margin, y + brandFS, brandFS * 1.2, {
+      fontSize: brandFS, weight: 700, fill: "#FFFFFF", anchor: "start", letterSpacing: Math.round(brandFS * 0.1),
+    }));
+    y += brandFS * 1.5;
+  }
+
+  if (headline?.text.trim()) {
+    const fontSize = Math.round(width * 0.05);
+    const lines = wrapText(getFont(800), headline.text.trim(), safeWidth, fontSize);
+    const lineHeight = fontSize * 1.2;
+    parts.push(renderTextLines(lines, margin, y + fontSize, lineHeight, { fontSize, weight: 800, fill: "#FFFFFF", anchor: "start", glowColor: accent }));
+    y += lines.length * lineHeight + Math.round(width * 0.018);
+  }
+
+  if (supporting?.text.trim()) {
+    const fontSize = Math.round(width * 0.026);
+    const lines = wrapText(getFont(400), supporting.text.trim(), safeWidth, fontSize);
+    const lineHeight = fontSize * 1.35;
+    parts.push(renderTextLines(lines, margin, y + fontSize, lineHeight, { fontSize, weight: 400, fill: "#E8E8EC", anchor: "start" }));
+    y += lines.length * lineHeight + Math.round(width * 0.02);
+  }
+
+  if (cta?.text.trim()) {
+    const fontSize = Math.round(width * 0.03);
+    const pillTextColor = legibleTextColorFor(accent);
+    const pill = buildCtaPillSvg(cta.text.trim(), {
+      centerX: margin + safeWidth / 2, top: y, maxWidth: safeWidth, fontSize, fill: accent, textColor: pillTextColor,
+    });
+    parts.push(pill.svg);
+    y += pill.height + Math.round(width * 0.02);
+  }
+
+  const footer = buildContactFooterSvg({
+    contact: input.contactInfo, x: margin, yTop: y, maxWidth: safeWidth,
+    fontSize: Math.round(width * 0.022), color: "#E8E8EC", align: "start",
+  });
+  if (footer.svg) {
+    parts.push(footer.svg);
+    y += footer.height;
+  }
+
+  const contentHeight = y + padding;
+  const targetScrimHeight = Math.round(height * 0.34);
+  // No upper cap -- see SPLIT_BANNER's identical comment.
+  const scrimHeight = Math.max(contentHeight, targetScrimHeight);
+  const scrimTop = height - scrimHeight;
+
+  // Two-layer dark scrim -- a fuller-opacity band plus a taller, lower-
+  // opacity layer above it for a soft fade toward the photo, without any
+  // gradient/filter primitive.
+  const scrim =
+    `<rect x="0" y="${round2(scrimTop - scrimHeight * 0.25)}" width="${width}" height="${round2(scrimHeight * 0.25)}" fill="#000000" fill-opacity="0.32" />` +
+    `<rect x="0" y="${round2(scrimTop)}" width="${width}" height="${round2(scrimHeight)}" fill="#000000" fill-opacity="0.78" />`;
+
+  return `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">${scrim}<g transform="translate(0, ${round2(scrimTop)})">${parts.join("")}</g></svg>`;
+}
+
 /** Dispatches to the layout-specific renderer for input.layoutArchetype.
  * A creative with genuinely no on-image text (no headline/supporting/CTA
  * and an empty business name) short-circuits to a bare, empty SVG for
@@ -806,17 +1660,35 @@ export function buildTextOverlaySvg(input: TextOverlayLayoutInput): string {
     return `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg"></svg>`;
   }
   switch (input.layoutArchetype) {
+    case "BASIC_ESSENTIAL":
+      return buildBasicEssentialSvg(input, picked);
     case "SPLIT_BANNER":
       return buildSplitBannerSvg(input, picked);
     case "FLOATING_CARD":
       return buildFloatingCardSvg(input, picked);
     case "EDITORIAL_FRAME":
       return buildEditorialFrameSvg(input, picked);
+    case "MINIMAL_FOOTER_STRIP":
+      return buildMinimalFooterStripSvg(input, picked);
+    case "ELEVATED_BADGE":
+      return buildElevatedBadgeSvg(input, picked);
+    case "DUAL_TONE_SIDEBAR":
+      return buildDualToneSidebarSvg(input, picked);
+    case "FROSTED_GLASS_CENTER":
+      return buildFrostedGlassCenterSvg(input, picked);
+    case "TYPOGRAPHIC_HERO":
+      return buildTypographicHeroSvg(input, picked);
+    case "POLAROID_LIFESTYLE":
+      return buildPolaroidLifestyleSvg(input, picked);
+    case "CLINICAL_TRUST":
+      return buildClinicalTrustSvg(input, picked);
+    case "NEON_NIGHTLIFE":
+      return buildNeonNightlifeSvg(input, picked);
     default:
       // Unreachable given validateCreativeTreatment's own enum check --
       // kept as a real, working default rather than a throw so a
       // never-quite-impossible bad value still renders something usable.
-      return buildFloatingCardSvg(input, picked);
+      return buildBasicEssentialSvg(input, picked);
   }
 }
 
