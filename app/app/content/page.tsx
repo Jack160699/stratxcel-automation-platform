@@ -1,6 +1,7 @@
 import { requireClientContext } from "@/lib/tenants/client-context";
 import { getCurrentBrandBrain } from "@stratxcel/brand-brain";
 import { ContentLibraryClient, type ContentItem } from "./ContentLibraryClient";
+import { isBrandOrLogoAsset } from "@/lib/social/brand-asset-filter";
 
 export const dynamic = "force-dynamic";
 
@@ -18,21 +19,24 @@ export const dynamic = "force-dynamic";
 // shop_profile_photo and {} both still included) before shipping this.
 const LOGO_VARIANT_PROVENANCE_FILTER = JSON.stringify({ purpose: "logo_variant" });
 
-async function loadTenantMedia(supabase: any, tenantId: string) {
+async function loadTenantMedia(supabase: any, tenantId: string, activeBrandBrain?: any) {
   try {
     const { data: assets } = await supabase
       .from("social_media_assets")
-      .select("id, original_name, mime_type, storage_bucket, storage_path, created_at, status")
+      .select("id, original_name, mime_type, storage_bucket, storage_path, created_at, status, provenance, source_type, generation_job_id")
       .eq("tenant_id", tenantId)
       .eq("status", "READY")
       .not("provenance", "cs", LOGO_VARIANT_PROVENANCE_FILTER)
       .order("created_at", { ascending: false })
-      .limit(15);
+      .limit(50);
 
     if (!assets || assets.length === 0) return [];
 
+    // Filter out brand assets, logo variants, and non-publishing media
+    const contentAssets = assets.filter((a: any) => !isBrandOrLogoAsset(a, activeBrandBrain));
+
     const items: Array<{ id: string; name: string; url: string; mimeType: string; createdAt: string }> = [];
-    for (const a of assets) {
+    for (const a of contentAssets) {
       try {
         const { data: signed } = await supabase.storage.from(a.storage_bucket).createSignedUrl(a.storage_path, 3600);
         if (signed?.signedUrl) {
@@ -234,9 +238,11 @@ export default async function CustomerContentPage() {
   const tenantId = ctx.workspaceTenant.tenantId;
   const tenantDb = ctx.supabase;
 
-  const [brain, mediaAssets, generations, captions] = await Promise.all([
-    getCurrentBrandBrain(tenantDb, tenantId).catch(() => null),
-    loadTenantMedia(tenantDb, tenantId),
+  // Load tenant brain first to provide active brand context for filtering
+  const brain = await getCurrentBrandBrain(tenantDb, tenantId).catch(() => null);
+
+  const [mediaAssets, generations, captions] = await Promise.all([
+    loadTenantMedia(tenantDb, tenantId, brain),
     loadImageGenerationCreatives(tenantDb, tenantId),
     loadTextCaptions(tenantDb, tenantId),
   ]);

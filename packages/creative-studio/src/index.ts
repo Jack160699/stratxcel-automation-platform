@@ -18,4 +18,5 @@ export * from "./revision/loop.ts";
 export * from "./selection/best-candidate.ts";
 export * from "./binding/final-artifact.ts";
 export * from "./package/compositions.ts";
+export * from "./treatment/creative-treatment.ts";
 export * from "./pipeline/run-studio.ts";

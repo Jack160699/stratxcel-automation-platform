@@ -164,11 +164,43 @@ export async function DELETE(request: Request) {
 
   const { data: asset } = await ctx.supabase
     .from("social_media_assets")
-    .select("id, storage_bucket, storage_path")
+    .select("id, storage_bucket, storage_path, provenance")
     .eq("id", assetId)
     .eq("tenant_id", tenantId)
     .maybeSingle();
   if (!asset) return Response.json({ error: "Photo not found" }, { status: 404 });
+
+  // Safeguard: Do not allow deletion if the asset is currently bound to active Brand Brain logo / logo_variants
+  const { data: brain } = await ctx.supabase
+    .from("brand_brains")
+    .select("current_version")
+    .eq("tenant_id", tenantId)
+    .maybeSingle();
+
+  if (brain?.current_version) {
+    const { data: version } = await ctx.supabase
+      .from("brand_brain_versions")
+      .select("content")
+      .eq("tenant_id", tenantId)
+      .eq("version", brain.current_version)
+      .maybeSingle();
+
+    const brainContent = (version?.content || {}) as Record<string, unknown>;
+    const logoUrl = typeof brainContent.logo_url === "string" ? brainContent.logo_url : "";
+    const logoVariants = (brainContent.logo_variants || {}) as Record<string, unknown>;
+    const isBound =
+      (logoUrl && (logoUrl.includes(assetId) || (asset.storage_path && logoUrl.includes(asset.storage_path)))) ||
+      Object.values(logoVariants).some(
+        (v) => typeof v === "string" && (v.includes(assetId) || (asset.storage_path && v.includes(asset.storage_path)))
+      );
+
+    if (isBound) {
+      return Response.json(
+        { error: "Cannot delete an asset that is currently set as an active brand logo." },
+        { status: 400 }
+      );
+    }
+  }
 
   await ctx.supabase.storage.from(asset.storage_bucket).remove([asset.storage_path]);
   const { error } = await ctx.supabase.from("social_media_assets").delete().eq("id", assetId);

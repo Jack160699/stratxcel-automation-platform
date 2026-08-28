@@ -1,6 +1,9 @@
 import crypto from "node:crypto";
 import { requireImageGenerationContext } from "@/lib/image-generation/http";
 import { extensionForName, validateMediaMetadata } from "@/lib/social/media-validation";
+import { isBrandOrLogoAsset } from "@/lib/social/brand-asset-filter";
+
+import { getCurrentBrandBrain } from "@stratxcel/brand-brain";
 
 export const runtime = "nodejs";
 
@@ -14,19 +17,56 @@ function safeName(name: string) {
 export async function GET() {
   const ctx = await requireImageGenerationContext();
   if (!ctx.ok) return Response.json({ error: ctx.error }, { status: ctx.status });
+
+  // 1. Fetch current and historical Brand Brain records to cross-reference all logo URLs and variants
+  const brandBrainRecords: any[] = [];
+  try {
+    const currentBrain = await getCurrentBrandBrain(ctx.supabase, ctx.tenantId).catch(() => null);
+    if (currentBrain) {
+      brandBrainRecords.push(currentBrain);
+    }
+    const { data: versions } = await ctx.supabase
+      .from("brand_brain_versions")
+      .select("content")
+      .eq("tenant_id", ctx.tenantId)
+      .limit(20);
+    if (versions) {
+      brandBrainRecords.push(...versions);
+    }
+  } catch {
+    // Non-fatal if brand brain lookup fails
+  }
+
   const { data, error } = await ctx.supabase
     .from("social_media_assets")
-    .select("id,original_name,mime_type,size_bytes,source_type,created_at,storage_bucket,storage_path")
+    .select("id,original_name,mime_type,size_bytes,source_type,created_at,storage_bucket,storage_path,provenance")
     .eq("tenant_id", ctx.tenantId)
     .eq("status", "READY")
     .in("mime_type", [...REFERENCE_MIME_TYPES])
     .order("created_at", { ascending: false })
-    .limit(50);
+    .limit(100);
+
   if (error) return Response.json({ error: "Reference assets could not be loaded" }, { status: 500 });
-  const assets = await Promise.all((data ?? []).map(async (asset) => {
+
+  // Filter out any brand assets, logo variants, or active brand logos
+  const eligibleAssets = (data ?? []).filter((asset) => !isBrandOrLogoAsset(asset, brandBrainRecords)).slice(0, 50);
+
+  const assets = await Promise.all(eligibleAssets.map(async (asset) => {
     const { data: signed } = await ctx.service.storage.from(asset.storage_bucket).createSignedUrl(asset.storage_path, 10 * 60);
-    return { ...asset, previewUrl: signed?.signedUrl ?? null };
+    return {
+      id: asset.id,
+      original_name: asset.original_name,
+      mime_type: asset.mime_type,
+      size_bytes: asset.size_bytes,
+      source_type: asset.source_type,
+      created_at: asset.created_at,
+      storage_bucket: asset.storage_bucket,
+      storage_path: asset.storage_path,
+      provenance: asset.provenance,
+      previewUrl: signed?.signedUrl ?? null,
+    };
   }));
+
   return Response.json({ assets });
 }
 

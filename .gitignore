@@ -49,3 +49,6 @@ next-env.d.ts
 # Supabase CLI local cache (created by `supabase link`) — never commit
 supabase/.temp/
 .quality-campaign-bridge-token.local
+
+# Local benchmark & scratch review artifacts
+scratch/

@@ -421,6 +421,39 @@ export async function removeUnattachedMediaAsset(ctx: AgentActorContext, assetId
   const { data } = await query.maybeSingle();
   const asset = data as MediaAssetRow | null;
   if (!asset) throw new Error("Media asset cannot be removed.");
+
+  // Safeguard: check if asset is bound to active Brand Brain logo / logo_variants
+  const targetTenantId = asset.tenant_id || (isTenantAgentContext(ctx) ? ctx.tenantId : null);
+  if (targetTenantId) {
+    const { data: brain } = await ctx.supabase
+      .from("brand_brains")
+      .select("current_version")
+      .eq("tenant_id", targetTenantId)
+      .maybeSingle();
+
+    if (brain?.current_version) {
+      const { data: version } = await ctx.supabase
+        .from("brand_brain_versions")
+        .select("content")
+        .eq("tenant_id", targetTenantId)
+        .eq("version", brain.current_version)
+        .maybeSingle();
+
+      const brainContent = (version?.content || {}) as Record<string, unknown>;
+      const logoUrl = typeof brainContent.logo_url === "string" ? brainContent.logo_url : "";
+      const logoVariants = (brainContent.logo_variants || {}) as Record<string, unknown>;
+      const isBound =
+        (logoUrl && (logoUrl.includes(asset.id) || (asset.storage_path && logoUrl.includes(asset.storage_path)))) ||
+        Object.values(logoVariants).some(
+          (v) => typeof v === "string" && (v.includes(asset.id) || (asset.storage_path && v.includes(asset.storage_path)))
+        );
+
+      if (isBound) {
+        throw new Error("Cannot delete an asset that is currently set as an active brand logo.");
+      }
+    }
+  }
+
   const [{ count: masterCount }, { count: variantCount }] = await Promise.all([
     ctx.supabase.from("social_content_master_media").select("*", { count: "exact", head: true }).eq("asset_id", asset.id),
     ctx.supabase.from("social_content_variant_media").select("*", { count: "exact", head: true }).eq("asset_id", asset.id),

@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Card, CardHeading } from "@/components/ui/Card";
 import { uploadToSignedUrlWithProgress } from "@/lib/social/media-upload-client";
+import { isBrandOrLogoAsset } from "@/lib/social/brand-asset-filter";
 import type { ImageGenerationCandidateRow, ImageGenerationJobRow, ImageJobDetail } from "@/lib/image-generation/types";
 
 interface ReferenceAsset {
@@ -13,6 +14,8 @@ interface ReferenceAsset {
   original_name: string;
   mime_type: string;
   source_type: string;
+  storage_path?: string;
+  provenance?: Record<string, unknown> | null;
   previewUrl: string | null;
 }
 
@@ -71,7 +74,33 @@ export function CreativeStudioWorkspace(props: {
   const loadReferences = useCallback(async () => {
     const response = await fetch("/api/platform/image-generations/references", { cache: "no-store" });
     const result = await response.json();
-    if (response.ok) setReferences(result.assets ?? []);
+    if (response.ok) {
+      const rawAssets: ReferenceAsset[] = result.assets ?? [];
+      const cleanAssets = rawAssets.filter((a) => {
+        if (isBrandOrLogoAsset(a)) return false;
+        const name = (a.original_name || "").toLowerCase();
+        const path = (a.storage_path || "").toLowerCase();
+        if (
+          name.includes("logo") ||
+          name.includes("transparent") ||
+          name.includes("monodark") ||
+          name.includes("monolight") ||
+          name.includes("badge") ||
+          name.includes("brand") ||
+          path.includes("logo") ||
+          path.includes("transparent") ||
+          path.includes("monodark") ||
+          path.includes("monolight") ||
+          path.includes("badge") ||
+          path.includes("brand") ||
+          path.includes("shop-profile")
+        ) {
+          return false;
+        }
+        return true;
+      });
+      setReferences(cleanAssets);
+    }
   }, []);
 
   const loadDetail = useCallback(async (jobId: string) => {

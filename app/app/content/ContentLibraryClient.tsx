@@ -107,6 +107,36 @@ export function ContentLibraryClient({
 
   const filteredItems = useMemo(() => {
     return items.filter((item) => {
+      // Exclude any brand asset / logo variant items from the content feed
+      const titleLower = item.title.toLowerCase();
+      if (
+        titleLower.includes("logo") ||
+        titleLower.includes("transparent") ||
+        titleLower.includes("monodark") ||
+        titleLower.includes("mono_dark") ||
+        titleLower.includes("mono-dark") ||
+        titleLower.includes("monolight") ||
+        titleLower.includes("mono_light") ||
+        titleLower.includes("mono-light") ||
+        titleLower.includes("monochrome") ||
+        titleLower.includes("badge") ||
+        titleLower.includes("brand_mark") ||
+        titleLower.includes("brandmark") ||
+        titleLower.includes("brand-mark") ||
+        titleLower.includes("brand_asset") ||
+        titleLower.includes("brandasset") ||
+        titleLower.includes("brand-asset") ||
+        titleLower.includes("brand_profile") ||
+        titleLower.includes("shop_profile") ||
+        titleLower.includes("profile_photo") ||
+        titleLower.includes("shop_photo") ||
+        titleLower.startsWith("brand-") ||
+        titleLower.startsWith("brand_") ||
+        titleLower === "brand"
+      ) {
+        return false;
+      }
+
       // Tab filter
       if (activeTab === "creatives" && item.type !== "image" && item.type !== "creative" && item.type !== "poster") return false;
       if (activeTab === "drafts" && !["DRAFT", "READY", "QUEUED", "PROCESSING", "REVIEWING", "REVISING"].includes(item.status)) return false;
