@@ -345,7 +345,25 @@ export function AutopilotDashboard() {
   if (error) return <ErrorState message={error} onRetry={load} />;
   if (!data) return <p className="text-sm text-sx-text-muted">Loading Autopilot…</p>;
 
-  if (!data.activated) return <ActivationChecklist tenantId={tenantId} eligibility={data.eligibility} onActivated={load} />;
+  // Visual style preferences and manual/on-demand generation (Subscription-
+  // Gated Visual Archetypes brief) are their own Growth+ capability, gated
+  // only by plan tier -- NOT by whether the separate automated package
+  // queue (social_autopilot_authorizations) has finished its own brand/
+  // entitlement/connected-account activation checklist below. A Growth
+  // tenant who hasn't activated the automated package yet can still pick a
+  // visual style and generate manually today; rendering these only inside
+  // the "activated" branch (a real bug found during live verification --
+  // they were unreachable for any tenant still on the setup checklist) hid
+  // an entire Growth+ capability behind an unrelated precondition.
+  if (!data.activated) {
+    return (
+      <div className="flex flex-col gap-4">
+        <VisualStyleCard tenantId={tenantId} />
+        <ManualArchetypeGeneration tenantId={tenantId} />
+        <ActivationChecklist tenantId={tenantId} eligibility={data.eligibility} onActivated={load} />
+      </div>
+    );
+  }
 
   const runControl = async (action: "pause" | "resume" | "cancel") => {
     setBusyAction(true);
