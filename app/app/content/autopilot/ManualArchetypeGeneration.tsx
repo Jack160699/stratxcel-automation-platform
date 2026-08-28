@@ -41,19 +41,31 @@ export function ManualArchetypeGeneration({ tenantId }: { tenantId: string }) {
   const [chosenArchetype, setChosenArchetype] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // A transient fetch failure (network blip, momentary auth hiccup) must
+  // never be silently reinterpreted as "this tier doesn't have manual
+  // generation" -- that conflation was a real bug found live: any failed
+  // load permanently hid the whole card with no visible error and no way
+  // to recover short of reloading the page. Tracked separately so a real
+  // failure shows a real, retriable error instead of quietly vanishing.
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [detail, setDetail] = useState<JobDetail | null>(null);
   const pollRun = useRef(0);
 
-  useEffect(() => {
+  const loadPreferences = useCallback(() => {
+    setLoadError(null);
     fetchPreferences(tenantId)
       .then((result) => {
         setPremiumSelectionAvailable(result.premiumSelectionAvailable);
         setPreferred(result.preferredArchetypes);
         setCatalog(result.catalog);
-        setChosenArchetype(result.preferredArchetypes[0] ?? null);
+        setChosenArchetype((current) => current ?? result.preferredArchetypes[0] ?? null);
       })
-      .catch(() => setPremiumSelectionAvailable(false));
+      .catch((err) => setLoadError(err instanceof Error ? err.message : "Could not load your visual style preferences."));
   }, [tenantId]);
+
+  useEffect(() => {
+    loadPreferences();
+  }, [loadPreferences]);
 
   const loadDetail = useCallback(async (jobId: string) => {
     const response = await fetch(`/api/platform/image-generations/${encodeURIComponent(jobId)}`, { cache: "no-store" });
@@ -102,6 +114,16 @@ export function ManualArchetypeGeneration({ tenantId }: { tenantId: string }) {
     }
   };
 
+  if (loadError) {
+    return (
+      <Card variant="panel">
+        <CardHeading>Manual generation</CardHeading>
+        <div className="mt-3">
+          <ErrorState message={loadError} onRetry={loadPreferences} />
+        </div>
+      </Card>
+    );
+  }
   if (premiumSelectionAvailable === null) return null; // still loading -- render nothing rather than a flash of the wrong state
   if (!premiumSelectionAvailable) return null; // Starter/free: no manual generation surface at all
 
