@@ -62,6 +62,35 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
     // app/api/platform/brand/photos/route.ts's DELETE).
     const { data: asset } = await service.from("social_media_assets").select("storage_bucket, storage_path").eq("id", id).eq("tenant_id", tenantId).maybeSingle();
     if (!asset) return NextResponse.json({ error: "Asset not found" }, { status: 404 });
+
+    // Content Library Filtering mission Safeguard: a BrandBrain Logo
+    // Engine variant should already be invisible in this UI (the query
+    // that feeds it now excludes provenance.purpose: "logo_variant"), but
+    // this route must not itself trust that the client is running the
+    // fixed frontend -- a stale page, a direct API call, or a race with
+    // the deploy could still send a logo variant's real id here. Deleting
+    // its storage object out from under an active brand_brains
+    // logo_variants reference would silently break both the Brand Center
+    // preview and the real production compositor (lib/brand/
+    // logo-variant-resolver.ts, which downloads by this exact assetId).
+    // Checked directly against the live brand_brains content rather than
+    // relying on provenance alone, since a tenant could in principle have
+    // saved a manually-uploaded asset id there too.
+    const { data: brandBrain } = await service.from("brand_brains").select("tenant_id, current_version").eq("tenant_id", tenantId).maybeSingle();
+    if (brandBrain) {
+      const { data: version } = await service
+        .from("brand_brain_versions")
+        .select("content")
+        .eq("tenant_id", tenantId)
+        .eq("version", brandBrain.current_version)
+        .maybeSingle();
+      const logoVariants = (version?.content as Record<string, unknown> | undefined)?.logo_variants as Record<string, { assetId?: unknown }> | undefined;
+      const referencedAssetIds = new Set(Object.values(logoVariants ?? {}).map((v) => v?.assetId).filter((v): v is string => typeof v === "string"));
+      if (referencedAssetIds.has(id)) {
+        return NextResponse.json({ error: "This image is part of your active saved logo. Remove or replace your logo from Brand Center first." }, { status: 409 });
+      }
+    }
+
     await service.storage.from(asset.storage_bucket).remove([asset.storage_path]).catch(() => undefined);
     const { error } = await service.from("social_media_assets").delete().eq("id", id).eq("tenant_id", tenantId);
     if (error) return NextResponse.json({ error: "Could not delete this asset." }, { status: 500 });

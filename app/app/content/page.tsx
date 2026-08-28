@@ -4,6 +4,20 @@ import { ContentLibraryClient, type ContentItem } from "./ContentLibraryClient";
 
 export const dynamic = "force-dynamic";
 
+// Real bug found live: the BrandBrain Logo Engine's 4 generated variants
+// (transparent/monoLight/monoDark/badge) are real social_media_assets
+// rows (provenance.purpose: "logo_variant" -- see lib/brand/logo-
+// analyzer.ts / app/api/platform/brand/logo-analyze/route.ts), and this
+// query pulled every READY asset for the tenant with no purpose filter
+// at all, so they showed up as ordinary content cards. Excluded via
+// PostgREST's "not contains" (`cs` negated) rather than a plain
+// `.neq("provenance->>purpose", ...)`: a NULL/absent purpose key would
+// make a `!=` comparison evaluate to NULL (excluded) in SQL, which would
+// have silently hidden every asset with no recorded purpose at all --
+// verified live against real provenance shapes (logo_variant excluded,
+// shop_profile_photo and {} both still included) before shipping this.
+const LOGO_VARIANT_PROVENANCE_FILTER = JSON.stringify({ purpose: "logo_variant" });
+
 async function loadTenantMedia(supabase: any, tenantId: string) {
   try {
     const { data: assets } = await supabase
@@ -11,6 +25,7 @@ async function loadTenantMedia(supabase: any, tenantId: string) {
       .select("id, original_name, mime_type, storage_bucket, storage_path, created_at, status")
       .eq("tenant_id", tenantId)
       .eq("status", "READY")
+      .not("provenance", "cs", LOGO_VARIANT_PROVENANCE_FILTER)
       .order("created_at", { ascending: false })
       .limit(15);
 

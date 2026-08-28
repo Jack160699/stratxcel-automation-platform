@@ -185,6 +185,15 @@ async function run() {
   assert.ok(!contentLibraryPage.includes("treatment?.ctaDirection"), "must not read the nonexistent CreativeTreatment.ctaDirection field -- the real CTA lives at treatment.cta.text (a CtaDecision object)");
   assert.ok(contentLibraryPage.includes("cta?.text"), "the CTA line shown on a content card must read the real treatment.cta.text field");
 
+  // Content Library Filtering mission: BrandBrain Logo Engine variants
+  // (provenance.purpose: "logo_variant") must never surface as content
+  // cards -- verified live that .not("provenance", "cs", ...) (NOT
+  // "contains") is the safe exclusion, since a naive .neq() on the JSON
+  // path would silently also hide every asset with no recorded purpose at
+  // all (NULL != 'x' is NULL, not TRUE, in SQL).
+  assert.ok(contentLibraryPage.includes('.not("provenance", "cs"'), "the tenant-media query must exclude logo_variant rows via a real, verified-safe provenance filter, not pull every READY asset unconditionally");
+  assert.ok(contentLibraryPage.includes("logo_variant"), "the exclusion filter must actually target the real purpose value logo-analyze/route.ts writes");
+
   // BrandBrain Logo Engine Phase 4: the real production wiring from a
   // tenant's saved logo_variants (brand_brains content JSONB) into the
   // deterministic compositor's logoVariants input. Verified as source-
@@ -202,6 +211,16 @@ async function run() {
   const logoAnalyzeRoute = read("app", "api", "platform", "brand", "logo-analyze", "route.ts");
   assert.ok(logoAnalyzeRoute.includes("analyzeLogo"), "the logo-analyze route must use the real sharp pipeline, not a stub");
   assert.ok(logoAnalyzeRoute.includes('provenance: { purpose:'), "each generated variant must record its own provenance (purpose/variant/sourceAssetId/dimensions) on its social_media_assets row -- never an untraceable generated asset");
+
+  // Content Library Filtering mission Safeguard: the delete route must
+  // never let a client (stale frontend, direct API call, or a race with
+  // the deploy) delete a social_media_asset that's actively referenced as
+  // this tenant's saved logo -- checked against the real, live
+  // brand_brains content, not just inferred from provenance.
+  const contentDeleteRoute = read("app", "api", "platform", "content", "[id]", "route.ts");
+  assert.ok(contentDeleteRoute.includes("logo_variants"), "the delete route must check the real saved logo_variants before deleting a social_media_asset");
+  assert.ok(contentDeleteRoute.includes("referencedAssetIds"), "the safeguard must check the actual referenced asset ids, not just a provenance guess");
+  assert.match(contentDeleteRoute, /status:\s*409/, "an attempt to delete an actively-referenced logo asset must be rejected with a real conflict status, not silently succeed");
   const brandPage = read("app", "app", "brand", "page.tsx");
   assert.ok(brandPage.includes("uploadToSignedUrlWithProgress"), "the fixed upload flow must actually use the real signed-upload protocol, not the broken raw-FormData POST it replaced");
   assert.ok(!brandPage.includes('formData.append("file", file)'), "the broken raw-multipart upload path must be fully removed, not left as dead/parallel code");
