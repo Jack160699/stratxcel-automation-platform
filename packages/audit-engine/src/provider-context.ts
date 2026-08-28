@@ -1,4 +1,4 @@
-import type { BrandBrainContent } from "@stratxcel/brand-brain";
+import { getActiveServices, type BrandBrainContent } from "@stratxcel/brand-brain";
 
 /**
  * Explicit allowlist of business context fields that may be sent to AI providers
@@ -114,6 +114,16 @@ function products(value: unknown): Array<{ name: string; description?: string }>
   return items.length ? items : undefined;
 }
 
+/** Only consulted when the legacy `products` field is absent — see
+ * getActiveServices (canonical.ts) for the services/products
+ * normalization + legacy-fallback logic itself. */
+function canonicalProductsServices(brain: BrandBrainContent): Array<{ name: string; description?: string }> | undefined {
+  const items = getActiveServices(brain)
+    .slice(0, 12)
+    .map((s) => ({ name: s.name.slice(0, 240), description: s.shortDescription ? s.shortDescription.slice(0, 1_000) : undefined }));
+  return items.length ? items : undefined;
+}
+
 /**
  * Builds the only business context packet allowed into Audit provider prompts.
  * Unknown Brand Brain keys and forbidden billing/auth fields are dropped.
@@ -134,7 +144,12 @@ export function buildAuditProviderBusinessContext(input: {
     businessName: text(input.businessName) ?? text(brain.business_name),
     industry: text(input.industry) ?? text(brain.industry),
     description: text(brain.business_description) ?? text(brain.description),
-    productsServices: products(brain.products),
+    // Canonical services (Brand Brain Final UX + Data + Save System
+    // Section 7) — falls back to the legacy `products` field automatically
+    // via getActiveServices, so a tenant on either shape still surfaces
+    // real offer context to Audit generation instead of silently going
+    // empty once they migrate to the new structured Services editor.
+    productsServices: products(brain.products) ?? canonicalProductsServices(brain as BrandBrainContent),
     priorityOffering: text(brain.priority_offering),
     customerSegments: stringList(brain.customer_segments)
       ?? stringList(

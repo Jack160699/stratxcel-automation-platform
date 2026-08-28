@@ -15,7 +15,7 @@ import { validatePackageComposition, compositionMediaTypeForUnit, resolvePurchas
 import { selectPackageMediaAsset } from "./package-media.ts";
 import { recordAudit } from "./repositories/system.ts";
 import { hasCapability, isPlanTier } from "@stratxcel/payments-and-wallet";
-import { getCurrentBrandBrain } from "@stratxcel/brand-brain";
+import { getCurrentBrandBrain, getActiveServices } from "@stratxcel/brand-brain";
 import { createSocialAuditConnectorInsightsProvider } from "./audit-connector-insights.ts";
 import { buildVerifiedBusinessInformation } from "./package-business-facts.ts";
 import { buildCreativeBrief, formatCreativeBriefForPrompt, selectObjective } from "./creative-brief.ts";
@@ -680,6 +680,17 @@ export async function prepareNearTermPackageItems(service: ServiceClient, author
     const insights = connectorInsightsResult.status === "fulfilled" ? connectorInsightsResult.value : null;
     const googleBusiness = insights?.googleBusiness.state === "available" ? insights.googleBusiness.data : null;
     businessInformation = buildVerifiedBusinessInformation({ googleBusiness, brandBrain: brandBrain?.content ?? null });
+    // Brand Brain Final UX + Data + Save System Section 7: the tenant's
+    // real structured Services (added via /app/brand's Services editor)
+    // must reach Social Autopilot's real automated generation, not just
+    // whatever the separately-maintained social_brand_profiles.products
+    // happens to have. Additive to buildVerifiedBusinessInformation's own
+    // facts (never replaces them) -- getActiveServices already handles the
+    // legacy `products` fallback, so this is a no-op duplicate for a
+    // tenant whose brandProfile.products already came from the same
+    // source, and real new signal for one who has only saved services on
+    // the canonical Brand Brain.
+    businessInformation = [...businessInformation, ...getActiveServices(brandBrain?.content).map((s) => (s.shortDescription ? `Service: ${s.name} — ${s.shortDescription}` : `Service: ${s.name}`))];
   }
 
   for (const raw of dueItems ?? []) {

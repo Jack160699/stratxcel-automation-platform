@@ -30,9 +30,9 @@ export default function WebsiteFactoryPage() {
     phone?: string;
     location?: string;
     description?: string;
-    services?: string[];
+    services: string[];
     logoUrl?: string | null;
-  }>({});
+  }>({ services: [] });
   const [loadingShop, setLoadingShop] = useState(true);
 
   // Builder steps: "package" | "shop_confirm" | "style_select" | "builder"
@@ -51,12 +51,22 @@ export default function WebsiteFactoryPage() {
       .then((data) => {
         if (data?.brandBrain?.content) {
           const c = data.brandBrain.content;
+          // Brand Brain Final UX + Data + Save System Section 7: prefer
+          // the canonical, structured `services` array (active only) over
+          // the legacy catalog_tags/products fields it superseded — same
+          // fallback order getCanonicalServices (@stratxcel/brand-brain)
+          // uses server-side, kept inline here since this is a client
+          // component reading an already-fetched JSON payload, not a
+          // second persisted data store.
+          const services: string[] = Array.isArray(c.services) && c.services.length
+            ? c.services.filter((s: { active?: boolean }) => s?.active !== false).map((s: { name?: string }) => s?.name).filter((n: unknown): n is string => Boolean(n))
+            : c.catalog_tags || (c.products ? c.products.map((p: any) => p.name) : []);
           setShopData({
             industry: c.industry || "Local Retail & Services",
             phone: c.business_phone || "",
             location: c.location || "",
             description: c.positioning || "",
-            services: c.catalog_tags || (c.products ? c.products.map((p: any) => p.name) : []),
+            services,
             logoUrl: c.logo_url || null,
           });
         }
@@ -74,12 +84,21 @@ export default function WebsiteFactoryPage() {
   // already answers and to resolve the real business name. Every AI-built
   // site was therefore generated with no knowledge of the real business at
   // all, falling through to a regex-guessed or hardcoded placeholder name.
+  //
+  // Second real gap fixed here (Brand Brain Final UX + Data + Save System
+  // Section 7): shopData.services was already fetched (for the Step 2
+  // confirm screen) but never forwarded either — the website builder had
+  // real business identity but zero knowledge of what the business
+  // actually offers, so it could never pre-populate service/product pages
+  // from a tenant's real saved catalog.
   const connectorContext: AuthorizedConnectorContext = {
     brandBrain: {
       businessName,
       industry: shopData.industry,
       logoUrl: shopData.logoUrl || undefined,
+      story: shopData.description || undefined,
     },
+    catalog: shopData.services.length ? { existingServices: shopData.services.map((title) => ({ title })) } : undefined,
   };
 
   if (!tenantId) {

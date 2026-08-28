@@ -37,7 +37,7 @@
  * logo graphic on the finished creative (only the business name as text),
  * because 10 of the 12 registered archetypes don't place one yet.
  */
-import { getCurrentBrandBrain } from "@stratxcel/brand-brain";
+import { getCurrentBrandBrain, getCanonicalBrandContext } from "@stratxcel/brand-brain";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { resolveConfiguredProvider } from "./agent/provider.ts";
 import { buildCreativeBrief, type CreativeBrief } from "./creative-brief.ts";
@@ -86,37 +86,14 @@ const STUDIO_ARCHETYPE_ROUTING: ArchetypeRoutingContext = {
   reason: "Creative Studio restricts to the two layout archetypes whose compositor implementation places the tenant's real logo image today -- see text-overlay-render.ts.",
 };
 
-/** Verified facts drawn straight from this tenant's saved Brand Brain
- * content -- the same "company info, services, packages" the mission asks
- * to be injected, never fabricated. Mirrors package-business-facts.ts's
- * "Label: value" shape so downstream consumers (the treatment prompt's
- * verified-facts handling, validateCreativeTreatment's placeholder checks)
- * behave identically regardless of which pipeline supplied them. */
-function buildVerifiedFactsFromBrandBrain(content: Record<string, unknown>): string[] {
-  const facts: string[] = [];
-  if (typeof content.target_audience === "string" && content.target_audience.trim()) {
-    facts.push(`Target audience: ${content.target_audience.trim()}`);
-  }
-  if (Array.isArray(content.products)) {
-    for (const product of content.products) {
-      if (!product || typeof product !== "object") continue;
-      const name = typeof (product as { name?: unknown }).name === "string" ? (product as { name?: string }).name!.trim() : "";
-      const description = typeof (product as { description?: unknown }).description === "string" ? (product as { description?: string }).description!.trim() : "";
-      if (!name) continue;
-      facts.push(description ? `Product/service: ${name} — ${description}` : `Product/service: ${name}`);
-    }
-  }
-  if (Array.isArray(content.rules)) {
-    for (const rule of content.rules) {
-      if (typeof rule === "string" && rule.trim()) facts.push(`Brand rule: ${rule.trim()}`);
-    }
-  }
-  if (Array.isArray(content.locations)) {
-    for (const location of content.locations) {
-      if (typeof location === "string" && location.trim()) facts.push(`Location: ${location.trim()}`);
-    }
-  }
-  return facts;
+/** Brand rules ("things missions must never do or say") are real grounding
+ * context for the AI, but they are constraints, not facts -- Section 10
+ * requires keeping them out of the canonical verifiedFacts list itself
+ * (buildVerifiedFacts), so they're appended separately here into the same
+ * businessInformation bucket the provider call already sends. */
+function buildRuleConstraints(content: Record<string, unknown>): string[] {
+  const rules = Array.isArray(content.rules) ? content.rules : [];
+  return rules.filter((r): r is string => typeof r === "string" && r.trim().length > 0).map((r) => `Brand rule (must follow): ${r.trim()}`);
 }
 
 export async function generateStudioCreativeTreatment(args: {
@@ -132,15 +109,23 @@ export async function generateStudioCreativeTreatment(args: {
 
     const brandBrain = await getCurrentBrandBrain(args.writeClient as never, args.tenantId);
     const content = (brandBrain?.content ?? {}) as Record<string, unknown>;
-    const businessName = typeof content.business_name === "string" ? content.business_name.trim() : "";
-    const industryText = typeof content.industry === "string" ? content.industry : null;
-    const brandTone = typeof content.tone_of_voice === "string" ? content.tone_of_voice.split(/,\s*/).filter(Boolean) : [];
-    const brandColors = Array.isArray(content.color_hints) ? content.color_hints.map(String) : [];
-    const audience = typeof content.target_audience === "string" ? content.target_audience : null;
+    // Single source of truth (Brand Brain Final UX + Data + Save System
+    // Section 7): business identity, services (canonical `services`, with
+    // the legacy `products` fallback), and verified facts all come from
+    // the one shared canonical snapshot instead of this file hand-picking
+    // raw content fields -- the exact same helper every other real
+    // consumer (image-generation, the workforce brand-context compiler,
+    // Social Autopilot) now uses.
+    const canonical = getCanonicalBrandContext(brandBrain?.content);
+    const businessName = canonical.businessName;
+    const industryText = canonical.industry;
+    const brandTone = canonical.toneOfVoice ? canonical.toneOfVoice.split(/,\s*/).filter(Boolean) : [];
+    const brandColors = canonical.colors;
+    const audience = canonical.targetAudience;
     const pillars = Array.isArray(content.pillars)
       ? content.pillars.filter((p): p is string => typeof p === "string" && p.trim().length > 0)
       : [];
-    const verifiedFacts = buildVerifiedFactsFromBrandBrain(content);
+    const verifiedFacts = [...canonical.verifiedFacts, ...buildRuleConstraints(content)];
     const objective = INTENDED_USE_OBJECTIVE[args.intendedUse] ?? "ENGAGEMENT";
 
     const brief: CreativeBrief = buildCreativeBrief({

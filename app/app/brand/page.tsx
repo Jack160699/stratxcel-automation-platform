@@ -5,12 +5,14 @@ import { useCurrentTenant } from "../CurrentTenantContext";
 import { Card, CardHeading } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Field, Input, Textarea } from "@/components/ui/Input";
-import { ErrorState, EmptyState } from "@/components/ui/Feedback";
+import { ErrorState } from "@/components/ui/Feedback";
 import { trackFunnel } from "@/lib/analytics/events";
 import { loadCustomerJson } from "@/lib/customer-app/load-result";
 import { DigitalPresenceCards } from "@/components/audit/DigitalPresenceCards";
 import { uploadToSignedUrlWithProgress } from "@/lib/social/media-upload-client";
+import { validateBrandBrainContent, HIGHLIGHT_MAX_LENGTH, HIGHLIGHTS_MAX_COUNT, type BrandBrainService } from "@stratxcel/brand-brain";
 import { LogoAnalyzerFlow } from "./LogoAnalyzerFlow";
+import { ServicesEditor } from "./ServicesEditor";
 
 interface BrandBrainContent {
   business_name?: string;
@@ -19,12 +21,20 @@ interface BrandBrainContent {
   location?: string;
   /** Shop-facing contact number — StratXcel App reference's Location & Hours row. Distinct from the WhatsApp OTP-verified number (Connected Accounts); this is a plain display field for the shop's public phone line, no verification. */
   business_phone?: string;
+  /** Optional shop-facing email — "email where supported" (Brand Brain Final UX + Data + Save System §6). Never required; not every business wants a public inbox. */
+  business_email?: string;
   /** Weekly hours as one free-text line (e.g. "Mon–Sat: 8:00 AM – 9:30 PM") — kept as a single field like every other Brand Brain string, not a structured per-day schema. */
   business_hours?: string;
-  /** Short catalog/service tags — Brand Center's "Catalog & Services" chips. */
+  /** @deprecated Superseded by `services` — see ServicesEditor / getCanonicalServices (@stratxcel/brand-brain). Left unedited by this page; kept only so a tenant's pre-existing tags aren't silently deleted. */
   catalog_tags?: string[];
-  /** Short highlight lines — Brand Center's "Business Highlights". */
+  /** Short highlight lines — Brand Center's "Business Highlights". A
+   * concise summary, NOT the service catalog (Section 2) — length/count
+   * guided client-side and enforced server-side (validateBrandBrainContent). */
   highlights?: string[];
+  /** The canonical, structured services/products list. Always read via
+   * getCanonicalServices() elsewhere in the platform — this page edits the
+   * raw array directly since it IS the source of truth being edited. */
+  services?: BrandBrainService[];
   positioning?: string;
   tone_of_voice?: string;
   target_audience?: string;
@@ -33,6 +43,7 @@ interface BrandBrainContent {
   channels?: string[];
   pillars?: string[];
   rules?: string[];
+  /** @deprecated Superseded by `services`. Read-fallback only (getCanonicalServices) — this page no longer writes it. */
   products?: { name: string; description: string }[];
   biggest_business_problem?: string;
   [key: string]: unknown;
@@ -44,6 +55,8 @@ interface ShopPhoto {
   url: string | null;
 }
 
+type SaveStatus = "idle" | "unsaved" | "saving" | "saved" | "error";
+
 const EMPTY: BrandBrainContent = {};
 
 /** Weekend-hours check for the Brand Center screen's warning — a real, deterministic read of the business_hours text (no fabricated static warning). */
@@ -52,23 +65,45 @@ function missingWeekendHours(hours: string | undefined): boolean {
   return !/sat|sun|weekend/i.test(hours);
 }
 
+const SAVE_STATUS_LABEL: Record<SaveStatus, string> = {
+  idle: "All changes saved",
+  unsaved: "Unsaved changes",
+  saving: "Saving…",
+  saved: "Saved ✓",
+  error: "Save failed",
+};
+
+const SAVE_STATUS_COLOR: Record<SaveStatus, string> = {
+  idle: "text-sx-text-subtle",
+  unsaved: "text-sx-warning",
+  saving: "text-sx-text-subtle",
+  saved: "text-sx-success",
+  error: "text-sx-danger",
+};
+
 /**
  * Brand Center — StratXcel App reference (Claude Design project
- * 6c2ad0a0-c8c8-47d1-a79d-3a1b255a7b01, "Brand Center" screen). Rebuilt
- * around that reference's card composition (Business Info, Location &
- * Hours, Catalog & Services, Business Highlights, Photos & Logo, Digital
- * Presence) using the real, tenant-scoped Brand Brain content —
- * @stratxcel/brand-brain's versioned tables and this same load/save flow
- * predate this pass and are unchanged. business_hours/catalog_tags/
- * highlights are new optional keys on the same flexible jsonb content
- * blob (no migration needed — see packages/brand-brain's
- * `[key: string]: unknown`). Photos reuse the existing social_media_assets
- * storage the AI-reference-image feature already established (see
- * app/api/platform/brand/photos/route.ts). The deeper AI-context fields
+ * 6c2ad0a0-c8c8-47d1-a79d-3a1b255a7b01, "Brand Center" screen), rebuilt
+ * again for the Brand Brain Final UX + Data + Save System mission:
+ *
+ *  - Save is now an explicit, unambiguous state machine (idle/unsaved/
+ *    saving/saved/error), never the old plain saving/saved booleans that
+ *    left "did my edit actually save?" ambiguous the moment a save failed
+ *    or the user kept typing. A failed save NEVER clears `content` — Retry
+ *    re-runs save() again with the exact same in-memory edits, never
+ *    load() (which would silently discard them by overwriting with
+ *    server state).
+ *  - "Catalog & Services" (bare chips) and the old read-only "Products &
+ *    Services" display are both replaced by one real Services section
+ *    (ServicesEditor) — add/edit/archive/delete/reorder, structured
+ *    fields, not a giant textarea.
+ *  - Business Highlights gets real length/count guidance, enforced both
+ *    client-side (fail fast) and server-side (validateBrandBrainContent).
+ *
+ * @stratxcel/brand-brain's versioned tables and this page's load/save
+ * flow predate this pass and are unchanged. The deeper AI-context fields
  * (positioning, tone, differentiators, goals, pillars, rules — what
- * missions and AI agents execute against) are preserved in full below,
- * not deleted, just moved out of the primary identity section the
- * reference actually specifies.
+ * missions and AI agents execute against) are preserved in full below.
  */
 export default function BrandPage() {
   const { active } = useCurrentTenant();
@@ -78,9 +113,18 @@ export default function BrandPage() {
   const [version, setVersion] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
   const loadSequence = useRef(0);
+
+  // Save state machine (Section 1) — the single source of truth for what
+  // the Save button/status label show. `dirty` tracks "does content differ
+  // from what's actually persisted"; `saving`/`saveError`/`justSaved` track
+  // the in-flight request. Derived into one SaveStatus below rather than
+  // juggled as separate booleans at every call site.
+  const [dirty, setDirty] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [justSaved, setJustSaved] = useState(false);
+  const saveStatus: SaveStatus = saving ? "saving" : saveError ? "error" : justSaved ? "saved" : dirty ? "unsaved" : "idle";
 
   const [photos, setPhotos] = useState<ShopPhoto[]>([]);
   const [photosError, setPhotosError] = useState<string | null>(null);
@@ -114,6 +158,11 @@ export default function BrandPage() {
     const businessName = loaded.business_name?.trim() ? loaded.business_name : active?.name;
     setContent(businessName ? { ...loaded, business_name: businessName } : loaded);
     setVersion(result.data.brandBrain?.current_version ?? 0);
+    // A fresh load is, by definition, exactly what's persisted — never
+    // "unsaved", never a stale error/saved flash from a previous visit.
+    setDirty(false);
+    setSaveError(null);
+    setJustSaved(false);
   }
 
   async function loadPhotos() {
@@ -136,15 +185,47 @@ export default function BrandPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenantId]);
 
+  // Section 15: never silently discard edits by navigating/closing away
+  // from them. Covers tab close / refresh / external navigation — the
+  // one confirm-before-leaving hook the browser itself provides;
+  // in-app client-side route changes have no equivalent first-party Next.js
+  // App Router guard without a broader shell-level change, so this is
+  // deliberately scoped to what beforeunload actually covers.
+  useEffect(() => {
+    function handler(e: BeforeUnloadEvent) {
+      if (dirty && !saving) {
+        e.preventDefault();
+        e.returnValue = "";
+      }
+    }
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [dirty, saving]);
+
   function field<K extends keyof BrandBrainContent>(key: K, value: BrandBrainContent[K]) {
     setContent((c) => ({ ...(c ?? EMPTY), [key]: value }));
-    setSaved(false);
+    setDirty(true);
+    setJustSaved(false);
+    // A fresh edit supersedes a previous failure — the status line goes
+    // back to "Unsaved changes" (the honest current state) rather than
+    // leaving a stale "Save failed" banner sitting over new, un-retried edits.
+    setSaveError(null);
   }
+
+  const validationIssues = content ? validateBrandBrainContent(content) : [];
+  const canSave = Boolean(!readOnly && content && dirty && !saving && validationIssues.length === 0);
 
   async function save() {
     if (!tenantId || !content) return;
+    if (validationIssues.length) {
+      // Client-side pre-check (validateBrandBrainContent is the exact same
+      // pure function the server re-runs) — fails fast with the specific
+      // field-level reason instead of a round-trip 400.
+      setSaveError(validationIssues[0]!.issue);
+      return;
+    }
     setSaving(true);
-    setError(null);
+    setSaveError(null);
     try {
       const result = await loadCustomerJson<{ version: { version: number } }>(
         () =>
@@ -160,12 +241,20 @@ export default function BrandPage() {
         "We couldn't save your shop details right now."
       );
       if (result.status === "error") {
-        setError(result.message);
+        // Real bug fixed here (Section 15): a failed save must never clear
+        // or reload `content` — the customer's typed edits stay exactly as
+        // they entered them, and Retry (this same save() function) tries
+        // again with those exact values. The old top-of-page ErrorState's
+        // "Retry" called load(), which would have silently thrown away
+        // whatever the customer just typed by overwriting it with
+        // server state.
+        setSaveError(result.message);
         return;
       }
       setVersion(result.data.version.version);
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
+      setDirty(false);
+      setJustSaved(true);
+      setTimeout(() => setJustSaved(false), 2500);
       trackFunnel("brand_brain_completed", { surface: "app_brand" });
     } finally {
       setSaving(false);
@@ -232,30 +321,44 @@ export default function BrandPage() {
   }
 
   const weekendMissing = missingWeekendHours(content?.business_hours);
+  const highlightsCount = content?.highlights?.length ?? 0;
 
   return (
     <div className="sx-customer-app mx-auto flex w-full max-w-[720px] flex-col gap-6 pb-20 md:pb-8">
       <header className="flex flex-col gap-1">
-        <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h1 className="text-2xl font-bold tracking-tight text-sx-text">My Shop{active ? ` · ${active.name}` : ""}</h1>
-            <p className="text-xs text-sx-text-muted">Manage your shop profile, logo, operating hours, and business voice</p>
+            <p className="text-xs text-sx-text-muted">Tell StratXcel about your business once, save it, and every StratXcel service understands it automatically.</p>
           </div>
-          <Button variant="primary" size="cta" onClick={save} disabled={readOnly || saving || !content}>
-            {saving ? "Saving…" : saved ? "Saved ✓" : "Save Changes"}
-          </Button>
+          <div className="flex flex-col items-end gap-1">
+            <Button variant="primary" size="cta" onClick={save} disabled={!canSave && saveStatus !== "error"}>
+              {saving ? "Saving…" : saveStatus === "error" ? "Save failed — Retry" : "Save Changes"}
+            </Button>
+            <span role="status" className={`text-[11px] font-semibold ${SAVE_STATUS_COLOR[saveStatus]}`}>
+              {SAVE_STATUS_LABEL[saveStatus]}
+            </span>
+          </div>
         </div>
       </header>
 
       {error && <ErrorState message={error} onRetry={load} />}
+      {saveError && (
+        <div role="alert" className="flex flex-col gap-2 rounded-sx-md border border-[rgb(242_86_95_/_0.35)] bg-[rgb(242_86_95_/_0.06)] p-3.5 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-sx-text">{saveError}</p>
+          <Button variant="danger" size="sm" onClick={save} disabled={saving} className="shrink-0">
+            {saving ? "Retrying…" : "Retry"}
+          </Button>
+        </div>
+      )}
       {tenantId && loading && <p className="text-sm text-sx-text-subtle">Loading…</p>}
 
       {content && (
         <fieldset disabled={readOnly} className="flex flex-col gap-4">
-          {/* Business Information */}
+          {/* Business Identity */}
           <Card className="p-5">
             <div className="flex items-center justify-between">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-sx-text-subtle">Business Information</p>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-sx-text-subtle">Business Identity</p>
             </div>
             <div className="mt-3 grid gap-3.5 sm:grid-cols-2">
               <Field label="Business name">
@@ -273,19 +376,29 @@ export default function BrandPage() {
                   />
                 </Field>
               </div>
+              <div className="sm:col-span-2">
+                <Field label="Website URL">
+                  <Input value={content.website_url ?? ""} placeholder="https://yourbusiness.in" onChange={(e) => field("website_url", e.target.value)} />
+                </Field>
+              </div>
             </div>
           </Card>
 
-          {/* Location & Hours */}
+          {/* Contact */}
           <Card className="p-5">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-sx-text-subtle">Location & Hours</p>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-sx-text-subtle">Contact</p>
             <div className="mt-3 grid gap-3.5">
               <Field label="Address">
                 <Textarea value={content.location ?? ""} placeholder="12, Main Road, Near HDFC Bank, Ahmedabad 380009" onChange={(e) => field("location", e.target.value)} />
               </Field>
-              <Field label="Phone number">
-                <Input value={content.business_phone ?? ""} placeholder="+91 98250 12345" onChange={(e) => field("business_phone", e.target.value)} />
-              </Field>
+              <div className="grid gap-3.5 sm:grid-cols-2">
+                <Field label="Phone number">
+                  <Input value={content.business_phone ?? ""} placeholder="+91 98250 12345" onChange={(e) => field("business_phone", e.target.value)} />
+                </Field>
+                <Field label="Email (optional)">
+                  <Input type="email" value={content.business_email ?? ""} placeholder="hello@yourbusiness.in" onChange={(e) => field("business_email", e.target.value)} />
+                </Field>
+              </div>
               <Field label="Business hours">
                 <Input
                   value={content.business_hours ?? ""}
@@ -299,27 +412,39 @@ export default function BrandPage() {
             </div>
           </Card>
 
-          {/* Catalog & Services */}
-          <TagListCard
-            title="Catalog & Services"
-            values={content.catalog_tags ?? []}
-            onChange={(v) => field("catalog_tags", v)}
-            addLabel="+ Add"
-            placeholder="e.g. Groceries"
-          />
+          {/* Services — structured, replaces the old Catalog & Services
+              chips and the old read-only Products display. */}
+          <ServicesEditor services={content.services ?? []} onChange={(services) => field("services", services)} readOnly={readOnly} />
 
-          {/* Business Highlights */}
-          <ListLinesCard
-            title="Business Highlights"
-            values={content.highlights ?? []}
-            onChange={(v) => field("highlights", v)}
-            placeholder="e.g. Free delivery within 3 km"
-          />
+          {/* Business Highlights — a concise summary, not the service
+              catalog (Section 2). Real length/count guidance shown
+              inline, matching validateBrandBrainContent's own limits. */}
+          <Card className="p-5">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-sx-text-subtle">Business Highlights</p>
+            <p className="mt-1 text-xs text-sx-text-muted">
+              A few short, punchy lines about your business — not a service description. e.g. &ldquo;Automated business growth platform focused on Social, SEO, and Websites.&rdquo;
+            </p>
+            <Textarea
+              className="mt-3"
+              value={(content.highlights ?? []).join("\n")}
+              placeholder="e.g. Free delivery within 3 km"
+              onChange={(e) => field("highlights", e.target.value.split("\n"))}
+            />
+            <div className="mt-1.5 flex items-center justify-between text-[10.5px]">
+              <span className={highlightsCount > HIGHLIGHTS_MAX_COUNT ? "font-semibold text-sx-danger" : "text-sx-text-subtle"}>
+                {highlightsCount}/{HIGHLIGHTS_MAX_COUNT} lines
+              </span>
+              <span className="text-sx-text-subtle">Up to {HIGHLIGHT_MAX_LENGTH} characters per line</span>
+            </div>
+            {(content.highlights ?? []).some((h) => h.length > HIGHLIGHT_MAX_LENGTH) && (
+              <p className="mt-1 text-[11px] font-medium text-sx-danger">One or more lines are too long — keep each highlight short, like a bullet point.</p>
+            )}
+          </Card>
 
-          {/* Brand Logo & Business Mark */}
+          {/* Brand Identity: Logo & Brand Mark */}
           <Card className="p-5">
             <div className="flex items-center justify-between">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-sx-text-subtle">Business Logo & Brand Mark</p>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-sx-text-subtle">Brand Identity — Logo & Brand Mark</p>
               {typeof content.logo_url === "string" && content.logo_url && !readOnly && (
                 <button
                   type="button"
@@ -441,9 +566,6 @@ export default function BrandPage() {
               )}
             </div>
             <div className="mt-4 grid gap-3.5 sm:grid-cols-2 border-t border-sx-border pt-4">
-              <Field label="Website URL">
-                <Input value={content.website_url ?? ""} placeholder="https://yourbusiness.in" onChange={(e) => field("website_url", e.target.value)} />
-              </Field>
               <Field label="Public channels / profiles (one per line)">
                 <Textarea
                   value={(content.channels ?? []).join("\n")}
@@ -453,26 +575,7 @@ export default function BrandPage() {
             </div>
           </Card>
 
-          {/* Products / services — existing, real */}
-          <Card className="p-5">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-sx-text-subtle">Products & Services</p>
-            {(content.products ?? []).length === 0 ? (
-              <div className="mt-3">
-                <EmptyState title="No products listed yet." subtitle="Products and services added during onboarding will show up here." />
-              </div>
-            ) : (
-              <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                {content.products!.map((p) => (
-                  <div key={p.name} className="rounded-sx-sm bg-sx-surface-2 p-3">
-                    <p className="text-sm font-semibold text-sx-text">{p.name}</p>
-                    <p className="mt-1 text-xs text-sx-text-subtle">{p.description}</p>
-                  </div>
-                ))}
-              </div>
-            )}
-          </Card>
-
-          {/* AI & Growth Context */}
+          {/* AI & Growth Context / Business Facts */}
           <section className="flex flex-col gap-3 pt-2">
             <h2 className="flex items-baseline gap-2 text-[19px] font-semibold text-sx-text">
               AI & Growth Context
@@ -550,79 +653,5 @@ export default function BrandPage() {
         </fieldset>
       )}
     </div>
-  );
-}
-
-function TagListCard({
-  title,
-  values,
-  onChange,
-  addLabel,
-  placeholder,
-}: {
-  title: string;
-  values: string[];
-  onChange: (values: string[]) => void;
-  addLabel: string;
-  placeholder: string;
-}) {
-  const [draft, setDraft] = useState("");
-  function commit() {
-    const v = draft.trim();
-    if (v) onChange([...values, v]);
-    setDraft("");
-  }
-  return (
-    <Card className="p-5">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-sx-text-subtle">{title}</p>
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        {values.map((tag, idx) => (
-          <span key={`${tag}-${idx}`} className="inline-flex items-center gap-1.5 rounded-sx-sm bg-sx-surface-2 px-3 py-1.5 text-[13px] text-sx-text-muted">
-            {tag}
-            <button type="button" aria-label={`Remove ${tag}`} onClick={() => onChange(values.filter((_, i) => i !== idx))} className="text-sx-text-subtle hover:text-sx-danger">
-              ✕
-            </button>
-          </span>
-        ))}
-        <input
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              commit();
-            }
-          }}
-          onBlur={commit}
-          placeholder={placeholder}
-          className="min-w-[120px] flex-1 rounded-sx-sm bg-transparent px-1 py-1.5 text-[13px] text-sx-text outline-none placeholder:text-sx-text-subtle"
-        />
-      </div>
-      <p className="mt-1 text-[11px] text-sx-text-subtle">{addLabel} — press Enter to add</p>
-    </Card>
-  );
-}
-
-function ListLinesCard({
-  title,
-  values,
-  onChange,
-  placeholder,
-}: {
-  title: string;
-  values: string[];
-  onChange: (values: string[]) => void;
-  placeholder: string;
-}) {
-  return (
-    <Card className="p-5">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-sx-text-subtle">{title}</p>
-      <Textarea
-        className="mt-3"
-        value={values.join("\n")}
-        placeholder={placeholder}
-        onChange={(e) => onChange(e.target.value.split("\n").filter(Boolean))}
-      />
-    </Card>
   );
 }
