@@ -21,8 +21,9 @@ import { validateCreativeTreatment, forceArchetypeOntoTreatment, resolveOverlayE
 import { buildVisualDirectorBrief } from "../social/visual-director-prompt";
 import { deriveBrandVisualDNA } from "../social/brand-visual-dna";
 import { classifyIndustry } from "../social/industry-taxonomy";
-import { renderTextOverlay } from "../social/text-overlay-render";
+import { renderTextOverlay, type LogoVariantBundle } from "../social/text-overlay-render";
 import { resolveManualRouting } from "../social/archetype-routing";
+import { resolveLogoVariantBundle } from "../brand/logo-variant-resolver";
 
 const TERMINAL = new Set(["READY", "FAILED"]);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -379,7 +380,7 @@ export async function processImageGenerationJob(args: {
   // prompt's own brand-context lines already say.
   const treatment = job.creative_treatment as CreativeTreatment | null;
   let effectiveBrief = job.brief;
-  let overlayContext: { treatment: CreativeTreatment; businessName: string; brandDNA: ReturnType<typeof deriveBrandVisualDNA> } | null = null;
+  let overlayContext: { treatment: CreativeTreatment; businessName: string; brandDNA: ReturnType<typeof deriveBrandVisualDNA>; logoVariants: LogoVariantBundle | null } | null = null;
   // Both the treatment-derived prompt and deterministic text-overlay
   // compositing are scoped to the ORIGINAL (non-revision) generation --
   // a revision works from the human's specific revision instruction
@@ -396,7 +397,19 @@ export async function processImageGenerationJob(args: {
       industryCategory: classifyIndustry(typeof snapshot.industry === "string" ? snapshot.industry : null),
     });
     effectiveBrief = buildVisualDirectorBrief({ treatment, businessName, brandDNA });
-    overlayContext = { treatment, businessName, brandDNA };
+    // BrandBrain Logo Engine Phase 4: resolve this tenant's saved
+    // logo_variants (brand_brains content JSONB -- no migration, per the
+    // approved design) into real, ready-to-composite data URIs. A live
+    // fetch (not part of the job's own frozen brand_context_snapshot) so
+    // a tenant who changes their logo sees it on their very next
+    // generation, not only after a new job snapshot is taken. Never
+    // throws the whole generation -- a brand-brain lookup failure or a
+    // tenant with no saved logo just means no logo is composited, same as
+    // today.
+    const logoVariants = await getCurrentBrandBrain(args.writeClient as never, job.tenant_id)
+      .then((brain) => resolveLogoVariantBundle(args.writeClient as never, job.tenant_id, (brain?.content as Record<string, unknown> | undefined)?.logo_variants))
+      .catch(() => null);
+    overlayContext = { treatment, businessName, brandDNA, logoVariants };
   }
   const prompt = buildProviderReadyImagePrompt({
     brief: effectiveBrief,
@@ -487,7 +500,7 @@ export async function processImageGenerationJob(args: {
     overlayContext && resolvedOverlayElements.length
       ? async ({ bytes, mimeType }: { bytes: Uint8Array; mimeType: string }) => {
           const canvas = ASPECT_CANVAS[job.aspect_ratio] ?? ASPECT_CANVAS["1:1"]!;
-          const { businessName, brandDNA, treatment: overlayTreatment } = overlayContext!;
+          const { businessName, brandDNA, treatment: overlayTreatment, logoVariants } = overlayContext!;
           const snapshot = job.brand_context_snapshot as { locations?: unknown };
           // Final Production Loop brief constraint #1: never invent contact
           // info. This real production path has no verified-facts pipeline
@@ -511,6 +524,7 @@ export async function processImageGenerationJob(args: {
             businessName,
             layoutArchetype: overlayTreatment.layoutArchetype,
             contactInfo: { location, phone: null, website: null },
+            logoVariants,
           });
           return { bytes: composited, mimeType: "image/png" };
         }

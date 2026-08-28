@@ -185,6 +185,27 @@ async function run() {
   assert.ok(!contentLibraryPage.includes("treatment?.ctaDirection"), "must not read the nonexistent CreativeTreatment.ctaDirection field -- the real CTA lives at treatment.cta.text (a CtaDecision object)");
   assert.ok(contentLibraryPage.includes("cta?.text"), "the CTA line shown on a content card must read the real treatment.cta.text field");
 
+  // BrandBrain Logo Engine Phase 4: the real production wiring from a
+  // tenant's saved logo_variants (brand_brains content JSONB) into the
+  // deterministic compositor's logoVariants input. Verified as source-
+  // inclusion for the same server-only reason as every other service.ts
+  // check above; selectLogoVariant's own per-archetype decision logic is
+  // fully unit-tested in real isolation by text-overlay-render.test.ts,
+  // and the sharp pipeline that produces the variants themselves by
+  // logo-analyzer.test.ts.
+  assert.ok(service.includes("resolveLogoVariantBundle"), "the real generation path must resolve this tenant's saved logo variants, not just accept a caller-supplied logoImage");
+  assert.ok(service.includes("getCurrentBrandBrain") && service.includes("logo_variants"), "logo variants must be read from the real, versioned brand_brains content -- not a separate/duplicated store");
+  assert.ok(service.includes("logoVariants") && service.includes("renderTextOverlay"), "the resolved logo variant bundle must actually reach the real compositor call, not just be resolved and discarded");
+  const textOverlayRender = read("lib", "social", "text-overlay-render.ts");
+  assert.ok(textOverlayRender.includes("export function selectLogoVariant"), "the archetype-appropriate variant selection must be a real, exported, independently-testable function");
+  assert.ok(textOverlayRender.includes("ARCHETYPE_LOGO_SURFACE"), "variant selection must be driven by a real per-archetype surface-tone table, not an ad hoc guess");
+  const logoAnalyzeRoute = read("app", "api", "platform", "brand", "logo-analyze", "route.ts");
+  assert.ok(logoAnalyzeRoute.includes("analyzeLogo"), "the logo-analyze route must use the real sharp pipeline, not a stub");
+  assert.ok(logoAnalyzeRoute.includes('provenance: { purpose:'), "each generated variant must record its own provenance (purpose/variant/sourceAssetId/dimensions) on its social_media_assets row -- never an untraceable generated asset");
+  const brandPage = read("app", "app", "brand", "page.tsx");
+  assert.ok(brandPage.includes("uploadToSignedUrlWithProgress"), "the fixed upload flow must actually use the real signed-upload protocol, not the broken raw-FormData POST it replaced");
+  assert.ok(!brandPage.includes('formData.append("file", file)'), "the broken raw-multipart upload path must be fully removed, not left as dead/parallel code");
+
   console.log("image-generation.test.ts: ALL PASS");
 }
 

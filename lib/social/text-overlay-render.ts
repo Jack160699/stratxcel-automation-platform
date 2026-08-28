@@ -511,16 +511,79 @@ export interface TextOverlayLayoutInput {
    * field renders no row for it; nothing here is ever fabricated. */
   contactInfo?: VerifiedContactInfo | null;
   /** A real raster brand logo (already-uploaded tenant asset), composited
-   * with its aspect ratio preserved -- never stretched. HONEST SCOPE (v1):
-   * no real production caller passes this yet (lib/image-generation/
-   * service.ts has no logo-asset fetch wired into the compositor path
-   * today), and only BASIC_ESSENTIAL and FLOATING_CARD actually place it
-   * when supplied -- every other archetype still falls back to the
-   * text-glyph brand label. Wiring the remaining archetypes and the real
-   * production caller is a real, tracked follow-up, not silently claimed
-   * as complete. When absent (the common case today), every archetype's
-   * existing text-glyph brand label is unaffected. */
-  logoImage?: { dataUri: string; mimeType: "image/png" | "image/jpeg" | "image/webp"; aspectRatio: number } | null;
+   * with its aspect ratio preserved -- never stretched. Used directly when
+   * `logoVariants` isn't supplied (backward compat / single-variant
+   * callers); ignored in favor of the archetype-resolved pick from
+   * `logoVariants` when both are present. HONEST SCOPE: only
+   * BASIC_ESSENTIAL and FLOATING_CARD actually place a real logo image
+   * today -- every other archetype still falls back to the text-glyph
+   * brand label regardless of what's supplied here. Wiring the remaining
+   * 10 archetypes is a real, tracked follow-up, not silently claimed as
+   * complete. When absent (still the common case for many tenants without
+   * a saved logo), every archetype's existing text-glyph brand label is
+   * unaffected. */
+  logoImage?: LogoAsset | null;
+  /** BrandBrain Logo Engine (Phase 3/4): the tenant's full set of
+   * generated logo variants (lib/brand/logo-analyzer.ts), keyed by kind.
+   * When supplied, `selectLogoVariant` picks the archetype-appropriate
+   * one automatically (e.g. a mono-light knockout for a dark/photo
+   * background, a bounded badge for a busy photo surface) instead of the
+   * caller guessing -- see ARCHETYPE_LOGO_SURFACE below. */
+  logoVariants?: LogoVariantBundle | null;
+}
+
+/** One resolved, ready-to-composite logo image -- a data URI (not a
+ * remote URL; every caller resolves bytes itself, matching every other
+ * asset this compositor touches) plus enough metadata to place it without
+ * distortion. */
+export interface LogoAsset {
+  dataUri: string;
+  mimeType: "image/png" | "image/jpeg" | "image/webp";
+  aspectRatio: number;
+}
+
+export type LogoVariantKind = "transparent" | "monoLight" | "monoDark" | "badge";
+
+/** Not every variant is guaranteed to exist (e.g. a tenant who saved a
+ * logo before the Logo Engine shipped may only have `transparent`) --
+ * selectLogoVariant always has a real fallback chain regardless of which
+ * keys are actually present. */
+export type LogoVariantBundle = Partial<Record<LogoVariantKind, LogoAsset>>;
+
+/** Real per-archetype "what does the logo actually sit on" surface tone
+ * -- the single place that decision is made, so extending logo placement
+ * to the other 10 archetypes later needs no further policy work, just
+ * wiring buildLogoImageSvg into each builder. Covers all 12 even though
+ * only 2 place a real logo today (see TextOverlayLayoutInput's own scope
+ * note above). */
+const ARCHETYPE_LOGO_SURFACE: Record<LayoutArchetype, LogoVariantKind> = {
+  BASIC_ESSENTIAL: "monoLight", // sits on the brand-primary-color band -- a flat white mark reads reliably regardless of the tenant's actual brand color
+  SPLIT_BANNER: "monoLight", // same brand-color band pattern
+  FLOATING_CARD: "monoDark", // sits inside its own translucent light chip
+  EDITORIAL_FRAME: "badge", // sits directly on the photo -- needs its own contained surface
+  MINIMAL_FOOTER_STRIP: "monoLight", // full-bleed photo with a dark scrim footer
+  ELEVATED_BADGE: "badge", // photo-first with floating UI elements -- same contained-surface need
+  DUAL_TONE_SIDEBAR: "monoLight", // sidebar is brand-primary-color filled
+  FROSTED_GLASS_CENTER: "badge", // frosted card floats over a photo
+  TYPOGRAPHIC_HERO: "badge", // dark photo wash background
+  POLAROID_LIFESTYLE: "monoDark", // polaroid border is white/cream
+  CLINICAL_TRUST: "monoDark", // light, clinical background
+  NEON_NIGHTLIFE: "monoLight", // genuinely dark, atmospheric background
+};
+
+/** Resolves which logo asset (if any) an archetype should actually
+ * composite: the archetype-appropriate variant from `logoVariants` when
+ * present (falling through transparent -> badge -> monoLight -> monoDark
+ * if the preferred kind wasn't generated for this tenant), else the
+ * single `logoImage` for backward-compat callers, else null (falls back
+ * to the text-glyph brand label at the call site, same as always). */
+export function selectLogoVariant(input: Pick<TextOverlayLayoutInput, "logoImage" | "logoVariants" | "layoutArchetype">): LogoAsset | null {
+  if (input.logoVariants) {
+    const preferred = ARCHETYPE_LOGO_SURFACE[input.layoutArchetype];
+    const resolved = input.logoVariants[preferred] ?? input.logoVariants.transparent ?? input.logoVariants.badge ?? input.logoVariants.monoLight ?? input.logoVariants.monoDark;
+    if (resolved) return resolved;
+  }
+  return input.logoImage ?? null;
 }
 
 /** Composites a real raster logo into a bounding box with its aspect
@@ -670,13 +733,14 @@ function buildFloatingCardSvg(input: TextOverlayLayoutInput, picked: PickedEleme
   const parts: string[] = [];
   const brandFS = Math.round(width * 0.026);
   const chipMargin = Math.round(width * 0.07);
-  if (input.logoImage) {
+  const resolvedLogo = selectLogoVariant(input);
+  if (resolvedLogo) {
     const logoBoxHeight = Math.round(brandFS * 1.9);
-    const logoBoxWidth = Math.round(logoBoxHeight * input.logoImage.aspectRatio);
+    const logoBoxWidth = Math.round(logoBoxHeight * resolvedLogo.aspectRatio);
     const chipX = width - chipMargin - logoBoxWidth - brandFS * 0.5;
     const chipY = chipMargin * 0.9 - logoBoxHeight;
     parts.push(`<rect x="${round2(chipX - brandFS * 0.4)}" y="${round2(chipY - brandFS * 0.35)}" width="${round2(logoBoxWidth + brandFS * 0.8)}" height="${round2(logoBoxHeight + brandFS * 0.7)}" rx="${round2(brandFS * 0.4)}" fill="${escapeXml(primary)}" fill-opacity="0.82" />`);
-    const logoSvg = buildLogoImageSvg(input.logoImage, chipX, chipY, logoBoxWidth, logoBoxHeight);
+    const logoSvg = buildLogoImageSvg(resolvedLogo, chipX, chipY, logoBoxWidth, logoBoxHeight);
     if (logoSvg) parts.push(logoSvg);
   } else if (brandLabel.text.trim()) {
     const text = brandLabel.text.trim();
@@ -908,7 +972,8 @@ function buildBasicEssentialSvg(input: TextOverlayLayoutInput, picked: PickedEle
 
   const brandFS = Math.round(width * 0.024);
   const logoBoxHeight = Math.round(brandFS * 1.7);
-  const logoSvg = buildLogoImageSvg(input.logoImage, margin, y, Math.round(logoBoxHeight * (input.logoImage?.aspectRatio ?? 1)), logoBoxHeight);
+  const resolvedLogo = selectLogoVariant(input);
+  const logoSvg = buildLogoImageSvg(resolvedLogo, margin, y, Math.round(logoBoxHeight * (resolvedLogo?.aspectRatio ?? 1)), logoBoxHeight);
   if (logoSvg) {
     parts.push(logoSvg);
     y += logoBoxHeight + Math.round(width * 0.012);

@@ -1,7 +1,7 @@
 // Run with: node --experimental-strip-types lib/social/__tests__/text-overlay-render.test.ts
 import assert from "node:assert/strict";
 import sharp from "sharp";
-import { buildTextOverlaySvg, renderTextOverlay, type TextOverlayLayoutInput } from "../text-overlay-render.ts";
+import { buildTextOverlaySvg, renderTextOverlay, selectLogoVariant, type TextOverlayLayoutInput, type LogoAsset, type LogoVariantBundle } from "../text-overlay-render.ts";
 
 function test(name: string, fn: () => void | Promise<void>) {
   return (async () => {
@@ -464,6 +464,55 @@ async function main() {
     assert.doesNotThrow(() => {
       buildTextOverlaySvg({ ...BASE, layoutArchetype: "NOT_A_REAL_ARCHETYPE" as unknown as TextOverlayLayoutInput["layoutArchetype"], elements: [{ role: "headline", text: "X" }] });
     });
+  });
+
+  await test("selectLogoVariant: BrandBrain Logo Engine -- picks the archetype-appropriate variant from a full bundle", () => {
+    const asset = (id: string): LogoAsset => ({ dataUri: `data:image/png;base64,${id}`, mimeType: "image/png", aspectRatio: 1 });
+    const bundle: LogoVariantBundle = { transparent: asset("t"), monoLight: asset("light"), monoDark: asset("dark"), badge: asset("badge") };
+    // BASIC_ESSENTIAL sits on the brand-color band -> monoLight (per ARCHETYPE_LOGO_SURFACE).
+    assert.equal(selectLogoVariant({ layoutArchetype: "BASIC_ESSENTIAL", logoVariants: bundle, logoImage: null }), bundle.monoLight);
+    // EDITORIAL_FRAME sits directly on the photo -> badge.
+    assert.equal(selectLogoVariant({ layoutArchetype: "EDITORIAL_FRAME", logoVariants: bundle, logoImage: null }), bundle.badge);
+    // POLAROID_LIFESTYLE's white/cream border -> monoDark.
+    assert.equal(selectLogoVariant({ layoutArchetype: "POLAROID_LIFESTYLE", logoVariants: bundle, logoImage: null }), bundle.monoDark);
+  });
+
+  await test("selectLogoVariant: falls through the chain when the preferred variant wasn't generated for this tenant", () => {
+    const asset = (id: string): LogoAsset => ({ dataUri: `data:image/png;base64,${id}`, mimeType: "image/png", aspectRatio: 1 });
+    // Only `transparent` exists (e.g. a tenant who saved a logo before the Logo Engine shipped) -- every archetype must still resolve something real, not null.
+    const legacyBundle: LogoVariantBundle = { transparent: asset("t") };
+    assert.equal(selectLogoVariant({ layoutArchetype: "BASIC_ESSENTIAL", logoVariants: legacyBundle, logoImage: null }), legacyBundle.transparent);
+    assert.equal(selectLogoVariant({ layoutArchetype: "EDITORIAL_FRAME", logoVariants: legacyBundle, logoImage: null }), legacyBundle.transparent);
+  });
+
+  await test("selectLogoVariant: backward compat -- falls back to plain logoImage when no logoVariants bundle is supplied", () => {
+    const single: LogoAsset = { dataUri: "data:image/png;base64,single", mimeType: "image/png", aspectRatio: 1.5 };
+    assert.equal(selectLogoVariant({ layoutArchetype: "BASIC_ESSENTIAL", logoVariants: undefined, logoImage: single }), single);
+    assert.equal(selectLogoVariant({ layoutArchetype: "BASIC_ESSENTIAL", logoVariants: null, logoImage: single }), single);
+  });
+
+  await test("selectLogoVariant: no logo at all resolves to null (falls back to the text-glyph brand label at the call site)", () => {
+    assert.equal(selectLogoVariant({ layoutArchetype: "BASIC_ESSENTIAL", logoVariants: null, logoImage: null }), null);
+    assert.equal(selectLogoVariant({ layoutArchetype: "BASIC_ESSENTIAL", logoVariants: undefined, logoImage: undefined }), null);
+  });
+
+  await test("selectLogoVariant: every one of the 12 archetypes resolves a real, non-null pick from a full bundle", () => {
+    const asset = (id: string): LogoAsset => ({ dataUri: `data:image/png;base64,${id}`, mimeType: "image/png", aspectRatio: 1 });
+    const bundle: LogoVariantBundle = { transparent: asset("t"), monoLight: asset("light"), monoDark: asset("dark"), badge: asset("badge") };
+    for (const layoutArchetype of ["BASIC_ESSENTIAL", "SPLIT_BANNER", "FLOATING_CARD", "EDITORIAL_FRAME", "MINIMAL_FOOTER_STRIP", "ELEVATED_BADGE", "DUAL_TONE_SIDEBAR", "FROSTED_GLASS_CENTER", "TYPOGRAPHIC_HERO", "POLAROID_LIFESTYLE", "CLINICAL_TRUST", "NEON_NIGHTLIFE"] as const) {
+      const resolved = selectLogoVariant({ layoutArchetype, logoVariants: bundle, logoImage: null });
+      assert.ok(resolved, `${layoutArchetype}: must resolve a real logo variant from a full bundle`);
+    }
+  });
+
+  await test("BASIC_ESSENTIAL and FLOATING_CARD actually composite the logoVariants-resolved image, not just logoImage", () => {
+    const asset: LogoAsset = { dataUri: "data:image/png;base64,QUJD", mimeType: "image/png", aspectRatio: 2 };
+    for (const layoutArchetype of ["BASIC_ESSENTIAL", "FLOATING_CARD"] as const) {
+      const withoutLogo = buildTextOverlaySvg({ ...BASE, layoutArchetype, businessName: "Test Business" });
+      const withVariants = buildTextOverlaySvg({ ...BASE, layoutArchetype, businessName: "Test Business", logoImage: null, logoVariants: { monoLight: asset, monoDark: asset, badge: asset, transparent: asset } });
+      assert.ok(withVariants.includes("<image"), `${layoutArchetype}: a resolved logoVariants bundle must actually render an <image> element`);
+      assert.notEqual(withoutLogo, withVariants, `${layoutArchetype}: output must differ when a real logo variant is supplied`);
+    }
   });
 
   console.log("text-overlay-render.test.ts: ALL PASS");

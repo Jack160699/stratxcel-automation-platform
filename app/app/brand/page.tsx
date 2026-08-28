@@ -10,6 +10,7 @@ import { trackFunnel } from "@/lib/analytics/events";
 import { loadCustomerJson } from "@/lib/customer-app/load-result";
 import { DigitalPresenceCards } from "@/components/audit/DigitalPresenceCards";
 import { uploadToSignedUrlWithProgress } from "@/lib/social/media-upload-client";
+import { LogoAnalyzerFlow } from "./LogoAnalyzerFlow";
 
 interface BrandBrainContent {
   business_name?: string;
@@ -322,7 +323,11 @@ export default function BrandPage() {
               {typeof content.logo_url === "string" && content.logo_url && !readOnly && (
                 <button
                   type="button"
-                  onClick={() => field("logo_url", undefined)}
+                  onClick={() => {
+                    field("logo_url", undefined);
+                    field("logo_transparent_url", undefined);
+                    field("logo_variants", undefined);
+                  }}
                   className="text-xs font-semibold text-sx-danger hover:underline"
                 >
                   Remove Logo
@@ -347,16 +352,19 @@ export default function BrandPage() {
                 <p className="text-[11px] text-sx-text-subtle">
                   This logo appears in your customer header, social creatives, and audit reports.
                 </p>
-                {!readOnly && (
+                {!readOnly && tenantId && (
                   <div className="mt-1 flex items-center gap-2">
-                    <button
-                      type="button"
-                      disabled={uploadingPhoto}
-                      onClick={() => fileInputRef.current?.click()}
-                      className="rounded-sx-xs bg-sx-surface-2 border border-sx-border px-2.5 py-1 text-xs font-semibold text-sx-text hover:bg-sx-surface-3 transition-colors"
-                    >
-                      {typeof content.logo_url === "string" && content.logo_url ? "Replace Logo" : "Upload Logo"}
-                    </button>
+                    <LogoAnalyzerFlow
+                      tenantId={tenantId}
+                      readOnly={readOnly}
+                      // LogoAnalyzerFlow persists this itself (its own
+                      // GET-merge-POST) -- reload the real saved state
+                      // rather than staging it into `content` via field(),
+                      // which would misleadingly mark it as an unsaved
+                      // edit still waiting on this page's own Save
+                      // Changes button when it's already been saved.
+                      onSaved={() => void load()}
+                    />
                   </div>
                 )}
               </div>
