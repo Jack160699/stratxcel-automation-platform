@@ -242,6 +242,9 @@ export function buildCreativeTreatmentPrompt(input: CreativeTreatmentInput): AIM
     `- Content pillar: ${input.brief.contentPillar}`,
     `- Concept angle to develop into a real idea: ${input.brief.concept}`,
     `- CTA style if a CTA is used: ${input.brief.cta}`,
+    input.brief.seasonalContext
+      ? `- ${input.brief.seasonalContext} Reference this ONLY if it genuinely fits this business and concept -- never force a festival/season tie-in onto unrelated content.`
+      : `- No upcoming festival/season occasion falls within this post's near-term window.`,
     ``,
     `VERIFIED FACTS (use only what's naturally relevant, never fabricate beyond this list):`,
     input.brief.verifiedFacts.length ? input.brief.verifiedFacts.map((f) => `- ${f}`).join("\n") : "- none available",

@@ -20,6 +20,14 @@ export function packageErrorForClient(value: unknown): string {
   const raw = value instanceof Error ? value.message : typeof value === "string" ? value : "";
   const key = Object.keys(PACKAGE_ERROR_COPY).find((candidate) => raw.includes(candidate));
   if (key) return PACKAGE_ERROR_COPY[key];
+  // Hermes-Orchestrated Content Engine Hardening mission Section 3: a
+  // platform rate limit (MetaApiError category "rate_limit" -- see
+  // ../errors.ts) is real, transient, and already automatically retried by
+  // worker.ts's own retry logic -- it must never read like the same
+  // "something is broken, go fix your setup" copy a genuine configuration
+  // problem gets, or a customer has no way to tell "this will resolve
+  // itself" from "I need to do something."
+  if (/rate.?limit(ed)?|too many requests|429/i.test(raw)) return "This platform is temporarily rate-limiting requests — Autopilot will retry automatically.";
   if (/token|connect|account unavailable/i.test(raw)) return "Reconnect this social account to continue.";
   return "Autopilot needs attention. Review its setup and try again.";
 }

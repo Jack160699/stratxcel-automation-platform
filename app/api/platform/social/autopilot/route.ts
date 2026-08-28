@@ -1,4 +1,4 @@
-import { NextResponse, type NextRequest } from "next/server";
+import { after, NextResponse, type NextRequest } from "next/server";
 import { requireClientContext } from "@/lib/tenants/client-context";
 import { isMemberOfTenant } from "@/lib/tenants/current-tenant";
 import { createSupabaseServiceClient } from "@/lib/supabase/service";
@@ -7,6 +7,7 @@ import {
   setPackageAutopilotState,
   setPackageAutopilotScope,
   skipPackageQueueItem,
+  approvePackageQueueItem,
   reschedulePackageQueueItemInTimezone,
   editPackageQueueItemContent,
   assignBrandProfileToTenant,
@@ -16,10 +17,45 @@ import {
   resolvePurchasedPackageComposition,
   formatPackageCompositionLabel,
   utcIsoToDatetimeLocalValue,
+  planPackagePeriod,
+  prepareNearTermPackageItems,
+  runPackageAutopilotBatch,
   type PackageAuthorizationRow,
 } from "@/lib/social/package-autopilot";
 import { packageErrorForClient } from "@/lib/social/package-errors";
 import { recordAudit } from "@/lib/social/repositories/system";
+
+/**
+ * Hermes-Orchestrated Content Engine Hardening mission, Section 1: real gap
+ * found live -- activatePackageAutopilot / setPackageAutopilotState(ACTIVE)
+ * only ever wrote the authorization row. The very next content this tenant
+ * would see was whatever the hourly package-producer cron happened to plan
+ * + prepare (Gemini) on its own schedule -- up to ~59 minutes of dead air
+ * after a customer just activated (or resumed) Social Autopilot, not the
+ * "instantly have day-one content" this mission requires. planPackagePeriod
+ * and prepareNearTermPackageItems are both explicitly documented as
+ * idempotent/safe to call repeatedly (see their own doc comments in
+ * package-autopilot.ts) -- calling them here, in the background via
+ * after() so the activate/resume response itself stays fast, and again
+ * later by the regular cron, can never double-plan or double-prepare
+ * anything. authorization.preparation_horizon_days defaults to 5 (real
+ * schema default), so this single call already covers day-one AND day-two
+ * (and beyond) the moment activation succeeds -- no separate "day 0 vs day
+ * 1" special-casing needed.
+ */
+function triggerImmediatePackagePreparation(service: ReturnType<typeof createSupabaseServiceClient>, authorizationId: string) {
+  after(async () => {
+    try {
+      await planPackagePeriod(service as Parameters<typeof planPackagePeriod>[0], authorizationId);
+      await prepareNearTermPackageItems(service as Parameters<typeof prepareNearTermPackageItems>[0], authorizationId);
+    } catch (err) {
+      console.error("triggerImmediatePackagePreparation: background plan+prepare failed", {
+        authorizationId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  });
+}
 
 async function authorizeTenant(tenantId: string, allowStaffRead = false) {
   const ctx = await requireClientContext();
@@ -223,6 +259,10 @@ export async function POST(req: NextRequest) {
           maxPostsPerDay: typeof body.maxPostsPerDay === "number" ? body.maxPostsPerDay : undefined,
           brandProfileId: String(body.brandProfileId ?? ""),
         });
+        // Section 1: instant day-one (+ day-two, via the real 5-day default
+        // horizon) content preparation on activation, instead of waiting up
+        // to ~59 minutes for the next hourly package-producer cron tick.
+        triggerImmediatePackagePreparation(service, authorization.id);
         return NextResponse.json({ ok: true, authorization });
       }
       case "pause":
@@ -235,6 +275,26 @@ export async function POST(req: NextRequest) {
           clientUserId: auth.userId,
           state,
         });
+        // A resumed authorization needs its queue refilled just as urgently
+        // as a freshly-activated one -- same instant-preparation trigger,
+        // never on pause/cancel.
+        if (body.action === "resume") triggerImmediatePackagePreparation(service, String(body.authorizationId ?? ""));
+        return NextResponse.json({ ok: true, result });
+      }
+      case "approve": {
+        const queueItemId = String(body.queueItemId ?? "");
+        if (!(await verifyQueueItemTenant(service, queueItemId, tenantId))) return NextResponse.json({ error: "Queue item not found" }, { status: 404 });
+        const publishNow = body.publishNow === true;
+        const result = await approvePackageQueueItem(service as Parameters<typeof approvePackageQueueItem>[0], { queueItemId, publishNow });
+        await recordAudit({ actorType: "USER", actorId: auth.userId, action: "social.package.approve", targetType: "social_autopilot_queue_item", targetId: queueItemId, summary: publishNow ? "Approved a reviewed post and requested immediate publish" : "Approved a reviewed post for its scheduled time", meta: { tenantId, publishNow } });
+        // Section 3 ("on command"): don't make the customer wait for the
+        // next 15-minute worker cron tick when they explicitly asked for
+        // immediate publish -- same in-process pattern the admin "Run
+        // worker now" action and the Copilot "post now" tool already use,
+        // just scoped to the package batch executor.
+        if (publishNow) {
+          after(() => runPackageAutopilotBatch(service as Parameters<typeof runPackageAutopilotBatch>[0]).catch(() => {}));
+        }
         return NextResponse.json({ ok: true, result });
       }
       case "updateScope": {
@@ -314,3 +374,14 @@ export async function POST(req: NextRequest) {
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+// The route itself responds fast (triggerImmediatePackagePreparation and
+// the "approve publishNow" batch trigger both run via after(), not before
+// the response), but Vercel still bounds the WHOLE invocation -- including
+// after() work -- by maxDuration. Both background paths can make real
+// Gemini calls (prepareNearTermPackageItems) or reach real social-platform
+// publish APIs (runPackageAutopilotBatch), so this needs the same 300s
+// budget this codebase already uses everywhere else for long AI/publish
+// chains (see app/api/platform/image-generations/route.ts's own comment) --
+// not the platform default, which was exactly the root cause of the real,
+// previously-fixed "The provider timed out" production incidents.
+export const maxDuration = 300;

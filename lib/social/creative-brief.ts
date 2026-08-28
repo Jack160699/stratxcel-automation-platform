@@ -44,6 +44,14 @@ export interface CreativeBriefInput {
   brandColors?: string[];
   /** From brandProfile.audiences / verified target_audience fact, in that preference order. */
   audience?: string | null;
+  /** Hermes-Orchestrated Content Engine Hardening mission Section 2: a
+   * real, deterministic upcoming-festival/season line (festival-
+   * calendar.ts's seasonalContextLine, keyed to this specific post's
+   * scheduled date) -- optional flavor context the model may use IF
+   * genuinely relevant, never a fact to force into every post. Never
+   * fabricated: the calendar module itself only ever returns a verified
+   * date or nothing. */
+  seasonalContext?: string | null;
 }
 
 export interface CreativeBrief {
@@ -63,6 +71,7 @@ export interface CreativeBrief {
   layoutDirection: string;
   brandDirection: string;
   avoid: string[];
+  seasonalContext: string | null;
 }
 
 const FORMAT_LABEL: Record<CreativeBriefInput["mediaType"], string> = {
@@ -143,6 +152,7 @@ export function buildCreativeBrief(input: CreativeBriefInput): CreativeBrief {
       input.brandTone?.length ? `Tone: ${input.brandTone.join(", ")}.` : "",
       input.brandColors?.length ? `Brand colors: ${input.brandColors.join(", ")}.` : "",
     ].filter(Boolean).join(" ") || "No explicit brand voice/colors saved yet -- default to a clean, professional, business-appropriate presentation.",
+    seasonalContext: input.seasonalContext?.trim() || null,
     avoid,
   };
 }
@@ -181,6 +191,9 @@ export function formatCreativeBriefForPrompt(brief: CreativeBrief): string {
       : `- MUST: naturally mention the business's actual name at least once (caption or hashtags).`,
     `- MUST: naturally reflect the brand tone described in the brand direction below -- ideally using one of its actual descriptive words where it fits, not just a generic approximation of that mood.`,
     `- Brand direction: ${brief.brandDirection}`,
+    brief.seasonalContext
+      ? `- ${brief.seasonalContext} Reference this ONLY if it genuinely fits this business and concept -- never force a festival/season tie-in onto unrelated content.`
+      : "",
     // Final Production Loop brief Step 4: the strict text-quality gate's
     // near-misses (scores 85-89) are consistently copy that's specific
     // enough to pass industry/business checks but still leans on a
@@ -189,5 +202,5 @@ export function formatCreativeBriefForPrompt(brief: CreativeBrief): string {
     // of them.
     `- OMISSION PRINCIPLE: premium copy comes from knowing what NOT to include. Write the shortest version that is still specific and complete -- if a sentence, clause, or adjective doesn't add a real, concrete detail, cut it rather than pad the caption with it.`,
     `- NEVER write generic AI-marketing filler ("Elevate your experience", "Discover the magic", "Unleash your potential", "Experience excellence", or phrases like them). Every claim must be a specific, concrete detail about THIS business -- e.g. "Routine care, right in Indiranagar" not "We care about your teeth."`,
-  ].join("\n");
+  ].filter(Boolean).join("\n");
 }

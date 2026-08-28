@@ -241,6 +241,20 @@ function UpcomingRow({ item, tenantId, timezone, onChanged }: { item: UpcomingIt
       setBusy(false);
     }
   };
+  // Real bug fixed live: a REVIEW_BEFORE_PUBLISH post reaching "Ready for
+  // review" previously had no action anywhere -- not this button, not the
+  // backend -- that ever moved it forward, so it sat here forever. Approve
+  // hands it to the normal scheduled-publish pipeline at its existing
+  // time; Approve & Publish Now also pulls that time forward to right now.
+  const approve = async (publishNow: boolean) => {
+    setBusy(true);
+    try {
+      await callAutopilotApi({ tenantId, action: "approve", queueItemId: item.id, publishNow });
+      onChanged();
+    } finally {
+      setBusy(false);
+    }
+  };
   const saveEdit = async () => {
     setBusy(true);
     try {
@@ -304,7 +318,13 @@ function UpcomingRow({ item, tenantId, timezone, onChanged }: { item: UpcomingIt
           </div>
         </div>
       ) : (
-        <div className="mt-1 flex gap-2">
+        <div className="mt-1 flex flex-wrap gap-2">
+          {item.status === "REVIEW_REQUIRED" && (
+            <>
+              <Button size="sm" variant="primary" disabled={busy} onClick={() => void approve(false)}>Approve</Button>
+              <Button size="sm" variant="ghost" disabled={busy} onClick={() => void approve(true)}>Approve &amp; Publish Now</Button>
+            </>
+          )}
           <Button size="sm" variant="ghost" disabled={busy || previewLoading || item.status === "PLANNED" || item.status === "BLOCKED"} onClick={() => void openPreview()}>
             {previewLoading ? "Loading…" : "Preview"}
           </Button>
