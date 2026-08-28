@@ -155,19 +155,35 @@ async function loadImageGenerationCreatives(supabase: any, tenantId: string) {
  * doesn't exist -- confirmed via live schema introspection. The real
  * table is content_variants, a per-platform text/copy row joined to its
  * parent content_master idea; content_variants itself has no tenant_id
- * column, so scoping goes through content_master.tenant_id). Distinct
- * from image_generation_jobs entirely -- these are copy-only rows with no
- * image at all, so the "Captions" tab must read from here, not filter
- * image jobs down to the ones missing a thumbnail.
+ * column, so scoping goes through content_master).
+ *
+ * A second real finding, live: content_master uses DUAL scoping --
+ * `createContentMaster` (lib/social/repositories/content.ts) writes
+ * `tenant_id` only for a genuine tenant-agent context, but real
+ * package-autopilot.ts callers (lib/social/package-autopilot.ts) pass an
+ * OwnerContext instead, which writes `owner_id` (a legacy pre-tenant
+ * identity -- the bound social_brand_profiles.owner_id, NOT
+ * ctx.workspaceTenant.tenantId). Confirmed via live introspection: every
+ * real content_master row today has tenant_id: null and a real owner_id.
+ * A query scoped only by tenant_id would silently return zero rows for
+ * every real tenant's actual package-autopilot-generated captions -- so
+ * this resolves the tenant's bound brand profile's owner_id first and
+ * matches on EITHER column, covering both the legacy owner-scoped path
+ * real data uses today and the tenant-scoped path forward-compatibly.
  */
 async function loadTextCaptions(supabase: any, tenantId: string) {
   try {
-    const { data: masters } = await supabase
-      .from("content_master")
-      .select("id, title")
+    const { data: brandProfile } = await supabase
+      .from("social_brand_profiles")
+      .select("owner_id")
       .eq("tenant_id", tenantId)
-      .order("created_at", { ascending: false })
-      .limit(30);
+      .limit(1)
+      .maybeSingle();
+    const ownerId = brandProfile?.owner_id as string | undefined;
+
+    let mastersQuery = supabase.from("content_master").select("id, title");
+    mastersQuery = ownerId ? mastersQuery.or(`tenant_id.eq.${tenantId},owner_id.eq.${ownerId}`) : mastersQuery.eq("tenant_id", tenantId);
+    const { data: masters } = await mastersQuery.order("created_at", { ascending: false }).limit(30);
     if (!masters || masters.length === 0) return [];
     const masterIds = masters.map((m: any) => m.id);
     const titleByMasterId = new Map(masters.map((m: any) => [m.id, m.title as string | null]));
