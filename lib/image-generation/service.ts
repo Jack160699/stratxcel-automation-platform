@@ -30,14 +30,22 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 const REFERENCE_MIME_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
 
 export class ImageGenerationServiceError extends Error {
-  constructor(
-    readonly code: string,
-    message: string,
-    readonly status = 400,
-    readonly retryable = false,
-  ) {
+  readonly code: string;
+  readonly status: number;
+  readonly retryable: boolean;
+
+  // Deliberately explicit fields, not TS constructor parameter properties:
+  // --experimental-strip-types (the flag every `npm run test:*` script in
+  // this repo uses) cannot parse that shorthand
+  // (ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX) -- confirmed live the moment
+  // anything in lib/social/** first gained a real (even dynamic) import
+  // edge into this file. Identical runtime behavior either way.
+  constructor(code: string, message: string, status = 400, retryable = false) {
     super(message);
     this.name = "ImageGenerationServiceError";
+    this.code = code;
+    this.status = status;
+    this.retryable = retryable;
   }
 }
 

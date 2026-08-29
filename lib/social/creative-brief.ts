@@ -38,6 +38,17 @@ export interface CreativeBriefInput {
   availablePillars: string[];
   recentPillars?: string[];
   recentConcepts?: string[];
+  /** Mission D+ Sections 10/11/26-28: real, empirically-confirmed gap --
+   * recentConcepts alone kept the categorical topic varied (customer story
+   * vs. product spotlight vs. behind-the-scenes), but the ACTUAL SENTENCES
+   * describing the business's own flagship product still converged on
+   * near-identical phrasing across posts with completely different
+   * concepts (checkRepetition's post-hoc whole-caption Jaccard check
+   * doesn't reliably catch a single repeated sentence buried in an
+   * otherwise-different caption). Feeding the model actual recent phrasing
+   * to explicitly avoid, not just a topic label, fixes the repetition at
+   * its source instead of only rejecting it after generation. */
+  recentCaptionExcerpts?: string[];
   objective: ContentObjective;
   verifiedFacts: string[];
   brandTone?: string[];
@@ -124,11 +135,21 @@ export function buildCreativeBrief(input: CreativeBriefInput): CreativeBrief {
   const audience = input.audience?.trim() || "the business's real customers -- not a generic demographic";
   const cta = `${OBJECTIVE_CTA_STYLE[input.objective]}, in the style of ${profile.ctaStyle}`;
 
+  const recentCaptionExcerpts = input.recentCaptionExcerpts ?? [];
+
   const avoid = [
     "generic marketing filler (\"experience excellence\", \"quality you can trust\", \"contact us today\", \"don't miss out\")",
     "any specific address, phone number, discount, price, rating, review count, opening hours, or guarantee not present in verifiedFacts",
     "placeholder or template scaffolding of any kind",
     ...recentConcepts.slice(0, 3).map((used) => `the "${used}" concept (used recently -- pick a genuinely different angle)`),
+    // Section 10/11/26-28: phrase-level repetition, not just topic
+    // repetition -- a genuinely different concept can still restate the
+    // business in the same sentence. Truncated so a handful of recent posts
+    // don't dominate the prompt; enough to recognize and avoid the pattern,
+    // not a full transcript.
+    ...recentCaptionExcerpts.slice(0, 3).map(
+      (text) => `reusing this exact phrasing/sentence structure from a recent post -- describe things in a genuinely different way: "${text.slice(0, 160).trim()}${text.length > 160 ? "…" : ""}"`
+    ),
   ];
 
   return {

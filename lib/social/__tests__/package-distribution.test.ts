@@ -83,7 +83,46 @@ function run() {
   }, {});
   assert.ok(Object.values(busyDayCounts).every((count) => count <= 3));
 
-  console.log("package-distribution.test.ts: ALL PASS (DST-correct scheduling, even spread, quantity/period correctness, no-burst safety, round-robin)");
+  // --- Mission D+ Section 29/39D/E: exact remaining-subscription-days
+  //     entitlement bound, stated literally in the mission's own example
+  //     ("if the subscription has 17 days remaining, generate 17"). This is
+  //     the same windowEnd-bounding this file already exercises above,
+  //     restated as its own explicit, named assertion so the connection to
+  //     this specific product requirement is locked in, not merely implied. ---
+  const seventeenDaysLeft = computePackageDistribution({
+    ...base,
+    now: new Date("2026-08-10T04:00:00.000Z"),
+    periodStart: new Date("2026-08-10T00:00:00.000Z"),
+    periodEnd: new Date("2026-08-26T00:00:00.000Z"), // 17 calendar days inclusive of `now`'s day (Aug 10-26 in IST)
+    existingCount: 0,
+    targetUnits: 28, // a full 28-post plan mid-period, more than the remaining window can hold
+    maxPostsPerDay: 1,
+  });
+  assert.equal(seventeenDaysLeft.slots.length, 17, "exactly 17 days remaining must plan exactly 17 units, never the full 28 -- the mission's own literal example");
+  assert.equal(seventeenDaysLeft.blockedReason, "insufficient_window_for_remaining_entitlement", "the shortfall (28 entitled vs 17 plannable) must be flagged, never silently truncated without a reason");
+  // Calendar-day comparison (in the authorization's own timezone), not a
+  // raw millisecond one -- the function schedules by calendar day, and
+  // periodEnd's own UTC-midnight instant can be numerically "earlier" than
+  // that same calendar day's default IST posting time.
+  const periodEndCalendarDay = new Date("2026-08-26T00:00:00.000Z").toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+  for (const slot of seventeenDaysLeft.slots) {
+    const slotCalendarDay = new Date(slot.scheduledAt).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    assert.ok(slotCalendarDay <= periodEndCalendarDay, "no slot may ever be scheduled past the real subscription period end's calendar day");
+  }
+
+  // --- Section 29: when the subscription has already fully elapsed, zero
+  //     new content is ever planned -- no silent auto-renewal, no
+  //     generating past what was actually paid for. ---
+  const alreadyEnded = computePackageDistribution({
+    ...base,
+    now: new Date("2026-09-10T00:00:00.000Z"), // after periodEnd
+    existingCount: 5,
+    targetUnits: 28,
+  });
+  assert.equal(alreadyEnded.slots.length, 0, "an elapsed period must plan zero further units");
+  assert.equal(alreadyEnded.blockedReason, "period_window_elapsed");
+
+  console.log("package-distribution.test.ts: ALL PASS (DST-correct scheduling, even spread, quantity/period correctness, no-burst safety, round-robin, exact-remaining-days entitlement bound)");
 }
 
 run();

@@ -8,12 +8,24 @@ export interface PackageCompositionItem {
   mediaType: PackageMediaKind;
   quantity: number;
 }
+/**
+ * Mission D+ Sections 16-19 (Creative Policy): BRAND_LIBRARY (default,
+ * unchanged behavior) selects from the tenant's existing approved assets
+ * via selectPackageMediaAsset -- no AI call, no new spend. NET_NEW_AI
+ * requires a real, freshly AI-generated image for every media unit; no
+ * existing asset may ever satisfy it, and a generation failure blocks the
+ * item (never falls back to an existing asset).
+ */
+export type CreativeMode = "BRAND_LIBRARY" | "NET_NEW_AI";
 export interface PackageComposition {
   items: PackageCompositionItem[];
   countingPolicy: "CONTENT_UNIT" | "PLATFORM_PUBLISH";
   allowedPlatforms: string[];
   publishingMode: "AUTO_PUBLISH" | "REVIEW_BEFORE_PUBLISH";
   servicePeriodDays: number;
+  /** Optional/absent on every pre-existing authorization -- treated as
+   * BRAND_LIBRARY, so this is a zero-migration, backward-compatible addition. */
+  creativeMode?: CreativeMode;
 }
 
 /**

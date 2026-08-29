@@ -14,6 +14,7 @@ import type { OwnerContext } from "./db-context.ts";
 import type { AgentTenantContext } from "./agent-tenant-types.ts";
 import { validatePackageComposition, compositionMediaTypeForUnit, resolvePurchasedPackageComposition, type PackageComposition } from "./package-composition.ts";
 import { selectPackageMediaAsset } from "./package-media.ts";
+import { generateNetNewPackageMediaAsset } from "./package-net-new-media.ts";
 import { recordAudit } from "./repositories/system.ts";
 import { hasCapability, isPlanTier } from "@stratxcel/payments-and-wallet";
 import { getCurrentBrandBrain, getActiveServices } from "@stratxcel/brand-brain";
@@ -37,6 +38,12 @@ import { seasonalContextLine } from "./festival-calendar.ts";
  * genuinely upcoming occasion to feel timely without stretching "upcoming"
  * past the point of relevance. */
 const FESTIVAL_LOOKAHEAD_DAYS = 7;
+
+/** Mission D+ Section 21: how many times a BLOCKED item is re-attempted in
+ * a later preparation pass before it is left BLOCKED for good. Bounded
+ * deliberately -- each retry is a real, possibly-billable AI attempt
+ * sequence, not a free re-roll. */
+const MAX_BLOCKED_RETRIES = 2;
 
 export {
   assignBrandProfileToTenant,
@@ -130,6 +137,8 @@ export interface PackageQueueItemRow {
   settled_at: string | null;
   created_at: string;
   updated_at: string;
+  /** Mission D+ Section 21: cross-pass retry counter for a BLOCKED item. 0 for every never-retried row. */
+  retry_count: number;
 }
 
 export interface PackagePublishClaim {
@@ -839,12 +848,19 @@ export async function prepareNearTermPackageItems(service: ServiceClient, author
   if (authorization.state !== "ACTIVE") return { prepared: 0, blocked: 0 };
 
   const horizonEnd = new Date(Date.now() + authorization.preparation_horizon_days * 86_400_000).toISOString();
+  // Mission D+ Section 21: a BLOCKED item (in-pass corrective-instruction
+  // attempts exhausted) is now eligible for a bounded number of cross-pass
+  // retries instead of being permanently excluded -- capped by
+  // MAX_BLOCKED_RETRIES so this can never become unbounded execution. A
+  // fresh PLANNED row's retry_count is always 0, so this filter never
+  // excludes normal first-time preparation.
   const { data: dueItems } = await service
     .from("social_autopilot_queue_items")
     .select("*")
     .eq("authorization_id", authorization.id)
     .eq("period_number", authorization.period_number)
-    .eq("status", "PLANNED")
+    .in("status", ["PLANNED", "BLOCKED"])
+    .lt("retry_count", MAX_BLOCKED_RETRIES)
     .lte("scheduled_at", horizonEnd)
     .order("scheduled_at", { ascending: true })
     .limit(20);
@@ -888,6 +904,14 @@ export async function prepareNearTermPackageItems(service: ServiceClient, author
 
   for (const raw of dueItems ?? []) {
     const item = raw as PackageQueueItemRow;
+    // Hoisted out of the try block (Mission D+ Section 21): the catch below
+    // needs the pillar a failed attempt actually used, if generation got
+    // that far, so a cross-pass retry's history-based selection steers
+    // away from it -- a `const` declared inside `try { }` is not visible
+    // inside the paired `catch { }` block. A plain string (not the full
+    // CreativeBrief) so every existing `brief.___` usage below stays
+    // completely untouched.
+    let attemptedPillar: string | null = null;
     try {
       if (!provider) throw new Error("AI provider not configured");
       const { data: account } = await service.from("social_accounts").select("platform").eq("id", item.account_id).maybeSingle();
@@ -911,7 +935,12 @@ export async function prepareNearTermPackageItems(service: ServiceClient, author
         .eq("authorization_id", authorization.id)
         .not("content_pillar", "is", null)
         .order("created_at", { ascending: false })
-        .limit(5);
+        // Mission D+ Section 10/26-28: widened from 5 -- a 24-28 day
+        // remaining period generates well past a 5-item lookback before a
+        // pillar naturally comes back around, so a small window stopped
+        // being a meaningful diversity signal partway through a real
+        // campaign.
+        .limit(15);
       const recentPillarNames = [...new Set((recentPillars ?? []).map((row) => row.content_pillar as string))];
 
       // Creative memory (Section 11/26): recent concept/caption/objective
@@ -927,7 +956,8 @@ export async function prepareNearTermPackageItems(service: ServiceClient, author
         .eq("authorization_id", authorization.id)
         .not("variant_id", "is", null)
         .order("created_at", { ascending: false })
-        .limit(8);
+        // Mission D+ Section 10/26-28: widened alongside the pillar window above.
+        .limit(15);
       const recentVariantIds = [...new Set((recentVariantIdRows ?? []).map((row) => row.variant_id as string))];
       const recentConcepts: string[] = [];
       const recentCaptions: string[] = [];
@@ -977,6 +1007,7 @@ export async function prepareNearTermPackageItems(service: ServiceClient, author
         availablePillars: pillarNames,
         recentPillars: recentPillarNames,
         recentConcepts,
+        recentCaptionExcerpts: recentCaptions,
         objective,
         verifiedFacts: businessInformation,
         brandTone: brandProfile.voice.tone,
@@ -988,6 +1019,7 @@ export async function prepareNearTermPackageItems(service: ServiceClient, author
         // the preparation moment's.
         seasonalContext: seasonalContextLine(new Date(item.scheduled_at), FESTIVAL_LOOKAHEAD_DAYS),
       });
+      attemptedPillar = brief.contentPillar;
 
       // Premium Creative Intelligence (build brief Section 2): a real
       // creative-treatment step BEFORE copy -- business facts -> brand
@@ -1134,7 +1166,23 @@ export async function prepareNearTermPackageItems(service: ServiceClient, author
       const generated = loopResult.content;
       const qualityScore = loopResult.scoreResult;
 
-      const mediaAsset = await selectPackageMediaAsset(service, { tenantId: authorization.tenant_id, ownerId: brandProfile.owner_id, mediaType, avoidAssetIds: recentAssetIds });
+      // Mission D+ Sections 16-19: NET_NEW_AI must never fall back to
+      // selectPackageMediaAsset -- generateNetNewPackageMediaAsset throws on
+      // any real failure, which this try/catch already routes to BLOCKED
+      // (never a silent old-image substitution, never PREPARED without a
+      // genuinely new asset).
+      const creativeMode = authorization.package_composition.creativeMode ?? "BRAND_LIBRARY";
+      const mediaAsset =
+        mediaType === "text"
+          ? null
+          : creativeMode === "NET_NEW_AI"
+            ? await generateNetNewPackageMediaAsset(service, {
+                tenantId: authorization.tenant_id,
+                ownerId: brandProfile.owner_id,
+                treatment,
+                queueItemId: item.id,
+              })
+            : await selectPackageMediaAsset(service, { tenantId: authorization.tenant_id, ownerId: brandProfile.owner_id, mediaType, avoidAssetIds: recentAssetIds });
       // Real gap found live (Fix Main Content UI / Force Publish mission):
       // content_master/content_variants carry a DB-enforced XOR constraint
       // -- (owner_id IS NOT NULL) <> (tenant_id IS NOT NULL), see
@@ -1213,15 +1261,32 @@ export async function prepareNearTermPackageItems(service: ServiceClient, author
           updated_at: new Date().toISOString(),
         })
         .eq("id", item.id)
-        .eq("status", "PLANNED"); // only advance a still-PLANNED row — never overwrite a concurrently-edited/settled one
+        .in("status", ["PLANNED", "BLOCKED"]); // only advance a still-PLANNED/BLOCKED row — never overwrite a concurrently-edited/settled one; BLOCKED is included so a successful cross-pass retry (Section 21) can advance it too
       prepared += 1;
     } catch (err) {
       blocked += 1;
+      // Mission D+ Section 21: a retried BLOCKED item's failed pillar is
+      // now recorded when generation got far enough to pick one
+      // (previously only a successful PREPARED write ever set
+      // content_pillar) -- recentPillarNames above scans ALL queue items
+      // regardless of status, so this is what makes the NEXT retry's
+      // deterministic selectLeastRecentlyUsed actually steer toward a
+      // different pillar instead of re-deriving the identical failed one
+      // from unchanged history. null when the failure happened before a
+      // pillar was ever chosen (e.g. no AI provider configured) -- leaves
+      // the item's existing content_pillar (if any) untouched rather than
+      // overwriting it with a fabricated value.
       await service
         .from("social_autopilot_queue_items")
-        .update({ status: "BLOCKED", last_error: err instanceof Error ? err.message : "preparation failed", updated_at: new Date().toISOString() })
+        .update({
+          status: "BLOCKED",
+          ...(attemptedPillar ? { content_pillar: attemptedPillar } : {}),
+          last_error: err instanceof Error ? err.message : "preparation failed",
+          retry_count: item.retry_count + 1,
+          updated_at: new Date().toISOString(),
+        })
         .eq("id", item.id)
-        .eq("status", "PLANNED");
+        .in("status", ["PLANNED", "BLOCKED"]);
     }
   }
 

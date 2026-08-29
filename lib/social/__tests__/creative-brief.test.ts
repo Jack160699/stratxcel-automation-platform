@@ -152,6 +152,36 @@ function testPromptWithNoFactsStillRequiresNameButNotFacts() {
   console.log("creative-brief.test.ts: zero-facts brief still requires the name but not a fact reference — PASS");
 }
 
+function testAvoidListWarnsAgainstRecentCaptionPhrasing() {
+  // Mission D+ Sections 10/11/26-28: real evidence from a live campaign --
+  // four posts with four genuinely different concepts (customer story,
+  // product spotlight, behind the scenes, helpful tip) still all restated
+  // the business's own product with near-identical phrasing
+  // ("automatically researches, creates, validates, schedules, and
+  // publishes branded social content" appeared in 3 of 4). recentConcepts
+  // alone can't catch this -- the concepts genuinely differed. The brief
+  // must explicitly name the recent phrasing to avoid, not just the topic.
+  const recentCaption =
+    "At Stratxcel, our Social Autopilot automatically researches, creates, validates, schedules, and publishes branded social content for local business owners across India.";
+  const brief = buildCreativeBrief({
+    ...BASE,
+    businessName: "Acme",
+    industryText: "Retail",
+    recentCaptionExcerpts: [recentCaption],
+  });
+  const prompt = formatCreativeBriefForPrompt(brief);
+  assert.ok(brief.avoid.some((a) => a.includes("automatically researches, creates, validates, schedules")), "avoid list must carry the actual recent phrasing, not just a topic label");
+  assert.ok(prompt.includes("automatically researches, creates, validates, schedules"), "the real recent phrasing must reach the prompt text the model actually sees");
+  assert.ok(/reusing this exact phrasing/i.test(prompt), "must explicitly instruct against reusing the phrasing, not just display it inertly");
+  console.log("creative-brief.test.ts: avoid list carries real recent-caption phrasing into the prompt, not just topic labels — PASS");
+}
+
+function testNoRecentCaptionsProducesNoPhantomPhraseWarnings() {
+  const brief = buildCreativeBrief({ ...BASE, businessName: "Acme", industryText: "Retail" });
+  assert.ok(!brief.avoid.some((a) => a.includes("reusing this exact phrasing")), "must not fabricate a phrasing warning when there is no real recent-caption history yet (e.g. day 1 of a fresh campaign)");
+  console.log("creative-brief.test.ts: zero recent captions produces zero fabricated phrasing warnings — PASS");
+}
+
 function run() {
   testThrowsWithNoPillars();
   testSelectObjectiveNeverPicksSalesWithoutARealOffer();
@@ -167,6 +197,8 @@ function run() {
   testPromptExplicitlyRequiresBusinessNameFactAndToneUsage();
   testPromptWithNoFactsStillRequiresNameButNotFacts();
   testPromptIncludesOmissionPrincipleAndBansFiller();
+  testAvoidListWarnsAgainstRecentCaptionPhrasing();
+  testNoRecentCaptionsProducesNoPhantomPhraseWarnings();
   console.log("creative-brief.test.ts: ALL PASS");
 }
 
