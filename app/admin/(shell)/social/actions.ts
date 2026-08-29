@@ -453,6 +453,7 @@ export async function runTenantContentBackfillAction() {
     let planned = 0;
     let prepared = 0;
     let blocked = 0;
+    let recoveryExhausted = 0;
     let failures = 0;
     let moreWorkRemaining = false;
     for (const auth of authorizations ?? []) {
@@ -466,6 +467,7 @@ export async function runTenantContentBackfillAction() {
         planned += planResult.planned;
         prepared += prepareResult.prepared;
         blocked += prepareResult.blocked;
+        recoveryExhausted += prepareResult.recoveryExhausted;
         if (prepareResult.moreWorkRemaining) moreWorkRemaining = true;
       } catch (err) {
         failures++;
@@ -477,8 +479,8 @@ export async function runTenantContentBackfillAction() {
       actorType: "USER",
       actorId: ctx.ownerId,
       action: "social.package.retroactive_backfill",
-      summary: `Retroactive tenant content backfill: ${(authorizations ?? []).length} authorization(s) scanned, planned=${planned}, prepared=${prepared}, blocked=${blocked}, failures=${failures}${moreWorkRemaining ? " -- more eligible work remains; chaining the real automatic producer so this doesn't require another click" : ""}`,
-      meta: { authorizationCount: (authorizations ?? []).length, planned, prepared, blocked, failures, moreWorkRemaining },
+      summary: `Retroactive tenant content backfill: ${(authorizations ?? []).length} authorization(s) scanned, planned=${planned}, prepared=${prepared}, blocked=${blocked}, recoveryExhausted=${recoveryExhausted}, failures=${failures}${moreWorkRemaining ? " -- more eligible work remains; chaining the real automatic producer so this doesn't require another click" : ""}`,
+      meta: { authorizationCount: (authorizations ?? []).length, planned, prepared, blocked, recoveryExhausted, failures, moreWorkRemaining },
     });
 
     // Mission E Section 18/26/27: an admin click remains available for

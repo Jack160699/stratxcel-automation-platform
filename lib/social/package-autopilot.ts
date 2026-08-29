@@ -39,11 +39,38 @@ import { seasonalContextLine } from "./festival-calendar.ts";
  * past the point of relevance. */
 const FESTIVAL_LOOKAHEAD_DAYS = 7;
 
-/** Mission D+ Section 21: how many times a BLOCKED item is re-attempted in
- * a later preparation pass before it is left BLOCKED for good. Bounded
- * deliberately -- each retry is a real, possibly-billable AI attempt
- * sequence, not a free re-roll. */
-const MAX_BLOCKED_RETRIES = 2;
+/**
+ * Mission F Section 3/11: a real, STAGED recovery policy, not a flat retry
+ * count. "2 -> 10, same prompt repeated" was explicitly rejected -- every
+ * one of these attempts (retry_count 0..MAX_RECOVERY_ATTEMPTS-1) forces a
+ * materially different generation strategy (see the recovery-stage logic in
+ * prepareNearTermPackageItems below), so a real quality/originality
+ * rejection gets a genuine chance to become a genuinely different, passing
+ * post instead of permanently consuming one of the customer's paid days.
+ * Still bounded (Section 11's dead-letter safety limit): each attempt is a
+ * real, possibly-billable AI call sequence, not a free re-roll. Once
+ * exhausted, the item is marked `recovery_exhausted` (Section 10) -- BLOCKED
+ * stops meaning "still being retried" and starts meaning "needs a human
+ * look" -- but it is never deleted, hidden, or silently dropped from the
+ * campaign (Section 12).
+ */
+export const MAX_RECOVERY_ATTEMPTS = 4;
+
+/** Mission F Section 6: one rejected attempt's real history -- what was
+ * tried and why it failed. Read by the NEXT attempt on the same item to
+ * force a genuinely different concept/pillar/objective, and to explain the
+ * previous mistake explicitly rather than leaving it to be rediscovered. */
+export interface RecoveryAttemptRecord {
+  attempt: number;
+  pillar: string | null;
+  concept: string | null;
+  objective: string | null;
+  /** Real QualityFailureReason codes (e.g. "DUPLICATE_CONCEPT", "WEAK_CTA")
+   * when the failure came from the quality gate; empty when it came from
+   * something else (missing provider, image generation, etc). */
+  failureReasons: string[];
+  at: string;
+}
 
 export {
   assignBrandProfileToTenant,
@@ -139,6 +166,11 @@ export interface PackageQueueItemRow {
   updated_at: string;
   /** Mission D+ Section 21: cross-pass retry counter for a BLOCKED item. 0 for every never-retried row. */
   retry_count: number;
+  /** Mission F Section 6: this item's own rejected-attempt history. */
+  recovery_state: RecoveryAttemptRecord[];
+  /** Mission F Section 10/11: true once every staged recovery attempt has
+   * been tried and failed -- excluded from further automatic pickup. */
+  recovery_exhausted: boolean;
 }
 
 export interface PackagePublishClaim {
@@ -855,6 +887,10 @@ const CANONICAL_PLATFORM_LABEL: Record<string, string> = {
 export interface PrepareNearTermResult {
   prepared: number;
   blocked: number;
+  /** Mission F Section 11/25/37: how many of this call's BLOCKED outcomes
+   * were a genuine recovery exhaustion (every staged attempt tried and
+   * failed), not just an ordinary still-being-retried BLOCKED. */
+  recoveryExhausted: number;
   /** Mission E Section 2/4: true when this call stopped before exhausting
    * every eligible item -- either the real runtime deadline was reached, or
    * a real follow-up count found more eligible items beyond this batch.
@@ -880,24 +916,27 @@ export async function prepareNearTermPackageItems(
 ): Promise<PrepareNearTermResult> {
   const deadline = options?.deadlineMs ?? Date.now() + DEFAULT_PREPARE_BUDGET_MS;
   const { data: authRow } = await service.from("social_autopilot_authorizations").select("*").eq("id", authorizationId).maybeSingle();
-  if (!authRow) return { prepared: 0, blocked: 0, moreWorkRemaining: false };
+  if (!authRow) return { prepared: 0, blocked: 0, recoveryExhausted: 0, moreWorkRemaining: false };
   const authorization = authRow as PackageAuthorizationRow;
-  if (authorization.state !== "ACTIVE") return { prepared: 0, blocked: 0, moreWorkRemaining: false };
+  if (authorization.state !== "ACTIVE") return { prepared: 0, blocked: 0, recoveryExhausted: 0, moreWorkRemaining: false };
 
   const horizonEnd = new Date(Date.now() + authorization.preparation_horizon_days * 86_400_000).toISOString();
-  // Mission D+ Section 21: a BLOCKED item (in-pass corrective-instruction
-  // attempts exhausted) is now eligible for a bounded number of cross-pass
-  // retries instead of being permanently excluded -- capped by
-  // MAX_BLOCKED_RETRIES so this can never become unbounded execution. A
-  // fresh PLANNED row's retry_count is always 0, so this filter never
-  // excludes normal first-time preparation.
+  // Mission D+ Section 21 / Mission F Section 3/10: a BLOCKED item (in-pass
+  // corrective-instruction attempts exhausted) is eligible for a bounded
+  // number of cross-pass recovery retries instead of being permanently
+  // excluded -- capped by MAX_RECOVERY_ATTEMPTS so this can never become
+  // unbounded execution, and excluded once recovery_exhausted is set (every
+  // staged attempt genuinely tried and failed). A fresh PLANNED row's
+  // retry_count is always 0 and recovery_exhausted always false, so this
+  // filter never excludes normal first-time preparation.
   const { data: dueItems } = await service
     .from("social_autopilot_queue_items")
     .select("*")
     .eq("authorization_id", authorization.id)
     .eq("period_number", authorization.period_number)
     .in("status", ["PLANNED", "BLOCKED"])
-    .lt("retry_count", MAX_BLOCKED_RETRIES)
+    .eq("recovery_exhausted", false)
+    .lt("retry_count", MAX_RECOVERY_ATTEMPTS)
     .lte("scheduled_at", horizonEnd)
     .order("scheduled_at", { ascending: true })
     .limit(20);
@@ -905,6 +944,7 @@ export async function prepareNearTermPackageItems(
   const provider = resolveConfiguredProvider();
   let prepared = 0;
   let blocked = 0;
+  let recoveryExhausted = 0;
 
   // Fact/Claim Safety Layer (Section 4/5 of the build brief): ground
   // generation in the tenant's REAL verified business facts instead of
@@ -916,7 +956,10 @@ export async function prepareNearTermPackageItems(
   // failure here must never block content preparation, which already
   // worked without this. buildVerifiedBusinessInformation omits anything
   // not actually present -- it never invents a fact.
-  let businessInformation: string[] = [];
+  // Mission F: named _batch to make clear this is the once-per-run value --
+  // shadowed per-item below (Section 5 research-driven recovery) for an
+  // item on its last allowed recovery attempt, never mutated here.
+  let businessInformationBatch: string[] = [];
   if ((dueItems ?? []).length > 0) {
     const [brandBrainResult, connectorInsightsResult] = await Promise.allSettled([
       getCurrentBrandBrain(service as Parameters<typeof getCurrentBrandBrain>[0], authorization.tenant_id),
@@ -925,7 +968,7 @@ export async function prepareNearTermPackageItems(
     const brandBrain = brandBrainResult.status === "fulfilled" ? brandBrainResult.value : null;
     const insights = connectorInsightsResult.status === "fulfilled" ? connectorInsightsResult.value : null;
     const googleBusiness = insights?.googleBusiness.state === "available" ? insights.googleBusiness.data : null;
-    businessInformation = buildVerifiedBusinessInformation({ googleBusiness, brandBrain: brandBrain?.content ?? null });
+    businessInformationBatch = buildVerifiedBusinessInformation({ googleBusiness, brandBrain: brandBrain?.content ?? null });
     // Brand Brain Final UX + Data + Save System Section 7: the tenant's
     // real structured Services (added via /app/brand's Services editor)
     // must reach Social Autopilot's real automated generation, not just
@@ -936,7 +979,7 @@ export async function prepareNearTermPackageItems(
     // tenant whose brandProfile.products already came from the same
     // source, and real new signal for one who has only saved services on
     // the canonical Brand Brain.
-    businessInformation = [...businessInformation, ...getActiveServices(brandBrain?.content).map((s) => (s.shortDescription ? `Service: ${s.name} — ${s.shortDescription}` : `Service: ${s.name}`))];
+    businessInformationBatch = [...businessInformationBatch, ...getActiveServices(brandBrain?.content).map((s) => (s.shortDescription ? `Service: ${s.name} — ${s.shortDescription}` : `Service: ${s.name}`))];
   }
 
   let deadlineHit = false;
@@ -959,6 +1002,35 @@ export async function prepareNearTermPackageItems(
     // CreativeBrief) so every existing `brief.___` usage below stays
     // completely untouched.
     let attemptedPillar: string | null = null;
+    let attemptedConcept: string | null = null;
+    let attemptedObjective: string | null = null;
+    /** Real QualityFailureReason codes from this attempt's last generation
+     * try (Mission F Section 6/25) -- captured even when the item ultimately
+     * fails, so the catch block can persist WHY, not just THAT it failed. */
+    let lastHardFailureReasons: string[] = [];
+    // Mission F Section 3/4/6: this item's OWN rejected-attempt history --
+    // read before generating again so a cross-pass retry forces a genuinely
+    // different angle, not a deterministic re-derivation of the identical
+    // rejected one from unchanged campaign-wide recency alone. Present for
+    // every never-retried row too (always []), so this is a pure no-op on
+    // normal first-time preparation.
+    const priorAttempts: RecoveryAttemptRecord[] = Array.isArray(item.recovery_state) ? item.recovery_state : [];
+    const priorConcepts = [...new Set(priorAttempts.map((a) => a.concept).filter((v): v is string => Boolean(v)))];
+    const priorPillars = [...new Set(priorAttempts.map((a) => a.pillar).filter((v): v is string => Boolean(v)))];
+    const priorObjectives = [...new Set(priorAttempts.map((a) => a.objective).filter((v): v is string => Boolean(v)))] as ContentObjective[];
+    const priorFailureReasons = [...new Set(priorAttempts.flatMap((a) => a.failureReasons ?? []))];
+    // Mission F Section 3: staged, failure-specific recovery -- never a
+    // blind identical retry. Retry 1+ always excludes the exact
+    // concept/pillar already rejected for THIS item (Section 4
+    // DUPLICATE_CONCEPT handling: "the new concept must be genuinely
+    // different"). A retry additionally forces a new objective (-> a new
+    // CTA style, Section 4 WEAK_CTA handling) when a previous attempt
+    // specifically failed WEAK_CTA, or generically from the second retry
+    // onward. The LAST allowed attempt also re-gathers fresh business
+    // research (Section 5) rather than retrying against stale context.
+    const isRecoveryRetry = item.retry_count > 0;
+    const forceNewObjective = isRecoveryRetry && (priorFailureReasons.includes("WEAK_CTA") || item.retry_count >= 2);
+    const isFinalRecoveryAttempt = item.retry_count >= MAX_RECOVERY_ATTEMPTS - 1;
     try {
       if (!provider) throw new Error("AI provider not configured");
       const { data: account } = await service.from("social_accounts").select("platform").eq("id", item.account_id).maybeSingle();
@@ -973,6 +1045,28 @@ export async function prepareNearTermPackageItems(
 
       const mediaType = compositionMediaTypeForUnit(authorization.package_composition, contentUnitIndexForRow(item.package_sequence, authorization.counting_policy));
       if (!mediaType) throw new Error("package_composition_exhausted");
+
+      // Mission F Section 5 (research-driven recovery): shadows the
+      // batch-level `businessInformation` for the rest of this item's
+      // generation ONLY -- "research once, generate many" stays correct for
+      // every normal item; only an item on its LAST allowed recovery
+      // attempt (already exhausted campaign-wide diversity signals) pays
+      // for a genuine fresh re-gather, reusing the SAME real connector
+      // (never a second research engine). Best-effort: a failed refresh
+      // must never block this real, possibly-final attempt.
+      let businessInformation = businessInformationBatch;
+      if (isFinalRecoveryAttempt) {
+        try {
+          const freshInsights = await createSocialAuditConnectorInsightsProvider(service as Parameters<typeof createSocialAuditConnectorInsightsProvider>[0]).gather(authorization.tenant_id);
+          const freshGoogleBusiness = freshInsights?.googleBusiness.state === "available" ? freshInsights.googleBusiness.data : null;
+          if (freshGoogleBusiness) {
+            const refreshed = buildVerifiedBusinessInformation({ googleBusiness: freshGoogleBusiness, brandBrain: null });
+            businessInformation = [...new Set([...businessInformationBatch, ...refreshed])];
+          }
+        } catch {
+          // businessInformation stays the batch-level facts -- fine.
+        }
+      }
 
       // Avoid obvious repetition (Section 26): tell the strategy layer which
       // pillars were used most recently in this authorization.
@@ -1043,7 +1137,14 @@ export async function prepareNearTermPackageItems(
       // stays false until that data model exists: SALES never enters the
       // objective rotation without a real offer behind it (Section 5) --
       // documented, honest gap, not a silent invention.
-      const objective = selectObjective({ hasOffer: false, recentObjectives });
+      const objective = selectObjective({
+        hasOffer: false,
+        recentObjectives,
+        // Mission F Section 3/4 (WEAK_CTA recovery stage): a hard
+        // exclusion, only when this attempt is actually staged to change
+        // the objective -- normal first-time preparation is untouched.
+        ...(forceNewObjective ? { excludeObjectives: priorObjectives } : {}),
+      });
 
       const brief = buildCreativeBrief({
         businessName: brandProfile.identity.name?.trim() || "",
@@ -1065,8 +1166,17 @@ export async function prepareNearTermPackageItems(
         // for a slot 4 days out should reflect what's near ITS date, not
         // the preparation moment's.
         seasonalContext: seasonalContextLine(new Date(item.scheduled_at), FESTIVAL_LOOKAHEAD_DAYS),
+        // Mission F Section 3/4/7: a real, hard-guaranteed exclusion of
+        // whatever already failed FOR THIS EXACT ITEM -- never a blind
+        // identical retry. Empty on a never-retried item, so this is a
+        // pure no-op for normal first-time preparation.
+        excludeConcepts: isRecoveryRetry ? priorConcepts : [],
+        excludePillars: isRecoveryRetry ? priorPillars : [],
+        recentFailureContext: isRecoveryRetry ? priorFailureReasons : [],
       });
       attemptedPillar = brief.contentPillar;
+      attemptedConcept = brief.concept;
+      attemptedObjective = objective;
 
       // Premium Creative Intelligence (build brief Section 2): a real
       // creative-treatment step BEFORE copy -- business facts -> brand
@@ -1205,6 +1315,13 @@ export async function prepareNearTermPackageItems(
         }),
       });
 
+      // Mission F Section 6/25: captured regardless of outcome -- the real
+      // hard-failure reason codes from the LAST generation try this call
+      // made, so a failure below (here or from anything downstream, e.g.
+      // creative generation) still lets the catch block persist WHY this
+      // attempt specifically failed, not just THAT it did.
+      lastHardFailureReasons = loopResult.attempts[loopResult.attempts.length - 1]?.hardFailureReasons ?? [];
+
       if (!loopResult.success || !loopResult.content || !loopResult.scoreResult) {
         // Never a bare "quality gate failed" -- finalReason is built from
         // the actual hard-failure reason codes (Phase B).
@@ -1323,17 +1440,62 @@ export async function prepareNearTermPackageItems(
       // pillar was ever chosen (e.g. no AI provider configured) -- leaves
       // the item's existing content_pillar (if any) untouched rather than
       // overwriting it with a fabricated value.
+      const errorMessage = err instanceof Error ? err.message : "preparation failed";
+      const nextRetryCount = item.retry_count + 1;
+      // Mission F Section 11: a real, bounded dead-letter limit -- once
+      // every staged recovery attempt has genuinely been tried and failed,
+      // stop retrying automatically. This never drops the day from the
+      // campaign (Section 12/9) -- the row, and its full real failure
+      // history, stays exactly where it is, explicitly marked for a human
+      // look instead of silently retried forever or silently abandoned.
+      const exhausted = nextRetryCount >= MAX_RECOVERY_ATTEMPTS;
+      if (exhausted) recoveryExhausted += 1;
+      // Mission F Section 6: this attempt's real outcome, appended to the
+      // item's own recovery ledger -- what the NEXT attempt (if any) reads
+      // to guarantee a materially different strategy.
+      const attemptRecord: RecoveryAttemptRecord = {
+        attempt: nextRetryCount,
+        pillar: attemptedPillar,
+        concept: attemptedConcept,
+        objective: attemptedObjective,
+        failureReasons: lastHardFailureReasons,
+        at: new Date().toISOString(),
+      };
       await service
         .from("social_autopilot_queue_items")
         .update({
           status: "BLOCKED",
           ...(attemptedPillar ? { content_pillar: attemptedPillar } : {}),
-          last_error: err instanceof Error ? err.message : "preparation failed",
-          retry_count: item.retry_count + 1,
+          last_error: exhausted
+            ? `recovery exhausted after ${nextRetryCount} structurally different attempts -- last failure: ${errorMessage}`
+            : errorMessage,
+          retry_count: nextRetryCount,
+          recovery_state: [...priorAttempts, attemptRecord],
+          recovery_exhausted: exhausted,
           updated_at: new Date().toISOString(),
         })
         .eq("id", item.id)
         .in("status", ["PLANNED", "BLOCKED"]);
+      if (exhausted) {
+        // Section 12: "expose it in admin/support diagnostics" -- a real
+        // audit trail entry distinct from an ordinary BLOCKED (which is
+        // still actively, automatically being retried), so this is
+        // actually observable without reading queue-item rows directly.
+        // The /admin/social/packages "Blocked items" panel surfaces the
+        // same recovery_exhausted flag directly on the row.
+        await recordAudit({
+          actorType: "SYSTEM",
+          action: "social.package.recovery_exhausted",
+          targetType: "social_autopilot_queue_item",
+          targetId: item.id,
+          summary: `Content item exhausted all ${MAX_RECOVERY_ATTEMPTS} staged recovery attempts -- needs a human/support look`,
+          meta: {
+            tenantId: authorization.tenant_id,
+            authorizationId: authorization.id,
+            attempts: [...priorAttempts, attemptRecord].map((a) => ({ attempt: a.attempt, failureReasons: a.failureReasons })),
+          },
+        }).catch(() => {});
+      }
     }
   }
 
@@ -1351,12 +1513,13 @@ export async function prepareNearTermPackageItems(
       .eq("authorization_id", authorization.id)
       .eq("period_number", authorization.period_number)
       .in("status", ["PLANNED", "BLOCKED"])
-      .lt("retry_count", MAX_BLOCKED_RETRIES)
+      .eq("recovery_exhausted", false)
+      .lt("retry_count", MAX_RECOVERY_ATTEMPTS)
       .lte("scheduled_at", horizonEnd);
     moreWorkRemaining = (count ?? 0) > 0;
   }
 
-  return { prepared, blocked, moreWorkRemaining };
+  return { prepared, blocked, recoveryExhausted, moreWorkRemaining };
 }
 
 /**

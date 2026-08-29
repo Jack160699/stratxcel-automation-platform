@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { requireOwnerContext } from "@/lib/social/db-context";
+import { MAX_RECOVERY_ATTEMPTS } from "@/lib/social/package-autopilot";
 import { createSupabaseServiceClient } from "@/lib/supabase/service";
 import { listMyTenants } from "@/lib/tenants/current-tenant";
 import { StatusBadge } from "../components/StatusBadge";
@@ -27,7 +28,7 @@ export default async function SocialPackagesPage() {
   const [{ data: runs }, { data: authorizations }, { data: blockedItems }] = await Promise.all([
     service.from("social_autopilot_producer_runs").select("*").order("run_at", { ascending: false }).limit(10),
     service.from("social_autopilot_authorizations").select("id, tenant_id, state, publishing_mode, period_number, period_target_units, starts_at, ends_at, allowed_platforms").order("updated_at", { ascending: false }).limit(50),
-    service.from("social_autopilot_queue_items").select("id, tenant_id, authorization_id, status, last_error, scheduled_at").eq("status", "BLOCKED").order("updated_at", { ascending: false }).limit(20),
+    service.from("social_autopilot_queue_items").select("id, tenant_id, authorization_id, status, last_error, scheduled_at, retry_count, recovery_exhausted").eq("status", "BLOCKED").order("updated_at", { ascending: false }).limit(20),
   ]);
 
   const lastRun = runs?.[0] ?? null;
@@ -78,6 +79,13 @@ export default async function SocialPackagesPage() {
       </section>
 
       <section className="saut-card p-4">
+        {/* Mission F Section 10/12: BLOCKED means "recovery in progress"
+            (still eligible for an automatic retry with a materially
+            different angle) unless recovery_exhausted is true, which means
+            every staged recovery attempt has genuinely been tried and
+            failed and this one specifically needs a human/support look --
+            distinguished here so staff aren't left guessing which BLOCKED
+            rows are self-healing and which aren't. */}
         <div className="saut-section-title mb-3">Blocked items ({blockedItems?.length ?? 0})</div>
         {!blockedItems?.length ? (
           <p className="text-sm" style={{ color: "var(--saut-text-subtle)" }}>Nothing needs attention.</p>
@@ -86,6 +94,11 @@ export default async function SocialPackagesPage() {
             {blockedItems.map((item) => (
               <div key={item.id} className="saut-card-2 flex flex-wrap items-center justify-between gap-2 p-2.5 text-xs">
                 <span className="saut-mono">{item.tenant_id}</span>
+                {item.recovery_exhausted ? (
+                  <span style={{ color: "var(--saut-danger)" }}>Recovery exhausted ({item.retry_count}/{MAX_RECOVERY_ATTEMPTS} attempts) — needs a human look</span>
+                ) : (
+                  <span style={{ color: "var(--saut-text-subtle)" }}>Recovering ({item.retry_count}/{MAX_RECOVERY_ATTEMPTS} attempts) — will retry automatically with a different angle</span>
+                )}
                 <span style={{ color: "var(--saut-danger)" }}>{item.last_error}</span>
                 <span>{new Date(item.scheduled_at).toLocaleString()}</span>
               </div>

@@ -151,3 +151,21 @@ export function selectLeastRecentlyUsed<T extends string>(candidates: T[], recen
   }
   return best;
 }
+
+/**
+ * Mission F Section 4/7: a real, *guaranteed* exclusion, not just recency
+ * weighting. `selectLeastRecentlyUsed` alone can still re-pick a value that
+ * was JUST rejected -- e.g. a business with only 3 pillars and a thin recent
+ * history can legitimately roll the identical pillar right back around. A
+ * cross-pass recovery retry needs a hard guarantee that a concept/pillar
+ * already rejected FOR THIS EXACT ITEM cannot be re-selected -- "the new
+ * concept must be genuinely different" is a correctness requirement, not a
+ * preference. Falls back to the full (non-excluded) candidate pool, still
+ * ranked by recency, if excluding leaves nothing -- a business with a single
+ * saved pillar must still get a real brief rather than throwing, and a
+ * degraded-but-working retry beats a permanently stuck one. */
+export function selectLeastRecentlyUsedExcluding<T extends string>(candidates: T[], recentValues: T[], excludeValues: T[]): T {
+  const excludeSet = new Set(excludeValues);
+  const remaining = candidates.filter((candidate) => !excludeSet.has(candidate));
+  return selectLeastRecentlyUsed(remaining.length ? remaining : candidates, recentValues);
+}

@@ -16,6 +16,10 @@ export interface ProducerRunResult {
   itemsPlanned: number;
   itemsPrepared: number;
   itemsBlocked: number;
+  /** Mission F Section 11/25/37: how many of itemsBlocked were a genuine
+   * recovery exhaustion (every staged attempt tried and failed), not an
+   * ordinary still-being-retried BLOCKED. */
+  itemsRecoveryExhausted: number;
   failures: Array<{ authorizationId: string; error: string }>;
   durationMs: number;
   skipped?: string;
@@ -51,6 +55,7 @@ export async function runPackageAutopilotProducer(service: ServiceClient, batchL
       itemsPlanned: 0,
       itemsPrepared: 0,
       itemsBlocked: 0,
+      itemsRecoveryExhausted: 0,
       failures: [],
       durationMs: Date.now() - started,
       skipped: `kill_switch:${kill.reason ?? kill.scope}`,
@@ -69,6 +74,7 @@ export async function runPackageAutopilotProducer(service: ServiceClient, batchL
   let itemsPlanned = 0;
   let itemsPrepared = 0;
   let itemsBlocked = 0;
+  let itemsRecoveryExhausted = 0;
   let moreWorkRemaining = false;
   const failures: ProducerRunResult["failures"] = [];
   let authorizationsTouched = 0;
@@ -93,6 +99,7 @@ export async function runPackageAutopilotProducer(service: ServiceClient, batchL
       const prepared = await prepareNearTermPackageItems(service, authorization.id, { deadlineMs: sharedDeadline });
       itemsPrepared += prepared.prepared;
       itemsBlocked += prepared.blocked;
+      itemsRecoveryExhausted += prepared.recoveryExhausted;
       if (prepared.moreWorkRemaining) moreWorkRemaining = true;
     } catch (err) {
       failures.push({ authorizationId: authorization.id, error: err instanceof Error ? err.message : "producer step failed" });
@@ -104,6 +111,7 @@ export async function runPackageAutopilotProducer(service: ServiceClient, batchL
     itemsPlanned,
     itemsPrepared,
     itemsBlocked,
+    itemsRecoveryExhausted,
     failures,
     durationMs: Date.now() - started,
     moreWorkRemaining,

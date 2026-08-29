@@ -29,9 +29,10 @@ function run() {
 
   // --- BLOCKED is now selectable, but bounded -----------------------------
   assert.match(body, /\.in\("status",\s*\["PLANNED",\s*"BLOCKED"\]\)/, "the due-item query must include BLOCKED, not just PLANNED -- a BLOCKED item must not be permanently unreachable");
-  assert.match(body, /\.lt\("retry_count",\s*MAX_BLOCKED_RETRIES\)/, "the retry must be bounded by a real cap -- never unbounded re-execution of a permanently-failing item");
-  assert.match(src, /const MAX_BLOCKED_RETRIES\s*=\s*\d+;/, "the retry cap must be a real, finite constant");
-  console.log("prepareNearTermPackageItems: BLOCKED items are re-selectable, bounded by a real retry cap — PASS");
+  assert.match(body, /\.eq\("recovery_exhausted",\s*false\)/, "the due-item query must exclude items that have genuinely exhausted recovery (Mission F) -- distinct from an ordinary still-retrying BLOCKED row");
+  assert.match(body, /\.lt\("retry_count",\s*MAX_RECOVERY_ATTEMPTS\)/, "the retry must be bounded by a real cap -- never unbounded re-execution of a permanently-failing item");
+  assert.match(src, /export const MAX_RECOVERY_ATTEMPTS\s*=\s*\d+;/, "the retry cap must be a real, finite, exported constant (exported so the admin diagnostics surface can display it without hardcoding a second copy)");
+  console.log("prepareNearTermPackageItems: BLOCKED items are re-selectable, bounded by a real recovery-attempt cap — PASS");
 
   // --- A retry actually changes the angle: the failed pillar is recorded
   //     even on failure, so the next attempt's deterministic
@@ -43,8 +44,9 @@ function run() {
   console.log("prepareNearTermPackageItems: a retry's failed pillar is recorded, structurally steering the next attempt toward a different angle — PASS");
 
   // --- retry_count is actually incremented on repeated failure -----------
-  assert.match(catchBody, /retry_count:\s*item\.retry_count\s*\+\s*1/, "retry_count must increment on each real failure -- otherwise the bound above is meaningless (every BLOCKED row would read as retry_count 0 forever)");
-  console.log("prepareNearTermPackageItems: retry_count increments on real failure, making the retry cap actually enforceable — PASS");
+  assert.match(catchBody, /const nextRetryCount = item\.retry_count \+ 1;/, "retry_count must increment on each real failure -- otherwise the bound above is meaningless (every BLOCKED row would read as retry_count 0 forever)");
+  assert.match(catchBody, /retry_count:\s*nextRetryCount/, "the incremented value must actually be persisted");
+  console.log("prepareNearTermPackageItems: retry_count increments on real failure, making the recovery-attempt cap actually enforceable — PASS");
 
   // --- A successful retry can advance a BLOCKED row, not just PLANNED ----
   const successGuardIndex = body.indexOf('status: authorization.publishing_mode === "AUTO_PUBLISH"');

@@ -14,7 +14,7 @@
 
 import type { ContentObjective } from "./content-options.ts";
 import { classifyIndustry, getIndustryProfile, type IndustryCategory } from "./industry-taxonomy.ts";
-import { selectLeastRecentlyUsed } from "./content-diversity.ts";
+import { selectLeastRecentlyUsed, selectLeastRecentlyUsedExcluding } from "./content-diversity.ts";
 
 const OBJECTIVE_CTA_STYLE: Record<ContentObjective, string> = {
   REACH: "an invitation to see or discover more, not a hard sell",
@@ -49,6 +49,18 @@ export interface CreativeBriefInput {
    * to explicitly avoid, not just a topic label, fixes the repetition at
    * its source instead of only rejecting it after generation. */
   recentCaptionExcerpts?: string[];
+  /** Mission F Section 3/4/7 (recovery policy): concepts/pillars already
+   * REJECTED for this exact queue item on an earlier attempt -- unlike
+   * recentPillars/recentConcepts (soft, campaign-wide recency weighting),
+   * these are hard-excluded from selection. A cross-pass retry must
+   * genuinely change the angle, not just be nudged away from it. */
+  excludeConcepts?: string[];
+  excludePillars?: string[];
+  /** Mission F Section 4/6: the actual reason(s) a previous attempt on this
+   * exact item failed (e.g. "DUPLICATE_CONCEPT", "WEAK_CTA") -- surfaced as
+   * an explicit, diagnosable instruction rather than left for the model to
+   * rediscover the same mistake. */
+  recentFailureContext?: string[];
   objective: ContentObjective;
   verifiedFacts: string[];
   brandTone?: string[];
@@ -112,9 +124,16 @@ const STANDARD_OBJECTIVES: ContentObjective[] = ["ENGAGEMENT", "AUTHORITY", "TRA
  * selection: SALES only enters rotation when a real offer/priority-selling
  * point exists in verified facts (never assumed) -- otherwise the rotation
  * favors engagement/authority/community, which are always safe defaults. */
-export function selectObjective(input: { hasOffer: boolean; recentObjectives?: ContentObjective[] }): ContentObjective {
+export function selectObjective(input: { hasOffer: boolean; recentObjectives?: ContentObjective[]; excludeObjectives?: ContentObjective[] }): ContentObjective {
   const candidates = input.hasOffer ? OFFER_AWARE_OBJECTIVES : STANDARD_OBJECTIVES;
-  return selectLeastRecentlyUsed(candidates, input.recentObjectives ?? []);
+  // Mission F Section 4 (WEAK_CTA recovery): "re-evaluate the intended
+  // customer action... the CTA must match the content objective" -- a hard
+  // exclusion, not just recency weighting, so a retry specifically staged
+  // to fix a weak CTA is guaranteed a genuinely different objective (and
+  // therefore a genuinely different CTA style -- see OBJECTIVE_CTA_STYLE).
+  return input.excludeObjectives?.length
+    ? selectLeastRecentlyUsedExcluding(candidates, input.recentObjectives ?? [], input.excludeObjectives)
+    : selectLeastRecentlyUsed(candidates, input.recentObjectives ?? []);
 }
 
 export function buildCreativeBrief(input: CreativeBriefInput): CreativeBrief {
@@ -123,14 +142,18 @@ export function buildCreativeBrief(input: CreativeBriefInput): CreativeBrief {
   const industry = classifyIndustry(input.industryText, input.descriptionText);
   const profile = getIndustryProfile(industry);
 
-  const contentPillar = selectLeastRecentlyUsed(input.availablePillars, input.recentPillars ?? []);
+  const contentPillar = input.excludePillars?.length
+    ? selectLeastRecentlyUsedExcluding(input.availablePillars, input.recentPillars ?? [], input.excludePillars)
+    : selectLeastRecentlyUsed(input.availablePillars, input.recentPillars ?? []);
 
   // A concept is scoped to the pillar via a stable per-pillar rotation offset
   // so the SAME pillar doesn't always reach for the SAME first concept, while
   // staying deterministic (no randomness) and still diversity-aware against
   // actual recent history.
   const recentConcepts = input.recentConcepts ?? [];
-  const concept = selectLeastRecentlyUsed(profile.concepts, recentConcepts);
+  const concept = input.excludeConcepts?.length
+    ? selectLeastRecentlyUsedExcluding(profile.concepts, recentConcepts, input.excludeConcepts)
+    : selectLeastRecentlyUsed(profile.concepts, recentConcepts);
 
   const audience = input.audience?.trim() || "the business's real customers -- not a generic demographic";
   const cta = `${OBJECTIVE_CTA_STYLE[input.objective]}, in the style of ${profile.ctaStyle}`;
@@ -150,6 +173,14 @@ export function buildCreativeBrief(input: CreativeBriefInput): CreativeBrief {
     ...recentCaptionExcerpts.slice(0, 3).map(
       (text) => `reusing this exact phrasing/sentence structure from a recent post -- describe things in a genuinely different way: "${text.slice(0, 160).trim()}${text.length > 160 ? "…" : ""}"`
     ),
+    // Mission F Section 4/7: a hard recovery-retry exclusion, named
+    // explicitly and diagnosably -- not folded silently into the generic
+    // "used recently" framing above, so the model (and any human reading
+    // the prompt later) can tell a genuine past REJECTION apart from
+    // ordinary rotation.
+    ...(input.excludeConcepts?.length ? [`the following concept(s), already rejected for this exact post on a previous attempt -- do not return to them, even reworded: ${input.excludeConcepts.join("; ")}`] : []),
+    ...(input.excludePillars?.length ? [`the following content pillar(s), already rejected for this exact post on a previous attempt: ${input.excludePillars.join("; ")}`] : []),
+    ...(input.recentFailureContext?.length ? [`repeating the same mistake that got a previous attempt at this exact post rejected: ${input.recentFailureContext.join("; ")}`] : []),
   ];
 
   return {
