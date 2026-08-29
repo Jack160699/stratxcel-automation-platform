@@ -62,9 +62,9 @@ export function buildProviderReadyImagePrompt(input: {
     line("Never include these claims", brand.prohibited_claims),
     input.language?.trim() ? `Language / Cultural Context: ${input.language.trim()}` : null,
     input.styleDirection?.trim() ? `Creative direction: ${input.styleDirection.trim()}` : null,
-    input.revisionInstruction?.trim() ? `Revision request: ${input.revisionInstruction.trim()}` : null,
-    "Do not invent business facts, awards, prices, testimonials, product details, or readable logo/text not supplied in the brief.",
-    "Avoid malformed typography, watermarks, unsafe claims, and platform-inappropriate crops.",
+    "HARD MANDATORY NEGATIVE CONSTRAINT: DO NOT DRAW, RENDER, OR INVENT ANY TEXT, WORDS, LETTERS, SLOGANS, HEADLINES, LOGOS, OR BRAND MARKS ANYWHERE IN THIS IMAGE. Produce clean, authentic, editorial photography ONLY with natural lighting and realistic composition. Absolutely no fake logos, invented typography, poster banners, or text overlays.",
+    "Do not invent business facts, awards, prices, testimonials, product details, or hallucinated branding.",
+    "Avoid malformed anatomy, AI artifacts, fake logos, watermarks, unsafe claims, and platform-inappropriate crops.",
   ].filter((value): value is string => Boolean(value));
   return lines.join("\n").slice(0, 12_000);
 }
