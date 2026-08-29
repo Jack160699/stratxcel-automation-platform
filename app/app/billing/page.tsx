@@ -127,6 +127,16 @@ function isAutoPay(sub: Subscription) {
  * Price comes straight off the catalog's priceCents field (mirrors
  * packages/payments-and-wallet/src/plans.ts) rather than a second literal map.
  */
+/**
+ * GoFree subscription redemption only ever grants a RECURRING plan (it
+ * inserts a subscriptions row with a 30-day current_period_end) -- the two
+ * one-time website purchases in SELF_SERVICE_PLANS below don't share that
+ * "monthly period" semantic and are handled by a separate purchase flow, so
+ * they're deliberately excluded here rather than offered as an option the
+ * real RPC (redeem_subscription_go_free_code_v1) would reject.
+ */
+const GO_FREE_ELIGIBLE_TIERS = new Set(["seo", "social", "advanced_seo", "advanced_social", "advanced_growth"]);
+
 const SELF_SERVICE_PLANS = PRICING_TIERS.filter(
   (t) =>
     (t.planKey === "seo" ||
@@ -174,7 +184,18 @@ export default function BillingPage() {
   // test accounts holding a code issued from /admin/go-free-codes. The
   // server independently re-validates eligibility, plan, and price — this
   // form only ever submits a plan tier and a code string.
-  const [goFreePlan, setGoFreePlan] = useState<"starter" | "growth" | "business">("starter");
+  //
+  // Real bug found live (Hermes mission real end-to-end test): this used to
+  // default to "starter", a legacy tier the current self-service catalog no
+  // longer contains -- getSelfServicePlan("starter") returns null server-side
+  // (packages/payments-and-wallet/src/plans.ts), so the redeem call always
+  // failed with "This plan isn't available for GoFree activation.", for
+  // every real approved code, on every current plan option this dropdown
+  // offered. Defaulting to the first REAL self-service tier (and building
+  // the options from SELF_SERVICE_PLANS below, not a stale hardcoded list)
+  // fixes GoFree subscription redemption generally, not just for one tenant.
+  const goFreeEligiblePlans = SELF_SERVICE_PLANS.filter((p) => GO_FREE_ELIGIBLE_TIERS.has(p.tier));
+  const [goFreePlan, setGoFreePlan] = useState<string>("social");
   const [goFreeCode, setGoFreeCode] = useState("");
   const [goFreeBusy, setGoFreeBusy] = useState(false);
   const [goFreeError, setGoFreeError] = useState<string | null>(null);
@@ -305,7 +326,8 @@ export default function BillingPage() {
         setGoFreeError(body.error ?? "Could not activate this plan.");
         return;
       }
-      setGoFreeSuccess(`${goFreePlan[0]!.toUpperCase()}${goFreePlan.slice(1)} activated as a test/trial — ₹0 payable.`);
+      const activatedPlanName = goFreeEligiblePlans.find((p) => p.tier === goFreePlan)?.name ?? goFreePlan;
+      setGoFreeSuccess(`${activatedPlanName} activated as a test/trial — ₹0 payable.`);
       setGoFreeCode("");
       await load();
     } catch {
@@ -469,12 +491,14 @@ export default function BillingPage() {
               <div className="mt-3 flex flex-col gap-2 sm:flex-row">
                 <select
                   value={goFreePlan}
-                  onChange={(e) => setGoFreePlan(e.target.value as "starter" | "growth" | "business")}
+                  onChange={(e) => setGoFreePlan(e.target.value)}
                   className="rounded-sx-sm border border-sx-border bg-sx-surface-1 px-3 py-2 text-sm text-sx-text"
                 >
-                  <option value="starter">Starter — {money(SELF_SERVICE_PLANS.find((p) => p.tier === "starter")?.priceCents ?? 299900)}/mo</option>
-                  <option value="growth">Growth — {money(SELF_SERVICE_PLANS.find((p) => p.tier === "growth")?.priceCents ?? 799900)}/mo</option>
-                  <option value="business">Business — {money(SELF_SERVICE_PLANS.find((p) => p.tier === "business")?.priceCents ?? 1599900)}/mo</option>
+                  {goFreeEligiblePlans.map((p) => (
+                    <option key={p.tier} value={p.tier}>
+                      {p.name} — {money(p.priceCents)}/mo
+                    </option>
+                  ))}
                 </select>
                 <input
                   value={goFreeCode}

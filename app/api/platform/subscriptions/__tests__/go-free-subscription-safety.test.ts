@@ -24,7 +24,7 @@ import {
   publicPromoMessage,
 } from "../../../../../lib/promo/go-free.ts";
 import { PLAN_LIMITS } from "../../../../../packages/payments-and-wallet/src/entitlements.ts";
-import { PLAN_DEFINITIONS } from "../../../../../packages/payments-and-wallet/src/plans.ts";
+import { PLAN_DEFINITIONS, getSelfServicePlan } from "../../../../../packages/payments-and-wallet/src/plans.ts";
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..", "..");
 const read = (...parts: string[]) => fs.readFileSync(path.join(root, ...parts), "utf8");
@@ -221,6 +221,54 @@ function run() {
   assert.doesNotMatch(billingPage, /amountDueCents:\s*0/, "the client must never assert its own ₹0 due amount — only the server response after redemption may say so");
 
   console.log("go-free-subscription-safety.test.ts: billing UI invariants PASS");
+
+  // ===========================================================================
+  // 8. v3 catalog support — real live bug found during the Hermes mission's
+  //    real end-to-end test: the original migration only ever recognized the
+  //    legacy v2 tiers (starter/growth/business, now selfServiceCheckout:
+  //    false), so GoFree subscription redemption could not activate ANY plan
+  //    a real customer can actually buy today. Verifies the follow-up
+  //    migration adds the 5 real RECURRING self-service tiers with prices/
+  //    limits that exactly match PLAN_DEFINITIONS/PLAN_LIMITS, and that the
+  //    billing page no longer hardcodes the dead legacy tier set.
+  // ===========================================================================
+  const v3Migration = read("supabase", "migrations", "20260830080000_go_free_subscription_v3_catalog_support.sql");
+  const v3EligibleTiers: Array<{ tier: "seo" | "social" | "advanced_seo" | "advanced_social" | "advanced_growth"; limits: number[] }> = [
+    { tier: "seo", limits: [0, 0, 0, 0, 0, 0] },
+    { tier: "social", limits: [28, 0, 0, 0, 28, 0] },
+    { tier: "advanced_seo", limits: [0, 0, 0, 0, 0, 0] },
+    { tier: "advanced_social", limits: [28, 0, 0, 0, 28, 28] },
+    { tier: "advanced_growth", limits: [28, 0, 0, 1, 28, 28] },
+  ];
+  for (const { tier, limits } of v3EligibleTiers) {
+    assert.match(v3Migration, new RegExp(`p_plan_tier = '${tier}' then`), `redeem RPC must handle the real current plan_tier=${tier}`);
+    const expectedPrice = PLAN_DEFINITIONS[tier].priceCents;
+    assert.ok(v3Migration.includes(`v_price_cents := ${expectedPrice};`), `expected v_price_cents := ${expectedPrice} for ${tier} — must match PLAN_DEFINITIONS.${tier}.priceCents exactly`);
+    const expectedLimits = toArray(PLAN_LIMITS[tier]);
+    assert.deepEqual(expectedLimits, limits, `test's own expected limits for ${tier} must match the real PLAN_LIMITS.${tier} (sanity check on the test itself)`);
+    assert.ok(v3Migration.includes(`v_limits := array[${limits.join(", ")}];`), `expected v_limits := array[${limits.join(", ")}] for ${tier} — must match entitlements.ts PLAN_LIMITS.${tier}`);
+    // Every real self-service tier must also be self-service per the TS source
+    // of truth, or this migration would be granting a plan nobody can buy.
+    assert.ok(getSelfServicePlan(tier as never), `${tier} must actually be a real, current self-service plan`);
+  }
+  // The legacy branches must still be present, byte-for-byte — this migration
+  // is additive, never a replacement of the original commit's own coverage.
+  for (const tier of ["starter", "growth", "business"] as const) {
+    assert.match(v3Migration, new RegExp(`p_plan_tier = '${tier}' then`), `legacy plan_tier=${tier} must still be handled — additive, not a replacement`);
+  }
+  // The two one-time website plans are deliberately excluded (documented
+  // reason: this RPC always grants a 30-day recurring subscriptions row).
+  assert.doesNotMatch(v3Migration, /p_plan_tier = 'website_landing_page'/, "one-time website plans must not be routed through the recurring-subscription RPC");
+  assert.doesNotMatch(v3Migration, /p_plan_tier = 'website_standard'/, "one-time website plans must not be routed through the recurring-subscription RPC");
+  console.log("go-free-subscription-safety.test.ts: v3 catalog support migration matches the real TS plan/entitlement source — PASS");
+
+  const billingPageForV3 = readCode("app", "app", "billing", "page.tsx");
+  assert.doesNotMatch(billingPageForV3, /<option value="starter">/, "the dead legacy tier set must no longer be hardcoded into the GoFree dropdown");
+  assert.doesNotMatch(billingPageForV3, /<option value="growth">/);
+  assert.doesNotMatch(billingPageForV3, /<option value="business">/);
+  assert.match(billingPageForV3, /goFreeEligiblePlans\.map/, "the dropdown must be built from the real self-service catalog, not a hardcoded list");
+  assert.match(billingPageForV3, /GO_FREE_ELIGIBLE_TIERS/, "must scope GoFree eligibility to the RECURRING tiers the RPC actually supports");
+  console.log("go-free-subscription-safety.test.ts: billing page no longer offers the dead legacy tier set — PASS");
 
   console.log("go-free-subscription-safety.test.ts: ALL PASS");
 }
