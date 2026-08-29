@@ -126,7 +126,9 @@ const GENERIC_ADJECTIVE_WEIGHTS: Array<[string, number]> = [
 ];
 
 function genericAdjectiveScore(text: string): { hits: number; weight: number } {
-  const lower = text.toLowerCase();
+  // Strip legitimate tenure/experience phrases (e.g. "14 years of clinical experience", "10 years experience")
+  // so factual doctor/chef backgrounds are never penalized as generic fluff.
+  const lower = text.toLowerCase().replace(/\b\d+\+?\s*(?:years?|yrs?)(?:\s+of)?(?:\s+[a-z]+)?\s+experience\b/g, "");
   let hits = 0;
   let weight = 0;
   for (const [phrase, w] of GENERIC_ADJECTIVE_WEIGHTS) {
@@ -246,6 +248,40 @@ export function scoreGeneratedContent(input: QualityScoreInput): QualityScoreRes
   // --- Hard-fail: no discernible CTA at all. ---
   if (!hasCtaVerb(caption) && !hasCtaVerb(input.hashtags.join(" "))) {
     hardFailures.push({ reason: "WEAK_CTA", detail: "no recognizable call-to-action verb found in the caption or hashtags" });
+  }
+
+  // --- Hard-fail: Anti-Template Rule (Mission G §10) ---
+  // The generator must NOT repeatedly use default AI/marketing filler buzzwords
+  // unless the specific business verified facts explicitly define it.
+  const FORBIDDEN_TEMPLATE_BUZZWORDS = [
+    "ai-powered",
+    "data-driven",
+    "end-to-end",
+    "grow your business",
+    "we grow your business",
+    "your social presence, running while you rest",
+    "running while you rest",
+    "we handle the rest",
+    "take care of the rest",
+    "take your business online",
+    "automated follow-up",
+    "end-to-end automation",
+    "intelligent platform",
+    "experience excellence",
+    "quality you can trust",
+    "elevate your experience",
+    "discover the magic",
+    "unleash your potential",
+  ];
+  const lowerCap = `${title} ${caption}`.toLowerCase();
+  for (const buzzword of FORBIDDEN_TEMPLATE_BUZZWORDS) {
+    if (lowerCap.includes(buzzword)) {
+      hardFailures.push({
+        reason: "GENERIC_COPY",
+        detail: `violates the Hard Anti-Template rule by using generic filler phrase: "${buzzword}"`,
+      });
+      break;
+    }
   }
 
   // --- Scoring dimensions (computed regardless of hard-fail status, so a

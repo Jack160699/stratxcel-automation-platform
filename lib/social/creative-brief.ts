@@ -15,6 +15,7 @@
 import type { ContentObjective } from "./content-options.ts";
 import { classifyIndustry, getIndustryProfile, type IndustryCategory } from "./industry-taxonomy.ts";
 import { selectLeastRecentlyUsed, selectLeastRecentlyUsedExcluding } from "./content-diversity.ts";
+import type { PlannedDayStrategy } from "./campaign-strategy-planner.ts";
 
 const OBJECTIVE_CTA_STYLE: Record<ContentObjective, string> = {
   REACH: "an invitation to see or discover more, not a hard sell",
@@ -75,6 +76,8 @@ export interface CreativeBriefInput {
    * fabricated: the calendar module itself only ever returns a verified
    * date or nothing. */
   seasonalContext?: string | null;
+  /** 28-day campaign strategy blueprint for this specific day (Mission G §8-§9). */
+  plannedStrategy?: PlannedDayStrategy | null;
 }
 
 export interface CreativeBrief {
@@ -95,6 +98,7 @@ export interface CreativeBrief {
   brandDirection: string;
   avoid: string[];
   seasonalContext: string | null;
+  plannedStrategy?: PlannedDayStrategy | null;
 }
 
 const FORMAT_LABEL: Record<CreativeBriefInput["mediaType"], string> = {
@@ -142,26 +146,24 @@ export function buildCreativeBrief(input: CreativeBriefInput): CreativeBrief {
   const industry = classifyIndustry(input.industryText, input.descriptionText);
   const profile = getIndustryProfile(industry);
 
-  const contentPillar = input.excludePillars?.length
+  const planned = input.plannedStrategy;
+  const contentPillar = planned?.contentPillar || (input.excludePillars?.length
     ? selectLeastRecentlyUsedExcluding(input.availablePillars, input.recentPillars ?? [], input.excludePillars)
-    : selectLeastRecentlyUsed(input.availablePillars, input.recentPillars ?? []);
+    : selectLeastRecentlyUsed(input.availablePillars, input.recentPillars ?? []));
 
-  // A concept is scoped to the pillar via a stable per-pillar rotation offset
-  // so the SAME pillar doesn't always reach for the SAME first concept, while
-  // staying deterministic (no randomness) and still diversity-aware against
-  // actual recent history.
   const recentConcepts = input.recentConcepts ?? [];
-  const concept = input.excludeConcepts?.length
+  const concept = planned?.creativeConcept || (input.excludeConcepts?.length
     ? selectLeastRecentlyUsedExcluding(profile.concepts, recentConcepts, input.excludeConcepts)
-    : selectLeastRecentlyUsed(profile.concepts, recentConcepts);
+    : selectLeastRecentlyUsed(profile.concepts, recentConcepts));
 
   const audience = input.audience?.trim() || "the business's real customers -- not a generic demographic";
-  const cta = `${OBJECTIVE_CTA_STYLE[input.objective]}, in the style of ${profile.ctaStyle}`;
+  const cta = planned?.ctaStrategy || `${OBJECTIVE_CTA_STYLE[input.objective]}, in the style of ${profile.ctaStyle}`;
+  const hook = planned?.hookStrategy || HOOK_STYLE_BY_OBJECTIVE[input.objective];
 
   const recentCaptionExcerpts = input.recentCaptionExcerpts ?? [];
 
   const avoid = [
-    "generic marketing filler (\"experience excellence\", \"quality you can trust\", \"contact us today\", \"don't miss out\")",
+    "generic marketing filler (\"AI-powered\", \"automated\", \"data-driven\", \"end-to-end\", \"we grow your business\", \"experience excellence\", \"quality you can trust\", \"contact us today\", \"don't miss out\")",
     "any specific address, phone number, discount, price, rating, review count, opening hours, or guarantee not present in verifiedFacts",
     "placeholder or template scaffolding of any kind",
     // STRATXCEL ONE-SHOT REBUILD mission Section 16/45: found live in
@@ -200,9 +202,13 @@ export function buildCreativeBrief(input: CreativeBriefInput): CreativeBrief {
     contentPillar,
     concept,
     format: FORMAT_LABEL[input.mediaType],
-    hook: HOOK_STYLE_BY_OBJECTIVE[input.objective],
-    headlineDirection: `A short, specific headline for the "${concept}" angle -- name the actual thing (dish, service, product, offer, tip), never a generic label.`,
-    supportingCopyDirection: `1-3 sentences that make the "${contentPillar}" pillar concrete for ${input.businessName} specifically, using verifiedFacts where naturally relevant. No invented specifics.`,
+    hook,
+    headlineDirection: planned
+      ? `A short, punchy headline specifically about: "${planned.topic}" — ${planned.uniqueAngle}. Never a generic label.`
+      : `A short, specific headline for the "${concept}" angle -- name the actual thing (dish, service, product, offer, tip), never a generic label.`,
+    supportingCopyDirection: planned
+      ? `1-3 sentences resolving customer problem: "${planned.customerProblem}". Make the "${contentPillar}" pillar concrete for ${input.businessName}, drawing on verifiedFacts where naturally relevant.`
+      : `1-3 sentences that make the "${contentPillar}" pillar concrete for ${input.businessName} specifically, using verifiedFacts where naturally relevant. No invented specifics.`,
     verifiedFacts: input.verifiedFacts,
     cta,
     visualDirection: profile.visualStyle,
@@ -223,12 +229,13 @@ export function buildCreativeBrief(input: CreativeBriefInput): CreativeBrief {
       : `Imagery must depict ${input.businessName}'s actual ${industry.replace("_", " ")} context -- never unrelated stock photography.`,
     layoutDirection: input.mediaType === "text"
       ? "No visual layout required for a text-only update."
-      : "Clear single focal point, headline legible at thumbnail size, no more than one short supporting line of on-image text.",
+      : "Clear single focal point, headline legible at thumbnail size, minimal on-image text (photograph carries the story).",
     brandDirection: [
       input.brandTone?.length ? `Tone: ${input.brandTone.join(", ")}.` : "",
       input.brandColors?.length ? `Brand colors: ${input.brandColors.join(", ")}.` : "",
     ].filter(Boolean).join(" ") || "No explicit brand voice/colors saved yet -- default to a clean, professional, business-appropriate presentation.",
     seasonalContext: input.seasonalContext?.trim() || null,
+    plannedStrategy: input.plannedStrategy,
     avoid,
   };
 }
@@ -238,12 +245,16 @@ export function buildCreativeBrief(input: CreativeBriefInput): CreativeBrief {
  * buildCreativeBrief so the brief object itself stays testable independent
  * of prompt string formatting. */
 export function formatCreativeBriefForPrompt(brief: CreativeBrief): string {
+  const p = brief.plannedStrategy;
   return [
     `CREATIVE BRIEF (already decided -- follow it, do not re-derive strategy):`,
     `- Objective: ${brief.objective}`,
     `- Audience: ${brief.audience}`,
     `- Content pillar: ${brief.contentPillar}`,
     `- Creative concept: ${brief.concept}`,
+    p ? `- Unique strategic angle: ${p.uniqueAngle}` : "",
+    p ? `- Customer problem addressed: ${p.customerProblem}` : "",
+    p ? `- Research insight: ${p.researchInsight}` : "",
     `- Format: ${brief.format}`,
     `- Hook direction: ${brief.hook}`,
     `- Headline direction: ${brief.headlineDirection}`,
@@ -251,17 +262,6 @@ export function formatCreativeBriefForPrompt(brief: CreativeBrief): string {
     `- CTA direction: ${brief.cta}`,
     brief.verifiedFacts.length ? `- Verified business facts available to use: ${brief.verifiedFacts.join("; ")}` : "- No additional verified business facts available for this post.",
     `- Avoid: ${brief.avoid.join("; ")}`,
-    // Found against real generated output (Premium Creative Intelligence
-    // campaign, Sections 4/28): businessSpecificity and brandConsistency
-    // were the two most consistent point losses across otherwise-strong
-    // real captions -- not because the copy was generic (industryRelevance
-    // and creativeOriginality scored near-max on the same captions), but
-    // because the business's actual name was simply never mentioned
-    // (confirmed on real output, e.g. a genuinely specific gym caption
-    // that never once said "IronCore Fitness"), and because the caption
-    // rarely happened to literally use one of the brand's own tone words.
-    // Both are directly fixable by asking for them explicitly rather than
-    // leaving them implicit.
     brief.verifiedFacts.length
       ? `- MUST: naturally mention the business's actual name at least once (caption or hashtags), and concretely reference at least one of the verified facts above by its specific detail -- not just in spirit.`
       : `- MUST: naturally mention the business's actual name at least once (caption or hashtags).`,
@@ -270,13 +270,7 @@ export function formatCreativeBriefForPrompt(brief: CreativeBrief): string {
     brief.seasonalContext
       ? `- ${brief.seasonalContext} Reference this ONLY if it genuinely fits this business and concept -- never force a festival/season tie-in onto unrelated content.`
       : "",
-    // Final Production Loop brief Step 4: the strict text-quality gate's
-    // near-misses (scores 85-89) are consistently copy that's specific
-    // enough to pass industry/business checks but still leans on a
-    // generic AI-marketing register instead of one hyper-specific hook.
-    // The OMISSION principle is the fix -- fewer, stronger words, not more
-    // of them.
     `- OMISSION PRINCIPLE: premium copy comes from knowing what NOT to include. Write the shortest version that is still specific and complete -- if a sentence, clause, or adjective doesn't add a real, concrete detail, cut it rather than pad the caption with it.`,
-    `- NEVER write generic AI-marketing filler ("Elevate your experience", "Discover the magic", "Unleash your potential", "Experience excellence", or phrases like them). Every claim must be a specific, concrete detail about THIS business -- e.g. "Routine care, right in Indiranagar" not "We care about your teeth."`,
+    `- HARD ANTI-TEMPLATE RULE: Strictly forbid AI/marketing filler ("AI-powered", "data-driven", "automated", "end-to-end", "we grow your business", "running while you rest", "elevate your experience", "discover the magic", "unleash your potential"). Every claim must be a specific, concrete detail about THIS business.`,
   ].filter(Boolean).join("\n");
 }

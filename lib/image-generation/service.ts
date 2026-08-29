@@ -609,7 +609,11 @@ export async function processImageGenerationJob(args: {
   // duplicating a {role:"cta"} entry into textHierarchy, so the CTA was
   // silently never rendered on 8 of 14 real passing creatives in one
   // benchmark run despite the treatment clearly intending one.
-  const resolvedOverlayElements = overlayContext ? resolveOverlayElements(overlayContext.treatment) : [];
+  const isTextLed = overlayContext?.treatment?.intentionallyTextLed === true;
+  const isSocialAutopilot = job.source_context === "social_autopilot";
+  const resolvedOverlayElements = (overlayContext && (!isSocialAutopilot || isTextLed))
+    ? resolveOverlayElements(overlayContext.treatment)
+    : [];
   // Gated on `overlayContext` alone -- NOT also `resolvedOverlayElements.length`.
   // Real, serious bug found live (Unify Creative Studio mission): the
   // treatment prompt explicitly and correctly encourages "no on-image text

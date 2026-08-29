@@ -62,6 +62,7 @@ function testBadVsBetterExample() {
   const bad = scoreGeneratedContent({ ...BASE, caption: "Experience amazing service at our business. Contact us today!", title: "Amazing Service", hashtags: ["#business"] });
   const better = scoreGeneratedContent({
     ...BASE,
+    industry: "salon",
     caption: "Need a trim before the weekend? Book your appointment at Coastal Kitchen's sister salon in Fort Kochi -- walk-ins welcome Saturday morning.",
     title: "Book Your Weekend Trim",
     hashtags: ["#FortKochi"],

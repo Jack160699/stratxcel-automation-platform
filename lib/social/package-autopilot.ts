@@ -21,6 +21,9 @@ import { getCurrentBrandBrain, getActiveServices } from "@stratxcel/brand-brain"
 import { createSocialAuditConnectorInsightsProvider } from "./audit-connector-insights.ts";
 import { buildVerifiedBusinessInformation } from "./package-business-facts.ts";
 import { buildCreativeBrief, formatCreativeBriefForPrompt, selectObjective } from "./creative-brief.ts";
+import { deriveBusinessContentIntelligence } from "./business-intelligence.ts";
+import { buildCampaignStrategy } from "./campaign-strategy-planner.ts";
+import { evaluateVisualQuality } from "./visual-quality-score.ts";
 import { runGenerationLoop } from "./generation-loop.ts";
 import { parseGeneratedCopy, type GeneratedCopy } from "./generated-copy-parser.ts";
 import { buildCreativeTreatmentPrompt, validateCreativeTreatment, forceArchetypeOntoTreatment, safeParseJson, type CreativeTreatment, type LayoutArchetype } from "./creative-treatment.ts";
@@ -1134,25 +1137,43 @@ export async function prepareNearTermPackageItems(
         recentAssetIds = [...new Set((recentMediaRows ?? []).map((row) => row.asset_id as string))];
       }
 
-      // Section 4: prefer Brand Brain's real target_audience fact (from paid
-      // audit intake) over Social's own (often-empty) audiences list.
+      // Mission G: Business Content Intelligence & 28-Day Strategic Blueprint
+      const businessIntel = deriveBusinessContentIntelligence({
+        businessName: brandProfile.identity.name?.trim() || "",
+        industryText: brandProfile.identity.industry ?? null,
+        descriptionText: brandProfile.identity.description ?? null,
+        verifiedFacts: businessInformation,
+        brandTone: brandProfile.voice.tone,
+        brandColors: brandProfile.visual.colors,
+        audiences: brandProfile.audiences,
+        blockedPhrases: brandProfile.voice.blocked_phrases,
+        forbiddenClaims: brandProfile.voice.forbidden_claims,
+      });
+
+      const campaignPlan = buildCampaignStrategy({
+        businessIntel,
+        availablePillars: pillarNames,
+        daysCount: authorization.period_target_units || 28,
+      });
+
+      const dayIndex = Math.max(0, (item.package_sequence ?? 1) - 1);
+      const plannedStrategy = campaignPlan.days[dayIndex % campaignPlan.days.length] ?? null;
+
+      // Prefer Brand Brain's real target_audience fact over empty lists
       const audienceFact = businessInformation.find((fact) => fact.startsWith("Target audience:"));
       const audience = brandProfile.audiences[0]?.name?.trim() || audienceFact?.split(":").slice(1).join(":").trim() || null;
 
-      // No structured "current offer/discount" data source exists anywhere
-      // in the business-fact pipeline yet (package-business-facts.ts
-      // deliberately excludes offers -- see its header). hasOffer therefore
-      // stays false until that data model exists: SALES never enters the
-      // objective rotation without a real offer behind it (Section 5) --
-      // documented, honest gap, not a silent invention.
-      const objective = selectObjective({
-        hasOffer: false,
-        recentObjectives,
-        // Mission F Section 3/4 (WEAK_CTA recovery stage): a hard
-        // exclusion, only when this attempt is actually staged to change
-        // the objective -- normal first-time preparation is untouched.
-        ...(forceNewObjective ? { excludeObjectives: priorObjectives } : {}),
-      });
+      const objective = (isRecoveryRetry && forceNewObjective)
+        ? selectObjective({
+            hasOffer: false,
+            recentObjectives,
+            ...(forceNewObjective ? { excludeObjectives: priorObjectives } : {}),
+          })
+        : (plannedStrategy?.objective || selectObjective({
+            hasOffer: false,
+            recentObjectives,
+            ...(forceNewObjective ? { excludeObjectives: priorObjectives } : {}),
+          }));
 
       const brief = buildCreativeBrief({
         businessName: brandProfile.identity.name?.trim() || "",
@@ -1168,19 +1189,11 @@ export async function prepareNearTermPackageItems(
         verifiedFacts: businessInformation,
         brandTone: brandProfile.voice.tone,
         audience,
-        // Hermes-Orchestrated Content Engine Hardening mission Section 2:
-        // real, deterministic festival/season awareness, keyed to THIS
-        // post's own scheduled date (not "now") -- a post prepared today
-        // for a slot 4 days out should reflect what's near ITS date, not
-        // the preparation moment's.
         seasonalContext: seasonalContextLine(new Date(item.scheduled_at), FESTIVAL_LOOKAHEAD_DAYS),
-        // Mission F Section 3/4/7: a real, hard-guaranteed exclusion of
-        // whatever already failed FOR THIS EXACT ITEM -- never a blind
-        // identical retry. Empty on a never-retried item, so this is a
-        // pure no-op for normal first-time preparation.
         excludeConcepts: isRecoveryRetry ? priorConcepts : [],
         excludePillars: isRecoveryRetry ? priorPillars : [],
         recentFailureContext: isRecoveryRetry ? priorFailureReasons : [],
+        plannedStrategy: isRecoveryRetry ? null : plannedStrategy,
       });
       attemptedPillar = brief.contentPillar;
       attemptedConcept = brief.concept;
@@ -1408,12 +1421,7 @@ export async function prepareNearTermPackageItems(
           qualityScore: qualityScore.score,
           qualityBreakdown: qualityScore.breakdown,
           attempts: loopResult.attempts.length,
-          // Premium Creative Intelligence treatment (Section 8), when real
-          // generation succeeded above -- consumed by the image-generation
-          // step to build a visual-director prompt (visual-director-
-          // prompt.ts) instead of the caption text repeated as an image
-          // brief. Absent (undefined) when treatment generation failed or
-          // this is a text-only unit -- never a fabricated placeholder.
+          plannedStrategy: plannedStrategy ?? undefined,
           treatment: treatment ?? undefined,
         },
       });

@@ -947,13 +947,36 @@ function buildEditorialFrameSvg(input: TextOverlayLayoutInput, picked: PickedEle
 
 /**
  * BASIC_ESSENTIAL: the Starter (₹2,999) automated-tier safe default and
- * the ₹7,999+ tenant's own "reliable" pick -- deliberately the simplest
- * archetype in the registry. A solid brand-colored band (smaller than
- * SPLIT_BANNER's -- targets ~23% of canvas height, capped at 40%) with
- * just brand label, headline, and CTA. No accent-strip flourish, no
- * contact footer complexity by default (still renders one if contact info
- * is supplied) -- every choice here favors "never fails to render
- * correctly" over visual richness.
+/**
+ * Clean Logo Watermark Compositor (Failure A + Failure E Fix):
+ * When no on-image headline/CTA is planned (the Social Autopilot default),
+ * cleanly composites the customer's actual stored logo in a safe corner
+ * with aspect ratio preserved, or renders nothing if no real logo exists.
+ * Never creates an artificial text panel, fake logo, or blue slab.
+ */
+function buildCleanLogoWatermarkSvg(input: TextOverlayLayoutInput, resolvedLogo: LogoAsset | null, brandLabelText: string): string {
+  const { width, height } = input;
+  if (resolvedLogo && resolvedLogo.dataUri) {
+    const margin = Math.round(width * 0.05);
+    const brandFS = Math.round(width * 0.026);
+    const logoBoxHeight = Math.round(brandFS * 2.4);
+    const logoBoxWidth = Math.round(logoBoxHeight * (resolvedLogo.aspectRatio > 0 ? resolvedLogo.aspectRatio : 1));
+    const x = width - margin - logoBoxWidth;
+    const y = margin;
+    const pad = Math.round(brandFS * 0.45);
+    const logoSvg = buildLogoImageSvg(resolvedLogo, x, y, logoBoxWidth, logoBoxHeight);
+    if (!logoSvg) return `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg"></svg>`;
+    return `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg"><rect x="${round2(x - pad)}" y="${round2(y - pad)}" width="${round2(logoBoxWidth + pad * 2)}" height="${round2(logoBoxHeight + pad * 2)}" rx="${round2(pad)}" fill="#000000" fill-opacity="0.30" />${logoSvg}</svg>`;
+  }
+  // If no real logo exists, NEVER invent one or draw fake text panels
+  return `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg"></svg>`;
+}
+
+/**
+ * BASIC_ESSENTIAL: the Starter (₹2,999) automated-tier safe default and
+ * the ₹7,999+ tenant's own "reliable" pick. When headline/supporting text
+ * is present, renders a compact bottom band. When no text is planned (photo-first),
+ * renders only the clean logo watermark without any bottom panel.
  */
 function buildBasicEssentialSvg(input: TextOverlayLayoutInput, picked: PickedElements): string {
   const { width, height } = input;
@@ -962,6 +985,12 @@ function buildBasicEssentialSvg(input: TextOverlayLayoutInput, picked: PickedEle
   const bandTextColor = legibleTextColorFor(primary);
   const pillTextColor = legibleTextColorFor(secondary);
   const { headline, supporting, cta, brandLabel } = picked;
+  const resolvedLogo = selectLogoVariant(input);
+
+  const hasTextContent = Boolean(headline?.text.trim() || supporting?.text.trim() || cta?.text.trim());
+  if (!hasTextContent) {
+    return buildCleanLogoWatermarkSvg(input, resolvedLogo, brandLabel.text.trim());
+  }
 
   const margin = Math.round(width * 0.08);
   const safeWidth = width - margin * 2;
@@ -972,7 +1001,6 @@ function buildBasicEssentialSvg(input: TextOverlayLayoutInput, picked: PickedEle
 
   const brandFS = Math.round(width * 0.024);
   const logoBoxHeight = Math.round(brandFS * 1.7);
-  const resolvedLogo = selectLogoVariant(input);
   const logoSvg = buildLogoImageSvg(resolvedLogo, margin, y, Math.round(logoBoxHeight * (resolvedLogo?.aspectRatio ?? 1)), logoBoxHeight);
   if (logoSvg) {
     parts.push(logoSvg);
@@ -1023,12 +1051,11 @@ function buildBasicEssentialSvg(input: TextOverlayLayoutInput, picked: PickedEle
 
   const contentHeight = y + padding;
   const targetBandHeight = Math.round(height * 0.23);
-  // No upper cap -- see SPLIT_BANNER's identical comment; clipping is
-  // never acceptable even in this archetype's normally-compact band.
   const bandHeight = Math.max(contentHeight, targetBandHeight);
   const bandTop = height - bandHeight;
 
-  const band = `<rect x="0" y="${round2(bandTop)}" width="${width}" height="${round2(bandHeight)}" fill="${escapeXml(primary)}" />`;
+  const band = `<rect x="0" y="${round2(bandTop)}" width="${width}" height="${round2(bandHeight)}" fill="${escapeXml(primary)}" fill-opacity="0.90" />` +
+    `<rect x="0" y="${round2(bandTop)}" width="${width}" height="3" fill="${escapeXml(secondary)}" />`;
 
   return `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">${band}<g transform="translate(0, ${round2(bandTop)})">${parts.join("")}</g></svg>`;
 }
@@ -1718,11 +1745,12 @@ function buildNeonNightlifeSvg(input: TextOverlayLayoutInput, picked: PickedElem
 export function buildTextOverlaySvg(input: TextOverlayLayoutInput): string {
   const { width, height, elements, businessName } = input;
   const picked = pickElements(elements, businessName);
-  const hasContent = Boolean(
-    picked.headline?.text.trim() || picked.supporting?.text.trim() || picked.cta?.text.trim() || picked.brandLabel.text.trim()
+  const hasTextContent = Boolean(
+    picked.headline?.text.trim() || picked.supporting?.text.trim() || picked.cta?.text.trim()
   );
-  if (!hasContent) {
-    return `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg"></svg>`;
+  if (!hasTextContent) {
+    const resolvedLogo = selectLogoVariant(input);
+    return buildCleanLogoWatermarkSvg(input, resolvedLogo, picked.brandLabel.text.trim());
   }
   switch (input.layoutArchetype) {
     case "BASIC_ESSENTIAL":
