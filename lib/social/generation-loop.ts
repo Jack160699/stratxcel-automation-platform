@@ -21,6 +21,7 @@ const CORRECTIVE_INSTRUCTION: Record<QualityFailureReason, (detail: string) => s
   UNSUPPORTED_FACT: (detail) => `Remove this specific claim, which is not in the verified business facts: ${detail}. Never invent a fact.`,
   PLACEHOLDER_DETECTED: () => "Remove all placeholder or template scaffolding text and write real, finished copy.",
   DUPLICATE_CONCEPT: () => "Choose a new content pillar and creative concept not used in recent tenant content.",
+  TARGET_INDUSTRY_CONTAMINATION: (detail) => `Rewrite this: ${detail}. If illustrating with a customer example, use clear third-person attribution ("a local business... they use...") -- never address the reader as if they themselves work in that other industry.`,
   WEAK_CTA: () => "Add a specific, actionable call-to-action appropriate to the business (e.g. book, visit, order, call, enquire).",
   LOW_INDUSTRY_RELEVANCE: () => "Use language and details specific to this industry and this business, not generic service language.",
   BRAND_CONTEXT_MISSING: () => "Required brand/business context is missing for this generation -- this cannot be corrected by rewriting; check the input pipeline.",

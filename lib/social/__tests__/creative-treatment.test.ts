@@ -115,6 +115,38 @@ test("buildCreativeTreatmentPrompt grounds the prompt in real verified facts and
   assert.ok(combined.includes("JSON"));
 });
 
+test("STRATXCEL ONE-SHOT REBUILD Section 2/16/45: a 'generic'-industry business gets an explicit identity-clarity instruction against depicting a customer's industry as its own", () => {
+  // Real bug found live in production: a real published creative for a
+  // 'generic'-classified B2B SaaS business (StratXcel itself) depicted a
+  // medical clinic reception desk (stethoscope, anatomy poster) as if it
+  // were the business's own premises, and the caption said "while you
+  // focus on your patients". "(generic)" alone told the model nothing
+  // about what the business actually looks like.
+  const brief = buildCreativeBrief({
+    businessName: "Stratxcel",
+    industryText: "AI Automation, Digital Transformation & Business Technology",
+    descriptionText: "Stratxcel is a technology and digital solutions company focused on AI automation, websites, and business systems for businesses.",
+    platform: "instagram",
+    mediaType: "image",
+    availablePillars: ["AI Automation in Real Business"],
+    objective: "AUTHORITY",
+    verifiedFacts: [],
+  });
+  const dna = deriveBrandVisualDNA({ brandColors: [], brandTone: [], industryCategory: "generic" });
+  const vocab = getIndustryVisualVocabulary("generic");
+  const messages = buildCreativeTreatmentPrompt({ brief, businessName: "Stratxcel", industry: "generic", brandDNA: dna, visualVocab: vocab, mediaType: "image" });
+  const combined = messages.map((m) => m.content).join("\n");
+  assert.ok(combined.includes("IDENTITY CLARITY"), "a 'generic' business must get an explicit identity-clarity instruction");
+  assert.ok(combined.includes("NOT a local storefront business"));
+  assert.ok(/clinic|salon|restaurant/i.test(combined), "must explicitly name at least one wrong-industry example to guard against");
+
+  // A business already classified into a real vertical has no such
+  // ambiguity (it already knows what it is) -- must not get the line.
+  const restaurantMessages = buildRestaurantPromptMessages();
+  const restaurantCombined = restaurantMessages.map((m) => m.content).join("\n");
+  assert.ok(!restaurantCombined.includes("IDENTITY CLARITY"), "a business already classified into a real vertical must not get the generic-only identity-clarity line");
+});
+
 test("a treatment whose textHierarchy contains AI-instruction leakage is rejected (Finished Premium Marketing Creative brief Section 2/21)", () => {
   const bad = { ...GOOD_TREATMENT, textHierarchy: [{ role: "headline", text: "Add text here" }] };
   const issues = validateCreativeTreatment(bad, { concept: "training tip" });

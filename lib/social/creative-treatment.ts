@@ -234,6 +234,18 @@ export function buildCreativeTreatmentPrompt(input: CreativeTreatmentInput): AIM
 
   const user = [
     `BUSINESS: ${input.businessName} (${input.industry.replace(/_/g, " ")})`,
+    // STRATXCEL ONE-SHOT REBUILD mission Section 2/16/45: found live in
+    // production -- a real published creative for a "generic"-classified
+    // B2B SaaS business depicted a medical clinic reception desk
+    // (stethoscope, anatomy poster) as if it were the business's OWN
+    // premises. "(generic)" alone tells the model nothing about what the
+    // business actually does or looks like, leaving room to invent a
+    // customer-industry scene and present it as the business's own. Only
+    // fires for "generic" -- a business already classified into a real
+    // vertical (clinic, salon, restaurant, ...) has no such ambiguity.
+    input.industry === "generic"
+      ? `IDENTITY CLARITY: ${input.businessName} is NOT a local storefront business -- it has no premises resembling a clinic, salon, restaurant, gym, spa, or retail shop. Depict ${input.businessName}'s own real context only (its software/product, its team, its real workspace). If a customer's business is shown as an example, the scene must be unmistakably framed as someone else's business, in a way a viewer could never mistake for ${input.businessName}'s own operations.`
+      : "",
     `MEDIA TYPE: ${input.mediaType}`,
     ``,
     `STRATEGY ALREADY DECIDED (do not re-derive):`,

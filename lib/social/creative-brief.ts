@@ -164,6 +164,16 @@ export function buildCreativeBrief(input: CreativeBriefInput): CreativeBrief {
     "generic marketing filler (\"experience excellence\", \"quality you can trust\", \"contact us today\", \"don't miss out\")",
     "any specific address, phone number, discount, price, rating, review count, opening hours, or guarantee not present in verifiedFacts",
     "placeholder or template scaffolding of any kind",
+    // STRATXCEL ONE-SHOT REBUILD mission Section 16/45: found live in
+    // production -- 2 of 4 real published posts read as though the
+    // business itself were a different industry (e.g. "...while you focus
+    // on your patients..." on a B2B software company's own account, and a
+    // fabricated named customer -- "Dr. Sharma sits at the wooden
+    // reception desk...") because a customer-example illustration
+    // addressed the reader in second person instead of a clearly-
+    // attributed third-person example.
+    `addressing the reader as though THEY work in a different industry than ${input.businessName || "this business"}'s own (never "your patients"/"your menu"/"your salon"/etc. unless that genuinely is this business) -- when illustrating with a customer example, use clear third-person attribution ("a local business... they use...") never second-person "you"/"your" for that other industry`,
+    "inventing a specific named person, a specific fabricated business, or a specific fabricated anecdote/scene (a name, a precise moment, an invented detail) presented as if it really happened -- an illustrative example must stay general (\"a growing local business\", \"one of our customers\") unless a real testimonial is present in verifiedFacts",
     ...recentConcepts.slice(0, 3).map((used) => `the "${used}" concept (used recently -- pick a genuinely different angle)`),
     // Section 10/11/26-28: phrase-level repetition, not just topic
     // repetition -- a genuinely different concept can still restate the
@@ -196,7 +206,21 @@ export function buildCreativeBrief(input: CreativeBriefInput): CreativeBrief {
     verifiedFacts: input.verifiedFacts,
     cta,
     visualDirection: profile.visualStyle,
-    imageryDirection: `Imagery must depict ${input.businessName}'s actual ${industry === "generic" ? "product, service, or team" : industry.replace("_", " ")} context -- never unrelated stock photography.`,
+    // STRATXCEL ONE-SHOT REBUILD mission Section 2/16/45: found live in
+    // production -- a real published creative for StratXcel (a B2B SaaS
+    // company classified "generic", since it belongs to none of the
+    // local-service verticals) depicted a medical clinic reception desk
+    // (stethoscope, anatomy poster, a person in a white coat) as if it
+    // were StratXcel's OWN premises. The vague "product, service, or
+    // team" fallback left too much room for the model to invent a
+    // customer-industry scene and present it as StratXcel's own. Explicit
+    // now: depict THIS business's own real context (software, screens,
+    // a real workspace/team), and if a customer's business is shown, it
+    // must be unmistakably a customer EXAMPLE, never depicted as this
+    // business's own premises.
+    imageryDirection: industry === "generic"
+      ? `Imagery must depict ${input.businessName}'s own actual context -- its product/software, its team, or its real workspace. ${input.businessName} is NOT a local storefront business (not a clinic, salon, restaurant, gym, or shop) -- never depict a scene from one of ITS CUSTOMERS' industries as though it were ${input.businessName}'s own premises or staff. If illustrating a customer's business, the scene must be unmistakably framed as someone else's business, not ${input.businessName}'s.`
+      : `Imagery must depict ${input.businessName}'s actual ${industry.replace("_", " ")} context -- never unrelated stock photography.`,
     layoutDirection: input.mediaType === "text"
       ? "No visual layout required for a text-only update."
       : "Clear single focal point, headline legible at thumbnail size, no more than one short supporting line of on-image text.",

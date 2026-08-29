@@ -200,6 +200,77 @@ function testWeightsSumToOneHundred() {
   console.log("quality-score.test.ts: dimension weights never sum above 100 — PASS");
 }
 
+// --- STRATXCEL ONE-SHOT REBUILD mission Section 16/45: real bug found live
+//     in production -- 2 of 4 real published StratXcel posts read as
+//     though the B2B SaaS company itself were a clinic/local business,
+//     because a customer-example illustration addressed the reader in
+//     second person with an industry-specific possessive noun. The exact
+//     real caption text (queue item 48168937, content_variant 88152ab7,
+//     published live to Instagram) is reproduced here verbatim. ---
+function testTargetIndustryContaminationCatchesTheRealLiveBug() {
+  const result = scoreGeneratedContent({
+    ...BASE,
+    industry: "generic", // StratXcel's own real classification -- a B2B SaaS company, not a clinic
+    businessName: "Stratxcel",
+    caption:
+      "Your local SEO running in the background while you focus on your patients. Dr. Sharma sits at the wooden reception desk of a local clinic in Bhilai during a quiet monsoon evening, holding a warm cup of tea and checking a weekly Google visibility report delivered effortlessly by Stratxcel Social Autopilot. This is how modern founders reclaim their evenings without sacrificing search visibility. Join our founder community.",
+    title: "Local SEO, Handled",
+    hashtags: ["#Stratxcel"],
+  });
+  assert.ok(reasonsOf(result).includes("TARGET_INDUSTRY_CONTAMINATION"), `the exact real live-published contaminated caption must hard-fail; got reasons: ${JSON.stringify(reasonsOf(result))}`);
+  assert.equal(result.score, 0);
+  console.log("quality-score.test.ts: TARGET_INDUSTRY_CONTAMINATION catches the real live-published 'your patients' bug — PASS");
+}
+
+function testCorrectlyAttributedCustomerExampleDoesNotContaminate() {
+  // The OTHER real published post (queue item 66c14af4, content_variant
+  // 66c14af4's variant) -- the CORRECT pattern: third-person, clearly
+  // attributed, never addresses the reader as if they run the example
+  // business.
+  const result = scoreGeneratedContent({
+    ...BASE,
+    industry: "generic",
+    businessName: "Stratxcel",
+    caption:
+      "Founders waste an average of 12 hours a week manually coordinating social media and search visibility. When a growing retail business in Bhilai needed to scale their digital presence without hiring an in-house marketing team, they implemented Stratxcel's Social Autopilot. The system now automatically researches, creates, validates, schedules, and publishes their branded social content. Read the full case study to see how intelligent business operations free up your team for core product growth.",
+    title: "12 Hours a Week, Reclaimed",
+    hashtags: ["#Stratxcel"],
+  });
+  assert.ok(!reasonsOf(result).includes("TARGET_INDUSTRY_CONTAMINATION"), `a correctly third-person-attributed customer example must never hard-fail; got reasons: ${JSON.stringify(reasonsOf(result))}`);
+  console.log("quality-score.test.ts: a correctly third-person-attributed customer example is never flagged as contamination — PASS");
+}
+
+function testOwnIndustryVocabularyIsNeverFlagged() {
+  // A REAL clinic tenant is allowed to say "your patients" about ITSELF --
+  // the check must only fire when the vocabulary belongs to an industry
+  // OTHER than the business's own classified one.
+  const result = scoreGeneratedContent({
+    ...BASE,
+    industry: "clinic",
+    caption: "Book your appointment today and let our team take great care of your patients from the moment they walk in.",
+    title: "We Care For Your Patients",
+    hashtags: ["#clinic"],
+  });
+  assert.ok(!reasonsOf(result).includes("TARGET_INDUSTRY_CONTAMINATION"), "a real clinic's own caption about its own patients must never be flagged as contamination");
+  console.log("quality-score.test.ts: a business's OWN industry vocabulary about itself is never flagged as contamination — PASS");
+}
+
+function testGenericBusinessLanguageDoesNotFalsePositive() {
+  // "your service", "your clients", "your problem" etc. are ordinary,
+  // completely legitimate B2B language -- the curated word list must not
+  // false-positive on common business vocabulary.
+  const result = scoreGeneratedContent({
+    ...BASE,
+    industry: "generic",
+    businessName: "Stratxcel",
+    caption: "Solve your biggest operational problem this week -- book a free workflow audit with our automation experts and see your service quality improve within days.",
+    title: "Book a Free Audit",
+    hashtags: ["#automation"],
+  });
+  assert.ok(!reasonsOf(result).includes("TARGET_INDUSTRY_CONTAMINATION"), `ordinary B2B language ('your problem', 'your service') must never false-positive; got reasons: ${JSON.stringify(reasonsOf(result))}`);
+  console.log("quality-score.test.ts: ordinary B2B language ('your service', 'your problem') never false-positives as contamination — PASS");
+}
+
 function testCleanBusinessSpecificContentCanActuallyPass() {
   const result = scoreGeneratedContent({
     ...BASE,
@@ -234,6 +305,10 @@ function run() {
   testVisualQualityIsMarkedPending();
   testWeightsSumToOneHundred();
   testCleanBusinessSpecificContentCanActuallyPass();
+  testTargetIndustryContaminationCatchesTheRealLiveBug();
+  testCorrectlyAttributedCustomerExampleDoesNotContaminate();
+  testOwnIndustryVocabularyIsNeverFlagged();
+  testGenericBusinessLanguageDoesNotFalsePositive();
   console.log("quality-score.test.ts: ALL PASS");
 }
 

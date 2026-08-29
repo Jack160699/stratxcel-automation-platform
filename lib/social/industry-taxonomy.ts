@@ -128,3 +128,63 @@ export function getIndustryProfile(category: IndustryCategory): IndustryProfile 
 export function allIndustryCategories(): IndustryCategory[] {
   return [...INDUSTRY_PROFILES.map((profile) => profile.category), "generic"];
 }
+
+/**
+ * Target-industry-contamination detection (STRATXCEL ONE-SHOT REBUILD
+ * mission, Section 16): found live in production -- 2 of StratXcel's own 4
+ * real published posts read as though StratXcel ITSELF were a clinic
+ * ("...while you focus on your patients. Dr. Sharma sits at the wooden
+ * reception desk of a local clinic..."), because the model illustrated a
+ * customer example by addressing the READER in second person with an
+ * industry-specific possessive noun, instead of a clearly third-person,
+ * explicitly-attributed example ("a growing retail business... they
+ * implemented..." -- the correct pattern, also found live on a different
+ * real published post). `classifyIndustry` itself was NOT the bug here --
+ * StratXcel's own brand profile correctly classifies as "generic" (a B2B
+ * SaaS company, not a locally-served vertical) -- this catches the specific
+ * failure mode of the generated COPY nonetheless drifting into a different
+ * industry's identity.
+ *
+ * Deliberately a small, hand-picked, high-precision word list rather than
+ * each industry's full relevanceVocabulary: many of those words (e.g.
+ * "service", "client", "solution", "problem") are completely ordinary,
+ * legitimate B2B language and would false-positive constantly if used here.
+ * Same conservative philosophy as classifyIndustry's own header comment:
+ * never guess wrong (a false positive here blocks genuinely fine copy).
+ * `local_service`'s own vocabulary overlaps too much with ordinary business
+ * language to include at all -- deliberately omitted.
+ */
+const IDENTITY_CLAIMING_NOUNS: Partial<Record<IndustryCategory, string[]>> = {
+  clinic: ["patients", "patient"],
+  restaurant: ["diners", "menu"],
+  salon: ["stylists"],
+  gym: ["workout", "gym members"],
+  retail: ["shoppers", "storefront"],
+  real_estate: ["tenants", "listings"],
+};
+
+export interface IndustryContaminationCheck {
+  isContaminated: boolean;
+  reason: string | null;
+}
+
+/** `ownIndustry` is the business's OWN classified category (from
+ * classifyIndustry against ITS OWN identity/description) -- that
+ * category's own words are correctly self-referential and are never
+ * flagged. Every other category's identity-claiming words are checked. */
+export function checkTargetIndustryContamination(caption: string, ownIndustry: IndustryCategory): IndustryContaminationCheck {
+  const lower = caption.toLowerCase();
+  for (const [category, nouns] of Object.entries(IDENTITY_CLAIMING_NOUNS) as Array<[IndustryCategory, string[]]>) {
+    if (category === ownIndustry) continue;
+    for (const noun of nouns) {
+      const pattern = new RegExp(`\\byour\\s+${noun}\\b`, "i");
+      if (pattern.test(lower)) {
+        return {
+          isContaminated: true,
+          reason: `"your ${noun}" addresses the reader as though the business itself were a ${category.replace("_", " ")} -- a customer example must be third-person and clearly attributed (e.g. "a local ${category.replace("_", " ")}... they use...", never "you"/"your ${noun}")`,
+        };
+      }
+    }
+  }
+  return { isContaminated: false, reason: null };
+}

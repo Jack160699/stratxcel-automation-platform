@@ -19,7 +19,7 @@
  */
 
 import type { IndustryCategory } from "./industry-taxonomy.ts";
-import { getIndustryProfile } from "./industry-taxonomy.ts";
+import { getIndustryProfile, checkTargetIndustryContamination } from "./industry-taxonomy.ts";
 import type { ContentObjective } from "./content-options.ts";
 import { findPlaceholderOrFiller } from "./placeholder-detection.ts";
 import { checkRepetition, type CreativeFingerprint } from "./content-diversity.ts";
@@ -34,7 +34,8 @@ export type QualityFailureReason =
   | "GENERIC_COPY"
   | "LOW_BUSINESS_SPECIFICITY"
   | "LOW_INDUSTRY_RELEVANCE"
-  | "BRAND_CONTEXT_MISSING";
+  | "BRAND_CONTEXT_MISSING"
+  | "TARGET_INDUSTRY_CONTAMINATION";
 
 export interface QualityFailure {
   reason: QualityFailureReason;
@@ -231,6 +232,15 @@ export function scoreGeneratedContent(input: QualityScoreInput): QualityScoreRes
   const repetition = checkRepetition({ captionText: caption, concept: input.concept }, recentFingerprints);
   if (repetition.isDuplicate) {
     hardFailures.push({ reason: "DUPLICATE_CONCEPT", detail: repetition.reason ?? "duplicate of recent content" });
+  }
+
+  // --- Hard-fail: target-industry contamination (Section 16/45) -- found
+  // live in production, 2 of 4 real published posts. The business's own
+  // classified industry is passed in as `input.industry`; that category's
+  // own vocabulary is correctly self-referential and is never flagged. ---
+  const contamination = checkTargetIndustryContamination(caption, input.industry);
+  if (contamination.isContaminated) {
+    hardFailures.push({ reason: "TARGET_INDUSTRY_CONTAMINATION", detail: contamination.reason ?? "reads as though the business belongs to a different industry" });
   }
 
   // --- Hard-fail: no discernible CTA at all. ---

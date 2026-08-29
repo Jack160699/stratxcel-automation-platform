@@ -182,6 +182,16 @@ function testNoRecentCaptionsProducesNoPhantomPhraseWarnings() {
   console.log("creative-brief.test.ts: zero recent captions produces zero fabricated phrasing warnings — PASS");
 }
 
+function testAvoidListWarnsAgainstTargetIndustryContamination() {
+  // STRATXCEL ONE-SHOT REBUILD mission Section 16/45: defense-in-depth --
+  // this must be prevented BEFORE generation, not just corrected after a
+  // rejection (the quality-score.ts hard-fail is the second layer).
+  const brief = buildCreativeBrief({ ...BASE, businessName: "Stratxcel", industryText: "AI Automation, Digital Transformation & Business Technology" });
+  assert.ok(brief.avoid.some((a) => a.includes("your patients") && a.includes("different industry")), "the avoid list must explicitly warn against addressing the reader as if they work in a different industry");
+  assert.ok(brief.avoid.some((a) => a.includes("fabricated") || a.includes("inventing a specific named person")), "the avoid list must explicitly warn against a fabricated named persona/anecdote");
+  console.log("creative-brief.test.ts: avoid list warns against target-industry contamination and fabricated personas — PASS");
+}
+
 function run() {
   testThrowsWithNoPillars();
   testSelectObjectiveNeverPicksSalesWithoutARealOffer();
@@ -199,6 +209,7 @@ function run() {
   testPromptIncludesOmissionPrincipleAndBansFiller();
   testAvoidListWarnsAgainstRecentCaptionPhrasing();
   testNoRecentCaptionsProducesNoPhantomPhraseWarnings();
+  testAvoidListWarnsAgainstTargetIndustryContamination();
   console.log("creative-brief.test.ts: ALL PASS");
 }
 
