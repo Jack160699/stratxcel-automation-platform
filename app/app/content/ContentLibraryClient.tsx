@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Card } from "@/components/ui/Card";
 import { Modal } from "@/components/ui/Overlay";
@@ -11,35 +12,17 @@ export interface ContentItem {
   title: string;
   type: "image" | "video" | "caption" | "creative" | "poster";
   category: "draft" | "published" | "generated" | "saved";
-  // Real content_variants.platform values seen in production (threads,
-  // linkedin, facebook, instagram, ...) -- kept as a loose string rather
-  // than a closed union so a real platform this list doesn't yet name
-  // still displays instead of silently failing a type check.
   platform?: string;
   imageUrl?: string;
   captionText?: string;
   aspectRatio?: string;
   createdAt: string;
   publishedAt?: string;
-  // The full set of real image_generation_jobs.status values (Subscription-
-  // Gated Visual Archetypes / image-generation schema) plus the pre-existing
-  // PUBLISHED/SCHEDULED states used by other content sources -- a real job
-  // in progress must render its ACTUAL status, never be squeezed into a
-  // status it isn't in yet.
   status: "DRAFT" | "QUEUED" | "PROCESSING" | "REVIEWING" | "REVISING" | "READY" | "FAILED" | "PUBLISHED" | "SCHEDULED" | "GENERATED";
   objective?: string;
   angle?: "Local & Friendly" | "Festive / Special Offer" | "5-Star Review Spotlight" | "Behind the Scenes";
-  /** The real layout archetype this creative actually rendered with (e.g.
-   * "SPLIT_BANNER"), read from the job's own creative_treatment -- undefined
-   * for content with no treatment (plain uploads, captions). Never inferred
-   * or guessed client-side. */
   layoutArchetype?: string;
-  /** The real safe_error persisted on a FAILED job -- shown instead of
-   * silently rendering a card with no explanation. */
   errorMessage?: string;
-  /** Which real table this item's `id` refers to -- the delete action
-   * needs this to call the right target; an item with no deleteKind (none
-   * currently) simply has no delete affordance. */
   deleteKind?: "image_generation_job" | "content_variant" | "social_media_asset";
   metrics?: {
     reach?: number;
@@ -56,11 +39,6 @@ export const STRATEGIC_ANGLES = [
   { key: "bts", label: "Behind the Scenes", icon: "🎬", desc: "Authentic founder and kitchen/shop craft story" },
 ] as const;
 
-/** One shared status→color mapping for every status pill on the page --
- * previously each pill inlined its own PUBLISHED/READY-only ternary, which
- * silently lumped a real FAILED job in with "still generating" amber and
- * gave every in-progress state (QUEUED/PROCESSING/REVIEWING/REVISING) the
- * same "READY" blue as a finished one. */
 function statusPillClass(status: ContentItem["status"]): string {
   switch (status) {
     case "PUBLISHED":
@@ -70,7 +48,7 @@ function statusPillClass(status: ContentItem["status"]): string {
     case "FAILED":
       return "bg-red-600";
     default:
-      return "bg-amber-600"; // DRAFT, QUEUED, PROCESSING, REVIEWING, REVISING, SCHEDULED, GENERATED -- genuinely in progress or not yet sent
+      return "bg-amber-600";
   }
 }
 
@@ -91,6 +69,7 @@ export function ContentLibraryClient({
   businessName: string;
   initialItems: ContentItem[];
 }) {
+  const router = useRouter();
   const { active } = useCurrentTenant();
   const tenantId = active?.tenantId ?? null;
   const [activeTab, setActiveTab] = useState<string>("all");
@@ -98,9 +77,19 @@ export function ContentLibraryClient({
   const [previewItem, setPreviewItem] = useState<ContentItem | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [items, setItems] = useState<ContentItem[]>(initialItems);
-  // Delete requires clicking twice (arm, then confirm) rather than a
-  // separate modal -- prominent per the mission's own "prominent Delete
-  // action" ask, but a single misclick can't destroy a real record.
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  // Sync items when initialItems prop updates from server re-render
+  useEffect(() => {
+    setItems(initialItems);
+  }, [initialItems]);
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    router.refresh();
+    setTimeout(() => setIsRefreshing(false), 800);
+  };
+
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<{ id: string; message: string } | null>(null);
@@ -205,29 +194,11 @@ export function ContentLibraryClient({
 
   const handleRegenerateAngle = (item: ContentItem, angleKey: string) => {
     const angleObj = STRATEGIC_ANGLES.find((a) => a.key === angleKey) || STRATEGIC_ANGLES[0];
-    const updated = items.map((it) => {
-      if (it.id !== item.id) return it;
-      let newCaption = it.captionText || "";
-      if (angleKey === "local") {
-        newCaption = `Proudly serving our local neighborhood! 📍 Visit ${businessName} this week for specialized care and friendly local service. Drop a comment or message us to book your spot! #SupportLocal #${businessName.replace(/\\s+/g, "")}`;
-      } else if (angleKey === "offer") {
-        newCaption = `Special festive promotion at ${businessName}! 🎉 Enjoy exclusive seasonal benefits for a limited time. Tap the link in bio or DM us to claim yours today! #FestiveOffer #SpecialDeal #${businessName.replace(/\\s+/g, "")}`;
-      } else if (angleKey === "review") {
-        newCaption = `⭐ "Best service in town!" Thank you to our wonderful customers for trusting ${businessName}. We take pride in delivering top-quality results every single day. #CustomerLove #5StarReview #${businessName.replace(/\\s+/g, "")}`;
-      } else if (angleKey === "bts") {
-        newCaption = `Behind the scenes at ${businessName}! 🎬 A sneak peek into how we prepare and craft our services with complete care. What would you like to see next? #BehindTheScenes #Craftsmanship #${businessName.replace(/\\s+/g, "")}`;
-      }
-      return {
-        ...it,
-        angle: angleObj.label as any,
-        captionText: newCaption,
-        status: "READY" as const,
-      };
-    });
-    setItems(updated);
-    if (previewItem && previewItem.id === item.id) {
-      setPreviewItem((prev) => (prev ? { ...prev, angle: angleObj.label as any } : null));
-    }
+    router.push(
+      `/app/social/copilot?prompt=${encodeURIComponent(
+        `Create a strategic social post for ${businessName} focusing on ${angleObj.label}: ${angleObj.desc}. Ground in our verified business facts and customer psychology.`
+      )}`
+    );
   };
 
   const handleDelete = async (item: ContentItem) => {
@@ -267,6 +238,16 @@ export function ContentLibraryClient({
           </p>
         </div>
         <div className="flex items-center gap-2.5">
+          <button
+            type="button"
+            onClick={() => void handleRefresh()}
+            disabled={isRefreshing}
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-sx-sm border border-sx-border bg-sx-surface-1 px-3.5 text-xs sm:text-sm font-semibold text-sx-text transition-colors hover:bg-sx-surface-2 disabled:opacity-50"
+            title="Refresh content from server"
+          >
+            <span className={isRefreshing ? "animate-spin" : ""}>🔄</span>
+            <span>{isRefreshing ? "Refreshing…" : "Refresh"}</span>
+          </button>
           <Link
             href="/app/content/studio"
             className="inline-flex h-10 items-center justify-center gap-2 rounded-sx-sm bg-sx-accent px-4 text-xs sm:text-sm font-semibold text-sx-accent-on transition-colors hover:bg-sx-accent/90"
@@ -624,6 +605,14 @@ export function ContentLibraryClient({
                 <p className="mt-1 whitespace-pre-wrap break-words text-sm text-sx-text hyphens-none">{previewItem.captionText}</p>
               </div>
             )}
+
+            {/* Generation Diagnostics */}
+            <div className="flex flex-wrap items-center gap-2 text-[10.5px] font-mono text-sx-text-subtle border-t border-sx-border/60 pt-2">
+              <span className="rounded bg-sx-surface-2 px-1.5 py-0.5" title={previewItem.id}>ID: {previewItem.id.slice(0, 18)}…</span>
+              <span className="rounded bg-sx-surface-2 px-1.5 py-0.5">Status: {previewItem.status}</span>
+              {previewItem.layoutArchetype && <span className="rounded bg-sx-surface-2 px-1.5 py-0.5">Layout: {previewItem.layoutArchetype}</span>}
+              <span className="rounded bg-sx-surface-2 px-1.5 py-0.5">Created: {new Date(previewItem.createdAt).toLocaleString()}</span>
+            </div>
 
             <div className="flex items-center justify-between border-t border-sx-border pt-3">
               <div className="flex items-center gap-2">

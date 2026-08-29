@@ -4,6 +4,7 @@ import { ContentLibraryClient, type ContentItem } from "./ContentLibraryClient";
 import { isBrandOrLogoAsset } from "@/lib/social/brand-asset-filter";
 
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 // Real bug found live: the BrandBrain Logo Engine's 4 generated variants
 // (transparent/monoLight/monoDark/badge) are real social_media_assets

@@ -417,6 +417,7 @@ export async function POST(req: NextRequest) {
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
 // The route itself responds fast (triggerImmediatePackagePreparation and
 // the "approve publishNow" batch trigger both run via after(), not before
 // the response), but Vercel still bounds the WHOLE invocation -- including
