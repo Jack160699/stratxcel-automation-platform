@@ -1028,7 +1028,8 @@ function buildBasicEssentialSvg(input: TextOverlayLayoutInput, picked: PickedEle
   const bandHeight = Math.max(contentHeight, targetBandHeight);
   const bandTop = height - bandHeight;
 
-  const band = `<rect x="0" y="${round2(bandTop)}" width="${width}" height="${round2(bandHeight)}" fill="${escapeXml(primary)}" />`;
+  const band = `<rect x="0" y="${round2(bandTop)}" width="${width}" height="${round2(bandHeight)}" fill="${escapeXml(primary)}" fill-opacity="0.90" />` +
+    `<rect x="0" y="${round2(bandTop)}" width="${width}" height="3" fill="${escapeXml(secondary)}" />`;
 
   return `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">${band}<g transform="translate(0, ${round2(bandTop)})">${parts.join("")}</g></svg>`;
 }

@@ -238,6 +238,39 @@ export function scoreGeneratedContent(input: QualityScoreInput): QualityScoreRes
     hardFailures.push({ reason: "WEAK_CTA", detail: "no recognizable call-to-action verb found in the caption or hashtags" });
   }
 
+  // --- Hard-fail: Anti-Template Rule (Mission G §10) ---
+  // The generator must NOT repeatedly use default AI/marketing filler buzzwords
+  // unless the specific business verified facts explicitly define it.
+  const isAutomationOrAiBusiness = (input.verifiedFacts ?? []).some((f) => {
+    const fl = f.toLowerCase();
+    return fl.includes("artificial intelligence") || fl.includes("automation software") || fl.includes("saas");
+  });
+
+  if (!isAutomationOrAiBusiness) {
+    const FORBIDDEN_TEMPLATE_BUZZWORDS = [
+      "ai-powered",
+      "data-driven",
+      "end-to-end",
+      "grow your business",
+      "we grow your business",
+      "your social presence, running while you rest",
+      "running while you rest",
+      "we handle the rest",
+      "take care of the rest",
+      "take your business online",
+    ];
+    const lowerCap = `${title} ${caption}`.toLowerCase();
+    for (const buzzword of FORBIDDEN_TEMPLATE_BUZZWORDS) {
+      if (lowerCap.includes(buzzword)) {
+        hardFailures.push({
+          reason: "GENERIC_COPY",
+          detail: `violates the Hard Anti-Template rule by using generic filler phrase: "${buzzword}"`,
+        });
+        break;
+      }
+    }
+  }
+
   // --- Scoring dimensions (computed regardless of hard-fail status, so a
   // BLOCKED item's diagnostics still show WHERE it was weak). ---
   // Found against REAL generated output (Phase 12 iteration): a genuinely
