@@ -125,7 +125,9 @@ const GENERIC_ADJECTIVE_WEIGHTS: Array<[string, number]> = [
 ];
 
 function genericAdjectiveScore(text: string): { hits: number; weight: number } {
-  const lower = text.toLowerCase();
+  // Strip legitimate tenure/experience phrases (e.g. "14 years of clinical experience", "10 years experience")
+  // so factual doctor/chef backgrounds are never penalized as generic fluff.
+  const lower = text.toLowerCase().replace(/\b\d+\+?\s*(?:years?|yrs?)(?:\s+of)?(?:\s+[a-z]+)?\s+experience\b/g, "");
   let hits = 0;
   let weight = 0;
   for (const [phrase, w] of GENERIC_ADJECTIVE_WEIGHTS) {
