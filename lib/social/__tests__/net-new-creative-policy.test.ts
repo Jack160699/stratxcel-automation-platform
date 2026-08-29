@@ -40,8 +40,33 @@ function run() {
   console.log("package-net-new-media.ts: calls the real image-generation chain, never the existing-asset picker — PASS");
 
   // --- Fail-closed: any real failure throws, no candidate silently accepted
-  assert.match(netNewMedia, /if \(processed\.job\.status !== "READY" \|\| !processed\.candidates\.length\) \{[\s\S]{0,200}throw new Error/, "a failed/empty job must throw, not return a placeholder or null asset");
+  // (NetNewGenerationError, not a plain Error, since Mission "Final
+  // Remaining Blockers" Section 11 -- extends Error, so this is still a
+  // real throw, just one that also carries the real error_retryable
+  // signal across the boundary instead of collapsing it to a string).
+  assert.match(netNewMedia, /if \(processed\.job\.status !== "READY" \|\| !processed\.candidates\.length\) \{[\s\S]{0,600}throw new NetNewGenerationError/, "a failed/empty job must throw, not return a placeholder or null asset");
+  assert.match(netNewMedia, /class NetNewGenerationError extends Error/, "the thrown error must still be a real Error subclass (fail-closed via a genuine throw, never swallowed)");
   console.log("package-net-new-media.ts: generation failure is fail-closed (throws) — PASS");
+
+  // --- Transient provider failures don't burn a genuine recovery attempt
+  //     (Section 11/17): real bug found live -- a sustained OpenAI rate
+  //     limit was silently exhausting real content days that were never
+  //     actually rejected on quality. error_retryable is the real signal
+  //     computed by image-generation/service.ts's own safeProviderReason,
+  //     never re-derived by guessing at message text here. -------------
+  assert.match(netNewMedia, /processed\.job\.error_retryable/, "the real, already-computed retryability signal must be threaded through, not discarded");
+  const prepareStartForTransient = packageAutopilot.indexOf("export async function prepareNearTermPackageItems");
+  const prepareEndForTransient = packageAutopilot.indexOf("\nexport async function", prepareStartForTransient + 50);
+  const prepareBodyForTransient = packageAutopilot.slice(prepareStartForTransient, prepareEndForTransient > 0 ? prepareEndForTransient : undefined);
+  assert.match(prepareBodyForTransient, /err instanceof NetNewGenerationError && err\.retryable/, "a transient provider failure must be detected via the real typed error, not string-matching the message");
+  const transientBranchIndex = prepareBodyForTransient.indexOf("err instanceof NetNewGenerationError && err.retryable");
+  const transientBranchEnd = prepareBodyForTransient.indexOf("continue;", transientBranchIndex);
+  assert.ok(transientBranchEnd > transientBranchIndex, "the transient-failure branch must end with continue -- skipping straight to the next due item, never falling through into the genuine-failure recovery-budget logic below it");
+  const transientBranchBody = prepareBodyForTransient.slice(transientBranchIndex, transientBranchEnd);
+  assert.ok(!/retry_count:\s*nextRetryCount/.test(transientBranchBody), "a transient provider failure must NOT increment retry_count -- it never counts toward the bounded recovery-attempt budget");
+  assert.ok(!/recovery_state:/.test(transientBranchBody), "a transient provider failure must NOT append a recovery_state entry -- no real content strategy was actually evaluated/rejected");
+  assert.match(transientBranchBody, /status:\s*"BLOCKED"/, "the item must stay a real, visible BLOCKED row -- still immediately eligible for the next automatic pass");
+  console.log("prepareNearTermPackageItems: a transient/retryable provider failure never consumes the bounded recovery-attempt budget — PASS");
 
   // --- Idempotency: stable key per queue item, not re-derived per attempt
   assert.match(netNewMedia, /idempotencyKey:\s*`package-net-new:\$\{input\.queueItemId\}`/, "the idempotency key must be stable per queue item so a retry within the same preparation pass reuses the existing job instead of spending a second real generation call");

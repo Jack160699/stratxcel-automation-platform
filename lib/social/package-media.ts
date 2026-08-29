@@ -17,6 +17,22 @@ const CANDIDATE_POOL_SIZE = 10;
  * recently-used set, falling back to the newest candidate outright when
  * every fetched candidate has been used recently (e.g. only one asset
  * exists) -- variety is a preference, never a reason to block a post.
+ *
+ * STRATXCEL FINAL REMAINING BLOCKERS mission (Sections 4-8): before this,
+ * the ONLY filters here were tenant_id/owner_id/mime_type prefix -- a
+ * manually-designed Creative Studio poster (heavy headline/CTA/bullet-list
+ * text), the business's own raw logo file, or even a 64x64 logo-mark PNG
+ * variant were all structurally valid candidates for automatic selection
+ * as a post's main photo. Confirmed live on the real StratXcel tenant: 28
+ * of its 34 real assets were exactly this kind of unsafe candidate.
+ * `autopilot_eligible` (social_media_assets_autopilot_classification
+ * migration) is the real, DB-level hard boundary (Section 8) -- an asset
+ * classified MARKETING_GRAPHIC/POSTER/BANNER/BRAND_LOGO/etc. can never
+ * reach this candidate pool at all, regardless of what any caller intends.
+ * Defaults true for any never-classified asset (this is a fail-open
+ * default, not fail-closed, deliberately: it never retroactively breaks
+ * an asset nobody has ever flagged as unsafe) -- ineligibility is only
+ * ever a real, explicit, evidenced classification action.
  */
 export async function selectPackageMediaAsset(
   service: ServiceClient,
@@ -29,6 +45,7 @@ export async function selectPackageMediaAsset(
     .select("id,mime_type")
     .eq("tenant_id", input.tenantId)
     .eq("owner_id", input.ownerId)
+    .eq("autopilot_eligible", true)
     .like("mime_type", `${mimePrefix}%`)
     .order("created_at", { ascending: false })
     .limit(CANDIDATE_POOL_SIZE);

@@ -1,6 +1,29 @@
 import type { ServiceClient } from "@stratxcel/whatsapp";
 import type { CreativeTreatment } from "./creative-treatment.ts";
 
+/**
+ * STRATXCEL FINAL REMAINING BLOCKERS mission (Section 11/17): a real,
+ * live-observed problem -- a sustained OpenAI PROVIDER_RATE_LIMIT (an
+ * external, transient infrastructure condition, not a content-quality
+ * verdict) was consuming the SAME bounded MAX_RECOVERY_ATTEMPTS budget as a
+ * genuine quality/originality rejection, silently exhausting real content
+ * days for a reason that had nothing to do with the content itself.
+ * image-generation/service.ts already computes a real `error_retryable`
+ * per failure (safeProviderReason) -- this class is what carries that real
+ * signal across the throw boundary into prepareNearTermPackageItems's catch
+ * block, instead of collapsing every failure into a plain Error string.
+ */
+export class NetNewGenerationError extends Error {
+  readonly errorCode: string;
+  readonly retryable: boolean;
+  constructor(message: string, errorCode: string, retryable: boolean) {
+    super(message);
+    this.name = "NetNewGenerationError";
+    this.errorCode = errorCode;
+    this.retryable = retryable;
+  }
+}
+
 // Deliberately a dynamic import, resolved inside the function below rather
 // than a static top-level import: lib/image-generation/service.ts begins
 // with `import "server-only"` (throws outside Next's real bundler -- by
@@ -136,14 +159,25 @@ export async function generateNetNewPackageMediaAsset(
 
   const processed = await processImageGenerationJob({ writeClient: service, jobId: job.id });
   if (processed.job.status !== "READY" || !processed.candidates.length) {
-    throw new Error(
-      `net_new_generation_failed: ${processed.job.safe_error ?? processed.job.error_code ?? "no candidates returned"}`
+    // Section 11: a transient provider condition (rate limit, storage not
+    // ready) is real infrastructure retryability, not a verdict on this
+    // item's content -- error_retryable is the real, already-computed
+    // signal (image-generation/service.ts's safeProviderReason), never
+    // re-derived here by guessing at message text.
+    throw new NetNewGenerationError(
+      `net_new_generation_failed: ${processed.job.safe_error ?? processed.job.error_code ?? "no candidates returned"}`,
+      processed.job.error_code ?? "GENERATION_FAILED",
+      processed.job.error_retryable ?? true
     );
   }
 
   const best = processed.candidates.find((c) => c.status !== "REJECTED") ?? processed.candidates[0];
   if (!best) {
-    throw new Error("net_new_generation_failed: all candidates rejected");
+    // Every candidate failed the provider's own safety/quality screening --
+    // a real content-shaped outcome (the generated image itself was
+    // rejected), not an infrastructure condition -- correctly still counts
+    // toward the recovery budget like any other real failure.
+    throw new NetNewGenerationError("net_new_generation_failed: all candidates rejected", "ALL_CANDIDATES_REJECTED", false);
   }
 
   // attachToVariantId is intentionally omitted -- the queue item's variant

@@ -14,7 +14,7 @@ import type { OwnerContext } from "./db-context.ts";
 import type { AgentTenantContext } from "./agent-tenant-types.ts";
 import { validatePackageComposition, compositionMediaTypeForUnit, resolvePurchasedPackageComposition, type PackageComposition } from "./package-composition.ts";
 import { selectPackageMediaAsset } from "./package-media.ts";
-import { generateNetNewPackageMediaAsset } from "./package-net-new-media.ts";
+import { generateNetNewPackageMediaAsset, NetNewGenerationError } from "./package-net-new-media.ts";
 import { recordAudit } from "./repositories/system.ts";
 import { hasCapability, isPlanTier } from "@stratxcel/payments-and-wallet";
 import { getCurrentBrandBrain, getActiveServices } from "@stratxcel/brand-brain";
@@ -1457,6 +1457,38 @@ export async function prepareNearTermPackageItems(
       // the item's existing content_pillar (if any) untouched rather than
       // overwriting it with a fabricated value.
       const errorMessage = err instanceof Error ? err.message : "preparation failed";
+
+      // STRATXCEL FINAL REMAINING BLOCKERS mission Section 11/17: a real,
+      // live-observed problem -- a sustained external provider rate limit
+      // was consuming the SAME bounded recovery-attempt budget as a
+      // genuine quality/originality rejection, silently exhausting real
+      // content days for a reason that had nothing to do with the content
+      // itself. A transient, retryable infrastructure failure (the real
+      // error_retryable signal from image-generation/service.ts, not a
+      // guess at message text) leaves the item exactly where it was --
+      // still BLOCKED, still immediately eligible for the very next
+      // automatic pass, its recovery budget untouched -- instead of
+      // burning one of its bounded MAX_RECOVERY_ATTEMPTS on an outage that
+      // was never a verdict on the content.
+      if (err instanceof NetNewGenerationError && err.retryable) {
+        // blocked was already incremented at the top of this catch block.
+        // Real content strategy WAS chosen and used for this attempt (the
+        // copy itself was fine -- only the image infrastructure failed);
+        // recorded the same way a genuine failure records it, so the
+        // campaign-wide diversity signal (recentPillarNames) stays accurate.
+        await service
+          .from("social_autopilot_queue_items")
+          .update({
+            status: "BLOCKED",
+            ...(attemptedPillar ? { content_pillar: attemptedPillar } : {}),
+            last_error: `${errorMessage} (transient provider condition -- will retry automatically, does not count toward recovery attempts)`,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", item.id)
+          .in("status", ["PLANNED", "BLOCKED"]);
+        continue;
+      }
+
       const nextRetryCount = item.retry_count + 1;
       // Mission F Section 11: a real, bounded dead-letter limit -- once
       // every staged recovery attempt has genuinely been tried and failed,
