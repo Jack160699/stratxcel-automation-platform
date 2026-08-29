@@ -41,6 +41,25 @@ function run() {
   assert.match(fnBody, /stripUnschedulablePlatforms/, "must use the same real allow-list every other activation path uses -- never let youtube back in here either");
   assert.match(fnBody, /await activatePackageAutopilot\(service, \{/, "must call the real, single canonical activation function -- no parallel implementation");
 
+  // --- Hermes mission Section 89 ("build the generalized customer-generation
+  //     engine", not a StratXcel-specific hack): real bug found live --
+  //     this call never passed maxPostsPerDay, so every auto-activated
+  //     customer always got activatePackageAutopilot's own hardcoded `?? 1`
+  //     default regardless of their actual purchased plan's social_posts
+  //     entitlement. A higher-tier customer (e.g. 75 posts/period) could
+  //     never actually clear their own quota within the billing period at
+  //     1/day, and computePackageDistribution's own capacity check
+  //     (daysAvailable * maxPostsPerDay) would mark the package
+  //     insufficient_window_for_remaining_entitlement / NEEDS_ATTENTION on
+  //     the very first planning pass. Must be derived from the tenant's
+  //     REAL entitlement limit and REAL subscription period length, never
+  //     a fabricated constant. ------------------------------------------
+  const activationCallBlock = fnBody.slice(fnBody.indexOf("await activatePackageAutopilot(service, {"), fnBody.indexOf("await activatePackageAutopilot(service, {") + 400);
+  assert.match(fnBody, /entitlement\.limit_amount \/ periodDays/, "maxPostsPerDay must be derived from the real entitlement limit, not a hardcoded constant");
+  assert.match(fnBody, /current_period_start, current_period_end/, "must read the real subscription period bounds to derive a real period length");
+  assert.match(activationCallBlock, /maxPostsPerDay: derivedMaxPostsPerDay/, "the derived pace must actually reach activatePackageAutopilot, not just be computed and discarded");
+  console.log("attemptAutoActivatePackageAutopilot: maxPostsPerDay is derived from the tenant's real entitlement, never hardcoded to 1 regardless of plan — PASS");
+
   // --- Never throws back to a webhook/OAuth callback over an ordinary
   //     "not ready yet" outcome (a brand-new customer with no brand profile
   //     or connected account yet) -----------------------------------------

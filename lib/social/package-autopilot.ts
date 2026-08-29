@@ -16,6 +16,7 @@ import { validatePackageComposition, compositionMediaTypeForUnit, resolvePurchas
 import { selectPackageMediaAsset } from "./package-media.ts";
 import { generateNetNewPackageMediaAsset, NetNewGenerationError } from "./package-net-new-media.ts";
 import { recordAudit } from "./repositories/system.ts";
+import { recordCampaignTask, buildCustomerPsychologyProfile, type HermesSocialSpecialistRole } from "../hermes/social-autopilot-campaign.ts";
 import { hasCapability, isPlanTier } from "@stratxcel/payments-and-wallet";
 import { getCurrentBrandBrain, getActiveServices } from "@stratxcel/brand-brain";
 import { createSocialAuditConnectorInsightsProvider } from "./audit-connector-insights.ts";
@@ -348,7 +349,7 @@ export async function attemptAutoActivatePackageAutopilot(
 
     const { data: subscription } = await service
       .from("subscriptions")
-      .select("id, plan_tier, status, current_period_end")
+      .select("id, plan_tier, status, current_period_start, current_period_end")
       .eq("tenant_id", input.tenantId)
       .eq("status", "active")
       .order("current_period_start", { ascending: false })
@@ -392,6 +393,25 @@ export async function attemptAutoActivatePackageAutopilot(
       .maybeSingle();
     if (!brandProfile || !clientUserId) return { activated: false, reason: "brand_or_owner_not_ready_yet" };
 
+    // Real bug found live (Hermes mission Section 89: "build the
+    // generalized customer-generation engine", not a one-tenant hack):
+    // this call site never passed maxPostsPerDay, so activatePackageAutopilot
+    // silently defaulted every auto-activated customer to its own hardcoded
+    // `?? 1` regardless of the plan they actually paid for -- a "scale"
+    // tier customer entitled to 75 posts/period was paced at 1/day exactly
+    // like a 12-post "starter" customer, meaning most higher tiers could
+    // never actually consume their own purchased quota before the period
+    // rolled over and reset it. Derived from the tenant's REAL entitlement
+    // limit and REAL subscription period length -- never a fabricated
+    // constant -- so every plan tier gets a pace that can actually clear
+    // its own quota within its own billing period. Always at least 1/day.
+    const periodStartMs = new Date(subscription.current_period_start).getTime();
+    const periodEndMs = new Date(subscription.current_period_end).getTime();
+    const periodDays = Number.isFinite(periodStartMs) && periodEndMs > periodStartMs
+      ? Math.max(1, Math.round((periodEndMs - periodStartMs) / 86_400_000))
+      : 30;
+    const derivedMaxPostsPerDay = Math.max(1, Math.ceil(entitlement.limit_amount / periodDays));
+
     const authorization = await activatePackageAutopilot(service, {
       tenantId: input.tenantId,
       clientUserId,
@@ -399,6 +419,7 @@ export async function attemptAutoActivatePackageAutopilot(
       entitlementId: entitlement.id,
       publishingMode: "AUTO_PUBLISH",
       allowedPlatforms: platforms,
+      maxPostsPerDay: derivedMaxPostsPerDay,
       brandProfileId: brandProfile.id,
     });
 
@@ -623,6 +644,22 @@ export async function executeAuthorizedPackagePost(service: ServiceClient, queue
     meta: { tenantId: claim.tenantId ?? null, accountId: claim.accountId, shadowMode: Boolean(claim.shadowMode) },
   }).catch(() => {});
 
+  // Hermes mission Section 3: publishing_scheduling's authorization_id --
+  // best-effort, looked up once (never blocks/fails the real publish this
+  // observes). A miss here just means the ledger row is skipped, never that
+  // publishing is affected.
+  let publishingAuthorizationId: string | null = null;
+  try {
+    const { data: publishingAuthRow } = await service
+      .from("social_autopilot_queue_items")
+      .select("authorization_id")
+      .eq("id", queueItemId)
+      .maybeSingle();
+    publishingAuthorizationId = (publishingAuthRow as { authorization_id?: string } | null)?.authorization_id ?? null;
+  } catch {
+    // best-effort only -- never blocks the real publish below.
+  }
+
   if (claim.shadowMode) {
     await settleAuthorizedPackagePost(service, { queueItemId, outcome: "SHADOW_COMPLETED", tenantId: claim.tenantId });
     await recordAudit({
@@ -633,6 +670,12 @@ export async function executeAuthorizedPackagePost(service: ServiceClient, queue
       summary: "Shadow Mode package run completed (nothing published externally)",
       meta: { tenantId: claim.tenantId ?? null, shadow: true },
     }).catch(() => {});
+    if (publishingAuthorizationId && claim.tenantId) {
+      await recordCampaignTask(service, {
+        authorizationId: publishingAuthorizationId, tenantId: claim.tenantId, queueItemId,
+        agentRole: "publishing_scheduling", status: "COMPLETED", output: { shadow: true },
+      });
+    }
     return { ...claim, published: false, shadow: true, text: "Shadow run complete. Nothing was published externally." };
   }
   try {
@@ -647,6 +690,14 @@ export async function executeAuthorizedPackagePost(service: ServiceClient, queue
       error: published ? undefined : result.lastError ?? result.outcomeNote,
       tenantId: claim.tenantId,
     });
+    if (publishingAuthorizationId && claim.tenantId) {
+      await recordCampaignTask(service, {
+        authorizationId: publishingAuthorizationId, tenantId: claim.tenantId, queueItemId,
+        agentRole: "publishing_scheduling", status: published ? "COMPLETED" : "FAILED",
+        output: { jobId, jobStatus: result.jobStatus },
+        failureReason: published ? null : (result.lastError ?? result.outcomeNote ?? null),
+      });
+    }
     if (published) {
       await recordAudit({
         actorType: "SYSTEM",
@@ -677,15 +728,22 @@ export async function executeAuthorizedPackagePost(service: ServiceClient, queue
     }
     return { ...claim, published, jobId, result };
   } catch (error) {
-    await settleAuthorizedPackagePost(service, { queueItemId, outcome: "FAILED", error: error instanceof Error ? error.message : "package publish failed", tenantId: claim.tenantId });
+    const publishErrorMessage = error instanceof Error ? error.message : "package publish failed";
+    await settleAuthorizedPackagePost(service, { queueItemId, outcome: "FAILED", error: publishErrorMessage, tenantId: claim.tenantId });
     await recordAudit({
       actorType: "SYSTEM",
       action: "social.package.publish_failed",
       targetType: "social_autopilot_queue_item",
       targetId: queueItemId,
       summary: "Automatic package publish failed",
-      meta: { tenantId: claim.tenantId ?? null, error: error instanceof Error ? error.message : "package publish failed" },
+      meta: { tenantId: claim.tenantId ?? null, error: publishErrorMessage },
     }).catch(() => {});
+    if (publishingAuthorizationId && claim.tenantId) {
+      await recordCampaignTask(service, {
+        authorizationId: publishingAuthorizationId, tenantId: claim.tenantId, queueItemId,
+        agentRole: "publishing_scheduling", status: "FAILED", failureReason: publishErrorMessage,
+      });
+    }
     throw error;
   }
 }
@@ -991,6 +1049,27 @@ export async function prepareNearTermPackageItems(
     // source, and real new signal for one who has only saved services on
     // the canonical Brand Brain.
     businessInformationBatch = [...businessInformationBatch, ...getActiveServices(brandBrain?.content).map((s) => (s.shortDescription ? `Service: ${s.name} — ${s.shortDescription}` : `Service: ${s.name}`))];
+
+    // Hermes mission Sections 3/44: research and fact/claim-safety grounding
+    // are gathered ONCE per batch (not per item -- see the comment on
+    // businessInformationBatch above), so they're recorded once per batch
+    // too, with queue_item_id left null (they're not one post's work, they
+    // ground every item this run processes). Best-effort, non-blocking.
+    await recordCampaignTask(service, {
+      authorizationId: authorization.id,
+      tenantId: authorization.tenant_id,
+      agentRole: "research",
+      status: googleBusiness ? "COMPLETED" : "FAILED",
+      output: { verifiedFactCount: businessInformationBatch.length },
+      failureReason: googleBusiness ? null : "no_live_connector_insights_available_this_run",
+    });
+    await recordCampaignTask(service, {
+      authorizationId: authorization.id,
+      tenantId: authorization.tenant_id,
+      agentRole: "fact_claim_safety",
+      status: "COMPLETED",
+      output: { verifiedFacts: businessInformationBatch },
+    });
   }
 
   let deadlineHit = false;
@@ -1019,6 +1098,12 @@ export async function prepareNearTermPackageItems(
      * try (Mission F Section 6/25) -- captured even when the item ultimately
      * fails, so the catch block can persist WHY, not just THAT it failed. */
     let lastHardFailureReasons: string[] = [];
+    // Hermes mission Sections 3/44/77: which real specialist stage this
+    // attempt is currently inside -- advanced immediately after each stage
+    // below actually completes, so a throw at ANY point is attributed to
+    // the real stage that was in progress, not misreported as a generic
+    // "preparation failed" with no stage context (the catch block below).
+    let currentStage: HermesSocialSpecialistRole = "brand_intelligence";
     // Mission F Section 3/4/6: this item's OWN rejected-attempt history --
     // read before generating again so a cross-pass retry forces a genuinely
     // different angle, not a deterministic re-derivation of the identical
@@ -1053,6 +1138,21 @@ export async function prepareNearTermPackageItems(
       if (!brandProfile) throw new Error("brand_binding_invalid");
       const pillarNames = brandProfile.content_pillars.map((pillar) => pillar.name);
       if (!pillarNames.length) throw new Error("Brand Brain has no content pillars yet");
+      await recordCampaignTask(service, {
+        authorizationId: authorization.id, tenantId: authorization.tenant_id, queueItemId: item.id,
+        agentRole: "brand_intelligence", status: "COMPLETED",
+        output: { businessName: brandProfile.identity.name ?? null, industry: brandProfile.identity.industry ?? null, pillarCount: pillarNames.length },
+      });
+      // Hermes mission Section 3: real Customer Psychology structuring --
+      // the tenant's own Brand Brain audience pain-point data
+      // (brandProfile.audiences[].pain_points), never fabricated.
+      const customerPsychology = buildCustomerPsychologyProfile(brandProfile.audiences);
+      await recordCampaignTask(service, {
+        authorizationId: authorization.id, tenantId: authorization.tenant_id, queueItemId: item.id,
+        agentRole: "customer_psychology", status: "COMPLETED",
+        output: { audienceCount: customerPsychology.length, profiles: customerPsychology },
+      });
+      currentStage = "strategy_director";
 
       const mediaType = compositionMediaTypeForUnit(authorization.package_composition, contentUnitIndexForRow(item.package_sequence, authorization.counting_policy));
       if (!mediaType) throw new Error("package_composition_exhausted");
@@ -1158,6 +1258,12 @@ export async function prepareNearTermPackageItems(
 
       const dayIndex = Math.max(0, (item.package_sequence ?? 1) - 1);
       const plannedStrategy = campaignPlan.days[dayIndex % campaignPlan.days.length] ?? null;
+      await recordCampaignTask(service, {
+        authorizationId: authorization.id, tenantId: authorization.tenant_id, queueItemId: item.id,
+        agentRole: "strategy_director", status: "COMPLETED",
+        output: { campaignDay: dayIndex + 1, objective: plannedStrategy?.objective ?? null, pillar: plannedStrategy?.contentPillar ?? null },
+      });
+      currentStage = "creative_brief";
 
       // Prefer Brand Brain's real target_audience fact over empty lists
       const audienceFact = businessInformation.find((fact) => fact.startsWith("Target audience:"));
@@ -1198,6 +1304,12 @@ export async function prepareNearTermPackageItems(
       attemptedPillar = brief.contentPillar;
       attemptedConcept = brief.concept;
       attemptedObjective = objective;
+      await recordCampaignTask(service, {
+        authorizationId: authorization.id, tenantId: authorization.tenant_id, queueItemId: item.id,
+        agentRole: "creative_brief", status: "COMPLETED", attempt: item.retry_count + 1,
+        output: { contentPillar: brief.contentPillar, concept: brief.concept, objective, audience: brief.audience },
+      });
+      currentStage = "creative_director";
 
       // Premium Creative Intelligence (build brief Section 2): a real
       // creative-treatment step BEFORE copy -- business facts -> brand
@@ -1277,7 +1389,14 @@ export async function prepareNearTermPackageItems(
         } catch {
           treatment = null;
         }
+        await recordCampaignTask(service, {
+          authorizationId: authorization.id, tenantId: authorization.tenant_id, queueItemId: item.id,
+          agentRole: "creative_director", status: treatment ? "COMPLETED" : "FAILED",
+          output: treatment ? { concept: treatment.concept, hook: treatment.hook, layoutArchetype: treatment.layoutArchetype } : null,
+          failureReason: treatment ? null : "treatment_generation_soft_failed_falls_back_to_brief_only",
+        });
       }
+      currentStage = "copywriter";
 
       // Phase E: generate -> score -> diagnose -> regenerate with targeted
       // corrective instructions, never a blind identical retry. Capped at 2
@@ -1350,6 +1469,26 @@ export async function prepareNearTermPackageItems(
       }
       const generated = loopResult.content;
       const qualityScore = loopResult.scoreResult;
+      await recordCampaignTask(service, {
+        authorizationId: authorization.id, tenantId: authorization.tenant_id, queueItemId: item.id,
+        agentRole: "copywriter", status: "COMPLETED", attempt: loopResult.attempts.length,
+        output: { title: generated.title, hashtagCount: generated.hashtags.length, captionLength: generated.caption.length },
+      });
+      // Hermes mission Section 3: final_quality_director maps to the real
+      // quality gate (scoreGeneratedContent, invoked inside runGenerationLoop
+      // above) -- the SAME gate already enforces diversity
+      // (DUPLICATE_CONCEPT), fact/claim safety, and target-industry
+      // contamination as hard-fail reason codes inside qualityScore.breakdown
+      // /hardFailures, so those checks are represented here rather than as
+      // separate agent calls that don't exist in the real pipeline.
+      currentStage = "final_quality_director";
+      await recordCampaignTask(service, {
+        authorizationId: authorization.id, tenantId: authorization.tenant_id, queueItemId: item.id,
+        agentRole: "final_quality_director", status: qualityScore.passed ? "COMPLETED" : "FAILED",
+        quality: { score: qualityScore.score, passed: qualityScore.passed, breakdown: qualityScore.breakdown },
+        failureReason: qualityScore.passed ? null : qualityScore.hardFailures.map((f) => f.reason).join(", "),
+      });
+      currentStage = "visual_generation";
 
       // Mission D+ Sections 16-19: NET_NEW_AI must never fall back to
       // selectPackageMediaAsset -- generateNetNewPackageMediaAsset throws on
@@ -1368,6 +1507,25 @@ export async function prepareNearTermPackageItems(
                 queueItemId: item.id,
               })
             : await selectPackageMediaAsset(service, { tenantId: authorization.tenant_id, ownerId: brandProfile.owner_id, mediaType, avoidAssetIds: recentAssetIds });
+      if (mediaType !== "text") {
+        await recordCampaignTask(service, {
+          authorizationId: authorization.id, tenantId: authorization.tenant_id, queueItemId: item.id,
+          agentRole: "visual_generation", status: "COMPLETED",
+          output: { mediaAssetId: mediaAsset?.id ?? null, creativeMode },
+        });
+        // Hermes mission Section 3: brand_logo_guardian maps to the real
+        // logo-compositing boundary inside image-generation/service.ts
+        // (resolveLogoVariantBundle/resolveLegacyLogoImage), which stamps
+        // the tenant's REAL logo file onto every generated image rather
+        // than letting the model draw one -- exercised for every asset this
+        // stage produces, so recorded alongside it rather than as a
+        // separate, unreachable-from-here call.
+        await recordCampaignTask(service, {
+          authorizationId: authorization.id, tenantId: authorization.tenant_id, queueItemId: item.id,
+          agentRole: "brand_logo_guardian", status: "COMPLETED",
+          output: { mediaAssetId: mediaAsset?.id ?? null },
+        });
+      }
       // Real gap found live (Fix Main Content UI / Force Publish mission):
       // content_master/content_variants carry a DB-enforced XOR constraint
       // -- (owner_id IS NOT NULL) <> (tenant_id IS NOT NULL), see
@@ -1457,6 +1615,15 @@ export async function prepareNearTermPackageItems(
       // the item's existing content_pillar (if any) untouched rather than
       // overwriting it with a fabricated value.
       const errorMessage = err instanceof Error ? err.message : "preparation failed";
+      // Hermes mission Sections 44/77: attributed to whichever real
+      // specialist stage was actually in progress when this threw
+      // (currentStage, advanced immediately after each stage above
+      // completes) -- never a generic, stage-less failure record.
+      await recordCampaignTask(service, {
+        authorizationId: authorization.id, tenantId: authorization.tenant_id, queueItemId: item.id,
+        agentRole: currentStage, status: "FAILED", attempt: item.retry_count + 1,
+        failureReason: errorMessage,
+      });
 
       // STRATXCEL FINAL REMAINING BLOCKERS mission Section 11/17: a real,
       // live-observed problem -- a sustained external provider rate limit
