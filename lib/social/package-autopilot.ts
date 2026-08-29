@@ -393,7 +393,7 @@ export async function attemptAutoActivatePackageAutopilot(
       // needing to open /app or an admin needing to click anything.
       if (prepareResult.moreWorkRemaining) {
         const { chainPackageProducerIfMoreWorkRemains } = await import("./package-producer-chain.ts");
-        chainPackageProducerIfMoreWorkRemains(0);
+        await chainPackageProducerIfMoreWorkRemains(0);
       }
     } catch (err) {
       console.error("attemptAutoActivatePackageAutopilot: plan+prepare failed after real activation", {

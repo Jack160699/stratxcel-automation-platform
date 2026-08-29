@@ -488,7 +488,7 @@ export async function runTenantContentBackfillAction() {
     if (moreWorkRemaining) {
       after(async () => {
         const { chainPackageProducerIfMoreWorkRemains } = await import("@/lib/social/package-producer-chain");
-        chainPackageProducerIfMoreWorkRemains(0);
+        await chainPackageProducerIfMoreWorkRemains(0);
       });
     }
   } catch (err) {

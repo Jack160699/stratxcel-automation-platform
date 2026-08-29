@@ -58,7 +58,7 @@ function triggerImmediatePackagePreparation(service: ReturnType<typeof createSup
       // keeps advancing without the subscriber needing to do anything else.
       if (prepareResult.moreWorkRemaining) {
         const { chainPackageProducerIfMoreWorkRemains } = await import("@/lib/social/package-producer-chain");
-        chainPackageProducerIfMoreWorkRemains(0);
+        await chainPackageProducerIfMoreWorkRemains(0);
       }
     } catch (err) {
       console.error("triggerImmediatePackagePreparation: background plan+prepare failed", {

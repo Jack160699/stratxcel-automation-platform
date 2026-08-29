@@ -36,7 +36,9 @@ export async function GET(req: NextRequest) {
   // risks the caller's own request (Vercel Cron, or a real activation).
   if (result.moreWorkRemaining) {
     const depth = Number(req.headers.get("x-autopilot-chain-depth") ?? "0") || 0;
-    after(() => chainPackageProducerIfMoreWorkRemains(depth));
+    after(async () => {
+      await chainPackageProducerIfMoreWorkRemains(depth);
+    });
   }
 
   return NextResponse.json(result);
