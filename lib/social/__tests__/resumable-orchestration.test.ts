@@ -76,7 +76,7 @@ function run() {
   //     Vercel's own runtime logs across every request path in the window,
   //     with the earlier fire-and-forget version. Must genuinely await
   //     dispatch, bounded by a short real timeout so it never waits for
-  //     the CHAINED invocation's own full ~220s of real work.) -----------
+  //     the CHAINED invocation's own full ~130s of real work.) -----------
   assert.match(chainHelper, /MAX_PACKAGE_PRODUCER_CHAIN_DEPTH/, "must have a real, finite depth bound -- never an unbounded chain");
   assert.match(chainHelper, /if \(depth >= MAX_PACKAGE_PRODUCER_CHAIN_DEPTH\)/, "must actually stop at the bound, not just define it");
   assert.match(chainHelper, /const secret = process\.env\.CRON_SECRET;\s*\n\s*if \(!secret\) return;/, "must fail closed exactly like the route's own auth check -- never chains an unauthenticated call");
@@ -84,7 +84,7 @@ function run() {
   assert.match(chainHelper, /"x-autopilot-chain-depth":\s*String\(depth \+ 1\)/, "must increment the depth on every hop, or the bound above is meaningless");
   assert.match(chainHelper, /export async function chainPackageProducerIfMoreWorkRemains/, "must be async so a caller inside after() can genuinely await dispatch");
   assert.match(chainHelper, /await fetch\(url,/, "must actually await the fetch -- an unawaited fetch inside an after() callback can be torn down before it ever leaves the process");
-  assert.match(chainHelper, /signal:\s*AbortSignal\.timeout\(CHAIN_DISPATCH_TIMEOUT_MS\)/, "must bound the await with a short real timeout -- must never wait for the chained invocation's own full ~220s of real work, only that dispatch happened");
+  assert.match(chainHelper, /signal:\s*AbortSignal\.timeout\(CHAIN_DISPATCH_TIMEOUT_MS\)/, "must bound the await with a short real timeout -- must never wait for the chained invocation's own full ~130s of real work, only that dispatch happened");
   console.log("package-producer-chain.ts: bounded, fail-closed, correctly authenticated, genuinely dispatches (bounded await, not fire-and-forget) — PASS");
 
   // --- The cron/producer route: chains via after() (never delays its own
@@ -107,7 +107,7 @@ function run() {
 
   // --- Admin backfill: also shares one real budget across its own loop,
   //     and chains too, so a real click never needs repeating ------------
-  assert.match(adminActions, /const sharedDeadline = Date\.now\(\) \+ 220_000/, "the admin backfill loop must also share one real budget across every authorization it touches");
+  assert.match(adminActions, /const sharedDeadline = Date\.now\(\) \+ 130_000/, "the admin backfill loop must also share one real budget across every authorization it touches");
   assert.match(adminActions, /prepareNearTermPackageItems\([^)]*auth\.id, \{ deadlineMs: sharedDeadline \}\)/, "must pass the shared deadline down, matching the automatic path's own discipline");
   assert.match(adminActions, /if \(moreWorkRemaining\) \{[\s\S]{0,200}await chainPackageProducerIfMoreWorkRemains\(0\)/, "a real admin click must also hand off to the self-chaining producer instead of requiring a second click, genuinely awaited inside its own after()");
   console.log("runTenantContentBackfillAction: shares one real budget, chains on real remaining work, genuinely awaited — PASS");

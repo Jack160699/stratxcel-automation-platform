@@ -900,14 +900,22 @@ export interface PrepareNearTermResult {
   moreWorkRemaining: boolean;
 }
 
-/** Mission E Section 2/4: a single NET_NEW_AI item has taken ~150-160s in
- * real production. Budgeted so a real invocation stops STARTING new items
- * well before the real 300s maxDuration -- never killed mid-flight (the
- * exact failure mode Mission D+ found live and had to build stale-job
- * self-healing for). 220s leaves a real margin for whatever item is
- * already in flight when the deadline check fires, plus the loop's own
- * non-generation overhead (business-fact fetch, BLOCKED-write, etc.). */
-const DEFAULT_PREPARE_BUDGET_MS = 220_000;
+/** Mission E Section 2/4 / Mission F live finding: a single NET_NEW_AI item
+ * has taken ~150-160s in real production (confirmed again live during
+ * Mission F: 148s). The real, declared maxDuration on every caller of this
+ * function is 300s (system/page.tsx, package-producer/route.ts). Mission
+ * E's original 220s budget left only an 80s margin for whatever item was
+ * already in flight when the deadline check fired -- LESS than a single
+ * NET_NEW_AI item's own real cost. Confirmed live: a recovery-policy pass
+ * started a NET_NEW_AI generation just before the 220s mark, the image
+ * finished successfully at ~148s in, but the calling Server Action's real
+ * 300s maxDuration killed the invocation in the same instant, before the
+ * result could ever be written back (a real "Vercel Runtime Timeout Error:
+ * Task timed out after 300 seconds", not a hypothetical). 130s leaves a
+ * genuine ~170s margin -- comfortably above every observed/documented
+ * single-item cost, so an item already in flight when the deadline check
+ * fires can always actually finish and be written, not just "probably". */
+const DEFAULT_PREPARE_BUDGET_MS = 130_000;
 
 export async function prepareNearTermPackageItems(
   service: ServiceClient,

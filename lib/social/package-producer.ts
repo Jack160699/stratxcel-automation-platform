@@ -34,13 +34,17 @@ export interface ProducerRunResult {
 
 const PACKAGE_WORKER_TYPE = "package-autopilot-worker" as const;
 
-/** Mission E Section 2/4: shared across EVERY authorization this
- * invocation touches -- not reset per authorization. A platform with
- * several real active authorizations must not let each one claim its own
- * fresh ~220s (Nx220s would blow through the real 300s maxDuration exactly
- * the way a single authorization's own NET_NEW_AI batch already did in
- * Mission D+). */
-const PRODUCER_BUDGET_MS = 220_000;
+/** Mission E Section 2/4 / Mission F live finding: shared across EVERY
+ * authorization this invocation touches -- not reset per authorization. A
+ * platform with several real active authorizations must not let each one
+ * claim its own fresh budget (Nx budget would blow through the real 300s
+ * maxDuration exactly the way a single authorization's own NET_NEW_AI batch
+ * already did in Mission D+). Matches prepareNearTermPackageItems's own
+ * DEFAULT_PREPARE_BUDGET_MS -- see that constant's comment for the live,
+ * confirmed reasoning (a 220s budget left only an 80s margin, less than a
+ * single NET_NEW_AI item's real ~150-160s cost, and a real production
+ * invocation was actually killed mid-flight by this exact gap). */
+const PRODUCER_BUDGET_MS = 130_000;
 
 export async function runPackageAutopilotProducer(service: ServiceClient, batchLimit = 50): Promise<ProducerRunResult> {
   const started = Date.now();

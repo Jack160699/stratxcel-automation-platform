@@ -238,6 +238,52 @@ function testAdminDiagnosticsSurfaceDistinguishesRecoveryExhaustion() {
   console.log("admin/social/packages/page.tsx: support diagnostics distinguish recovery-in-progress from recovery-exhausted — PASS");
 }
 
+// --- Real bug found live during Mission F: the shared execution budget left
+//     too small a margin for a single in-flight NET_NEW_AI item to safely
+//     finish before the real 300s maxDuration killed the invocation -------
+function testSharedBudgetLeavesASafeMarginForOneInFlightItem() {
+  // Confirmed live: a recovery-retry pass started a NET_NEW_AI image
+  // generation just before the (then) 220s deadline check; the image
+  // finished successfully at 148s into ITS OWN wall-clock, but by then the
+  // calling Server Action had already been killed by its real, declared
+  // 300s maxDuration ("Vercel Runtime Timeout Error: Task timed out after
+  // 300 seconds", not simulated) -- the result was generated but never
+  // written back. An 80s margin (300-220) is less than the documented
+  // ~150-160s single-item cost; it must never be smaller than that.
+  const REAL_DECLARED_MAX_DURATION_MS = 300_000;
+  // The largest real, live-confirmed single-item cost so far (image
+  // generation alone) plus real margin for the surrounding DB writes.
+  const MIN_SAFE_MARGIN_MS = 170_000;
+
+  const packageAutopilot = read("lib", "social", "package-autopilot.ts");
+  const packageProducer = read("lib", "social", "package-producer.ts");
+  const adminActions = read("app", "admin", "(shell)", "social", "actions.ts");
+  const systemPage = read("app", "admin", "(shell)", "social", "system", "page.tsx");
+  const producerRoute = read("app", "api", "social", "package-producer", "route.ts");
+
+  assert.match(systemPage, /export const maxDuration = 300;/, "the real declared maxDuration this test's math depends on must still be 300s -- if this ever changes, the safety math below must be re-derived, not silently stale");
+  assert.match(producerRoute, /export const maxDuration = 300;/, "the producer route's real declared maxDuration must also still be 300s");
+
+  const prepareBudgetMatch = packageAutopilot.match(/const DEFAULT_PREPARE_BUDGET_MS = (\d+)_?(\d*);/);
+  const producerBudgetMatch = packageProducer.match(/const PRODUCER_BUDGET_MS = (\d+)_?(\d*);/);
+  const adminBudgetMatch = adminActions.match(/const sharedDeadline = Date\.now\(\) \+ (\d+)_?(\d*);/);
+  assert.ok(prepareBudgetMatch, "DEFAULT_PREPARE_BUDGET_MS must be a real, greppable numeric constant");
+  assert.ok(producerBudgetMatch, "PRODUCER_BUDGET_MS must be a real, greppable numeric constant");
+  assert.ok(adminBudgetMatch, "the admin backfill's shared deadline must be a real, greppable numeric literal");
+
+  const toNumber = (m: RegExpMatchArray) => Number(`${m[1]}${m[2] ?? ""}`);
+  for (const [label, match] of [
+    ["prepareNearTermPackageItems's DEFAULT_PREPARE_BUDGET_MS", prepareBudgetMatch],
+    ["runPackageAutopilotProducer's PRODUCER_BUDGET_MS", producerBudgetMatch],
+    ["runTenantContentBackfillAction's sharedDeadline", adminBudgetMatch],
+  ] as const) {
+    const budgetMs = toNumber(match);
+    const margin = REAL_DECLARED_MAX_DURATION_MS - budgetMs;
+    assert.ok(margin >= MIN_SAFE_MARGIN_MS, `${label} (${budgetMs}ms) leaves only a ${margin}ms margin under the real 300s maxDuration -- must be at least ${MIN_SAFE_MARGIN_MS}ms so a single in-flight NET_NEW_AI item (real, live-confirmed ~148-160s) can always finish and be written back, never killed mid-flight one beat too late`);
+  }
+  console.log(`prepareNearTermPackageItems/runPackageAutopilotProducer/runTenantContentBackfillAction: shared execution budgets leave a real, sufficient margin (>=${MIN_SAFE_MARGIN_MS / 1000}s) under the real 300s maxDuration for one in-flight NET_NEW_AI item to safely finish — PASS`);
+}
+
 function run() {
   testSelectLeastRecentlyUsedExcludingGuaranteesExclusion();
   testSelectLeastRecentlyUsedExcludingDegradesGracefullyWhenNothingRemains();
@@ -252,6 +298,7 @@ function run() {
   testNetNewAiFailClosedGuaranteeIsUntouchedByRecovery();
   testExhaustedItemsAreStructurallyUnpublishable();
   testAdminDiagnosticsSurfaceDistinguishesRecoveryExhaustion();
+  testSharedBudgetLeavesASafeMarginForOneInFlightItem();
   console.log("recovery-policy.test.ts: ALL PASS");
 }
 

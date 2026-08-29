@@ -444,12 +444,18 @@ export async function runTenantContentBackfillAction() {
       .in("state", ["ACTIVE", "NEEDS_ATTENTION"]);
     if (error) throw new Error(`Could not query social_autopilot_authorizations: ${error.message}`);
 
-    // Mission E Section 2/4: one shared budget across every authorization
-    // this click touches, not a fresh one per authorization -- otherwise N
-    // real active authorizations could together blow well past this
-    // Server Action's own real maxDuration, the same failure mode Mission
-    // D+ found live for a single authorization's own NET_NEW_AI batch.
-    const sharedDeadline = Date.now() + 220_000;
+    // Mission E Section 2/4 / Mission F live finding: one shared budget
+    // across every authorization this click touches, not a fresh one per
+    // authorization -- otherwise N real active authorizations could
+    // together blow well past this Server Action's own real 300s
+    // maxDuration, the same failure mode Mission D+ found live for a
+    // single authorization's own NET_NEW_AI batch. 130s (not the original
+    // 220s) -- confirmed live during Mission F that 220s left only an 80s
+    // margin, less than a single NET_NEW_AI item's real ~150-160s cost:
+    // a real click's own invocation was killed by a genuine "Task timed
+    // out after 300 seconds" the instant an in-flight image finished, one
+    // beat too late to be written back. Matches DEFAULT_PREPARE_BUDGET_MS.
+    const sharedDeadline = Date.now() + 130_000;
     let planned = 0;
     let prepared = 0;
     let blocked = 0;
