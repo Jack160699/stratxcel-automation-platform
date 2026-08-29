@@ -1167,9 +1167,13 @@ export async function prepareNearTermPackageItems(
         ? selectObjective({
             hasOffer: false,
             recentObjectives,
-            excludeObjectives: priorObjectives,
+            ...(forceNewObjective ? { excludeObjectives: priorObjectives } : {}),
           })
-        : (plannedStrategy?.objective || selectObjective({ hasOffer: false, recentObjectives }));
+        : (plannedStrategy?.objective || selectObjective({
+            hasOffer: false,
+            recentObjectives,
+            ...(forceNewObjective ? { excludeObjectives: priorObjectives } : {}),
+          }));
 
       const brief = buildCreativeBrief({
         businessName: brandProfile.identity.name?.trim() || "",

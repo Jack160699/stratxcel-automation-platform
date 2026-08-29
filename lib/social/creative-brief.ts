@@ -12,6 +12,8 @@
  * buildVerifiedBusinessInformation, and recent-queue-item lookups).
  */
 
+import type { ContentObjective } from "./content-options.ts";
+import { classifyIndustry, getIndustryProfile, type IndustryCategory } from "./industry-taxonomy.ts";
 import { selectLeastRecentlyUsed, selectLeastRecentlyUsedExcluding } from "./content-diversity.ts";
 import type { PlannedDayStrategy } from "./campaign-strategy-planner.ts";
 
