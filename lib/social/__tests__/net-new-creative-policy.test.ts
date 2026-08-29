@@ -46,6 +46,16 @@ function run() {
   // --- Idempotency: stable key per queue item, not re-derived per attempt
   assert.match(netNewMedia, /idempotencyKey:\s*`package-net-new:\$\{input\.queueItemId\}`/, "the idempotency key must be stable per queue item so a retry within the same preparation pass reuses the existing job instead of spending a second real generation call");
 
+  // --- Stale-in-flight self-healing (found live: a real backfill run got
+  //     killed by its own maxDuration mid-image-generation, leaving that
+  //     job's row permanently stuck at PROCESSING -- and both the
+  //     idempotency lookup AND processImageGenerationJob's own PROCESSING
+  //     branch return a stuck row as-is forever, never re-driving it) -----
+  assert.match(netNewMedia, /STALE_PROCESSING_MS/, "must define a real staleness threshold");
+  assert.match(netNewMedia, /isStaleInFlight/, "must detect a stuck PROCESSING/REVIEWING/REVISING job, not trust the idempotency lookup unconditionally");
+  assert.match(netNewMedia, /package-net-new-retry:\$\{input\.queueItemId\}:\$\{Date\.now\(\)\}/, "a stale job must be abandoned in favor of a genuinely fresh, disambiguated idempotency key -- not the same dead key forever");
+  console.log("package-net-new-media.ts: a stuck PROCESSING job (killed mid-flight by maxDuration) self-heals via a fresh idempotency key, never wedged forever — PASS");
+
   // --- The caller: NET_NEW_AI branch never falls back, and a thrown
   //     failure is caught by the SAME mechanism that marks BLOCKED --------
   const wireStart = packageAutopilot.indexOf("const creativeMode = authorization.package_composition.creativeMode");

@@ -50,12 +50,21 @@ function run() {
   assert.ok(adminSystemPage.includes("runTenantContentBackfillAction") && adminSystemPage.includes("runWorkerNowAction"), "both real admin actions must still be wired to this same page (the fix must not have accidentally detached them)");
   console.log("admin/social/system/page.tsx: real maxDuration set at the page level, fixing the Server Actions' silent timeout — PASS");
 
-  // --- Automation infrastructure (vercel.json cron) was never broken --
-  //     regression guard, not a re-fix ------------------------------------
+  // --- Automation infrastructure (vercel.json cron) exists and is once-daily
+  //     (Mission D+ superseded the original "must stay hourly/15min" guard:
+  //     the Vercel project is on the Hobby plan, which rejects ANY
+  //     deployment containing a sub-daily cron -- confirmed live via a real
+  //     deploy attempt returning cron_jobs_limits_reached, silently blocking
+  //     every deployment since whenever the account moved onto/started
+  //     enforcing that plan tier. Both crons were deliberately widened to
+  //     once/day, explicitly authorized by the user as a temporary,
+  //     reversible tradeoff to unblock deployment -- this guard now checks
+  //     that both real paths still exist with a real once-daily schedule,
+  //     not that they were never touched) --------------------------------
   const vercelConfig = read("vercel.json");
-  assert.match(vercelConfig, /"path":\s*"\/api\/social\/package-producer"[\s\S]{0,60}"schedule":\s*"0 \* \* \* \*"/, "the hourly package-producer cron schedule must remain intact -- it was never the actual problem, the timeout budget was");
-  assert.match(vercelConfig, /"path":\s*"\/api\/social\/worker"[\s\S]{0,60}"schedule":\s*"\*\/15 \* \* \* \*"/, "the 15-minute publish worker cron schedule must remain intact");
-  console.log("vercel.json: both real cron schedules confirmed intact — PASS");
+  assert.match(vercelConfig, /"path":\s*"\/api\/social\/package-producer"[\s\S]{0,60}"schedule":\s*"0 2 \* \* \*"/, "package-producer must still exist with a real, valid once-daily schedule -- Hobby-plan cron limits reject anything more frequent");
+  assert.match(vercelConfig, /"path":\s*"\/api\/social\/worker"[\s\S]{0,60}"schedule":\s*"0 6 \* \* \*"/, "the publish worker must still exist with a real, valid once-daily schedule, scheduled after package-producer so same-day-prepared content can still be picked up same day");
+  console.log("vercel.json: both real cron schedules confirmed present, once-daily (Hobby-plan compatible) — PASS");
 
   console.log("debug-silent-automation-timeout-fix.test.ts: ALL PASS");
 }

@@ -25,6 +25,26 @@ async function loadImageGenerationService() {
   return import("../image-generation/service.ts");
 }
 
+/** Found live (Mission D+ real backfill run): a Server Action / route
+ * killed mid-flight by its own real maxDuration budget (NET_NEW_AI's real
+ * image-generation calls are ~150s+ each, so a batch of several can
+ * genuinely exceed 300s) leaves that job's row stuck at PROCESSING
+ * forever -- it was never marked FAILED, because nothing survived to run
+ * the catch block. processImageGenerationJob's own PROCESSING branch
+ * (correctly, for the case this module doesn't own -- a genuinely
+ * concurrent in-flight call) just returns the row as-is rather than
+ * re-driving it, and createImageGenerationJob's idempotency lookup ties
+ * every future attempt for this SAME queue item to that SAME dead row
+ * forever, regardless of status. Comfortably above the ~156s a real
+ * generation has taken in production, so a genuinely in-flight concurrent
+ * call is never mistaken for stale. */
+const STALE_PROCESSING_MS = 10 * 60_000;
+
+function isStaleInFlight(job: { status: string; updated_at: string }): boolean {
+  if (!["PROCESSING", "REVIEWING", "REVISING"].includes(job.status)) return false;
+  return Date.now() - new Date(job.updated_at).getTime() > STALE_PROCESSING_MS;
+}
+
 /**
  * Mission D+ Sections 16-19: the NET_NEW_AI creative mode. Before this,
  * `prepareNearTermPackageItems` had exactly one media path --
@@ -69,31 +89,50 @@ export async function generateNetNewPackageMediaAsset(
     (input.treatment?.concept && input.treatment.concept.trim()) ||
     "Brand social post creative, on-brand and platform-appropriate.";
 
-  const job = await createImageGenerationJob({
+  const baseInput = {
+    tenantId: input.tenantId,
+    actorUserId: input.ownerId,
+    brief,
+    // createImageGenerationJob accepts the treatment as a plain record (it
+    // re-validates the shape itself via validateTreatmentForJob) -- same
+    // cast the admin force-regen action's own reconstructed-from-JSON
+    // treatment implicitly satisfies.
+    treatment: input.treatment as unknown as Record<string, unknown> | null,
+    aspectRatio: "1:1" as const,
+    candidateCount: 2,
+    sourceContext: "social_autopilot" as const,
+    sourceId: input.queueItemId,
+    intendedUse: "social_post" as const,
+  };
+
+  let job = await createImageGenerationJob({
     authorizationClient: service,
     writeClient: service,
     input: {
-      tenantId: input.tenantId,
-      actorUserId: input.ownerId,
-      brief,
-      // createImageGenerationJob accepts the treatment as a plain record (it
-      // re-validates the shape itself via validateTreatmentForJob) -- same
-      // cast the admin force-regen action's own reconstructed-from-JSON
-      // treatment implicitly satisfies.
-      treatment: input.treatment as unknown as Record<string, unknown> | null,
-      aspectRatio: "1:1",
-      candidateCount: 2,
-      sourceContext: "social_autopilot",
-      sourceId: input.queueItemId,
-      // Distinct from the admin force-regen key (which is timestamped so a
-      // human can retry indefinitely) -- this one is stable per queue item,
-      // so a worker retry within the same preparation window reuses the
-      // same job/candidates instead of spending a second real generation
-      // call (Section 31: generation retries must not double-attach).
+      ...baseInput,
+      // Stable per queue item, so a worker retry within the same
+      // preparation window reuses the same job/candidates instead of
+      // spending a second real generation call (Section 31: generation
+      // retries must not double-attach).
       idempotencyKey: `package-net-new:${input.queueItemId}`,
-      intendedUse: "social_post",
     },
   });
+
+  if (isStaleInFlight(job)) {
+    // The stable key is permanently wedded to a dead job -- fall back to a
+    // fresh, timestamped key (same disambiguation the admin force-regen
+    // action already uses) so this attempt actually drives a new real
+    // generation instead of re-fetching the same stuck PROCESSING row
+    // forever.
+    job = await createImageGenerationJob({
+      authorizationClient: service,
+      writeClient: service,
+      input: {
+        ...baseInput,
+        idempotencyKey: `package-net-new-retry:${input.queueItemId}:${Date.now()}`,
+      },
+    });
+  }
 
   const processed = await processImageGenerationJob({ writeClient: service, jobId: job.id });
   if (processed.job.status !== "READY" || !processed.candidates.length) {
