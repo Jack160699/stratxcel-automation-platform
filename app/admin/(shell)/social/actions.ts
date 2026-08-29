@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { after } from "next/server";
 import { requireOwnerContext } from "@/lib/social/db-context";
 import { disconnectAccount } from "@/lib/social/repositories/accounts";
 import { createCampaign } from "@/lib/social/repositories/campaigns";
@@ -443,17 +444,29 @@ export async function runTenantContentBackfillAction() {
       .in("state", ["ACTIVE", "NEEDS_ATTENTION"]);
     if (error) throw new Error(`Could not query social_autopilot_authorizations: ${error.message}`);
 
+    // Mission E Section 2/4: one shared budget across every authorization
+    // this click touches, not a fresh one per authorization -- otherwise N
+    // real active authorizations could together blow well past this
+    // Server Action's own real maxDuration, the same failure mode Mission
+    // D+ found live for a single authorization's own NET_NEW_AI batch.
+    const sharedDeadline = Date.now() + 220_000;
     let planned = 0;
     let prepared = 0;
     let blocked = 0;
     let failures = 0;
+    let moreWorkRemaining = false;
     for (const auth of authorizations ?? []) {
+      if (Date.now() >= sharedDeadline) {
+        moreWorkRemaining = true;
+        break;
+      }
       try {
         const planResult = await planPackagePeriod(service as Parameters<typeof planPackagePeriod>[0], auth.id);
-        const prepareResult = await prepareNearTermPackageItems(service as Parameters<typeof prepareNearTermPackageItems>[0], auth.id);
+        const prepareResult = await prepareNearTermPackageItems(service as Parameters<typeof prepareNearTermPackageItems>[0], auth.id, { deadlineMs: sharedDeadline });
         planned += planResult.planned;
         prepared += prepareResult.prepared;
         blocked += prepareResult.blocked;
+        if (prepareResult.moreWorkRemaining) moreWorkRemaining = true;
       } catch (err) {
         failures++;
         console.error(`Retroactive backfill failed for authorization ${auth.id} (tenant ${auth.tenant_id}):`, err instanceof Error ? err.message : err);
@@ -464,9 +477,20 @@ export async function runTenantContentBackfillAction() {
       actorType: "USER",
       actorId: ctx.ownerId,
       action: "social.package.retroactive_backfill",
-      summary: `Retroactive tenant content backfill: ${(authorizations ?? []).length} authorization(s) scanned, planned=${planned}, prepared=${prepared}, blocked=${blocked}, failures=${failures}`,
-      meta: { authorizationCount: (authorizations ?? []).length, planned, prepared, blocked, failures },
+      summary: `Retroactive tenant content backfill: ${(authorizations ?? []).length} authorization(s) scanned, planned=${planned}, prepared=${prepared}, blocked=${blocked}, failures=${failures}${moreWorkRemaining ? " -- more eligible work remains; chaining the real automatic producer so this doesn't require another click" : ""}`,
+      meta: { authorizationCount: (authorizations ?? []).length, planned, prepared, blocked, failures, moreWorkRemaining },
     });
+
+    // Mission E Section 18/26/27: an admin click remains available for
+    // support/debugging, but shouldn't itself need repeating -- if real
+    // work is still left after this click's own bounded budget, hand off
+    // to the same real self-chaining producer the automatic path uses.
+    if (moreWorkRemaining) {
+      after(async () => {
+        const { chainPackageProducerIfMoreWorkRemains } = await import("@/lib/social/package-producer-chain");
+        chainPackageProducerIfMoreWorkRemains(0);
+      });
+    }
   } catch (err) {
     console.error("Retroactive tenant content backfill failed:", err);
   }

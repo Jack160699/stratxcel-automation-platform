@@ -1,5 +1,6 @@
-import { NextResponse, type NextRequest } from "next/server";
+import { NextResponse, after, type NextRequest } from "next/server";
 import { runPackageAutopilotProducer } from "@/lib/social/package-producer";
+import { chainPackageProducerIfMoreWorkRemains } from "@/lib/social/package-producer-chain";
 import { createSupabaseServiceClient } from "@/lib/supabase/service";
 
 /**
@@ -27,6 +28,17 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const result = await runPackageAutopilotProducer(createSupabaseServiceClient() as Parameters<typeof runPackageAutopilotProducer>[0]);
+
+  // Mission E Section 2/4/18: this invocation stopped inside its own real
+  // time budget (never killed mid-flight), but real eligible work can
+  // still remain -- self-chain a fresh invocation via after() so the
+  // response returns immediately and the chain trigger never delays or
+  // risks the caller's own request (Vercel Cron, or a real activation).
+  if (result.moreWorkRemaining) {
+    const depth = Number(req.headers.get("x-autopilot-chain-depth") ?? "0") || 0;
+    after(() => chainPackageProducerIfMoreWorkRemains(depth));
+  }
+
   return NextResponse.json(result);
 }
 

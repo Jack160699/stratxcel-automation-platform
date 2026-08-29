@@ -383,7 +383,18 @@ export async function attemptAutoActivatePackageAutopilot(
     // content for the near-term horizon, never a second implementation.
     try {
       await planPackagePeriod(service, authorization.id);
-      await prepareNearTermPackageItems(service, authorization.id);
+      const prepareResult = await prepareNearTermPackageItems(service, authorization.id);
+      // Mission E Section 21: "campaign created -> orchestrator queued" --
+      // one bounded inline call already gets real day-one content live
+      // immediately, but NET_NEW_AI's real ~150-160s/item cost means it
+      // rarely finishes the whole near-term horizon by itself. Chain the
+      // real self-continuing producer (Section 18) so the rest of the
+      // campaign keeps advancing on its own, without the subscriber ever
+      // needing to open /app or an admin needing to click anything.
+      if (prepareResult.moreWorkRemaining) {
+        const { chainPackageProducerIfMoreWorkRemains } = await import("./package-producer-chain.ts");
+        chainPackageProducerIfMoreWorkRemains(0);
+      }
     } catch (err) {
       console.error("attemptAutoActivatePackageAutopilot: plan+prepare failed after real activation", {
         authorizationId: authorization.id,
@@ -841,11 +852,37 @@ const CANONICAL_PLATFORM_LABEL: Record<string, string> = {
  * text, no configured AI provider) is marked BLOCKED with a real reason —
  * never silently published with garbage (Section 28/48).
  */
-export async function prepareNearTermPackageItems(service: ServiceClient, authorizationId: string): Promise<{ prepared: number; blocked: number }> {
+export interface PrepareNearTermResult {
+  prepared: number;
+  blocked: number;
+  /** Mission E Section 2/4: true when this call stopped before exhausting
+   * every eligible item -- either the real runtime deadline was reached, or
+   * a real follow-up count found more eligible items beyond this batch.
+   * Callers (the producer route) use this to decide whether to
+   * self-chain another invocation rather than leaving the rest for
+   * whenever the next scheduled trigger happens to fire. */
+  moreWorkRemaining: boolean;
+}
+
+/** Mission E Section 2/4: a single NET_NEW_AI item has taken ~150-160s in
+ * real production. Budgeted so a real invocation stops STARTING new items
+ * well before the real 300s maxDuration -- never killed mid-flight (the
+ * exact failure mode Mission D+ found live and had to build stale-job
+ * self-healing for). 220s leaves a real margin for whatever item is
+ * already in flight when the deadline check fires, plus the loop's own
+ * non-generation overhead (business-fact fetch, BLOCKED-write, etc.). */
+const DEFAULT_PREPARE_BUDGET_MS = 220_000;
+
+export async function prepareNearTermPackageItems(
+  service: ServiceClient,
+  authorizationId: string,
+  options?: { deadlineMs?: number }
+): Promise<PrepareNearTermResult> {
+  const deadline = options?.deadlineMs ?? Date.now() + DEFAULT_PREPARE_BUDGET_MS;
   const { data: authRow } = await service.from("social_autopilot_authorizations").select("*").eq("id", authorizationId).maybeSingle();
-  if (!authRow) return { prepared: 0, blocked: 0 };
+  if (!authRow) return { prepared: 0, blocked: 0, moreWorkRemaining: false };
   const authorization = authRow as PackageAuthorizationRow;
-  if (authorization.state !== "ACTIVE") return { prepared: 0, blocked: 0 };
+  if (authorization.state !== "ACTIVE") return { prepared: 0, blocked: 0, moreWorkRemaining: false };
 
   const horizonEnd = new Date(Date.now() + authorization.preparation_horizon_days * 86_400_000).toISOString();
   // Mission D+ Section 21: a BLOCKED item (in-pass corrective-instruction
@@ -902,7 +939,17 @@ export async function prepareNearTermPackageItems(service: ServiceClient, author
     businessInformation = [...businessInformation, ...getActiveServices(brandBrain?.content).map((s) => (s.shortDescription ? `Service: ${s.name} — ${s.shortDescription}` : `Service: ${s.name}`))];
   }
 
+  let deadlineHit = false;
   for (const raw of dueItems ?? []) {
+    // Mission E Section 2/4: checked BEFORE starting a new item, never
+    // mid-item -- a real NET_NEW_AI attempt already in flight is always
+    // allowed to finish, so nothing is ever killed mid-write. Any item not
+    // yet started this call is left exactly as it was (still
+    // PLANNED/BLOCKED, untouched) for the next invocation to pick up.
+    if (Date.now() >= deadline) {
+      deadlineHit = true;
+      break;
+    }
     const item = raw as PackageQueueItemRow;
     // Hoisted out of the try block (Mission D+ Section 21): the catch below
     // needs the pillar a failed attempt actually used, if generation got
@@ -1290,7 +1337,26 @@ export async function prepareNearTermPackageItems(service: ServiceClient, author
     }
   }
 
-  return { prepared, blocked };
+  // Mission E Section 2/4: a real, cheap count -- not a heuristic -- of
+  // whatever is STILL eligible after this call, using the exact same
+  // WHERE clause as the due-item query above. Deadline-hit always implies
+  // more work (the loop broke before finishing dueItems); otherwise this
+  // is the only way to know whether dueItems's own 20-row page was the
+  // whole remaining backlog or just the front of a longer one.
+  let moreWorkRemaining = deadlineHit;
+  if (!moreWorkRemaining) {
+    const { count } = await service
+      .from("social_autopilot_queue_items")
+      .select("id", { count: "exact", head: true })
+      .eq("authorization_id", authorization.id)
+      .eq("period_number", authorization.period_number)
+      .in("status", ["PLANNED", "BLOCKED"])
+      .lt("retry_count", MAX_BLOCKED_RETRIES)
+      .lte("scheduled_at", horizonEnd);
+    moreWorkRemaining = (count ?? 0) > 0;
+  }
+
+  return { prepared, blocked, moreWorkRemaining };
 }
 
 /**

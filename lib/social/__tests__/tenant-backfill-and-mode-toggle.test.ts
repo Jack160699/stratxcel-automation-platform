@@ -96,7 +96,9 @@ function run() {
   //     button --------------------------------------------------------
   assert.ok(adminActions.includes("export async function runTenantContentBackfillAction"), "a real admin server action must exist as the verified execution path");
   const backfillActionIndex = adminActions.indexOf("export async function runTenantContentBackfillAction");
-  const backfillActionBody = adminActions.slice(backfillActionIndex, backfillActionIndex + 2200);
+  // Widened for Mission E's shared-budget/self-chaining additions (real
+  // function body now runs to ~3527 chars from its own start).
+  const backfillActionBody = adminActions.slice(backfillActionIndex, backfillActionIndex + 3800);
   assert.match(backfillActionBody, /const ctx = await assertOwner\(\);/, "must be admin/staff-gated exactly like every other action in this file, never open to a customer");
   assert.ok(backfillActionBody.includes("packageKillSwitchActive") && backfillActionBody.includes("kill.active"), "must refuse to run under an active kill switch, exactly like runPackageAutopilotBatch itself");
   assert.match(backfillActionBody, /\.in\("state",\s*\["ACTIVE",\s*"NEEDS_ATTENTION"\]\)/, "must select the exact same authorization states as the standalone script and planPackagePeriod itself");

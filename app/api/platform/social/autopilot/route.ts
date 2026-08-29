@@ -50,7 +50,16 @@ function triggerImmediatePackagePreparation(service: ReturnType<typeof createSup
   after(async () => {
     try {
       await planPackagePeriod(service as Parameters<typeof planPackagePeriod>[0], authorizationId);
-      await prepareNearTermPackageItems(service as Parameters<typeof prepareNearTermPackageItems>[0], authorizationId);
+      const prepareResult = await prepareNearTermPackageItems(service as Parameters<typeof prepareNearTermPackageItems>[0], authorizationId);
+      // Mission E Section 18/21: this one bounded inline call gets real
+      // day-one content live immediately, but rarely finishes the whole
+      // near-term horizon on its own once NET_NEW_AI's real per-item cost
+      // is in play -- chain the real self-continuing producer so the rest
+      // keeps advancing without the subscriber needing to do anything else.
+      if (prepareResult.moreWorkRemaining) {
+        const { chainPackageProducerIfMoreWorkRemains } = await import("@/lib/social/package-producer-chain");
+        chainPackageProducerIfMoreWorkRemains(0);
+      }
     } catch (err) {
       console.error("triggerImmediatePackagePreparation: background plan+prepare failed", {
         authorizationId,
