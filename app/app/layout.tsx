@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { resolveCanonicalIdentity } from "@/lib/identity/resolve-identity";
+import { ACTIVE_TENANT_COOKIE } from "@/lib/tenants/current-tenant";
 import AppLogin from "./AppLogin";
 import { OnboardingPanel } from "./OnboardingPanel";
 import { CurrentTenantProvider } from "./CurrentTenantContext";
@@ -35,7 +37,26 @@ export default async function ClientLayout({ children }: { children: ReactNode }
   const tenants = identity.state === "STAFF_VIEWING_CLIENT"
     ? [{ ...identity.staffWorkspace, role: null, accessMode: "staff_support" as const }]
     : identity.tenants.map((tenant) => ({ ...tenant, accessMode: "customer" as const }));
-  const active = tenants[0];
+  // Real, live bug found this session: this used to unconditionally take
+  // tenants[0], ignoring the real ACTIVE_TENANT_COOKIE that ClientSwitcher's
+  // "Switch Workspace" UI writes via setActiveTenantAction (see
+  // app/app/tenant-actions.ts / lib/tenants/current-tenant.ts). A single
+  // client-side switchTenant() call looked like it worked -- the shop
+  // switcher UI updated and every client-fetched API call used the new
+  // tenant -- but any hard navigation re-ran this Server Component fresh,
+  // silently reverting back to whichever tenant listMyTenants happened to
+  // return first. Every real customer to date has exactly one tenant
+  // membership, so tenants[0] was always trivially correct in production;
+  // this only surfaces once an account holds 2+ real memberships (the exact
+  // scenario the switcher exists for). Same trust boundary as
+  // resolveCurrentTenant(): a stale/forged/removed cookie value can only
+  // ever match an entry in the tenants we already fetched for this real
+  // user, never select one they don't belong to. STAFF_VIEWING_CLIENT is
+  // unaffected -- that path's single-entry tenants array comes from the
+  // separate signed staff-workspace cookie, not this one.
+  const activeTenantCookieId =
+    identity.state === "STAFF_VIEWING_CLIENT" ? undefined : (await cookies()).get(ACTIVE_TENANT_COOKIE)?.value;
+  const active = (activeTenantCookieId && tenants.find((t) => t.tenantId === activeTenantCookieId)) || tenants[0];
   const tenantDb = identity.supabase;
   const [subscriptionResult, auditResult, digitalPresence] = await Promise.all([
     tenantDb
