@@ -108,15 +108,37 @@ function run() {
   const fitHealthy = evaluateCommercialFit({ bottlenecks: [], catalogue, entitlementSnapshot: snapshotFromContract({ allocationPolicy: "UNKNOWN", packageComposition: [], relevantEntitlements: {} }) });
   assert.equal(fitHealthy.outcome, "NO_CHANGE_NEEDED");
 
-  // smallest covering — prefer starter over business when both cover
-  const starterCat = catalogue.filter((c) => c.planKey === "starter" || c.planKey === "business");
+  // smallest covering — prefer the cheaper, targeted plan over the flagship
+  // when both cover. STRATXCEL full-system closure brief Section 28
+  // (regression sweep): real, pre-existing test drift found while running
+  // every dedicated suite -- "starter"/"business" predate the real
+  // commercial-model v3 catalog migration (packages/payments-and-wallet/
+  // src/plans.ts) and are now `status: "legacy"`, which
+  // buildCatalogueFromPlanDefinitions (packages/workforce-core/src/
+  // intelligence/catalogue.ts) correctly, deliberately excludes from the
+  // real catalogue (`plans.filter((p) => p.status === "active")`) -- so
+  // starterCat was silently empty, and evaluateCommercialFit correctly
+  // fell back to CUSTOM rather than ever recommending an unpurchasable
+  // legacy plan. Fixed to use the real, current, active v3 tiers that
+  // exhibit the same real "smaller plan also covers, bigger plan also
+  // covers" relationship this test's actual intent requires: social
+  // (₹3,999, real social_posts entitlement -> covers this module's real
+  // "seo" bottleneck domain per domainsForEntitlements' own mapping) vs
+  // advanced_growth (₹18,498, the flagship, also covers it) -- confirmed
+  // empirically live: "seo" (the plan named SEO Growth) does NOT itself
+  // carry social_posts entitlement (packages/payments-and-wallet/src/
+  // entitlements.ts), so it never actually covers this internal domain --
+  // a real, pre-existing (not part of this fix) naming distinction between
+  // the customer-facing "SEO Growth" plan and this module's internal "seo"
+  // bottleneck-domain concept.
+  const starterCat = catalogue.filter((c) => c.planKey === "social" || c.planKey === "advanced_growth");
   const upsell = evaluateCommercialFit({
     bottlenecks: [{ id: "bn1", code: "WEAK_SEARCH_VISIBILITY", domain: "search_seo", description: "weak seo", evidenceIds: [], severity: "medium", estimatedImpactClass: "high", confidence: "medium", upstreamDependencies: [], downstreamEffects: [], priorityScore: 75, status: "open" }],
     catalogue: starterCat,
     entitlementSnapshot: snapshotFromContract({ allocationPolicy: "UNKNOWN", packageComposition: [], relevantEntitlements: {} }),
   });
   assert.equal(upsell.outcome, "SMALLEST_COVERING_OPTION");
-  assert.equal(upsell.recommendedPlanKey, "starter");
+  assert.equal(upsell.recommendedPlanKey, "social");
 
   // already entitled website_maintenance
   const entitled = evaluateCommercialFit({

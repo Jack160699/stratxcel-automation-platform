@@ -123,13 +123,30 @@ console.log("✓ Copilot mobile structure and plan awareness verified.");
 // =========================================================================
 console.log("\nTest 5: Canonical Billing Plans & Pricing...");
 
-assert.equal(PLAN_DEFINITIONS.starter.priceCents, 299_900, "Starter plan must be ₹2,999/mo (299_900 paise)");
-assert.equal(PLAN_DEFINITIONS.growth.priceCents, 799_900, "Growth plan must be ₹7,999/mo (799_900 paise)");
-assert.equal(PLAN_DEFINITIONS.business.priceCents, 1_599_900, "Business plan must be ₹15,999/mo (1_599_900 paise)");
+// STRATXCEL full-system closure brief, Section 28 (regression sweep): real,
+// pre-existing test drift found while running every dedicated suite --
+// this test predates the real commercial-model v3 catalog migration
+// (packages/payments-and-wallet/src/plans.ts, git history: "GoFree
+// subscription redemption was unredeemable for every current plan",
+// "commercial_model_v3_subscription_tier_guard_fix"). starter/growth/
+// business are still real PLAN_DEFINITIONS entries (their real legacy
+// prices below are unchanged and still correct -- kept for existing
+// subscribers) but are now explicitly `status: "legacy"` with
+// `selfServiceCheckout: false`, so SELF_SERVICE_PLAN_TIERS (a real,
+// computed filter over PLAN_DEFINITIONS by status==="active" &&
+// selfServiceCheckout) correctly excludes them. Fixed to assert the real,
+// current, deliberately-authored self-service catalog rather than
+// inventing a rollback of a genuine, already-shipped product decision.
+assert.equal(PLAN_DEFINITIONS.starter.priceCents, 299_900, "Starter (legacy, existing subscribers only) must remain ₹2,999/mo (299_900 paise)");
+assert.equal(PLAN_DEFINITIONS.growth.priceCents, 799_900, "Growth (legacy, existing subscribers only) must remain ₹7,999/mo (799_900 paise)");
+assert.equal(PLAN_DEFINITIONS.business.priceCents, 1_599_900, "Business (legacy, existing subscribers only) must remain ₹15,999/mo (1_599_900 paise)");
+assert.equal(PLAN_DEFINITIONS.starter.status, "legacy", "starter must be explicitly legacy, never silently reactivated for new self-service checkout");
+assert.equal(PLAN_DEFINITIONS.growth.status, "legacy", "growth must be explicitly legacy, never silently reactivated for new self-service checkout");
+assert.equal(PLAN_DEFINITIONS.business.status, "legacy", "business must be explicitly legacy, never silently reactivated for new self-service checkout");
 assert.deepEqual(
   Array.from(SELF_SERVICE_PLAN_TIERS),
-  ["starter", "growth", "business"],
-  "Self-service payable plans must be starter, growth, and business"
+  ["seo", "social", "seo_and_social", "advanced_seo", "advanced_social", "advanced_growth", "website_landing_page", "website_standard"],
+  "Self-service payable plans must be the real, current v3 catalog -- never the pre-migration starter/growth/business tiers, which are legacy-only"
 );
 
 // The billing page sources price cents from the shared catalog
@@ -138,10 +155,17 @@ assert.deepEqual(
 // the duplicate map is gone and the shared source carries the right numbers.
 const billingPageFile = read("app", "app", "billing", "page.tsx");
 assert.ok(!billingPageFile.includes("SELF_SERVICE_TIER_PRICE_CENTS"), "Billing page must not re-declare its own price map");
+// Same real v3 migration as above (Section 28 regression sweep): 799_900
+// (legacy Growth) and 1_599_900 (legacy Business) were intentionally
+// removed from the real, current catalog -- legacy plans are priced only
+// in PLAN_DEFINITIONS (still checked above) for existing subscribers, no
+// longer duplicated into the self-service catalog customers actually see.
+// Checks the real, current v3 tiers' prices instead (seo unchanged at
+// 299_900; advanced_growth, the real flagship tier, at 1_849_800).
 const catalogFile = read("lib", "commercial", "catalog.ts");
-assert.ok(catalogFile.includes("299_900"), "Catalog must carry the canonical Starter price (299_900)");
-assert.ok(catalogFile.includes("799_900"), "Catalog must carry the canonical Growth price (799_900)");
-assert.ok(catalogFile.includes("1_599_900"), "Catalog must carry the canonical Business price (1_599_900)");
+assert.ok(catalogFile.includes("299_900"), "Catalog must carry the canonical SEO Growth price (299_900)");
+assert.ok(catalogFile.includes("849_900"), "Catalog must carry the canonical Advanced Social price (849_900)");
+assert.ok(catalogFile.includes("1_849_800"), "Catalog must carry the canonical Advanced Growth (flagship) price (1_849_800)");
 
 console.log("✓ Canonical billing plans and pricing verified.");
 
