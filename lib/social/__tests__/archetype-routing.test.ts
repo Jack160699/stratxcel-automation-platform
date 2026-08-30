@@ -1,6 +1,6 @@
 // Run with: node --experimental-strip-types lib/social/__tests__/archetype-routing.test.ts
 import assert from "node:assert/strict";
-import { resolveAutomatedRouting, resolveManualRouting, sanitizePreferredArchetypes } from "../archetype-routing.ts";
+import { resolveAutomatedRouting, resolveManualRouting, sanitizePreferredArchetypes, toArchetypeTier } from "../archetype-routing.ts";
 import { validateCreativeTreatment, forceArchetypeOntoTreatment, type CreativeTreatment } from "../creative-treatment.ts";
 
 function test(name: string, fn: () => void) {
@@ -166,6 +166,39 @@ test("No active subscription: manual generation rejected with NO_SUBSCRIPTION, n
   const result = resolveManualRouting({ tier: "free", preferredArchetypes: [], requestedArchetype: "SPLIT_BANNER" });
   assert.equal(result.ok, false);
   if (!result.ok) assert.equal(result.error.code, "NO_SUBSCRIPTION");
+});
+
+// --- v3 catalog mapping (real bug found live: advanced_growth/
+// advanced_social had no archetype routing at all, forcing every
+// automated post to BASIC_ESSENTIAL and hard-rejecting manual generation
+// with NO_SUBSCRIPTION on a real, live, paying tenant) --------------------
+test("advanced_growth/advanced_social automated: routed to the same business bucket as legacy Growth/Business, not the no-capability fallback", () => {
+  for (const tier of ["advanced_growth", "advanced_social"] as const) {
+    const preferences = ["ELEVATED_BADGE", "TYPOGRAPHIC_HERO"];
+    const result = resolveAutomatedRouting({ tier, preferredArchetypes: preferences });
+    assert.ok(preferences.includes(result.routingContext.forcedArchetype!), `${tier}: expected a real rotated premium archetype, not a fallback`);
+    assert.equal(result.fallbackReason, null, `${tier}: real saved preferences must not trigger any fallback`);
+  }
+});
+
+test("advanced_growth/advanced_social manual: an archetype in saved preferences is granted, not rejected as NO_SUBSCRIPTION", () => {
+  for (const tier of ["advanced_growth", "advanced_social"] as const) {
+    const result = resolveManualRouting({ tier, preferredArchetypes: ["CLINICAL_TRUST"], requestedArchetype: "CLINICAL_TRUST" });
+    assert.equal(result.ok, true, `${tier}: expected manual generation to succeed for a real advanced_social/advanced_growth tenant`);
+    if (result.ok) assert.equal(result.routingContext.forcedArchetype, "CLINICAL_TRUST");
+  }
+});
+
+test("seo/social/seo_and_social/advanced_seo: zero real Social Autopilot automated/manual quota (PLAN_LIMITS) -- deliberately unmapped, same safe fallback as any tier without the capability", () => {
+  for (const tier of ["seo", "social", "seo_and_social", "advanced_seo"] as const) {
+    assert.equal(toArchetypeTier(tier), null, `${tier}: must not be silently granted premium archetype access it has no real quota for`);
+    const automated = resolveAutomatedRouting({ tier, preferredArchetypes: ["NEON_NIGHTLIFE"] });
+    assert.equal(automated.routingContext.forcedArchetype, "BASIC_ESSENTIAL");
+    assert.ok(automated.fallbackReason);
+    const manual = resolveManualRouting({ tier, preferredArchetypes: [], requestedArchetype: "SPLIT_BANNER" });
+    assert.equal(manual.ok, false);
+    if (!manual.ok) assert.equal(manual.error.code, "NO_SUBSCRIPTION");
+  }
 });
 
 // --- sanitizePreferredArchetypes -------------------------------------------

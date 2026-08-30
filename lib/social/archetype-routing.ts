@@ -19,6 +19,28 @@
  *                       superset of Growth everywhere else in
  *                       PLAN_CAPABILITIES/PLAN_LIMITS).
  *
+ * Current (v3) catalog mapping -- verified against the real, live
+ * PLAN_LIMITS in packages/payments-and-wallet/src/entitlements.ts, not
+ * guessed from plan names or marketing copy:
+ *   advanced_social, advanced_growth: the only two v3 tiers with nonzero
+ *                       social_autopilot_automated_monthly/manual_monthly
+ *                       (28/10 each, live-confirmed) -- routed to the same
+ *                       "business" archetype bucket as legacy Growth/
+ *                       Business (full preference-rotation automated,
+ *                       full manual archetype selection).
+ *   seo, social, seo_and_social, advanced_seo: PLAN_LIMITS gives these
+ *                       0/0 for both social_autopilot_automated_monthly
+ *                       and social_autopilot_manual_monthly -- zero real
+ *                       Social Autopilot capability today, so they are
+ *                       deliberately left unmapped (same safe
+ *                       "no archetype access" fallback as any other tier
+ *                       without the capability). Not an oversight -- if
+ *                       one of these tiers ever gains a real automated/
+ *                       manual quota, add it here alongside its PLAN_LIMITS
+ *                       change, per docs/architecture/
+ *                       RAZORPAY_RECONCILIATION_AND_PLAN_TIERS.md's
+ *                       "adding a new plan tier" checklist.
+ *
  * Pure and deterministic: no AI call, no I/O -- callers fetch plan_tier
  * and the tenant's social_autopilot_visual_preferences row and pass them
  * in. Never trusts a client-supplied tier or preference list; those must
@@ -32,15 +54,44 @@ import { selectLeastRecentlyUsed } from "./content-diversity.ts";
 /** Real plan tiers this module knows how to route -- a superset of
  * ArchetypeTier (which only covers the three that can ever hold a
  * premium archetype) so free/legacy tiers fail closed explicitly rather
- * than needing every caller to pre-filter. */
-export type SubscriptionPlanTier = "free" | "starter" | "growth" | "business" | "scale" | "launch" | "custom_growth";
+ * than needing every caller to pre-filter. Includes both the current (v3)
+ * self-service catalog and the legacy DB-compatibility tiers -- see
+ * packages/payments-and-wallet/src/plans.ts for the canonical tier list. */
+export type SubscriptionPlanTier =
+  | "free"
+  | "starter"
+  | "growth"
+  | "business"
+  | "scale"
+  | "launch"
+  | "custom_growth"
+  | "seo"
+  | "social"
+  | "seo_and_social"
+  | "advanced_seo"
+  | "advanced_social"
+  | "advanced_growth";
 
-function toArchetypeTier(tier: SubscriptionPlanTier): ArchetypeTier | null {
+/** The ONE place a real subscription plan_tier string turns into an
+ * internal archetype-capability bucket. Every caller that needs this
+ * mapping (automated/manual routing below, and the visual-preferences API
+ * route) must go through this -- never re-derive it with an inline
+ * tier-equality check, which is exactly how advanced_social/advanced_growth
+ * silently lost premium archetype access the first time this was written
+ * in more than one place. */
+export function toArchetypeTier(tier: SubscriptionPlanTier): ArchetypeTier | null {
   if (tier === "starter" || tier === "growth" || tier === "business") return tier;
-  // scale/launch/custom_growth: legacy/quote-led, not part of the current
-  // commercial offer for this feature -- fail closed (Section 22: "No
-  // subscription -> deny premium archetype access") rather than guess
-  // which existing tier they should behave like.
+  // advanced_social / advanced_growth: the only v3 tiers with a nonzero
+  // social_autopilot_automated_monthly/manual_monthly quota (28/10, both
+  // live-confirmed in PLAN_LIMITS) -- same premium archetype-rotation +
+  // manual-selection behavior as legacy Growth/Business.
+  if (tier === "advanced_social" || tier === "advanced_growth") return "business";
+  // seo/social/seo_and_social/advanced_seo: 0/0 for both real
+  // social_autopilot quotas today -- no Social Autopilot archetype access,
+  // same safe fallback as scale/launch/custom_growth (legacy/quote-led,
+  // never part of this feature's commercial offer). Fail closed (Section
+  // 22: "No subscription -> deny premium archetype access") rather than
+  // guess which existing tier an unmapped one should behave like.
   return null;
 }
 

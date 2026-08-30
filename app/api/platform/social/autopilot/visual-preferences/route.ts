@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { requireClientContext } from "@/lib/tenants/client-context";
 import { isMemberOfTenant } from "@/lib/tenants/current-tenant";
 import { createSupabaseServiceClient } from "@/lib/supabase/service";
-import { ARCHETYPE_IDS, ARCHETYPE_REGISTRY, archetypesForTier, sanitizePreferredArchetypes, type SubscriptionPlanTier } from "@/lib/social/archetype-routing";
+import { ARCHETYPE_IDS, ARCHETYPE_REGISTRY, archetypesForTier, sanitizePreferredArchetypes, toArchetypeTier, type SubscriptionPlanTier } from "@/lib/social/archetype-routing";
 import { recordAudit } from "@/lib/social/repositories/system";
 
 /**
@@ -37,12 +37,18 @@ async function resolveTier(service: ReturnType<typeof createSupabaseServiceClien
   // access for.
   const { data } = await service.from("subscriptions").select("plan_tier").eq("tenant_id", tenantId).eq("status", "active").order("updated_at", { ascending: false }).limit(1).maybeSingle();
   const tier = typeof data?.plan_tier === "string" ? data.plan_tier : "free";
-  const known: SubscriptionPlanTier[] = ["free", "starter", "growth", "business", "scale", "launch", "custom_growth"];
+  // Full real tier universe (legacy DB-compatibility tiers + the current
+  // v3 self-service catalog) -- see SubscriptionPlanTier in
+  // archetype-routing.ts, the single canonical list. Whether a given tier
+  // actually gets premium archetype access is decided in exactly one
+  // place from here on: toArchetypeTier(), not by this array.
+  const known: SubscriptionPlanTier[] = ["free", "starter", "growth", "business", "scale", "launch", "custom_growth", "seo", "social", "seo_and_social", "advanced_seo", "advanced_social", "advanced_growth"];
   return (known as string[]).includes(tier) ? (tier as SubscriptionPlanTier) : "free";
 }
 
 function catalogForTier(tier: SubscriptionPlanTier) {
-  const allowedIds = tier === "starter" || tier === "growth" || tier === "business" ? archetypesForTier(tier) : (["BASIC_ESSENTIAL"] as const);
+  const archetypeTier = toArchetypeTier(tier);
+  const allowedIds = archetypeTier ? archetypesForTier(archetypeTier) : (["BASIC_ESSENTIAL"] as const);
   return ARCHETYPE_IDS.map((id) => ({
     ...ARCHETYPE_REGISTRY[id],
     allowedForTier: (allowedIds as readonly string[]).includes(id),
@@ -61,10 +67,14 @@ export async function GET(req: NextRequest) {
     service.from("social_autopilot_visual_preferences").select("preferred_archetypes, updated_at").eq("tenant_id", tenantId).maybeSingle(),
   ]);
 
-  // Whether premium (Growth/Business-only) archetype selection is even a
-  // concept for this tenant -- Starter never sees the picker at all
+  // Whether premium (Growth/Business-bucket-only) archetype selection is
+  // even a concept for this tenant -- Starter never sees the picker at all
   // (Section 14: "no premium selector, instead a fixed-system message").
-  const premiumSelectionAvailable = tier === "growth" || tier === "business";
+  // Routed through the one canonical tier->bucket mapping so this stays in
+  // sync with automated/manual routing (advanced_social/advanced_growth
+  // included, not just legacy growth/business).
+  const archetypeTier = toArchetypeTier(tier);
+  const premiumSelectionAvailable = archetypeTier === "growth" || archetypeTier === "business";
 
   return NextResponse.json({
     tier,
@@ -91,13 +101,16 @@ export async function POST(req: NextRequest) {
 
   const service = createSupabaseServiceClient();
   const tier = await resolveTier(service, tenantId);
-  if (tier !== "growth" && tier !== "business") {
+  const archetypeTier = toArchetypeTier(tier);
+  if (archetypeTier !== "growth" && archetypeTier !== "business") {
     // Section 22: never let an invalid/unauthorized request accidentally
-    // upgrade visual privileges. A Starter (or free/legacy) tenant simply
-    // cannot have a preference row that means anything -- automated
-    // routing ignores it unconditionally either way, but rejecting the
-    // write outright keeps the DB honest and gives the frontend a real
-    // error instead of a silently-no-op save.
+    // upgrade visual privileges. A Starter (or free/legacy/no-capability)
+    // tenant simply cannot have a preference row that means anything --
+    // automated routing ignores it unconditionally either way, but
+    // rejecting the write outright keeps the DB honest and gives the
+    // frontend a real error instead of a silently-no-op save. Routed
+    // through the same canonical mapping as GET/catalogForTier so
+    // advanced_social/advanced_growth tenants are not incorrectly denied.
     return NextResponse.json({ error: "Visual style preferences are a Growth/Business feature. This workspace's current plan always uses StratXcel's Basic Essential visual system." }, { status: 403 });
   }
 
