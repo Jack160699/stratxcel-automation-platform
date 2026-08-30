@@ -1066,6 +1066,24 @@ export async function prepareNearTermPackageItems(
     // the real content preparation below, which worked without this.
     const existingStrategy = (weeklyCampaign?.strategy ?? {}) as Record<string, unknown>;
     if (weeklyCampaign && !existingStrategy.marketIntelligence) {
+      // Known, real, accepted limitation (found live this pass): this
+      // plain fire-and-forget promise can be killed before the ~90s
+      // grounded-search call finishes if prepareNearTermPackageItems's
+      // own remaining work returns first. next/server's after() was tried
+      // here to fix that properly (the same mechanism the real
+      // package-producer route already uses) but was reverted: it broke
+      // `next/server` module resolution (ERR_MODULE_NOT_FOUND) for this
+      // file under this project's plain `node --experimental-strip-types`
+      // test-running setup (lib/social/package-autopilot.ts is loaded
+      // directly by ~20 test files that way, never through the real
+      // Next.js bundler) -- a confirmed, reproducible regression across
+      // the whole test:social-package-autopilot suite, a materially worse
+      // outcome than the reliability gap it was meant to fix. Left as
+      // fire-and-forget: self-healing via the strategy.marketIntelligence
+      // idempotency check above -- if this particular pass's process dies
+      // before the research call resolves, the row simply stays
+      // unpopulated and the next real pass this same week tries again,
+      // never a duplicate paid search either way.
       void gatherLiveMarketIntelligence(service, {
         tenantId: authorization.tenant_id,
         businessName: String(brandBrain?.content?.business_name ?? brandBrain?.content?.name ?? ""),
