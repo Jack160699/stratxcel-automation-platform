@@ -1,5 +1,6 @@
-import { requireOwnerContext } from "@/lib/social/db-context";
-import { getBrandProfile } from "@/lib/social/repositories/brand";
+import { requireOwnerContext, getServiceContext } from "@/lib/social/db-context";
+import { resolveCurrentTenant } from "@/lib/tenants/current-tenant";
+import { getBrandProfileForTenant } from "@/lib/social/repositories/brand";
 import { Toaster } from "../components/Toaster";
 import { CompanyProfileForm } from "./components/CompanyProfileForm";
 import { ProductsSection } from "./components/ProductsSection";
@@ -31,7 +32,15 @@ export default async function BrandBrainPage() {
   const ctx = await requireOwnerContext();
   if (!ctx.ok) return null;
 
-  const profile = await getBrandProfile(ctx);
+  // Real fix (see lib/social/repositories/brand.ts's header comment on
+  // getBrandProfileForTenant): must read the ACTIVE tenant being managed
+  // (the same real, RLS-membership-revalidated selection the "S Stratxcel"
+  // switcher in the header sets), never the logged-in staff member's own
+  // identity.
+  const { active } = await resolveCurrentTenant(ctx.supabase, ctx.ownerId);
+  if (!active) return null;
+  const { supabase: service } = getServiceContext();
+  const profile = await getBrandProfileForTenant(service as never, active.tenantId);
 
   return (
     <div className="space-y-8 pb-24">

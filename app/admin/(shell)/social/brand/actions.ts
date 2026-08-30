@@ -1,15 +1,28 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireOwnerContext } from "@/lib/social/db-context";
-import { getBrandProfile, upsertBrandProfile, replaceAtIndex, type BrandProfileRow } from "@/lib/social/repositories/brand";
+import { requireOwnerContext, getServiceContext } from "@/lib/social/db-context";
+import { resolveCurrentTenant } from "@/lib/tenants/current-tenant";
+import { getBrandProfileForTenant, upsertBrandProfileForTenant, replaceAtIndex, type BrandProfileRow } from "@/lib/social/repositories/brand";
 import { recordAudit } from "@/lib/social/repositories/system";
 import type { BrandActionResult } from "./types";
 
+/**
+ * STRATXCEL final closure brief: real fix, see
+ * lib/social/repositories/brand.ts's header comment on
+ * getBrandProfileForTenant for the full real-bug writeup. Every action in
+ * this file must operate on the real ACTIVE tenant being managed (the
+ * same real, RLS-membership-revalidated selection resolveCurrentTenant
+ * already provides everywhere else in the admin shell), never the
+ * logged-in staff member's own identity.
+ */
 async function assertOwner() {
   const ctx = await requireOwnerContext();
   if (!ctx.ok) throw new Error(ctx.error);
-  return ctx;
+  const { active } = await resolveCurrentTenant(ctx.supabase, ctx.ownerId);
+  if (!active) throw new Error("No active workspace selected");
+  const { supabase: service } = getServiceContext();
+  return { ownerId: ctx.ownerId, tenantId: active.tenantId, service: service as never };
 }
 
 const GENERIC_ERROR = "Could not save. Please try again.";
@@ -17,7 +30,7 @@ const GENERIC_ERROR = "Could not save. Please try again.";
 export async function saveBrandProfileAction(_prevState: BrandActionResult | null, formData: FormData): Promise<BrandActionResult> {
   try {
     const ctx = await assertOwner();
-    await upsertBrandProfile(ctx, {
+    await upsertBrandProfileForTenant(ctx.service, ctx.tenantId, {
       identity: {
         name: String(formData.get("company_name") ?? "") || undefined,
         industry: String(formData.get("industry") ?? "") || undefined,
@@ -34,10 +47,10 @@ export async function saveBrandProfileAction(_prevState: BrandActionResult | nul
           .split(",")
           .map((s) => s.trim())
           .filter(Boolean),
-        forbidden_claims: (await getBrandProfile(ctx)).voice.forbidden_claims,
+        forbidden_claims: (await getBrandProfileForTenant(ctx.service, ctx.tenantId)).voice.forbidden_claims,
       },
     });
-    await recordAudit({ actorType: "USER", actorId: ctx.ownerId, action: "brand.profile.save", summary: "Updated Brand Brain company profile" });
+    await recordAudit({ actorType: "USER", actorId: ctx.ownerId, action: "brand.profile.save", summary: "Updated Brand Brain company profile", meta: { tenantId: ctx.tenantId } });
     revalidatePath("/admin/social/brand");
     return { ok: true, message: "Company profile saved" };
   } catch (err) {
@@ -51,8 +64,8 @@ async function patchArrayField<K extends "products" | "content_pillars" | "rules
   mutate: (arr: BrandProfileRow[K]) => BrandProfileRow[K]
 ) {
   const ctx = await assertOwner();
-  const current = await getBrandProfile(ctx);
-  await upsertBrandProfile(ctx, { [field]: mutate(current[field]) } as Partial<BrandProfileRow>);
+  const current = await getBrandProfileForTenant(ctx.service, ctx.tenantId);
+  await upsertBrandProfileForTenant(ctx.service, ctx.tenantId, { [field]: mutate(current[field]) } as Partial<BrandProfileRow>);
   revalidatePath("/admin/social/brand");
 }
 
