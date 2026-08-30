@@ -73,16 +73,32 @@ function fmt(ts: string | null) {
 }
 
 export default async function SystemPage() {
+  // TEMPORARY real-production timing instrumentation (STRATXCEL full-system
+  // closure brief, Section 5/6: real root-cause search for the measured
+  // ~6.4s responseStart->responseEnd server-streaming delay -- TTFB itself
+  // is fast (~165ms), so the real bottleneck is server-side awaited work,
+  // not the client). Removed once the real slow call is identified and fixed.
+  const __t0 = Date.now();
   // See layout.tsx: nested pages guard independently of the parent layout.
   const ctx = await requireOwnerContext();
   if (!ctx.ok) return null;
+  console.error(`[perf] requireOwnerContext: ${Date.now() - __t0}ms`);
 
   const { supabase: service } = getServiceContext();
+  const __tHealth = Date.now();
+  const healthP = runHealthChecks(ctx).then((r) => { console.error(`[perf] runHealthChecks: ${Date.now() - __tHealth}ms`); return r; });
+  const __tJobs = Date.now();
+  const jobsP = listJobs(ctx, 30).then((r) => { console.error(`[perf] listJobs: ${Date.now() - __tJobs}ms`); return r; });
+  const __tAudit = Date.now();
+  const auditP = listAuditEvents(ctx, 30).then((r) => { console.error(`[perf] listAuditEvents: ${Date.now() - __tAudit}ms`); return r; });
+  const __tImg = Date.now();
+  const imgP = assessImageProviderHealth(service as never, STRATXCEL_TENANT_ID, 24).then((r) => { console.error(`[perf] assessImageProviderHealth: ${Date.now() - __tImg}ms`); return r; }).catch(() => null);
+  const __tTenant = Date.now();
   const [health, jobs, auditEvents, imageProviderHealth, tenantSocialHealth] = await Promise.all([
-    runHealthChecks(ctx),
-    listJobs(ctx, 30),
-    listAuditEvents(ctx, 30),
-    assessImageProviderHealth(service as never, STRATXCEL_TENANT_ID, 24).catch(() => null),
+    healthP,
+    jobsP,
+    auditP,
+    imgP,
     // STRATXCEL full-system closure brief Section 9: real fix for a
     // confirmed, live bug -- the "social"/"workers"/"webhooks" groups
     // below (from runHealthChecks) reflect the LOGGED-IN ADMIN'S OWN
@@ -94,8 +110,9 @@ export default async function SystemPage() {
     // real, correctly tenant_id-scoped replacement for what this page's
     // own framing ("S Stratxcel" workspace, tenant-specific actions right
     // above it) always implied it already was.
-    assessTenantSocialHealth(service as never, STRATXCEL_TENANT_ID).catch(() => null),
+    assessTenantSocialHealth(service as never, STRATXCEL_TENANT_ID).then((r) => { console.error(`[perf] assessTenantSocialHealth: ${Date.now() - __tTenant}ms`); return r; }).catch(() => null),
   ]);
+  console.error(`[perf] TOTAL Promise.all: ${Date.now() - __tHealth}ms`);
 
   const grouped = health.reduce<Record<string, typeof health>>((acc, h) => {
     (acc[h.group] ??= []).push(h);
