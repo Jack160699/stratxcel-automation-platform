@@ -286,6 +286,47 @@ function testCleanBusinessSpecificContentCanActuallyPass() {
   console.log(`quality-score.test.ts: genuinely good, business-specific copy can reach the ${QUALITY_PASS_THRESHOLD}+ pass threshold — PASS`);
 }
 
+// --- Real defect found live (StratXcel batch, 2026-08-30): a leaked
+// internal structuring label inside otherwise-real, on-brand copy. ---
+function testLeakedTemplateLabelIsRejected() {
+  const result = scoreGeneratedContent({
+    ...BASE,
+    caption:
+      "Let the software handle the midnight publishing while you rest.\n\nStandards and Approach: Social Autopilot automatically researches, creates, validates, schedules and publishes branded social content.\n\nReserve festive slot.",
+    title: "Midnight Publishing",
+    hashtags: ["#Automation"],
+  });
+  assert.ok(reasonsOf(result).includes("LEAKED_TEMPLATE_LABEL"), `expected LEAKED_TEMPLATE_LABEL, got: ${JSON.stringify(result.hardFailures)}`);
+  assert.equal(result.passed, false);
+  console.log("quality-score.test.ts: real live leaked-section-label defect (\"Standards and Approach:\") is caught — PASS");
+}
+
+function testCommonNaturalColonLeadInsAreNotFalseFlagged() {
+  for (const caption of [
+    "Tip: book your table before 7pm on weekends for the best seats.",
+    "Fun fact: our sourdough starter is older than most of our staff.",
+    "PS: we just added a new flavor to the weekend menu.",
+    "Quick tip: pair the fish curry with the coconut rice for the full experience.",
+  ]) {
+    const result = scoreGeneratedContent({ ...BASE, caption, title: "Note", hashtags: ["#FortKochi"] });
+    assert.ok(!reasonsOf(result).includes("LEAKED_TEMPLATE_LABEL"), `expected no false LEAKED_TEMPLATE_LABEL on natural copy: "${caption}"`);
+  }
+  console.log("quality-score.test.ts: common natural colon-led lead-ins (Tip:/Fun fact:/PS:) never false-flag as leaked labels — PASS");
+}
+
+function testOtherLeakedLabelsAreAlsoCaught() {
+  for (const label of ["Key Benefits", "Summary", "Our Approach", "Core Value"]) {
+    const result = scoreGeneratedContent({
+      ...BASE,
+      caption: `Fresh Kerala fish curry served hot every morning at Coastal Kitchen, Fort Kochi.\n\n${label}: we source everything from the local harbor market before sunrise.`,
+      title: "Fresh Fish Curry",
+      hashtags: ["#FortKochi"],
+    });
+    assert.ok(reasonsOf(result).includes("LEAKED_TEMPLATE_LABEL"), `expected "${label}:" to be caught as a leaked template label`);
+  }
+  console.log("quality-score.test.ts: other real leaked-label patterns (Summary:/Our Approach:/etc.) are also caught, not just the one observed live — PASS");
+}
+
 function run() {
   testBadGenericCopyIsRejected();
   testBetterBusinessSpecificCopyPasses();
@@ -310,6 +351,9 @@ function run() {
   testCorrectlyAttributedCustomerExampleDoesNotContaminate();
   testOwnIndustryVocabularyIsNeverFlagged();
   testGenericBusinessLanguageDoesNotFalsePositive();
+  testLeakedTemplateLabelIsRejected();
+  testCommonNaturalColonLeadInsAreNotFalseFlagged();
+  testOtherLeakedLabelsAreAlsoCaught();
   console.log("quality-score.test.ts: ALL PASS");
 }
 

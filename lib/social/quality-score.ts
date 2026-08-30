@@ -35,7 +35,8 @@ export type QualityFailureReason =
   | "LOW_BUSINESS_SPECIFICITY"
   | "LOW_INDUSTRY_RELEVANCE"
   | "BRAND_CONTEXT_MISSING"
-  | "TARGET_INDUSTRY_CONTAMINATION";
+  | "TARGET_INDUSTRY_CONTAMINATION"
+  | "LEAKED_TEMPLATE_LABEL";
 
 export interface QualityFailure {
   reason: QualityFailureReason;
@@ -282,6 +283,30 @@ export function scoreGeneratedContent(input: QualityScoreInput): QualityScoreRes
       });
       break;
     }
+  }
+
+  // Real defect found live (StratXcel batch, 2026-08-30): a generated
+  // caption read "...\n\nStandards and Approach: Social Autopilot —
+  // Automatically researches, creates..." -- the model echoed an internal
+  // structuring label ("Standards and Approach:") straight into
+  // customer-facing copy. This is a distinct failure mode from
+  // FORBIDDEN_TEMPLATE_BUZZWORDS above (a marketing cliche) -- it's a
+  // structural artifact: a short Title-Case phrase at the start of a line,
+  // immediately followed by a colon, that reads like a leaked document
+  // section header rather than organic social writing. A small allowlist
+  // of genuinely common, natural colon-led social lead-ins ("Tip:", "PS:",
+  // "Fun fact:", etc.) keeps this from false-failing legitimate copy.
+  const NATURAL_COLON_LEAD_INS = new Set([
+    "note", "tip", "ps", "psst", "fyi", "reminder", "update", "question",
+    "poll", "new", "today", "this week", "quick tip", "pro tip", "fun fact",
+    "heads up", "bonus", "bts", "recap", "myth", "fact", "warning", "alert",
+  ]);
+  const leakedLabelMatch = caption.match(/(?:^|\n)\s*([A-Z][a-zA-Z]*(?:\s+(?:and|&|[A-Z][a-zA-Z]*)){0,4}):\s/);
+  if (leakedLabelMatch && !NATURAL_COLON_LEAD_INS.has(leakedLabelMatch[1].trim().toLowerCase())) {
+    hardFailures.push({
+      reason: "LEAKED_TEMPLATE_LABEL",
+      detail: `caption contains a leaked structural/section label ("${leakedLabelMatch[1].trim()}:") instead of reading as natural copy`,
+    });
   }
 
   // --- Scoring dimensions (computed regardless of hard-fail status, so a

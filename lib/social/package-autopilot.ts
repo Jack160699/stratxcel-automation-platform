@@ -33,6 +33,7 @@ import { getIndustryVisualVocabulary } from "./industry-visual-vocabulary.ts";
 import { researchInsightsForIndustry } from "./visual-research-library.ts";
 import { resolveAutomatedRouting } from "./archetype-routing.ts";
 import { seasonalContextLine } from "./festival-calendar.ts";
+import { ensureWeeklyCampaignForTenant } from "./weekly-campaign.ts";
 
 /** Hermes-Orchestrated Content Engine Hardening mission Section 2: how far
  * ahead of a post's own scheduled date to surface a real upcoming
@@ -989,6 +990,20 @@ export async function prepareNearTermPackageItems(
   const authorization = authRow as PackageAuthorizationRow;
   if (authorization.state !== "ACTIVE") return { prepared: 0, blocked: 0, recoveryExhausted: 0, moreWorkRemaining: false };
 
+  // STRATXCEL weekly-engine brief Section 19/22: ensure this authorization's
+  // real weekly-campaign checkpoint exists for whichever real calendar week
+  // "now" falls in, before any item preparation this pass. Idempotent (a
+  // second call within the same real week is a no-op read, never a
+  // duplicate row) and strictly additive/best-effort -- a failure here must
+  // never block the real, revenue-critical item preparation below, the
+  // same discipline recordCampaignTask/recordAudit already use throughout
+  // this pipeline.
+  void ensureWeeklyCampaignForTenant(service, {
+    tenantId: authorization.tenant_id,
+    authorizationId: authorization.id,
+    timezone: authorization.timezone,
+  }).catch(() => {});
+
   const horizonEnd = new Date(Date.now() + authorization.preparation_horizon_days * 86_400_000).toISOString();
   // Mission D+ Section 21 / Mission F Section 3/10: a BLOCKED item (in-pass
   // corrective-instruction attempts exhausted) is eligible for a bounded
@@ -1420,6 +1435,7 @@ export async function prepareNearTermPackageItems(
                 ].join("\n")
               : "",
             `Respond with ONLY strict JSON: {"title": string, "masterIdea": string, "caption": string, "hashtags": string[]}.`,
+            `The "caption" value must read as natural, flowing social copy a person would actually write -- never insert a document-style section label (e.g. "Standards and Approach:", "Key Benefits:", "Summary:") anywhere inside it.`,
             correctiveInstructions.length
               ? `CORRECTIONS FROM A PREVIOUS ATTEMPT -- apply these specifically:\n${correctiveInstructions.map((i) => `- ${i}`).join("\n")}`
               : "",

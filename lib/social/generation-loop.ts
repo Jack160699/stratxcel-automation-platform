@@ -27,6 +27,7 @@ const CORRECTIVE_INSTRUCTION: Record<QualityFailureReason, (detail: string) => s
   BRAND_CONTEXT_MISSING: () => "Required brand/business context is missing for this generation -- this cannot be corrected by rewriting; check the input pipeline.",
   MALFORMED_STRUCTURE: () => "Return a complete, valid response with every required field populated.",
   FORBIDDEN_CLAIM: (detail) => `Remove this phrase, which is forbidden by brand rules: ${detail}.`,
+  LEAKED_TEMPLATE_LABEL: (detail) => `Rewrite this: ${detail}. The caption must read as one continuous piece of natural social copy -- never a section label followed by a colon, like a document heading.`,
 };
 
 /** A failure reason that no amount of rewriting the copy can fix -- retrying
