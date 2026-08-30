@@ -62,8 +62,54 @@ function run() {
   //     today are honestly null/empty, never fabricated -------------
   assert.equal(ctx.subNiche, null);
   assert.equal(ctx.brandPersonality, null);
-  assert.deepEqual(ctx.performanceHistory, [], "no real analytics ingestion exists yet -- must be an honest empty array, never a fabricated metric");
+  // STRATXCEL two-gap closure brief: real analytics ingestion now exists
+  // (lib/social/analytics-ingestion.ts + performance-analysis.ts) -- this
+  // particular call just didn't pass a performanceHistory input, so it
+  // must default to an honest empty array (this codebase's established
+  // "never fabricate a fallback" rule), not silently invent one.
+  assert.deepEqual(ctx.performanceHistory, [], "with no performanceHistory input, the result must be an honest empty array, never a fabricated metric");
   console.log("social-autopilot-context.test.ts: fields with no real data source are honestly null/empty, never fabricated — PASS");
+
+  // --- A real, already-computed performance snapshot genuinely flows
+  //     through when the caller has one ---------------------------------
+  const ctxWithPerformance = buildSocialAutopilotContext({
+    tenantId: "466e6195-a9f6-4576-8271-29fdae61c18a",
+    ownerId: "9381030b-b14a-4551-a6e9-b5918f017e1b",
+    subscriptionId: null,
+    brandProfile: REAL_STRATXCEL_BRAND_PROFILE,
+    brandBrainContent: null,
+    verifiedFacts: [],
+    research: null,
+    campaignHistory: [],
+    performanceHistory: [
+      {
+        tenantId: "466e6195-a9f6-4576-8271-29fdae61c18a",
+        weekStart: "2026-08-17",
+        weekEnd: "2026-08-23",
+        postsAnalyzed: 4,
+        postsWithRealMetrics: 4,
+        topPerformingTopics: [{ key: "educational", avgEngagementScore: 0.2, sampleSize: 2 }],
+        weakTopics: [],
+        topFormats: [],
+        weakFormats: [],
+        strongestCtas: [],
+        weakestCtas: [],
+        engagementPatterns: [],
+        contentFatigue: { repeatedPillars: [], repeatedFormats: [], repeatedObjectives: [] },
+        strategicRecommendations: ["Increase educational content."],
+        confidence: "MEDIUM",
+        dataSource: "REAL_ANALYTICS",
+      },
+    ],
+    weekStart: null,
+    weekEnd: null,
+    subscriptionEntitlements: null,
+    auditEntitlements: null,
+  });
+  assert.equal(ctxWithPerformance.performanceHistory.length, 1);
+  assert.equal(ctxWithPerformance.performanceHistory[0]!.dataSource, "REAL_ANALYTICS");
+  assert.equal(ctxWithPerformance.performanceHistory[0]!.strategicRecommendations[0], "Increase educational content.");
+  console.log("social-autopilot-context.test.ts: a real, already-computed performance snapshot genuinely flows through the canonical context — PASS");
 
   // --- Missing/null inputs never throw, never fabricate a fallback -----
   const empty = buildSocialAutopilotContext({

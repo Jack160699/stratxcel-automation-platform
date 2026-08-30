@@ -77,7 +77,10 @@ interface VerificationExecution {
   ownerId: string;
 }
 
-async function getValidProviderAccessToken(
+// Exported (previously private) for lib/social/analytics-ingestion.ts: analytics
+// ingestion needs the exact same real, auto-refreshing token resolution the
+// publish path already uses -- never a second, drifting implementation.
+export async function getValidProviderAccessToken(
   service: ServiceClient,
   account: { id: string; platform: string }
 ): Promise<{ accessToken: string; provider: SocialProvider }> {

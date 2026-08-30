@@ -3,6 +3,7 @@ import type { BrandBrainContent } from "@stratxcel/brand-brain";
 import { getActiveServices } from "@stratxcel/brand-brain";
 import { buildCustomerPsychologyProfile, type CustomerPsychologyProfile } from "../hermes/social-autopilot-campaign.ts";
 import type { LiveMarketIntelligence } from "./market-intelligence.ts";
+import type { PerformanceAnalysis } from "./performance-analysis.ts";
 import type { PlanEntitlementLimits } from "@stratxcel/payments-and-wallet";
 
 /**
@@ -76,11 +77,14 @@ export interface SocialAutopilotContext {
   /** Real prior real weekly-campaign checkpoint rows for this tenant, oldest first -- empty if none exist yet. */
   campaignHistory: Array<{ weekKey: string; status: string; createdAt: string }>;
   /**
-   * Real gap, honestly represented: no live platform-analytics ingestion
-   * exists in this codebase yet (confirmed via repository search this
-   * session) -- always an empty array today, never fabricated metrics.
+   * STRATXCEL two-gap closure brief, Gap 1/2: real when a real Monday
+   * performance snapshot has been computed for this tenant (see
+   * lib/social/performance-analysis.ts, fed by real ingested
+   * lib/social/analytics-ingestion.ts data) -- honestly empty when none
+   * exists yet (a brand-new tenant, or a week with zero real published
+   * posts to measure), never a fabricated metric.
    */
-  performanceHistory: unknown[];
+  performanceHistory: PerformanceAnalysis[];
 
   weekStart: string | null;
   weekEnd: string | null;
@@ -106,6 +110,8 @@ export function buildSocialAutopilotContext(input: {
   verifiedFacts: string[];
   research: LiveMarketIntelligence | null;
   campaignHistory: Array<{ week_key: string; status: string; created_at: string }>;
+  /** Optional: real, already-computed Monday performance snapshot(s) for this tenant. Defaults to [] (honest empty) when the caller has none yet. */
+  performanceHistory?: PerformanceAnalysis[];
   weekStart: string | null;
   weekEnd: string | null;
   subscriptionEntitlements: PlanEntitlementLimits | null;
@@ -157,7 +163,7 @@ export function buildSocialAutopilotContext(input: {
     customerPsychology: buildCustomerPsychologyProfile(input.brandProfile?.audiences ?? []),
 
     campaignHistory: input.campaignHistory.map((c) => ({ weekKey: c.week_key, status: c.status, createdAt: c.created_at })),
-    performanceHistory: [],
+    performanceHistory: input.performanceHistory ?? [],
 
     weekStart: input.weekStart,
     weekEnd: input.weekEnd,

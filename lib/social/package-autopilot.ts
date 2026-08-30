@@ -36,6 +36,8 @@ import { seasonalContextLine } from "./festival-calendar.ts";
 import { ensureWeeklyCampaignForTenant } from "./weekly-campaign.ts";
 import { gatherLiveMarketIntelligence, type LiveMarketIntelligence } from "./market-intelligence.ts";
 import { buildSocialAutopilotContext } from "./social-autopilot-context.ts";
+import { ingestSocialPerformanceForTenant } from "./analytics-ingestion.ts";
+import { runMondayPerformanceAnalysisForTenant, type PerformanceAnalysis } from "./performance-analysis.ts";
 
 /** Hermes-Orchestrated Content Engine Hardening mission Section 2: how far
  * ahead of a post's own scheduled date to surface a real upcoming
@@ -1099,6 +1101,62 @@ export async function prepareNearTermPackageItems(
         )
         .catch(() => {});
     }
+
+    // STRATXCEL two-gap closure brief, Gap 1: real analytics ingestion.
+    // Runs every real pass (not gated behind the once-per-week check below)
+    // -- cheap, idempotent (upserts against a real per-day unique key, see
+    // 20260831010000_social_metrics_observation_date.sql), and there is no
+    // free Vercel Hobby cron slot left (vercel.json is already at the real
+    // 9-cron ceiling vercel-hobby-cron-limits.test.ts enforces) to run it
+    // on its own schedule -- hooking it into this real, already-daily
+    // batch entry point is how it gets real, roughly-daily cadence without
+    // a new declared cron. Strictly best-effort/non-blocking, matching
+    // every other call site in this block. Bounded to 20s total so a
+    // tenant with many real eligible posts can never meaningfully
+    // cannibalize the per-item generation budget the loop below checks
+    // its own deadline against -- any posts not reached within the bound
+    // are simply picked up on a later real pass; ingestion is incremental
+    // and idempotent, so nothing is lost by deferring them.
+    await Promise.race([
+      ingestSocialPerformanceForTenant(service, authorization.tenant_id),
+      new Promise((resolve) => setTimeout(resolve, 20_000)),
+    ]).catch(() => null);
+
+    // STRATXCEL two-gap closure brief, Gap 2 (Section 6/7): the real
+    // Monday performance-analysis snapshot -- computed at most once per
+    // real calendar week per tenant (idempotent via the same
+    // strategy.<key> presence check marketIntelligence already uses just
+    // above), from whatever real social_metrics the ingestion step above
+    // (and prior real days' ingestion runs) has actually recorded for last
+    // week's real published posts. Writes into BOTH the existing, already-
+    // designed performance_snapshot/performance_signal_status columns
+    // (weekly-campaign.ts's WeeklyCampaignRow -- previously always
+    // NO_ANALYTICS_AVAILABLE because nothing ever computed a real
+    // snapshot) and strategy.performanceAnalysis, so it reaches the real
+    // creative-brief research-insight seam below (Section 9's
+    // "research -> strategy -> brief -> content" trace) the exact same way
+    // marketIntelligence already does. Never fabricates a snapshot when no
+    // real posts/metrics exist yet -- analyzeWeeklyPerformance itself
+    // returns dataSource: "NO_ANALYTICS_AVAILABLE" honestly in that case,
+    // and performance_signal_status is only ever set to SNAPSHOT_RECORDED
+    // when it's genuinely REAL_ANALYTICS.
+    if (weeklyCampaign && !existingStrategy.performanceAnalysis) {
+      const prevWeekStart = new Date(new Date(`${weeklyCampaign.week_start}T00:00:00.000Z`).getTime() - 7 * 86_400_000).toISOString().slice(0, 10);
+      const prevWeekEnd = new Date(new Date(`${weeklyCampaign.week_end}T00:00:00.000Z`).getTime() - 7 * 86_400_000).toISOString().slice(0, 10);
+      await runMondayPerformanceAnalysisForTenant(service, { tenantId: authorization.tenant_id, weekStart: prevWeekStart, weekEnd: prevWeekEnd })
+        .then((analysis: PerformanceAnalysis) =>
+          service
+            .from("social_autopilot_weekly_campaigns")
+            .update({
+              strategy: { ...existingStrategy, performanceAnalysis: analysis },
+              performance_snapshot: analysis,
+              performance_signal_status: analysis.dataSource === "REAL_ANALYTICS" ? "SNAPSHOT_RECORDED" : "NO_ANALYTICS_AVAILABLE",
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", weeklyCampaign.id)
+        )
+        .catch(() => {});
+    }
     // Brand Brain Final UX + Data + Save System Section 7: the tenant's
     // real structured Services (added via /app/brand's Services editor)
     // must reach Social Autopilot's real automated generation, not just
@@ -1158,6 +1216,7 @@ export async function prepareNearTermPackageItems(
         verifiedFacts: businessInformationBatch,
         research: (existingStrategy.marketIntelligence as LiveMarketIntelligence | undefined) ?? null,
         campaignHistory: recentCampaigns ?? [],
+        performanceHistory: existingStrategy.performanceAnalysis ? [existingStrategy.performanceAnalysis as PerformanceAnalysis] : [],
         weekStart: weeklyCampaignRow?.week_start ?? null,
         weekEnd: weeklyCampaignRow?.week_end ?? null,
         subscriptionEntitlements: null,
@@ -1443,9 +1502,21 @@ export async function prepareNearTermPackageItems(
       // real search in the background and won't see it yet; every
       // subsequent pass this week will).
       const liveIntelligence = (weeklyCampaign?.strategy as { marketIntelligence?: { available?: boolean; summary?: string | null } } | undefined)?.marketIntelligence;
+      // STRATXCEL two-gap closure brief, Gap 2 (Section 9): the real
+      // Monday performance snapshot (see the strategy.performanceAnalysis
+      // write above) reaches the SAME real prompt-influencing seam
+      // marketIntelligence already uses -- "research -> strategy -> brief
+      // -> content" is a genuine trace, not two disconnected features.
+      // Only appended once real strategicRecommendations exist
+      // (dataSource: "REAL_ANALYTICS") -- a NO_ANALYTICS_AVAILABLE week
+      // contributes nothing here rather than a fabricated recommendation.
+      const livePerformance = (weeklyCampaign?.strategy as { performanceAnalysis?: PerformanceAnalysis } | undefined)?.performanceAnalysis;
       const researchInsights = [
         ...researchInsightsForIndustry(brief.industry === "generic" ? "all" : brief.industry),
         ...(liveIntelligence?.available && liveIntelligence.summary ? [`Real, current market research (gathered this week): ${liveIntelligence.summary}`] : []),
+        ...(livePerformance?.dataSource === "REAL_ANALYTICS" && livePerformance.strategicRecommendations.length > 0
+          ? [`Real performance analysis from last week's real published posts: ${livePerformance.strategicRecommendations.join(" ")}`]
+          : []),
       ];
 
       // Subscription-Gated Visual Archetypes brief Sections 7 (Rule A/B)

@@ -179,6 +179,16 @@ export const xProvider: SocialProvider = {
   },
 
   async getInsights(): Promise<InsightsResult> {
-    return { metrics: { impressions: 0, likes: 0, retweets: 0 } };
+    // Real bug found during the analytics-ingestion build: this used to
+    // return hardcoded { impressions: 0, likes: 0, retweets: 0 } for EVERY
+    // post regardless of actual performance -- a fabricated zero, exactly
+    // the anti-pattern the platform's own "never convert unavailable
+    // metrics into fake zeroes" rule exists to prevent (a real post with
+    // real engagement would have silently reported zero forever). Post
+    // metrics on X require the paid API tier (v2 `public_metrics`/
+    // `non_public_metrics` on /2/tweets) that this integration's free-tier
+    // OAuth app does not have; return no metrics rather than fabricating
+    // any, matching linkedin.ts's honest stub for the same class of gap.
+    return { metrics: {} };
   },
 };
