@@ -83,4 +83,37 @@ generated content and regenerating a fresh TODAY→SUNDAY batch. Given that:
   scheduled through 2026-09-11, on a live paying customer's account.
 
 this decision was deliberately not executed unilaterally in the same pass
-as this export. See the session's final report for how it was resolved.
+as this export — it was put to the account owner directly, who chose full
+cleanup.
+
+## Cleanup executed (after this export, same session)
+
+Real action taken, in dependency-safe order (verified live afterward):
+
+1. The 8 PREPARED queue items were detached from their generated content
+   first (`variant_id`/`content_master_id` set to `null`) — necessary
+   because `social_autopilot_queue_items.variant_id` has an `ON DELETE
+   CASCADE` FK to `content_variants(id)`; deleting the content before
+   detaching would have cascade-deleted the queue_item rows themselves,
+   which was not the intent.
+2. All 50 non-PUBLISHED queue items (42 BLOCKED + 8 PREPARED) were reset
+   to `PLANNED` — a real, existing, first-party status meaning "empty
+   slot, not yet attempted" — clearing `last_error`, `retry_count`,
+   `recovery_state`, `recovery_exhausted`, `claimed_at`, `settled_at`.
+   This reuses the existing queue-item lifecycle rather than inventing a
+   new "archived" status or schema.
+3. The 7 real `content_master` rows exclusively used by the 8 PREPARED
+   items were hard-deleted, cascading automatically to their 8
+   `content_variants` rows and those variants' `social_content_variant_media`
+   link rows. The underlying `social_media_assets` image rows were left
+   untouched (already `autopilot_eligible = false`, quarantined).
+4. The 4 PUBLISHED items and their 2 real `content_master` /
+   4 `content_variants` rows were **not touched** — verified live
+   afterward: still present, byte-for-byte the same rows.
+
+Live-verified end state: `50 PLANNED, 4 PUBLISHED` (0 BLOCKED, 0 PREPARED)
+for this authorization. The 50 `PLANNED` slots remain real, existing
+scheduling infrastructure (not deleted) so `prepareNearTermPackageItems`
+can legitimately regenerate them within its own near-term horizon and the
+tenant's real remaining entitlement — nothing was force-generated in bulk
+as part of this cleanup step itself.
