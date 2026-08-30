@@ -1029,6 +1029,85 @@ export async function prepareNearTermPackageItems(
     .order("scheduled_at", { ascending: true })
     .limit(20);
 
+  // `let`, not `const`: reassigned in-memory below immediately after a
+  // real, awaited strategy write succeeds (Gap 2), so the marketIntelligence
+  // block further down -- which does its own independent
+  // {...existingStrategy, marketIntelligence: X} spread against this same
+  // in-memory snapshot -- can never race a fresh real write and silently
+  // clobber it back out. Real bug found and fixed live while verifying
+  // this pass in production: the two blocks used to live inside two
+  // different scopes with two different snapshots of the same row.
+  let existingStrategy = (weeklyCampaign?.strategy ?? {}) as Record<string, unknown>;
+
+  // STRATXCEL two-gap closure brief, Gap 1: real analytics ingestion.
+  // Deliberately NOT gated on dueItems.length > 0 -- real bug found live
+  // while verifying this in production: StratXcel's real queue was 50/50
+  // BLOCKED + recovery_exhausted (a separate, pre-existing issue), so
+  // dueItems was genuinely empty and the ingestion/analysis block, when it
+  // lived inside that gate, never actually ran even though there was real
+  // published history to measure and a real Monday analysis to compute.
+  // Ingestion and performance analysis are about MEASURING what already
+  // published, not about what's due to generate next -- they must run
+  // regardless of whether this pass happens to have new content to
+  // prepare. Runs every real pass -- cheap, idempotent (upserts against a
+  // real per-day unique key, see
+  // 20260831010000_social_metrics_observation_date.sql), and there is no
+  // free Vercel Hobby cron slot left (vercel.json is already at the real
+  // 9-cron ceiling vercel-hobby-cron-limits.test.ts enforces) to run it on
+  // its own schedule -- hooking it into this real, already-daily batch
+  // entry point is how it gets real, roughly-daily cadence without a new
+  // declared cron. Strictly best-effort/non-blocking. Bounded to 20s total
+  // so a tenant with many real eligible posts can never meaningfully
+  // cannibalize the per-item generation budget the loop below checks its
+  // own deadline against -- any posts not reached within the bound are
+  // simply picked up on a later real pass; ingestion is incremental and
+  // idempotent, so nothing is lost by deferring them.
+  await Promise.race([
+    ingestSocialPerformanceForTenant(service, authorization.tenant_id),
+    new Promise((resolve) => setTimeout(resolve, 20_000)),
+  ]).catch(() => null);
+
+  // STRATXCEL two-gap closure brief, Gap 2 (Section 6/7): the real Monday
+  // performance-analysis snapshot -- computed at most once per real
+  // calendar week per tenant (idempotent via the same strategy.<key>
+  // presence check marketIntelligence uses below), from whatever real
+  // social_metrics the ingestion step above (and prior real days'
+  // ingestion runs) has actually recorded for last week's real published
+  // posts. Writes into BOTH the existing, already-designed
+  // performance_snapshot/performance_signal_status columns
+  // (weekly-campaign.ts's WeeklyCampaignRow -- previously always
+  // NO_ANALYTICS_AVAILABLE because nothing ever computed a real snapshot)
+  // and strategy.performanceAnalysis, so it reaches the real
+  // creative-brief research-insight seam below (Section 9's "research ->
+  // strategy -> brief -> content" trace) the exact same way
+  // marketIntelligence does. Never fabricates a snapshot when no real
+  // posts/metrics exist yet -- analyzeWeeklyPerformance itself returns
+  // dataSource: "NO_ANALYTICS_AVAILABLE" honestly in that case, and
+  // performance_signal_status is only ever set to SNAPSHOT_RECORDED when
+  // it's genuinely REAL_ANALYTICS. Awaited (not fire-and-forget, unlike
+  // marketIntelligence) -- this is bounded, real-DB-only work (no slow
+  // external AI/search call to outlive this invocation), so awaiting it
+  // is both safe and what makes the in-memory existingStrategy
+  // reassignment below race-free against marketIntelligence's write.
+  if (weeklyCampaign && !existingStrategy.performanceAnalysis) {
+    const prevWeekStart = new Date(new Date(`${weeklyCampaign.week_start}T00:00:00.000Z`).getTime() - 7 * 86_400_000).toISOString().slice(0, 10);
+    const prevWeekEnd = new Date(new Date(`${weeklyCampaign.week_end}T00:00:00.000Z`).getTime() - 7 * 86_400_000).toISOString().slice(0, 10);
+    await runMondayPerformanceAnalysisForTenant(service, { tenantId: authorization.tenant_id, weekStart: prevWeekStart, weekEnd: prevWeekEnd })
+      .then(async (analysis: PerformanceAnalysis) => {
+        const { error } = await service
+          .from("social_autopilot_weekly_campaigns")
+          .update({
+            strategy: { ...existingStrategy, performanceAnalysis: analysis },
+            performance_snapshot: analysis,
+            performance_signal_status: analysis.dataSource === "REAL_ANALYTICS" ? "SNAPSHOT_RECORDED" : "NO_ANALYTICS_AVAILABLE",
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", weeklyCampaign.id);
+        if (!error) existingStrategy = { ...existingStrategy, performanceAnalysis: analysis };
+      })
+      .catch(() => {});
+  }
+
   const provider = resolveConfiguredProvider();
   let prepared = 0;
   let blocked = 0;
@@ -1067,7 +1146,6 @@ export async function prepareNearTermPackageItems(
     // real no-op here, never a duplicate paid search). Strictly
     // best-effort and non-blocking -- never lets a research failure affect
     // the real content preparation below, which worked without this.
-    const existingStrategy = (weeklyCampaign?.strategy ?? {}) as Record<string, unknown>;
     if (weeklyCampaign && !existingStrategy.marketIntelligence) {
       // Known, real, accepted limitation (found live this pass): this
       // plain fire-and-forget promise can be killed before the ~90s
@@ -1097,62 +1175,6 @@ export async function prepareNearTermPackageItems(
           service
             .from("social_autopilot_weekly_campaigns")
             .update({ strategy: { ...existingStrategy, marketIntelligence: intelligence }, updated_at: new Date().toISOString() })
-            .eq("id", weeklyCampaign.id)
-        )
-        .catch(() => {});
-    }
-
-    // STRATXCEL two-gap closure brief, Gap 1: real analytics ingestion.
-    // Runs every real pass (not gated behind the once-per-week check below)
-    // -- cheap, idempotent (upserts against a real per-day unique key, see
-    // 20260831010000_social_metrics_observation_date.sql), and there is no
-    // free Vercel Hobby cron slot left (vercel.json is already at the real
-    // 9-cron ceiling vercel-hobby-cron-limits.test.ts enforces) to run it
-    // on its own schedule -- hooking it into this real, already-daily
-    // batch entry point is how it gets real, roughly-daily cadence without
-    // a new declared cron. Strictly best-effort/non-blocking, matching
-    // every other call site in this block. Bounded to 20s total so a
-    // tenant with many real eligible posts can never meaningfully
-    // cannibalize the per-item generation budget the loop below checks
-    // its own deadline against -- any posts not reached within the bound
-    // are simply picked up on a later real pass; ingestion is incremental
-    // and idempotent, so nothing is lost by deferring them.
-    await Promise.race([
-      ingestSocialPerformanceForTenant(service, authorization.tenant_id),
-      new Promise((resolve) => setTimeout(resolve, 20_000)),
-    ]).catch(() => null);
-
-    // STRATXCEL two-gap closure brief, Gap 2 (Section 6/7): the real
-    // Monday performance-analysis snapshot -- computed at most once per
-    // real calendar week per tenant (idempotent via the same
-    // strategy.<key> presence check marketIntelligence already uses just
-    // above), from whatever real social_metrics the ingestion step above
-    // (and prior real days' ingestion runs) has actually recorded for last
-    // week's real published posts. Writes into BOTH the existing, already-
-    // designed performance_snapshot/performance_signal_status columns
-    // (weekly-campaign.ts's WeeklyCampaignRow -- previously always
-    // NO_ANALYTICS_AVAILABLE because nothing ever computed a real
-    // snapshot) and strategy.performanceAnalysis, so it reaches the real
-    // creative-brief research-insight seam below (Section 9's
-    // "research -> strategy -> brief -> content" trace) the exact same way
-    // marketIntelligence already does. Never fabricates a snapshot when no
-    // real posts/metrics exist yet -- analyzeWeeklyPerformance itself
-    // returns dataSource: "NO_ANALYTICS_AVAILABLE" honestly in that case,
-    // and performance_signal_status is only ever set to SNAPSHOT_RECORDED
-    // when it's genuinely REAL_ANALYTICS.
-    if (weeklyCampaign && !existingStrategy.performanceAnalysis) {
-      const prevWeekStart = new Date(new Date(`${weeklyCampaign.week_start}T00:00:00.000Z`).getTime() - 7 * 86_400_000).toISOString().slice(0, 10);
-      const prevWeekEnd = new Date(new Date(`${weeklyCampaign.week_end}T00:00:00.000Z`).getTime() - 7 * 86_400_000).toISOString().slice(0, 10);
-      await runMondayPerformanceAnalysisForTenant(service, { tenantId: authorization.tenant_id, weekStart: prevWeekStart, weekEnd: prevWeekEnd })
-        .then((analysis: PerformanceAnalysis) =>
-          service
-            .from("social_autopilot_weekly_campaigns")
-            .update({
-              strategy: { ...existingStrategy, performanceAnalysis: analysis },
-              performance_snapshot: analysis,
-              performance_signal_status: analysis.dataSource === "REAL_ANALYTICS" ? "SNAPSHOT_RECORDED" : "NO_ANALYTICS_AVAILABLE",
-              updated_at: new Date().toISOString(),
-            })
             .eq("id", weeklyCampaign.id)
         )
         .catch(() => {});

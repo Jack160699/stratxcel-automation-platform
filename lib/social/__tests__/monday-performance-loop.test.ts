@@ -29,7 +29,16 @@ function run() {
   assert.match(src, /import \{ ingestSocialPerformanceForTenant \} from "\.\/analytics-ingestion\.ts";/, "must import the real ingestion function, not a stub");
   assert.match(src, /ingestSocialPerformanceForTenant\(service, authorization\.tenant_id\)/, "must genuinely call real ingestion for this real authorization's tenant");
   assert.match(src, /setTimeout\(resolve, 20_000\)/, "the real ingestion call must be time-bounded so a tenant with many posts can never eat the per-item generation budget");
-  console.log("monday-performance-loop.test.ts: real analytics ingestion is genuinely called from the real daily batch entry point, time-bounded — PASS");
+  // Real bug found and fixed live in production while verifying this pass:
+  // StratXcel's real queue was 50/50 BLOCKED + recovery_exhausted, so
+  // dueItems was genuinely empty -- ingestion/analysis must run regardless
+  // (measuring what already published is not conditional on there being
+  // new content due to generate), so the real call must appear BEFORE the
+  // dueItems gate in source order, never nested inside it.
+  const ingestIndex = src.indexOf("ingestSocialPerformanceForTenant(service, authorization.tenant_id)");
+  const dueItemsGateIndex = src.indexOf('if ((dueItems ?? []).length > 0) {');
+  assert.ok(ingestIndex >= 0 && dueItemsGateIndex >= 0 && ingestIndex < dueItemsGateIndex, "real analytics ingestion must run unconditionally, never gated behind whether new content happens to be due this pass -- a fully BLOCKED/recovery-exhausted real queue (StratXcel's real live state, confirmed) must still get its existing published content measured");
+  console.log("monday-performance-loop.test.ts: real analytics ingestion runs regardless of whether new content is due this pass — PASS");
 
   // --- Gap 2 (performance analysis) is computed idempotently -- the SAME
   //     real once-per-week discipline marketIntelligence already uses,
