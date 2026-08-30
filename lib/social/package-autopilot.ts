@@ -34,6 +34,7 @@ import { researchInsightsForIndustry } from "./visual-research-library.ts";
 import { resolveAutomatedRouting } from "./archetype-routing.ts";
 import { seasonalContextLine } from "./festival-calendar.ts";
 import { ensureWeeklyCampaignForTenant } from "./weekly-campaign.ts";
+import { gatherLiveMarketIntelligence } from "./market-intelligence.ts";
 
 /** Hermes-Orchestrated Content Engine Hardening mission Section 2: how far
  * ahead of a post's own scheduled date to surface a real upcoming
@@ -998,11 +999,11 @@ export async function prepareNearTermPackageItems(
   // never block the real, revenue-critical item preparation below, the
   // same discipline recordCampaignTask/recordAudit already use throughout
   // this pipeline.
-  void ensureWeeklyCampaignForTenant(service, {
+  const weeklyCampaign = await ensureWeeklyCampaignForTenant(service, {
     tenantId: authorization.tenant_id,
     authorizationId: authorization.id,
     timezone: authorization.timezone,
-  }).catch(() => {});
+  }).catch(() => null);
 
   const horizonEnd = new Date(Date.now() + authorization.preparation_horizon_days * 86_400_000).toISOString();
   // Mission D+ Section 21 / Mission F Section 3/10: a BLOCKED item (in-pass
@@ -1053,6 +1054,32 @@ export async function prepareNearTermPackageItems(
     const insights = connectorInsightsResult.status === "fulfilled" ? connectorInsightsResult.value : null;
     const googleBusiness = insights?.googleBusiness.state === "available" ? insights.googleBusiness.data : null;
     businessInformationBatch = buildVerifiedBusinessInformation({ googleBusiness, brandBrain: brandBrain?.content ?? null });
+
+    // STRATXCEL Master Execution Prompt Sections 16-17: real, grounded
+    // competitor/social-trend research, gathered at most ONCE per real
+    // calendar week per tenant (Section 47 cost control -- a real, billed
+    // grounded-search call, not a per-item cost). Only fires when this
+    // week's checkpoint doesn't already carry research (idempotent: a
+    // second prepareNearTermPackageItems pass later the same week is a
+    // real no-op here, never a duplicate paid search). Strictly
+    // best-effort and non-blocking -- never lets a research failure affect
+    // the real content preparation below, which worked without this.
+    const existingStrategy = (weeklyCampaign?.strategy ?? {}) as Record<string, unknown>;
+    if (weeklyCampaign && !existingStrategy.marketIntelligence) {
+      void gatherLiveMarketIntelligence(service, {
+        tenantId: authorization.tenant_id,
+        businessName: String(brandBrain?.content?.business_name ?? brandBrain?.content?.name ?? ""),
+        industry: String(brandBrain?.content?.industry ?? ""),
+        location: typeof brandBrain?.content?.location === "string" ? brandBrain.content.location : null,
+      })
+        .then((intelligence) =>
+          service
+            .from("social_autopilot_weekly_campaigns")
+            .update({ strategy: { ...existingStrategy, marketIntelligence: intelligence }, updated_at: new Date().toISOString() })
+            .eq("id", weeklyCampaign.id)
+        )
+        .catch(() => {});
+    }
     // Brand Brain Final UX + Data + Save System Section 7: the tenant's
     // real structured Services (added via /app/brand's Services editor)
     // must reach Social Autopilot's real automated generation, not just
@@ -1344,7 +1371,20 @@ export async function prepareNearTermPackageItems(
         industryCategory: brief.industry,
       });
       const visualVocab = getIndustryVisualVocabulary(brief.industry);
-      const researchInsights = researchInsightsForIndustry(brief.industry === "generic" ? "all" : brief.industry);
+      // STRATXCEL Master Execution Prompt Section 19: "the strategy must
+      // use this information" -- real, live competitor/trend findings
+      // (gathered once/week, see the weeklyCampaign block above) are
+      // appended additively to the existing static curated library, never
+      // replacing it. Only present once a prior pass this same real week
+      // has actually completed the grounded search (eventual consistency
+      // -- the pass that FIRST creates the weekly checkpoint fires the
+      // real search in the background and won't see it yet; every
+      // subsequent pass this week will).
+      const liveIntelligence = (weeklyCampaign?.strategy as { marketIntelligence?: { available?: boolean; summary?: string | null } } | undefined)?.marketIntelligence;
+      const researchInsights = [
+        ...researchInsightsForIndustry(brief.industry === "generic" ? "all" : brief.industry),
+        ...(liveIntelligence?.available && liveIntelligence.summary ? [`Real, current market research (gathered this week): ${liveIntelligence.summary}`] : []),
+      ];
 
       // Subscription-Gated Visual Archetypes brief Sections 7 (Rule A/B)
       // + 9: server-authoritative archetype routing BEFORE the Gemini
