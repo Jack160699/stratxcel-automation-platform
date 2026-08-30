@@ -53,9 +53,18 @@ function run() {
   // The check must be BEFORE the try block that does the real generation
   // work, not after -- an item already in flight must always be allowed to
   // finish (never killed mid-write, the exact Mission D+ failure mode).
-  const deadlineCheckIndex = prepareBody.indexOf("if (Date.now() >= deadline)");
-  const firstTryIndex = prepareBody.indexOf("try {");
-  assert.ok(deadlineCheckIndex >= 0 && deadlineCheckIndex < firstTryIndex, "the deadline check must run before any per-item work starts, never interrupt work already begun");
+  // Scoped to the real per-item loop specifically (searching for "try {"
+  // from the loop's own start, not the whole function body) -- the
+  // function legitimately has other real try/catch blocks BEFORE the
+  // per-item loop today (e.g. the canonical-context assembly try/catch,
+  // strictly additive batch-level observability), which is fine and
+  // doesn't interrupt anything already in flight; a naive "first try{
+  // anywhere in the function" search would incorrectly flag those.
+  const perItemLoopIndex = prepareBody.indexOf("for (const raw of dueItems");
+  assert.ok(perItemLoopIndex >= 0, "must find the real per-item loop");
+  const deadlineCheckIndex = prepareBody.indexOf("if (Date.now() >= deadline)", perItemLoopIndex);
+  const firstTryIndexInLoop = prepareBody.indexOf("try {", perItemLoopIndex);
+  assert.ok(deadlineCheckIndex >= perItemLoopIndex && deadlineCheckIndex < firstTryIndexInLoop, "the deadline check must run before any per-item work starts, never interrupt work already begun");
   assert.match(prepareBody, /moreWorkRemaining/, "must return a real signal for whether eligible work remains beyond this call");
   assert.match(prepareBody, /count:\s*"exact",\s*head:\s*true/, "the remaining-work signal must be a real count query, not a heuristic guess");
   console.log("prepareNearTermPackageItems: real deadline-aware, in-flight-safe, accurately reports remaining work — PASS");

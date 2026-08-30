@@ -34,7 +34,8 @@ import { researchInsightsForIndustry } from "./visual-research-library.ts";
 import { resolveAutomatedRouting } from "./archetype-routing.ts";
 import { seasonalContextLine } from "./festival-calendar.ts";
 import { ensureWeeklyCampaignForTenant } from "./weekly-campaign.ts";
-import { gatherLiveMarketIntelligence } from "./market-intelligence.ts";
+import { gatherLiveMarketIntelligence, type LiveMarketIntelligence } from "./market-intelligence.ts";
+import { buildSocialAutopilotContext } from "./social-autopilot-context.ts";
 
 /** Hermes-Orchestrated Content Engine Hardening mission Section 2: how far
  * ahead of a post's own scheduled date to surface a real upcoming
@@ -1130,6 +1131,49 @@ export async function prepareNearTermPackageItems(
       status: "COMPLETED",
       output: { verifiedFacts: businessInformationBatch },
     });
+
+    // STRATXCEL zero-gap closure brief Section 5: the literal canonical
+    // SocialAutopilotContext, assembled once per batch from the exact
+    // real data already gathered above (never a redundant parallel
+    // fetch) and recorded through the real Hermes campaign-task ledger
+    // so it is genuinely observable, not a dead type nobody calls.
+    // Best-effort/non-blocking, matching every other batch-level
+    // recordCampaignTask call in this function -- an assembly/recording
+    // failure here must never affect the real generation work below.
+    try {
+      const firstDueItem = (dueItems ?? [])[0] as PackageQueueItemRow | undefined;
+      const [{ data: weeklyCampaignRow }, { data: recentCampaigns }, ownerBrandProfile] = await Promise.all([
+        service.from("social_autopilot_weekly_campaigns").select("week_start,week_end").eq("authorization_id", authorization.id).order("created_at", { ascending: false }).limit(1).maybeSingle(),
+        service.from("social_autopilot_weekly_campaigns").select("week_key,status,created_at").eq("tenant_id", authorization.tenant_id).order("created_at", { ascending: false }).limit(8),
+        firstDueItem
+          ? getBoundBrandProfile({ ok: true, ownerId: firstDueItem.owner_id, email: null, supabase: service as Parameters<typeof getBoundBrandProfile>[0]["supabase"] }, authorization.brand_profile_id, authorization.tenant_id).catch(() => null)
+          : Promise.resolve(null),
+      ]);
+      const ctx = buildSocialAutopilotContext({
+        tenantId: authorization.tenant_id,
+        ownerId: firstDueItem?.owner_id ?? null,
+        subscriptionId: authorization.subscription_id,
+        brandProfile: ownerBrandProfile,
+        brandBrainContent: brandBrain?.content ?? null,
+        verifiedFacts: businessInformationBatch,
+        research: (existingStrategy.marketIntelligence as LiveMarketIntelligence | undefined) ?? null,
+        campaignHistory: recentCampaigns ?? [],
+        weekStart: weeklyCampaignRow?.week_start ?? null,
+        weekEnd: weeklyCampaignRow?.week_end ?? null,
+        subscriptionEntitlements: null,
+        auditEntitlements: null,
+      });
+      await recordCampaignTask(service, {
+        authorizationId: authorization.id,
+        tenantId: authorization.tenant_id,
+        agentRole: "brand_intelligence",
+        status: "COMPLETED",
+        output: ctx as unknown as Record<string, unknown>,
+      });
+    } catch {
+      // Assembly/recording is strictly additive observability -- never
+      // blocks the real generation work below.
+    }
   }
 
   let deadlineHit = false;
