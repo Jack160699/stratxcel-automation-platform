@@ -73,9 +73,11 @@ function fmt(ts: string | null) {
 }
 
 export default async function SystemPage() {
+  const __t0 = Date.now(); // TEMPORARY, round 2 -- reverted after this measurement
   // See layout.tsx: nested pages guard independently of the parent layout.
   const ctx = await requireOwnerContext();
   if (!ctx.ok) return null;
+  console.error(`[perf2] requireOwnerContext: ${Date.now() - __t0}ms`);
 
   // STRATXCEL full-system closure brief, Section 5/6 (real, measured
   // performance root-cause): real Vercel function logs (temporary
@@ -86,11 +88,12 @@ export default async function SystemPage() {
   // were already running concurrently with each other via this same
   // Promise.all; that part was never the problem.
   const { supabase: service } = getServiceContext();
+  const __t1 = Date.now();
   const [health, jobs, auditEvents, imageProviderHealth, tenantSocialHealth] = await Promise.all([
-    runHealthChecks(ctx),
-    listJobs(ctx, 30),
-    listAuditEvents(ctx, 30),
-    assessImageProviderHealth(service as never, STRATXCEL_TENANT_ID, 24).catch(() => null),
+    runHealthChecks(ctx).then((r) => { console.error(`[perf2] runHealthChecks: ${Date.now() - __t1}ms`); return r; }),
+    listJobs(ctx, 30).then((r) => { console.error(`[perf2] listJobs: ${Date.now() - __t1}ms`); return r; }),
+    listAuditEvents(ctx, 30).then((r) => { console.error(`[perf2] listAuditEvents: ${Date.now() - __t1}ms`); return r; }),
+    assessImageProviderHealth(service as never, STRATXCEL_TENANT_ID, 24).then((r) => { console.error(`[perf2] assessImageProviderHealth: ${Date.now() - __t1}ms`); return r; }).catch(() => null),
     // STRATXCEL full-system closure brief Section 9: real fix for a
     // confirmed, live bug -- the "social"/"workers"/"webhooks" groups
     // below (from runHealthChecks) reflect the LOGGED-IN ADMIN'S OWN
@@ -102,8 +105,9 @@ export default async function SystemPage() {
     // real, correctly tenant_id-scoped replacement for what this page's
     // own framing ("S Stratxcel" workspace, tenant-specific actions right
     // above it) always implied it already was.
-    assessTenantSocialHealth(service as never, STRATXCEL_TENANT_ID).catch(() => null),
+    assessTenantSocialHealth(service as never, STRATXCEL_TENANT_ID).then((r) => { console.error(`[perf2] assessTenantSocialHealth: ${Date.now() - __t1}ms`); return r; }).catch(() => null),
   ]);
+  console.error(`[perf2] TOTAL: ${Date.now() - __t0}ms`);
 
   const grouped = health.reduce<Record<string, typeof health>>((acc, h) => {
     (acc[h.group] ??= []).push(h);
