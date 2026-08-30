@@ -25,25 +25,61 @@ const AI_ENV_KEYS: Record<string, string> = {
  * persists a snapshot row per component to social_health_checks. Nothing in
  * here fabricates a status — a provider with no credentials is reported
  * NOT_CONFIGURED, never OPERATIONAL.
+ *
+ * STRATXCEL full-system closure brief, Section 5/6 (real, measured
+ * performance root-cause): live production timing (real Vercel function
+ * logs, not a guess) showed this function alone taking ~2.7s of the real
+ * ~6.4s server-side page-load residual on /admin/social/system --
+ * confirmed via source review to be 5 real Supabase round-trips awaited
+ * fully SEQUENTIALLY (each one waiting for the previous to finish) even
+ * though most of them don't actually depend on each other's results.
+ * Restructured into 2 real parallel waves instead of 5 sequential ones:
+ * wave 1 (the database-reachability check, listAccounts, and the
+ * publishing-mode settings row -- none of these need each other's
+ * output) then wave 2 (the publishing-job counts and webhook-event count
+ * -- both need accountIds from wave 1's listAccounts, but not each
+ * other). Every real query, every real computed status/message, and the
+ * real relative ordering of records within each shared group
+ * (workers: publishing/scheduler/publishing_mode; webhooks: receiver/
+ * meta_subscription/events_received) are completely unchanged -- this is
+ * purely a concurrency restructuring, not a behavior change.
  */
 export async function runHealthChecks(ctx: OwnerContext): Promise<HealthRecord[]> {
   const service = createSupabaseServiceClient();
   const records: HealthRecord[] = [];
 
-  // --- Core: database reachability ---
   const dbStart = Date.now();
-  const { error: dbError } = await ctx.supabase.from("stratxcel_admins").select("user_id").eq("user_id", ctx.ownerId).limit(1);
+  const [dbResult, accounts, settingsResult] = await Promise.all([
+    ctx.supabase.from("stratxcel_admins").select("user_id").eq("user_id", ctx.ownerId).limit(1),
+    listAccounts(ctx),
+    ctx.supabase.from("social_automation_settings").select("shadow_mode, autonomy_level").eq("owner_id", ctx.ownerId).maybeSingle(),
+  ]);
+  const dbLatencyMs = Date.now() - dbStart;
+  const dbError = dbResult.error;
+  const accountIds = accounts.map((account) => account.id);
+  const settingsRow = settingsResult.data;
+
+  const [jobCountsResult, webhookCountResult] = await Promise.all([
+    accountIds.length
+      ? ctx.supabase.from("social_publishing_jobs").select("status").in("account_id", accountIds)
+      : Promise.resolve({ data: [] as Array<{ status: string }> }),
+    accountIds.length
+      ? ctx.supabase.from("social_webhook_events").select("id", { count: "exact", head: true }).in("account_id", accountIds)
+      : Promise.resolve({ count: 0 }),
+  ]);
+  const jobCounts = jobCountsResult.data;
+  const webhookEventCount = "count" in webhookCountResult ? webhookCountResult.count : 0;
+
+  // --- Core: database reachability ---
   records.push({
     component: "database",
     group: "core",
     status: dbError ? "FAILED" : "OPERATIONAL",
     message: dbError ? dbError.message : "Supabase reachable",
-    latencyMs: Date.now() - dbStart,
+    latencyMs: dbLatencyMs,
   });
 
   // --- Social accounts ---
-  const accounts = await listAccounts(ctx);
-  const accountIds = accounts.map((account) => account.id);
   for (const platform of SOCIAL_PLATFORMS) {
     const acct = accounts.find((a) => a.platform === platform);
     if (!acct) {
@@ -90,9 +126,6 @@ export async function runHealthChecks(ctx: OwnerContext): Promise<HealthRecord[]
   });
 
   // --- Workers / queue ---
-  const { data: jobCounts } = accountIds.length
-    ? await ctx.supabase.from("social_publishing_jobs").select("status").in("account_id", accountIds)
-    : { data: [] };
   const counts = (jobCounts ?? []).reduce<Record<string, number>>((acc, j) => {
     acc[j.status] = (acc[j.status] ?? 0) + 1;
     return acc;
@@ -113,11 +146,6 @@ export async function runHealthChecks(ctx: OwnerContext): Promise<HealthRecord[]
     message: cronConfigured ? "CRON_SECRET set — Vercel cron authorized" : "CRON_SECRET not set",
   });
 
-  const { data: settingsRow } = await ctx.supabase
-    .from("social_automation_settings")
-    .select("shadow_mode, autonomy_level")
-    .eq("owner_id", ctx.ownerId)
-    .maybeSingle();
   const anyLive = settingsRow?.shadow_mode === false;
   records.push({
     component: "publishing_mode",
@@ -135,12 +163,6 @@ export async function runHealthChecks(ctx: OwnerContext): Promise<HealthRecord[]
     status: "OPERATIONAL",
     message: "Receiver routes implemented with signature verification",
   });
-  const { count: webhookEventCount } = accountIds.length
-    ? await ctx.supabase
-        .from("social_webhook_events")
-        .select("id", { count: "exact", head: true })
-        .in("account_id", accountIds)
-    : { count: 0 };
   const hasWebhookEvents = Boolean(webhookEventCount && webhookEventCount > 0);
   records.push({
     component: "webhooks:meta_subscription",
