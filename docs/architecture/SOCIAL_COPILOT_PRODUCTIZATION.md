@@ -107,6 +107,12 @@ Unchanged standing authorization: Starter / Growth / Business / Image30 consume 
 Business Growth Plan Social subplan. Manual Copilot chat cannot acquire package
 AUTO_PUBLISH. Package weekly slots also require concrete timestamps.
 
+For the real, current per-item generation pipeline (research → strategy →
+creative brief → treatment → copy → quality gate → image → logo → publish)
+and the Hermes campaign-task ledger that observes it, see
+`PACKAGE_AUTOPILOT_AND_HERMES.md` — this section predates the v3 plan
+catalog and the Hermes instrumentation layer.
+
 ## Wiring
 
 ```
