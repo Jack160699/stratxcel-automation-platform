@@ -4,6 +4,7 @@ import { listAuditEvents } from "@/lib/social/repositories/system";
 import { listJobs } from "@/lib/social/repositories/publishing";
 import { runWorkerNowAction, runTenantContentBackfillAction, forceRegeneratePackageItemImageAction, forcePublishQueueItemNowAction } from "../actions";
 import { assessImageProviderHealth, type ImageProviderHealthStatus } from "@/lib/social/image-provider-health";
+import { assessTenantSocialHealth } from "@/lib/social/tenant-social-health";
 
 // STRATXCEL zero-waste image-spend brief Section 7: real, evidence-based
 // image-provider fallback health -- distinct from the generic
@@ -72,11 +73,23 @@ export default async function SystemPage() {
   if (!ctx.ok) return null;
 
   const { supabase: service } = getServiceContext();
-  const [health, jobs, auditEvents, imageProviderHealth] = await Promise.all([
+  const [health, jobs, auditEvents, imageProviderHealth, tenantSocialHealth] = await Promise.all([
     runHealthChecks(ctx),
     listJobs(ctx, 30),
     listAuditEvents(ctx, 30),
     assessImageProviderHealth(service as never, STRATXCEL_TENANT_ID, 24).catch(() => null),
+    // STRATXCEL full-system closure brief Section 9: real fix for a
+    // confirmed, live bug -- the "social"/"workers"/"webhooks" groups
+    // below (from runHealthChecks) reflect the LOGGED-IN ADMIN'S OWN
+    // connections (by design -- see lib/social/agent/tools.ts's own
+    // comment), never this tenant's. Live-confirmed: the current staff
+    // account has its own unrelated real accounts under a different real
+    // tenant_id, and StratXcel's real shadow_mode (false / LIVE) was being
+    // shown as the OPPOSITE (SHADOW) because of this. This section is the
+    // real, correctly tenant_id-scoped replacement for what this page's
+    // own framing ("S Stratxcel" workspace, tenant-specific actions right
+    // above it) always implied it already was.
+    assessTenantSocialHealth(service as never, STRATXCEL_TENANT_ID).catch(() => null),
   ]);
 
   const grouped = health.reduce<Record<string, typeof health>>((acc, h) => {
@@ -150,9 +163,53 @@ export default async function SystemPage() {
         </section>
       )}
 
+      {tenantSocialHealth && (
+        <section className="space-y-3">
+          <h2 className="saut-section-title">StratXcel workspace status (real, tenant-scoped)</h2>
+          <div className="saut-card flex flex-col gap-2 p-3 text-sm">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-xs">Publishing mode</span>
+              <span className={`saut-chip shrink-0 ${tenantSocialHealth.publishingMode.shadowMode === false ? "saut-chip-success" : tenantSocialHealth.publishingMode.shadowMode === true ? "saut-chip-info" : "saut-chip-neutral"}`}>
+                <span className="saut-chip-dot" />
+                {tenantSocialHealth.publishingMode.shadowMode === null
+                  ? "unknown — no automation settings yet"
+                  : tenantSocialHealth.publishingMode.shadowMode
+                  ? `SHADOW — paused (${tenantSocialHealth.publishingMode.autonomyLevel ?? "unknown"})`
+                  : `LIVE — publishing enabled (${tenantSocialHealth.publishingMode.autonomyLevel ?? "unknown"})`}
+              </span>
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-xs">Connected platforms</span>
+              <span className="text-xs" style={{ color: "var(--saut-text-muted)" }}>
+                {tenantSocialHealth.connectedPlatforms.length === 0
+                  ? "none connected"
+                  : tenantSocialHealth.connectedPlatforms.map((p) => `${p.platform} (${p.status.toLowerCase()}${p.status === "CONNECTED" ? `, token ${p.tokenHealth.toLowerCase()}` : ""})`).join(" · ")}
+              </span>
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-xs">Publishing jobs</span>
+              <span className="text-xs" style={{ color: "var(--saut-text-muted)" }}>
+                {tenantSocialHealth.jobCounts.scheduled} scheduled · {tenantSocialHealth.jobCounts.running} running · {tenantSocialHealth.jobCounts.failed} failed · {tenantSocialHealth.jobCounts.published} published
+              </span>
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-xs">Webhook events (lifetime)</span>
+              <span className="text-xs" style={{ color: "var(--saut-text-muted)" }}>{tenantSocialHealth.webhookEventCount}</span>
+            </div>
+          </div>
+        </section>
+      )}
+
       {(["core", "workers", "social", "webhooks", "ai", "media"] as const).map((group) => (
         <section key={group} className="space-y-3">
-          <h2 className="saut-section-title capitalize">{group}</h2>
+          <h2 className="saut-section-title capitalize">
+            {group}
+            {(group === "social" || group === "workers" || group === "webhooks") && (
+              <span className="ml-2 text-[10px] font-normal normal-case" style={{ color: "var(--saut-text-subtle)" }}>
+                (the logged-in admin account&apos;s own connections — see StratXcel workspace status above for this tenant&apos;s real state)
+              </span>
+            )}
+          </h2>
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {(grouped[group] ?? []).map((h) => (
               <div key={h.component} className="saut-card flex items-start justify-between gap-3 p-3 text-sm">
