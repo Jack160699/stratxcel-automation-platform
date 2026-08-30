@@ -3,9 +3,13 @@
 How a real payment actually becomes an active subscription with real
 entitlements, and — critically — every place a new plan tier must be added
 for that to keep working. This exact class of gap (a new tier added to the
-TS catalog but not to one of the SQL RPCs below) was found live **three
-times** during one investigation; this doc exists so it isn't found a
-fourth time.
+TS catalog but not to one of the SQL RPCs, or an application-layer tier
+map, below) was found live **five times** across two separate
+investigations (three in the RPCs/GoFree/billing-UI below; a fourth in
+`lib/social/archetype-routing.ts`'s visual-archetype tier mapping,
+separately fixed and documented in `PACKAGE_AUTOPILOT_AND_HERMES.md`; a
+fifth in the AI-runtime COGS budget tier map, documented further down in
+this file); this doc exists so it isn't found a sixth time.
 
 ## The real chain
 
@@ -80,6 +84,15 @@ and receive nothing:
    `GO_FREE_ELIGIBLE_TIERS` if the tier is a real RECURRING self-service
    plan, not a one-time purchase) — so the tier is actually offered/
    redeemable in the UI, not just accepted server-side.
+8. **`lib/social/archetype-routing.ts`'s `toArchetypeTier()`** — if the
+   tier should get real Social Autopilot visual-archetype access (only
+   relevant if it also gets a nonzero `social_autopilot_automated_monthly`/
+   `manual_monthly` in step 2).
+9. **`packages/ai-runtime/src/policy/task-policies.ts`'s
+   `DEFAULT_MONTHLY_BUDGET_USD`** + **`resolveTenantPlanTier`** (in
+   `factory.ts`) — the tier's real AI-COGS monthly budget ceiling, once a
+   real value is decided (see "A fifth real instance" below — not yet
+   fixed for the current v3 catalog).
 
 ## How the fix migrations were verified safe
 
@@ -93,6 +106,37 @@ inside the new migration — i.e. the diff is provably additive (new
 branches inserted) with zero existing lines altered, removed, or
 reordered. This is the pattern to repeat for any future change to either
 RPC.
+
+## A fifth real instance, found later: AI-runtime COGS budget tiers
+
+`resolveTenantPlanTier` (`packages/ai-runtime/src/factory.ts`) is a
+**different, narrower** `PlanTier` set than the commercial catalog above --
+it exists purely to compute a tenant's internal AI-COGS budget ceiling
+(`DEFAULT_MONTHLY_BUDGET_USD`, `packages/ai-runtime/src/policy/
+task-policies.ts`), which only has `starter | growth | business | scale`
+entries. It only recognizes those four legacy values and silently
+defaults every real v3 tier (`seo`, `social`, `seo_and_social`,
+`advanced_seo`, `advanced_social`, `advanced_growth` -- including
+StratXcel's own real, active plan) to `"starter"`, the cheapest budget.
+
+**Confirmed NOT the same severity as the RPCs above** --
+`packages/ai-runtime/src/budget/envelope.ts`'s own header comment: *"Internal
+COGS guards — not customer token balances."* At `exhausted_100` it still
+usually `allowExecution: true` (prefers cheaper models, blocks premium
+escalation); only the true worst case (no owner-approved overage, no
+reserved-critical budget, no emergency margin) fully blocks. Real but
+moderate: a premium-tier customer's generation could get throttled to
+cheaper models sooner than intended, not silently lose paid-for access
+outright.
+
+**Deliberately not fixed alongside this doc's other four instances** --
+unlike the Razorpay/GoFree price and limit values (mechanically derivable
+from `PLAN_DEFINITIONS`/`PLAN_LIMITS`, already established elsewhere in
+this codebase), the *correct* AI-COGS budget ceiling per v3 tier is a real
+product/finance decision (how much should StratXcel's own AI spend be
+allowed to reach for an ₹18,498/mo `advanced_growth` customer?) that
+isn't something to guess at for a live financial safety mechanism. Add it
+to the checklist below as item 8 once those values are decided.
 
 ## One-time plans are a separate path
 
