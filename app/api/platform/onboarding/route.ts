@@ -10,6 +10,7 @@ import { resolveAuditBudgetLimitUsd, createLiveAutomaticAuditExecutor } from "@s
 import { createSocialAuditConnectorInsightsProvider } from "@/lib/social/audit-connector-insights";
 import { sanitizeChannels } from "@/lib/audit/v1/channels";
 import { provisionTenantConnectorsFromMetadata } from "@/lib/social/provisioning";
+import { consumeAuditIfSubscribed } from "@/lib/audit/audit-entitlement";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -459,6 +460,15 @@ export async function POST(request: Request) {
 
     // Trigger automatic audit generation
     if (auditOrderId) {
+      // Hermes platform-restructure mission Sections 44/65: if this tenant
+      // already has a real active subscription at onboarding time, this
+      // audit consumes 1 of their real 5/month allowance. Best-effort and
+      // fail-open (see consumeAuditIfSubscribed) -- a tenant with no active
+      // subscription yet (the common real onboarding order: signup ->
+      // onboarding -> THEN subscribe separately via /app/billing) is
+      // completely unaffected; their free onboarding audit runs exactly as
+      // it always has.
+      await consumeAuditIfSubscribed(serviceClient, tenant.id).catch(() => {});
       try {
         const started = await serviceClient.rpc("start_automatic_audit_generation_v1", {
           p_audit_order_id: auditOrderId,

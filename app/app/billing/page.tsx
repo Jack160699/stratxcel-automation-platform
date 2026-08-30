@@ -20,7 +20,8 @@ interface EntitlementStatus {
     | "whatsapp_contacts"
     | "website_maintenance"
     | "content_generation_monthly"
-    | "automated_content_monthly";
+    | "automated_content_monthly"
+    | "audit_requests";
   limit: number;
   currentUsage: number;
   remaining: number;
@@ -666,6 +667,15 @@ export default function BillingPage() {
                 <div className="rounded-sx-sm bg-sx-surface-2 p-3.5">
                   <p className="text-sm font-semibold text-sx-text">{e.limit} researched creatives StratXcel makes for you</p>
                   <p className="mt-0.5 text-xs text-sx-text-subtle">{e.remaining} remaining this month — on top of what you request yourself.</p>
+                </div>
+              );
+            })()}
+            {entitlements.find((e) => e.metric === "audit_requests") && (() => {
+              const e = entitlements.find((x) => x.metric === "audit_requests")!;
+              return (
+                <div className="rounded-sx-sm bg-sx-surface-2 p-3.5">
+                  <p className="text-sm font-semibold text-sx-text">{e.limit} free business audits this month</p>
+                  <p className="mt-0.5 text-xs text-sx-text-subtle">{e.remaining} remaining — resets each billing period.</p>
                 </div>
               );
             })()}

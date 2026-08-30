@@ -603,7 +603,13 @@ export type EntitlementMetric =
   | "social_autopilot_automated_monthly"
   | "social_autopilot_manual_monthly"
   | "image_generation_attempts_monthly"
-  | "copilot_monthly_uses";
+  | "copilot_monthly_uses"
+  /** Real, subscription-scoped monthly audit allowance (5/month) -- granted
+   * and reset entirely in application code (lib/audit/audit-entitlement.ts),
+   * never by reconcile_and_fulfill_razorpay_payment_v4 /
+   * reconcile_and_fulfill_razorpay_subscription_charge. See
+   * 20260830100000_audit_monthly_allowance.sql for the real reasoning. */
+  | "audit_requests";
 
 export interface EntitlementStatus {
   metric: EntitlementMetric;
