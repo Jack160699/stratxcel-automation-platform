@@ -122,7 +122,25 @@ export async function generateNetNewPackageMediaAsset(
     // treatment implicitly satisfies.
     treatment: input.treatment as unknown as Record<string, unknown> | null,
     aspectRatio: "1:1" as const,
-    candidateCount: 2,
+    // Real cost defect found live (StratXcel image-spend forensics,
+    // 2026-08-30): this requested 2 candidates per attempt, but the real
+    // selection logic just below (`best = candidates.find(c => c.status
+    // !== "REJECTED") ?? candidates[0]`) is not a quality comparison --
+    // it takes whichever candidate wasn't already provider-side-rejected,
+    // defaulting to the first. The second real, fully-billed candidate is
+    // discarded unused on nearly every call. Confirmed in the real usage
+    // ledger: all 26 real successful automated generations this period
+    // show media_units=2, doubling real OpenAI-fallback cost
+    // ($0.422/call instead of ~$0.211) for no real benefit -- the exact
+    // same waste already identified and fixed for manual generation
+    // (app/api/platform/social/autopilot/manual-generate/route.ts,
+    // candidateCount: 1, with its own test asserting this reasoning).
+    // A genuinely failed candidate (provider safety/quality rejection,
+    // or the provider returning fewer than requested) is already handled
+    // by this pipeline's own staged recovery/retry budget -- paying for
+    // a second candidate on every single attempt as insurance against
+    // that duplicates a real, already-tested-and-working mechanism.
+    candidateCount: 1,
     sourceContext: "social_autopilot" as const,
     sourceId: input.queueItemId,
     intendedUse: "social_post" as const,
@@ -171,7 +189,20 @@ export async function generateNetNewPackageMediaAsset(
     );
   }
 
-  const best = processed.candidates.find((c) => c.status !== "REJECTED") ?? processed.candidates[0];
+  // Real bug found live alongside the candidateCount cost fix above (this
+  // pass makes it far more likely to actually trigger, at candidateCount=1
+  // -- but the bug itself predates that change): `?? processed.candidates[0]`
+  // meant that when every real candidate was REJECTED, `.find(...)`
+  // correctly returned undefined, but the fallback then re-selected
+  // candidates[0] anyway -- which, with every candidate rejected, IS a
+  // rejected candidate. `best` was therefore always truthy, so the
+  // `if (!best)` safety check immediately below (whose own comment
+  // describes exactly the "every candidate failed screening" case) could
+  // never actually fire; a provider-rejected (safety/quality-flagged)
+  // image could be selected and composited instead of failing closed. No
+  // `?? candidates[0]` fallback: `best` is undefined precisely when no
+  // real candidate passed screening, which is what the check below needs.
+  const best = processed.candidates.find((c) => c.status !== "REJECTED");
   if (!best) {
     // Every candidate failed the provider's own safety/quality screening --
     // a real content-shaped outcome (the generated image itself was

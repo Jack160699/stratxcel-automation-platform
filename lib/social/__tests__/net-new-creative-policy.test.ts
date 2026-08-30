@@ -107,6 +107,30 @@ function run() {
   assert.ok(catchIndex > prepareBody.indexOf("generateNetNewPackageMediaAsset"), "a BLOCKED write must exist textually after the net-new call site, in the catch path");
   console.log("prepareNearTermPackageItems: a NET_NEW_AI failure is caught by the same BLOCKED path as any other preparation failure — PASS");
 
+  // --- Real cost defect found live (StratXcel image-spend forensics,
+  //     2026-08-30): candidateCount was 2, but the real selection logic
+  //     just takes the first non-rejected candidate -- not a quality
+  //     comparison -- so the second real, fully-billed candidate was
+  //     discarded unused on nearly every automated generation, confirmed
+  //     in the real usage ledger (media_units=2 on all 26 real successful
+  //     calls this period, doubling real OpenAI-fallback cost for no
+  //     benefit). Same fix, same reasoning, already applied and tested for
+  //     manual generation (app/api/platform/social/autopilot/manual-generate/
+  //     route.ts, candidateCount: 1). ------------------------------------
+  assert.match(netNewMedia, /candidateCount:\s*1,/, "the automated NET_NEW_AI path must request exactly 1 candidate -- its own selection logic never compares multiple candidates, so requesting more only wastes real provider cost with no second candidate ever getting selected");
+  console.log("package-net-new-media.ts: requests exactly 1 real candidate per attempt, not 2 -- no discarded-but-billed second candidate — PASS");
+
+  // --- Real bug found live alongside the cost fix above: when EVERY real
+  //     candidate is provider-rejected (safety/quality screening), the
+  //     selection logic must fail closed, never silently select a
+  //     rejected image. The old `?? processed.candidates[0]` fallback
+  //     defeated this -- `best` was always truthy even when every
+  //     candidate had status REJECTED, so the ALL_CANDIDATES_REJECTED
+  //     safety throw immediately below it could never actually fire. -----
+  assert.ok(!/processed\.candidates\.find\(\(c\) => c\.status !== "REJECTED"\) \?\? processed\.candidates\[0\]/.test(netNewMedia), "must not silently fall back to candidates[0] when every real candidate was rejected -- that re-selects a provider-flagged image instead of failing closed");
+  assert.match(netNewMedia, /const best = processed\.candidates\.find\(\(c\) => c\.status !== "REJECTED"\);/, "best must be undefined (not a rejected candidate) when nothing passed screening, so the ALL_CANDIDATES_REJECTED check below can actually fire");
+  console.log("package-net-new-media.ts: when every real candidate is provider-rejected, selection fails closed instead of silently re-selecting a rejected image — PASS");
+
   console.log("net-new-creative-policy.test.ts: ALL PASS");
 }
 
