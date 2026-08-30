@@ -129,14 +129,18 @@ moderate: a premium-tier customer's generation could get throttled to
 cheaper models sooner than intended, not silently lose paid-for access
 outright.
 
-**Deliberately not fixed alongside this doc's other four instances** --
-unlike the Razorpay/GoFree price and limit values (mechanically derivable
-from `PLAN_DEFINITIONS`/`PLAN_LIMITS`, already established elsewhere in
-this codebase), the *correct* AI-COGS budget ceiling per v3 tier is a real
-product/finance decision (how much should StratXcel's own AI spend be
-allowed to reach for an ₹18,498/mo `advanced_growth` customer?) that
-isn't something to guess at for a live financial safety mechanism. Add it
-to the checklist below as item 8 once those values are decided.
+**Fixed** (same session, follow-up pass) — without inventing a new dollar
+figure for each v3 tier (still a real product/finance decision this
+module has no authority to guess at), `resolveTenantPlanTier` now
+classifies each real v3 tier to whichever EXISTING legacy budget bucket
+its real price is nearest to (`V3_TIER_TO_LEGACY_BUDGET_BUCKET` in
+`factory.ts`) — `advanced_growth` (₹18,498) now correctly resolves to
+`"business"` (₹15,999, nearest) instead of `"starter"` (₹2,999,
+previously the only outcome for every unrecognized tier). This is a
+real, mechanically-derived improvement, not a final answer — the
+*correct* per-tier dollar ceiling is still an open product decision; this
+just stops every premium v3 customer being COGS-budgeted as the cheapest
+possible tier in the meantime.
 
 ## One-time plans are a separate path
 
