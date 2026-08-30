@@ -15,6 +15,25 @@ import type { AgentTenantContext } from "./agent-tenant-types.ts";
 import { validatePackageComposition, compositionMediaTypeForUnit, resolvePurchasedPackageComposition, type PackageComposition } from "./package-composition.ts";
 import { selectPackageMediaAsset } from "./package-media.ts";
 import { generateNetNewPackageMediaAsset, NetNewGenerationError } from "./package-net-new-media.ts";
+
+/**
+ * STRATXCEL full-system closure brief, Section 6/8: the text-generation
+ * ("copywriter") counterpart to NetNewGenerationError.retryable -- see
+ * generation-loop.ts's GenerationLoopResult.generationErrorRetryable for
+ * the full real-bug writeup this closes. Defined here (not inside
+ * generation-loop.ts) because that module's own design deliberately never
+ * throws -- it always returns a structured result; this file is where the
+ * result gets converted into a thrown preparation failure, so this is
+ * where the corresponding retryable error class belongs.
+ */
+class GenerationLoopRetryableError extends Error {
+  readonly retryable: boolean;
+  constructor(message: string, retryable: boolean) {
+    super(message);
+    this.name = "GenerationLoopRetryableError";
+    this.retryable = retryable;
+  }
+}
 import { recordAudit } from "./repositories/system.ts";
 import { recordCampaignTask, buildCustomerPsychologyProfile, type HermesSocialSpecialistRole } from "../hermes/social-autopilot-campaign.ts";
 import { hasCapability, isPlanTier } from "@stratxcel/payments-and-wallet";
@@ -1676,7 +1695,7 @@ export async function prepareNearTermPackageItems(
       if (!loopResult.success || !loopResult.content || !loopResult.scoreResult) {
         // Never a bare "quality gate failed" -- finalReason is built from
         // the actual hard-failure reason codes (Phase B).
-        throw new Error(loopResult.finalReason ?? "Generated content failed the quality gate");
+        throw new GenerationLoopRetryableError(loopResult.finalReason ?? "Generated content failed the quality gate", loopResult.generationErrorRetryable);
       }
       const generated = loopResult.content;
       const qualityScore = loopResult.scoreResult;
@@ -1847,8 +1866,16 @@ export async function prepareNearTermPackageItems(
       // still BLOCKED, still immediately eligible for the very next
       // automatic pass, its recovery budget untouched -- instead of
       // burning one of its bounded MAX_RECOVERY_ATTEMPTS on an outage that
-      // was never a verdict on the content.
-      if (err instanceof NetNewGenerationError && err.retryable) {
+      // was never a verdict on the content. STRATXCEL full-system closure
+      // brief Section 6/8: real bug found live -- this same protection
+      // never covered the copywriter (text-generation) stage's own
+      // transient provider failures (GenerationLoopRetryableError,
+      // generation-loop.ts) -- confirmed this was the real root cause for
+      // 30 of StratXcel's 50 real recovery-exhausted queue items ("AI
+      // service temporarily unavailable"/"Usage limit reached" during a
+      // provider-side condition, silently burning the recovery budget on
+      // an outage that had nothing to do with the content).
+      if ((err instanceof NetNewGenerationError && err.retryable) || (err instanceof GenerationLoopRetryableError && err.retryable)) {
         // blocked was already incremented at the top of this catch block.
         // Real content strategy WAS chosen and used for this attempt (the
         // copy itself was fine -- only the image infrastructure failed);

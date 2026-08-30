@@ -121,6 +121,49 @@ async function testProviderErrorNeverSilentlyDiscardsPriorDiagnostics() {
   console.log("generation-loop.test.ts: a provider error mid-loop never silently discards prior attempt diagnostics — PASS");
 }
 
+// STRATXCEL full-system closure brief, Section 6/8: real bug found live --
+// this is the exact class of failure ("AI service temporarily
+// unavailable"/"Usage limit reached") confirmed to be the real root cause
+// for 30 of StratXcel's 50 real recovery-exhausted queue items. A
+// transient provider failure must be classified as genuinely retryable so
+// prepareNearTermPackageItems (package-autopilot.ts) can leave the item's
+// recovery budget untouched, mirroring the same real protection
+// package-net-new-media.ts's NetNewGenerationError.retryable already gives
+// image generation.
+async function testTransientProviderFailureIsClassifiedAsRetryable() {
+  const result = await runGenerationLoop({
+    generate: async (): Promise<typeof GOOD_CONTENT> => {
+      throw new Error("upstream request timed out");
+    },
+    toScoreInput: (content) => ({ ...BASE_SCORE_INPUT, ...content }),
+  });
+  assert.equal(result.success, false);
+  assert.equal(result.generationErrorRetryable, true, "a real transient provider condition (timeout) must be classified as retryable, never silently treated as a genuine content failure");
+  console.log("generation-loop.test.ts: a transient provider failure (timeout) is classified as retryable — PASS");
+}
+
+async function testNonTransientProviderFailureIsNotRetryable() {
+  const result = await runGenerationLoop({
+    generate: async (): Promise<typeof GOOD_CONTENT> => {
+      throw new Error("content blocked by safety system");
+    },
+    toScoreInput: (content) => ({ ...BASE_SCORE_INPUT, ...content }),
+  });
+  assert.equal(result.success, false);
+  assert.equal(result.generationErrorRetryable, false, "a genuine safety refusal is a real content-shaped outcome, not an infrastructure condition -- must never be classified as retryable");
+  console.log("generation-loop.test.ts: a non-transient provider failure (safety refusal) is never classified as retryable — PASS");
+}
+
+async function testGenuineQualityGateExhaustionIsNeverRetryable() {
+  const result = await runGenerationLoop({
+    generate: async () => BAD_CONTENT, // always fails the real quality gate, never throws
+    toScoreInput: (content) => ({ ...BASE_SCORE_INPUT, ...content }),
+  });
+  assert.equal(result.success, false);
+  assert.equal(result.generationErrorRetryable, false, "a genuine, repeated quality-gate rejection is a real content-shaped outcome -- must correctly still consume the bounded recovery budget, never be exempted");
+  console.log("generation-loop.test.ts: a genuine quality-gate exhaustion (not a provider error) is never classified as retryable — PASS");
+}
+
 function testCorrectiveInstructionsForReturnsSpecificText() {
   const badScore = scoreGeneratedContent({ ...BASE_SCORE_INPUT, ...BAD_CONTENT });
   const instructions = correctiveInstructionsFor(badScore);
@@ -136,6 +179,9 @@ async function run() {
   await testExhaustsMaxAttemptsAndReportsSpecificReason();
   await testNonCorrectableFailureStopsImmediately();
   await testProviderErrorNeverSilentlyDiscardsPriorDiagnostics();
+  await testTransientProviderFailureIsClassifiedAsRetryable();
+  await testNonTransientProviderFailureIsNotRetryable();
+  await testGenuineQualityGateExhaustionIsNeverRetryable();
   testCorrectiveInstructionsForReturnsSpecificText();
   console.log("generation-loop.test.ts: ALL PASS");
 }

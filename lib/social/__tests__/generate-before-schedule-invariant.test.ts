@@ -45,8 +45,14 @@ function run() {
 
   // The quality-gate failure path must throw/skip BEFORE any status update
   // to PREPARED is reached -- i.e. the runGenerationLoop failure check
-  // textually precedes the PREPARED status write.
-  const qualityGateGuardIndex = prepareBody.indexOf('throw new Error(loopResult.finalReason ?? "Generated content failed the quality gate")');
+  // textually precedes the PREPARED status write. STRATXCEL full-system
+  // closure brief Section 6/8: the throw itself changed from a plain Error
+  // to GenerationLoopRetryableError (still a genuine throw -- the fail-
+  // closed guarantee this test checks is unaffected) so the real
+  // transient-provider-failure retryable signal survives the throw
+  // boundary instead of being discarded, matching NetNewGenerationError's
+  // same real pattern for the image-generation stage.
+  const qualityGateGuardIndex = prepareBody.indexOf('throw new GenerationLoopRetryableError(loopResult.finalReason ?? "Generated content failed the quality gate"');
   const preparedWriteIndex = prepareBody.indexOf('"PREPARED"');
   assert.ok(qualityGateGuardIndex >= 0, "the quality-gate failure guard must exist");
   assert.ok(preparedWriteIndex > qualityGateGuardIndex, "the PREPARED status write must be textually AFTER the quality-gate guard -- generation failure must never reach a PREPARED write");

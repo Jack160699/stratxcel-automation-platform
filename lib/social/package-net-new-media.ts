@@ -220,13 +220,58 @@ export async function generateNetNewPackageMediaAsset(
   // image could be selected and composited instead of failing closed. No
   // `?? candidates[0]` fallback: `best` is undefined precisely when no
   // real candidate passed screening, which is what the check below needs.
-  const best = processed.candidates.find((c) => c.status !== "REJECTED");
+  let best = processed.candidates.find((c) => c.status !== "REJECTED");
   if (!best) {
     // Every candidate failed the provider's own safety/quality screening --
     // a real content-shaped outcome (the generated image itself was
     // rejected), not an infrastructure condition -- correctly still counts
     // toward the recovery budget like any other real failure.
     throw new NetNewGenerationError("net_new_generation_failed: all candidates rejected", "ALL_CANDIDATES_REJECTED", false);
+  }
+
+  // STRATXCEL full-system closure brief, Section 6/8: real bug found live
+  // via direct production evidence. The idempotency key above
+  // (package-net-new:<queueItemId>) is stable per queue item FOREVER -- by
+  // design, so a worker retry within the same window reuses the same real
+  // job instead of spending a second real generation call. But if the
+  // asset that job produced is LATER quarantined (autopilot_eligible set
+  // false by a retroactive contamination sweep -- confirmed live: exactly
+  // this happened to a real StratXcel asset via the blue-slab-compositor
+  // quarantine, 20260830060000_social_media_assets_autopilot_classification.sql),
+  // every future call for this SAME queue item keeps finding that SAME
+  // terminal, quarantined job via the idempotency lookup and "succeeds" at
+  // this function's own level (recording visual_generation: COMPLETED)
+  // while the caller's own downstream eligibility check correctly refuses
+  // to ever persist it -- an unwinnable loop that burns the bounded
+  // recovery-attempt budget on a problem retrying literally cannot fix,
+  // since it keeps returning the exact same disqualified asset. Checked
+  // unconditionally (cheap, indexed read) rather than only on the reused-
+  // job path -- a genuinely fresh generation is eligible=true by default
+  // (see that same migration), so this is a harmless no-op extra read in
+  // the normal case and only ever forces a real, bounded (exactly one
+  // extra attempt) fresh generation in the rare case a reused result has
+  // since been disqualified.
+  const { data: eligibility } = await service.from("social_media_assets").select("autopilot_eligible").eq("id", best.asset_id).maybeSingle();
+  if (eligibility?.autopilot_eligible === false) {
+    const freshJob = await createImageGenerationJob({
+      authorizationClient: service,
+      writeClient: service,
+      input: { ...baseInput, idempotencyKey: `package-net-new-retry:${input.queueItemId}:${Date.now()}` },
+    });
+    const freshProcessed = await processImageGenerationJob({ writeClient: service, jobId: freshJob.id });
+    if (freshProcessed.job.status !== "READY" || !freshProcessed.candidates.length) {
+      throw new NetNewGenerationError(
+        `net_new_generation_failed: ${freshProcessed.job.safe_error ?? freshProcessed.job.error_code ?? "no candidates returned"}`,
+        freshProcessed.job.error_code ?? "GENERATION_FAILED",
+        freshProcessed.job.error_retryable ?? true
+      );
+    }
+    const freshBest = freshProcessed.candidates.find((c) => c.status !== "REJECTED");
+    if (!freshBest) {
+      throw new NetNewGenerationError("net_new_generation_failed: all candidates rejected", "ALL_CANDIDATES_REJECTED", false);
+    }
+    job = freshJob;
+    best = freshBest;
   }
 
   // attachToVariantId is intentionally omitted -- the queue item's variant

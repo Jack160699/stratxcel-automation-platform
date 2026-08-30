@@ -128,8 +128,28 @@ function run() {
   //     candidate had status REJECTED, so the ALL_CANDIDATES_REJECTED
   //     safety throw immediately below it could never actually fire. -----
   assert.ok(!/processed\.candidates\.find\(\(c\) => c\.status !== "REJECTED"\) \?\? processed\.candidates\[0\]/.test(netNewMedia), "must not silently fall back to candidates[0] when every real candidate was rejected -- that re-selects a provider-flagged image instead of failing closed");
-  assert.match(netNewMedia, /const best = processed\.candidates\.find\(\(c\) => c\.status !== "REJECTED"\);/, "best must be undefined (not a rejected candidate) when nothing passed screening, so the ALL_CANDIDATES_REJECTED check below can actually fire");
+  assert.match(netNewMedia, /let best = processed\.candidates\.find\(\(c\) => c\.status !== "REJECTED"\);/, "best must be undefined (not a rejected candidate) when nothing passed screening, so the ALL_CANDIDATES_REJECTED check below can actually fire -- `let`, not `const`, because the quarantine-recheck below may reassign it to a genuinely fresh candidate");
   console.log("package-net-new-media.ts: when every real candidate is provider-rejected, selection fails closed instead of silently re-selecting a rejected image — PASS");
+
+  // --- Real bug found live via direct production evidence (StratXcel,
+  //     2026-08-30/31): the stable per-queue-item idempotency key means a
+  //     REUSED job/candidate can point to an asset that was LATER
+  //     quarantined (autopilot_eligible=false) -- confirmed live: a real
+  //     StratXcel queue item kept "succeeding" at this function (reusing
+  //     the same quarantined asset via the idempotency lookup) while its
+  //     caller's own downstream eligibility check correctly refused to
+  //     ever persist it, burning the bounded recovery budget on a problem
+  //     retrying could never fix. Must re-check eligibility and force a
+  //     genuinely fresh, disambiguated generation when the reused result
+  //     is disqualified. ----------------------------------------------
+  assert.match(netNewMedia, /eligibility\?\.autopilot_eligible === false/, "must re-check whether the selected (possibly reused-via-idempotency) candidate's asset is still autopilot_eligible");
+  const eligibilityBlockStart = netNewMedia.indexOf("eligibility?.autopilot_eligible === false");
+  const eligibilityBlockEnd = netNewMedia.indexOf("\n  }", eligibilityBlockStart);
+  const eligibilityBlock = netNewMedia.slice(eligibilityBlockStart, eligibilityBlockEnd);
+  assert.match(eligibilityBlock, /package-net-new-retry:\$\{input\.queueItemId\}:\$\{Date\.now\(\)\}/, "a disqualified reused result must force a genuinely fresh, disambiguated idempotency key -- the same real StratXcel post disqualified forever otherwise (retrying the stable key would just find the SAME quarantined result again)");
+  assert.match(eligibilityBlock, /job = freshJob;/, "must actually swap in the fresh job/candidate, not merely detect the problem and still return the disqualified one");
+  assert.match(eligibilityBlock, /best = freshBest;/);
+  console.log("package-net-new-media.ts: a reused (idempotent) candidate that was later quarantined forces a genuinely fresh generation instead of looping on a disqualified asset forever — PASS");
 
   console.log("net-new-creative-policy.test.ts: ALL PASS");
 }

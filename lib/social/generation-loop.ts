@@ -12,6 +12,7 @@
  */
 
 import { scoreGeneratedContent, type QualityScoreInput, type QualityScoreResult, type QualityFailureReason } from "./quality-score.ts";
+import { classifyProviderError, isTransientFallbackWorthy } from "@stratxcel/ai-runtime";
 
 export const DEFAULT_MAX_ATTEMPTS = 3;
 
@@ -52,6 +53,8 @@ export interface GenerationAttemptRecord {
    * instead of an uncaught throw silently discarding what earlier attempts
    * already diagnosed. */
   generationError?: string;
+  /** Only meaningful when generationError is set -- whether the underlying provider failure was transient (see GenerationLoopResult.generationErrorRetryable). */
+  retryable?: boolean;
 }
 
 export interface GenerationLoopResult<T> {
@@ -61,6 +64,26 @@ export interface GenerationLoopResult<T> {
   attempts: GenerationAttemptRecord[];
   /** Specific, diagnosable -- never "quality gate failed" -- populated only when success is false. */
   finalReason: string | null;
+  /**
+   * STRATXCEL full-system closure brief, Section 6/8: real bug found live
+   * -- when `generate()` itself throws (a provider/network failure, not a
+   * quality-gate verdict), that failure used to be flattened into a plain
+   * string (finalReason) with no way for the caller to know it was
+   * transient. Confirmed live: this is what caused the majority (30 of 50)
+   * of StratXcel's real recovery-exhausted queue items -- a real
+   * "AI service temporarily unavailable"/"Usage limit reached" provider
+   * condition on the copywriter stage was silently counted as a genuine
+   * content failure, burning the bounded recovery budget on an outage that
+   * had nothing to do with the content. Mirrors the SAME real,
+   * already-proven protection package-net-new-media.ts's
+   * NetNewGenerationError.retryable already gives the image-generation
+   * stage -- classified via the same real, structured
+   * classifyProviderError/isTransientFallbackWorthy signal already used
+   * elsewhere in this codebase (packages/ai-runtime/src/errors.ts), never
+   * a new guess at message text. Always `false` for a genuine quality-gate
+   * failure (a real content-shaped outcome, correctly still counted).
+   */
+  generationErrorRetryable: boolean;
 }
 
 export interface GenerationLoopInput<T> {
@@ -87,13 +110,15 @@ export async function runGenerationLoop<T>(input: GenerationLoopInput<T>): Promi
       // rather than retrying blindly, but preserve every diagnostic already
       // collected instead of letting this throw discard them uncaught.
       const message = err instanceof Error ? err.message : "generation call failed";
-      attempts.push({ attempt, passed: false, score: 0, hardFailureReasons: [], correctiveInstructions: [], generationError: message });
+      const retryable = isTransientFallbackWorthy(classifyProviderError(err));
+      attempts.push({ attempt, passed: false, score: 0, hardFailureReasons: [], correctiveInstructions: [], generationError: message, retryable });
       return {
         success: false,
         content: null,
         scoreResult: null,
         attempts,
         finalReason: `generation call failed on attempt ${attempt}/${maxAttempts}: ${message}`,
+        generationErrorRetryable: retryable,
       };
     }
     const scoreResult = scoreGeneratedContent(input.toScoreInput(content));
@@ -102,7 +127,7 @@ export async function runGenerationLoop<T>(input: GenerationLoopInput<T>): Promi
     attempts.push({ attempt, passed: scoreResult.passed, score: scoreResult.score, hardFailureReasons, correctiveInstructions });
 
     if (scoreResult.passed) {
-      return { success: true, content, scoreResult, attempts, finalReason: null };
+      return { success: true, content, scoreResult, attempts, finalReason: null, generationErrorRetryable: false };
     }
 
     // A non-correctable failure (e.g. missing brand context) means every
@@ -115,6 +140,7 @@ export async function runGenerationLoop<T>(input: GenerationLoopInput<T>): Promi
         scoreResult,
         attempts,
         finalReason: scoreResult.diagnostics.filter((d) => d.startsWith("[")).join(" ") || "generation failed a non-correctable quality gate",
+        generationErrorRetryable: false,
       };
     }
 
@@ -128,5 +154,6 @@ export async function runGenerationLoop<T>(input: GenerationLoopInput<T>): Promi
     scoreResult: null,
     attempts,
     finalReason: `exhausted ${maxAttempts} attempts; last attempt failed: ${last.hardFailureReasons.join(", ") || `score ${last.score} below threshold`}`,
+    generationErrorRetryable: false,
   };
 }
