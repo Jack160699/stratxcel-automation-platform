@@ -154,6 +154,29 @@ export function Sidebar({
                 <Link
                   key={item.key}
                   href={item.href}
+                  // STRATXCEL full-system closure brief, Section 3/4 (real
+                  // measured performance sweep): real, measured finding on
+                  // /admin/social/system -- every admin page's real, live
+                  // performance.getEntriesByType("resource") showed ~49
+                  // real background fetch requests (two full passes over
+                  // every one of the ~25 sidebar items) totaling ~18.8s of
+                  // cumulative fetch time, purely from Next.js's own
+                  // default automatic viewport-triggered RSC prefetch on
+                  // every admin nav link -- every admin page is a real,
+                  // force-dynamic, DB-querying route (see e.g. this exact
+                  // page's own maxDuration=300 comment), so "prefetch
+                  // everything visible in the sidebar" means firing a real
+                  // server request (and a real DB round-trip on the
+                  // destination page) for every one of ~25 pages a staff
+                  // member almost never all visits in one session. The
+                  // customer sidebar (the `if (customer)` branch above)
+                  // deliberately keeps prefetch={true} -- a much smaller,
+                  // lighter customer nav genuinely benefits from instant
+                  // nav. Admin does not: disabling automatic prefetch here
+                  // does not remove navigation -- a real click still
+                  // navigates immediately; it only stops the unsolicited
+                  // eager fetch of every other page's real data on load.
+                  prefetch={false}
                   aria-current={active ? "page" : undefined}
                   className={`flex h-8 min-w-0 items-center gap-2.5 rounded-sx-sm text-[13px] transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sx-accent ${
                     collapsed ? "w-10 justify-center" : "px-2.5"
