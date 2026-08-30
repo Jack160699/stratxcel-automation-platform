@@ -44,6 +44,36 @@ test("a well-formed, specific treatment has zero validation issues", () => {
   assert.deepEqual(issues, []);
 });
 
+// Real defect found live on StratXcel's own PUBLISHED output: an on-image
+// headline read "Local SEO that runs while you run your clinic." --
+// checkTargetIndustryContamination already guarded the caption text
+// (commit 3780ef2) but textHierarchy/cta.text is a separate generation
+// path rendered as literal pixels on the final creative, and was never
+// checked at all.
+test("on-image textHierarchy text addressing the reader as a different industry ('your clinic') is rejected when the real industry is known", () => {
+  const contaminated: CreativeTreatment = { ...GOOD_TREATMENT, textHierarchy: [{ role: "headline", text: "Local SEO that runs while you run your clinic." }] };
+  const issues = validateCreativeTreatment(contaminated, { concept: "training tip", industry: "generic" });
+  assert.ok(issues.some((i) => i.field === "textHierarchy" && i.issue.includes("clinic")), `expected the real live-observed 'your clinic' headline to be rejected, got: ${JSON.stringify(issues)}`);
+});
+
+test("cta.text addressing the reader as a different industry is rejected when the real industry is known", () => {
+  const contaminated: CreativeTreatment = { ...GOOD_TREATMENT, cta: { needed: true, text: "Book your patients' next visit today", rationale: "test" } };
+  const issues = validateCreativeTreatment(contaminated, { concept: "training tip", industry: "generic" });
+  assert.ok(issues.some((i) => i.field === "cta"), `expected a contaminated cta.text to be rejected, got: ${JSON.stringify(issues)}`);
+});
+
+test("on-image text is never flagged when no industry is supplied (backward compatible with call sites that don't have it in scope, e.g. validateTreatmentForJob)", () => {
+  const contaminated: CreativeTreatment = { ...GOOD_TREATMENT, textHierarchy: [{ role: "headline", text: "Local SEO that runs while you run your clinic." }] };
+  const issues = validateCreativeTreatment(contaminated, { concept: "training tip" });
+  assert.ok(!issues.some((i) => i.field === "textHierarchy" && i.issue.includes("clinic")), "must not attempt the check at all when industry is unknown, rather than false-flagging or crashing");
+});
+
+test("on-image text about the business's OWN industry is never flagged as contamination", () => {
+  const ownIndustry: CreativeTreatment = { ...GOOD_TREATMENT, textHierarchy: [{ role: "headline", text: "Built for your gym floor." }] };
+  const issues = validateCreativeTreatment(ownIndustry, { concept: "training tip", industry: "gym" });
+  assert.deepEqual(issues, []);
+});
+
 test("a treatment whose concept is just the category label restated is rejected", () => {
   const bad = { ...GOOD_TREATMENT, concept: "training tip" };
   const issues = validateCreativeTreatment(bad, { concept: "training tip" });

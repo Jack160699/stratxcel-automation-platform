@@ -175,7 +175,7 @@ export async function generateStudioCreativeTreatment(args: {
       { brandInstructions: [], tenantId: args.tenantId, businessInformation: verifiedFacts },
     );
     const parsed = safeParseJson(result.text);
-    const issues = validateCreativeTreatment(parsed, { concept: studioBrief.concept, routingContext: STUDIO_ARCHETYPE_ROUTING });
+    const issues = validateCreativeTreatment(parsed, { concept: studioBrief.concept, routingContext: STUDIO_ARCHETYPE_ROUTING, industry: studioBrief.industry });
     if (issues.length) return null;
     return parsed as CreativeTreatment;
   } catch {

@@ -223,6 +223,26 @@ function testTargetIndustryContaminationCatchesTheRealLiveBug() {
   console.log("quality-score.test.ts: TARGET_INDUSTRY_CONTAMINATION catches the real live-published 'your patients' bug — PASS");
 }
 
+// Real gap found live this session (StratXcel platform-closure): the
+// noun list only ever covered SECONDARY identity-claiming nouns ("your
+// patients") -- it never covered the category's own PRIMARY noun ("your
+// clinic"), even though that is the most direct form of this exact
+// contamination pattern. A real generated on-image headline ("...while
+// you run your clinic.") was not caught by the pre-fix noun list.
+function testDirectCategoryNounContaminationIsCaught() {
+  for (const [phrase, category] of [
+    ["Local SEO that runs while you run your clinic.", "clinic"],
+    ["Marketing that works while you run your restaurant.", "restaurant"],
+    ["Bookings that fill up while you run your salon.", "salon"],
+    ["Automation that works while you run your gym.", "gym"],
+    ["Inventory synced while you run your store.", "retail"],
+  ] as const) {
+    const result = scoreGeneratedContent({ ...BASE, industry: "generic", businessName: "Stratxcel", caption: phrase, title: "Test", hashtags: ["#Stratxcel"] });
+    assert.ok(reasonsOf(result).includes("TARGET_INDUSTRY_CONTAMINATION"), `expected "${phrase}" to be caught as ${category} contamination, got: ${JSON.stringify(result.hardFailures)}`);
+  }
+  console.log("quality-score.test.ts: direct category-noun contamination ('your clinic', 'your restaurant', 'your salon', 'your gym', 'your store') is caught, not just secondary nouns — PASS");
+}
+
 function testCorrectlyAttributedCustomerExampleDoesNotContaminate() {
   // The OTHER real published post (queue item 66c14af4, content_variant
   // 66c14af4's variant) -- the CORRECT pattern: third-person, clearly
@@ -387,6 +407,7 @@ function run() {
   testWeightsSumToOneHundred();
   testCleanBusinessSpecificContentCanActuallyPass();
   testTargetIndustryContaminationCatchesTheRealLiveBug();
+  testDirectCategoryNounContaminationIsCaught();
   testCorrectlyAttributedCustomerExampleDoesNotContaminate();
   testOwnIndustryVocabularyIsNeverFlagged();
   testGenericBusinessLanguageDoesNotFalsePositive();

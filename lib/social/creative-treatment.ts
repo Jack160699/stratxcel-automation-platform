@@ -24,7 +24,7 @@
 
 import type { AITextProviderAdapter, AIMessage } from "@stratxcel/ai-runtime";
 import type { CreativeBrief } from "./creative-brief.ts";
-import type { IndustryCategory } from "./industry-taxonomy.ts";
+import { checkTargetIndustryContamination, type IndustryCategory } from "./industry-taxonomy.ts";
 import type { BrandVisualDNA } from "./brand-visual-dna.ts";
 import { summarizeBrandVisualDNA } from "./brand-visual-dna.ts";
 import type { IndustryVisualVocabulary } from "./industry-visual-vocabulary.ts";
@@ -313,7 +313,7 @@ export interface CreativeTreatmentValidationIssue {
  * short/empty) sneaking through as if it were real creative work. */
 export function validateCreativeTreatment(
   treatment: unknown,
-  context: { concept: string; routingContext?: ArchetypeRoutingContext }
+  context: { concept: string; routingContext?: ArchetypeRoutingContext; industry?: IndustryCategory }
 ): CreativeTreatmentValidationIssue[] {
   const issues: CreativeTreatmentValidationIssue[] = [];
   const t = treatment as Partial<CreativeTreatment> | null | undefined;
@@ -353,6 +353,21 @@ export function validateCreativeTreatment(
     for (const el of t.textHierarchy) {
       const leak = el?.text ? findPlaceholderOrFiller(el.text) : null;
       if (leak) issues.push({ field: "textHierarchy", issue: `"${el.role}" text contains implementation-instruction/placeholder leakage: "${leak}"` });
+      // Real defect found live on StratXcel's own published output (this
+      // exact real headline: "Local SEO that runs while you run your
+      // clinic."): checkTargetIndustryContamination was already applied to
+      // the CAPTION, but on-image textHierarchy is a SEPARATE generation
+      // path that gets rendered as literal pixels on the final published
+      // creative -- it was never checked at all, so the same contamination
+      // pattern the caption-side fix (commit 3780ef2) already guards
+      // against could still ship straight onto the image. Only meaningful
+      // when a real industry is known.
+      if (context.industry && el?.text) {
+        const contamination = checkTargetIndustryContamination(el.text, context.industry);
+        if (contamination.isContaminated) {
+          issues.push({ field: "textHierarchy", issue: `"${el.role}" on-image text: ${contamination.reason}` });
+        }
+      }
     }
   }
 
@@ -363,6 +378,10 @@ export function validateCreativeTreatment(
   } else if (t.cta.text) {
     const leak = findPlaceholderOrFiller(t.cta.text);
     if (leak) issues.push({ field: "cta", issue: `cta.text contains implementation-instruction/placeholder leakage: "${leak}"` });
+    if (context.industry) {
+      const contamination = checkTargetIndustryContamination(t.cta.text, context.industry);
+      if (contamination.isContaminated) issues.push({ field: "cta", issue: `cta.text: ${contamination.reason}` });
+    }
   }
 
   if (!Array.isArray(t.negativeConstraints)) {

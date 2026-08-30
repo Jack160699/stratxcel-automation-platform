@@ -636,13 +636,27 @@ export function getIndustryProfile(category: IndustryCategory) {
  * `local_service`'s own vocabulary overlaps too much with ordinary business
  * language to include at all -- deliberately omitted.
  */
+// Real gap found live (StratXcel platform-closure session): this list
+// only ever covered SECONDARY identity-claiming nouns (e.g. "your
+// patients") -- it never included the category's own PRIMARY noun (e.g.
+// "your clinic"), even though that is the most direct, obvious form of
+// the exact contamination pattern this check exists to catch. Confirmed
+// live: a real generated on-image headline ("...while you run your
+// clinic.") was NOT flagged by the pre-fix version of this list, because
+// "clinic" itself was never in it -- only "patients"/"patient" were.
 const IDENTITY_CLAIMING_NOUNS: Partial<Record<IndustryCategory, string[]>> = {
-  clinic: ["patients", "patient"],
-  restaurant: ["diners", "menu"],
-  salon: ["stylists"],
-  gym: ["workout", "gym members"],
-  retail: ["shoppers", "storefront"],
-  real_estate: ["tenants", "listings"],
+  clinic: ["clinic", "clinics", "patients", "patient"],
+  restaurant: ["restaurant", "restaurants", "diners", "menu"],
+  salon: ["salon", "salons", "stylists"],
+  gym: ["gym", "gyms", "workout", "gym members"],
+  retail: ["store", "stores", "shop", "shops", "shoppers", "storefront"],
+  real_estate: ["property", "properties", "tenants", "listings"],
+  // local_service deliberately left unmapped: it's a broad catch-all
+  // category (not a specific business type like "clinic"/"salon"), and
+  // its most obvious identity-claiming candidates ("customers",
+  // "clients") are near-universal B2B/B2C phrasing every industry
+  // legitimately uses -- adding them would false-positive constantly
+  // rather than catch a real, specific contamination pattern.
 };
 
 export interface IndustryContaminationCheck {

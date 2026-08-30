@@ -1457,7 +1457,7 @@ export async function prepareNearTermPackageItems(
             { brandInstructions: selectGeminiBrandInstructions(brandProfile), tenantId: authorization.tenant_id, businessInformation }
           );
           const parsedTreatment = safeParseJson(treatmentResult.text);
-          const issues = validateCreativeTreatment(parsedTreatment, { concept: brief.concept, routingContext });
+          const issues = validateCreativeTreatment(parsedTreatment, { concept: brief.concept, routingContext, industry: brief.industry });
           if (!issues.length) treatment = forceArchetypeOntoTreatment(parsedTreatment as CreativeTreatment, routingContext);
         } catch {
           treatment = null;
