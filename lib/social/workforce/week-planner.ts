@@ -121,6 +121,34 @@ export function resolveThisWeekRange(timeZone: string, nowIso?: string): {
   return { start, end, nowParts };
 }
 
+/**
+ * Resolve the CANONICAL (Monday -> Sunday) week boundary containing "now",
+ * in the tenant timezone. Distinct from resolveThisWeekRange (whose start
+ * is always today, changing every day) -- this is a stable weekly-cycle
+ * identity: every day within the same real calendar week resolves to the
+ * SAME monday, which is exactly the property a weekly campaign checkpoint
+ * needs for idempotency (STRATXCEL weekly-engine brief Section 19: "one
+ * Monday should not create duplicate campaigns" -- more precisely, no day
+ * within a week should ever resolve to a different week-identity than any
+ * other day in that same week).
+ */
+export function resolveCanonicalWeekBounds(timeZone: string, nowIso?: string): {
+  mondayLocalDate: { year: number; month: number; day: number };
+  sundayLocalDate: { year: number; month: number; day: number };
+  /** YYYY-MM-DD of mondayLocalDate -- the real, stable weekly-campaign key. */
+  weekKey: string;
+  nowParts: ReturnType<typeof zonedParts>;
+} {
+  const now = nowIso ?? new Date().toISOString();
+  const nowParts = zonedParts(now, timeZone);
+  const today = { year: nowParts.year, month: nowParts.month, day: nowParts.day };
+  const daysSinceMonday = nowParts.weekday - 1; // weekday: Mon=1 ... Sun=7
+  const mondayLocalDate = addDays(today, -daysSinceMonday);
+  const sundayLocalDate = addDays(mondayLocalDate, 6);
+  const weekKey = `${mondayLocalDate.year}-${String(mondayLocalDate.month).padStart(2, "0")}-${String(mondayLocalDate.day).padStart(2, "0")}`;
+  return { mondayLocalDate, sundayLocalDate, weekKey, nowParts };
+}
+
 function candidateHours(preferred?: readonly number[]): number[] {
   if (preferred && preferred.length > 0) return [...preferred];
   return [...DEFAULT_WEEKLY_SLOT_POLICY.weekdayHours];
