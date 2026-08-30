@@ -1,8 +1,26 @@
-import { requireOwnerContext } from "@/lib/social/db-context";
+import { requireOwnerContext, getServiceContext } from "@/lib/social/db-context";
 import { runHealthChecks, type HealthStatus } from "@/lib/social/health";
 import { listAuditEvents } from "@/lib/social/repositories/system";
 import { listJobs } from "@/lib/social/repositories/publishing";
 import { runWorkerNowAction, runTenantContentBackfillAction, forceRegeneratePackageItemImageAction, forcePublishQueueItemNowAction } from "../actions";
+import { assessImageProviderHealth, type ImageProviderHealthStatus } from "@/lib/social/image-provider-health";
+
+// STRATXCEL zero-waste image-spend brief Section 7: real, evidence-based
+// image-provider fallback health -- distinct from the generic
+// "media:image_generation" readiness probe below, which only answers "is
+// the API reachable right now", not "has every real recent attempt
+// actually been landing on the pricier fallback." Scoped to the real
+// StratXcel tenant explicitly (this admin panel's only real, active
+// tenant today -- see the mission brief's own repeated "use StratXcel
+// only" constraint) rather than built as a tenant-picker UI in this pass.
+const STRATXCEL_TENANT_ID = "466e6195-a9f6-4576-8271-29fdae61c18a";
+
+const PROVIDER_HEALTH_CHIP: Record<ImageProviderHealthStatus, string> = {
+  PRIMARY_HEALTHY: "saut-chip-success",
+  PRIMARY_DEGRADED: "saut-chip-warning",
+  FALLBACK_ACTIVE: "saut-chip-danger",
+  NO_RECENT_DATA: "saut-chip-neutral",
+};
 
 // Debug Silent Automation Failure mission: real root cause of "clicked
 // Backfill/Run worker now, nothing happened" -- per Next.js's own docs
@@ -53,7 +71,13 @@ export default async function SystemPage() {
   const ctx = await requireOwnerContext();
   if (!ctx.ok) return null;
 
-  const [health, jobs, auditEvents] = await Promise.all([runHealthChecks(ctx), listJobs(ctx, 30), listAuditEvents(ctx, 30)]);
+  const { supabase: service } = getServiceContext();
+  const [health, jobs, auditEvents, imageProviderHealth] = await Promise.all([
+    runHealthChecks(ctx),
+    listJobs(ctx, 30),
+    listAuditEvents(ctx, 30),
+    assessImageProviderHealth(service as never, STRATXCEL_TENANT_ID, 24).catch(() => null),
+  ]);
 
   const grouped = health.reduce<Record<string, typeof health>>((acc, h) => {
     (acc[h.group] ??= []).push(h);
@@ -106,6 +130,25 @@ export default async function SystemPage() {
           </button>
         </form>
       </div>
+
+      {imageProviderHealth && (
+        <section className="space-y-3">
+          <h2 className="saut-section-title">Image provider health (StratXcel, last 24h)</h2>
+          <div className="saut-card flex items-start justify-between gap-3 p-3 text-sm">
+            <span className="min-w-0">
+              <span className="block text-xs font-medium">
+                {imageProviderHealth.totalCalls} real image generation{imageProviderHealth.totalCalls === 1 ? "" : "s"}
+                {imageProviderHealth.fallbackRate != null ? ` · ${Math.round(imageProviderHealth.fallbackRate * 100)}% on fallback` : ""}
+                {imageProviderHealth.observedCostMultiplier != null ? ` · ~${imageProviderHealth.observedCostMultiplier.toFixed(1)}x cost` : ""}
+              </span>
+              <span className="mt-1 block text-[10px] leading-relaxed" style={{ color: "var(--saut-text-subtle)" }}>{imageProviderHealth.message}</span>
+            </span>
+            <span className={`saut-chip shrink-0 ${PROVIDER_HEALTH_CHIP[imageProviderHealth.status]}`}>
+              <span className="saut-chip-dot" /> {imageProviderHealth.status.replace(/_/g, " ").toLowerCase()}
+            </span>
+          </div>
+        </section>
+      )}
 
       {(["core", "workers", "social", "webhooks", "ai", "media"] as const).map((group) => (
         <section key={group} className="space-y-3">
