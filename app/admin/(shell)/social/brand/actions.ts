@@ -2,27 +2,28 @@
 
 import { revalidatePath } from "next/cache";
 import { requireOwnerContext, getServiceContext } from "@/lib/social/db-context";
-import { resolveCurrentTenant } from "@/lib/tenants/current-tenant";
 import { getBrandProfileForTenant, upsertBrandProfileForTenant, replaceAtIndex, type BrandProfileRow } from "@/lib/social/repositories/brand";
 import { recordAudit } from "@/lib/social/repositories/system";
+import { STRATXCEL_TENANT_ID } from "@/lib/social/stratxcel-tenant";
 import type { BrandActionResult } from "./types";
 
 /**
  * STRATXCEL final closure brief: real fix, see
  * lib/social/repositories/brand.ts's header comment on
- * getBrandProfileForTenant for the full real-bug writeup. Every action in
- * this file must operate on the real ACTIVE tenant being managed (the
- * same real, RLS-membership-revalidated selection resolveCurrentTenant
- * already provides everywhere else in the admin shell), never the
- * logged-in staff member's own identity.
+ * getBrandProfileForTenant AND lib/social/stratxcel-tenant.ts's own header
+ * comment for the full real-bug writeup (including a real, live-caught
+ * SECOND bug: resolveCurrentTenant/tenant_members resolves to the WRONG
+ * "Stratxcel" for the logged-in staff session -- two distinct real
+ * tenants share that exact name). Every action in this file operates on
+ * the real, explicit, shared StratXcel tenant constant, matching the
+ * already-established pattern for this admin panel's other
+ * StratXcel-scoped section.
  */
 async function assertOwner() {
   const ctx = await requireOwnerContext();
   if (!ctx.ok) throw new Error(ctx.error);
-  const { active } = await resolveCurrentTenant(ctx.supabase, ctx.ownerId);
-  if (!active) throw new Error("No active workspace selected");
   const { supabase: service } = getServiceContext();
-  return { ownerId: ctx.ownerId, tenantId: active.tenantId, service: service as never };
+  return { ownerId: ctx.ownerId, tenantId: STRATXCEL_TENANT_ID, service: service as never };
 }
 
 const GENERIC_ERROR = "Could not save. Please try again.";

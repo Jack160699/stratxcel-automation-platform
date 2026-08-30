@@ -1,6 +1,6 @@
 import { requireOwnerContext, getServiceContext } from "@/lib/social/db-context";
-import { resolveCurrentTenant } from "@/lib/tenants/current-tenant";
 import { getBrandProfileForTenant } from "@/lib/social/repositories/brand";
+import { STRATXCEL_TENANT_ID } from "@/lib/social/stratxcel-tenant";
 import { Toaster } from "../components/Toaster";
 import { CompanyProfileForm } from "./components/CompanyProfileForm";
 import { ProductsSection } from "./components/ProductsSection";
@@ -33,14 +33,19 @@ export default async function BrandBrainPage() {
   if (!ctx.ok) return null;
 
   // Real fix (see lib/social/repositories/brand.ts's header comment on
-  // getBrandProfileForTenant): must read the ACTIVE tenant being managed
-  // (the same real, RLS-membership-revalidated selection the "S Stratxcel"
-  // switcher in the header sets), never the logged-in staff member's own
-  // identity.
-  const { active } = await resolveCurrentTenant(ctx.supabase, ctx.ownerId);
-  if (!active) return null;
+  // getBrandProfileForTenant AND lib/social/stratxcel-tenant.ts's own
+  // header comment): must read the real customer tenant, never the
+  // logged-in staff member's own identity. A first attempt at this fix
+  // used resolveCurrentTenant (the "S Stratxcel ▾" switcher's own real
+  // mechanism) -- confirmed live, and reverted, because it silently
+  // resolved to a DIFFERENT real tenant that also happens to be named
+  // "Stratxcel" (the staff member's own tenant_members row), not the real
+  // customer -- the exact same class of bug this fix exists to close, just
+  // one layer deeper. Matches the same explicit, hardcoded-tenant pattern
+  // already established and live-verified for this admin panel's other
+  // StratXcel-scoped section (app/admin/(shell)/social/system/page.tsx).
   const { supabase: service } = getServiceContext();
-  const profile = await getBrandProfileForTenant(service as never, active.tenantId);
+  const profile = await getBrandProfileForTenant(service as never, STRATXCEL_TENANT_ID);
 
   return (
     <div className="space-y-8 pb-24">

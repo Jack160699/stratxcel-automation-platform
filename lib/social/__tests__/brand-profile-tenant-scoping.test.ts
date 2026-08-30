@@ -91,15 +91,22 @@ async function testBrandNewTenantGetsAGenuinelyNewTenantScopedRow() {
 
 function testAdminBrandPageUsesTheRealTenantScopedFunctions() {
   const page = read("app", "admin", "(shell)", "social", "brand", "page.tsx");
-  assert.match(page, /resolveCurrentTenant\(ctx\.supabase, ctx\.ownerId\)/, "the admin Brand Brain page must resolve the real active tenant, never trust the logged-in staff member's own identity");
-  assert.match(page, /getBrandProfileForTenant\(service as never, active\.tenantId\)/, "the admin Brand Brain page must read the real tenant-scoped profile, never the old owner-scoped getBrandProfile");
+  // Real, live-caught second bug (see lib/social/stratxcel-tenant.ts's own
+  // header comment): resolveCurrentTenant()/tenant_members resolves to a
+  // DIFFERENT real tenant that also happens to be named "Stratxcel" for
+  // the logged-in staff session -- never the real customer. Must use the
+  // real, explicit, shared tenant constant instead.
+  assert.ok(!page.includes("resolveCurrentTenant("), "must never CALL resolveCurrentTenant()/tenant_members to resolve the tenant -- confirmed live to resolve to the wrong 'Stratxcel' (mentioning it in a comment documenting why, as this file's own header does, is fine)");
+  assert.match(page, /import \{ STRATXCEL_TENANT_ID \} from "@\/lib\/social\/stratxcel-tenant";/, "must import the one real, shared StratXcel tenant constant");
+  assert.match(page, /getBrandProfileForTenant\(service as never, STRATXCEL_TENANT_ID\)/, "the admin Brand Brain page must read the real tenant-scoped profile, never the old owner-scoped getBrandProfile");
   assert.ok(!page.includes("getBrandProfile(ctx)"), "must never fall back to the old owner-scoped read");
 
   const actions = read("app", "admin", "(shell)", "social", "brand", "actions.ts");
-  assert.match(actions, /resolveCurrentTenant\(ctx\.supabase, ctx\.ownerId\)/, "every admin Brand Brain action must resolve the real active tenant");
+  assert.ok(!actions.includes("resolveCurrentTenant("), "every admin Brand Brain action must never CALL resolveCurrentTenant()/tenant_members to resolve the tenant");
+  assert.match(actions, /tenantId: STRATXCEL_TENANT_ID/, "every action must operate on the real, explicit, shared StratXcel tenant constant");
   assert.ok(!actions.includes("upsertBrandProfile(ctx,"), "must never fall back to the old owner-scoped write (the exact real bug -- silently saving into the wrong row)");
   assert.match(actions, /upsertBrandProfileForTenant\(ctx\.service, ctx\.tenantId,/, "every save must go through the real tenant-scoped write");
-  console.log("brand-profile-tenant-scoping.test.ts: the real admin Brand Brain page and every one of its actions use the real tenant-scoped functions — PASS");
+  console.log("brand-profile-tenant-scoping.test.ts: the real admin Brand Brain page and every one of its actions use the real, explicit StratXcel tenant constant — PASS");
 }
 
 async function run() {

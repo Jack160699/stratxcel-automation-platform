@@ -5,6 +5,7 @@ import { listJobs } from "@/lib/social/repositories/publishing";
 import { runWorkerNowAction, runTenantContentBackfillAction, forceRegeneratePackageItemImageAction, forcePublishQueueItemNowAction } from "../actions";
 import { assessImageProviderHealth, type ImageProviderHealthStatus } from "@/lib/social/image-provider-health";
 import { assessTenantSocialHealth } from "@/lib/social/tenant-social-health";
+import { STRATXCEL_TENANT_ID } from "@/lib/social/stratxcel-tenant";
 
 // STRATXCEL zero-waste image-spend brief Section 7: real, evidence-based
 // image-provider fallback health -- distinct from the generic
@@ -14,7 +15,11 @@ import { assessTenantSocialHealth } from "@/lib/social/tenant-social-health";
 // StratXcel tenant explicitly (this admin panel's only real, active
 // tenant today -- see the mission brief's own repeated "use StratXcel
 // only" constraint) rather than built as a tenant-picker UI in this pass.
-const STRATXCEL_TENANT_ID = "466e6195-a9f6-4576-8271-29fdae61c18a";
+// STRATXCEL_TENANT_ID now lives in lib/social/stratxcel-tenant.ts (a real,
+// shared, explicitly-documented constant) -- see its own header comment
+// for why re-deriving this via resolveCurrentTenant()/tenant_members is a
+// real, confirmed-live bug trap: two distinct real tenants are both
+// literally named "Stratxcel".
 
 const PROVIDER_HEALTH_CHIP: Record<ImageProviderHealthStatus, string> = {
   PRIMARY_HEALTHY: "saut-chip-success",
