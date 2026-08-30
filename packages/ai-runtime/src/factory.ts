@@ -249,6 +249,40 @@ export async function resolveTenantMonthSpend(
   return recorder.resolveMonthSpend!(tenantId, monthKey);
 }
 
+// Real defect found live (StratXcel platform-closure session): every
+// current v3 self-service tier (seo/social/seo_and_social/advanced_seo/
+// advanced_social/advanced_growth -- including StratXcel's own real,
+// active advanced_growth plan) silently fell through to "starter", the
+// cheapest AI-COGS budget bucket, below. This map fixes that WITHOUT
+// inventing any new budget dollar figures (a real product/finance
+// decision this module has no authority to guess at) -- it classifies
+// each real v3 tier to whichever EXISTING legacy budget bucket its real
+// price is closest to, extending the same price-ordered relationship this
+// file's own DEFAULT_MONTHLY_BUDGET_USD table already encodes for the
+// four legacy tiers, applied mechanically rather than defaulted to the
+// lowest bucket for every unrecognized value.
+//
+// Real prices, from packages/payments-and-wallet/src/plans.ts
+// PLAN_DEFINITIONS (priceCents, GST-inclusive) -- kept as a local literal
+// map rather than a cross-package import: @stratxcel/ai-runtime currently
+// declares zero workspace dependencies by design, and this fix does not
+// warrant introducing one.
+//   v3:     seo=2999  social=3999  seo_and_social=6998  advanced_seo=9999
+//           advanced_social=8499  advanced_growth=18498
+//   legacy: starter=2999  growth=7999  business=15999  scale=29999
+// Nearest-by-price classification:
+//   seo(2999)->starter(exact)  social(3999)->starter(|1000|<|4000|)
+//   seo_and_social(6998)->growth(|1001|<|3999|)  advanced_seo(9999)->growth(|2000|<|6000|)
+//   advanced_social(8499)->growth(|500|<|7500|)  advanced_growth(18498)->business(|2499|<|11501|)
+const V3_TIER_TO_LEGACY_BUDGET_BUCKET: Record<string, Exclude<PlanTier, "custom">> = {
+  seo: "starter",
+  social: "starter",
+  seo_and_social: "growth",
+  advanced_seo: "growth",
+  advanced_social: "growth",
+  advanced_growth: "business",
+};
+
 export async function resolveTenantPlanTier(
   supabase: {
     from: (table: string) => {
@@ -277,6 +311,7 @@ export async function resolveTenantPlanTier(
     .maybeSingle();
   const tier = (data?.plan_tier ?? "starter").toLowerCase();
   if (tier === "growth" || tier === "business" || tier === "scale" || tier === "custom") return tier;
+  if (tier in V3_TIER_TO_LEGACY_BUDGET_BUCKET) return V3_TIER_TO_LEGACY_BUDGET_BUCKET[tier];
   return "starter";
 }
 
