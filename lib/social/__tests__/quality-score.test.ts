@@ -327,6 +327,45 @@ function testOtherLeakedLabelsAreAlsoCaught() {
   console.log("quality-score.test.ts: other real leaked-label patterns (Summary:/Our Approach:/etc.) are also caught, not just the one observed live — PASS");
 }
 
+// --- Real defect found live (StratXcel batch, 2026-08-30): a fabricated
+// offer with no basis in verified facts. ---
+function testFabricatedOfferIsRejected() {
+  const result = scoreGeneratedContent({
+    ...BASE,
+    caption: "Quiet midnight publishing for tomorrow's local rush. Reserve your festive offer before slots run out.",
+    title: "Festive Prep",
+    hashtags: ["#Automation"],
+  });
+  assert.ok(reasonsOf(result).includes("FABRICATED_OFFER"), `expected FABRICATED_OFFER, got: ${JSON.stringify(result.hardFailures)}`);
+  assert.equal(result.passed, false);
+  console.log("quality-score.test.ts: real live fabricated-offer defect (\"festive offer\") is caught — PASS");
+}
+
+function testOfferClaimSupportedByVerifiedFactsIsNotRejected() {
+  const result = scoreGeneratedContent({
+    ...BASE,
+    caption: "Our early access offer for loyal regulars starts this weekend at Coastal Kitchen -- book your table.",
+    title: "Early Access Weekend",
+    hashtags: ["#FortKochi"],
+    verifiedFacts: ["Business location (as provided by the owner): Fort Kochi", "Current promotion: early access offer for loyal regulars this weekend"],
+  });
+  assert.ok(!reasonsOf(result).includes("FABRICATED_OFFER"), `expected no FABRICATED_OFFER when the offer is genuinely in verified facts, got: ${JSON.stringify(result.hardFailures)}`);
+  console.log("quality-score.test.ts: an offer claim genuinely present in verified facts is never false-flagged as fabricated — PASS");
+}
+
+function testOtherFabricatedOfferPatternsAreAlsoCaught() {
+  for (const claim of ["limited time discount", "exclusive access", "special event"]) {
+    const result = scoreGeneratedContent({
+      ...BASE,
+      caption: `Fresh Kerala fish curry served hot every morning at Coastal Kitchen, Fort Kochi. Ask about our ${claim} this week.`,
+      title: "Fresh Fish Curry",
+      hashtags: ["#FortKochi"],
+    });
+    assert.ok(reasonsOf(result).includes("FABRICATED_OFFER"), `expected "${claim}" to be caught as a fabricated offer`);
+  }
+  console.log("quality-score.test.ts: other real fabricated-offer patterns (limited time discount/exclusive access/special event) are also caught — PASS");
+}
+
 function run() {
   testBadGenericCopyIsRejected();
   testBetterBusinessSpecificCopyPasses();
@@ -354,6 +393,9 @@ function run() {
   testLeakedTemplateLabelIsRejected();
   testCommonNaturalColonLeadInsAreNotFalseFlagged();
   testOtherLeakedLabelsAreAlsoCaught();
+  testFabricatedOfferIsRejected();
+  testOfferClaimSupportedByVerifiedFactsIsNotRejected();
+  testOtherFabricatedOfferPatternsAreAlsoCaught();
   console.log("quality-score.test.ts: ALL PASS");
 }
 

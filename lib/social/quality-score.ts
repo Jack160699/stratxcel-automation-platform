@@ -36,7 +36,8 @@ export type QualityFailureReason =
   | "LOW_INDUSTRY_RELEVANCE"
   | "BRAND_CONTEXT_MISSING"
   | "TARGET_INDUSTRY_CONTAMINATION"
-  | "LEAKED_TEMPLATE_LABEL";
+  | "LEAKED_TEMPLATE_LABEL"
+  | "FABRICATED_OFFER";
 
 export interface QualityFailure {
   reason: QualityFailureReason;
@@ -149,6 +150,15 @@ const RATING_PATTERN = /\b\d(?:\.\d)?\s?(?:star|stars|\/\s?5|out of 5)\b/i;
 const REVIEW_COUNT_PATTERN = /\b\d[\d,]*\+?\s+(?:reviews|ratings)\b/i;
 const PRICE_PATTERN = /(?:₹|rs\.?|\$|inr)\s?\d[\d,]*/i;
 const GUARANTEE_PATTERN = /\b(?:guarantee(?:d)?|100%\s+(?:satisfaction|money[- ]back))\b/i;
+// Real defect found live (StratXcel batch, 2026-08-30): a caption invented
+// "Reserve your festive slot" / "Reserve early-access festive setup" --
+// StratXcel (B2B SaaS/automation) has no such real offer; the model
+// fabricated one from an unrelated seasonal-tone signal
+// (seasonalContextLine's "festive lead-up" descriptor being over-applied).
+// Distinct from the numeric claim patterns above (price/discount/rating):
+// this catches a CONCEPTUAL offer claim with no number to fact-check, so it
+// needs its own pattern + the same "supported by verified facts" gate.
+const FABRICATED_OFFER_PATTERN = /\b(?:festive|early[- ]access|early[- ]bird|limited[- ](?:time|availability|slots?)|exclusive|special)\s+(?:offer|slot|setup|deal|promo(?:tion)?|discount|access|event|pricing|package)\b/i;
 
 function claimTokensNotInFacts(caption: string, verifiedFacts: string[]): string[] {
   const factsBlob = verifiedFacts.join(" | ").toLowerCase();
@@ -225,6 +235,16 @@ export function scoreGeneratedContent(input: QualityScoreInput): QualityScoreRes
   const unsupportedClaims = claimTokensNotInFacts(caption, input.verifiedFacts ?? []);
   if (unsupportedClaims.length) {
     hardFailures.push({ reason: "UNSUPPORTED_FACT", detail: `states a specific claim not present in verified business facts: ${unsupportedClaims.map((c) => `"${c}"`).join(", ")}` });
+  }
+
+  // --- Hard-fail: fabricated offer/promotion/slot the business never
+  // actually made (real live defect -- see FABRICATED_OFFER_PATTERN). ---
+  const offerMatch = caption.match(FABRICATED_OFFER_PATTERN);
+  if (offerMatch) {
+    const factsBlob = (input.verifiedFacts ?? []).join(" | ").toLowerCase();
+    if (!factsBlob.includes(offerMatch[0].toLowerCase())) {
+      hardFailures.push({ reason: "FABRICATED_OFFER", detail: `references an offer/promotion ("${offerMatch[0]}") not present in verified business facts -- the business never actually made this offer` });
+    }
   }
 
   // --- Hard-fail: duplicate/repeated content (Section 11/26). ---

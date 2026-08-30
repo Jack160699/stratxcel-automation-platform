@@ -28,6 +28,7 @@ const CORRECTIVE_INSTRUCTION: Record<QualityFailureReason, (detail: string) => s
   MALFORMED_STRUCTURE: () => "Return a complete, valid response with every required field populated.",
   FORBIDDEN_CLAIM: (detail) => `Remove this phrase, which is forbidden by brand rules: ${detail}.`,
   LEAKED_TEMPLATE_LABEL: (detail) => `Rewrite this: ${detail}. The caption must read as one continuous piece of natural social copy -- never a section label followed by a colon, like a document heading.`,
+  FABRICATED_OFFER: (detail) => `Remove this: ${detail}. Never invent a promotion, discount, festive offer, early-access slot, or limited-availability claim that is not in the verified business facts -- write about the real business instead of an imagined offer.`,
 };
 
 /** A failure reason that no amount of rewriting the copy can fix -- retrying
