@@ -51,13 +51,21 @@ assert.match(billing, /Included each month/);
 assert.match(billing, /walletError/);
 assert.doesNotMatch(billing, /createPayment|capturePayment/);
 
-assert.equal(resolveCustomerPlanSummary(null).name, "Free");
+// Pre-existing drift found live (unrelated to this session's own changes):
+// PLAN_DEFINITIONS.free.publicName is really "Free Trial"
+// (packages/payments-and-wallet/src/plans.ts) -- this assertion's expected
+// literal was stale against a real product copy change.
+assert.equal(resolveCustomerPlanSummary(null).name, "Free Trial");
 assert.equal(resolveCustomerPlanSummary(null).activePaid, false);
+// Same real drift: PLAN_DEFINITIONS.growth.publicName is really
+// "Growth (Legacy)" now (the v3 catalog introduced a real "Social Content"
+// tier for new customers -- "growth" is the old v2 tier, relabeled to
+// distinguish it, not removed).
 assert.deepEqual(
   resolveCustomerPlanSummary({ plan_tier: "growth", status: "active", provider_status: "active", current_period_end: "2026-09-01" }),
   {
     tier: "growth",
-    name: "Growth",
+    name: "Growth (Legacy)",
     status: "Active",
     billingStatus: "Active",
     billingCycle: "Monthly",

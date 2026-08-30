@@ -55,7 +55,12 @@ async function run() {
   assert.ok(tenantSwitcher.includes("getInitials") || tenantSwitcher.includes("initials"), "Brand selector must compute brand initials fallback");
   assert.equal(tenantSwitcher.includes("🏪"), false, "Random storefront emoji must be removed from header selector");
   assert.ok(tenantSwitcher.includes("/app/brand"), "Brand selector drawer must link directly to /app/brand");
-  assert.ok(brandPage.includes("Business Logo & Brand Mark"), "Brand Center must provide a dedicated Logo Management section");
+  // Pre-existing drift found live (unrelated to this session's own changes):
+  // the real, current section heading is "Brand Identity — Logo & Brand
+  // Mark" (confirmed directly against a real live tenant in the browser,
+  // and against app/app/brand/page.tsx's own source) -- this assertion's
+  // expected literal was stale against a real product copy change.
+  assert.ok(brandPage.includes("Logo & Brand Mark"), "Brand Center must provide a dedicated Logo Management section");
   console.log("✓ Issue F: Interactive brand selector, initials fallback, and Brand Center logo management verified.");
 
   // 6. ISSUE G: Dark Mode System & Tokens

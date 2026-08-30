@@ -36,24 +36,33 @@ async function loadTenantMedia(supabase: any, tenantId: string, activeBrandBrain
     // Filter out brand assets, logo variants, and non-publishing media
     const contentAssets = assets.filter((a: any) => !isBrandOrLogoAsset(a, activeBrandBrain));
 
-    const items: Array<{ id: string; name: string; url: string; mimeType: string; createdAt: string }> = [];
-    for (const a of contentAssets) {
-      try {
-        const { data: signed } = await supabase.storage.from(a.storage_bucket).createSignedUrl(a.storage_path, 3600);
-        if (signed?.signedUrl) {
-          items.push({
+    // Hermes platform-restructure mission Section 56/77: this used to sign
+    // each asset's storage URL one at a time in a sequential for-loop --
+    // for a tenant with 50 real assets (this query's own real limit), that
+    // was up to 50 sequential Storage round-trips on the customer's own
+    // Content Library load. Parallelized via Promise.all, same real pattern
+    // already used a few functions below in this same file
+    // (buildImageUrlByVariantId) -- order is preserved (Promise.all keeps
+    // array order regardless of resolution order), never sign fewer/more
+    // assets than before.
+    const signed = await Promise.all(
+      contentAssets.map(async (a: any) => {
+        try {
+          const { data: signedUrl } = await supabase.storage.from(a.storage_bucket).createSignedUrl(a.storage_path, 3600);
+          if (!signedUrl?.signedUrl) return null;
+          return {
             id: a.id,
             name: a.original_name || "Media Asset",
-            url: signed.signedUrl,
+            url: signedUrl.signedUrl,
             mimeType: a.mime_type || "image/jpeg",
             createdAt: a.created_at,
-          });
+          };
+        } catch {
+          return null;
         }
-      } catch {
-        // storage sign error ignored
-      }
-    }
-    return items;
+      })
+    );
+    return signed.filter((item): item is { id: string; name: string; url: string; mimeType: string; createdAt: string } => item !== null);
   } catch {
     return [];
   }
@@ -127,14 +136,17 @@ async function loadImageGenerationCreatives(supabase: any, tenantId: string) {
         .from("social_media_assets")
         .select("id, storage_bucket, storage_path")
         .in("id", assetIds);
-      for (const asset of assets ?? []) {
+      // Same real fix as loadTenantMedia above -- parallelized, a Map write
+      // is safe from concurrent async callbacks (single-threaded event loop),
+      // and every asset that was signed before is still signed now.
+      await Promise.all((assets ?? []).map(async (asset: any) => {
         try {
           const { data: signed } = await supabase.storage.from(asset.storage_bucket).createSignedUrl(asset.storage_path, 3600);
           if (signed?.signedUrl) signedUrlByAssetId.set(asset.id, signed.signedUrl);
         } catch {
           // storage sign error ignored -- card renders without a preview image
         }
-      }
+      }));
     }
 
     return jobs.map((job: any) => {
