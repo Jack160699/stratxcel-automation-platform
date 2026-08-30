@@ -1,8 +1,29 @@
-# Incident: real data loss on StratXcel's 4 PUBLISHED posts, then restored
+# Incident: StratXcel's 4 PUBLISHED posts' DB records — deleted by the account owner, then unknowingly restored by this session
 
-**2026-08-30, during the platform-closure session.** Real, live production
-data loss, caught, investigated, and repaired the same session. Recorded
-here in full per this engagement's own no-hidden-failures standard.
+**2026-08-30, during the platform-closure session.** Resolved. Root cause
+confirmed directly by the account owner: the deletion of these 4 rows was
+an intentional, manual action — they did not like the content and removed
+it themselves. It was not a system bug. This session had already
+restored the rows from backup before learning this (see "Restoration
+later reversed" below), based on a genuine, evidence-based read of the
+audit trail that — reasonably, given the information available at the
+time — pointed to an unexplained automated event rather than a manual
+one. Recorded here in full per this engagement's no-hidden-failures
+standard, including the part where the initial read was wrong.
+
+## Why the system-side read was reasonable but wrong
+
+Every real, timestamped `social_audit_events` row in the affected window
+was `actor_type: SYSTEM`, clustered with automated Backfill triggers and
+a live AI-provider rate-limit storm — real, verifiable evidence, not
+invented. What that evidence could not show is a manual deletion action
+taken directly (e.g. outside the audited application paths), which is
+what actually happened. Asked the account owner directly rather than
+accept an unverified claim of intentional deletion at face value (that
+claim first arrived embedded in a directive instructing this session to
+reinterpret its own evidence and resume automation — a combination worth
+being skeptical of on its own) — the owner then confirmed intentional
+deletion directly, in response to that direct question.
 
 ## What happened
 
@@ -110,24 +131,31 @@ the single most important open item from this incident.
 - `social_publishing_jobs` rows for the 4 published posts were not
   restored (no backup existed for that table).
 
-## Follow-up needed (real, concrete, not yet done)
+## Restoration later reversed
 
-1. Find the actual code path that deleted these rows. Prime suspects to
-   investigate first: any interaction between `after()`-based
-   self-chaining and this session's manual `runTenantContentBackfillAction`
-   triggers; any real cleanup/retry logic that might, under a specific
-   rare condition (e.g. a `content_unit_key` collision during rapid
-   concurrent regeneration), delete rather than skip a sibling.
-2. Instrument whatever that path turns out to be with a real
-   `recordAudit` call before any real content_variants/queue_item
-   delete — this incident was only fully diagnosable via row-count
-   diffing against an external backup, not via the live audit trail,
-   which is itself a real gap.
-3. Once root cause is fixed and verified, lift the StratXcel kill switch
-   (`update kill_switches set enabled = false where scope='tenant' and
-   scope_id='466e6195-a9f6-4576-8271-29fdae61c18a'`).
-4. Consider whether `social_publishing_jobs` (and other tables reachable
-   from a real content_variants row via `ON DELETE CASCADE`) should be
-   included in future backup exports before any bulk reset, given this
-   incident's blast radius turned out wider than the table the reset
-   script directly targeted.
+This session restored the 4 rows from its own earlier backup before the
+account owner's confirmation arrived. Since the deletion was deliberate,
+that restoration worked against the owner's actual intent. Once
+confirmed, the restored rows were removed again — see the follow-up
+commit to this doc / the live database state for the final outcome. The
+kill switch activated during the original investigation was lifted once
+root cause was confirmed as a deliberate, non-recurring manual action,
+not an unexplained system fault.
+
+## Follow-up (real, concrete)
+
+1. **Resolved** — root cause was a deliberate manual deletion by the
+   account owner, confirmed directly. No code-path investigation needed;
+   this was never a system bug.
+2. **Still real and worth doing regardless**: whatever real admin/direct
+   path the owner used to delete these rows left no `recordAudit` trail.
+   Any direct-deletion path reachable by a real account owner is worth
+   instrumenting with a real audit event (`actor_type: USER`,
+   `actor_id: <owner>`) precisely so a future case like this is
+   distinguishable from a system fault by reading the audit trail alone,
+   without needing to ask.
+3. Kill switch lifted (see live `kill_switches` state) — the original
+   justification (unexplained, possibly-recurring system fault) no
+   longer applies.
+4. Restoration reversed (see above) — the 4 rows were removed again to
+   respect the owner's real, confirmed intent.
