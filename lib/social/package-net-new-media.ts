@@ -104,6 +104,24 @@ export async function generateNetNewPackageMediaAsset(
     queueItemId: string;
   }
 ): Promise<{ id: string }> {
+  // STRATXCEL zero-waste image-spend brief Section 6: a real, live
+  // same-day circuit breaker, checked BEFORE any real provider call --
+  // additive to the existing monthly AI-COGS budget gate, which is soft
+  // and month-scoped. Fails open on its own read error (never blocks
+  // real generation because the safety table itself was briefly
+  // unreadable), fails CLOSED (throws, same as any other real
+  // generation failure -- BLOCKED, never a silent skip or stand-in
+  // asset) when the real ledger shows the threshold genuinely reached.
+  const { checkDailyImageSpendLimit } = await import("./image-cost-guard.ts");
+  const spendCheck = await checkDailyImageSpendLimit(service, input.tenantId);
+  if (!spendCheck.allowed) {
+    throw new NetNewGenerationError(
+      `net_new_generation_blocked: ${spendCheck.reason}`,
+      "DAILY_IMAGE_SPEND_LIMIT_REACHED",
+      false
+    );
+  }
+
   const { createImageGenerationJob, processImageGenerationJob, selectImageGenerationCandidate } =
     await loadImageGenerationService();
 
