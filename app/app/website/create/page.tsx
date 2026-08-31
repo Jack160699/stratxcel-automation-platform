@@ -45,6 +45,11 @@ export default function WebsiteFactoryPage() {
   // Load My Shop data
   useEffect(() => {
     if (!tenantId) return;
+    // react-hooks/set-state-in-effect: same documented data-fetching
+    // pattern as SxPrivateMedia.tsx -- setting the loading flag before
+    // starting the fetch that resolves it, not an "adjust state from a
+    // prop" case.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoadingShop(true);
     fetch(`/api/platform/brand?tenantId=${encodeURIComponent(tenantId)}`)
       .then((r) => r.json())

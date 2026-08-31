@@ -32,7 +32,7 @@ export default function AiCrmAgentPage() {
         </h1>
         <p className="mt-6 max-w-2xl font-sx-sans text-[16px] leading-relaxed text-sx-text-muted sm:text-[18px]">
           Stratxcel keeps track of every WhatsApp and website inquiry to your business, so nothing gets missed while
-          you're busy running your shop. There's no separate CRM software to learn — it's part of how Stratxcel
+          you&apos;re busy running your shop. There&apos;s no separate CRM software to learn — it&apos;s part of how Stratxcel
           works for you.
         </p>
 

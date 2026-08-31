@@ -439,7 +439,7 @@ export function VisualAuditReport({
       {staleConnectorLabels.length > 0 && (
         <div className="rounded-sx-sm border border-sx-warning/30 bg-sx-warning/10 px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
           <span className="text-xs font-semibold text-sx-warning">
-            {staleConnectorLabels.join(", ")} {staleConnectorLabels.length === 1 ? "was" : "were"} connected after this audit ran, so the findings below don't reflect {staleConnectorLabels.length === 1 ? "it" : "them"} yet.
+            {staleConnectorLabels.join(", ")} {staleConnectorLabels.length === 1 ? "was" : "were"} connected after this audit ran, so the findings below don&apos;t reflect {staleConnectorLabels.length === 1 ? "it" : "them"} yet.
           </span>
           {/* Free-audit re-runs are gated to one grant per tenant
               (claim_fresh_product_grant_audit_v1) -- a tenant who already

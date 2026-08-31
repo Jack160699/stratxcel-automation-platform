@@ -30,12 +30,21 @@ export default function SettingsPage() {
   const [emailState, setEmailState] = useState<EmailState>(() =>
     userEmail ? { status: "success", email: userEmail } : { status: "loading", email: null }
   );
+  // react-hooks/set-state-in-effect: adjusting state to match a prop that
+  // changes is the documented "you might not need an Effect" case
+  // (https://react.dev/learn/you-might-not-need-an-effect) -- do it
+  // directly during render, gated on the tracked previous value, rather
+  // than as the first synchronous statement in the effect below. The
+  // effect itself now only owns the genuinely async path (fetching the
+  // real user when userEmail isn't already known).
+  const [syncedUserEmail, setSyncedUserEmail] = useState(userEmail);
+  if (userEmail !== syncedUserEmail) {
+    setSyncedUserEmail(userEmail);
+    if (userEmail) setEmailState({ status: "success", email: userEmail });
+  }
 
   useEffect(() => {
-    if (userEmail) {
-      setEmailState({ status: "success", email: userEmail });
-      return;
-    }
+    if (userEmail) return;
     let current = true;
     async function loadEmail() {
       try {

@@ -172,7 +172,7 @@ export default function GrowthPage() {
 
       {error ? (
         <Card variant="nested" className="p-6 text-center border-sx-border">
-          <p className="text-sm font-medium text-sx-text mb-2">Growth couldn't load right now.</p>
+          <p className="text-sm font-medium text-sx-text mb-2">Growth couldn&apos;t load right now.</p>
           <p className="text-xs text-sx-text-muted mb-4">{error}</p>
           <div className="flex items-center justify-center gap-3">
             {tenantId && (

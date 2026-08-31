@@ -27,6 +27,14 @@ export function SxPrivateMedia({
 
   useEffect(() => {
     let active = true;
+    // react-hooks/set-state-in-effect: resetting to a loading state before
+    // starting a new fetch when a dependency (assetId/retryToken) changes
+    // is the documented data-fetching pattern (react.dev "You Might Not
+    // Need an Effect" -> "Fetching data"), not the "adjusting state from a
+    // prop" case that rule exists to catch -- unlike that case, this one
+    // genuinely belongs in the effect (it's gated by the same `active`
+    // cleanup flag as the fetch itself).
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setUrl(null);
     setError(null);
     fetch(`/api/social/copilot/media-preview?assetId=${encodeURIComponent(assetId)}`)
