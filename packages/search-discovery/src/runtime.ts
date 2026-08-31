@@ -124,19 +124,36 @@ export async function runSearchAnalysis(
     let pages = options.pages ?? [];
     let crawlErrors: Array<{ url: string; error: string }> = [];
     // Root-caused via docs/discovery/SEARCH_GROWTH_ENGINE_GAP_AUDIT.md,
-    // Update 20: these used to default to `false` ("confirmed missing")
-    // rather than `null` ("not actually checked yet"). Whenever the real
-    // crawl below is skipped (ownership not yet verified -- a legitimate
-    // safety gate, not a defect), robotsPresent/sitemapPresent silently
-    // kept their false defaults and analyzeTechnicalSeo reported them as
-    // real HIGH-severity ROBOTS_MISSING/SITEMAP_MISSING findings -- a real,
-    // live false positive confirmed on the real StratXcel tenant (its own
-    // robots.txt and sitemap.xml were verified genuinely live and correct
-    // at the time this was flagged as missing).
+    // Updates 20 & 21. robotsPresent/sitemapPresent stay `null` ("not
+    // actually checked") rather than a fabricated `false` ("confirmed
+    // missing") whenever the crawl below doesn't run -- see Update 20.
     let robotsPresent: boolean | null = null;
     let sitemapPresent: boolean | null = null;
 
-    if (!pages.length && SEARCH_RUNTIME_FLAGS.crawlEnabled && project.ownership_verified) {
+    // Update 21: this used to also require `project.ownership_verified`
+    // (never set to true anywhere in this codebase -- confirmed by a
+    // full repo search -- so this had silently disabled the entire
+    // crawl-based analysis pipeline, for every tenant, always). Root
+    // cause: READ (a public, SSRF-protected crawl of pages the site
+    // already serves to any visitor or search engine -- crawlWebsite()
+    // independently calls assertPublicHttpTarget() on every URL it
+    // touches, rejecting private IPs/localhost/internal hosts regardless
+    // of this flag) was wrongly conflated with WRITE (actually modifying
+    // the tenant's live site, which stays gated on its own real,
+    // independent authorization -- the Vercel connector's token-based
+    // scope, entirely unrelated to this field -- see execution/engine.ts
+    // and vercel/connector.ts, neither of which references
+    // ownership_verified at all). A customer submitting their own
+    // propertyUrl (this run's actual input) is already a reasonable basis
+    // for "you may look at this site's public pages," the same standard
+    // every SEO scanning tool uses -- proof of ownership is what a WRITE
+    // path should require, not a read-only crawl.
+    //
+    // ownership_verified is deliberately left in the schema, unremoved --
+    // it remains available for a genuine future ownership-gated WRITE
+    // decision; this fix only stops misapplying it to gate public
+    // analysis.
+    if (!pages.length && SEARCH_RUNTIME_FLAGS.crawlEnabled) {
       await event(db, input, "SEARCH_CRAWL_STARTED", run.id);
       const result = await (options.crawl ?? crawlWebsite)(input.propertyUrl, {
         limits: { maxPages: CRAWL_LIMITS[input.plan] },
@@ -151,9 +168,13 @@ export async function runSearchAnalysis(
         truncated: result.truncated,
       });
     } else if (!pages.length) {
+      // The only remaining real reason to reach here is the crawl feature
+      // flag (SEARCH_DISCOVERY_CRAWL_ENABLED) itself being off -- a
+      // genuine, deliberate operator-controlled kill switch, unrelated to
+      // this tenant or its website.
       await event(db, input, "SEARCH_PROVIDER_SKIPPED", run.id, {
         provider: "first_party_crawl",
-        state: project.ownership_verified ? "configuration_required" : "permission_required",
+        state: "configuration_required",
       });
       // robotsPresent/sitemapPresent correctly stay null here -- the real
       // crawl never ran, so the real answer is genuinely unknown, not
