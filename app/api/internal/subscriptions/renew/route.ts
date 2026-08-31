@@ -4,6 +4,7 @@ import {
   isPaymentFeatureEnabled,
   getPlanDefinition,
   isProviderManagedSubscription,
+  isPlanTier,
   type PlanTier,
 } from "@stratxcel/payments-and-wallet";
 import {
@@ -97,8 +98,21 @@ export async function POST(request: Request) {
         }
       }
 
+      // Real defect found and fixed (docs/discovery/SEARCH_GROWTH_ENGINE_GAP_AUDIT.md,
+      // Update 15): this used to only recognize pending_plan_tier ===
+      // "starter" | "growth" | "business" -- the same legacy-only-tier
+      // pattern as the EntitlementGate bug fixed alongside this. A real
+      // in-app plan change (app/app/billing/page.tsx's "Change plan"
+      // button, via /api/platform/subscriptions/[id]/change-plan) can set
+      // pending_plan_tier to any current v3 catalog tier (seo, social,
+      // advanced_growth, etc.), which this renewal job would then silently
+      // never apply -- the subscription would keep renewing at the old
+      // tier/price indefinitely. Checked live before this fix: zero
+      // subscriptions currently have a pending_plan_tier set, so no real
+      // tenant was actually stuck by this -- fixed pre-emptively via the
+      // one canonical isPlanTier() check, not a widened hardcoded list.
       let planTier = sub.plan_tier as PlanTier;
-      if (sub.pending_plan_tier && (sub.pending_plan_tier === "starter" || sub.pending_plan_tier === "growth" || sub.pending_plan_tier === "business")) {
+      if (sub.pending_plan_tier && isPlanTier(sub.pending_plan_tier)) {
         planTier = sub.pending_plan_tier;
         await serviceDb
           .from("subscriptions")
