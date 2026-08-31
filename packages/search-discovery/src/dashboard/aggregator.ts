@@ -22,7 +22,7 @@ export async function getSearchGrowthDashboardData(
     // 1. Fetch Tenant Project
     db
       .from("search_projects")
-      .select("name, property_url")
+      .select("name, property_url, enabled")
       .eq("tenant_id", tenantId)
       .maybeSingle(),
     // 2. Fetch Subscription & Entitlements
@@ -279,6 +279,13 @@ export async function getSearchGrowthDashboardData(
     projectName: propertyName,
     propertyUrl,
     detectedWebsiteUrl,
+    // Real, already-existing scheduler eligibility gate (search_projects.enabled,
+    // already filtered on by app/api/internal/search/scheduler/route.ts's
+    // `.eq("enabled", true)`) -- was created and read but never exposed to
+    // any customer-facing control before this. null (not true/false) when
+    // there is genuinely no project yet, since the concept of "growth
+    // on/off" doesn't apply until a first analysis has run.
+    growthEnabled: hasProject ? (project?.enabled ?? true) : null,
     isPaidTenant,
     planTier,
     canExecute,

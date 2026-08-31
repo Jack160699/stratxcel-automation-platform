@@ -1,5 +1,21 @@
 # Search Growth Engine Gap Audit
 
+## Update 22 — the real Growth ON/OFF control: `search_projects.enabled` already existed and was already the live scheduler gate; nothing let a customer control it
+
+The brief asked for a Growth activation toggle as a critical product requirement. Checked first, per "do not rebuild": found `search_projects.enabled` already exists in the real schema (`default true`) and, corrected from an earlier grep miss this session (my previous search for `\.enabled\b` as a property access didn't match `.eq("enabled", true)`, a string-argument call), **is already the real, live gate the daily scheduler filters on** (`app/api/internal/search/scheduler/route.ts`). Searched exhaustively for any existing write path that ever sets it: none exists anywhere. The read/scheduling side was real and live; the customer-facing write side was the one genuine, real, missing piece — not a second growth-state system to invent.
+
+**Built the one missing write path**: `app/api/platform/search/toggle/route.ts` (`POST { tenantId, enabled }`), permission-gated identically to the existing "Run Search Analysis" route (`mission:create`), updating only an *existing* `search_projects` row -- a tenant with no project yet gets an honest `SEARCH_TOGGLE_NO_PROJECT` error rather than one being silently created as a side effect. Turning growth off does not touch subscription/entitlement/billing state at all -- that stays independently, already-correctly enforced by the scheduler's own separate `subscription.status === "active"` check (verified unchanged).
+
+**Exposed the read side**: `getSearchGrowthDashboardData` now also selects `enabled` from the same, already-fetched `search_projects` row (zero new query) and returns `growthEnabled: boolean | null` — `null` before any project exists (the on/off concept doesn't apply yet), otherwise the real column value, never fabricated.
+
+**Wired a real, theme-consistent control** into the existing `/app/search` page (no redesign, no new visual system) — a `role="switch"` toggle above the existing `SearchGrowthDashboardView`, using the same `sx-*` theme tokens already used throughout this codebase (e.g. `AutopilotModeToggle.tsx`'s existing pattern), optimistically updating and reverting cleanly on a failed request rather than leaving a fabricated on/off state showing.
+
+**New tests**: `detected-website.test.ts` extended with three real fixture-based scenarios (null before any project, true/false correctly reflecting the real column); `api-security.test.ts` (search) extended to require the toggle route gate on a real permission and never insert/upsert a project as a side effect; new `growth-toggle.test.ts` pinning that the scheduler's real `.eq("enabled", true)` gate stays intact, the UI control is actually wired (not orphaned), and a failed toggle reverts the optimistic UI update rather than fabricating success.
+
+**Live-verified, read-only, before deploying**: real tenant's project is `enabled: true` (the correct, unchanged default) — the daily scheduler already includes them; the customer will now see a real, correctly-reflecting toggle rather than no control at all.
+
+**Not attempted this pass, disclosed rather than fabricated**: the broader UI simplification asked for (dedicated simple SEO/AEO/GEO screens, Home dashboard redesign, a full mobile/accessibility pass) was not built wholesale. Building several new customer-facing screens without the ability to visually render or test them (the standing, disclosed authenticated-UI limitation) risks introducing real defects I could not catch, and most of that work is about *presenting* data from a crawl that still cannot be confirmed active in production (`SEARCH_DISCOVERY_CRAWL_ENABLED`, still `MISSING` per Update 21's investigation, unchanged this pass). The one piece that was genuinely missing, well-specified, backend-ready, and safely buildable without visual verification — the Growth toggle — was built, tested, and deployed.
+
 ## Update 21 — the real architectural bug behind Update 20: public analysis was wrongly coupled to unproven website ownership, silently disabling crawl-based analysis for every tenant, always
 
 Update 20 fixed the *symptom* (a fabricated finding when the crawl was skipped). This update fixes the actual cause: **why was the crawl being skipped at all.**

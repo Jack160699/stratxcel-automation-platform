@@ -72,11 +72,38 @@ async function testInvalidConnectedUrlDoesNotCrashOrFabricate() {
   console.log("detected-website.test.ts: unparseable stored Search Console URL -> fails closed to null — PASS");
 }
 
+// --- Update 22: growthEnabled -- the real, already-existing scheduler
+//     eligibility gate (search_projects.enabled), exposed for the first
+//     time to a customer-facing control. -----------------------------
+async function testGrowthEnabledNullWhenNoProject() {
+  const db = fakeDb({ search_projects: null, search_google_connections: null });
+  const result = await getSearchGrowthDashboardData(db, "tenant-1");
+  assert.equal(result.growthEnabled, null, "the on/off concept doesn't apply before a first analysis has ever run -- must be null, never a fabricated true or false");
+  console.log("detected-website.test.ts: growthEnabled null before any project exists — PASS");
+}
+
+async function testGrowthEnabledReflectsRealColumnTrue() {
+  const db = fakeDb({ search_projects: { name: "StratXcel", property_url: "https://www.stratxcel.in", enabled: true } });
+  const result = await getSearchGrowthDashboardData(db, "tenant-1");
+  assert.equal(result.growthEnabled, true, "must reflect the real search_projects.enabled value the scheduler itself filters on");
+  console.log("detected-website.test.ts: growthEnabled true reflects the real enabled column — PASS");
+}
+
+async function testGrowthEnabledReflectsRealColumnFalse() {
+  const db = fakeDb({ search_projects: { name: "StratXcel", property_url: "https://www.stratxcel.in", enabled: false } });
+  const result = await getSearchGrowthDashboardData(db, "tenant-1");
+  assert.equal(result.growthEnabled, false, "a customer-paused project must report false, not silently default back to true");
+  console.log("detected-website.test.ts: growthEnabled false reflects a real customer pause — PASS");
+}
+
 async function run() {
   await testDetectedWhenNoProjectButSearchConsoleConnected();
   await testNullWhenNoConnectionExists();
   await testNullOnceRealProjectExists();
   await testInvalidConnectedUrlDoesNotCrashOrFabricate();
+  await testGrowthEnabledNullWhenNoProject();
+  await testGrowthEnabledReflectsRealColumnTrue();
+  await testGrowthEnabledReflectsRealColumnFalse();
   console.log("detected-website.test.ts: ALL PASS");
 }
 

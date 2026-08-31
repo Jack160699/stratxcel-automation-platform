@@ -31,6 +31,12 @@ export interface SearchGrowthDashboardData {
    * Never a source of truth once hasProject is true; never fabricated
    * when no real connection exists (Update 17). */
   detectedWebsiteUrl: string | null;
+  /** The real, already-existing scheduler eligibility gate
+   * (search_projects.enabled) -- true/false once a project exists, null
+   * when it doesn't yet (the on/off concept doesn't apply before a first
+   * analysis has run). Controls whether the daily continuous-growth cron
+   * includes this tenant (Update 22). */
+  growthEnabled: boolean | null;
   isPaidTenant: boolean;
   planTier: string;
   canExecute: boolean;

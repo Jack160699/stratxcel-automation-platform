@@ -27,6 +27,7 @@ const vercelConnect = read("app", "api", "platform", "search", "vercel", "connec
 const vercelDisconnect = read("app", "api", "platform", "search", "vercel", "disconnect", "route.ts");
 const vercelDiscover = read("app", "api", "platform", "search", "vercel", "discover", "route.ts");
 const websiteStatus = read("app", "api", "platform", "search", "website", "status", "route.ts");
+const toggle = read("app", "api", "platform", "search", "toggle", "route.ts");
 
 // --- every tenant-scoped search route authenticates the caller before touching tenant data ---
 for (const [name, source] of [
@@ -38,6 +39,7 @@ for (const [name, source] of [
   ["vercel/disconnect", vercelDisconnect],
   ["vercel/discover", vercelDiscover],
   ["website/status", websiteStatus],
+  ["toggle", toggle],
 ] as const) {
   assert.match(
     source,
@@ -80,4 +82,15 @@ assert.match(dashboard, /if \(!ctx\.ok\)/, "dashboard route must branch on ctx.o
   assert.match(site, /if \(!ctx\.ok\)/, "website/status route must branch on ctx.ok and refuse the request when it's false");
 }
 
-console.log("api-security.test.ts (search): every tenant-scoped search route authenticates before touching tenant data; dashboard and website/status specifically gate before their service client — PASS");
+// --- Update 22: the new Growth toggle must gate on real permission and
+//     never blindly create a project as a side effect of a toggle call --
+//     turning growth on/off must require an existing project (the
+//     customer's own "Run Search Analysis" is what creates one). ---------
+{
+  const toggleCode = stripComments(toggle);
+  assert.match(toggleCode, /requirePermission\(ctx\.role, "mission:create"\)|can\(ctx\.role, "mission:create"\)/, "toggle route must gate on a real permission, the same one required to start an analysis run");
+  assert.match(toggleCode, /SEARCH_TOGGLE_NO_PROJECT/, "toggling growth for a tenant with no existing search_projects row must fail honestly, never silently create one");
+  assert.doesNotMatch(toggleCode, /\.from\("search_projects"\)\s*\.\s*(insert|upsert)/, "toggle must only ever update an existing project row, never insert/upsert a new one");
+}
+
+console.log("api-security.test.ts (search): every tenant-scoped search route authenticates before touching tenant data; dashboard and website/status specifically gate before their service client; growth toggle requires a real permission and an existing project — PASS");

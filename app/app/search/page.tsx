@@ -46,6 +46,7 @@ export default function SearchPage() {
   const [loading, setLoading] = useState(true);
   const [site, setSite] = useState("");
   const [running, setRunning] = useState(false);
+  const [toggling, setToggling] = useState(false);
 
   const load = useCallback(async () => {
     if (!tenantId) return;
@@ -93,6 +94,31 @@ export default function SearchPage() {
       if (response.ok) await load();
     } finally {
       setRunning(false);
+    }
+  }
+
+  // Update 22 (docs/discovery/SEARCH_GROWTH_ENGINE_GAP_AUDIT.md): the real
+  // scheduler-eligibility flag (search_projects.enabled) already existed
+  // and was already the live gate the daily continuous-growth cron
+  // filters on -- nothing anywhere let a customer actually control it.
+  // This is the one missing write path, not a new growth-state system.
+  async function toggleGrowth(next: boolean) {
+    if (!tenantId || toggling) return;
+    setToggling(true);
+    const previous = data;
+    // Optimistic update -- reverted on failure below.
+    setData((current) => (current ? { ...current, growthEnabled: next } : current));
+    try {
+      const response = await fetch("/api/platform/search/toggle", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tenantId, enabled: next }),
+      });
+      if (!response.ok) setData(previous);
+    } catch {
+      setData(previous);
+    } finally {
+      setToggling(false);
     }
   }
 
@@ -144,7 +170,34 @@ export default function SearchPage() {
           </div>
         </Card>
       ) : (
-        <SearchGrowthDashboardView initialData={data} />
+        <div className="flex flex-col gap-4">
+          <Card className="flex items-center justify-between gap-3 p-4">
+            <div className="min-w-0">
+              <p className="text-[14px] font-semibold text-sx-text">Growth</p>
+              <p className="mt-0.5 text-[13px] text-sx-text-muted">
+                {data.growthEnabled ? "StratXcel continuously analyzes and improves your search visibility." : "Paused — StratXcel will not run scheduled growth cycles until you turn this back on."}
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={data.growthEnabled ?? false}
+              aria-label="Growth"
+              disabled={toggling}
+              onClick={() => toggleGrowth(!data.growthEnabled)}
+              className={`relative h-7 w-12 shrink-0 rounded-full transition-colors disabled:opacity-60 ${
+                data.growthEnabled ? "bg-sx-accent" : "bg-sx-surface-2 border border-sx-border"
+              }`}
+            >
+              <span
+                className={`absolute top-0.5 h-6 w-6 rounded-full bg-white shadow transition-transform ${
+                  data.growthEnabled ? "translate-x-[22px]" : "translate-x-0.5"
+                }`}
+              />
+            </button>
+          </Card>
+          <SearchGrowthDashboardView initialData={data} />
+        </div>
       )}
     </EntitlementGate>
   );
