@@ -1,6 +1,13 @@
 import { createTenantAIRuntime, resolveTenantMonthSpend, resolveTenantPlanTier } from "@stratxcel/ai-runtime";
 import { researchAIExecutorFromRuntime } from "@stratxcel/workforce-core";
-import { runGroundedResearch, type ResearchArtifactPersister } from "@stratxcel/search-discovery";
+import {
+  runGroundedResearch,
+  type ResearchArtifactPersister,
+  mapResearchToTrendCandidates,
+  evaluateTrendRelevance,
+  type TrendSignal,
+  type TrendScoringContext,
+} from "@stratxcel/search-discovery";
 import { createSupabaseServiceClient } from "../supabase/service.ts";
 
 type ServiceClient = ReturnType<typeof createSupabaseServiceClient>;
@@ -52,6 +59,22 @@ export interface LiveMarketIntelligence {
   provider: "google" | "openai" | null;
   reason: string | null;
   gatheredAt: string;
+  /**
+   * Real trend signals derived from the SAME grounded-research call above
+   * -- not a second paid AI call. Root-caused via
+   * docs/discovery/SEARCH_GROWTH_ENGINE_GAP_AUDIT.md: no trend-relevance
+   * classification existed anywhere in this codebase, and this function's
+   * own research question already asks about "current content trends,
+   * formats, and hooks" -- the answer was already being fetched and
+   * discarded except as freeform claim text. Now also mapped through the
+   * real trend relevance engine (USE_NOW/ADAPT/MONITOR/IGNORE), scored
+   * against a conservative default context (this function only has
+   * businessName/industry/location -- services/targetAudience default to
+   * empty rather than guessed, which the relevance engine treats as
+   * neutral, not a fabricated match). Always `[]` when research is
+   * unavailable -- never fabricated.
+   */
+  trendSignals: TrendSignal[];
 }
 
 function noopArtifactPersister(): ResearchArtifactPersister {
@@ -73,6 +96,7 @@ export async function gatherLiveMarketIntelligence(
     provider: null,
     reason,
     gatheredAt,
+    trendSignals: [],
   });
 
   try {
@@ -116,6 +140,18 @@ export async function gatherLiveMarketIntelligence(
       return unavailable(result.humanReason ?? result.reasonCode ?? result.status);
     }
 
+    const scoringContext: TrendScoringContext = {
+      industry: input.industry || "",
+      services: [],
+      brandValues: [],
+      targetAudience: [],
+      availableChannels: ["social"],
+      riskTolerance: "MEDIUM",
+    };
+    const trendSignals = mapResearchToTrendCandidates(result, { platform: "social" }).map((candidate, i) =>
+      evaluateTrendRelevance(candidate, scoringContext, { id: `${input.tenantId}-${gatheredAt}-${i}`, tenantId: input.tenantId }),
+    );
+
     return {
       available: true,
       summary: result.summary,
@@ -124,6 +160,7 @@ export async function gatherLiveMarketIntelligence(
       provider: result.provider,
       reason: null,
       gatheredAt: result.searchedAt,
+      trendSignals,
     };
   } catch (err) {
     return unavailable(err instanceof Error ? err.message.slice(0, 240) : "market_intelligence_failed");

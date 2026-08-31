@@ -34,5 +34,39 @@ export async function listSearchState(db: SearchDb, tenantId: string) {
     snapshots: snapshots.data ?? []
   };
 }
+/**
+ * Persists entity-graph nodes (from authority/entity-graph.ts's
+ * buildEntityCitationGraph) into search_entity_nodes.
+ *
+ * Root-caused via docs/discovery/SEARCH_GROWTH_ENGINE_GAP_AUDIT.md:
+ * search_entity_nodes was applied to production with a real schema
+ * (including consistency_status) but no real code read or wrote it --
+ * buildEntityCitationGraph computed real EntityGraphNode[] values that
+ * were never persisted anywhere. This closes that gap using the exact
+ * unique constraint the migration defined
+ * (tenant_id, project_id, entity_type, canonical_name).
+ */
+export async function persistEntityGraph(db: SearchDb, input: { tenantId: string; projectId: string; nodes: Array<{ entityType: string; canonicalName: string; attributes: unknown; relationships: unknown; consistencyStatus: string; evidence: unknown }> }) {
+  const now = new Date().toISOString();
+  for (const node of input.nodes) {
+    const { error } = await db.from("search_entity_nodes").upsert({ tenant_id: input.tenantId, project_id: input.projectId, entity_type: node.entityType, canonical_name: node.canonicalName, attributes: node.attributes, relationships: node.relationships, consistency_status: node.consistencyStatus, evidence: node.evidence, updated_at: now }, { onConflict: "tenant_id,project_id,entity_type,canonical_name" });
+    if (error) throw new Error(`SEARCH_ENTITY_NODE_SAVE_FAILED: ${error.message}`);
+  }
+}
+
+/**
+ * Persists trend signals (from trends/relevance-engine.ts's
+ * evaluateTrendRelevance) into search_trend_signals. Same additive
+ * pattern as persistEntityGraph -- upserts on the real unique constraint
+ * (tenant_id, topic, source), never a fabricated row.
+ */
+export async function persistTrendSignals(db: SearchDb, input: { tenantId: string; projectId?: string | null; signals: Array<{ platform: string; topic: string; format: string; hookPattern: string | null; visualPattern: string | null; audienceSignal: string | null; reasonForTrend: string; velocity: number | null; source: string; sourceUrl: string | null; observedAt: string; confidence: string; scores: unknown; decision: string; decisionReason: string; adaptationGuidance: string | null }> }) {
+  const now = new Date().toISOString();
+  for (const s of input.signals) {
+    const { error } = await db.from("search_trend_signals").upsert({ tenant_id: input.tenantId, project_id: input.projectId ?? null, platform: s.platform, topic: s.topic, format: s.format, hook_pattern: s.hookPattern, visual_pattern: s.visualPattern, audience_signal: s.audienceSignal, reason_for_trend: s.reasonForTrend, velocity: s.velocity, source: s.source, source_url: s.sourceUrl, observed_at: s.observedAt, confidence: s.confidence, scores: s.scores, decision: s.decision, decision_reason: s.decisionReason, adaptation_guidance: s.adaptationGuidance, updated_at: now }, { onConflict: "tenant_id,topic,source" });
+    if (error) throw new Error(`SEARCH_TREND_SIGNAL_SAVE_FAILED: ${error.message}`);
+  }
+}
+
 export const SEARCH_RETENTION_POLICY = { rawHtmlPersisted: false, terminalRunDays: 400, recommendationAndActionHistory: "preserved", snapshotStrategy: "daily source fingerprints replace duplicates" } as const;
 export async function compactSearchHistory(db: SearchDb, tenantId: string, cutoff = new Date(Date.now() - SEARCH_RETENTION_POLICY.terminalRunDays * 86_400_000).toISOString()) { const { error } = await db.from("search_analysis_runs").delete().eq("tenant_id", tenantId).in("state", ["COMPLETED", "PARTIAL", "FAILED"]).lt("completed_at", cutoff); if (error) throw new Error(`SEARCH_HISTORY_COMPACTION_FAILED: ${error.message}`); }

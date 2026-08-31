@@ -25,3 +25,5 @@ export * from "./release/index.ts";
 export * from "./runtime-proof/index.ts";
 export * from "./cadence/index.ts";
 export * from "./activation/index.ts";
+export * from "./trends/index.ts";
+export * from "./vercel/index.ts";

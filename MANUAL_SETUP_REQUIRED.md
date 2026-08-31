@@ -4,6 +4,8 @@ Every item below genuinely needs owner access, a dashboard login, OTP/consent, K
 
 No secret values are included anywhere in this document — only variable names, dashboard locations, and formats.
 
+**🔴 M14 is high priority and currently affecting real production behavior — see below.**
+
 **Status update (2026-08-03, later the same day):** M10 (migrations) is now done — see that item below. The foundation dashboard has been merged to `main` and deployed to production, and a Phase 1 unified-shell/client-switcher change has since shipped on top of it (see `LIVE_SYSTEM_MAP.md`). WhatsApp, Razorpay, Hermes, Google Drive, and BYOK remain exactly as described below — none of that changed. M11 (worker hosting) is still open.
 
 ---
@@ -147,6 +149,44 @@ No secret values are included anywhere in this document — only variable names,
 - **Verify success:** `scripts/hermes-health`-style checks against the new host's `/health` endpoint from the existing t3.small, over the private link only (a check from the public internet should fail/time out).
 - **Impact if skipped:** `HERMES_MODE` stays `disabled`/`mock` — no functional loss, just no real Hermes execution.
 - **Code readiness:** `apps/mission-worker`/`apps/hermes-gateway` deployment: done (already live). Hermes Agent runtime deployment: no Dockerfile/platform config needed beyond `infrastructure/hermes/docker-compose.yml`, since the target is "run the official `nousresearch/hermes-agent` image" rather than something to build.
+
+---
+
+## New this session (Search Growth Engine build)
+
+### M14 — ✅ DONE (2026-08-31) — Apply 4 missing search-growth database migrations to production
+- **Status:** Applied this session via Supabase MCP `apply_migration`, with explicit owner confirmation before the write. Verified directly against the live database afterward, not assumed: `list_tables` shows all 7 tables (`search_cms_connections`, `search_strategy_states`, `search_ai_visibility_snapshots`, `search_external_sources`, `search_entity_nodes`, `search_action_baselines`, `search_action_experiments`) present with RLS enabled; `get_advisors` (security) shows zero findings against any of them; a direct `select tenant_id from search_strategy_states limit 1` — the exact query `app/api/platform/search/health/route.ts`'s new real check performs — succeeds with no error, confirming the DATABASE health category now genuinely evaluates to `PASS` rather than the disproven hardcoded claim it used to make.
+- **Original text below, kept for history:**
+- **Priority:** 🔴 High — this is not a "nice to have," it's actively causing wrong behavior in production right now.
+- **System:** Supabase (project `uccqlgeghkwzujeeymua`, ref matches every other item in this file)
+- **Why manual:** Verified directly against the real production database (Supabase `list_migrations` + `list_tables`, not inferred) — 4 real, already-written, already-reviewed local migration files were never applied: `supabase/migrations/20260820050000_search_action_execution_and_cms.sql`, `20260820060000_search_growth_loop_and_aeo.sql`, `20260820070000_search_external_authority_and_reputation.sql`, `20260820080000_search_action_outcomes_and_experiments.sql`. All four are additive (`CREATE TABLE IF NOT EXISTS`, no destructive statements) but applying any schema change to the real production database is exactly the class of action this session has consistently held for explicit owner confirmation, same as a production deploy — not something to run unprompted.
+- **Real, confirmed impact while unapplied** (see `docs/discovery/SEARCH_GROWTH_ENGINE_GAP_AUDIT.md`'s Update 6 for full detail — code-level mitigations for both are already shipped this session, but the migrations are the actual fix):
+  1. The real, live, **paid** action-execution route was silently falling back to a hardcoded placeholder site URL and reporting success for real customers — mitigated (now fails closed with an honest error) but customers still can't actually execute paid actions until `search_cms_connections` exists.
+  2. The real, live daily cron has been running the full expensive AI/crawl/SERP growth cycle **every day instead of every 3 days** for every paid tenant, because the "have we run recently" lookup against the missing `search_strategy_states` table silently returns nothing — mitigated (now skips safely on the lookup error instead of defaulting to "always due") but the continuous-growth loop cannot actually persist strategy state or run on its intended cadence until the table exists.
+- **Where:** Supabase Dashboard → project `stratxcel` → SQL Editor, or `supabase db push --linked` from a machine with the Supabase CLI linked to this project.
+- **Steps:**
+  1. Review the 4 migration files (all additive, already reviewed this session).
+  2. Apply them to `uccqlgeghkwzujeeymua` only.
+  3. Verify via `supabase migration list --linked` (all 4 should show as applied on both sides) or by re-running this session's own check: `GET /api/platform/search/health` should report `DATABASE: PASS`, not `FAIL`.
+- **Verify success:** `certifyProductionReadiness()`/`runGoLiveSystemHealthCheck()` (both already fixed this session to check real state) report the tables present; a real paid customer can connect a CMS and execute an action against their real site; the scheduler's per-tenant cadence log shows `NOT_DUE` results between growth cycles instead of `COMPLETED` every day.
+- **Impact if skipped:** Paid action execution stays effectively unusable (fails closed now, rather than silently wrong — but still unusable) and the growth-loop scheduler keeps running at 1-day cadence instead of 3-day, which is a real, ongoing cost/rate concern for every real AI/SERP provider call it makes each day it runs unnecessarily.
+- **Code readiness:** Done — the code-level defensive fixes are shipped and tested this session; applying the migrations is the only remaining step, and it alone is what unlocks the actual features (customers connecting a real CMS, the loop persisting real strategy state).
+
+### M12 — Vercel API/OAuth credentials for the website connector
+- **Priority:** Medium
+- **System:** Vercel dashboard (Account/Team Settings → Tokens, or Integrations for an OAuth app)
+- **Why manual:** Verified directly this session — `.env.local`/`.env.production.local` contain `VERCEL_OIDC_TOKEN` (a build-time deployment-context token) but no `VERCEL_API_TOKEN`/OAuth client credentials. A real "connect → authorize → persist → verify → use" Vercel connector (brief Sections 7-9) cannot reach the real Vercel REST API for project/domain/deployment discovery without one.
+- **Where:** Vercel Dashboard → Settings → Tokens (personal/team access token) — or Integrations Console if building a real OAuth app for multi-customer use.
+- **Steps:**
+  1. Decide: a single scoped access token (fastest path to proving the connector against StratXcel's own real Vercel project) vs. a full OAuth integration (required before any *other* customer can connect their own Vercel account).
+  2. Generate the token/OAuth client, set `VERCEL_API_TOKEN` (or `VERCEL_CLIENT_ID`/`VERCEL_CLIENT_SECRET`) as an env var.
+- **Verify success:** A real call to `GET https://api.vercel.com/v9/projects` with the token returns StratXcel's real project list.
+- **Impact if skipped:** The Vercel connector stays adapter-only (no live discovery/deployment) — website SEO/AEO/GEO actions can still be computed (proven this session against the real production site) but not authorized-deployed through a generic connector; StratXcel's own site can still be fixed directly via this repo + existing deploy pipeline.
+- **Code readiness:** Not yet built — real, non-fabricated actions are computed (`lib/growth/search-growth-director.ts`); the connector adapter itself is next.
+
+### M13 — ~~Google Search Console + Google Business Profile API OAuth credentials~~ RETRACTED — already real and configured in production
+- **Correction (same session):** This item was written after checking only `.env.local` (the dev env file). Re-checked against `.env.production.local` and it's wrong: `GOOGLE_SEARCH_OAUTH_CLIENT_ID`/`_SECRET`, `SEARCH_GOOGLE_OAUTH_STATE_SECRET`, `GOOGLE_BUSINESS_CLIENT_ID`/`_SECRET`, and `SEARCH_DISCOVERY_SCHEDULER_ENABLED`/`_SECRET` are all **already set in production**. There is a real, wired, tested Search Console + GA4 OAuth flow live at `app/api/platform/search/google/{connect,callback,disconnect,config,resources}/route.ts`, backed by a 12,000+-line real package (`packages/search-discovery`, exported via `@stratxcel/search-discovery`) — see `docs/discovery/SEARCH_GROWTH_ENGINE_GAP_AUDIT.md`'s correction section for what that package actually contains. Leaving this struck through rather than deleted, per this file's own convention of not hiding a wrong claim once made.
+- **Genuinely still true:** these production credentials are not mirrored into `.env.local`, so a real OAuth round-trip cannot be exercised from local dev without copying them (a `vercel env pull` or manual copy) — that's a real, minor, low-priority dev-environment gap, not a missing-credential blocker.
 
 ---
 

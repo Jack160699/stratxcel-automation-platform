@@ -153,6 +153,49 @@ test("11. Entity graph consistency", () => {
   assert.equal(brand?.relationships.length, 3); // 2 services + 1 location
 });
 
+test("11b. Entity graph NAP consistency: genuine data comparison, not presence-only (see docs/discovery/SEARCH_GROWTH_ENGINE_GAP_AUDIT.md)", () => {
+  const base = {
+    businessName: "Apollo Clinic",
+    domain: "clinic.in",
+    services: ["Dental"],
+    locations: ["Raipur"],
+    hasGbp: true,
+    hasSchema: true,
+    externalSourcesCount: 5,
+  };
+
+  // Fully consistent: same real phone (formatting-only difference) + address match exactly.
+  const consistent = buildEntityCitationGraph({
+    ...base,
+    nap: { websitePhone: "98765 43210", gbpPhone: "9876543210", websiteAddress: "12 MG Road, Raipur", gbpAddress: "12 MG Road, Raipur" },
+  });
+  assert.equal(consistent.find((n) => n.entityType === "LOCATION")?.consistencyStatus, "CONSISTENT");
+
+  // Phone mismatch: a real, different number.
+  const phoneMismatch = buildEntityCitationGraph({
+    ...base,
+    nap: { websitePhone: "9876543210", gbpPhone: "9111111111", websiteAddress: "12 MG Road, Raipur", gbpAddress: "12 MG Road, Raipur" },
+  });
+  const phoneLoc = phoneMismatch.find((n) => n.entityType === "LOCATION")!;
+  assert.equal(phoneLoc.consistencyStatus, "INCONSISTENT");
+  assert.ok(phoneLoc.evidence.some((e) => e.includes("Phone mismatch")));
+  assert.equal(phoneLoc.attributes.phoneConsistent, false);
+
+  // Address mismatch: a real, different address.
+  const addressMismatch = buildEntityCitationGraph({
+    ...base,
+    nap: { websitePhone: "9876543210", gbpPhone: "9876543210", websiteAddress: "12 MG Road, Raipur", gbpAddress: "45 Civil Lines, Raipur" },
+  });
+  const addrLoc = addressMismatch.find((n) => n.entityType === "LOCATION")!;
+  assert.equal(addrLoc.consistencyStatus, "INCONSISTENT");
+  assert.ok(addrLoc.evidence.some((e) => e.includes("Address mismatch")));
+
+  // Missing comparable data (no GBP data supplied): falls back to the
+  // original presence-only behavior, never fabricates a mismatch it can't evidence.
+  const noNapData = buildEntityCitationGraph(base);
+  assert.equal(noNapData.find((n) => n.entityType === "LOCATION")?.consistencyStatus, "CONSISTENT"); // hasGbp: true, no comparable data supplied
+});
+
 test("13. No fake publication status & 15. Free execution blocked", () => {
   const sources: ExternalSourceProfile[] = [
     {

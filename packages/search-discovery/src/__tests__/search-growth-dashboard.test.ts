@@ -13,6 +13,7 @@ function createMockDashboardDb(config?: {
   competitors?: any[];
   actions?: any[];
   strategyState?: any;
+  hasProject?: boolean;
 }) {
   let queriedTenantId: string | null = null;
 
@@ -28,6 +29,7 @@ function createMockDashboardDb(config?: {
       single: async () => ({ data: null, error: null }),
       maybeSingle: async () => {
         if (table === "search_projects") {
+          if (config?.hasProject === false) return { data: null, error: null };
           return {
             data: { id: "p1", tenant_id: state.tenant_id || "t1", name: "Apollo Clinic", property_url: "https://clinic.in" },
             error: null,
@@ -149,6 +151,19 @@ test("3. Dashboard data completeness & 4. Missing providers & 5. Live vs adapter
   const serpConnector = data.connectorHealth.find((c) => c.providerKey === "live_serp_measurement");
   assert.ok(serpConnector);
   assert.ok(["CONNECTED", "ADAPTER_READY"].includes(serpConnector?.status || ""));
+  assert.equal(data.hasProject, true, "a tenant with a real search_projects row must report hasProject: true");
+});
+
+test("3b. hasProject is genuinely false, and projectName/propertyUrl stay honestly labeled placeholders, for a tenant with no real project yet (see docs/discovery/SEARCH_GROWTH_ENGINE_GAP_AUDIT.md)", async () => {
+  const db = createMockDashboardDb({ isPaid: false, hasProject: false });
+  const data = await getSearchGrowthDashboardData(db as any, "tenant-new");
+  assert.equal(data.hasProject, false);
+  // The placeholder values themselves are allowed to still exist for
+  // backward compatibility, but any real caller MUST gate on hasProject
+  // before treating them as real -- this pins that the flag actually
+  // reflects "no row found", not a fabricated true.
+  assert.equal(data.projectName, "Local Business");
+  assert.equal(data.propertyUrl, "https://example.com");
 });
 
 test("6. Free user locked actions", async () => {

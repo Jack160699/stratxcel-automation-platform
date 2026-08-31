@@ -12,9 +12,29 @@ function checkEnvVar(name: string): ProviderCredentialState {
  * Checks environment status safely WITHOUT exposing any raw secret values.
  */
 export function buildProviderCapabilityMatrix(): ProviderCapabilityRecord[] {
+  // Root-caused live: this previously checked GOOGLE_SEARCH_CONSOLE_CLIENT_ID/
+  // _SECRET, which nothing in the codebase actually sets or reads --
+  // packages/search-discovery/src/google/oauth.ts (the real OAuth flow
+  // behind app/api/platform/search/google/connect) reads
+  // GOOGLE_SEARCH_OAUTH_CLIENT_ID/_SECRET, confirmed both by that file and
+  // by google-oauth.test.ts. With the old name, this matrix always reported
+  // Search Console/GA4 as ADAPTER_READY even when the real credentials were
+  // set in production -- a false negative in a report whose whole purpose
+  // is "eliminate false binary claims". Fixed to check the name the real
+  // OAuth code actually reads.
   const googleOauthState: ProviderCredentialState =
-    checkEnvVar("GOOGLE_SEARCH_CONSOLE_CLIENT_ID") === "SET" &&
-    checkEnvVar("GOOGLE_SEARCH_CONSOLE_CLIENT_SECRET") === "SET"
+    checkEnvVar("GOOGLE_SEARCH_OAUTH_CLIENT_ID") === "SET" &&
+    checkEnvVar("GOOGLE_SEARCH_OAUTH_CLIENT_SECRET") === "SET"
+      ? "SET"
+      : "MISSING";
+
+  // GBP has its own real, dedicated credential (see
+  // lib/social/providers/google-business.ts's getClientId/getClientSecret,
+  // which check GOOGLE_BUSINESS_CLIENT_ID/_SECRET first) -- distinct from
+  // the Search/GA4 OAuth client, not a fallback alias of it.
+  const googleBusinessOauthState: ProviderCredentialState =
+    checkEnvVar("GOOGLE_BUSINESS_CLIENT_ID") === "SET" &&
+    checkEnvVar("GOOGLE_BUSINESS_CLIENT_SECRET") === "SET"
       ? "SET"
       : "MISSING";
 
@@ -68,14 +88,14 @@ export function buildProviderCapabilityMatrix(): ProviderCapabilityRecord[] {
       displayName: "Google Business Profile / Maps",
       category: "social_local",
       adapterExists: true,
-      credentialState: googleOauthState,
+      credentialState: googleBusinessOauthState,
       readAvailable: true,
       writeAvailable: true,
       tenantScoped: true,
       productionVerified: true,
       manualSetupRequired: "Connect Google Account with Business Profile Manager permissions.",
       externalApprovalRequired: "Google My Business API access approval.",
-      status: googleOauthState === "SET" ? "CONFIGURED_NOT_VERIFIED" : "ADAPTER_READY",
+      status: googleBusinessOauthState === "SET" ? "CONFIGURED_NOT_VERIFIED" : "ADAPTER_READY",
       notes: "Local search presence, NAP consistency, categories, and review engagement.",
     },
 

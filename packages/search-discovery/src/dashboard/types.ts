@@ -21,6 +21,8 @@ export interface DashboardScorecardMetric {
 
 export interface SearchGrowthDashboardData {
   tenantId: string;
+  /** False when this tenant has no real search_projects row yet -- projectName/propertyUrl are honest placeholders in that case, never real data. See docs/discovery/SEARCH_GROWTH_ENGINE_GAP_AUDIT.md. */
+  hasProject: boolean;
   projectName: string;
   propertyUrl: string;
   isPaidTenant: boolean;

@@ -54,18 +54,48 @@ export async function POST(request: Request) {
   }
 
   // 3. Resolve Connected CMS Provider
-  const { data: cmsConn } = await supabase
+  //
+  // Root-caused live via docs/discovery/SEARCH_GROWTH_ENGINE_GAP_AUDIT.md:
+  // search_cms_connections does not exist in the real production database
+  // (its migration, 20260820050000_search_action_execution_and_cms.sql,
+  // was never applied -- confirmed directly against the live schema, not
+  // assumed). This query's error was previously discarded (`const { data:
+  // cmsConn }`), so the real query failure silently looked identical to
+  // "tenant has no CMS connection configured", and the code fell through
+  // to a HARDCODED PLACEHOLDER property URL
+  // ("https://client-site.stratxcel.in") and executed the mutation
+  // against it anyway -- a real, live, PAID action route silently
+  // targeting a fake site while reporting success. Fixed to fail closed
+  // on a real query error, and to fail closed (not fall back to a
+  // fabricated URL) when a tenant genuinely has no CMS connection row
+  // either -- both cases now return an honest error instead of a false
+  // success.
+  const { data: cmsConn, error: cmsConnError } = await supabase
     .from("search_cms_connections")
     .select("*")
     .eq("tenant_id", body.tenantId)
     .maybeSingle();
 
-  const cmsProvider = cmsConn?.cms_type === "wordpress"
+  if (cmsConnError) {
+    return Response.json(
+      { error: "SEARCH_CMS_LOOKUP_FAILED", message: "Could not look up this workspace's connected CMS. No action was executed." },
+      { status: 500 },
+    );
+  }
+
+  if (!cmsConn) {
+    return Response.json(
+      { error: "SEARCH_CMS_NOT_CONNECTED", message: "No website/CMS is connected for this workspace yet. Connect one before executing actions." },
+      { status: 409 },
+    );
+  }
+
+  const cmsProvider = cmsConn.cms_type === "wordpress"
     ? createFixtureWordPressProvider({ siteUrl: cmsConn.site_url, writeEnabled: cmsConn.write_enabled })
     : createStratxcelNativeCMSProvider({
         siteProjectId: "native_site",
         tenantId: body.tenantId,
-        propertyUrl: cmsConn?.site_url || "https://client-site.stratxcel.in",
+        propertyUrl: cmsConn.site_url,
       });
 
   // 4. Execute Action

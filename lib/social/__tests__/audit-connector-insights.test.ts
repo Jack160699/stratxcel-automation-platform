@@ -119,10 +119,30 @@ async function noRowsMeansNotConnectedForAllPlatforms() {
   console.log("✓ Test 3: a tenant with no connected accounts gets an honest not_connected state everywhere");
 }
 
+// Test 4: a CONNECTED/HEALTHY Google Business row whose provider_account_id
+// is still the OAuth-time fallback bare id (found live against the real
+// StratXcel tenant — docs/discovery/SEARCH_GROWTH_ENGINE_GAP_AUDIT.md,
+// Update 10) must report an honest, actionable permission_required state
+// and must never attempt the doomed network read against an invalid
+// resource path.
+async function unresolvedGbpLocationNeverAttemptsRead() {
+  const accounts: FakeAccountRow[] = [
+    { id: "acc-gbp-unresolved", tenant_id: "tenant-d", platform: "google_business", provider_account_id: "118157607743139723110", username: null, display_name: null, status: "CONNECTED", updated_at: "2026-08-23T10:24:53.000Z", created_at: "2026-08-23T10:24:53.000Z" },
+  ];
+  const { service } = makeFakeService(accounts);
+  const provider = createSocialAuditConnectorInsightsProvider(service);
+  const result = await provider.gather("tenant-d");
+  assert.equal(result.googleBusiness.state, "permission_required", "an unresolved GBP location must not be reported as available or as a generic provider_error");
+  assert.equal(result.googleBusiness.data, null);
+  assert.match(result.googleBusiness.reason ?? "", /reconnect/i, "the reason must be actionable, not a generic failure message");
+  console.log("✓ Test 4: a CONNECTED row with an unresolved GBP location id gets an honest, actionable state without attempting a doomed network read");
+}
+
 (async () => {
   await tenantIsolation();
   await disconnectedNeverAttemptsRead();
   await noRowsMeansNotConnectedForAllPlatforms();
+  await unresolvedGbpLocationNeverAttemptsRead();
   console.log("\n=================================================================");
   console.log("ALL SOCIAL AUDIT CONNECTOR INSIGHTS TESTS PASSED SUCCESSFULLY!");
   console.log("=================================================================");

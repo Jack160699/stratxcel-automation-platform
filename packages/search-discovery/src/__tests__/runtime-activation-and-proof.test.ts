@@ -13,28 +13,73 @@ test("1. Vercel deployment detection & 2. Cron registration detection & 3. Cron 
   const proof = evaluateRuntimeActivationProof();
   assert.equal(proof.deploymentDetails.productionDomain, "https://www.stratxcel.in");
   assert.equal(proof.cronRegistration.searchScheduler.status, "REGISTERED_IN_VERCEL_JSON");
-  assert.equal(proof.cronRegistration.searchScheduler.schedule, "0 */4 * * *");
+  // '0 9 * * *' (daily), not '0 */4 * * *' -- the Vercel Hobby plan caps
+  // every cron to once/day (commit ae11163). See
+  // docs/discovery/SEARCH_GROWTH_ENGINE_GAP_AUDIT.md.
+  assert.equal(proof.cronRegistration.searchScheduler.schedule, "0 9 * * *");
   assert.equal(proof.cronRegistration.searchScheduler.runtimeStatus, "CONFIGURED_PENDING_EXTERNAL_INVOCATION");
 });
 
 test("4. Scheduler auth & 5. Scheduler last-run evidence & 6. Worker runtime evidence", () => {
-  const proof = evaluateRuntimeActivationProof();
-  assert.equal(proof.schedulerSecret.isConfigured, true);
-  assert.equal(proof.schedulerSecret.authVerificationPassed, true);
-  assert.equal(proof.cronRegistration.auditWorker.status, "REGISTERED_IN_VERCEL_JSON");
+  const original = process.env.SEARCH_DISCOVERY_SCHEDULER_SECRET;
+  process.env.SEARCH_DISCOVERY_SCHEDULER_SECRET = "test-scheduler-secret";
+  try {
+    const proof = evaluateRuntimeActivationProof();
+    assert.equal(proof.schedulerSecret.isConfigured, true);
+    assert.equal(proof.schedulerSecret.authVerificationPassed, true);
+    assert.equal(proof.cronRegistration.auditWorker.status, "REGISTERED_IN_VERCEL_JSON");
+  } finally {
+    if (original === undefined) delete process.env.SEARCH_DISCOVERY_SCHEDULER_SECRET;
+    else process.env.SEARCH_DISCOVERY_SCHEDULER_SECRET = original;
+  }
+});
+
+test("4b. Scheduler auth reports honestly unconfigured, not a fabricated true, when the secret is missing", () => {
+  const original = process.env.SEARCH_DISCOVERY_SCHEDULER_SECRET;
+  delete process.env.SEARCH_DISCOVERY_SCHEDULER_SECRET;
+  try {
+    const proof = evaluateRuntimeActivationProof();
+    assert.equal(proof.schedulerSecret.isConfigured, false);
+    assert.equal(proof.schedulerSecret.authVerificationPassed, false);
+  } finally {
+    if (original !== undefined) process.env.SEARCH_DISCOVERY_SCHEDULER_SECRET = original;
+  }
 });
 
 test("7. Provider runtime verification & 8. GSC live-data mapping & 9. GA4 live-data mapping", () => {
-  const proof = evaluateRuntimeActivationProof();
-  const gsc = proof.providers.find((p) => p.providerId === "google_search_console");
-  assert.ok(gsc);
-  assert.equal(gsc?.status, "PRODUCTION_VERIFIED");
-  assert.equal(gsc?.readVerified, true);
-  assert.equal(gsc?.writeVerified, false); // Read only
+  const original = process.env.GOOGLE_SEARCH_OAUTH_CLIENT_ID;
+  process.env.GOOGLE_SEARCH_OAUTH_CLIENT_ID = "test-client-id";
+  try {
+    const proof = evaluateRuntimeActivationProof();
+    const gsc = proof.providers.find((p) => p.providerId === "google_search_console");
+    assert.ok(gsc);
+    assert.equal(gsc?.status, "PRODUCTION_VERIFIED");
+    assert.equal(gsc?.readVerified, true);
+    assert.equal(gsc?.writeVerified, false); // Read only
 
-  const ga4 = proof.providers.find((p) => p.providerId === "google_analytics_4");
-  assert.ok(ga4);
-  assert.equal(ga4?.status, "PRODUCTION_VERIFIED");
+    const ga4 = proof.providers.find((p) => p.providerId === "google_analytics_4");
+    assert.ok(ga4);
+    assert.equal(ga4?.status, "PRODUCTION_VERIFIED");
+  } finally {
+    if (original === undefined) delete process.env.GOOGLE_SEARCH_OAUTH_CLIENT_ID;
+    else process.env.GOOGLE_SEARCH_OAUTH_CLIENT_ID = original;
+  }
+});
+
+test("7b. GSC/GA4 provider telemetry genuinely reports ADAPTER_READY, not a fabricated PRODUCTION_VERIFIED, when the real credential is absent (found via a real acceptance-test run against production env -- see docs/discovery/SEARCH_GROWTH_ENGINE_GAP_AUDIT.md)", () => {
+  const original = process.env.GOOGLE_SEARCH_OAUTH_CLIENT_ID;
+  delete process.env.GOOGLE_SEARCH_OAUTH_CLIENT_ID;
+  try {
+    const proof = evaluateRuntimeActivationProof();
+    const gsc = proof.providers.find((p) => p.providerId === "google_search_console");
+    assert.equal(gsc?.status, "ADAPTER_READY");
+    assert.equal(gsc?.authenticated, false);
+    assert.equal(gsc?.readVerified, false);
+    const ga4 = proof.providers.find((p) => p.providerId === "google_analytics_4");
+    assert.equal(ga4?.status, "ADAPTER_READY");
+  } finally {
+    if (original !== undefined) process.env.GOOGLE_SEARCH_OAUTH_CLIENT_ID = original;
+  }
 });
 
 test("10. SERP live-data mapping & 11. AI live-data mapping & 14. Missing optional provider handling", () => {

@@ -20,6 +20,33 @@ const GOOGLE_AUTH_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
 const GOOGLE_USERINFO_ENDPOINT = "https://www.googleapis.com/oauth2/v2/userinfo";
 
+/**
+ * Classifies whether a stored `provider_account_id` for a Google Business
+ * connection is a real, resolved location resource name
+ * ("accounts/{id}/locations/{id}", the only shape the Business Information
+ * and Local Posts APIs accept) or the OAuth-time fallback this file's own
+ * exchangeCodeForToken() stores when GBP account/location discovery finds
+ * nothing accessible for that identity (the bare Google account
+ * id/`profileData.id`, or a bare account resource name with no location
+ * segment).
+ *
+ * Found live against the real StratXcel tenant
+ * (docs/discovery/SEARCH_GROWTH_ENGINE_GAP_AUDIT.md, Update 10): its stored
+ * google_business provider_account_id is a bare 21-digit id with no
+ * "accounts/" prefix — exactly this fallback shape — while status/
+ * token_health still read CONNECTED/HEALTHY (OAuth genuinely succeeded;
+ * only account/location discovery didn't). Every live read or write built
+ * against provider_account_id assuming it is always a resolved resource
+ * name (e.g. audit-connector-insights.ts's gatherGoogleBusiness, and
+ * publish() above) would silently call an invalid resource path for a
+ * connection in this state and surface a generic, unexplained error. This
+ * function makes the distinction checkable and testable instead of
+ * silently indistinguishable from a healthy connection.
+ */
+export function isResolvedGbpLocationResourceName(id: string): boolean {
+  return /^accounts\/[^/]+\/locations\/[^/]+$/.test(id);
+}
+
 function getClientId(): string {
   const id =
     process.env.GOOGLE_BUSINESS_CLIENT_ID ||
@@ -268,3 +295,90 @@ export const googleBusinessProvider: SocialProvider = {
   // downside with no real caller to serve. Omitting the optional method
   // entirely is the honest state: "not available", not a fake zero.
 };
+
+export interface GoogleBusinessRawReview {
+  reviewId: string; // the resource name, e.g. accounts/1/locations/2/reviews/3
+  reviewerName: string;
+  starRating: number; // 1-5
+  comment: string;
+  createTime: string;
+  hasExistingReply: boolean;
+}
+
+/**
+ * Real, live Reviews.list call — same v4 Business API family this file's
+ * own publish() already uses for Local Posts (Google never split reviews
+ * out to a newer API the way it did Business Information/Account
+ * Management). GET only; makes no mutation. `locationName` must already be
+ * a resolved "accounts/{id}/locations/{id}" resource — call
+ * isResolvedGbpLocationResourceName() before this, same guard
+ * audit-connector-insights.ts's gatherGoogleBusiness already applies.
+ */
+export async function listLocationReviews(accessToken: string, locationName: string): Promise<GoogleBusinessRawReview[]> {
+  const reviews: GoogleBusinessRawReview[] = [];
+  let pageToken: string | undefined;
+  do {
+    const url = new URL(`https://mybusiness.googleapis.com/v4/${locationName}/reviews`);
+    if (pageToken) url.searchParams.set("pageToken", pageToken);
+    const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${accessToken}` } });
+    if (!res.ok) {
+      let detail = "";
+      try {
+        detail = await res.text();
+      } catch {
+        // ignore
+      }
+      throw new Error(`Google Business reviews list failed (${res.status}): ${detail || "no error body"}`);
+    }
+    const body = (await res.json()) as {
+      reviews?: Array<{
+        reviewId?: string;
+        name?: string;
+        reviewer?: { displayName?: string };
+        starRating?: string; // Google returns an enum string: ONE..FIVE
+        comment?: string;
+        createTime?: string;
+        reviewReply?: { comment?: string };
+      }>;
+      nextPageToken?: string;
+    };
+    const STAR_MAP: Record<string, number> = { ONE: 1, TWO: 2, THREE: 3, FOUR: 4, FIVE: 5 };
+    for (const r of body.reviews ?? []) {
+      if (!r.name) continue; // no resource name means no usable reply target — skip rather than fabricate one
+      reviews.push({
+        reviewId: r.name,
+        reviewerName: r.reviewer?.displayName || "Customer",
+        starRating: r.starRating ? (STAR_MAP[r.starRating] ?? 0) : 0,
+        comment: r.comment || "",
+        createTime: r.createTime || "",
+        hasExistingReply: Boolean(r.reviewReply?.comment),
+      });
+    }
+    pageToken = body.nextPageToken;
+  } while (pageToken);
+  return reviews;
+}
+
+/**
+ * Real, live Reviews.updateReply call. Throws a real, honest error on any
+ * non-ok response — never fabricates a successful reply the way publish()
+ * used to before it was fixed (see google-business-publish-honesty.test.ts).
+ * `reviewName` is the resource name returned by listLocationReviews above,
+ * e.g. "accounts/1/locations/2/reviews/3".
+ */
+export async function replyToLocationReview(accessToken: string, reviewName: string, comment: string): Promise<void> {
+  const res = await fetch(`https://mybusiness.googleapis.com/v4/${reviewName}/reply`, {
+    method: "PUT",
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ comment }),
+  });
+  if (!res.ok) {
+    let detail = "";
+    try {
+      detail = await res.text();
+    } catch {
+      // ignore
+    }
+    throw new Error(`Google Business review reply failed (${res.status}): ${detail || "no error body"}`);
+  }
+}

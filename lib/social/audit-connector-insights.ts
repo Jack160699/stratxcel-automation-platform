@@ -9,7 +9,7 @@ import { createSupabaseServiceClient } from "../supabase/service.ts";
 import { getDecryptedTokenState, saveRefreshedAccessToken } from "./repositories/accounts.ts";
 import { facebookProvider } from "./providers/facebook.ts";
 import { instagramProvider } from "./providers/instagram.ts";
-import { googleBusinessProvider } from "./providers/google-business.ts";
+import { googleBusinessProvider, isResolvedGbpLocationResourceName } from "./providers/google-business.ts";
 
 type ServiceClient = ReturnType<typeof createSupabaseServiceClient>;
 
@@ -53,7 +53,11 @@ interface AccountRow {
  * result through the existing saveRefreshedAccessToken path, then retries once.
  * Never returns a token for any account other than the one explicitly passed in.
  */
-async function resolveAccessToken(
+// Exported for reuse by app/api/internal/search/scheduler/route.ts's
+// review-bot cycle, which needs the identical "try the stored token, refresh
+// once on a real 401, never fabricate a usable token" resolution this file
+// already implements — kept as one real implementation, not duplicated.
+export async function resolveAccessToken(
   service: ServiceClient,
   accountId: string,
 ): Promise<{ accessToken: string; refreshToken: string | null } | null> {
@@ -75,7 +79,8 @@ async function resolveAccessToken(
   }
 }
 
-async function refreshToken(
+// Exported for the same reason as resolveAccessToken above.
+export async function refreshToken(
   service: ServiceClient,
   accountId: string,
   refreshTokenValue: string,
@@ -217,6 +222,22 @@ async function gatherGoogleBusiness(
   service: ServiceClient,
   account: AccountRow,
 ): Promise<ConnectorSection<GoogleBusinessInsight>> {
+  // Found live against the real StratXcel tenant (see
+  // isResolvedGbpLocationResourceName's own header comment and
+  // docs/discovery/SEARCH_GROWTH_ENGINE_GAP_AUDIT.md, Update 10): a
+  // CONNECTED/HEALTHY row's provider_account_id can still be the OAuth-time
+  // fallback bare id when GBP account/location discovery never resolved a
+  // real location. Calling the location-read endpoint with that id below
+  // was previously indistinguishable from a real transient failure — a
+  // generic provider_error/permission_required with no actionable reason.
+  // Checked before spending a token lookup or a doomed network call.
+  if (!isResolvedGbpLocationResourceName(account.provider_account_id)) {
+    return unavailable(
+      "permission_required",
+      "Google Business account/location was never resolved during connection (no accessible Business Profile found for this Google identity, or discovery failed) — reconnect Google Business to complete setup.",
+    );
+  }
+
   const tokens = await resolveAccessToken(service, account.id);
   if (!tokens) return unavailable("provider_error", "Could not read the stored Google Business token.");
   const retrievedAt = new Date().toISOString();

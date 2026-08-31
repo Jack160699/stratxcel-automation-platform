@@ -6,6 +6,8 @@
  *  C. Verification Center: Step-by-step verification experience, honest status tracking, and automation enablement upon verification.
  */
 
+import type { GoogleBusinessRawReview } from "../social/providers/google-business.ts";
+
 export type GoogleVerificationStatus =
   | "PENDING"
   | "USER_ACTION_REQUIRED"
@@ -184,8 +186,30 @@ export function auditGoogleBusinessProfile(location: GoogleBusinessLocationDetai
   };
 }
 
+// Sensitive-topic escalation vocabulary (brief-aligned: legal, medical,
+// safety, privacy, refund dispute, threat) -- deliberately keyword-based
+// and conservative (a false-positive escalation just means a human looks at
+// one more review; a false negative means an unsafe topic gets an
+// auto-published templated reply, which is the worse failure mode). Grouped
+// by category so a future caller can see *why* something escalated, not
+// just that it did.
+const ESCALATION_VOCABULARY: Record<string, string[]> = {
+  legal: ["lawsuit", "lawyer", "attorney", "sue", "legal action", "police", "fraud", "scam"],
+  medical: ["allergic", "allergy", "hospital", "poisoning", "food poisoning", "injury", "injured", "ambulance"],
+  safety: ["unsafe", "danger", "dangerous", "assault", "harassment", "discrimination"],
+  privacy: ["data breach", "privacy", "leaked my", "personal information"],
+  refund_dispute: ["refund", "chargeback", "never received", "overcharged", "billing dispute"],
+  threat: ["threat", "threatened", "kill", "violence"],
+};
+
 /**
- * Analyzes a review and drafts an AI response with sentiment and escalation classification.
+ * Analyzes a review and drafts a templated response with sentiment and
+ * escalation classification. Deliberately templated, not LLM-generated:
+ * the brief's own rule for negative reviews ("avoid invented explanation")
+ * is safest satisfied by never inventing anything in the first place --
+ * every draft below states only what the review's own rating/text already
+ * established, plus the real supplied business name. Never fabricates a
+ * cause, a resolution already taken, or a fact about the business.
  */
 export function processCustomerReview(
   businessName: string,
@@ -193,6 +217,7 @@ export function processCustomerReview(
 ): {
   sentiment: "POSITIVE" | "NEUTRAL" | "NEGATIVE";
   requiresEscalation: boolean;
+  escalationReasons: string[];
   draftResponse: string;
 } {
   const isNegative = review.starRating <= 2;
@@ -203,25 +228,79 @@ export function processCustomerReview(
   if (isNegative) sentiment = "NEGATIVE";
   else if (isNeutral) sentiment = "NEUTRAL";
 
-  // Critical escalation check (mentions of legal, fraud, food poisoning, discrimination)
   const lower = review.comment.toLowerCase();
-  const hasCriticalFlag = ["scam", "fraud", "police", "legal", "poisoning", "danger", "worst", "cheat"].some((w) => lower.includes(w));
-  const requiresEscalation = isNegative && hasCriticalFlag;
+  const escalationReasons = Object.entries(ESCALATION_VOCABULARY)
+    .filter(([, words]) => words.some((w) => lower.includes(w)))
+    .map(([category]) => category);
+  // A sensitive-topic mention on an otherwise-positive review (e.g. "no
+  // allergy issues, staff were great") is not what this exists to catch --
+  // escalation is reserved for reviews that are already negative/neutral
+  // AND raise one of these categories, matching the brief's own framing
+  // ("negative/sensitive review -> escalate", not "any mention -> escalate").
+  const requiresEscalation = !isPositive && escalationReasons.length > 0;
 
   let draftResponse = "";
   if (isPositive) {
-    draftResponse = `Thank you so much for the 5-star review, ${review.reviewerName}! We are thrilled to hear you had a great experience with ${businessName}. We look forward to serving you again soon!`;
+    draftResponse = `Thank you so much for the review, ${review.reviewerName}! We are thrilled to hear you had a great experience with ${businessName}. We look forward to serving you again soon!`;
   } else if (isNeutral) {
     draftResponse = `Hello ${review.reviewerName}, thank you for your feedback. We are always striving to improve and would love to hear how we can make your next experience at ${businessName} a 5-star one.`;
   } else {
-    draftResponse = `Hello ${review.reviewerName}, we sincerely apologize that your experience did not meet expectations. At ${businessName}, customer satisfaction is our top priority. Please reach out to our team directly so we can resolve this for you immediately.`;
+    draftResponse = `Hello ${review.reviewerName}, we sincerely apologize that your experience did not meet expectations. At ${businessName}, customer satisfaction is our top priority. Please reach out to our team directly so we can resolve this for you.`;
   }
 
   return {
     sentiment,
     requiresEscalation,
+    escalationReasons,
     draftResponse,
   };
+}
+
+export interface ReviewResponsePlanItem {
+  reviewId: string;
+  reviewerName: string;
+  starRating: number;
+  comment: string;
+  sentiment: "POSITIVE" | "NEUTRAL" | "NEGATIVE";
+  escalationReasons: string[];
+  action: "AUTO_REPLY" | "ESCALATE" | "SKIP_ALREADY_REPLIED";
+  draftResponse: string | null;
+}
+
+/**
+ * Pure decision layer over real, already-fetched reviews (never fetches or
+ * publishes anything itself — matches this codebase's established pattern
+ * of separating decision from execution, e.g. execution/policy.ts in
+ * packages/search-discovery). A review that already has a reply is never
+ * re-classified into an action (no double-reply risk, and the brief's own
+ * "no duplicate publication" rule applies here too), but its sentiment is
+ * still computed — a real, safe input for the brief's Section 22 (review
+ * language → SEO/AEO/GEO signal) that a caller can use without this
+ * function ever mutating anything.
+ */
+export function planReviewResponses(businessName: string, reviews: readonly GoogleBusinessRawReview[]): ReviewResponsePlanItem[] {
+  return reviews.map((r) => {
+    const outcome = processCustomerReview(businessName, {
+      reviewerName: r.reviewerName,
+      starRating: r.starRating,
+      comment: r.comment,
+    });
+    const action: ReviewResponsePlanItem["action"] = r.hasExistingReply
+      ? "SKIP_ALREADY_REPLIED"
+      : outcome.requiresEscalation
+      ? "ESCALATE"
+      : "AUTO_REPLY";
+    return {
+      reviewId: r.reviewId,
+      reviewerName: r.reviewerName,
+      starRating: r.starRating,
+      comment: r.comment,
+      sentiment: outcome.sentiment,
+      escalationReasons: outcome.escalationReasons,
+      action,
+      draftResponse: action === "AUTO_REPLY" ? outcome.draftResponse : null,
+    };
+  });
 }
 
 /**

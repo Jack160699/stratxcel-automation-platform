@@ -1,0 +1,266 @@
+// Run with: node --experimental-strip-types packages/search-discovery/src/__tests__/vercel-connector.test.ts
+//
+// Root-caused via docs/discovery/SEARCH_GROWTH_ENGINE_GAP_AUDIT.md: no
+// website deployment connector existed anywhere in this codebase. Every
+// endpoint/response shape used by client.ts was verified against Vercel's
+// live documentation during this task (fetched, not recalled), and every
+// test here uses a mocked fetcher -- never a real network call, matching
+// this codebase's cost/safety discipline (this isn't paid like an AI
+// call, but a real external network dependency has no place in an
+// automated test either).
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import {
+  validateVercelToken,
+  listVercelProjects,
+  listVercelProjectDomains,
+  connectVercelWebsite,
+  disconnectVercelWebsite,
+  discoverVercelProjects,
+} from "../vercel/index.ts";
+import type { SecretVault } from "@stratxcel/byok";
+
+function jsonResponse(status: number, body: unknown): Response {
+  return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+}
+
+// --- client.ts: token validation ---
+
+test("1. validateVercelToken: real success shape (GET /v2/user) parses correctly", async () => {
+  const fetcher = (async (url: string | URL, init?: RequestInit) => {
+    assert.equal(String(url), "https://api.vercel.com/v2/user");
+    assert.equal((init?.headers as Record<string, string>).Authorization, "Bearer real-looking-token");
+    return jsonResponse(200, { user: { id: "acct_123", username: "jdoe", name: "Jane Doe" } });
+  }) as typeof fetch;
+
+  const result = await validateVercelToken("real-looking-token", fetcher);
+  assert.deepEqual(result, { valid: true, accountId: "acct_123", accountName: "Jane Doe", reason: null });
+});
+
+test("2. validateVercelToken: real 401 shape is honestly reported, never treated as valid", async () => {
+  const fetcher = (async () => jsonResponse(401, { error: { code: "forbidden" } })) as typeof fetch;
+  const result = await validateVercelToken("bad-token", fetcher);
+  assert.equal(result.valid, false);
+  assert.equal(result.reason, "TOKEN_UNAUTHORIZED");
+});
+
+test("3. validateVercelToken: a network failure is honestly reported, never fabricated as valid", async () => {
+  const fetcher = (async () => {
+    throw new Error("getaddrinfo ENOTFOUND api.vercel.com");
+  }) as typeof fetch;
+  const result = await validateVercelToken("token", fetcher);
+  assert.equal(result.valid, false);
+  assert.ok(result.reason?.includes("ENOTFOUND"));
+});
+
+// --- client.ts: project/domain listing ---
+
+test("4. listVercelProjects: parses the real raw-array response shape", async () => {
+  const fetcher = (async () =>
+    jsonResponse(200, [
+      { id: "prj_1", name: "my-site", framework: "nextjs", alias: [{ domain: "my-site.example.com" }], latestDeployments: [{ id: "dpl_1", url: "my-site.vercel.app", readyState: "READY", target: "production" }] },
+    ])) as typeof fetch;
+
+  const projects = await listVercelProjects("token", { fetcher });
+  assert.equal(projects.length, 1);
+  assert.equal(projects[0]!.externalProjectId, "prj_1");
+  assert.equal(projects[0]!.framework, "nextjs");
+  assert.equal(projects[0]!.lastDeploymentState, "READY");
+  assert.equal(projects[0]!.domains[0]!.name, "my-site.example.com");
+});
+
+test("5. listVercelProjects: parses the real { projects, pagination } response shape", async () => {
+  const fetcher = (async () =>
+    jsonResponse(200, { projects: [{ id: "prj_2", name: "other-site", framework: null }], pagination: { count: 1, next: null } })) as typeof fetch;
+
+  const projects = await listVercelProjects("token", { fetcher });
+  assert.equal(projects.length, 1);
+  assert.equal(projects[0]!.externalProjectId, "prj_2");
+  assert.equal(projects[0]!.framework, null);
+  assert.deepEqual(projects[0]!.domains, [], "a project with no alias must produce an empty domain list, never a fabricated one");
+});
+
+test("6. listVercelProjects: a real API error throws with the real status, not a silent empty list", async () => {
+  const fetcher = (async () => jsonResponse(500, { error: "internal" })) as typeof fetch;
+  await assert.rejects(() => listVercelProjects("token", { fetcher }), /HTTP 500/);
+});
+
+test("7. listVercelProjectDomains: real verification-status field flows through", async () => {
+  const fetcher = (async () => jsonResponse(200, { domains: [{ name: "unverified.example.com", apexName: "example.com", verified: false }] })) as typeof fetch;
+  const domains = await listVercelProjectDomains("token", "prj_1", fetcher);
+  assert.equal(domains[0]!.verified, false, "a genuinely unverified domain must never be reported as verified");
+});
+
+// --- connector.ts: connect/disconnect/discover, with a mock DB + mock vault ---
+
+function createMockVault(): SecretVault & { stored: Map<string, string> } {
+  const stored = new Map<string, string>();
+  return {
+    stored,
+    async store(plaintext: string) {
+      const ref = `vault-ref-${stored.size + 1}`;
+      stored.set(ref, plaintext);
+      return ref;
+    },
+    async retrieve(ref: string) {
+      return stored.get(ref) ?? null;
+    },
+    async revoke(ref: string) {
+      stored.delete(ref);
+    },
+  };
+}
+
+function createMockDb() {
+  const connections: any[] = [];
+  const projects: any[] = [];
+  return {
+    getConnections: () => connections,
+    getProjects: () => projects,
+    from(table: string) {
+      return {
+        select() {
+          return {
+            eq(col1: string, val1: string) {
+              return {
+                eq(col2: string, val2: string) {
+                  return {
+                    maybeSingle: async () => {
+                      const row = connections.find((c) => c[col1] === val1 && c[col2] === val2);
+                      return { data: row ?? null, error: null };
+                    },
+                  };
+                },
+                maybeSingle: async () => {
+                  const row = connections.find((c) => c[col1] === val1);
+                  return { data: row ?? null, error: null };
+                },
+              };
+            },
+          };
+        },
+        upsert(row: any) {
+          // Perform the write eagerly (real Supabase upserts on call, not
+          // on .select()) so both `await ...upsert(...)` directly AND
+          // `await ...upsert(...).select().single()` observe the same
+          // real result -- this mock was previously only wired for the
+          // second form, silently no-op-ing the first (see
+          // docs/discovery/SEARCH_GROWTH_ENGINE_GAP_AUDIT.md).
+          let result: { data: any; error: any };
+          if (table === "search_website_connections") {
+            const existingIdx = connections.findIndex((c) => c.tenant_id === row.tenant_id && c.provider === row.provider);
+            const id = existingIdx >= 0 ? connections[existingIdx].id : `conn-${connections.length + 1}`;
+            const saved = { id, ...row };
+            if (existingIdx >= 0) connections[existingIdx] = saved;
+            else connections.push(saved);
+            result = { data: { id }, error: null };
+          } else if (table === "search_website_connection_projects") {
+            projects.push(row);
+            result = { data: { id: `proj-${projects.length}` }, error: null };
+          } else {
+            result = { data: null, error: null };
+          }
+          return Object.assign(Promise.resolve(result), {
+            select() {
+              return { single: async () => result };
+            },
+          });
+        },
+        update(patch: any) {
+          return {
+            eq(_col: string, id: string) {
+              const idx = connections.findIndex((c) => c.id === id);
+              if (idx >= 0) connections[idx] = { ...connections[idx], ...patch };
+              return Promise.resolve({ data: null, error: null });
+            },
+          };
+        },
+        delete() {
+          return {
+            eq(_col: string, id: string) {
+              const idx = connections.findIndex((c) => c.id === id);
+              if (idx >= 0) connections.splice(idx, 1);
+              return Promise.resolve({ data: null, error: null });
+            },
+          };
+        },
+      };
+    },
+  } as any;
+}
+
+test("8. connectVercelWebsite: an invalid token never creates a connection or a vault entry", async () => {
+  const db = createMockDb();
+  const vault = createMockVault();
+  const fetcher = (async () => jsonResponse(401, {})) as typeof fetch;
+
+  const result = await connectVercelWebsite(db, { tenantId: "t1", connectedByUserId: "u1", token: "bad-token", fetcher, vault });
+  assert.equal(result.ok, false);
+  assert.equal(db.getConnections().length, 0);
+  assert.equal(vault.stored.size, 0, "an invalid token must never reach the vault");
+});
+
+test("9. connectVercelWebsite: a real valid token creates a connection with the token vaulted, not stored raw", async () => {
+  const db = createMockDb();
+  const vault = createMockVault();
+  const fetcher = (async () => jsonResponse(200, { user: { id: "acct_1", username: "jdoe", name: "Jane Doe" } })) as typeof fetch;
+
+  const result = await connectVercelWebsite(db, { tenantId: "t1", connectedByUserId: "u1", token: "real-token-value", fetcher, vault });
+  assert.equal(result.ok, true);
+  assert.equal(result.accountName, "Jane Doe");
+
+  const saved = db.getConnections()[0];
+  assert.equal(saved.tenant_id, "t1");
+  assert.notEqual(saved.token_vault_ref, "real-token-value", "the raw token must never be the stored value -- only a vault reference");
+  assert.equal(vault.stored.get(saved.token_vault_ref), "real-token-value", "the vault itself must hold the real token, retrievable only by its ref");
+});
+
+test("10. discoverVercelProjects: not connected is honestly reported, never a fabricated empty success", async () => {
+  const db = createMockDb();
+  const result = await discoverVercelProjects(db, { tenantId: "t1" });
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, "NOT_CONNECTED");
+});
+
+test("11. discoverVercelProjects: real connected tenant discovers and persists real projects", async () => {
+  const db = createMockDb();
+  const vault = createMockVault();
+  const connectFetcher = (async () => jsonResponse(200, { user: { id: "acct_1", username: "jdoe", name: "Jane Doe" } })) as typeof fetch;
+  await connectVercelWebsite(db, { tenantId: "t1", connectedByUserId: "u1", token: "real-token", fetcher: connectFetcher, vault });
+
+  const discoverFetcher = (async (url: string | URL) => {
+    const u = String(url);
+    if (u.includes("/v10/projects")) return jsonResponse(200, [{ id: "prj_1", name: "site-1", framework: "nextjs", alias: [{ domain: "site1.example.com" }] }]);
+    if (u.includes("/domains")) return jsonResponse(200, { domains: [{ name: "site1.example.com", apexName: "example.com", verified: true }] });
+    throw new Error(`unexpected URL in test: ${u}`);
+  }) as typeof fetch;
+
+  const result = await discoverVercelProjects(db, { tenantId: "t1", fetcher: discoverFetcher, vault });
+  assert.equal(result.ok, true);
+  assert.equal(result.projectCount, 1);
+  assert.equal(db.getProjects()[0]!.project_name, "site-1");
+  assert.equal(db.getProjects()[0]!.domains[0]!.verified, true);
+});
+
+test("12. disconnectVercelWebsite: real disconnect removes the connection and revokes the vault entry", async () => {
+  const db = createMockDb();
+  const vault = createMockVault();
+  const fetcher = (async () => jsonResponse(200, { user: { id: "acct_1", username: "jdoe", name: "Jane Doe" } })) as typeof fetch;
+  const connectResult = await connectVercelWebsite(db, { tenantId: "t1", connectedByUserId: "u1", token: "real-token", fetcher, vault });
+  const tokenRef = db.getConnections()[0]!.token_vault_ref;
+  assert.ok(vault.stored.has(tokenRef));
+
+  const disconnectResult = await disconnectVercelWebsite(db, { tenantId: "t1", vault });
+  assert.equal(disconnectResult.ok, true);
+  assert.equal(db.getConnections().length, 0);
+  assert.equal(vault.stored.has(tokenRef), false, "disconnecting must actually revoke the vaulted secret, not just delete the connection row");
+  void connectResult;
+});
+
+test("13. disconnectVercelWebsite: disconnecting an already-disconnected tenant is idempotent, never an error", async () => {
+  const db = createMockDb();
+  const result = await disconnectVercelWebsite(db, { tenantId: "never-connected" });
+  assert.equal(result.ok, true);
+});
+
+console.log("vercel-connector.test.ts: real Vercel API response shapes parse correctly; connect/disconnect/discover never store a raw token or fabricate success — PASS");

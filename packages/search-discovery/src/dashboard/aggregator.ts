@@ -65,6 +65,14 @@ export async function getSearchGrowthDashboardData(
       .limit(10),
   ]);
 
+  // Root-caused via docs/discovery/SEARCH_GROWTH_ENGINE_GAP_AUDIT.md: a
+  // tenant with no search_projects row yet (never run an analysis) was
+  // silently handed fabricated placeholder values ("Local Business",
+  // "https://example.com") indistinguishable from real data by any
+  // caller. `hasProject` lets a caller (e.g. the dashboard page) render
+  // an honest "connect your website" prompt instead of a dashboard full
+  // of fake data.
+  const hasProject = Boolean(project);
   const propertyName = project?.name || "Local Business";
   const propertyUrl = project?.property_url || "https://example.com";
 
@@ -240,6 +248,7 @@ export async function getSearchGrowthDashboardData(
 
   return {
     tenantId,
+    hasProject,
     projectName: propertyName,
     propertyUrl,
     isPaidTenant,

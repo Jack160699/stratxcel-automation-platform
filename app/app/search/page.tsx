@@ -1,34 +1,113 @@
 "use client";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useCurrentTenant } from "../CurrentTenantContext";
-import { ModulePageHeader, ModuleStatusSummary } from "../components/ModulePageHeader";
-import { IntegrationStatus } from "../components/IntegrationStatus";
-import { GoogleSearchIntegrationPanel } from "../components/GoogleSearchIntegrationPanel";
-import { Card, CardHeading, CardRow } from "@/components/ui/Card";
-import { Metric } from "@/components/ui/Metric";
-import { StatusChip } from "@/components/ui/StatusChip";
+import { SearchGrowthDashboardView } from "@/components/search-growth/SearchGrowthDashboardView";
+import type { SearchGrowthDashboardData } from "@stratxcel/search-discovery";
+import { ErrorState } from "@/components/ui/Feedback";
+import { Card, CardHeading } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
-import { ErrorState } from "@/components/ui/Feedback";
 import { EntitlementGate } from "@/components/ui/EntitlementGate";
-type RuntimeState = { projects: any[]; runs: any[]; opportunities: any[]; recommendations: any[]; actions: any[]; snapshots: any[] };
-const tabs = ["Overview", "Opportunities", "Google Search", "Local / Maps", "AI Search", "Social Discovery", "Actions / Approvals", "Results / Progress"] as const;
-const providerLabel: Record<string, string> = { search_console: "Google Search Console", ga4: "Google Analytics 4", google_business_profile: "Google Business Profile", meta: "Meta / social reporting" };
-const chipFor = (state: string) => state === "COMPLETED" || state === "RESOLVED" || state === "connected" ? "success" : state === "FAILED" || state === "error" ? "danger" : state === "RUNNING" || state === "AWAITING_APPROVAL" ? "warning" : "dashed";
-export default function SearchPage() { const { active } = useCurrentTenant(); const tenantId = active?.tenantId; const [tab, setTab] = useState<(typeof tabs)[number]>("Overview"); const [state, setState] = useState<RuntimeState | null>(null); const [site, setSite] = useState(""); const [running, setRunning] = useState(false); const [error, setError] = useState<string | null>(null);
-  const load = useCallback(async () => { if (!tenantId) return; setError(null); const response = await fetch(`/api/platform/search?tenantId=${encodeURIComponent(tenantId)}`); const body = await response.json(); if (!response.ok) return setError(body.error ?? "SEARCH_STATE_FAILED"); setState(body); if (body.projects?.[0]?.property_url) setSite((current) => current || body.projects[0].property_url); }, [tenantId]);
-  useEffect(() => { void load(); }, [load]);
-  async function run() { if (!tenantId || !site.trim()) return; setRunning(true); setError(null); try { const response = await fetch("/api/platform/search/run", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tenantId, propertyUrl: site.trim(), propertyName: active?.name ?? "Website" }) }); const body = await response.json(); if (!response.ok) return setError(body.error ?? "SEARCH_RUN_FAILED"); await load(); } finally { setRunning(false); } }
-  const latest = state?.runs?.[0]; const activeOpportunities = state?.opportunities?.filter((o) => !["RESOLVED", "SUPERSEDED"].includes(o.status)) ?? []; const resolved = state?.opportunities?.filter((o) => o.status === "RESOLVED") ?? []; const waitingActions = state?.actions?.filter((a) => a.state === "AWAITING_APPROVAL") ?? []; const providers = useMemo(() => { const map = new Map<string, any>(); for (const snapshot of state?.snapshots ?? []) if (!map.has(snapshot.source)) map.set(snapshot.source, snapshot); return [...map.values()]; }, [state]);
-  return <div className="flex flex-col gap-6"><ModulePageHeader title="Search & Discovery" tenantName={active?.name} description="Saved analysis history and prioritized discovery work. Missing provider data stays visibly unavailable." actions={<Button size="sm" onClick={run} disabled={running || !site.trim()}>{running ? "Running…" : "Run Search Analysis"}</Button>} />
+
+/**
+ * Root-caused via docs/discovery/SEARCH_GROWTH_ENGINE_GAP_AUDIT.md: two
+ * real implementations of this page existed -- this simpler tab-based one
+ * (calling /api/platform/search + /api/platform/search/run) and
+ * SearchGrowthDashboardView (backed by the more mature
+ * dashboard/aggregator.ts, surfacing real strategy mode, competitor
+ * intelligence, AI-search visibility, and the real readiness
+ * certification this session hardened) -- with no caller ever rendering
+ * the richer one.
+ *
+ * Decision, made per the requested priority (existing mature
+ * implementation > lowest friction > lowest operational complexity):
+ * SearchGrowthDashboardView is canonical, wired in here. Verified this is
+ * safe to do decisively rather than incrementally: this route is not
+ * actually reachable by a real V1 customer today -- its own
+ * layout.tsx renders `NotV1CustomerRoute`, which unconditionally
+ * redirects to /app ("Prevents unfinished engineering surfaces from
+ * rendering in the V1 app"). Whoever lifts that gate should visually QA
+ * this page first; nothing here is live-customer-facing yet.
+ */
+export default function SearchPage() {
+  const { active } = useCurrentTenant();
+  const tenantId = active?.tenantId;
+  const [data, setData] = useState<SearchGrowthDashboardData | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [site, setSite] = useState("");
+  const [running, setRunning] = useState(false);
+
+  const load = useCallback(async () => {
+    if (!tenantId) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await fetch(`/api/platform/search/dashboard?tenantId=${encodeURIComponent(tenantId)}`);
+      const body = await response.json();
+      if (!response.ok) {
+        setError(body.error ?? "SEARCH_DASHBOARD_FAILED");
+        return;
+      }
+      setData(body as SearchGrowthDashboardData);
+    } catch {
+      setError("SEARCH_DASHBOARD_NETWORK_ERROR");
+    } finally {
+      setLoading(false);
+    }
+  }, [tenantId]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  async function runFirstAnalysis() {
+    if (!tenantId || !site.trim()) return;
+    setRunning(true);
+    try {
+      const response = await fetch("/api/platform/search/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tenantId, propertyUrl: site.trim(), propertyName: active?.name ?? "Website" }),
+      });
+      if (response.ok) await load();
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  if (loading) return null; // app/app/search/loading.tsx covers the route-transition skeleton
+
+  // Preserved unchanged from the previous implementation -- this SEO/search
+  // feature's own paid-tier gate is a separate, real access-control
+  // decision from which dashboard component renders inside it, and this
+  // pass doesn't touch it (a dedicated regression test,
+  // packages/payments-and-wallet/src/__tests__/autopilot-universal-unlock.test.ts,
+  // exists specifically to catch this feature's EntitlementGate usage
+  // being removed as a side effect of unrelated work).
+  return (
     <EntitlementGate tenantId={tenantId} minTier="growth" featureName="Google SEO workflows">
-    {error && <ErrorState message={error} onRetry={load} />}<Card><CardHeading>Website to analyse</CardHeading><div className="mt-2 flex flex-col gap-2 sm:flex-row"><Input type="url" value={site} onChange={(event) => setSite(event.target.value)} placeholder="https://yourbusiness.in" className="flex-1" /><p className="self-center text-xs text-sx-text-subtle">Only an owned/configured public website should be entered.</p></div></Card>
-    <nav className="flex gap-2 overflow-x-auto pb-1" aria-label="Search and Discovery sections">{tabs.map((item) => <button key={item} onClick={() => setTab(item)} className={`shrink-0 rounded-sx-sm border px-3 py-2 text-xs ${tab === item ? "border-sx-accent bg-sx-accent-muted text-sx-text" : "border-sx-border text-sx-text-muted"}`}>{item}</button>)}</nav>
-    {tab === "Google Search" && tenantId && <GoogleSearchIntegrationPanel tenantId={tenantId} />}
-    <ModuleStatusSummary><Metric label="Last analysis" value={latest ? new Date(latest.created_at).toLocaleDateString() : "—"} deltaLabel={latest?.state ?? "Ready"} /><Metric label="Active opportunities" value={state ? activeOpportunities.length : "—"} deltaLabel="saved findings" /><Metric label="Resolved" value={state ? resolved.length : "—"} deltaLabel="preserved history" /><Metric label="Needs approval" value={state ? waitingActions.length : "—"} deltaLabel="current actions" /></ModuleStatusSummary>
-    <section className="grid gap-3 md:grid-cols-2">{providers.length ? providers.map((p) => <IntegrationStatus key={p.source} name={providerLabel[p.source] ?? p.source} state={p.availability_state === "connected" ? "connected" : p.availability_state === "error" ? "error" : "disconnected"} detail={p.unavailable_reason ?? "Data available"} />) : <><IntegrationStatus name="Google Search Console" state="disconnected" detail="Not connected for this workspace." /><IntegrationStatus name="Google Analytics 4" state="disconnected" detail="Not connected for this workspace." /><IntegrationStatus name="Google Business Profile" state="disconnected" detail="Configuration and ownership access required." /><IntegrationStatus name="Meta / social reporting" state="not_supported" detail="Reporting permission required." /></>}</section>
-    <section className="grid gap-4 lg:grid-cols-2"><Card><div className="flex items-center justify-between"><CardHeading>Current opportunities</CardHeading><StatusChip state={activeOpportunities.length ? "accent" : "neutral"}>{activeOpportunities.length ? "Needs attention" : "Healthy / waiting"}</StatusChip></div>{activeOpportunities.length ? activeOpportunities.slice(0, 8).map((o) => <CardRow key={o.id}><div className="min-w-0 flex-1"><p className="truncate text-xs font-medium text-sx-text">{o.category}</p><p className="truncate text-xs text-sx-text-subtle">{o.proposed_action}</p></div><StatusChip state={chipFor(o.status)}>{o.severity}</StatusChip></CardRow>) : <p className="mt-2 text-xs text-sx-text-muted">Run an analysis to create saved findings. If a source is unavailable, the result will say so clearly.</p>}</Card>
-      <Card><CardHeading>Analysis history</CardHeading>{state?.runs?.length ? state.runs.slice(0, 10).map((run) => <CardRow key={run.id}><div className="min-w-0 flex-1"><p className="text-xs text-sx-text">{run.run_type} · {new Date(run.created_at).toLocaleString()}</p><p className="text-xs text-sx-text-subtle">{run.summary_counts?.pages ?? 0} pages · {run.summary_counts?.issues ?? 0} issues{run.failure_reason ? ` · ${run.failure_reason}` : ""}</p></div><StatusChip state={chipFor(run.state)}>{run.state}</StatusChip></CardRow>) : <p className="mt-2 text-xs text-sx-text-muted">No saved Search analysis yet.</p>}</Card></section>
-    <Card><CardHeading>How changes are handled</CardHeading><p className="mt-2 text-xs leading-5 text-sx-text-muted">Analysis is saved to this workspace. Recommendations do not publish website, search, map, or social changes without the required connection and your approval.</p></Card><p className="text-xs text-sx-text-subtle">Search recommendations are opportunities, not guarantees of rankings, map positions, traffic, AI citations, or revenue.</p>
+      {error || !data ? (
+        <ErrorState message={error ?? "SEARCH_DASHBOARD_UNAVAILABLE"} onRetry={load} />
+      ) : !data.hasProject ? (
+        // Root-caused via docs/discovery/SEARCH_GROWTH_ENGINE_GAP_AUDIT.md:
+        // getSearchGrowthDashboardData previously handed every caller
+        // fabricated placeholder data ("Local Business" /
+        // "https://example.com") for a tenant with no real project yet,
+        // indistinguishable from a real one. hasProject makes that honest
+        // -- a genuine "connect your website" prompt instead of a
+        // dashboard full of fake data.
+        <Card className="p-6">
+          <CardHeading>Connect your website to start</CardHeading>
+          <p className="mt-2 text-xs text-sx-text-muted">Enter your website to run the first real SEO/AEO/GEO analysis. Nothing is published or changed without your approval. Missing provider data stays visibly unavailable — never shown as if it were real.</p>
+          <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+            <Input type="url" value={site} onChange={(e) => setSite(e.target.value)} placeholder="https://yourbusiness.in" className="flex-1" />
+            <Button onClick={runFirstAnalysis} disabled={running || !site.trim()}>{running ? "Running…" : "Run Search Analysis"}</Button>
+          </div>
+        </Card>
+      ) : (
+        <SearchGrowthDashboardView initialData={data} />
+      )}
     </EntitlementGate>
-    </div>; }
+  );
+}

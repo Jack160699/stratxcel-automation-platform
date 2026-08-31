@@ -176,3 +176,34 @@ test("Go-Live System Health Check produces truthful 14-category report", () => {
   assert.ok(["READY_FOR_CUSTOMERS", "CONFIGURATION_REQUIRED"].includes(health.overallStatus));
   assert.ok(health.passedCount >= 10);
 });
+
+test("DATABASE category is genuinely conditional on a real check, not a hardcoded PASS (see docs/discovery/SEARCH_GROWTH_ENGINE_GAP_AUDIT.md)", () => {
+  const unknown = runGoLiveSystemHealthCheck();
+  const dbUnknown = unknown.categories.find((c) => c.category === "DATABASE")!;
+  assert.equal(dbUnknown.status, "WARN", "no real check supplied -> honestly unverified, not a fabricated PASS");
+
+  const present = runGoLiveSystemHealthCheck({ requiredTablesPresent: true });
+  const dbPresent = present.categories.find((c) => c.category === "DATABASE")!;
+  assert.equal(dbPresent.status, "PASS");
+
+  const missing = runGoLiveSystemHealthCheck({ requiredTablesPresent: false });
+  const dbMissing = missing.categories.find((c) => c.category === "DATABASE")!;
+  assert.equal(dbMissing.status, "FAIL");
+  assert.equal(missing.overallStatus, "BLOCKED", "a real missing-table result must actually block the overall verdict, not just annotate one category");
+});
+
+test("CONNECTORS category reads the real GOOGLE_SEARCH_OAUTH_CLIENT_ID, not the stale GOOGLE_SEARCH_CONSOLE_CLIENT_ID name (found via a real acceptance-test run against production env -- see docs/discovery/SEARCH_GROWTH_ENGINE_GAP_AUDIT.md)", () => {
+  const original = process.env.GOOGLE_SEARCH_OAUTH_CLIENT_ID;
+  try {
+    process.env.GOOGLE_SEARCH_OAUTH_CLIENT_ID = "test-client-id";
+    const withReal = runGoLiveSystemHealthCheck();
+    assert.equal(withReal.categories.find((c) => c.category === "CONNECTORS")!.status, "PASS");
+
+    delete process.env.GOOGLE_SEARCH_OAUTH_CLIENT_ID;
+    const withoutReal = runGoLiveSystemHealthCheck();
+    assert.equal(withoutReal.categories.find((c) => c.category === "CONNECTORS")!.status, "WARN");
+  } finally {
+    if (original === undefined) delete process.env.GOOGLE_SEARCH_OAUTH_CLIENT_ID;
+    else process.env.GOOGLE_SEARCH_OAUTH_CLIENT_ID = original;
+  }
+});

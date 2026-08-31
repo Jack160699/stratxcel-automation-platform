@@ -23,6 +23,7 @@ function createMockLoopDb(config?: {
   let queriedTenantId: string | null = null;
   let insertedStates: any[] = [];
   let insertedAuditEvents: any[] = [];
+  let insertedEntityNodes: any[] = [];
 
   function createChain(table: string, state: any = {}): any {
     const chain: any = {
@@ -73,6 +74,7 @@ function createMockLoopDb(config?: {
   return {
     getQueriedTenantId: () => queriedTenantId,
     getInsertedStates: () => insertedStates,
+    getInsertedEntityNodes: () => insertedEntityNodes,
     from(table: string) {
       return {
         select(cols?: string) {
@@ -90,14 +92,16 @@ function createMockLoopDb(config?: {
         },
         upsert(row: any) {
           if (table === "search_strategy_states") insertedStates.push(row);
-          return {
+          if (table === "search_entity_nodes") insertedEntityNodes.push(row);
+          const result = { data: { id: "upserted-id", ...row }, error: null };
+          return Object.assign(Promise.resolve(result), {
             select() {
               return {
-                single: async () => ({ data: { id: "upserted-id", ...row }, error: null }),
-                maybeSingle: async () => ({ data: { id: "upserted-id", ...row }, error: null }),
+                single: async () => result,
+                maybeSingle: async () => result,
               };
             },
-          };
+          });
         },
         update(patch: any) {
           return createChain(table, patch);
@@ -357,6 +361,33 @@ test("21. Repeated cycles are idempotent", async () => {
   );
 
   assert.equal(res1.strategyMode, "EXPAND");
+});
+
+test("21b. Entity graph is computed and persisted on a real loop run, and reflects real NAP evidence (see docs/discovery/SEARCH_GROWTH_ENGINE_GAP_AUDIT.md)", async () => {
+  const db = createMockLoopDb({ planTier: "growth" });
+  await runContinuousGrowthLoop(
+    { db },
+    {
+      tenantId: "tenant-paid",
+      propertyUrl: "https://clinic.in",
+      propertyName: "Apollo Clinic",
+      plan: "growth",
+      locations: ["Raipur"],
+      services: ["Dental"],
+      idempotencyKey: "idem-entity-1",
+      hasGbp: true,
+      hasSchema: true,
+      nap: { websitePhone: "9876543210", gbpPhone: "9111111111", websiteAddress: "12 MG Road", gbpAddress: "12 MG Road" },
+    }
+  );
+
+  const persisted = db.getInsertedEntityNodes();
+  assert.ok(persisted.length > 0, "a real growth cycle must persist real entity nodes, not skip search_entity_nodes entirely");
+  const location = persisted.find((n: any) => n.entity_type === "LOCATION");
+  assert.ok(location, "the LOCATION node for the real supplied location must be persisted");
+  assert.equal(location.consistency_status, "INCONSISTENT", "the real phone mismatch supplied above must actually reach the persisted row, not be dropped in transit");
+  assert.equal(location.tenant_id, "tenant-paid");
+  assert.equal(location.project_id, "proj-123");
 });
 
 test("22. Outcome attribution preserves chronology", () => {

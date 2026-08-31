@@ -630,7 +630,12 @@ function createTestDb() {
     ownerId: "owner_healthy",
     tenantId: tenantIdHealthy,
     platform: "google_business",
-    providerAccountId: "gbp_healthy",
+    // A real resolved GBP location resource name (see
+    // isResolvedGbpLocationResourceName's own header comment) -- not the
+    // OAuth-time fallback bare id shape covered by Test 9 below. This
+    // fixture's whole point is "a genuinely usable, genuinely resolved
+    // connection reads as CONNECTED", so it must use a realistic id.
+    providerAccountId: "accounts/999/locations/888",
     username: "healthy@example.com",
     displayName: "Healthy Business",
     permissions: ["business.manage"],
@@ -643,6 +648,43 @@ function createTestDb() {
   console.log("✓ social_accounts rows with no matching social_tokens row correctly report REAUTH_REQUIRED, not a false CONNECTED.\n");
 }
 
+// -------------------------------------------------------------
+// TEST 9: social_accounts -- CONNECTED/HEALTHY with a genuinely usable
+// token, but provider_account_id is still the OAuth-time fallback bare id
+// (GBP account/location discovery never resolved a real location) --
+// found live against the real StratXcel tenant
+// (docs/discovery/SEARCH_GROWTH_ENGINE_GAP_AUDIT.md, Update 10). Must
+// report REAUTH_REQUIRED with a specific, actionable reason, never a
+// misleading CONNECTED/"fully ready" card.
+// -------------------------------------------------------------
+{
+  console.log("Test 9: social_accounts -- CONNECTED with an unresolved GBP location id...");
+  const { client } = createTestDb();
+  const tenantId = "tenant_gbp_unresolved_location";
+
+  await upsertConnectedAccount(client, {
+    ownerId: "owner_unresolved",
+    tenantId,
+    platform: "google_business",
+    // Exactly the real shape found live: a bare Google account id, no
+    // "accounts/{id}/locations/{id}" resource path.
+    providerAccountId: "118157607743139723110",
+    username: "owner@example.com",
+    displayName: "StratXcel",
+    permissions: ["business.manage"],
+    accessToken: "real_access_token",
+    expiresInSeconds: 3600,
+  });
+
+  const status = await getBusinessConnectionStatus(client, tenantId, "google_business");
+  assert.equal(status.connectionState, "REAUTH_REQUIRED", "an unresolved GBP location must never report CONNECTED, even with a genuinely usable token");
+  assert.equal(status.reauthRequired, true);
+  assert.equal(status.healthState, "DEGRADED");
+  assert.match(status.error ?? "", /location wasn't found/i, "the reason must be specific and actionable, not a generic connection-error message");
+
+  console.log("✓ An unresolved GBP location reports an honest, actionable REAUTH_REQUIRED instead of a misleading CONNECTED.\n");
+}
+
 console.log("===============================================================");
-console.log("ALL DIGITAL PRESENCE & CONNECTOR STABILITY TESTS PASSED (8/8)!");
+console.log("ALL DIGITAL PRESENCE & CONNECTOR STABILITY TESTS PASSED (9/9)!");
 console.log("===============================================================\n");

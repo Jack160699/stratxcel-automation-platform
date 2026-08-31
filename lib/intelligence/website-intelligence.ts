@@ -36,6 +36,27 @@ export function unknownFact<T>(fallbackValue: T, source = "website_crawler"): No
   };
 }
 
+/**
+ * Rejects H2 headings that read as narrative marketing copy rather than a
+ * real service/product name -- see the "Check Headings & Links for
+ * Services / Products" call site for how this was root-caused against a
+ * real, live crawl. A heuristic, not a classifier: it only catches the
+ * concrete false-positive patterns actually observed (questions,
+ * process-arrow narrative, personal-pronoun sentences), not every possible
+ * false positive.
+ */
+export function isLikelyServiceNamePhrase(heading: string): boolean {
+  const h = heading.trim();
+  if (h.includes("?")) return false;
+  if (/[→>]|->/u.test(h)) return false;
+  if (/\b(you|your|yours|you're|you'll|you've|we|we're|let's|us)\b/i.test(h)) return false;
+  // Two-plus sentences (an internal ". " followed by more words) reads as
+  // narrative copy, not a service name -- e.g. "Pick an outcome.
+  // Stratxcel connects the work behind it."
+  if (/\.\s+\S/.test(h)) return false;
+  return true;
+}
+
 export interface DiscoveredChannel {
   platform: string;
   url: string;
@@ -274,9 +295,25 @@ export async function runWebsiteIntelligencePipeline(
     }
 
     // Check Headings & Links for Services / Products
+    //
+    // Root-caused via a real, live audit of stratxcel.in itself (see
+    // docs/discovery/SEARCH_GROWTH_ENGINE_GAP_AUDIT.md): the original
+    // filter (URL contains "service"/"solution", heading under 60 chars,
+    // not one of a handful of nav-label words) happily matched narrative
+    // marketing copy on "solutions" pages -- "What do you want to
+    // improve?", "Start with the result you need", "Understand → Diagnose
+    // → Execute → Improve" all passed as "services". A real downstream
+    // consumer (the AEO director, lib/growth/search-growth-director.ts)
+    // surfaced this immediately by generating nonsense "what does this
+    // service include" questions from them. `isLikelyServiceNamePhrase`
+    // below is a conservative, evidence-based tightening: it rejects
+    // questions, process-arrow copy, and personal-pronoun narrative
+    // sentences, which is what every false positive observed live had in
+    // common. It is still a heuristic, not a classifier -- documented as
+    // such, not claimed to be perfect.
     for (const h2 of page.headings.h2) {
       if (page.technical.url.includes("service") || page.technical.url.includes("solution")) {
-        if (h2.length < 60 && !/subscribe|contact|newsletter|footer|about/i.test(h2)) {
+        if (h2.length < 60 && !/subscribe|contact|newsletter|footer|about/i.test(h2) && isLikelyServiceNamePhrase(h2)) {
           services.add(h2);
         }
       }

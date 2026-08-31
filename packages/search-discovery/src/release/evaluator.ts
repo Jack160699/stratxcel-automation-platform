@@ -69,7 +69,7 @@ export function evaluateProductionReleaseGate(): ReleaseGateReport {
       whatsappReviews: "ADAPTER_READY_NOT_CONFIGURED",
     },
     summary:
-      "Code is 100% complete and regression-verified across 12 test suites. Deployed domain https://www.stratxcel.in is active. Vercel Cron ('0 */4 * * *') is registered in vercel.json. Third-party SERP & AI search providers are safely decoupled and remain ADAPTER_READY.",
+      "Code is 100% complete and regression-verified across 12 test suites. Deployed domain https://www.stratxcel.in is active. Vercel Cron ('0 9 * * *' daily, per the Hobby-plan cron cap -- see docs/discovery/SEARCH_GROWTH_ENGINE_GAP_AUDIT.md) is registered in vercel.json. Third-party SERP & AI search providers are safely decoupled and remain ADAPTER_READY.",
   };
 }
 

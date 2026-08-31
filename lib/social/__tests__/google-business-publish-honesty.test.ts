@@ -19,7 +19,7 @@
 // check, so the actual request/response handling is exercised.
 // Run with: node --experimental-strip-types lib/social/__tests__/google-business-publish-honesty.test.ts
 import assert from "node:assert/strict";
-import { googleBusinessProvider } from "../providers/google-business.ts";
+import { googleBusinessProvider, isResolvedGbpLocationResourceName } from "../providers/google-business.ts";
 
 async function run() {
   const basePublishInput = {
@@ -95,6 +95,16 @@ async function run() {
   }
 
   console.log("PASS: google-business publish() makes a real call and never fabricates success; getInsights() is gone, not faked");
+
+  // --- isResolvedGbpLocationResourceName: real vs OAuth-fallback ids. -----
+  // Found live against the real StratXcel tenant (see
+  // docs/discovery/SEARCH_GROWTH_ENGINE_GAP_AUDIT.md, Update 10): its
+  // stored provider_account_id is exactly the bare-id fallback shape below.
+  assert.equal(isResolvedGbpLocationResourceName("accounts/123/locations/456"), true, "a real resolved resource name must classify as resolved");
+  assert.equal(isResolvedGbpLocationResourceName("118157607743139723110"), false, "a bare numeric OAuth fallback id must not be mistaken for a resolved location");
+  assert.equal(isResolvedGbpLocationResourceName("accounts/123"), false, "an account with no location segment is not a usable location resource");
+  assert.equal(isResolvedGbpLocationResourceName(""), false, "an empty id is never resolved");
+  console.log("PASS: isResolvedGbpLocationResourceName distinguishes real resolved locations from the OAuth-time fallback id");
 }
 
 run();

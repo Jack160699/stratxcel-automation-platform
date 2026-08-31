@@ -17,15 +17,67 @@ test("1. Scheduler production configuration (vercel.json) & 3. Scheduler invocat
 
   const schedulerCron = parsed.crons?.find((c: any) => c.path === "/api/internal/search/scheduler");
   assert.ok(schedulerCron, "vercel.json must contain /api/internal/search/scheduler cron entry");
-  assert.equal(schedulerCron.schedule, "0 */4 * * *");
+  // '0 9 * * *' (daily), not '0 */4 * * *' -- the Vercel Hobby plan caps
+  // every cron to once/day (commit ae11163, a real, live, user-authorized
+  // deployment fix). See docs/discovery/SEARCH_GROWTH_ENGINE_GAP_AUDIT.md.
+  assert.equal(schedulerCron.schedule, "0 9 * * *");
 });
 
 test("2. Scheduler authentication & 4. Scheduler last-run health state", () => {
-  const health = getSchedulerHealthStatus();
-  assert.equal(health.isConfiguredInVercel, true);
-  assert.equal(health.status, "OPERATIONAL");
-  assert.equal(health.scheduleCronExpression, "0 */4 * * *");
-  assert.ok(health.nextRunAt);
+  const original = process.env.SEARCH_DISCOVERY_SCHEDULER_SECRET;
+  process.env.SEARCH_DISCOVERY_SCHEDULER_SECRET = "test-scheduler-secret";
+  try {
+    const health = getSchedulerHealthStatus();
+    assert.equal(health.isConfiguredInVercel, true);
+    assert.equal(health.status, "OPERATIONAL");
+    assert.equal(health.scheduleCronExpression, "0 9 * * *");
+    assert.ok(health.nextRunAt);
+    // No real DB-backed run history is available to this pure function --
+    // must stay honestly null, never fabricated as "now".
+    assert.equal(health.lastRunAt, null);
+    assert.equal(health.lastSuccessAt, null);
+  } finally {
+    if (original === undefined) delete process.env.SEARCH_DISCOVERY_SCHEDULER_SECRET;
+    else process.env.SEARCH_DISCOVERY_SCHEDULER_SECRET = original;
+  }
+});
+
+test("2b. Scheduler health reports MISCONFIGURED, not a fabricated OPERATIONAL, when the secret is missing", () => {
+  const original = process.env.SEARCH_DISCOVERY_SCHEDULER_SECRET;
+  delete process.env.SEARCH_DISCOVERY_SCHEDULER_SECRET;
+  try {
+    const health = getSchedulerHealthStatus();
+    assert.equal(health.secretConfigured, false);
+    assert.equal(health.status, "MISCONFIGURED");
+  } finally {
+    if (original !== undefined) process.env.SEARCH_DISCOVERY_SCHEDULER_SECRET = original;
+  }
+});
+
+test("4c. Launch gate's Google OAuth entry reads the real env var name, not a stale one", () => {
+  const originalId = process.env.GOOGLE_SEARCH_OAUTH_CLIENT_ID;
+  const originalSecret = process.env.GOOGLE_SEARCH_OAUTH_CLIENT_SECRET;
+  process.env.GOOGLE_SEARCH_OAUTH_CLIENT_ID = "test-id";
+  process.env.GOOGLE_SEARCH_OAUTH_CLIENT_SECRET = "test-secret";
+  try {
+    const gate = evaluateLaunchGate();
+    const googleOauth = gate.providers.find((p) => p.id === "google_oauth");
+    assert.equal(googleOauth?.status, "VERIFIED", "real GOOGLE_SEARCH_OAUTH_CLIENT_ID/_SECRET must be recognized, not the stale GOOGLE_SEARCH_CONSOLE_CLIENT_ID name");
+  } finally {
+    if (originalId === undefined) delete process.env.GOOGLE_SEARCH_OAUTH_CLIENT_ID;
+    else process.env.GOOGLE_SEARCH_OAUTH_CLIENT_ID = originalId;
+    if (originalSecret === undefined) delete process.env.GOOGLE_SEARCH_OAUTH_CLIENT_SECRET;
+    else process.env.GOOGLE_SEARCH_OAUTH_CLIENT_SECRET = originalSecret;
+  }
+});
+
+test("4d. Launch gate's scheduler_cron entry reflects the real vercel.json, not a hardcoded VERIFIED", () => {
+  const gate = evaluateLaunchGate();
+  const schedulerCron = gate.providers.find((p) => p.id === "scheduler_cron");
+  // Real repo state: the cron genuinely is registered -- asserting the
+  // real value (not just that *some* value exists) so this only stays
+  // green while that remains true.
+  assert.equal(schedulerCron?.status, "VERIFIED");
 });
 
 test("5. Owner configuration dashboard & 14. Core vs optional launch blockers & 15. Launch gate logic", () => {

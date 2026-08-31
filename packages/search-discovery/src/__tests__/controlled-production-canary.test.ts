@@ -95,16 +95,69 @@ test("4. Real Rollback Test: restores original page state on simulated failure",
 });
 
 test("5. Controlled Canary Report & Certification", async () => {
-  const db = createMockCanaryDb();
-  const report = await compileControlledCanaryReport(mockCanaryTenant, db);
+  // Real credentials for GSC/GA4 (this test's concern is the report's own
+  // wiring, not re-proving the env-var check already covered elsewhere).
+  const originalClientId = process.env.GOOGLE_SEARCH_OAUTH_CLIENT_ID;
+  const originalClientSecret = process.env.GOOGLE_SEARCH_OAUTH_CLIENT_SECRET;
+  process.env.GOOGLE_SEARCH_OAUTH_CLIENT_ID = "test-client-id";
+  process.env.GOOGLE_SEARCH_OAUTH_CLIENT_SECRET = "test-client-secret";
+  try {
+    const db = createMockCanaryDb();
+    const report = await compileControlledCanaryReport(mockCanaryTenant, db);
 
-  assert.equal(report.certification, "PRODUCTION_VERIFIED_WITH_OPTIONAL_PROVIDERS_MISSING");
-  assert.equal(report.allAcceptanceCriteriaMet, true);
-  assert.equal(report.freeAudit.passed, true);
-  assert.equal(report.freeAudit.mutationsPrevented, true);
-  assert.equal(report.freeBypassAttempt.blocked, true);
-  assert.equal(report.paidExecution.passed, true);
-  assert.equal(report.rollbackTest.passed, true);
-  assert.equal(report.truthfulProviderStates.serpTracker, "ADAPTER_READY");
-  assert.equal(report.truthfulProviderStates.perplexityAi, "ADAPTER_READY");
+    assert.equal(report.certification, "PRODUCTION_VERIFIED_WITH_OPTIONAL_PROVIDERS_MISSING");
+    assert.equal(report.allAcceptanceCriteriaMet, true);
+    assert.equal(report.freeAudit.passed, true);
+    assert.equal(report.freeAudit.mutationsPrevented, true);
+    assert.equal(report.freeBypassAttempt.blocked, true);
+    assert.equal(report.paidExecution.passed, true);
+    assert.equal(report.rollbackTest.passed, true);
+    assert.equal(report.truthfulProviderStates.serpTracker, "ADAPTER_READY");
+    assert.equal(report.truthfulProviderStates.perplexityAi, "ADAPTER_READY");
+    // These four used to be hardcoded literals disconnected from any real
+    // check (see docs/discovery/SEARCH_GROWTH_ENGINE_GAP_AUDIT.md) --
+    // pinning the exact real values now, not just truthiness, so a future
+    // regression back to a hardcoded literal is still caught even if it
+    // happens to hardcode `true`/"OPERATIONAL" again.
+    assert.equal(report.paidExecution.actionType, "FIX_MISSING_TITLE");
+    assert.equal(report.paidExecution.liveDomVerified, true);
+    assert.equal(report.truthfulProviderStates.googleSearchConsole, "PRODUCTION_VERIFIED");
+    assert.equal(report.truthfulProviderStates.stratxcelNativeCms, "PRODUCTION_VERIFIED");
+  } finally {
+    if (originalClientId === undefined) delete process.env.GOOGLE_SEARCH_OAUTH_CLIENT_ID;
+    else process.env.GOOGLE_SEARCH_OAUTH_CLIENT_ID = originalClientId;
+    if (originalClientSecret === undefined) delete process.env.GOOGLE_SEARCH_OAUTH_CLIENT_SECRET;
+    else process.env.GOOGLE_SEARCH_OAUTH_CLIENT_SECRET = originalClientSecret;
+  }
+});
+
+test("5b. Provider states genuinely flip to ADAPTER_READY, not a fabricated PRODUCTION_VERIFIED, when GSC credentials are absent", async () => {
+  const originalClientId = process.env.GOOGLE_SEARCH_OAUTH_CLIENT_ID;
+  const originalClientSecret = process.env.GOOGLE_SEARCH_OAUTH_CLIENT_SECRET;
+  delete process.env.GOOGLE_SEARCH_OAUTH_CLIENT_ID;
+  delete process.env.GOOGLE_SEARCH_OAUTH_CLIENT_SECRET;
+  try {
+    const db = createMockCanaryDb();
+    const report = await compileControlledCanaryReport(mockCanaryTenant, db);
+    assert.equal(report.truthfulProviderStates.googleSearchConsole, "ADAPTER_READY");
+  } finally {
+    if (originalClientId !== undefined) process.env.GOOGLE_SEARCH_OAUTH_CLIENT_ID = originalClientId;
+    if (originalClientSecret !== undefined) process.env.GOOGLE_SEARCH_OAUTH_CLIENT_SECRET = originalClientSecret;
+  }
+});
+
+test("6. Paid execution report is genuinely derived from the real CMS mutation, not a hardcoded literal", async () => {
+  // A tenant whose fixture page already HAS a title (nothing to fix) --
+  // the real underlying updateMetadata call still runs and still "passes"
+  // structurally, but the specific liveDomVerified evidence must reflect
+  // whatever the real mutation actually produced, not an unconditional
+  // `true` baked into the report regardless of input.
+  const db = createMockCanaryDb();
+  const paidExecRes = await runControlledCanaryPaidExecution(mockCanaryTenant, db);
+  assert.ok(paidExecRes.afterState, "real CMS execution must produce real afterState evidence");
+  assert.notEqual(
+    JSON.stringify(paidExecRes.afterState),
+    "{}",
+    "afterState must not be an empty fabricated placeholder",
+  );
 });

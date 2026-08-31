@@ -13,6 +13,8 @@ import {
   evaluateLaunchGate,
   getSearchGrowthDashboardData,
   checkTenantRevocationState,
+  buildProviderCapabilityMatrix,
+  getSchedulerHealthStatus,
 } from "../index.ts";
 
 export async function runControlledCanaryAudit(
@@ -122,12 +124,40 @@ export async function compileControlledCanaryReport(
   // Test Dashboard Data
   const dashboard = await getSearchGrowthDashboardData(mockDb, tenant.tenantId);
 
+  // Root-caused via docs/discovery/SEARCH_GROWTH_ENGINE_GAP_AUDIT.md: this
+  // report previously hardcoded `paidExecution`/`truthfulProviderStates` as
+  // literal `true`/"OPERATIONAL" without ever calling the real, separately
+  // tested `runControlledCanaryPaidExecution` (which actually exercises the
+  // real CMS execution engine) or the real provider capability matrix --
+  // "PRODUCTION_VERIFIED..." certification asserted over checks that never
+  // ran. Now genuinely calls both.
+  const paidExecRes = await runControlledCanaryPaidExecution(tenant, mockDb);
+  const paidExecutionPassed = paidExecRes.status === "VERIFIED";
+  // `afterState` here is `executeSearchAction`'s `afterEvidence`, which is
+  // the CMS provider's own mutation-result object -- itself shaped
+  // `{ beforeState: {title,...}, afterState: {title,...}, ... }` (see
+  // execution/cms/stratxcel-native.ts's updateMetadata) -- so the real new
+  // title is nested one level deeper than `beforeEvidence`'s title.
+  const mutatedTitle = (paidExecRes.afterState as { afterState?: { title?: unknown } } | undefined)?.afterState?.title;
+  const liveDomVerified =
+    paidExecutionPassed &&
+    typeof mutatedTitle === "string" &&
+    mutatedTitle.length > 0 &&
+    mutatedTitle !== paidExecRes.beforeState?.title;
+
+  const providerMatrix = buildProviderCapabilityMatrix();
+  const providerStatus = (key: string): string =>
+    providerMatrix.find((p) => p.providerKey === key)?.status ?? "NOT_CONFIGURED";
+  const hasSchedulerCronConfigured = getSchedulerHealthStatus().isConfiguredInVercel;
+
   const allAcceptanceCriteriaMet =
     auditRes.status === "COMPLETED" &&
     auditRes.mutationsAttempted === 0 &&
     bypassBlocked &&
     rollbackRes.passed &&
-    dashboard.tenantId === tenant.tenantId;
+    dashboard.tenantId === tenant.tenantId &&
+    paidExecutionPassed &&
+    liveDomVerified;
 
   return {
     generatedAt: new Date().toISOString(),
@@ -149,27 +179,31 @@ export async function compileControlledCanaryReport(
       blockerCode: "SUBSCRIPTION_REQUIRED",
     },
     paidExecution: {
-      passed: true,
-      actionType: "FIX_MISSING_TITLE",
-      liveDomVerified: true,
-      valueLedgerDelivered: true,
+      passed: paidExecutionPassed,
+      actionType: paidExecRes.actionType,
+      liveDomVerified,
+      valueLedgerDelivered: paidExecRes.valueLedgerRecorded,
     },
     rollbackTest: {
       passed: rollbackRes.passed,
       originalStateRestored: rollbackRes.restoredTitle === "Original Stable Title",
     },
+    // Not independently re-verified in this report -- runContinuousGrowthLoop
+    // needs DB fixtures (search_measurement_snapshots, search_actions,
+    // search_strategy_states) this canary's lightweight mock doesn't yet
+    // provide. Left honestly labeled rather than hardcoded as passing.
     schedulerWorkerCycle: {
-      passed: true,
-      mode: "EXPAND",
-      cadenceRespected: true,
+      passed: hasSchedulerCronConfigured,
+      mode: "NOT_INDEPENDENTLY_VERIFIED_IN_THIS_REPORT",
+      cadenceRespected: hasSchedulerCronConfigured,
     },
     truthfulProviderStates: {
-      googleSearchConsole: "OPERATIONAL",
-      googleAnalytics4: "OPERATIONAL",
-      wordpressRest: "OPERATIONAL",
-      stratxcelNativeCms: "OPERATIONAL",
-      serpTracker: "ADAPTER_READY",
-      perplexityAi: "ADAPTER_READY",
+      googleSearchConsole: providerStatus("google_search_console"),
+      googleAnalytics4: providerStatus("google_analytics_4"),
+      wordpressRest: providerStatus("wordpress_rest_api"),
+      stratxcelNativeCms: providerStatus("stratxcel_native_website"),
+      serpTracker: providerStatus("live_serp_measurement"),
+      perplexityAi: providerStatus("perplexity_ai_search"),
     },
     customerDashboardIntegrity: {
       passed: true,

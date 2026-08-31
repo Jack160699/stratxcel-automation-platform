@@ -2,6 +2,12 @@ import { cache } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getCurrentBrandBrain } from "@stratxcel/brand-brain";
 import type { PlatformIconKey } from "@/components/audit/PlatformIcon";
+// Relative, not "@/lib/..." -- this is a real runtime value import (unlike
+// the type-only PlatformIconKey import above, which the type-strip step
+// elides), and this repo's test convention runs .test.ts files directly
+// under `node --experimental-strip-types`, which has no tsconfig path-alias
+// resolution.
+import { isResolvedGbpLocationResourceName } from "../social/providers/google-business.ts";
 
 export type CanonicalConnectionState =
   | "CONNECTED"
@@ -238,8 +244,21 @@ export const getTenantDigitalPresence = cache(async function getTenantDigitalPre
   const gbSocial = findSocialRow("google_business") || findSocialRow("google");
   const gbPublic = extractPublicProfile("google_business", onlineProfiles);
   const gbConnected = gbSocial && String(gbSocial.status).toUpperCase() === "CONNECTED";
-  const gbReauth = isReauthRequired(gbSocial, hasUsableToken);
   const gbError = gbSocial && String(gbSocial.status).toUpperCase() === "ERROR";
+  // Found live against the real StratXcel tenant
+  // (docs/discovery/SEARCH_GROWTH_ENGINE_GAP_AUDIT.md, Update 10): a row can
+  // be status: CONNECTED / token_health: HEALTHY with a genuinely usable
+  // OAuth token, while provider_account_id is still the OAuth-time fallback
+  // bare Google account id (GBP account/location discovery never resolved
+  // a real accounts/{id}/locations/{id} resource for this identity). Every
+  // GBP read/write call this codebase makes needs that resolved resource
+  // name -- a connection in this state cannot actually do anything GBP-
+  // specific yet, so it must not read as a healthy CONNECTED card here, the
+  // exact "Google Business is fully ready" misrepresentation this was
+  // found to produce on the real customer-facing home dashboard
+  // (app/app/page.tsx reads connectionState directly).
+  const gbLocationUnresolved = Boolean(gbConnected && !isResolvedGbpLocationResourceName(gbSocial?.provider_account_id ?? ""));
+  const gbReauth = isReauthRequired(gbSocial, hasUsableToken) || gbLocationUnresolved;
 
   const googleBusinessStatus: CanonicalConnectionStatus = {
     provider: "google_business",
@@ -272,7 +291,11 @@ export const getTenantDigitalPresence = cache(async function getTenantDigitalPre
     isDiscoveredPublicly: Boolean(gbPublic.url && !gbConnected),
     isOAuth: true,
     provenance: gbConnected ? "oauth_authenticated" : gbPublic.url ? "discovered_public" : "unknown",
-    error: gbError ? "Google Business connection error. Please reconnect." : null,
+    error: gbError
+      ? "Google Business connection error. Please reconnect."
+      : gbLocationUnresolved
+      ? "Google Business is connected, but the business location wasn't found for this Google account — reconnect to complete setup."
+      : null,
   };
 
   // 3. Instagram

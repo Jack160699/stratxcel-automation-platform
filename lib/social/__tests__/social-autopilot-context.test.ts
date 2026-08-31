@@ -33,7 +33,7 @@ function run() {
     brandProfile: REAL_STRATXCEL_BRAND_PROFILE,
     brandBrainContent: { location: "Bhilai, Chhattisgarh, India", logo_url: "https://example.com/logo.png", logo_variants: { square: "https://example.com/logo-square.png" } } as never,
     verifiedFacts: ["Business location (as provided by the owner): Bhilai, Chhattisgarh, India"],
-    research: { available: true, summary: "Real competitor summary", claims: [], sources: [], provider: "google", reason: null, gatheredAt: "2026-08-30T00:00:00Z" },
+    research: { available: true, summary: "Real competitor summary", claims: [], sources: [], provider: "google", reason: null, gatheredAt: "2026-08-30T00:00:00Z", trendSignals: [] },
     campaignHistory: [{ week_key: "2026-08-24", status: "ACTIVE", created_at: "2026-08-30T00:00:00Z" }],
     weekStart: "2026-08-24",
     weekEnd: "2026-08-30",
