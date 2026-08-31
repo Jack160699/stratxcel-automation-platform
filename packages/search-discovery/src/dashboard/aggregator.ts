@@ -1,6 +1,7 @@
 import type { SearchDb } from "../repository.ts";
 import type { SearchGrowthDashboardData, DashboardScorecardMetric } from "./types.ts";
 import { certifyProductionReadiness } from "../diagnostics/readiness-certification.ts";
+import { normalizeWebsiteInput } from "../website-input.ts";
 
 export async function getSearchGrowthDashboardData(
   db: SearchDb,
@@ -16,6 +17,7 @@ export async function getSearchGrowthDashboardData(
     { data: gscSnapshotRow },
     { data: strategyState },
     { data: actionRows },
+    { data: googleConnection },
   ] = await Promise.all([
     // 1. Fetch Tenant Project
     db
@@ -63,6 +65,15 @@ export async function getSearchGrowthDashboardData(
       .eq("tenant_id", tenantId)
       .order("created_at", { ascending: false })
       .limit(10),
+    // 7. Fetch any already-connected Search Console property, so a tenant
+    // who connected Google Search Console but has never run a Search
+    // Growth analysis yet doesn't see an empty "Connect your website"
+    // field for a website the platform already knows about (Update 17).
+    db
+      .from("search_google_connections")
+      .select("search_console_site_url")
+      .eq("tenant_id", tenantId)
+      .maybeSingle(),
   ]);
 
   // Root-caused via docs/discovery/SEARCH_GROWTH_ENGINE_GAP_AUDIT.md: a
@@ -75,6 +86,21 @@ export async function getSearchGrowthDashboardData(
   const hasProject = Boolean(project);
   const propertyName = project?.name || "Local Business";
   const propertyUrl = project?.property_url || "https://example.com";
+
+  // Root-caused via docs/discovery/SEARCH_GROWTH_ENGINE_GAP_AUDIT.md,
+  // Update 17: a tenant with no search_projects row yet was always shown
+  // an empty "Connect your website" field, even when the platform already
+  // has a real, verified website for them (a connected Search Console
+  // property). Only ever set when there is genuinely no project yet --
+  // once a real search_projects row exists, propertyUrl above is already
+  // the real, authoritative source and this is irrelevant.
+  const detectedWebsiteUrl =
+    !hasProject && googleConnection?.search_console_site_url
+      ? (() => {
+          const normalized = normalizeWebsiteInput(googleConnection.search_console_site_url);
+          return normalized.ok ? normalized.url : null;
+        })()
+      : null;
 
   const planTier = subscription?.plan_tier || "free";
   const isPaidTenant = planTier !== "free" && subscription?.status === "active";
@@ -251,6 +277,7 @@ export async function getSearchGrowthDashboardData(
     hasProject,
     projectName: propertyName,
     propertyUrl,
+    detectedWebsiteUrl,
     isPaidTenant,
     planTier,
     canExecute,

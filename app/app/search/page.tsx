@@ -70,6 +70,17 @@ export default function SearchPage() {
     void load();
   }, [load]);
 
+  // Update 17 (docs/discovery/SEARCH_GROWTH_ENGINE_GAP_AUDIT.md): a tenant
+  // who already connected Google Search Console but never ran a Search
+  // Growth analysis was always shown an empty website field, even though
+  // the platform genuinely already knows their website. Pre-fill from the
+  // real, already-connected source (detectedWebsiteUrl) instead of forcing
+  // re-entry -- still fully editable, since a customer may legitimately
+  // want to analyze a different site than their Search Console property.
+  useEffect(() => {
+    if (data && !data.hasProject && data.detectedWebsiteUrl) setSite((current) => current || data.detectedWebsiteUrl!);
+  }, [data]);
+
   async function runFirstAnalysis() {
     if (!tenantId || !site.trim()) return;
     setRunning(true);
@@ -114,10 +125,21 @@ export default function SearchPage() {
         // -- a genuine "connect your website" prompt instead of a
         // dashboard full of fake data.
         <Card className="p-6">
-          <CardHeading>Connect your website to start</CardHeading>
-          <p className="mt-2 text-xs text-sx-text-muted">Enter your website to run the first real SEO/AEO/GEO analysis. Nothing is published or changed without your approval. Missing provider data stays visibly unavailable — never shown as if it were real.</p>
+          {data.detectedWebsiteUrl ? (
+            <>
+              <CardHeading>Website detected</CardHeading>
+              <p className="mt-2 text-xs text-sx-text-muted">
+                We found <span className="font-semibold text-sx-text">{data.detectedWebsiteUrl}</span> from your connected Google Search Console. Run the first real SEO/AEO/GEO analysis on it, or enter a different website below. Nothing is published or changed without your approval.
+              </p>
+            </>
+          ) : (
+            <>
+              <CardHeading>Connect your website to start</CardHeading>
+              <p className="mt-2 text-xs text-sx-text-muted">Enter your website to run the first real SEO/AEO/GEO analysis. Nothing is published or changed without your approval. Missing provider data stays visibly unavailable — never shown as if it were real.</p>
+            </>
+          )}
           <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-            <Input type="url" value={site} onChange={(e) => setSite(e.target.value)} placeholder="https://yourbusiness.in" className="flex-1" />
+            <Input type="text" value={site} onChange={(e) => setSite(e.target.value)} placeholder="yourbusiness.in" className="flex-1" />
             <Button onClick={runFirstAnalysis} disabled={running || !site.trim()}>{running ? "Running…" : "Run Search Analysis"}</Button>
           </div>
         </Card>

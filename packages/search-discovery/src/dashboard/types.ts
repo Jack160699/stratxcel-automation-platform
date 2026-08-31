@@ -25,6 +25,12 @@ export interface SearchGrowthDashboardData {
   hasProject: boolean;
   projectName: string;
   propertyUrl: string;
+  /** Populated ONLY when hasProject is false and the tenant already has a
+   * real, connected Search Console property -- lets the onboarding UI
+   * pre-fill/detect an already-known website instead of an empty field.
+   * Never a source of truth once hasProject is true; never fabricated
+   * when no real connection exists (Update 17). */
+  detectedWebsiteUrl: string | null;
   isPaidTenant: boolean;
   planTier: string;
   canExecute: boolean;
