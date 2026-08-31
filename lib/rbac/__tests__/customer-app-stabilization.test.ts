@@ -124,15 +124,31 @@ async function run() {
     assert.ok(nav.includes(`href: "${href}"`), `${href} must remain a V1 destination`);
   }
   assert.equal(nav.includes('href: "/app/crm"'), false, "/app/crm must NOT be in customer V1 navigation");
-  for (const segment of ["missions", "approvals", "copilot", "ads", "search", "files", "reports"]) {
+  // Checks the real gate usage (the re-export from the shared component),
+  // not a bare mention of the identifier -- a layout is free to reference
+  // NotV1CustomerRoute in an explanatory comment (e.g. documenting why a
+  // route is no longer gated) without that counting as still using it.
+  const usesGate = (layoutSource: string) => /from\s*["'][^"']*\/components\/NotV1CustomerRoute["']/.test(layoutSource);
+  for (const segment of ["missions", "approvals", "copilot", "ads", "files", "reports"]) {
     assert.ok(
-      read("app", "app", segment, "layout.tsx").includes("NotV1CustomerRoute"),
+      usesGate(read("app", "app", segment, "layout.tsx")),
       `/app/${segment} must terminate at the V1 route boundary`
     );
   }
-  assert.equal(read("app", "app", "website", "layout.tsx").includes("NotV1CustomerRoute"), false, "Website at /app/website must be reachable");
-  assert.equal(read("app", "app", "social", "layout.tsx").includes("NotV1CustomerRoute"), false, "Copilot at /app/social/copilot must be reachable");
-  assert.equal(read("app", "app", "integrations", "layout.tsx").includes("NotV1CustomerRoute"), false, "Connectors at /app/integrations must be reachable");
+  assert.equal(usesGate(read("app", "app", "website", "layout.tsx")), false, "Website at /app/website must be reachable");
+  assert.equal(usesGate(read("app", "app", "social", "layout.tsx")), false, "Copilot at /app/social/copilot must be reachable");
+  assert.equal(usesGate(read("app", "app", "integrations", "layout.tsx")), false, "Connectors at /app/integrations must be reachable");
+  // Update 14 (docs/discovery/SEARCH_GROWTH_ENGINE_GAP_AUDIT.md): the
+  // Search Growth OS gate was lifted once its root cause -- 13 real
+  // fabrication defects in SearchGrowthDashboardView.tsx, not an
+  // unresolvable product gap -- was found and fixed. Real protection for
+  // this route is unchanged: app/app/layout.tsx still enforces
+  // auth/tenant resolution, and page.tsx's own EntitlementGate
+  // (minTier="growth") still enforces the paid-tier boundary. Reachable
+  // today via the real, already-live Search Console connect flow on
+  // /app/integrations, whose OAuth callback lands here.
+  assert.equal(usesGate(read("app", "app", "search", "layout.tsx")), false, "Search Growth OS at /app/search must be reachable");
+  assert.ok(read("app", "app", "search", "page.tsx").includes('minTier="growth"'), "Search Growth OS must still be paid-tier gated via EntitlementGate");
 
   const settings = read("app", "app", "settings", "page.tsx");
   assert.equal(settings.includes("/app/integrations"), false);

@@ -68,7 +68,7 @@ export function SearchGrowthDashboardView({ initialData }: SearchGrowthDashboard
             <div className="space-y-1">
               <div className="flex items-center gap-2 text-amber-300 font-bold text-sm">
                 <span>🚀</span>
-                <span>StratXcel found {data.actionCenter.totalActionsCount || 17} high-priority growth opportunities</span>
+                <span>StratXcel found {data.actionCenter.totalActionsCount} high-priority growth opportunities</span>
               </div>
               <p className="text-xs text-sx-text-muted">
                 These are the actions our autonomous Growth Engine can execute and continuously monitor for you every 3 days.
@@ -93,7 +93,7 @@ export function SearchGrowthDashboardView({ initialData }: SearchGrowthDashboard
             { id: "actions", label: `Action Center (${data.actionCenter.totalActionsCount})` },
             { id: "proof", label: "What StratXcel Achieved" },
             { id: "connectors", label: "Connectors & Readiness" },
-            { id: "notifications", label: `Notifications (${data.customerNotifications?.length ?? 3})` },
+            { id: "notifications", label: `Notifications (${data.customerNotifications?.length ?? 0})` },
           ].map((tab) => (
             <button
               key={tab.id}
@@ -128,13 +128,18 @@ export function SearchGrowthDashboardView({ initialData }: SearchGrowthDashboard
                       Cadence: Every 3 Days (≈10 cycles/month)
                     </span>
                     <span className="text-[10px] px-2 py-0.5 rounded bg-blue-950/60 border border-blue-800/50 text-blue-300 font-semibold">
-                      Next Cycle: {data.cadenceSchedule?.nextCycleDueAt ? "in 2 days" : "in 2 days"}
+                      {/* Was previously "in 2 days" unconditionally regardless of the real
+                          nextCycleDueAt value -- both branches of the ternary returned the
+                          same fabricated literal. Fixed to actually use the real date, or
+                          say honestly that it isn't scheduled yet. */}
+                      Next Cycle: {data.cadenceSchedule?.nextCycleDueAt
+                        ? new Date(data.cadenceSchedule.nextCycleDueAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })
+                        : "Not yet scheduled"}
                     </span>
                   </div>
                   <p className="text-xs text-sx-text-muted mt-1.5 max-w-2xl leading-relaxed">
                     <span className="font-semibold text-sx-text">Current Strategy ({data.continuousGrowth.strategyMode}): </span>
-                    {data.cadenceSchedule?.strategyRationale ||
-                      "Competitor movement detected on 3 priority queries. Defending core keyword rankings and updating schema."}
+                    {data.cadenceSchedule?.strategyRationale || "Strategy rationale not yet available for this cycle."}
                   </p>
                 </div>
               </div>
@@ -286,16 +291,20 @@ export function SearchGrowthDashboardView({ initialData }: SearchGrowthDashboard
                   <div key={idx} className="p-5 rounded-xl bg-sx-surface-2 border border-sx-border space-y-4">
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-mono font-bold text-rose-400">{wtw.competitorDomain}</span>
-                      <span className="text-[10px] px-2 py-0.5 rounded bg-rose-950/60 text-rose-300 border border-rose-800/40">
-                        {wtw.confidence || "HIGH"} CONFIDENCE
-                      </span>
+                      {/* wtw.confidence is real evidence-derived data when present; a
+                          missing value must not be shown as a fabricated "HIGH". */}
+                      {wtw.confidence && (
+                        <span className="text-[10px] px-2 py-0.5 rounded bg-rose-950/60 text-rose-300 border border-rose-800/40">
+                          {wtw.confidence} CONFIDENCE
+                        </span>
+                      )}
                     </div>
 
                     <div>
                       <h3 className="text-sm font-bold text-sx-text">{wtw.competitorName || wtw.competitorDomain}</h3>
                       <p className="text-xs text-sx-text-muted mt-1">
                         <span className="text-rose-400 font-semibold">{wtw.competitorName || wtw.competitorDomain} appears ahead because: </span>
-                        {wtw.summary || wtw.gap || "They maintain dedicated location-specific landing pages and deeper schema coverage."}
+                        {wtw.summary || wtw.gap || "Specific gap details not yet available for this competitor."}
                       </p>
                     </div>
 
@@ -320,7 +329,7 @@ export function SearchGrowthDashboardView({ initialData }: SearchGrowthDashboard
 
                     <div className="pt-2 border-t border-sx-border text-xs">
                       <span className="font-semibold text-sx-text">Recommended Counter-Action: </span>
-                      <p className="text-emerald-400 mt-0.5">{wtw.recommendedAction || "Deploy optimized local service schema and dedicated target page."}</p>
+                      <p className="text-emerald-400 mt-0.5">{wtw.recommendedAction || "Recommended action not yet available for this gap."}</p>
                     </div>
                   </div>
                 ))}
@@ -413,7 +422,7 @@ export function SearchGrowthDashboardView({ initialData }: SearchGrowthDashboard
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold uppercase tracking-wider text-sx-text">1. Delivered</span>
                   <span className="text-xs px-2 py-0.5 rounded bg-sx-surface-3 text-sx-text font-bold">
-                    {data.achievedProof?.delivered?.length ?? 1}
+                    {data.achievedProof?.delivered?.length ?? 0}
                   </span>
                 </div>
                 <p className="text-[11px] text-sx-text-muted">Atomic schema, metadata, and service page mutations applied.</p>
@@ -432,7 +441,7 @@ export function SearchGrowthDashboardView({ initialData }: SearchGrowthDashboard
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold uppercase tracking-wider text-emerald-400">2. Verified</span>
                   <span className="text-xs px-2 py-0.5 rounded bg-emerald-950/80 text-emerald-300 font-bold border border-emerald-700/50">
-                    {data.achievedProof?.verified?.length ?? 1}
+                    {data.achievedProof?.verified?.length ?? 0}
                   </span>
                 </div>
                 <p className="text-[11px] text-sx-text-muted">Live DOM checks confirmed canonical, meta, and JSON-LD schema correctness.</p>
@@ -451,7 +460,7 @@ export function SearchGrowthDashboardView({ initialData }: SearchGrowthDashboard
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold uppercase tracking-wider text-blue-400">3. Observed</span>
                   <span className="text-xs px-2 py-0.5 rounded bg-blue-950/80 text-blue-300 font-bold border border-blue-700/50">
-                    {data.achievedProof?.observed?.length ?? 1}
+                    {data.achievedProof?.observed?.length ?? 0}
                   </span>
                 </div>
                 <p className="text-[11px] text-sx-text-muted">Indexed by Google and detected in Search Console queries.</p>
@@ -642,18 +651,25 @@ export function SearchGrowthDashboardView({ initialData }: SearchGrowthDashboard
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              {/* aiVisibilityScore/mentionCoveragePercentage/competitorCitationShare are
+                  genuinely `number | null` -- null means no real citation-probe evidence
+                  exists yet. Previously fell back to fabricated numbers (65/100, 70%, 40%)
+                  that looked exactly like real measurements. Show the honest unavailable
+                  state instead -- never invent an AI-visibility score. */}
               <div className="p-5 rounded-xl bg-sx-surface-2 border border-sx-border">
                 <div className="text-xs text-sx-text-muted">AI Visibility Score</div>
                 <div className="text-2xl font-extrabold text-sx-text mt-1">
-                  {data.aiSearch.aiVisibilityScore ?? 65}/100
+                  {data.aiSearch.aiVisibilityScore !== null ? `${data.aiSearch.aiVisibilityScore}/100` : "Not available"}
                 </div>
-                <div className="text-[10px] text-emerald-400 mt-1">Grounded in citation probes</div>
+                <div className="text-[10px] text-sx-text-subtle mt-1">
+                  {data.aiSearch.aiVisibilityScore !== null ? "Grounded in citation probes" : "No citation probe data yet"}
+                </div>
               </div>
 
               <div className="p-5 rounded-xl bg-sx-surface-2 border border-sx-border">
                 <div className="text-xs text-sx-text-muted">Brand Mention Coverage</div>
                 <div className="text-2xl font-extrabold text-sx-text mt-1">
-                  {data.aiSearch.mentionCoveragePercentage ?? 70}%
+                  {data.aiSearch.mentionCoveragePercentage !== null ? `${data.aiSearch.mentionCoveragePercentage}%` : "Not available"}
                 </div>
                 <div className="text-[10px] text-sx-text-muted mt-1">Prompt share across services</div>
               </div>
@@ -661,7 +677,7 @@ export function SearchGrowthDashboardView({ initialData }: SearchGrowthDashboard
               <div className="p-5 rounded-xl bg-sx-surface-2 border border-sx-border">
                 <div className="text-xs text-sx-text-muted">Competitor Citation Share</div>
                 <div className="text-2xl font-extrabold text-purple-300 mt-1">
-                  {data.aiSearch.competitorCitationShare ?? 40}%
+                  {data.aiSearch.competitorCitationShare !== null ? `${data.aiSearch.competitorCitationShare}%` : "Not available"}
                 </div>
                 <div className="text-[10px] text-sx-text-muted mt-1">Share held by rivals</div>
               </div>

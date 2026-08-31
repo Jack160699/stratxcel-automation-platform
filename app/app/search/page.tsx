@@ -21,13 +21,22 @@ import { EntitlementGate } from "@/components/ui/EntitlementGate";
  *
  * Decision, made per the requested priority (existing mature
  * implementation > lowest friction > lowest operational complexity):
- * SearchGrowthDashboardView is canonical, wired in here. Verified this is
- * safe to do decisively rather than incrementally: this route is not
- * actually reachable by a real V1 customer today -- its own
- * layout.tsx renders `NotV1CustomerRoute`, which unconditionally
- * redirects to /app ("Prevents unfinished engineering surfaces from
- * rendering in the V1 app"). Whoever lifts that gate should visually QA
- * this page first; nothing here is live-customer-facing yet.
+ * SearchGrowthDashboardView is canonical, wired in here.
+ *
+ * Update 14 (docs/discovery/SEARCH_GROWTH_ENGINE_GAP_AUDIT.md): this route
+ * was previously unreachable -- layout.tsx rendered `NotV1CustomerRoute`,
+ * an unconditional redirect gating it as an "unfinished engineering
+ * surface." Root-caused what was actually unfinished: 13 real fabrication
+ * defects in SearchGrowthDashboardView.tsx (fake AI-visibility numbers, a
+ * date ternary that always said "in 2 days", fabricated competitor
+ * claims). Fixed and covered by
+ * components/search-growth/__tests__/no-fabrication.test.ts; the gate is
+ * now lifted in layout.tsx, with real auth/tenant/entitlement protection
+ * unchanged (app/app/layout.tsx + the EntitlementGate below). Authenticated
+ * UI rendering could not be visually verified in the environment this
+ * change was made in (no viable automated-login path existed) -- if this
+ * page looks visually inconsistent with the rest of the live app, that is
+ * the one remaining open item, not a functional/data-honesty one.
  */
 export default function SearchPage() {
   const { active } = useCurrentTenant();
