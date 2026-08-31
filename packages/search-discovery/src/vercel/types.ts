@@ -56,6 +56,11 @@ export interface VercelTokenValidationResult {
   valid: boolean;
   accountId: string | null;
   accountName: string | null;
+  /** Set only when this token is scoped to a specific Team rather than
+   * "Full Account" -- see client.ts's validateVercelToken for why this
+   * matters (a team-scoped token has no personal /v2/user resource and
+   * must pass ?teamId= on every subsequent project/domain call). */
+  teamId: string | null;
   reason: string | null;
 }
 

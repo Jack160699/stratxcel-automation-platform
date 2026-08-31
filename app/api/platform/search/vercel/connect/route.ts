@@ -37,7 +37,13 @@ export async function POST(request: Request) {
   const result = await connectVercelWebsite(supabase, {
     tenantId: body.tenantId,
     connectedByUserId: ctx.userId,
-    token: body.token,
+    // Defensive trim server-side, independent of the client already
+    // trimming (WebsiteConnectorCard.tsx) -- the length check three lines
+    // up validates the trimmed length but this used to pass the raw,
+    // untrimmed value through, an inconsistency worth closing regardless
+    // of whether it was the reported 404's actual cause (this codebase's
+    // established pattern: never trust client-side normalization alone).
+    token: body.token.trim(),
     scope: body.scope === "AUTONOMOUS_WRITE" ? "AUTONOMOUS_WRITE" : "ANALYSIS_ONLY",
   });
 

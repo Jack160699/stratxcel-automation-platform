@@ -34,7 +34,55 @@ test("1. validateVercelToken: real success shape (GET /v2/user) parses correctly
   }) as typeof fetch;
 
   const result = await validateVercelToken("real-looking-token", fetcher);
-  assert.deepEqual(result, { valid: true, accountId: "acct_123", accountName: "Jane Doe", reason: null });
+  assert.deepEqual(result, { valid: true, accountId: "acct_123", accountName: "Jane Doe", teamId: null, reason: null });
+});
+
+// --- Update 19: the actual real, live, reported customer bug -------------
+// docs/discovery/SEARCH_GROWTH_ENGINE_GAP_AUDIT.md -- a customer's genuinely
+// valid Vercel Personal Access Token, scoped to a specific Team rather than
+// "Full Account" (a normal, common choice Vercel itself offers at token
+// creation), returned VERCEL_API_ERROR_404 on GET /v2/user -- Vercel's own
+// docs confirm 404 isn't even a documented response for that endpoint;
+// genuinely bad tokens get 401/403. A team-scoped token has no personal
+// "user" resource at all. This is the exact repro and exact fix.
+
+test("1b. validateVercelToken: a Team-scoped token 404s on /v2/user but is correctly recognized as valid via the /v2/teams fallback (the real reported bug, fixed)", async () => {
+  const fetcher = (async (url: string | URL) => {
+    const u = String(url);
+    if (u.includes("/v2/user")) return jsonResponse(404, { error: { code: "not_found" } });
+    if (u.includes("/v2/teams")) return jsonResponse(200, { teams: [{ id: "team_abc123", name: "StratXcel", slug: "stratxcel" }] });
+    throw new Error(`unexpected URL in test: ${u}`);
+  }) as typeof fetch;
+
+  const result = await validateVercelToken("real-team-scoped-token", fetcher);
+  assert.deepEqual(result, { valid: true, accountId: "team_abc123", accountName: "StratXcel", teamId: "team_abc123", reason: null });
+});
+
+test("1c. validateVercelToken: a 404 on /v2/user AND an empty/failed /v2/teams is honestly rejected, never fabricated valid", async () => {
+  const fetcher = (async (url: string | URL) => {
+    const u = String(url);
+    if (u.includes("/v2/user")) return jsonResponse(404, {});
+    if (u.includes("/v2/teams")) return jsonResponse(200, { teams: [] });
+    throw new Error(`unexpected URL in test: ${u}`);
+  }) as typeof fetch;
+
+  const result = await validateVercelToken("genuinely-bad-token", fetcher);
+  assert.equal(result.valid, false);
+  assert.equal(result.reason, "VERCEL_API_ERROR_404");
+});
+
+test("1d. validateVercelToken: 401/403 on /v2/user never falls back to /v2/teams -- a genuinely unauthorized token is rejected immediately", async () => {
+  let teamsCalled = false;
+  const fetcher = (async (url: string | URL) => {
+    const u = String(url);
+    if (u.includes("/v2/teams")) { teamsCalled = true; return jsonResponse(200, { teams: [{ id: "team_x", name: "X", slug: "x" }] }); }
+    return jsonResponse(401, {});
+  }) as typeof fetch;
+
+  const result = await validateVercelToken("expired-token", fetcher);
+  assert.equal(result.valid, false);
+  assert.equal(result.reason, "TOKEN_UNAUTHORIZED");
+  assert.equal(teamsCalled, false, "401/403 must never trigger the team fallback -- that's reserved for the specific 404-on-valid-team-token case");
 });
 
 test("2. validateVercelToken: real 401 shape is honestly reported, never treated as valid", async () => {
@@ -87,8 +135,16 @@ test("6. listVercelProjects: a real API error throws with the real status, not a
 
 test("7. listVercelProjectDomains: real verification-status field flows through", async () => {
   const fetcher = (async () => jsonResponse(200, { domains: [{ name: "unverified.example.com", apexName: "example.com", verified: false }] })) as typeof fetch;
-  const domains = await listVercelProjectDomains("token", "prj_1", fetcher);
+  const domains = await listVercelProjectDomains("token", "prj_1", { fetcher });
   assert.equal(domains[0]!.verified, false, "a genuinely unverified domain must never be reported as verified");
+});
+
+test("7b. listVercelProjectDomains: a supplied teamId is actually sent as a query param, not silently dropped", async () => {
+  const fetcher = (async (url: string | URL) => {
+    assert.match(String(url), /teamId=team_abc123/);
+    return jsonResponse(200, { domains: [] });
+  }) as typeof fetch;
+  await listVercelProjectDomains("token", "prj_1", { teamId: "team_abc123", fetcher });
 });
 
 // --- connector.ts: connect/disconnect/discover, with a mock DB + mock vault ---
@@ -240,6 +296,38 @@ test("11. discoverVercelProjects: real connected tenant discovers and persists r
   assert.equal(result.projectCount, 1);
   assert.equal(db.getProjects()[0]!.project_name, "site-1");
   assert.equal(db.getProjects()[0]!.domains[0]!.verified, true);
+});
+
+test("11b. connectVercelWebsite -> discoverVercelProjects: a Team-scoped token's team_id is persisted and actually threaded into the real project + domain API calls, end to end", async () => {
+  const db = createMockDb();
+  const vault = createMockVault();
+  const connectFetcher = (async (url: string | URL) => {
+    const u = String(url);
+    if (u.includes("/v2/user")) return jsonResponse(404, {});
+    if (u.includes("/v2/teams")) return jsonResponse(200, { teams: [{ id: "team_abc123", name: "StratXcel", slug: "stratxcel" }] });
+    throw new Error(`unexpected URL in test: ${u}`);
+  }) as typeof fetch;
+  const connectResult = await connectVercelWebsite(db, { tenantId: "t1", connectedByUserId: "u1", token: "real-team-token", fetcher: connectFetcher, vault });
+  assert.equal(connectResult.ok, true);
+  assert.equal(db.getConnections()[0]!.team_id, "team_abc123", "the resolved teamId must actually be persisted on the connection row, not dropped");
+
+  const discoverFetcher = (async (url: string | URL) => {
+    const u = String(url);
+    if (u.includes("/v10/projects")) {
+      assert.match(u, /teamId=team_abc123/, "project discovery must pass the stored teamId, not omit it");
+      return jsonResponse(200, [{ id: "prj_1", name: "stratxcel-site", framework: "nextjs", alias: [{ domain: "www.stratxcel.in" }] }]);
+    }
+    if (u.includes("/domains")) {
+      assert.match(u, /teamId=team_abc123/, "domain discovery must also pass the stored teamId, not omit it");
+      return jsonResponse(200, { domains: [{ name: "www.stratxcel.in", apexName: "stratxcel.in", verified: true }] });
+    }
+    throw new Error(`unexpected URL in test: ${u}`);
+  }) as typeof fetch;
+
+  const result = await discoverVercelProjects(db, { tenantId: "t1", fetcher: discoverFetcher, vault });
+  assert.equal(result.ok, true);
+  assert.equal(result.projectCount, 1);
+  assert.equal(db.getProjects()[0]!.domains[0]!.name, "www.stratxcel.in");
 });
 
 test("12. disconnectVercelWebsite: real disconnect removes the connection and revokes the vault entry", async () => {

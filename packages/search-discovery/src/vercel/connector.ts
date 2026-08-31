@@ -57,6 +57,10 @@ export async function connectVercelWebsite(
         scope: input.scope ?? "ANALYSIS_ONLY",
         external_account_id: validation.accountId,
         external_account_name: validation.accountName,
+        // Update 19: only set for a Team-scoped token (validateVercelToken
+        // resolves this via the /v2/teams fallback) -- null for a normal
+        // "Full Account" personal token, matching Vercel's own model.
+        team_id: validation.teamId,
         is_healthy: true,
         last_verified_at: new Date().toISOString(),
         last_error: null,
@@ -119,7 +123,7 @@ export interface DiscoverVercelProjectsResult {
 export async function discoverVercelProjects(db: SearchDb, input: { tenantId: string; searchProjectId?: string | null; fetcher?: typeof fetch; vault?: SecretVault }): Promise<DiscoverVercelProjectsResult> {
   const { data: connection, error: fetchError } = await db
     .from("search_website_connections")
-    .select("id, token_vault_ref")
+    .select("id, token_vault_ref, team_id")
     .eq("tenant_id", input.tenantId)
     .eq("provider", "vercel")
     .maybeSingle();
@@ -133,7 +137,10 @@ export async function discoverVercelProjects(db: SearchDb, input: { tenantId: st
 
   let projects;
   try {
-    projects = await listVercelProjects(token, { fetcher: input.fetcher });
+    // Update 19: pass the stored team_id through when this connection was
+    // authorized with a Team-scoped token -- listVercelProjects already
+    // supported this, it just never received it before now.
+    projects = await listVercelProjects(token, { teamId: (connection.team_id as string | null) ?? undefined, fetcher: input.fetcher });
   } catch (err) {
     await db.from("search_website_connections").update({ is_healthy: false, last_error: err instanceof Error ? err.message : "DISCOVERY_FAILED", updated_at: new Date().toISOString() }).eq("id", connection.id);
     return { ok: false, projectCount: 0, reason: err instanceof Error ? err.message : "DISCOVERY_FAILED" };
@@ -145,7 +152,7 @@ export async function discoverVercelProjects(db: SearchDb, input: { tenantId: st
     // own summary only carries assigned aliases, not verification state.
     let domains = project.domains;
     try {
-      domains = await listVercelProjectDomains(token, project.externalProjectId, input.fetcher);
+      domains = await listVercelProjectDomains(token, project.externalProjectId, { teamId: (connection.team_id as string | null) ?? undefined, fetcher: input.fetcher });
     } catch {
       // Keep the alias-derived summary rather than failing the whole
       // discovery pass over one project's domain lookup.

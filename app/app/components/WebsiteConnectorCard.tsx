@@ -13,6 +13,31 @@ interface VercelProject {
   lastDeploymentUrl: string | null;
 }
 
+/**
+ * Customer-friendly Vercel connect error copy (docs/discovery/
+ * SEARCH_GROWTH_ENGINE_GAP_AUDIT.md, Update 19) -- the raw backend reason
+ * (TOKEN_UNAUTHORIZED, VERCEL_API_ERROR_404, NOT_CONNECTED, etc.) used to
+ * be shown to the customer directly. The raw reason is still the real,
+ * specific cause -- it just doesn't belong in front of a customer who was
+ * never told what a Personal Access Token or an HTTP status code is.
+ */
+function friendlyVercelConnectError(reason: string | undefined): string {
+  switch (reason) {
+    case "TOKEN_UNAUTHORIZED":
+      return "Your Vercel connection could not be authorized. Double-check the token and try again.";
+    case "MALFORMED_RESPONSE":
+    case "VERCEL_API_ERROR_404":
+    case "VERCEL_API_ERROR_500":
+    case "VERCEL_API_ERROR_502":
+    case "VERCEL_API_ERROR_503":
+      return "Vercel could not be reached right now. Please try again in a moment.";
+    default:
+      return reason?.startsWith("VERCEL_API_ERROR_")
+        ? "Vercel could not be reached right now. Please try again in a moment."
+        : "Could not connect to Vercel. Check the token and try again.";
+  }
+}
+
 interface WebsiteStatus {
   website: { url: string; source: "search_project" | "search_console" } | null;
   detectedPlatform: string | null;
@@ -80,7 +105,7 @@ export function WebsiteConnectorCard({ tenantId }: { tenantId: string }) {
       });
       const body = await res.json();
       if (!res.ok) {
-        setConnectError(body.reason || body.error || "Could not connect to Vercel. Check the token and try again.");
+        setConnectError(friendlyVercelConnectError(body.reason || body.error));
         return;
       }
       setTokenInput("");
