@@ -87,15 +87,22 @@ export default function SearchPage() {
 
   if (loading) return null; // app/app/search/loading.tsx covers the route-transition skeleton
 
-  // Preserved unchanged from the previous implementation -- this SEO/search
-  // feature's own paid-tier gate is a separate, real access-control
-  // decision from which dashboard component renders inside it, and this
-  // pass doesn't touch it (a dedicated regression test,
+  // This SEO/search feature's own paid-tier gate is a separate, real
+  // access-control decision from which dashboard component renders inside
+  // it (a dedicated regression test,
   // packages/payments-and-wallet/src/__tests__/autopilot-universal-unlock.test.ts,
   // exists specifically to catch this feature's EntitlementGate usage
   // being removed as a side effect of unrelated work).
+  //
+  // Update 15 (docs/discovery/SEARCH_GROWTH_ENGINE_GAP_AUDIT.md): this used
+  // to pass minTier="growth" -- a legacy tier name not present anywhere in
+  // the real, currently-sold v3 catalog, which silently locked out every
+  // real customer regardless of plan (confirmed live against the real
+  // StratXcel tenant's active `advanced_growth` subscription). Now gated
+  // on the actual capability the catalog defines for this feature:
+  // PLAN_CAPABILITIES[tier].seo_execution.
   return (
-    <EntitlementGate tenantId={tenantId} minTier="growth" featureName="Google SEO workflows">
+    <EntitlementGate tenantId={tenantId} requiredCapability="seo_execution" featureName="Google SEO workflows">
       {error || !data ? (
         <ErrorState message={error ?? "SEARCH_DASHBOARD_UNAVAILABLE"} onRetry={load} />
       ) : !data.hasProject ? (

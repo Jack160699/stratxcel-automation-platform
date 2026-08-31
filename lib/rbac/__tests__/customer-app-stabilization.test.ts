@@ -143,12 +143,20 @@ async function run() {
   // fabrication defects in SearchGrowthDashboardView.tsx, not an
   // unresolvable product gap -- was found and fixed. Real protection for
   // this route is unchanged: app/app/layout.tsx still enforces
-  // auth/tenant resolution, and page.tsx's own EntitlementGate
-  // (minTier="growth") still enforces the paid-tier boundary. Reachable
-  // today via the real, already-live Search Console connect flow on
-  // /app/integrations, whose OAuth callback lands here.
+  // auth/tenant resolution, and page.tsx's own EntitlementGate still
+  // enforces the paid-tier boundary. Reachable today via the real,
+  // already-live Search Console connect flow on /app/integrations, whose
+  // OAuth callback lands here.
+  //
+  // Update 15: EntitlementGate's gating prop changed from the legacy,
+  // catalog-unaware `minTier="growth"` to catalog-driven
+  // `requiredCapability="seo_execution"` (see components/ui/EntitlementGate.tsx
+  // and packages/payments-and-wallet/src/__tests__/plans.test.ts) -- fixing
+  // the real bug where the old TIER_RANK map didn't recognize any current
+  // commercial-model tier (including the real StratXcel tenant's own
+  // active advanced_growth plan) and silently denied everyone.
   assert.equal(usesGate(read("app", "app", "search", "layout.tsx")), false, "Search Growth OS at /app/search must be reachable");
-  assert.ok(read("app", "app", "search", "page.tsx").includes('minTier="growth"'), "Search Growth OS must still be paid-tier gated via EntitlementGate");
+  assert.ok(read("app", "app", "search", "page.tsx").includes('requiredCapability="seo_execution"'), "Search Growth OS must still be paid-tier gated via EntitlementGate, on the real catalog capability");
 
   const settings = read("app", "app", "settings", "page.tsx");
   assert.equal(settings.includes("/app/integrations"), false);

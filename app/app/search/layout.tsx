@@ -12,11 +12,14 @@
  * it comes from (a) app/app/layout.tsx one level up, which already
  * enforces real authentication and tenant resolution for every /app/*
  * route including this one, and (b) the EntitlementGate
- * (minTier="growth") already inside page.tsx, which enforces the real
- * RBAC/entitlement/feature-tier boundary for this specific feature. That
- * is the same real gating pattern app/app/integrations/layout.tsx (a
- * live, non-gated route) already uses -- a plain pass-through here, with
- * the actual protection living where the actual logic is.
+ * (requiredCapability="seo_execution", per Update 15 -- fixed a real bug
+ * where its prior minTier="growth" prop didn't recognize any current
+ * commercial-model tier and silently denied every real customer) already
+ * inside page.tsx, which enforces the real RBAC/entitlement/feature-tier
+ * boundary for this specific feature. That is the same real gating
+ * pattern app/app/integrations/layout.tsx (a live, non-gated route)
+ * already uses -- a plain pass-through here, with the actual protection
+ * living where the actual logic is.
  *
  * Scope: this change touches only this route's layout. The shared
  * NotV1CustomerRoute component, and the other 6 routes still using it
