@@ -123,8 +123,18 @@ export async function runSearchAnalysis(
   try {
     let pages = options.pages ?? [];
     let crawlErrors: Array<{ url: string; error: string }> = [];
-    let robotsPresent = false;
-    let sitemapPresent = false;
+    // Root-caused via docs/discovery/SEARCH_GROWTH_ENGINE_GAP_AUDIT.md,
+    // Update 20: these used to default to `false` ("confirmed missing")
+    // rather than `null` ("not actually checked yet"). Whenever the real
+    // crawl below is skipped (ownership not yet verified -- a legitimate
+    // safety gate, not a defect), robotsPresent/sitemapPresent silently
+    // kept their false defaults and analyzeTechnicalSeo reported them as
+    // real HIGH-severity ROBOTS_MISSING/SITEMAP_MISSING findings -- a real,
+    // live false positive confirmed on the real StratXcel tenant (its own
+    // robots.txt and sitemap.xml were verified genuinely live and correct
+    // at the time this was flagged as missing).
+    let robotsPresent: boolean | null = null;
+    let sitemapPresent: boolean | null = null;
 
     if (!pages.length && SEARCH_RUNTIME_FLAGS.crawlEnabled && project.ownership_verified) {
       await event(db, input, "SEARCH_CRAWL_STARTED", run.id);
@@ -145,10 +155,14 @@ export async function runSearchAnalysis(
         provider: "first_party_crawl",
         state: project.ownership_verified ? "configuration_required" : "permission_required",
       });
-    } else {
-      robotsPresent = true;
-      sitemapPresent = true;
+      // robotsPresent/sitemapPresent correctly stay null here -- the real
+      // crawl never ran, so the real answer is genuinely unknown, not
+      // "confirmed absent."
     }
+    // Note: when options.pages is pre-supplied by a caller, robots/sitemap
+    // presence is still genuinely unknown from that alone -- no real
+    // production caller does this today (both real call sites always crawl
+    // fresh), so this intentionally stays null rather than guessing true.
 
     const issues = analyzeTechnicalSeo(pages, {
       https: input.propertyUrl.startsWith("https://"),

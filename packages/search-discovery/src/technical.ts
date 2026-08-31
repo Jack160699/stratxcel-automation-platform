@@ -1,11 +1,32 @@
 import type { TechnicalIssue, TechnicalPage } from "./types.ts";
 
-export function analyzeTechnicalSeo(pages: TechnicalPage[], site: { https: boolean; robotsPresent: boolean; sitemapPresent: boolean }): TechnicalIssue[] {
+/**
+ * Root-caused via docs/discovery/SEARCH_GROWTH_ENGINE_GAP_AUDIT.md, Update
+ * 20: a real, live false-positive found on the real StratXcel tenant --
+ * ROBOTS_MISSING and SITEMAP_MISSING were reported as confirmed findings
+ * even though https://www.stratxcel.in/robots.txt and /sitemap.xml were
+ * both genuinely live and correct (verified directly: HTTP 200, real
+ * content, real canonical domain).
+ *
+ * robotsPresent/sitemapPresent are tri-state (boolean | null), not plain
+ * booleans: `null` means "not actually checked" (runtime.ts skips the real
+ * crawl -- and therefore never learns the real answer -- whenever a
+ * project's website ownership isn't yet verified, a legitimate safety
+ * gate against crawling a site the tenant hasn't proven they own). The old
+ * plain-boolean signature forced every unchecked case to silently default
+ * to `false`, which this function then reported as a confirmed HIGH-
+ * severity finding -- "not yet checked" was fabricated into "confirmed
+ * missing." Only a real, explicit `false` (an actual crawl ran and
+ * genuinely found nothing) is reported now; `null` reports nothing, same
+ * honest-silence pattern already used elsewhere in this pipeline for
+ * unavailable/unchecked provider state.
+ */
+export function analyzeTechnicalSeo(pages: TechnicalPage[], site: { https: boolean; robotsPresent: boolean | null; sitemapPresent: boolean | null }): TechnicalIssue[] {
   const issues: TechnicalIssue[] = [];
   const add = (issue: TechnicalIssue) => issues.push(issue);
   if (!site.https) add({ code: "HTTPS_REQUIRED", severity: "Critical", evidence: "The property is not served over HTTPS.", affectedUrl: "site-wide", whyItMatters: "Visitors and search engines need a secure origin.", recommendedAction: "Enable HTTPS and redirect HTTP URLs.", automaticallyFixable: false, approvalRequired: true });
-  if (!site.robotsPresent) add({ code: "ROBOTS_MISSING", severity: "High", evidence: "No robots.txt was observed.", affectedUrl: "/robots.txt", whyItMatters: "Crawler policy is unclear.", recommendedAction: "Prepare a reviewed robots.txt policy.", automaticallyFixable: true, approvalRequired: true });
-  if (!site.sitemapPresent) add({ code: "SITEMAP_MISSING", severity: "High", evidence: "No sitemap was observed.", affectedUrl: "/sitemap.xml", whyItMatters: "Discovery of important pages can be slower.", recommendedAction: "Generate and submit a sitemap.", automaticallyFixable: true, approvalRequired: true });
+  if (site.robotsPresent === false) add({ code: "ROBOTS_MISSING", severity: "High", evidence: "No robots.txt was observed.", affectedUrl: "/robots.txt", whyItMatters: "Crawler policy is unclear.", recommendedAction: "Prepare a reviewed robots.txt policy.", automaticallyFixable: true, approvalRequired: true });
+  if (site.sitemapPresent === false) add({ code: "SITEMAP_MISSING", severity: "High", evidence: "No sitemap was observed.", affectedUrl: "/sitemap.xml", whyItMatters: "Discovery of important pages can be slower.", recommendedAction: "Generate and submit a sitemap.", automaticallyFixable: true, approvalRequired: true });
   const titles = new Map<string, string[]>();
   const descriptions = new Map<string, string[]>();
   const linked = new Set(pages.flatMap((p) => p.internalLinks ?? []));
