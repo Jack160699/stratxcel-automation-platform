@@ -1,5 +1,15 @@
 # Search Growth Engine Gap Audit
 
+## Update 13 — the root cause behind nearly every remaining "yellow gap": one deliberate, pre-existing product gate
+
+A later brief asked me to close "Website connector visibility," "Vercel connect UI," "Website Analysis/Detected Platform" on the customer-facing Connector screen. Checked before building anything: **`/app/search` — the entire Search Growth OS (SEO/AEO/GEO, the Vercel connector, entity consistency, everything this whole mission built and just shipped to production) — is still gated behind `NotV1CustomerRoute`** (`app/app/search/layout.tsx`: `export { NotV1CustomerRoute as default } from "../components/NotV1CustomerRoute";`), a real, pre-existing, deliberate redirect ("Prevents unfinished engineering surfaces from rendering in the V1 app") already documented in Update 5. This is now confirmed as the live, current state of `main`/production (598c088), not stale information.
+
+This means: building a "Connect Vercel" UI card would be genuinely pointless right now — the route it would live on is unreachable by any real customer regardless. This is the actual reason most of that brief's sections 4-21 can't be closed as ordinary engineering bugs: **the blocker is one product-launch gate, not scattered small defects.** Lifting it is a real decision (this feature going live for real customers) squarely in the same category this whole session has held a line on — not something to flip silently as a "small yellow gap."
+
+**Real, positive counter-finding**: `/app/integrations` (the actual live Connector screen) is **not** gated, and already has a mature, real `google_business`-specific reconnect flow (`ConnectionBadge`'s `action_required` state → "Reconnect account" button → real `/api/social/oauth/google_business/connect` link). This session's earlier `canonical-status.ts` fix (Update 10 — unresolved-location GBP connections now report `REAUTH_REQUIRED` instead of a false `CONNECTED`) is **already live and already wired into this real reconnect UI** for the real StratXcel tenant, with no further work needed.
+
+No code changes were made this pass — the findings above are root causes, not fixable-by-me defects, and manufacturing UI changes on an unreachable route would be exactly the "artificially turn impossible guarantees into green" this brief itself prohibits. Production remains at `598c088`; full regression + `tsc --noEmit` re-confirmed clean against the exact deployed state.
+
 ## Update 12 — Review Bot wired to a durable, idempotent live trigger; migration applied; work committed & pushed; production-merge deliberately not done autonomously (real, measured reason, not a generic caution)
 
 Closed Update 11's stated gap ("engine exists but no durable live trigger + idempotent processing loop"), per this brief's explicit instruction to integrate into the existing scheduler rather than add a cron and to not ask about routine migration/commit/deploy steps.
