@@ -21,6 +21,7 @@
  * for `normalizeResearchUrl`'s stricter evidence-URL callers.
  */
 import { normalizeResearchUrl, UnsafeResearchUrlError } from "./research/normalize.ts";
+import type { SearchDb } from "./repository.ts";
 
 export type NormalizedWebsiteInput =
   | { ok: true; url: string; hostname: string; matchKey: string }
@@ -91,4 +92,83 @@ export function normalizeWebsiteInput(raw: unknown): NormalizedWebsiteInput {
   if (!matchKey) return { ok: false, reason: "invalid_url" };
 
   return { ok: true, url: resolved, hostname: normalized.domain, matchKey };
+}
+
+export interface CanonicalWebsite {
+  url: string;
+  /** search_project: a real analysis has actually run for this website --
+   * the authoritative source once it exists. search_console: no analysis
+   * has run yet, but the tenant already has a real, connected Search
+   * Console property for this site. */
+  source: "search_project" | "search_console";
+}
+
+/**
+ * The ONE canonical decision logic for "what is this tenant's website" --
+ * docs/discovery/SEARCH_GROWTH_ENGINE_GAP_AUDIT.md, Updates 17 & 18. A pure
+ * function over already-fetched rows (not a query itself) so callers that
+ * already have these rows from their own parallel fetch (dashboard/
+ * aggregator.ts) don't pay for a second round trip -- see
+ * resolveCanonicalWebsite() below for callers that don't. Precedence,
+ * matching Update 17's original reasoning: a real search_projects row (an
+ * analysis has actually run) is always authoritative once it exists; a
+ * connected Search Console property is used only as a *detected* fallback
+ * before any analysis has run. Returns null when genuinely neither exists
+ * -- never fabricated.
+ */
+export function deriveCanonicalWebsite(
+  projectRow: { property_url?: string | null } | null | undefined,
+  connectionRow: { search_console_site_url?: string | null } | null | undefined,
+): CanonicalWebsite | null {
+  if (projectRow?.property_url) return { url: projectRow.property_url, source: "search_project" };
+  if (connectionRow?.search_console_site_url) {
+    const normalized = normalizeWebsiteInput(connectionRow.search_console_site_url);
+    if (normalized.ok) return { url: normalized.url, source: "search_console" };
+  }
+  return null;
+}
+
+/** Query-performing wrapper around deriveCanonicalWebsite() for callers
+ * (e.g. the Website connector status endpoint) that don't already have
+ * search_projects/search_google_connections rows fetched. */
+export async function resolveCanonicalWebsite(db: SearchDb, tenantId: string): Promise<CanonicalWebsite | null> {
+  const [{ data: project }, { data: connection }] = await Promise.all([
+    db.from("search_projects").select("property_url").eq("tenant_id", tenantId).maybeSingle(),
+    db.from("search_google_connections").select("search_console_site_url").eq("tenant_id", tenantId).maybeSingle(),
+  ]);
+  return deriveCanonicalWebsite(project, connection);
+}
+
+export interface DiscoveredVercelProject {
+  projectName: string;
+  domains: unknown;
+  framework: string | null;
+  lastDeploymentState: string | null;
+  lastDeploymentUrl: string | null;
+}
+
+/**
+ * "Detected platform" for the Website connector card -- app/api/platform/
+ * search/website/status/route.ts. Never a guess: only ever a discovered
+ * Vercel project's own real `framework` field, and only when one of that
+ * project's own real discovered domains actually matches the canonical
+ * website's hostname. A tenant with a Vercel connection but no matching
+ * domain (e.g. only unrelated side-projects connected), or no Vercel
+ * connection at all, correctly gets null -- never a fabricated "Unknown
+ * framework" guess.
+ */
+export function matchVercelProjectToWebsite(
+  projects: readonly DiscoveredVercelProject[],
+  websiteUrl: string,
+): DiscoveredVercelProject | null {
+  const websiteKey = websiteMatchKey(websiteUrl);
+  if (!websiteKey) return null;
+  for (const project of projects) {
+    if (!Array.isArray(project.domains)) continue;
+    for (const domain of project.domains as Array<{ name?: unknown }>) {
+      if (typeof domain?.name !== "string") continue;
+      if (websiteMatchKey(`https://${domain.name}`) === websiteKey) return project;
+    }
+  }
+  return null;
 }

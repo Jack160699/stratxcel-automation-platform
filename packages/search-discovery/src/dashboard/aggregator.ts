@@ -1,7 +1,7 @@
 import type { SearchDb } from "../repository.ts";
 import type { SearchGrowthDashboardData, DashboardScorecardMetric } from "./types.ts";
 import { certifyProductionReadiness } from "../diagnostics/readiness-certification.ts";
-import { normalizeWebsiteInput } from "../website-input.ts";
+import { deriveCanonicalWebsite } from "../website-input.ts";
 
 export async function getSearchGrowthDashboardData(
   db: SearchDb,
@@ -94,13 +94,14 @@ export async function getSearchGrowthDashboardData(
   // property). Only ever set when there is genuinely no project yet --
   // once a real search_projects row exists, propertyUrl above is already
   // the real, authoritative source and this is irrelevant.
-  const detectedWebsiteUrl =
-    !hasProject && googleConnection?.search_console_site_url
-      ? (() => {
-          const normalized = normalizeWebsiteInput(googleConnection.search_console_site_url);
-          return normalized.ok ? normalized.url : null;
-        })()
-      : null;
+  //
+  // Update 18: this now calls the shared deriveCanonicalWebsite() (also
+  // used by the Website connector status endpoint) instead of its own
+  // inline copy of the same precedence logic -- one canonical
+  // implementation, not two independently-maintained reads of the same
+  // two tables (docs/discovery/SEARCH_GROWTH_ENGINE_GAP_AUDIT.md).
+  const canonicalWebsite = !hasProject ? deriveCanonicalWebsite(project, googleConnection) : null;
+  const detectedWebsiteUrl = canonicalWebsite?.source === "search_console" ? canonicalWebsite.url : null;
 
   const planTier = subscription?.plan_tier || "free";
   const isPaidTenant = planTier !== "free" && subscription?.status === "active";

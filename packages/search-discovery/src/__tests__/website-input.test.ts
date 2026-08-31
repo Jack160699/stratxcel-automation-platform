@@ -10,7 +10,7 @@
 //
 // Run with: node --experimental-strip-types packages/search-discovery/src/__tests__/website-input.test.ts
 import assert from "node:assert/strict";
-import { normalizeWebsiteInput, websiteMatchKey } from "../website-input.ts";
+import { normalizeWebsiteInput, websiteMatchKey, matchVercelProjectToWebsite, deriveCanonicalWebsite } from "../website-input.ts";
 
 function expectOk(raw: string, expectedUrl: string, label?: string) {
   const result = normalizeWebsiteInput(raw);
@@ -101,5 +101,34 @@ expectRejected("http://169.254.169.254", "cloud metadata host");
 //     (e.g. a connected Search Console property) against a fresh input ------
 assert.equal(websiteMatchKey("https://www.stratxcel.in/"), websiteMatchKey("https://stratxcel.in"));
 assert.equal(websiteMatchKey("not a url"), null);
+
+// --- deriveCanonicalWebsite: the one shared decision used by both the
+//     Search Growth dashboard and the Website connector status route -----
+assert.deepEqual(
+  deriveCanonicalWebsite({ property_url: "https://www.stratxcel.in" }, { search_console_site_url: "https://a-different-site.example/" }),
+  { url: "https://www.stratxcel.in", source: "search_project" },
+  "a real search_projects row is always authoritative, even over a connected Search Console property for a different site"
+);
+assert.deepEqual(
+  deriveCanonicalWebsite(null, { search_console_site_url: "https://www.stratxcel.in/" }),
+  { url: "https://www.stratxcel.in", source: "search_console" },
+  "falls back to a connected Search Console property, normalized, when no project exists yet"
+);
+assert.equal(deriveCanonicalWebsite(null, null), null, "genuinely nothing known -> null, never fabricated");
+assert.equal(deriveCanonicalWebsite(null, { search_console_site_url: "not a url" }), null, "an unparseable stored value fails closed to null");
+
+// --- matchVercelProjectToWebsite: Website connector card's "detected
+//     platform" -- only ever real, only when a project's own domain
+//     actually matches the canonical website; never a guess -------------
+{
+  const projects = [
+    { projectName: "marketing-site", domains: [{ name: "www.stratxcel.in" }, { name: "stratxcel-abc123.vercel.app" }], framework: "nextjs", lastDeploymentState: "READY", lastDeploymentUrl: null },
+    { projectName: "unrelated-app", domains: [{ name: "something-else.example" }], framework: "react", lastDeploymentState: "READY", lastDeploymentUrl: null },
+  ];
+  assert.equal(matchVercelProjectToWebsite(projects, "https://stratxcel.in")?.framework, "nextjs", "www/non-www domain match must still resolve via the same match-key logic");
+  assert.equal(matchVercelProjectToWebsite(projects, "https://totally-unconnected.example"), null, "no matching project domain -> null, never guessed");
+  assert.equal(matchVercelProjectToWebsite([], "https://stratxcel.in"), null, "no Vercel projects at all -> null");
+  assert.equal(matchVercelProjectToWebsite(projects, "not a url"), null, "an invalid website url fails closed to null");
+}
 
 console.log("website-input.test.ts: ALL PASS");

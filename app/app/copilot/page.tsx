@@ -334,8 +334,20 @@ export default function CopilotPage() {
               )}
 
               <div className="flex items-center justify-between gap-3 pt-1">
+                {/* Root-caused via docs/discovery/SEARCH_GROWTH_ENGINE_GAP_AUDIT.md,
+                    Update 18: this used to say "Delegates to Hermes agent
+                    engine" -- a real, live, paying-customer-facing claim
+                    that named an internal execution backend
+                    (docs/architecture/JOB_OWNERSHIP_MATRIX.md: customers
+                    should never need to know this name) that is, by
+                    explicit design, HERMES_MODE=disabled in production
+                    today. The real, honest mechanism this submission
+                    triggers -- POST /api/platform/missions, a real mission
+                    row that mission-worker either completes or denies with
+                    a clear reason -- is accurately described without
+                    naming or overpromising an inactive backend. */}
                 <p className="text-[12px] text-sx-text-muted">
-                  {isSubscribed ? "Delegates to Hermes agent engine" : "Wallet: ₹0 · Plan: Free"}
+                  {isSubscribed ? "Sent to your AI workspace" : "Wallet: ₹0 · Plan: Free"}
                 </p>
                 <button
                   type="submit"

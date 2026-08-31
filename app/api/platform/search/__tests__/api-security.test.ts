@@ -26,6 +26,7 @@ const executeAction = read("app", "api", "platform", "search", "actions", "execu
 const vercelConnect = read("app", "api", "platform", "search", "vercel", "connect", "route.ts");
 const vercelDisconnect = read("app", "api", "platform", "search", "vercel", "disconnect", "route.ts");
 const vercelDiscover = read("app", "api", "platform", "search", "vercel", "discover", "route.ts");
+const websiteStatus = read("app", "api", "platform", "search", "website", "status", "route.ts");
 
 // --- every tenant-scoped search route authenticates the caller before touching tenant data ---
 for (const [name, source] of [
@@ -36,6 +37,7 @@ for (const [name, source] of [
   ["vercel/connect", vercelConnect],
   ["vercel/disconnect", vercelDisconnect],
   ["vercel/discover", vercelDiscover],
+  ["website/status", websiteStatus],
 ] as const) {
   assert.match(
     source,
@@ -69,4 +71,13 @@ assert.equal(/Response\.json\([^;]*\bbody\.token\b/s.test(stripComments(vercelCo
 // --- dashboard route must actually reject when auth fails, not just call the check and ignore the result ---
 assert.match(dashboard, /if \(!ctx\.ok\)/, "dashboard route must branch on ctx.ok and refuse the request when it's false");
 
-console.log("api-security.test.ts (search): every tenant-scoped search route authenticates before touching tenant data; dashboard specifically gates before its service client — PASS");
+// --- the same auth-before-service-client ordering, for the new Website connector status route ---
+{
+  const site = stripComments(websiteStatus);
+  const authIdx = site.search(/requireTenantReadContext\(/);
+  const serviceIdx = site.search(/getTenantServiceContext\(/);
+  assert.ok(authIdx !== -1 && serviceIdx !== -1 && authIdx < serviceIdx, "website/status route must authenticate BEFORE reaching for the RLS-bypassing service client");
+  assert.match(site, /if \(!ctx\.ok\)/, "website/status route must branch on ctx.ok and refuse the request when it's false");
+}
+
+console.log("api-security.test.ts (search): every tenant-scoped search route authenticates before touching tenant data; dashboard and website/status specifically gate before their service client — PASS");

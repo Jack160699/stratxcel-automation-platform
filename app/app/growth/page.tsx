@@ -151,7 +151,6 @@ export default function GrowthPage() {
   }, [missions, rangeDays]);
 
   const completed = rangeFiltered.filter((m) => TERMINAL_COMPLETED.has(m.state));
-  const websiteSeo = rangeFiltered.filter((m) => m.service_key === "website_landing_page" || m.service_key === "seo_audit");
 
   return (
     <div className="flex flex-col gap-6 max-w-5xl">
@@ -292,13 +291,25 @@ export default function GrowthPage() {
               </div>
             </Card>
 
-            <Card variant="nested" className="p-4 bg-sx-surface-1">
-              <span className="text-[11px] font-medium text-sx-text-muted uppercase tracking-wider">Website & SEO Status</span>
-              <div className="mt-2 flex items-baseline gap-2">
-                <span className="text-2xl font-bold text-sx-success">Active</span>
-                <span className="text-xs text-sx-text-subtle">{websiteSeo.length} optimized</span>
-              </div>
-            </Card>
+            {/* Root-caused via docs/discovery/SEARCH_GROWTH_ENGINE_GAP_AUDIT.md,
+                Update 18: "Growth" is the only primary nav item this app
+                has, but it never linked to the real Search Growth OS
+                (SEO/AEO/GEO -- /app/search) at all -- a customer had no
+                discoverable path there short of a manually typed URL.
+                This card used to show a hardcoded "Active" badge sourced
+                from mission counts, unrelated to the real search-discovery
+                engine's actual state. Now a real, honest link into it
+                instead, using the existing "Growth" nav entry rather than
+                adding a second, duplicate one (the brief explicitly
+                forbids separate permanent nav items for SEO/AEO/GEO). */}
+            <Link href="/app/search" className="block">
+              <Card variant="nested" className="p-4 bg-sx-surface-1 transition-colors hover:bg-sx-surface-2">
+                <span className="text-[11px] font-medium text-sx-text-muted uppercase tracking-wider">Search Growth (SEO · AEO · GEO)</span>
+                <div className="mt-2 flex items-baseline gap-2">
+                  <span className="text-sm font-semibold text-sx-accent">Open Search Growth →</span>
+                </div>
+              </Card>
+            </Link>
 
             <Card variant="nested" className="p-4 bg-sx-surface-1">
               <span className="text-[11px] font-medium text-sx-text-muted uppercase tracking-wider">Audit Score</span>

@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/Button";
 import { ErrorState } from "@/components/ui/Feedback";
 import { PlatformIcon, type PlatformIconKey } from "@/components/audit/PlatformIcon";
 import { GoogleSearchIntegrationPanel } from "../components/GoogleSearchIntegrationPanel";
+import { WebsiteConnectorCard } from "../components/WebsiteConnectorCard";
 import type { ConnectorState, CustomerIntegrationStatus } from "@/lib/connectors/load-integrations-data";
 
 function ConnectionBadge({
@@ -503,6 +504,14 @@ export default function IntegrationsPage() {
           })}
         </div>
       </section>
+
+      {/* Website */}
+      {tenantId && (
+        <section>
+          <p className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-[0.06em] text-sx-text-subtle">Website</p>
+          <WebsiteConnectorCard tenantId={tenantId} />
+        </section>
+      )}
 
       {/* Analytics & Other */}
       {tenantId && (
