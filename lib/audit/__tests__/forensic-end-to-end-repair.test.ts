@@ -17,26 +17,33 @@ function createMockService() {
   const service: any = {
     from(table: string) {
       if (table === "social_accounts") {
+        // Generic filter-accumulator chain (matches audit-connector-insights.test.ts's
+        // makeFakeService pattern): supports any real ordering/count of
+        // .eq()/.is() before .maybeSingle(), instead of hand-nested
+        // fixed-depth callbacks -- found live via test:forensic on this
+        // exact release branch: provisioning.ts's real ownerScopedAccount
+        // lookup chains .is("tenant_id", null).eq(...).eq(...), a shape
+        // the old fixed-depth-2-eq-only mock never supported, so `.is`
+        // threw and the whole re-pointing path silently failed every run.
+        function socialAccountsChain(filters: Record<string, any>): any {
+          return {
+            eq(col: string, val: any) {
+              return socialAccountsChain({ ...filters, [col]: val });
+            },
+            is(col: string, val: any) {
+              return socialAccountsChain({ ...filters, [col]: val });
+            },
+            async maybeSingle() {
+              const found = socialAccounts.find((r) =>
+                Object.entries(filters).every(([col, val]) => (r[col] ?? null) === val)
+              );
+              return { data: found || null, error: null };
+            },
+          };
+        }
         return {
           select(_cols?: string) {
-            return {
-              eq(col1: string, val1: any) {
-                return {
-                  eq(col2: string, val2: any) {
-                    return {
-                      async maybeSingle() {
-                        const found = socialAccounts.find((r) => r[col1] === val1 && r[col2] === val2);
-                        return { data: found || null, error: null };
-                      },
-                    };
-                  },
-                  async maybeSingle() {
-                    const found = socialAccounts.find((r) => r[col1] === val1);
-                    return { data: found || null, error: null };
-                  },
-                };
-              },
-            };
+            return socialAccountsChain({});
           },
           insert(payload: any) {
             socialAccounts.push({ ...payload, id: `soc_${Date.now()}_${Math.random()}` });
@@ -205,9 +212,18 @@ assert.equal(summary.googleConnectionsProvisioned, true, "Google connection must
 // Verify all written records share the exact canonical tenant ID
 const accounts = mockDb._state.socialAccounts;
 assert.ok(accounts.every((a: any) => a.tenant_id === TENANT_ID), "All social accounts must match canonical tenant ID");
-assert.ok(accounts.some((a: any) => a.platform === "instagram" && a.status === "CONNECTED"), "Instagram must be CONNECTED");
-assert.ok(accounts.some((a: any) => a.platform === "facebook" && a.status === "CONNECTED"), "Facebook must be CONNECTED");
-assert.ok(accounts.some((a: any) => a.platform === "youtube" && a.status === "CONNECTED"), "YouTube must be CONNECTED");
+// This test's fixture provides onboarding metadata alone (no
+// social_tokens row, no real evidence of a usable token) -- per
+// provisioning.ts's own real, deliberate fix (see its header comment,
+// found live against a real production tenant), an account provisioned
+// from metadata alone must never be fabricated as CONNECTED. It's
+// RECONNECT_REQUIRED until a real token is verified. This assertion used
+// to expect the disproven fabricating behavior; found stale via
+// test:forensic on this release branch, fixed to match the real,
+// currently-correct honesty fix rather than reintroducing it.
+assert.ok(accounts.some((a: any) => a.platform === "instagram" && a.status === "RECONNECT_REQUIRED"), "Instagram must be honestly RECONNECT_REQUIRED, not fabricated CONNECTED, with no real token evidence");
+assert.ok(accounts.some((a: any) => a.platform === "facebook" && a.status === "RECONNECT_REQUIRED"), "Facebook must be honestly RECONNECT_REQUIRED, not fabricated CONNECTED, with no real token evidence");
+assert.ok(accounts.some((a: any) => a.platform === "youtube" && a.status === "RECONNECT_REQUIRED"), "YouTube must be honestly RECONNECT_REQUIRED, not fabricated CONNECTED, with no real token evidence");
 
 console.log("✓ Single canonical tenant identity and connector persistence verified.");
 
