@@ -222,6 +222,12 @@ export function WebsiteConnectorCard({ tenantId }: { tenantId: string }) {
           <p className="text-[15px] font-semibold text-sx-text">Website</p>
           <p className="truncate text-xs text-sx-text-subtle">Your website, detected platform, and automatic-change capability.</p>
         </div>
+        <span className="flex shrink-0 items-center gap-1.5 rounded-lg bg-sx-success/10 px-2.5 py-1">
+          <span className="h-[5px] w-[5px] rounded-full bg-sx-success" />
+          <span className="text-[11px] font-semibold text-sx-success">
+            {status?.website ? "Connected" : "Checking"}
+          </span>
+        </span>
       </div>
 
       {error && <p className="mt-3 text-xs text-sx-danger">{error}</p>}
@@ -269,8 +275,17 @@ export function WebsiteConnectorCard({ tenantId }: { tenantId: string }) {
           <div className="border-t border-sx-border pt-3">
             <div className="flex items-center justify-between">
               <p className="text-[13px] font-semibold text-sx-text">Vercel</p>
-              {status.vercel.state !== "NOT_CONNECTED" && (
-                <span className="text-[11px] text-sx-text-subtle">{status.vercel.accountName}</span>
+              {status.vercel.state !== "NOT_CONNECTED" ? (
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] font-semibold text-sx-success flex items-center gap-1">
+                    ✓ Connected
+                  </span>
+                  {status.vercel.accountName && (
+                    <span className="text-[11px] text-sx-text-subtle">({status.vercel.accountName})</span>
+                  )}
+                </div>
+              ) : (
+                <span className="text-[11px] text-sx-text-subtle">Not connected</span>
               )}
             </div>
 
@@ -287,15 +302,35 @@ export function WebsiteConnectorCard({ tenantId }: { tenantId: string }) {
             )}
 
             {status.vercel.projects.length > 0 && (
-              <ul className="mt-2 space-y-1">
-                {status.vercel.projects.map((p) => (
-                  <li key={p.projectName} className="text-xs text-sx-text-subtle">
-                    <span className="font-medium text-sx-text">{p.projectName}</span>
-                    {p.framework ? ` · ${p.framework}` : ""}
-                    {p.lastDeploymentState ? ` · ${p.lastDeploymentState}` : ""}
-                  </li>
-                ))}
-              </ul>
+              <div className="mt-2 space-y-1.5 rounded-sx-sm bg-sx-surface-2 p-2.5">
+                {status.vercel.projects.map((p) => {
+                  const domainList = Array.isArray(p.domains)
+                    ? (p.domains as Array<{ name?: unknown }>).map((d) => String(d.name || "")).filter(Boolean).join(", ")
+                    : null;
+                  return (
+                    <div key={p.projectName} className="text-xs">
+                      <div className="flex items-center justify-between">
+                        <span className="font-semibold text-sx-text">Project: {p.projectName}</span>
+                        {p.framework && (
+                          <span className="rounded bg-sx-surface-1 px-1.5 py-0.5 text-[10px] font-medium text-sx-text-subtle uppercase">
+                            {p.framework}
+                          </span>
+                        )}
+                      </div>
+                      {domainList && (
+                        <p className="mt-0.5 text-xs text-sx-text-subtle truncate">
+                          Domain: {domainList}
+                        </p>
+                      )}
+                      {p.lastDeploymentState && (
+                        <p className="mt-0.5 text-[11px] text-sx-text-muted">
+                          Deployment: {p.lastDeploymentState}
+                        </p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             )}
 
             {status.vercel.state === "NOT_CONNECTED" ? (

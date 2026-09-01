@@ -99,8 +99,8 @@ export interface CanonicalWebsite {
   /** search_project: a real analysis has actually run for this website --
    * the authoritative source once it exists. search_console: no analysis
    * has run yet, but the tenant already has a real, connected Search
-   * Console property for this site. */
-  source: "search_project" | "search_console";
+   * Console property for this site. brand_brain: configured in workspace Brand Brain. */
+  source: "search_project" | "search_console" | "brand_brain";
 }
 
 /**
@@ -113,17 +113,23 @@ export interface CanonicalWebsite {
  * matching Update 17's original reasoning: a real search_projects row (an
  * analysis has actually run) is always authoritative once it exists; a
  * connected Search Console property is used only as a *detected* fallback
- * before any analysis has run. Returns null when genuinely neither exists
- * -- never fabricated.
+ * before any analysis has run; Brand Brain website_url is used as third precedence.
+ * Returns null when genuinely neither exists -- never fabricated.
  */
 export function deriveCanonicalWebsite(
   projectRow: { property_url?: string | null } | null | undefined,
   connectionRow: { search_console_site_url?: string | null } | null | undefined,
+  brandBrainRow?: { content?: { website_url?: string | null } } | null | undefined,
 ): CanonicalWebsite | null {
   if (projectRow?.property_url) return { url: projectRow.property_url, source: "search_project" };
   if (connectionRow?.search_console_site_url) {
     const normalized = normalizeWebsiteInput(connectionRow.search_console_site_url);
     if (normalized.ok) return { url: normalized.url, source: "search_console" };
+  }
+  const brainUrl = brandBrainRow?.content?.website_url;
+  if (typeof brainUrl === "string" && brainUrl.trim().length > 0) {
+    const normalized = normalizeWebsiteInput(brainUrl);
+    if (normalized.ok) return { url: normalized.url, source: "brand_brain" };
   }
   return null;
 }
@@ -132,11 +138,12 @@ export function deriveCanonicalWebsite(
  * (e.g. the Website connector status endpoint) that don't already have
  * search_projects/search_google_connections rows fetched. */
 export async function resolveCanonicalWebsite(db: SearchDb, tenantId: string): Promise<CanonicalWebsite | null> {
-  const [{ data: project }, { data: connection }] = await Promise.all([
+  const [{ data: project }, { data: connection }, { data: brain }] = await Promise.all([
     db.from("search_projects").select("property_url").eq("tenant_id", tenantId).maybeSingle(),
     db.from("search_google_connections").select("search_console_site_url").eq("tenant_id", tenantId).maybeSingle(),
+    db.from("brand_brains").select("content").eq("tenant_id", tenantId).maybeSingle(),
   ]);
-  return deriveCanonicalWebsite(project, connection);
+  return deriveCanonicalWebsite(project, connection, brain);
 }
 
 export interface DiscoveredVercelProject {

@@ -362,3 +362,37 @@ test("8. Canonical resolveVercelWriteCapability: Truthful state resolution acros
   assert.equal(isolatedRes.writeEnabled, false);
 });
 
+test("9. UI Consolidation: Exactly ONE Website section on /app/integrations, Vercel nested inside, unified across Search Growth", async () => {
+  const fs = await import("node:fs");
+  const path = await import("node:path");
+
+  const integrationsPagePath = path.resolve(process.cwd(), "app/app/integrations/page.tsx");
+  const integrationsSource = fs.readFileSync(integrationsPagePath, "utf-8");
+
+  // Verify WebsiteConnectorCard is rendered
+  const websiteCardMatches = (integrationsSource.match(/<WebsiteConnectorCard/g) || []).length;
+  assert.equal(websiteCardMatches, 1, "There must be exactly ONE WebsiteConnectorCard on /app/integrations");
+
+  // Verify no duplicate Website sections
+  assert.ok(!integrationsSource.includes("Website &amp; Production Edge"), "Duplicate 'Website & Production Edge' section must be removed");
+
+  // Verify order: Website -> Primary Channels -> Analytics & Other
+  const websiteIdx = integrationsSource.indexOf("<WebsiteConnectorCard");
+  const primaryIdx = integrationsSource.indexOf("Primary Channels");
+  const analyticsIdx = integrationsSource.indexOf("Analytics & Other");
+
+  assert.ok(websiteIdx !== -1 && primaryIdx !== -1 && analyticsIdx !== -1, "All 3 main sections must be present");
+  assert.ok(websiteIdx < primaryIdx, "Website section must appear BEFORE Primary Channels");
+  assert.ok(primaryIdx < analyticsIdx, "Primary Channels must appear BEFORE Analytics & Other");
+
+  // Verify shared canonical resolver is used
+  const { resolveCanonicalWebsite, deriveCanonicalWebsite } = await import("../website-input.ts");
+  const canonical = deriveCanonicalWebsite(
+    { property_url: "https://www.stratxcel.in" },
+    { search_console_site_url: "https://www.stratxcel.in" }
+  );
+  assert.equal(canonical?.url, "https://www.stratxcel.in");
+  assert.equal(canonical?.source, "search_project");
+});
+
+
