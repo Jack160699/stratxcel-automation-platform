@@ -294,12 +294,30 @@ async function handleSchedulerInvocation(request: Request) {
     // connected Google Business Profile row, not assumed. Query failure
     // (including "no such row") is treated as honestly unknown (false),
     // never fabricated as true.
+    //
+    // STRATXCEL — MASTER AUTONOMOUS GROWTH PLATFORM brief, Section 26/36/50
+    // ("if GBP is unavailable/unverified, GEO must show the real
+    // limitation... do not manufacture a GEO score"): this used to be
+    // `Boolean(gbpAccount)` -- true for any row with status CONNECTED,
+    // regardless of whether a real location was ever resolved. Real StratXcel
+    // tenant, confirmed live: status CONNECTED, but zero accessible GBP
+    // accounts (Update 26) -- entity-graph.ts's `consistencyStatus =
+    // hasGbp ? "CONSISTENT" : "WEAK_COVERAGE"` and orchestrator.ts's
+    // `gbpClaimed`/`napConsistent` fallback would all have reported this
+    // tenant's NAP as genuinely consistent and GBP as genuinely claimed off
+    // a connection with no usable location data behind it at all -- exactly
+    // the fabricated-GEO-score gap this brief calls out. Now requires the
+    // same resolved-location guard every other GBP-quality check in this
+    // codebase already uses (review bot, verification recheck).
     const { data: gbpAccount } = await supabase
       .from("social_accounts")
-      .select("id")
+      .select("id, status, provider_account_id")
       .eq("tenant_id", project.tenant_id)
       .eq("platform", "google_business")
       .maybeSingle();
+    const hasUsableGbp = Boolean(
+      gbpAccount && gbpAccount.status === "CONNECTED" && isResolvedGbpLocationResourceName(gbpAccount.provider_account_id)
+    );
 
     try {
       const loopResult = await runContinuousGrowthLoop(
@@ -310,7 +328,7 @@ async function handleSchedulerInvocation(request: Request) {
           propertyName: project.name,
           plan,
           idempotencyKey,
-          hasGbp: Boolean(gbpAccount),
+          hasGbp: hasUsableGbp,
         }
       );
 

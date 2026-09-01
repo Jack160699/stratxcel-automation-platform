@@ -49,3 +49,18 @@ assert.match(route, /currentState === "VERIFIED"/, "an already-VERIFIED connecti
 assert.equal(vercelJson.crons.length, 9, "the verification recheck must not add an 11th cron entry either");
 
 console.log("PASS: the automatic Google verification recheck is hosted on the existing scheduler cron, guarded identically to Review Bot, with no new cron slot.");
+
+// --- GEO's hasGbp signal (STRATXCEL — MASTER AUTONOMOUS GROWTH PLATFORM ---
+// --- brief, Section 26/36/50: "if GBP is unavailable/unverified, GEO -------
+// --- must show the real limitation... do not manufacture a GEO score") -----
+// --- must require a genuinely resolved location, not merely a CONNECTED ----
+// --- row -- a bare "does a row exist" check was found live to fabricate ----
+// --- NAP consistency/gbpClaimed for the real StratXcel tenant, whose row ---
+// --- is CONNECTED with zero accessible GBP accounts (Update 26). -----------
+const hasGbpAssignment = route.slice(route.indexOf("const hasUsableGbp ="), route.indexOf("const hasUsableGbp =") + 400);
+assert.match(hasGbpAssignment, /isResolvedGbpLocationResourceName\(gbpAccount\.provider_account_id\)/, "hasGbp must require a genuinely resolved location, not just a CONNECTED row");
+assert.match(hasGbpAssignment, /gbpAccount\.status === "CONNECTED"/, "hasGbp must also require the real CONNECTED status, not assume it from row existence alone");
+assert.match(route, /hasGbp:\s*hasUsableGbp/, "the computed, location-gated signal must actually be the one passed into the growth loop, not a raw row-existence check");
+assert.doesNotMatch(route, /hasGbp:\s*Boolean\(gbpAccount\)/, "must never regress back to the bare row-existence check this was found to fabricate consistency from");
+
+console.log("PASS: GEO's hasGbp signal requires a genuinely resolved GBP location, never fabricating NAP consistency from a bare CONNECTED row.");
