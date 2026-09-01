@@ -20,6 +20,7 @@ import { SOCIAL_DELEGATION_TOOLS } from "@/lib/agent-core/social-delegation-tool
 import { RESEARCH_DELEGATION_TOOLS } from "@/lib/agent-core/research-tools";
 import { GROWTH_MEDIA_TOOLS } from "@/lib/agent-core/growth-media-tools";
 import { WORKFORCE_REGISTRY_TOOLS } from "@/lib/agent-core/workforce-registry-tools";
+import { loadOwnerBrainKnowledge } from "@/lib/agent-core/owner-brain-context";
 import { decideWhatsAppSocialMission, runWhatsAppSocialMission } from "@/lib/social/whatsapp-bridge";
 
 export const runtime = "nodejs";
@@ -324,6 +325,7 @@ export async function POST(request: Request) {
       userText: text,
       providerMessageId,
       extraTools: EXTRA_TOOLS,
+      extraKnowledge: await loadOwnerBrainKnowledge(principal),
     });
 
     if (result.status === "duplicate") {

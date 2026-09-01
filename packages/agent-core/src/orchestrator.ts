@@ -40,6 +40,16 @@ export interface RunAgentTurnInput {
   /** App-layer-composed tools (e.g. social delegation) merged in alongside
    *  the built-in registries, still subject to the same permission filter. */
   extraTools?: AgentTool[];
+  /** App-layer-composed Brain knowledge (e.g. the owner's own bounded,
+   *  confirmed owner-brain memories/decisions/open-loops -- see
+   *  lib/owner-brain/hermes/owner-memory-context.ts's buildBoundedOwnerContext,
+   *  the same already-tested, size-capped retrieval Hermes missions use).
+   *  Plain strings, already formatted and already bounded by the caller --
+   *  this package stays free of any app-specific knowledge-source concept,
+   *  the same reason extraTools exists instead of this package importing
+   *  app code directly. Appended into the system prompt unconditionally,
+   *  same as businessFacts/memories. */
+  extraKnowledge?: string[];
 }
 
 export type RunAgentTurnStatus = "completed" | "failed" | "blocked" | "duplicate";
@@ -91,7 +101,7 @@ export async function runAgentTurn(input: RunAgentTurnInput): Promise<RunAgentTu
   }
 
   const tools = resolveAgentTools(principal, { extraTools: input.extraTools });
-  const brain = await buildBrainContext({ supabase, principal, tools, history: priorHistory });
+  const brain = await buildBrainContext({ supabase, principal, tools, history: priorHistory, extraKnowledge: input.extraKnowledge });
   const messages: AgentTurnMessage[] = [
     { role: "system", content: brain.systemPrompt },
     // Sits immediately next to the history it caveats, not just in the main

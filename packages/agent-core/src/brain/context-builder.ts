@@ -16,7 +16,7 @@ import { retrieveBrainKnowledge } from "./knowledge.ts";
 const STALE_HISTORY_NOTICE =
   "The conversation turns below are prior context only, captured at the time they were written, and may now be OUT OF DATE (e.g. a lead status, count, or figure may have changed since). Use them to understand intent and references, but for any operational fact, status, or number you restate — especially in a fresh brief/status/summary — call the relevant tool again this turn and answer from its current result. Never reuse a status, count, or figure from history without re-verifying it.";
 
-export async function buildBrainContext(input: { supabase: ServiceClient; principal: AgentPrincipal; tools: AgentTool[]; history: AgentMessageRow[] }) {
+export async function buildBrainContext(input: { supabase: ServiceClient; principal: AgentPrincipal; tools: AgentTool[]; history: AgentMessageRow[]; extraKnowledge?: string[] }) {
   const { principal } = input;
   const [memories, knowledge] = await Promise.all([listAgentMemories(input.supabase, principal), retrieveBrainKnowledge(input.supabase, principal)]);
   const capabilities = capabilityGroupsFromTools(input.tools);
@@ -32,6 +32,7 @@ export async function buildBrainContext(input: { supabase: ServiceClient; princi
     "Never expose secrets, IDs used only internally, or another user's/tenant's data. Never claim an action succeeded without tool output.",
     knowledge.businessFacts.length ? `Authorized business context:\n${knowledge.businessFacts.join("\n")}` : "",
     memories.length ? `Explicit scoped memories:\n${memories.map((m) => `- [${m.scope}] ${m.memoryKey}: ${m.memoryValue}`).join("\n")}` : "",
+    input.extraKnowledge?.length ? input.extraKnowledge.join("\n\n") : "",
   ].filter(Boolean).join("\n\n");
   const history = boundConversationHistory(input.history);
   return {
