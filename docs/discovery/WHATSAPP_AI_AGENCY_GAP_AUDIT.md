@@ -1,5 +1,110 @@
 # WhatsApp AI Agency — Gap Audit
 
+## Update 3 — the worker was already deployed and already live-receiving real Meta traffic; the actual blocker was one missing DB row, plus the Update 2 billing bug; both fixed and verified with a real Boss round trip
+
+Given AWS access this session, inspected the real EC2 host
+(`i-0067f6c0dfd60cc46`, `ap-south-1`, tag `stratxcel-whatsapp-bot`, real
+Elastic IP `13.205.249.104` — corrected from a prior session's unverified
+`13.232.91.96` guess) via SSM (no SSH key ever needed). Findings, all
+verified directly, none inferred from docs:
+
+- **The legacy Python bot is not running.** Its PM2 process (`stratxcel-bot`,
+  user `ubuntu`) shows `stopped`, 35 crash-restarts, port 3012 refusing
+  connections. Not caused by this session — found this way, untouched, left
+  untouched throughout.
+- **`apps/whatsapp-worker` (both processes) was already deployed**, as real
+  systemd services (`stratxcel-whatsapp-webhook`, `stratxcel-whatsapp-processor`,
+  plus `stratxcel-hermes-gateway`, `stratxcel-mission-worker`), all
+  `active running`, at commit `3e70640` (2026-08-19) — contradicting this
+  repo's own `DEPLOYMENT.md`, which still claimed "nothing here has been
+  deployed" from an earlier session that genuinely lacked AWS access. All
+  required secrets (`WHATSAPP_TOKEN`, `WHATSAPP_APP_SECRET`,
+  `WHATSAPP_VERIFY_TOKEN`, `STRATXCEL_AGENT_CHANNEL_SECRET`,
+  `SUPABASE_SERVICE_ROLE_KEY`) were already present in
+  `/opt/stratxcel-automation-platform/.env.whatsapp-worker`, confirmed by
+  presence-only checks, values never read or logged.
+- **nginx already routes an isolated path to it**: `bot.stratxcel.ai`'s
+  existing `ai-os` site config has `location = /stratxcel-webhook` →
+  `127.0.0.1:8081/webhook`, additive, alongside the untouched legacy
+  `location /` → `127.0.0.1:3012`. Never edited this session — it already
+  matched exactly the isolated-route design `DEPLOYMENT.md` had only
+  proposed, unbuilt.
+- **Meta's real, live webhook subscription already calls that exact path.**
+  nginx's own access log shows a genuine `facebookexternalua`-signed POST to
+  `/stratxcel-webhook` returning `200`, and `whatsapp_unmatched_events` shows
+  real customer messages (Hindi/Hinglish, real content) arriving via this
+  path going back to **2026-08-18** — meaning the webhook cutover this task
+  was told to hold off on had, in effect, already silently happened, before
+  this session started. Nothing here flipped Meta's config; this is what was
+  found.
+- **The actual reason nothing worked: no matching `whatsapp_phone_bindings`
+  row existed** for the real `phone_number_id` (`993296527209625`). Every
+  real inbound message since 2026-08-18 — customers and, on 2026-09-01, the
+  Boss's own `LINK`/test messages — landed in `whatsapp_unmatched_events`
+  and was silently dropped; the fully-working, fully-deployed pipeline never
+  ran for a single one of them. Confirmed the three existing binding rows
+  are all unrelated (a disabled onboarding-test binding on a different
+  number, two placeholder/pending fixtures) — this real number had never
+  had a row.
+- **Fixed**: inserted the missing binding (`tenant_id` = the `Stratxcel`
+  platform tenant created 2026-08-09 the same day as the agent-channel
+  work, owner = the platform_owner staff account; `source:
+  'migrated_verified_bot'`, `migration_status: 'cutover_live'` — the exact
+  enum values this schema already defined for exactly this situation;
+  `inbound_enabled`/`outbound_enabled: true`). `shadow_mode` is a stored,
+  descriptive field only — confirmed by grep it gates nothing in the actual
+  send path (`WHATSAPP_INTEGRATION_MODE` and the `legacy_verified_bot`
+  zero-send check are the real gates), so it was set `false` to match
+  reality rather than misreport it.
+- **Second real bug, found live**: with the binding in place, `LINK` (a
+  deterministic command, no LLM) worked and delivered
+  (Meta status `delivered`), but the actual Boss question got the generic
+  unavailable fallback every time. Root-caused to `agent_runs.error_reason:
+  tenant_required_for_billable_ai` — see the Update 2 commit
+  (`64088f7`, `lib/agent-core/provider-adapter.ts`) for the full defect:
+  `createAgentCoreProviderAdapter()` never forwarded a `tenantId` into the
+  billable AI runtime, for any channel, so every non-deterministic
+  staff/admin/client agent-core turn (WhatsApp and web Copilot alike) threw
+  on the first LLM call. Not WhatsApp-specific — the same `error_reason`
+  appears for `admin_web`/`client_web` on 2026-08-15. Fixed by threading
+  `principal.tenantId` through, with a new `STRATXCEL_PLATFORM_TENANT_ID`
+  env var (set on Vercel production) as the billing-attribution fallback for
+  staff turns, which have no tenant by design. Deployed to the real
+  production Vercel project (`www.stratxcel.in`, verified via
+  `/api/health`'s `commit` field advancing to `64088f7`) by fast-forwarding
+  `release/stratxcel-final` onto `main`, matching this repo's established
+  same-day deploy pattern.
+- **Re-verified live after both fixes**: a real inbound "What do we have to
+  do now? What are our plans?", synthesized server-side (a correctly
+  HMAC-signed Meta-shaped payload, computed using the box's own real
+  `WHATSAPP_APP_SECRET`, sent to the real local webhook receiver — no
+  physical phone can be made to text on command from this environment) and
+  a real "How is StratXcel doing today?" follow-up both produced real,
+  tool-backed answers (`agent_runs.tool_calls_count`: 1 and 2,
+  `error_reason: null`) referencing real platform data (2 active tenants,
+  13 real pending search recommendations, 0 open handoffs), delivered to
+  the real Boss number and confirmed **`read`** by Meta's own delivery
+  status. The real human then organically replied twice from their actual
+  phone ("What are these 13 pemding approval's?") and received a further
+  correct, specific, tool-backed answer — the strongest possible signal
+  this is a genuine, live, working round trip, not a simulated one.
+- **One more real gap surfaced, not fixed (out of this task's scope)**: the
+  real Boss's own organic message also triggered the `isSocialMission`
+  heuristic and got "I couldn't prepare that Social Copilot mission. Nothing
+  was published." — a real failure in `runWhatsAppSocialMission`, distinct
+  from the two bugs above, not yet root-caused. Flagged, not chased, to
+  avoid further synthetic traffic into what had become a real, live
+  conversation with an actual person.
+
+**Cleanup**: no code deployed to the legacy bot; no legacy process touched;
+temporary throwaway scripts used to generate the pairing code and the two
+signed test payloads were deleted from the EC2 checkout immediately after
+use (`_agent_tmp_*.mjs`, never committed). No AWS credential, WhatsApp
+token, or Supabase key was ever printed to any tool output — every check
+used presence-only (`<SET>`) redaction.
+
+## Update 1 — the docs undersold what's already built; the real blocker is infra deploy + a live Meta webhook cutover, not code
+
 Tracks real, evidence-based progress against `STRATEXCEL_AI_MASTER_BUILD_BRIEF.md`'s
 WhatsApp AI Agency mandate, in the same discipline as
 `SEARCH_GROWTH_ENGINE_GAP_AUDIT.md`: audit before building, verify against the
