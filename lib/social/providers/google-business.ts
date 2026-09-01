@@ -157,12 +157,46 @@ function getClientSecret(): string {
 /**
  * Discovers all accessible Google Business Profile accounts for an access token.
  */
+/**
+ * Real, safe (never a secret) forensic evidence from the FIRST accounts.list
+ * page -- the one call every later discovery step depends on. Root-caused
+ * live (STRATXCEL — GOOGLE BUSINESS DISCOVERY CONTRADICTION brief): a real,
+ * screenshot-proven, customer-managed Business Profile still produced
+ * `accounts: []` from this exact endpoint for the exact right, verified-
+ * matching Google identity -- "zero accounts" was being treated as proof a
+ * profile doesn't exist, when a genuinely healthy 200 OK with zero accounts
+ * is also the documented behavior of an OAuth client Google has not yet
+ * granted Business Profile API access to (live-verified against Google's
+ * own current docs: "The Google My Business API is only visible... to
+ * users who submit and receive approval... through the access request
+ * form" -- developers.google.com/my-business/content/prereqs/basic-setup).
+ * Persisting the real status/error envelope turns "zero accounts" from an
+ * assumption into evidence a human can actually act on.
+ */
+export interface GbpAccountsDiscoveryDiagnostic {
+  httpStatus: number | null;
+  ok: boolean | null;
+  accountsReturned: number | null;
+  providerErrorStatus: string | null;
+  providerErrorMessage: string | null;
+  checkedAt: string;
+}
+
 export async function discoverGoogleBusinessAccounts(
   accessToken: string,
   fetcher: typeof fetch = fetch
-): Promise<GbpAccount[]> {
+): Promise<{ accounts: GbpAccount[]; diagnostic: GbpAccountsDiscoveryDiagnostic }> {
   const accounts: GbpAccount[] = [];
   let pageToken: string | undefined;
+  let diagnostic: GbpAccountsDiscoveryDiagnostic = {
+    httpStatus: null,
+    ok: null,
+    accountsReturned: null,
+    providerErrorStatus: null,
+    providerErrorMessage: null,
+    checkedAt: new Date().toISOString(),
+  };
+  let firstPage = true;
 
   try {
     do {
@@ -174,8 +208,26 @@ export async function discoverGoogleBusinessAccounts(
       });
 
       if (!res.ok) {
+        let errBody: { error?: { status?: string; message?: string } } = {};
+        try {
+          errBody = await res.json();
+        } catch {
+          // ignore -- non-JSON error body
+        }
+        if (firstPage) {
+          diagnostic = {
+            httpStatus: res.status,
+            ok: false,
+            accountsReturned: 0,
+            providerErrorStatus: errBody.error?.status ?? null,
+            // Google's own safe, non-secret error message -- never the token/header.
+            providerErrorMessage: typeof errBody.error?.message === "string" ? errBody.error.message.slice(0, 300) : null,
+            checkedAt: new Date().toISOString(),
+          };
+        }
         console.warn("discoverGoogleBusinessAccounts: account management API returned non-ok status", {
           status: res.status,
+          providerErrorStatus: diagnostic.providerErrorStatus,
         });
         break;
       }
@@ -191,6 +243,17 @@ export async function discoverGoogleBusinessAccounts(
         nextPageToken?: string;
       };
 
+      if (firstPage) {
+        diagnostic = {
+          httpStatus: res.status,
+          ok: true,
+          accountsReturned: (data.accounts || []).length,
+          providerErrorStatus: null,
+          providerErrorMessage: null,
+          checkedAt: new Date().toISOString(),
+        };
+      }
+
       for (const acct of data.accounts || []) {
         if (acct.name) {
           accounts.push({
@@ -204,12 +267,21 @@ export async function discoverGoogleBusinessAccounts(
       }
 
       pageToken = data.nextPageToken;
+      firstPage = false;
     } while (pageToken);
   } catch (err) {
     console.warn("discoverGoogleBusinessAccounts threw:", err);
+    diagnostic = {
+      httpStatus: null,
+      ok: null,
+      accountsReturned: null,
+      providerErrorStatus: "NETWORK_ERROR",
+      providerErrorMessage: err instanceof Error ? err.message.slice(0, 300) : String(err).slice(0, 300),
+      checkedAt: new Date().toISOString(),
+    };
   }
 
-  return accounts;
+  return { accounts, diagnostic };
 }
 
 /**
@@ -286,8 +358,8 @@ export async function discoverGoogleBusinessLocationsForAccount(
 export async function discoverAllGoogleBusinessLocations(
   accessToken: string,
   fetcher: typeof fetch = fetch
-): Promise<{ accounts: GbpAccount[]; locations: GbpLocation[] }> {
-  const accounts = await discoverGoogleBusinessAccounts(accessToken, fetcher);
+): Promise<{ accounts: GbpAccount[]; locations: GbpLocation[]; accountsDiagnostic: GbpAccountsDiscoveryDiagnostic }> {
+  const { accounts, diagnostic: accountsDiagnostic } = await discoverGoogleBusinessAccounts(accessToken, fetcher);
   const allLocations: GbpLocation[] = [];
 
   for (const account of accounts) {
@@ -300,7 +372,7 @@ export async function discoverAllGoogleBusinessLocations(
     allLocations.push(...locs);
   }
 
-  return { accounts, locations: allLocations };
+  return { accounts, locations: allLocations, accountsDiagnostic };
 }
 
 /**
@@ -584,7 +656,7 @@ export const googleBusinessProvider: SocialProvider = {
     }
 
     // Discover accessible Google Business Profile accounts and locations across all accounts
-    const { accounts, locations } = await discoverAllGoogleBusinessLocations(tokenData.access_token);
+    const { accounts, locations, accountsDiagnostic } = await discoverAllGoogleBusinessLocations(tokenData.access_token);
 
     // Match against the StratXcel business context
     const matchResult = matchGoogleBusinessLocation(locations, {
@@ -663,6 +735,13 @@ export const googleBusinessProvider: SocialProvider = {
         accountName: loc.accountName,
         permissionLevel: loc.permissionLevel,
       })),
+      // Real, safe (never a secret) forensic evidence from the accounts.list
+      // call itself (STRATXCEL — GOOGLE BUSINESS DISCOVERY CONTRADICTION
+      // brief) -- lets a future investigation distinguish a genuine "this
+      // identity really has no accounts" from a healthy 200 OK that Google's
+      // own API-access-tier restrictions can also produce for a real,
+      // customer-managed profile, instead of re-guessing from scratch.
+      accounts_discovery_diagnostic: accountsDiagnostic,
       discovery_status: matched
         ? "LOCATION_MATCHED"
         : locations.length > 0

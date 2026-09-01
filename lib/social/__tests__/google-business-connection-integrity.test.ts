@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
 import {
   googleBusinessProvider,
   isResolvedGbpLocationResourceName,
@@ -457,6 +459,46 @@ async function run() {
     await assert.rejects(() => claimGoogleLocation("tok", "accounts/999", realLocation, "req-2", claimFailFetch), /Google Business location claim failed \(409\)/);
   }
   console.log("✓ Test 9: searchGoogleLocations/claimGoogleLocation call the real endpoints, never fabricate a match or claim result");
+
+  // --- 10. Regression for the exact real, screenshot-proven failure --------
+  // --- (STRATXCEL — GOOGLE BUSINESS DISCOVERY CONTRADICTION brief, ---------
+  // --- Section 28): a genuinely healthy 200 OK with zero accounts must be --
+  // --- DISTINGUISHABLE, in the persisted evidence, from an explicit 403 ----
+  // --- denial -- "zero accounts" is never proof of non-existence, and this -
+  // --- codebase must never collapse both into one unexplained state again. -
+  {
+    const zeroAccountsHealthyFetch = (async () => ({ ok: true, status: 200, json: async () => ({ accounts: [] }) })) as unknown as typeof fetch;
+    const { accounts: acctsHealthy, accountsDiagnostic: diagHealthy } = await discoverAllGoogleBusinessLocations("tok", zeroAccountsHealthyFetch);
+    assert.equal(acctsHealthy.length, 0);
+    assert.equal(diagHealthy.httpStatus, 200);
+    assert.equal(diagHealthy.ok, true);
+    assert.equal(diagHealthy.accountsReturned, 0);
+    assert.equal(diagHealthy.providerErrorStatus, null, "a genuinely healthy empty response must never be conflated with a real denial");
+
+    const deniedFetch = (async () => ({
+      ok: false,
+      status: 403,
+      json: async () => ({ error: { status: "PERMISSION_DENIED", message: "The caller does not have permission" } }),
+    })) as unknown as typeof fetch;
+    const { accounts: acctsDenied, accountsDiagnostic: diagDenied } = await discoverAllGoogleBusinessLocations("tok", deniedFetch);
+    assert.equal(acctsDenied.length, 0);
+    assert.equal(diagDenied.httpStatus, 403);
+    assert.equal(diagDenied.ok, false);
+    assert.equal(diagDenied.providerErrorStatus, "PERMISSION_DENIED");
+    assert.notEqual(
+      diagHealthy.providerErrorStatus,
+      diagDenied.providerErrorStatus,
+      "a healthy empty response and an explicit permission denial must remain distinguishable in the persisted evidence, never both silently reduced to the same NO_GBP_ACCOUNTS_FOUND with no trace of which actually happened"
+    );
+
+    // The customer-facing copy for this exact real scenario (zero accounts,
+    // whichever real cause) must never regress into claiming non-existence.
+    const page = fs.readFileSync(path.join(process.cwd(), "app", "app", "integrations", "page.tsx"), "utf8");
+    const zeroAccountsBlock = page.slice(page.indexOf('case "NO_GBP_ACCOUNTS_FOUND"'), page.indexOf('case "NO_LOCATIONS_IN_ACCOUNTS"'));
+    assert.doesNotMatch(zeroAccountsBlock, /couldn't find a google business profile/i, "must never claim the profile doesn't exist -- disproven live by a real, screenshot-confirmed managed listing");
+    assert.doesNotMatch(zeroAccountsBlock, /create or claim/i, "must never tell the customer to create a new profile when the real one may already exist");
+  }
+  console.log("✓ Test 10: a healthy 200-OK-zero-accounts response is distinguishable from an explicit 403 denial, and the customer copy never regresses into claiming non-existence");
 
   console.log("\n============================================================");
   console.log("ALL GOOGLE BUSINESS CONNECTION INTEGRITY TESTS PASSED!");

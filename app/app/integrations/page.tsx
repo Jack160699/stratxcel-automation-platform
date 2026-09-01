@@ -96,17 +96,32 @@ function ConnectionBadge({
  */
 type GbpDiscoveryStatus = NonNullable<CustomerIntegrationStatus["google_business_details"]>["discoveryStatus"];
 
+// STRATXCEL — GOOGLE BUSINESS DISCOVERY CONTRADICTION brief: root-caused
+// live against a real, screenshot-proven case where the exact right,
+// verified-matching Google identity (confirmed via the stored username)
+// genuinely manages a real Business Profile, yet accounts.list still
+// returned zero accounts. Live-verified against Google's own current docs
+// (developers.google.com/my-business/content/prereqs): a healthy 200 OK
+// with zero accounts is ALSO the documented behavior of an OAuth client
+// Google has not yet granted Business Profile API "Basic Access" to --
+// approval itself requires an already-verified profile, a real
+// bootstrapping catch-22 for a business still completing verification.
+// "Zero accounts" is therefore never treated as proof the profile doesn't
+// exist -- this copy must never contradict a customer who already sees
+// "You manage this Business Profile" in their own Google account.
 function gbpLocationSetupCopy(discoveryStatus: GbpDiscoveryStatus, locationsCount: number | null): { message: string; ctaLabel: string } {
   switch (discoveryStatus) {
     case "NO_GBP_ACCOUNTS_FOUND":
       return {
-        message: "We couldn't find a Google Business Profile for this account.",
-        ctaLabel: "Create or claim your Google Business Profile ↗",
+        message:
+          "We couldn't yet confirm a Business Profile through this connection. If you already manage one for this business in Google, open it directly to check its status or finish verification — we'll keep checking automatically and connect it as soon as it's accessible.",
+        ctaLabel: "Open Google Business Profile ↗",
       };
     case "NO_LOCATIONS_IN_ACCOUNTS":
       return {
-        message: "Your Google account has a Business Profile, but no business location on it yet.",
-        ctaLabel: "Add your business location ↗",
+        message:
+          "We found a Google account for Business Profile, but couldn't yet confirm a business location through this connection. If you already manage one, open it directly to check its status — we'll keep checking automatically.",
+        ctaLabel: "Open Google Business Profile ↗",
       };
     case "LOCATION_SELECTION_REQUIRED":
       return {
@@ -121,8 +136,8 @@ function gbpLocationSetupCopy(discoveryStatus: GbpDiscoveryStatus, locationsCoun
       // before this field existed) -- the honest, still-accurate fallback,
       // never a fabricated specific reason.
       return {
-        message: "We couldn't find a matching Business Profile location for this account.",
-        ctaLabel: "Complete Google Business setup ↗",
+        message: "We couldn't yet confirm a matching Business Profile location through this connection.",
+        ctaLabel: "Open Google Business Profile ↗",
       };
   }
 }
@@ -646,7 +661,7 @@ export default function IntegrationsPage() {
                         </p>
                         <div className="mt-3 flex flex-wrap items-center gap-2">
                           <a
-                            href="https://business.google.com/"
+                            href="https://business.google.com/locations"
                             target="_blank"
                             rel="noreferrer"
                             className="inline-flex"

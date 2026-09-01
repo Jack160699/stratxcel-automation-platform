@@ -88,7 +88,7 @@ export async function POST(request: Request) {
       (typeof brandContent.brand_name === "string" ? (brandContent.brand_name as string) : null) ||
       "StratXcel";
 
-    const { accounts, locations } = await discoverAllGoogleBusinessLocations(tokens.accessToken);
+    const { accounts, locations, accountsDiagnostic } = await discoverAllGoogleBusinessLocations(tokens.accessToken);
 
     const matchResult = matchGoogleBusinessLocation(locations, {
       websiteUrl: canonicalWebsite,
@@ -138,6 +138,7 @@ export async function POST(request: Request) {
         match_confidence: matchResult.matchConfidence,
         accounts_count: accounts.length,
         locations_count: locations.length,
+        accounts_discovery_diagnostic: accountsDiagnostic,
         discovered_at: now,
       };
 
@@ -210,6 +211,12 @@ export async function POST(request: Request) {
             ? "NO_LOCATIONS_IN_ACCOUNTS"
             : "NO_GBP_ACCOUNTS_FOUND",
         discovered_at: now,
+        // Real, safe forensic evidence from the accounts.list call itself --
+        // see discoverGoogleBusinessAccounts's own doc comment. A 200 OK
+        // with zero accounts is NOT reliable proof this identity has no
+        // Business Profile; it is also the documented behavior of an OAuth
+        // client Google has not yet granted Business Profile API access to.
+        accounts_discovery_diagnostic: accountsDiagnostic,
         // Real, additive fact from Google's own database -- never
         // fabricated, and distinct from the account/location discovery
         // above (that's "what THIS identity can already manage"; this is
@@ -252,6 +259,12 @@ export async function POST(request: Request) {
               claimable: Boolean(!locationMatch.requestAdminRightsUri && accounts.length > 0),
             }
           : null,
+        // Safe (no token/secret) evidence from the real accounts.list call --
+        // never trust "0 accounts" alone; this is what actually happened.
+        accountsDiscoveryDiagnostic: {
+          httpStatus: accountsDiagnostic.httpStatus,
+          providerErrorStatus: accountsDiagnostic.providerErrorStatus,
+        },
       });
     }
   } catch (err) {
