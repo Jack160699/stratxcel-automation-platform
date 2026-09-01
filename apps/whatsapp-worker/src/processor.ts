@@ -11,6 +11,7 @@ import {
 } from "@stratxcel/whatsapp";
 import { isWhatsAppAgentChannelEnabled } from "@stratxcel/agent-core";
 import { routeToAgentChannel, type AgentChannelOutcome } from "./agent-channel-router.ts";
+import { routeToOutreachReply } from "./outreach-reply-router.ts";
 
 /**
  * The async half of the WhatsApp pipeline: claims 'whatsapp.process_inbound'
@@ -89,6 +90,15 @@ const GREETING_TEXT = "Hi! 👋 StratXcel Support here. How can we help?";
 export function isBareGreeting(text: string): boolean {
   const normalized = text.trim().toLowerCase().replace(/[!.,?]+$/g, "");
   return ["hi", "hello", "hey", "hlo", "namaste", "hii", "heya"].includes(normalized);
+}
+
+/** True only for a lead the send_whatsapp_message_to_contact tool actually
+ *  created/tagged (source: "whatsapp_outreach") -- never inferred from
+ *  message content, so a normal customer/prospect lead can never be
+ *  mis-routed into outreach continuation by what they happen to say. */
+async function isOutreachLead(supabase: ReturnType<typeof createWhatsAppClient>, tenantId: string, leadId: string): Promise<boolean> {
+  const { data } = await supabase.from("crm_leads").select("source").eq("id", leadId).eq("tenant_id", tenantId).maybeSingle();
+  return data?.source === "whatsapp_outreach";
 }
 
 export async function maybeSendAutomaticReply(
@@ -193,7 +203,38 @@ export async function processOnce(
     }
 
     const result = await processInboundMessage(whatsappClient, { tenantId: job.tenant_id, message, phoneBindingId });
-    await maybeSendAutomaticReply(whatsappClient, job.tenant_id, message, result);
+
+    // Outbound outreach (feature-flagged, default OFF): a reply from someone
+    // the Boss/staff WhatsApp Agent proactively contacted gets a
+    // purpose-aware continuation, never the generic keyword-matched
+    // auto-reply below -- that reply would ignore why this contact was
+    // messaged in the first place. Checked AFTER processInboundMessage (the
+    // lead/message must already be persisted) but BEFORE the generic
+    // maybeSendAutomaticReply, which this branch replaces entirely for an
+    // outreach lead's conversation.
+    const isOutreachReply =
+      process.env.WHATSAPP_OUTREACH_ENABLED === "true" &&
+      !result.optedOut &&
+      !result.escalated &&
+      result.conversationId &&
+      (await isOutreachLead(whatsappClient, job.tenant_id, result.leadId));
+
+    if (isOutreachReply && result.conversationId) {
+      const endpointUrl = process.env.STRATXCEL_OUTREACH_REPLY_ENDPOINT_URL;
+      if (endpointUrl && phoneBindingId) {
+        await routeToOutreachReply({
+          endpointUrl,
+          tenantId: job.tenant_id,
+          leadId: result.leadId,
+          conversationId: result.conversationId,
+          phoneBindingId,
+          providerMessageId: message.providerMessageId,
+        });
+      }
+    } else {
+      await maybeSendAutomaticReply(whatsappClient, job.tenant_id, message, result);
+    }
+
     await queue.complete({ jobId: job.id, leaseOwner: LEASE_OWNER });
   } catch (err) {
     await queue.fail({

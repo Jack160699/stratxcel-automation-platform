@@ -1,5 +1,6 @@
-import { updateLeadStatus, updateLead, type LeadStatus } from "@stratxcel/leads-and-crm";
-import { setConversationAutomationMode, type WhatsAppConversationRow } from "@stratxcel/whatsapp";
+import { createHash } from "node:crypto";
+import { updateLeadStatus, updateLead, createLead, findLeadByNormalizedPhone, type LeadStatus } from "@stratxcel/leads-and-crm";
+import { setConversationAutomationMode, sendOutboundWhatsAppMessage, normalizePhoneNumber, type WhatsAppConversationRow } from "@stratxcel/whatsapp";
 import { scheduleFollowUp } from "@stratxcel/whatsapp";
 import { requestAppointment } from "@stratxcel/whatsapp";
 import { createAndEstimateMission } from "@stratxcel/missions";
@@ -7,6 +8,8 @@ import { createHumanHandoff } from "@stratxcel/human-handoff";
 import type { AgentTool } from "../contract.ts";
 
 const LEAD_STATUSES: LeadStatus[] = ["NEW", "CONTACTED", "QUALIFIED", "WON", "LOST"];
+const OUTREACH_CONVERSATION_ROLES = ["SALES", "PARTNERSHIP", "OUTREACH", "FOLLOW_UP", "EXPLAINER", "HR"] as const;
+type OutreachConversationRole = (typeof OUTREACH_CONVERSATION_ROLES)[number];
 
 type ConversationAutomationMode = WhatsAppConversationRow["automation_mode"];
 const CONVERSATION_AUTOMATION_MODES: ConversationAutomationMode[] = ["paused", "automated", "human_only", "handoff"];
@@ -207,6 +210,107 @@ export const ADMIN_MUTATION_TOOLS: AgentTool[] = [
         contextSnapshot: { source: "agent_core", channel: ctx.principal.channel },
       });
       return { handoff };
+    },
+  },
+  {
+    schema: {
+      name: "send_whatsapp_message_to_contact",
+      description:
+        "Send a real, targeted, one-to-one first WhatsApp message to an external contact on Stratxcel's own behalf, for a stated purpose. Finds or creates the contact's CRM record and conversation (never a duplicate), stores the purpose so replies are understood in context, and reports back once the person answers. Never for bulk/mass messaging -- one specific contact per call.",
+      parameters: {
+        type: "object",
+        properties: {
+          phoneNumber: { type: "string", description: "The contact's phone number -- +91xxxxxxxxxx, 91xxxxxxxxxx, or a bare 10-digit Indian number. Do not guess a country for an ambiguous international number; ask the Boss to confirm it instead." },
+          message: { type: "string", description: "The exact first message to send, in your own words for the stated purpose." },
+          purpose: { type: "string", description: "Why this contact is being messaged, in enough detail to continue the conversation intelligently later (e.g. 'find out what services they offer and whether there's a partnership/revenue fit')." },
+          conversationRole: { type: "string", enum: [...OUTREACH_CONVERSATION_ROLES], description: "SALES, PARTNERSHIP, OUTREACH, FOLLOW_UP, EXPLAINER, or HR -- shapes how the conversation is continued when they reply." },
+          contactName: { type: "string" },
+        },
+        required: ["phoneNumber", "message", "purpose", "conversationRole"],
+      },
+    },
+    mutating: true,
+    // Textbook "external_mutation" per this file's own risk taxonomy (a real,
+    // customer-visible send) -- but external_mutation is dashboard_only on
+    // the whatsapp channel (see policy/channel-policy.ts), which would make
+    // this tool silently unusable from the one channel the Boss actually
+    // uses it from. Deliberately low_mutation instead: every call is a
+    // single, explicitly Boss-authored, one-to-one message (never an
+    // autonomous/unbounded send), and the whatsapp channel's
+    // confirm_required policy still requires one typed CONFIRM code -- bound
+    // to this exact phone/message/purpose via hashNormalizedInput -- before
+    // anything actually reaches Meta's API. That confirmation is the real
+    // safety control the brief's own "human approval before... other
+    // high-risk actions" requirement asks for.
+    risk: "low_mutation",
+    requiredPermission: "agent:mutate:outreach",
+    async execute(ctx, args) {
+      const rawPhone = requireString(args, "phoneNumber");
+      const message = requireString(args, "message");
+      const purpose = requireString(args, "purpose");
+      const conversationRole = requireString(args, "conversationRole") as OutreachConversationRole;
+      if (!OUTREACH_CONVERSATION_ROLES.includes(conversationRole)) {
+        throw new Error(`invalid conversationRole: ${conversationRole}`);
+      }
+      const contactName = typeof args.contactName === "string" && args.contactName.trim() ? args.contactName.trim() : null;
+
+      const tenantId = process.env.STRATXCEL_PLATFORM_TENANT_ID;
+      if (!tenantId) {
+        throw new Error("outreach_not_configured: STRATXCEL_PLATFORM_TENANT_ID is not set");
+      }
+
+      const normalizedPhone = normalizePhoneNumber(rawPhone);
+      if (!normalizedPhone) throw new Error("invalid phoneNumber");
+
+      let lead = await findLeadByNormalizedPhone(ctx.supabase, tenantId, normalizedPhone);
+      const outreachMetadata = {
+        outreachPurpose: purpose,
+        conversationRole,
+        initiatedBy: "boss_whatsapp_agent",
+        initiatedByAuthUserId: ctx.principal.authUserId,
+        initiatedAt: new Date().toISOString(),
+      };
+      if (lead) {
+        // Returning contact: reuse the same lead/conversation (never a
+        // duplicate) but refresh the stored purpose so the NEXT reply is
+        // continued against what the Boss is asking for right now.
+        lead = await updateLead(ctx.supabase, {
+          leadId: lead.id,
+          tenantId,
+          contactName: contactName ?? undefined,
+          metadata: { ...lead.metadata, ...outreachMetadata },
+        });
+      } else {
+        lead = await createLead(ctx.supabase, {
+          tenantId,
+          source: "whatsapp_outreach",
+          contactName,
+          contactPhone: normalizedPhone,
+          normalizedPhone,
+          metadata: outreachMetadata,
+        });
+      }
+
+      // Deterministic per (contact, purpose, message) so a retried/duplicate
+      // tool invocation for the exact same ask never sends twice -- the same
+      // discipline sendOutboundWhatsAppMessage already enforces for every
+      // other caller, extended to this one's own key derivation.
+      const idempotencyKey = `outreach:${tenantId}:${normalizedPhone}:${createHash("sha256").update(`${purpose} ${message}`).digest("hex").slice(0, 24)}`;
+
+      const outcome = await sendOutboundWhatsAppMessage(ctx.supabase, {
+        tenantId,
+        leadId: lead.id,
+        body: message,
+        idempotencyKey,
+        isHumanInitiated: true,
+      });
+
+      const contact = { leadId: lead.id, tenantId, normalizedPhone, contactName };
+      if (!outcome.ok) {
+        return { contact, purpose, conversationRole, send: { ok: false as const, reason: outcome.reason } };
+      }
+      const mode = outcome.alreadySent ? "already_sent" : outcome.mode;
+      return { contact, purpose, conversationRole, send: { ok: true as const, mode, messageId: outcome.messageId } };
     },
   },
 ];

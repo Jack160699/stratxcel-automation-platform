@@ -1,4 +1,8 @@
-export type LeadSource = "whatsapp" | "website_form" | "manual" | "import";
+/** "whatsapp_outreach" = the Boss/staff WhatsApp Agent proactively contacted
+ *  this external party (sales/partnership/outreach/follow_up/explainer/hr) —
+ *  distinct from "whatsapp" (an inbound customer/prospect who messaged in
+ *  first). See crm_leads_source_check (20260901180000_crm_leads_allow_whatsapp_outreach_source.sql). */
+export type LeadSource = "whatsapp" | "website_form" | "manual" | "import" | "whatsapp_outreach";
 export type LeadStatus = "NEW" | "CONTACTED" | "QUALIFIED" | "WON" | "LOST";
 
 export interface LeadRow {

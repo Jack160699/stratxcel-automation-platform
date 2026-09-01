@@ -13,6 +13,11 @@ import { recordWhatsAppMessage, setConversationAutomationMode } from "../message
 
 export interface ProcessInboundResult {
   leadId: string;
+  /** Present once the RPC has created/found the conversation row -- null only
+   *  in the (should-never-happen) case the DB call itself failed to return
+   *  one. Added so callers (e.g. outreach reply continuation) can look up
+   *  conversation-scoped history without a second lead->conversation query. */
+  conversationId: string | null;
   optedOut: boolean;
   escalated: boolean;
   escalationReason: EscalationReason | null;
@@ -135,7 +140,7 @@ export async function processInboundMessage(
       targetType: "crm_lead",
       targetId: lead.id,
     });
-    return { leadId: lead.id, optedOut: true, escalated: false, escalationReason: null, proposedResponse: null, serviceKey: null, confidence: "high" };
+    return { leadId: lead.id, conversationId: recorded.conversationId ?? null, optedOut: true, escalated: false, escalationReason: null, proposedResponse: null, serviceKey: null, confidence: "high" };
   }
 
   if (input.message.kind !== "text") {
@@ -149,7 +154,7 @@ export async function processInboundMessage(
       rulePath: "media_unsupported",
       executionTrace,
     });
-    return { leadId: lead.id, optedOut: false, escalated: false, escalationReason: null, proposedResponse: null, serviceKey: null, confidence: "low" };
+    return { leadId: lead.id, conversationId: recorded.conversationId ?? null, optedOut: false, escalated: false, escalationReason: null, proposedResponse: null, serviceKey: null, confidence: "low" };
   }
 
   const compiled = compileGoalToMission(input.message.body);
@@ -174,7 +179,7 @@ export async function processInboundMessage(
       rulePath: `escalation_${escalation.reason}`,
       executionTrace,
     });
-    return { leadId: lead.id, optedOut: false, escalated: true, escalationReason: escalation.reason, proposedResponse: null, serviceKey: null, confidence: "high" };
+    return { leadId: lead.id, conversationId: recorded.conversationId ?? null, optedOut: false, escalated: true, escalationReason: escalation.reason, proposedResponse: null, serviceKey: null, confidence: "high" };
   }
 
   executionTrace.push(`compiler:${compiled.matched ? "matched" : "fallback"}:${compiled.serviceKey}`);
@@ -200,5 +205,5 @@ export async function processInboundMessage(
     metadata: { serviceKey: compiled.serviceKey },
   });
 
-  return { leadId: lead.id, optedOut: false, escalated: false, escalationReason: null, proposedResponse, serviceKey: compiled.serviceKey, confidence };
+  return { leadId: lead.id, conversationId: recorded.conversationId ?? null, optedOut: false, escalated: false, escalationReason: null, proposedResponse, serviceKey: compiled.serviceKey, confidence };
 }

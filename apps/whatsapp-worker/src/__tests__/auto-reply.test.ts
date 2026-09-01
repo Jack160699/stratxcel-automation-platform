@@ -44,6 +44,7 @@ function message(providerMessageId: string, body = "I need a website"): ParsedIn
 function result(overrides: Partial<ProcessInboundResult> = {}): ProcessInboundResult {
   return {
     leadId: LEAD_ID,
+    conversationId: "conversation-id",
     optedOut: false,
     escalated: false,
     escalationReason: null,

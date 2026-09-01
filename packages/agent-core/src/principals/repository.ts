@@ -15,12 +15,18 @@ const STAFF_ROLE_PERMISSIONS: Record<string, readonly string[]> = {
     "agent:read:approvals", "agent:read:handoffs", "agent:read:operations", "agent:read:health",
     "agent:read:integrations", "agent:read:audit", "agent:read:finance", "agent:read:social",
     "agent:read:memory", "agent:mutate:memory", "agent:mutate:leads", "agent:mutate:missions", "agent:mutate:handoffs", "agent:mutate:conversations",
+    // Real, one-to-one external WhatsApp outreach on Stratxcel's own behalf
+    // (send_whatsapp_message_to_contact) -- "platform owner/admin = allowed,
+    // at minimum" per the outbound-outreach brief. Never granted to a
+    // narrower staff role by default.
+    "agent:mutate:outreach",
   ],
   platform_admin: [
     "agent:read:clients", "agent:read:leads", "agent:read:conversations", "agent:read:missions",
     "agent:read:approvals", "agent:read:handoffs", "agent:read:operations", "agent:read:health",
     "agent:read:integrations", "agent:read:social",
     "agent:read:memory", "agent:mutate:memory", "agent:mutate:leads", "agent:mutate:missions", "agent:mutate:handoffs", "agent:mutate:conversations",
+    "agent:mutate:outreach",
   ],
   audit_reviewer: ["agent:read:audit", "agent:read:clients", "agent:read:leads", "agent:read:memory", "agent:mutate:memory"],
   finance_reviewer: ["agent:read:finance", "agent:read:clients", "agent:read:memory", "agent:mutate:memory"],
