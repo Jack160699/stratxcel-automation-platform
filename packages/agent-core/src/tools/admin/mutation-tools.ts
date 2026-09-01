@@ -297,13 +297,50 @@ export const ADMIN_MUTATION_TOOLS: AgentTool[] = [
       // other caller, extended to this one's own key derivation.
       const idempotencyKey = `outreach:${tenantId}:${normalizedPhone}:${createHash("sha256").update(`${purpose} ${message}`).digest("hex").slice(0, 24)}`;
 
-      const outcome = await sendOutboundWhatsAppMessage(ctx.supabase, {
+      let outcome = await sendOutboundWhatsAppMessage(ctx.supabase, {
         tenantId,
         leadId: lead.id,
         body: message,
         idempotencyKey,
         isHumanInitiated: true,
       });
+
+      // Meta requires an approved template for a genuinely business-initiated
+      // first message (this contact has never messaged in, so there's no
+      // open free-form window) -- real Meta policy, not bypassable. Retry
+      // once with the platform's own approved outreach-intro template
+      // (purpose/contact name as its two variables) rather than failing the
+      // whole call outright, but only if one is actually APPROVED right now
+      // -- never invent or guess at a template's approval state.
+      if (!outcome.ok && outcome.reason === "template_required_outside_service_window") {
+        const { data: template } = await ctx.supabase
+          .from("whatsapp_templates")
+          .select("id, name, language, status")
+          .eq("tenant_id", tenantId)
+          .eq("name", "stratxcel_outreach_intro")
+          .eq("status", "APPROVED")
+          .maybeSingle();
+        if (template) {
+          // Meta sends the template's own approved wording, not `message` --
+          // the locally persisted/admin-chat-visible body must match what
+          // the contact actually received, not the free-text the Boss
+          // originally asked for (which becomes the template's {{2}} variable
+          // here, not the literal sent text).
+          const templateParams = [contactName ?? "there", purpose];
+          const renderedBody = `Hi ${templateParams[0]}, this is Stratxcel — ${templateParams[1]}. Would you be open to a quick chat?`;
+          outcome = await sendOutboundWhatsAppMessage(ctx.supabase, {
+            tenantId,
+            leadId: lead.id,
+            body: renderedBody,
+            idempotencyKey: `${idempotencyKey}:template`,
+            isHumanInitiated: true,
+            templateId: template.id,
+            templateName: template.name,
+            templateLanguage: template.language,
+            templateParams,
+          });
+        }
+      }
 
       const contact = { leadId: lead.id, tenantId, normalizedPhone, contactName };
       if (!outcome.ok) {
