@@ -19,6 +19,7 @@ import { createAgentCoreProviderAdapter } from "@/lib/agent-core/provider-adapte
 import { SOCIAL_DELEGATION_TOOLS } from "@/lib/agent-core/social-delegation-tools";
 import { RESEARCH_DELEGATION_TOOLS } from "@/lib/agent-core/research-tools";
 import { GROWTH_MEDIA_TOOLS } from "@/lib/agent-core/growth-media-tools";
+import { WORKFORCE_REGISTRY_TOOLS } from "@/lib/agent-core/workforce-registry-tools";
 import { decideWhatsAppSocialMission, runWhatsAppSocialMission } from "@/lib/social/whatsapp-bridge";
 
 export const runtime = "nodejs";
@@ -33,7 +34,7 @@ export const maxDuration = 60;
  *  web research/commercial-catalog tools. One list, used everywhere a tool
  *  set is needed below (capability listings AND the actual agent turn) so
  *  WHOAMI/HELP never claims a capability the turn itself doesn't have. */
-const EXTRA_TOOLS = [...SOCIAL_DELEGATION_TOOLS, ...RESEARCH_DELEGATION_TOOLS, ...GROWTH_MEDIA_TOOLS];
+const EXTRA_TOOLS = [...SOCIAL_DELEGATION_TOOLS, ...RESEARCH_DELEGATION_TOOLS, ...GROWTH_MEDIA_TOOLS, ...WORKFORCE_REGISTRY_TOOLS];
 
 /**
  * Private, HMAC-authenticated endpoint for the WhatsApp agent channel. NOT a
