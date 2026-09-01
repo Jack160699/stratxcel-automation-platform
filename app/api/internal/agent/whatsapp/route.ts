@@ -306,7 +306,7 @@ export async function POST(request: Request) {
     const result = await runAgentTurn({
       supabase,
       principal,
-      provider: createAgentCoreProviderAdapter(),
+      provider: createAgentCoreProviderAdapter(principal.tenantId),
       userText: text,
       providerMessageId,
       extraTools: SOCIAL_DELEGATION_TOOLS,

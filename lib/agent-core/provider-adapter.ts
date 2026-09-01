@@ -12,7 +12,28 @@
 import { resolveConfiguredProvider } from "../social/agent/provider";
 import type { AgentLLMProvider, AgentTurnMessage, ToolSchema } from "@stratxcel/agent-core";
 
-export function createAgentCoreProviderAdapter(): AgentLLMProvider {
+/**
+ * The configured AI-runtime provider path (AiRuntimeSocialProvider) requires
+ * a real tenantId on every call for plan-tier/metering resolution — it has
+ * no concept of an unbilled/platform-staff turn, and throws
+ * "tenant_required_for_billable_ai" without one. A client principal always
+ * carries a real tenantId (see @stratxcel/agent-core's principal model); a
+ * staff principal deliberately does not (platform staff aren't scoped to
+ * one tenant). Without this fallback, every non-deterministic staff/admin
+ * turn — WhatsApp Boss/staff channel and admin_web Copilot alike — throws
+ * on the first LLM call and falls back to "Stratxcel Agent is temporarily
+ * unavailable", 100% of the time, regardless of how correct the rest of the
+ * pipeline is. Found live via the WhatsApp Boss acceptance test; see
+ * docs/discovery/WHATSAPP_AI_AGENCY_GAP_AUDIT.md Update 2. For a staff turn,
+ * attribute usage to the canonical Stratxcel platform tenant instead of
+ * inventing a customer tenant or leaving the turn permanently broken.
+ */
+function resolveBillingTenantId(tenantId: string | null): string | undefined {
+  if (tenantId) return tenantId;
+  return process.env.STRATXCEL_PLATFORM_TENANT_ID || undefined;
+}
+
+export function createAgentCoreProviderAdapter(tenantId: string | null): AgentLLMProvider {
   return {
     isConfigured() {
       return resolveConfiguredProvider() !== null;
@@ -28,7 +49,10 @@ export function createAgentCoreProviderAdapter(): AgentLLMProvider {
         toolName: m.toolName,
       }));
 
-      const result = await provider.complete(socialMessages, tools, { brandInstructions: [] });
+      const result = await provider.complete(socialMessages, tools, {
+        brandInstructions: [],
+        tenantId: resolveBillingTenantId(tenantId),
+      });
       return { text: result.text, toolCalls: result.toolCalls };
     },
   };

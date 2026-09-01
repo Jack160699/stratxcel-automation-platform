@@ -73,6 +73,6 @@ export async function sendCopilotMessage(principal: AgentPrincipal, userText: st
     return { ok: true, replyText, status: "completed", confirmationRequired: false };
   }
 
-  const result = await runAgentTurn({ supabase, principal, provider: createAgentCoreProviderAdapter(), userText: trimmed });
+  const result = await runAgentTurn({ supabase, principal, provider: createAgentCoreProviderAdapter(principal.tenantId), userText: trimmed });
   return { ok: result.status !== "failed", replyText: result.replyText, status: result.status, confirmationRequired: result.confirmationRequired };
 }
