@@ -1,5 +1,5 @@
 import { requireTenantReadContext, getTenantServiceContext } from "@/lib/tenants/tenant-context";
-import { resolveCanonicalWebsite, matchVercelProjectToWebsite } from "@stratxcel/search-discovery";
+import { resolveCanonicalWebsite, matchVercelProjectToWebsite, resolveVercelWriteCapability } from "@stratxcel/search-discovery";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -63,11 +63,17 @@ export async function GET(request: Request) {
   const matchedProject = website ? matchVercelProjectToWebsite(projects, website.url) : null;
   const detectedPlatform = matchedProject?.framework ?? null;
 
+  const writeCapability = await resolveVercelWriteCapability({
+    tenantId,
+    db: supabase,
+    siteUrl: website?.url,
+  });
+
   const vercelState = !connection
     ? "NOT_CONNECTED"
-    : connection.is_healthy === false
+    : writeCapability.state === "AUTHENTICATION_FAILED" || connection.is_healthy === false
       ? "PROVIDER_ERROR"
-      : connection.scope === "AUTONOMOUS_WRITE"
+      : writeCapability.state === "WRITE_READY" || connection.scope === "AUTONOMOUS_WRITE"
         ? "READY"
         : "AUTHORIZED";
 

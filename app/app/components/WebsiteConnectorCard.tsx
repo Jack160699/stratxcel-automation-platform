@@ -162,7 +162,7 @@ export function WebsiteConnectorCard({ tenantId }: { tenantId: string }) {
       const res = await fetch("/api/platform/search/vercel/connect", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tenantId, token: tokenInput.trim(), scope: "ANALYSIS_ONLY" }),
+        body: JSON.stringify({ tenantId, token: tokenInput.trim(), scope: "AUTONOMOUS_WRITE" }),
       });
       const body = await res.json();
       if (!res.ok) {
@@ -333,37 +333,42 @@ export function WebsiteConnectorCard({ tenantId }: { tenantId: string }) {
               </div>
             )}
 
-            {status.vercel.state === "NOT_CONNECTED" ? (
-              showConnectForm ? (
-                <div className="mt-3 space-y-2">
-                  <p className="text-xs text-sx-text-subtle">
-                    Paste a Vercel Personal Access Token (Vercel → Account Settings → Tokens). Any scope works — Full Account, a specific Team, or a specific Project (the narrowest, most secure choice). We validate and store it securely — it&rsquo;s never shown again.
-                  </p>
-                  <input
-                    type="password"
-                    value={tokenInput}
-                    onChange={(e) => setTokenInput(e.target.value)}
-                    placeholder="Vercel token"
-                    className="w-full rounded-sx-sm border border-sx-border bg-sx-surface-2 p-2.5 text-sm font-mono text-sx-text placeholder:text-sx-text-subtle focus:border-sx-accent focus:outline-none"
-                  />
-                  {connectError && <p className="text-xs text-sx-danger">{connectError}</p>}
-                  <div className="flex items-center justify-end gap-2">
-                    <Button variant="ghost" size="sm" onClick={() => { setShowConnectForm(false); setConnectError(null); }}>Cancel</Button>
-                    <Button variant="primary" size="sm" onClick={handleConnectVercel} disabled={connecting || !tokenInput.trim()}>
-                      {connecting ? "Connecting…" : "Connect Vercel"}
-                    </Button>
-                  </div>
+            {showConnectForm ? (
+              <div className="mt-3 space-y-2">
+                <p className="text-xs text-sx-text-subtle">
+                  Paste a Vercel Personal Access Token (Vercel → Account Settings → Tokens). Any scope works — Full Account, a specific Team, or a specific Project with deployment permissions. We validate and store it securely — it&rsquo;s never shown again.
+                </p>
+                <input
+                  type="password"
+                  value={tokenInput}
+                  onChange={(e) => setTokenInput(e.target.value)}
+                  placeholder="Vercel token"
+                  className="w-full rounded-sx-sm border border-sx-border bg-sx-surface-2 p-2.5 text-sm font-mono text-sx-text placeholder:text-sx-text-subtle focus:border-sx-accent focus:outline-none"
+                />
+                {connectError && <p className="text-xs text-sx-danger">{connectError}</p>}
+                <div className="flex items-center justify-end gap-2">
+                  <Button variant="ghost" size="sm" onClick={() => { setShowConnectForm(false); setConnectError(null); }}>Cancel</Button>
+                  <Button variant="primary" size="sm" onClick={handleConnectVercel} disabled={connecting || !tokenInput.trim()}>
+                    {connecting ? "Connecting…" : "Connect Vercel"}
+                  </Button>
                 </div>
-              ) : (
-                <Button variant="primary" size="sm" className="mt-3 w-full" onClick={() => setShowConnectForm(true)}>
-                  Connect Vercel
-                </Button>
-              )
+              </div>
+            ) : status.vercel.state === "NOT_CONNECTED" ? (
+              <Button variant="primary" size="sm" className="mt-3 w-full" onClick={() => setShowConnectForm(true)}>
+                Connect Vercel
+              </Button>
             ) : (
               <div className="mt-3 flex items-center justify-between gap-2">
-                <Button variant="secondary" size="sm" onClick={handleDiscover} disabled={discovering}>
-                  {discovering ? "Discovering…" : "Refresh projects"}
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button variant="secondary" size="sm" onClick={handleDiscover} disabled={discovering}>
+                    {discovering ? "Discovering…" : "Refresh projects"}
+                  </Button>
+                  {status.vercel.state === "AUTHORIZED" && (
+                    <Button variant="secondary" size="sm" onClick={() => setShowConnectForm(true)}>
+                      Update Token
+                    </Button>
+                  )}
+                </div>
                 <Button variant="ghost" size="sm" className="text-sx-danger hover:bg-sx-danger/10" onClick={handleDisconnect}>
                   Disconnect
                 </Button>
