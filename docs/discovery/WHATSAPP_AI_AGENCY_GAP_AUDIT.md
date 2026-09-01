@@ -1,5 +1,29 @@
 # WhatsApp AI Agency — Gap Audit
 
+## Update 35 — a real security anti-pattern found and fixed proactively, before it could ever become live
+
+While investigating a signed-URL mechanism to bridge the paid-audit PDF report
+(`capability:paid_audit_pdf_report`), found `PreviewManager`
+(`packages/websites-and-domains/src/preview/preview-manager.ts`) fell back to a
+hardcoded, source-visible constant secret (`"stratxcel_preview_hmac_secret_2026"`)
+whenever `PREVIEW_SECRET_KEY` wasn't configured — a real anti-pattern against the
+master build brief's own rule 3 ("do not expose secret values in code").
+
+Traced every real `app/` route before concluding severity, rather than assuming the
+worst: confirmed zero live routes currently call this class — only its own smoke-test and
+unit test do. The real, live preview page (`app/app/website/[siteId]/preview`) uses
+genuine Supabase session auth instead, completely unaffected. Not an active exploit today,
+but a real risk the moment anyone wires this class to a live route without remembering to
+set the real secret. Fixed proactively rather than waiting for that to happen.
+
+Mirrors `config/production-gate.ts`'s own already-established fail-closed pattern exactly,
+rather than inventing a new one: hard throw in production if genuinely unconfigured; a
+real, unpredictable, non-constant random secret in every other environment, so existing
+tests keep working without needing a real secret configured. New
+`preview-secret-fail-closed.test.ts` (5 assertions, including one that specifically checks
+the old hardcoded string never appears again) wired into `test:website-factory`. Full
+23-file suite exit 0, full-repo `tsc --noEmit` clean, lint clean.
+
 ## Update 34 — closed the "What Needs Attention" gap flagged in Update 33 rather than leaving it open
 
 Continued straight through rather than stopping at the honestly-recorded gap: "What Needs

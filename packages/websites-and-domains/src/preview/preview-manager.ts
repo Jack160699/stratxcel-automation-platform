@@ -5,12 +5,40 @@
  * version targeting, strict tenant isolation, and search engine noindex enforcement.
  */
 
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHmac, timingSafeEqual, randomBytes } from "node:crypto";
+import { resolveAppEnvironment } from "../config/production-gate.ts";
 import type {
   PreviewTokenPayload,
   PreviewResolutionResult,
   PreviewMetaHeaders,
 } from "./types.ts";
+
+/**
+ * Resolves the real HMAC signing secret -- never a hardcoded, source-visible
+ * constant. Found 2026-09-02 (convergence-loop mission, section 25 security
+ * pass): this class previously fell back to the literal string
+ * "stratxcel_preview_hmac_secret_2026" whenever PREVIEW_SECRET_KEY wasn't
+ * set -- a real anti-pattern (per the master build brief's own rule 3, "do
+ * not expose secret values in code") that happened to be harmless only
+ * because grepping the whole repo confirms zero real app/ routes currently
+ * call this class (only its own smoke-test and unit test do). Fixed before
+ * anything wires it up, not after. Mirrors config/production-gate.ts's
+ * existing, already-established fail-closed pattern exactly rather than
+ * inventing a new one: hard failure if production and genuinely
+ * unconfigured; a real, unpredictable, process-lifetime-scoped random
+ * secret (never the same value twice, never guessable from source) in
+ * every other environment, so tests keep working without needing a real
+ * secret configured.
+ */
+export function resolvePreviewSecretKey(explicit?: string, envObj: Record<string, string | undefined> = process.env): string {
+  if (explicit) return explicit;
+  const envKey = envObj.PREVIEW_SECRET_KEY;
+  if (envKey) return envKey;
+  if (resolveAppEnvironment(envObj) === "production") {
+    throw new Error("PREVIEW_SECRET_KEY is required in production -- preview URL signing must never fall back to a predictable default.");
+  }
+  return randomBytes(32).toString("hex");
+}
 
 export class PreviewManager {
   private secretKey: string;
@@ -22,7 +50,7 @@ export class PreviewManager {
     baseUrl?: string;
     defaultTtlSeconds?: number;
   }) {
-    this.secretKey = options?.secretKey || process.env.PREVIEW_SECRET_KEY || "stratxcel_preview_hmac_secret_2026";
+    this.secretKey = resolvePreviewSecretKey(options?.secretKey);
     this.defaultBaseUrl = options?.baseUrl || "https://preview.stratxcel.in";
     this.defaultTtlSeconds = options?.defaultTtlSeconds || 60 * 60 * 24 * 7; // 7 days
   }
