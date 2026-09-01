@@ -25,6 +25,22 @@
  *   creation/editing/deployment mutation surface). A read-only status
  *   check is the safe, scoped slice of it: zero new logic, matches the
  *   check_growth_status/check_connections pattern exactly.
+ * - check_domain_status: another safe, scoped slice of the same
+ *   websites-and-domains subsystem -- inspectDomainDns (its own header
+ *   comment: "Safe Read-Only DNS Inspector", pure public DNS resolution,
+ *   no DB/mutation at all) plus getVercelDomainStatus (Vercel's own
+ *   verified/sslActive state, the same VERCEL_AUTH_TOKEN/project/team
+ *   defaults execute_growth_action's Vercel CMS provider already uses).
+ *   Answers "domain operations where legitimately supported" without
+ *   touching the creation/editing/deployment mutation surface at all.
+ * - run_growth_analysis: packages/search-discovery's runSearchAnalysis,
+ *   UNMODIFIED -- triggers a REAL fresh SEO/AEO/GEO crawl+analysis, not
+ *   just a read of what check_growth_status already has stored. Mirrors
+ *   app/api/platform/search/run/route.ts's exact rate-limit/idempotency/
+ *   Google-provider-resolution logic. See growth-analysis-outcome.ts for
+ *   its interpretOutcome classifier (kept in its own pure file for the
+ *   same standalone-testability reason as lib/social/agent/publish-
+ *   outcome-classify.ts).
  * - check_audit_status: the exact same public_audit_requests read as
  *   app/api/platform/audit/route.ts's GET handler (list branch), scoped by
  *   tenantId instead of a cookie session since a service-role agent call
@@ -64,6 +80,7 @@ import type { AgentTool } from "@stratxcel/agent-core";
 import { isPlanTier } from "@stratxcel/payments-and-wallet";
 import { createDevEncryptedVault } from "@stratxcel/byok";
 import { interpretGrowthAnalysisOutcome } from "./growth-analysis-outcome";
+import { inspectDomainDns, getVercelDomainStatus } from "@stratxcel/websites-and-domains";
 
 /** Staff/Boss turns have no tenantId (platform staff aren't tenant-scoped);
  *  an explicit args.tenantId (e.g. a client's real id from a prior
@@ -225,6 +242,29 @@ export const GROWTH_MEDIA_TOOLS: AgentTool[] = [
         .order("created_at", { ascending: false });
       if (error) return { available: false, reason: error.message };
       return { tenantId, sites: sites ?? [] };
+    },
+  },
+  {
+    schema: {
+      name: "check_domain_status",
+      description: "Real live domain status for a Stratxcel-built site's custom domain: real public DNS records (A/CNAME/AAAA/nameservers, safe read-only resolution, no changes made) AND Vercel's own verification/SSL-certificate status for that domain (verified, sslActive). Use for 'is our domain pointed correctly', 'is SSL active', 'why isn't our domain working', 'check DNS for X'. Complements check_website_status (which only reads the stored custom_domain value, not its live state). Read-only.",
+      parameters: {
+        type: "object",
+        properties: { domain: { type: "string", description: "The domain to check, e.g. www.example.com. Usually the custom_domain from a prior check_website_status call." } },
+        required: ["domain"],
+      },
+    },
+    mutating: false,
+    risk: "read",
+    requiredPermission: "agent:read:website",
+    async execute(_ctx, args) {
+      const domain = typeof args.domain === "string" ? args.domain.trim() : "";
+      if (!domain) return { available: false, reason: "domain is required" };
+      const [dns, vercel] = await Promise.all([
+        inspectDomainDns({ domain }).catch((err: unknown) => ({ error: err instanceof Error ? err.message : "dns_inspection_failed" })),
+        getVercelDomainStatus(domain).catch((err: unknown) => ({ error: err instanceof Error ? err.message : "vercel_status_failed" })),
+      ]);
+      return { domain, dns, vercel };
     },
   },
   {
