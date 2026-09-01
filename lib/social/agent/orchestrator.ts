@@ -50,7 +50,7 @@ import {
   stripInternalInput,
 } from "./dependencies.ts";
 import { validateBrandEntities } from "./brand-validation.ts";
-import { PUBLISH_INTENT_TOOLS, describePublishAttempt, type PublishReceipt } from "./publish-outcome-classify.ts";
+import { PUBLISH_INTENT_TOOLS, describePublishAttempt, describeImageGenerationOutcome, type PublishReceipt } from "./publish-outcome-classify.ts";
 import { sanitizeUserFacingText } from "./user-facing-text.ts";
 import {
   attachmentPart,
@@ -483,6 +483,20 @@ export async function runAgentTurn(ctx: AgentActorContext, sessionId: string, ru
   // outcome this turn — the deterministic backstop against a false
   // "Done."/"Posted."/"Published." reply (see Section 10 of the integrity brief).
   let lastPublishOutcome: { succeeded: boolean; note?: string; receipt: PublishReceipt } | null = null;
+  // VERIFICATION INTEGRITY (autonomous-convergence-loop mission, section 10
+  // -- "universalize the existing interpretOutcome architecture... applies
+  // globally... to image"). generate_image (executeGenerateImageTool) has
+  // the exact same real, non-throwing soft-failure surface that produced
+  // the live Update-9/10 incident on this function's OTHER caller
+  // (lib/agent-core/growth-media-tools.ts, WhatsApp/Admin Copilot) --
+  // outcome: FAILED/REVISION_REQUIRED/NOT_CONFIGURED/WAITING_CONFIGURATION/
+  // PENDING, none of which throw. That fix never touched THIS orchestrator
+  // (Social Autopilot's own, separate agent loop -- see this file's own
+  // AgentTool interface, distinct from packages/agent-core's) even though
+  // it calls the identical underlying function, so the same bug was
+  // independently live here the whole time. Same discipline as
+  // lastPublishOutcome, generalized rather than duplicated in spirit only.
+  let lastImageOutcome: { succeeded: boolean; note: string } | null = null;
   let generatedCandidates: {
     jobId?: string;
     candidates: Array<{ candidateId: string; storedAssetId?: string; previewUrl?: string | null; format?: string; status?: string }>;
@@ -654,7 +668,12 @@ export async function runAgentTurn(ctx: AgentActorContext, sessionId: string, ru
             const genOutput = output as {
               generationJobId?: string;
               candidates?: Array<{ candidateId: string; storedAssetId?: string; previewUrl?: string | null; format?: string; status?: string }>;
+              outcome?: string;
+              reason?: string;
             };
+            if (typeof genOutput.outcome === "string" && genOutput.outcome !== "OK") {
+              lastImageOutcome = { succeeded: false, note: describeImageGenerationOutcome(genOutput.outcome, genOutput.reason) };
+            }
             if (Array.isArray(genOutput.candidates) && genOutput.candidates.length > 0) {
               const candidatesWithPreviews = await Promise.all(
                 genOutput.candidates.map(async (cand) => {
@@ -812,6 +831,16 @@ export async function runAgentTurn(ctx: AgentActorContext, sessionId: string, ru
     if (hasPublishArtifact && (!responseText.trim() || BARE_SUCCESS_CLAIM.test(responseText.trim()))) {
       responseText = "Prepared for review.";
     }
+    // VERIFICATION INTEGRITY -- append (never silently drop) the real image-
+    // generation failure, same discipline as lastPublishOutcome above but
+    // additive rather than replacing, since there is no single fixed
+    // "bare success claim" phrase for images the way "Done."/"Posted." is
+    // for publishing -- see lastImageOutcome's declaration for the full
+    // incident this closes.
+    if (lastImageOutcome && !lastImageOutcome.succeeded) {
+      const trimmed = responseText.trim();
+      responseText = trimmed && trimmed !== "Done." ? `${trimmed}\n\n${lastImageOutcome.note}` : lastImageOutcome.note;
+    }
     responseText = sanitizeUserFacingText(responseText);
 
     const parts: Array<Record<string, unknown>> = [];
@@ -836,7 +865,8 @@ export async function runAgentTurn(ctx: AgentActorContext, sessionId: string, ru
       parts.push({ type: "publish_receipt", ...lastPublishOutcome.receipt });
     }
     await insertMessage(ctx, sessionId, "AGENT", responseText, parts);
-    const terminalSessionStatus = lastPublishOutcome && !lastPublishOutcome.succeeded
+    const imageOutcomeFailed = Boolean(lastImageOutcome && !lastImageOutcome.succeeded);
+    const terminalSessionStatus = (lastPublishOutcome && !lastPublishOutcome.succeeded) || imageOutcomeFailed
       ? "ATTENTION_REQUIRED"
       : proposedActions.length
         ? "WAITING_FOR_CHOICE"
@@ -844,13 +874,15 @@ export async function runAgentTurn(ctx: AgentActorContext, sessionId: string, ru
     await setSessionStatus(ctx, sessionId, terminalSessionStatus);
     // A mission's terminal event reflects whether the user's requested
     // outcome was actually achieved, not just that the run executed without
-    // crashing — a failed publish attempt must never look like a clean
-    // success in the trace.
+    // crashing — a failed publish OR image-generation attempt must never
+    // look like a clean success in the trace.
     const missionOutcome = lastPublishOutcome
       ? (lastPublishOutcome.succeeded ? "COMPLETED" : "FAILED")
-      : proposedActions.length
-        ? "WAITING_FOR_APPROVAL"
-        : "COMPLETED";
+      : imageOutcomeFailed
+        ? "FAILED"
+        : proposedActions.length
+          ? "WAITING_FOR_APPROVAL"
+          : "COMPLETED";
     await recordRunEvent(ctx, runId, {
       type: "RUN_COMPLETED",
       label: PHASE_LABELS.RUN_COMPLETED,

@@ -6,6 +6,7 @@ import { requestAppointment } from "@stratxcel/whatsapp";
 import { createAndEstimateMission } from "@stratxcel/missions";
 import { createHumanHandoff } from "@stratxcel/human-handoff";
 import type { AgentTool } from "../contract.ts";
+import { interpretMissionOutcome } from "../mission-outcome.ts";
 
 const LEAD_STATUSES: LeadStatus[] = ["NEW", "CONTACTED", "QUALIFIED", "WON", "LOST"];
 const OUTREACH_CONVERSATION_ROLES = ["SALES", "PARTNERSHIP", "OUTREACH", "FOLLOW_UP", "EXPLAINER", "HR"] as const;
@@ -181,6 +182,12 @@ export const ADMIN_MUTATION_TOOLS: AgentTool[] = [
       });
       return { mission };
     },
+    // VERIFICATION INTEGRITY (autonomous-convergence-loop mission, section
+    // 10 -- "universalize the existing interpretOutcome architecture...
+    // applies globally"). Found by auditing every mutating tool for the
+    // same class of defect Updates 10/13 fixed live -- see
+    // ../mission-outcome.ts's header comment for the full explanation.
+    interpretOutcome: interpretMissionOutcome,
   },
   {
     schema: {

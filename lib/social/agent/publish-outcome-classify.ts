@@ -91,6 +91,35 @@ export function platformLabel(platform: string): string {
   return PLATFORM_LABELS[platform.toLowerCase()] ?? platform;
 }
 
+/**
+ * Same wording discipline as outcomeNoteFor -- a real, honest, human-safe
+ * summary of a non-OK GenerateImageOutcome (generate_image /
+ * executeGenerateImageTool), never fabricated. Pulled out here (not left
+ * inline in orchestrator.ts) for the exact reason this module exists at
+ * all per its own header comment: pure, dependency-free, standalone-
+ * testable classification logic.
+ *
+ * VERIFICATION INTEGRITY (autonomous-convergence-loop mission, section 10
+ * -- "universalize the existing interpretOutcome architecture... applies
+ * globally... to image"). generate_image has the exact same real,
+ * non-throwing soft-failure surface that produced the live Update-9/10
+ * incident on this function's OTHER caller (lib/agent-core/growth-media-
+ * tools.ts, WhatsApp/Admin Copilot) -- outcome: FAILED/REVISION_REQUIRED/
+ * NOT_CONFIGURED/WAITING_CONFIGURATION/PENDING, none of which throw. That
+ * fix never touched Social Autopilot's own, separate agent loop even
+ * though it calls the identical underlying function, so the same bug was
+ * independently live here the whole time, unrelated to and unfixed by
+ * Updates 10/13.
+ */
+export function describeImageGenerationOutcome(outcome: string, reason?: string): string {
+  if (outcome === "REVISION_REQUIRED") return "The image candidates are ready but need your selection before anything is final.";
+  if (outcome === "NOT_CONFIGURED" || outcome === "WAITING_CONFIGURATION") {
+    return `Image generation isn't fully set up yet${reason ? ` (${reason})` : ""} — no image was created.`;
+  }
+  if (outcome === "PENDING") return "Image generation is still pending — nothing is ready yet.";
+  return `Image generation did not succeed${reason ? ` (${reason})` : ""} — no image was created.`;
+}
+
 export function outcomeNoteFor(
   job: PublishingJobRow | null,
   wasImmediate: boolean,

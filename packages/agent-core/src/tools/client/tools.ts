@@ -6,6 +6,7 @@ import { createHumanHandoff } from "@stratxcel/human-handoff";
 import { getCurrentBrandBrain } from "@stratxcel/brand-brain";
 import { getIntegrationMode } from "@stratxcel/whatsapp";
 import type { AgentTool, ToolContext } from "../contract.ts";
+import { interpretMissionOutcome } from "../mission-outcome.ts";
 
 /**
  * PHASE 9 INVARIANT: every tool in this file derives tenantId from
@@ -181,6 +182,12 @@ export const CLIENT_MUTATION_TOOLS: AgentTool[] = [
       });
       return { mission };
     },
+    // VERIFICATION INTEGRITY (autonomous-convergence-loop mission, section
+    // 10) -- this customer-facing create_mission shares admin/mutation-tools.ts's
+    // exact same soft-failure surface (createAndEstimateMission can return
+    // a mission stuck in AWAITING_FUNDS/AWAITING_APPROVAL/etc without
+    // throwing); see ../mission-outcome.ts's header comment.
+    interpretOutcome: interpretMissionOutcome,
   },
   {
     schema: {
