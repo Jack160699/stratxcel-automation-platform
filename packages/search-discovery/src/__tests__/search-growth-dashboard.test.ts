@@ -220,11 +220,15 @@ test("8. Competitor display & 9. AI provider status & 10. Authority status", asy
   assert.ok(data.aiSearch.providerStatuses.length >= 2);
   // STRATXCEL — AEO brief, Section 41: this test used to pin
   // authorityCoverage's hardcoded fabricated value (70/100, every tenant,
-  // always) as "expected behavior". This codebase has no real, persisted
-  // directory/citation-coverage measurement yet, so the honest state is
-  // null/NOT DIRECTLY MEASURED -- corrected here, not silently deleted.
+  // always) as "expected behavior". AEO Final Closure (Update 32) traced
+  // this all the way to root cause: the engine's real overallAuthorityScore
+  // formula depends on directory/citation data that no real crawler in this
+  // codebase writes (search_external_sources has zero writers), so its
+  // "real" score is secretly half a hardcoded constant -- persisting that
+  // would fabricate confidence this platform doesn't have. Honest state
+  // remains null/NOT ENOUGH DATA -- corrected here, not silently deleted.
   assert.equal(data.scorecards.authorityCoverage.value, null);
-  assert.equal(data.scorecards.authorityCoverage.displayValue, "NOT DIRECTLY MEASURED");
+  assert.equal(data.scorecards.authorityCoverage.displayValue, "NOT ENOUGH DATA");
 });
 
 test("11. Timeline correctness & 12. Tenant isolation & 13. No secret leakage", async () => {

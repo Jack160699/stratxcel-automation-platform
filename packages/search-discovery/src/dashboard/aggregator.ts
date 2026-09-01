@@ -268,21 +268,38 @@ export async function getSearchGrowthDashboardData(
 
   // STRATXCEL — AEO brief, Section 41: same fabrication class as
   // aiVisibility above (hardcoded 70/100, STABLE, HIGH confidence for
-  // every tenant, always). Unlike aiVisibility/localPresence, this
-  // codebase has no real, persisted directory/citation-coverage measurement
-  // to read yet (authority/gap-engine.ts's analyzeAuthorityGaps runs
-  // per-cycle but is never persisted) -- disclosed and left honestly
-  // unmeasured rather than fabricating a second guessed number, or
-  // spending this pass building a whole new persistence layer for a
-  // different brief's scope.
+  // every tenant, always). Re-investigated for the AEO Final Closure pass
+  // (docs/discovery/SEARCH_GROWTH_ENGINE_GAP_AUDIT.md, Update 32), which
+  // asked: "if the engine already produces a score, persist that actual
+  // output" -- it does: authority/orchestrator.ts's
+  // runExternalAuthorityAnalysis() returns a real overallAuthorityScore.
+  // But tracing it to its one real caller (loop/orchestrator.ts) shows it
+  // is computed as `citationCoverage * 0.5 + entityScore * 0.5`, where
+  // citationCoverage comes from `discoveredSources` -- a parameter that
+  // real call site never passes, so it is always `[]`, and the formula's
+  // own fallback (a hardcoded neutral 50) fires every single time. Full
+  // codebase search confirms search_external_sources (the one table that
+  // would hold real directory/citation discoveries) has zero writers
+  // anywhere -- no crawler for it exists yet. Persisting and labeling that
+  // blended number "External Authority Coverage: REAL VALUE" would launder
+  // a permanent 50%-constant placeholder as a genuine measurement, which is
+  // exactly the fabrication this brief prohibits ("do not invent a score
+  // merely to fill a card... Use: REAL VALUE or NOT ENOUGH DATA"). The
+  // entity-consistency half of that formula IS real and already flows into
+  // localPresence below -- relabeling it as "External Authority Coverage"
+  // would itself misrepresent what is actually being measured (internal
+  // NAP/schema consistency, not external directory citations). Correctly
+  // left honestly unmeasured: closing this for real requires a genuine
+  // directory/citation discovery crawler, which is new scope this brief
+  // does not ask for and this pass does not fabricate a substitute for.
   const authorityCoverage: DashboardScorecardMetric = {
     label: "External Authority Coverage",
     value: null,
-    displayValue: "NOT DIRECTLY MEASURED",
+    displayValue: "NOT ENOUGH DATA",
     trend: "INSUFFICIENT_DATA",
     confidence: "LOW",
     dataCoveragePercentage: 0,
-    statusNote: "Directory and citation coverage measurement is not yet persisted for this tenant.",
+    statusNote: "No directory/citation discovery source is wired for this tenant yet (search_external_sources has no real writer) -- external authority coverage cannot be honestly measured until one exists.",
   };
 
   // STRATXCEL — AEO brief, Section 41: same fabrication class (hardcoded

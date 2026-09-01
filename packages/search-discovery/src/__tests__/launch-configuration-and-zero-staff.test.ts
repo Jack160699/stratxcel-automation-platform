@@ -37,16 +37,57 @@ test("2. Scheduler authentication & 4. Scheduler last-run health state", () => {
   }
 });
 
-test("2b. Scheduler health reports MISCONFIGURED, not a fabricated OPERATIONAL, when the secret is missing", () => {
+test("2b. Scheduler health reports MISCONFIGURED, not a fabricated OPERATIONAL, when neither secret is set", () => {
   const original = process.env.SEARCH_DISCOVERY_SCHEDULER_SECRET;
+  const originalCron = process.env.CRON_SECRET;
   delete process.env.SEARCH_DISCOVERY_SCHEDULER_SECRET;
+  delete process.env.CRON_SECRET;
   try {
     const health = getSchedulerHealthStatus();
     assert.equal(health.secretConfigured, false);
+    assert.equal(health.cronSecretConfigured, false);
     assert.equal(health.status, "MISCONFIGURED");
   } finally {
     if (original !== undefined) process.env.SEARCH_DISCOVERY_SCHEDULER_SECRET = original;
+    if (originalCron !== undefined) process.env.CRON_SECRET = originalCron;
   }
+});
+
+// Root-caused live via docs/discovery/SEARCH_GROWTH_ENGINE_GAP_AUDIT.md
+// (AEO Final Closure, Update 32): search_strategy_states/search_entity_nodes
+// had 0 rows system-wide and every real search_analysis_runs row was
+// trigger_source="manual" -- Vercel's own automatic cron invocation only
+// ever attaches a bearer token for a var named exactly CRON_SECRET, which
+// this route never checked, so Vercel's real daily invocation had no way to
+// ever authenticate. Locked in here so a future edit can't silently drop
+// Vercel's reserved CRON_SECRET as an equally-valid scheduler secret.
+test("2c. Scheduler health recognizes Vercel's own reserved CRON_SECRET as sufficient on its own", () => {
+  const original = process.env.SEARCH_DISCOVERY_SCHEDULER_SECRET;
+  const originalCron = process.env.CRON_SECRET;
+  delete process.env.SEARCH_DISCOVERY_SCHEDULER_SECRET;
+  process.env.CRON_SECRET = "test-vercel-cron-secret";
+  try {
+    const health = getSchedulerHealthStatus();
+    assert.equal(health.secretConfigured, false);
+    assert.equal(health.cronSecretConfigured, true);
+    assert.equal(health.status, "OPERATIONAL", "CRON_SECRET alone must be enough -- Vercel's real cron never sends SEARCH_DISCOVERY_SCHEDULER_SECRET");
+  } finally {
+    if (original !== undefined) process.env.SEARCH_DISCOVERY_SCHEDULER_SECRET = original;
+    if (originalCron !== undefined) process.env.CRON_SECRET = originalCron;
+    else delete process.env.CRON_SECRET;
+  }
+});
+
+test("2d. Scheduler route accepts either real secret as a valid bearer token, and rejects anything else", () => {
+  const routeRaw = fs.readFileSync(
+    path.resolve(process.cwd(), "app", "api", "internal", "search", "scheduler", "route.ts"),
+    "utf-8"
+  );
+  const route = routeRaw.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
+  assert.match(route, /SEARCH_DISCOVERY_SCHEDULER_SECRET/, "the existing manual/internal secret must remain a valid path, unchanged");
+  assert.match(route, /process\.env\.CRON_SECRET/, "Vercel's own reserved CRON_SECRET must now also be read and checked");
+  assert.match(route, /SEARCH_SCHEDULER_UNAUTHORIZED/, "a request matching neither real secret must still be rejected");
+  assert.match(route, /isAuthorizedSchedulerCall/, "the two secrets must be combined into one explicit authorization decision, not two independent early-return guards that could each be individually weakened later");
 });
 
 test("4c. Launch gate's Google OAuth entry reads the real env var name, not a stale one", () => {

@@ -184,8 +184,37 @@ async function handleSchedulerInvocation(request: Request) {
     return Response.json({ error: "SEARCH_SCHEDULER_DISABLED" }, { status: 503 });
   }
 
-  const secret = process.env.SEARCH_DISCOVERY_SCHEDULER_SECRET;
-  if (!secret || request.headers.get("authorization") !== `Bearer ${secret}`) {
+  // Root-caused live via docs/discovery/SEARCH_GROWTH_ENGINE_GAP_AUDIT.md
+  // (AEO Final Closure, Update 32): search_strategy_states and
+  // search_entity_nodes had 0 rows system-wide, and every real
+  // search_analysis_runs row was trigger_source="manual" -- proving this
+  // route's real, scheduled Vercel Cron invocation had never once
+  // authenticated successfully, in the entire history of the table.
+  // Root cause: Vercel's own documented cron-authentication mechanism only
+  // auto-attaches `Authorization: Bearer $CRON_SECRET` to its automatic
+  // invocation when a project env var is named exactly CRON_SECRET
+  // (vercel.com/docs/cron-jobs/manage-cron-jobs) -- this route instead
+  // checked only a custom-named SEARCH_DISCOVERY_SCHEDULER_SECRET, which
+  // Vercel's platform has no way to know about. Vercel's real daily cron
+  // request therefore almost certainly carried no matching Authorization
+  // header at all, and was silently rejected here with 401 every single
+  // day. Fixed to accept EITHER real secret: the existing
+  // SEARCH_DISCOVERY_SCHEDULER_SECRET stays valid unchanged (manual/
+  // internal calls, e.g. an admin "Analyze Now"), and Vercel's own
+  // reserved CRON_SECRET -- once a value is set for it in the Vercel
+  // project, which this session has no tool capable of doing itself; no
+  // available tool writes Vercel env var values -- now also authenticates
+  // Vercel's genuine automatic cron requests. This never weakens security:
+  // a request must still present one real, exactly-matching secret: it
+  // only recognizes a second legitimate one, matching Vercel's own
+  // documented convention instead of fighting it.
+  const configuredSecret = process.env.SEARCH_DISCOVERY_SCHEDULER_SECRET;
+  const cronSecret = process.env.CRON_SECRET;
+  const authHeader = request.headers.get("authorization");
+  const isAuthorizedSchedulerCall =
+    (Boolean(configuredSecret) && authHeader === `Bearer ${configuredSecret}`) ||
+    (Boolean(cronSecret) && authHeader === `Bearer ${cronSecret}`);
+  if (!isAuthorizedSchedulerCall) {
     return Response.json({ error: "SEARCH_SCHEDULER_UNAUTHORIZED" }, { status: 401 });
   }
 

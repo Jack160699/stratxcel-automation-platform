@@ -28,6 +28,16 @@ export interface ConfiguredProviderItem {
 export interface SchedulerHealthStatus {
   isConfiguredInVercel: boolean;
   secretConfigured: boolean;
+  /**
+   * Whether Vercel's own reserved CRON_SECRET env var is set. Vercel only
+   * auto-attaches `Authorization: Bearer $CRON_SECRET` to its real,
+   * automatic cron invocation when a var named exactly this exists in the
+   * project (docs/discovery/SEARCH_GROWTH_ENGINE_GAP_AUDIT.md, Update 32) --
+   * `secretConfigured` alone (the custom SEARCH_DISCOVERY_SCHEDULER_SECRET)
+   * says nothing about whether Vercel's own automatic invocation can ever
+   * authenticate.
+   */
+  cronSecretConfigured: boolean;
   lastRunAt: string | null;
   nextRunAt: string | null;
   lastSuccessAt: string | null;

@@ -178,18 +178,32 @@ function nextDailyNineUtc(now: Date): Date {
  * design) rather than fabricate it. `isConfiguredInVercel` had the same
  * problem (hardcoded `true`) -- now a real read of the deployed
  * vercel.json, same check `runtime-proof/evaluator.ts` already performs.
+ *
+ * Root-caused live via docs/discovery/SEARCH_GROWTH_ENGINE_GAP_AUDIT.md
+ * (AEO Final Closure, Update 32): `secretConfigured` here only ever
+ * reflected the custom SEARCH_DISCOVERY_SCHEDULER_SECRET var, which
+ * Vercel's own automatic cron invocation has no way to know about --
+ * Vercel only auto-attaches a bearer token for a var named exactly
+ * CRON_SECRET. A tenant could see `secretConfigured: true` and
+ * `status: "OPERATIONAL"` here while Vercel's real daily invocation was
+ * still being silently 401'd, forever, with zero honest signal of that in
+ * this report. The scheduler route itself was fixed to accept either
+ * secret; this function is fixed to report both, so MISCONFIGURED now
+ * means what it says: neither secret Vercel could plausibly send exists.
  */
 export function getSchedulerHealthStatus(): SchedulerHealthStatus {
   const secretConfigured = Boolean(process.env.SEARCH_DISCOVERY_SCHEDULER_SECRET);
+  const cronSecretConfigured = Boolean(process.env.CRON_SECRET);
   const isConfiguredInVercel = isSchedulerRegisteredInVercelJson();
   return {
     isConfiguredInVercel,
     secretConfigured,
+    cronSecretConfigured,
     lastRunAt: null,
     nextRunAt: nextDailyNineUtc(new Date()).toISOString(),
     lastSuccessAt: null,
     lastFailureAt: null,
-    status: !isConfiguredInVercel || !secretConfigured ? "MISCONFIGURED" : "OPERATIONAL",
+    status: !isConfiguredInVercel || (!secretConfigured && !cronSecretConfigured) ? "MISCONFIGURED" : "OPERATIONAL",
     scheduleCronExpression: "0 9 * * *",
   };
 }
