@@ -5,6 +5,7 @@ import {
   discoverAllGoogleBusinessLocations,
   matchGoogleBusinessLocation,
   getCanonicalGbpLocationResourceName,
+  searchGoogleLocations,
 } from "@/lib/social/providers/google-business";
 import { getCurrentBrandBrain } from "@stratxcel/brand-brain";
 
@@ -166,11 +167,40 @@ export async function POST(request: Request) {
         reason: matchResult.reason,
       });
     } else {
+      // STRATXCEL — AUTONOMOUS BUSINESS PROFILE brief, Section 11/12/57:
+      // "this is not permission to stop" once normal account/location
+      // discovery finds nothing accessible -- googleLocations:search checks
+      // whether Google's own database already has a listing for this real
+      // business (claimed by someone else, or genuinely unclaimed) before
+      // concluding there's simply nothing to do but a generic "create a new
+      // one" pointer. Read-only against Google; never mutates anything.
+      // Best-effort: a search failure must not turn an otherwise-successful
+      // discovery probe into a hard error.
+      let locationMatch: Awaited<ReturnType<typeof searchGoogleLocations>>[number] | null = null;
+      try {
+        const searchResults = await searchGoogleLocations(tokens.accessToken, {
+          title: brandName,
+          websiteUri: canonicalWebsite,
+        });
+        locationMatch = searchResults[0] ?? null;
+      } catch (searchErr) {
+        console.warn("google-business probe: googleLocations:search failed, continuing without a match", {
+          error: searchErr instanceof Error ? searchErr.message : String(searchErr),
+        });
+      }
+
       const existingMeta = (socialAccount.metadata ?? {}) as Record<string, unknown>;
       const updatedMetadata: Record<string, unknown> = {
         ...existingMeta,
         location_resolved: false,
         google_verification_state: googleVerificationState,
+        // Real account resource this identity can create/claim a location
+        // under, when one exists (NO_LOCATIONS_IN_ACCOUNTS case) -- needed
+        // by the claim endpoint below; null when accounts.length is 0 (the
+        // real, Google-side "no parent to create under" limitation
+        // searchGoogleLocations/claimGoogleLocation's own doc comments
+        // explain).
+        account_name: accounts[0]?.name ?? null,
         accounts_count: accounts.length,
         locations_count: locations.length,
         discovery_status:
@@ -180,6 +210,21 @@ export async function POST(request: Request) {
             ? "NO_LOCATIONS_IN_ACCOUNTS"
             : "NO_GBP_ACCOUNTS_FOUND",
         discovered_at: now,
+        // Real, additive fact from Google's own database -- never
+        // fabricated, and distinct from the account/location discovery
+        // above (that's "what THIS identity can already manage"; this is
+        // "does Google know about this business at all").
+        google_location_search: locationMatch
+          ? {
+              name: locationMatch.name,
+              title: locationMatch.title,
+              website_uri: locationMatch.websiteUri,
+              request_admin_rights_uri: locationMatch.requestAdminRightsUri,
+              claimable: Boolean(!locationMatch.requestAdminRightsUri && accounts.length > 0),
+              raw_location: locationMatch.location,
+              searched_at: now,
+            }
+          : { name: null, searched_at: now },
       };
 
       await supabase
@@ -200,6 +245,13 @@ export async function POST(request: Request) {
         accountsCount: accounts.length,
         locationsCount: locations.length,
         reason: matchResult.reason,
+        googleLocationMatch: locationMatch
+          ? {
+              title: locationMatch.title,
+              requestAdminRightsUri: locationMatch.requestAdminRightsUri,
+              claimable: Boolean(!locationMatch.requestAdminRightsUri && accounts.length > 0),
+            }
+          : null,
       });
     }
   } catch (err) {

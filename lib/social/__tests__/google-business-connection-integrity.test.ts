@@ -7,6 +7,8 @@ import {
   discoverAllGoogleBusinessLocations,
   normalizeGoogleVerificationState,
   getAccountVerificationState,
+  searchGoogleLocations,
+  claimGoogleLocation,
   type GbpAccount,
   type GbpLocation,
 } from "../providers/google-business.ts";
@@ -388,6 +390,73 @@ async function run() {
     "zero-accounts and locations-found-but-unmatched must remain distinguishable, never collapsed into the same discoveryStatus"
   );
   console.log("✓ Test 8: LOCATION_SELECTION_REQUIRED reaches the UI layer distinctly from NO_GBP_ACCOUNTS_FOUND");
+
+  // --- 9. searchGoogleLocations / claimGoogleLocation -- real, live-------
+  // --- verified endpoints (STRATXCEL — AUTONOMOUS BUSINESS PROFILE brief, --
+  // --- Section 11/12/57: "this is not permission to stop" once normal ------
+  // --- account/location discovery finds nothing). --------------------------
+  {
+    const fetchCalls: Array<{ url: string; init?: RequestInit }> = [];
+    const mockFetch = (async (url: string, init?: RequestInit) => {
+      fetchCalls.push({ url: String(url), init });
+      return {
+        ok: true,
+        json: async () => ({
+          googleLocations: [
+            {
+              name: "googleLocations/abc123",
+              location: { title: "StratXcel", websiteUri: "https://www.stratxcel.in" },
+              requestAdminRightsUri: "https://business.google.com/request-access/abc123",
+            },
+          ],
+        }),
+      } as Response;
+    }) as unknown as typeof fetch;
+
+    const results = await searchGoogleLocations("tok", { title: "StratXcel", websiteUri: "https://www.stratxcel.in" }, mockFetch);
+    assert.equal(fetchCalls[0].url, "https://mybusinessbusinessinformation.googleapis.com/v1/googleLocations:search");
+    assert.equal(fetchCalls[0].init?.method, "POST");
+    const sentBody = JSON.parse(String(fetchCalls[0].init?.body));
+    assert.equal(sentBody.location.title, "StratXcel");
+    assert.equal(sentBody.location.websiteUri, "https://www.stratxcel.in");
+    assert.equal(results.length, 1);
+    assert.equal(results[0].name, "googleLocations/abc123");
+    assert.equal(results[0].requestAdminRightsUri, "https://business.google.com/request-access/abc123", "an already-claimed match must surface Google's own real request-access URL");
+
+    // Genuinely unclaimed match: no requestAdminRightsUri.
+    const unclaimedFetch = (async () => ({
+      ok: true,
+      json: async () => ({ googleLocations: [{ name: "googleLocations/xyz", location: { title: "StratXcel" } }] }),
+    })) as unknown as typeof fetch;
+    const unclaimedResults = await searchGoogleLocations("tok", { title: "StratXcel" }, unclaimedFetch);
+    assert.equal(unclaimedResults[0].requestAdminRightsUri, null, "a genuinely unclaimed listing must never have a fabricated requestAdminRightsUri");
+
+    // Zero matches: never fabricates a result.
+    const noMatchFetch = (async () => ({ ok: true, json: async () => ({}) })) as unknown as typeof fetch;
+    assert.deepEqual(await searchGoogleLocations("tok", { title: "Nonexistent Business" }, noMatchFetch), []);
+
+    // Honest failure, never a fabricated empty success.
+    const failFetch = (async () => ({ ok: false, status: 403, text: async () => "forbidden" })) as unknown as typeof fetch;
+    await assert.rejects(() => searchGoogleLocations("tok", { title: "StratXcel" }, failFetch), /Google location search failed \(403\)/);
+
+    // claimGoogleLocation: reuses Google's own returned location verbatim, never a fabricated payload.
+    let claimUrl = "";
+    let claimBody: unknown;
+    const claimFetch = (async (url: string, init?: RequestInit) => {
+      claimUrl = String(url);
+      claimBody = JSON.parse(String(init?.body));
+      return { ok: true, json: async () => ({ name: "accounts/999/locations/888" }) } as Response;
+    }) as unknown as typeof fetch;
+    const realLocation: GbpLocation = { name: "googleLocations/xyz", title: "StratXcel", websiteUri: "https://www.stratxcel.in" };
+    const claimed = await claimGoogleLocation("tok", "accounts/999", realLocation, "req-1", claimFetch);
+    assert.equal(claimUrl, "https://mybusinessbusinessinformation.googleapis.com/v1/accounts/999/locations?requestId=req-1");
+    assert.deepEqual(claimBody, realLocation, "must resubmit the exact location Google returned, never a modified/fabricated one");
+    assert.equal(claimed.name, "accounts/999/locations/888");
+
+    const claimFailFetch = (async () => ({ ok: false, status: 409, text: async () => "already exists" })) as unknown as typeof fetch;
+    await assert.rejects(() => claimGoogleLocation("tok", "accounts/999", realLocation, "req-2", claimFailFetch), /Google Business location claim failed \(409\)/);
+  }
+  console.log("✓ Test 9: searchGoogleLocations/claimGoogleLocation call the real endpoints, never fabricate a match or claim result");
 
   console.log("\n============================================================");
   console.log("ALL GOOGLE BUSINESS CONNECTION INTEGRITY TESTS PASSED!");

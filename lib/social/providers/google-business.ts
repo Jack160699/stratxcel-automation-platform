@@ -304,6 +304,124 @@ export async function discoverAllGoogleBusinessLocations(
 }
 
 /**
+ * A location Google's own database already knows about, discovered via
+ * googleLocations:search -- independent of whether the authenticated
+ * identity has any accessible Business Profile account at all (unlike
+ * discoverAllGoogleBusinessLocations above, this needs no accounts/{id}
+ * parent). Real, live-verified endpoint
+ * (developers.google.com/my-business/reference/businessinformation/rest/v1/googleLocations/search,
+ * fetched during this fix, not recalled) -- exactly the "search for
+ * existing profile before creating a new one" capability the STRATXCEL —
+ * AUTONOMOUS BUSINESS PROFILE brief's Section 11/12/57 asks for.
+ */
+export interface GoogleLocationMatch {
+  name: string; // "googleLocations/{id}" -- NOT an accounts-and-locations resource name; only usable via claimGoogleLocation below.
+  title: string | null;
+  websiteUri: string | null;
+  // Present only when this listing is already claimed by some account
+  // (any account, not necessarily this one) -- Google's own real,
+  // documented mechanism for "request access to a listing someone else
+  // manages". Null means the listing exists but is genuinely unclaimed.
+  requestAdminRightsUri: string | null;
+  // The sparse Location payload Google itself returned -- reusable
+  // verbatim in claimGoogleLocation() below (accounts.locations.create)
+  // to claim this exact listing rather than fabricating a new one.
+  location: GbpLocation | null;
+}
+
+export async function searchGoogleLocations(
+  accessToken: string,
+  query: { title: string; websiteUri?: string | null; phoneNumber?: string | null },
+  fetcher: typeof fetch = fetch
+): Promise<GoogleLocationMatch[]> {
+  const locationQuery: Record<string, unknown> = { title: query.title };
+  if (query.websiteUri) locationQuery.websiteUri = query.websiteUri;
+  // Real request shape (live-verified): phoneNumbers here is a plain
+  // string array for matching, distinct from the full Location resource's
+  // phoneNumbers.primaryPhone object shape used elsewhere in this file.
+  if (query.phoneNumber) locationQuery.phoneNumbers = [query.phoneNumber];
+
+  const res = await fetcher("https://mybusinessbusinessinformation.googleapis.com/v1/googleLocations:search", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ pageSize: 5, location: locationQuery }),
+  });
+  if (!res.ok) {
+    let detail = "";
+    try {
+      detail = await res.text();
+    } catch {
+      // ignore
+    }
+    const err = new Error(`Google location search failed (${res.status}): ${detail || "no error body"}`) as Error & { status?: number };
+    err.status = res.status;
+    throw err;
+  }
+  const data = (await res.json()) as {
+    googleLocations?: Array<{ name?: string; location?: GbpLocation; requestAdminRightsUri?: string }>;
+  };
+  return (data.googleLocations ?? [])
+    .filter((g): g is { name: string; location?: GbpLocation; requestAdminRightsUri?: string } => Boolean(g.name))
+    .map((g) => ({
+      name: g.name,
+      title: g.location?.title ?? null,
+      websiteUri: g.location?.websiteUri ?? null,
+      requestAdminRightsUri: g.requestAdminRightsUri ?? null,
+      location: g.location ?? null,
+    }));
+}
+
+/**
+ * Claims an existing, genuinely-unclaimed Google location -- never a new,
+ * fabricated one -- by resubmitting Google's own returned `location`
+ * payload from searchGoogleLocations() through the real, documented
+ * accounts.locations.create endpoint. Per Google's own docs (live-verified,
+ * not recalled): reusing an already-discovered, unclaimed location's exact
+ * data through this endpoint is the real, supported claim mechanism --
+ * there is no separate "claim" verb. Only ever call this with a `location`
+ * object Google itself returned; never construct one from guessed/AI
+ * business data (that would be genuine new-listing creation, a materially
+ * different, higher-risk action this function does not perform).
+ * `accountName` must be a real "accounts/{id}" resource this identity can
+ * manage (from discoverGoogleBusinessAccounts) -- Personal accounts cannot
+ * be created via this API (live-verified against accounts.create's own
+ * docs), so a genuinely account-less identity (zero accounts, not zero
+ * locations) has no valid parent to claim under at all; that is a real,
+ * Google-side limitation, not something this function can work around.
+ * `requestId` provides real idempotency (Google's own documented dedupe
+ * key) against a retried claim attempt.
+ */
+export async function claimGoogleLocation(
+  accessToken: string,
+  accountName: string,
+  location: GbpLocation,
+  requestId: string,
+  fetcher: typeof fetch = fetch
+): Promise<{ name: string }> {
+  const url = new URL(`https://mybusinessbusinessinformation.googleapis.com/v1/${accountName}/locations`);
+  url.searchParams.set("requestId", requestId);
+  const res = await fetcher(url.toString(), {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify(location),
+  });
+  if (!res.ok) {
+    let detail = "";
+    try {
+      detail = await res.text();
+    } catch {
+      // ignore
+    }
+    const err = new Error(`Google Business location claim failed (${res.status}): ${detail || "no error body"}`) as Error & { status?: number };
+    err.status = res.status;
+    throw err;
+  }
+  const created = (await res.json()) as { name?: string };
+  if (!created.name) throw new Error("Google Business location claim returned no location name -- cannot confirm success");
+  return { name: created.name };
+}
+
+/**
  * Matches the optimal Google Business location using real verified evidence:
  * 1. Website URI hostname match against the tenant canonical website
  * 2. Business title / Brand name match

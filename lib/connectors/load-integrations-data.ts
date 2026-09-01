@@ -60,6 +60,21 @@ export interface CustomerIntegrationStatus {
     discoveryStatus: "NO_GBP_ACCOUNTS_FOUND" | "NO_LOCATIONS_IN_ACCOUNTS" | "LOCATION_SELECTION_REQUIRED" | "LOCATION_MATCHED" | null;
     accountsCount: number | null;
     locationsCount: number | null;
+    // Real, additive fact from Google's own database (googleLocations:search,
+    // STRATXCEL — AUTONOMOUS BUSINESS PROFILE brief, Section 11/12/57) --
+    // "does Google already know about this business at all", independent
+    // of what this identity can already manage. Only meaningful when
+    // locationSetupRequired is true and discoveryStatus isn't LOCATION_MATCHED.
+    googleLocationMatch: {
+      title: string | null;
+      // Real per-listing official Google URL to request access -- present
+      // only when the listing is already managed by another account.
+      requestAdminRightsUri: string | null;
+      // True only when the listing is genuinely unclaimed AND this identity
+      // has a real account to claim it under -- the one case the /claim
+      // endpoint below will actually succeed for.
+      claimable: boolean;
+    } | null;
   };
   google_analytics?: ConnectorState;
   google_search_console?: ConnectorState;
@@ -160,6 +175,15 @@ export async function loadIntegrationsStatusData(
         | null,
       accountsCount: typeof gbMeta.accounts_count === "number" ? gbMeta.accounts_count : null,
       locationsCount: typeof gbMeta.locations_count === "number" ? gbMeta.locations_count : null,
+      googleLocationMatch: (() => {
+        const search = gbMeta.google_location_search as { name?: string | null; title?: string | null; request_admin_rights_uri?: string | null; claimable?: boolean } | undefined;
+        if (!search?.name) return null;
+        return {
+          title: search.title ?? null,
+          requestAdminRightsUri: search.request_admin_rights_uri ?? null,
+          claimable: Boolean(search.claimable),
+        };
+      })(),
     },
     google_analytics: mapState(conns.google_analytics.connectionState),
     google_search_console: mapState(conns.google_search_console.connectionState),

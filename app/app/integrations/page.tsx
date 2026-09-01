@@ -150,6 +150,8 @@ export default function IntegrationsPage() {
   const [whatsappIsFirstConnect, setWhatsappIsFirstConnect] = useState(true);
   const [whatsappJustVerified, setWhatsappJustVerified] = useState<string | null>(null);
   const [oauthBanner, setOauthBanner] = useState<{ kind: "success" | "error"; message: string } | null>(null);
+  const [claimingGbp, setClaimingGbp] = useState(false);
+  const [claimError, setClaimError] = useState<string | null>(null);
 
   useEffect(() => {
     if (cooldownSeconds <= 0) return;
@@ -238,6 +240,34 @@ export default function IntegrationsPage() {
       }
     } catch {
       setError("Network error disconnecting account.");
+    }
+  }
+
+  // Claims the exact, already-discovered, unclaimed Google location the
+  // probe route's googleLocations:search found (STRATXCEL — AUTONOMOUS
+  // BUSINESS PROFILE brief, Section 12/57) -- a deliberate customer click,
+  // never automatic, since this is a real, public write against the
+  // customer's actual Google Business Profile.
+  async function handleClaimGbpLocation() {
+    if (!tenantId) return;
+    setClaimingGbp(true);
+    setClaimError(null);
+    try {
+      const res = await fetch("/api/platform/social/google-business/claim", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tenantId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.ok) {
+        setClaimError(data.reason || "Could not claim this Google Business listing. Please try again.");
+        return;
+      }
+      reloadStatus();
+    } catch {
+      setClaimError("Network error claiming this Google Business listing.");
+    } finally {
+      setClaimingGbp(false);
     }
   }
 
@@ -581,20 +611,55 @@ export default function IntegrationsPage() {
                     <p className="text-xs font-semibold text-sx-warning">
                       ✓ Google Account Connected {gbpDetails?.googleEmail ? `(${gbpDetails.googleEmail})` : ""}
                     </p>
-                    <p className="mt-1 text-xs text-sx-text-subtle">
-                      {gbpSetupCopy?.message}
-                    </p>
-                    <div className="mt-3 flex flex-wrap items-center gap-2">
-                      <a
-                        href="https://business.google.com/"
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex"
-                      >
-                        <Button variant="primary" size="sm">
-                          {gbpSetupCopy?.ctaLabel}
-                        </Button>
-                      </a>
+
+                    {/* A real, existing Google listing was found (STRATXCEL
+                        — AUTONOMOUS BUSINESS PROFILE brief, Section 11/12/57)
+                        -- give the precise, evidence-based next step instead
+                        of the generic fallback below. */}
+                    {gbpDetails?.googleLocationMatch?.requestAdminRightsUri ? (
+                      <>
+                        <p className="mt-1 text-xs text-sx-text-subtle">
+                          {gbpDetails.googleLocationMatch.title ? `"${gbpDetails.googleLocationMatch.title}" is` : "This business is"} already listed on Google, managed by another account.
+                        </p>
+                        <div className="mt-3 flex flex-wrap items-center gap-2">
+                          <a href={gbpDetails.googleLocationMatch.requestAdminRightsUri} target="_blank" rel="noreferrer" className="inline-flex">
+                            <Button variant="primary" size="sm">Request access on Google ↗</Button>
+                          </a>
+                        </div>
+                      </>
+                    ) : gbpDetails?.googleLocationMatch?.claimable ? (
+                      <>
+                        <p className="mt-1 text-xs text-sx-text-subtle">
+                          We found an existing, unclaimed Google listing{gbpDetails.googleLocationMatch.title ? `: "${gbpDetails.googleLocationMatch.title}"` : ""}.
+                        </p>
+                        {claimError && <p className="mt-1 text-xs text-sx-danger">{claimError}</p>}
+                        <div className="mt-3 flex flex-wrap items-center gap-2">
+                          <Button variant="primary" size="sm" onClick={handleClaimGbpLocation} disabled={claimingGbp}>
+                            {claimingGbp ? "Claiming…" : "Claim this listing"}
+                          </Button>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <p className="mt-1 text-xs text-sx-text-subtle">
+                          {gbpSetupCopy?.message}
+                        </p>
+                        <div className="mt-3 flex flex-wrap items-center gap-2">
+                          <a
+                            href="https://business.google.com/"
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex"
+                          >
+                            <Button variant="primary" size="sm">
+                              {gbpSetupCopy?.ctaLabel}
+                            </Button>
+                          </a>
+                        </div>
+                      </>
+                    )}
+
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
                       {connectHref && (
                         <a href={connectHref} className="inline-flex">
                           <Button variant="secondary" size="sm">
