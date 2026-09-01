@@ -42,13 +42,36 @@ const PROVIDER_LABELS: Record<string, string> = {
   whatsapp: "WhatsApp Verified",
 };
 
-function loadDraft(): { step: number; draft: OnboardingDraft } {
-  if (typeof window === "undefined") return { step: 0, draft: EMPTY_DRAFT };
+/**
+ * Root-caused live via docs/discovery/SEARCH_GROWTH_ENGINE_GAP_AUDIT.md
+ * (Platform Convergence): `ONBOARDING_DRAFT_KEY` is a single, fixed,
+ * origin-scoped sessionStorage key with no user-id namespacing at all.
+ * Real production evidence: `stratxcelsolutions@gmail.com` (a real,
+ * distinct Google account, never a member of the real Stratxcel tenant)
+ * reached onboarding twice, ~11 hours apart, and both the client draft and
+ * the real per-user server draft correctly carried its own earlier input
+ * forward -- that specific case was genuinely the same user resuming its
+ * own draft, not a leak. But `loadDraft()`'s result was applied to state
+ * completely unvalidated, with zero check that the currently authenticated
+ * user is the same one who saved it. In the same browser tab, a second,
+ * genuinely different, brand-new user (no server draft of their own yet)
+ * would silently inherit whatever business name/industry/location a prior
+ * user typed and abandoned in that tab -- exactly the "browser state
+ * decides what looks like identity" failure mode Section 1 warns against,
+ * just at the onboarding-form layer rather than tenant routing (the real
+ * tenant-resolution chain, auth user id -> tenant_members -> tenant, was
+ * traced end-to-end and found correct and deterministic; not touched here).
+ * Fixed by stamping the persisted draft with the real authenticated user id
+ * that saved it, and requiring a match before ever treating a client draft
+ * as this user's own (see the `ownerUserId` check in `loadAccount`).
+ */
+function loadDraft(): { step: number; draft: OnboardingDraft; ownerUserId: string | null } {
+  if (typeof window === "undefined") return { step: 0, draft: EMPTY_DRAFT, ownerUserId: null };
   try {
     const raw = window.sessionStorage.getItem(ONBOARDING_DRAFT_KEY);
-    if (!raw) return { step: 0, draft: EMPTY_DRAFT };
-    const parsed = JSON.parse(raw) as { step: number; draft: OnboardingDraft };
-    if (!parsed?.draft) return { step: 0, draft: EMPTY_DRAFT };
+    if (!raw) return { step: 0, draft: EMPTY_DRAFT, ownerUserId: null };
+    const parsed = JSON.parse(raw) as { step: number; draft: OnboardingDraft; ownerUserId?: string | null };
+    if (!parsed?.draft) return { step: 0, draft: EMPTY_DRAFT, ownerUserId: null };
     return {
       step: Math.min(Math.max(parsed.step ?? 0, 0), TOTAL_STEPS - 1),
       draft: {
@@ -60,10 +83,16 @@ function loadDraft(): { step: number; draft: OnboardingDraft } {
           connections: parsed.draft.account?.connections || EMPTY_DRAFT.account.connections,
         },
       },
+      ownerUserId: parsed.ownerUserId ?? null,
     };
   } catch {
-    return { step: 0, draft: EMPTY_DRAFT };
+    return { step: 0, draft: EMPTY_DRAFT, ownerUserId: null };
   }
+}
+
+function persistDraft(step: number, draft: OnboardingDraft, ownerUserId: string | null) {
+  if (typeof window === "undefined") return;
+  window.sessionStorage.setItem(ONBOARDING_DRAFT_KEY, JSON.stringify({ step, draft, ownerUserId }));
 }
 
 function mergeDraft(value: Partial<OnboardingDraft> | undefined): OnboardingDraft {
@@ -167,9 +196,18 @@ function mergeOAuthConnectionsIntoDraft(
 
 export function OnboardingWizard({ isStaff = false }: { isStaff?: boolean }) {
   const router = useRouter();
+  // Captured once, synchronously, for the async ownership check below --
+  // never applied to state directly. Applying it here (as this used to)
+  // would render a possibly-different-user's business name/industry/
+  // location before this component has any idea who is actually
+  // authenticated -- see loadDraft()'s doc comment.
   const initial = useRef(loadDraft());
-  const [step, setStep] = useState(initial.current.step);
-  const [draft, setDraft] = useState<OnboardingDraft>(initial.current.draft);
+  const [step, setStep] = useState(0);
+  const [draft, setDraft] = useState<OnboardingDraft>(EMPTY_DRAFT);
+  // A ref, not state: read by event-listener closures (the OAuth
+  // postMessage handler below) that are attached once on mount and would
+  // otherwise always see the stale (null) value from that first render.
+  const ownerUserIdRef = useRef<string | null>(null);
   const [accountName, setAccountName] = useState<string | null>(null);
   const [draftHydrated, setDraftHydrated] = useState(false);
   const [autoSave, setAutoSave] = useState<"saved" | "saving" | "failed">("saved");
@@ -228,9 +266,7 @@ export function OnboardingWizard({ isStaff = false }: { isStaff?: boolean }) {
         setDraft((prevDraft) => {
           let merged = body.saved?.draft ? mergeDraft(body.saved.draft) : prevDraft;
           if (body.oauthConnections) merged = mergeOAuthConnectionsIntoDraft(merged, body.oauthConnections);
-          if (typeof window !== "undefined") {
-            window.sessionStorage.setItem(ONBOARDING_DRAFT_KEY, JSON.stringify({ step, draft: merged }));
-          }
+          persistDraft(step, merged, ownerUserIdRef.current);
           return merged;
         });
       }
@@ -241,11 +277,10 @@ export function OnboardingWizard({ isStaff = false }: { isStaff?: boolean }) {
   }
 
   useEffect(() => {
-    const clientDraft = loadDraft();
-    if (clientDraft.step > 0 || clientDraft.draft.business.name || clientDraft.draft.business.website) {
-      setStep(clientDraft.step);
-      setDraft(clientDraft.draft);
-    }
+    // `initial.current` was captured synchronously at mount, before this
+    // component had any idea who is authenticated -- it must never be
+    // applied to state until validated against the real user below.
+    const clientDraft = initial.current;
     let cancelled = false;
     async function loadAccount() {
       try {
@@ -257,23 +292,38 @@ export function OnboardingWizard({ isStaff = false }: { isStaff?: boolean }) {
         const user = authResult.data?.user;
         if (cancelled) return;
         if (user) {
+          ownerUserIdRef.current = user.id;
+          // The one real fix: a client-side draft is only ever trusted as
+          // this user's own when it was stamped with this exact user id by
+          // a previous visit from the same authenticated session. A draft
+          // saved by a different (or no) user in this same browser tab is
+          // never applied -- closes the cross-account onboarding-form leak
+          // traced in docs/discovery/SEARCH_GROWTH_ENGINE_GAP_AUDIT.md.
+          const clientDraftOwnedByThisUser = clientDraft.ownerUserId === user.id;
+          const clientDraftHasContent =
+            clientDraft.step > 0 || Boolean(clientDraft.draft.business.name) || Boolean(clientDraft.draft.business.website);
           if (draftResponse && draftResponse.ok) {
             const body = (await draftResponse.json()) as {
               saved?: { step?: number; draft?: Partial<OnboardingDraft> } | null;
               oauthConnections?: Record<string, any>;
               googleSearch?: any;
             };
-            if (body.saved?.draft || body.oauthConnections || body.googleSearch) {
+            if (body.saved?.draft || body.oauthConnections || body.googleSearch || (clientDraftOwnedByThisUser && clientDraftHasContent)) {
               const combinedOauth = {
                 ...(body.oauthConnections || {}),
                 ...(body.googleSearch ? { google_search: body.googleSearch } : {}),
               };
-              const baseDraft = body.saved?.draft ? mergeDraft(body.saved.draft) : clientDraft.draft;
+              const baseDraft = body.saved?.draft
+                ? mergeDraft(body.saved.draft)
+                : clientDraftOwnedByThisUser
+                  ? clientDraft.draft
+                  : EMPTY_DRAFT;
               const merged = mergeOAuthConnectionsIntoDraft(baseDraft, combinedOauth);
 
               const urlParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
               const hasOAuthReturn = urlParams?.get("connected") || urlParams?.get("oauth") || urlParams?.get("googleConnected");
-              const nextStep = hasOAuthReturn ? 3 : Math.min(Math.max(body.saved?.step ?? 0, 0), TOTAL_STEPS - 1);
+              const fallbackStep = clientDraftOwnedByThisUser ? clientDraft.step : 0;
+              const nextStep = hasOAuthReturn ? 3 : Math.min(Math.max(body.saved?.step ?? fallbackStep, 0), TOTAL_STEPS - 1);
 
               setStep(nextStep);
               setDraft(merged);
@@ -296,7 +346,7 @@ export function OnboardingWizard({ isStaff = false }: { isStaff?: boolean }) {
 
   useEffect(() => {
     if (typeof window === "undefined" || !draftHydrated) return;
-    window.sessionStorage.setItem(ONBOARDING_DRAFT_KEY, JSON.stringify({ step, draft }));
+    persistDraft(step, draft, ownerUserIdRef.current);
     setAutoSave("saving");
     const timeout = window.setTimeout(async () => {
       try {

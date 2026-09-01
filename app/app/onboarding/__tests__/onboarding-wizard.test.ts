@@ -158,6 +158,21 @@ function run() {
   assert.ok(/googleConnected/.test(stepReview) && /waConnected/.test(stepReview), "StepReview must derive real Google/WhatsApp connection state, not a static label");
   assert.ok(/Connected ✓/.test(stepReview) && /Not connected/.test(stepReview), "StepReview must show the real connected/not-connected wording");
 
+  // --- 16. The onboarding-draft sessionStorage key is never trusted cross-user ---
+  //
+  // Root-caused live via docs/discovery/SEARCH_GROWTH_ENGINE_GAP_AUDIT.md
+  // (Platform Convergence): ONBOARDING_DRAFT_KEY is a single, fixed,
+  // origin-scoped sessionStorage key. A draft saved by one authenticated
+  // user in a browser tab was applied, unvalidated, to whoever next opened
+  // onboarding in that same tab -- a real cross-account onboarding-form
+  // data leak, matching this brief's "never use browser state to decide
+  // identity" rule at the form-content layer. Locked in here so a future
+  // edit can't silently drop the ownership check.
+  assert.ok(/ownerUserId/.test(wizard), "the persisted draft must be stamped with the real authenticated user id that saved it");
+  assert.ok(/clientDraftOwnedByThisUser/.test(wizard), "a loaded client draft must only ever be trusted when it was saved by the currently authenticated user");
+  assert.equal(/useState\(initial\.current\.draft\)/.test(wizard), false, "the unvalidated client draft must never be applied to state synchronously at mount, before the real user is known");
+  assert.ok(/const \[draft, setDraft\] = useState<OnboardingDraft>\(EMPTY_DRAFT\)/.test(wizard), "initial render must start from an empty draft, not a possibly-different-user's sessionStorage content");
+
   console.log(
     "onboarding-wizard.test.ts: ALL PASS (reference 5-step sequence — Welcome/Business/Your Goals/Your Brand/Review & Launch, real single-field business discovery, real never-fabricated Brand step, optional ConnectorSheet with real OAuth + WhatsApp OTP, zero-membership gating, server-resumable draft, real Brand Brain persistence, direct audit handoff)"
   );
