@@ -364,9 +364,31 @@ export function generateSiteFromSpecification(tenantId: string, spec: WebsiteSpe
 
 /**
  * Natural-Language Website Editor:
- * Applies a customer modification instruction (e.g., "Make the homepage more premium",
- * "Add a testimonials section", "Add an About page", "Change the pricing", "Add products")
+ * Applies a customer modification instruction (currently recognized:
+ * "Make the homepage/hero more premium/luxurious", "Add an About page")
  * onto an existing project and generates an updated page tree.
+ *
+ * VERIFICATION INTEGRITY (2026-09-02, same defect class and fix as the
+ * generation-time fabrication fixed the same day -- see
+ * no-fabricated-testimonials.test.ts): this function used to (1) insert
+ * hardcoded fabricated testimonials/products for "testimonial"/"product"/
+ * "price" instructions, and (2) ALWAYS report revisionCount+1/
+ * status:"in_revision" even when the instruction matched none of its
+ * recognized patterns -- indistinguishable from a real edit having
+ * happened. Fixed by (1) removing the fabricating patterns entirely
+ * (same "real data, clearly marked placeholder, or nothing" rule), and
+ * (2) only advancing revisionCount/status/revisionNotes when a pattern
+ * genuinely changed something -- an unrecognized instruction (including,
+ * by design, "testimonial"/"product"/"price" ones now that those patterns
+ * are gone) returns currentProject completely unchanged, which
+ * app/api/platform/website-factory/[projectId]/edit/route.ts now checks
+ * for and reports honestly rather than claiming success. This is
+ * DELIBERATELY still a no-op for unrecognized instructions -- including
+ * destructive-sounding ones -- not a thrown error: see
+ * website-factory-security.test.ts's "Distinguishes safe visual edits
+ * from destructive/financial commands", a real, intentional safety
+ * property this fix preserves exactly, just without the previously
+ * misleading success signal.
  */
 export function applyNaturalLanguageEdit(
   currentProject: SiteProject,
@@ -376,37 +398,20 @@ export function applyNaturalLanguageEdit(
   const norm = instruction.toLowerCase().trim();
   const pages = JSON.parse(JSON.stringify(currentProject.pages)) as SitePage[];
   const homePage = pages.find((p) => p.slug === "" || p.isHomepage) || pages[0];
+  let matched = false;
 
   // 1. "Make homepage more premium" / "Make hero more luxurious"
   if (norm.includes("premium") || norm.includes("luxurious") || norm.includes("hero")) {
-    if (homePage) {
-      const heroSec = homePage.sections.find((s) => s.type === "hero");
-      if (heroSec) {
-        heroSec.heading = heroSec.heading.includes("—") ? heroSec.heading : `${heroSec.heading} — Handcrafted Excellence`;
-        heroSec.subheading = "Curated collections engineered with uncompromising craftsmanship, timeless design, and unmatched distinction.";
-        heroSec.backgroundStyle = "dark";
-      }
+    const heroSec = homePage?.sections.find((s) => s.type === "hero");
+    if (heroSec) {
+      heroSec.heading = heroSec.heading.includes("—") ? heroSec.heading : `${heroSec.heading} — Handcrafted Excellence`;
+      heroSec.subheading = "Curated collections engineered with uncompromising craftsmanship, timeless design, and unmatched distinction.";
+      heroSec.backgroundStyle = "dark";
+      matched = true;
     }
   }
 
-  // 2. "Add a testimonials section" / "testimonials"
-  if (norm.includes("testimonial") || norm.includes("review")) {
-    if (homePage && !homePage.sections.some((s) => s.type === "testimonials")) {
-      homePage.sections.push({
-        type: "testimonials",
-        heading: "Client Testimonials & Praise",
-        subheading: "Trusted by connoisseurs and discerning clients worldwide",
-        items: [
-          { title: "Exceptional Quality", description: "The attention to detail and fabric selection is truly world-class.", author: "Alexander Vance", role: "Verified Client", rating: 5 },
-          { title: "Remarkable Service", description: "Seamless experience from inquiry to delivery. Highest recommendation.", author: "Marcus Sterling", role: "Creative Director", rating: 5 },
-        ],
-        layout: "grid",
-        columns: 2,
-      });
-    }
-  }
-
-  // 3. "Add an About page" / "about"
+  // 2. "Add an About page" / "about"
   if (norm.includes("about page") && !pages.some((p) => p.slug === "about")) {
     pages.push({
       id: "page_about",
@@ -429,30 +434,12 @@ export function applyNaturalLanguageEdit(
         },
       ],
     });
+    matched = true;
   }
 
-  // 4. "Add products" / "Change pricing" / "ecommerce"
-  if (norm.includes("product") || norm.includes("price") || norm.includes("pricing") || norm.includes("collection")) {
-    if (homePage) {
-      let prodSec = homePage.sections.find((s) => s.type === "products" || s.type === "collections");
-      if (!prodSec) {
-        prodSec = {
-          type: "products",
-          heading: "Featured Signature Collection",
-          subheading: "Explore the new season essentials",
-          items: [
-            { title: "Signature Tailored Blazer", description: "Fine Italian wool with sculpted silhouette", price: "₹24,999", link: "/products/tailored-blazer" },
-            { title: "Egyptian Cotton Oxford Shirt", description: "200-ply Egyptian giza cotton with mother-of-pearl buttons", price: "₹8,499", link: "/products/oxford-shirt" },
-            { title: "Pleated Wool Trousers", description: "Bespoke drape with adjustable side tabs", price: "₹12,999", link: "/products/pleated-trousers" },
-          ],
-          columns: 3,
-        };
-        homePage.sections.splice(1, 0, prodSec);
-      }
-    }
-  }
-
-  // If updated specification was generated by AI, use its validated pages
+  // If updated specification was generated by AI, use its validated pages --
+  // this branch is always a real change (a fresh AI-validated spec exists),
+  // independent of the keyword patterns above.
   if (updatedSpec && updatedSpec.pages && updatedSpec.pages.length > 0) {
     const fromSpec = generateSiteFromSpecification(currentProject.tenantId, updatedSpec);
     return {
@@ -464,6 +451,8 @@ export function applyNaturalLanguageEdit(
       themeConfig: (updatedSpec.visualStyle as unknown as Record<string, unknown>) || currentProject.themeConfig,
     };
   }
+
+  if (!matched) return currentProject;
 
   return {
     ...currentProject,

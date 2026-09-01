@@ -1,5 +1,36 @@
 # WhatsApp AI Agency — Gap Audit
 
+## Update 32 — the edit-time half is fixed too; the whole chain (engine → route → UI) is now honest end-to-end
+
+Continued straight from Update 31 rather than stopping at "generation is fixed, edit is
+still open." `applyNaturalLanguageEdit` (`site-builder.ts`) had its fabricated
+testimonials/products insertion blocks removed entirely, and now tracks whether a real
+structural change actually happened — an unmatched instruction (including
+destructive-sounding ones — a real, intentional safety property from
+`website-factory-security.test.ts` that this fix deliberately preserves) returns the
+project genuinely unchanged instead of always claiming a completed revision.
+
+`app/api/platform/website-factory/[projectId]/edit/route.ts` updated to detect this
+(before/after `revisionCount` comparison) and respond with a new, honest `applied: false`
++ explanation instead of unconditionally recording a version and reporting success.
+
+**Then found the same defect one layer further up**, and fixed that too:
+`app/app/website/page.tsx` — the real customer-facing UI — wasn't reading the route's
+response at all. It unconditionally showed *"Website update applied successfully!"*
+regardless of what actually happened, which would have silently defeated the honest
+backend signal just added. Fixed to check `applied` and surface the real message.
+
+One existing test (`website-factory-e2e.test.ts`'s "Adds testimonials section upon
+natural-language command") had encoded the old fabrication behavior as an expected
+feature — corrected to assert the honest behavior instead, matching the same remediation
+already applied to `no-fabricated-testimonials.test.ts` in Update 31.
+
+Verification: `no-fabricated-testimonials.test.ts` (10/10), `website-factory-e2e.test.ts`
+(9/9), full `test:website-factory` (22 files, hundreds of cases) exit 0, full-repo
+`tsc --noEmit` clean, lint clean. `capability_registry`'s finding updated once more —
+still correctly `REAL_NOT_EXPOSED` (not `REAL_EXPOSED`) since this capability isn't
+bridged to the agent yet, only fixed at the dashboard level.
+
 ## Update 31 — actually fixed the generation-time half of Update 29/30's fabrication defect, not just documented it
 
 Followed Update 30's precise scoping with a real fix, using the exact remediation pattern

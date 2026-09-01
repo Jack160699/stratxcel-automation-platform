@@ -68,7 +68,26 @@ export async function POST(request: Request, { params }: RouteParams) {
     }
 
     // 2. Apply natural-language modification
-    const updatedProject = applyNaturalLanguageEdit(project as unknown as SiteProject, instruction);
+    const beforeProject = project as unknown as SiteProject;
+    const updatedProject = applyNaturalLanguageEdit(beforeProject, instruction);
+
+    // VERIFICATION INTEGRITY (2026-09-02): applyNaturalLanguageEdit now
+    // returns the project genuinely unchanged (same revisionCount) when the
+    // instruction matches none of its recognized patterns, instead of
+    // always claiming a revision happened -- see that function's own header
+    // comment. Honor that signal here rather than unconditionally recording
+    // a version and reporting success: an unrecognized instruction is a
+    // real, honest "I don't support that edit yet" outcome, not a silent
+    // no-op reported as a completed change.
+    if (updatedProject.revisionCount === beforeProject.revisionCount) {
+      return Response.json({
+        project,
+        previewUrl: `/app/website/${siteProjectId}/preview`,
+        instruction,
+        applied: false,
+        message: "That instruction wasn't recognized as a supported edit yet, so no change was made. Try describing a specific visual change (e.g. \"make the homepage more premium\") or adding an About page.",
+      });
+    }
 
     // 3. Record new version snapshot via the atomic RPC
     const { error: rpcErr } = await serviceDb.rpc("apply_site_project_version", {
@@ -107,6 +126,7 @@ export async function POST(request: Request, { params }: RouteParams) {
       project: finalProject,
       previewUrl: `/app/website/${siteProjectId}/preview`,
       instruction,
+      applied: true,
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to apply edit";

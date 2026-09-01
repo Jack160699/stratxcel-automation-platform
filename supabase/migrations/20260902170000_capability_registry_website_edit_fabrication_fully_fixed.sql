@@ -1,0 +1,11 @@
+-- Records that the edit-time half of the fabrication defect (Updates
+-- 29-31) is now ALSO fixed, completing the full chain: engine -> route ->
+-- UI, all honest end-to-end. Applied live via Supabase MCP on 2026-09-02;
+-- this file makes that reproducible from a fresh database.
+update public.capability_registry
+set status = 'REAL_NOT_EXPOSED',
+    name = 'Website natural-language edit -- fabrication defect now FULLY FIXED (both generation and edit paths)',
+    status_notes = 'UPDATE 2026-09-02, same pass: fixed the remaining edit-time half too, not left open. applyNaturalLanguageEdit (site-builder.ts) had its fabricated testimonials/products insertion blocks removed entirely (same "real data, clearly marked placeholder, or nothing" rule), and now tracks whether a real structural change actually occurred -- an unmatched instruction (including destructive-sounding ones, a real, intentional, PRESERVED safety property per website-factory-security.test.ts) returns the project genuinely unchanged instead of always claiming a completed revision. app/api/platform/website-factory/[projectId]/edit/route.ts updated to detect this (comparing revisionCount before/after) and respond with a new honest `applied: false` + explanatory message instead of unconditionally recording a version and claiming success. Found and fixed the SAME defect class one layer up: app/app/website/page.tsx (the real customer-facing UI) was NOT reading the route''s response at all -- it unconditionally showed "Website update applied successfully!" regardless of what happened. Fixed to check `applied` and show the honest message instead. Full chain (engine -> route -> UI) now honest end-to-end. Verification: no-fabricated-testimonials.test.ts (10/10), website-factory-e2e.test.ts (9/9, including a corrected test that used to assert the fabrication as a feature), full test:website-factory suite (22 files) exit 0, full-repo tsc --noEmit clean, lint clean. Still correctly REAL_NOT_EXPOSED (not REAL_EXPOSED) because this capability is not yet bridged to the agent -- WhatsApp/Admin Copilot still cannot trigger a website edit; only the now-fixed dashboard feature can.',
+    last_verified_at = now(),
+    last_verified_by = 'claude_session_2026-09-02'
+where capability_key = 'capability:website_edit_fabrication_defect';

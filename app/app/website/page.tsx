@@ -93,6 +93,14 @@ export default function WebsitePage() {
         return;
       }
       setEditInstruction("");
+      // VERIFICATION INTEGRITY (2026-09-02): the route now honestly reports
+      // applied: false when the instruction wasn't a recognized edit and
+      // nothing changed -- surface that here instead of always claiming
+      // success, otherwise this UI would silently undo the backend fix.
+      if (body.applied === false) {
+        setError(body.message ?? "That instruction wasn't recognized as a supported edit yet, so no change was made.");
+        return;
+      }
       setEditSuccessMessage("Website update applied successfully!");
       setTimeout(() => setEditSuccessMessage(null), 4000);
       await loadData();

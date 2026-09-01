@@ -326,11 +326,24 @@ async function runE2ETest() {
     assert.equal(heroSection?.backgroundStyle, "dark");
   });
 
-  // STEP 13: Natural Language Editing ("Add testimonials")
-  it("Adds testimonials section upon natural-language command", () => {
+  // STEP 13: Natural Language Editing ("Add testimonials") -- this test used
+  // to assert the site fabricated a testimonials section (invented reviewer
+  // names, invented quotes) for an instruction with no real review data
+  // behind it. Fixed 2026-09-02, same rule as no-fabricated-testimonials.test.ts:
+  // "real verified data, clearly marked placeholder, or nothing" -- there is
+  // no real review data at edit time either, so nothing is the correct,
+  // honest outcome, and the function now says so (returns the project
+  // genuinely unchanged) instead of fabricating content and claiming success.
+  it("Does not fabricate a NEW testimonials section for an instruction with no real review data, and honestly reports no change", () => {
+    // siteProject's fixture already has one real testimonials section
+    // (line ~139 above) -- the property under test is that this
+    // unrecognized instruction doesn't ADD a second, fabricated one, and
+    // doesn't claim a revision happened when nothing did.
     const editedWithTestimonials = applyNaturalLanguageEdit(siteProject, "Add a testimonials section with client reviews");
-    const hasTestimonials = editedWithTestimonials.pages[0].sections.some(s => s.type === "testimonials");
-    assert.equal(hasTestimonials, true);
+    const testimonialsSections = editedWithTestimonials.pages[0].sections.filter(s => s.type === "testimonials");
+    assert.equal(testimonialsSections.length, 1, "must not fabricate an additional testimonials section beyond the one already in the fixture");
+    assert.equal(editedWithTestimonials.revisionCount, siteProject.revisionCount, "an unmatched instruction must not be reported as a completed revision");
+    assert.equal(editedWithTestimonials, siteProject, "an unmatched instruction must return the project genuinely unchanged, not a copy that claims something happened");
   });
 
   // STEP 14: Natural Language Editing ("Add an About page")
