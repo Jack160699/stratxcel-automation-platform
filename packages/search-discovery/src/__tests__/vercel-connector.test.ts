@@ -58,7 +58,7 @@ test("1b. validateVercelToken: a Team-scoped token 404s on /v2/user but is corre
   assert.deepEqual(result, { valid: true, accountId: "team_abc123", accountName: "StratXcel", teamId: "team_abc123", reason: null });
 });
 
-test("1c. validateVercelToken: a 404 on /v2/user AND an empty/failed /v2/teams is honestly rejected, never fabricated valid", async () => {
+test("1c. validateVercelToken: a 404 on /v2/user AND a genuinely-empty /v2/teams is honestly rejected as TEAM_REQUIRED, never fabricated valid", async () => {
   const fetcher = (async (url: string | URL) => {
     const u = String(url);
     if (u.includes("/v2/user")) return jsonResponse(404, {});
@@ -68,7 +68,7 @@ test("1c. validateVercelToken: a 404 on /v2/user AND an empty/failed /v2/teams i
 
   const result = await validateVercelToken("genuinely-bad-token", fetcher);
   assert.equal(result.valid, false);
-  assert.equal(result.reason, "VERCEL_API_ERROR_404");
+  assert.equal(result.reason, "TEAM_REQUIRED", "a 404-on-/v2/user token whose /v2/teams call genuinely succeeds with zero teams is authenticated but has no team to use -- distinct from an invalid token");
 });
 
 test("1d. validateVercelToken: 401/403 on /v2/user never falls back to /v2/teams -- a genuinely unauthorized token is rejected immediately", async () => {
@@ -81,24 +81,64 @@ test("1d. validateVercelToken: 401/403 on /v2/user never falls back to /v2/teams
 
   const result = await validateVercelToken("expired-token", fetcher);
   assert.equal(result.valid, false);
-  assert.equal(result.reason, "TOKEN_UNAUTHORIZED");
+  assert.equal(result.reason, "INVALID_TOKEN");
   assert.equal(teamsCalled, false, "401/403 must never trigger the team fallback -- that's reserved for the specific 404-on-valid-team-token case");
+});
+
+test("1e. validateVercelToken: a 404 on /v2/user whose /v2/teams fallback ALSO says unauthorized is reported as INVALID_TOKEN, not the stale generic 404", async () => {
+  const fetcher = (async (url: string | URL) => {
+    const u = String(url);
+    if (u.includes("/v2/user")) return jsonResponse(404, {});
+    if (u.includes("/v2/teams")) return jsonResponse(403, {});
+    throw new Error(`unexpected URL in test: ${u}`);
+  }) as typeof fetch;
+
+  const result = await validateVercelToken("revoked-team-token", fetcher);
+  assert.equal(result.valid, false);
+  assert.equal(result.reason, "INVALID_TOKEN", "when the /v2/teams fallback itself says 401/403, both endpoints agree the token is bad -- must not stay a generic VERCEL_API_ERROR_404");
+});
+
+test("1f. validateVercelToken: a 404 on /v2/user whose /v2/teams fallback fails with a provider error (5xx) is reported as PROVIDER_UNAVAILABLE, not confused with an empty-teams TEAM_REQUIRED", async () => {
+  const fetcher = (async (url: string | URL) => {
+    const u = String(url);
+    if (u.includes("/v2/user")) return jsonResponse(404, {});
+    if (u.includes("/v2/teams")) return jsonResponse(503, {});
+    throw new Error(`unexpected URL in test: ${u}`);
+  }) as typeof fetch;
+
+  const result = await validateVercelToken("token-during-outage", fetcher);
+  assert.equal(result.valid, false);
+  assert.equal(result.reason, "PROVIDER_UNAVAILABLE", "a /v2/teams 5xx means the provider call itself failed -- must not be reported the same as a genuinely valid-but-team-less token");
 });
 
 test("2. validateVercelToken: real 401 shape is honestly reported, never treated as valid", async () => {
   const fetcher = (async () => jsonResponse(401, { error: { code: "forbidden" } })) as typeof fetch;
   const result = await validateVercelToken("bad-token", fetcher);
   assert.equal(result.valid, false);
-  assert.equal(result.reason, "TOKEN_UNAUTHORIZED");
+  assert.equal(result.reason, "INVALID_TOKEN");
 });
 
-test("3. validateVercelToken: a network failure is honestly reported, never fabricated as valid", async () => {
+test("2b. validateVercelToken: a real 5xx on /v2/user is reported as PROVIDER_UNAVAILABLE, never as a customer credential problem", async () => {
+  const fetcher = (async () => jsonResponse(503, { error: "internal" })) as typeof fetch;
+  const result = await validateVercelToken("token", fetcher);
+  assert.equal(result.valid, false);
+  assert.equal(result.reason, "PROVIDER_UNAVAILABLE");
+});
+
+test("2c. validateVercelToken: a 200 response with an unrecognized body shape is reported as INTERNAL_ERROR, never fabricated valid", async () => {
+  const fetcher = (async () => jsonResponse(200, { unexpected: true })) as typeof fetch;
+  const result = await validateVercelToken("token", fetcher);
+  assert.equal(result.valid, false);
+  assert.equal(result.reason, "INTERNAL_ERROR");
+});
+
+test("3. validateVercelToken: a network failure is honestly reported as PROVIDER_UNAVAILABLE, never fabricated as valid", async () => {
   const fetcher = (async () => {
     throw new Error("getaddrinfo ENOTFOUND api.vercel.com");
   }) as typeof fetch;
   const result = await validateVercelToken("token", fetcher);
   assert.equal(result.valid, false);
-  assert.ok(result.reason?.includes("ENOTFOUND"));
+  assert.equal(result.reason, "PROVIDER_UNAVAILABLE");
 });
 
 // --- client.ts: project/domain listing ---

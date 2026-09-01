@@ -30,17 +30,41 @@ async function vercelFetch(token: string, path: string, fetcher: typeof fetch = 
   return response;
 }
 
+interface VercelTeamsLookup {
+  teams: Array<{ id: string; name: string | null; slug: string | null }>;
+  /**
+   * Root-caused via docs/discovery/SEARCH_GROWTH_ENGINE_GAP_AUDIT.md,
+   * Update 23: a real customer still saw the generic "Vercel could not be
+   * reached" message after Update 19's team-token fix. Traced to this
+   * function silently `return []`-ing on ANY non-ok /v2/teams response,
+   * indistinguishably collapsing three different real causes -- a
+   * genuinely bad token (401/403), a genuinely valid-but-team-less token
+   * (200 with zero teams), and Vercel's own API being unavailable
+   * (5xx/network). validateVercelToken's caller can't report the right
+   * customer-facing reason without this distinction, so it's captured
+   * here instead of discarded. null means the call itself succeeded
+   * (whether or not it returned any teams).
+   */
+  failureReason: "UNAUTHORIZED" | "UNAVAILABLE" | null;
+}
+
 /**
  * Verified: GET /v2/teams, bearer auth, `limit` query param
  * (vercel.com/docs/rest-api/teams/list-all-teams). Used as the fallback
  * identity check in validateVercelToken() for a Team-scoped token -- see
  * that function's comment.
  */
-async function listVercelTeams(token: string, fetcher: typeof fetch): Promise<Array<{ id: string; name: string | null; slug: string | null }>> {
-  const response = await vercelFetch(token, "/v2/teams?limit=20", fetcher);
-  if (!response.ok) return [];
+async function listVercelTeams(token: string, fetcher: typeof fetch): Promise<VercelTeamsLookup> {
+  let response: Response;
+  try {
+    response = await vercelFetch(token, "/v2/teams?limit=20", fetcher);
+  } catch {
+    return { teams: [], failureReason: "UNAVAILABLE" };
+  }
+  if (response.status === 401 || response.status === 403) return { teams: [], failureReason: "UNAUTHORIZED" };
+  if (!response.ok) return { teams: [], failureReason: "UNAVAILABLE" };
   const body = (await response.json()) as { teams?: Array<{ id: string; name?: string | null; slug?: string | null }> };
-  return (body.teams ?? []).map((t) => ({ id: t.id, name: t.name ?? null, slug: t.slug ?? null }));
+  return { teams: (body.teams ?? []).map((t) => ({ id: t.id, name: t.name ?? null, slug: t.slug ?? null })), failureReason: null };
 }
 
 /**
@@ -67,35 +91,70 @@ async function listVercelTeams(token: string, fetcher: typeof fetch): Promise<Ar
  * that could have used that support.
  *
  * Fixed: on a 404 specifically (never on 401/403, which stay a genuine,
- * immediate TOKEN_UNAUTHORIZED) fall back to GET /v2/teams -- a team-
+ * immediate INVALID_TOKEN) fall back to GET /v2/teams -- a team-
  * scoped token can always list the team(s) it belongs to. Success there
  * is treated as a valid, team-scoped token; its teamId is returned so
  * every subsequent project/domain call can pass ?teamId= correctly.
+ *
+ * Update 23 (docs/discovery/SEARCH_GROWTH_ENGINE_GAP_AUDIT.md): a real
+ * customer still saw the generic "Vercel could not be reached" message
+ * after the above fix -- meaning their token 404'd on /v2/user AND the
+ * /v2/teams fallback also didn't resolve a usable team, but every one of
+ * those distinct outcomes reported the exact same stale
+ * VERCEL_API_ERROR_404 reason regardless of what /v2/teams actually said.
+ * `reason` is now one of a small, differentiated, customer-actionable set
+ * instead of a raw HTTP-status passthrough:
+ *   - INVALID_TOKEN: /v2/user (or the /v2/teams fallback) returned 401/403
+ *     -- the token itself is wrong, revoked, or expired.
+ *   - TEAM_REQUIRED: /v2/user 404'd (team-scoped token shape) AND
+ *     /v2/teams genuinely succeeded but returned zero teams -- Vercel
+ *     accepted the token but it has no team/account access to use.
+ *   - PROVIDER_UNAVAILABLE: Vercel itself returned a 5xx/unexpected status
+ *     or the request failed at the network level (either endpoint) --
+ *     not a customer credential problem.
+ *   - INTERNAL_ERROR: Vercel returned 200 but a response shape this
+ *     client doesn't recognize -- a contract mismatch on our side, not a
+ *     customer-actionable state.
+ * Deliberately NOT including TEAM_NOT_FOUND / PROJECT_NOT_FOUND /
+ * DOMAIN_MISMATCH here: those describe a specific team/project/domain
+ * failing to match something, which only becomes knowable later, in
+ * discoverVercelProjects/matchVercelProjectToWebsite -- neither Vercel
+ * API called here can actually distinguish those cases, and inventing a
+ * fake distinction they don't support would be worse than not having it.
  */
 export async function validateVercelToken(token: string, fetcher: typeof fetch = fetch): Promise<VercelTokenValidationResult> {
   try {
     const response = await vercelFetch(token, "/v2/user", fetcher);
     if (response.status === 401 || response.status === 403) {
-      return { valid: false, accountId: null, accountName: null, teamId: null, reason: "TOKEN_UNAUTHORIZED" };
+      return { valid: false, accountId: null, accountName: null, teamId: null, reason: "INVALID_TOKEN" };
     }
     if (response.status === 404) {
-      const teams = await listVercelTeams(token, fetcher);
+      const { teams, failureReason } = await listVercelTeams(token, fetcher);
       if (teams.length > 0) {
         const team = teams[0]!;
         return { valid: true, accountId: team.id, accountName: team.name || team.slug || null, teamId: team.id, reason: null };
       }
-      return { valid: false, accountId: null, accountName: null, teamId: null, reason: `VERCEL_API_ERROR_${response.status}` };
+      if (failureReason === "UNAUTHORIZED") {
+        return { valid: false, accountId: null, accountName: null, teamId: null, reason: "INVALID_TOKEN" };
+      }
+      if (failureReason === "UNAVAILABLE") {
+        return { valid: false, accountId: null, accountName: null, teamId: null, reason: "PROVIDER_UNAVAILABLE" };
+      }
+      // failureReason is null here -- /v2/teams genuinely succeeded, just
+      // with zero teams. The token authenticates but has nothing for it
+      // to act on.
+      return { valid: false, accountId: null, accountName: null, teamId: null, reason: "TEAM_REQUIRED" };
     }
     if (!response.ok) {
-      return { valid: false, accountId: null, accountName: null, teamId: null, reason: `VERCEL_API_ERROR_${response.status}` };
+      return { valid: false, accountId: null, accountName: null, teamId: null, reason: "PROVIDER_UNAVAILABLE" };
     }
     const body = (await response.json()) as { user?: { id?: string; username?: string; name?: string | null } };
     if (!body.user?.id) {
-      return { valid: false, accountId: null, accountName: null, teamId: null, reason: "MALFORMED_RESPONSE" };
+      return { valid: false, accountId: null, accountName: null, teamId: null, reason: "INTERNAL_ERROR" };
     }
     return { valid: true, accountId: body.user.id, accountName: body.user.name || body.user.username || null, teamId: null, reason: null };
-  } catch (err) {
-    return { valid: false, accountId: null, accountName: null, teamId: null, reason: err instanceof Error ? err.message.slice(0, 200) : "NETWORK_ERROR" };
+  } catch {
+    return { valid: false, accountId: null, accountName: null, teamId: null, reason: "PROVIDER_UNAVAILABLE" };
   }
 }
 

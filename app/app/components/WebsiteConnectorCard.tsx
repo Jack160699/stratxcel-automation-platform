@@ -15,26 +15,32 @@ interface VercelProject {
 
 /**
  * Customer-friendly Vercel connect error copy (docs/discovery/
- * SEARCH_GROWTH_ENGINE_GAP_AUDIT.md, Update 19) -- the raw backend reason
- * (TOKEN_UNAUTHORIZED, VERCEL_API_ERROR_404, NOT_CONNECTED, etc.) used to
- * be shown to the customer directly. The raw reason is still the real,
- * specific cause -- it just doesn't belong in front of a customer who was
- * never told what a Personal Access Token or an HTTP status code is.
+ * SEARCH_GROWTH_ENGINE_GAP_AUDIT.md, Update 19). The raw backend reason
+ * is still the real, specific cause -- it just doesn't belong in front of
+ * a customer who was never told what a Personal Access Token or an HTTP
+ * status code is.
+ *
+ * Update 23: a real customer still saw the one generic "Vercel could not
+ * be reached" message after Update 19's fix -- traced to
+ * validateVercelToken collapsing every non-401/403 failure (a genuinely
+ * team-less token, a Vercel outage, an unrecognized response shape) into
+ * the same raw VERCEL_API_ERROR_404/500/502/503 status codes, all mapped
+ * here to one string. client.ts now returns a small, differentiated,
+ * real-cause reason set instead -- each gets its own distinct, correct,
+ * actionable message.
  */
 function friendlyVercelConnectError(reason: string | undefined): string {
   switch (reason) {
-    case "TOKEN_UNAUTHORIZED":
+    case "INVALID_TOKEN":
       return "Your Vercel connection could not be authorized. Double-check the token and try again.";
-    case "MALFORMED_RESPONSE":
-    case "VERCEL_API_ERROR_404":
-    case "VERCEL_API_ERROR_500":
-    case "VERCEL_API_ERROR_502":
-    case "VERCEL_API_ERROR_503":
+    case "TEAM_REQUIRED":
+      return "This token isn't scoped to a Vercel team or project. Create a token scoped to the team your site belongs to, then try again.";
+    case "PROVIDER_UNAVAILABLE":
       return "Vercel could not be reached right now. Please try again in a moment.";
+    case "INTERNAL_ERROR":
+      return "Something went wrong on our end connecting to Vercel. Please try again.";
     default:
-      return reason?.startsWith("VERCEL_API_ERROR_")
-        ? "Vercel could not be reached right now. Please try again in a moment."
-        : "Could not connect to Vercel. Check the token and try again.";
+      return "Could not connect to Vercel. Check the token and try again.";
   }
 }
 

@@ -1,7 +1,8 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useCurrentTenant } from "../CurrentTenantContext";
 import { SearchGrowthDashboardView } from "@/components/search-growth/SearchGrowthDashboardView";
+import { SimpleGrowthSummary } from "@/components/search-growth/SimpleGrowthSummary";
 import type { SearchGrowthDashboardData } from "@stratxcel/search-discovery";
 import { ErrorState } from "@/components/ui/Feedback";
 import { Card, CardHeading } from "@/components/ui/Card";
@@ -47,6 +48,11 @@ export default function SearchPage() {
   const [site, setSite] = useState("");
   const [running, setRunning] = useState(false);
   const [toggling, setToggling] = useState(false);
+  const [analyzeState, setAnalyzeState] = useState<"idle" | "running" | "success" | "error">("idle");
+  const [analyzeErrorMessage, setAnalyzeErrorMessage] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<"simple" | "detailed">("simple");
+  const [viewModeSaving, setViewModeSaving] = useState(false);
+  const successTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const load = useCallback(async () => {
     if (!tenantId) return;
@@ -81,6 +87,79 @@ export default function SearchPage() {
   useEffect(() => {
     if (data && !data.hasProject && data.detectedWebsiteUrl) setSite((current) => current || data.detectedWebsiteUrl!);
   }, [data]);
+
+  // Update 23: viewMode is a real, persisted per-tenant field
+  // (search_projects.view_mode) -- sync local UI state from it whenever a
+  // fresh dashboard load returns, so a refresh or a second device always
+  // reflects the real stored preference rather than a hardcoded default.
+  useEffect(() => {
+    if (data) setViewMode(data.viewMode);
+  }, [data]);
+
+  useEffect(() => {
+    return () => {
+      if (successTimeoutRef.current) clearTimeout(successTimeoutRef.current);
+    };
+  }, []);
+
+  // Update 23 (docs/discovery/SEARCH_GROWTH_ENGINE_GAP_AUDIT.md): once a
+  // project exists, there was no way to trigger a fresh analysis outside
+  // onboarding -- reuses the exact same /api/platform/search/run endpoint
+  // as runFirstAnalysis above (the real analysis engine, crawl, and
+  // scheduler are never duplicated), passing the project's own already-known
+  // propertyUrl so nothing needs re-entering.
+  async function analyzeNow() {
+    if (!tenantId || !data?.propertyUrl || analyzeState === "running") return;
+    setAnalyzeState("running");
+    setAnalyzeErrorMessage(null);
+    try {
+      const response = await fetch("/api/platform/search/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tenantId, propertyUrl: data.propertyUrl, propertyName: active?.name ?? data.projectName }),
+      });
+      const body = await response.json().catch(() => ({} as { error?: string }));
+      if (!response.ok) {
+        setAnalyzeState("error");
+        setAnalyzeErrorMessage(
+          response.status === 429
+            ? "You've reached the analysis limit for now. Please try again in a few minutes."
+            : "We couldn't complete the analysis."
+        );
+        return;
+      }
+      await load();
+      setAnalyzeState("success");
+      successTimeoutRef.current = setTimeout(() => setAnalyzeState("idle"), 4000);
+    } catch {
+      setAnalyzeState("error");
+      setAnalyzeErrorMessage("We couldn't complete the analysis.");
+    }
+  }
+
+  // Update 23: purely a UI-presentation switch over the SAME
+  // SearchGrowthDashboardData already loaded -- deliberately calls a
+  // different endpoint (/api/platform/search/view-mode) than the Growth
+  // automation toggle below, so it can never affect scheduler eligibility,
+  // entitlement, the website connection, or billing.
+  async function changeViewMode(next: "simple" | "detailed") {
+    if (!tenantId || viewModeSaving || next === viewMode) return;
+    setViewModeSaving(true);
+    const previous = viewMode;
+    setViewMode(next);
+    try {
+      const response = await fetch("/api/platform/search/view-mode", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tenantId, viewMode: next }),
+      });
+      if (!response.ok) setViewMode(previous);
+    } catch {
+      setViewMode(previous);
+    } finally {
+      setViewModeSaving(false);
+    }
+  }
 
   async function runFirstAnalysis() {
     if (!tenantId || !site.trim()) return;
@@ -196,7 +275,65 @@ export default function SearchPage() {
               />
             </button>
           </Card>
-          <SearchGrowthDashboardView initialData={data} />
+
+          {/* Update 23: manual "Analyze Now" -- reuses the same
+             /api/platform/search/run endpoint runFirstAnalysis above
+             already calls; this is not a second analysis engine. */}
+          <Card className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <p className="text-[14px] font-semibold text-sx-text">Manual analysis</p>
+              <p className="mt-0.5 text-[13px] text-sx-text-muted">
+                {analyzeState === "error"
+                  ? analyzeErrorMessage ?? "We couldn't complete the analysis."
+                  : data.lastAnalysisCompletedAt
+                  ? `Last analyzed: ${new Date(data.lastAnalysisCompletedAt).toLocaleString()}`
+                  : "Run a fresh SEO/AEO/GEO analysis any time, outside the automatic schedule."}
+              </p>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              {analyzeState === "error" && (
+                <Button variant="ghost" size="sm" onClick={analyzeNow}>
+                  Retry
+                </Button>
+              )}
+              <Button onClick={analyzeNow} disabled={analyzeState === "running"}>
+                {analyzeState === "running" ? "Analyzing…" : analyzeState === "success" ? "Analysis complete" : "Analyze Now"}
+              </Button>
+            </div>
+          </Card>
+
+          {/* Update 23: Simple / Detailed is a UI-presentation switch only
+             (search_projects.view_mode) -- deliberately not labeled
+             "Growth ON/OFF" or wired to growthEnabled above, since it never
+             touches automation, entitlement, or the website connection. */}
+          <div className="flex items-center gap-2 self-start rounded-sx-sm border border-sx-border bg-sx-surface-2 p-1" role="tablist" aria-label="Dashboard detail level">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={viewMode === "simple"}
+              disabled={viewModeSaving}
+              onClick={() => changeViewMode("simple")}
+              className={`rounded-sx-sm px-3 py-1.5 text-[12.5px] font-semibold transition-colors disabled:opacity-60 ${
+                viewMode === "simple" ? "bg-sx-accent text-sx-accent-on" : "text-sx-text-muted hover:text-sx-text"
+              }`}
+            >
+              Simple view
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={viewMode === "detailed"}
+              disabled={viewModeSaving}
+              onClick={() => changeViewMode("detailed")}
+              className={`rounded-sx-sm px-3 py-1.5 text-[12.5px] font-semibold transition-colors disabled:opacity-60 ${
+                viewMode === "detailed" ? "bg-sx-accent text-sx-accent-on" : "text-sx-text-muted hover:text-sx-text"
+              }`}
+            >
+              Detailed view
+            </button>
+          </div>
+
+          {viewMode === "detailed" ? <SearchGrowthDashboardView initialData={data} /> : <SimpleGrowthSummary data={data} />}
         </div>
       )}
     </EntitlementGate>

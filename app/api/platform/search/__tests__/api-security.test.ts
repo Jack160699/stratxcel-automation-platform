@@ -28,6 +28,7 @@ const vercelDisconnect = read("app", "api", "platform", "search", "vercel", "dis
 const vercelDiscover = read("app", "api", "platform", "search", "vercel", "discover", "route.ts");
 const websiteStatus = read("app", "api", "platform", "search", "website", "status", "route.ts");
 const toggle = read("app", "api", "platform", "search", "toggle", "route.ts");
+const viewMode = read("app", "api", "platform", "search", "view-mode", "route.ts");
 
 // --- every tenant-scoped search route authenticates the caller before touching tenant data ---
 for (const [name, source] of [
@@ -40,6 +41,7 @@ for (const [name, source] of [
   ["vercel/discover", vercelDiscover],
   ["website/status", websiteStatus],
   ["toggle", toggle],
+  ["view-mode", viewMode],
 ] as const) {
   assert.match(
     source,
@@ -93,4 +95,18 @@ assert.match(dashboard, /if \(!ctx\.ok\)/, "dashboard route must branch on ctx.o
   assert.doesNotMatch(toggleCode, /\.from\("search_projects"\)\s*\.\s*(insert|upsert)/, "toggle must only ever update an existing project row, never insert/upsert a new one");
 }
 
-console.log("api-security.test.ts (search): every tenant-scoped search route authenticates before touching tenant data; dashboard and website/status specifically gate before their service client; growth toggle requires a real permission and an existing project — PASS");
+// --- Update 23: the new Simple/Detailed view-mode route must gate on a
+//     real permission, only ever update an existing project's own
+//     dedicated view_mode column, and must never touch enabled (the
+//     separate Growth automation gate) -- confirming the two customer
+//     preferences stay genuinely independent at the API layer, not just
+//     in the UI. -----------------------------------------------------
+{
+  const viewModeCode = stripComments(viewMode);
+  assert.match(viewModeCode, /can\(ctx\.role, "mission:view"\)/, "view-mode route must gate on a real permission");
+  assert.match(viewModeCode, /SEARCH_VIEW_MODE_NO_PROJECT/, "changing the view mode for a tenant with no existing search_projects row must fail honestly, never silently create one");
+  assert.doesNotMatch(viewModeCode, /\.from\("search_projects"\)\s*\.\s*(insert|upsert)/, "view-mode route must only ever update an existing project row, never insert/upsert a new one");
+  assert.doesNotMatch(viewModeCode, /update\(\{[^}]*\benabled\s*:/, "view-mode route must never write search_projects.enabled -- that is the separate Growth automation gate");
+}
+
+console.log("api-security.test.ts (search): every tenant-scoped search route authenticates before touching tenant data; dashboard and website/status specifically gate before their service client; growth toggle and view-mode each require a real permission, an existing project, and never touch each other's column — PASS");

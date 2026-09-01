@@ -37,6 +37,21 @@ export interface SearchGrowthDashboardData {
    * analysis has run). Controls whether the daily continuous-growth cron
    * includes this tenant (Update 22). */
   growthEnabled: boolean | null;
+  /** Real timestamp of the most recent search_analysis_runs row that
+   * genuinely reached state COMPLETED -- null when no analysis has ever
+   * completed for this tenant. Deliberately separate from
+   * continuousGrowth.lastEvaluatedAt / cadenceSchedule.lastCycleCompletedAt
+   * below (which fall back to the current instant when no strategy state
+   * exists yet); this field is never fabricated (Update 23). */
+  lastAnalysisCompletedAt: string | null;
+  /** Customer-facing dashboard detail-level preference (search_projects.view_mode,
+   * Update 23) -- purely which UI renders (SimpleGrowthSummary vs.
+   * SearchGrowthDashboardView) over this SAME data object. Deliberately
+   * independent of growthEnabled above: never read or written by the
+   * scheduler, entitlement, billing, or disconnect logic. Always
+   * "simple" or "detailed", defaulting to "simple" (including before a
+   * project exists, since there is nowhere to persist a preference yet). */
+  viewMode: "simple" | "detailed";
   isPaidTenant: boolean;
   planTier: string;
   canExecute: boolean;

@@ -41,4 +41,20 @@ assert.match(card, /Automatic website changes/, "must show write-access/automati
 // --- token is a paste-once flow (the real Vercel connector model), never OAuth-redirect-only ---
 assert.match(card, /type="password"/, "the Vercel token input must exist for the real paste-once flow");
 
+// --- Update 23: a real customer still saw one generic "Vercel could not
+//     be reached" message after Update 19 -- validateVercelToken now
+//     returns a differentiated reason set; the UI must map each one to
+//     its own distinct, actionable message, never collapse them back
+//     into a single string or the old raw-status passthrough. ----------
+for (const reason of ["INVALID_TOKEN", "TEAM_REQUIRED", "PROVIDER_UNAVAILABLE", "INTERNAL_ERROR"]) {
+  assert.match(card, new RegExp(`case "${reason}"`), `friendlyVercelConnectError must handle ${reason} as its own distinct case`);
+}
+assert.doesNotMatch(card, /VERCEL_API_ERROR_/, "must no longer reference the old raw-HTTP-status reason codes -- client.ts now returns differentiated, real-cause reasons instead");
+{
+  const teamRequiredMsg = card.match(/case "TEAM_REQUIRED":\s*\n\s*return "([^"]+)"/)?.[1];
+  const providerUnavailableMsg = card.match(/case "PROVIDER_UNAVAILABLE":\s*\n\s*return "([^"]+)"/)?.[1];
+  assert.ok(teamRequiredMsg && providerUnavailableMsg, "both TEAM_REQUIRED and PROVIDER_UNAVAILABLE must have their own return string");
+  assert.notEqual(teamRequiredMsg, providerUnavailableMsg, "TEAM_REQUIRED (a valid-but-scopeless token) and PROVIDER_UNAVAILABLE (Vercel itself failing) are different, actionable causes -- must not collapse to the same customer message");
+}
+
 console.log("website-connector-card.test.ts: ALL PASS");

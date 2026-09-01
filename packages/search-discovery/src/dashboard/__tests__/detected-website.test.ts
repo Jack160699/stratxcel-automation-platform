@@ -96,6 +96,54 @@ async function testGrowthEnabledReflectsRealColumnFalse() {
   console.log("detected-website.test.ts: growthEnabled false reflects a real customer pause — PASS");
 }
 
+// --- Update 23: lastAnalysisCompletedAt -- a dedicated, honest "last
+//     analyzed" signal for the manual "Analyze Now" control. Deliberately
+//     NOT continuousGrowth.lastEvaluatedAt, which falls back to the
+//     current instant when no search_strategy_states row exists yet. ---
+async function testLastAnalysisCompletedAtNullWhenNoRunHasEverCompleted() {
+  const db = fakeDb({ search_projects: { name: "StratXcel", property_url: "https://www.stratxcel.in" }, search_analysis_runs: null });
+  const result = await getSearchGrowthDashboardData(db, "tenant-1");
+  assert.equal(result.lastAnalysisCompletedAt, null, "no completed run yet -- must be honestly null, never fabricated as 'just now'");
+  console.log("detected-website.test.ts: lastAnalysisCompletedAt null with no completed run — PASS");
+}
+
+async function testLastAnalysisCompletedAtReflectsRealCompletedRun() {
+  const db = fakeDb({
+    search_projects: { name: "StratXcel", property_url: "https://www.stratxcel.in" },
+    search_analysis_runs: { completed_at: "2026-08-30T09:00:00Z" },
+  });
+  const result = await getSearchGrowthDashboardData(db, "tenant-1");
+  assert.equal(result.lastAnalysisCompletedAt, "2026-08-30T09:00:00Z", "must reflect the real most-recent COMPLETED run's timestamp");
+  console.log("detected-website.test.ts: lastAnalysisCompletedAt reflects a real completed run — PASS");
+}
+
+// --- Update 23: viewMode -- a customer-facing UI-only detail-level
+//     preference, deliberately independent of growthEnabled/enabled
+//     above (backend scheduler eligibility). -------------------------
+async function testViewModeDefaultsToSimpleWhenNoProject() {
+  const db = fakeDb({ search_projects: null });
+  const result = await getSearchGrowthDashboardData(db, "tenant-1");
+  assert.equal(result.viewMode, "simple", "no project yet -- must default to 'simple', never crash or return an invalid value");
+  console.log("detected-website.test.ts: viewMode defaults to simple with no project — PASS");
+}
+
+async function testViewModeReflectsRealStoredDetailed() {
+  const db = fakeDb({ search_projects: { name: "StratXcel", property_url: "https://www.stratxcel.in", view_mode: "detailed" } });
+  const result = await getSearchGrowthDashboardData(db, "tenant-1");
+  assert.equal(result.viewMode, "detailed", "must reflect the real stored search_projects.view_mode value");
+  console.log("detected-website.test.ts: viewMode reflects real stored 'detailed' — PASS");
+}
+
+async function testViewModeIsIndependentOfGrowthEnabled() {
+  const db = fakeDb({
+    search_projects: { name: "StratXcel", property_url: "https://www.stratxcel.in", enabled: false, view_mode: "detailed" },
+  });
+  const result = await getSearchGrowthDashboardData(db, "tenant-1");
+  assert.equal(result.growthEnabled, false, "growthEnabled must reflect enabled exactly as before");
+  assert.equal(result.viewMode, "detailed", "viewMode must reflect view_mode independently -- a paused-automation tenant can still prefer the detailed view");
+  console.log("detected-website.test.ts: viewMode and growthEnabled vary independently — PASS");
+}
+
 async function run() {
   await testDetectedWhenNoProjectButSearchConsoleConnected();
   await testNullWhenNoConnectionExists();
@@ -104,6 +152,11 @@ async function run() {
   await testGrowthEnabledNullWhenNoProject();
   await testGrowthEnabledReflectsRealColumnTrue();
   await testGrowthEnabledReflectsRealColumnFalse();
+  await testLastAnalysisCompletedAtNullWhenNoRunHasEverCompleted();
+  await testLastAnalysisCompletedAtReflectsRealCompletedRun();
+  await testViewModeDefaultsToSimpleWhenNoProject();
+  await testViewModeReflectsRealStoredDetailed();
+  await testViewModeIsIndependentOfGrowthEnabled();
   console.log("detected-website.test.ts: ALL PASS");
 }
 

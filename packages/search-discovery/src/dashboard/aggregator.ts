@@ -18,11 +18,12 @@ export async function getSearchGrowthDashboardData(
     { data: strategyState },
     { data: actionRows },
     { data: googleConnection },
+    { data: lastCompletedRunRow },
   ] = await Promise.all([
     // 1. Fetch Tenant Project
     db
       .from("search_projects")
-      .select("name, property_url, enabled")
+      .select("name, property_url, enabled, view_mode")
       .eq("tenant_id", tenantId)
       .maybeSingle(),
     // 2. Fetch Subscription & Entitlements
@@ -73,6 +74,23 @@ export async function getSearchGrowthDashboardData(
       .from("search_google_connections")
       .select("search_console_site_url")
       .eq("tenant_id", tenantId)
+      .maybeSingle(),
+    // 8. Fetch the most recent genuinely COMPLETED analysis run, so a
+    // manual "Analyze Now" trigger (docs/discovery/SEARCH_GROWTH_ENGINE_GAP_AUDIT.md,
+    // Update 23) can show a real "Last analyzed" timestamp. Deliberately
+    // its own dedicated field rather than reusing
+    // continuousGrowth.lastEvaluatedAt / cadenceSchedule.lastCycleCompletedAt
+    // below, which fall back to the current instant when no
+    // search_strategy_states row exists yet -- a fabrication this field
+    // must not inherit. Only a row whose state is COMPLETED counts as
+    // "analyzed"; a RUNNING/FAILED/RETRY_WAIT run never sets completed_at.
+    db
+      .from("search_analysis_runs")
+      .select("completed_at")
+      .eq("tenant_id", tenantId)
+      .eq("state", "COMPLETED")
+      .order("completed_at", { ascending: false })
+      .limit(1)
       .maybeSingle(),
   ]);
 
@@ -286,6 +304,17 @@ export async function getSearchGrowthDashboardData(
     // there is genuinely no project yet, since the concept of "growth
     // on/off" doesn't apply until a first analysis has run.
     growthEnabled: hasProject ? (project?.enabled ?? true) : null,
+    // Real, honest "last analyzed" signal for the manual "Analyze Now"
+    // control (Update 23) -- the most recent search_analysis_runs row that
+    // genuinely reached state COMPLETED. null when no analysis has ever
+    // completed yet, never fabricated as "now".
+    lastAnalysisCompletedAt: lastCompletedRunRow?.completed_at ?? null,
+    // Customer-facing dashboard detail-level preference (Update 23) --
+    // deliberately a SEPARATE concept from growthEnabled above (backend
+    // scheduler eligibility). "simple" is the honest default for a
+    // tenant with no project yet, since there's no real search_projects
+    // row to read a stored preference from.
+    viewMode: (project?.view_mode === "detailed" ? "detailed" : "simple") as "simple" | "detailed",
     isPaidTenant,
     planTier,
     canExecute,
