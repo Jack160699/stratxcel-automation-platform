@@ -68,7 +68,24 @@ function classificationToConnectFailureReason(classification: VercelDiagnosticCl
  */
 async function recordConnectAttempt(
   db: SearchDb,
-  input: { tenantId: string; connectedByUserId: string | null; connectionId: string | null; outcome: "succeeded" | "failed"; classification: string; accountId: string | null; teamId: string | null },
+  input: {
+    tenantId: string;
+    connectedByUserId: string | null;
+    connectionId: string | null;
+    outcome: "succeeded" | "failed";
+    classification: string;
+    accountId: string | null;
+    teamId: string | null;
+    projectId?: string | null;
+    /** Update 24, forensic pass: the real evidence behind the
+     * classification -- GET /v2/user's own HTTP status and Vercel's own
+     * safe, non-secret error envelope ({error:{code,message}}). Never the
+     * token or the Authorization header. */
+    endpoint?: string;
+    httpStatus?: number | null;
+    providerErrorCode?: string | null;
+    providerErrorMessage?: string | null;
+  },
 ) {
   try {
     await recordAuditEvent(db as any, {
@@ -78,7 +95,17 @@ async function recordConnectAttempt(
       action: "SEARCH_VERCEL_CONNECT_ATTEMPTED",
       targetType: "search_website_connection",
       targetId: input.connectionId ?? undefined,
-      metadata: { outcome: input.outcome, classification: input.classification, accountId: input.accountId, teamId: input.teamId },
+      metadata: {
+        outcome: input.outcome,
+        classification: input.classification,
+        accountId: input.accountId,
+        teamId: input.teamId,
+        projectId: input.projectId ?? null,
+        endpoint: input.endpoint ?? "GET /v2/user",
+        httpStatus: input.httpStatus ?? null,
+        providerErrorCode: input.providerErrorCode ?? null,
+        providerErrorMessage: input.providerErrorMessage ?? null,
+      },
     });
   } catch {
     // Best-effort: a failure to WRITE the audit record must never fail
@@ -99,7 +126,18 @@ export async function connectVercelWebsite(
   const tokenClassification = classifyTokenValidation(validation);
 
   if (!validation.valid) {
-    await recordConnectAttempt(db, { tenantId: input.tenantId, connectedByUserId: input.connectedByUserId, connectionId: null, outcome: "failed", classification: tokenClassification, accountId: null, teamId: null });
+    await recordConnectAttempt(db, {
+      tenantId: input.tenantId,
+      connectedByUserId: input.connectedByUserId,
+      connectionId: null,
+      outcome: "failed",
+      classification: tokenClassification,
+      accountId: null,
+      teamId: null,
+      httpStatus: validation.httpStatus,
+      providerErrorCode: validation.providerErrorCode,
+      providerErrorMessage: validation.providerErrorMessage,
+    });
     return { ok: false, connectionId: null, accountName: null, reason: classificationToConnectFailureReason(tokenClassification), diagnosticState: null };
   }
 
@@ -115,7 +153,7 @@ export async function connectVercelWebsite(
   } catch {
     // best-effort -- domain matching just gets skipped
   }
-  const projectDiagnosis = await diagnoseProjectAndDomainAccess(input.token, validation.teamId, canonicalWebsiteUrl, input.fetcher);
+  const projectDiagnosis = await diagnoseProjectAndDomainAccess(input.token, validation.teamId, canonicalWebsiteUrl, input.fetcher, validation.projectId);
 
   const vault = input.vault ?? createDevEncryptedVault(db as never);
   let tokenRef: string;
@@ -164,7 +202,18 @@ export async function connectVercelWebsite(
     return { ok: false, connectionId: null, accountName: null, reason: `CONNECTION_SAVE_FAILED: ${error.message}`, diagnosticState: null };
   }
 
-  await recordConnectAttempt(db, { tenantId: input.tenantId, connectedByUserId: input.connectedByUserId, connectionId: data.id as string, outcome: "succeeded", classification: projectDiagnosis.classification, accountId: validation.accountId, teamId: validation.teamId });
+  await recordConnectAttempt(db, {
+    tenantId: input.tenantId,
+    connectedByUserId: input.connectedByUserId,
+    connectionId: data.id as string,
+    outcome: "succeeded",
+    classification: projectDiagnosis.classification,
+    accountId: validation.accountId,
+    teamId: validation.teamId,
+    projectId: validation.projectId,
+    endpoint: projectDiagnosis.failingCall,
+    httpStatus: validation.httpStatus,
+  });
 
   return { ok: true, connectionId: data.id as string, accountName: validation.accountName, reason: null, diagnosticState: projectDiagnosis.classification };
 }

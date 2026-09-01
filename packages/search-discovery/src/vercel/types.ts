@@ -61,7 +61,27 @@ export interface VercelTokenValidationResult {
    * matters (a team-scoped token has no personal /v2/user resource and
    * must pass ?teamId= on every subsequent project/domain call). */
   teamId: string | null;
+  /** Update 24 follow-up: set only when this token is scoped to a single
+   * specific Project (Vercel's narrowest, most-recommended token scope --
+   * "Choose the narrowest scope that covers the projects you need").
+   * Vercel's own docs confirm: "A project-scoped token denies requests
+   * for user-level resources, team-level resources, and other projects" --
+   * meaning BOTH /v2/user and /v2/teams genuinely reject a fully valid
+   * project-scoped token, and every subsequent project/domain call must
+   * omit teamId entirely ("Vercel infers the team and project from the
+   * token"), never pass the tenant's stored teamId (there isn't one). */
+  projectId: string | null;
   reason: string | null;
+  /** Update 24, forensic pass: the real HTTP status GET /v2/user itself
+   * returned (before any team/project fallback), and Vercel's own safe,
+   * non-secret error envelope fields (`error.code`/`error.message`) when
+   * present -- captured so a real, inspectable diagnostic record can be
+   * written for every attempt (docs/discovery/SEARCH_GROWTH_ENGINE_GAP_AUDIT.md,
+   * section 1's requested "endpoint/status/provider_message"). Never the
+   * token or the Authorization header. */
+  httpStatus: number | null;
+  providerErrorCode: string | null;
+  providerErrorMessage: string | null;
 }
 
 export type WebsiteConnectionScope = "ANALYSIS_ONLY" | "AUTONOMOUS_WRITE";

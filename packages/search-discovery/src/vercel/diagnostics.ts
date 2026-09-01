@@ -49,6 +49,14 @@ export type VercelDiagnosticClassification =
   | "TOKEN_INVALID"
   | "TOKEN_VALID_PERSONAL"
   | "TOKEN_VALID_TEAM"
+  /** Update 24, second pass: Vercel's third, narrowest token scope --
+   * "the token's single project" (vercel.com/docs/rest-api/getting-started,
+   * fetched live). A project-scoped token has no /v2/user or /v2/teams
+   * access at all by design ("denies requests for user-level resources,
+   * team-level resources") -- this is a genuinely valid token, not a
+   * lesser one, and Vercel's own docs recommend it as the narrowest,
+   * most-secure choice. */
+  | "TOKEN_VALID_PROJECT"
   | "TEAM_ACCESS_MISSING"
   | "PROJECT_ACCESS_MISSING"
   | "PROJECT_NOT_FOUND"
@@ -90,7 +98,11 @@ const NOT_MATCHED: Pick<VercelDiagnosticResult, "matchedProjectId" | "matchedDom
  * regardless of what any later project/domain lookup finds.
  */
 export function classifyTokenValidation(validation: VercelTokenValidationResult): VercelDiagnosticClassification {
-  if (validation.valid) return validation.teamId ? "TOKEN_VALID_TEAM" : "TOKEN_VALID_PERSONAL";
+  if (validation.valid) {
+    if (validation.teamId) return "TOKEN_VALID_TEAM";
+    if (validation.projectId) return "TOKEN_VALID_PROJECT";
+    return "TOKEN_VALID_PERSONAL";
+  }
   switch (validation.reason) {
     case "TEAM_REQUIRED":
       return "TEAM_ACCESS_MISSING";
@@ -118,6 +130,7 @@ export async function diagnoseProjectAndDomainAccess(
   teamId: string | null,
   targetWebsiteUrl: string | null,
   fetcher: typeof fetch = fetch,
+  projectId: string | null = null,
 ): Promise<{ classification: VercelDiagnosticClassification; failingCall: string; httpStatus: number | null } & Pick<VercelDiagnosticResult, "matchedProjectId" | "matchedDomain">> {
   let projects;
   try {
@@ -127,7 +140,7 @@ export async function diagnoseProjectAndDomainAccess(
     return { classification: status === 401 || status === 403 ? "PROJECT_ACCESS_MISSING" : "PROVIDER_ERROR", failingCall: "GET /v10/projects", httpStatus: status, ...NOT_MATCHED };
   }
 
-  const validClassification: VercelDiagnosticClassification = teamId ? "TOKEN_VALID_TEAM" : "TOKEN_VALID_PERSONAL";
+  const validClassification: VercelDiagnosticClassification = teamId ? "TOKEN_VALID_TEAM" : projectId ? "TOKEN_VALID_PROJECT" : "TOKEN_VALID_PERSONAL";
 
   if (projects.length === 0) {
     return { classification: "PROJECT_NOT_FOUND", failingCall: "GET /v10/projects", httpStatus: 200, ...NOT_MATCHED };
@@ -211,6 +224,6 @@ export async function diagnoseVercelConnection(
   }
 
   const identity = { accountId: validation.accountId, accountName: validation.accountName, teamId: validation.teamId };
-  const projectResult = await diagnoseProjectAndDomainAccess(token, validation.teamId, targetWebsiteUrl, fetcher);
+  const projectResult = await diagnoseProjectAndDomainAccess(token, validation.teamId, targetWebsiteUrl, fetcher, validation.projectId);
   return { ...identity, ...projectResult };
 }

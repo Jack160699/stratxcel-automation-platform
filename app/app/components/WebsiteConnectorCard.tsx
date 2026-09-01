@@ -302,7 +302,7 @@ export function WebsiteConnectorCard({ tenantId }: { tenantId: string }) {
               showConnectForm ? (
                 <div className="mt-3 space-y-2">
                   <p className="text-xs text-sx-text-subtle">
-                    Paste a Vercel Personal Access Token (Vercel → Account Settings → Tokens). We validate and store it securely — it&rsquo;s never shown again.
+                    Paste a Vercel Personal Access Token (Vercel → Account Settings → Tokens). Any scope works — Full Account, a specific Team, or a specific Project (the narrowest, most secure choice). We validate and store it securely — it&rsquo;s never shown again.
                   </p>
                   <input
                     type="password"

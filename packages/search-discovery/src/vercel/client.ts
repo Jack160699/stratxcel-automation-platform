@@ -90,71 +90,135 @@ async function listVercelTeams(token: string, fetcher: typeof fetch): Promise<Ve
  * never did, so every team-scoped token failed before reaching any code
  * that could have used that support.
  *
- * Fixed: on a 404 specifically (never on 401/403, which stay a genuine,
- * immediate INVALID_TOKEN) fall back to GET /v2/teams -- a team-
- * scoped token can always list the team(s) it belongs to. Success there
- * is treated as a valid, team-scoped token; its teamId is returned so
- * every subsequent project/domain call can pass ?teamId= correctly.
+ * Fixed (Update 19): on a 404 specifically fall back to GET /v2/teams --
+ * a team-scoped token can always list the team(s) it belongs to. Success
+ * there is treated as a valid, team-scoped token; its teamId is returned
+ * so every subsequent project/domain call can pass ?teamId= correctly.
  *
- * Update 23 (docs/discovery/SEARCH_GROWTH_ENGINE_GAP_AUDIT.md): a real
- * customer still saw the generic "Vercel could not be reached" message
- * after the above fix -- meaning their token 404'd on /v2/user AND the
- * /v2/teams fallback also didn't resolve a usable team, but every one of
- * those distinct outcomes reported the exact same stale
- * VERCEL_API_ERROR_404 reason regardless of what /v2/teams actually said.
- * `reason` is now one of a small, differentiated, customer-actionable set
- * instead of a raw HTTP-status passthrough:
- *   - INVALID_TOKEN: /v2/user (or the /v2/teams fallback) returned 401/403
- *     -- the token itself is wrong, revoked, or expired.
- *   - TEAM_REQUIRED: /v2/user 404'd (team-scoped token shape) AND
- *     /v2/teams genuinely succeeded but returned zero teams -- Vercel
- *     accepted the token but it has no team/account access to use.
- *   - PROVIDER_UNAVAILABLE: Vercel itself returned a 5xx/unexpected status
- *     or the request failed at the network level (either endpoint) --
- *     not a customer credential problem.
- *   - INTERNAL_ERROR: Vercel returned 200 but a response shape this
- *     client doesn't recognize -- a contract mismatch on our side, not a
- *     customer-actionable state.
- * Deliberately NOT including TEAM_NOT_FOUND / PROJECT_NOT_FOUND /
- * DOMAIN_MISMATCH here: those describe a specific team/project/domain
- * failing to match something, which only becomes knowable later, in
- * discoverVercelProjects/matchVercelProjectToWebsite -- neither Vercel
- * API called here can actually distinguish those cases, and inventing a
- * fake distinction they don't support would be worse than not having it.
+ * Update 24, first pass: a real customer still saw the generic "Vercel
+ * could not be reached" message after the above fix -- differentiated
+ * `reason` into INVALID_TOKEN / TEAM_REQUIRED / PROVIDER_UNAVAILABLE /
+ * INTERNAL_ERROR.
+ *
+ * Update 24, second pass (docs/discovery/SEARCH_GROWTH_ENGINE_GAP_AUDIT.md):
+ * a customer then tried a genuinely FRESH token and got INVALID_TOKEN
+ * again. Re-verified Vercel's own current, live docs end to end (fetched
+ * during this fix) rather than assuming a customer/copy-paste error, and
+ * found the real cause: Vercel now documents a THIRD token scope this
+ * client never accounted for. From vercel.com/docs/rest-api/getting-started
+ * (fetched live): "Understand account, team, and project scope ... Project:
+ * The token's single project ... A project-scoped token denies requests
+ * for user-level resources, team-level resources, and other projects."
+ * The same page's own guidance is to "Choose the narrowest scope that
+ * covers the projects you need" -- meaning a security-conscious customer
+ * choosing the narrowest, most-recommended scope for exactly this
+ * connector's use case (one website) would have their genuinely valid
+ * token rejected by /v2/user AND /v2/teams, both "denied" by design, and
+ * this client had no third fallback to try. Worse: the prior code only
+ * ever fell back past a 404 on /v2/user, never a 401/403 -- but Vercel
+ * documents 401 and 403 (not 404) as /v2/user's real "denied" responses,
+ * so a project-scoped token most likely never even reached the old
+ * /v2/teams fallback at all.
+ *
+ * Fixed: /v2/user's fallback chain now triggers on ANY non-2xx status
+ * (not just 404), tries /v2/teams, and -- new this pass -- falls back
+ * further to GET /v10/projects (no teamId, letting Vercel infer it from
+ * the token, exactly as the docs specify for a project-scoped token) before
+ * concluding the token is genuinely invalid. Only when /v2/user, /v2/teams,
+ * AND /v10/projects have ALL been tried and none resolved a usable
+ * identity does this return INVALID_TOKEN -- and only when at least one of
+ * them explicitly returned 401/403 (an unambiguous "denied", not just an
+ * empty list) is that classification used, per section 21 of the brief
+ * this fixed: "do not stop at INVALID_TOKEN unless the actual Vercel
+ * response proves it."
  */
+/** Every failing branch below shares the same null identity shape --
+ * built once so the /v2/user status + Vercel's own safe error envelope
+ * fields (captured once, up front, since that's the primary evidence
+ * point for a real forensic record) are never forgotten on any path. */
+function invalidResult(
+  reason: string,
+  diagnostics: { httpStatus: number | null; providerErrorCode: string | null; providerErrorMessage: string | null },
+): VercelTokenValidationResult {
+  return { valid: false, accountId: null, accountName: null, teamId: null, projectId: null, reason, ...diagnostics };
+}
+
 export async function validateVercelToken(token: string, fetcher: typeof fetch = fetch): Promise<VercelTokenValidationResult> {
+  let diagnostics: { httpStatus: number | null; providerErrorCode: string | null; providerErrorMessage: string | null } = {
+    httpStatus: null,
+    providerErrorCode: null,
+    providerErrorMessage: null,
+  };
   try {
-    const response = await vercelFetch(token, "/v2/user", fetcher);
-    if (response.status === 401 || response.status === 403) {
-      return { valid: false, accountId: null, accountName: null, teamId: null, reason: "INVALID_TOKEN" };
+    const userResponse = await vercelFetch(token, "/v2/user", fetcher);
+    diagnostics = { httpStatus: userResponse.status, providerErrorCode: null, providerErrorMessage: null };
+    if (userResponse.ok) {
+      const body = (await userResponse.json()) as { user?: { id?: string; username?: string; name?: string | null } };
+      if (!body.user?.id) return invalidResult("INTERNAL_ERROR", diagnostics);
+      return { valid: true, accountId: body.user.id, accountName: body.user.name || body.user.username || null, teamId: null, projectId: null, reason: null, ...diagnostics };
     }
-    if (response.status === 404) {
-      const { teams, failureReason } = await listVercelTeams(token, fetcher);
-      if (teams.length > 0) {
-        const team = teams[0]!;
-        return { valid: true, accountId: team.id, accountName: team.name || team.slug || null, teamId: team.id, reason: null };
+    // Update 24, forensic pass (docs/discovery/SEARCH_GROWTH_ENGINE_GAP_AUDIT.md,
+    // section 1): capture Vercel's own real, safe error envelope
+    // ({ error: { code, message } }, vercel.com/docs/rest-api/errors,
+    // fetched live) for /v2/user specifically -- the primary evidence
+    // point for a real diagnostic record. Best-effort: a non-JSON or
+    // differently-shaped body must never crash validation.
+    try {
+      const errorBody = (await userResponse.json()) as { error?: { code?: string; message?: string } };
+      diagnostics.providerErrorCode = errorBody.error?.code ?? null;
+      diagnostics.providerErrorMessage = errorBody.error?.message ?? null;
+    } catch {
+      // best-effort only
+    }
+    if (userResponse.status >= 500) {
+      // A genuine Vercel-side outage on /v2/user -- no point trying
+      // narrower-scope fallbacks, they would hit the same outage.
+      return invalidResult("PROVIDER_UNAVAILABLE", diagnostics);
+    }
+
+    // /v2/user denied this token (401/403/404/anything else non-2xx, not
+    // 5xx) -- ambiguous by itself: could be a genuinely bad token, or a
+    // Team- or Project-scoped token, both of which Vercel documents as
+    // legitimately denying user-level resource access. Try progressively
+    // narrower real scopes before concluding anything.
+    let sawExplicitDenial = userResponse.status === 401 || userResponse.status === 403;
+
+    const teamsResult = await listVercelTeams(token, fetcher);
+    if (teamsResult.teams.length > 0) {
+      const team = teamsResult.teams[0]!;
+      return { valid: true, accountId: team.id, accountName: team.name || team.slug || null, teamId: team.id, projectId: null, reason: null, ...diagnostics };
+    }
+    if (teamsResult.failureReason === "UNAVAILABLE") return invalidResult("PROVIDER_UNAVAILABLE", diagnostics);
+    if (teamsResult.failureReason === "UNAUTHORIZED") sawExplicitDenial = true;
+
+    // Update 24, second pass: the new fallback -- a Project-scoped token
+    // has no personal /v2/user resource AND no team to list, but can
+    // always list its own single project via /v10/projects with no
+    // teamId (Vercel infers it from the token).
+    try {
+      const projects = await listVercelProjects(token, { fetcher });
+      if (projects.length > 0) {
+        const project = projects[0]!;
+        return { valid: true, accountId: null, accountName: project.projectName, teamId: null, projectId: project.externalProjectId, reason: null, ...diagnostics };
       }
-      if (failureReason === "UNAUTHORIZED") {
-        return { valid: false, accountId: null, accountName: null, teamId: null, reason: "INVALID_TOKEN" };
+    } catch (err) {
+      if (err instanceof VercelApiError) {
+        if (err.status >= 500) return invalidResult("PROVIDER_UNAVAILABLE", diagnostics);
+        if (err.status === 401 || err.status === 403) sawExplicitDenial = true;
       }
-      if (failureReason === "UNAVAILABLE") {
-        return { valid: false, accountId: null, accountName: null, teamId: null, reason: "PROVIDER_UNAVAILABLE" };
-      }
-      // failureReason is null here -- /v2/teams genuinely succeeded, just
-      // with zero teams. The token authenticates but has nothing for it
-      // to act on.
-      return { valid: false, accountId: null, accountName: null, teamId: null, reason: "TEAM_REQUIRED" };
     }
-    if (!response.ok) {
-      return { valid: false, accountId: null, accountName: null, teamId: null, reason: "PROVIDER_UNAVAILABLE" };
-    }
-    const body = (await response.json()) as { user?: { id?: string; username?: string; name?: string | null } };
-    if (!body.user?.id) {
-      return { valid: false, accountId: null, accountName: null, teamId: null, reason: "INTERNAL_ERROR" };
-    }
-    return { valid: true, accountId: body.user.id, accountName: body.user.name || body.user.username || null, teamId: null, reason: null };
-  } catch {
-    return { valid: false, accountId: null, accountName: null, teamId: null, reason: "PROVIDER_UNAVAILABLE" };
+
+    if (sawExplicitDenial) return invalidResult("INVALID_TOKEN", diagnostics);
+    // Every endpoint responded without an explicit 401/403 anywhere, but
+    // none resolved a usable identity (e.g. a 404 with genuinely zero
+    // teams and zero projects) -- authenticated, but nothing to act on.
+    return invalidResult("TEAM_REQUIRED", diagnostics);
+  } catch (err) {
+    return invalidResult("PROVIDER_UNAVAILABLE", {
+      httpStatus: diagnostics.httpStatus,
+      providerErrorCode: null,
+      providerErrorMessage: err instanceof Error ? err.message.slice(0, 200) : null,
+    });
   }
 }
 

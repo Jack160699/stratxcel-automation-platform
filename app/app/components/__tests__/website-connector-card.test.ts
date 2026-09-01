@@ -68,4 +68,10 @@ assert.match(card, /Token connected\..*couldn't find a matching website project/
 assert.match(card, /Token connected\..*None of the projects.*contain \$\{websiteHostname\}/, "DOMAIN_MISMATCH must use the tenant's OWN real website hostname, never a hardcoded example domain");
 assert.doesNotMatch(card, /None of the projects.*contain stratxcel\.in/, "must never hardcode the literal stratxcel.in domain -- every other real tenant has a different real website");
 
+// --- Update 24, second pass: Vercel's own live docs (fetched during this
+//     fix) confirm a THIRD real token scope (Project) this connector now
+//     supports -- the instructional copy must reflect that any real scope
+//     works, not just imply "Personal Access Token" without qualification. ---
+assert.match(card, /Full Account.*Team.*Project/s, "the token instructions must mention all three real Vercel token scopes this connector now supports");
+
 console.log("website-connector-card.test.ts: ALL PASS");

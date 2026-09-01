@@ -36,7 +36,12 @@ test("1. validateVercelToken: real success shape (GET /v2/user) parses correctly
   }) as typeof fetch;
 
   const result = await validateVercelToken("real-looking-token", fetcher);
-  assert.deepEqual(result, { valid: true, accountId: "acct_123", accountName: "Jane Doe", teamId: null, reason: null });
+  assert.equal(result.valid, true);
+  assert.equal(result.accountId, "acct_123");
+  assert.equal(result.accountName, "Jane Doe");
+  assert.equal(result.teamId, null);
+  assert.equal(result.projectId, null);
+  assert.equal(result.reason, null);
 });
 
 // --- Update 19: the actual real, live, reported customer bug -------------
@@ -57,34 +62,84 @@ test("1b. validateVercelToken: a Team-scoped token 404s on /v2/user but is corre
   }) as typeof fetch;
 
   const result = await validateVercelToken("real-team-scoped-token", fetcher);
-  assert.deepEqual(result, { valid: true, accountId: "team_abc123", accountName: "StratXcel", teamId: "team_abc123", reason: null });
+  assert.equal(result.valid, true);
+  assert.equal(result.accountId, "team_abc123");
+  assert.equal(result.accountName, "StratXcel");
+  assert.equal(result.teamId, "team_abc123");
+  assert.equal(result.projectId, null);
+  assert.equal(result.reason, null);
 });
 
-test("1c. validateVercelToken: a 404 on /v2/user AND a genuinely-empty /v2/teams is honestly rejected as TEAM_REQUIRED, never fabricated valid", async () => {
+test("1c. validateVercelToken: a 404 on /v2/user, a genuinely-empty /v2/teams, AND a genuinely-empty /v10/projects is honestly rejected as TEAM_REQUIRED, never fabricated valid", async () => {
   const fetcher = (async (url: string | URL) => {
     const u = String(url);
     if (u.includes("/v2/user")) return jsonResponse(404, {});
     if (u.includes("/v2/teams")) return jsonResponse(200, { teams: [] });
+    if (u.includes("/v10/projects")) return jsonResponse(200, []);
     throw new Error(`unexpected URL in test: ${u}`);
   }) as typeof fetch;
 
   const result = await validateVercelToken("genuinely-bad-token", fetcher);
   assert.equal(result.valid, false);
-  assert.equal(result.reason, "TEAM_REQUIRED", "a 404-on-/v2/user token whose /v2/teams call genuinely succeeds with zero teams is authenticated but has no team to use -- distinct from an invalid token");
+  assert.equal(result.reason, "TEAM_REQUIRED", "a 404-on-/v2/user token whose /v2/teams AND /v10/projects calls both genuinely succeed with nothing usable is authenticated but has no scope to use -- distinct from an invalid token");
 });
 
-test("1d. validateVercelToken: 401/403 on /v2/user never falls back to /v2/teams -- a genuinely unauthorized token is rejected immediately", async () => {
-  let teamsCalled = false;
+// --- Update 24, second pass: re-verified Vercel's own live docs
+// (vercel.com/docs/rest-api/getting-started, fetched during this fix) --
+// a Personal Access Token can ALSO be scoped to a single Project (the
+// narrowest, most-recommended scope), which "denies requests for
+// user-level resources, team-level resources" -- meaning /v2/user CAN
+// legitimately return 401/403 (not just 404) for a completely valid
+// token. The old assumption that 401/403 always means "immediately
+// invalid, never fall back" was itself the real second-round bug. -------
+
+test("1d. validateVercelToken: a 401 on /v2/user DOES now fall back and correctly resolves as valid via /v2/teams -- 401/403 is no longer an automatic dead end", async () => {
   const fetcher = (async (url: string | URL) => {
     const u = String(url);
-    if (u.includes("/v2/teams")) { teamsCalled = true; return jsonResponse(200, { teams: [{ id: "team_x", name: "X", slug: "x" }] }); }
-    return jsonResponse(401, {});
+    if (u.includes("/v2/user")) return jsonResponse(401, {});
+    if (u.includes("/v2/teams")) return jsonResponse(200, { teams: [{ id: "team_x", name: "X", slug: "x" }] });
+    throw new Error(`unexpected URL in test: ${u}`);
   }) as typeof fetch;
 
-  const result = await validateVercelToken("expired-token", fetcher);
+  const result = await validateVercelToken("team-scoped-token-that-401s", fetcher);
+  assert.equal(result.valid, true, "a 401 on /v2/user must not be treated as an automatic, unrecoverable dead end -- a genuinely valid team-scoped token can present this way");
+  assert.equal(result.teamId, "team_x");
+});
+
+test("1d2. validateVercelToken: a Project-scoped token (denied on BOTH /v2/user and /v2/teams, per Vercel's own documented scope model) is correctly recognized as valid via the /v10/projects fallback", async () => {
+  const fetcher = (async (url: string | URL) => {
+    const u = String(url);
+    if (u.includes("/v2/user")) return jsonResponse(403, { error: { code: "forbidden", message: "Not authorized" } });
+    if (u.includes("/v2/teams")) return jsonResponse(403, { error: { code: "forbidden", message: "Not authorized" } });
+    if (u.includes("/v10/projects")) return jsonResponse(200, [{ id: "prj_1", name: "stratxcel", framework: "nextjs" }]);
+    throw new Error(`unexpected URL in test: ${u}`);
+  }) as typeof fetch;
+
+  const result = await validateVercelToken("real-project-scoped-token", fetcher);
+  assert.equal(result.valid, true, "vercel.com/docs/rest-api/getting-started: 'A project-scoped token denies requests for user-level resources, team-level resources' -- this is a genuinely valid token, not an invalid one");
+  assert.equal(result.projectId, "prj_1");
+  assert.equal(result.accountName, "stratxcel");
+  assert.equal(result.teamId, null);
+});
+
+test("1d3. validateVercelToken: denied (401) on ALL of /v2/user, /v2/teams, AND /v10/projects -- only THEN is INVALID_TOKEN concluded, having exhausted every real scope", async () => {
+  let userCalled = false, teamsCalled = false, projectsCalled = false;
+  const fetcher = (async (url: string | URL) => {
+    const u = String(url);
+    if (u.includes("/v2/user")) userCalled = true;
+    if (u.includes("/v2/teams")) teamsCalled = true;
+    if (u.includes("/v10/projects")) projectsCalled = true;
+    return jsonResponse(401, { error: { code: "forbidden", message: "Not authorized" } });
+  }) as typeof fetch;
+
+  const result = await validateVercelToken("genuinely-expired-token", fetcher);
   assert.equal(result.valid, false);
   assert.equal(result.reason, "INVALID_TOKEN");
-  assert.equal(teamsCalled, false, "401/403 must never trigger the team fallback -- that's reserved for the specific 404-on-valid-team-token case");
+  assert.equal(userCalled, true);
+  assert.equal(teamsCalled, true, "must actually try the team fallback before concluding invalid -- never assume from /v2/user alone");
+  assert.equal(projectsCalled, true, "must actually try the project fallback too -- the narrowest, most-recommended real Vercel token scope must be checked before giving up");
+  assert.equal(result.httpStatus, 401, "the real /v2/user status must be captured for a forensic record");
+  assert.equal(result.providerErrorCode, "forbidden", "Vercel's own safe, non-secret error code must be captured for a forensic record");
 });
 
 test("1e. validateVercelToken: a 404 on /v2/user whose /v2/teams fallback ALSO says unauthorized is reported as INVALID_TOKEN, not the stale generic 404", async () => {
@@ -146,26 +201,33 @@ test("3. validateVercelToken: a network failure is honestly reported as PROVIDER
 // --- vercel/diagnostics.ts: full connect->team->project->domain pipeline
 //     (docs/discovery/SEARCH_GROWTH_ENGINE_GAP_AUDIT.md, Update 24) ---
 
+function fakeValidation(overrides: Partial<Awaited<ReturnType<typeof validateVercelToken>>>): Awaited<ReturnType<typeof validateVercelToken>> {
+  return { valid: false, accountId: null, accountName: null, teamId: null, projectId: null, reason: null, httpStatus: null, providerErrorCode: null, providerErrorMessage: null, ...overrides };
+}
+
 test("D1. classifyTokenValidation: maps every real validateVercelToken outcome to its own internal diagnostic classification", () => {
-  assert.equal(classifyTokenValidation({ valid: true, accountId: "a", accountName: "A", teamId: null, reason: null }), "TOKEN_VALID_PERSONAL");
-  assert.equal(classifyTokenValidation({ valid: true, accountId: "t", accountName: "T", teamId: "team_1", reason: null }), "TOKEN_VALID_TEAM");
-  assert.equal(classifyTokenValidation({ valid: false, accountId: null, accountName: null, teamId: null, reason: "INVALID_TOKEN" }), "TOKEN_INVALID");
-  assert.equal(classifyTokenValidation({ valid: false, accountId: null, accountName: null, teamId: null, reason: "TEAM_REQUIRED" }), "TEAM_ACCESS_MISSING");
-  assert.equal(classifyTokenValidation({ valid: false, accountId: null, accountName: null, teamId: null, reason: "PROVIDER_UNAVAILABLE" }), "PROVIDER_ERROR");
-  assert.equal(classifyTokenValidation({ valid: false, accountId: null, accountName: null, teamId: null, reason: "INTERNAL_ERROR" }), "INTERNAL_ERROR");
+  assert.equal(classifyTokenValidation(fakeValidation({ valid: true, accountId: "a", accountName: "A" })), "TOKEN_VALID_PERSONAL");
+  assert.equal(classifyTokenValidation(fakeValidation({ valid: true, accountId: "t", accountName: "T", teamId: "team_1" })), "TOKEN_VALID_TEAM");
+  assert.equal(classifyTokenValidation(fakeValidation({ valid: true, accountName: "P", projectId: "prj_1" })), "TOKEN_VALID_PROJECT");
+  assert.equal(classifyTokenValidation(fakeValidation({ reason: "INVALID_TOKEN" })), "TOKEN_INVALID");
+  assert.equal(classifyTokenValidation(fakeValidation({ reason: "TEAM_REQUIRED" })), "TEAM_ACCESS_MISSING");
+  assert.equal(classifyTokenValidation(fakeValidation({ reason: "PROVIDER_UNAVAILABLE" })), "PROVIDER_ERROR");
+  assert.equal(classifyTokenValidation(fakeValidation({ reason: "INTERNAL_ERROR" })), "INTERNAL_ERROR");
 });
 
-test("D2. diagnoseVercelConnection: a genuinely invalid token classifies as TOKEN_INVALID, failing at GET /v2/user, no further calls made", async () => {
-  let teamsOrProjectsCalled = false;
+test("D2. diagnoseVercelConnection: a token denied on /v2/user AND every real fallback (team, project) genuinely finds nothing usable classifies as TOKEN_INVALID", async () => {
   const fetcher = (async (url: string | URL) => {
     if (String(url).includes("/v2/user")) return jsonResponse(401, {});
-    teamsOrProjectsCalled = true;
+    // Update 24, second pass: a 401 on /v2/user is no longer an automatic
+    // dead end -- it must still try /v2/teams and /v10/projects (a
+    // Project-scoped token legitimately gets denied on /v2/user too) before
+    // concluding TOKEN_INVALID. This fetcher lets both fallbacks succeed
+    // with genuinely zero usable results, never denies them explicitly.
     return jsonResponse(200, {});
   }) as typeof fetch;
   const result = await diagnoseVercelConnection("bad-token", "https://www.stratxcel.in", fetcher);
-  assert.equal(result.classification, "TOKEN_INVALID");
+  assert.equal(result.classification, "TOKEN_INVALID", "the explicit 401 on /v2/user is real, unambiguous evidence, even though the fallback endpoints were also genuinely tried");
   assert.equal(result.failingCall, "GET /v2/user");
-  assert.equal(teamsOrProjectsCalled, false, "an invalid token must never proceed to team/project/domain calls");
 });
 
 test("D3. diagnoseVercelConnection: a valid personal token whose account has zero Vercel projects classifies as PROJECT_NOT_FOUND, not a token failure", async () => {
