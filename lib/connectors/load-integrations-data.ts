@@ -49,6 +49,17 @@ export interface CustomerIntegrationStatus {
     verificationRequired: boolean;
     verificationPending: boolean;
     verificationMessage: string | null;
+    // Real discovery outcome already captured by google-business.ts's
+    // exchangeCodeForToken/the google-business probe route
+    // (metadata.discovery_status) but never read by anything until now --
+    // only meaningful when locationSetupRequired is true. Lets the UI say
+    // exactly what happened (no account at all vs. accounts with no
+    // locations vs. locations found but none matched) instead of one
+    // generic "location setup required" message for all three (STRATXCEL —
+    // MASTER AUTONOMOUS GROWTH PLATFORM brief, Section 29).
+    discoveryStatus: "NO_GBP_ACCOUNTS_FOUND" | "NO_LOCATIONS_IN_ACCOUNTS" | "LOCATION_SELECTION_REQUIRED" | "LOCATION_MATCHED" | null;
+    accountsCount: number | null;
+    locationsCount: number | null;
   };
   google_analytics?: ConnectorState;
   google_search_console?: ConnectorState;
@@ -141,6 +152,14 @@ export async function loadIntegrationsStatusData(
       verificationRequired: Boolean(conns.google_business.verificationRequired),
       verificationPending: Boolean(conns.google_business.verificationPending),
       verificationMessage: conns.google_business.verificationMessage ?? null,
+      discoveryStatus: (typeof gbMeta.discovery_status === "string" ? gbMeta.discovery_status : null) as
+        | "NO_GBP_ACCOUNTS_FOUND"
+        | "NO_LOCATIONS_IN_ACCOUNTS"
+        | "LOCATION_SELECTION_REQUIRED"
+        | "LOCATION_MATCHED"
+        | null,
+      accountsCount: typeof gbMeta.accounts_count === "number" ? gbMeta.accounts_count : null,
+      locationsCount: typeof gbMeta.locations_count === "number" ? gbMeta.locations_count : null,
     },
     google_analytics: mapState(conns.google_analytics.connectionState),
     google_search_console: mapState(conns.google_search_console.connectionState),

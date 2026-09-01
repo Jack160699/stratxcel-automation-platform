@@ -79,6 +79,54 @@ function ConnectionBadge({
   return <span className="shrink-0 rounded-lg bg-sx-surface-2 px-2.5 py-1 text-[11px] font-semibold text-sx-text-subtle">Not connected</span>;
 }
 
+/**
+ * Real, honest copy for the "account connected but no location resolved"
+ * case, differentiated by the actual discovery outcome
+ * (google-business.ts's real accounts/locations discovery, already
+ * captured in metadata.discovery_status but -- until this fix -- never
+ * read anywhere downstream). STRATXCEL — MASTER AUTONOMOUS GROWTH
+ * PLATFORM brief, Section 29: a customer whose Google account genuinely
+ * has zero accessible Business Profile accounts needs a different,
+ * more specific message and action than one whose account has locations
+ * that just didn't automatically match -- collapsing both into one
+ * generic "couldn't find a matching location" sentence understates what's
+ * actually known and, for the zero-accounts case, points the customer at
+ * the wrong mental model (they don't have a mismatched location; they
+ * don't have a Business Profile at all yet).
+ */
+type GbpDiscoveryStatus = NonNullable<CustomerIntegrationStatus["google_business_details"]>["discoveryStatus"];
+
+function gbpLocationSetupCopy(discoveryStatus: GbpDiscoveryStatus, locationsCount: number | null): { message: string; ctaLabel: string } {
+  switch (discoveryStatus) {
+    case "NO_GBP_ACCOUNTS_FOUND":
+      return {
+        message: "We couldn't find a Google Business Profile for this account.",
+        ctaLabel: "Create or claim your Google Business Profile ↗",
+      };
+    case "NO_LOCATIONS_IN_ACCOUNTS":
+      return {
+        message: "Your Google account has a Business Profile, but no business location on it yet.",
+        ctaLabel: "Add your business location ↗",
+      };
+    case "LOCATION_SELECTION_REQUIRED":
+      return {
+        message:
+          typeof locationsCount === "number" && locationsCount > 0
+            ? `We found ${locationsCount} business location${locationsCount === 1 ? "" : "s"} on this Google account, but couldn't automatically match one to your business.`
+            : "We found business locations on this Google account, but couldn't automatically match one to your business.",
+        ctaLabel: "Review your locations ↗",
+      };
+    default:
+      // discovery_status genuinely unknown (e.g. an older connection from
+      // before this field existed) -- the honest, still-accurate fallback,
+      // never a fabricated specific reason.
+      return {
+        message: "We couldn't find a matching Business Profile location for this account.",
+        ctaLabel: "Complete Google Business setup ↗",
+      };
+  }
+}
+
 export default function IntegrationsPage() {
   const { active } = useCurrentTenant();
   const tenantId = active?.tenantId;
@@ -444,6 +492,9 @@ export default function IntegrationsPage() {
             const isLocationResolved = isGbp && Boolean(gbpDetails?.locationResolved);
             const isVerificationRequired = isGbp && isLocationResolved && Boolean(gbpDetails?.verificationRequired);
             const isVerificationPending = isGbp && isLocationResolved && Boolean(gbpDetails?.verificationPending);
+            const gbpSetupCopy = isLocationSetupRequired
+              ? gbpLocationSetupCopy(gbpDetails?.discoveryStatus ?? null, gbpDetails?.locationsCount ?? null)
+              : null;
 
             return (
               <Card key={card.key} className="p-4">
@@ -531,7 +582,7 @@ export default function IntegrationsPage() {
                       ✓ Google Account Connected {gbpDetails?.googleEmail ? `(${gbpDetails.googleEmail})` : ""}
                     </p>
                     <p className="mt-1 text-xs text-sx-text-subtle">
-                      We couldn&apos;t find a matching Business Profile location for this account. Create or verify your business in Google Business Profile.
+                      {gbpSetupCopy?.message}
                     </p>
                     <div className="mt-3 flex flex-wrap items-center gap-2">
                       <a
@@ -541,7 +592,7 @@ export default function IntegrationsPage() {
                         className="inline-flex"
                       >
                         <Button variant="primary" size="sm">
-                          Complete Google Business setup ↗
+                          {gbpSetupCopy?.ctaLabel}
                         </Button>
                       </a>
                       {connectHref && (

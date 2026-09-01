@@ -229,6 +229,9 @@ async function run() {
   assert.equal(uiStatusSetup.google_business_details?.locationResolved, false);
   assert.equal(uiStatusSetup.google_business_details?.locationSetupRequired, true);
   assert.equal(uiStatusSetup.google_business_details?.googleEmail, "shriyansh@example.com");
+  // Real discovery outcome (brief Section 29) must actually reach the UI
+  // layer, not just sit captured in metadata.
+  assert.equal(uiStatusSetup.google_business_details?.discoveryStatus, "NO_GBP_ACCOUNTS_FOUND");
 
   console.log("✓ Test 4: Canonical status resolution accurately separates resolved from setup-required states");
 
@@ -361,6 +364,30 @@ async function run() {
   assert.equal(presenceSetupReused.connections.google_business.verificationRequired, false);
 
   console.log("✓ Test 7: canonical-status verification surfacing is additive, precedence-correct, and location-gated");
+
+  // --- 8. Real discovery outcome (accounts exist with locations, but ------
+  // --- none matched) must be distinguishable from the zero-accounts case --
+  // --- all the way through to the UI layer (brief Section 29). ------------
+  const locationSelectionDb = makeMockDb({
+    id: "test-acc-selection",
+    tenant_id: "tenant-selection",
+    platform: "google_business",
+    provider_account_id: "999888777",
+    display_name: "Owner",
+    username: "owner4@example.com",
+    status: "CONNECTED",
+    token_health: "HEALTHY",
+    metadata: { location_resolved: false, discovery_status: "LOCATION_SELECTION_REQUIRED", accounts_count: 1, locations_count: 3 },
+  });
+  const uiStatusSelection = await loadIntegrationsStatusData(locationSelectionDb as any, "tenant-selection", "owner");
+  assert.equal(uiStatusSelection.google_business_details?.discoveryStatus, "LOCATION_SELECTION_REQUIRED");
+  assert.equal(uiStatusSelection.google_business_details?.locationsCount, 3);
+  assert.notEqual(
+    uiStatusSelection.google_business_details?.discoveryStatus,
+    uiStatusSetup.google_business_details?.discoveryStatus,
+    "zero-accounts and locations-found-but-unmatched must remain distinguishable, never collapsed into the same discoveryStatus"
+  );
+  console.log("✓ Test 8: LOCATION_SELECTION_REQUIRED reaches the UI layer distinctly from NO_GBP_ACCOUNTS_FOUND");
 
   console.log("\n============================================================");
   console.log("ALL GOOGLE BUSINESS CONNECTION INTEGRITY TESTS PASSED!");
