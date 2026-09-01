@@ -363,4 +363,33 @@ export const ADMIN_READ_TOOLS: AgentTool[] = [
       return { wallet: account };
     },
   },
+  {
+    schema: {
+      name: "check_capabilities",
+      description: "The canonical Capability Registry -- what the whole Stratxcel ecosystem can actually do right now, honestly classified (REAL_EXPOSED, REAL_NOT_EXPOSED, PARTIAL, BROKEN, NOT_BUILT, EXTERNAL_REQUIRED). Use this to answer 'what can you do', 'can you do X yet', or to check a capability's real status before claiming it exists or doesn't.",
+      parameters: {
+        type: "object",
+        properties: {
+          category: { type: "string", description: "Optional filter, e.g. research, growth, media, outreach, website, finance, ecosystem." },
+          status: { type: "string", description: "Optional filter: REAL_EXPOSED, REAL_NOT_EXPOSED, PARTIAL, BROKEN, NOT_BUILT, or EXTERNAL_REQUIRED." },
+        },
+      },
+    },
+    mutating: false,
+    risk: "read",
+    requiredPermission: "agent:read:capabilities",
+    async execute(ctx, args) {
+      let query = ctx.supabase
+        .from("capability_registry")
+        .select("capability_key, name, description, category, status, status_notes, external_blocker, department, connection, cost_profile")
+        .order("category", { ascending: true });
+      const category = typeof args.category === "string" ? args.category : null;
+      const status = typeof args.status === "string" ? args.status : null;
+      if (category) query = query.eq("category", category);
+      if (status) query = query.eq("status", status);
+      const { data, error } = await query;
+      if (error) throw error;
+      return { capabilities: data ?? [] };
+    },
+  },
 ];

@@ -28,6 +28,10 @@ const STAFF_ROLE_PERMISSIONS: Record<string, readonly string[]> = {
     // budget gate is the real spend control; this permission is just "may
     // ask for one at all".
     "agent:mutate:media",
+    // Canonical Capability Registry read (check_capabilities) -- "what can
+    // I do right now" is core Brain awareness, granted to the same roles
+    // that already see everything else listed here.
+    "agent:read:capabilities",
   ],
   platform_admin: [
     "agent:read:clients", "agent:read:leads", "agent:read:conversations", "agent:read:missions",
@@ -37,6 +41,7 @@ const STAFF_ROLE_PERMISSIONS: Record<string, readonly string[]> = {
     "agent:mutate:outreach",
     "agent:read:research",
     "agent:mutate:media",
+    "agent:read:capabilities",
   ],
   audit_reviewer: ["agent:read:audit", "agent:read:clients", "agent:read:leads", "agent:read:memory", "agent:mutate:memory"],
   finance_reviewer: ["agent:read:finance", "agent:read:clients", "agent:read:memory", "agent:mutate:memory"],
