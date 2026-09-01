@@ -1,5 +1,53 @@
 # WhatsApp AI Agency — Gap Audit
 
+## Update 25 — a real Capability Registry admin page; the admin IA turns out considerably more mature than assumed
+
+Before writing any admin UI code, inventoried all 38 real `/admin` pages and traced the
+actual deployed navigation config rather than guessing. What looked at first like 8
+orphaned pages (`app/admin/(shell)/platform/*` plus `inbox`) turned out, on inspection, to
+be deliberate, well-documented compatibility redirects referencing a real design doc —
+correctly verified rather than assumed broken, avoiding a false "dead code" finding.
+
+That doc, `docs/product-design/ADMIN_INFORMATION_ARCHITECTURE.md`, reveals a real, mature,
+already-secured Stable/Beta admin IA: `requireReleaseAccess("v2")` gates both UI and API
+(owner-admin identity + a real httpOnly-cookie Beta Mode toggle, audited), with My
+Operating Brain and Hermes Mission Control as the first two Beta/"Technical Admin"
+surfaces. This substantially changes the honest status of the mission's Normal/Technical
+Admin split from "not started" to **`PARTIAL`, considerably further along than assumed**
+— rebuilding it from scratch would have duplicated real, working, security-reviewed
+architecture, exactly what this whole engagement has tried to avoid.
+
+Added one small, correctly-scoped increment using the exact existing pattern:
+`/admin/capabilities`, a real UI over `capability_registry` itself — same
+`requireReleaseAccess("v2")` guard, same `Card`/`StatusChip`/`EmptyState`/`ErrorState`
+design-system components as My Operating Brain, wired into the existing documented Beta
+nav group rather than a new pattern invented alongside the old one. Real data only —
+`EmptyState` for a genuinely empty table, `ErrorState` for a real query failure, zero
+fabricated rows. Re-ran every existing test touching this nav/architecture (5 files) —
+zero regressions to the real, live admin panel real staff use daily. Commit `b94236b`.
+
+## Update 24 — real live domain DNS + Vercel verification status ("domain operations where legitimately supported")
+
+`check_domain_status` wraps two more real, unmodified functions from
+`packages/websites-and-domains`: `inspectDomainDns` (its own header comment: "Safe
+Read-Only DNS Inspector") and `getVercelDomainStatus` (Vercel's own verified/SSL state,
+same token/project/team defaults `execute_growth_action` already uses). Complements
+`check_website_status`, which only ever read the stored `custom_domain` column — this
+reports the domain's actual live state. Live-verified before shipping: real DNS
+resolution proven against the real `stratxcel.in` domain; Vercel status proven to degrade
+gracefully without a local token. Commit `59484b7`.
+
+## Update 23 — the agent can now trigger a REAL fresh SEO/AEO/GEO analysis, not just read stored results
+
+`run_growth_analysis` mirrors `app/api/platform/search/run/route.ts`'s exact logic (same
+rate limit, same idempotency-key derivation, same Google provider resolution) and calls
+`runSearchAnalysis` unmodified — a real, SSRF-protected crawl of the tenant's own public
+pages, real technical-SEO analysis, real competitor discovery. Never touches the live
+website (that stays `execute_growth_action`'s separate job). Verification integrity
+applied from day one: `runSearchAnalysis` never throws, so a pure, dependency-free,
+unit-tested classifier (`lib/agent-core/growth-analysis-outcome.ts`) covers
+COMPLETED/PARTIAL/FAILED/RETRY_WAIT/duplicate-in-flight. Commit `9cba6f3`.
+
 ## Update 21 — real owner connection status bridged; Priority Engine fully traced (real blocker found, not fabricated); a second, distinct paid-audit PDF system found and honestly left unbridged
 
 `check_owner_connections` (`8027aec`) reads `owner_sources` directly (never calling
