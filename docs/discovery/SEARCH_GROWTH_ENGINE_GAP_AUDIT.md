@@ -1,5 +1,22 @@
 # Search Growth Engine Gap Audit
 
+## Update 29 — googleLocations:search + claim/request-access flow: the real API capability behind "this is not permission to stop"
+
+STRATXCEL — AUTONOMOUS BUSINESS PROFILE brief, Section 11/12/13/56/57. The real StratXcel tenant's Google identity has zero accessible Business Profile accounts (Update 26). The brief's explicit instruction: don't treat that as a dead end without first checking whether Google's *current* API supports searching for an existing listing, requesting access to it, or claiming it.
+
+**Fetched Google's own live, current REST docs during this fix (not recalled)** for exactly this question:
+- `googleLocations:search` (`POST /v1/googleLocations:search`) is real, requires no `accounts/*` parent at all, and returns ranked matches with a `requestAdminRightsUri` field when a match is already claimed by *any* account -- Google's own real "request access" mechanism.
+- `accounts.locations.create` is the real, documented way to claim an *unclaimed* match Google already returned: resubmit its exact `location` payload under a real account you can manage.
+- `accounts.create`'s own docs state plainly: "Personal accounts... cannot be created." An identity with zero accounts (not zero locations -- the real tenant's exact case) has no account resource to claim/create under, and none can be provisioned via API. This is a genuine, live-verified, Google-side limitation, not an assumption.
+
+**Built**: `searchGoogleLocations`/`claimGoogleLocation` in `google-business.ts`. The `google-business/probe` route now runs the search whenever normal discovery finds nothing, persisting the real result (`social_accounts.metadata.google_location_search`) instead of discarding it. New `/api/platform/social/google-business/claim` route -- deliberately a customer-clicked action, never autonomous (claiming is a real, public, hard-to-reverse write) -- recomputes claimability server-side from stored state, never trusts a client flag, and resubmits Google's own payload verbatim. Integrations UI now shows three real, distinct outcomes for "location setup required" instead of one generic message: already claimed elsewhere (real per-listing request-access link), genuinely unclaimed (a real "Claim this listing" button), or no match anywhere (existing Update 27 copy).
+
+**Tests**: new provider-layer cases (real endpoints, honest failures, never-fabricate assertions), a static-source test pinning the search actually runs and the claim route's server-side safety checks. Full `test:social`/`test:connectors` regression, workspace `tsc --noEmit`, ESLint clean.
+
+**Self-inflicted issue found and fixed while testing**: a `//` comment containing a literal "accounts-star-slash-locations-star"-shaped substring tripped this repo's own static-source test helper's naive block-comment stripper (mistook it for an unterminated `/*`, silently swallowing real code up to the next unrelated `*/` much later in the file -- the failure mode looked like an entire function had vanished). Reworded the one comment that had it; confirmed no other touched file does.
+
+**Live-verified, read-only, before deploying**: the real StratXcel tenant's row is unaffected by this change directly (metadata is only written on the next real probe run, which the existing auto-probe `useEffect` already triggers automatically next time the customer opens `/app/integrations`) -- this pass added the capability and deployed it; the real search result for this tenant's actual Google identity has not yet been observed, since exercising it needs the customer's own live session (not available in this environment).
+
 ## Update 26 — Google Business verification status: captured, surfaced, and automatically rechecked; reconciled with a concurrent rewrite of the same files mid-session
 
 New brief: STRATXCEL — GOOGLE BUSINESS AUTONOMOUS SETUP (Sections 9/10/11/19/20/38 are the operative ones here). Traced the real, already-mature GBP connector first, per this repo's own standing rule, rather than assuming a gap existed.
