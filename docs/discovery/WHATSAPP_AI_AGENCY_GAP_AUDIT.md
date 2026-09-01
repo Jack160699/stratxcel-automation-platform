@@ -1,5 +1,31 @@
 # WhatsApp AI Agency — Gap Audit
 
+## Update 31 — actually fixed the generation-time half of Update 29/30's fabrication defect, not just documented it
+
+Followed Update 30's precise scoping with a real fix, using the exact remediation pattern
+already proven for the 2026-08-23 testimonials fix: `page-planner.ts`'s `ECOMMERCE`
+template had its two fabricated products sections ("Trending Favorites" on the homepage,
+"Full Catalog" on the shop page) removed entirely; `AI_BUSINESS`'s fabricated pricing
+section ("Starter... ₹2,999/mo", "Pro... ₹6,999/mo") likewise. Both are reachable via the
+real, live `POST /api/platform/website-factory/brief` route, so this is a real fix to
+already-shipped, customer-facing generation behavior, not just a registry entry.
+
+Added real regression coverage rather than trusting the fix by inspection:
+`no-fabricated-testimonials.test.ts` extended from 7 to 10 tests (new tests assert no
+`products`/`pricing` section type is ever generated, and that none of the specific
+fabricated strings survive in any template's output) — all pass. Also closed a real,
+separate gap found in the process: this test file existed but was **never wired into
+`test:website-factory`**, the package's own aggregate test script — added now. Full
+`test:website-factory` (22 files, hundreds of cases) re-verified passing after the change;
+full-repo `tsc --noEmit` clean.
+
+**Still open, not fixed this pass**: `applyNaturalLanguageEdit` (the separate "edit"
+feature, `site-builder.ts`) has its own, still-unfixed copy of the identical fabricated
+testimonials/products, plus its own silent-no-op-reported-as-success issue. A real fix
+there is more involved (edit-time content needs an honest "didn't understand this
+instruction" path, not just deletion) — correctly left open rather than rushed. Registry
+status moved from `BROKEN` to `PARTIAL` to reflect the real, partial, verified progress.
+
 ## Update 29 — traced the website "edit" capability, found a real, live, pre-existing content-fabrication defect; correctly refused to bridge it
 
 While pursuing section 11's "edit" operation (creation/status/domain checks were already

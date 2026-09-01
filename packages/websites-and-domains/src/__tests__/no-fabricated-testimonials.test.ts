@@ -16,6 +16,16 @@
  * The mission rule is "real verified data, clearly marked placeholder, or
  * nothing" -- there is no real review data at generation time, so nothing
  * is what these templates now produce.
+ *
+ * Extended 2026-09-02: the 2026-08-23 fix and this suite covered
+ * testimonials only. Auditing packages/agent-core's website "edit"
+ * capability surfaced the SAME defect class, unfixed, in this same file's
+ * ECOMMERCE and AI_BUSINESS templates -- hardcoded fabricated products
+ * ("Signature Tailored Blazer... ₹24,999" and three others) and a
+ * hardcoded fabricated pricing plan ("Starter... ₹2,999/mo", "Pro...
+ * ₹6,999/mo") reachable via the real, live POST /api/platform/website-
+ * factory/brief route. Fixed the same way: those sections are removed
+ * entirely rather than generated with invented data.
  */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
@@ -69,5 +79,42 @@ describe("No fabricated testimonials in any generated website template", () => {
     const pages = planPageArchitecture("SERVICE_BUSINESS", { businessName: "Acme Consulting" });
     const serialized = JSON.stringify(pages);
     assert.ok(!serialized.includes("Stratxcel"), "a customer's generated website must never hardcode the platform's own name as if it were their business or a client testimonial about them");
+  });
+
+  it("ECOMMERCE template never generates a fabricated products section", () => {
+    const pages = planPageArchitecture("ECOMMERCE", { businessName: "Test Business" });
+    for (const page of pages) {
+      for (const section of page.sections) {
+        assert.notEqual(section.type, "products", `ECOMMERCE's "${page.title}" page must not include a fabricated products section`);
+      }
+    }
+  });
+
+  it("AI_BUSINESS template never generates a fabricated pricing section", () => {
+    const pages = planPageArchitecture("AI_BUSINESS", { businessName: "Test Business" });
+    for (const page of pages) {
+      for (const section of page.sections) {
+        assert.notEqual(section.type, "pricing", `AI_BUSINESS's "${page.title}" page must not include a fabricated pricing section`);
+      }
+    }
+  });
+
+  it("no fabricated product names, invented plan prices, or invented quantities survive anywhere in this file's output", () => {
+    const knownFabrications = [
+      "Signature Tailored Blazer",
+      "Egyptian Cotton Oxford Shirt",
+      "Pleated Wool Trousers",
+      "Classic Knit Crewneck",
+      "Sartorial Silk Scarf",
+      "₹2,999/mo",
+      "₹6,999/mo",
+    ];
+    for (const websiteType of ALL_WEBSITE_TYPES) {
+      const pages = planPageArchitecture(websiteType, { businessName: "Test Business" });
+      const serialized = JSON.stringify(pages);
+      for (const fabrication of knownFabrications) {
+        assert.ok(!serialized.includes(fabrication), `${websiteType} output must not contain the fabricated "${fabrication}"`);
+      }
+    }
   });
 });

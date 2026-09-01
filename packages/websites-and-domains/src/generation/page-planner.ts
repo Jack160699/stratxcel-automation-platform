@@ -38,16 +38,14 @@ export function planPageArchitecture(
               ctaText: "Shop New Arrivals",
               ctaLink: "/shop",
             },
-            {
-              type: "products",
-              heading: "Trending Favorites",
-              subheading: "Most popular items selected by our community",
-              items: [
-                { title: "Signature Tailored Blazer", description: "Fine Italian wool with sculpted silhouette", price: "₹24,999", link: "/shop" },
-                { title: "Egyptian Cotton Oxford Shirt", description: "200-ply Egyptian giza cotton with mother-of-pearl buttons", price: "₹8,499", link: "/shop" },
-                { title: "Pleated Wool Trousers", description: "Bespoke drape with adjustable side tabs", price: "₹12,999", link: "/shop" },
-              ],
-            },
+            // Found live (2026-09-02, same defect class as the testimonials fix
+            // below): this section hardcoded three fabricated products
+            // ("Signature Tailored Blazer... ₹24,999" and two others) with no
+            // connection to the real business's actual catalog -- for a website
+            // about to be published live as the customer's own storefront. No
+            // "products" section is generated here at all now, same rule as
+            // testimonials: "real verified data, clearly marked placeholder, or
+            // nothing" -- there is no real product data at generation time.
             {
               type: "features",
               heading: "Why Choose Us",
@@ -84,14 +82,10 @@ export function planPageArchitecture(
               heading: "All Collections",
               subheading: "Explore every curated item designed for perfection.",
             },
-            {
-              type: "products",
-              heading: "Full Catalog",
-              items: [
-                { title: "Classic Knit Crewneck", description: "Pure cashmere soft knitwear", price: "₹14,999" },
-                { title: "Sartorial Silk Scarf", description: "Hand-rolled Italian silk twill", price: "₹4,999" },
-              ],
-            },
+            // Found live (2026-09-02): same fabricated-products defect as the
+            // homepage "Trending Favorites" section above ("Classic Knit
+            // Crewneck... ₹14,999" and one other, again invented). Removed for
+            // the same reason -- no real catalog data exists at generation time.
           ],
         },
         {
@@ -264,15 +258,12 @@ export function planPageArchitecture(
                 { title: "Zero-Maintenance Hosting", description: "99.99% uptime with automated point-in-time recovery." },
               ],
             },
-            {
-              type: "pricing",
-              heading: "Simple, Transparent Pricing",
-              subheading: "Choose the perfect plan for your business journey.",
-              items: [
-                { title: "Starter", description: "1 Custom Domain, AI Assistant, Standard Hosting", price: "₹2,999/mo" },
-                { title: "Pro", description: "Unlimited Domains, Full E-commerce, VIP Support", price: "₹6,999/mo" },
-              ],
-            },
+            // Found live (2026-09-02): same fabricated-data defect -- this
+            // section hardcoded two invented plan names/features/prices
+            // ("Starter... ₹2,999/mo", "Pro... ₹6,999/mo") with no connection
+            // to whatever the real business actually charges. No "pricing"
+            // section is generated here at all now -- there is no real pricing
+            // data at generation time.
             {
               type: "faq",
               heading: "Frequently Asked Questions",
