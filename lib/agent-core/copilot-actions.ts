@@ -17,6 +17,7 @@ import { RESEARCH_DELEGATION_TOOLS } from "./research-tools";
 import { GROWTH_MEDIA_TOOLS } from "./growth-media-tools";
 import { WORKFORCE_REGISTRY_TOOLS } from "./workforce-registry-tools";
 import { loadOwnerBrainKnowledge } from "./owner-brain-context";
+import { OWNER_CONNECTIONS_TOOL } from "./owner-connections-tool";
 
 /**
  * Shared turn/thread logic for the admin and client web Copilot UIs
@@ -82,7 +83,7 @@ export async function sendCopilotMessage(principal: AgentPrincipal, userText: st
     principal,
     provider: createAgentCoreProviderAdapter(principal.tenantId),
     userText: trimmed,
-    extraTools: [...RESEARCH_DELEGATION_TOOLS, ...GROWTH_MEDIA_TOOLS, ...WORKFORCE_REGISTRY_TOOLS],
+    extraTools: [...RESEARCH_DELEGATION_TOOLS, ...GROWTH_MEDIA_TOOLS, ...WORKFORCE_REGISTRY_TOOLS, OWNER_CONNECTIONS_TOOL],
     extraKnowledge: await loadOwnerBrainKnowledge(principal),
   });
   return { ok: result.status !== "failed", replyText: result.replyText, status: result.status, confirmationRequired: result.confirmationRequired };
