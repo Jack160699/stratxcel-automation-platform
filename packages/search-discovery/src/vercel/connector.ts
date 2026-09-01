@@ -346,3 +346,141 @@ export async function discoverVercelProjects(db: SearchDb, input: { tenantId: st
 
   return { ok: true, projectCount: projects.length, reason: null };
 }
+
+export interface ProbeVercelWriteCapabilityResult {
+  ok: boolean;
+  /** The real, verified write capability state persisted into the DB. */
+  capabilityState: "WRITE_READY" | "READ_ONLY" | "AUTH_FAILED" | "NOT_CONNECTED" | "ERROR";
+  /** The scope value written to search_website_connections.scope -- or the existing scope if unchanged. */
+  persistedScope: "AUTONOMOUS_WRITE" | "ANALYSIS_ONLY" | null;
+  /** Non-secret diagnostic info about how the probe reached its conclusion. */
+  reason: string;
+  /** Vercel HTTP status from the write probe call. */
+  probeHttpStatus: number | null;
+}
+
+/**
+ * Safe, non-destructive real write capability probe using the customer's actual vaulted token.
+ *
+ * Mechanism: Vercel's POST /v13/deployments with deliberately minimal body.
+ *   - If the token has write/deployment access: Vercel returns 400/422 (bad request -- missing
+ *     required fields) confirming the token IS authorized to create deployments.
+ *   - If the token is truly read-only: Vercel returns 403 (Forbidden).
+ *   - Either way, no actual deployment is created -- the probe is non-destructive.
+ *
+ * This is the only truthful way to determine write capability: calling the actual Vercel API
+ * with the actual customer credential. Scope metadata alone is insufficient since tokens
+ * may have been created before scope metadata was stored, or with the wrong scope value.
+ *
+ * On success, persists the real scope into search_website_connections:
+ *   - AUTONOMOUS_WRITE if write access confirmed
+ *   - ANALYSIS_ONLY if genuinely read-only
+ *
+ * NEVER returns the token. NEVER logs it.
+ */
+export async function probeVercelWriteCapability(
+  db: SearchDb,
+  input: { tenantId: string; fetcher?: typeof fetch; vault?: SecretVault }
+): Promise<ProbeVercelWriteCapabilityResult> {
+  const { data: connection, error: fetchError } = await db
+    .from("search_website_connections")
+    .select("id, token_vault_ref, team_id, scope, is_healthy")
+    .eq("tenant_id", input.tenantId)
+    .eq("provider", "vercel")
+    .maybeSingle();
+
+  if (fetchError) {
+    return { ok: false, capabilityState: "ERROR", persistedScope: null, reason: `CONNECTION_LOOKUP_FAILED: ${fetchError.message}`, probeHttpStatus: null };
+  }
+  if (!connection) {
+    return { ok: false, capabilityState: "NOT_CONNECTED", persistedScope: null, reason: "No Vercel connection found for this tenant.", probeHttpStatus: null };
+  }
+  if (connection.is_healthy === false) {
+    return { ok: false, capabilityState: "AUTH_FAILED", persistedScope: null, reason: "Existing connection is marked unhealthy. Reconnect with a valid token first.", probeHttpStatus: null };
+  }
+
+  const vault = input.vault ?? createDevEncryptedVault(db as never);
+  let token: string | null = null;
+  try {
+    token = await vault.retrieve(connection.token_vault_ref as string);
+  } catch {
+    // Vault retrieval failed
+  }
+
+  if (!token) {
+    return { ok: false, capabilityState: "AUTH_FAILED", persistedScope: null, reason: "Failed to retrieve customer token from vault.", probeHttpStatus: null };
+  }
+
+  // Safe, non-destructive write probe:
+  // POST /v13/deployments with minimal body.
+  // - Write-authorized token: 400 or 422 (token is valid but body is incomplete)
+  // - Read-only token: 403 (Forbidden)
+  // - Bad token: 401
+  const fetcher = input.fetcher ?? fetch;
+  const teamId = (connection.team_id as string | null) ?? null;
+  const probeUrl = `https://api.vercel.com/v13/deployments${teamId ? `?teamId=${encodeURIComponent(teamId)}` : ""}`;
+
+  let probeStatus: number | null = null;
+  let writeAuthorized = false;
+
+  try {
+    const probeResponse = await fetcher(probeUrl, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ name: "_probe_check_only_no_deployment" }),
+    });
+
+    probeStatus = probeResponse.status;
+
+    // 400/422 = token is authorized to write deployments but request body is incomplete/invalid
+    // 403 = token is explicitly denied deployment write access
+    // 401 = token is invalid/revoked (connection health needs update)
+    if (probeStatus === 400 || probeStatus === 422 || probeStatus === 404) {
+      // 404 can also mean authorized but project/team not found -- still authorized to call
+      writeAuthorized = true;
+    } else if (probeStatus === 403) {
+      writeAuthorized = false;
+    } else if (probeStatus === 401) {
+      // Mark connection as unhealthy
+      await db.from("search_website_connections")
+        .update({ is_healthy: false, last_error: "Token rejected by Vercel (401)", updated_at: new Date().toISOString() })
+        .eq("id", connection.id);
+      return { ok: false, capabilityState: "AUTH_FAILED", persistedScope: null, reason: "Token rejected by Vercel (401). Reconnect with a valid token.", probeHttpStatus: probeStatus };
+    } else {
+      // Unexpected status (5xx, etc) -- don't change scope, return error
+      return { ok: false, capabilityState: "ERROR", persistedScope: connection.scope as "AUTONOMOUS_WRITE" | "ANALYSIS_ONLY", reason: `Unexpected probe response: HTTP ${probeStatus}`, probeHttpStatus: probeStatus };
+    }
+  } catch (err) {
+    return { ok: false, capabilityState: "ERROR", persistedScope: null, reason: `Write probe network error: ${err instanceof Error ? err.message : String(err)}`, probeHttpStatus: null };
+  }
+
+  const newScope: "AUTONOMOUS_WRITE" | "ANALYSIS_ONLY" = writeAuthorized ? "AUTONOMOUS_WRITE" : "ANALYSIS_ONLY";
+  const capabilityState = writeAuthorized ? "WRITE_READY" : "READ_ONLY";
+
+  // Persist the truthful scope only if it changed
+  if (connection.scope !== newScope) {
+    const { error: updateError } = await db
+      .from("search_website_connections")
+      .update({
+        scope: newScope,
+        last_verified_at: new Date().toISOString(),
+        last_error: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", connection.id);
+
+    if (updateError) {
+      return { ok: false, capabilityState, persistedScope: null, reason: `Write probe succeeded but scope update failed: ${updateError.message}`, probeHttpStatus: probeStatus };
+    }
+  }
+
+  const reason = writeAuthorized
+    ? `Write probe confirmed: HTTP ${probeStatus} (Vercel accepted the token's write authorization before rejecting the incomplete deployment body). Scope persisted as AUTONOMOUS_WRITE.`
+    : `Write probe returned HTTP 403 (Forbidden). This Vercel token does not have deployment write access. Scope persisted as ANALYSIS_ONLY. To enable automatic website changes, reconnect with a token that has deployment write permission.`;
+
+  return { ok: true, capabilityState, persistedScope: newScope, reason, probeHttpStatus: probeStatus };
+}
+

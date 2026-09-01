@@ -121,6 +121,7 @@ export function WebsiteConnectorCard({ tenantId }: { tenantId: string }) {
   const [connectError, setConnectError] = useState<string | null>(null);
   const [discovering, setDiscovering] = useState(false);
   const [showConnectForm, setShowConnectForm] = useState(false);
+  const [probingWrite, setProbingWrite] = useState(false);
 
   // Update 24: the tenant's OWN real canonical website hostname (never a
   // hardcoded example domain) -- used only to phrase the DOMAIN_MISMATCH
@@ -144,7 +145,28 @@ export function WebsiteConnectorCard({ tenantId }: { tenantId: string }) {
           return;
         }
         setError(null);
-        setStatus(body as WebsiteStatus);
+        const loadedStatus = body as WebsiteStatus;
+        setStatus(loadedStatus);
+        // If connected but showing AUTHORIZED (read-only scope), auto-probe
+        // the real write capability via the actual Vercel API using the
+        // customer's vaulted token. This is the only truthful check.
+        if (loadedStatus?.vercel?.state === "AUTHORIZED") {
+          setProbingWrite(true);
+          fetch("/api/platform/search/vercel/probe-write", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ tenantId }),
+          }).then(async (probeRes) => {
+            if (probeRes.ok || probeRes.status === 200) {
+              // Reload status to reflect the real persisted scope
+              reload();
+            }
+          }).catch(() => {
+            // Best-effort -- status stays as-is
+          }).finally(() => {
+            setProbingWrite(false);
+          });
+        }
       })
       .catch(() => setError("Could not load website status."));
   }
@@ -260,10 +282,12 @@ export function WebsiteConnectorCard({ tenantId }: { tenantId: string }) {
           </div>
           <div className="flex items-center justify-between rounded-sx-sm bg-sx-surface-2 px-3 py-2">
             <span className="text-xs text-sx-text-subtle">Automatic website changes</span>
-            {status.vercel.state === "READY" ? (
-              <span className="text-[11px] font-semibold text-sx-success">Enabled</span>
+            {probingWrite ? (
+              <span className="text-[11px] font-semibold text-sx-text-subtle">Checking write access…</span>
+            ) : status.vercel.state === "READY" ? (
+              <span className="text-[11px] font-semibold text-sx-success">✓ Ready</span>
             ) : status.vercel.state === "AUTHORIZED" ? (
-              <span className="text-[11px] font-semibold text-sx-warning">Connected · read-only</span>
+              <span className="text-[11px] font-semibold text-sx-warning">Read-only</span>
             ) : status.vercel.state === "PROVIDER_ERROR" ? (
               <span className="text-[11px] font-semibold text-sx-danger">Connection issue</span>
             ) : (
