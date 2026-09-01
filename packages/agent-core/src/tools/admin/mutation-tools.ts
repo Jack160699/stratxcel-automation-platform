@@ -349,5 +349,17 @@ export const ADMIN_MUTATION_TOOLS: AgentTool[] = [
       const mode = outcome.alreadySent ? "already_sent" : outcome.mode;
       return { contact, purpose, conversationRole, send: { ok: true as const, mode, messageId: outcome.messageId } };
     },
+    // Same verification-integrity discipline as generate_image's -- `send.ok`
+    // can be false (template pending, kill switch, consent required, ...)
+    // without execute() ever throwing; that must reach the user as a real
+    // failure/pending note, never get lost in the model's own synthesis.
+    interpretOutcome(result) {
+      const send = (result as { send?: { ok?: boolean; reason?: string } } | null)?.send;
+      if (!send || send.ok) return null;
+      if (send.reason === "template_required_outside_service_window") {
+        return { status: "pending", detail: "needs an approved Meta template for a first contact -- one is submitted and awaiting Meta's review" };
+      }
+      return { status: "failed", detail: send.reason };
+    },
   },
 ];

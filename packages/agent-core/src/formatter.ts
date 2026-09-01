@@ -122,6 +122,14 @@ export interface FormatAgentReplyInput {
   text?: string;
   toolSummaries?: string[];
   confirmationPrompt?: string;
+  /** Deterministic, non-LLM-authored facts about a mutating tool's real
+   *  outcome (see tools/contract.ts's interpretOutcome / orchestrator.ts's
+   *  verificationNotes) -- appended UNCONDITIONALLY, never gated behind
+   *  whether `text` is present. This is what guarantees a real failed/
+   *  pending/partial mutation reaches the user even when the model's own
+   *  `text` claims success -- the exact live-observed defect this exists to
+   *  close. Never omit a real note to keep a reply shorter. */
+  verificationNotes?: string[];
 }
 
 /** Composes the final outbound WhatsApp message. Bullets, no tables, bounded
@@ -130,6 +138,7 @@ export function formatAgentReply(input: FormatAgentReplyInput): string {
   const sections: string[] = [];
   if (input.text) sections.push(input.text.trim());
   if (input.toolSummaries?.length) sections.push(input.toolSummaries.join("\n\n"));
+  if (input.verificationNotes?.length) sections.push(input.verificationNotes.join("\n"));
   if (input.confirmationPrompt) sections.push(input.confirmationPrompt.trim());
   const composed = sections.filter(Boolean).join("\n\n") || "Done.";
   return truncate(sanitizeAgentReplyText(composed), MAX_REPLY_CHARS);

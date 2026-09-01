@@ -118,5 +118,20 @@ export const GROWTH_MEDIA_TOOLS: AgentTool[] = [
         candidateCount: 1,
       });
     },
+    // Live-observed defect this closes: a real OpenAI HTTP 429 produced
+    // `outcome: "FAILED"` here, but the model's own free-text reply still
+    // said "Done." -- see docs/discovery/WHATSAPP_AI_AGENCY_GAP_AUDIT.md
+    // Update 9. GenerateImageOutcome's real values, mapped honestly:
+    // REVISION_REQUIRED means candidates were actually generated but still
+    // need a human pick -- real progress, not full completion, so "partial"
+    // rather than "success".
+    interpretOutcome(result) {
+      const outcome = (result as { outcome?: string } | null)?.outcome;
+      const reason = (result as { reason?: string } | null)?.reason;
+      if (!outcome || outcome === "OK") return null;
+      if (outcome === "REVISION_REQUIRED") return { status: "partial", detail: "candidates ready, needs your selection in the dashboard" };
+      if (outcome === "WAITING_CONFIGURATION" || outcome === "PENDING") return { status: "pending", detail: reason };
+      return { status: "failed", detail: reason ?? outcome.toLowerCase().replaceAll("_", " ") };
+    },
   },
 ];

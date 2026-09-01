@@ -102,6 +102,14 @@ export async function runAgentTurn(input: RunAgentTurnInput): Promise<RunAgentTu
   ];
 
   const toolSummaries: string[] = [];
+  // Deterministic, non-LLM-dependent verification backstop (Master Brain
+  // brief, "VERIFICATION INTEGRITY"). Populated only from a tool's own
+  // explicit interpretOutcome() classification -- never inferred from the
+  // model's free text -- and appended to the final reply unconditionally
+  // below, so a real failure/pending/partial mutation outcome cannot be
+  // silently overridden by the model inventing success prose, the way
+  // generate_image's real HTTP 429 was live-observed to be.
+  const verificationNotes: string[] = [];
   let finalText = "";
   let confirmationPending: { code: string; expiresAt: string } | null = null;
   let failureReason: string | null = null;
@@ -208,6 +216,28 @@ export async function runAgentTurn(input: RunAgentTurnInput): Promise<RunAgentTu
           risk: tool.risk,
           mutating: tool.mutating,
         });
+        if (tool.mutating && tool.interpretOutcome) {
+          // Never let a tool's own classifier throw the turn off course --
+          // an outcome classifier failing to classify is not itself a
+          // reason to fail the whole run.
+          let outcome: ReturnType<NonNullable<AgentTool["interpretOutcome"]>> = null;
+          try {
+            outcome = tool.interpretOutcome(result);
+          } catch {
+            outcome = null;
+          }
+          if (outcome && outcome.status !== "success") {
+            const verb = outcome.status === "failed" ? "did not succeed" : outcome.status === "pending" ? "is still pending" : "only partially completed";
+            verificationNotes.push(`⚠️ ${describeToolAction(tool.schema.name)} ${verb}${outcome.detail ? ` (${outcome.detail})` : ""}.`);
+            await recordRunEvent(supabase, {
+              runId,
+              eventType: "tool_outcome_not_success",
+              toolName: tool.schema.name,
+              risk: tool.risk,
+              metadata: { status: outcome.status, detail: outcome.detail ?? null },
+            });
+          }
+        }
         const summary = summarizeToolResult(tool.schema.name, result);
         toolSummaries.push(summary);
         messages.push({
@@ -233,6 +263,10 @@ export async function runAgentTurn(input: RunAgentTurnInput): Promise<RunAgentTu
         // second user-facing transcript. Fall back to privacy-safe summaries
         // only when the bounded loop produced no final synthesis.
         toolSummaries: !confirmationPending && !finalText.trim() ? toolSummaries : [],
+        // Deterministic, unconditional -- appended regardless of what
+        // finalText said, and regardless of the toolSummaries fallback
+        // branch above. This is the actual fix, not the two lines above it.
+        verificationNotes: confirmationPending ? [] : verificationNotes,
       });
 
   await recordAgentMessage(supabase, { sessionId: session.id, role: "assistant", content: replyText });

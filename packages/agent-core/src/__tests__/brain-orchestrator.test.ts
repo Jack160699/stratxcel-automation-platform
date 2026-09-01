@@ -113,6 +113,60 @@ async function run() {
   const refResult = await runAgentTurn({ supabase: freshClient as any, principal, provider: refProvider, userText: "Which lead did you just mention?", extraTools: freshTools });
   assert.equal(refResult.replyText, "You were asking about the Acme lead I mentioned.", "referential questions must still resolve normally against history");
 
+  // VERIFICATION INTEGRITY regression (Master Brain brief, section 1) --
+  // reproduces the exact live incident: a mutating tool returns a real,
+  // non-throwing `{ outcome: "FAILED" }` result, and the model's OWN final
+  // text still claims success ("Done. The requested change was completed.")
+  // -- verbatim, this is what generate_image actually produced after a real
+  // OpenAI HTTP 429 (see docs/discovery/WHATSAPP_AI_AGENCY_GAP_AUDIT.md
+  // Update 9). Before this fix, formatAgentReply used `text` alone whenever
+  // it was non-empty, so the lie reached the user untouched. The fix must
+  // append the tool's real verdict regardless.
+  const { client: outcomeClient } = createFakeSupabase();
+  let lyingRound = 0;
+  const lyingProvider: AgentLLMProvider = {
+    isConfigured: () => true,
+    async complete() {
+      lyingRound += 1;
+      if (lyingRound === 1) return { text: "", toolCalls: [{ id: "img-1", name: "flaky_mutation", arguments: {} }] };
+      return { text: "Done. The requested change was completed.", toolCalls: [] };
+    },
+  };
+  const flakyTool: AgentTool = {
+    schema: { name: "flaky_mutation", description: "Simulates a real provider failure the model must not paper over.", parameters: {} },
+    mutating: true,
+    risk: "read",
+    requiredPermission: "agent:read:test",
+    async execute() {
+      return { outcome: "FAILED", reason: "provider rate limit" };
+    },
+    interpretOutcome(result) {
+      const outcome = (result as { outcome?: string }).outcome;
+      if (outcome === "FAILED") return { status: "failed", detail: (result as { reason?: string }).reason };
+      return null;
+    },
+  };
+  const outcomeResult = await runAgentTurn({ supabase: outcomeClient as any, principal, provider: lyingProvider, userText: "Create an image", extraTools: [flakyTool] });
+  assert.ok(outcomeResult.replyText.includes("Done. The requested change was completed."), "the model's own synthesis is still shown -- this fix adds truth, it does not delete the model's text");
+  assert.ok(/did not succeed/.test(outcomeResult.replyText), "a real FAILED tool outcome must ALSO appear in the final reply as failure language, even though the model's own text claimed success");
+  assert.ok(outcomeResult.replyText.includes("provider rate limit"), "the real failure detail must reach the user, not be silently dropped");
+
+  // A tool that opts in but classifies its own result as success (or a tool
+  // that never opts in at all) must produce zero verification notes -- this
+  // is strictly additive, never a behavior change for the unmodified case.
+  const { client: successClient } = createFakeSupabase();
+  let successRound = 0;
+  const successProvider: AgentLLMProvider = { isConfigured: () => true, async complete() { successRound += 1; return successRound === 1 ? { text: "", toolCalls: [{ id: "s1", name: "quiet_mutation", arguments: {} }] } : { text: "All set.", toolCalls: [] }; } };
+  const quietTool: AgentTool = {
+    schema: { name: "quiet_mutation", description: "A tool with no outcome classifier.", parameters: {} },
+    mutating: true,
+    risk: "read",
+    requiredPermission: "agent:read:test",
+    async execute() { return { ok: true }; },
+  };
+  const quietResult = await runAgentTurn({ supabase: successClient as any, principal, provider: successProvider, userText: "Do the thing", extraTools: [quietTool] });
+  assert.equal(quietResult.replyText, "All set.", "a tool without interpretOutcome must never gain unrelated verification text appended to its reply");
+
   console.log("brain-orchestrator.test.ts (@stratxcel/agent-core): ALL PASS");
 }
 run();

@@ -29,6 +29,27 @@ export interface ToolSchema {
   parameters: Record<string, unknown>;
 }
 
+/**
+ * Canonical mutation-outcome semantics (PHASE "VERIFICATION INTEGRITY" —
+ * Master Brain brief, section 1). A tool's raw JSON result can throw a
+ * FAILED/PENDING/PARTIAL signal on the floor of a large object the model
+ * never reliably reads back correctly — proven live: generate_image
+ * returned `outcome: "FAILED"` after a real OpenAI HTTP 429, and the
+ * model's own free-text synthesis still said "Done. The requested change
+ * was completed." This is never trusted to prompt-engineering alone: see
+ * orchestrator.ts's deterministic append of every non-success
+ * interpretOutcome() result onto the final reply, unconditionally,
+ * regardless of what the model's own text said.
+ */
+export type ToolOutcomeStatus = "success" | "failed" | "pending" | "partial";
+export interface ToolOutcome {
+  status: ToolOutcomeStatus;
+  /** Short, human-readable, WhatsApp-safe reason — never a raw provider
+   *  error string, stack trace, or internal id (formatAgentReply's own
+   *  sanitizer runs over this too, but the source should already be clean). */
+  detail?: string;
+}
+
 export interface AgentTool {
   schema: ToolSchema;
   mutating: boolean;
@@ -38,6 +59,19 @@ export interface AgentTool {
    *  execute() must never re-derive authorization from the prompt. */
   requiredPermission: string;
   execute(ctx: ToolContext, args: Record<string, unknown>): Promise<unknown>;
+  /**
+   * Optional, explicit, type-safe outcome classifier for a mutating tool
+   * whose execute() can return a non-throwing result that still represents
+   * a real failure/pending/partial state (throwing is already handled
+   * separately by the orchestrator's catch block — this is for the "HTTP
+   * 200 but business failure" case). Omit for a tool where any non-throwing
+   * result is inherently success (the current, unchanged default for every
+   * existing tool that doesn't implement this) — this is strictly additive,
+   * never a behavior change for a tool that doesn't opt in. Return null to
+   * decline to classify a specific result (treated as success, same as
+   * omitting the function entirely).
+   */
+  interpretOutcome?(result: unknown): ToolOutcome | null;
 }
 
 /**
