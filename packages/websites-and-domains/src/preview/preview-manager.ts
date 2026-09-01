@@ -41,7 +41,8 @@ export function resolvePreviewSecretKey(explicit?: string, envObj: Record<string
 }
 
 export class PreviewManager {
-  private secretKey: string;
+  private explicitSecretKey: string | undefined;
+  private resolvedSecretKey: string | undefined;
   private defaultBaseUrl: string;
   private defaultTtlSeconds: number;
 
@@ -50,9 +51,29 @@ export class PreviewManager {
     baseUrl?: string;
     defaultTtlSeconds?: number;
   }) {
-    this.secretKey = resolvePreviewSecretKey(options?.secretKey);
+    // LAZY resolution -- do not call resolvePreviewSecretKey() here. Found
+    // live 2026-09-02: the module-level `previewManager` singleton below
+    // runs this constructor at IMPORT time, and this module is transitively
+    // imported by a real API route's build-time page-data collection
+    // (packages/workforce-core/src/adapters/website-generate.ts ->
+    // /api/social/copilot/whatsapp-web-action) even though nothing there
+    // ever actually CALLS generate/verifySignedToken. An eager throw here
+    // broke the production build outright -- a strictly worse outcome than
+    // the hardcoded-secret bug this was meant to fix. Resolving lazily, on
+    // first real use via the secretKey getter below, preserves the exact
+    // same fail-closed guarantee (a real attempt to sign/verify in
+    // production with no configured secret still throws) without punishing
+    // mere module evaluation for code nothing actually calls yet.
+    this.explicitSecretKey = options?.secretKey;
     this.defaultBaseUrl = options?.baseUrl || "https://preview.stratxcel.in";
     this.defaultTtlSeconds = options?.defaultTtlSeconds || 60 * 60 * 24 * 7; // 7 days
+  }
+
+  private get secretKey(): string {
+    if (this.resolvedSecretKey === undefined) {
+      this.resolvedSecretKey = resolvePreviewSecretKey(this.explicitSecretKey);
+    }
+    return this.resolvedSecretKey;
   }
 
   /**

@@ -1,0 +1,19 @@
+-- Records an honest self-correction: the first version of Update 35's fix
+-- broke the real production build (eager secret resolution at module-import
+-- time). Caught via a real "next build" verification, fixed properly with
+-- lazy resolution. Applied live via Supabase MCP on 2026-09-02; this file
+-- makes that reproducible from a fresh database.
+update public.capability_registry
+set status_notes = status_notes || ' SELF-CORRECTION (same day, same pass): the first version of this fix resolved the secret EAGERLY in the constructor, which runs at module-IMPORT time for the module-level previewManager singleton -- and that import happens transitively during a real Vercel production build (page-data collection for /api/social/copilot/whatsapp-web-action), which sets NODE_ENV=production, even though nothing there actually calls generate/verifySignedToken. The eager throw broke the production build outright (confirmed via the real failed Vercel deployment''s build logs, not assumed) -- a strictly worse outcome than the hardcoded-secret bug being fixed. Caught by actually running a real "NODE_ENV=production npm run build" locally (not just tsc --noEmit, which cannot catch a runtime module-evaluation throw) before re-shipping. Fixed properly with lazy resolution (a private getter, resolved only on first real use of generate/verifySignedToken) -- same fail-closed guarantee, but merely importing/constructing the class can never throw. New regression test added specifically reproducing this exact incident (constructing PreviewManager in a simulated production+unconfigured environment must not throw). Real production build (next build, NODE_ENV=production) re-verified locally, exit 0, before the corrected fix was shipped.',
+    last_verified_at = now(),
+    last_verified_by = 'claude_session_2026-09-02'
+where capability_key = 'capability:preview_manager_hardcoded_secret_fixed';
+
+-- Also records the SECURITY DEFINER function trace from the security audit
+-- follow-up: all three flagged functions confirmed genuinely safe on full
+-- review, closing that half of the earlier PARTIAL finding.
+update public.capability_registry
+set status_notes = 'UPDATE 2026-09-02, same pass: traced all three SECURITY DEFINER functions fully by reading their real SQL bodies (pg_get_functiondef), not just their advisor-flagged signatures. All three are genuinely safe, correctly designed: (1) check_and_increment_audit_rate_limit is intentionally callable pre-auth -- it is the public, unauthenticated audit-intake flow''s own rate limiter, keyed only by an already-hashed IP (never a raw IP), touching only its own isolated rate-limit table -- exactly the kind of function that MUST be anon-callable by design. (2) claim_social_agent_action and (3) claim_social_agent_action_tenant both have real, explicit authorization checks INSIDE the function body (current_user = service_role OR auth.uid() matches the caller-supplied owner_id / real tenant_members membership check), are hard-restricted to exactly two status transitions (EXECUTING, REJECTED -- any other value raises an exception), and only ever touch rows already in PROPOSED status (SUPERSEDED/SUCCEEDED/FAILED/EXECUTING rows are structurally unreachable through these RPCs). Supabase''s advisor flags ANY SECURITY DEFINER function reachable by anon/authenticated as worth reviewing -- a correct, blanket heuristic, not itself proof of a defect; on actual review all three pass. This half of the finding is now CLOSED, not just left open. Only remaining open item: Leaked Password Protection is still disabled in Supabase Auth -- still genuinely blocked on dashboard access no available tool can provide (Authentication -> Policies -> Leaked Password Protection).',
+    last_verified_at = now(),
+    last_verified_by = 'claude_session_2026-09-02'
+where capability_key = 'capability:security_audit_pass';

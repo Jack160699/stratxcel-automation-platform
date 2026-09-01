@@ -1,5 +1,39 @@
 # WhatsApp AI Agency — Gap Audit
 
+## Update 36 — a self-correction: Update 35's own fix broke the real production build, caught and fixed properly before it reached production
+
+Reporting this honestly rather than quietly re-shipping and moving on. Update 35's fix
+resolved `PreviewManager`'s HMAC secret **eagerly**, inside the constructor. That
+constructor runs at **module-import time** for the module-level `previewManager`
+singleton — and that module import happens transitively during a real Vercel production
+build (page-data collection for `/api/social/copilot/whatsapp-web-action`, which pulls it
+in via `packages/workforce-core/src/adapters/website-generate.ts`), which sets
+`NODE_ENV=production`, even though nothing on that path ever actually calls
+`generate`/`verifySignedToken`. The eager throw broke the production build outright — a
+strictly worse outcome than the hardcoded-secret bug it was meant to fix.
+
+**Confirmed via the real, failed Vercel deployment's build logs**, not assumed: production
+was left stuck on the prior commit while this was unresolved. Caught properly by actually
+running `NODE_ENV=production npm run build` locally before re-shipping — `tsc --noEmit`
+alone could never have caught this, since it's a runtime module-evaluation failure, not a
+type error.
+
+Fixed with lazy resolution: the secret is now resolved by a private getter, on first real
+use of `generateSignedToken`/`verifySignedToken`, never at construction/import time. Same
+fail-closed guarantee preserved exactly (a genuine attempt to sign/verify in production
+with no configured secret still throws) without punishing mere module evaluation. New
+regression test added specifically reproducing this exact incident. Real production build
+re-verified locally (exit 0) before shipping the corrected fix.
+
+Also closed, same pass: traced all three `SECURITY DEFINER` functions flagged by the
+earlier security audit by reading their real SQL bodies, not just their advisor-flagged
+signatures — all three confirmed genuinely safe and correctly designed (a public,
+intentionally pre-auth rate limiter scoped to its own table; two atomic-claim functions
+with real, explicit `auth.uid()`/tenant-membership authorization checks, hard-restricted
+to exactly two status transitions on `PROPOSED`-only rows). Closes that half of
+`capability:security_audit_pass`; only Leaked Password Protection (needs Supabase
+dashboard access) remains open.
+
 ## Update 35 — a real security anti-pattern found and fixed proactively, before it could ever become live
 
 While investigating a signed-URL mechanism to bridge the paid-audit PDF report
