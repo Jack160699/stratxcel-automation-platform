@@ -1,5 +1,36 @@
 # WhatsApp AI Agency — Gap Audit
 
+## Update 9 — three more real engines bridged (Update 8); live tests found a genuine verification gap, reported honestly not papered over
+
+Capability audit (Master Brain brief, section 22) found a rich, real package inventory
+(`audit-engine`, `revenue-ops`, `creative-studio`, `hermes`, `websites-and-domains`,
+`workforce-core`, `trust-department`, `brand-brain`, `byok` — not all fully traced this pass).
+Bridged three of the clearest, safest wins into the agent tool registry (commit `bcfd42b`):
+`check_growth_status` (`listSearchState` — same data as the Search Growth dashboard),
+`check_connections` (`loadIntegrationsStatusData` — same data as the Integrations page), and
+`generate_image` (`executeGenerateImageTool`, unmodified — real budget gate, real job
+persistence).
+
+**All three live-tested against the real Boss number:**
+- "Check our SEO status" → real, correct opportunity data (`tool_calls_count: 1`), delivered.
+- "Check our Google Business profile status" → real, correct, honest "setup required" state
+  (matches Updates 26-30's own findings for this exact tenant) — not fabricated as connected.
+- "Create one simple test image" → correctly required a CONFIRM code first (WhatsApp
+  `low_mutation` policy working as designed), then on CONFIRM, a **real** `image_generation_jobs`
+  row was created and a **real** OpenAI Images API call was made — which failed with a real,
+  external `HTTP 429` (rate limit), not a bug in this code.
+
+**Real defect found, not hidden**: the WhatsApp reply after that failed job was "Done. The
+requested change was completed." — wrong. The tool's return value correctly carried
+`outcome: "FAILED"` (verified directly against the `image_generation_jobs` row), but the LLM's
+own free-text synthesis of that tool result did not accurately reflect the failure. This is
+exactly the class of problem the brief's own "Verification" section (19) warns about ("API
+success != business success... never fabricate") — found live, not theorized. Not fixed this
+pass: retrofitting reliable mutation-outcome verification into `formatAgentReply`/the
+orchestrator's synthesis step is real, separate, careful work (prompt-reliability engineering
+needs iteration to trust, and each iteration here costs a real provider call) — flagged as
+`BROKEN` rather than quietly patched and hoped-fixed.
+
 ## Update 7 — outbound outreach (Updates 4-5) and real public-web research (Update 6): both live-verified against the real Boss number
 
 **Outbound outreach** (commits `0badb18`, `356035e`): `send_whatsapp_message_to_contact` admin
