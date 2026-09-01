@@ -4,7 +4,16 @@ Every item below genuinely needs owner access, a dashboard login, OTP/consent, K
 
 No secret values are included anywhere in this document — only variable names, dashboard locations, and formats.
 
-**🔴 M14 is high priority and currently affecting real production behavior — see below.**
+**Status update (2026-09-02):** the "M14 is high priority and currently affecting real
+production behavior" banner that used to sit here is now stale and has been removed — M14
+was resolved 2026-08-31 (`search_cms_connections`/`search_strategy_states` both
+re-verified present in production this session, not just trusted from the "✅ DONE"
+label). M8/M9/M11's Hermes-runtime status (Docker/inference-provider/host decision, all
+still open) and M12 (Vercel API token) are, as of this session's own re-verification,
+still genuinely open in exactly the way described below — `hermesMode: disabled` in
+production confirms M9/M11 specifically. See `docs/discovery/WHATSAPP_AI_AGENCY_GAP_AUDIT.md`
+and `LIVE_SYSTEM_MAP.md`'s own 2026-09-02 addendum for what has been built since this
+file's items were last individually updated.
 
 **Status update (2026-08-03, later the same day):** M10 (migrations) is now done — see that item below. The foundation dashboard has been merged to `main` and deployed to production, and a Phase 1 unified-shell/client-switcher change has since shipped on top of it (see `LIVE_SYSTEM_MAP.md`). WhatsApp, Razorpay, Hermes, Google Drive, and BYOK remain exactly as described below — none of that changed. M11 (worker hosting) is still open.
 
