@@ -56,11 +56,14 @@
  *   Operates only on an action a human already asked to see via
  *   check_growth_status -- never invents a mutation from free text.
  */
-import { listSearchState, executeSearchAction, createFixtureWordPressProvider, createStratxcelNativeCMSProvider, createVercelCMSProvider, resolveVercelWriteCapability } from "@stratxcel/search-discovery";
+import { listSearchState, executeSearchAction, createFixtureWordPressProvider, createStratxcelNativeCMSProvider, createVercelCMSProvider, resolveVercelWriteCapability, runSearchAnalysis, resolveGoogleProviderStates, stableFingerprint, CRAWL_LIMITS, normalizeWebsiteInput, type RuntimePlan, type ProviderConnection } from "@stratxcel/search-discovery";
 import { loadIntegrationsStatusData } from "../connectors/load-integrations-data";
 import { executeGenerateImageTool } from "../social/agent/generate-image-tool";
 import type { AgentTenantContext } from "../social/agent-tenant-types";
 import type { AgentTool } from "@stratxcel/agent-core";
+import { isPlanTier } from "@stratxcel/payments-and-wallet";
+import { createDevEncryptedVault } from "@stratxcel/byok";
+import { interpretGrowthAnalysisOutcome } from "./growth-analysis-outcome";
 
 /** Staff/Boss turns have no tenantId (platform staff aren't tenant-scoped);
  *  an explicit args.tenantId (e.g. a client's real id from a prior
@@ -92,6 +95,94 @@ export const GROWTH_MEDIA_TOOLS: AgentTool[] = [
       const state = await listSearchState(ctx.supabase as never, tenantId);
       return { tenantId, ...state };
     },
+  },
+  {
+    schema: {
+      name: "run_growth_analysis",
+      description: "Trigger a REAL fresh SEO/AEO/GEO analysis run on a tenant's website -- a real, SSRF-protected crawl of the site's own public pages, real technical-SEO analysis, real competitor discovery, and (when Google Search Console is connected) real query measurement -- producing new opportunities/recommendations exactly like the scheduled/manual dashboard run does. Use for 'run a fresh SEO scan', 'analyze our site again', 'check for new SEO issues' -- NOT for reading already-computed results (use check_growth_status for that). Rate-limited to 3 runs per 15 minutes per tenant, same as the dashboard.",
+      parameters: {
+        type: "object",
+        properties: {
+          propertyUrl: { type: "string", description: "The website to analyze, e.g. stratxcel.in or https://stratxcel.in. Bare domains are fine." },
+          propertyName: { type: "string", description: "Optional display name for this property. Defaults to the domain." },
+          tenantId: { type: "string", description: "Optional -- a specific client's tenant id. Defaults to Stratxcel's own." },
+        },
+        required: ["propertyUrl"],
+      },
+    },
+    mutating: true,
+    // A real crawl+analysis of the tenant's OWN public site, rate-limited,
+    // never touching the live website (that's execute_growth_action's job,
+    // gated separately). Mirrors app/api/platform/search/run/route.ts's
+    // exact logic (same rate-limit, same idempotency-key derivation, same
+    // Google-provider resolution with the same fail-degraded-not-abort
+    // handling) rather than reinventing it -- only replaces that route's
+    // cookie-scoped requireTenantContext()/RBAC check with agent-core's own
+    // equivalent, same reasoning as execute_growth_action.
+    risk: "low_mutation",
+    requiredPermission: "agent:mutate:website",
+    async execute(ctx, args) {
+      const tenantId = resolveTenantId(ctx, args);
+      if (!tenantId) return { outcome: "FAILED", reason: "no_tenant_resolved" };
+      const rawUrl = typeof args.propertyUrl === "string" ? args.propertyUrl : "";
+      const normalizedSite = normalizeWebsiteInput(rawUrl);
+      if (!normalizedSite.ok) return { outcome: "FAILED", reason: `invalid_property_url:${normalizedSite.reason}` };
+      const propertyUrl = normalizedSite.url;
+
+      const since = new Date(Date.now() - 15 * 60_000).toISOString();
+      const { count } = await ctx.supabase
+        .from("search_analysis_runs")
+        .select("id", { count: "exact", head: true })
+        .eq("tenant_id", tenantId)
+        .gte("created_at", since);
+      if ((count ?? 0) >= 3) return { outcome: "RATE_LIMITED", reason: "3 runs already started in the last 15 minutes -- try again shortly." };
+
+      const { data: subscription } = await ctx.supabase
+        .from("subscriptions")
+        .select("plan_tier")
+        .eq("tenant_id", tenantId)
+        .eq("status", "active")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const tier = (subscription as { plan_tier?: string } | null)?.plan_tier;
+      const plan: RuntimePlan = isPlanTier(tier) && tier in CRAWL_LIMITS ? (tier as RuntimePlan) : "free";
+
+      const bucket = new Date().toISOString().slice(0, 16).replace(/\d$/, "0");
+      const idempotencyKey = stableFingerprint([tenantId, propertyUrl, "manual", bucket]);
+
+      let googleConnections: ProviderConnection[];
+      let googleSnapshots: Record<string, { dimensions: unknown; values: unknown; periodStart?: string; periodEnd?: string }>;
+      try {
+        const vault = createDevEncryptedVault(ctx.supabase as never);
+        const resolved = await resolveGoogleProviderStates({ db: ctx.supabase as never, vault, tenantId });
+        googleConnections = resolved.connections;
+        googleSnapshots = resolved.snapshots;
+      } catch (err) {
+        const reason = err instanceof Error ? err.message : "Google provider resolution failed.";
+        googleConnections = [
+          { provider: "search_console", state: "error", reason },
+          { provider: "ga4", state: "error", reason },
+        ];
+        googleSnapshots = {};
+      }
+      const providerStates: ProviderConnection[] = [
+        ...googleConnections,
+        { provider: "google_business_profile", state: "configuration_required", reason: "Owner connection required." },
+        { provider: "meta", state: "permission_required", reason: "Reporting permission required." },
+      ];
+
+      const propertyName = (typeof args.propertyName === "string" && args.propertyName.trim().slice(0, 120)) || normalizedSite.hostname;
+      const result = await runSearchAnalysis(
+        ctx.supabase as never,
+        { tenantId, actorUserId: ctx.principal.authUserId, propertyUrl, propertyName, plan, runType: "manual", triggerSource: "manual", idempotencyKey },
+        { providerStates, providerSnapshots: googleSnapshots }
+      );
+      return { tenantId, propertyUrl, duplicate: result.duplicate, run: result.run };
+    },
+    // VERIFICATION INTEGRITY, applied from day one (Update 10's discipline)
+    // -- see interpretGrowthAnalysisOutcome's own header comment above.
+    interpretOutcome: interpretGrowthAnalysisOutcome,
   },
   {
     schema: {
