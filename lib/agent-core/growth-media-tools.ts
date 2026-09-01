@@ -25,6 +25,17 @@
  *   creation/editing/deployment mutation surface). A read-only status
  *   check is the safe, scoped slice of it: zero new logic, matches the
  *   check_growth_status/check_connections pattern exactly.
+ * - check_audit_status: the exact same public_audit_requests read as
+ *   app/api/platform/audit/route.ts's GET handler (list branch), scoped by
+ *   tenantId instead of a cookie session since a service-role agent call
+ *   has none -- same table, same real job_status/progress_percentage
+ *   pipeline packages/audit-engine's runAutomaticAuditGeneration writes
+ *   into. NOT the same thing as the pre-existing inspect_audit_events tool
+ *   (agent:read:audit) -- that reads the platform's own internal
+ *   security/action audit_events log, a completely different table and
+ *   concept that happens to share the word "audit"; this one is the
+ *   customer-facing prospect/website Audit product, so it gets its own
+ *   permission (agent:read:audit_reports) to avoid conflating the two.
  * - generate_image: lib/social/agent/generate-image-tool.ts's
  *   executeGenerateImageTool, UNMODIFIED -- real budget gate, real
  *   idempotent job persistence, real brand-context loading. This function's
@@ -123,6 +134,31 @@ export const GROWTH_MEDIA_TOOLS: AgentTool[] = [
         .order("created_at", { ascending: false });
       if (error) return { available: false, reason: error.message };
       return { tenantId, sites: sites ?? [] };
+    },
+  },
+  {
+    schema: {
+      name: "check_audit_status",
+      description: "Real, currently-stored prospect/website Audit requests for a tenant -- business name, website URL, status, job_status, progress_percentage, requested product, and timestamps. The exact same public_audit_requests data the Audit dashboard list shows. Use for 'check our audit status', 'is the audit done', 'what's the progress on the audit'. Read-only.",
+      parameters: {
+        type: "object",
+        properties: { tenantId: { type: "string", description: "Optional -- a specific client's tenant id. Defaults to Stratxcel's own." } },
+      },
+    },
+    mutating: false,
+    risk: "read",
+    requiredPermission: "agent:read:audit_reports",
+    async execute(ctx, args) {
+      const tenantId = resolveTenantId(ctx, args);
+      if (!tenantId) return { available: false, reason: "no_tenant_resolved" };
+      const { data: audits, error } = await ctx.supabase
+        .from("public_audit_requests")
+        .select("id, business_name, website_url, status, job_status, progress_percentage, requested_product, submitted_at, started_at, completed_at, error_message")
+        .eq("tenant_id", tenantId)
+        .order("submitted_at", { ascending: false })
+        .limit(20);
+      if (error) return { available: false, reason: error.message };
+      return { tenantId, audits: audits ?? [] };
     },
   },
   {

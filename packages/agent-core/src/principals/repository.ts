@@ -42,6 +42,12 @@ const STAFF_ROLE_PERMISSIONS: Record<string, readonly string[]> = {
     // agent:mutate:website so a future narrower staff role could see status
     // without being able to execute fixes.
     "agent:read:website",
+    // Real, read-only public_audit_requests status (check_audit_status) --
+    // the customer-facing prospect/website Audit product. Deliberately its
+    // own permission, distinct from the pre-existing agent:read:audit
+    // (which gates inspect_audit_events, the platform's internal
+    // security/action log) -- same English word, unrelated data.
+    "agent:read:audit_reports",
   ],
   platform_admin: [
     "agent:read:clients", "agent:read:leads", "agent:read:conversations", "agent:read:missions",
@@ -54,6 +60,7 @@ const STAFF_ROLE_PERMISSIONS: Record<string, readonly string[]> = {
     "agent:read:capabilities",
     "agent:mutate:website",
     "agent:read:website",
+    "agent:read:audit_reports",
   ],
   audit_reviewer: ["agent:read:audit", "agent:read:clients", "agent:read:leads", "agent:read:memory", "agent:mutate:memory"],
   finance_reviewer: ["agent:read:finance", "agent:read:clients", "agent:read:memory", "agent:mutate:memory"],
