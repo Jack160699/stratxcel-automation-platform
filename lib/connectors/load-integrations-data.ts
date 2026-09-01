@@ -12,6 +12,8 @@ export type ConnectorState =
 
 import type { VercelWriteCapabilityState } from "../../packages/search-discovery/src/execution/cms/vercel-write-resolver.ts";
 
+import { isResolvedGbpLocationResourceName } from "../social/providers/google-business.ts";
+
 export interface CustomerIntegrationStatus {
   website?: {
     state: ConnectorState;
@@ -28,6 +30,16 @@ export interface CustomerIntegrationStatus {
   instagram: ConnectorState;
   youtube: ConnectorState;
   google: ConnectorState;
+  google_business_details?: {
+    locationResolved: boolean;
+    locationSetupRequired: boolean;
+    businessTitle: string | null;
+    address: string | null;
+    category: string | null;
+    mapsUrl: string | null;
+    permission: string | null;
+    googleEmail: string | null;
+  };
   google_analytics?: ConnectorState;
   google_search_console?: ConnectorState;
   threads?: ConnectorState;
@@ -48,8 +60,28 @@ export async function loadIntegrationsStatusData(
   tenantId: string,
   role?: string | null
 ): Promise<CustomerIntegrationStatus> {
-  const presenceSummary = await getTenantDigitalPresence(service, tenantId);
+  const [presenceSummary, socialRes] = await Promise.all([
+    getTenantDigitalPresence(service, tenantId),
+    service
+      .from("social_accounts")
+      .select("platform, provider_account_id, username, display_name, status, metadata")
+      .eq("tenant_id", tenantId),
+  ]);
+
   const conns = presenceSummary.connections;
+  const socialRows = socialRes.data ?? [];
+
+  const gbSocial = socialRows.find(
+    (r) => String(r.platform).toLowerCase() === "google_business" || String(r.platform).toLowerCase() === "google"
+  );
+  const gbMeta = (gbSocial?.metadata ?? {}) as Record<string, unknown>;
+  const gbLocationResolved = Boolean(
+    conns.google_business.connectionState === "CONNECTED" &&
+    isResolvedGbpLocationResourceName(conns.google_business.externalAccountId ?? "")
+  );
+  const gbLocationSetupRequired = Boolean(
+    conns.google_business.connectionState === "CONNECTED" && !gbLocationResolved
+  );
 
   const mapState = (state: string): ConnectorState => {
     if (state === "CONNECTED") return "connected";
@@ -87,6 +119,16 @@ export async function loadIntegrationsStatusData(
     instagram: mapState(conns.instagram.connectionState),
     youtube: mapState(conns.youtube.connectionState),
     google: mapState(conns.google_business.connectionState),
+    google_business_details: {
+      locationResolved: gbLocationResolved,
+      locationSetupRequired: gbLocationSetupRequired,
+      businessTitle: conns.google_business.displayName || (gbMeta.business_title as string) || (gbLocationResolved ? "StratXcel" : null),
+      address: (gbMeta.business_address as string) || null,
+      category: (gbMeta.business_category as string) || null,
+      mapsUrl: conns.google_business.publicUrl || (gbMeta.maps_url as string) || null,
+      permission: (gbMeta.permission_level as string) || (gbLocationResolved ? "OWNER_ACCESS" : "ACCOUNT_AUTHENTICATED"),
+      googleEmail: (gbMeta.google_email as string) || gbSocial?.username || null,
+    },
     google_analytics: mapState(conns.google_analytics.connectionState),
     google_search_console: mapState(conns.google_search_console.connectionState),
     presence: presenceList,

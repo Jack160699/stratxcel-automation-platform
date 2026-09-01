@@ -297,6 +297,7 @@ export async function GET(
             accessToken: result.accessToken,
             refreshToken: result.refreshToken,
             expiresInSeconds: result.expiresInSeconds,
+            metadata: result.metadata,
           });
 
           if (provider === "google" || provider === "google_business") {
@@ -403,6 +404,7 @@ export async function GET(
             accessToken: result.accessToken,
             refreshToken: result.refreshToken,
             expiresInSeconds: result.expiresInSeconds,
+            metadata: result.metadata,
           });
         } catch (preTenantErr) {
           // Non-fatal: the onboarding_oauth_connections metadata write below
@@ -509,6 +511,7 @@ export async function GET(
       accessToken: result.accessToken,
       refreshToken: result.refreshToken ?? null,
       expiresInSeconds: result.expiresInSeconds ?? null,
+      metadata: result.metadata,
     });
 
     await recordAudit({

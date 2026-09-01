@@ -43,8 +43,71 @@ const GOOGLE_USERINFO_ENDPOINT = "https://www.googleapis.com/oauth2/v2/userinfo"
  * function makes the distinction checkable and testable instead of
  * silently indistinguishable from a healthy connection.
  */
+export interface GbpAccount {
+  name: string; // e.g. "accounts/1234567890"
+  accountName: string; // e.g. "My Business Account"
+  type?: "PERSONAL" | "LOCATION_GROUP" | "USER_GROUP" | "ORGANIZATION" | string;
+  role?: "PRIMARY_OWNER" | "OWNER" | "MANAGER" | "SITE_MANAGER" | string;
+  verificationState?: "VERIFIED" | "UNVERIFIED" | "VETTED_PARTNER" | string;
+}
+
+export interface GbpLocation {
+  name: string; // e.g. "locations/987654321" or "accounts/1234567890/locations/987654321"
+  title: string; // business title, e.g. "StratXcel"
+  storefrontAddress?: {
+    addressLines?: string[];
+    locality?: string;
+    administrativeArea?: string;
+    postalCode?: string;
+    regionCode?: string;
+  };
+  websiteUri?: string;
+  categories?: {
+    primaryCategory?: { name?: string; displayName?: string };
+    additionalCategories?: Array<{ name?: string; displayName?: string }>;
+  };
+  phoneNumbers?: {
+    primaryPhone?: string;
+    additionalPhones?: string[];
+  };
+  metadata?: {
+    mapsUri?: string;
+    placeId?: string;
+    hasVoiceOfMerchant?: boolean;
+    canDelete?: boolean;
+    duplicateLocation?: boolean;
+  };
+  profile?: {
+    description?: string;
+  };
+  accountName?: string; // parent account name, e.g. "accounts/1234567890"
+  accountRole?: string; // role in account, e.g. "OWNER" | "MANAGER"
+  permissionLevel?: "OWNER_ACCESS" | "MANAGER_ACCESS" | "READ_ONLY";
+}
+
+/**
+ * Normalizes location resource names to canonical format.
+ * v4 APIs (Reviews, Local Posts) require `accounts/{accountId}/locations/{locationId}`.
+ * v1 Business Information API accepts both `accounts/{accountId}/locations/{locationId}` and `locations/{locationId}`.
+ */
+export function getCanonicalGbpLocationResourceName(accountName?: string, locationName?: string): string {
+  if (!locationName) return "";
+  if (locationName.startsWith("accounts/")) return locationName;
+  if (accountName && accountName.startsWith("accounts/")) {
+    return `${accountName}/${locationName.replace(/^\/+/, "")}`;
+  }
+  return locationName;
+}
+
+/**
+ * Classifies whether a stored `provider_account_id` for a Google Business
+ * connection is a real, resolved location resource name
+ * ("accounts/{id}/locations/{id}" or "locations/{id}").
+ * Rejects bare numeric user IDs (e.g. 21-digit Google account ID), bare accounts without locations, or empty strings.
+ */
 export function isResolvedGbpLocationResourceName(id: string): boolean {
-  return /^accounts\/[^/]+\/locations\/[^/]+$/.test(id);
+  if (!id) return false;
+  return /^(accounts\/[^/]+\/)?locations\/[^/]+$/.test(id);
 }
 
 function getClientId(): string {
@@ -66,6 +129,247 @@ function getClientSecret(): string {
   return secret;
 }
 
+/**
+ * Discovers all accessible Google Business Profile accounts for an access token.
+ */
+export async function discoverGoogleBusinessAccounts(
+  accessToken: string,
+  fetcher: typeof fetch = fetch
+): Promise<GbpAccount[]> {
+  const accounts: GbpAccount[] = [];
+  let pageToken: string | undefined;
+
+  try {
+    do {
+      const url = new URL("https://mybusinessaccountmanagement.googleapis.com/v1/accounts");
+      if (pageToken) url.searchParams.set("pageToken", pageToken);
+
+      const res = await fetcher(url.toString(), {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+
+      if (!res.ok) {
+        console.warn("discoverGoogleBusinessAccounts: account management API returned non-ok status", {
+          status: res.status,
+        });
+        break;
+      }
+
+      const data = (await res.json()) as {
+        accounts?: Array<{
+          name?: string;
+          accountName?: string;
+          type?: string;
+          role?: string;
+          verificationState?: string;
+        }>;
+        nextPageToken?: string;
+      };
+
+      for (const acct of data.accounts || []) {
+        if (acct.name) {
+          accounts.push({
+            name: acct.name,
+            accountName: acct.accountName || acct.name,
+            type: acct.type,
+            role: acct.role,
+            verificationState: acct.verificationState,
+          });
+        }
+      }
+
+      pageToken = data.nextPageToken;
+    } while (pageToken);
+  } catch (err) {
+    console.warn("discoverGoogleBusinessAccounts threw:", err);
+  }
+
+  return accounts;
+}
+
+/**
+ * Discovers all accessible locations for a given Google Business account.
+ */
+export async function discoverGoogleBusinessLocationsForAccount(
+  accessToken: string,
+  accountName: string,
+  accountRole?: string,
+  fetcher: typeof fetch = fetch
+): Promise<GbpLocation[]> {
+  const locations: GbpLocation[] = [];
+  let pageToken: string | undefined;
+
+  const roleUpper = (accountRole || "").toUpperCase();
+  const permissionLevel: "OWNER_ACCESS" | "MANAGER_ACCESS" | "READ_ONLY" =
+    roleUpper.includes("OWNER")
+      ? "OWNER_ACCESS"
+      : roleUpper.includes("MANAGER")
+      ? "MANAGER_ACCESS"
+      : "OWNER_ACCESS"; // Default for personal/primary accounts
+
+  try {
+    do {
+      const url = new URL(
+        `https://mybusinessbusinessinformation.googleapis.com/v1/${accountName}/locations`
+      );
+      url.searchParams.set(
+        "readMask",
+        "name,title,storefrontAddress,websiteUri,categories,phoneNumbers,metadata,profile"
+      );
+      if (pageToken) url.searchParams.set("pageToken", pageToken);
+
+      const res = await fetcher(url.toString(), {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+
+      if (!res.ok) {
+        console.warn("discoverGoogleBusinessLocationsForAccount: locations API non-ok", {
+          accountName,
+          status: res.status,
+        });
+        break;
+      }
+
+      const data = (await res.json()) as {
+        locations?: Array<GbpLocation>;
+        nextPageToken?: string;
+      };
+
+      for (const loc of data.locations || []) {
+        if (loc.name) {
+          locations.push({
+            ...loc,
+            accountName,
+            accountRole,
+            permissionLevel,
+          });
+        }
+      }
+
+      pageToken = data.nextPageToken;
+    } while (pageToken);
+  } catch (err) {
+    console.warn("discoverGoogleBusinessLocationsForAccount threw:", err);
+  }
+
+  return locations;
+}
+
+/**
+ * Discovers all Google Business accounts and all locations across all accounts.
+ */
+export async function discoverAllGoogleBusinessLocations(
+  accessToken: string,
+  fetcher: typeof fetch = fetch
+): Promise<{ accounts: GbpAccount[]; locations: GbpLocation[] }> {
+  const accounts = await discoverGoogleBusinessAccounts(accessToken, fetcher);
+  const allLocations: GbpLocation[] = [];
+
+  for (const account of accounts) {
+    const locs = await discoverGoogleBusinessLocationsForAccount(
+      accessToken,
+      account.name,
+      account.role,
+      fetcher
+    );
+    allLocations.push(...locs);
+  }
+
+  return { accounts, locations: allLocations };
+}
+
+/**
+ * Matches the optimal Google Business location using real verified evidence:
+ * 1. Website URI hostname match against the tenant canonical website
+ * 2. Business title / Brand name match
+ * 3. Single available location auto-match
+ */
+export function matchGoogleBusinessLocation(
+  locations: GbpLocation[],
+  context: {
+    websiteUrl?: string | null;
+    brandName?: string | null;
+    address?: string | null;
+    phone?: string | null;
+  }
+): {
+  matchedLocation: GbpLocation | null;
+  matchConfidence: "HIGH" | "MEDIUM" | "SINGLE_LOCATION" | "NONE";
+  reason: string;
+} {
+  if (!locations || locations.length === 0) {
+    return {
+      matchedLocation: null,
+      matchConfidence: "NONE",
+      reason: "No Google Business Profile locations discovered for this Google account.",
+    };
+  }
+
+  // 1. Match by website URI (highest confidence signal)
+  let targetHostname = "";
+  if (context.websiteUrl) {
+    try {
+      const u = new URL(
+        context.websiteUrl.startsWith("http") ? context.websiteUrl : `https://${context.websiteUrl}`
+      );
+      targetHostname = u.hostname.toLowerCase().replace(/^www\./, "");
+    } catch {
+      targetHostname = context.websiteUrl.toLowerCase().replace(/^www\./, "");
+    }
+  }
+
+  if (targetHostname) {
+    for (const loc of locations) {
+      if (loc.websiteUri) {
+        try {
+          const locHost = new URL(
+            loc.websiteUri.startsWith("http") ? loc.websiteUri : `https://${loc.websiteUri}`
+          ).hostname.toLowerCase().replace(/^www\./, "");
+          if (locHost === targetHostname) {
+            return {
+              matchedLocation: loc,
+              matchConfidence: "HIGH",
+              reason: `Matched by website domain: ${locHost} matches ${targetHostname}`,
+            };
+          }
+        } catch {
+          // Ignore invalid URL in location
+        }
+      }
+    }
+  }
+
+  // 2. Match by Brand / Business Title
+  const targetBrand = (context.brandName || "StratXcel").trim().toLowerCase();
+  if (targetBrand) {
+    for (const loc of locations) {
+      const titleLower = (loc.title || "").trim().toLowerCase();
+      if (titleLower === targetBrand || titleLower.includes(targetBrand) || targetBrand.includes(titleLower)) {
+        return {
+          matchedLocation: loc,
+          matchConfidence: "MEDIUM",
+          reason: `Matched by business name: "${loc.title}" matches "${context.brandName || "StratXcel"}"`,
+        };
+      }
+    }
+  }
+
+  // 3. Single location fallback (if only 1 location exists across all accounts)
+  if (locations.length === 1) {
+    return {
+      matchedLocation: locations[0],
+      matchConfidence: "SINGLE_LOCATION",
+      reason: `Auto-selected sole accessible Business Profile location: "${locations[0].title}"`,
+    };
+  }
+
+  return {
+    matchedLocation: null,
+    matchConfidence: "NONE",
+    reason: `Found ${locations.length} business locations, but none definitively matched website (${context.websiteUrl || "none"}) or brand (${context.brandName || "none"}). Manual location selection required.`,
+  };
+}
+
 export const googleBusinessProvider: SocialProvider = {
   name: "google_business",
   requiredScopes: [
@@ -84,6 +388,7 @@ export const googleBusinessProvider: SocialProvider = {
       scope: googleBusinessProvider.requiredScopes.join(" "),
       access_type: "offline",
       prompt: "select_account",
+      include_granted_scopes: "true",
       state,
     });
     return `${GOOGLE_AUTH_ENDPOINT}?${params.toString()}`;
@@ -135,86 +440,81 @@ export const googleBusinessProvider: SocialProvider = {
       // Non-blocking fallback
     }
 
-    // Discover accessible Google Business Profile accounts and locations.
-    // Found live during E2E testing: every catch/non-ok branch here used to
-    // discard the real reason silently, so a connection that fell all the
-    // way back to the bare userinfo id as externalAccountId (unusable for
-    // any later Posts/Reviews/profile call, which all need a real
-    // accounts/{id}/locations/{id} resource name) left zero trace of why --
-    // no GBP account for this identity, a scope problem, or an API-access
-    // gap all looked identical afterward. Same principle already applied to
-    // resolveAccessToken's error handling elsewhere in this codebase — log
-    // the real (non-secret) failure reason instead of swallowing it.
-    let locationDisplayName = profileData.name || profileData.email || "Google Business Profile";
-    let locationExternalId = profileData.id || profileData.email || "google_business_account";
-    let gbpAccountFound = false;
-    let gbpLocationFound = false;
+    // Discover accessible Google Business Profile accounts and locations across all accounts
+    const { accounts, locations } = await discoverAllGoogleBusinessLocations(tokenData.access_token);
 
-    try {
-      const gbpAccountsRes = await fetch(
-        "https://mybusinessaccountmanagement.googleapis.com/v1/accounts",
-        { headers: { Authorization: `Bearer ${tokenData.access_token}` } }
-      );
-      if (gbpAccountsRes.ok) {
-        const gbpData = (await gbpAccountsRes.json()) as {
-          accounts?: Array<{ name?: string; accountName?: string; type?: string; verificationState?: string }>;
-        };
-        const accounts = gbpData.accounts || [];
-        if (accounts.length > 0) {
-          gbpAccountFound = true;
-          const account = accounts[0];
-          if (account.accountName) locationDisplayName = account.accountName;
-          if (account.name) {
-            locationExternalId = account.name;
-            try {
-              const locationsRes = await fetch(
-                `https://mybusinessbusinessinformation.googleapis.com/v1/${account.name}/locations?readMask=name,title,storefrontAddress,websiteUri`,
-                { headers: { Authorization: `Bearer ${tokenData.access_token}` } }
-              );
-              if (locationsRes.ok) {
-                const locData = (await locationsRes.json()) as {
-                  locations?: Array<{ name?: string; title?: string }>;
-                };
-                if (locData.locations && locData.locations.length > 0) {
-                  gbpLocationFound = true;
-                  const loc = locData.locations[0];
-                  if (loc.title) locationDisplayName = loc.title;
-                  if (loc.name) locationExternalId = loc.name;
-                } else {
-                  console.warn("google-business OAuth: account has zero locations, falling back to the bare account id", { account: account.name });
-                }
-              } else {
-                console.warn("google-business OAuth: location discovery failed, falling back to the bare account id", {
-                  account: account.name,
-                  status: locationsRes.status,
-                  body: (await locationsRes.text().catch(() => "")).slice(0, 500),
-                });
-              }
-            } catch (locErr) {
-              console.warn("google-business OAuth: location discovery threw, falling back to the bare account id", {
-                account: account.name,
-                error: locErr instanceof Error ? locErr.message : String(locErr),
-              });
-            }
-          }
-        } else {
-          console.warn("google-business OAuth: zero Business Profile accounts accessible for this identity — falling back to the bare userinfo id, which cannot be used for Posts/Reviews/profile calls", {
-            username: profileData.email,
-          });
-        }
-      } else {
-        console.warn("google-business OAuth: account discovery failed, falling back to the bare userinfo id", {
-          status: gbpAccountsRes.status,
-          body: (await gbpAccountsRes.text().catch(() => "")).slice(0, 500),
-        });
-      }
-    } catch (acctErr) {
-      console.warn("google-business OAuth: account discovery threw, falling back to the bare userinfo id", {
-        error: acctErr instanceof Error ? acctErr.message : String(acctErr),
-      });
+    // Match against the StratXcel business context
+    const matchResult = matchGoogleBusinessLocation(locations, {
+      websiteUrl: "https://www.stratxcel.in",
+      brandName: "StratXcel",
+    });
+
+    const matched = matchResult.matchedLocation;
+    let locationExternalId: string;
+    let locationDisplayName: string;
+    let locationUsername: string;
+
+    if (matched) {
+      locationExternalId = getCanonicalGbpLocationResourceName(matched.accountName, matched.name);
+      locationDisplayName = matched.title || "StratXcel";
+      locationUsername = matched.title || profileData.email || profileData.name || "StratXcel";
+    } else {
+      locationExternalId = profileData.id || profileData.email || "google_business_account";
+      locationDisplayName = profileData.name || profileData.email || "Google Business Profile";
+      locationUsername = profileData.email || profileData.name || "google_business_user";
     }
 
     const grantedScopes = tokenData.scope ? tokenData.scope.split(" ") : googleBusinessProvider.requiredScopes;
+
+    const formattedAddress = matched?.storefrontAddress
+      ? [
+          matched.storefrontAddress.addressLines?.join(", "),
+          matched.storefrontAddress.locality,
+          matched.storefrontAddress.administrativeArea,
+          matched.storefrontAddress.postalCode,
+          matched.storefrontAddress.regionCode,
+        ]
+          .filter(Boolean)
+          .join(", ")
+      : null;
+
+    const metadata: Record<string, unknown> = {
+      google_user_id: profileData.id ?? null,
+      google_email: profileData.email ?? null,
+      google_name: profileData.name ?? null,
+      location_resolved: Boolean(matched),
+      location_resource_name: matched ? locationExternalId : null,
+      location_name: matched?.name ?? null,
+      account_name: matched?.accountName ?? (accounts[0]?.name ?? null),
+      business_title: matched?.title ?? null,
+      business_category: matched?.categories?.primaryCategory?.displayName ?? null,
+      business_address: formattedAddress,
+      business_website: matched?.websiteUri ?? null,
+      business_phone: matched?.phoneNumbers?.primaryPhone ?? null,
+      maps_url: matched?.metadata?.mapsUri ?? null,
+      place_id: matched?.metadata?.placeId ?? null,
+      permission_level: matched?.permissionLevel ?? (matched ? "OWNER_ACCESS" : "ACCOUNT_AUTHENTICATED"),
+      match_reason: matchResult.reason,
+      match_confidence: matchResult.matchConfidence,
+      accounts_count: accounts.length,
+      locations_count: locations.length,
+      discovered_locations: locations.map((loc) => ({
+        name: loc.name,
+        canonicalResource: getCanonicalGbpLocationResourceName(loc.accountName, loc.name),
+        title: loc.title,
+        websiteUri: loc.websiteUri,
+        accountName: loc.accountName,
+        permissionLevel: loc.permissionLevel,
+      })),
+      discovery_status: matched
+        ? "LOCATION_MATCHED"
+        : locations.length > 0
+        ? "LOCATION_SELECTION_REQUIRED"
+        : accounts.length > 0
+        ? "NO_LOCATIONS_IN_ACCOUNTS"
+        : "NO_GBP_ACCOUNTS_FOUND",
+      discovered_at: new Date().toISOString(),
+    };
 
     return {
       accessToken: tokenData.access_token,
@@ -222,9 +522,10 @@ export const googleBusinessProvider: SocialProvider = {
       expiresInSeconds: tokenData.expires_in,
       externalAccountId: locationExternalId,
       displayName: locationDisplayName,
-      username: profileData.email || profileData.name,
+      username: locationUsername,
       profilePictureUrl: profileData.picture,
       scopes: grantedScopes,
+      metadata,
     };
   },
 

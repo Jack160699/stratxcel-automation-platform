@@ -91,6 +91,7 @@ export async function upsertConnectedAccount(
     accessToken: string;
     refreshToken?: string | null;
     expiresInSeconds?: number | null;
+    metadata?: Record<string, unknown>;
   }
 ) {
   const now = new Date().toISOString();
@@ -100,7 +101,7 @@ export async function upsertConnectedAccount(
   if (input.tenantId) {
     const { data: existingTenantAccount, error: fetchErr } = await service
       .from("social_accounts")
-      .select("id")
+      .select("id, metadata")
       .eq("tenant_id", input.tenantId)
       .eq("platform", input.platform)
       .limit(1)
@@ -111,6 +112,10 @@ export async function upsertConnectedAccount(
     }
 
     if (existingTenantAccount?.id) {
+      const mergedMetadata = {
+        ...((existingTenantAccount.metadata as Record<string, unknown>) ?? {}),
+        ...(input.metadata ?? {}),
+      };
       const { data: updated, error: updateErr } = await service
         .from("social_accounts")
         .update({
@@ -122,6 +127,7 @@ export async function upsertConnectedAccount(
           permissions: input.permissions,
           status: "CONNECTED",
           token_health: "HEALTHY",
+          metadata: mergedMetadata,
           last_sync_at: now,
           updated_at: now,
         })
@@ -153,6 +159,7 @@ export async function upsertConnectedAccount(
             permissions: input.permissions,
             status: "CONNECTED",
             token_health: "HEALTHY",
+            metadata: input.metadata ?? {},
             last_sync_at: now,
             updated_at: now,
           },
@@ -177,6 +184,7 @@ export async function upsertConnectedAccount(
               permissions: input.permissions,
               status: "CONNECTED",
               token_health: "HEALTHY",
+              metadata: input.metadata ?? {},
               last_sync_at: now,
               updated_at: now,
             },
@@ -206,6 +214,7 @@ export async function upsertConnectedAccount(
             permissions: input.permissions,
             status: "CONNECTED",
             token_health: "HEALTHY",
+            metadata: input.metadata ?? {},
             last_sync_at: now,
             updated_at: now,
           },

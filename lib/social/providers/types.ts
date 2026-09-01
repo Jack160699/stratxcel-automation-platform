@@ -19,6 +19,7 @@ export interface OAuthExchangeResult {
   username?: string;
   profilePictureUrl?: string;
   scopes: string[];
+  metadata?: Record<string, unknown>;
 }
 
 export interface PublishInput {

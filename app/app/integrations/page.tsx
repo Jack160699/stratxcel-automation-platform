@@ -14,15 +14,25 @@ function ConnectionBadge({
   state,
   canConnect,
   isDiscovered,
+  isLocationSetupRequired,
 }: {
   state: ConnectorState;
   canConnect: boolean;
   isDiscovered: boolean;
+  isLocationSetupRequired?: boolean;
 }) {
   if (state === "checking") {
     return <span className="shrink-0 rounded-lg bg-sx-surface-2 px-2.5 py-1 text-[11px] font-semibold text-sx-text-subtle">Checking</span>;
   }
   if (state === "connected") {
+    if (isLocationSetupRequired) {
+      return (
+        <span className="flex shrink-0 items-center gap-1.5 rounded-lg bg-sx-warning/10 px-2.5 py-1">
+          <span className="h-[5px] w-[5px] rounded-full bg-sx-warning" />
+          <span className="text-[11px] font-semibold text-sx-warning">Location setup required</span>
+        </span>
+      );
+    }
     return (
       <span className="flex shrink-0 items-center gap-1.5 rounded-lg bg-sx-success/10 px-2.5 py-1">
         <span className="h-[5px] w-[5px] rounded-full bg-sx-success" />
@@ -170,6 +180,27 @@ export default function IntegrationsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenantId]);
 
+  // Auto-probe Google Business location if account is connected but location is unresolved
+  const probedGbpRef = useRef(false);
+  useEffect(() => {
+    if (!tenantId || !status || probedGbpRef.current) return;
+    if (status.google === "connected" && status.google_business_details?.locationSetupRequired) {
+      probedGbpRef.current = true;
+      fetch("/api/platform/social/google-business/probe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tenantId }),
+      })
+        .then((r) => r.json())
+        .then((res) => {
+          if (res.ok && res.locationResolved) {
+            reloadStatus();
+          }
+        })
+        .catch(() => {});
+    }
+  }, [tenantId, status]);
+
   const presenceFor = (key: PlatformIconKey) => status?.presence?.find((entry) => entry.key === key);
 
   const cards: Array<{
@@ -184,7 +215,11 @@ export default function IntegrationsPage() {
       key: "google_business",
       title: "Google Business",
       state: status?.google ?? "setup_required",
-      copy: "Helps customers find your shop on Google Maps & Search.",
+      copy: status?.google_business_details?.locationResolved
+        ? "Connected — Google Maps & Search profile active."
+        : status?.google === "connected" && status?.google_business_details?.locationSetupRequired
+        ? "Google account connected · Business location setup required."
+        : "Helps customers find your shop on Google Maps & Search.",
       isOAuth: true,
       tier: "primary",
     },
@@ -377,6 +412,11 @@ export default function IntegrationsPage() {
               ? `/api/social/oauth/${card.key}/connect?redirectTo=${encodeURIComponent("/app/integrations")}&tenantId=${encodeURIComponent(tenantId)}`
               : null;
 
+            const isGbp = card.key === "google_business";
+            const gbpDetails = status?.google_business_details;
+            const isLocationSetupRequired = isGbp && Boolean(gbpDetails?.locationSetupRequired);
+            const isLocationResolved = isGbp && Boolean(gbpDetails?.locationResolved);
+
             return (
               <Card key={card.key} className="p-4">
                 <div className="flex items-center gap-3">
@@ -391,10 +431,90 @@ export default function IntegrationsPage() {
                     state={!status && card.state !== "connected" ? "checking" : card.state}
                     canConnect={card.isOAuth ? canConnect : true}
                     isDiscovered={isDiscovered}
+                    isLocationSetupRequired={isLocationSetupRequired}
                   />
                 </div>
 
-                {presence?.href && (
+                {/* Google Business Profile location resolved */}
+                {isGbp && card.state === "connected" && isLocationResolved && (
+                  <div className="mt-3 rounded-sx-sm bg-sx-surface-2 p-3">
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-semibold text-sx-text">
+                        {gbpDetails?.businessTitle || "StratXcel"}
+                      </p>
+                      {gbpDetails?.permission && (
+                        <span className="rounded bg-sx-accent-muted px-2 py-0.5 text-[10px] font-semibold text-sx-accent">
+                          {gbpDetails.permission.replace(/_/g, " ")}
+                        </span>
+                      )}
+                    </div>
+                    {gbpDetails?.address && (
+                      <p className="mt-1 text-xs text-sx-text-muted">
+                        {gbpDetails.address}
+                      </p>
+                    )}
+                    {gbpDetails?.category && (
+                      <p className="mt-0.5 text-[11px] text-sx-text-subtle">
+                        Category: {gbpDetails.category}
+                      </p>
+                    )}
+                    {gbpDetails?.mapsUrl && (
+                      <a
+                        href={gbpDetails.mapsUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="mt-1 block text-xs font-medium text-sx-accent hover:underline"
+                      >
+                        View on Google Maps ↗
+                      </a>
+                    )}
+                    <p className="mt-1 text-xs text-sx-text-subtle">
+                      Authenticated Google Business Profile · Reviews & local search active
+                    </p>
+                  </div>
+                )}
+
+                {/* Google Business Profile authenticated but location setup required */}
+                {isGbp && card.state === "connected" && isLocationSetupRequired && (
+                  <div className="mt-3 rounded-sx-sm border border-sx-warning/30 bg-sx-warning/5 p-3">
+                    <p className="text-xs font-semibold text-sx-warning">
+                      ✓ Google Account Connected {gbpDetails?.googleEmail ? `(${gbpDetails.googleEmail})` : ""}
+                    </p>
+                    <p className="mt-1 text-xs text-sx-text-subtle">
+                      We couldn&apos;t find a matching Business Profile location for this account. Create or verify your business in Google Business Profile.
+                    </p>
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                      <a
+                        href="https://business.google.com/"
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex"
+                      >
+                        <Button variant="primary" size="sm">
+                          Complete Google Business setup ↗
+                        </Button>
+                      </a>
+                      {connectHref && (
+                        <a href={connectHref} className="inline-flex">
+                          <Button variant="secondary" size="sm">
+                            Reconnect with another account
+                          </Button>
+                        </a>
+                      )}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-sx-danger hover:bg-sx-danger/10"
+                        onClick={() => handleDisconnect(card.key)}
+                      >
+                        Disconnect
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Other providers presence */}
+                {!isGbp && presence?.href && (
                   <div className="mt-3 rounded-sx-sm bg-sx-surface-2 p-3">
                     <a
                       href={presence.href}
@@ -413,7 +533,7 @@ export default function IntegrationsPage() {
                   </div>
                 )}
 
-                {card.isOAuth && tenantId && (
+                {card.isOAuth && tenantId && !(isGbp && card.state === "connected" && isLocationSetupRequired) && (
                   <div className="mt-3 flex items-center justify-between gap-3 border-t border-sx-border pt-3">
                     {card.state === "connected" && (
                       <div className="flex w-full items-center justify-between gap-2">

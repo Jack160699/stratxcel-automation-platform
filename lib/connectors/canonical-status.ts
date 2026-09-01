@@ -180,7 +180,7 @@ export const getTenantDigitalPresence = cache(async function getTenantDigitalPre
       .order("created_at", { ascending: false }),
     supabase
       .from("social_accounts")
-      .select("id, platform, provider_account_id, username, display_name, status, token_health, last_sync_at, updated_at")
+      .select("id, platform, provider_account_id, username, display_name, status, token_health, metadata, last_sync_at, updated_at")
       .eq("tenant_id", tenantId),
     supabase
       .from("search_google_connections")
@@ -264,20 +264,12 @@ export const getTenantDigitalPresence = cache(async function getTenantDigitalPre
   const gbPublic = extractPublicProfile("google_business", onlineProfiles);
   const gbConnected = gbSocial && String(gbSocial.status).toUpperCase() === "CONNECTED";
   const gbError = gbSocial && String(gbSocial.status).toUpperCase() === "ERROR";
-  // Found live against the real StratXcel tenant
-  // (docs/discovery/SEARCH_GROWTH_ENGINE_GAP_AUDIT.md, Update 10): a row can
-  // be status: CONNECTED / token_health: HEALTHY with a genuinely usable
-  // OAuth token, while provider_account_id is still the OAuth-time fallback
-  // bare Google account id (GBP account/location discovery never resolved
-  // a real accounts/{id}/locations/{id} resource for this identity). Every
-  // GBP read/write call this codebase makes needs that resolved resource
-  // name -- a connection in this state cannot actually do anything GBP-
-  // specific yet, so it must not read as a healthy CONNECTED card here, the
-  // exact "Google Business is fully ready" misrepresentation this was
-  // found to produce on the real customer-facing home dashboard
-  // (app/app/page.tsx reads connectionState directly).
-  const gbLocationUnresolved = Boolean(gbConnected && !isResolvedGbpLocationResourceName(gbSocial?.provider_account_id ?? ""));
-  const gbReauth = isReauthRequired(gbSocial, hasUsableToken) || gbLocationUnresolved;
+  const gbTokenNeedsReauth = isReauthRequired(gbSocial, hasUsableToken);
+  const gbLocationResolved = Boolean(gbConnected && isResolvedGbpLocationResourceName(gbSocial?.provider_account_id ?? ""));
+  const gbLocationSetupRequired = Boolean(gbConnected && !gbLocationResolved && !gbTokenNeedsReauth);
+
+  const gbMeta = (gbSocial?.metadata ?? {}) as Record<string, unknown>;
+  const gbMapsUrl = (typeof gbMeta.maps_url === "string" ? gbMeta.maps_url : null) || gbPublic.url || null;
 
   const googleBusinessStatus: CanonicalConnectionStatus = {
     provider: "google_business",
@@ -285,15 +277,10 @@ export const getTenantDigitalPresence = cache(async function getTenantDigitalPre
     title: "Google Business",
     tenantId,
     externalAccountId: gbSocial?.provider_account_id ?? null,
-    displayName: gbSocial?.display_name || gbSocial?.username || (gbConnected ? "Google Business Profile" : null),
+    displayName: gbSocial?.display_name || gbSocial?.username || (gbLocationResolved ? "StratXcel" : gbConnected ? "Google Account Connected" : null),
     handle: gbSocial?.username ? cleanHandle(gbSocial.username) : gbPublic.handle,
-    publicUrl: gbPublic.url,
-    // gbReauth takes precedence over gbConnected: a row can be status=CONNECTED
-    // with a REVOKED/EXPIRED token_health (the provider invalidated it without
-    // the customer disconnecting) -- that must still surface as needing
-    // reconnect, not as a healthy connection. isReauthRequired() already
-    // excludes DISCONNECTED, so a deliberate disconnect still wins below.
-    connectionState: gbReauth
+    publicUrl: gbMapsUrl,
+    connectionState: gbTokenNeedsReauth
       ? "REAUTH_REQUIRED"
       : gbConnected
       ? "CONNECTED"
@@ -302,18 +289,24 @@ export const getTenantDigitalPresence = cache(async function getTenantDigitalPre
       : gbPublic.url
       ? "DISCOVERED_PUBLICLY"
       : "NOT_CONNECTED",
-    authState: gbReauth ? "EXPIRED" : gbConnected ? "AUTHENTICATED" : "UNAUTHENTICATED",
-    healthState: gbReauth ? "DEGRADED" : gbConnected ? "HEALTHY" : gbError ? "DEGRADED" : "UNKNOWN",
-    capabilities: ["local_seo", "review_sync", "business_hours"],
+    authState: gbTokenNeedsReauth ? "EXPIRED" : gbConnected ? "AUTHENTICATED" : "UNAUTHENTICATED",
+    healthState: gbTokenNeedsReauth ? "DEGRADED" : gbConnected ? "HEALTHY" : gbError ? "DEGRADED" : "UNKNOWN",
+    capabilities: gbLocationResolved
+      ? ["local_seo", "review_sync", "business_hours", "location_management", "local_posts"]
+      : gbConnected
+      ? ["google_account_authenticated"]
+      : ["local_seo", "review_sync"],
     lastSyncedAt: gbSocial?.last_sync_at ?? gbSocial?.updated_at ?? null,
-    reauthRequired: Boolean(gbReauth),
+    reauthRequired: Boolean(gbTokenNeedsReauth),
     isDiscoveredPublicly: Boolean(gbPublic.url && !gbConnected),
     isOAuth: true,
     provenance: gbConnected ? "oauth_authenticated" : gbPublic.url ? "discovered_public" : "unknown",
     error: gbError
       ? "Google Business connection error. Please reconnect."
-      : gbLocationUnresolved
-      ? "Google Business is connected, but the business location wasn't found for this Google account — reconnect to complete setup."
+      : gbTokenNeedsReauth
+      ? "Google Business access expired or was revoked. Please reconnect."
+      : gbLocationSetupRequired
+      ? "Google account is connected, but a matching Business Profile location was not found or requires setup in Google Business Profile."
       : null,
   };
 
