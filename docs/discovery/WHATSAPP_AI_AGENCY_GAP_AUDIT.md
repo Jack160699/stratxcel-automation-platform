@@ -1,5 +1,63 @@
 # WhatsApp AI Agency — Gap Audit
 
+## Update 17 — a real engine the original capability audit missed entirely: packages/workforce-core's departments/roles/capabilities registries
+
+`check_workforce_registry` exposes ~1,200 lines of real, tested, static TypeScript
+modeling that already existed and was never traced by Update 11's original capability
+audit: 25 real departments (mission, responsibilities, specialist roles, accepted/output
+artifact classes, quality gates, risk level), 85 real specialist roles across them, and 30
+real capability keys each with an explicit, never-defaulted
+`AVAILABLE`/`PLANNED`/`NOT_CONFIGURED`/`UNAVAILABLE` implementation status — the actual
+org chart and build-status catalog Hermes's mission engine is built on.
+
+Deliberately framed as complementary, not duplicate: `check_capabilities` (Postgres
+`capability_registry`, Update 11) answers "can a human reach X via WhatsApp/Admin Copilot
+right now" (tool-exposure status); this answers "does the mission engine model X as
+implemented at all" (internal engine implementation status) — a different axis for a
+different question, not a second registry for the same one. Explicitly notes `AVAILABLE`
+here describes implementation, not live autonomous execution — `hermesMode` stays
+`disabled` in production (reconfirmed live via `/api/health` this pass), so nothing here
+claims missions run unattended.
+
+Zero-cost, zero-risk, zero new business logic — `listDepartments()`/`listAllRoles()`/
+`listCapabilities()`/`countCapabilitiesByStatus()` are pure, static, in-memory reads with
+no database or network call, wrapped unmodified. Real-verified against the actual
+unmocked package before shipping: 25 departments, 85 roles, capability status counts (11
+`AVAILABLE` / 13 `PLANNED` / 4 `NOT_CONFIGURED` / 2 `UNAVAILABLE`). `tsc --noEmit` clean,
+lint clean, full `npm run test:agent-core` unaffected (12/12). Commit `2e78035`.
+
+## Update 14-16 — three more real, scoped, read-only bridges; one production deploy incident diagnosed and resolved
+
+- **Update 14** (`6ed68d2`): `check_website_status` — the exact same `site_projects` read
+  `app/api/platform/websites/route.ts`'s GET handler returns. Deliberately read-only:
+  `packages/websites-and-domains`'s full creation/editing/deployment engine (123+ files, a
+  real deployment state machine) genuinely needs its own dedicated bridging pass, not a
+  rushed wrapper — `engine:website_vercel_orchestration` correctly stays
+  `REAL_NOT_EXPOSED` for the mutation surface. Also closed a real documentation gap:
+  Updates 10-13 had been committed to git but never written into this file (see below,
+  now backfilled verbatim from the actual commit messages).
+  **Also**: the production-target deployment of commit `26be399` (Update 13, the second
+  verification-integrity fix) initially entered Vercel's `ERROR` state during "Deploying
+  outputs" after a clean, successful build — Vercel's own message flagged it as possibly
+  transient, and the identical commit built `READY` as a preview on the release branch. An
+  empty-commit retry (`ff9e45b`) deployed clean; `/api/health` confirmed production
+  serving it afterward. Diagnosed as a genuine one-off Vercel-side failure, not a code
+  defect.
+- **Update 15** (`85654df`): `check_audit_status` — the same `public_audit_requests` read
+  `app/api/platform/audit/route.ts`'s GET (list) handler returns. New permission
+  `agent:read:audit_reports`, deliberately distinct from the pre-existing
+  `agent:read:audit` (which gates `inspect_audit_events`, the platform's own internal
+  security/action log — same word, unrelated table, never conflated).
+- **Update 16** (`4ad2fcf`): closed a zero-test-coverage gap on `check_capabilities`
+  itself — the canonical "what can you do" surface the whole mission's anti-fabrication
+  discipline depends on had no regression test until now. New
+  `check-capabilities-tool.test.ts` verifies the real filter logic (category alone,
+  status alone, both as an intersection not a union) against the real fake-supabase
+  query-builder chain.
+
+`capability_registry` reached 16 real rows this stretch, all verified live against
+production Supabase after each migration, not just asserted from the migration file.
+
 ## Update 13 — a SECOND verification-integrity defect, found live minutes after Update 10 shipped — `handleConfirm`'s deterministic CONFIRM path also claimed success unconditionally
 
 Real production incident, not a test: the Boss confirmed `execute_growth_action` via
