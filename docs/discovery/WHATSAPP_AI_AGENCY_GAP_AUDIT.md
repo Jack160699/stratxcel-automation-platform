@@ -30,6 +30,22 @@ Flagged as a real recommendation for the dashboard team: route those 4 patterns 
 real, brand-grounded content generator, and make an unmatched instruction return an honest
 "not understood" response instead of a false revision.
 
+**Follow-up, same pass — precisely scoped the real exposure, not left at "the edit route is
+broken":**
+- `generate5PageSite` (the basic creation route, `POST /api/platform/websites`, already
+  bridged read-only via `check_website_status`) is confirmed **clean** — no fabrication.
+- The AI Website Creator/brief flow (`POST /api/platform/website-factory/brief` →
+  `WebsiteGenerationEngine` → `page-planner.ts`'s `planPageArchitecture`) already had its
+  **testimonials** fabrication fixed on 2026-08-23 (a real, documented P1 fix — see that
+  file's own `no-fabricated-testimonials.test.ts`). But that fix and its regression test
+  check testimonials only — the same file's ecommerce "Trending Favorites" template still
+  hardcodes fabricated **products** ("Signature Tailored Blazer... ₹24,999") for every
+  `ECOMMERCE`-type site generated through this real, reachable route. An incomplete fix of
+  an already-known bug class, not a brand-new one.
+- `applyNaturalLanguageEdit` (the separate "edit" feature) has its own, never-fixed copy
+  of the identical fabricated products *and* still-fabricated testimonials, plus its own
+  silent-no-op issue.
+
 ## Update 25 — a real Capability Registry admin page; the admin IA turns out considerably more mature than assumed
 
 Before writing any admin UI code, inventoried all 38 real `/admin` pages and traced the
