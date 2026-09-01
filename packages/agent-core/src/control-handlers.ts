@@ -11,7 +11,7 @@ import {
   auditConfirmationCancelled,
   auditFailedAction,
 } from "./audit.ts";
-import { formatAgentReply, formatWhoAmI, formatPermissionAwareHelp } from "./formatter.ts";
+import { formatAgentReply, formatWhoAmI, formatPermissionAwareHelp, describeToolAction } from "./formatter.ts";
 import type { AgentTool } from "./tools/contract.ts";
 import { capabilityGroupsFromTools } from "./brain/capabilities.ts";
 
@@ -123,8 +123,31 @@ export async function handleConfirm(
   }
 
   try {
-    await tool.execute({ principal, supabase }, result.normalizedInput);
+    const executionResult = await tool.execute({ principal, supabase }, result.normalizedInput);
     await auditConfirmationExecuted(supabase, principal, { confirmationId: result.id, actionName: result.actionName });
+    // VERIFICATION INTEGRITY (Master Brain brief, section 1/14) -- the exact
+    // same class of defect Update 10 fixed in runAgentTurn's LLM loop,
+    // found live in THIS separate deterministic path: execute_growth_action
+    // returned a real, non-throwing BLOCKED result (the action was
+    // AWAITING_APPROVAL, nothing was actually changed) and this handler
+    // still said "Done. The requested change was completed." -- unconditionally,
+    // with no LLM involved at all. A tool not throwing is not the same
+    // fact as a tool succeeding; interpretOutcome() is the same real
+    // classifier the orchestrator uses, applied here too rather than
+    // trusted to only matter in one call site.
+    let outcome: ReturnType<NonNullable<AgentTool["interpretOutcome"]>> = null;
+    try {
+      outcome = tool.interpretOutcome?.(executionResult) ?? null;
+    } catch {
+      outcome = null;
+    }
+    if (outcome && outcome.status !== "success") {
+      const verb = outcome.status === "failed" ? "did not succeed" : outcome.status === "pending" ? "is still pending" : "only partially completed";
+      return {
+        reply: formatAgentReply({ text: `⚠️ ${describeToolAction(tool.schema.name)} ${verb}${outcome.detail ? ` (${outcome.detail})` : ""}.` }),
+        executed: true,
+      };
+    }
     return {
       reply: formatAgentReply({ text: "Done. The requested change was completed." }),
       executed: true,
