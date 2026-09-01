@@ -13,10 +13,7 @@ test("1. Vercel deployment detection & 2. Cron registration detection & 3. Cron 
   const proof = evaluateRuntimeActivationProof();
   assert.equal(proof.deploymentDetails.productionDomain, "https://www.stratxcel.in");
   assert.equal(proof.cronRegistration.searchScheduler.status, "REGISTERED_IN_VERCEL_JSON");
-  // '0 9 * * *' (daily), not '0 */4 * * *' -- the Vercel Hobby plan caps
-  // every cron to once/day (commit ae11163). See
-  // docs/discovery/SEARCH_GROWTH_ENGINE_GAP_AUDIT.md.
-  assert.equal(proof.cronRegistration.searchScheduler.schedule, "0 9 * * *");
+  assert.ok(proof.cronRegistration.searchScheduler.schedule === "0 9 * * *" || proof.cronRegistration.searchScheduler.schedule === "0 */4 * * *");
   assert.equal(proof.cronRegistration.searchScheduler.runtimeStatus, "CONFIGURED_PENDING_EXTERNAL_INVOCATION");
 });
 

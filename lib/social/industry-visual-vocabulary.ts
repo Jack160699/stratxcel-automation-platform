@@ -73,6 +73,13 @@ const VOCABULARY: Record<IndustryCategory, IndustryVisualVocabulary> = {
     compositionIdeas: ["hands + tool + work surface as the frame", "before/after split showing the actual problem and resolution", "technician mid-task, not posed"],
     avoid: ["staged handshake-in-front-of-van stock photo", "generic tool-flat-lay with no work context", "overly dramatic emergency lighting when the concept is routine maintenance"],
   },
+  saas: {
+    subjects: ["product UI in live workflow context", "automation telemetry metrics", "engineer/founder solving customer workflow", "data visualization of business impact"],
+    techniques: ["clean screen recording with crisp UI typography", "minimalist dark/light mode aesthetic", "subtle kinetic micro-animations"],
+    moods: ["efficiency", "clarity", "empowerment", "modern velocity"],
+    compositionIdeas: ["hero interface screenshot with generous margin", "workflow diagram connecting inputs to automated outcomes", "customer outcome metric card"],
+    avoid: ["stock handshake photos", "fake 3D isometric cubes with no product relevance", "cluttered dashboards with illegible microtext"],
+  },
   generic: {
     subjects: ["the actual product/service/team in real use", "a genuine moment of the business operating"],
     techniques: ["natural, unstaged-feeling framing", "lighting appropriate to the real environment"],

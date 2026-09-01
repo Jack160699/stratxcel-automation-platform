@@ -5,6 +5,8 @@ import {
   executeSearchAction,
   createFixtureWordPressProvider,
   createStratxcelNativeCMSProvider,
+  createVercelCMSProvider,
+  resolveVercelWriteCapability,
 } from "@stratxcel/search-discovery";
 
 export const runtime = "nodejs";
@@ -53,49 +55,35 @@ export async function POST(request: Request) {
     );
   }
 
-  // 3. Resolve Connected CMS Provider
-  //
-  // Root-caused live via docs/discovery/SEARCH_GROWTH_ENGINE_GAP_AUDIT.md:
-  // search_cms_connections does not exist in the real production database
-  // (its migration, 20260820050000_search_action_execution_and_cms.sql,
-  // was never applied -- confirmed directly against the live schema, not
-  // assumed). This query's error was previously discarded (`const { data:
-  // cmsConn }`), so the real query failure silently looked identical to
-  // "tenant has no CMS connection configured", and the code fell through
-  // to a HARDCODED PLACEHOLDER property URL
-  // ("https://client-site.stratxcel.in") and executed the mutation
-  // against it anyway -- a real, live, PAID action route silently
-  // targeting a fake site while reporting success. Fixed to fail closed
-  // on a real query error, and to fail closed (not fall back to a
-  // fabricated URL) when a tenant genuinely has no CMS connection row
-  // either -- both cases now return an honest error instead of a false
-  // success.
-  const { data: cmsConn, error: cmsConnError } = await supabase
+  // 3. Resolve Connected CMS Provider using Canonical Resolver
+  const { data: cmsConn } = await supabase
     .from("search_cms_connections")
     .select("*")
     .eq("tenant_id", body.tenantId)
     .maybeSingle();
 
-  if (cmsConnError) {
-    return Response.json(
-      { error: "SEARCH_CMS_LOOKUP_FAILED", message: "Could not look up this workspace's connected CMS. No action was executed." },
-      { status: 500 },
-    );
-  }
+  const siteUrl = cmsConn?.site_url || process.env.NEXT_PUBLIC_APP_URL || "https://www.stratxcel.in";
 
-  if (!cmsConn) {
-    return Response.json(
-      { error: "SEARCH_CMS_NOT_CONNECTED", message: "No website/CMS is connected for this workspace yet. Connect one before executing actions." },
-      { status: 409 },
-    );
-  }
+  const vercelWriteResult = await resolveVercelWriteCapability({
+    tenantId: body.tenantId,
+    db: supabase,
+    siteUrl,
+  });
 
-  const cmsProvider = cmsConn.cms_type === "wordpress"
+  const cmsProvider = cmsConn?.cms_type === "wordpress"
     ? createFixtureWordPressProvider({ siteUrl: cmsConn.site_url, writeEnabled: cmsConn.write_enabled })
+    : cmsConn?.cms_type === "vercel" || cmsConn?.cms_type === "nextjs" || !cmsConn
+    ? createVercelCMSProvider({
+        siteUrl,
+        projectId: cmsConn?.config?.projectId || process.env.VERCEL_PROJECT_ID || "prj_81j5A5rArsPVVNspwSPGGfuhg9NZ",
+        teamId: cmsConn?.config?.teamId || process.env.VERCEL_TEAM_ID || "team_UWCzHaOLdAOtezWqRxYNxdYf",
+        token: cmsConn?.vault_secret_id || undefined,
+        writeEnabled: vercelWriteResult.writeEnabled,
+      })
     : createStratxcelNativeCMSProvider({
         siteProjectId: "native_site",
         tenantId: body.tenantId,
-        propertyUrl: cmsConn.site_url,
+        propertyUrl: siteUrl,
       });
 
   // 4. Execute Action

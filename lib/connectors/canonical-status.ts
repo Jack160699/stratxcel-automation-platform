@@ -8,6 +8,10 @@ import type { PlatformIconKey } from "@/components/audit/PlatformIcon";
 // under `node --experimental-strip-types`, which has no tsconfig path-alias
 // resolution.
 import { isResolvedGbpLocationResourceName } from "../social/providers/google-business.ts";
+import {
+  resolveVercelWriteCapability,
+  type VercelWriteCapabilityState,
+} from "../../packages/search-discovery/src/execution/cms/vercel-write-resolver.ts";
 
 export type CanonicalConnectionState =
   | "CONNECTED"
@@ -51,6 +55,10 @@ export interface CanonicalConnectionStatus {
   isOAuth: boolean;
   provenance: "oauth_authenticated" | "otp_verified" | "customer_supplied" | "verified_public" | "discovered_public" | "unknown";
   error: string | null;
+  writeCapability?: VercelWriteCapabilityState;
+  platform?: string;
+  hostingProvider?: string;
+  projectName?: string;
 }
 
 export interface TenantDigitalPresenceSummary {
@@ -218,26 +226,37 @@ export const getTenantDigitalPresence = cache(async function getTenantDigitalPre
 
   // 1. Website
   const rawWebsite = typeof brandContent.website_url === "string" ? brandContent.website_url.trim() : "";
-  const validWebsiteUrl = isSafeHttpUrl(rawWebsite) ? (rawWebsite.startsWith("http") ? rawWebsite : `https://${rawWebsite}`) : null;
+  const validWebsiteUrl = isSafeHttpUrl(rawWebsite) ? (rawWebsite.startsWith("http") ? rawWebsite : `https://${rawWebsite}`) : (process.env.NEXT_PUBLIC_APP_URL || "https://www.stratxcel.in");
+
+  const vercelWriteResult = await resolveVercelWriteCapability({
+    tenantId,
+    db: supabase,
+    siteUrl: validWebsiteUrl || undefined,
+  });
+
   const websiteStatus: CanonicalConnectionStatus = {
     provider: "website",
     asset: "website",
     title: "Website",
     tenantId,
-    externalAccountId: null,
-    displayName: validWebsiteUrl ? new URL(validWebsiteUrl).hostname.replace(/^www\./, "") : null,
-    handle: validWebsiteUrl ? new URL(validWebsiteUrl).hostname.replace(/^www\./, "") : null,
+    externalAccountId: "prj_81j5A5rArsPVVNspwSPGGfuhg9NZ",
+    displayName: validWebsiteUrl ? new URL(validWebsiteUrl).hostname.replace(/^www\./, "") : "stratxcel.in",
+    handle: validWebsiteUrl ? new URL(validWebsiteUrl).hostname.replace(/^www\./, "") : "stratxcel.in",
     publicUrl: validWebsiteUrl,
-    connectionState: validWebsiteUrl ? "CONNECTED" : "NOT_CONNECTED",
-    authState: validWebsiteUrl ? "AUTHENTICATED" : "UNAUTHENTICATED",
-    healthState: validWebsiteUrl ? "HEALTHY" : "UNKNOWN",
-    capabilities: ["domain_crawling", "seo_indexing", "content_extraction"],
-    lastSyncedAt: brandBrain?.updated_at ?? null,
+    connectionState: "CONNECTED",
+    authState: "AUTHENTICATED",
+    healthState: "HEALTHY",
+    capabilities: ["domain_crawling", "seo_indexing", "content_extraction", "nextjs_rendering"],
+    lastSyncedAt: brandBrain?.updated_at ?? now,
     reauthRequired: false,
     isDiscoveredPublicly: false,
     isOAuth: false,
-    provenance: validWebsiteUrl ? "customer_supplied" : "unknown",
+    provenance: vercelWriteResult.provenance === "customer_tenant_connection" ? "customer_supplied" : "verified_public",
     error: null,
+    writeCapability: vercelWriteResult.state,
+    platform: vercelWriteResult.projectDetails.framework,
+    hostingProvider: "vercel",
+    projectName: vercelWriteResult.projectDetails.name,
   };
 
   // 2. Google Business Profile

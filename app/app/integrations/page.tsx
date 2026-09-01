@@ -357,6 +357,56 @@ export default function IntegrationsPage() {
         />
       )}
 
+      {/* Website & Hosting */}
+      <section>
+        <p className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-[0.06em] text-sx-text-subtle">Website &amp; Production Edge</p>
+        <Card className="p-4">
+          <div className="flex items-center gap-3">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-sx-sm bg-sx-accent-muted text-sx-accent font-bold text-lg">
+              🌐
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <p className="text-[15px] font-semibold text-sx-text">Website</p>
+                <span className="rounded bg-sx-surface-2 px-1.5 py-0.5 text-[10px] font-medium text-sx-text-subtle uppercase">
+                  {status?.website?.platform || "nextjs"}
+                </span>
+              </div>
+              <p className="truncate text-xs text-sx-text-subtle">
+                Vercel: {status?.website?.vercelProject || "stratxcel"} · {status?.website?.platform || "nextjs"} · {status?.website?.vercelStatus || "READY"}
+              </p>
+            </div>
+            <span className="flex shrink-0 items-center gap-1.5 rounded-lg bg-sx-success/10 px-2.5 py-1">
+              <span className="h-[5px] w-[5px] rounded-full bg-sx-success" />
+              <span className="text-[11px] font-semibold text-sx-success">Connected</span>
+            </span>
+          </div>
+
+          <div className="mt-3 rounded-sx-sm bg-sx-surface-2 p-3">
+            <a
+              href={status?.website?.url || "https://www.stratxcel.in"}
+              target="_blank"
+              rel="noreferrer"
+              className="block text-sm font-semibold text-sx-accent hover:underline break-all"
+            >
+              {status?.website?.url || "https://www.stratxcel.in"}
+            </a>
+            <div className="mt-2 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between border-t border-sx-border/50 pt-2">
+              <span className="text-xs font-medium text-sx-text">Automatic website changes</span>
+              {status?.website?.automaticChangesReady ? (
+                <span className="text-xs font-semibold text-sx-success flex items-center gap-1">
+                  ✓ Ready
+                </span>
+              ) : (
+                <span className="text-xs text-sx-text-subtle">
+                  Connect Vercel with write access
+                </span>
+              )}
+            </div>
+          </div>
+        </Card>
+      </section>
+
       {/* Primary Channels */}
       <section>
         <p className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-[0.06em] text-sx-text-subtle">Primary Channels</p>

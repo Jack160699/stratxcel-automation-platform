@@ -11,18 +11,20 @@ export function evaluateRuntimeActivationProof(): RuntimeActivationReport {
   // 1. Inspect physical vercel.json cron registration
   let hasSchedulerCron = false;
   let hasAuditWorkerCron = false;
+  let schedulerSchedule = "0 9 * * *";
+  let auditWorkerSchedule = "0 8 * * *";
 
   try {
     const vercelJsonPath = path.resolve(process.cwd(), "vercel.json");
     if (fs.existsSync(vercelJsonPath)) {
       const content = fs.readFileSync(vercelJsonPath, "utf-8");
       const parsed = JSON.parse(content);
-      hasSchedulerCron = Boolean(
-        parsed.crons?.some((c: any) => c.path === "/api/internal/search/scheduler")
-      );
-      hasAuditWorkerCron = Boolean(
-        parsed.crons?.some((c: any) => c.path === "/api/platform/audit/worker")
-      );
+      const sched = parsed.crons?.find((c: any) => c.path === "/api/internal/search/scheduler");
+      const audit = parsed.crons?.find((c: any) => c.path === "/api/platform/audit/worker");
+      hasSchedulerCron = Boolean(sched);
+      hasAuditWorkerCron = Boolean(audit);
+      if (sched?.schedule) schedulerSchedule = sched.schedule;
+      if (audit?.schedule) auditWorkerSchedule = audit.schedule;
     }
   } catch {
     hasSchedulerCron = false;
@@ -31,18 +33,6 @@ export function evaluateRuntimeActivationProof(): RuntimeActivationReport {
   const schedulerSecretConfigured = Boolean(process.env.SEARCH_DISCOVERY_SCHEDULER_SECRET);
 
   // 2. Evaluate Provider Telemetry Truth
-  //
-  // Root-caused via a real acceptance-test run against real production env
-  // this session (docs/discovery/SEARCH_GROWTH_ENGINE_GAP_AUDIT.md): the
-  // google_search_console/google_analytics_4 entries below had BOTH bugs
-  // this file's schedulerSecret field already had fixed once --
-  // `Boolean(x || true)` (always true regardless of the env var) AND the
-  // stale GOOGLE_SEARCH_CONSOLE_CLIENT_ID name nothing sets or reads (the
-  // real OAuth flow reads GOOGLE_SEARCH_OAUTH_CLIENT_ID) -- plus
-  // `authenticated`/`readVerified`/`status: "PRODUCTION_VERIFIED"`
-  // hardcoded unconditionally on top of that. Two entries below
-  // (serp_provider, perplexity_ai) already show the correct real pattern
-  // in this same array; these two now match it.
   const googleSearchOauthConfigured = Boolean(process.env.GOOGLE_SEARCH_OAUTH_CLIENT_ID);
   const providers: RuntimeProviderTelemetry[] = [
     {
@@ -157,39 +147,19 @@ export function evaluateRuntimeActivationProof(): RuntimeActivationReport {
       deploymentStatus: "ACTIVE",
     },
     cronRegistration: {
-      // Both schedules corrected to match the real, current vercel.json:
-      // commit ae11163 ("fix(infra): reduce all sub-daily crons to
-      // once/day -- Hobby plan blocks deployment otherwise") widened these
-      // from '0 */4 * * *' / '*/5 * * * *' to real, plan-compliant daily
-      // times on 2026-08-29, a real, live, user-authorized deployment fix
-      // (confirmed via an actual Vercel API cron_jobs_limits_reached
-      // error) -- this evaluator was never updated afterward, so it was
-      // asserting a schedule that would fail to deploy on this project's
-      // actual Vercel plan. See docs/discovery/SEARCH_GROWTH_ENGINE_GAP_AUDIT.md.
       searchScheduler: {
         path: "/api/internal/search/scheduler",
-        schedule: "0 9 * * *",
+        schedule: schedulerSchedule,
         status: hasSchedulerCron ? "REGISTERED_IN_VERCEL_JSON" : "NOT_REGISTERED",
         runtimeStatus: "CONFIGURED_PENDING_EXTERNAL_INVOCATION",
       },
       auditWorker: {
         path: "/api/platform/audit/worker",
-        schedule: "0 8 * * *",
+        schedule: auditWorkerSchedule,
         status: hasAuditWorkerCron ? "REGISTERED_IN_VERCEL_JSON" : "NOT_REGISTERED",
         runtimeStatus: "CONFIGURED_PENDING_EXTERNAL_INVOCATION",
       },
     },
-    // Root-caused via docs/discovery/SEARCH_GROWTH_ENGINE_GAP_AUDIT.md,
-    // same class of bug as the one already fixed in
-    // launch/launch-gate.ts's getSchedulerHealthStatus: this was hardcoded
-    // `true`/`true` regardless of whether SEARCH_DISCOVERY_SCHEDULER_SECRET
-    // is actually set -- a readiness-certification function reporting
-    // itself certified without checking anything. This function is pure
-    // (filesystem + env only, no network), so `authVerificationPassed`
-    // honestly means "the enforcement mechanism is correctly configured to
-    // require the secret" -- a real static check -- not "a live HTTP round
-    // trip against the deployed route was actually performed", which
-    // nothing in this file can claim.
     schedulerSecret: {
       isConfigured: schedulerSecretConfigured,
       authVerificationPassed: schedulerSecretConfigured,

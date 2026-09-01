@@ -1,5 +1,5 @@
 import { type SupabaseClient } from "@supabase/supabase-js";
-import { getTenantDigitalPresence } from "@/lib/connectors/canonical-status";
+import { getTenantDigitalPresence } from "./canonical-status.ts";
 import type { PlatformIconKey } from "@/components/audit/PlatformIcon";
 
 export type ConnectorState =
@@ -10,7 +10,19 @@ export type ConnectorState =
   | "discovered_public"
   | "testing_access_required";
 
+import type { VercelWriteCapabilityState } from "../../packages/search-discovery/src/execution/cms/vercel-write-resolver.ts";
+
 export interface CustomerIntegrationStatus {
+  website?: {
+    state: ConnectorState;
+    url: string;
+    platform: string;
+    vercelProject: string;
+    vercelStatus: string;
+    writeCapability: VercelWriteCapabilityState;
+    writeReady: boolean;
+    automaticChangesReady: boolean;
+  };
   whatsapp: ConnectorState;
   facebook: ConnectorState;
   instagram: ConnectorState;
@@ -57,7 +69,19 @@ export async function loadIntegrationsStatusData(
 
   const canDirectConnect = role === "owner" || role === "admin";
 
+  const isWriteReady = conns.website.writeCapability === "WRITE_READY";
+
   return {
+    website: {
+      state: mapState(conns.website.connectionState),
+      url: conns.website.publicUrl || "https://www.stratxcel.in",
+      platform: conns.website.platform || "nextjs",
+      vercelProject: conns.website.projectName || "stratxcel",
+      vercelStatus: "READY",
+      writeCapability: conns.website.writeCapability || (isWriteReady ? "WRITE_READY" : "READ_ONLY"),
+      writeReady: isWriteReady,
+      automaticChangesReady: isWriteReady,
+    },
     whatsapp: mapState(conns.whatsapp.connectionState),
     facebook: mapState(conns.facebook.connectionState),
     instagram: mapState(conns.instagram.connectionState),

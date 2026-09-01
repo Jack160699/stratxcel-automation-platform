@@ -21,7 +21,7 @@ export interface ResearchLibraryEntry {
   source: string;
   url: string;
   dateAccessed: string;
-  industry: "all" | "restaurant" | "salon" | "gym" | "clinic" | "retail" | "real_estate" | "local_service";
+  industry: "all" | "restaurant" | "salon" | "gym" | "clinic" | "retail" | "real_estate" | "local_service" | "saas";
   pattern: string;
   whyItWorks: string;
   whatNotToCopy: string;

@@ -15,6 +15,7 @@ export type IndustryCategory =
   | "retail"
   | "real_estate"
   | "local_service"
+  | "saas"
   | "generic";
 
 export type SubNicheCategory =
@@ -42,6 +43,7 @@ export type SubNicheCategory =
   | "service_interior_design"
   | "service_professional_legal_ca"
   | "service_automotive"
+  | "saas_platform"
   | "generic_business";
 
 export interface NicheResearchDrivers {
@@ -517,6 +519,60 @@ export const NICHE_RESEARCH_PROFILES: Record<SubNicheCategory, NicheResearchDriv
     ctaPhrasings: ["Book your detailing slot", "Get a paint protection quote", "DM for package details"],
     relevanceVocabulary: ["detailing", "ceramic coating", "ppf", "paint correction", "gloss", "car care", "scratch", "swirl marks", "protection", "car"],
   },
+  saas_platform: {
+    subNiche: "saas_platform",
+    displayName: "SaaS Marketing & Business Automation Platform",
+    parentCategory: "saas",
+    // These keywords are checked BEFORE the generic_business keywords so a
+    // SaaS description scores here instead of accidentally matching clinic/
+    // salon terms via low-signal words like "business" or "local".
+    keywords: [
+      "saas", "software", "automation platform", "marketing platform", "marketing automation",
+      "crm", "whatsapp automation", "lead generation software", "local business software",
+      "digital marketing platform", "growth platform", "business software", "autopilot",
+      "brand brain", "content automation", "social autopilot", "ai marketing",
+      "stratxcel", "stratXcel", "marketing tool", "growth operations",
+    ],
+    engagementTriggers: [
+      "Before/after: how a business owner's week changed after adopting automation",
+      "The specific manual task this platform eliminates for real local business owners",
+      "Real business owner reaction to seeing their social posts go live automatically",
+    ],
+    conversionTriggers: [
+      "Free trial or demo request from a local business owner",
+      "Specific ROI or time-saved metric from a real customer case study",
+      "One-click signup for the autopilot content package",
+    ],
+    trustBuilders: [
+      "Real customer names and business types using the platform",
+      "Transparent pricing with no hidden fees",
+      "Built specifically for India's local business context, not a generic US tool",
+    ],
+    educationTopics: [
+      "Why local businesses lose customers who find them on Google but can't reach them on WhatsApp",
+      "The 3 social posts every local business needs to run every month (and why most don't)",
+      "How consistent social presence leads to real walk-in traffic, not just likes",
+    ],
+    authorityDemonstrations: [
+      "A real business owner showing their dashboard with live automation running",
+      "Time-lapse of 28 days of social posts planned, generated, and published hands-free",
+    ],
+    sampleHooks: [
+      "A local restaurant owner in Bhilai gets 40+ new WhatsApp leads every month — here's what changed.",
+      "The reason most local businesses have dead Instagram pages isn't laziness. It's time.",
+      "You don't need a marketing team to show up on social media every day. Here's the actual alternative.",
+    ],
+    visualDirection: "Real local business owners at their own shops — not stock photo models — shown interacting with a phone or laptop displaying the platform's actual UI. Warm, documentary-style photography that feels lived-in and authentic, not polished corporate.",
+    ctaPhrasings: [
+      "See how it works for your business",
+      "Start your free trial",
+      "Book a 15-minute demo",
+    ],
+    relevanceVocabulary: [
+      "autopilot", "automation", "local business", "social presence", "leads",
+      "WhatsApp", "content", "brand", "growth", "platform", "dashboard", "campaign",
+    ],
+  },
   generic_business: {
     subNiche: "generic_business",
     displayName: "Local Commercial Enterprise",
@@ -576,6 +632,7 @@ export const INDUSTRY_CATEGORIES: IndustryCategory[] = [
   "retail",
   "real_estate",
   "local_service",
+  "saas",
   "generic",
 ];
 
@@ -596,6 +653,7 @@ const PRIMARY_NICHE_FOR_CATEGORY: Record<IndustryCategory, SubNicheCategory> = {
   retail: "retail_fashion_boutique",
   real_estate: "real_estate_residential",
   local_service: "service_plumbing_hvac",
+  saas: "saas_platform",
   generic: "generic_business",
 };
 

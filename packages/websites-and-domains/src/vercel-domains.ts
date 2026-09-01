@@ -8,6 +8,7 @@ export interface VercelDomainStatus {
 }
 
 const DEFAULT_PROJECT_ID = process.env.VERCEL_PROJECT_ID ?? "prj_81j5A5rArsPVVNspwSPGGfuhg9NZ";
+const DEFAULT_TEAM_ID = process.env.VERCEL_TEAM_ID ?? "team_UWCzHaOLdAOtezWqRxYNxdYf";
 
 /**
  * Attaches a domain to the Vercel project. Never claims verified/SSL state
@@ -21,7 +22,8 @@ const DEFAULT_PROJECT_ID = process.env.VERCEL_PROJECT_ID ?? "prj_81j5A5rArsPVVNs
 export async function attachDomainToVercel(
   domainName: string,
   projectId: string = DEFAULT_PROJECT_ID,
-  token: string = process.env.VERCEL_AUTH_TOKEN ?? ""
+  token: string = process.env.VERCEL_AUTH_TOKEN ?? "",
+  teamId: string = DEFAULT_TEAM_ID
 ): Promise<VercelDomainStatus> {
   if (!token) {
     return {
@@ -35,7 +37,8 @@ export async function attachDomainToVercel(
   }
 
   try {
-    const res = await fetch(`https://api.vercel.com/v10/projects/${projectId}/domains`, {
+    const query = teamId ? `?teamId=${encodeURIComponent(teamId)}` : "";
+    const res = await fetch(`https://api.vercel.com/v10/projects/${projectId}/domains${query}`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,
@@ -86,14 +89,16 @@ export async function attachDomainToVercel(
 export async function getVercelDomainStatus(
   domainName: string,
   projectId: string = DEFAULT_PROJECT_ID,
-  token: string = process.env.VERCEL_AUTH_TOKEN ?? ""
+  token: string = process.env.VERCEL_AUTH_TOKEN ?? "",
+  teamId: string = DEFAULT_TEAM_ID
 ): Promise<VercelDomainStatus> {
   if (!token) {
     return { domain: domainName, apexDomain: domainName, verified: false, sslActive: false, configured: false, error: "VERCEL_AUTH_TOKEN is not configured" };
   }
 
   try {
-    const res = await fetch(`https://api.vercel.com/v9/projects/${projectId}/domains/${encodeURIComponent(domainName)}`, {
+    const query = teamId ? `?teamId=${encodeURIComponent(teamId)}` : "";
+    const res = await fetch(`https://api.vercel.com/v9/projects/${projectId}/domains/${encodeURIComponent(domainName)}${query}`, {
       headers: { Authorization: `Bearer ${token}` },
     });
 

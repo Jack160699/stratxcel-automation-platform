@@ -5,6 +5,8 @@
 export type CMSType =
   | "wordpress"
   | "stratxcel_native"
+  | "vercel"
+  | "nextjs"
   | "webflow"
   | "shopify"
   | "webhook";

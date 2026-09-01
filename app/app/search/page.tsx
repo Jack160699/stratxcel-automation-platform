@@ -10,35 +10,6 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { EntitlementGate } from "@/components/ui/EntitlementGate";
 
-/**
- * Root-caused via docs/discovery/SEARCH_GROWTH_ENGINE_GAP_AUDIT.md: two
- * real implementations of this page existed -- this simpler tab-based one
- * (calling /api/platform/search + /api/platform/search/run) and
- * SearchGrowthDashboardView (backed by the more mature
- * dashboard/aggregator.ts, surfacing real strategy mode, competitor
- * intelligence, AI-search visibility, and the real readiness
- * certification this session hardened) -- with no caller ever rendering
- * the richer one.
- *
- * Decision, made per the requested priority (existing mature
- * implementation > lowest friction > lowest operational complexity):
- * SearchGrowthDashboardView is canonical, wired in here.
- *
- * Update 14 (docs/discovery/SEARCH_GROWTH_ENGINE_GAP_AUDIT.md): this route
- * was previously unreachable -- layout.tsx rendered `NotV1CustomerRoute`,
- * an unconditional redirect gating it as an "unfinished engineering
- * surface." Root-caused what was actually unfinished: 13 real fabrication
- * defects in SearchGrowthDashboardView.tsx (fake AI-visibility numbers, a
- * date ternary that always said "in 2 days", fabricated competitor
- * claims). Fixed and covered by
- * components/search-growth/__tests__/no-fabrication.test.ts; the gate is
- * now lifted in layout.tsx, with real auth/tenant/entitlement protection
- * unchanged (app/app/layout.tsx + the EntitlementGate below). Authenticated
- * UI rendering could not be visually verified in the environment this
- * change was made in (no viable automated-login path existed) -- if this
- * page looks visually inconsistent with the rest of the live app, that is
- * the one remaining open item, not a functional/data-honesty one.
- */
 export default function SearchPage() {
   const { active } = useCurrentTenant();
   const tenantId = active?.tenantId;
@@ -77,21 +48,12 @@ export default function SearchPage() {
     void load();
   }, [load]);
 
-  // Update 17 (docs/discovery/SEARCH_GROWTH_ENGINE_GAP_AUDIT.md): a tenant
-  // who already connected Google Search Console but never ran a Search
-  // Growth analysis was always shown an empty website field, even though
-  // the platform genuinely already knows their website. Pre-fill from the
-  // real, already-connected source (detectedWebsiteUrl) instead of forcing
-  // re-entry -- still fully editable, since a customer may legitimately
-  // want to analyze a different site than their Search Console property.
   useEffect(() => {
-    if (data && !data.hasProject && data.detectedWebsiteUrl) setSite((current) => current || data.detectedWebsiteUrl!);
+    if (data && !data.hasProject) {
+      setSite((current) => current || data.detectedWebsiteUrl || "https://www.stratxcel.in");
+    }
   }, [data]);
 
-  // Update 23: viewMode is a real, persisted per-tenant field
-  // (search_projects.view_mode) -- sync local UI state from it whenever a
-  // fresh dashboard load returns, so a refresh or a second device always
-  // reflects the real stored preference rather than a hardcoded default.
   useEffect(() => {
     if (data) setViewMode(data.viewMode);
   }, [data]);
@@ -102,12 +64,6 @@ export default function SearchPage() {
     };
   }, []);
 
-  // Update 23 (docs/discovery/SEARCH_GROWTH_ENGINE_GAP_AUDIT.md): once a
-  // project exists, there was no way to trigger a fresh analysis outside
-  // onboarding -- reuses the exact same /api/platform/search/run endpoint
-  // as runFirstAnalysis above (the real analysis engine, crawl, and
-  // scheduler are never duplicated), passing the project's own already-known
-  // propertyUrl so nothing needs re-entering.
   async function analyzeNow() {
     if (!tenantId || !data?.propertyUrl || analyzeState === "running") return;
     setAnalyzeState("running");
@@ -137,11 +93,6 @@ export default function SearchPage() {
     }
   }
 
-  // Update 23: purely a UI-presentation switch over the SAME
-  // SearchGrowthDashboardData already loaded -- deliberately calls a
-  // different endpoint (/api/platform/search/view-mode) than the Growth
-  // automation toggle below, so it can never affect scheduler eligibility,
-  // entitlement, the website connection, or billing.
   async function changeViewMode(next: "simple" | "detailed") {
     if (!tenantId || viewModeSaving || next === viewMode) return;
     setViewModeSaving(true);
@@ -176,16 +127,10 @@ export default function SearchPage() {
     }
   }
 
-  // Update 22 (docs/discovery/SEARCH_GROWTH_ENGINE_GAP_AUDIT.md): the real
-  // scheduler-eligibility flag (search_projects.enabled) already existed
-  // and was already the live gate the daily continuous-growth cron
-  // filters on -- nothing anywhere let a customer actually control it.
-  // This is the one missing write path, not a new growth-state system.
   async function toggleGrowth(next: boolean) {
     if (!tenantId || toggling) return;
     setToggling(true);
     const previous = data;
-    // Optimistic update -- reverted on failure below.
     setData((current) => (current ? { ...current, growthEnabled: next } : current));
     try {
       const response = await fetch("/api/platform/search/toggle", {
@@ -201,34 +146,13 @@ export default function SearchPage() {
     }
   }
 
-  if (loading) return null; // app/app/search/loading.tsx covers the route-transition skeleton
+  if (loading) return null;
 
-  // This SEO/search feature's own paid-tier gate is a separate, real
-  // access-control decision from which dashboard component renders inside
-  // it (a dedicated regression test,
-  // packages/payments-and-wallet/src/__tests__/autopilot-universal-unlock.test.ts,
-  // exists specifically to catch this feature's EntitlementGate usage
-  // being removed as a side effect of unrelated work).
-  //
-  // Update 15 (docs/discovery/SEARCH_GROWTH_ENGINE_GAP_AUDIT.md): this used
-  // to pass minTier="growth" -- a legacy tier name not present anywhere in
-  // the real, currently-sold v3 catalog, which silently locked out every
-  // real customer regardless of plan (confirmed live against the real
-  // StratXcel tenant's active `advanced_growth` subscription). Now gated
-  // on the actual capability the catalog defines for this feature:
-  // PLAN_CAPABILITIES[tier].seo_execution.
   return (
     <EntitlementGate tenantId={tenantId} requiredCapability="seo_execution" featureName="Google SEO workflows">
       {error || !data ? (
         <ErrorState message={error ?? "SEARCH_DASHBOARD_UNAVAILABLE"} onRetry={load} />
       ) : !data.hasProject ? (
-        // Root-caused via docs/discovery/SEARCH_GROWTH_ENGINE_GAP_AUDIT.md:
-        // getSearchGrowthDashboardData previously handed every caller
-        // fabricated placeholder data ("Local Business" /
-        // "https://example.com") for a tenant with no real project yet,
-        // indistinguishable from a real one. hasProject makes that honest
-        // -- a genuine "connect your website" prompt instead of a
-        // dashboard full of fake data.
         <Card className="p-6">
           {data.detectedWebsiteUrl ? (
             <>
@@ -244,7 +168,7 @@ export default function SearchPage() {
             </>
           )}
           <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-            <Input type="text" value={site} onChange={(e) => setSite(e.target.value)} placeholder="yourbusiness.in" className="flex-1" />
+            <Input type="text" value={site} onChange={(e) => setSite(e.target.value)} placeholder="https://www.stratxcel.in" className="flex-1" />
             <Button onClick={runFirstAnalysis} disabled={running || !site.trim()}>{running ? "Running…" : "Run Search Analysis"}</Button>
           </div>
         </Card>
@@ -276,9 +200,6 @@ export default function SearchPage() {
             </button>
           </Card>
 
-          {/* Update 23: manual "Analyze Now" -- reuses the same
-             /api/platform/search/run endpoint runFirstAnalysis above
-             already calls; this is not a second analysis engine. */}
           <Card className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0">
               <p className="text-[14px] font-semibold text-sx-text">Manual analysis</p>
@@ -302,10 +223,6 @@ export default function SearchPage() {
             </div>
           </Card>
 
-          {/* Update 23: Simple / Detailed is a UI-presentation switch only
-             (search_projects.view_mode) -- deliberately not labeled
-             "Growth ON/OFF" or wired to growthEnabled above, since it never
-             touches automation, entitlement, or the website connection. */}
           <div className="flex items-center gap-2 self-start rounded-sx-sm border border-sx-border bg-sx-surface-2 p-1" role="tablist" aria-label="Dashboard detail level">
             <button
               type="button"

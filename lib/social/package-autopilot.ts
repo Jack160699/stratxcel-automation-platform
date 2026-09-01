@@ -1412,8 +1412,14 @@ export async function prepareNearTermPackageItems(
         .eq("authorization_id", authorization.id)
         .not("variant_id", "is", null)
         .order("created_at", { ascending: false })
-        // Mission D+ Section 10/26-28: widened alongside the pillar window above.
-        .limit(15);
+        // Mission D+ Section 10/26-28: widened to full 28-day campaign cycle
+        // (previously 15) so the creative diversity engine and copy
+        // anti-duplication gate cover the ENTIRE package period, not just the
+        // most recent half of it -- confirmed live that duplicate hooks
+        // ("You run your business. We grow it online.") appeared across
+        // days 1 and day 16+ because the recency window didn't reach back far
+        // enough to flag the day-1 caption as "used" when generating day 16.
+        .limit(28);
       const recentVariantIds = [...new Set((recentVariantIdRows ?? []).map((row) => row.variant_id as string))];
       const recentConcepts: string[] = [];
       const recentCaptions: string[] = [];
