@@ -64,3 +64,20 @@ assert.match(route, /hasGbp:\s*hasUsableGbp/, "the computed, location-gated sign
 assert.doesNotMatch(route, /hasGbp:\s*Boolean\(gbpAccount\)/, "must never regress back to the bare row-existence check this was found to fabricate consistency from");
 
 console.log("PASS: GEO's hasGbp signal requires a genuinely resolved GBP location, never fabricating NAP consistency from a bare CONNECTED row.");
+
+// --- AEO: the real, tested, honest-when-unconfigured AI Search provider ---
+// --- (STRATXCEL — AEO brief) must actually be wired into the live growth --
+// --- loop call -- confirmed live via GET /api/platform/search/health that -
+// --- PERPLEXITY_API_KEY is not configured, and by inspection that this ----
+// --- call site never passed `aiProvider` at all, so the orchestrator's own
+// --- safe default (createUnavailableAISearchProvider()) silently applied --
+// --- even once/if a real key were ever added. Real services/locations -----
+// --- must come from the same canonical Brand Brain reader every other real
+// --- consumer uses -- never a second business-data source, never hardcoded.
+assert.match(route, /createLivePerplexityProvider/, "the real, tested Perplexity AI Search provider must actually be imported and used, not left dead");
+assert.match(route, /aiProvider:\s*createLivePerplexityProvider\(\)/, "the live provider must actually be passed into runContinuousGrowthLoop's deps -- constructing it without wiring it in would still leave the orchestrator's unavailable default in effect");
+assert.match(route, /getCanonicalBrandContext/, "real business services/locations must come from the canonical Brand Brain reader, not a second/duplicate business-data source");
+assert.match(route, /services:\s*realServices/, "the real, Brand-Brain-sourced services must actually reach the growth loop input, not stay unused");
+assert.match(route, /locations:\s*realLocations/, "the real, Brand-Brain-sourced location must actually reach the growth loop input, not stay unused");
+
+console.log("PASS: the real AI Search provider and real Brand Brain business context are actually wired into the live growth loop call, not left dead code.");

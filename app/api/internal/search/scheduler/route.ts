@@ -4,9 +4,11 @@ import {
   stableFingerprint,
   runContinuousGrowthLoop,
   evaluateGrowthCycleEligibility,
+  createLivePerplexityProvider,
   type RuntimePlan,
 } from "@stratxcel/search-discovery";
 import { isPlanTier } from "@stratxcel/payments-and-wallet";
+import { getCurrentBrandBrain, getCanonicalBrandContext } from "@stratxcel/brand-brain";
 import { resolveAccessToken, refreshToken as refreshSocialToken } from "@/lib/social/audit-connector-insights";
 import {
   googleBusinessProvider,
@@ -319,9 +321,32 @@ async function handleSchedulerInvocation(request: Request) {
       gbpAccount && gbpAccount.status === "CONNECTED" && isResolvedGbpLocationResourceName(gbpAccount.provider_account_id)
     );
 
+    // STRATXCEL — AEO brief: runContinuousGrowthLoop's real, tested,
+    // honest-when-unconfigured AI Search measurement path
+    // (packages/search-discovery/src/ai-search/) was never actually reached
+    // in production -- confirmed live via GET /api/platform/search/health
+    // (remediation: "Add ... PERPLEXITY_API_KEY to environment secrets to
+    // unlock live rank & AEO tracking") and by this call site itself never
+    // passing `aiProvider`, so the orchestrator's own default
+    // (`createUnavailableAISearchProvider()`) always applied regardless of
+    // whether a real key was ever configured. createLivePerplexityProvider()
+    // is safe to construct unconditionally -- it checks PERPLEXITY_API_KEY
+    // itself and returns the same honest NOT_CONFIGURED/unavailable shape
+    // when absent, so this changes nothing today and activates automatically
+    // the moment a real key is added, with zero code redeploy.
+    //
+    // Real business services/locations (never fabricated, never a second
+    // business-data source -- Section 4/10/19): the same canonical Brand
+    // Brain reader every other real consumer in this codebase already uses.
+    // Best-effort: a Brand Brain read failure must not fail the whole cycle.
+    const brandBrain = await getCurrentBrandBrain(supabase, project.tenant_id).catch(() => null);
+    const brandContext = getCanonicalBrandContext(brandBrain?.content ?? null);
+    const realServices = brandContext.services.map((s) => s.name).filter(Boolean);
+    const realLocations = brandContext.location ? [brandContext.location] : [];
+
     try {
       const loopResult = await runContinuousGrowthLoop(
-        { db: supabase },
+        { db: supabase, aiProvider: createLivePerplexityProvider() },
         {
           tenantId: project.tenant_id,
           propertyUrl: project.property_url,
@@ -329,6 +354,8 @@ async function handleSchedulerInvocation(request: Request) {
           plan,
           idempotencyKey,
           hasGbp: hasUsableGbp,
+          services: realServices,
+          locations: realLocations,
         }
       );
 

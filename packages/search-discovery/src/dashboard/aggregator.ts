@@ -19,6 +19,8 @@ export async function getSearchGrowthDashboardData(
     { data: actionRows },
     { data: googleConnection },
     { data: lastCompletedRunRow },
+    { data: aiSearchSnapshotRow },
+    { data: entityNodeRows },
   ] = await Promise.all([
     // 1. Fetch Tenant Project
     db
@@ -36,21 +38,35 @@ export async function getSearchGrowthDashboardData(
       .limit(1)
       .maybeSingle(),
     // 3. Fetch Latest Competitor Intelligence Snapshot
+    //
+    // STRATXCEL — AEO brief, Section 41 (hunt for fabrication) surfaced this
+    // while tracing the aiVisibility scorecard: search_measurement_snapshots'
+    // real, live schema column is `captured_at`, not `created_at` (confirmed
+    // directly against production -- `created_at` does not exist on this
+    // table at all). Both this query and the GSC one below `.select()`ed and
+    // `.order()`ed by a column that has never existed, so every real call
+    // failed with a genuine Postgres error -- silently discarded by this
+    // destructuring (`{ data: compSnapshotRow }` never checks `error`), the
+    // same "query error swallowed" pattern this codebase has already found
+    // and fixed elsewhere. The practical effect: competitor intelligence and
+    // real Search Console telemetry NEVER reached this dashboard for ANY
+    // tenant, ever -- every dependent scorecard (searchAuthorityScore,
+    // organicVisibility) silently fell back to its no-data branch instead.
     db
       .from("search_measurement_snapshots")
-      .select("values, dimensions, availability_state, unavailable_reason, created_at")
+      .select("values, dimensions, availability_state, unavailable_reason, captured_at")
       .eq("tenant_id", tenantId)
       .eq("source", "competitor_intelligence")
-      .order("created_at", { ascending: false })
+      .order("captured_at", { ascending: false })
       .limit(1)
       .maybeSingle(),
     // 4. Fetch GSC Telemetry Snapshot
     db
       .from("search_measurement_snapshots")
-      .select("values, availability_state, created_at")
+      .select("values, availability_state, captured_at")
       .eq("tenant_id", tenantId)
       .eq("source", "search_console")
-      .order("created_at", { ascending: false })
+      .order("captured_at", { ascending: false })
       .limit(1)
       .maybeSingle(),
     // 5. Fetch Strategy State
@@ -92,6 +108,27 @@ export async function getSearchGrowthDashboardData(
       .order("completed_at", { ascending: false })
       .limit(1)
       .maybeSingle(),
+    // 9. Fetch the real, persisted AI Visibility snapshot (STRATXCEL — AEO
+    // brief) -- the same real calculateAIVisibilityScore() output the
+    // continuous growth loop now saves (loop/orchestrator.ts), replacing
+    // the previously hardcoded "65/100" scorecard below.
+    db
+      .from("search_measurement_snapshots")
+      .select("values, availability_state, unavailable_reason, captured_at")
+      .eq("tenant_id", tenantId)
+      .eq("source", "ai_search")
+      .order("captured_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    // 10. Fetch real, persisted entity-consistency nodes (authority/entity-
+    // graph.ts, wired live per a prior session's Update 8) -- replaces the
+    // previously hardcoded "80/100 Local & Maps Presence" scorecard below
+    // with the real NAP/GBP consistency StratXcel already computes and
+    // stores for this tenant.
+    db
+      .from("search_entity_nodes")
+      .select("entity_type, consistency_status")
+      .eq("tenant_id", tenantId),
   ]);
 
   // Root-caused via docs/discovery/SEARCH_GROWTH_ENGINE_GAP_AUDIT.md: a
@@ -179,7 +216,7 @@ export async function getSearchGrowthDashboardData(
     trend: authScoreVal !== null && authScoreVal >= 70 ? "IMPROVING" : "STABLE",
     confidence: authorityScoreBreakdown.confidence || (gscRows.length > 0 ? "HIGH" : "MEDIUM"),
     dataCoveragePercentage: authorityScoreBreakdown.dataCoveragePercentage || (gscRows.length > 0 ? 80 : 35),
-    lastUpdatedAt: compSnapshotRow?.created_at || now,
+    lastUpdatedAt: compSnapshotRow?.captured_at || now,
     statusNote: gscRows.length === 0 ? "Connect Search Console to unlock full first-party score." : undefined,
   };
 
@@ -193,14 +230,31 @@ export async function getSearchGrowthDashboardData(
     statusNote: gscRows.length === 0 ? "Connect Google Search Console to ingest verified click telemetry." : undefined,
   };
 
+  // STRATXCEL — AEO brief, Section 7/29/41: no fake AI visibility score.
+  // This was hardcoded (65/100, STABLE, MEDIUM confidence) for every
+  // tenant, always -- including tenants for whom AI Search measurement has
+  // never run, and while PERPLEXITY_API_KEY was never even configured in
+  // production (confirmed live). Now reads the real, persisted output of
+  // calculateAIVisibilityScore() (loop/orchestrator.ts's ai_search
+  // snapshot) -- overallScore is null (not a guessed number) whenever no
+  // real measurement exists yet, which SimpleGrowthSummary.tsx's own
+  // statusWord() already correctly renders as "Not enough data yet".
+  const aiSearchScore = (aiSearchSnapshotRow?.values as any)?.score as
+    | { overallScore: number | null; confidence?: "HIGH" | "MEDIUM" | "LOW"; dataCoveragePercentage?: number }
+    | undefined;
+  const aiVisibilityVal = aiSearchScore?.overallScore ?? null;
   const aiVisibility: DashboardScorecardMetric = {
     label: "AI Search Visibility",
-    value: 65,
-    displayValue: "65/100",
-    trend: "STABLE",
-    confidence: "MEDIUM",
-    dataCoveragePercentage: 60,
-    lastUpdatedAt: now,
+    value: aiVisibilityVal,
+    displayValue: aiVisibilityVal !== null ? `${aiVisibilityVal}/100` : "NOT DIRECTLY MEASURED",
+    trend: aiVisibilityVal === null ? "INSUFFICIENT_DATA" : aiVisibilityVal >= 60 ? "IMPROVING" : "STABLE",
+    confidence: aiSearchScore?.confidence ?? "LOW",
+    dataCoveragePercentage: aiSearchScore?.dataCoveragePercentage ?? 0,
+    lastUpdatedAt: aiSearchSnapshotRow?.captured_at || undefined,
+    statusNote:
+      aiVisibilityVal === null
+        ? aiSearchSnapshotRow?.unavailable_reason || "Add PERPLEXITY_API_KEY to environment secrets to unlock live AI Search visibility measurement."
+        : undefined,
   };
 
   const competitivePosition: DashboardScorecardMetric = {
@@ -212,22 +266,43 @@ export async function getSearchGrowthDashboardData(
     dataCoveragePercentage: competitors.length > 0 ? 100 : 20,
   };
 
+  // STRATXCEL — AEO brief, Section 41: same fabrication class as
+  // aiVisibility above (hardcoded 70/100, STABLE, HIGH confidence for
+  // every tenant, always). Unlike aiVisibility/localPresence, this
+  // codebase has no real, persisted directory/citation-coverage measurement
+  // to read yet (authority/gap-engine.ts's analyzeAuthorityGaps runs
+  // per-cycle but is never persisted) -- disclosed and left honestly
+  // unmeasured rather than fabricating a second guessed number, or
+  // spending this pass building a whole new persistence layer for a
+  // different brief's scope.
   const authorityCoverage: DashboardScorecardMetric = {
     label: "External Authority Coverage",
-    value: 70,
-    displayValue: "70/100",
-    trend: "STABLE",
-    confidence: "HIGH",
-    dataCoveragePercentage: 75,
+    value: null,
+    displayValue: "NOT DIRECTLY MEASURED",
+    trend: "INSUFFICIENT_DATA",
+    confidence: "LOW",
+    dataCoveragePercentage: 0,
+    statusNote: "Directory and citation coverage measurement is not yet persisted for this tenant.",
   };
 
+  // STRATXCEL — AEO brief, Section 41: same fabrication class (hardcoded
+  // 80/100, IMPROVING, HIGH confidence for every tenant, always -- even one
+  // with a zero-account Google Business connection, see Update 26/28). Now
+  // reads the real, already-persisted search_entity_nodes rows (authority/
+  // entity-graph.ts, wired into every real growth cycle since Update 8) --
+  // null (not a guessed number) when this tenant has zero real location
+  // entity nodes yet.
+  const locationEntityNodes = (entityNodeRows || []).filter((n: { entity_type: string }) => n.entity_type === "LOCATION");
+  const consistentLocationCount = locationEntityNodes.filter((n: { consistency_status: string }) => n.consistency_status === "CONSISTENT").length;
+  const localPresenceVal = locationEntityNodes.length > 0 ? Math.round((consistentLocationCount / locationEntityNodes.length) * 100) : null;
   const localPresence: DashboardScorecardMetric = {
     label: "Local & Maps Presence",
-    value: 80,
-    displayValue: "80/100",
-    trend: "IMPROVING",
-    confidence: "HIGH",
-    dataCoveragePercentage: 85,
+    value: localPresenceVal,
+    displayValue: localPresenceVal !== null ? `${localPresenceVal}/100` : "NOT ENOUGH DATA",
+    trend: localPresenceVal === null ? "INSUFFICIENT_DATA" : localPresenceVal >= 70 ? "IMPROVING" : "STABLE",
+    confidence: locationEntityNodes.length > 0 ? "HIGH" : "LOW",
+    dataCoveragePercentage: locationEntityNodes.length > 0 ? 100 : 0,
+    statusNote: localPresenceVal === null ? "Connect and resolve a Google Business Profile location to unlock local presence scoring." : undefined,
   };
 
   const verifiedCount = actions.filter((a: { status: string }) => a.status === "VERIFIED").length;
@@ -247,7 +322,7 @@ export async function getSearchGrowthDashboardData(
       providerKey: "google_search_console",
       displayName: "Google Search Console",
       status: gscRows.length > 0 ? "CONNECTED" : "NOT_CONNECTED",
-      lastVerifiedAt: gscSnapshotRow?.created_at,
+      lastVerifiedAt: gscSnapshotRow?.captured_at,
       readCapability: true,
       writeCapability: false,
       dataUsed: "Clicks, impressions, CTR, average ranking position",
@@ -468,7 +543,7 @@ export async function getSearchGrowthDashboardData(
               id: "obs_1",
               title: "Search Console Telemetry Ingested",
               detectedInGsc: true,
-              observedAt: compSnapshotRow?.created_at || now,
+              observedAt: compSnapshotRow?.captured_at || now,
               query: gscRows[0]?.query || "primary keyword",
             },
           ]

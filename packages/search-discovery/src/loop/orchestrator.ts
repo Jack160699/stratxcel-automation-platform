@@ -1,5 +1,5 @@
 import type { SearchDb } from "../repository.ts";
-import { persistEntityGraph } from "../repository.ts";
+import { persistEntityGraph, saveMeasurementSnapshot, stableFingerprint } from "../repository.ts";
 import { runSearchAnalysis, type SearchRuntimeInput } from "../runtime.ts";
 import {
   type AISearchMeasurementProvider,
@@ -172,6 +172,39 @@ export async function runContinuousGrowthLoop(
       nap: input.nap,
     });
     await persistEntityGraph(db, { tenantId: input.tenantId, projectId: entityProjectId, nodes: entityNodes });
+  }
+
+  // 9c. Persist the real AI Visibility Score (STRATXCEL — AEO brief).
+  //
+  // Root-caused live: calculateAIVisibilityScore() above was computed on
+  // every real growth cycle but never persisted anywhere -- the immediate
+  // caller (the search scheduler) only ever surfaced it in its own cron
+  // response, discarded afterward. The customer-facing dashboard
+  // (dashboard/aggregator.ts) therefore had no real row to read and used a
+  // hardcoded `65/100` "AI Search Visibility" scorecard for every tenant,
+  // always, regardless of whether AI Search measurement had ever run or
+  // even had a provider configured (confirmed live: PERPLEXITY_API_KEY is
+  // not currently set in production, per GET /api/platform/search/health).
+  // Same real, already-existing search_measurement_snapshots table and
+  // saveMeasurementSnapshot() every other real measurement source already
+  // uses -- no new table, no second AEO data store. Requires a real
+  // project/run to attach to, same as the entity graph above; best-effort
+  // (a persistence failure here must never fail an otherwise-successful
+  // growth cycle).
+  if (entityProjectId && analysisResult.run?.id) {
+    await saveMeasurementSnapshot(db, {
+      tenantId: input.tenantId,
+      projectId: entityProjectId,
+      runId: analysisResult.run.id,
+      source: "ai_search",
+      dimensions: { queriesGenerated: aiQueries.length, queriesMeasured: aiResults.length, provider: aiProvider.platform },
+      values: { score: aiScore, gaps: aiGaps.slice(0, 10) },
+      availabilityState: aiStatus === "AVAILABLE" ? "connected" : "not_connected",
+      unavailableReason: aiStatus !== "AVAILABLE" ? "Live AI Search measurement provider is not configured." : undefined,
+      fingerprint: stableFingerprint(["ai_search", new Date().toISOString().slice(0, 10)]),
+    }).catch(() => {
+      // Best-effort -- never fail the whole growth cycle over a snapshot write.
+    });
   }
 
   // 10. Persist Strategy State & AI Snapshots

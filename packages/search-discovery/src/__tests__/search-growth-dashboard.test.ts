@@ -1,5 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
 import {
   certifyProductionReadiness,
   getSearchGrowthDashboardData,
@@ -14,6 +16,8 @@ function createMockDashboardDb(config?: {
   actions?: any[];
   strategyState?: any;
   hasProject?: boolean;
+  aiSearchScore?: { overallScore: number | null; confidence?: string; dataCoveragePercentage?: number } | null;
+  entityNodes?: Array<{ entity_type: string; consistency_status: string }>;
 }) {
   let queriedTenantId: string | null = null;
 
@@ -54,7 +58,7 @@ function createMockDashboardDb(config?: {
                   targetQueries: [{ query: "dentist in raipur" }],
                   authorityScore: { overallScore: 78, confidence: "HIGH", dataCoveragePercentage: 85 },
                 },
-                created_at: "2026-08-20T00:00:00Z",
+                captured_at: "2026-08-20T00:00:00Z",
               },
               error: null,
             };
@@ -65,7 +69,19 @@ function createMockDashboardDb(config?: {
                 values: {
                   rows: config?.gscRows || [{ query: "dentist", impressions: 1000, clicks: 80, position: 3.2 }],
                 },
-                created_at: "2026-08-20T00:00:00Z",
+                captured_at: "2026-08-20T00:00:00Z",
+              },
+              error: null,
+            };
+          }
+          if (state.source === "ai_search") {
+            if (config?.aiSearchScore === undefined) return { data: null, error: null };
+            return {
+              data: {
+                values: { score: config.aiSearchScore },
+                availability_state: config.aiSearchScore?.overallScore !== null ? "connected" : "not_connected",
+                unavailable_reason: config.aiSearchScore?.overallScore === null ? "Live AI Search measurement provider is not configured." : null,
+                captured_at: "2026-08-20T00:00:00Z",
               },
               error: null,
             };
@@ -91,6 +107,14 @@ function createMockDashboardDb(config?: {
     from(table: string) {
       return {
         select() {
+          if (table === "search_entity_nodes") {
+            return {
+              eq(col: string, val: string) {
+                if (col === "tenant_id") queriedTenantId = val;
+                return Promise.resolve({ data: config?.entityNodes ?? [], error: null });
+              },
+            };
+          }
           if (table === "search_actions") {
             return {
               eq(col: string, val: string) {
@@ -194,7 +218,13 @@ test("8. Competitor display & 9. AI provider status & 10. Authority status", asy
   assert.ok(data.whyCompetitorsWin.length >= 1);
   assert.equal(data.whyCompetitorsWin[0].competitorDomain, "rival.in");
   assert.ok(data.aiSearch.providerStatuses.length >= 2);
-  assert.ok(data.scorecards.authorityCoverage.value !== null);
+  // STRATXCEL — AEO brief, Section 41: this test used to pin
+  // authorityCoverage's hardcoded fabricated value (70/100, every tenant,
+  // always) as "expected behavior". This codebase has no real, persisted
+  // directory/citation-coverage measurement yet, so the honest state is
+  // null/NOT DIRECTLY MEASURED -- corrected here, not silently deleted.
+  assert.equal(data.scorecards.authorityCoverage.value, null);
+  assert.equal(data.scorecards.authorityCoverage.displayValue, "NOT DIRECTLY MEASURED");
 });
 
 test("11. Timeline correctness & 12. Tenant isolation & 13. No secret leakage", async () => {
@@ -238,4 +268,65 @@ test("16. Dashboard with multiple connected providers & 17. Dashboard after acti
 
   const data = await getSearchGrowthDashboardData(db as any, "tenant-verified-test");
   assert.equal(data.actionCenter.actions[0].status, "FAILED");
+});
+
+test("19. search_measurement_snapshots is queried by its real column (captured_at), never the non-existent created_at", () => {
+  // Regression for a real, live production bug (STRATXCEL — AEO brief,
+  // Section 41): search_measurement_snapshots' real schema column is
+  // captured_at -- confirmed directly against production; created_at does
+  // not exist on this table at all. Both the competitor-intelligence and
+  // Search Console snapshot queries previously select()ed/order()ed by
+  // created_at, so every real call failed with a genuine Postgres error,
+  // silently discarded because the destructuring here never checks
+  // `error` -- competitor intelligence and real GSC telemetry never
+  // reached this dashboard for any tenant, ever. This is a static-source
+  // check (not the in-memory mock DB used elsewhere in this file) because
+  // that mock doesn't enforce real column existence the way Postgres does
+  // -- exactly why this bug was invisible to every prior test here.
+  const raw = fs.readFileSync(path.join(import.meta.dirname, "..", "dashboard", "aggregator.ts"), "utf8");
+  // Strip comments first -- this test's own explanatory comment above (and
+  // the source file's matching one) legitimately mentions both table and
+  // column names together, which must not trip a raw-source check.
+  const source = raw.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
+  const firstIdx = source.indexOf('from("search_measurement_snapshots")');
+  const secondIdx = source.indexOf('from("search_measurement_snapshots")', firstIdx + 1);
+  assert.ok(firstIdx >= 0 && secondIdx > firstIdx, "expected exactly two real search_measurement_snapshots queries (competitor_intelligence + search_console)");
+  for (const idx of [firstIdx, secondIdx]) {
+    const queryBlock = source.slice(idx, idx + 300);
+    assert.match(queryBlock, /captured_at/, "each search_measurement_snapshots query must select/order by the real captured_at column");
+    assert.doesNotMatch(queryBlock, /created_at/, "must never query search_measurement_snapshots by the non-existent created_at column again");
+  }
+});
+
+test("20. AI Search Visibility and Local & Maps Presence are honestly unmeasured with zero real data", async () => {
+  // STRATXCEL — AEO brief, Section 41: with no ai_search snapshot and no
+  // search_entity_nodes rows, both scorecards must be null/INSUFFICIENT_DATA
+  // -- never the previously hardcoded 65/100 and 80/100.
+  const db = createMockDashboardDb({ isPaid: true });
+  const data = await getSearchGrowthDashboardData(db as any, "tenant-no-ai-no-entities");
+
+  assert.equal(data.scorecards.aiVisibility.value, null);
+  assert.equal(data.scorecards.aiVisibility.trend, "INSUFFICIENT_DATA");
+  assert.equal(data.scorecards.localPresence.value, null);
+  assert.equal(data.scorecards.localPresence.trend, "INSUFFICIENT_DATA");
+});
+
+test("21. AI Search Visibility and Local & Maps Presence reflect real persisted data when it exists", async () => {
+  const db = createMockDashboardDb({
+    isPaid: true,
+    aiSearchScore: { overallScore: 42, confidence: "MEDIUM", dataCoveragePercentage: 60 },
+    entityNodes: [
+      { entity_type: "LOCATION", consistency_status: "CONSISTENT" },
+      { entity_type: "LOCATION", consistency_status: "INCONSISTENT" },
+      { entity_type: "SERVICE", consistency_status: "CONSISTENT" }, // non-LOCATION rows must not dilute the local-presence ratio
+    ],
+  });
+  const data = await getSearchGrowthDashboardData(db as any, "tenant-real-ai-and-entities");
+
+  assert.equal(data.scorecards.aiVisibility.value, 42);
+  assert.equal(data.scorecards.aiVisibility.displayValue, "42/100");
+  assert.equal(data.scorecards.aiVisibility.confidence, "MEDIUM");
+  // 1 of 2 real LOCATION nodes is CONSISTENT -- exactly 50%, and the one
+  // SERVICE node must not have been counted.
+  assert.equal(data.scorecards.localPresence.value, 50);
 });
