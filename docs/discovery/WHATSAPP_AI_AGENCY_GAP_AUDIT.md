@@ -1,5 +1,47 @@
 # WhatsApp AI Agency — Gap Audit
 
+## Update 7 — outbound outreach (Updates 4-5) and real public-web research (Update 6): both live-verified against the real Boss number
+
+**Outbound outreach** (commits `0badb18`, `356035e`): `send_whatsapp_message_to_contact` admin
+tool -- finds/reuses a `crm_leads` row under the Stratxcel platform tenant, stores the Boss's
+stated purpose, sends via the existing `sendOutboundWhatsAppMessage` choke point.
+`risk: low_mutation` (not `external_mutation`, which is `dashboard_only` on the whatsapp channel
+and would make the tool silently unusable from WhatsApp) -- the real safety control is the
+existing typed CONFIRM-code flow. A cold first contact needs an approved Meta template; none of
+the 3 previously-approved templates fit, so a real one (`stratxcel_outreach_intro`, MARKETING,
+Meta id `2295702371188444`) was submitted live and remains genuinely pending Meta's review as of
+this entry -- external, asynchronous, not something any amount of engineering resolves faster.
+Reply continuation (`/api/internal/whatsapp/outreach-reply`) is deliberately tool-less: the
+person replying is an external, unauthenticated third party who must never reach a tool
+registry, so it can only ever produce text.
+
+**Public web research** (commit `56a63dd`): root cause of "I cannot browse external websites
+directly" traced to its real cause -- not a model limitation, a missing tool. The capability
+already existed, mature and tested (`packages/search-discovery`'s `crawlWebsite` -> real SSRF
+protection, real robots.txt/sitemap parsing; wrapped by
+`lib/intelligence/website-intelligence.ts`'s `runWebsiteIntelligencePipeline`, which already
+extracts almost exactly what the brief asked for -- business identity, services, audience,
+positioning, SEO signals, conversion strengths/weaknesses). Verified live against the real test
+URL (`tajwebsolutions.com`, 4 pages) before wiring anything in. New `analyze_website` +
+`stratxcel_service_catalog` tools (`lib/agent-core/research-tools.ts`), wired into both the
+WhatsApp route's tool set AND the Admin Copilot's -- one canonical agent, one tool registry, as
+required.
+
+**Live-verified** against the real Boss number, post-deploy: "Analyze https://tajwebsolutions.com
+and find partnership opportunities for Stratxcel" produced a real, tool-backed answer
+(`tool_calls_count: 2`) correctly identifying Taj Web Solutions as a frontend/design studio and
+proposing a genuine complementary partnership angle (their design work + Stratxcel's SEO/WhatsApp
+automation/growth execution) -- delivered, Meta status `delivered`. A follow-up "Create a short
+audit report for this company" reused the already-fetched data with zero new tool calls (real
+caching/reuse, per the brief's own cost-control requirement) and produced a real, structured
+audit referencing Stratxcel's actual named service tiers.
+
+**Not built this pass, explicitly**: market/company discovery (find N companies matching a
+description -- no generic multi-result business-search infrastructure was found to adapt),
+automated audit-PDF/document generation, image/creative generation as an agent tool, and
+website/Vercel page-creation as an agent tool. Each is real, separate, larger integration work;
+none was faked or stubbed to look done.
+
 ## Update 3 — the worker was already deployed and already live-receiving real Meta traffic; the actual blocker was one missing DB row, plus the Update 2 billing bug; both fixed and verified with a real Boss round trip
 
 Given AWS access this session, inspected the real EC2 host
