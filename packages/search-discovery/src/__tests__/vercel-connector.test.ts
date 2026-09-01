@@ -17,6 +17,8 @@ import {
   connectVercelWebsite,
   disconnectVercelWebsite,
   discoverVercelProjects,
+  diagnoseVercelConnection,
+  classifyTokenValidation,
 } from "../vercel/index.ts";
 import type { SecretVault } from "@stratxcel/byok";
 
@@ -141,6 +143,92 @@ test("3. validateVercelToken: a network failure is honestly reported as PROVIDER
   assert.equal(result.reason, "PROVIDER_UNAVAILABLE");
 });
 
+// --- vercel/diagnostics.ts: full connect->team->project->domain pipeline
+//     (docs/discovery/SEARCH_GROWTH_ENGINE_GAP_AUDIT.md, Update 24) ---
+
+test("D1. classifyTokenValidation: maps every real validateVercelToken outcome to its own internal diagnostic classification", () => {
+  assert.equal(classifyTokenValidation({ valid: true, accountId: "a", accountName: "A", teamId: null, reason: null }), "TOKEN_VALID_PERSONAL");
+  assert.equal(classifyTokenValidation({ valid: true, accountId: "t", accountName: "T", teamId: "team_1", reason: null }), "TOKEN_VALID_TEAM");
+  assert.equal(classifyTokenValidation({ valid: false, accountId: null, accountName: null, teamId: null, reason: "INVALID_TOKEN" }), "TOKEN_INVALID");
+  assert.equal(classifyTokenValidation({ valid: false, accountId: null, accountName: null, teamId: null, reason: "TEAM_REQUIRED" }), "TEAM_ACCESS_MISSING");
+  assert.equal(classifyTokenValidation({ valid: false, accountId: null, accountName: null, teamId: null, reason: "PROVIDER_UNAVAILABLE" }), "PROVIDER_ERROR");
+  assert.equal(classifyTokenValidation({ valid: false, accountId: null, accountName: null, teamId: null, reason: "INTERNAL_ERROR" }), "INTERNAL_ERROR");
+});
+
+test("D2. diagnoseVercelConnection: a genuinely invalid token classifies as TOKEN_INVALID, failing at GET /v2/user, no further calls made", async () => {
+  let teamsOrProjectsCalled = false;
+  const fetcher = (async (url: string | URL) => {
+    if (String(url).includes("/v2/user")) return jsonResponse(401, {});
+    teamsOrProjectsCalled = true;
+    return jsonResponse(200, {});
+  }) as typeof fetch;
+  const result = await diagnoseVercelConnection("bad-token", "https://www.stratxcel.in", fetcher);
+  assert.equal(result.classification, "TOKEN_INVALID");
+  assert.equal(result.failingCall, "GET /v2/user");
+  assert.equal(teamsOrProjectsCalled, false, "an invalid token must never proceed to team/project/domain calls");
+});
+
+test("D3. diagnoseVercelConnection: a valid personal token whose account has zero Vercel projects classifies as PROJECT_NOT_FOUND, not a token failure", async () => {
+  const fetcher = (async (url: string | URL) => {
+    const u = String(url);
+    if (u.includes("/v2/user")) return jsonResponse(200, { user: { id: "acct_1", username: "jdoe" } });
+    if (u.includes("/v10/projects")) return jsonResponse(200, []);
+    throw new Error(`unexpected URL: ${u}`);
+  }) as typeof fetch;
+  const result = await diagnoseVercelConnection("real-token", "https://www.stratxcel.in", fetcher);
+  assert.equal(result.classification, "PROJECT_NOT_FOUND");
+  assert.equal(result.failingCall, "GET /v10/projects");
+  assert.equal(result.accountId, "acct_1", "the real account identity must still be reported even though no project matched -- this is not a token failure");
+});
+
+test("D4. diagnoseVercelConnection: listing projects returns 403 (insufficient scope) classifies as PROJECT_ACCESS_MISSING, distinct from an invalid token", async () => {
+  const fetcher = (async (url: string | URL) => {
+    const u = String(url);
+    if (u.includes("/v2/user")) return jsonResponse(200, { user: { id: "acct_1", username: "jdoe" } });
+    if (u.includes("/v10/projects")) return jsonResponse(403, {});
+    throw new Error(`unexpected URL: ${u}`);
+  }) as typeof fetch;
+  const result = await diagnoseVercelConnection("real-token", "https://www.stratxcel.in", fetcher);
+  assert.equal(result.classification, "PROJECT_ACCESS_MISSING");
+  assert.equal(result.httpStatus, 403);
+});
+
+test("D5. diagnoseVercelConnection: real projects exist but none of their real domains match the target website -> DOMAIN_MISMATCH, never a name-based guess", async () => {
+  const fetcher = (async (url: string | URL) => {
+    const u = String(url);
+    if (u.includes("/v2/user")) return jsonResponse(200, { user: { id: "acct_1", username: "jdoe" } });
+    if (u.includes("/v10/projects")) return jsonResponse(200, [{ id: "prj_1", name: "stratxcel-site", framework: "nextjs" }]); // name LOOKS right, but...
+    if (u.includes("/domains")) return jsonResponse(200, { domains: [{ name: "unrelated-project.example.com", apexName: "example.com", verified: true }] }); // ...its real domain is unrelated
+    throw new Error(`unexpected URL: ${u}`);
+  }) as typeof fetch;
+  const result = await diagnoseVercelConnection("real-token", "https://www.stratxcel.in", fetcher);
+  assert.equal(result.classification, "DOMAIN_MISMATCH", "a project merely NAMED like the target site, with no real matching domain, must never be treated as a match");
+  assert.equal(result.matchedProjectId, null);
+});
+
+test("D6. diagnoseVercelConnection: real project + real matching domain -> the full success path, TOKEN_VALID_TEAM with the matched project/domain reported", async () => {
+  const fetcher = (async (url: string | URL) => {
+    const u = String(url);
+    if (u.includes("/v2/user")) return jsonResponse(404, {});
+    if (u.includes("/v2/teams")) return jsonResponse(200, { teams: [{ id: "team_abc123", name: "StratXcel", slug: "stratxcel" }] });
+    if (u.includes("/v10/projects")) {
+      assert.match(u, /teamId=team_abc123/);
+      return jsonResponse(200, [{ id: "prj_1", name: "stratxcel-site", framework: "nextjs" }]);
+    }
+    if (u.includes("/domains")) {
+      assert.match(u, /teamId=team_abc123/);
+      return jsonResponse(200, { domains: [{ name: "www.stratxcel.in", apexName: "stratxcel.in", verified: true }] });
+    }
+    throw new Error(`unexpected URL: ${u}`);
+  }) as typeof fetch;
+  const result = await diagnoseVercelConnection("real-team-token", "https://www.stratxcel.in", fetcher);
+  assert.equal(result.classification, "TOKEN_VALID_TEAM");
+  assert.equal(result.failingCall, "NONE");
+  assert.equal(result.matchedProjectId, "prj_1");
+  assert.equal(result.matchedDomain, "www.stratxcel.in");
+  assert.equal(result.teamId, "team_abc123");
+});
+
 // --- client.ts: project/domain listing ---
 
 test("4. listVercelProjects: parses the real raw-array response shape", async () => {
@@ -210,11 +298,19 @@ function createMockVault(): SecretVault & { stored: Map<string, string> } {
 function createMockDb() {
   const connections: any[] = [];
   const projects: any[] = [];
+  const auditEvents: any[] = [];
   return {
     getConnections: () => connections,
     getProjects: () => projects,
+    getAuditEvents: () => auditEvents,
     from(table: string) {
       return {
+        insert(row: any) {
+          // recordAuditEvent's real shape: .insert({...}).select("*").single()
+          const saved = { id: `audit-${auditEvents.length + 1}`, ...row };
+          if (table === "audit_events") auditEvents.push(saved);
+          return { select: () => ({ single: async () => ({ data: saved, error: null }) }) };
+        },
         select() {
           return {
             eq(col1: string, val1: string) {
@@ -370,6 +466,51 @@ test("11b. connectVercelWebsite -> discoverVercelProjects: a Team-scoped token's
   assert.equal(db.getProjects()[0]!.domains[0]!.name, "www.stratxcel.in");
 });
 
+test("11c. connectVercelWebsite: a valid token whose project-listing call fails downstream still succeeds -- section 9's 'token valid but project missing is not a token failure'", async () => {
+  const db = createMockDb();
+  const vault = createMockVault();
+  const fetcher = (async (url: string | URL) => {
+    const u = String(url);
+    if (u.includes("/v2/user")) return jsonResponse(200, { user: { id: "acct_1", username: "jdoe" } });
+    if (u.includes("/v10/projects")) return jsonResponse(503, {}); // Vercel itself having a bad moment, AFTER the token was already proven valid
+    throw new Error(`unexpected URL: ${u}`);
+  }) as typeof fetch;
+
+  const result = await connectVercelWebsite(db, { tenantId: "t1", connectedByUserId: "u1", token: "real-token", fetcher, vault });
+  assert.equal(result.ok, true, "a proven-valid token must still connect even when a later, separate project-listing call fails -- that is not a token failure");
+  assert.equal(result.diagnosticState, "PROVIDER_ERROR", "the downstream problem is still surfaced as detail, just never as a connect failure");
+  assert.equal(db.getConnections().length, 1);
+});
+
+test("11d. connectVercelWebsite: every attempt (success and failure) writes a real audit event, and it never contains the raw token", async () => {
+  const db = createMockDb();
+  const vault = createMockVault();
+
+  const badFetcher = (async () => jsonResponse(401, {})) as typeof fetch;
+  await connectVercelWebsite(db, { tenantId: "t1", connectedByUserId: "u1", token: "SECRET-BAD-TOKEN-VALUE", fetcher: badFetcher, vault });
+
+  const goodFetcher = (async (url: string | URL) => {
+    const u = String(url);
+    if (u.includes("/v2/user")) return jsonResponse(200, { user: { id: "acct_1", username: "jdoe" } });
+    if (u.includes("/v10/projects")) return jsonResponse(200, []);
+    throw new Error(`unexpected URL: ${u}`);
+  }) as typeof fetch;
+  await connectVercelWebsite(db, { tenantId: "t1", connectedByUserId: "u1", token: "SECRET-GOOD-TOKEN-VALUE", fetcher: goodFetcher, vault });
+
+  const events = db.getAuditEvents();
+  assert.equal(events.length, 2, "both the failed and the succeeded attempt must each write a real audit event -- previously neither did");
+  assert.equal(events[0].action, "SEARCH_VERCEL_CONNECT_ATTEMPTED");
+  assert.equal(events[0].metadata.outcome, "failed");
+  assert.equal(events[0].metadata.classification, "TOKEN_INVALID");
+  assert.equal(events[1].metadata.outcome, "succeeded");
+  assert.equal(events[1].metadata.classification, "PROJECT_NOT_FOUND");
+  for (const event of events) {
+    const serialized = JSON.stringify(event);
+    assert.doesNotMatch(serialized, /SECRET-BAD-TOKEN-VALUE/, "the audit record must never contain the raw token");
+    assert.doesNotMatch(serialized, /SECRET-GOOD-TOKEN-VALUE/, "the audit record must never contain the raw token");
+  }
+});
+
 test("12. disconnectVercelWebsite: real disconnect removes the connection and revokes the vault entry", async () => {
   const db = createMockDb();
   const vault = createMockVault();
@@ -391,4 +532,4 @@ test("13. disconnectVercelWebsite: disconnecting an already-disconnected tenant 
   assert.equal(result.ok, true);
 });
 
-console.log("vercel-connector.test.ts: real Vercel API response shapes parse correctly; connect/disconnect/discover never store a raw token or fabricate success — PASS");
+console.log("vercel-connector.test.ts: real Vercel API response shapes parse correctly; connect/disconnect/discover never store a raw token or fabricate success; the full token->team->project->domain diagnostic pipeline classifies every real failure mode correctly, a downstream project/domain problem never undoes a proven-valid token, and every connect attempt is now really audited — PASS");

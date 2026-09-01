@@ -156,11 +156,18 @@ export interface DiscoveredVercelProject {
  * domain (e.g. only unrelated side-projects connected), or no Vercel
  * connection at all, correctly gets null -- never a fabricated "Unknown
  * framework" guess.
+ *
+ * Update 24: generic over T (constrained to DiscoveredVercelProject) so a
+ * caller that needs to preserve extra real fields not in the base shape
+ * (e.g. vercel/diagnostics.ts's externalProjectId, needed to report which
+ * specific project matched) gets its own richer type back out, without a
+ * second/duplicate matching implementation. Every existing caller passing
+ * plain DiscoveredVercelProject[] is unaffected -- T defaults to that.
  */
-export function matchVercelProjectToWebsite(
-  projects: readonly DiscoveredVercelProject[],
+export function matchVercelProjectToWebsite<T extends DiscoveredVercelProject>(
+  projects: readonly T[],
   websiteUrl: string,
-): DiscoveredVercelProject | null {
+): T | null {
   const websiteKey = websiteMatchKey(websiteUrl);
   if (!websiteKey) return null;
   for (const project of projects) {

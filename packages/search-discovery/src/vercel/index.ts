@@ -1,3 +1,4 @@
 export * from "./types.ts";
 export * from "./client.ts";
 export * from "./connector.ts";
+export * from "./diagnostics.ts";

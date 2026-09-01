@@ -51,5 +51,5 @@ export async function POST(request: Request) {
     return Response.json({ error: "SEARCH_VERCEL_CONNECT_FAILED", reason: result.reason }, { status: 400 });
   }
 
-  return Response.json({ connected: true, accountName: result.accountName }, { status: 200 });
+  return Response.json({ connected: true, accountName: result.accountName, diagnosticState: result.diagnosticState }, { status: 200 });
 }

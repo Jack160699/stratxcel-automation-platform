@@ -31,7 +31,7 @@ export async function GET(request: Request) {
 
   const { data: connection } = await supabase
     .from("search_website_connections")
-    .select("id, provider, external_account_name, scope, is_healthy, last_verified_at, last_error")
+    .select("id, provider, external_account_name, scope, is_healthy, last_verified_at, last_error, diagnostic_state")
     .eq("tenant_id", tenantId)
     .eq("provider", "vercel")
     .maybeSingle();
@@ -82,6 +82,12 @@ export async function GET(request: Request) {
         isHealthy: connection?.is_healthy ?? null,
         lastVerifiedAt: connection?.last_verified_at ?? null,
         lastError: connection?.last_error ?? null,
+        // Update 24: the non-blocking token->team->project->domain
+        // diagnosis (vercel/diagnostics.ts) -- null for a connection made
+        // before this column existed, until its next connect/discover
+        // refreshes it. Lets the UI distinguish "connected, project not
+        // found yet" from "connected and verified" without a raw status code.
+        diagnosticState: connection?.diagnostic_state ?? null,
         projects,
       },
     },

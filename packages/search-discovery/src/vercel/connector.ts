@@ -1,6 +1,9 @@
 import { createDevEncryptedVault, type SecretVault } from "@stratxcel/byok";
+import { recordAuditEvent } from "@stratxcel/audit";
 import { validateVercelToken, listVercelProjects, listVercelProjectDomains } from "./client.ts";
-import type { WebsiteConnectionScope } from "./types.ts";
+import { classifyTokenValidation, diagnoseProjectAndDomainAccess, type VercelDiagnosticClassification } from "./diagnostics.ts";
+import type { WebsiteConnectionScope, VercelProjectSummary, VercelProjectDomain } from "./types.ts";
+import { matchVercelProjectToWebsite, resolveCanonicalWebsite } from "../website-input.ts";
 import type { SearchDb } from "../repository.ts";
 
 /**
@@ -28,23 +31,98 @@ export interface ConnectVercelResult {
   connectionId: string | null;
   accountName: string | null;
   reason: string | null;
+  /** Populated only when ok is true -- one of the "token is genuinely
+   * valid" diagnostic states (docs/discovery/SEARCH_GROWTH_ENGINE_GAP_AUDIT.md,
+   * Update 24). A valid token whose Vercel account has no matching
+   * StratXcel project/domain yet is still a SUCCESSFUL connection
+   * (section 9 of the brief this fixed: "token valid but project missing
+   * is not a token failure") -- this field carries that extra, non-
+   * blocking detail. Null when ok is false; `reason` carries the failure
+   * cause in that case, unchanged from Update 23. */
+  diagnosticState: VercelDiagnosticClassification | null;
+}
+
+function classificationToConnectFailureReason(classification: VercelDiagnosticClassification): string {
+  switch (classification) {
+    case "TEAM_ACCESS_MISSING":
+      return "TEAM_REQUIRED";
+    case "PROVIDER_ERROR":
+      return "PROVIDER_UNAVAILABLE";
+    case "INTERNAL_ERROR":
+      return "INTERNAL_ERROR";
+    case "TOKEN_INVALID":
+    default:
+      return "INVALID_TOKEN";
+  }
+}
+
+/**
+ * Root-caused via docs/discovery/SEARCH_GROWTH_ENGINE_GAP_AUDIT.md, Update
+ * 24: a real customer's connect attempt failed with no trace of it
+ * anywhere afterward -- connectVercelWebsite reported a reason to its
+ * immediate HTTP caller and then discarded it. Every attempt (success or
+ * failure) is now recorded as a real, sanitized audit_events row so a
+ * future investigation of "trace the actual production request" has an
+ * actual record, never nothing. Never includes the token -- only Vercel's
+ * own non-secret identifiers (accountId, teamId) and the classification.
+ */
+async function recordConnectAttempt(
+  db: SearchDb,
+  input: { tenantId: string; connectedByUserId: string | null; connectionId: string | null; outcome: "succeeded" | "failed"; classification: string; accountId: string | null; teamId: string | null },
+) {
+  try {
+    await recordAuditEvent(db as any, {
+      tenantId: input.tenantId,
+      actorUserId: input.connectedByUserId,
+      actorKind: input.connectedByUserId ? "user" : "system",
+      action: "SEARCH_VERCEL_CONNECT_ATTEMPTED",
+      targetType: "search_website_connection",
+      targetId: input.connectionId ?? undefined,
+      metadata: { outcome: input.outcome, classification: input.classification, accountId: input.accountId, teamId: input.teamId },
+    });
+  } catch {
+    // Best-effort: a failure to WRITE the audit record must never fail
+    // (or fabricate the outcome of) the real connect attempt itself.
+  }
 }
 
 export async function connectVercelWebsite(
   db: SearchDb,
   input: { tenantId: string; connectedByUserId: string | null; token: string; scope?: WebsiteConnectionScope; fetcher?: typeof fetch; vault?: SecretVault },
 ): Promise<ConnectVercelResult> {
+  // Update 24: gates purely on token-level validity, exactly as Update 23
+  // did -- a downstream project/domain-stage problem (a transient Vercel
+  // error listing projects, zero matching projects, no domain match) must
+  // NEVER undo an already-proven-valid token (section 9 of the brief this
+  // fixed: "token valid but project missing is not a token failure").
   const validation = await validateVercelToken(input.token, input.fetcher);
+  const tokenClassification = classifyTokenValidation(validation);
+
   if (!validation.valid) {
-    return { ok: false, connectionId: null, accountName: null, reason: validation.reason };
+    await recordConnectAttempt(db, { tenantId: input.tenantId, connectedByUserId: input.connectedByUserId, connectionId: null, outcome: "failed", classification: tokenClassification, accountId: null, teamId: null });
+    return { ok: false, connectionId: null, accountName: null, reason: classificationToConnectFailureReason(tokenClassification), diagnosticState: null };
   }
+
+  // Non-blocking: runs the same real listVercelProjects/listVercelProjectDomains
+  // production functions (never a second/duplicate implementation) to
+  // classify how much of the project/domain pipeline succeeds -- but
+  // whatever it returns, the connection below is still created, because
+  // the token itself is already proven valid.
+  let canonicalWebsiteUrl: string | null = null;
+  try {
+    const canonical = await resolveCanonicalWebsite(db, input.tenantId);
+    canonicalWebsiteUrl = canonical?.url ?? null;
+  } catch {
+    // best-effort -- domain matching just gets skipped
+  }
+  const projectDiagnosis = await diagnoseProjectAndDomainAccess(input.token, validation.teamId, canonicalWebsiteUrl, input.fetcher);
 
   const vault = input.vault ?? createDevEncryptedVault(db as never);
   let tokenRef: string;
   try {
     tokenRef = await vault.store(input.token);
   } catch (err) {
-    return { ok: false, connectionId: null, accountName: null, reason: err instanceof Error ? err.message : "VAULT_STORE_FAILED" };
+    return { ok: false, connectionId: null, accountName: null, reason: err instanceof Error ? err.message : "VAULT_STORE_FAILED", diagnosticState: null };
   }
 
   const { data, error } = await db
@@ -61,6 +139,10 @@ export async function connectVercelWebsite(
         // resolves this via the /v2/teams fallback) -- null for a normal
         // "Full Account" personal token, matching Vercel's own model.
         team_id: validation.teamId,
+        // Update 24: the additional, non-blocking project/domain
+        // classification -- refreshed again on every discoverVercelProjects
+        // call using the same already-fetched data, no extra API calls.
+        diagnostic_state: projectDiagnosis.classification,
         is_healthy: true,
         last_verified_at: new Date().toISOString(),
         last_error: null,
@@ -79,10 +161,12 @@ export async function connectVercelWebsite(
     } catch {
       // best-effort cleanup only -- the primary error below is what matters
     }
-    return { ok: false, connectionId: null, accountName: null, reason: `CONNECTION_SAVE_FAILED: ${error.message}` };
+    return { ok: false, connectionId: null, accountName: null, reason: `CONNECTION_SAVE_FAILED: ${error.message}`, diagnosticState: null };
   }
 
-  return { ok: true, connectionId: data.id as string, accountName: validation.accountName, reason: null };
+  await recordConnectAttempt(db, { tenantId: input.tenantId, connectedByUserId: input.connectedByUserId, connectionId: data.id as string, outcome: "succeeded", classification: projectDiagnosis.classification, accountId: validation.accountId, teamId: validation.teamId });
+
+  return { ok: true, connectionId: data.id as string, accountName: validation.accountName, reason: null, diagnosticState: projectDiagnosis.classification };
 }
 
 export async function disconnectVercelWebsite(db: SearchDb, input: { tenantId: string; vault?: SecretVault }): Promise<{ ok: boolean; reason: string | null }> {
@@ -147,6 +231,10 @@ export async function discoverVercelProjects(db: SearchDb, input: { tenantId: st
   }
 
   const now = new Date().toISOString();
+  // Update 24: accumulated alongside the existing per-project persist loop
+  // so the domain data already being fetched here can also refresh
+  // diagnostic_state below -- zero extra Vercel API calls.
+  const projectsWithDomains: Array<VercelProjectSummary & { domains: VercelProjectDomain[] }> = [];
   for (const project of projects) {
     // Real per-project domain verification status -- listVercelProjects's
     // own summary only carries assigned aliases, not verification state.
@@ -157,6 +245,7 @@ export async function discoverVercelProjects(db: SearchDb, input: { tenantId: st
       // Keep the alias-derived summary rather than failing the whole
       // discovery pass over one project's domain lookup.
     }
+    projectsWithDomains.push({ ...project, domains });
 
     const { error } = await db
       .from("search_website_connection_projects")
@@ -177,7 +266,34 @@ export async function discoverVercelProjects(db: SearchDb, input: { tenantId: st
     if (error) return { ok: false, projectCount: 0, reason: `PROJECT_SAVE_FAILED: ${error.message}` };
   }
 
-  await db.from("search_website_connections").update({ is_healthy: true, last_verified_at: now, last_error: null, updated_at: now }).eq("id", connection.id);
+  // Update 24: refresh diagnostic_state from the same real data just
+  // fetched above -- the token was already known-valid to reach this line
+  // (only a valid token's connection row exists at all), so this only
+  // ever distinguishes PROJECT_NOT_FOUND / DOMAIN_MISMATCH /
+  // TOKEN_VALID_PERSONAL / TOKEN_VALID_TEAM, matching
+  // diagnoseVercelConnection's own classification for the same inputs
+  // without a second live round-trip or a second matching implementation.
+  let diagnosticState: string;
+  if (projects.length === 0) {
+    diagnosticState = "PROJECT_NOT_FOUND";
+  } else {
+    let canonicalWebsiteUrl: string | null = null;
+    try {
+      const canonical = await resolveCanonicalWebsite(db, input.tenantId);
+      canonicalWebsiteUrl = canonical?.url ?? null;
+    } catch {
+      // best-effort
+    }
+    const isTeamToken = Boolean(connection.team_id);
+    if (!canonicalWebsiteUrl) {
+      diagnosticState = isTeamToken ? "TOKEN_VALID_TEAM" : "TOKEN_VALID_PERSONAL";
+    } else {
+      const matched = matchVercelProjectToWebsite(projectsWithDomains, canonicalWebsiteUrl);
+      diagnosticState = matched ? (isTeamToken ? "TOKEN_VALID_TEAM" : "TOKEN_VALID_PERSONAL") : "DOMAIN_MISMATCH";
+    }
+  }
+
+  await db.from("search_website_connections").update({ is_healthy: true, last_verified_at: now, last_error: null, diagnostic_state: diagnosticState, updated_at: now }).eq("id", connection.id);
 
   return { ok: true, projectCount: projects.length, reason: null };
 }

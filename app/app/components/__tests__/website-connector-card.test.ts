@@ -57,4 +57,15 @@ assert.doesNotMatch(card, /VERCEL_API_ERROR_/, "must no longer reference the old
   assert.notEqual(teamRequiredMsg, providerUnavailableMsg, "TEAM_REQUIRED (a valid-but-scopeless token) and PROVIDER_UNAVAILABLE (Vercel itself failing) are different, actionable causes -- must not collapse to the same customer message");
 }
 
+// --- Update 24: section 9 of the brief -- "token valid but project
+//     missing" must be shown as its own distinct state, NEVER as a token
+//     failure. The diagnosticState message must reflect the connection
+//     itself succeeding (a genuinely valid token), with only the
+//     downstream project/domain match still pending. -------------------
+assert.match(card, /diagnosticState/, "the card must read the real, non-blocking diagnosticState from the status endpoint");
+assert.match(card, /friendlyDiagnosticState/, "must map diagnosticState through its own dedicated, distinct copy function -- never the token-failure copy function");
+assert.match(card, /Token connected\..*couldn't find a matching website project/, "PROJECT_NOT_FOUND must read as a successful connection with a pending project match, never as an authorization failure");
+assert.match(card, /Token connected\..*None of the projects.*contain \$\{websiteHostname\}/, "DOMAIN_MISMATCH must use the tenant's OWN real website hostname, never a hardcoded example domain");
+assert.doesNotMatch(card, /None of the projects.*contain stratxcel\.in/, "must never hardcode the literal stratxcel.in domain -- every other real tenant has a different real website");
+
 console.log("website-connector-card.test.ts: ALL PASS");

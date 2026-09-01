@@ -28,19 +28,60 @@ interface VercelProject {
  * here to one string. client.ts now returns a small, differentiated,
  * real-cause reason set instead -- each gets its own distinct, correct,
  * actionable message.
+ *
+ * Update 24: a customer then reported this EXACT INVALID_TOKEN message for
+ * a token they described as real. Traced end to end (docs/discovery/
+ * SEARCH_GROWTH_ENGINE_GAP_AUDIT.md, Update 24): no bug in header
+ * construction or trimming (both client and server already trim; the
+ * Authorization header is exactly "Bearer <token>") -- Vercel's own API
+ * genuinely returns 401/403 for that specific token. This is a real,
+ * external fact about that token (expired, revoked, or malformed on
+ * Vercel's side), not a defect this codebase can override. Copy below
+ * updated to this update's specified exact wording for the token-level
+ * failures.
  */
 function friendlyVercelConnectError(reason: string | undefined): string {
   switch (reason) {
     case "INVALID_TOKEN":
-      return "Your Vercel connection could not be authorized. Double-check the token and try again.";
+      return "This Vercel token is not valid. Double-check that you copied the whole token and that it hasn't expired or been revoked.";
     case "TEAM_REQUIRED":
-      return "This token isn't scoped to a Vercel team or project. Create a token scoped to the team your site belongs to, then try again.";
+      return "This token does not have access to the required Vercel team. Create a token scoped to the team your site belongs to, then try again.";
     case "PROVIDER_UNAVAILABLE":
-      return "Vercel could not be reached right now. Please try again in a moment.";
+      return "Vercel is temporarily unavailable. Please try again in a moment.";
     case "INTERNAL_ERROR":
       return "Something went wrong on our end connecting to Vercel. Please try again.";
     default:
       return "Could not connect to Vercel. Check the token and try again.";
+  }
+}
+
+/**
+ * Update 24: friendly copy for the SEPARATE, non-blocking post-connect
+ * diagnostic state (search_website_connections.diagnostic_state) -- a
+ * connection with a genuinely valid token that simply hasn't (yet) found
+ * a matching project/domain in the connected Vercel account. Per this
+ * update's brief, section 9: this must never be shown as, or confused
+ * with, a token failure -- the token connected; only the project/domain
+ * match is still pending. `websiteHostname` is the tenant's OWN real
+ * canonical website (never a hardcoded example domain), so this never
+ * shows another tenant's domain.
+ */
+function friendlyDiagnosticState(state: string | null | undefined, websiteHostname: string | null): string | null {
+  switch (state) {
+    case "PROJECT_NOT_FOUND":
+      return "Token connected. We couldn't find a matching website project in this Vercel account yet.";
+    case "DOMAIN_MISMATCH":
+      return websiteHostname
+        ? `Token connected. None of the projects in this Vercel account contain ${websiteHostname}.`
+        : "Token connected. None of the projects in this Vercel account match your website.";
+    case "PROJECT_ACCESS_MISSING":
+      return "Token connected, but it doesn't have permission to list projects in this Vercel account.";
+    case "DOMAIN_NOT_FOUND":
+      return "Token connected. We couldn't check this account's project domains right now.";
+    case "PROVIDER_ERROR":
+      return "Token connected. Vercel was temporarily unavailable while we looked for a matching project -- try Refresh projects in a moment.";
+    default:
+      return null;
   }
 }
 
@@ -54,6 +95,7 @@ interface WebsiteStatus {
     isHealthy: boolean | null;
     lastVerifiedAt: string | null;
     lastError: string | null;
+    diagnosticState: string | null;
     projects: VercelProject[];
   };
 }
@@ -79,6 +121,19 @@ export function WebsiteConnectorCard({ tenantId }: { tenantId: string }) {
   const [connectError, setConnectError] = useState<string | null>(null);
   const [discovering, setDiscovering] = useState(false);
   const [showConnectForm, setShowConnectForm] = useState(false);
+
+  // Update 24: the tenant's OWN real canonical website hostname (never a
+  // hardcoded example domain) -- used only to phrase the DOMAIN_MISMATCH
+  // diagnostic message with the actual site this connection was checked
+  // against.
+  let websiteHostname: string | null = null;
+  if (status?.website?.url) {
+    try {
+      websiteHostname = new URL(status.website.url).hostname;
+    } catch {
+      websiteHostname = null;
+    }
+  }
 
   function reload() {
     fetch(`/api/platform/search/website/status?tenantId=${encodeURIComponent(tenantId)}`)
@@ -221,6 +276,14 @@ export function WebsiteConnectorCard({ tenantId }: { tenantId: string }) {
 
             {status.vercel.lastError && (
               <p className="mt-1 text-xs text-sx-danger">{status.vercel.lastError}</p>
+            )}
+
+            {/* Update 24: the connection itself succeeded (a genuinely
+               valid token) -- this is separate, non-blocking detail about
+               whether a matching project/domain was found yet, never
+               shown as if the connection had failed. */}
+            {status.vercel.state !== "NOT_CONNECTED" && friendlyDiagnosticState(status.vercel.diagnosticState, websiteHostname) && (
+              <p className="mt-1 text-xs text-sx-text-subtle">{friendlyDiagnosticState(status.vercel.diagnosticState, websiteHostname)}</p>
             )}
 
             {status.vercel.projects.length > 0 && (
