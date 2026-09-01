@@ -24,6 +24,10 @@ const STAFF_ROLE_PERMISSIONS: Record<string, readonly string[]> = {
     // read-only, no tenant/ownership implications, safe for the same roles
     // that can already initiate outreach.
     "agent:read:research",
+    // Real, cost-gated image generation (generate_image) -- the tool's own
+    // budget gate is the real spend control; this permission is just "may
+    // ask for one at all".
+    "agent:mutate:media",
   ],
   platform_admin: [
     "agent:read:clients", "agent:read:leads", "agent:read:conversations", "agent:read:missions",
@@ -32,6 +36,7 @@ const STAFF_ROLE_PERMISSIONS: Record<string, readonly string[]> = {
     "agent:read:memory", "agent:mutate:memory", "agent:mutate:leads", "agent:mutate:missions", "agent:mutate:handoffs", "agent:mutate:conversations",
     "agent:mutate:outreach",
     "agent:read:research",
+    "agent:mutate:media",
   ],
   audit_reviewer: ["agent:read:audit", "agent:read:clients", "agent:read:leads", "agent:read:memory", "agent:mutate:memory"],
   finance_reviewer: ["agent:read:finance", "agent:read:clients", "agent:read:memory", "agent:mutate:memory"],

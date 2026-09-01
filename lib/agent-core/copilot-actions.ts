@@ -14,6 +14,7 @@ import {
 } from "@stratxcel/agent-core";
 import { createAgentCoreProviderAdapter } from "./provider-adapter";
 import { RESEARCH_DELEGATION_TOOLS } from "./research-tools";
+import { GROWTH_MEDIA_TOOLS } from "./growth-media-tools";
 
 /**
  * Shared turn/thread logic for the admin and client web Copilot UIs
@@ -79,7 +80,7 @@ export async function sendCopilotMessage(principal: AgentPrincipal, userText: st
     principal,
     provider: createAgentCoreProviderAdapter(principal.tenantId),
     userText: trimmed,
-    extraTools: RESEARCH_DELEGATION_TOOLS,
+    extraTools: [...RESEARCH_DELEGATION_TOOLS, ...GROWTH_MEDIA_TOOLS],
   });
   return { ok: result.status !== "failed", replyText: result.replyText, status: result.status, confirmationRequired: result.confirmationRequired };
 }
