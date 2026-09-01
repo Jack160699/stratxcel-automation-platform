@@ -17,6 +17,13 @@ async function run() {
   assert.ok(growthPage.includes("Retry"), "Must contain a graceful Retry button on error");
   assert.ok(growthPage.includes("Back to Home"), "Must contain Back to Home link");
   assert.ok(growthPage.includes("loadData"), "Must use controlled loadData without crashing");
+  // VERIFICATION INTEGRITY (2026-09-02): a real, live mislabeling was found
+  // and fixed here -- PARTIALLY_COMPLETED missions (some sub-tasks did not
+  // finish) were shown as an unqualified "Completed successfully" in the
+  // "What Improved" card, identical to a genuinely COMPLETED one. Source-
+  // text-checks that the fix is actually present, not just described.
+  assert.ok(growthPage.includes('isPartial = m.state === "PARTIALLY_COMPLETED"'), "Must distinguish PARTIALLY_COMPLETED from COMPLETED before labeling a mission");
+  assert.ok(growthPage.includes("some parts may need review"), "A partially completed mission must say so, not read as an unqualified success");
   console.log("✓ Issue A: Growth page stability, error handling, and outcome architecture verified.");
 
   // 2. ISSUE B: Content Visuals & Media Resolution

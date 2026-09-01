@@ -6,7 +6,7 @@ import { useCurrentTenant } from "../CurrentTenantContext";
 import { ModulePageHeader } from "../components/ModulePageHeader";
 import { Card, CardHeading } from "@/components/ui/Card";
 import { Select } from "@/components/ui/Input";
-import type { MissionSummary } from "../components/MissionSummaryCard";
+import { MISSION_STATE_CHIP, type MissionSummary } from "../components/MissionSummaryCard";
 
 const TERMINAL_COMPLETED = new Set(["COMPLETED", "PARTIALLY_COMPLETED"]);
 const RANGE_OPTIONS = [
@@ -211,14 +211,26 @@ export default function GrowthPage() {
               </div>
               <ul className="space-y-2.5 text-xs text-sx-text">
                 {completed.length > 0 ? (
-                  completed.slice(0, 3).map((m) => (
-                    <li key={m.id} className="flex items-start gap-2">
-                      <span className="text-sx-success shrink-0 mt-0.5">•</span>
-                      <span className="leading-relaxed">
-                        <strong className="font-semibold text-sx-text">{(m.service_key || "Task").replace(/_/g, " ")}</strong>: Completed successfully
-                      </span>
-                    </li>
-                  ))
+                  completed.slice(0, 3).map((m) => {
+                    // VERIFICATION INTEGRITY (2026-09-02): PARTIALLY_COMPLETED
+                    // is a real, distinct mission outcome -- some sub-tasks
+                    // did not finish -- and must never read as an unqualified
+                    // "Completed successfully" the way COMPLETED correctly
+                    // does. Reuses the same label MISSION_STATE_CHIP already
+                    // uses on the Missions page rather than inventing new
+                    // wording here.
+                    const isPartial = m.state === "PARTIALLY_COMPLETED";
+                    const label = isPartial ? (MISSION_STATE_CHIP[m.state]?.label ?? "Partially completed") : "Completed successfully";
+                    return (
+                      <li key={m.id} className="flex items-start gap-2">
+                        <span className={`${isPartial ? "text-amber-500" : "text-sx-success"} shrink-0 mt-0.5`}>•</span>
+                        <span className="leading-relaxed">
+                          <strong className="font-semibold text-sx-text">{(m.service_key || "Task").replace(/_/g, " ")}</strong>: {label}
+                          {isPartial ? " — some parts may need review" : ""}
+                        </span>
+                      </li>
+                    );
+                  })
                 ) : (
                   <li className="flex items-start gap-2">
                     <span className="text-sx-success shrink-0 mt-0.5">•</span>
