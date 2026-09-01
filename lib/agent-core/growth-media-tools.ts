@@ -14,6 +14,17 @@
  *   Integrations page renders from (Google/GBP/Search Console/GA4/Vercel/
  *   WhatsApp/social), so a WhatsApp/Admin-AI answer can never disagree with
  *   what the dashboard shows.
+ * - check_website_status: the exact same site_projects read as
+ *   app/api/platform/websites/route.ts's GET handler (same columns, same
+ *   ordering) -- packages/websites-and-domains's full creation/editing/
+ *   deployment engine (123+ files: brief engine, generation engine, editing
+ *   engine, ecommerce engine, a real deployment state machine) is a real,
+ *   mature subsystem that genuinely needs its own dedicated bridging pass,
+ *   not a rushed wrapper here (capability_registry:
+ *   engine:website_vercel_orchestration stays REAL_NOT_EXPOSED for the
+ *   creation/editing/deployment mutation surface). A read-only status
+ *   check is the safe, scoped slice of it: zero new logic, matches the
+ *   check_growth_status/check_connections pattern exactly.
  * - generate_image: lib/social/agent/generate-image-tool.ts's
  *   executeGenerateImageTool, UNMODIFIED -- real budget gate, real
  *   idempotent job persistence, real brand-context loading. This function's
@@ -88,6 +99,30 @@ export const GROWTH_MEDIA_TOOLS: AgentTool[] = [
       if (!tenantId) return { available: false, reason: "no_tenant_resolved" };
       const status = await loadIntegrationsStatusData(ctx.supabase as never, tenantId);
       return { tenantId, ...status };
+    },
+  },
+  {
+    schema: {
+      name: "check_website_status",
+      description: "Real, currently-stored Stratxcel-built websites for a tenant -- name, slug, status (draft/live/etc.), custom domain, framework, template, and timestamps. The exact same data and columns the Website page's list reads. Use for 'what's the status of our website', 'is our domain connected', 'do we have a website yet'. Read-only -- for creating or editing a website, say that's dashboard-only for now.",
+      parameters: {
+        type: "object",
+        properties: { tenantId: { type: "string", description: "Optional -- a specific client's tenant id. Defaults to Stratxcel's own." } },
+      },
+    },
+    mutating: false,
+    risk: "read",
+    requiredPermission: "agent:read:website",
+    async execute(ctx, args) {
+      const tenantId = resolveTenantId(ctx, args);
+      if (!tenantId) return { available: false, reason: "no_tenant_resolved" };
+      const { data: sites, error } = await ctx.supabase
+        .from("site_projects")
+        .select("id, tenant_id, name, slug, status, custom_domain, framework, template, created_at, updated_at")
+        .eq("tenant_id", tenantId)
+        .order("created_at", { ascending: false });
+      if (error) return { available: false, reason: error.message };
+      return { tenantId, sites: sites ?? [] };
     },
   },
   {

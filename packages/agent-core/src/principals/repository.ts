@@ -37,6 +37,11 @@ const STAFF_ROLE_PERMISSIONS: Record<string, readonly string[]> = {
     // (subscription, approval state, connector health) is the real gate;
     // this permission is "may attempt at all".
     "agent:mutate:website",
+    // Real, read-only site_projects status (check_website_status) -- same
+    // data the Website dashboard page shows. Separate from
+    // agent:mutate:website so a future narrower staff role could see status
+    // without being able to execute fixes.
+    "agent:read:website",
   ],
   platform_admin: [
     "agent:read:clients", "agent:read:leads", "agent:read:conversations", "agent:read:missions",
@@ -48,6 +53,7 @@ const STAFF_ROLE_PERMISSIONS: Record<string, readonly string[]> = {
     "agent:mutate:media",
     "agent:read:capabilities",
     "agent:mutate:website",
+    "agent:read:website",
   ],
   audit_reviewer: ["agent:read:audit", "agent:read:clients", "agent:read:leads", "agent:read:memory", "agent:mutate:memory"],
   finance_reviewer: ["agent:read:finance", "agent:read:clients", "agent:read:memory", "agent:mutate:memory"],

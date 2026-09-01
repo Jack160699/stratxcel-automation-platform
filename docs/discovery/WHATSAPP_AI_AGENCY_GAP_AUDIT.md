@@ -1,5 +1,96 @@
 # WhatsApp AI Agency — Gap Audit
 
+## Update 13 — a SECOND verification-integrity defect, found live minutes after Update 10 shipped — `handleConfirm`'s deterministic CONFIRM path also claimed success unconditionally
+
+Real production incident, not a test: the Boss confirmed `execute_growth_action` via
+WhatsApp's real `CONFIRM <code>` flow (Update 12). The engine correctly, honestly returned
+a non-throwing `BLOCKED` result — the real `search_actions` row was `AWAITING_APPROVAL`,
+nothing was changed on the live website. `handleConfirm`
+([control-handlers.ts](../../packages/agent-core/src/control-handlers.ts)) replied "Done.
+The requested change was completed." anyway — a hardcoded literal, **no LLM involved at
+all**, on a code path Update 10 never touched (that fix only covers `runAgentTurn`'s LLM
+loop).
+
+Verified by grep that exactly two `tool.execute()` call sites exist in the whole package —
+`orchestrator.ts` (fixed in Update 10) and `control-handlers.ts` (fixed here). Same
+mechanism applied: `handleConfirm` now calls the tool's own `interpretOutcome()` on the
+real result and lets a non-success verdict override the hardcoded "Done." reply, instead of
+assuming any non-throwing `execute()` means success.
+
+Zero prior test coverage existed for `handleConfirm` at all — exactly how this went
+unnoticed. New
+[handle-confirm.test.ts](../../packages/agent-core/src/__tests__/handle-confirm.test.ts)
+reproduces the incident (a tool returns a real `BLOCKED` result, `handleConfirm` must not
+say "Done") and proves the fix is additive (a tool without `interpretOutcome`, or one that
+succeeds, is byte-for-byte unaffected). Wired into the canonical `test:agent-core` script.
+`tsc --noEmit` clean, lint clean, full `npm test` passes. Commit `26be399`.
+
+## Update 12 — real live-website SEO/content fix execution + real finance overview
+
+`execute_growth_action` wraps `packages/search-discovery`'s `executeSearchAction`
+**unmodified** — a real, already-mature "verification as a platform primitive"
+implementation: before/after evidence capture, real live HTML re-verification after the
+write, automatic rollback on verification failure, and precise
+`COMPLETED`/`VERIFIED`/`FAILED`/`BLOCKED`/`VERIFICATION_FAILED` states (exactly the "deploy
+started is not deployed; deployed is not healthy" distinction the brief asks for — it
+already existed, just unbridged). CMS provider resolution mirrors
+`app/api/platform/search/actions/execute/route.ts`'s exact logic rather than reinventing
+it. Only ever operates on an `actionId` a human or a prior `check_growth_status` call
+already surfaced — never invents a mutation from free text. `risk: low_mutation` (real
+CONFIRM-code gate on WhatsApp); `interpretOutcome` implemented from day one (Update 10's
+discipline applied proactively this time, not retrofitted after an incident).
+
+`finance_summary` expanded (not duplicated) to include real subscription plan/status,
+recent invoices (`listInvoicesForTenant`), and usage-entitlement remaining capacity
+(`getEntitlementSummary`) alongside the existing wallet balance — real, existing,
+tenant-scoped functions from `@stratxcel/payments-and-wallet`, zero new logic. New
+permission `agent:mutate:website`. `capability_registry` gains 2 more real rows (13
+total). `tsc --noEmit` clean, lint clean, full `npm test` passes. Commit `1cef351`.
+
+## Update 11 — canonical Capability Registry: a durable, honest catalog of what the ecosystem can actually do
+
+A real, queryable catalog (`capability_registry` table in Postgres), **not** a second tool
+registry — execution stays exactly `resolveAgentTools()`/`runAgentTurn`. Seeded from this
+session's own capability audit (11 rows), each with a real status: `REAL_EXPOSED` (the
+agent tools live-verified this session, plus outreach), `REAL_NOT_EXPOSED` (website/Vercel
+orchestration, `audit-engine`, `revenue-ops` — real packages, not yet bridged), `PARTIAL`
+(outreach pending a Meta template; Hermes missions creatable but `hermes_mode=disabled` in
+production), `NOT_BUILT` (market/company discovery), and `EXTERNAL_REQUIRED`
+(Ascendory/Jandarpan — zero references anywhere in this repository, no code/data/
+credentials reachable).
+
+New `check_capabilities` admin read tool
+([read-tools.ts](../../packages/agent-core/src/tools/admin/read-tools.ts)) answers "what
+can you do right now" from this real table, filterable by category/status. New permission
+`agent:read:capabilities`, already part of `ADMIN_READ_TOOLS` — already reachable from
+WhatsApp and Admin Copilot via the existing `resolveAgentTools()` wiring, no extra
+call-site changes needed. `tsc --noEmit` clean, lint clean, full `npm test` passes.
+Commit `835cc30`.
+
+## Update 10 — the verification-integrity defect (Master Brain brief, priority 1): a failed mutation can no longer be reported as success
+
+Fixes the exact live-observed defect from Update 9: `generate_image` returned a real,
+non-throwing `outcome: FAILED` result after a genuine OpenAI HTTP 429, and the model's own
+free-text synthesis still said "Done. The requested change was completed." Root cause:
+`formatAgentReply` used the model's text alone whenever it was non-empty, so a tool's real
+failure signal — present in the raw JSON the model saw — was never guaranteed to survive
+into the final reply.
+
+Fix is deterministic, not another prompt: `AgentTool` gains an optional, type-safe
+`interpretOutcome(result)` classifier
+([contract.ts](../../packages/agent-core/src/tools/contract.ts)) — strictly additive, a
+tool that doesn't implement it behaves exactly as before. `orchestrator.ts` calls it for
+every mutating tool call and collects non-success verdicts into `verificationNotes`, which
+`formatAgentReply` now appends to the final reply **unconditionally** — never gated behind
+whether the model's own text is present (unlike the pre-existing `toolSummaries` fallback,
+which stays conditional). Implemented for `generate_image` and
+`send_whatsapp_message_to_contact`.
+
+Regression test
+([brain-orchestrator.test.ts](../../packages/agent-core/src/__tests__/brain-orchestrator.test.ts))
+reproduces the exact incident verbatim, plus a second test proving the fix is additive.
+`tsc --noEmit` clean, lint clean, full `npm test` passes. Commit `b72a70e`.
+
 ## Update 9 — three more real engines bridged (Update 8); live tests found a genuine verification gap, reported honestly not papered over
 
 Capability audit (Master Brain brief, section 22) found a rich, real package inventory

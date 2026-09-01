@@ -1,0 +1,7 @@
+-- Additive capability_registry row for check_website_status. Applied live
+-- via Supabase MCP on 2026-09-02; this file makes that reproducible from a
+-- fresh database.
+insert into public.capability_registry
+  (capability_key, name, description, category, skill, agent_tool_name, package_or_module, department, connection, required_permission, read_write, tenant_scope, cost_profile, risk, verification_method, status, status_notes, external_blocker, last_verified_at, last_verified_by)
+values
+  ('agent_tool:check_website_status', 'Real website/domain status', 'Currently-stored Stratxcel-built websites for a tenant -- name, slug, status, custom domain, framework, template -- the exact same site_projects columns app/api/platform/websites/route.ts''s GET handler returns.', 'website', 'website status read', 'check_website_status', 'app/api/platform/websites/route.ts (site_projects table)', 'Engineering', 'vercel', 'agent:read:website', 'read', 'tenant', 'free', 'read', 'none (read-only)', 'REAL_EXPOSED', 'Deliberately scoped to read-only for this pass. The full creation/editing/deployment engine (packages/websites-and-domains, 123+ files: brief engine, generation engine, editing engine, ecommerce engine, a real deployment state machine) is real and mature but needs its own dedicated bridging pass, not a rushed wrapper -- engine:website_vercel_orchestration stays REAL_NOT_EXPOSED for the mutation surface.', null, now(), 'claude_session_2026-09-02');
