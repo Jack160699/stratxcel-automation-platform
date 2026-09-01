@@ -1,5 +1,24 @@
 # Search Growth Engine Gap Audit
 
+## Update 30 — "zero accounts" was never proof of non-existence; real customer evidence disproved it, root-caused, and the false claim removed
+
+STRATXCEL — GOOGLE BUSINESS DISCOVERY CONTRADICTION brief. Real, direct customer evidence: a Google Search screenshot showing "Stratxcel Solutions" / "You manage this Business Profile" for the connected Google identity, with Google's own message "Verification not successful. To get verified, submit another recording." This directly contradicts this codebase's own `NO_GBP_ACCOUNTS_FOUND` classification and its resulting customer copy ("We couldn't find a Google Business Profile for this account" / "Create or claim").
+
+**Traced rather than assumed either side was right:**
+- Live-checked the real stored connection: `username = "stratxcelgame@gmail.com"` — exactly the identity the brief names. The "wrong OAuth identity" theory is disproven.
+- Update 29's `googleLocations:search` (deployed and auto-triggered by the real customer's own page visit at 12:23 UTC) *also* returned zero matches for the real business name + website — a second, independent real Google endpoint agreeing with `accounts.list`'s zero. A mere matching/mapping bug in this codebase would not explain two independent real Google endpoints both returning nothing for the exact right query.
+- Live-fetched Google's own current docs (not recalled): `developers.google.com/my-business/content/prereqs` confirms Business Profile APIs require a **separate, explicit "Basic Access" approval request** beyond enabling the API and requesting `business.manage` scope — checkable via a real, documented signal (Cloud Console quota: 0 QPM = not approved, 300 QPM = approved) — and **eligibility for that approval itself requires an already-verified profile for 60+ days**, a genuine bootstrapping catch-22 for a business (this one) still completing verification. A healthy `200 OK` with zero accounts is Google's own documented behavior for an unapproved OAuth client, not proof a profile doesn't exist.
+
+**Fixed the actual, provable gap**: this codebase was treating "zero accounts" as conclusive, with no persisted trail distinguishing a genuine empty result from an access-tier restriction. `discoverGoogleBusinessAccounts` now returns real HTTP status + Google's own safe (non-secret) error envelope alongside the accounts array; persisted into `social_accounts.metadata.accounts_discovery_diagnostic` on every discovery attempt (OAuth connect and the manual probe). Rewrote every `NO_GBP_ACCOUNTS_FOUND`/`NO_LOCATIONS_IN_ACCOUNTS` customer message: no longer "couldn't find" / "create a new one" — now "couldn't yet confirm" + "open your existing profile directly," never contradicting a customer who can see their own real, managed listing.
+
+**What this update deliberately did NOT do**: fabricate a discovered location. The real location data is not returned by any API call this environment can make — the access-tier gap is real and external, and no amount of retrying/rewriting discovery logic changes what Google's API actually returns to this OAuth client today. What's fixed is the false claim layered on top of that real gap.
+
+**Tests**: diagnostic capture distinguishes a 200-empty response from a 403-denied one (never collapsed to the same unexplained state); the customer copy for this exact scenario is pinned to never regress into claiming non-existence. `gbp-discovery-status-copy.test.ts` updated to assert the corrected wording. Full `test:social` regression, workspace `tsc --noEmit`, ESLint clean.
+
+**Live-verified, read-only**: real tenant's `username` confirms identity match; most recent probe (customer-triggered) still 0 accounts / 0 search matches, consistent with the access-tier hypothesis.
+
+**Genuinely unresolved, disclosed rather than guessed further**: this session has no access to the real Google Cloud Console for the project behind `GOOGLE_BUSINESS_CLIENT_ID`, so the access-tier hypothesis (strongly evidenced, not yet independently confirmed) could not be checked directly. **The one concrete, checkable next step**: the account owner (using an email listed as owner/manager on the real Business Profile) opens Cloud Console → the Business Profile API's quota page. 0 QPM confirms this hypothesis exactly; 300 QPM would mean the real root cause is still open and needs further live tracing.
+
 ## Update 29 — googleLocations:search + claim/request-access flow: the real API capability behind "this is not permission to stop"
 
 STRATXCEL — AUTONOMOUS BUSINESS PROFILE brief, Section 11/12/13/56/57. The real StratXcel tenant's Google identity has zero accessible Business Profile accounts (Update 26). The brief's explicit instruction: don't treat that as a dead end without first checking whether Google's *current* API supports searching for an existing listing, requesting access to it, or claiming it.
