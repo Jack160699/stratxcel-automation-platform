@@ -1,0 +1,18 @@
+-- Records a real, live, pre-existing product defect found while tracing
+-- the website "edit" capability for the convergence-loop mission (section
+-- 11). Deliberately NOT bridged to the agent -- see status_notes.
+-- Applied live via Supabase MCP on 2026-09-02; this file makes that
+-- reproducible from a fresh database.
+
+update public.capability_registry
+set status = 'REAL_NOT_EXPOSED',
+    status_notes = 'Real, mature package; not a one-shot function -- a real deployment state machine. Needs a dedicated bridging pass, not a rushed wrapper. The "edit" sub-feature specifically was traced this pass and found to have a real, serious content-fabrication defect -- see capability:website_edit_fabrication_defect for that specific finding (kept separate since it does not implicate the creation/deployment parts of this engine, which remain untraced/unbridged rather than known-broken).',
+    last_verified_at = now(),
+    last_verified_by = 'claude_session_2026-09-02'
+where capability_key = 'engine:website_vercel_orchestration';
+
+insert into public.capability_registry
+  (capability_key, name, description, category, skill, agent_tool_name, package_or_module, department, connection, required_permission, read_write, tenant_scope, cost_profile, risk, verification_method, status, status_notes, external_blocker, last_verified_at, last_verified_by)
+values
+  ('capability:website_edit_fabrication_defect', 'Website natural-language edit: fabricated content + silent no-op (real, live defect)', 'app/api/platform/website-factory/[projectId]/edit/route.ts is a real, complete, already-LIVE dashboard route with good risk-gating (HIGH-risk keywords -- delete/domain/publish/refund -- correctly require explicit confirmed:true). But its core function, applyNaturalLanguageEdit (packages/websites-and-domains/src/site-builder.ts), is a narrow 4-pattern keyword matcher, not a general content editor: (1) for "testimonial/review" and "product/price/pricing/collection" instructions, it inserts HARDCODED FABRICATED content -- fictional testimonial authors ("Alexander Vance", "Marcus Sterling") and fictional products ("Signature Tailored Blazer... Rs24,999") with zero connection to the real tenant''s actual business; (2) for any instruction outside its 4 recognized patterns (the large majority of real requests), it silently no-ops on the actual page content while STILL returning revisionCount+1 and status:"in_revision" -- indistinguishable from a real edit having happened, both to the API caller and to whoever reads the resulting revision history.', 'website', null, null, 'packages/websites-and-domains/src/site-builder.ts (applyNaturalLanguageEdit), consumed by app/api/platform/website-factory/[projectId]/edit/route.ts', 'Engineering', null, null, 'read', 'tenant', 'free', 'read', 'source-read verification of applyNaturalLanguageEdit''s full implementation, 2026-09-02', 'BROKEN', 'This is a real, live, pre-existing product-quality/honesty defect in an already-shipped DASHBOARD feature, not just an unbridged agent capability -- deliberately NOT bridged to the agent (edit_website_content), since doing so would let the WhatsApp/Admin Copilot actively fabricate fake customer testimonials/products on a real customer''s live website, or silently claim a no-op edit succeeded -- the exact class of harm this whole mission''s verification-integrity work exists to prevent. Recommend fixing the dashboard feature (route the 4 hardcoded patterns through a real, brand-grounded content generator, and make an unmatched instruction return an honest "not understood" response instead of a false revision) before either the dashboard or an agent tool relies on it further.', null, now(), 'claude_session_2026-09-02')
+on conflict (capability_key) do nothing;

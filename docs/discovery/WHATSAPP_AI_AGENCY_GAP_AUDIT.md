@@ -1,5 +1,35 @@
 # WhatsApp AI Agency — Gap Audit
 
+## Update 29 — traced the website "edit" capability, found a real, live, pre-existing content-fabrication defect; correctly refused to bridge it
+
+While pursuing section 11's "edit" operation (creation/status/domain checks were already
+bridged in Updates 14/24), traced `app/api/platform/website-factory/[projectId]/edit/route.ts`
+fully. The route itself is well-built — real risk-gating, HIGH-risk keywords (delete/
+domain-change/publish/refund) correctly require explicit `confirmed: true`. But its core
+function, `applyNaturalLanguageEdit` (`packages/websites-and-domains/src/site-builder.ts`),
+turned out to be a narrow 4-pattern keyword matcher, not a general content editor:
+
+1. For "testimonial/review" and "product/price/pricing/collection" instructions, it
+   inserts **hardcoded, fabricated** content — fictional testimonial authors ("Alexander
+   Vance", "Marcus Sterling") and fictional products ("Signature Tailored Blazer...
+   ₹24,999") with zero connection to the real tenant's actual business.
+2. For any instruction outside its 4 recognized patterns — the large majority of real
+   requests — it silently no-ops on the actual page content while still returning
+   `revisionCount + 1` and `status: "in_revision"`, indistinguishable from a real edit
+   having happened.
+
+**This is a real, live, pre-existing defect in an already-shipped dashboard feature**, not
+just an unbridged agent capability. Correctly refused to build `edit_website_content` as
+an agent tool — doing so would let WhatsApp/Admin Copilot actively fabricate fake customer
+testimonials/products on a real customer's live website, or silently claim a no-op edit
+succeeded, exactly the class of harm this session's whole verification-integrity effort
+exists to prevent. Recorded honestly as `BROKEN` (`capability:website_edit_fabrication_defect`),
+separate from the broader `engine:website_vercel_orchestration` row (which stays
+`REAL_NOT_EXPOSED` — the creation/deployment parts weren't found broken, just untraced).
+Flagged as a real recommendation for the dashboard team: route those 4 patterns through a
+real, brand-grounded content generator, and make an unmatched instruction return an honest
+"not understood" response instead of a false revision.
+
 ## Update 25 — a real Capability Registry admin page; the admin IA turns out considerably more mature than assumed
 
 Before writing any admin UI code, inventoried all 38 real `/admin` pages and traced the
