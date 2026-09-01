@@ -31,12 +31,14 @@ export interface WorkspaceTenant {
  */
 export async function listMyTenants(supabase: SupabaseClient, userId: string): Promise<TenantMembership[]> {
   const memberships = await listMembershipsForUser(supabase, userId);
-  return memberships.map((m) => ({
-    tenantId: m.tenant_id,
-    name: m.tenant.name,
-    slug: m.tenant.slug,
-    role: m.role,
-  }));
+  return memberships
+    .filter((m) => m && m.tenant && typeof m.tenant === "object" && Boolean(m.tenant.name))
+    .map((m) => ({
+      tenantId: m.tenant_id,
+      name: m.tenant.name,
+      slug: m.tenant.slug,
+      role: m.role,
+    }));
 }
 
 export interface CurrentTenantResult {
