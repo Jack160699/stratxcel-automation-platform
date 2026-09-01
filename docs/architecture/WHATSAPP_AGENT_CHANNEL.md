@@ -1,9 +1,18 @@
 # WhatsApp Agent Channel — Backend Foundation
 
-Status: **backend foundation only, not deployed, not enabled**. Branch
-`feat/whatsapp-agent-core-backend`. This document describes what exists on
-this branch, not a live system — nothing here is wired into production
-traffic. See the end-of-task report for exact verification.
+Status, corrected (see `docs/discovery/WHATSAPP_AI_AGENCY_GAP_AUDIT.md` Update
+1 for the live evidence): the Next.js side described below is **merged and
+live in production** — `WHATSAPP_AGENT_CHANNEL_ENABLED` and
+`STRATXCEL_AGENT_CHANNEL_SECRET` are both set on the real `stratxcel` Vercel
+project, and an unauthenticated probe of `POST
+https://www.stratxcel.in/api/internal/agent/whatsapp` returns 401 (enabled,
+auth-rejected), not 404 (disabled). What is genuinely **not** live: no real
+WhatsApp traffic reaches this endpoint yet, because `apps/whatsapp-worker`
+(the webhook receiver that would call it) has never been deployed to a real
+host and Meta's webhook for the real business number still points only at
+the legacy Python bot (`bot.stratxcel.ai`). The sections below describing
+"not yet wired" tool-calling and outbound delivery are also stale — both are
+real and implemented; see the audit doc for exactly what changed and where.
 
 ## Why this exists
 
@@ -156,19 +165,18 @@ the routing decision happens **before** `processInboundMessage` runs, so a
 linked principal's message never creates a CRM lead or falls through to the
 prospect flow — the two are mutually exclusive by construction.
 
-**Known, intentionally deferred follow-up**: delivering the agent's reply
-text back to a linked principal over WhatsApp is not wired to an actual send
-in this branch. The one existing outbound send choke point,
-`sendOutboundWhatsAppMessage` (`packages/whatsapp/src/outbound.ts`), is
-deliberately lead-scoped (`leadId` is mandatory) and its own doc comment
-states there is intentionally no second, weaker send path in this codebase.
-A linked staff/client principal is not a CRM lead. Extending that function
-to support a non-lead recipient (or adding an equally-gated parallel path)
-is real, scoped follow-up work for whoever reviews and enables the flag —
-see `apps/whatsapp-worker/src/processor.ts`'s `handleAgentChannelOutcome`
-doc comment. The routing decision itself (never creating a duplicate lead,
-never falling back to prospect flow for a linked principal, calling the
-HMAC-authenticated endpoint correctly) is real and tested.
+**Corrected**: delivering the agent's reply text back to a linked principal
+is wired to a real send. `packages/whatsapp/src/outbound.ts` grew
+`sendOutboundWhatsAppToRecipient`, an equally-gated non-lead counterpart to
+`sendOutboundWhatsAppMessage` (same preflight/adapter/idempotency machinery,
+writes to the additive `agent_channel_messages` table instead of assuming a
+`crm_leads` row). `app/api/internal/agent/whatsapp/route.ts` calls it for
+every reply — deterministic command acks and real Agent turns alike — before
+returning to the worker; the worker's `handleAgentChannelOutcome` is now
+purely an observability hook, not a delivery gap. The routing decision
+itself (never creating a duplicate lead, never falling back to prospect flow
+for a linked principal, calling the HMAC-authenticated endpoint correctly)
+remains real and tested.
 
 ## Failure behavior
 
@@ -194,13 +202,14 @@ than re-invoking tools or creating a second confirmation.
 interface. `lib/agent-core/provider-adapter.ts` (Next.js app side) adapts
 the **existing** configured provider (`lib/social/agent/provider.ts`'s
 `resolveConfiguredProvider()`) to it — no second Gemini client was created.
-**Known limitation, not hidden**: the concrete `GeminiProvider.complete()`
-today always returns `toolCalls: []` (no live tool-calling round-trip yet).
-Until that provider is upgraded, a free-text agent turn not covered by a
-deterministic command answers in text only and does not invoke read/mutation
-tools via the LLM loop — deterministic commands are entirely unaffected by
-this. Existing Social Copilot tests are unaffected because this is a new,
-additive call site.
+**Corrected**: the concrete `GeminiProvider`/`AiRuntimeSocialProvider` now do
+real function-calling round trips (`lib/social/agent/provider.ts`'s
+`parseGeminiCompletionParts` extracts `functionCall` parts; the AI-runtime
+path returns real `toolCalls` from `runtime.execute`), and
+`packages/agent-core/src/orchestrator.ts`'s `runAgentTurn` runs a real,
+bounded (5-round) tool-calling loop. A free-text agent turn not covered by a
+deterministic command can invoke read/mutation tools today, subject to the
+same principal-scoped registry and mutation policy described above.
 
 ## Social capability delegation
 
@@ -221,8 +230,10 @@ classification.
 | `WHATSAPP_AGENT_CHANNEL_ENABLED` | absent (→ `false`) | Master switch. Gates both the internal endpoint (404 when off) and the worker's routing call site. |
 | `STRATXCEL_AGENT_CHANNEL_SECRET` | unset | HMAC secret for the internal endpoint. Unset → endpoint fails closed (`not_configured` → 401). |
 
-Neither is set in this branch's environment. No staff or client phone has
-been linked. No production system was touched.
+**Corrected**: both are now set on the real production Vercel project (see
+the Status note at the top of this document). No staff or client phone has
+been linked yet (`whatsapp_channel_principals` has no active row as of this
+audit) — that is the actual next step, not an env-var gap.
 
 ## Deployment sequence (not performed by this branch)
 

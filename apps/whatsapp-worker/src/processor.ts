@@ -127,25 +127,22 @@ export async function maybeSendAutomaticReply(
 }
 
 /**
- * PHASE 17 follow-up, deliberately not solved by this branch: delivering
- * `agentOutcome.text` back to the sender over WhatsApp. The single existing
- * send choke point, sendOutboundWhatsAppMessage() (@stratxcel/whatsapp), is
- * intentionally lead-scoped (SendOutboundInput.leadId is mandatory) — its
- * own doc comment states there is deliberately no second, weaker send path
- * in this codebase. A linked staff/client principal is not a CRM lead, so
- * routing their reply through that function is not a like-for-like fit, and
- * building a second send path here would violate that stated design
- * principle and skip its kill-switch/consent/window checks. Extending
- * sendOutboundWhatsAppMessage to support a non-lead recipient (or adding a
- * parallel, equally-gated send path) is real, scoped follow-up work for
- * whoever reviews and enables WHATSAPP_AGENT_CHANNEL_ENABLED — it is
- * intentionally NOT hacked around here. For now this only logs the outcome,
- * which is enough to prove the ROUTING decision (never falling back to the
- * prospect flow for a linked principal, never creating a duplicate lead) is
- * correct and testable ahead of that follow-up.
+ * STALE COMMENT, CORRECTED (see docs/discovery/WHATSAPP_AI_AGENCY_GAP_AUDIT.md
+ * Update 1): the PHASE 17 follow-up this comment used to describe as
+ * unsolved — delivering the agent's reply back to a linked principal — is no
+ * longer true. `@stratxcel/whatsapp` grew a real, equally-gated non-lead send
+ * path (`sendOutboundWhatsAppToRecipient`, sharing its preflight/adapter/
+ * idempotency machinery with the lead-scoped `sendOutboundWhatsAppMessage`,
+ * writing to `agent_channel_messages` instead of a fake `crm_leads` row), and
+ * `app/api/internal/agent/whatsapp/route.ts` already calls it for every
+ * reply — deterministic commands and real Agent turns alike — before this
+ * function ever runs. The send has already happened by the time this
+ * function is called; this is now purely a worker-side observability hook
+ * for the routing decision (never falling back to the prospect flow for a
+ * linked principal, never creating a duplicate lead), not a delivery gap.
  */
 export function handleAgentChannelOutcome(message: ParsedInboundWhatsAppMessage, outcome: AgentChannelOutcome): void {
-  console.log("[whatsapp-processor] agent channel outcome (delivery not yet wired — see doc comment)", {
+  console.log("[whatsapp-processor] agent channel outcome (reply already sent upstream by the internal agent endpoint)", {
     providerMessageId: message.providerMessageId,
     outcome: outcome.outcome,
   });
