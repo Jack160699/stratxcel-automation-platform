@@ -17,10 +17,22 @@ import {
 } from "@stratxcel/agent-core";
 import { createAgentCoreProviderAdapter } from "@/lib/agent-core/provider-adapter";
 import { SOCIAL_DELEGATION_TOOLS } from "@/lib/agent-core/social-delegation-tools";
+import { RESEARCH_DELEGATION_TOOLS } from "@/lib/agent-core/research-tools";
 import { decideWhatsAppSocialMission, runWhatsAppSocialMission } from "@/lib/social/whatsapp-bridge";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+// A real website analysis (analyze_website) makes several real, sequential
+// HTTP fetches against a third-party host -- well past the 10s default.
+// Vercel caps this to whatever the plan actually allows; this is a ceiling,
+// not a promise every turn takes this long.
+export const maxDuration = 60;
+
+/** WhatsApp's full extra-tool set: Social Autopilot delegation + public
+ *  web research/commercial-catalog tools. One list, used everywhere a tool
+ *  set is needed below (capability listings AND the actual agent turn) so
+ *  WHOAMI/HELP never claims a capability the turn itself doesn't have. */
+const EXTRA_TOOLS = [...SOCIAL_DELEGATION_TOOLS, ...RESEARCH_DELEGATION_TOOLS];
 
 /**
  * Private, HMAC-authenticated endpoint for the WhatsApp agent channel. NOT a
@@ -197,7 +209,7 @@ export async function POST(request: Request) {
   const parsed = parseCommand(text);
 
   if (parsed.kind === "link") {
-    const reply = await handleLinkCommand(supabase, normalizedPhone, parsed.code, SOCIAL_DELEGATION_TOOLS);
+    const reply = await handleLinkCommand(supabase, normalizedPhone, parsed.code, EXTRA_TOOLS);
     // No resolved principal yet at this exact instant (and no tenantId to
     // attribute an audit event to even for a client link — resolving it
     // again here would be redundant work for a one-line ack) — sent as an
@@ -273,17 +285,17 @@ export async function POST(request: Request) {
   }
 
   if (parsed.kind === "whoami") {
-    return sendAgentReply(handleWhoAmI(resolution, SOCIAL_DELEGATION_TOOLS), recipientContext, { principalTenantId });
+    return sendAgentReply(handleWhoAmI(resolution, EXTRA_TOOLS), recipientContext, { principalTenantId });
   }
   if (parsed.kind === "help") {
-    return sendAgentReply(handleHelp(principal, SOCIAL_DELEGATION_TOOLS), recipientContext, { principalTenantId });
+    return sendAgentReply(handleHelp(principal, EXTRA_TOOLS), recipientContext, { principalTenantId });
   }
   if (parsed.kind === "reset") {
     const reply = await handleReset(supabase, principal);
     return sendAgentReply(reply, recipientContext, { principalTenantId });
   }
   if (parsed.kind === "confirm") {
-    const { reply } = await handleConfirm(supabase, principal, parsed.code, SOCIAL_DELEGATION_TOOLS);
+    const { reply } = await handleConfirm(supabase, principal, parsed.code, EXTRA_TOOLS);
     return sendAgentReply(reply, recipientContext, { principalTenantId });
   }
   if (parsed.kind === "cancel") {
@@ -309,7 +321,7 @@ export async function POST(request: Request) {
       provider: createAgentCoreProviderAdapter(principal.tenantId),
       userText: text,
       providerMessageId,
-      extraTools: SOCIAL_DELEGATION_TOOLS,
+      extraTools: EXTRA_TOOLS,
     });
 
     if (result.status === "duplicate") {

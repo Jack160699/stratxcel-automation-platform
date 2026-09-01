@@ -13,6 +13,7 @@ import {
   type AgentPrincipal,
 } from "@stratxcel/agent-core";
 import { createAgentCoreProviderAdapter } from "./provider-adapter";
+import { RESEARCH_DELEGATION_TOOLS } from "./research-tools";
 
 /**
  * Shared turn/thread logic for the admin and client web Copilot UIs
@@ -73,6 +74,12 @@ export async function sendCopilotMessage(principal: AgentPrincipal, userText: st
     return { ok: true, replyText, status: "completed", confirmationRequired: false };
   }
 
-  const result = await runAgentTurn({ supabase, principal, provider: createAgentCoreProviderAdapter(principal.tenantId), userText: trimmed });
+  const result = await runAgentTurn({
+    supabase,
+    principal,
+    provider: createAgentCoreProviderAdapter(principal.tenantId),
+    userText: trimmed,
+    extraTools: RESEARCH_DELEGATION_TOOLS,
+  });
   return { ok: result.status !== "failed", replyText: result.replyText, status: result.status, confirmationRequired: result.confirmationRequired };
 }
