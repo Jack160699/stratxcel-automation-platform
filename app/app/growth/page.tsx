@@ -9,6 +9,13 @@ import { Select } from "@/components/ui/Input";
 import { MISSION_STATE_CHIP, type MissionSummary } from "../components/MissionSummaryCard";
 
 const TERMINAL_COMPLETED = new Set(["COMPLETED", "PARTIALLY_COMPLETED"]);
+// Real, stuck/blocked mission states -- see the master build brief's own
+// MissionState enum. CANCELLED is deliberately excluded (a closed,
+// dismissed state, not something needing attention); PARTIALLY_COMPLETED
+// is deliberately excluded too (already surfaced honestly in "What
+// Improved" above -- showing it again here would double-count the same
+// mission in two cards).
+const NEEDS_ATTENTION_STATES = new Set(["FAILED", "BLOCKED", "AWAITING_FUNDS", "AWAITING_APPROVAL", "AWAITING_INPUT", "HUMAN_HANDOFF"]);
 const RANGE_OPTIONS = [
   { value: "7", label: "Last 7 days" },
   { value: "30", label: "Last 30 days" },
@@ -151,6 +158,7 @@ export default function GrowthPage() {
   }, [missions, rangeDays]);
 
   const completed = rangeFiltered.filter((m) => TERMINAL_COMPLETED.has(m.state));
+  const needsAttentionMissions = rangeFiltered.filter((m) => NEEDS_ATTENTION_STATES.has(m.state));
 
   return (
     <div className="flex flex-col gap-6 max-w-5xl">
@@ -261,16 +269,38 @@ export default function GrowthPage() {
                 <CardHeading>What Needs Attention</CardHeading>
               </div>
               <ul className="space-y-2.5 text-xs text-sx-text">
-                <li className="flex items-start gap-2">
-                  <span className="text-amber-500 shrink-0 mt-0.5">•</span>
-                  <span className="leading-relaxed">
-                    Verify Google Business Profile connection in{" "}
-                    <Link href="/app/integrations" className="font-semibold text-sx-accent underline">
-                      Connected Accounts
-                    </Link>{" "}
-                    to capture local search traffic.
-                  </span>
-                </li>
+                {/* VERIFICATION INTEGRITY (2026-09-02): real, specific
+                    per-mission problems take priority over generic tips --
+                    a customer with a genuinely FAILED/BLOCKED/stalled
+                    mission must see that called out here, not just the
+                    same two evergreen tips regardless of their real state. */}
+                {needsAttentionMissions.slice(0, 3).map((m) => {
+                  const chip = MISSION_STATE_CHIP[m.state] ?? { label: m.state, state: "neutral" as const };
+                  return (
+                    <li key={m.id} className="flex items-start gap-2">
+                      <span className="text-amber-500 shrink-0 mt-0.5">•</span>
+                      <span className="leading-relaxed">
+                        <Link href={`/app/missions/${m.id}`} className="font-semibold text-sx-accent underline">
+                          {(m.service_key || "A mission").replace(/_/g, " ")}
+                        </Link>{" "}
+                        is <strong>{chip.label.toLowerCase()}</strong>
+                        {m.goal_text ? `: ${m.goal_text}` : ""}.
+                      </span>
+                    </li>
+                  );
+                })}
+                {needsAttentionMissions.length === 0 && (
+                  <li className="flex items-start gap-2">
+                    <span className="text-amber-500 shrink-0 mt-0.5">•</span>
+                    <span className="leading-relaxed">
+                      Verify Google Business Profile connection in{" "}
+                      <Link href="/app/integrations" className="font-semibold text-sx-accent underline">
+                        Connected Accounts
+                      </Link>{" "}
+                      to capture local search traffic.
+                    </span>
+                  </li>
+                )}
                 {typeof approvalsCount === "number" && approvalsCount > 0 && (
                   <li className="flex items-start gap-2">
                     <span className="text-amber-500 shrink-0 mt-0.5">•</span>

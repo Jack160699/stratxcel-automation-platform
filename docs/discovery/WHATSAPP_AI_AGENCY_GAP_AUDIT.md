@@ -1,5 +1,39 @@
 # WhatsApp AI Agency — Gap Audit
 
+## Update 34 — closed the "What Needs Attention" gap flagged in Update 33 rather than leaving it open
+
+Continued straight through rather than stopping at the honestly-recorded gap: "What Needs
+Attention" on the customer Growth dashboard now derives a real `needsAttentionMissions`
+list (`FAILED`/`BLOCKED`/`AWAITING_FUNDS`/`AWAITING_APPROVAL`/`AWAITING_INPUT`/
+`HUMAN_HANDOFF` — the real `MissionState` enum, matching the master build brief's own
+spec exactly) and renders real, specific per-mission callouts — service, goal text, and
+the real state label, linking to the actual mission — ahead of the two generic evergreen
+tips, which now only appear as a fallback when there's genuinely nothing mission-specific
+to report. `CANCELLED` and `PARTIALLY_COMPLETED` deliberately excluded (a closed/dismissed
+state, and a state already honestly surfaced in "What Improved" — avoids double-counting
+the same mission in two cards).
+
+Both the mission-labeling fix (Update 33) and this one are now `REAL_EXPOSED` in
+`capability_registry` — the customer Growth dashboard's two outcome cards are fully real
+and honest, not generic decoration. 2 new source-text assertions added to the existing
+`customer-app-bugfixes-polish.test.ts` (6/6 suites pass), full-repo `tsc --noEmit` clean,
+lint clean.
+
+## Update 33 — PARTIALLY_COMPLETED missions were mislabeled "Completed successfully" on the real customer dashboard
+
+Extended the verification-integrity theme from Updates 29-32 (backend/engine honesty) to
+the frontend, systematically: searched for the same unconditional-success pattern
+elsewhere in the app after finding it three layers deep in the website editor. Found a
+real instance in `app/app/growth/page.tsx`'s "What Improved" card: a `PARTIALLY_COMPLETED`
+mission (some sub-tasks did not finish) was labeled with the exact same "Completed
+successfully" text as a genuinely `COMPLETED` one. Fixed by reusing
+`MISSION_STATE_CHIP`'s existing, already-correct "Partially completed" label (already used
+correctly on the Missions page) plus an explicit "some parts may need review" note, rather
+than inventing new copy. Also swept and confirmed clean:
+`app/app/components/GoogleSearchIntegrationPanel.tsx` (correctly checks `response.ok`
+before showing success — a simple config save with no partial-completion states to
+misrepresent).
+
 ## Update 32 — the edit-time half is fixed too; the whole chain (engine → route → UI) is now honest end-to-end
 
 Continued straight from Update 31 rather than stopping at "generation is fixed, edit is

@@ -24,6 +24,12 @@ async function run() {
   // text-checks that the fix is actually present, not just described.
   assert.ok(growthPage.includes('isPartial = m.state === "PARTIALLY_COMPLETED"'), "Must distinguish PARTIALLY_COMPLETED from COMPLETED before labeling a mission");
   assert.ok(growthPage.includes("some parts may need review"), "A partially completed mission must say so, not read as an unqualified success");
+  // A second real gap in the same card family, fixed the same pass:
+  // "What Needs Attention" used to be entirely generic/hardcoded, never
+  // reflecting a real FAILED/BLOCKED/stalled mission. Source-text-checks
+  // the real per-mission derivation and rendering are actually present.
+  assert.ok(growthPage.includes("NEEDS_ATTENTION_STATES"), "What Needs Attention must be driven by real mission states, not hardcoded tips alone");
+  assert.ok(growthPage.includes("needsAttentionMissions"), "Must derive a real list of missions that genuinely need attention");
   console.log("✓ Issue A: Growth page stability, error handling, and outcome architecture verified.");
 
   // 2. ISSUE B: Content Visuals & Media Resolution
