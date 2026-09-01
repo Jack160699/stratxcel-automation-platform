@@ -47,6 +47,7 @@ V1 is the only default-visible release. Beta Mode never bypasses `requireOwnerCo
 **Beta**
 - My Operating Brain (`/admin/operating-brain`) — `release: "v2"`
 - Hermes Mission Control (`/admin/hermes`) — `release: "v2"`
+- Capability Registry (`/admin/capabilities`) — `release: "v2"` — real, honest UI over `capability_registry` (packages/agent-core's canonical catalog of what the WhatsApp/Admin Copilot Brain can actually do). Read-only.
 
 ## Direct-route / API security
 Hiding a nav link is not security. V2 pages and V2-only APIs call `requireReleaseAccess("v2")` / `requireReleaseAccessApi("v2")` (owner-admin **and** Beta) before data loads.

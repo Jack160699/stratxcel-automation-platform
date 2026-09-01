@@ -61,6 +61,7 @@ export const ADMIN_NAV_GROUPS_DATA: NavGroupData[] = [
     items: [
       { key: "operating-brain", label: "My Operating Brain", href: "/admin/operating-brain", release: "v2" },
       { key: "hermes", label: "Hermes Mission Control", href: "/admin/hermes", release: "v2" },
+      { key: "capabilities", label: "Capability Registry", href: "/admin/capabilities", release: "v2" },
     ],
   },
 ];
