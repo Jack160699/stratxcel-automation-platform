@@ -1,5 +1,89 @@
 # WhatsApp AI Agency — Gap Audit
 
+## Update 21 — real owner connection status bridged; Priority Engine fully traced (real blocker found, not fabricated); a second, distinct paid-audit PDF system found and honestly left unbridged
+
+`check_owner_connections` (`8027aec`) reads `owner_sources` directly (never calling
+`lib/owner-brain`'s own `listSources()`, which upserts default rows as a side effect —
+staying genuinely read-only for a tool declared `risk: "read"`): real status for Gmail,
+Google Calendar, Google Drive, Notion, GitHub — closing a real gap in the mission's
+Connections list (GitHub/Notion weren't covered by `check_connections`, which is
+customer-facing only). Live-verified against production before shipping: 10 real rows
+with genuinely mixed status (GitHub/Notion/Drive `CONNECTED`; Google Calendar/Gmail
+actually `ERROR`; chat platforms `UNAVAILABLE`) — proof this surfaces real state, not a
+fabricated all-green board.
+
+**Priority Engine, fully traced**: the real pipeline exists end-to-end —
+`diagnoseBusinessGrowth` → `deriveBottlenecks` → `buildGrowthRecommendations` →
+`buildPlanRecommendations`, all pure, real, tested. The genuine, specific blocker: no
+function anywhere in the repository computes the required `BusinessSignals` (each a
+none/low/medium/high classification like `searchVisibilityStrength`) from real tenant
+data — confirmed absent, not assumed. Writing that classifier personally would mean
+inventing new business judgment with a real risk of fabricating a false-confidence
+signal, which the mission's own anti-fabrication rule forbids — correctly stays
+`REAL_NOT_EXPOSED` until a real, evidence-based classifier exists as its own unit.
+
+**A second, separate audit system found**: `audit_orders` (a paid, tenant-scoped flow
+with its own real, working PDF report generator) is distinct from `public_audit_requests`
+(the free/prospect flow `check_audit_status`, Update 15, already covers). The PDF route
+is cookie-session-scoped with no `auditId` parameter at all — it resolves "the caller's
+own current completed audit" from their browser session, which a service-role agent call
+doesn't have. Bridging it honestly needs a new signed-URL/token mechanism, not a rushed
+wrapper — recorded as `REAL_NOT_EXPOSED`, not silently skipped or fabricated as covered.
+
+## Update 20 — universal verification audit: two more real, previously-unfixed instances of the exact defect class Updates 10/13 fixed live
+
+Audited every mutating tool in the repository for the soft-failure-reported-as-success
+defect class. Two more real instances found, not theorized:
+
+1. **`create_mission`** (both the staff tool and the customer-facing client tool) calls
+   `createAndEstimateMission`, which can return a mission stuck in `AWAITING_FUNDS` —
+   or, via its idempotency-key reuse path, any non-terminal `MissionState` — without ever
+   throwing. Neither tool had `interpretOutcome`. New shared
+   [mission-outcome.ts](../../packages/agent-core/src/tools/mission-outcome.ts)
+   (`interpretMissionOutcome`) closes both call sites identically.
+2. **Social Autopilot has its own, separate agent loop**
+   ([lib/social/agent/orchestrator.ts](../../lib/social/agent/orchestrator.ts) — a
+   distinct `AgentTool` contract from `packages/agent-core`'s canonical `runAgentTurn`; a
+   legitimate, deliberately separate, deeply-built specialized copilot for
+   content/publishing, not a lazy duplicate — it already had a working
+   deterministic-override pattern for its 3 publish-intent tools). But it never checked
+   `generate_image`'s own outcome field at all: the exact Update-9/10 incident (a real
+   OpenAI 429 producing `outcome: FAILED`, reported as a bare success) was independently,
+   silently live in Social Autopilot's chat interface the entire time, completely
+   unaffected by every fix already shipped this session. Closed the same way: real
+   tracking + a real classifier (moved into `publish-outcome-classify.ts`, the module
+   that exists specifically so this kind of logic is pure/standalone-testable), response
+   text/session status/mission-outcome telemetry all now correctly reflect a
+   failed/pending image generation.
+
+Every other mutating tool in the repository (7 admin CRM/ops tools, `execute_growth_action`,
+`send_whatsapp_message_to_contact`) was independently re-verified clean during this audit.
+Also closed: `forget_fact` silently returning `forgotten: false` with no verification note.
+Full `npm run test:agent-core` (14/14) and full `npm run test:social` (28/28, the entire
+Social Autopilot suite) both pass — zero regressions in either now-independently-verified
+agent loop. Commit `3d9665b`.
+
+## Update 19 — Master Brain now includes real owner memory, decisions, and open loops
+
+Traced the mission's own "the Brain must know our philosophy, priorities, decisions,
+what worked, what failed, what was learned" requirement against
+`buildBrainContext`/`retrieveBrainKnowledge` and found the staff-facing path returned
+only `"Stratxcel currently has N client workspaces."` — while a real, mature, ~50-file
+system for exactly that (`lib/owner-brain` — FACT/EXPLICIT_PREFERENCE/DECISION/LESSON/
+OPEN_LOOP memories with a confirmation lifecycle, real connectors, already used by Hermes
+missions) sat unwired for WhatsApp/Admin Copilot.
+
+`runAgentTurn` gains an additive `extraKnowledge: string[]` input, threaded through
+`buildBrainContext` into the system prompt — `packages/agent-core` stays free of any
+app-specific knowledge-source concept, the same reason `extraTools` exists instead of the
+package importing app code directly.
+[owner-brain-context.ts](../../lib/agent-core/owner-brain-context.ts) supplies it for
+every staff turn on both channels via `lib/owner-brain`'s already-built, already-tested
+`buildBoundedOwnerContext` (the exact same bounded, confirmation-filtered, size-capped
+retrieval Hermes missions already use) — zero new memory system. Per-`authUserId` scoped
+and failure-safe (any owner-brain error is swallowed, never blocks the turn). Commit
+`c5debab`.
+
 ## Update 17 — a real engine the original capability audit missed entirely: packages/workforce-core's departments/roles/capabilities registries
 
 `check_workforce_registry` exposes ~1,200 lines of real, tested, static TypeScript
