@@ -96,6 +96,12 @@ export async function POST(request: Request) {
 
     const matched = matchResult.matchedLocation;
     const now = new Date().toISOString();
+    // Same real Account.verificationState this file's exchangeCodeForToken()
+    // now also captures -- a manual re-probe is a real opportunity to
+    // refresh it too, at zero extra API cost (accounts is already fetched
+    // above for location discovery).
+    const verificationAccount = accounts.find((a) => a.name === (matched?.accountName ?? accounts[0]?.name));
+    const googleVerificationState = verificationAccount?.verificationState ?? null;
 
     if (matched) {
       const locationResourceName = getCanonicalGbpLocationResourceName(matched.accountName, matched.name);
@@ -118,6 +124,7 @@ export async function POST(request: Request) {
         location_resource_name: locationResourceName,
         location_name: matched.name,
         account_name: matched.accountName,
+        google_verification_state: googleVerificationState,
         business_title: matched.title || "StratXcel",
         business_category: matched.categories?.primaryCategory?.displayName ?? null,
         business_address: formattedAddress,
@@ -163,6 +170,7 @@ export async function POST(request: Request) {
       const updatedMetadata: Record<string, unknown> = {
         ...existingMeta,
         location_resolved: false,
+        google_verification_state: googleVerificationState,
         accounts_count: accounts.length,
         locations_count: locations.length,
         discovery_status:

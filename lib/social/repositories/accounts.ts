@@ -29,6 +29,16 @@ export interface SocialAccountRow {
 const ACCOUNT_COLUMNS =
   "id, owner_id, platform, provider_account_id, username, display_name, avatar_url, permissions, status, token_health, last_sync_at, next_scheduled_at, metadata, created_at, updated_at";
 
+// Drops null/undefined values before merging into stored metadata -- a
+// provider result with e.g. `google_verification_state: null` (genuinely
+// "discovery found nothing fresh this round", see google-business.ts) must
+// never overwrite a real, previously-stored value with null. Same principle
+// already applied to refreshToken elsewhere in this callback chain ("never
+// null out a previously-good value").
+function omitNullish(obj: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== null && v !== undefined));
+}
+
 /**
  * Tenant mode has no RLS policy on social_accounts scoped to tenant_id
  * (only the pre-existing owner_id/stratxcel_admins policy exists) — the
@@ -114,7 +124,7 @@ export async function upsertConnectedAccount(
     if (existingTenantAccount?.id) {
       const mergedMetadata = {
         ...((existingTenantAccount.metadata as Record<string, unknown>) ?? {}),
-        ...(input.metadata ?? {}),
+        ...omitNullish(input.metadata ?? {}),
       };
       const { data: updated, error: updateErr } = await service
         .from("social_accounts")
@@ -159,7 +169,7 @@ export async function upsertConnectedAccount(
             permissions: input.permissions,
             status: "CONNECTED",
             token_health: "HEALTHY",
-            metadata: input.metadata ?? {},
+            metadata: omitNullish(input.metadata ?? {}),
             last_sync_at: now,
             updated_at: now,
           },
@@ -184,7 +194,7 @@ export async function upsertConnectedAccount(
               permissions: input.permissions,
               status: "CONNECTED",
               token_health: "HEALTHY",
-              metadata: input.metadata ?? {},
+              metadata: omitNullish(input.metadata ?? {}),
               last_sync_at: now,
               updated_at: now,
             },
@@ -214,7 +224,7 @@ export async function upsertConnectedAccount(
             permissions: input.permissions,
             status: "CONNECTED",
             token_health: "HEALTHY",
-            metadata: input.metadata ?? {},
+            metadata: omitNullish(input.metadata ?? {}),
             last_sync_at: now,
             updated_at: now,
           },
@@ -255,6 +265,30 @@ export async function disconnectAccount(ctx: OwnerContext, id: string) {
     .from("social_tokens")
     .update({ access_token_encrypted: "", refresh_token_encrypted: null, expires_at: null, refresh_expires_at: null })
     .eq("account_id", id);
+}
+
+/**
+ * Merges a freshly-observed, real provider metadata fact into an existing
+ * account row without touching tokens/status/health -- the automatic
+ * Google Business verification recheck
+ * (app/api/internal/search/scheduler/route.ts) uses this to persist
+ * Google's own current Account.verificationState once a customer completes
+ * Google's verification outside StratXcel entirely, so the connection this
+ * codebase already has for them reflects it without ever requiring a
+ * repeat OAuth (STRATXCEL — GOOGLE BUSINESS AUTONOMOUS SETUP brief,
+ * Sections 11/20). Same never-null-out-a-real-value merge discipline as
+ * upsertConnectedAccount's own metadata handling above.
+ */
+export async function mergeAccountMetadata(service: ServiceClient, accountId: string, patch: Record<string, unknown>) {
+  const { data: existing, error: fetchErr } = await service.from("social_accounts").select("metadata").eq("id", accountId).maybeSingle();
+  if (fetchErr) throw new Error(`Failed to load social_accounts metadata: ${fetchErr.message}`);
+  const merged = { ...((existing?.metadata as Record<string, unknown>) ?? {}), ...omitNullish(patch) };
+  const { error: updateErr } = await service
+    .from("social_accounts")
+    .update({ metadata: merged, updated_at: new Date().toISOString() })
+    .eq("id", accountId);
+  if (updateErr) throw new Error(`Failed to update social_accounts metadata: ${updateErr.message}`);
+  return merged;
 }
 
 export async function markReauthRequired(service: ServiceClient, accountId: string) {

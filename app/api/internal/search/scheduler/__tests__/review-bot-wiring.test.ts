@@ -37,3 +37,15 @@ assert.ok(schedulerCron, "the existing search scheduler cron entry must still ex
 assert.doesNotMatch(JSON.stringify(vercelJson.crons), /review.?bot/i, "no separate review-bot cron path should exist in vercel.json");
 
 console.log("PASS: Review Bot is hosted on the existing scheduler cron with the resolved-location guard enforced before any live call, and no new cron slot was added.");
+
+// --- Automatic Google verification recheck (STRATXCEL — GOOGLE BUSINESS ---
+// --- AUTONOMOUS SETUP brief, Sections 11/20) must be hosted on this same ---
+// --- existing cron too -- not a new one, and it must never run for an ------
+// --- unresolved location or an already-VERIFIED connection. ----------------
+assert.match(route, /recheckGoogleVerificationForTenant/, "the verification recheck must actually be wired into this scheduler's tenant loop");
+const rechecksAfterGuard = route.indexOf("isResolvedGbpLocationResourceName(gbpAccount.provider_account_id)", route.indexOf("recheckGoogleVerificationForTenant"));
+assert.ok(rechecksAfterGuard >= 0, "the recheck function must apply the same resolved-location guard before ever calling Google");
+assert.match(route, /currentState === "VERIFIED"/, "an already-VERIFIED connection must be skipped, never re-checked forever");
+assert.equal(vercelJson.crons.length, 9, "the verification recheck must not add an 11th cron entry either");
+
+console.log("PASS: the automatic Google verification recheck is hosted on the existing scheduler cron, guarded identically to Review Bot, with no new cron slot.");

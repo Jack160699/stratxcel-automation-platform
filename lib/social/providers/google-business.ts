@@ -110,6 +110,31 @@ export function isResolvedGbpLocationResourceName(id: string): boolean {
   return /^(accounts\/[^/]+\/)?locations\/[^/]+$/.test(id);
 }
 
+/**
+ * Google's real Account resource has an output-only `verificationState`
+ * field (real values, live-verified against Google's own current docs
+ * fetched during this fix, not recalled: VERIFICATION_STATE_UNSPECIFIED,
+ * VERIFIED, UNVERIFIED, VERIFICATION_REQUESTED -- "VETTED_PARTNER" in this
+ * file's own GbpAccount type above is a separate, distinct field on the
+ * real Account resource, `vettedState`, not a real verificationState value;
+ * left as-is there since it's only a loose `| string` type hint, but never
+ * treated as a real verification value here). Normalizes Google's raw enum
+ * (or a genuinely unknown/missing value) into the small, honest set this
+ * codebase actually acts on -- never invents "VERIFIED" from an absent or
+ * unrecognized value. STRATXCEL — GOOGLE BUSINESS AUTONOMOUS SETUP brief,
+ * Section 9: "Do NOT call an unverified profile CONNECTED_AND_VERIFIED."
+ */
+export type NormalizedGoogleVerificationState = "VERIFIED" | "UNVERIFIED" | "PENDING" | "UNKNOWN";
+
+export function normalizeGoogleVerificationState(raw: unknown): NormalizedGoogleVerificationState {
+  if (raw === "VERIFIED") return "VERIFIED";
+  if (raw === "UNVERIFIED") return "UNVERIFIED";
+  if (raw === "VERIFICATION_REQUESTED") return "PENDING";
+  // VERIFICATION_STATE_UNSPECIFIED, missing, or any value this codebase
+  // doesn't recognize yet -- honestly unknown, never assumed verified.
+  return "UNKNOWN";
+}
+
 function getClientId(): string {
   const id =
     process.env.GOOGLE_BUSINESS_CLIENT_ID ||
@@ -478,6 +503,15 @@ export const googleBusinessProvider: SocialProvider = {
           .join(", ")
       : null;
 
+    // Google's real, output-only Account.verificationState -- this account
+    // discovery already fetched every account above (discoverAllGoogleBusinessLocations),
+    // but until this fix nothing ever read verificationState off any of them.
+    // Same account the rest of this metadata attributes the connection to
+    // (the matched location's own parent account, falling back to the first
+    // discovered account when no location matched yet -- mirrors
+    // account_name's own fallback immediately below).
+    const verificationAccount = accounts.find((a) => a.name === (matched?.accountName ?? accounts[0]?.name));
+
     const metadata: Record<string, unknown> = {
       google_user_id: profileData.id ?? null,
       google_email: profileData.email ?? null,
@@ -486,6 +520,11 @@ export const googleBusinessProvider: SocialProvider = {
       location_resource_name: matched ? locationExternalId : null,
       location_name: matched?.name ?? null,
       account_name: matched?.accountName ?? (accounts[0]?.name ?? null),
+      // Raw Google enum, never normalized before storage -- normalization
+      // (canonical-status.ts's normalizeGoogleVerificationState call) always
+      // happens at read time so a future, currently-unrecognized real Google
+      // value is never silently frozen into a stale "UNKNOWN" forever.
+      google_verification_state: verificationAccount?.verificationState ?? null,
       business_title: matched?.title ?? null,
       business_category: matched?.categories?.primaryCategory?.displayName ?? null,
       business_address: formattedAddress,
@@ -682,4 +721,40 @@ export async function replyToLocationReview(accessToken: string, reviewName: str
     }
     throw new Error(`Google Business review reply failed (${res.status}): ${detail || "no error body"}`);
   }
+}
+
+/**
+ * Real, live accounts.get call -- the automatic-recheck half of the
+ * verification gap this file's own exchangeCodeForToken() was found to have
+ * (see normalizeGoogleVerificationState's own comment): a customer who
+ * completes Google's own verification after connecting has no reason to
+ * ever run this codebase's OAuth flow again, so the verification state
+ * captured once at connect-time would otherwise sit stale forever.
+ * `accountName` must be a real "accounts/{id}" resource (this codebase
+ * already stores one on every resolved connection as
+ * social_accounts.metadata.account_name -- see exchangeCodeForToken/the
+ * google-business probe route). Returns the raw Google enum string (or null
+ * on a 2xx response that genuinely omits the field) -- callers normalize it
+ * with normalizeGoogleVerificationState(); throws a real, honest error on
+ * any non-ok response so a caller's own 401-refresh-retry pattern (see
+ * listLocationReviews/replyToLocationReview's real callers) applies
+ * exactly the same way.
+ */
+export async function getAccountVerificationState(accessToken: string, accountName: string): Promise<string | null> {
+  const res = await fetch(`https://mybusinessaccountmanagement.googleapis.com/v1/${accountName}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) {
+    let detail = "";
+    try {
+      detail = await res.text();
+    } catch {
+      // ignore
+    }
+    const err = new Error(`Google Business account lookup failed (${res.status}): ${detail || "no error body"}`) as Error & { status?: number };
+    err.status = res.status;
+    throw err;
+  }
+  const account = (await res.json()) as { verificationState?: string };
+  return account.verificationState ?? null;
 }

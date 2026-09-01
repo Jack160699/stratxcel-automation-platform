@@ -15,21 +15,43 @@ function ConnectionBadge({
   canConnect,
   isDiscovered,
   isLocationSetupRequired,
+  isVerificationRequired,
+  isVerificationPending,
 }: {
   state: ConnectorState;
   canConnect: boolean;
   isDiscovered: boolean;
   isLocationSetupRequired?: boolean;
+  isVerificationRequired?: boolean;
+  isVerificationPending?: boolean;
 }) {
   if (state === "checking") {
     return <span className="shrink-0 rounded-lg bg-sx-surface-2 px-2.5 py-1 text-[11px] font-semibold text-sx-text-subtle">Checking</span>;
   }
   if (state === "connected") {
+    // Location setup takes precedence -- verification isn't even a
+    // knowable question yet without a resolved location.
     if (isLocationSetupRequired) {
       return (
         <span className="flex shrink-0 items-center gap-1.5 rounded-lg bg-sx-warning/10 px-2.5 py-1">
           <span className="h-[5px] w-[5px] rounded-full bg-sx-warning" />
           <span className="text-[11px] font-semibold text-sx-warning">Location setup required</span>
+        </span>
+      );
+    }
+    if (isVerificationRequired) {
+      return (
+        <span className="flex shrink-0 items-center gap-1.5 rounded-lg bg-sx-warning/10 px-2.5 py-1">
+          <span className="h-[5px] w-[5px] rounded-full bg-sx-warning" />
+          <span className="text-[11px] font-semibold text-sx-warning">Verification required</span>
+        </span>
+      );
+    }
+    if (isVerificationPending) {
+      return (
+        <span className="flex shrink-0 items-center gap-1.5 rounded-lg bg-sx-accent-muted px-2.5 py-1">
+          <span className="h-[5px] w-[5px] rounded-full bg-sx-accent" />
+          <span className="text-[11px] font-semibold text-sx-accent">Pending Google review</span>
         </span>
       );
     }
@@ -215,7 +237,11 @@ export default function IntegrationsPage() {
       key: "google_business",
       title: "Google Business",
       state: status?.google ?? "setup_required",
-      copy: status?.google_business_details?.locationResolved
+      copy: status?.google_business_details?.locationResolved && status?.google_business_details?.verificationRequired
+        ? "Business location found — Google verification required to activate."
+        : status?.google_business_details?.locationResolved && status?.google_business_details?.verificationPending
+        ? "Business location found — Google is reviewing your verification."
+        : status?.google_business_details?.locationResolved
         ? "Connected — Google Maps & Search profile active."
         : status?.google === "connected" && status?.google_business_details?.locationSetupRequired
         ? "Google account connected · Business location setup required."
@@ -416,6 +442,8 @@ export default function IntegrationsPage() {
             const gbpDetails = status?.google_business_details;
             const isLocationSetupRequired = isGbp && Boolean(gbpDetails?.locationSetupRequired);
             const isLocationResolved = isGbp && Boolean(gbpDetails?.locationResolved);
+            const isVerificationRequired = isGbp && isLocationResolved && Boolean(gbpDetails?.verificationRequired);
+            const isVerificationPending = isGbp && isLocationResolved && Boolean(gbpDetails?.verificationPending);
 
             return (
               <Card key={card.key} className="p-4">
@@ -432,6 +460,8 @@ export default function IntegrationsPage() {
                     canConnect={card.isOAuth ? canConnect : true}
                     isDiscovered={isDiscovered}
                     isLocationSetupRequired={isLocationSetupRequired}
+                    isVerificationRequired={isVerificationRequired}
+                    isVerificationPending={isVerificationPending}
                   />
                 </div>
 
@@ -468,9 +498,29 @@ export default function IntegrationsPage() {
                         View on Google Maps ↗
                       </a>
                     )}
-                    <p className="mt-1 text-xs text-sx-text-subtle">
-                      Authenticated Google Business Profile · Reviews & local search active
-                    </p>
+                    {/* A resolved location is not automatically a verified
+                        one -- claiming "Reviews & local search active" here
+                        regardless would be exactly the OAuth-success-as-
+                        verification-success conflation the brief forbids. */}
+                    {isVerificationRequired || isVerificationPending ? (
+                      <p className="mt-1 text-xs font-medium text-sx-warning">
+                        {gbpDetails?.verificationMessage}
+                      </p>
+                    ) : (
+                      <p className="mt-1 text-xs text-sx-text-subtle">
+                        Authenticated Google Business Profile · Reviews & local search active
+                      </p>
+                    )}
+                    {isVerificationRequired && (
+                      <a
+                        href="https://business.google.com/locations"
+                        target="_blank"
+                        rel="noreferrer"
+                        className="mt-2 inline-flex"
+                      >
+                        <Button variant="primary" size="sm">Complete verification ↗</Button>
+                      </a>
+                    )}
                   </div>
                 )}
 

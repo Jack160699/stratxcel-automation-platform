@@ -654,8 +654,22 @@ function createTestDb() {
 // (GBP account/location discovery never resolved a real location) --
 // found live against the real StratXcel tenant
 // (docs/discovery/SEARCH_GROWTH_ENGINE_GAP_AUDIT.md, Update 10). Must
-// report REAUTH_REQUIRED with a specific, actionable reason, never a
-// misleading CONNECTED/"fully ready" card.
+// report a specific, actionable "location setup required" reason, never a
+// generic error and never a fully-ready claim.
+//
+// Superseded design note: Update 10 originally folded this into
+// REAUTH_REQUIRED (reusing the existing enum rather than adding a new
+// state). The STRATXCEL — GOOGLE BUSINESS AUTONOMOUS SETUP brief's own
+// Section 9 explicitly distinguishes CONNECTED_LOCATION_SETUP_REQUIRED from
+// REAUTH_REQUIRED as separate states, and Section 19 forbids treating a
+// pending-verification/setup case as a reason to force a reconnect --
+// REAUTH_REQUIRED's own real customer-facing UI is wired to exactly that
+// "Reconnect account" CTA, which is the wrong action for an account whose
+// OAuth is genuinely still healthy. A later commit (google-business.ts's
+// multi-account discovery/canonical location matching rework) correctly
+// re-modeled this as CONNECTED + a distinct location-setup-required
+// advisory instead -- this test's expectation is updated to match the
+// current, correct behavior, not reverted.
 // -------------------------------------------------------------
 {
   console.log("Test 9: social_accounts -- CONNECTED with an unresolved GBP location id...");
@@ -677,12 +691,12 @@ function createTestDb() {
   });
 
   const status = await getBusinessConnectionStatus(client, tenantId, "google_business");
-  assert.equal(status.connectionState, "REAUTH_REQUIRED", "an unresolved GBP location must never report CONNECTED, even with a genuinely usable token");
-  assert.equal(status.reauthRequired, true);
-  assert.equal(status.healthState, "DEGRADED");
-  assert.match(status.error ?? "", /location wasn't found/i, "the reason must be specific and actionable, not a generic connection-error message");
+  assert.equal(status.connectionState, "CONNECTED", "OAuth is genuinely healthy here -- an unresolved location is its own distinct state, not a reason to force a reconnect");
+  assert.equal(status.reauthRequired, false);
+  assert.equal(status.healthState, "HEALTHY");
+  assert.match(status.error ?? "", /location.*(was not found|wasn't found)|setup/i, "the reason must be specific and actionable, not a generic connection-error message");
 
-  console.log("✓ An unresolved GBP location reports an honest, actionable REAUTH_REQUIRED instead of a misleading CONNECTED.\n");
+  console.log("✓ An unresolved GBP location reports an honest, actionable CONNECTED + location-setup-required, never a forced reconnect.\n");
 }
 
 console.log("===============================================================");

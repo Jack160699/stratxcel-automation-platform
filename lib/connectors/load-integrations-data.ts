@@ -39,6 +39,16 @@ export interface CustomerIntegrationStatus {
     mapsUrl: string | null;
     permission: string | null;
     googleEmail: string | null;
+    // Real, additive facts from canonical-status.ts's own verification
+    // computation (STRATXCEL — GOOGLE BUSINESS AUTONOMOUS SETUP brief,
+    // Section 9/19) -- only meaningful once locationResolved is true.
+    // Deliberately not folded into `google` (ConnectorState): this codebase
+    // already established the "companion details object" pattern for
+    // Google Business here (locationResolved/locationSetupRequired above)
+    // rather than growing the shared ConnectorState enum per-provider.
+    verificationRequired: boolean;
+    verificationPending: boolean;
+    verificationMessage: string | null;
   };
   google_analytics?: ConnectorState;
   google_search_console?: ConnectorState;
@@ -128,6 +138,9 @@ export async function loadIntegrationsStatusData(
       mapsUrl: conns.google_business.publicUrl || (gbMeta.maps_url as string) || null,
       permission: (gbMeta.permission_level as string) || (gbLocationResolved ? "OWNER_ACCESS" : "ACCOUNT_AUTHENTICATED"),
       googleEmail: (gbMeta.google_email as string) || gbSocial?.username || null,
+      verificationRequired: Boolean(conns.google_business.verificationRequired),
+      verificationPending: Boolean(conns.google_business.verificationPending),
+      verificationMessage: conns.google_business.verificationMessage ?? null,
     },
     google_analytics: mapState(conns.google_analytics.connectionState),
     google_search_console: mapState(conns.google_search_console.connectionState),

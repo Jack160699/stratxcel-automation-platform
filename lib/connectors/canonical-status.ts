@@ -7,7 +7,11 @@ import type { PlatformIconKey } from "@/components/audit/PlatformIcon";
 // elides), and this repo's test convention runs .test.ts files directly
 // under `node --experimental-strip-types`, which has no tsconfig path-alias
 // resolution.
-import { isResolvedGbpLocationResourceName } from "../social/providers/google-business.ts";
+import {
+  isResolvedGbpLocationResourceName,
+  normalizeGoogleVerificationState,
+  type NormalizedGoogleVerificationState,
+} from "../social/providers/google-business.ts";
 import {
   resolveVercelWriteCapability,
   type VercelWriteCapabilityState,
@@ -59,6 +63,19 @@ export interface CanonicalConnectionStatus {
   platform?: string;
   hostingProvider?: string;
   projectName?: string;
+  // Google Business Profile only (STRATXCEL — GOOGLE BUSINESS AUTONOMOUS
+  // SETUP brief, Section 9: "Do NOT call an unverified profile
+  // CONNECTED_AND_VERIFIED" / Section 38: "Never classify OAuth success as
+  // business verification success"). OAuth succeeding and a location
+  // resolving are both already real facts above (connectionState/
+  // reauthRequired/gbLocationSetupRequired) -- this is the separate,
+  // genuinely distinct fact of whether Google itself has verified the
+  // business. Undefined for every other provider (no equivalent concept),
+  // never fabricated as VERIFIED when unknown.
+  verificationState?: NormalizedGoogleVerificationState;
+  verificationRequired?: boolean;
+  verificationPending?: boolean;
+  verificationMessage?: string | null;
 }
 
 export interface TenantDigitalPresenceSummary {
@@ -271,6 +288,25 @@ export const getTenantDigitalPresence = cache(async function getTenantDigitalPre
   const gbMeta = (gbSocial?.metadata ?? {}) as Record<string, unknown>;
   const gbMapsUrl = (typeof gbMeta.maps_url === "string" ? gbMeta.maps_url : null) || gbPublic.url || null;
 
+  // Verification is only a meaningful question once OAuth is genuinely
+  // healthy AND a real location has resolved -- checking it any earlier
+  // would conflate "not yet connected"/"location setup required" with
+  // "connected but not verified". connectionState stays CONNECTED while
+  // verification is pending (brief Section 19: never force a reconnect
+  // just because Google's own verification hasn't cleared yet) -- surfaced
+  // as separate, additive facts instead.
+  const gbVerificationEligible = Boolean(gbConnected && gbLocationResolved && !gbTokenNeedsReauth);
+  const gbVerificationState: NormalizedGoogleVerificationState | undefined = gbVerificationEligible
+    ? normalizeGoogleVerificationState(gbMeta.google_verification_state)
+    : undefined;
+  const gbVerificationRequired = gbVerificationState === "UNVERIFIED";
+  const gbVerificationPending = gbVerificationState === "PENDING";
+  const gbVerificationMessage = gbVerificationRequired
+    ? "Google requires verification to confirm this is a real, authentic business before activating local map rankings, review sync, and posts. Complete Google's verification, then StratXcel continues automatically."
+    : gbVerificationPending
+    ? "Google is reviewing your business verification. This can take 1–3 business days — StratXcel continues automatically once Google confirms it."
+    : null;
+
   const googleBusinessStatus: CanonicalConnectionStatus = {
     provider: "google_business",
     asset: "profile",
@@ -308,6 +344,10 @@ export const getTenantDigitalPresence = cache(async function getTenantDigitalPre
       : gbLocationSetupRequired
       ? "Google account is connected, but a matching Business Profile location was not found or requires setup in Google Business Profile."
       : null,
+    verificationState: gbVerificationState,
+    verificationRequired: gbVerificationRequired,
+    verificationPending: gbVerificationPending,
+    verificationMessage: gbVerificationMessage,
   };
 
   // 3. Instagram

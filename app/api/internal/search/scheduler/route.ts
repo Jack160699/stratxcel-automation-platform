@@ -8,7 +8,15 @@ import {
 } from "@stratxcel/search-discovery";
 import { isPlanTier } from "@stratxcel/payments-and-wallet";
 import { resolveAccessToken, refreshToken as refreshSocialToken } from "@/lib/social/audit-connector-insights";
-import { googleBusinessProvider, isResolvedGbpLocationResourceName, listLocationReviews, replyToLocationReview } from "@/lib/social/providers/google-business";
+import {
+  googleBusinessProvider,
+  isResolvedGbpLocationResourceName,
+  listLocationReviews,
+  replyToLocationReview,
+  getAccountVerificationState,
+  normalizeGoogleVerificationState,
+} from "@/lib/social/providers/google-business";
+import { mergeAccountMetadata } from "@/lib/social/repositories/accounts";
 import { runReviewBotCycle } from "@/lib/google/review-bot-cycle";
 
 /**
@@ -84,6 +92,87 @@ async function runReviewBotForTenant(
   }
 }
 
+/**
+ * Automatic Google Business verification recheck (STRATXCEL — GOOGLE
+ * BUSINESS AUTONOMOUS SETUP brief, Sections 11/20: "the existing scheduled
+ * growth system should periodically recheck verification state" / "do not
+ * create another scheduler if the existing scheduler can perform this"). A
+ * customer who completes Google's own verification
+ * (business.google.com/locations, entirely outside StratXcel) has no
+ * reason to ever run this codebase's OAuth flow again -- without this, the
+ * google_verification_state captured once at connect-time
+ * (google-business.ts's exchangeCodeForToken) would sit stale forever, and
+ * canonical-status.ts would keep showing "Verification required" to a
+ * customer Google has already verified. Hosted on this exact same
+ * already-authenticated daily cron as the Review Bot above, for the same
+ * reason (no new cron slot, no new job-ownership-matrix entry) -- and only
+ * for tenants already in this route's tenant loop (real, pre-existing scope
+ * limit this cron already accepts for the Review Bot; not a new one).
+ * Never runs for a connection whose verification is already the terminal
+ * VERIFIED state (nothing left to learn), whose location never resolved,
+ * or that has no known account context to check.
+ */
+async function recheckGoogleVerificationForTenant(
+  supabase: ReturnType<typeof getTenantServiceContext>["supabase"],
+  tenantId: string
+): Promise<
+  | { status: "SKIPPED_NOT_CONNECTED" | "SKIPPED_UNRESOLVED_LOCATION" | "SKIPPED_NO_ACCOUNT_CONTEXT" | "SKIPPED_ALREADY_VERIFIED" | "SKIPPED_TOKEN_UNAVAILABLE" }
+  | { status: "UNCHANGED" | "UPDATED"; state: string }
+  | { status: "FAILED"; error: string }
+> {
+  const { data: gbpAccount } = await supabase
+    .from("social_accounts")
+    .select("id, provider_account_id, status, metadata")
+    .eq("tenant_id", tenantId)
+    .eq("platform", "google_business")
+    .maybeSingle();
+
+  if (!gbpAccount || gbpAccount.status !== "CONNECTED") return { status: "SKIPPED_NOT_CONNECTED" };
+  if (!isResolvedGbpLocationResourceName(gbpAccount.provider_account_id)) return { status: "SKIPPED_UNRESOLVED_LOCATION" };
+
+  const meta = (gbpAccount.metadata ?? {}) as Record<string, unknown>;
+  const currentState = normalizeGoogleVerificationState(meta.google_verification_state);
+  if (currentState === "VERIFIED") return { status: "SKIPPED_ALREADY_VERIFIED" };
+
+  // Real "accounts/{id}" resource this connection's own discovery already
+  // resolved and stored (google-business.ts's exchangeCodeForToken / the
+  // google-business probe route) -- never guessed or re-parsed from the
+  // location resource name, which (per this file's own updated
+  // isResolvedGbpLocationResourceName) can legitimately be a bare
+  // "locations/{id}" with no account segment to extract at all.
+  const accountName = typeof meta.account_name === "string" ? meta.account_name : null;
+  if (!accountName) return { status: "SKIPPED_NO_ACCOUNT_CONTEXT" };
+
+  const tokens = await resolveAccessToken(supabase, gbpAccount.id);
+  if (!tokens) return { status: "SKIPPED_TOKEN_UNAVAILABLE" };
+
+  const attempt = (accessToken: string) => getAccountVerificationState(accessToken, accountName);
+
+  let raw: string | null;
+  try {
+    raw = await attempt(tokens.accessToken);
+  } catch (err) {
+    const status = (err as Error & { status?: number }).status;
+    if (status === 401 && tokens.refreshToken) {
+      const fresh = await refreshSocialToken(supabase, gbpAccount.id, tokens.refreshToken, googleBusinessProvider);
+      if (!fresh) return { status: "SKIPPED_TOKEN_UNAVAILABLE" };
+      try {
+        raw = await attempt(fresh);
+      } catch (err2) {
+        return { status: "FAILED", error: err2 instanceof Error ? err2.message : "Verification recheck failed after token refresh." };
+      }
+    } else {
+      return { status: "FAILED", error: err instanceof Error ? err.message : "Verification recheck failed." };
+    }
+  }
+
+  const newState = normalizeGoogleVerificationState(raw);
+  if (newState === currentState) return { status: "UNCHANGED", state: newState };
+
+  await mergeAccountMetadata(supabase, gbpAccount.id, { google_verification_state: raw });
+  return { status: "UPDATED", state: newState };
+}
+
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -138,6 +227,7 @@ async function handleSchedulerInvocation(request: Request) {
     // state-lookup-failed, COMPLETED, FAILED) can report it without
     // silently dropping the outcome.
     const reviewBotResult = await runReviewBotForTenant(supabase, { tenantId: project.tenant_id, businessName: project.name });
+    const verificationRecheckResult = await recheckGoogleVerificationForTenant(supabase, project.tenant_id);
 
     // 2. Fetch Last Completed Growth Cycle State
     //
@@ -168,6 +258,7 @@ async function handleSchedulerInvocation(request: Request) {
         status: "SKIPPED_STATE_LOOKUP_FAILED",
         error: strategyStateError.message,
         reviewBot: reviewBotResult,
+        verificationRecheck: verificationRecheckResult,
       });
       continue; // Fail safe: never treat an unreadable cadence state as "due" -- that's the expensive direction.
     }
@@ -190,6 +281,7 @@ async function handleSchedulerInvocation(request: Request) {
         nextRunAt: eligibility.nextRunAt,
         reason: eligibility.reason,
         reviewBot: reviewBotResult,
+        verificationRecheck: verificationRecheckResult,
       });
       continue; // Skip expensive crawler, LLM, and SERP operations
     }
@@ -231,6 +323,7 @@ async function handleSchedulerInvocation(request: Request) {
         alertsCount: loopResult.alerts.length,
         nextDueAt: eligibility.nextRunAt,
         reviewBot: reviewBotResult,
+        verificationRecheck: verificationRecheckResult,
       });
     } catch (err) {
       results.push({
@@ -239,6 +332,7 @@ async function handleSchedulerInvocation(request: Request) {
         status: "FAILED",
         error: err instanceof Error ? err.message : "Growth loop run failed",
         reviewBot: reviewBotResult,
+        verificationRecheck: verificationRecheckResult,
       });
     }
   }

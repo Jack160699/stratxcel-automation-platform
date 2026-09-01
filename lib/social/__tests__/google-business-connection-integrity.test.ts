@@ -5,11 +5,16 @@ import {
   getCanonicalGbpLocationResourceName,
   matchGoogleBusinessLocation,
   discoverAllGoogleBusinessLocations,
+  normalizeGoogleVerificationState,
+  getAccountVerificationState,
   type GbpAccount,
   type GbpLocation,
 } from "../providers/google-business.ts";
 import { getTenantDigitalPresence } from "../../connectors/canonical-status.ts";
 import { loadIntegrationsStatusData } from "../../connectors/load-integrations-data.ts";
+
+process.env.GOOGLE_BUSINESS_CLIENT_ID = process.env.GOOGLE_BUSINESS_CLIENT_ID || "test-google-business-client-id";
+process.env.GOOGLE_BUSINESS_CLIENT_SECRET = process.env.GOOGLE_BUSINESS_CLIENT_SECRET || "test-google-business-client-secret";
 
 async function run() {
   console.log("Starting Google Business Profile Connection Integrity Test Suite...\n");
@@ -226,6 +231,136 @@ async function run() {
   assert.equal(uiStatusSetup.google_business_details?.googleEmail, "shriyansh@example.com");
 
   console.log("✓ Test 4: Canonical status resolution accurately separates resolved from setup-required states");
+
+  // --- 5. Google's real account.verificationState -- captured, never ----
+  // --- fabricated, distinct from OAuth/location success (STRATXCEL — -----
+  // --- GOOGLE BUSINESS AUTONOMOUS SETUP brief, Section 9/38) --------------
+  assert.equal(normalizeGoogleVerificationState("VERIFIED"), "VERIFIED");
+  assert.equal(normalizeGoogleVerificationState("UNVERIFIED"), "UNVERIFIED");
+  assert.equal(normalizeGoogleVerificationState("VERIFICATION_REQUESTED"), "PENDING");
+  assert.equal(normalizeGoogleVerificationState("VERIFICATION_STATE_UNSPECIFIED"), "UNKNOWN", "Google's own explicit unspecified sentinel must never read as verified");
+  assert.equal(normalizeGoogleVerificationState(undefined), "UNKNOWN", "a missing value must never be assumed verified");
+  assert.equal(normalizeGoogleVerificationState(null), "UNKNOWN");
+  assert.equal(normalizeGoogleVerificationState("something_unrecognized"), "UNKNOWN", "an unrecognized value must fail closed");
+
+  const verifiedFetch = (async (url: string) => {
+    const u = String(url);
+    if (u.includes("oauth2.googleapis.com/token")) return { ok: true, json: async () => ({ access_token: "tok_v", expires_in: 3600 }) } as Response;
+    if (u.includes("oauth2/v2/userinfo")) return { ok: true, json: async () => ({ id: "1", email: "owner@example.com" }) } as Response;
+    if (u.includes("mybusinessaccountmanagement.googleapis.com/v1/accounts") && !u.includes("accounts/")) {
+      return { ok: true, json: async () => ({ accounts: [{ name: "accounts/org-2", accountName: "StratXcel Org", verificationState: "VERIFIED" }] }) } as Response;
+    }
+    if (u.includes("accounts/org-2/locations")) {
+      return { ok: true, json: async () => ({ locations: [{ name: "locations/stratxcel-org-loc", title: "StratXcel", websiteUri: "https://www.stratxcel.in" }] }) } as Response;
+    }
+    return { ok: false, status: 404 } as Response;
+  }) as typeof fetch;
+
+  const originalFetch = globalThis.fetch;
+  try {
+    globalThis.fetch = verifiedFetch;
+    const verifiedResult = await googleBusinessProvider.exchangeCodeForToken("code_v", "https://www.stratxcel.in/api/social/oauth/google_business/callback");
+    assert.equal((verifiedResult.metadata as Record<string, unknown>)?.google_verification_state, "VERIFIED", "a real VERIFIED account.verificationState must reach the stored metadata, not be discarded");
+
+    // Zero accounts: must never fabricate a verification value.
+    globalThis.fetch = (async (url: string) => {
+      const u = String(url);
+      if (u.includes("oauth2.googleapis.com/token")) return { ok: true, json: async () => ({ access_token: "tok_z", expires_in: 3600 }) } as Response;
+      if (u.includes("oauth2/v2/userinfo")) return { ok: true, json: async () => ({ id: "2" }) } as Response;
+      if (u.includes("mybusinessaccountmanagement.googleapis.com/v1/accounts")) return { ok: true, json: async () => ({ accounts: [] }) } as Response;
+      return { ok: false, status: 404 } as Response;
+    }) as typeof fetch;
+    const zeroResult = await googleBusinessProvider.exchangeCodeForToken("code_z", "https://www.stratxcel.in/api/social/oauth/google_business/callback");
+    assert.equal((zeroResult.metadata as Record<string, unknown>)?.google_verification_state, null, "zero accessible accounts must never fabricate a verification state");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+  console.log("✓ Test 5: exchangeCodeForToken captures Google's real verificationState honestly");
+
+  // --- 6. getAccountVerificationState -- the real accounts.get call used --
+  // --- by the automatic recheck (brief Sections 11/20). --------------------
+  try {
+    let capturedUrl = "";
+    globalThis.fetch = (async (url: string) => {
+      capturedUrl = String(url);
+      return { ok: true, json: async () => ({ verificationState: "VERIFIED" }) } as Response;
+    }) as typeof fetch;
+    const state = await getAccountVerificationState("access_tok", "accounts/org-2");
+    assert.equal(capturedUrl, "https://mybusinessaccountmanagement.googleapis.com/v1/accounts/org-2");
+    assert.equal(state, "VERIFIED");
+
+    globalThis.fetch = (async () => ({ ok: false, status: 401, text: async () => "unauthorized" })) as unknown as typeof fetch;
+    await assert.rejects(() => getAccountVerificationState("bad_tok", "accounts/org-2"), /Google Business account lookup failed \(401\)/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+  console.log("✓ Test 6: getAccountVerificationState calls the real accounts.get endpoint and throws honestly on failure");
+
+  // --- 7. Canonical status: verification is additive, never overrides -----
+  // --- the CONNECTED state, and is only computed once a location has ------
+  // --- actually resolved (brief Section 19: never force a reconnect just --
+  // --- because verification is pending). -----------------------------------
+  const unverifiedDb = makeMockDb({
+    id: "test-acc-unverified",
+    tenant_id: "tenant-unverified",
+    platform: "google_business",
+    provider_account_id: "accounts/acc-1/locations/loc-1",
+    display_name: "StratXcel",
+    username: "StratXcel",
+    status: "CONNECTED",
+    token_health: "HEALTHY",
+    metadata: { location_resolved: true, business_title: "StratXcel", google_verification_state: "UNVERIFIED" },
+  });
+  const presenceUnverified = await getTenantDigitalPresence(unverifiedDb as any, "tenant-unverified");
+  assert.equal(presenceUnverified.connections.google_business.connectionState, "CONNECTED", "pending verification must never force a reconnect state");
+  assert.equal(presenceUnverified.connections.google_business.verificationState, "UNVERIFIED");
+  assert.equal(presenceUnverified.connections.google_business.verificationRequired, true);
+  assert.equal(presenceUnverified.connections.google_business.verificationPending, false);
+  assert.match(presenceUnverified.connections.google_business.verificationMessage ?? "", /verification/i);
+
+  const uiUnverified = await loadIntegrationsStatusData(unverifiedDb as any, "tenant-unverified", "owner");
+  assert.equal(uiUnverified.google, "connected", "ConnectorState stays connected -- verification is a companion field, not a new enum value");
+  assert.equal(uiUnverified.google_business_details?.verificationRequired, true);
+
+  const pendingDb = makeMockDb({
+    id: "test-acc-pending",
+    tenant_id: "tenant-pending",
+    platform: "google_business",
+    provider_account_id: "accounts/acc-2/locations/loc-2",
+    display_name: "StratXcel",
+    username: "StratXcel",
+    status: "CONNECTED",
+    token_health: "HEALTHY",
+    metadata: { location_resolved: true, business_title: "StratXcel", google_verification_state: "VERIFICATION_REQUESTED" },
+  });
+  const presencePending = await getTenantDigitalPresence(pendingDb as any, "tenant-pending");
+  assert.equal(presencePending.connections.google_business.verificationState, "PENDING");
+  assert.equal(presencePending.connections.google_business.verificationRequired, false, "an already-submitted verification is pending, not an unstarted action item");
+  assert.equal(presencePending.connections.google_business.verificationPending, true);
+
+  const verifiedGbpDb = makeMockDb({
+    id: "test-acc-verified",
+    tenant_id: "tenant-verified-gbp",
+    platform: "google_business",
+    provider_account_id: "accounts/acc-3/locations/loc-3",
+    display_name: "StratXcel",
+    username: "StratXcel",
+    status: "CONNECTED",
+    token_health: "HEALTHY",
+    metadata: { location_resolved: true, business_title: "StratXcel", google_verification_state: "VERIFIED" },
+  });
+  const presenceVerifiedGbp = await getTenantDigitalPresence(verifiedGbpDb as any, "tenant-verified-gbp");
+  assert.equal(presenceVerifiedGbp.connections.google_business.verificationState, "VERIFIED");
+  assert.equal(presenceVerifiedGbp.connections.google_business.verificationRequired, false);
+  assert.equal(presenceVerifiedGbp.connections.google_business.verificationMessage, null, "a genuinely verified profile must carry no verification advisory");
+
+  // Location NOT resolved: verification must not even be computed (Test B's
+  // setupRequiredDb fixture from Test 4, reused here for the same assertion).
+  const presenceSetupReused = await getTenantDigitalPresence(setupRequiredDb as any, "tenant-setup");
+  assert.equal(presenceSetupReused.connections.google_business.verificationState, undefined, "verification is not a meaningful question before the location itself resolves");
+  assert.equal(presenceSetupReused.connections.google_business.verificationRequired, false);
+
+  console.log("✓ Test 7: canonical-status verification surfacing is additive, precedence-correct, and location-gated");
 
   console.log("\n============================================================");
   console.log("ALL GOOGLE BUSINESS CONNECTION INTEGRITY TESTS PASSED!");
