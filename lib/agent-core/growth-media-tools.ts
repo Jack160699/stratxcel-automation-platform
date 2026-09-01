@@ -20,8 +20,21 @@
  *   own header comment is explicit that production callers must go through
  *   it (never construct a fresh unmetered runtime) -- this tool does
  *   exactly that, nothing more.
+ * - execute_growth_action: packages/search-discovery's executeSearchAction,
+ *   UNMODIFIED -- a real, already-mature "verify as a platform primitive"
+ *   implementation (before/after evidence, live HTML re-verification,
+ *   automatic rollback on verification failure, precise
+ *   COMPLETED/VERIFIED/FAILED/BLOCKED/VERIFICATION_FAILED states). Provider
+ *   resolution mirrors app/api/platform/search/actions/execute/route.ts's
+ *   EXACT logic (same functions, same fallback order) rather than
+ *   reinventing it -- this only replaces that route's cookie-scoped
+ *   requireTenantContext()/RBAC check with agent-core's own equivalent
+ *   (a verified AgentPrincipal + explicit tool permission), since a
+ *   service-role, principal-authorized call has no browser session to read.
+ *   Operates only on an action a human already asked to see via
+ *   check_growth_status -- never invents a mutation from free text.
  */
-import { listSearchState } from "@stratxcel/search-discovery";
+import { listSearchState, executeSearchAction, createFixtureWordPressProvider, createStratxcelNativeCMSProvider, createVercelCMSProvider, resolveVercelWriteCapability } from "@stratxcel/search-discovery";
 import { loadIntegrationsStatusData } from "../connectors/load-integrations-data";
 import { executeGenerateImageTool } from "../social/agent/generate-image-tool";
 import type { AgentTenantContext } from "../social/agent-tenant-types";
@@ -132,6 +145,83 @@ export const GROWTH_MEDIA_TOOLS: AgentTool[] = [
       if (outcome === "REVISION_REQUIRED") return { status: "partial", detail: "candidates ready, needs your selection in the dashboard" };
       if (outcome === "WAITING_CONFIGURATION" || outcome === "PENDING") return { status: "pending", detail: reason };
       return { status: "failed", detail: reason ?? outcome.toLowerCase().replaceAll("_", " ") };
+    },
+  },
+  {
+    schema: {
+      name: "execute_growth_action",
+      description: "Execute an already-identified SEO/content fix (from check_growth_status's `actions` list) on the real live website -- real before/after evidence, real live re-verification after the write, automatic rollback if verification fails. Only for an actionId a human/prior check_growth_status call already surfaced -- never invent one.",
+      parameters: {
+        type: "object",
+        properties: {
+          actionId: { type: "string", description: "A real search_actions.id from a prior check_growth_status result." },
+          tenantId: { type: "string", description: "Optional -- defaults to Stratxcel's own tenant." },
+        },
+        required: ["actionId"],
+      },
+    },
+    mutating: true,
+    // Textbook external_mutation (a real, verified live-website write) --
+    // but, same reasoning as generate_image/send_whatsapp_message_to_contact:
+    // dashboard_only would make this unusable from the one channel ("fix the
+    // website" over WhatsApp) the brief explicitly requires. low_mutation
+    // keeps the real safety control (a typed CONFIRM code bound to this
+    // exact actionId) while the underlying engine's own precheck/evidence/
+    // verification/rollback remains the real technical safety net
+    // regardless of channel.
+    risk: "low_mutation",
+    requiredPermission: "agent:mutate:website",
+    async execute(ctx, args) {
+      const tenantId = resolveTenantId(ctx, args);
+      const actionId = typeof args.actionId === "string" ? args.actionId : "";
+      if (!tenantId || !actionId) return { status: "BLOCKED", actionId, targetUrl: "", blockerCode: "MISSING_INPUT" };
+
+      const { data: subscription } = await ctx.supabase
+        .from("subscriptions")
+        .select("plan_tier, status")
+        .eq("tenant_id", tenantId)
+        .eq("status", "active")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const tier = (subscription as { plan_tier?: string } | null)?.plan_tier;
+      if (!tier || tier === "free" || (subscription as { status?: string } | null)?.status !== "active") {
+        return { status: "BLOCKED", actionId, targetUrl: "", blockerCode: "SUBSCRIPTION_REQUIRED", errorMessage: "An active Search Growth OS subscription is required to execute actions." };
+      }
+
+      const { data: cmsConn } = await ctx.supabase.from("search_cms_connections").select("*").eq("tenant_id", tenantId).maybeSingle();
+      const conn = cmsConn as { cms_type?: string; site_url?: string; write_enabled?: boolean; vault_secret_id?: string; config?: { projectId?: string; teamId?: string } } | null;
+      const siteUrl = conn?.site_url || process.env.NEXT_PUBLIC_APP_URL || "https://www.stratxcel.in";
+
+      const vercelWriteResult = await resolveVercelWriteCapability({ tenantId, db: ctx.supabase as never, siteUrl });
+      const cmsProvider =
+        conn?.cms_type === "wordpress"
+          ? createFixtureWordPressProvider({ siteUrl: conn.site_url ?? siteUrl, writeEnabled: Boolean(conn.write_enabled) })
+          : conn?.cms_type === "vercel" || conn?.cms_type === "nextjs" || !conn
+          ? createVercelCMSProvider({
+              siteUrl,
+              projectId: conn?.config?.projectId || process.env.VERCEL_PROJECT_ID || "prj_81j5A5rArsPVVNspwSPGGfuhg9NZ",
+              teamId: conn?.config?.teamId || process.env.VERCEL_TEAM_ID || "team_UWCzHaOLdAOtezWqRxYNxdYf",
+              token: conn?.vault_secret_id || undefined,
+              writeEnabled: vercelWriteResult.writeEnabled,
+            })
+          : createStratxcelNativeCMSProvider({ siteProjectId: "native_site", tenantId, propertyUrl: siteUrl });
+
+      return executeSearchAction(
+        { db: ctx.supabase as never, cmsProvider },
+        { tenantId, actionId, actorUserId: ctx.principal.authUserId }
+      );
+    },
+    // Same discipline as generate_image: the underlying engine's own status
+    // vocabulary is precise ("deploy started" vs "deployed" vs "healthy"),
+    // and that precision must survive into the final reply, not get
+    // flattened into a generic "Done."
+    interpretOutcome(result) {
+      const r = result as { status?: string; errorMessage?: string; blockerCode?: string } | null;
+      if (!r?.status || r.status === "VERIFIED" || r.status === "COMPLETED") return null;
+      if (r.status === "VERIFICATION_FAILED") return { status: "partial", detail: `the change was made but live verification failed${r.errorMessage ? `: ${r.errorMessage}` : ""} -- it may have been rolled back` };
+      if (r.status === "BLOCKED") return { status: "failed", detail: r.errorMessage ?? r.blockerCode };
+      return { status: "failed", detail: r.errorMessage };
     },
   },
 ];

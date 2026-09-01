@@ -32,6 +32,11 @@ const STAFF_ROLE_PERMISSIONS: Record<string, readonly string[]> = {
     // I do right now" is core Brain awareness, granted to the same roles
     // that already see everything else listed here.
     "agent:read:capabilities",
+    // Real, verified, rollback-capable live-website mutation
+    // (execute_growth_action) -- the underlying engine's own precheck
+    // (subscription, approval state, connector health) is the real gate;
+    // this permission is "may attempt at all".
+    "agent:mutate:website",
   ],
   platform_admin: [
     "agent:read:clients", "agent:read:leads", "agent:read:conversations", "agent:read:missions",
@@ -42,6 +47,7 @@ const STAFF_ROLE_PERMISSIONS: Record<string, readonly string[]> = {
     "agent:read:research",
     "agent:mutate:media",
     "agent:read:capabilities",
+    "agent:mutate:website",
   ],
   audit_reviewer: ["agent:read:audit", "agent:read:clients", "agent:read:leads", "agent:read:memory", "agent:mutate:memory"],
   finance_reviewer: ["agent:read:finance", "agent:read:clients", "agent:read:memory", "agent:mutate:memory"],

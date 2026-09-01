@@ -6,7 +6,7 @@ import { listPendingApprovals } from "@stratxcel/approvals";
 import { listOpenHandoffs } from "@stratxcel/human-handoff";
 import { listAuditEvents } from "@stratxcel/audit";
 import { listKillSwitches, getWorkerHealth, type WorkerType } from "@stratxcel/queue";
-import { getWalletAccount } from "@stratxcel/payments-and-wallet";
+import { getWalletAccount, listInvoicesForTenant, getEntitlementSummary } from "@stratxcel/payments-and-wallet";
 import type { AgentTool } from "../contract.ts";
 
 function requireTenantId(args: Record<string, unknown>): string {
@@ -351,7 +351,7 @@ export const ADMIN_READ_TOOLS: AgentTool[] = [
   {
     schema: {
       name: "finance_summary",
-      description: "Get wallet balance/reservation summary for a tenant.",
+      description: "Real financial overview for a tenant: wallet balance/reservations, real subscription plan/status, recent invoices, and usage-entitlement remaining capacity. Use for 'check our revenue/billing', 'is a subscription active', 'what's our plan usage'.",
       parameters: { type: "object", properties: { tenantId: { type: "string" } }, required: ["tenantId"] },
     },
     mutating: false,
@@ -359,8 +359,13 @@ export const ADMIN_READ_TOOLS: AgentTool[] = [
     requiredPermission: "agent:read:finance",
     async execute(ctx, args) {
       const tenantId = requireTenantId(args);
-      const account = await getWalletAccount(ctx.supabase, tenantId);
-      return { wallet: account };
+      const [{ data: subscription }, wallet, invoices, entitlements] = await Promise.all([
+        ctx.supabase.from("subscriptions").select("plan_tier, status, created_at").eq("tenant_id", tenantId).order("created_at", { ascending: false }).limit(1).maybeSingle(),
+        getWalletAccount(ctx.supabase, tenantId),
+        listInvoicesForTenant(ctx.supabase, tenantId),
+        getEntitlementSummary(ctx.supabase, tenantId),
+      ]);
+      return { subscription: subscription ?? null, wallet, invoices: invoices.slice(0, 10), entitlements };
     },
   },
   {
