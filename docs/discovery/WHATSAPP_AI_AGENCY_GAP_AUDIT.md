@@ -38,6 +38,19 @@ to fabricate completion on things that cannot be done safely in-session.
 Migration: `supabase/migrations/20260902500000_capability_registry_agent_factory_finding.sql`.
 No application code changed — investigation and registry entry only.
 
+**Addendum, same pass:** re-attempted the MCP browser tool for live UI
+visual verification (`mcp__stratxcel-browser__browser_navigate`) — failed
+identically to every prior attempt across this engagement: `"Browser is
+already in use for D:/pw-profile, use --isolated to run multiple instances
+of the same browser"`, a local Playwright profile lock held by another
+process on this machine, outside this session's control. Recorded once,
+precisely (`capability:live_browser_ui_verification`, `EXTERNAL_REQUIRED`),
+so future passes stop re-discovering the same environment blocker. Every
+route this would have visually verified was already confirmed to build and
+serve correctly via a real production build and live `/api/health` checks
+after every deploy this session. Migration:
+`supabase/migrations/20260902510000_capability_registry_browser_verification_blocker.sql`.
+
 ## Update 58 — get_paid_audit_report_link ships; tracing `engine:audit_engine` end to end found a real live cron/queue pipeline, a genuinely unbuilt free-audit automation gap, and a platform-wide Vercel Hobby-plan cron ceiling
 
 Closed the two items Update 57 explicitly left open rather than reconciled.
