@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { SearchCommandPill } from "@/components/shell/SearchCommandPill";
 
 /** The 56px top command bar shared by /app and /admin — docs/product-design/SHARED_SHELL_SPECIFICATION.md §3. */
 export function TopCommandBar({
@@ -8,6 +9,7 @@ export function TopCommandBar({
   staffBadge,
   userMenu,
   showSearch = true,
+  searchHref = "/admin/copilot",
   customer = false,
 }: {
   brand?: ReactNode;
@@ -16,6 +18,8 @@ export function TopCommandBar({
   staffBadge?: ReactNode;
   userMenu?: ReactNode;
   showSearch?: boolean;
+  /** Where the Search/⌘K pill opens — the real Copilot chat that can actually answer it. Defaults to /admin/copilot (this pill currently only ever renders for the admin shell). */
+  searchHref?: string;
   /** Customer app (product === "App") visual mode — spec §5.5: taller bar, a Help affordance, more breathing room. /admin never sets this. */
   customer?: boolean;
 }) {
@@ -43,7 +47,7 @@ export function TopCommandBar({
     <header className="flex h-14 shrink-0 items-center gap-3.5 border-b border-sx-border px-5">
       {brand && <div className="shrink-0 md:hidden">{brand}</div>}
       <div className="min-w-0 truncate text-[13.5px] font-semibold text-sx-text">{context}</div>
-      {showSearch && <SearchPill />}
+      {showSearch && <SearchCommandPill href={searchHref} />}
       <div className="flex-1" />
       {agentStatus}
       {staffBadge}
@@ -59,15 +63,6 @@ function HelpIcon() {
       <path d="M9.7 9.4a2.4 2.4 0 1 1 3.4 2.2c-.7.4-1.1.9-1.1 1.7" />
       <path d="M12 16.5h.01" />
     </svg>
-  );
-}
-
-function SearchPill() {
-  return (
-    <button className="hidden h-7 items-center gap-1.5 rounded-sx-xs border border-sx-border-strong bg-sx-surface-2 px-2.5 text-xs text-sx-text-subtle sm:inline-flex">
-      Search
-      <span className="ml-1.5 rounded-[4px] border border-sx-border-strong px-1 font-sx-mono text-[9px]">⌘K</span>
-    </button>
   );
 }
 

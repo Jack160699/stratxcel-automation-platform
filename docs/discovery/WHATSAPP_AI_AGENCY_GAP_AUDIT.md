@@ -14,6 +14,28 @@ never queried it. Fixed to call the real repository function and map its real st
 disabled display the other three rows already use. Verified: full-repo `tsc --noEmit`
 clean, lint clean, real `NODE_ENV=production next build` (exit 0).
 
+## Update 46 — Admin Command/Query: fixed a fully fake "Search ⌘K" button, pointed it at the real Copilot instead of building a second, duplicate command palette
+
+Master brief section 20 (Admin Command/Query) and section 15 ("no hardcoded fake
+actions"). While looking at what section 20 would need, checked the shared
+`TopCommandBar.tsx`'s existing "Search ⌘K" pill first — and found it was a plain
+`<button>` with **no `onClick` at all**, no keyboard listener, nothing. A visible,
+prominent control on every admin page that did nothing when clicked or when Cmd/Ctrl+K
+was pressed, despite visually promising both.
+
+Rather than building a whole new fuzzy-search command palette from scratch (a real,
+separate frontend project), recognized that the real command/query interface the brief
+describes already exists and is already wired to every real capability this session
+built — Admin Copilot (`/admin/copilot`, `runAgentTurn`/`resolveAgentTools`). New
+`components/shell/SearchCommandPill.tsx` — a small `"use client"` island, keeping
+`TopCommandBar` itself a Server Component — makes the pill genuinely real: clicking it,
+or pressing Cmd/Ctrl+K anywhere outside a text input, opens the real Copilot chat.
+`TopCommandBar` gained a `searchHref` prop (default `/admin/copilot`, matching its only
+current real usage) instead of a hardcoded path.
+
+Verified: full-repo `tsc --noEmit` clean, lint clean, real `NODE_ENV=production next
+build` (exit 0). No test referenced the old dead button (confirmed via grep).
+
 ## Update 45 — cost optimization audit: analyze_website has zero caching, a real repeat-fetch gap
 
 Master brief section 27. Ran the full `test:security` and `test:foundation` suites as a
