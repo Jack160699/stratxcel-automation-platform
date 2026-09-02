@@ -18,7 +18,7 @@
  * the Boss's call (via send_whatsapp_message_to_contact once they decide to
  * act), not an automatic side effect of merely looking a site up.
  */
-import { runWebsiteIntelligencePipeline } from "../intelligence/website-intelligence";
+import { runWebsiteIntelligencePipelineCached } from "./website-intelligence-cache";
 import { COMMERCIAL_PILLARS, PRICING_TIERS, TRUST_CLAIMS } from "../commercial/catalog";
 import type { AgentTool } from "@stratxcel/agent-core";
 
@@ -43,12 +43,12 @@ export const RESEARCH_DELEGATION_TOOLS: AgentTool[] = [
     mutating: false,
     risk: "read",
     requiredPermission: "agent:read:research",
-    async execute(_ctx, args) {
+    async execute(ctx, args) {
       const url = String(args.url ?? "").trim();
       if (!url) throw new Error("url is required");
       try {
-        const intelligence = await runWebsiteIntelligencePipeline(url, { maxPages: ANALYZE_MAX_PAGES });
-        return { fetched: true, url, intelligence };
+        const { intelligence, cacheHit } = await runWebsiteIntelligencePipelineCached(ctx.supabase as never, url, { maxPages: ANALYZE_MAX_PAGES });
+        return { fetched: true, url, intelligence, cacheHit };
       } catch (err) {
         // Real, honest failure (unreachable host, blocked by robots.txt,
         // private/internal target rejected by SSRF protection, timeout) --

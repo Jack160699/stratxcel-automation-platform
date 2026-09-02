@@ -14,6 +14,30 @@ never queried it. Fixed to call the real repository function and map its real st
 disabled display the other three rows already use. Verified: full-repo `tsc --noEmit`
 clean, lint clean, real `NODE_ENV=production next build` (exit 0).
 
+## Update 53 — analyze_website's cost-optimization gap fixed: a real Postgres-backed cache, not an in-memory one
+
+Master brief section 27, closing the `capability:analyze_website_no_cache` finding from
+Update 45. New `website_intelligence_cache` table (global, service-role-only RLS — these
+are public-website results, not tenant data) and
+`lib/agent-core/website-intelligence-cache.ts`'s `runWebsiteIntelligencePipelineCached` —
+a real cache-through wrapper with a deliberate 24-hour TTL (a business's public website
+content doesn't meaningfully change within a day; this also directly covers the actual
+observed repeat-lookup pattern). Deliberately **not** an in-memory cache — the exact
+mistake found live in Update 42's `editing/` module investigation
+(`capability:editing_module_in_memory_prototype`) would mean it never survives a
+serverless invocation in production. Any cache read/write failure falls through to a
+real, fresh pipeline run rather than blocking or risking a stale/fabricated result.
+
+The pipeline function is injected (`runPipeline` parameter, defaulting to the real one)
+specifically so the cache logic itself — the part actually worth testing — could be unit
+tested without a real network crawl. New `website-intelligence-cache.test.ts` (4
+assertions: miss-then-store, fresh-hit-skips-pipeline, expired-row-treated-as-miss,
+read-failure-falls-through). `capability:analyze_website_no_cache` reclassified from
+`PARTIAL` to `REAL_EXPOSED`.
+
+Verified: full-repo `tsc --noEmit` clean, lint clean, real `NODE_ENV=production next
+build` (exit 0).
+
 ## Update 52 — real Lucide icon library adopted across the shared shell (Premium UI, sections 19-20)
 
 Master brief sections 19-20 explicitly name shadcn/ui, Radix, Lucide, and Tremor. Checked
