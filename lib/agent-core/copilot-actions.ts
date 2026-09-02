@@ -22,6 +22,7 @@ import { BUSINESS_SIGNALS_TOOL } from "./business-signals-tool";
 import { BUSINESS_PRIORITIES_TOOL } from "./business-priorities-tool";
 import { AUTONOMY_DECISION_TOOL } from "./autonomy-decision-tool";
 import { REVENUE_DIAGNOSTICS_TOOL } from "./revenue-diagnostics-tool";
+import { WEBSITE_TOOLS } from "./website-tools";
 
 /**
  * Shared turn/thread logic for the admin and client web Copilot UIs
@@ -87,7 +88,7 @@ export async function sendCopilotMessage(principal: AgentPrincipal, userText: st
     principal,
     provider: createAgentCoreProviderAdapter(principal.tenantId),
     userText: trimmed,
-    extraTools: [...RESEARCH_DELEGATION_TOOLS, ...GROWTH_MEDIA_TOOLS, ...WORKFORCE_REGISTRY_TOOLS, OWNER_CONNECTIONS_TOOL, BUSINESS_SIGNALS_TOOL, BUSINESS_PRIORITIES_TOOL, AUTONOMY_DECISION_TOOL, REVENUE_DIAGNOSTICS_TOOL],
+    extraTools: [...RESEARCH_DELEGATION_TOOLS, ...GROWTH_MEDIA_TOOLS, ...WORKFORCE_REGISTRY_TOOLS, OWNER_CONNECTIONS_TOOL, BUSINESS_SIGNALS_TOOL, BUSINESS_PRIORITIES_TOOL, AUTONOMY_DECISION_TOOL, REVENUE_DIAGNOSTICS_TOOL, ...WEBSITE_TOOLS],
     extraKnowledge: await loadOwnerBrainKnowledge(principal),
   });
   return { ok: result.status !== "failed", replyText: result.replyText, status: result.status, confirmationRequired: result.confirmationRequired };

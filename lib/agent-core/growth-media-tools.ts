@@ -223,7 +223,7 @@ export const GROWTH_MEDIA_TOOLS: AgentTool[] = [
   {
     schema: {
       name: "check_website_status",
-      description: "Real, currently-stored Stratxcel-built websites for a tenant -- name, slug, status (draft/live/etc.), custom domain, framework, template, and timestamps. The exact same data and columns the Website page's list reads. Use for 'what's the status of our website', 'is our domain connected', 'do we have a website yet'. Read-only -- for creating or editing a website, say that's dashboard-only for now.",
+      description: "Real, currently-stored Stratxcel-built websites for a tenant -- name, slug, status (draft/live/etc.), custom domain, framework, template, and timestamps. The exact same data and columns the Website page's list reads. Use for 'what's the status of our website', 'is our domain connected', 'do we have a website yet'. Read-only -- for editing a website's content, use edit_website with the id this returns.",
       parameters: {
         type: "object",
         properties: { tenantId: { type: "string", description: "Optional -- a specific client's tenant id. Defaults to Stratxcel's own." } },

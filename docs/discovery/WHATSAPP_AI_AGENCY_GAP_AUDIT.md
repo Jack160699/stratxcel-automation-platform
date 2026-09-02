@@ -14,6 +14,50 @@ never queried it. Fixed to call the real repository function and map its real st
 disabled display the other three rows already use. Verified: full-repo `tsc --noEmit`
 clean, lint clean, real `NODE_ENV=production next build` (exit 0).
 
+## Update 42 — edit_website: WhatsApp/Admin Chat can now actually change a website, plus a real security upgrade found along the way
+
+Master brief section 7/22 (Website/Vercel; WhatsApp as universal remote control). Traced
+`check_website_status`'s own description first — it explicitly said editing was
+"dashboard-only for now." The real edit engine (`applyNaturalLanguageEdit`,
+`site-builder.ts`) is already live behind `/api/platform/website-factory/[projectId]/edit`,
+already fixed for fabrication earlier this session (Update 35-era) — the only missing piece
+was an agent tool calling it.
+
+Extracted the route's classify/fetch/apply/write/audit sequence into
+`lib/websites/apply-tenant-website-edit.ts` so the HTTP route and the new `edit_website`
+agent tool call exactly one implementation, not two that could drift.
+
+**A real security finding surfaced during the extraction**: the route's own risk
+classification was a small inline keyword list with no prompt-injection or secret-
+exfiltration guard at all. `packages/websites-and-domains` already has a genuinely more
+sophisticated classifier for exactly this, `classifyEditRequest` (`editing/classifier.ts`)
+— checks for "ignore previous instructions," "reveal secrets," `api_key`, `service_role`,
+script/`javascript:` payloads — but it belongs to an entirely separate, more advanced
+editing module (`editing/`: a full `WebsiteEditingEngine` with structured planning,
+specification validation, rollback, publish) that turned out to have **zero real
+callers** — only its own package's tests and `qa/auto-fix.ts`. Investigated why before
+assuming it should simply replace the live path: its `WebsiteVersionManager`
+(`editing/version-manager.ts`) stores all version history in a **private in-memory
+`Map`** — architecturally incompatible with a real serverless route, since state doesn't
+survive across invocations. That's the real reason it was never wired to production, not
+an oversight — the live route's simpler `applyNaturalLanguageEdit` + the real
+`apply_site_project_version` Postgres RPC is the architecturally correct persistent path.
+`classifyEditRequest` itself, though, is a pure function with no dependency on that
+in-memory layer — safe to extract and reuse on its own, so both the route and the new tool
+now use it.
+
+`edit_website` supports the same narrow pattern set `applyNaturalLanguageEdit` always did
+(visual/copy restyle, About-page addition) — not overclaimed as more capable than it is.
+High-risk edits (deletion, domain changes, unpublishing) still require explicit
+confirmation; unrecognized instructions still make no change and say so honestly rather
+than fabricating success.
+
+Verified: new `apply-tenant-website-edit.test.ts` (7 assertions covering every real
+outcome path), the full `test:website-factory` suite (26 files) passes,
+`website-factory-security.test.ts` and `website-factory-route-entry.test.ts` pass
+unchanged, full-repo `tsc --noEmit` clean, lint clean, real `NODE_ENV=production next
+build` (exit 0).
+
 ## Update 41 — the Admin IA rebuild begins: real Normal Admin / Technical Admin mode split, one dead legacy route removed
 
 The master brief's largest remaining body of work (sections 15-20: rebuild the Admin IA,
