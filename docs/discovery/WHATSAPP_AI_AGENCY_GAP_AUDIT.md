@@ -14,6 +14,37 @@ never queried it. Fixed to call the real repository function and map its real st
 disabled display the other three rows already use. Verified: full-repo `tsc --noEmit`
 clean, lint clean, real `NODE_ENV=production next build` (exit 0).
 
+## Update 55 — the full 30-day plan engine is now real and reachable: preview_growth_plan, and a self-correction of an earlier over-caution
+
+Master brief sections 4/15. Since Update 38, this doc has recorded `planBusinessGrowth`
+(the full 30-day plan engine) as `REAL_NOT_EXPOSED`, on the stated assumption that it
+"needs" a caller to supply `proposedStages`/`proposedWeeklyStrategy` to avoid fabricating
+a strategy. Re-checked that assumption properly this pass instead of continuing to defer
+to it: read `buildWorkflowStages` (`packages/workforce-core/src/planning/workflows.ts`)
+directly. It's wrong — `proposedStages` is genuinely optional; when absent, the function
+falls straight through to its own real, deterministic default stage generation keyed by
+`workflowFocus`. There was never a field here forcing fabrication. The earlier caution
+was itself over-cautious, not a correct safety boundary — worth recording honestly as a
+self-correction, the same way Update 36's incident was, rather than quietly fixing it
+without saying so.
+
+Extracted the real input-assembly logic shared between `check_business_priorities` and
+this new tool into `lib/agent-core/business-growth-input.ts`
+(`assembleBusinessGrowthPlannerInput`), so both call exactly one implementation. New
+`preview_growth_plan` (`lib/agent-core/growth-plan-tool.ts`) — the first real production
+caller `planBusinessGrowth` has ever had — calls it with zero fabricated input: entirely
+real signals, entitlements, Brand Brain, and connections. Deliberately a **preview only**:
+nothing is persisted to `workforce_plans`, no mission is linked or created. Committing a
+plan for real, and the learning loop revising a real persisted plan, remain their own,
+separate, honestly still-open items — this tool intentionally never does either.
+
+`capability:business_growth_planner_pipeline` reclassified from `REAL_NOT_EXPOSED` to
+`REAL_EXPOSED`.
+
+Verified: full-repo `tsc --noEmit` clean, lint clean, `test:agent-core-lib` and
+`test:workforce-core` (19 files, including `business-growth.test.ts` and
+`planner.test.ts`) pass unchanged, real `NODE_ENV=production next build` (exit 0).
+
 ## Update 54 — check_deployment_status: real Vercel deployment history exposed, another real-but-unwired function found
 
 Master brief section 7 (Website/Vercel: deployment status). Re-auditing
