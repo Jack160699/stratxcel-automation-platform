@@ -109,9 +109,15 @@ Pre-existing, real, verified before this session; re-confirmed still wired and p
 
 ## 9. Google / Search / Analytics
 `REAL_EXPOSED` — `check_connections`, and (Update 43) `check_google_business` (real GBP
-reviews, reusing the already-running automated Review Bot's own functions). GA4/Search
-Console remain covered only via `check_connections`' status view, not their own dedicated
-read/write tools.
+reviews, reusing the already-running automated Review Bot's own functions). **Correction,
+this refresh**: the previous claim that "GA4/Search Console remain covered only via
+`check_connections`' status view" was checked directly and is wrong — `check_growth_status`
+(§8) already returns real, persisted GA4/GSC measurement snapshots verbatim
+(`listSearchState`'s `snapshots` array: real `search_console`/`ga4` rows with actual
+`dimensions`/`values` — query rows, landing pages, conversions — via
+`search_measurement_snapshots`, populated by `resolveGoogleProviderStates` on every real
+`run_growth_analysis` run). No dedicated raw-metrics tool was missing; it was already
+there under a name that didn't advertise it.
 
 ## 10. Creative / Image
 `REAL_EXPOSED` — `generate_image`, real budget gate, real outcome-status propagation
