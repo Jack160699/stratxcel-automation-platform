@@ -14,6 +14,39 @@ never queried it. Fixed to call the real repository function and map its real st
 disabled display the other three rows already use. Verified: full-repo `tsc --noEmit`
 clean, lint clean, real `NODE_ENV=production next build` (exit 0).
 
+## Update 56 — commit_growth_plan: the first real write to workforce_plans, closing the precise Learning-loop blocker
+
+Master brief sections 5/15. Update 55's own follow-up sharpened the Learning-loop blocker
+to something precise: `workforce_plans` had zero real `INSERT` writers anywhere in this
+codebase. Rather than leave that recorded and move on, checked whether it was actually
+buildable — it was. `commit_growth_plan` (`lib/agent-core/growth-plan-commit-tool.ts`)
+requires a real, already-existing `missionId` (never creates one — that stays
+`create_mission`'s own job), runs a real tenant-isolation check (the mission's own
+`tenant_id` must match the caller's), recomputes the plan fresh via `planBusinessGrowth`
+using the same real input assembly `check_business_priorities`/`preview_growth_plan`
+already use, and inserts the real mapped fields — `version`/`status`/`planning_horizon`
+lean on the table's own real defaults (`1`/`DRAFT`/`30_day`).
+
+Classified `risk: "external_mutation"`, confirm-gated on every channel — the same
+classification `create_mission` itself carries, since this durably commits a real business
+strategy record, not a read-only preview.
+
+**Verified beyond the usual build/lint/test cycle**: ran a real transactional dry-run
+insert directly against the live `workforce_plans` table (`BEGIN` → insert with the exact
+column shapes this tool uses, against a real tenant + real mission row → confirmed the
+returned `version`/`status`/`planning_horizon` defaults were exactly as expected → `ROLLBACK`,
+leaving zero permanent data) *before* writing the capability_registry entry — catching any
+schema mismatch live rather than trusting `tsc` alone, consistent with the Update 36
+lesson.
+
+`engine:learning_loop`'s note updated: the write-path blocker is fixed; what's honestly
+still open is `applyLearningRevision` not being wired to any tool yet, and no real
+measured-outcome capture pipeline feeding it real signals — a persisted plan existing is
+necessary, not sufficient, for the loop to actually run.
+
+Verified: full-repo `tsc --noEmit` clean, lint clean, `test:agent-core` passes unchanged,
+real `NODE_ENV=production next build` (exit 0).
+
 ## Update 55 — the full 30-day plan engine is now real and reachable: preview_growth_plan, and a self-correction of an earlier over-caution
 
 Master brief sections 4/15. Since Update 38, this doc has recorded `planBusinessGrowth`
