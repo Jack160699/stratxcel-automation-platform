@@ -14,6 +14,21 @@ never queried it. Fixed to call the real repository function and map its real st
 disabled display the other three rows already use. Verified: full-repo `tsc --noEmit`
 clean, lint clean, real `NODE_ENV=production next build` (exit 0).
 
+## Update 45 — cost optimization audit: analyze_website has zero caching, a real repeat-fetch gap
+
+Master brief section 27. Ran the full `test:security` and `test:foundation` suites as a
+broad regression check after this session's many changes — all pass, no regressions.
+Then a targeted cost-optimization pass: `analyze_website`'s underlying
+`runWebsiteIntelligencePipeline` (`lib/intelligence/website-intelligence.ts`) makes
+several real sequential HTTP fetches with **zero caching** — asking about the same URL
+twice minutes apart re-fetches and re-processes from scratch every time. A proper fix
+needs a real Postgres-backed cache keyed by normalized URL with a deliberate TTL — not
+built this pass, since an in-memory cache would repeat the exact mistake just found live
+in the `editing/` module (Update 42: state that doesn't survive serverless invocations),
+and the right TTL is a real product decision, not a rushed guess. Recorded honestly as
+`PARTIAL` (the tool itself is correctly `REAL_EXPOSED`; only the missing caching layer is
+tracked here).
+
 ## Update 44 — Market Discovery re-confirmed honestly EXTERNAL_REQUIRED; Ascendory/Jandarpan cross-platform finding already recorded correctly
 
 Master brief section 13, which explicitly warns not to call generic web research "market
