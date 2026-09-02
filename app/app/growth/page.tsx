@@ -6,6 +6,7 @@ import { useCurrentTenant } from "../CurrentTenantContext";
 import { ModulePageHeader } from "../components/ModulePageHeader";
 import { Card, CardHeading } from "@/components/ui/Card";
 import { Select } from "@/components/ui/Input";
+import { StatusChip, type ChipState } from "@/components/ui/StatusChip";
 import { MISSION_STATE_CHIP, type MissionSummary } from "../components/MissionSummaryCard";
 
 const TERMINAL_COMPLETED = new Set(["COMPLETED", "PARTIALLY_COMPLETED"]);
@@ -31,6 +32,21 @@ interface AuditSummaryItem {
   overall_score?: number;
 }
 
+interface GrowthBottleneck {
+  id: string;
+  description: string;
+  severity: "info" | "low" | "medium" | "high" | "critical";
+  priorityScore: number;
+}
+
+const BOTTLENECK_SEVERITY_CHIP: Record<string, ChipState> = {
+  critical: "danger",
+  high: "danger",
+  medium: "warning",
+  low: "neutral",
+  info: "neutral",
+};
+
 /**
  * Growth — The primary customer destination answering: "Is my business improving?"
  * Tracks real mission completions, audit resolutions, connected presence growth,
@@ -45,6 +61,7 @@ export default function GrowthPage() {
   const [approvalsCount, setApprovalsCount] = useState<number | "forbidden" | null>(null);
   const [walletBalance, setWalletBalance] = useState<{ cents: number; currency: string } | null>(null);
   const [auditItems, setAuditItems] = useState<AuditSummaryItem[] | null>(null);
+  const [bottlenecks, setBottlenecks] = useState<GrowthBottleneck[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [rangeDays, setRangeDays] = useState("30");
@@ -124,6 +141,23 @@ export default function GrowthPage() {
             }
           } catch {
             // Audit unavailable - non-fatal
+          }
+        })(),
+
+        // 5. Growth priorities loader (Optional) -- the same real
+        // BusinessSignals -> diagnoseBusinessGrowth -> deriveBottlenecks
+        // pipeline check_business_priorities (WhatsApp/Admin Copilot) uses,
+        // now reaching the customer-facing Growth page too (master brief
+        // section 23, "same brain across interfaces").
+        (async () => {
+          try {
+            const res = await fetch(`/api/platform/growth/priorities?tenantId=${encodeURIComponent(tId)}`);
+            if (res.ok) {
+              const body = await res.json().catch(() => ({ bottlenecks: [] }));
+              setBottlenecks(Array.isArray(body.bottlenecks) ? body.bottlenecks : []);
+            }
+          } catch {
+            // Priorities unavailable - non-fatal
           }
         })(),
       ]);
@@ -247,11 +281,11 @@ export default function GrowthPage() {
                     </span>
                   </li>
                 )}
-                {auditItems && auditItems.length > 0 && (
+                {auditItems && auditItems.length > 0 && typeof auditItems[0].overall_score === "number" && (
                   <li className="flex items-start gap-2">
                     <span className="text-sx-success shrink-0 mt-0.5">•</span>
                     <span className="leading-relaxed">
-                      Growth Audit score calculated: <strong>{auditItems[0].overall_score ?? 85}/100</strong> baseline ready.
+                      Growth Audit score calculated: <strong>{auditItems[0].overall_score}/100</strong> baseline ready.
                     </span>
                   </li>
                 )}
@@ -323,6 +357,26 @@ export default function GrowthPage() {
             </Card>
           </div>
 
+          {/* Growth Priorities -- real, evidence-gated bottlenecks from the
+              same pipeline check_business_priorities (WhatsApp/Admin
+              Copilot) uses. Only rendered once real data resolves, and
+              only when there's something real to show -- no placeholder
+              card while loading (the page's own top-level skeleton already
+              covers that), no card at all if bottlenecks came back empty. */}
+          {bottlenecks && bottlenecks.length > 0 && (
+            <Card variant="nested" className="p-5 bg-sx-surface-1">
+              <CardHeading>What Should Happen Next</CardHeading>
+              <ul className="mt-3 space-y-2.5 text-xs text-sx-text">
+                {bottlenecks.slice(0, 3).map((b) => (
+                  <li key={b.id} className="flex items-start justify-between gap-3">
+                    <span className="leading-relaxed">{b.description}</span>
+                    <StatusChip state={BOTTLENECK_SEVERITY_CHIP[b.severity] ?? "neutral"}>{b.severity}</StatusChip>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          )}
+
           {/* Growth Snapshot Metrics */}
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <Card variant="nested" className="p-4 bg-sx-surface-1">
@@ -367,15 +421,20 @@ export default function GrowthPage() {
               </div>
             </Card>
 
-            <Card variant="nested" className="p-4 bg-sx-surface-1">
-              <span className="text-[11px] font-medium text-sx-text-muted uppercase tracking-wider">Content Assets</span>
-              <div className="mt-2 flex items-baseline gap-2">
-                <span className="text-2xl font-bold text-sx-text">Active</span>
-                <Link href="/app/content" className="text-xs text-sx-accent hover:underline">
-                  Library →
-                </Link>
-              </div>
-            </Card>
+            {/* VERIFICATION INTEGRITY (2026-09-02): this card used to
+                hardcode the word "Active" with no real check behind it at
+                all -- shown identically whether the tenant has any content
+                assets or not. Matches this file's own established honest
+                pattern immediately above (the Search Growth card): a real
+                navigation link, no unverified status claim. */}
+            <Link href="/app/content" className="block">
+              <Card variant="nested" className="p-4 bg-sx-surface-1 transition-colors hover:bg-sx-surface-2">
+                <span className="text-[11px] font-medium text-sx-text-muted uppercase tracking-wider">Content Assets</span>
+                <div className="mt-2 flex items-baseline gap-2">
+                  <span className="text-sm font-semibold text-sx-accent">Open Content Library →</span>
+                </div>
+              </Card>
+            </Link>
           </div>
 
           {/* Assistant Action Banner */}

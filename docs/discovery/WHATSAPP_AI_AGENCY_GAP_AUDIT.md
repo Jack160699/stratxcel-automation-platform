@@ -14,6 +14,27 @@ never queried it. Fixed to call the real repository function and map its real st
 disabled display the other three rows already use. Verified: full-repo `tsc --noEmit`
 clean, lint clean, real `NODE_ENV=production next build` (exit 0).
 
+## Update 49 — customer-facing Growth parity with the real diagnosis pipeline, plus two more fabrication bugs found and fixed
+
+Master brief section 23 ("same brain across interfaces") — the previous pass's remaining
+gap list named this explicitly: the real diagnosis pipeline (Updates 38/48) had only
+reached the admin side. New `app/api/platform/growth/priorities/route.ts` — a
+customer-safe counterpart to `check_business_priorities`, same real functions, gated by
+`requireTenantReadContext`/`brand_brain:view` on the real RLS session client, no
+service-role dependency. `app/app/growth/page.tsx` gained a 5th concurrent loader and a
+new "What Should Happen Next" card.
+
+While in that file, found two more real fabrication bugs of exactly the class this whole
+engagement has been hunting: the Growth Audit score line silently fell back to a
+hardcoded **"85/100"** whenever the real score was missing — a fabricated number shown to
+a real paying customer — now only renders with a genuine numeric score. The "Content
+Assets" card hardcoded the word **"Active"** unconditionally, with no real check behind
+it at all — replaced with an honest navigation-only card, matching this same file's own
+established pattern for the Search Growth card sitting right above it.
+
+Verified: `customer-app-bugfixes-polish.test.ts` passes unchanged, full-repo
+`tsc --noEmit` clean, lint clean, real `NODE_ENV=production next build` (exit 0).
+
 ## Update 48 — Admin Home's first real Growth Opportunities card, from the same diagnosis pipeline Update 38 already built
 
 Master brief section 17 ("what opportunities exist / what should happen next"). Admin
