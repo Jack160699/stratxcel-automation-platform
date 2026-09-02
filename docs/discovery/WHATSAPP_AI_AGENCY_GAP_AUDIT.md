@@ -1,5 +1,50 @@
 # WhatsApp AI Agency — Gap Audit
 
+## Update 62 — the autonomous execution loop investigated directly: StratExcel's own side is confirmed live in production right now; the real remaining blocker is the third-party engine, never deployed anywhere
+
+Priority 2 of the master convergence brief. Rather than reassert Update
+57's summary ("engineering side is complete, just flip HERMES_MODE"),
+investigated directly and found it was both too pessimistic and too
+optimistic in different places.
+
+**More real than the prior note gave credit for**: queried `worker_heartbeats`
+live — `apps/mission-worker` and `apps/hermes-gateway` (StratExcel's own
+queue consumer and restricted tool-callback gateway, per its own header
+comment "the trusted enforcement point") are both **actively heartbeating
+right now**, staleness under 30 seconds, on the real EC2 host. This is not
+aspirational infrastructure — it's running in production this moment,
+alongside the WhatsApp workers.
+
+**The real remaining gap, precisely**: `HERMES_MODE=http` calls out to a
+self-hosted `nousresearch/hermes-agent` instance
+(`infrastructure/hermes/README.md`) — a real, third-party, open-source
+autonomous agent runtime StratExcel doesn't own. That runtime **has never
+been deployed anywhere, in any session** — the README is explicit that
+Docker was unavailable when it was written, so not even the documented
+`docker compose up` has ever actually run once, dev or prod.
+`MANUAL_SETUP_REQUIRED.md`'s M9/M11 spell out exactly what's needed: an
+inference-provider API key (OpenRouter recommended — a real billing
+decision), a separate small host for the engine itself (M11's own
+capacity analysis: the shared EC2 box already runs four persistent
+processes on ~2GB RAM, and Hermes Agent alone wants ~2GB), and only then
+`HERMES_MODE=http` plus matching `HERMES_GATEWAY_URL`/`HERMES_API_KEY`. A
+genuine, still-open architectural question sits on top of all that: whether
+the upstream engine's tool-calling can be scoped to one mission's allowlist
+rather than installation-wide is undocumented anywhere reachable, and needs
+a real running instance to confirm — not just an authorization step, an
+unresolved design question.
+
+**What IS fully proven**: `HERMES_MODE=mock` (`MockHermesAdapter`) — the
+entire create_mission → queue → execute → complete pipeline round-trips
+correctly against simulated Hermes output (`scripts/hermes-smoke-test`).
+The StratExcel-side engineering really is done; only the real upstream
+engine round-trip is unproven, and this agent has no Docker/host access in
+this environment either to change that. Sharpened
+`engine:hermes_missions`'s `external_blocker` from a generic "owner
+authorization" to the precise chain above. Migration:
+`supabase/migrations/20260902550000_capability_registry_hermes_missions_sharpened.sql`.
+No application code changed — investigation and registry entry only.
+
 ## Update 61 — Agent Factory built for real: a persisted agent-definition record, a dynamic tool-resolver, governed creation, and a real dispatch surface on both channels; plus a real WhatsApp/Admin tool-registry drift found and fixed
 
 Update 59 found Agent Factory `NOT_BUILT` and named the four pieces a real
