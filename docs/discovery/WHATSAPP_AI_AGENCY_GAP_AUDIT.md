@@ -14,6 +14,23 @@ never queried it. Fixed to call the real repository function and map its real st
 disabled display the other three rows already use. Verified: full-repo `tsc --noEmit`
 clean, lint clean, real `NODE_ENV=production next build` (exit 0).
 
+## Update 51 — a real Final Completion Matrix, generated from the live registry, plus reconciling a duplicate market-discovery finding
+
+New `docs/discovery/FINAL_COMPLETION_MATRIX.md` — the master brief's own requested
+closing artifact, generated from a live query against `capability_registry` (47 rows: 29
+`REAL_EXPOSED`, 11 `REAL_NOT_EXPOSED`, 4 `PARTIAL`, 3 `EXTERNAL_REQUIRED`) plus this
+session's real test-suite run history, mapped onto the brief's own 40 sections. Written
+honestly: sections that are genuinely incomplete (the Premium visual UI pass most notably)
+are reported as such, not folded into `EXTERNAL_REQUIRED` to force a false binary.
+
+Also found and fixed a real inconsistency while cross-checking: a pre-existing row,
+`capability:market_company_discovery` ("Find N companies matching a description"), was
+still `NOT_BUILT` from an earlier pass — describing the exact same real gap as this
+session's own `capability:market_discovery` finding, which already identified the real,
+specific blocker (an unauthorized Apollo.io connector). Reconciled both to
+`EXTERNAL_REQUIRED` with the same named blocker rather than leaving one vague and one
+precise for the same underlying fact.
+
 ## Update 50 — Priority Engine + Autonomy Decision + Missions genuinely connected: the Brain can now recommend when a mission should be created
 
 Master brief section 14: "the Brain should be able to determine when a mission should be
