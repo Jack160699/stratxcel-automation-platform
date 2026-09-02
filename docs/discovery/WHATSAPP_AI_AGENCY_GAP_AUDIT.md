@@ -1,5 +1,95 @@
 # WhatsApp AI Agency — Gap Audit
 
+## Update 58 — get_paid_audit_report_link ships; tracing `engine:audit_engine` end to end found a real live cron/queue pipeline, a genuinely unbuilt free-audit automation gap, and a platform-wide Vercel Hobby-plan cron ceiling
+
+Closed the two items Update 57 explicitly left open rather than reconciled.
+
+**`capability:paid_audit_pdf_report` — closed for real.** Update 21 found the
+paid `audit_orders` product already has a real, working signed-URL sharing
+mechanism (`lib/audit/v1/whatsapp-send.ts`'s `getOrCreateAuditShareUrl`/
+`createAuditShareUrl`, a real `audit_share_tokens` table — token-hashed,
+14-day expiry, revocable, view-counted — and a real, already-built
+`/audit/share/[token]` page) but correctly refused to bridge it because it
+was cookie-session-scoped only, unreachable from a service-role agent call.
+[get_paid_audit_report_link](../../lib/agent-core/audit-report-link-tool.ts)
+is that real bridge: resolves the caller's current completed Audit order the
+same way the authenticated dashboard route does
+(`resolveCurrentAuditOrderId`, same real fallback to the latest completed
+order) but scoped by a resolved `tenantId` instead of a cookie session, then
+calls the exact same `getOrCreateAuditShareUrl` the dashboard's own "Share"
+button calls — one mechanism, two entry points. Classified `low_mutation`
+(confirm-gated on WhatsApp), not `read`: the first call for a given order
+mints a real, durable 14-day bearer-token row, a real action worth a
+confirmation. New permission `agent:mutate:audit_reports` (platform_owner/
+platform_admin), distinct from the existing read-only
+`agent:read:audit_reports`. Verified with a real transactional dry-run
+insert against the live `audit_share_tokens`/`audit_delivery_events` tables
+(rolled back, zero permanent data) confirming the exact schema mapping,
+beyond what `tsc`/build alone would catch.
+
+**`engine:audit_engine` — the "ambiguous canonical engine" framing was
+wrong; traced fully, with a real correction and two new findings.**
+`packages/audit-engine`'s `runAutomaticAuditGeneration` and `lib/audit/v1`
+are not competing implementations — they're different layers of the same
+PAID `audit_orders` product (generation vs. delivery). Confirmed
+`runAutomaticAuditGeneration` is real and **already live in production**:
+`createLiveAutomaticAuditExecutor` (`packages/audit-engine/src/live.ts`)
+calls it, and that executor is invoked by a real Vercel Cron
+(`app/api/platform/audit/worker/route.ts`, `CRON_SECRET`-authorized,
+registered in `vercel.json`) claiming real Postgres-queue jobs — a direct
+function-name grep alone missed this the first time (found zero direct
+callers; the real wiring is queue-mediated through the executor, not a
+direct call site), a real lesson about verifying queue-based wiring by its
+actual consumer, not just by import grep.
+
+Two real, previously-undocumented findings fell out of tracing this fully:
+
+1. **A factual correction to this doc's own record.** Since Update 15/40,
+   this doc claimed `packages/audit-engine` writes into `public_audit_requests`
+   (the free/prospect intake table) — checked directly this pass (grepped
+   every writer of that table) and it's false. `packages/audit-engine` only
+   ever touches `audit_generation_runs`/`audit_orders`/`audit_discovery_snapshots`
+   — the paid flow, never the free one. The free/prospect Audit product's
+   `job_status`/`progress_percentage`/`report_data` columns
+   (`supabase/migrations/20260805160000_authenticated_audit_jobs.sql`) exist
+   but are genuinely dead: the only two writers of `public_audit_requests`
+   anywhere in the repo are the public intake route (sets `job_status:
+   "draft"` once, never again) and a staff PATCH endpoint that only advances
+   a manual CRM-style status enum by hand. **No automated generation
+   pipeline for the free Audit product has ever existed** — recorded honestly
+   as `capability:prospect_audit_automated_pipeline`, `NOT_BUILT` (not
+   fabricated as covered by the paid engine, and not silently left
+   unrecorded either). `check_audit_status` (WhatsApp/Admin) was always
+   accurate — it just reads whatever a human manually recorded, because
+   that's genuinely all there is.
+2. **A platform-wide Vercel Hobby-plan cron ceiling, unrelated to any code
+   defect.** The audit worker route's own header comment and a 2026-08-19
+   finding in `apps/mission-worker/src/worker.ts` both describe an intended
+   `*/5 * * * *` (every 5 minutes) cadence for picking up a paid Audit's
+   generation job. The actual deployed `vercel.json` registers it as `0 8 *
+   * *` — once daily — and every other cron in the same file (social
+   package-producer, social worker, subscription renewals, operating-brain
+   worker/night-review/morning-plan/retention, search scheduler) is also
+   once-daily. Confirmed via the Vercel MCP (`list_teams`) the linked team is
+   on plan `"hobby"` — Vercel enforces a once-per-day cap on Cron Jobs for
+   Hobby accounts, full stop, for every cron in the app, not just this one.
+   Practical effect: a customer who completes payment can wait up to ~24h
+   worst-case before their Audit generation is even picked up (the job is
+   enqueued instantly at checkout via `start_automatic_audit_generation_v1`;
+   nothing claims it until the next daily tick). Recorded as
+   `capability:vercel_cron_hobby_tier_daily_cap`, `EXTERNAL_REQUIRED` —
+   fixing it means upgrading the Vercel team to a paid plan, a real billing
+   decision for the account owner, not an engineering task; editing
+   `vercel.json` to a sub-daily schedule against a Hobby-tier team would not
+   fix anything, since Vercel enforces the cap server-side regardless of what
+   the file says.
+
+Migration: `supabase/migrations/20260902490000_capability_registry_audit_engine_findings.sql`.
+Verified: full-repo `tsc --noEmit` clean, lint clean, `test:agent-core-lib`
+and `test:agent-core` (both full suites, zero regressions), real
+`NODE_ENV=production next build` (exit 0), plus the live transactional
+dry-run insert described above.
+
 ## Update 57 — final convergence re-inspection: 6 stale/vague `capability_registry` rows reconciled to match reality
 
 Per the confirmed "FINAL MASTER CONVERGENCE" mission, re-queried every live

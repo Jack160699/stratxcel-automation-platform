@@ -48,6 +48,12 @@ const STAFF_ROLE_PERMISSIONS: Record<string, readonly string[]> = {
     // (which gates inspect_audit_events, the platform's internal
     // security/action log) -- same English word, unrelated data.
     "agent:read:audit_reports",
+    // Real share-link mint/reuse for the PAID audit_orders report
+    // (get_paid_audit_report_link) -- distinct from the read-only
+    // agent:read:audit_reports above because the first call for a given
+    // order is a real write (a durable audit_share_tokens bearer-token
+    // row), not just a read.
+    "agent:mutate:audit_reports",
   ],
   platform_admin: [
     "agent:read:clients", "agent:read:leads", "agent:read:conversations", "agent:read:missions",
@@ -61,6 +67,7 @@ const STAFF_ROLE_PERMISSIONS: Record<string, readonly string[]> = {
     "agent:mutate:website",
     "agent:read:website",
     "agent:read:audit_reports",
+    "agent:mutate:audit_reports",
   ],
   audit_reviewer: ["agent:read:audit", "agent:read:clients", "agent:read:leads", "agent:read:memory", "agent:mutate:memory"],
   finance_reviewer: ["agent:read:finance", "agent:read:clients", "agent:read:memory", "agent:mutate:memory"],
