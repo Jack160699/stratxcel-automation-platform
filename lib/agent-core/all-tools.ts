@@ -38,6 +38,7 @@ import { CHECK_PLAN_OUTCOMES_TOOL } from "./plan-outcomes-tool";
 import { GROWTH_PLAN_REVISION_TOOL } from "./growth-plan-revision-tool";
 import { ROLLBACK_DEPLOYMENT_TOOL } from "./rollback-deployment-tool";
 import { VALUE_LEDGER_TOOLS } from "./value-ledger-tools";
+import { RUN_PROSPECT_AUDIT_ANALYSIS_TOOL } from "./prospect-audit-analysis-tool";
 
 export const ALL_EXTRA_TOOLS: AgentTool[] = [
   ...SOCIAL_DELEGATION_TOOLS,
@@ -58,4 +59,5 @@ export const ALL_EXTRA_TOOLS: AgentTool[] = [
   GROWTH_PLAN_REVISION_TOOL,
   ROLLBACK_DEPLOYMENT_TOOL,
   ...VALUE_LEDGER_TOOLS,
+  RUN_PROSPECT_AUDIT_ANALYSIS_TOOL,
 ];

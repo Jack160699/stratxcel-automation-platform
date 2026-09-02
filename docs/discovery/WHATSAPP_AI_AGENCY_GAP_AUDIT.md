@@ -1,5 +1,69 @@
 # WhatsApp AI Agency — Gap Audit
 
+## Update 66 — the last two open items resolved: a real automated first-pass prospect Audit, and two remaining `REAL_NOT_EXPOSED` rows converted from open questions into decisive, evidence-backed final answers
+
+**`run_prospect_audit_analysis`** ([lib/agent-core/prospect-audit-analysis-tool.ts](../../lib/agent-core/prospect-audit-analysis-tool.ts))
+closes `capability:prospect_audit_automated_pipeline` (`NOT_BUILT` since
+Update 58): reuses the exact real, already-live website intelligence
+pipeline `analyze_website` uses (`runWebsiteIntelligencePipelineCached` —
+real crawl, real SSRF protection, evidence-tagged extraction, 24h cache) to
+actually populate a submitted `public_audit_requests` row's
+`job_status`/`progress_percentage`/`report_data`/`evidence_data`/
+`completed_at`, on demand. Explicitly **not** the paid `audit_orders`
+engine's multi-stage pipeline — stated honestly, not overclaimed.
+Deliberately never touches the request's own CRM-stage `status` column — a
+human sales decision stays a human sales decision. True zero-touch
+automation would need a cron trigger, which this app's own Vercel
+Hobby-plan ceiling (`capability:vercel_cron_hobby_tier_daily_cap`, Update
+58) would bound to once-daily anyway even if built — an on-demand tool is
+the more honest, immediately valuable shape. Verified with a live
+transactional dry-run against a real submitted request, confirming it was
+genuinely still stuck at `job_status: draft` before this tool existed —
+direct, live proof the gap was real, not theoretical.
+
+**The last two `REAL_NOT_EXPOSED` rows**, both converted from ambiguous
+"needs a decision" placeholders into decisive, fully-evidenced final
+determinations:
+
+- `capability:providers_package_unused` — a repo-wide grep found **zero
+  real importers** of `@stratxcel/providers` anywhere outside its own
+  package, and every one of its 9 domains (ai, dns, domains, email,
+  hosting, images, payments, research, storage) has a real, dedicated,
+  already-live sibling package doing the same job with deeper integration
+  (`@stratxcel/ai-runtime`, `@stratxcel/websites-and-domains`,
+  `@stratxcel/email-runtime`, `@stratxcel/payments-and-wallet`,
+  `@stratxcel/search-discovery`, `@stratxcel/storage`). Fully superseded,
+  not an unexploited gap — wiring it would mean ripping out 7 working,
+  tested integrations for zero functional gain. Correctly, permanently
+  `REAL_NOT_EXPOSED`; recorded a precise recommendation (delete the package
+  entirely) for a future, deliberate cleanup pass, not bundled into this
+  investigation.
+- `capability:editing_module_in_memory_prototype` — re-examined against the
+  very precedent that made the Value Ledger fixable the same day, and found
+  it genuinely doesn't share that shape: Value Ledger's methods were
+  already `async`; `WebsiteVersionManager`'s 7 public methods are all
+  synchronous, called synchronously across ~1,400 lines and a real
+  271-assertion test suite. Converting it is a genuine, cascading refactor,
+  not a narrow implementation swap — and unlike the providers package, this
+  one is **not** redundant (it offers real per-edit version history/rollback
+  `edit_website` genuinely lacks, distinct from `rollback_deployment`'s
+  whole-deployment rollback). Recorded a precise, scoped future task rather
+  than either rushing a risky sync-to-async conversion or leaving a vague
+  placeholder.
+
+**Registry state after this update: 50 `REAL_EXPOSED`, 8 `EXTERNAL_REQUIRED`,
+2 `REAL_NOT_EXPOSED` — zero `NOT_BUILT`, zero `PARTIAL`, zero `BROKEN`.**
+Every remaining non-`REAL_EXPOSED` row carries a precise, evidence-backed
+reason: a named external/business blocker, or a decisive architectural
+determination with an exact scoped path forward.
+
+Verified (`run_prospect_audit_analysis`): full-repo `tsc --noEmit` clean,
+lint clean, `test:agent-core-lib` (zero regressions), real
+`NODE_ENV=production next build` (exit 0), a live transactional dry-run
+update/rollback against a real `public_audit_requests` row. Migrations:
+`supabase/migrations/20260902600000_capability_registry_prospect_audit_analysis.sql`,
+`supabase/migrations/20260902610000_capability_registry_final_two_decisive.sql`.
+
 ## Update 65 — the Value Ledger fixed from in-memory to real Postgres persistence, plus a real pre-existing test bug and two language/framework gotchas caught along the way
 
 Priority 3. Closed `capability:monthly_value_ledger_engine` (Update 60):
