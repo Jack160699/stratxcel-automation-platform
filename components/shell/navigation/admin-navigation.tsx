@@ -38,8 +38,9 @@ export function getAdminSidebarGroups(allowV2: boolean, viewMode: AdminViewMode 
 }
 
 export function getAdminMobileNav(allowV2: boolean, viewMode: AdminViewMode = "normal"): SidebarNavItem[] {
+  const keys = ADMIN_MOBILE_NAV_KEYS[viewMode];
   return flattenNavGroups(getAdminNavGroupsData(allowV2, viewMode))
-    .filter((item) => ADMIN_MOBILE_NAV_KEYS.includes(item.key))
+    .filter((item) => keys.includes(item.key))
     .map((item) => ({ ...item, icon: NAV_ICONS[item.key] ?? <DocIcon /> }));
 }
 

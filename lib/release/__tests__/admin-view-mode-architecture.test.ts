@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { ADMIN_NAV_GROUPS_DATA } from "../../../components/shell/navigation/admin-nav-data.ts";
+import { ADMIN_NAV_GROUPS_DATA, ADMIN_MOBILE_NAV_KEYS } from "../../../components/shell/navigation/admin-nav-data.ts";
 import { filterNavGroupsByMode, isAdminViewMode } from "../admin-view-mode-filter.ts";
 import { parseAdminViewMode, ADMIN_VIEW_MODE_COOKIE } from "../admin-view-mode-pure.ts";
 import { flattenNavGroups } from "../../../components/shell/navigation/active-route.ts";
@@ -63,6 +63,30 @@ function run() {
   // No functionality lost in the split -- every real item from before the
   // split is still reachable in exactly one mode.
   assert.equal(normalKeys.size + technicalKeys2.size, allKeys.length);
+
+  // --- Regression: mobile bottom nav must never resolve to zero items in --
+  // either mode. Real bug found live 2026-09-02 tracing through this exact
+  // split: a single shared ADMIN_MOBILE_NAV_KEYS list (all Normal-mode keys)
+  // silently produced an EMPTY mobile bottom nav whenever viewMode was
+  // "technical", since getAdminMobileNav's mode-filter runs first and a
+  // Technical-mode flattened nav never contains any Normal-mode key.
+  // ADMIN_MOBILE_NAV_KEYS is now mode-aware (Record<AdminViewMode, string[]>).
+  for (const mode of ["normal", "technical"] as const) {
+    const modeAdmin = filterNavGroupsByMode(ADMIN_NAV_GROUPS_DATA, { mode });
+    const modeItemKeys = new Set(flattenNavGroups(modeAdmin).map((i) => i.key));
+    const mobileKeysForMode = ADMIN_MOBILE_NAV_KEYS[mode];
+    const resolvedMobileItems = mobileKeysForMode.filter((k) => modeItemKeys.has(k));
+    assert.ok(resolvedMobileItems.length > 0, `${mode}-mode mobile bottom nav must resolve to at least one real item, never empty`);
+    // Every configured mobile key for a mode must actually exist as a real
+    // item in that mode's raw nav data -- a stale/typo'd key would
+    // otherwise silently just not render, the same class of bug as the one
+    // being regressed here. (This checks against mode alone, not release --
+    // a v2-gated key like "operating-brain" still counts as real here; the
+    // Beta gate is a separate, independently-tested axis.)
+    for (const key of mobileKeysForMode) {
+      assert.ok(modeItemKeys.has(key), `${mode}-mode mobile nav key "${key}" must be a real item in that mode's nav data`);
+    }
+  }
 
   // --- Server-owned cookie + owner gate, mirroring release-mode's pattern ---
   const viewModeApi = read("app", "api", "admin", "view-mode", "route.ts");

@@ -104,7 +104,14 @@ export const ADMIN_NAV_GROUPS_DATA: NavGroupData[] = [
   },
 ];
 
-// "missions" moved to Technical mode (master brief section 16) and no
-// longer appears in the default Normal-mode mobile nav; swapped for
-// "leads" (Sales/CRM) to keep 4 high-value Normal-mode quick-access items.
-export const ADMIN_MOBILE_NAV_KEYS = ["overview", "leads", "approvals", "clients"];
+// Mode-aware: getAdminMobileNav filters the already-mode-filtered nav data
+// down to these keys, so each mode needs its own real quick-access list --
+// a single shared list would silently produce an empty mobile bottom nav
+// for whichever mode it doesn't cover (found live 2026-09-02, tracing
+// through Update 41's own mode split: Technical mode's flattened nav never
+// contains "overview"/"leads"/"approvals"/"clients", so the old single
+// list resolved to zero items whenever viewMode was "technical").
+export const ADMIN_MOBILE_NAV_KEYS: Record<"normal" | "technical", readonly string[]> = {
+  normal: ["overview", "leads", "approvals", "clients"],
+  technical: ["missions", "system", "integrations", "operating-brain"],
+};

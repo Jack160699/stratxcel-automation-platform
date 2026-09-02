@@ -14,6 +14,27 @@ never queried it. Fixed to call the real repository function and map its real st
 disabled display the other three rows already use. Verified: full-repo `tsc --noEmit`
 clean, lint clean, real `NODE_ENV=production next build` (exit 0).
 
+## Update 47 — a real regression from Update 41's own mode split: the mobile bottom nav went empty in Technical mode, caught and fixed
+
+Master brief section 18 ("make the sidebar excellent on desktop and mobile"). While
+double-checking Update 41/46's work for other issues, traced `getAdminMobileNav`'s exact
+filter order for both view modes and found a genuine bug: `ADMIN_MOBILE_NAV_KEYS` was a
+single flat list of Normal-mode-only keys (`overview`, `leads`, `approvals`, `clients`).
+`getAdminMobileNav` mode-filters the nav data *first*, then filters that down to these
+keys — so calling it with `viewMode: "technical"` produced a flattened list containing
+only Technical items, none of which matched any key in the Normal-only list. The result:
+switching to Technical mode on mobile would render a **completely empty bottom nav bar**.
+
+Fixed by making `ADMIN_MOBILE_NAV_KEYS` mode-aware (`Record<AdminViewMode, string[]>`):
+Normal keeps its existing four; Technical gets its own real list (`missions`, `system`,
+`integrations`, `operating-brain`). Added a regression test that asserts neither mode
+ever resolves to an empty mobile nav, and that every configured key genuinely exists in
+that mode's real nav data — the same class of bug (a stale/typo'd key silently not
+rendering) would fail loudly now instead of silently.
+
+Verified: full `test:admin-view-mode` suite passes, full-repo `tsc --noEmit` clean, lint
+clean, real `NODE_ENV=production next build` (exit 0).
+
 ## Update 46 — Admin Command/Query: fixed a fully fake "Search ⌘K" button, pointed it at the real Copilot instead of building a second, duplicate command palette
 
 Master brief section 20 (Admin Command/Query) and section 15 ("no hardcoded fake
