@@ -1,5 +1,20 @@
 # WhatsApp AI Agency — Gap Audit
 
+## Update 40 addendum — section-6 capability audit finding: `packages/providers` is real, substantial, and has zero callers
+
+Continuing the master brief's section-6 instruction to audit every real package. Checked
+`packages/providers` (~2,556 lines — real AI/images/research/email/payments/domains/DNS
+provider interfaces, production adapters, resilience/retry/health/config) against an
+exhaustive repo-wide grep for `@stratxcel/providers` imports across `app/`, `lib/`, and
+every other package. Zero real callers anywhere outside its own test suite. Confirmed it
+is genuinely distinct from `packages/workforce-core/src/providers/` (`registry.ts`/
+`failover.ts`/`bootstrap.ts`/`image-generation.ts`) — workforce-core does **not** import
+`@stratxcel/providers` at all; the two are separate, non-overlapping abstractions, and
+workforce-core's own is the one actually wired into live capability execution. Recorded
+honestly as `REAL_NOT_EXPOSED` — not a defect, just a real, substantial, previously
+unaudited package worth a deliberate decision (wire it in, or formally deprecate) rather
+than sitting silently unused.
+
 ## Update 40 — Economic Intelligence: runRevenueWorkflow wired to real crm_leads/whatsapp_messages/contact_consent data, exposed as check_revenue_diagnostics
 
 Continuing straight from Update 39, into the master brief's Economic Intelligence section.
