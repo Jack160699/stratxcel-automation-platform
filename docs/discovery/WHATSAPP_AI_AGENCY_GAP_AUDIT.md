@@ -1,5 +1,58 @@
 # WhatsApp AI Agency — Gap Audit
 
+## Update 67 — full re-detection pass: Stratxcel's own Google OAuth is genuinely broken in production (a real, live finding, not a stale report), and a duplicate-tenant Google connection traced to the cause
+
+Per an explicit instruction to re-detect everything from live system state rather
+than trust prior status reports, re-verified every named connection directly
+against the database. Confirmed real, still true: GitHub (synced today),
+Supabase, Vercel API access, WhatsApp (a real staff principal, `status: active`,
+last used **yesterday** — the WhatsApp cutover's Boss-phone-linking blocker
+noted in memory as open on 2026-09-01 has evidently been resolved since),
+Google Business/Facebook/Instagram/Threads (all real `CONNECTED` rows),
+Notion (synced today), OpenAI image generation (22 real successful jobs).
+
+**A real, previously-undiscovered, currently-live production defect**:
+Stratxcel's own GA4/Search Console/Gmail/Calendar connection is broken.
+`search_google_connections` for tenant `872723d5-...` — confirmed via
+`missions` (72 rows), `crm_leads`, and `search_projects` to be the real,
+actively-used platform tenant, not a duplicate — shows `status: error`,
+`last_error: "Google token refresh failed: HTTP 400"` (Google's standard
+`invalid_grant` response — the refresh token has been revoked or expired,
+and cannot self-heal). `owner_sources` shows the identical symptom **as of
+today** (`last_sync_at` 07:35 UTC): `gmail` and `google_calendar` both
+`ERROR`, same root cause, gmail's last real success 2026-08-17.
+
+Traced the likely cause: a **second, near-empty "Stratxcel" tenant**
+(`466e6195-...` — 1 `search_projects` row, zero missions/leads/plans) has a
+currently-*working*, recently-synced (2026-09-01) Google connection for the
+exact same GA4 property and Search Console site. Someone appears to have
+completed a fresh Google OAuth reconnect under the wrong (near-unused)
+tenant, leaving the real, actively-used tenant's connection broken since
+~2026-08-09/20. Concrete impact: every tool built this session that reads
+real GA4/Search Console data for Stratxcel's own tenant by default
+(`check_growth_status`, `run_growth_analysis`, `check_plan_outcomes`,
+`revise_growth_plan`) has been operating on stale data for the real tenant
+since then — no new `search_measurement_snapshots` captured.
+
+Also found: Google Drive (`owner_sources`) shows `CONNECTED` but
+`last_sync_at` is `null` — never actually verified by a real sync, so its
+true health is unconfirmed despite the label. Razorpay: `razorpayMode: live`
+is genuinely configured, but the database shows **zero** real
+Razorpay-fulfilled transactions anywhere (`audit_orders` fulfilment is 100%
+`product_grant`/`promo`; the one real `subscriptions` row is a
+`go_free_trial`) — the payment code path is real and live-configured, but
+has never processed a real customer payment yet, worth stating precisely
+rather than treating the live-mode flag alone as proof of active use.
+
+Recorded as `capability:stratxcel_own_google_oauth_expired`,
+`EXTERNAL_REQUIRED` — this agent cannot complete an OAuth consent flow
+itself. Two real remediation paths recorded, both requiring the owner: (1)
+re-authenticate Google for the real tenant via the existing connect flow,
+or (2) if the working connection was a deliberate reconnect under the
+wrong tenant, consolidate the two tenants' data — a real data-migration
+decision needing explicit approval, not done silently. Migration:
+`supabase/migrations/20260902620000_capability_registry_google_oauth_expired_finding.sql`.
+
 ## Update 66 — the last two open items resolved: a real automated first-pass prospect Audit, and two remaining `REAL_NOT_EXPOSED` rows converted from open questions into decisive, evidence-backed final answers
 
 **`run_prospect_audit_analysis`** ([lib/agent-core/prospect-audit-analysis-tool.ts](../../lib/agent-core/prospect-audit-analysis-tool.ts))
