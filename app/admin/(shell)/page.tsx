@@ -5,10 +5,23 @@ import { requirePermission, PermissionDeniedError } from "@/lib/rbac/policy";
 import { listMissionsForTenant } from "@stratxcel/missions";
 import { listPendingApprovals } from "@stratxcel/approvals";
 import { getConnection as getStorageConnection } from "@stratxcel/storage";
+import { diagnoseBusinessGrowth, deriveBottlenecks } from "@stratxcel/workforce-core";
+import { getCurrentBrandBrain } from "@stratxcel/brand-brain";
+import { loadIntegrationsStatusData } from "@/lib/connectors/load-integrations-data";
+import { computeRealBusinessSignals } from "@/lib/agent-core/business-signals";
+import { computeRealEntitlementSnapshot } from "@/lib/agent-core/business-priorities";
 import { Card, CardHeading, CardRow } from "@/components/ui/Card";
 import { Metric } from "@/components/ui/Metric";
 import { StatusChip, type ChipState } from "@/components/ui/StatusChip";
 import { OnboardingPanel } from "./OnboardingPanel";
+
+const BOTTLENECK_SEVERITY_CHIP: Record<string, ChipState> = {
+  critical: "danger",
+  high: "danger",
+  medium: "warning",
+  low: "neutral",
+  info: "neutral",
+};
 
 const MISSION_STATE_CHIP: Record<string, { label: string; state: ChipState }> = {
   DRAFT: { label: "Draft", state: "neutral" },
@@ -91,6 +104,53 @@ export default async function CommandCenterPage() {
 
   const pendingCount = approvals?.length ?? 0;
 
+  // Real, evidence-gated growth diagnosis for the active tenant -- the same
+  // classifiers/pipeline check_business_priorities uses (Update 38), called
+  // directly here so Admin Home can answer "what opportunities exist / what
+  // should happen next" (master brief section 17) from actual signals, not
+  // a decorative card. Never blocks the rest of the page: a failure here
+  // degrades to an honest "couldn't compute" card, not a broken page.
+  const topBottlenecks = await (async () => {
+    try {
+      const [brandBrainRow, integrations, businessSignalsResult, entitlementSnapshot] = await Promise.all([
+        getCurrentBrandBrain(ctx.supabase as never, active.tenantId),
+        loadIntegrationsStatusData(ctx.supabase as never, active.tenantId),
+        computeRealBusinessSignals(ctx.supabase as never, active.tenantId),
+        computeRealEntitlementSnapshot(ctx.supabase as never, active.tenantId),
+      ]);
+      const brandBrain = brandBrainRow?.content ?? {};
+      const connectedChannels: string[] = [];
+      if (integrations.whatsapp === "connected") connectedChannels.push("whatsapp");
+      if (integrations.facebook === "connected") connectedChannels.push("facebook");
+      if (integrations.instagram === "connected") connectedChannels.push("instagram");
+      if (integrations.google === "connected") connectedChannels.push("google");
+
+      const diagnosis = diagnoseBusinessGrowth({
+        tenantId: active.tenantId,
+        missionId: `admin-home-priority-check:${active.tenantId}`,
+        timezone: "UTC",
+        currentDateIso: new Date().toISOString(),
+        brandBrain,
+        productsServices: [],
+        targetAudience: brandBrain.target_audience ?? "",
+        geography: "",
+        positioning: "",
+        connectedChannels,
+        businessGoals: [],
+        previousPerformance: [],
+        existingResearchEvidence: [],
+        activeCampaigns: [],
+        availableCapabilities: [],
+        entitlementSnapshot,
+        budgetEnvelope: { estimatedCents: null, reservedCents: 0, actualCents: null },
+        businessSignals: businessSignalsResult.signals,
+      });
+      return deriveBottlenecks(diagnosis).slice(0, 3);
+    } catch {
+      return null;
+    }
+  })();
+
   return (
     <div className="flex flex-col gap-6">
       <header className="flex flex-col gap-1">
@@ -154,6 +214,31 @@ export default async function CommandCenterPage() {
                   </CardRow>
                 );
               })}
+            </div>
+          )}
+        </Card>
+
+        <Card>
+          <div className="flex items-center justify-between">
+            <CardHeading>Growth opportunities for {active.name}</CardHeading>
+            <Link href="/admin/copilot" className="font-sx-mono text-xs text-sx-accent hover:underline">
+              Ask Copilot →
+            </Link>
+          </div>
+          {topBottlenecks === null ? (
+            <p className="text-sm text-sx-text-subtle">Couldn&apos;t compute a diagnosis right now.</p>
+          ) : topBottlenecks.length === 0 ? (
+            <p className="text-sm text-sx-text-subtle">No evidence-backed bottleneck found yet — connect more channels or add CRM/website activity for a real diagnosis.</p>
+          ) : (
+            <div>
+              {topBottlenecks.map((b) => (
+                <CardRow key={b.id}>
+                  <span className="min-w-0 flex-1 truncate text-sx-text-muted" title={b.description}>
+                    {b.description}
+                  </span>
+                  <StatusChip state={BOTTLENECK_SEVERITY_CHIP[b.severity] ?? "neutral"}>{b.severity}</StatusChip>
+                </CardRow>
+              ))}
             </div>
           )}
         </Card>

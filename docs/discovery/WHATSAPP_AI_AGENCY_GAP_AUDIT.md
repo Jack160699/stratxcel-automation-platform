@@ -14,6 +14,23 @@ never queried it. Fixed to call the real repository function and map its real st
 disabled display the other three rows already use. Verified: full-repo `tsc --noEmit`
 clean, lint clean, real `NODE_ENV=production next build` (exit 0).
 
+## Update 48 — Admin Home's first real Growth Opportunities card, from the same diagnosis pipeline Update 38 already built
+
+Master brief section 17 ("what opportunities exist / what should happen next"). Admin
+Home (`app/admin/(shell)/page.tsx`) had real Missions/Approvals/Integration cards already,
+but nothing answering "what should we focus on" for the active tenant. Rather than invent
+new logic, called the exact same real functions `check_business_priorities` (Update 38)
+already uses — `computeRealBusinessSignals`, `computeRealEntitlementSnapshot`,
+`getCurrentBrandBrain`, `loadIntegrationsStatusData`, `diagnoseBusinessGrowth`,
+`deriveBottlenecks` — directly in the page, rendering the top 3 real, evidence-backed
+bottlenecks with real severity chips. Degrades honestly on failure ("couldn't compute a
+diagnosis right now") and on a genuinely empty result ("no evidence-backed bottleneck
+found yet") rather than breaking the page or showing a fabricated/decorative card either
+way.
+
+Verified: full-repo `tsc --noEmit` clean, lint clean, real `NODE_ENV=production next
+build` (exit 0).
+
 ## Update 47 — a real regression from Update 41's own mode split: the mobile bottom nav went empty in Technical mode, caught and fixed
 
 Master brief section 18 ("make the sidebar excellent on desktop and mobile"). While
