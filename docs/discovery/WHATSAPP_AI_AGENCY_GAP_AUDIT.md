@@ -1,5 +1,65 @@
 # WhatsApp AI Agency — Gap Audit
 
+## Update 57 — final convergence re-inspection: 6 stale/vague `capability_registry` rows reconciled to match reality
+
+Per the confirmed "FINAL MASTER CONVERGENCE" mission, re-queried every live
+`REAL_NOT_EXPOSED`/`PARTIAL` row (13 total) before doing any new build work, to
+check whether earlier findings had gone stale as later Updates fixed the
+things they described without ever circling back to correct the row itself.
+Six had:
+
+**Stale — the row's own named blocker is now fixed, reclassified `REAL_EXPOSED`:**
+
+- `capability:revenue_ops_workflow_pipeline` / `engine:revenue_ops` — both
+  duplicates of the same package `runRevenueWorkflow`, which
+  `check_revenue_diagnostics` (Update 40) has wired to real inputs since.
+  Leaving these `REAL_NOT_EXPOSED` would have read as an open gap next to an
+  already-shipped tool that closes it.
+- `engine:priority_recommendations` — its recorded blocker was "no function
+  computes real BusinessSignals"; `computeRealBusinessSignals` (Update 37) is
+  exactly that function, and the full pipeline it feeds
+  (`diagnoseBusinessGrowth` → `deriveBottlenecks` → `planBusinessGrowth`) is
+  genuinely reachable end to end via `check_business_priorities`,
+  `preview_growth_plan`, and `commit_growth_plan`.
+- `capability:website_edit_fabrication_defect` — this row records a defect
+  that Update 42's own entry says was fixed in the same pass it was found
+  (`capability:edit_website_agent_tool`). The defect row itself was just never
+  flipped to match — corrected now.
+
+**Vague `PARTIAL` → precise `EXTERNAL_REQUIRED`, with a named external blocker:**
+
+- `agent_tool:send_whatsapp_message_to_contact` → `meta_whatsapp_template_approval_required`.
+  The tool is fully built and deployed; the only remaining piece is Meta's own
+  template-approval process for a cold first-contact WhatsApp message, which
+  no engineering here can grant.
+- `capability:security_audit_pass` → `supabase_auth_dashboard_leaked_password_protection_toggle`.
+  Re-confirmed directly this pass: `auth.config` is Supabase control-plane
+  configuration, not project-database state — `execute_sql` genuinely cannot
+  reach it. The toggle lives only in Supabase Dashboard → Authentication →
+  Policies, which no available tool can reach either. Every other item this
+  audit covered is closed; this is the one real remaining piece, named
+  precisely instead of left as an unexplained `PARTIAL`.
+- `engine:hermes_missions` → `owner_authorization_required_to_enable_hermes_mode`.
+  The engineering side is complete (`create_mission`, `commit_growth_plan`,
+  the real fail-closed autonomy-decision layer are all live) — the remaining
+  gap is deliberately not an engineering task. `HERMES_MODE=disabled` is a
+  real, intentional production kill-switch; flipping it to let missions
+  actually execute autonomously is a business/safety decision that requires
+  explicit owner authorization, not something this agent will do unilaterally.
+
+Two rows were checked and left exactly as recorded, because they are
+genuinely unresolved, not stale: `capability:paid_audit_pdf_report` (never
+properly investigated — notes are `null`) and `engine:audit_engine`
+(ambiguous which of `packages/audit-engine` or `lib/audit/v1` is canonical).
+Both are the next items in this pass, not reconciled here.
+
+Migration: `supabase/migrations/20260902480000_capability_registry_reconciliation.sql`
+reproduces all six live updates (applied via Supabase MCP `execute_sql` on
+2026-09-02) from a fresh database. No application code changed in this entry —
+registry-only. Verified: full-repo `tsc --noEmit` clean, lint clean (no source
+touched, so unaffected); the live rows were confirmed updated by re-querying
+`capability_registry` after the batch statement ran.
+
 ## Update 41 addendum — fixed a fabricated integration-status row found while starting the Admin Home rebuild
 
 Master brief section 15/17: "remove fake/empty metrics." `app/admin/(shell)/page.tsx`'s
