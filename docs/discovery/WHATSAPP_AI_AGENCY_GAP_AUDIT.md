@@ -1,5 +1,44 @@
 # WhatsApp AI Agency — Gap Audit
 
+## Update 60 — final rescan for fabrication/placeholder patterns: a real, well-built, but entirely unwired Monthly Value Ledger engine found, using the same in-memory-store anti-pattern already flagged in `editing/`
+
+Ran the master brief's explicit "final rescan" pass: a repo-wide grep for
+`TODO`/`FIXME`/`HACK`/`XXX`/`NOT_IMPLEMENTED` comments came back **clean** —
+zero matches outside tests, confirming this session's earlier fabrication
+sweeps (Updates 9, 10, 13, 20, 29–32) already scrubbed the classic marker
+signals. A second pass grepped `Math.random()` as a fake-metric smell (25
+files, mostly benign id/jitter/nonce generation) and one genuinely worth
+tracing stood out by name: `lib/reporting/value-ledger.ts`.
+
+`ValueLedgerService` and `lib/billing/monthly-cycle.ts`'s `MonthlyRenewalEngine`
+(which composes it with the real `generateTailoredCustomerPlans`/
+`synthesizeBusinessRequirements` engines into a full monthly recap package)
+are real, deliberately-designed, non-trivial code — not a fabricated-numbers
+risk. The real problem is structural, and it's a repeat of a pattern this
+session already knows to distrust: both classes store their state in a
+private in-memory array/Map (`this.inMemoryStore`, `this.generatedRecapCache`)
+— the exact same anti-pattern flagged (and deliberately left unfixed, for
+the same "don't wire something broken" reason) in
+`packages/websites-and-domains/src/editing`'s `WebsiteVersionManager`. Traced
+further: **zero real callers exist anywhere** — `app/`, `lib/` (outside its
+own module), `apps/`, and `packages/` all come back empty except the module
+itself, two doc references, and two test files. The one real-code caller
+that does exist, `packages/whatsapp/src/copilot/copilot-agent.ts`, is itself
+dead — confirmed it too has zero real callers, referenced only by its own
+tests. So the in-memory-store risk, while real, is currently inert: nothing
+in production can hit it.
+
+A genuine, real "prove your monthly ROI" report is a legitimate churn-
+reduction feature if built out properly — but it isn't named in this
+convergence pass's explicit scope, so it wasn't built here. Recorded
+honestly as `capability:monthly_value_ledger_engine`, `REAL_NOT_EXPOSED`,
+with an explicit note for whenever it IS wired: replace the in-memory stores
+with real Postgres-backed tables first (same discipline as
+`website_intelligence_cache`, Update 53), not silently ship the same defect
+class in a new place. Migration:
+`supabase/migrations/20260902520000_capability_registry_value_ledger_finding.sql`.
+No application code changed — investigation and registry entry only.
+
 ## Update 59 — Agent Factory investigated directly, honestly recorded `NOT_BUILT`: no dynamic runtime agent composition exists anywhere in this codebase
 
 The FINAL MASTER CONVERGENCE brief calls for an "Agent Factory" (dynamic
