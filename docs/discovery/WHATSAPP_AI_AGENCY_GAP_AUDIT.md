@@ -1,5 +1,50 @@
 # WhatsApp AI Agency — Gap Audit
 
+## Update 40 — Economic Intelligence: runRevenueWorkflow wired to real crm_leads/whatsapp_messages/contact_consent data, exposed as check_revenue_diagnostics
+
+Continuing straight from Update 39, into the master brief's Economic Intelligence section.
+Traced `runRevenueWorkflow` (`packages/revenue-ops/src/orchestrator.ts`, real and tested,
+but — per Update 37/38's own earlier finding — called only by its own test suite) and
+found every required input has a genuine real source in this schema after all, once
+checked properly: `whatsapp_messages` (real `lead_id`, `direction` ∈ `{inbound,outbound}`,
+`created_at` columns — currently empty in production, but the query logic is real and
+correct) and `contact_consent` (real `lead_id` FK, `opted_in`, `opted_out_at`) both exist
+and join cleanly onto `crm_leads`.
+
+New `lib/agent-core/revenue-diagnostics.ts`: `computeRealLeadRows` maps `crm_leads` rows
+directly to `LeadRowInput` (one real source value, `whatsapp_outreach`, isn't modeled in
+revenue-ops's `LeadSource` union — normalized to `whatsapp` rather than dropped or guessed
+at something unrelated). `computeRealMessageDerivedFacts` computes real
+`firstOutboundAtIso`/`hasPendingInbound` per lead from actual message ordering — a lead
+with zero messages honestly gets `firstOutboundAtIso: null` (never contacted yet), and
+`hasPendingInbound` is true only when the most recent real message on that thread is
+inbound. `computeRealConsentByLeadId` maps `contact_consent` directly.
+
+New `lib/agent-core/revenue-diagnostics-tool.ts` — `check_revenue_diagnostics` — the first
+real production caller of `runRevenueWorkflow`, wired with these real inputs plus real
+Brand Brain services (`getCurrentBrandBrain`) for `businessContext.offeredServices`.
+Returns real response-time diagnosis, per-lead intelligence-driven qualification, drafted
+CRM follow-up plans, drafted WhatsApp follow-up sequences, and human-handoff
+recommendations. Two real inputs are honestly left unsourced this pass, not fabricated:
+`events` for `diagnoseConversion` (no analytics-conversion-event table verified yet) and
+`conversationByLeadId`'s automation-mode context (a separate subsystem not traced). Both
+are confirmed-optional fields — `runRevenueWorkflow` handles their absence honestly rather
+than inventing data. Read-only by the underlying engine's own design regardless:
+`productionMutations`/`sendAttempts` are always empty — nothing is ever sent or written,
+only diagnosed and drafted.
+
+Caught and fixed one real bug before shipping: an early draft computed `LeadTimingSample`'s
+`createdAtIso` from `last_interaction_at` (or `now()` as a fallback) instead of the lead's
+actual `created_at` — `LeadRowInput` itself has no `created_at` field, so it was missing
+entirely from the mapped rows. Fixed by adding a `RealLeadRow` type (a structural superset
+of `LeadRowInput` carrying the real `created_at` through) before this ever shipped, since a
+wrong `createdAtIso` would have silently corrupted every real response-time measurement.
+
+Verified: new `revenue-diagnostics.test.ts` (3 assertions, including the cross-tenant/no-
+message/no-consent honesty checks and the `whatsapp_outreach` normalization case), the full
+`test:revenue-ops` suite still passes, full-repo `tsc --noEmit` clean, lint clean, real
+`NODE_ENV=production next build` (exit 0).
+
 ## Update 39 — the real autonomy decision layer: AUTO / LOW_RISK_APPROVAL / OWNER_APPROVAL / BLOCKED, deterministic and fail-closed, advisory only
 
 Continuing straight from Update 38, into the master brief's Autonomy section. Checked
