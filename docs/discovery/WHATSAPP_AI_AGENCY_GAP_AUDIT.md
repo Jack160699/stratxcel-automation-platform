@@ -14,6 +14,22 @@ never queried it. Fixed to call the real repository function and map its real st
 disabled display the other three rows already use. Verified: full-repo `tsc --noEmit`
 clean, lint clean, real `NODE_ENV=production next build` (exit 0).
 
+## Update 56 addendum — fixed a real gap in what commit_growth_plan stores before it could ever be hit in production
+
+Caught while thinking through what a future revision tool would actually need:
+`commit_growth_plan`'s `strategy_payload` originally stored a hand-picked subset of
+`BusinessGrowthPlan` fields, omitting `planningContext` (the Brand Brain/audience/
+geography/positioning/channels/goals snapshot). `reviseThirtyDayPlan` specifically reads
+`current.planningContext` to preserve that snapshot across a revision — omitting it would
+have made a real committed plan quietly unrevisable later, a real gap that wouldn't have
+surfaced until someone actually tried to revise a plan. Fixed to store the complete plan
+object instead of re-guessing which fields matter. No real rows existed yet (the tool
+shipped minutes earlier in the same pass), so this landed before it could ever bite in
+production.
+
+Verified: full-repo `tsc --noEmit` clean, lint clean, real `NODE_ENV=production next
+build` (exit 0).
+
 ## Update 56 — commit_growth_plan: the first real write to workforce_plans, closing the precise Learning-loop blocker
 
 Master brief sections 5/15. Update 55's own follow-up sharpened the Learning-loop blocker

@@ -82,15 +82,15 @@ export const GROWTH_PLAN_COMMIT_TOOL: AgentTool = {
           business_outcome: plan.businessOutcomeTarget,
           entitlement_snapshot: plannerInput.entitlementSnapshot,
           capability_snapshot: plannerInput.availableCapabilities,
-          strategy_payload: {
-            entryMode: plan.entryMode,
-            secondaryObjectives: plan.secondaryObjectives,
-            messagingThemes: plan.messagingThemes,
-            weeklyStrategy: plan.weeklyStrategy,
-            workforcePlan: plan.workforcePlan,
-            customerFacing: plan.customerFacing,
-            bottlenecks: plan.bottlenecks,
-          },
+          // The complete plan (minus the two fields already promoted to
+          // their own real columns above) -- not a hand-picked subset.
+          // reviseThirtyDayPlan (a future revision tool would need this)
+          // reads planningContext specifically to preserve the original
+          // Brand Brain/audience/channel snapshot across a revision; an
+          // earlier draft of this tool omitted it, which would have quietly
+          // made a real committed plan unrevisable later. Storing
+          // everything here avoids re-guessing which fields matter.
+          strategy_payload: plan,
           budget_envelope: plannerInput.budgetEnvelope,
         })
         .select("id, tenant_id, mission_id, version, status, created_at")
