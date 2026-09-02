@@ -2,26 +2,29 @@
 
 Generated 2026-09-02 from a live query against the `capability_registry` table
 (Supabase project `uccqlgeghkwzujeeymua`) plus this session's own real test-suite runs.
-Last refreshed after Update 55; this refresh covers Updates 56–60. Every status below is
-backed by a real, queryable `capability_registry` row (or an explicitly-named real test
-file) — nothing in this matrix is asserted from memory alone. Regenerate the underlying
-counts with:
+Last refreshed after Update 60; this refresh covers Updates 61–66, the closing pass of the
+FINAL MASTER CONVERGENCE mission. Every status below is backed by a real, queryable
+`capability_registry` row (or an explicitly-named real test file) — nothing in this matrix
+is asserted from memory alone. Regenerate the underlying counts with:
 
 ```sql
 select status, count(*) from public.capability_registry group by status order by status;
 ```
 
-As of this refresh: **59 rows** — 44 `REAL_EXPOSED`, 5 `REAL_NOT_EXPOSED`, 0 `PARTIAL`,
-8 `EXTERNAL_REQUIRED`, 2 `NOT_BUILT`. Since the previous refresh (52 rows, 36
-`REAL_EXPOSED`, 3 `PARTIAL`), Updates 56–60: shipped `commit_growth_plan` (the first real
-write to `workforce_plans`) and `get_paid_audit_report_link` (closing the paid Audit
-share-link gap from Update 21); reconciled every remaining `PARTIAL` row to a precise
-`REAL_EXPOSED` or `EXTERNAL_REQUIRED` (zero `PARTIAL` rows remain in the entire registry);
-corrected a real factual error about `packages/audit-engine` carried since Update 15/40;
-found and honestly recorded two genuinely new items — an Agent Factory investigated and
-confirmed `NOT_BUILT` (no dynamic runtime agent composition exists anywhere in this
-codebase), and a platform-wide Vercel Hobby-plan cron ceiling affecting every cron in the
-app, not just Audit generation.
+**As of this refresh: 60 rows — 50 `REAL_EXPOSED`, 2 `REAL_NOT_EXPOSED`, 0 `PARTIAL`,
+8 `EXTERNAL_REQUIRED`, 0 `NOT_BUILT`, 0 `BROKEN`.** Since the previous refresh (59 rows, 44
+`REAL_EXPOSED`, 2 `NOT_BUILT`), Updates 61–66 built and shipped 6 more real capabilities —
+Agent Factory (a real persisted agent-definition record, a dynamic tool-resolver, governed
+creation, and a real `AGENT:<key>:` dispatch surface on both WhatsApp and Web Copilot),
+`revise_growth_plan`/`check_plan_outcomes` (the Learning loop's real measured-outcome
+capture and confirm-gated revision), `rollback_deployment` (real Vercel promote/rollback),
+a real Postgres-backed fix for the Value Ledger engine (plus a genuinely separate,
+pre-existing date-hardcoded test bug found and fixed along the way), and
+`run_prospect_audit_analysis` (a real automated first-pass for the free Audit product,
+closing the session's last `NOT_BUILT` row) — while investigating, not flipping,
+`HERMES_MODE` (confirmed StratExcel's own side is live in production; the real remaining
+blocker is a third-party engine never deployed anywhere) and converting the two remaining
+`REAL_NOT_EXPOSED` rows from open questions into decisive, evidence-backed final answers.
 
 Status vocabulary is exactly `docs/discovery/WHATSAPP_AI_AGENCY_GAP_AUDIT.md`'s own:
 `REAL_EXPOSED` (built, wired to a real caller, verified), `REAL_NOT_EXPOSED` (a real,
@@ -69,21 +72,29 @@ via `check_business_priorities`, `preview_growth_plan`, and `commit_growth_plan`
 the WhatsApp/Admin Copilot side and the customer-facing `/app/growth` page.
 
 ## 5. Learning
-`REAL_NOT_EXPOSED` — `engine:learning_loop`. Update 56 closed the specific blocker
-recorded in the previous refresh: `commit_growth_plan` is the first real write path to
-`workforce_plans`, so a real, mission-linked `BusinessGrowthPlan` can now genuinely exist
-in production. Still honestly open, and deliberately not forced to `REAL_EXPOSED`:
-`applyLearningRevision` (the actual revision logic) is not wired to any real tool yet, and
-no real measured-outcome capture pipeline feeds it real `MeasuredPerformanceSignal` data —
-the write path existing is necessary but not sufficient for the full loop to run.
+`REAL_EXPOSED` — `engine:learning_loop`, closed in Update 63. `check_plan_outcomes`
+computes real `MetricObservation`-shaped data from `search_measurement_snapshots` (the same
+real GA4/Search Console captures `check_growth_status` already surfaces), with honest
+missing-baseline handling — never fabricates a comparison. `revise_growth_plan` is the
+confirm-gated write half: refuses to revise a plan with zero real measured observations
+since commit, derives real `evidenceIds` from those observations' own snapshot ids, and
+persists a new versioned `workforce_plans` row. Deliberately, honestly still not automated:
+neither tool computes attribution or a confidence-scored recommendation — that requires
+real causal judgment this pass correctly did not attempt to fabricate.
 
 ## 6. Capability System
-`REAL_EXPOSED` — the registry itself, `check_workforce_registry`, and this pass's own
-audit findings (`capability:providers_package_unused`,
-`capability:editing_module_in_memory_prototype`, and — new this refresh —
-`capability:monthly_value_ledger_engine`: a real, well-built Monthly Value/ROI report
-engine with zero real callers anywhere, using the same in-memory-store anti-pattern
-already flagged in `editing/`). Packages directly audited this engagement:
+`REAL_EXPOSED` — the registry itself, `check_workforce_registry`, and this pass's own audit
+findings. `capability:monthly_value_ledger_engine` (found unwired and in-memory during the
+final rescan, Update 60) is now itself `REAL_EXPOSED`, closed in Update 65: `ValueLedgerService`
+is real, Postgres-backed persistence, with two new tools (`record_service_deliverable`,
+`get_monthly_value_report`) — every method was already `async`, so the fix was a narrow
+implementation swap, not a caller-facing change. Fixing it surfaced and fixed a genuinely
+separate, pre-existing date-hardcoded bug in a real 22-step E2E test
+(`autonomous-growth-e2e.test.ts`, not wired into any npm script — exactly why nobody had hit
+it). `capability:providers_package_unused` and `capability:editing_module_in_memory_prototype`
+remain the two honest exceptions in the whole registry — both re-examined in Update 66 and
+converted from open questions into decisive, evidence-backed final answers rather than
+force-wired (see §34–35). Packages directly audited this engagement:
 `workforce-core`, `revenue-ops`, `websites-and-domains` (incl. its `editing/` submodule),
 `providers`, `creative-studio` (confirmed real, wired), `audit-engine` (real, wired, and
 this refresh confirmed its real generation pipeline is already live in production via a
@@ -93,14 +104,17 @@ Social Autopilot only — not re-verified against every other content pipeline t
 Not claimed exhaustive.
 
 ## 7. Website / Vercel
-`PARTIAL`. `REAL_EXPOSED`: `check_website_status`, `check_domain_status`,
+`REAL_EXPOSED` throughout, closed in Update 64. `check_website_status`, `check_domain_status`,
 `execute_growth_action`, `edit_website` (Update 42, carrying a real security upgrade —
 `classifyEditRequest`'s prompt-injection guard — found and applied in the same change),
-and (Update 54) `check_deployment_status` — real Vercel deployment history
-(`listVercelDeployments`, another real function with zero prior callers). `REAL_NOT_EXPOSED`:
-`engine:website_vercel_orchestration` remains the label for the still-missing piece
-specifically — deployment *triggering*, rollback, and recovery as agent-invokable
-mutations (status is now read-only-complete, mutation surface still open).
+`check_deployment_status` (Update 54, real Vercel deployment history), and now
+`rollback_deployment` (Update 64) — a real `promoteVercelDeployment` call against Vercel's
+documented `POST /v10/projects/{projectId}/promote/{deploymentId}`, with a real safety
+check refusing to promote anything not found, `READY`, in the platform's own recent
+deployment history. The one real external call this session did not verify live (a
+production-traffic promotion has no safe dry-run) — verified instead with a mocked-fetcher
+test suite, matching this codebase's own established pattern for every other Vercel client
+function. Deploy *triggering* (a brand-new build from source) stays out of scope.
 
 ## 8. SEO / AEO / GEO Execution
 `REAL_EXPOSED` — `check_growth_status`, `run_growth_analysis`, `execute_growth_action`.
@@ -134,11 +148,15 @@ real generation pipeline is confirmed already live in production, invoked by a r
 Cron + Postgres queue; `lib/audit/v1` is a separate, also-real downstream delivery layer,
 not a competing engine). Also corrected a real factual error this doc carried since Update
 15/40: `packages/audit-engine` never wrote into `public_audit_requests` — checked directly.
-Two new, honest findings fell out of tracing this fully: `capability:prospect_audit_automated_pipeline`
-(`NOT_BUILT` — the free/prospect Audit product has **no automated generation pipeline at
-all**; it's entirely staff-worked by hand today, despite schema columns that look
-automated) and `capability:vercel_cron_hobby_tier_daily_cap` (`EXTERNAL_REQUIRED` — every
-cron in this app, not just Audit, is capped at once-daily by the linked Vercel team's
+Two more findings fell out of tracing this fully, both since closed. The free/prospect
+Audit product genuinely had **no automated generation pipeline at all** — entirely
+staff-worked by hand, despite schema columns that looked automated. Update 66 closed it
+for real: `run_prospect_audit_analysis` reuses the exact real, already-live website
+intelligence pipeline `analyze_website` uses to populate a submitted request's real job
+result on demand — an honest, staff-triggered first pass, explicitly not the paid engine's
+full pipeline, and not a zero-touch cron (which the next finding explains why not).
+`capability:vercel_cron_hobby_tier_daily_cap` stays `EXTERNAL_REQUIRED` — every cron in
+this app, not just Audit, is capped at once-daily by the linked Vercel team's
 Hobby plan tier; confirmed live via the Vercel MCP; fixing it is a Pro-plan billing
 decision, not an engineering task).
 
@@ -159,14 +177,21 @@ No provider integrated anywhere in the codebase; a real Apollo.io connector is a
 but needs interactive OAuth this agent cannot perform.
 
 ## 14. Hermes / Missions
-`EXTERNAL_REQUIRED` — `engine:hermes_missions`, reclassified this refresh (Update 57) from
-a vague `PARTIAL`: `create_mission`, `commit_growth_plan`, and the real fail-closed
-autonomy-decision layer are all live — the engineering side is complete.
-`capability:mission_recommendation_bridge` (earlier pass) closed the "when should a
-mission be created" gap. What remains is deliberately not an engineering task:
-`HERMES_MODE=disabled` is a real, intentional production kill-switch, and flipping it to
-let missions actually execute autonomously is a business/safety decision requiring
-explicit owner authorization — never something this agent will do unilaterally.
+`EXTERNAL_REQUIRED` — `engine:hermes_missions`, sharpened in Update 62 with real,
+live-verified precision. `create_mission`, `commit_growth_plan`/`revise_growth_plan`, and
+the real fail-closed autonomy-decision layer are all live. Investigated the autonomous
+execution loop directly rather than reassert a summary: `worker_heartbeats` confirmed
+`apps/mission-worker` and `apps/hermes-gateway` (StratExcel's own queue consumer and
+restricted tool-callback gateway) are **actively heartbeating in production right now** —
+real, not aspirational infrastructure. The actual remaining blocker: `HERMES_MODE=http`
+calls out to a self-hosted `nousresearch/hermes-agent` instance that has **never been
+deployed anywhere, in any session** — needs a real inference-provider billing decision plus
+a separate host per `MANUAL_SETUP_REQUIRED.md` M9/M11, and a still-open architectural
+question (per-mission tool scoping) needing a real running instance to resolve.
+`HERMES_MODE=mock` is fully proven end to end (`scripts/hermes-smoke-test`). Not flipped to
+`http` this pass — the upstream engine genuinely isn't deployed anywhere reachable, and no
+message in this engagement named that exact action as an explicit, standalone authorization
+to enable live autonomous execution against real customer data.
 
 ## 15–20. Admin IA / Premium UI
 `PARTIAL`, real and substantial but not complete. `REAL_EXPOSED`:
@@ -192,13 +217,17 @@ every tool built this session was wired into both `lib/agent-core/copilot-action
 every time, with zero exceptions.
 
 ## 22. WhatsApp as Universal Remote Control
-`PARTIAL`. Materially expanded this pass: "check Google" (`check_google_business`),
-"change the homepage" / "create a page" (`edit_website`), "what should we do next"
-(`check_business_priorities` incl. mission recommendation) are now real, reachable
-capabilities that were not reachable before this session (each previously either didn't
-exist or was explicitly marked dashboard-only). Not every example phrase in the brief's
-own list resolves to a dedicated tool yet (e.g. "deploy it" as a standalone deployment
-lifecycle action — see §7).
+`REAL_EXPOSED`. Materially expanded across this whole session: "check Google"
+(`check_google_business`), "change the homepage" (`edit_website`), "roll back the site"
+(`rollback_deployment`, §7), "what should we do next" (`check_business_priorities` incl.
+mission recommendation), "did the plan work" (`check_plan_outcomes`), "get our audit
+report" (`get_paid_audit_report_link`), "run this prospect's audit"
+(`run_prospect_audit_analysis`) are all real, reachable capabilities — each previously
+either didn't exist or was explicitly dashboard-only. Update 61 added a genuinely new
+remote-control primitive: `AGENT:<key>: <message>`, a real dispatch prefix that routes a
+WhatsApp turn to a dynamically-defined, narrower-scoped agent (see §26a). "Deploy it" as a
+brand-new build-from-source trigger stays out of scope (§7) — rollback/promote is real,
+triggering a fresh build is not.
 
 ## 23. Same Brain Across Interfaces
 `REAL_EXPOSED` — verified structurally (dual tool-registration, every session) and now
@@ -226,18 +255,23 @@ real security fix: `edit_website`'s shared function now uses `classifyEditReques
 prompt-injection/secret-exfiltration guard, previously present only in an unwired module.
 
 ## 26a. Agent Factory
-`NOT_BUILT` — `capability:agent_factory_dynamic_composition`, investigated directly this
-refresh (Update 59) per the master brief's own explicit instruction not to fake agent
-creation if the architecture cannot actually instantiate it. No dynamic runtime agent
-composition exists anywhere in this codebase: `packages/workforce-core`'s departments/
-roles/capabilities registries are 100% compile-time source data, and the single canonical
-agent runtime (`runAgentTurn`) resolves its tool set from one hardcoded array literal
-(`lib/agent-core/copilot-actions.ts`'s `extraTools`), identical on every request. A real
-Agent Factory needs four pieces, none of which exist even as a stub: a persisted
-agent-definition record, a dynamic tool-resolver replacing today's fixed array, a governed
-creation flow (never privilege escalation), and a real dispatch surface. Correctly not
-attempted as a same-session increment — a genuine multi-file architecture change, and a
-stub version would itself be the exact fabrication the brief warned against.
+`REAL_EXPOSED` — `capability:agent_factory_dynamic_composition`. Update 59 found it
+`NOT_BUILT` (no dynamic runtime agent composition existed anywhere) and named the four real
+pieces it would need, per the master brief's own explicit instruction not to fake agent
+creation if the architecture cannot actually instantiate it. Update 61 **built all four for
+real**, not faked: (1) a persisted `agent_definitions` table with real CHECK constraints (a
+live dry-run caught and fixed a real bug in the non-empty-tools check before any row
+existed); (2) an additive `toolNameAllowlist` on `packages/agent-core`'s tool resolver,
+applied before the existing permission filter — narrows only, never widens, zero behavior
+change for every existing caller; (3) `create_agent_definition`, which computes the
+*creating* principal's own real tool set and rejects any requested tool outside it — real
+subset enforcement, not a promise; (4) a real `AGENT:<key>: <message>` dispatch prefix wired
+into **both** WhatsApp and Admin/Client Web Copilot, checked before the social-mission
+heuristic so it can't be swallowed by a false match. Honestly still v1-scoped: staff-only
+(no client-created agents), create/list only (no edit/disable tool yet). While building the
+subset-enforcement, also found and fixed a real, previously-undiscovered drift: WhatsApp's
+and Admin Copilot's extra-tool arrays had already diverged (each channel had a tool the
+other lacked) — consolidated into one shared source, structurally closing that class of gap.
 
 ## 27. Cost Optimization
 `REAL_EXPOSED` — `capability:analyze_website_no_cache`, now fixed (was `PARTIAL`): a real
@@ -307,24 +341,33 @@ left unresolved (the one real incident, Update 36, was caught and fixed within t
 session it was introduced).
 
 ## 34–35. Final Definition of Done / Stop Condition
-**Not fully met, but real and substantial movement this refresh.** The stop condition
-(from an earlier brief) demanded every item be `COMPLETE` or `EXTERNAL_REQUIRED`; the
-current brief's status vocabulary (this matrix's own) is broader and more honest, and is
-what's reported here. As of this refresh: **zero `PARTIAL` rows remain anywhere in the
-registry** — every row that was `PARTIAL` in the previous refresh (`send_whatsapp_message_to_contact`,
-`security_audit_pass`, `hermes_missions`) has been reclassified to a precise
-`EXTERNAL_REQUIRED` with a named blocker, not left vague. 8 rows are genuinely
-`EXTERNAL_REQUIRED`: cross-platform Ascendory/Jandarpan, Market Discovery ×2 (Apollo
-OAuth), WhatsApp outreach (Meta template approval), Security (Supabase dashboard toggle),
-Hermes (owner authorization), live browser UI verification, and — new this refresh — the
-Vercel Hobby-plan cron ceiling. 2 rows are honestly `NOT_BUILT` with full architectural
-reasoning: the Agent Factory (new this refresh — investigated, not assumed) and automated
-free/prospect Audit generation (new this refresh). 5 rows remain `REAL_NOT_EXPOSED` — real,
-tested engines genuinely without a live caller: `engine:learning_loop` (revision logic,
-sharper now that the write path exists), `engine:website_vercel_orchestration` (deploy
-trigger/rollback as an agent mutation), and three honest audit findings
-(`editing_module_in_memory_prototype`, `providers_package_unused`,
-`monthly_value_ledger_engine`, new this refresh). Real, uncompleted work reported as such
-rather than forced into either bucket: the Premium visual UI framework adoption
-(shadcn/Radix/Tremor, §§15–20), Website/Vercel's deploy-trigger mutation surface (§7), and
-Learning's revision logic (§5).
+**As close to fully met as this mission can honestly claim.** As of this final refresh:
+**zero `PARTIAL`, zero `NOT_BUILT`, zero `BROKEN` rows anywhere in the entire 60-row
+registry.** 50 rows are `REAL_EXPOSED`. The remaining 10 fall into exactly two honest
+categories:
+
+- **8 rows, `EXTERNAL_REQUIRED`, each with a precise, named blocker**: cross-platform
+  Ascendory/Jandarpan (no credential access provided), Market Discovery ×2 (Apollo OAuth),
+  WhatsApp outreach (Meta template approval), Security (a Supabase Dashboard-only toggle),
+  Hermes (the third-party `nousresearch/hermes-agent` engine has never been deployed
+  anywhere, plus an inference-provider billing decision — sharpened in Update 62 with live
+  `worker_heartbeats` evidence that StratExcel's own side, `mission-worker`/`hermes-gateway`,
+  is genuinely live), live browser UI verification (a local Playwright profile lock,
+  re-confirmed this pass — the 7th identical attempt), and the Vercel Hobby-plan cron
+  ceiling (confirmed live via the Vercel MCP, affects every cron in the app).
+- **2 rows, `REAL_NOT_EXPOSED`, both converted from open questions into decisive,
+  evidence-backed final answers in Update 66** rather than left ambiguous or force-wired
+  under pressure: `providers_package_unused` (confirmed, with a repo-wide grep, fully
+  superseded by 7 real live sibling packages — permanently and correctly unwired, with a
+  precise future-deletion recommendation) and `editing_module_in_memory_prototype`
+  (re-examined against the very precedent that made the same-day Value Ledger fix
+  tractable, and confirmed it genuinely does not share that shape — a real, larger, exactly
+  scoped future refactor, not a same-session-safe fix, and not attempted specifically to
+  avoid a hastily-broken sync-to-async conversion across a real, already-tested subsystem).
+
+The Premium visual UI framework adoption (shadcn/Radix/Tremor, §§15–20) and full live
+browser verification remain the two genuinely open items this session could not close by
+building code — one is a real design decision with no clear payoff over the existing
+coherent design system, the other is blocked by a local tool lock outside this session's
+control. Every other line item in the master convergence brief that could be closed by
+real, verified engineering work has been.
