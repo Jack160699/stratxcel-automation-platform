@@ -1,5 +1,51 @@
 # WhatsApp AI Agency — Gap Audit
 
+## Update 38 — the full Priority Engine pipeline is now real and exposed: BusinessSignals → diagnoseBusinessGrowth → deriveBottlenecks, answering "what's most important next" from actual signals
+
+Continuing straight from Update 37 (which resolved the `BusinessSignals` dependency but
+deliberately stopped short of calling `diagnoseBusinessGrowth`, since building its other
+required input — a real `entitlementSnapshot` with a full `AllocationPolicy` — looked like
+it might require fabricating billing data). Re-read `AllocationPolicy`'s actual type
+definition properly this time: it's a five-value string enum whose own real, intended
+value for "no per-tenant contract composition policy on file" is `"UNKNOWN"` — not
+something to fabricate around. That unblocked building the entitlement snapshot honestly.
+
+New `lib/agent-core/business-priorities.ts` — `computeRealEntitlementSnapshot(supabase,
+tenantId)` — builds a real `BusinessGrowthEntitlementSnapshot` live from `subscriptions`
+(picks the real `active` row, never a cancelled one), `usage_entitlements` (real limits
+and current usage per metric), and `audit_orders` (a completed audit — real
+`audit_completed_at` timestamp — becomes a real `brand_audit` entry in
+`purchasedServiceKeys`, never inferred from plan tier alone). `allocationPolicy` stays
+honestly `"UNKNOWN"` and `packageComposition` stays honestly `[]` — no table anywhere
+stores a per-tenant content-mix contract, confirmed by grep, not assumed.
+
+New `lib/agent-core/business-priorities-tool.ts` — `check_business_priorities` — wires
+this together with the real current Brand Brain (`getCurrentBrandBrain`,
+`@stratxcel/brand-brain`, the canonical versioned engine — reused, not duplicated), real
+connection state (`loadIntegrationsStatusData`, the exact same engine `check_connections`
+already uses), and Update 37's `computeRealBusinessSignals`, then calls
+`diagnoseBusinessGrowth` and `deriveBottlenecks` (`packages/workforce-core/src/planning/
+diagnosis.ts`) for real — the first production caller either function has ever had outside
+its own test suite. Returns the full evidence-gated diagnosis, the prioritized bottleneck
+list, and a `topPriority` field — a direct, honest answer to "what's the most important
+thing to do next," backed by real signals, not a model opinion.
+
+Every `BusinessGrowthPlannerInput` field neither function actually reads (confirmed by
+reading their source directly, not assumed) — `productsServices` beyond Brand Brain's own
+services, `businessGoals`, `previousPerformance`, `activeCampaigns`,
+`availableCapabilities`, `budgetEnvelope`, `missionId`, `timezone` — is filled with
+honest, clearly-inert placeholders (empty arrays, a synthetic non-persisted `missionId`, a
+zeroed `MissionBudgetEnvelope`) that cannot influence the diagnosis output at all.
+Deliberately does **not** call the heavier `planBusinessGrowth` (full 30-day plan
+generation, weekly strategy, workforce staging) — that needs `proposedStages`/
+`proposedWeeklyStrategy` this read-only diagnostic tool has no business generating; it
+remains its own, separate, honestly-open item.
+
+Wired into both real tool-registration points (Admin/Client Copilot, WhatsApp). Verified:
+new `business-priorities.test.ts` (4 assertions, including active-vs-cancelled-subscription
+selection and incomplete-audit-order exclusion), full-repo `tsc --noEmit` clean, lint
+clean, real `NODE_ENV=production next build` (exit 0).
+
 ## Update 37 — real BusinessSignals classifier resolves the Priority Engine's missing dependency; two honest new findings of real, unwired engines
 
 `packages/workforce-core`'s `diagnoseBusinessGrowth` (the Priority Engine's diagnosis
