@@ -14,6 +14,24 @@ never queried it. Fixed to call the real repository function and map its real st
 disabled display the other three rows already use. Verified: full-repo `tsc --noEmit`
 clean, lint clean, real `NODE_ENV=production next build` (exit 0).
 
+## Update 44 — Market Discovery re-confirmed honestly EXTERNAL_REQUIRED; Ascendory/Jandarpan cross-platform finding already recorded correctly
+
+Master brief section 13, which explicitly warns not to call generic web research "market
+discovery." Repo-wide search for a dedicated lead/company/market-discovery engine, and for
+any business-directory/company-data provider (Google Places, Apollo, Clearbit, Hunter,
+ZoomInfo): zero real implementation anywhere. `packages/search-discovery` is SEO/site-audit
+discovery, a different concept; `packages/leads-and-crm` manages leads already in the CRM,
+it doesn't find new ones. One real, concrete unblocking path does exist in this
+environment: a real Apollo.io Claude connector is available but requires an interactive
+OAuth authorization no agent session can perform on its own — recorded as the honest
+`external_blocker`, not a hypothetical one.
+
+Separately confirmed (not a new finding — Update 11, from before this session, already
+recorded it correctly): section 32's Ascendory/Jandarpan cross-platform requirement is
+genuinely `EXTERNAL_REQUIRED` (`capability:cross_platform_ecosystem_brain`) — zero
+references anywhere in this repository, no code/data/credentials reachable. Re-verified
+this is still accurate; nothing to change.
+
 ## Update 43 — check_google_business: real GBP reviews exposed to chat, reusing the already-running Review Bot's own functions
 
 Master brief section 9/22 ("Check Google"). Investigated Google Business exposure and
