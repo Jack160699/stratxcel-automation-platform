@@ -1,5 +1,54 @@
 # WhatsApp AI Agency — Gap Audit
 
+## Update 37 — real BusinessSignals classifier resolves the Priority Engine's missing dependency; two honest new findings of real, unwired engines
+
+`packages/workforce-core`'s `diagnoseBusinessGrowth` (the Priority Engine's diagnosis
+input) accepts an optional `businessSignals` field — and nothing in the app has ever
+computed one from real data. Every call site either omitted it or would have had to
+fabricate it. Traced the downstream logic first (`diagnosis.ts`): every branch is already
+gated on the specific signal being present, and confidence/status already downgrades to
+`ASSUMPTION`/`RESEARCH_REQUIRED` when `signalEvidenceIds` is empty — so a partial, honest
+signal set is architecturally safe to feed it, not a risk.
+
+Built `lib/agent-core/business-signals.ts` — `computeRealBusinessSignals(supabase,
+tenantId)` — which computes `hasWebsite`, `searchVisibilityStrength`,
+`crmFollowUpStrength`, `monthlyInquiries`, and `postContactConversionStrength` live from
+real `site_projects`/`search_opportunities`/`crm_leads` rows, every populated field
+carrying a real row id in `signalEvidenceIds`. Every other `BusinessSignals` field
+(`websiteTrafficStrength`, `hasAds`, `medianResponseTimeHours`, `leadCaptureStrength`,
+`socialPresenceStrength`, `analyticsAttributionStrength`) is left honestly `undefined` —
+no real data source exists yet for any of them. A conversion-rate signal is only reported
+once the contacted-lead sample is at least 5 — below that, honestly omitted rather than
+reporting a rate off a sample too small to mean anything.
+
+Exposed as a new read-only agent tool, `check_business_signals`
+(`lib/agent-core/business-signals-tool.ts`), wired into both real tool-registration points
+(`lib/agent-core/copilot-actions.ts` for Admin/Client Copilot, `app/api/internal/agent/
+whatsapp/route.ts` for WhatsApp) — same `resolveTenantId` discipline as
+`check_connections`/`check_growth_status`. Deliberately does **not** call
+`diagnoseBusinessGrowth`/`deriveBottlenecks` directly: their shared
+`BusinessGrowthPlannerInput` also requires a real `entitlementSnapshot` with a full
+`AllocationPolicy` — billing/allocation data this tool has no honest source for.
+Fabricating one just to force the call would violate the same real-data-or-nothing rule
+this classifier exists to uphold.
+
+That surfaced two honest, previously-unrecorded findings while tracing real callers:
+`planBusinessGrowth`/`diagnoseBusinessGrowth`/the whole 30-day-planner pipeline
+(`packages/workforce-core/src/planning`) and `runRevenueWorkflow`
+(`packages/revenue-ops/src/orchestrator.ts` — response-time diagnosis, lead intelligence,
+qualification, CRM follow-up plans, WhatsApp sequences, conversion diagnosis, human
+handoff) are both real, mature, well-tested engines called **only** by their own packages'
+tests — zero `app/` routes, zero `lib/agent-core` tools, zero API endpoints call either one
+in production today. Confirmed by exhaustive repo-wide grep for every exported entry
+point, not assumed. Recorded both as `REAL_NOT_EXPOSED` rather than silently left out —
+real, substantial capabilities genuinely not reachable by any customer, staff, or agent
+action yet. Wiring either into a production route is a separate, larger integration task.
+
+Verified: new `business-signals.test.ts` (6 assertions, including a small-sample-size
+regression and a cross-tenant-isolation regression), full-repo `tsc --noEmit` clean, lint
+clean, and — given Update 36's lesson — a real `NODE_ENV=production next build` (exit 0)
+before shipping.
+
 ## Update 36 — a self-correction: Update 35's own fix broke the real production build, caught and fixed properly before it reached production
 
 Reporting this honestly rather than quietly re-shipping and moving on. Update 35's fix
