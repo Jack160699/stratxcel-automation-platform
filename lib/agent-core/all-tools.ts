@@ -34,6 +34,8 @@ import { GOOGLE_BUSINESS_TOOL } from "./google-business-tool";
 import { GROWTH_PLAN_TOOL } from "./growth-plan-tool";
 import { GROWTH_PLAN_COMMIT_TOOL } from "./growth-plan-commit-tool";
 import { AUDIT_REPORT_LINK_TOOL } from "./audit-report-link-tool";
+import { CHECK_PLAN_OUTCOMES_TOOL } from "./plan-outcomes-tool";
+import { GROWTH_PLAN_REVISION_TOOL } from "./growth-plan-revision-tool";
 
 export const ALL_EXTRA_TOOLS: AgentTool[] = [
   ...SOCIAL_DELEGATION_TOOLS,
@@ -50,4 +52,6 @@ export const ALL_EXTRA_TOOLS: AgentTool[] = [
   GROWTH_PLAN_TOOL,
   GROWTH_PLAN_COMMIT_TOOL,
   AUDIT_REPORT_LINK_TOOL,
+  CHECK_PLAN_OUTCOMES_TOOL,
+  GROWTH_PLAN_REVISION_TOOL,
 ];

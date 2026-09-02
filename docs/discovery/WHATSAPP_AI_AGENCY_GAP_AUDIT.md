@@ -1,5 +1,66 @@
 # WhatsApp AI Agency — Gap Audit
 
+## Update 63 — the Learning loop closed for real: real measured outcomes from GA4/Search Console, and a confirm-gated, evidence-required plan revision
+
+Priority 6. `engine:learning_loop`'s precise remaining blocker (Update 56):
+"no real measured-outcome capture pipeline feeds `MeasuredPerformanceSignal`
+data." Closed both real halves.
+
+**`check_plan_outcomes`** ([lib/agent-core/plan-outcomes-tool.ts](../../lib/agent-core/plan-outcomes-tool.ts),
+backed by a pure [plan-outcomes.ts](../../lib/agent-core/plan-outcomes.ts))
+computes real observations from `search_measurement_snapshots` — the same
+real GA4/Search Console data `check_growth_status` already surfaces — by
+comparing the latest snapshot captured since a plan's commit date against
+the closest one captured before it. Honest by construction, matching
+`packages/workforce-core/src/performance/types.ts`'s own "do not invent
+values when sources are missing" rule: no baseline → `{ missing: true }`,
+never a fabricated comparison; a `0 → N` baseline never produces an invented
+"infinite%" change, `changePercent` is explicitly `null`; no snapshot
+captured since commit → an honest empty result, not an error.
+
+**`revise_growth_plan`** ([lib/agent-core/growth-plan-revision-tool.ts](../../lib/agent-core/growth-plan-revision-tool.ts))
+is the confirm-gated write half, mirroring `commit_growth_plan`'s own
+pattern: refuses to revise a plan with **zero** real measured observations
+since commit ("Revision requires evidence," per
+`packages/workforce-core/src/performance/learning-loop.ts`'s own header
+comment), derives real `evidenceIds` from those observations' own snapshot
+ids, calls the real `reviseThirtyDayPlan`, and persists a new, versioned
+`workforce_plans` row — `previous_plan_id` links it to the one it revises,
+a column `commit_growth_plan`'s own migration already built for exactly
+this. `risk: external_mutation`, confirm-gated.
+
+Deliberately, honestly incomplete in one specific way: **neither tool
+computes attribution or a confidence-scored recommendation**.
+`packages/workforce-core`'s `AttributionLink`/`OptimizationRecommendation`
+types exist for real causal judgment ("which bottleneck caused this
+change"), but building a real, evidence-based classifier for *them* is a
+distinct, larger task this pass correctly didn't attempt — that's exactly
+the kind of "fabricate a false-confidence signal" risk this engagement has
+avoided since the Priority Engine's own BusinessSignals work (Update 37).
+The human — or the model, reasoning from `check_plan_outcomes`' real
+numbers, confirm-gated before `revise_growth_plan` ever runs — decides what
+changed and why; the tool's own job is only to make sure that decision is
+grounded in at least one real number, never zero.
+
+**A real schema-verification catch during this build**: `plan-outcomes.ts`
+originally filtered `availability_state = "available"` — a value that does
+not exist in the real CHECK constraint
+(`connected|not_connected|permission_required|configuration_required|waiting_for_data|error`).
+Would have silently matched zero rows forever, in production, with no
+error. Found and fixed before shipping by reading the live constraint
+directly and cross-checking the real GA4 write path (`runtime.ts`), which
+uses `"connected"`.
+
+Verified: full-repo `tsc --noEmit` clean, lint clean, `test:agent-core-lib`
+(6 new assertions in
+[plan-outcomes.test.ts](../../lib/agent-core/__tests__/plan-outcomes.test.ts),
+zero regressions), real `NODE_ENV=production next build` (exit 0), and a
+live transactional dry-run insert/rollback exercising the full chain — a
+synthetic committed plan, two real-shaped GA4 snapshots (before/after), and
+the revision insert itself — against the real schema (including the real
+`search_projects`/`search_analysis_runs` foreign-key requirements).
+Migration: `supabase/migrations/20260902560000_capability_registry_learning_loop_closed.sql`.
+
 ## Update 62 — the autonomous execution loop investigated directly: StratExcel's own side is confirmed live in production right now; the real remaining blocker is the third-party engine, never deployed anywhere
 
 Priority 2 of the master convergence brief. Rather than reassert Update
