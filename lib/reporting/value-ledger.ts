@@ -1,3 +1,5 @@
+import { createSupabaseServiceClient } from "../supabase/service.ts";
+
 export interface ValueLedgerEntry {
   id?: string;
   tenantId: string;
@@ -28,12 +30,84 @@ export interface MonthlyValueReport {
   executiveSummary: string;
 }
 
+interface ValueLedgerRow {
+  id: string;
+  tenant_id: string;
+  cycle_month: string;
+  plan_id: string | null;
+  service_key: string;
+  mission_id: string | null;
+  deliverable_title: string;
+  deliverable_summary: string;
+  artifact_ref: string | null;
+  result_metric: string | null;
+  result_value: string | null;
+  customer_visible: boolean;
+  created_at: string;
+}
+
+function rowToEntry(row: ValueLedgerRow): ValueLedgerEntry {
+  return {
+    id: row.id,
+    tenantId: row.tenant_id,
+    cycleMonth: row.cycle_month,
+    planId: row.plan_id ?? undefined,
+    serviceKey: row.service_key,
+    missionId: row.mission_id ?? undefined,
+    deliverableTitle: row.deliverable_title,
+    deliverableSummary: row.deliverable_summary,
+    artifactRef: row.artifact_ref ?? undefined,
+    resultMetric: row.result_metric ?? undefined,
+    resultValue: row.result_value ?? undefined,
+    customerVisible: row.customer_visible,
+    createdAt: row.created_at,
+  };
+}
+
 /**
  * Value Ledger Service.
  * Records immutable deliverables and outcome receipts, and aggregates monthly proof-of-value.
+ *
+ * Real, Postgres-backed persistence (value_ledger_entries table) -- this
+ * class originally stored everything in a private in-memory array, the
+ * same anti-pattern already fixed elsewhere this session
+ * (website_intelligence_cache, Update 53: "never in-memory -- would not
+ * survive serverless invocations"). Found unwired and in-memory during the
+ * final rescan (Update 60); fixed here rather than left open, since fixing
+ * it is a narrow, safe, same-session change -- every method here was
+ * already declared async (the in-memory version just never needed to
+ * await anything), so no caller anywhere needs to change at all.
+ *
+ * The real Supabase client is resolved LAZILY (inside each method, never at
+ * construction or module-load time -- the specific, hard-learned lesson
+ * from Update 36, where an eagerly-resolved singleton dependency broke the
+ * real production build) UNLESS an explicit client is injected via the
+ * constructor, which real tests use to stay isolated from any live
+ * database (see lib/billing/__tests__/monthly-adaptive-renewal.test.ts,
+ * which pre-dates this fix and already relied on constructing its own
+ * ValueLedgerService instance -- the same injection point
+ * MonthlyRenewalEngine.execute26thMonthlyReport's own `ledger?:
+ * ValueLedgerService` override already uses for the same reason).
+ *
+ * Uses createSupabaseServiceClient (lib/supabase/service.ts) directly,
+ * NOT lib/tenants/tenant-context.ts's getTenantServiceContext --
+ * tenant-context.ts carries `import "server-only"` and a transitive
+ * next/headers import, which fails to even load under plain
+ * `node --experimental-strip-types` (confirmed live while building this
+ * fix). createSupabaseServiceClient's own header comment documents this
+ * exact tradeoff already: deliberately no `server-only`, specifically so
+ * it stays importable by this repo's plain-node test files.
  */
 export class ValueLedgerService {
-  private inMemoryStore: ValueLedgerEntry[] = [];
+  private injectedSupabase: unknown;
+
+  constructor(injectedSupabase?: unknown) {
+    this.injectedSupabase = injectedSupabase;
+  }
+
+  private supabase() {
+    return (this.injectedSupabase ?? createSupabaseServiceClient()) as ReturnType<typeof createSupabaseServiceClient>;
+  }
 
   /**
    * Records a deliverable or execution receipt into the Value Ledger.
@@ -45,7 +119,24 @@ export class ValueLedgerService {
       customerVisible: entry.customerVisible ?? true,
       createdAt: entry.createdAt ?? new Date().toISOString(),
     };
-    this.inMemoryStore.push(record);
+    const { error } = await this.supabase()
+      .from("value_ledger_entries")
+      .insert({
+        id: record.id,
+        tenant_id: record.tenantId,
+        cycle_month: record.cycleMonth,
+        plan_id: record.planId ?? null,
+        service_key: record.serviceKey,
+        mission_id: record.missionId ?? null,
+        deliverable_title: record.deliverableTitle,
+        deliverable_summary: record.deliverableSummary,
+        artifact_ref: record.artifactRef ?? null,
+        result_metric: record.resultMetric ?? null,
+        result_value: record.resultValue ?? null,
+        customer_visible: record.customerVisible,
+        created_at: record.createdAt,
+      });
+    if (error) throw new Error(`VALUE_LEDGER_RECORD_FAILED: ${error.message}`);
     return record;
   }
 
@@ -56,9 +147,14 @@ export class ValueLedgerService {
     tenantId: string,
     cycleMonth: string,
   ): Promise<ValueLedgerEntry[]> {
-    return this.inMemoryStore.filter(
-      (e) => e.tenantId === tenantId && e.cycleMonth === cycleMonth,
-    );
+    const { data, error } = await this.supabase()
+      .from("value_ledger_entries")
+      .select("*")
+      .eq("tenant_id", tenantId)
+      .eq("cycle_month", cycleMonth)
+      .order("created_at", { ascending: true });
+    if (error) throw new Error(`VALUE_LEDGER_LIST_FAILED: ${error.message}`);
+    return ((data ?? []) as ValueLedgerRow[]).map(rowToEntry);
   }
 
   /**

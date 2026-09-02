@@ -2,11 +2,52 @@ import assert from "node:assert/strict";
 import { MonthlyRenewalEngine } from "../monthly-cycle.ts";
 import { ValueLedgerService } from "../../reporting/value-ledger.ts";
 
+/**
+ * ValueLedgerService is now real, Postgres-backed (see value-ledger.ts's
+ * own header comment -- fixed from an in-memory Map during the final
+ * rescan, Update 60). This test stays isolated from any live database by
+ * injecting a minimal in-memory fake through the same constructor
+ * injection point the real service now supports, rather than relying on
+ * "no constructor args = isolated in-memory instance" the way it did
+ * before that fix.
+ */
+function createFakeLedgerSupabase() {
+  const rows: Array<Record<string, unknown>> = [];
+  return {
+    from(table: string) {
+      if (table !== "value_ledger_entries") throw new Error(`unexpected table: ${table}`);
+      return {
+        insert(row: Record<string, unknown>) {
+          rows.push(row);
+          return Promise.resolve({ error: null });
+        },
+        select(_columns: string) {
+          return {
+            eq(column: string, value: string) {
+              const afterFirst = rows.filter((r) => r[column] === value);
+              return {
+                eq(column2: string, value2: string) {
+                  const afterSecond = afterFirst.filter((r) => r[column2] === value2);
+                  return {
+                    order() {
+                      return Promise.resolve({ data: afterSecond, error: null });
+                    },
+                  };
+                },
+              };
+            },
+          };
+        },
+      };
+    },
+  };
+}
+
 async function testMonthlyAdaptiveRenewalSuite() {
   console.log("Testing Monthly Adaptive Renewal & Lifecycle (Cases 21, 22, 27, 28, 29, 30)...");
 
   const engine = new MonthlyRenewalEngine();
-  const ledger = new ValueLedgerService();
+  const ledger = new ValueLedgerService(createFakeLedgerSupabase());
 
   // Seed sample deliverable
   await ledger.recordDeliverable({

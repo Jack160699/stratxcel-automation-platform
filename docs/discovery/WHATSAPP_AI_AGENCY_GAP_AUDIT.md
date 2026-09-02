@@ -1,5 +1,66 @@
 # WhatsApp AI Agency — Gap Audit
 
+## Update 65 — the Value Ledger fixed from in-memory to real Postgres persistence, plus a real pre-existing test bug and two language/framework gotchas caught along the way
+
+Priority 3. Closed `capability:monthly_value_ledger_engine` (Update 60):
+[ValueLedgerService](../../lib/reporting/value-ledger.ts) is now backed by a
+real `value_ledger_entries` table instead of a private in-memory array.
+Every method was already declared `async` (the in-memory version just never
+awaited anything real), so no caller anywhere needed a signature change —
+only the internal implementation. Two new real agent tools bridge it:
+`record_service_deliverable` (`low_mutation`, staff records a real completed
+deliverable) and `get_monthly_value_report` (read, real aggregation).
+
+Three real things surfaced and got fixed in the same pass:
+
+1. **A real language-tooling constraint, not previously hit this session**:
+   a TypeScript constructor parameter-property shorthand
+   (`constructor(private x?: T) {}`) does not survive
+   `node --experimental-strip-types` — strip-only mode can erase type
+   annotations but not desugar JS-semantic shorthand. Fixed to an explicit
+   field + constructor body.
+2. **A real dependency-resolution trap**: the natural choice,
+   `lib/tenants/tenant-context.ts`'s `getTenantServiceContext`, carries
+   `import "server-only"` and a transitive `next/headers` import — it fails
+   to even load under plain `node`, confirmed live while building this fix.
+   Switched to `lib/supabase/service.ts`'s `createSupabaseServiceClient`
+   directly, whose own header comment already documents exactly this
+   tradeoff (deliberately no `server-only`, specifically so it stays
+   testable outside Next.js).
+3. **Three real, pre-existing tests** that directly constructed
+   `new ValueLedgerService()`
+   ([monthly-adaptive-renewal.test.ts](../../lib/billing/__tests__/monthly-adaptive-renewal.test.ts),
+   [whatsapp-copilot-flow.test.ts](../../packages/whatsapp/src/__tests__/whatsapp-copilot-flow.test.ts),
+   [autonomous-growth-e2e.test.ts](../../packages/workforce-core/src/__tests__/autonomous-growth-e2e.test.ts))
+   needed a constructor-injectable fake `supabase` to stay isolated from any
+   live database — added the same injection point
+   `MonthlyRenewalEngine.execute26thMonthlyReport`'s own `ledger?:` override
+   already used for the same reason.
+
+While re-running those three to verify, also found and fixed a **genuinely
+separate, pre-existing bug**, unrelated to this change: `autonomous-growth-e2e.test.ts`
+(a real 22-step E2E test, not wired into any npm script — which is exactly
+why nobody had hit this) hardcoded `cycleMonth: "2026-08"` for deliverables
+that the WhatsApp copilot's `ASK_TODAYS_WORK` handler reads back using the
+**real current wall-clock month**. A date-hardcoded fragility that would
+fail every month after August 2026 regardless of any code change — caught
+purely because this pass actually re-ran the test in September. Fixed by
+computing the current month once and using it consistently everywhere the
+WhatsApp check depends on it.
+
+Deliberately still out of scope, stated plainly: `MonthlyRenewalEngine`'s
+own `generatedRecapCache` (an in-memory Map composing this service with
+plan-proposal generation into a fuller renewal-recap package) remains
+unwired — a distinct, larger piece of work than closing the core ledger.
+
+Verified: full-repo `tsc --noEmit` clean, lint clean, `test:agent-core-lib`
+(zero regressions), all three previously-broken/newly-fixed test files
+re-run directly and passing (including the full 22-step E2E journey), real
+`NODE_ENV=production next build` (exit 0), a live transactional dry-run
+insert/rollback against the real `value_ledger_entries` schema. Migrations:
+`supabase/migrations/20260902580000_value_ledger_entries.sql`,
+`supabase/migrations/20260902590000_capability_registry_value_ledger_closed.sql`.
+
 ## Update 64 — real deployment rollback ships: promotes a real, already-verified prior Vercel deployment back to production
 
 Priority 3/5. `check_deployment_status` (Update 54) was explicit: "read-only,

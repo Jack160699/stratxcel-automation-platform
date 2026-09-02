@@ -7,6 +7,40 @@ import { handleWhatsAppCopilotMessage, type CopilotContext } from "../../../what
 import { MonthlyRenewalEngine } from "../../../../lib/billing/monthly-cycle.ts";
 import { getAgentDefinition } from "../../../hermes/src/registry/agent-registry.ts";
 
+/**
+ * ValueLedgerService is now real, Postgres-backed (value-ledger.ts's own
+ * header comment -- fixed from an in-memory Map, Update 60). Stays
+ * isolated from any live database via the same constructor injection
+ * point the real service supports.
+ */
+function createFakeLedgerSupabase() {
+  const rows: Array<Record<string, unknown>> = [];
+  return {
+    from(table: string) {
+      if (table !== "value_ledger_entries") throw new Error(`unexpected table: ${table}`);
+      return {
+        insert(row: Record<string, unknown>) {
+          rows.push(row);
+          return Promise.resolve({ error: null });
+        },
+        select(_columns: string) {
+          return {
+            eq(column: string, value: string) {
+              const afterFirst = rows.filter((r) => r[column] === value);
+              return {
+                eq(column2: string, value2: string) {
+                  const afterSecond = afterFirst.filter((r) => r[column2] === value2);
+                  return { order() { return Promise.resolve({ data: afterSecond, error: null }); } };
+                },
+              };
+            },
+          };
+        },
+      };
+    },
+  };
+}
+
 async function testAutonomousGrowthOperatingSystemE2E() {
   console.log("================================================================================");
   console.log("STARTING STRATXCEL AUTONOMOUS GROWTH OS MASTER E2E INTEGRATION JOURNEY");
@@ -128,12 +162,23 @@ async function testAutonomousGrowthOperatingSystemE2E() {
   assert.ok(orchestratorDef);
   assert.equal(orchestratorDef.category, "CORE");
 
-  const ledger = new ValueLedgerService();
+  const ledger = new ValueLedgerService(createFakeLedgerSupabase());
+  // handleWhatsAppCopilotMessage's ASK_TODAYS_WORK handler always reads
+  // real wall-clock "today" (new Date().toISOString().slice(0, 7)), never
+  // a caller-supplied cycleMonth -- so these two deliverables, which the
+  // WhatsApp check below reads back, must be recorded under whatever month
+  // the test is actually running in, not a fixed "2026-08" (a real,
+  // pre-existing, date-hardcoded fragility found while re-verifying this
+  // test after the ValueLedgerService persistence fix -- unrelated to that
+  // fix itself, but caught in the same pass). Every other cycleMonth in
+  // this file (plan/entitlement snapshots, the 26th-report simulation) is
+  // an explicit, caller-controlled input and correctly stays "2026-08".
+  const currentMonthForCopilot = new Date().toISOString().slice(0, 7);
 
   // Execute Task 1: Google Business Profile Optimization
   await ledger.recordDeliverable({
     tenantId,
-    cycleMonth: "2026-08",
+    cycleMonth: currentMonthForCopilot,
     serviceKey: "google_business_optimization",
     deliverableTitle: "Google Business Category & Catalog Sync",
     deliverableSummary: "Updated primary retail categories and synced 24 weekly household essential products.",
@@ -144,7 +189,7 @@ async function testAutonomousGrowthOperatingSystemE2E() {
   // Execute Task 2: Review Management Campaign
   await ledger.recordDeliverable({
     tenantId,
-    cycleMonth: "2026-08",
+    cycleMonth: currentMonthForCopilot,
     serviceKey: "review_management",
     deliverableTitle: "WhatsApp Review Collection Campaign",
     deliverableSummary: "Dispatched automated post-purchase review invites to recent customers.",
@@ -187,7 +232,7 @@ async function testAutonomousGrowthOperatingSystemE2E() {
     industry: brandBrainContent.industry,
     operatingLocations: brandBrainContent.locations,
     currentPlanMrpRupees: activePlanSnapshot.monthlyPriceRupees,
-    cycleMonth: "2026-08",
+    cycleMonth: currentMonthForCopilot,
     ledger,
   });
 
@@ -202,7 +247,7 @@ async function testAutonomousGrowthOperatingSystemE2E() {
     industry: brandBrainContent.industry,
     operatingLocations: brandBrainContent.locations,
     currentPlanMrpRupees: activePlanSnapshot.monthlyPriceRupees,
-    cycleMonth: "2026-08",
+    cycleMonth: currentMonthForCopilot,
     ledger,
   });
   assert.equal(monthlyRecap.generatedAt, recapDuplicate.generatedAt);

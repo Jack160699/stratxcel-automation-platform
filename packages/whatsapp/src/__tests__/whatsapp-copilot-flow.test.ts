@@ -2,10 +2,44 @@ import assert from "node:assert/strict";
 import { handleWhatsAppCopilotMessage, type CopilotContext } from "../copilot/copilot-agent.ts";
 import { ValueLedgerService } from "../../../../lib/reporting/value-ledger.ts";
 
+/**
+ * ValueLedgerService is now real, Postgres-backed (value-ledger.ts's own
+ * header comment -- fixed from an in-memory Map, Update 60). Stays
+ * isolated from any live database via the same constructor injection
+ * point the real service supports.
+ */
+function createFakeLedgerSupabase() {
+  const rows: Array<Record<string, unknown>> = [];
+  return {
+    from(table: string) {
+      if (table !== "value_ledger_entries") throw new Error(`unexpected table: ${table}`);
+      return {
+        insert(row: Record<string, unknown>) {
+          rows.push(row);
+          return Promise.resolve({ error: null });
+        },
+        select(_columns: string) {
+          return {
+            eq(column: string, value: string) {
+              const afterFirst = rows.filter((r) => r[column] === value);
+              return {
+                eq(column2: string, value2: string) {
+                  const afterSecond = afterFirst.filter((r) => r[column2] === value2);
+                  return { order() { return Promise.resolve({ data: afterSecond, error: null }); } };
+                },
+              };
+            },
+          };
+        },
+      };
+    },
+  };
+}
+
 async function testWhatsAppCopilotSuite() {
   console.log("Testing WhatsApp Customer Copilot Flow (Cases 25-26)...");
 
-  const ledger = new ValueLedgerService();
+  const ledger = new ValueLedgerService(createFakeLedgerSupabase());
   const currentMonth = new Date().toISOString().slice(0, 7);
 
   // Seed sample deliverable in Value Ledger
