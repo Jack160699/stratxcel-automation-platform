@@ -14,6 +14,20 @@ never queried it. Fixed to call the real repository function and map its real st
 disabled display the other three rows already use. Verified: full-repo `tsc --noEmit`
 clean, lint clean, real `NODE_ENV=production next build` (exit 0).
 
+## Update 54 — check_deployment_status: real Vercel deployment history exposed, another real-but-unwired function found
+
+Master brief section 7 (Website/Vercel: deployment status). Re-auditing
+`engine:website_vercel_orchestration` (still `REAL_NOT_EXPOSED`) turned up
+`listVercelDeployments` (`packages/search-discovery/src/vercel/client.ts`) — a real,
+already-implemented function (real Vercel `/v7/deployments` call, real
+`readyState`/`url`/`createdAt`) with zero real callers anywhere. Wired as
+`check_deployment_status` (`lib/agent-core/growth-media-tools.ts`), reusing the exact
+same `VERCEL_AUTH_TOKEN`/`VERCEL_PROJECT_ID` already proven live by `check_domain_status`.
+Read-only — never triggers, cancels, or rolls back anything.
+
+Verified: full-repo `tsc --noEmit` clean, lint clean, real `NODE_ENV=production next
+build` (exit 0).
+
 ## Update 53 — analyze_website's cost-optimization gap fixed: a real Postgres-backed cache, not an in-memory one
 
 Master brief section 27, closing the `capability:analyze_website_no_cache` finding from

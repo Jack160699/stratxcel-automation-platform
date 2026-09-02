@@ -33,6 +33,12 @@
  *   defaults execute_growth_action's Vercel CMS provider already uses).
  *   Answers "domain operations where legitimately supported" without
  *   touching the creation/editing/deployment mutation surface at all.
+ * - check_deployment_status: real recent Vercel deployment history
+ *   (readyState/URL/timestamps) for the platform's own project, via
+ *   listVercelDeployments (packages/search-discovery/src/vercel/client.ts)
+ *   -- a real, already-tested function with zero real callers before this
+ *   (found 2026-09-02). Same VERCEL_AUTH_TOKEN check_domain_status already
+ *   uses. Read-only, no deployment trigger of any kind.
  * - run_growth_analysis: packages/search-discovery's runSearchAnalysis,
  *   UNMODIFIED -- triggers a REAL fresh SEO/AEO/GEO crawl+analysis, not
  *   just a read of what check_growth_status already has stored. Mirrors
@@ -72,7 +78,7 @@
  *   Operates only on an action a human already asked to see via
  *   check_growth_status -- never invents a mutation from free text.
  */
-import { listSearchState, executeSearchAction, createFixtureWordPressProvider, createStratxcelNativeCMSProvider, createVercelCMSProvider, resolveVercelWriteCapability, runSearchAnalysis, resolveGoogleProviderStates, stableFingerprint, CRAWL_LIMITS, normalizeWebsiteInput, type RuntimePlan, type ProviderConnection } from "@stratxcel/search-discovery";
+import { listSearchState, executeSearchAction, createFixtureWordPressProvider, createStratxcelNativeCMSProvider, createVercelCMSProvider, resolveVercelWriteCapability, runSearchAnalysis, resolveGoogleProviderStates, stableFingerprint, CRAWL_LIMITS, normalizeWebsiteInput, listVercelDeployments, type RuntimePlan, type ProviderConnection } from "@stratxcel/search-discovery";
 import { loadIntegrationsStatusData } from "../connectors/load-integrations-data";
 import { executeGenerateImageTool } from "../social/agent/generate-image-tool";
 import type { AgentTenantContext } from "../social/agent-tenant-types";
@@ -265,6 +271,35 @@ export const GROWTH_MEDIA_TOOLS: AgentTool[] = [
         getVercelDomainStatus(domain).catch((err: unknown) => ({ error: err instanceof Error ? err.message : "vercel_status_failed" })),
       ]);
       return { domain, dns, vercel };
+    },
+  },
+  {
+    schema: {
+      name: "check_deployment_status",
+      description: "Real recent Vercel deployment history for the Stratxcel platform's own project -- deployment id, URL, real readyState (READY/ERROR/BUILDING/QUEUED/CANCELED), and when each was created. Uses the exact same real listVercelDeployments API call and VERCEL_AUTH_TOKEN this codebase already uses for domain verification (check_domain_status). Use for 'is the site deployed', 'did the last deploy succeed', 'check deployment status', 'is production healthy'. Read-only -- never triggers a deployment.",
+      parameters: {
+        type: "object",
+        properties: { limit: { type: "number", description: "How many recent deployments to return. Defaults to 5, capped at 20." } },
+      },
+    },
+    mutating: false,
+    risk: "read",
+    requiredPermission: "agent:read:website",
+    async execute(_ctx, args) {
+      const token = process.env.VERCEL_AUTH_TOKEN;
+      if (!token) return { available: false, reason: "VERCEL_AUTH_TOKEN is not configured" };
+      const limit = typeof args.limit === "number" ? Math.min(Math.max(args.limit, 1), 20) : 5;
+      const projectId = process.env.VERCEL_PROJECT_ID || "prj_81j5A5rArsPVVNspwSPGGfuhg9NZ";
+      try {
+        const deployments = await listVercelDeployments(token, { projectId, limit });
+        return {
+          available: true,
+          projectId,
+          deployments: deployments.map((d) => ({ ...d, createdAtIso: new Date(d.createdAt).toISOString() })),
+        };
+      } catch (err) {
+        return { available: false, reason: err instanceof Error ? err.message : "deployment_lookup_failed" };
+      }
     },
   },
   {
