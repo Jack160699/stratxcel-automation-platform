@@ -19,9 +19,9 @@ export class VercelApiError extends Error {
   }
 }
 
-async function vercelFetch(token: string, path: string, fetcher: typeof fetch = fetch): Promise<Response> {
+async function vercelFetch(token: string, path: string, fetcher: typeof fetch = fetch, method: "GET" | "POST" = "GET"): Promise<Response> {
   const response = await fetcher(`${VERCEL_API_BASE}${path}`, {
-    method: "GET",
+    method,
     headers: {
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
@@ -301,4 +301,24 @@ export async function listVercelDeployments(token: string, opts: { projectId: st
   }
   const body = (await response.json()) as { deployments: Array<{ uid: string; url: string; readyState: string; createdAt: number }> };
   return (body.deployments ?? []).map((d) => ({ id: d.uid, url: d.url, readyState: d.readyState, createdAt: d.createdAt }));
+}
+
+/**
+ * Verified: POST /v10/projects/{projectId}/promote/{deploymentId}, bearer
+ * auth (vercel.com/docs/rest-api/projects/point-production-traffic-to-a-given-deployment,
+ * fetched live 2026-09-02, not recalled from training data). "This does NOT
+ * rebuild the deployment" -- points production traffic at an existing,
+ * already-built deployment. Real success is 201/202 with no response body
+ * (per the same doc) -- this function does not attempt to parse one.
+ * Callers must independently confirm deploymentId belongs to a real,
+ * READY deployment for this exact project before calling this (see
+ * rollback-deployment-tool.ts) -- this function trusts its caller, the same
+ * way listVercelDeployments trusts a caller not to invent a projectId.
+ */
+export async function promoteVercelDeployment(token: string, opts: { projectId: string; deploymentId: string; teamId?: string; fetcher?: typeof fetch }): Promise<void> {
+  const query = opts.teamId ? `?teamId=${encodeURIComponent(opts.teamId)}` : "";
+  const response = await vercelFetch(token, `/v10/projects/${encodeURIComponent(opts.projectId)}/promote/${encodeURIComponent(opts.deploymentId)}${query}`, opts.fetcher, "POST");
+  if (!response.ok) {
+    throw new VercelApiError(`Failed to promote Vercel deployment ${opts.deploymentId} for project ${opts.projectId}: HTTP ${response.status}`, response.status);
+  }
 }

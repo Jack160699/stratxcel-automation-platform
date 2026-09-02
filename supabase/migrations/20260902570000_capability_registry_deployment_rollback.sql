@@ -1,0 +1,11 @@
+-- Records rollback_deployment, the real Vercel promote-deployment mutation
+-- closing engine:website_vercel_orchestration's remaining "no deployment
+-- trigger of any kind" gap from Update 54. Applied live via Supabase MCP
+-- on 2026-09-02; this file makes it reproducible from a fresh database.
+
+update public.capability_registry
+set status = 'REAL_EXPOSED',
+    status_notes = status_notes || ' CLOSED 2026-09-02 (remaining capability bridges pass): rollback_deployment (lib/agent-core/rollback-deployment-tool.ts) ships the real mutation half -- promoteVercelDeployment (packages/search-discovery/src/vercel/client.ts), a real function against Vercel''s documented POST /v10/projects/{projectId}/promote/{deploymentId} endpoint (fetched live 2026-09-02, not recalled), which points production traffic at an existing deployment without rebuilding it. Real safety check, not just a promise: the tool refuses to promote any deploymentId not found, with readyState==="READY", in the platform''s own real recent deployment history (listVercelDeployments -- the same function check_deployment_status already uses) -- never trusts an arbitrary supplied id. risk: external_mutation, confirm-gated, same classification as commit_growth_plan/revise_growth_plan. Verification note, stated honestly: unlike every other real external call this session verified live, this one was never exercised against the real Vercel API -- a DB write can be wrapped in BEGIN/ROLLBACK, a real production traffic promotion cannot be "tested" that way without it BEING the change. Verified instead with a mocked-fetcher test suite (4 assertions, vercel-promote-deployment.test.ts) asserting the exact real request shape, matching this codebase''s own established pattern for every other Vercel client function (vercel-connector.test.ts). Deploy TRIGGER (creating a brand-new build from source) remains out of scope -- this closes rollback/promote specifically, the piece explicitly named in check_deployment_status''s own Update 54 note ("no deployment trigger of any kind").',
+    external_blocker = null,
+    last_verified_at = now(), last_verified_by = 'claude_session_2026-09-02'
+where capability_key = 'engine:website_vercel_orchestration';

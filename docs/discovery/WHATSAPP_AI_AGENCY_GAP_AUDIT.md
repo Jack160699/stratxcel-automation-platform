@@ -1,5 +1,44 @@
 # WhatsApp AI Agency — Gap Audit
 
+## Update 64 — real deployment rollback ships: promotes a real, already-verified prior Vercel deployment back to production
+
+Priority 3/5. `check_deployment_status` (Update 54) was explicit: "read-only,
+no deployment trigger of any kind." Closed the mutation half:
+`rollback_deployment` ([lib/agent-core/rollback-deployment-tool.ts](../../lib/agent-core/rollback-deployment-tool.ts))
+calls a new, real `promoteVercelDeployment`
+([packages/search-discovery/src/vercel/client.ts](../../packages/search-discovery/src/vercel/client.ts)),
+verified against Vercel's real, documented endpoint (`POST
+/v10/projects/{projectId}/promote/{deploymentId}` — fetched live this pass,
+not recalled from training data) — points production traffic at an
+existing, already-built deployment without rebuilding anything.
+
+A real safety check, not a comment promising one: the tool refuses to
+promote any `deploymentId` that isn't found, with `readyState === "READY"`,
+in the platform's own real recent deployment history (`listVercelDeployments`
+— the same function `check_deployment_status` already calls) — it never
+trusts an arbitrary model- or user-supplied id. `risk: external_mutation`,
+confirm-gated, the same classification as `commit_growth_plan`/
+`revise_growth_plan`.
+
+**Verification note, stated plainly rather than glossed over**: unlike
+every other real external call verified this session, this one was **never
+exercised against the live Vercel API**, not even once. A DB write can be
+wrapped in `BEGIN`/`ROLLBACK`; a real production-traffic promotion cannot be
+"dry-run" that way — calling it for real *is* the change, with no undo. So
+this was verified the way every other Vercel client function already is
+([vercel-connector.test.ts](../../packages/search-discovery/src/__tests__/vercel-connector.test.ts)):
+a mocked-fetcher test suite (4 assertions in
+[vercel-promote-deployment.test.ts](../../packages/search-discovery/src/__tests__/vercel-promote-deployment.test.ts))
+asserting the exact real request shape — method, URL, headers, teamId
+query param — and that a non-ok response (404, 409) throws rather than
+silently succeeding. Deploy *triggering* (a brand-new build from source)
+stays out of scope; this closes rollback/promote specifically.
+
+Verified: full-repo `tsc --noEmit` clean, lint clean,
+`test:agent-core-lib` (4 new mocked-fetch assertions, zero regressions),
+real `NODE_ENV=production next build` (exit 0). Migration:
+`supabase/migrations/20260902570000_capability_registry_deployment_rollback.sql`.
+
 ## Update 63 — the Learning loop closed for real: real measured outcomes from GA4/Search Console, and a confirm-gated, evidence-required plan revision
 
 Priority 6. `engine:learning_loop`'s precise remaining blocker (Update 56):
