@@ -1,5 +1,43 @@
 # WhatsApp AI Agency — Gap Audit
 
+## Update 59 — Agent Factory investigated directly, honestly recorded `NOT_BUILT`: no dynamic runtime agent composition exists anywhere in this codebase
+
+The FINAL MASTER CONVERGENCE brief calls for an "Agent Factory" (dynamic
+runtime agent composition/creation with governed permissions/skills/
+connections), with its own explicit instruction: "do not fake agent creation
+if the architecture cannot actually instantiate it." Investigated directly,
+not assumed. The only real "agent-shaped" registries in this codebase —
+`packages/workforce-core`'s departments/roles/capabilities registries
+(Update 17) — are 100% compile-time, source-code-defined data
+(`DEPARTMENT_REGISTRY`/`ROLE_REGISTRY`/`capabilities/registry.ts`, all
+`Object.fromEntries` over a literal array; `DepartmentKey`/`CapabilityKey`
+are TypeScript literal unions, not database-backed). The single, canonical
+agent runtime (`packages/agent-core`'s `runAgentTurn`) resolves its tool set
+from a hardcoded array literal
+([lib/agent-core/copilot-actions.ts](../../lib/agent-core/copilot-actions.ts)'s
+`extraTools: [...]`), assembled identically on every request — there is no
+per-row, per-tenant, or per-principal dynamic tool/skill/connection
+resolution anywhere, and no persisted "agent definition" concept at all: no
+table, no CRUD, no `create_agent` tool.
+
+A real Agent Factory needs four pieces, none of which exist even as a stub:
+(1) a persisted agent-definition record (name, department, allowed skill/
+tool keys, connection scope, permission profile, `created_by`); (2) a
+dynamic tool-resolver building a real, permission-checked `AgentTool[]`
+subset per agent-definition row at request time, replacing today's fixed
+array; (3) a creation flow enforcing a new agent's requested permissions are
+always a subset of the creating principal's own (never privilege
+escalation); (4) a real dispatch surface for actually reaching a
+dynamically-created agent. Building even a minimal, honestly-real version is
+a multi-file, multi-week-scale architecture change — not a safe same-session
+increment like everything else shipped this pass — and a stub version (a
+table with no real dynamic dispatch behind it) would itself be exactly the
+fabrication the brief warned against. Recorded `NOT_BUILT` with the full
+architectural reasoning above, per the user's own confirmed instruction not
+to fabricate completion on things that cannot be done safely in-session.
+Migration: `supabase/migrations/20260902500000_capability_registry_agent_factory_finding.sql`.
+No application code changed — investigation and registry entry only.
+
 ## Update 58 — get_paid_audit_report_link ships; tracing `engine:audit_engine` end to end found a real live cron/queue pipeline, a genuinely unbuilt free-audit automation gap, and a platform-wide Vercel Hobby-plan cron ceiling
 
 Closed the two items Update 57 explicitly left open rather than reconciled.
