@@ -62,7 +62,17 @@ function run() {
   }
   assert.ok(betaHrefs.has("/admin/operating-brain"));
   assert.ok(betaHrefs.has("/admin/hermes"));
-  assert.ok(betaAdmin.some((g) => g.label === "Beta"));
+  // Admin Sections 15-18 (Normal/Technical split): V2 items are now grouped
+  // by real subject (Brain, Missions) rather than a single generic "Beta"
+  // bucket -- the visual "Beta" badge itself comes from admin-navigation.tsx's
+  // withIcons() (release === "v2" -> badge: "Beta"), applied per-item at
+  // render time regardless of which group it's organized under. The
+  // structural invariant that still matters here is that every V2 href
+  // lives in a real, named group, never an empty or unlabeled one.
+  for (const href of ["/admin/operating-brain", "/admin/hermes"]) {
+    const group = betaAdmin.find((g) => g.items.some((i) => i.href === href));
+    assert.ok(group?.label, `${href} must be organized under a real, named admin nav group`);
+  }
 
   // --- Public sitemap is V1 only ------------------------------------------
   assert.equal(CANONICAL_ORIGIN, "https://www.stratxcel.in");

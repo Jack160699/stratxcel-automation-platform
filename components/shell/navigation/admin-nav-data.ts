@@ -15,55 +15,96 @@ import type { NavGroupData } from "./nav-types";
  *
  * V2 / experimental surfaces declare release: "v2" and are only revealed
  * when an authorized owner-admin has Beta Mode ON (server cookie).
+ *
+ * Every item also declares `mode` ("normal" | "technical", default
+ * "normal") — the master build brief's Normal Admin / Technical Admin
+ * split (sections 15-18). This is an orthogonal axis from `release`:
+ * maturity (Stable/Beta) vs audience (day-to-day agency ops vs engineering/
+ * system tools). No new routes were invented to fill every named Technical
+ * Admin slot in the brief (Agents/Skills/Jobs/Queues/Workers/APIs/
+ * Deployments/Recovery have no dedicated real page yet) — each real
+ * existing page is placed under whichever real slot it actually is; a
+ * named slot with no real page is honestly absent rather than backed by an
+ * empty placeholder page. See docs/discovery/WHATSAPP_AI_AGENCY_GAP_AUDIT.md
+ * for the full mapping decision and what remains unmapped.
  */
 export const ADMIN_NAV_GROUPS_DATA: NavGroupData[] = [
   {
-    label: "Overview",
+    label: "Home",
     items: [
-      { key: "overview", label: "Agency Overview", href: "/admin", release: "v1" },
-      { key: "admin-copilot", label: "Admin Copilot", href: "/admin/copilot", release: "v1" },
+      { key: "overview", label: "Home", href: "/admin", release: "v1", mode: "normal" },
+      { key: "admin-copilot", label: "Admin Copilot", href: "/admin/copilot", release: "v1", mode: "normal" },
     ],
   },
   {
     label: "Clients",
-    items: [
-      { key: "clients", label: "Clients", href: "/admin/clients", release: "v1" },
-      { key: "leads", label: "Leads / CRM", href: "/admin/leads", release: "v1" },
-    ],
-  },
-  {
-    label: "Operations",
-    items: [
-      { key: "missions", label: "All Missions", href: "/admin/missions", release: "v1" },
-      { key: "approvals", label: "Approvals", href: "/admin/approvals", release: "v1" },
-      { key: "handoffs", label: "Human Handoffs", href: "/admin/handoffs", release: "v1" },
-      { key: "operations", label: "Operations Queue", href: "/admin/operations", release: "v1" },
-      { key: "audit-delivery", label: "Audit Delivery", href: "/admin/audit-requests", release: "v1" },
-    ],
+    items: [{ key: "clients", label: "Clients", href: "/admin/clients", release: "v1", mode: "normal" }],
   },
   {
     label: "Growth",
-    items: [{ key: "social", label: "Social Autopilot", href: "/admin/social", release: "v1" }],
+    items: [{ key: "social", label: "Social Autopilot", href: "/admin/social", release: "v1", mode: "normal" }],
   },
   {
-    label: "Platform",
+    label: "Sales",
     items: [
-      { key: "finance", label: "Finance", href: "/admin/finance", release: "v1" },
-      { key: "go-free-codes", label: "Go Free Codes", href: "/admin/go-free-codes", release: "v1" },
-      { key: "team", label: "Team", href: "/admin/team", release: "v1" },
-      { key: "integrations", label: "Integrations", href: "/admin/integrations", release: "v1" },
-      { key: "system", label: "System Health", href: "/admin/system", release: "v1" },
-      { key: "audit", label: "Audit Log", href: "/admin/audit", release: "v1" },
+      { key: "leads", label: "Leads / CRM", href: "/admin/leads", release: "v1", mode: "normal" },
+      { key: "go-free-codes", label: "Go Free Codes", href: "/admin/go-free-codes", release: "v1", mode: "normal" },
     ],
   },
   {
-    label: "Beta",
+    label: "Finance",
+    items: [{ key: "finance", label: "Finance", href: "/admin/finance", release: "v1", mode: "normal" }],
+  },
+  {
+    label: "Tasks",
     items: [
-      { key: "operating-brain", label: "My Operating Brain", href: "/admin/operating-brain", release: "v2" },
-      { key: "hermes", label: "Hermes Mission Control", href: "/admin/hermes", release: "v2" },
-      { key: "capabilities", label: "Capability Registry", href: "/admin/capabilities", release: "v2" },
+      { key: "approvals", label: "Approvals", href: "/admin/approvals", release: "v1", mode: "normal" },
+      { key: "handoffs", label: "Human Handoffs", href: "/admin/handoffs", release: "v1", mode: "normal" },
+      { key: "audit-delivery", label: "Audit Delivery", href: "/admin/audit-requests", release: "v1", mode: "normal" },
+    ],
+  },
+  {
+    label: "Settings",
+    items: [{ key: "team", label: "Team", href: "/admin/team", release: "v1", mode: "normal" }],
+  },
+  // --- Technical Admin (master build brief section 16) ------------------
+  {
+    label: "Brain",
+    items: [
+      { key: "operating-brain", label: "My Operating Brain", href: "/admin/operating-brain", release: "v2", mode: "technical" },
+      { key: "capabilities", label: "Capability Registry", href: "/admin/capabilities", release: "v2", mode: "technical" },
+    ],
+  },
+  {
+    label: "Missions",
+    items: [
+      { key: "missions", label: "All Missions", href: "/admin/missions", release: "v1", mode: "technical" },
+      { key: "hermes", label: "Hermes Mission Control", href: "/admin/hermes", release: "v2", mode: "technical" },
+    ],
+  },
+  {
+    label: "Connections",
+    items: [{ key: "integrations", label: "Integrations", href: "/admin/integrations", release: "v1", mode: "technical" }],
+  },
+  {
+    label: "Jobs & Queues",
+    items: [
+      // No dedicated Jobs/Queues/Workers page exists yet -- Operations Queue
+      // is the closest real, live surface covering this territory. Not
+      // renamed further to avoid overclaiming coverage it doesn't have.
+      { key: "operations", label: "Operations Queue", href: "/admin/operations", release: "v1", mode: "technical" },
+    ],
+  },
+  {
+    label: "System",
+    items: [
+      { key: "system", label: "System Health", href: "/admin/system", release: "v1", mode: "technical" },
+      { key: "audit", label: "Audit Log", href: "/admin/audit", release: "v1", mode: "technical" },
     ],
   },
 ];
 
-export const ADMIN_MOBILE_NAV_KEYS = ["overview", "missions", "approvals", "clients"];
+// "missions" moved to Technical mode (master brief section 16) and no
+// longer appears in the default Normal-mode mobile nav; swapped for
+// "leads" (Sales/CRM) to keep 4 high-value Normal-mode quick-access items.
+export const ADMIN_MOBILE_NAV_KEYS = ["overview", "leads", "approvals", "clients"];

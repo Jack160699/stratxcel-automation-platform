@@ -9,6 +9,8 @@ import {
   resolveAdminActiveKey,
 } from "@/components/shell/navigation/admin-navigation";
 import { AdminBetaModeToggle } from "@/components/shell/AdminBetaModeToggle";
+import { AdminViewModeToggle } from "@/components/shell/AdminViewModeToggle";
+import type { AdminViewMode } from "@/lib/release/admin-view-mode-filter";
 import { ClientSwitcher } from "./ClientSwitcher";
 import { ContextSwitcher } from "@/components/shell/ContextSwitcher";
 import { ThemeToggle } from "@/components/theme/ThemeProvider";
@@ -25,16 +27,18 @@ import { ThemeToggle } from "@/components/theme/ThemeProvider";
 export function AppShell({
   email,
   betaEnabled,
+  viewMode,
   children,
 }: {
   email: string;
   betaEnabled: boolean;
+  viewMode: AdminViewMode;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
-  const sidebarGroups = getAdminSidebarGroups(betaEnabled);
-  const mobileNavItems = getAdminMobileNav(betaEnabled);
-  const activeKey = resolveAdminActiveKey(pathname, betaEnabled);
+  const sidebarGroups = getAdminSidebarGroups(betaEnabled, viewMode);
+  const mobileNavItems = getAdminMobileNav(betaEnabled, viewMode);
+  const activeKey = resolveAdminActiveKey(pathname, betaEnabled, viewMode);
 
   return (
     <CoreAppShell
@@ -47,7 +51,12 @@ export function AppShell({
         items: g.items.map((i) => ({ key: i.key, label: i.label, href: i.href, icon: i.icon })),
       }))}
       topBarContext={<ClientSwitcher />}
-      staffBadge={<AdminBetaModeToggle enabled={betaEnabled} />}
+      staffBadge={
+        <div className="flex items-center gap-2">
+          <AdminViewModeToggle technical={viewMode === "technical"} />
+          <AdminBetaModeToggle enabled={betaEnabled} />
+        </div>
+      }
       userMenu={
         <div className="flex items-center gap-2.5">
           <ContextSwitcher currentContext="admin" compact />

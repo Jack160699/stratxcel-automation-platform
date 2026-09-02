@@ -1,5 +1,63 @@
 # WhatsApp AI Agency — Gap Audit
 
+## Update 41 — the Admin IA rebuild begins: real Normal Admin / Technical Admin mode split, one dead legacy route removed
+
+The master brief's largest remaining body of work (sections 15-20: rebuild the Admin IA,
+split Normal/Technical, then a Premium UI pass). Started with real reconnaissance rather
+than assuming the brief's "machinery-heavy" description applied literally: the current
+`/admin` nav (`admin-nav-data.ts`) turned out to be visually clean, but it does mix
+technical/system destinations (System Health, Audit Log, Hermes Mission Control,
+Capability Registry) into the same flat sidebar as business destinations (Clients,
+Finance, Team) — confirming the brief's real complaint structurally.
+
+**First, a genuine cleanup find**: `app/admin/platform/layout.tsx` (outside the `(shell)`
+route group) defined its own auth gate and an 8-item nav bar — but none of those routes,
+nor the segment itself, had a `page.tsx` anywhere in that subtree. The real, live pages
+already exist at `app/admin/(shell)/platform/*` (route groups are elided from the URL, so
+they serve the identical public paths) — two existing tests explicitly document this as a
+completed "Phase 1" migration. Deleted the orphaned file; both relevant tests still pass,
+real production build still resolves all 8 `/admin/platform/*` routes correctly from the
+`(shell)` group alone.
+
+**Then the real mode split.** Every `/admin` nav item now declares an explicit
+`mode: "normal" | "technical"` (default `"normal"`) alongside its existing `release`
+(`"v1"|"v2"`) — two genuinely orthogonal axes: audience vs maturity, deliberately not
+conflated (a Stable, mature tool like System Health can still be Technical-audience; a
+Beta tool isn't automatically Technical either). New `lib/release/admin-view-mode-filter.ts`
+(pure `filterNavGroupsByMode`, mirroring the existing release filter's exact shape),
+`admin-view-mode-pure.ts` + `admin-view-mode.ts` (a server-owned httpOnly cookie, mirroring
+`release-mode.ts` exactly), `app/api/admin/view-mode/route.ts` (owner-admin-only,
+audit-logged, mirroring `release-mode/route.ts` exactly), and `AdminViewModeToggle.tsx` (a
+second switch in the admin top bar next to the existing Stable/Beta toggle).
+
+`admin-nav-data.ts` fully recategorized using only real, pre-existing pages — nothing
+invented: **Normal** = Home, Admin Copilot, Clients, Social Autopilot (Growth), Leads/CRM +
+Go Free Codes (Sales), Finance, Approvals + Human Handoffs + Audit Delivery (Tasks), Team
+(Settings). **Technical** = My Operating Brain + Capability Registry (Brain), All Missions +
+Hermes Mission Control (Missions), Integrations (Connections), Operations Queue (Jobs &
+Queues — the closest real surface; no dedicated Jobs/Queues/Workers page exists yet),
+System Health + Audit Log (System). No functionality removed — every one of the 19 real
+pre-existing nav items still resolves in exactly one mode, asserted by a real test. No
+empty placeholder pages were invented for brief-named slots with no real page
+(Agents/Skills/Workers/APIs/Deployments/Recovery) — honestly absent, not faked.
+
+Caught and fixed a real, pre-existing gap along the way: `v1-stable-beta-architecture.test.ts`
+was never wired into any npm script — added `test:admin-view-mode` for it and the new
+`admin-view-mode-architecture.test.ts`. Also had to correct one of that test's own
+assertions (`betaAdmin.some(g => g.label === "Beta")`), which checked a literal "Beta"
+group label the redesign intentionally replaced with real subject-based grouping (Brain,
+Missions) — updated the assertion to check the invariant that actually still matters
+(every V2 item lives under a real, named group), not the specific label.
+
+Verified: new `admin-view-mode-architecture.test.ts`, the corrected
+`v1-stable-beta-architecture.test.ts`, the full `test:unified-shell-crm` and
+`test:hermes-mission-control` suites (all pass unchanged), full-repo `tsc --noEmit` clean,
+lint clean, real `NODE_ENV=production next build` (exit 0).
+
+**Still open, tracked separately**: the Premium UI visual pass (shadcn/Radix/Lucide/Tremor,
+sections 19-20), the rebuilt Admin Home content (section 17), and live UI verification by
+actually opening the deployed page (section 28).
+
 ## Update 40 addendum — section-6 capability audit finding: `packages/providers` is real, substantial, and has zero callers
 
 Continuing the master brief's section-6 instruction to audit every real package. Checked

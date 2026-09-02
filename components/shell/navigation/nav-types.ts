@@ -24,6 +24,16 @@ export interface NavItemData {
    * shell (StratXcel App Design Spec §4.1) — /admin ignores this field.
    */
   labelHi?: string;
+  /**
+   * Normal/Technical admin split (master build brief, Admin sections
+   * 15-18) — orthogonal to `release` (Stable/Beta is about maturity;
+   * normal/technical is about audience). Absent = "normal", so every
+   * existing nav item (including /app's, which never sets this) keeps its
+   * current visibility with no change required at every call site.
+   * /admin's own nav-data is the only place this is currently set
+   * explicitly; see lib/release/admin-view-mode-filter.ts.
+   */
+  mode?: "normal" | "technical";
 }
 
 export interface NavGroupData {
