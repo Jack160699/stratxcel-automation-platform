@@ -14,6 +14,34 @@ never queried it. Fixed to call the real repository function and map its real st
 disabled display the other three rows already use. Verified: full-repo `tsc --noEmit`
 clean, lint clean, real `NODE_ENV=production next build` (exit 0).
 
+## Update 52 — real Lucide icon library adopted across the shared shell (Premium UI, sections 19-20)
+
+Master brief sections 19-20 explicitly name shadcn/ui, Radix, Lucide, and Tremor. Checked
+`package.json` first: none of the four were present — the current design system
+(`components/ui/Card.tsx`, `StatusChip.tsx`, the `sx-*` CSS token set) is entirely
+hand-rolled Tailwind, including 24 hand-drawn inline `<svg>` icons across the shared
+shell.
+
+Made a deliberate scope call rather than attempting all four blindly: the existing design
+system is itself real, coherent, tested, and *not* a generic template — ripping it out
+for shadcn/Radix/Tremor would be a large, high-risk migration across dozens of files for
+uncertain benefit, the same "reuse existing canonical engines, never duplicate"
+discipline this whole engagement has applied to backend engines, now applied to UI.
+Lucide is different: a focused, additive icon library, not a competing component
+framework — genuinely safe to adopt without touching the rest of the system.
+
+Confirmed the npm registry was reachable, installed `lucide-react@0.469.0` (pinned), and
+replaced all 24 hand-drawn icons across `shared-icons.tsx`, `app-nav-icons.tsx`,
+`TopCommandBar.tsx`, `Sidebar.tsx`, and `MobileBottomNav.tsx` with their real Lucide
+equivalents — same size and stroke-width preserved, so no call site outside the icon
+definitions themselves needed to change.
+
+Verified: full-repo `tsc --noEmit` clean, lint clean (one `jsx-a11y` false positive on
+Lucide's `Image` icon name, fixed by aliasing the import), `test:unified-shell-crm` (5
+files) and `test:foundation` both pass unchanged, real `NODE_ENV=production next build`
+(exit 0). The broader shadcn/Radix/Tremor visual pass remains honestly not done — not
+claimed complete here.
+
 ## Update 51 — a real Final Completion Matrix, generated from the live registry, plus reconciling a duplicate market-discovery finding
 
 New `docs/discovery/FINAL_COMPLETION_MATRIX.md` — the master brief's own requested

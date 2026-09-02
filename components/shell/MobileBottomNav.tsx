@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useState, type ReactNode } from "react";
+import { MoreHorizontal } from "lucide-react";
 import { Modal } from "@/components/ui/Overlay";
 import { WHATSAPP_NUMBER } from "@/lib/constants";
 
@@ -207,11 +208,9 @@ function shortLabel(label: string): string {
   return label;
 }
 
+// Master build brief sections 19-20 ("prefer appropriate use of...
+// Lucide"): replaced the hand-drawn 3-dot icon with lucide-react's own.
 function MoreIcon() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6">
-      <path d="M4.5 10h.01M10 10h.01M15.5 10h.01" strokeLinecap="round" />
-    </svg>
-  );
+  return <MoreHorizontal size={20} strokeWidth={1.6} />;
 }
 

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState, type ReactNode } from "react";
+import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { Tooltip } from "@/components/ui/Overlay";
 
 export interface SidebarNavItem {
@@ -209,21 +210,12 @@ export function Sidebar({
   );
 }
 
+// Master build brief sections 19-20 ("prefer appropriate use of... Lucide"):
+// replaced two hand-drawn panel-collapse/expand icons with their real
+// lucide-react equivalents, same 14px size and 1.5 stroke width preserved.
 function CollapseIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="2" y="2.5" width="12" height="11" rx="1.5" />
-      <path d="M6.5 2.5v11" />
-      <path d="M4.3 6l-1.3 2 1.3 2" />
-    </svg>
-  );
+  return <PanelLeftClose size={14} strokeWidth={1.5} />;
 }
 function ExpandIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="2" y="2.5" width="12" height="11" rx="1.5" />
-      <path d="M6.5 2.5v11" />
-      <path d="M11.7 6l1.3 2-1.3 2" />
-    </svg>
-  );
+  return <PanelLeftOpen size={14} strokeWidth={1.5} />;
 }

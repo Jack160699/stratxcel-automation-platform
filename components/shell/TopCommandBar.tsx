@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { HelpCircle } from "lucide-react";
 import { SearchCommandPill } from "@/components/shell/SearchCommandPill";
 
 /** The 56px top command bar shared by /app and /admin — docs/product-design/SHARED_SHELL_SPECIFICATION.md §3. */
@@ -33,7 +34,7 @@ export function TopCommandBar({
           href="/contact"
           className="hidden items-center gap-1.5 rounded-sx-sm px-3 py-2 text-sm font-semibold text-sx-text-muted transition-colors hover:bg-sx-surface-2 sm:inline-flex"
         >
-          <HelpIcon />
+          <HelpCircle size={18} strokeWidth={1.75} />
           Help
         </a>
         {agentStatus}
@@ -53,16 +54,6 @@ export function TopCommandBar({
       {staffBadge}
       {userMenu}
     </header>
-  );
-}
-
-function HelpIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="12" cy="12" r="9" />
-      <path d="M9.7 9.4a2.4 2.4 0 1 1 3.4 2.2c-.7.4-1.1.9-1.1 1.7" />
-      <path d="M12 16.5h.01" />
-    </svg>
   );
 }
 
