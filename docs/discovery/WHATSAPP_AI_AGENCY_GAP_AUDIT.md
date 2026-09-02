@@ -1,5 +1,85 @@
 # WhatsApp AI Agency — Gap Audit
 
+## Update 61 — Agent Factory built for real: a persisted agent-definition record, a dynamic tool-resolver, governed creation, and a real dispatch surface on both channels; plus a real WhatsApp/Admin tool-registry drift found and fixed
+
+Update 59 found Agent Factory `NOT_BUILT` and named the four pieces a real
+one would need. Given room to build it properly rather than fake it, built
+all four:
+
+1. **Persisted agent-definition record**: a real `agent_definitions` table
+   (`supabase/migrations/20260902530000_agent_definitions.sql`) — key, name,
+   description, department, `allowed_tool_names`, status. A live
+   transactional dry-run insert caught a real bug in its own CHECK
+   constraint before any real row existed: Postgres' `array_length()`
+   returns `NULL`, not `0`, for an empty array, so a bare
+   `array_length(...) > 0` check silently admits an empty tool list (a CHECK
+   constraint treats `NULL` as "not violated"). Fixed to
+   `coalesce(array_length(...), 0) > 0` and re-verified live.
+2. **Dynamic tool-resolver**: `packages/agent-core/src/tools/registry.ts`
+   gained an additive `toolNameAllowlist` on `ResolveToolsOptions`, applied
+   *before* the existing permission filter — so it can only ever narrow a
+   principal's real tool set, never widen it. Zero behavior change for every
+   existing caller that omits it: the full pre-existing `test:agent-core`
+   suite (13 assertions across `tool-isolation.test.ts` and others) passes
+   unchanged, plus 5 new assertions in
+   [tool-allowlist.test.ts](../../packages/agent-core/src/__tests__/tool-allowlist.test.ts)
+   confirming narrowing, permission-filter independence, and that naming an
+   unknown tool is inert (not an error, not a fabricated capability).
+3. **Governed creation flow**: `create_agent_definition`
+   ([lib/agent-core/agent-factory-tools.ts](../../lib/agent-core/agent-factory-tools.ts))
+   computes the *creating* principal's own real, permission-filtered tool
+   set via `resolveAgentTools` and rejects any requested tool name outside
+   it — real subset enforcement, not a promise in a comment. Gated by a new
+   `agent:mutate:agent_definitions` permission deliberately restricted to
+   `platform_owner` only (narrower than this session's usual owner/admin
+   parity, since this defines *other* agents' governed scope — a
+   meta-governance action). `list_agent_definitions` is read-only, granted
+   to both `platform_owner` and `platform_admin`.
+4. **Real dispatch surface**: a deterministic `AGENT:<key>: <message>`
+   prefix ([lib/agent-core/agent-dispatch.ts](../../lib/agent-core/agent-dispatch.ts))
+   — pure parser split into a dependency-free
+   [agent-dispatch-parser.ts](../../lib/agent-core/agent-dispatch-parser.ts)
+   for standalone testability (7 assertions), matching this session's
+   established pure/impure split pattern. Deliberately kept separate from
+   `packages/agent-core/src/command-parser.ts` — that file's own header
+   comment is explicit its patterns are terminal, fully-handled-there
+   commands, while this is a routing prefix that hands off to a *normal*
+   agent turn with a restricted allowlist, a different shape. Checked before
+   RESET/CONFIRM/CANCEL fall-through and before the social-mission keyword
+   heuristic on **both** WhatsApp and Admin/Client Web Copilot — a real
+   staff member can create a real, narrower-scoped agent and actually reach
+   it from either channel today.
+
+Honestly still not covered, stated plainly rather than glossed over: v1 is
+staff-only (`agent_definitions.tenant_id` stays `null` for every row — no
+client-created/dispatched agents), and create/list only (no edit/disable
+tool yet — disabling a bad definition currently needs a direct DB update).
+The bar this row was actually blocked on — *can the architecture instantiate
+a new agent at all* — is now demonstrably met, not asserted.
+
+**A real, previously-undiscovered bug found while building this**: building
+the subset-enforcement needed one real source of truth for "every tool a
+principal could hold," which meant diffing the WhatsApp route's `EXTRA_TOOLS`
+literal against `copilot-actions.ts`'s. They had already drifted apart in
+both directions — WhatsApp had `SOCIAL_DELEGATION_TOOLS` that Admin Copilot
+lacked, and Admin Copilot had just gained `AUDIT_REPORT_LINK_TOOL` (Update
+58) that the WhatsApp route's separate literal was never updated to include,
+directly contradicting this session's own "wired into both, every time,
+zero exceptions" claim. Fixed by extracting
+[lib/agent-core/all-tools.ts](../../lib/agent-core/all-tools.ts)'s
+`ALL_EXTRA_TOOLS` as the one shared array both real call sites now import —
+this class of drift is structurally impossible going forward.
+
+Verified: full-repo `tsc --noEmit` clean, lint clean, full
+`test:agent-core-lib` and `test:agent-core` suites (18 pre-existing + 12 new
+assertions, zero regressions), real `NODE_ENV=production next build` (exit
+0), a live transactional dry-run insert/rollback against the real
+`agent_definitions` schema (including the constraint-bug fix, itself found
+via this dry-run), and a second dry-run confirming the fixed constraint now
+correctly rejects an empty tool list. Migrations:
+`supabase/migrations/20260902530000_agent_definitions.sql`,
+`supabase/migrations/20260902540000_capability_registry_agent_factory_shipped.sql`.
+
 ## Update 60 — final rescan for fabrication/placeholder patterns: a real, well-built, but entirely unwired Monthly Value Ledger engine found, using the same in-memory-store anti-pattern already flagged in `editing/`
 
 Ran the master brief's explicit "final rescan" pass: a repo-wide grep for

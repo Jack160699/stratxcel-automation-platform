@@ -13,17 +13,32 @@ export interface ResolveToolsOptions {
    *  so an extra tool with a requiredPermission the principal lacks is still
    *  excluded. */
   extraTools?: AgentTool[];
+  /** Agent Factory: when present, restricts the candidate set to tools whose
+   *  schema.name appears in this list, applied BEFORE the normal permission
+   *  filter below — so a dynamically-defined agent can only ever narrow what
+   *  its principal already has, never widen it (the permission filter still
+   *  runs unconditionally afterward, as a second, independent enforcement of
+   *  the same "never grant more than the caller already has" rule). Omit for
+   *  the default, unrestricted candidate set — zero behavior change for
+   *  every existing caller that doesn't pass this. */
+  toolNameAllowlist?: readonly string[];
 }
 
 const ADMIN_CANDIDATE_TOOLS: AgentTool[] = [...ADMIN_READ_TOOLS, ...ADMIN_MUTATION_TOOLS, ...MEMORY_TOOLS];
 const CLIENT_CANDIDATE_TOOLS: AgentTool[] = [...CLIENT_READ_TOOLS, ...CLIENT_MUTATION_TOOLS, ...MEMORY_TOOLS];
+
+function applyToolNameAllowlist(candidates: AgentTool[], allowlist?: readonly string[]): AgentTool[] {
+  if (!allowlist) return candidates;
+  const allowed = new Set(allowlist);
+  return candidates.filter((tool) => allowed.has(tool.schema.name));
+}
 
 /** Staff principal must still have real permission evaluation — not every
  *  "staff" row is omnipotent. See STAFF_ROLE_PERMISSIONS in
  *  principals/repository.ts, which varies by platform_staff_users.role. */
 export function resolveAdminTools(principal: AgentPrincipal, opts: ResolveToolsOptions = {}): AgentTool[] {
   if (principal.kind !== "staff") return [];
-  const candidates = [...ADMIN_CANDIDATE_TOOLS, ...(opts.extraTools ?? [])];
+  const candidates = applyToolNameAllowlist([...ADMIN_CANDIDATE_TOOLS, ...(opts.extraTools ?? [])], opts.toolNameAllowlist);
   return resolveTools(principal, candidates);
 }
 
@@ -34,7 +49,7 @@ export function resolveAdminTools(principal: AgentPrincipal, opts: ResolveToolsO
  *  vocabularies. */
 export function resolveClientTools(principal: AgentPrincipal, opts: ResolveToolsOptions = {}): AgentTool[] {
   if (principal.kind !== "client") return [];
-  const candidates = [...CLIENT_CANDIDATE_TOOLS, ...(opts.extraTools ?? [])];
+  const candidates = applyToolNameAllowlist([...CLIENT_CANDIDATE_TOOLS, ...(opts.extraTools ?? [])], opts.toolNameAllowlist);
   return resolveTools(principal, candidates);
 }
 

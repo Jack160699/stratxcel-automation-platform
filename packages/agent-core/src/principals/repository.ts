@@ -54,6 +54,16 @@ const STAFF_ROLE_PERMISSIONS: Record<string, readonly string[]> = {
     // order is a real write (a durable audit_share_tokens bearer-token
     // row), not just a read.
     "agent:mutate:audit_reports",
+    // Agent Factory: create_agent_definition (agent:mutate:agent_definitions)
+    // is deliberately platform_owner-ONLY, narrower than this session's
+    // usual convention of granting platform_owner and platform_admin the
+    // same scope -- defining a new agent's governed tool/permission
+    // boundary is a meta-governance action, so it gets the narrowest
+    // default circle. list_agent_definitions (agent:read:agent_definitions)
+    // is granted to both, matching the read/mutate asymmetry already used
+    // for audit reports above.
+    "agent:mutate:agent_definitions",
+    "agent:read:agent_definitions",
   ],
   platform_admin: [
     "agent:read:clients", "agent:read:leads", "agent:read:conversations", "agent:read:missions",
@@ -68,6 +78,7 @@ const STAFF_ROLE_PERMISSIONS: Record<string, readonly string[]> = {
     "agent:read:website",
     "agent:read:audit_reports",
     "agent:mutate:audit_reports",
+    "agent:read:agent_definitions",
   ],
   audit_reviewer: ["agent:read:audit", "agent:read:clients", "agent:read:leads", "agent:read:memory", "agent:mutate:memory"],
   finance_reviewer: ["agent:read:finance", "agent:read:clients", "agent:read:memory", "agent:mutate:memory"],

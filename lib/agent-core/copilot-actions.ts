@@ -13,20 +13,12 @@ import {
   type AgentPrincipal,
 } from "@stratxcel/agent-core";
 import { createAgentCoreProviderAdapter } from "./provider-adapter";
-import { RESEARCH_DELEGATION_TOOLS } from "./research-tools";
-import { GROWTH_MEDIA_TOOLS } from "./growth-media-tools";
-import { WORKFORCE_REGISTRY_TOOLS } from "./workforce-registry-tools";
 import { loadOwnerBrainKnowledge } from "./owner-brain-context";
-import { OWNER_CONNECTIONS_TOOL } from "./owner-connections-tool";
-import { BUSINESS_SIGNALS_TOOL } from "./business-signals-tool";
-import { BUSINESS_PRIORITIES_TOOL } from "./business-priorities-tool";
-import { AUTONOMY_DECISION_TOOL } from "./autonomy-decision-tool";
-import { REVENUE_DIAGNOSTICS_TOOL } from "./revenue-diagnostics-tool";
-import { WEBSITE_TOOLS } from "./website-tools";
-import { GOOGLE_BUSINESS_TOOL } from "./google-business-tool";
-import { GROWTH_PLAN_TOOL } from "./growth-plan-tool";
-import { GROWTH_PLAN_COMMIT_TOOL } from "./growth-plan-commit-tool";
-import { AUDIT_REPORT_LINK_TOOL } from "./audit-report-link-tool";
+import { ALL_EXTRA_TOOLS } from "./all-tools";
+import { AGENT_FACTORY_TOOLS } from "./agent-factory-tools";
+import { resolveAgentDispatch } from "./agent-dispatch";
+
+const EXTRA_TOOLS = [...ALL_EXTRA_TOOLS, ...AGENT_FACTORY_TOOLS];
 
 /**
  * Shared turn/thread logic for the admin and client web Copilot UIs
@@ -87,12 +79,29 @@ export async function sendCopilotMessage(principal: AgentPrincipal, userText: st
     return { ok: true, replyText, status: "completed", confirmationRequired: false };
   }
 
+  // Agent Factory dispatch: "AGENT:<key>: <message>" routes this turn to a
+  // dynamically-defined agent's narrower tool set instead of the full
+  // default. Applied after RESET/CONFIRM/CANCEL are already ruled out above
+  // (see agent-dispatch.ts's header comment for why this stays separate
+  // from parseCommand). A recognized-but-unknown/disabled agent key returns
+  // a deterministic error immediately, the same way a malformed CONFIRM/
+  // CANCEL code would, rather than silently falling through to a normal
+  // turn on text that isn't really a question.
+  const dispatch = await resolveAgentDispatch(supabase, trimmed);
+  if (dispatch.dispatchError) {
+    const session = await getOrCreateActiveSession(supabase, principal);
+    await recordAgentMessage(supabase, { sessionId: session.id, role: "user", content: trimmed });
+    await recordAgentMessage(supabase, { sessionId: session.id, role: "assistant", content: dispatch.dispatchError });
+    return { ok: false, replyText: dispatch.dispatchError, status: "failed", confirmationRequired: false };
+  }
+
   const result = await runAgentTurn({
     supabase,
     principal,
     provider: createAgentCoreProviderAdapter(principal.tenantId),
-    userText: trimmed,
-    extraTools: [...RESEARCH_DELEGATION_TOOLS, ...GROWTH_MEDIA_TOOLS, ...WORKFORCE_REGISTRY_TOOLS, OWNER_CONNECTIONS_TOOL, BUSINESS_SIGNALS_TOOL, BUSINESS_PRIORITIES_TOOL, AUTONOMY_DECISION_TOOL, REVENUE_DIAGNOSTICS_TOOL, ...WEBSITE_TOOLS, GOOGLE_BUSINESS_TOOL, GROWTH_PLAN_TOOL, GROWTH_PLAN_COMMIT_TOOL, AUDIT_REPORT_LINK_TOOL],
+    userText: dispatch.userText,
+    extraTools: EXTRA_TOOLS,
+    toolNameAllowlist: dispatch.toolNameAllowlist ?? undefined,
     extraKnowledge: await loadOwnerBrainKnowledge(principal),
   });
   return { ok: result.status !== "failed", replyText: result.replyText, status: result.status, confirmationRequired: result.confirmationRequired };

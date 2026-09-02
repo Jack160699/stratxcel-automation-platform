@@ -16,20 +16,10 @@ import {
   formatAgentReply,
 } from "@stratxcel/agent-core";
 import { createAgentCoreProviderAdapter } from "@/lib/agent-core/provider-adapter";
-import { SOCIAL_DELEGATION_TOOLS } from "@/lib/agent-core/social-delegation-tools";
-import { RESEARCH_DELEGATION_TOOLS } from "@/lib/agent-core/research-tools";
-import { GROWTH_MEDIA_TOOLS } from "@/lib/agent-core/growth-media-tools";
-import { WORKFORCE_REGISTRY_TOOLS } from "@/lib/agent-core/workforce-registry-tools";
 import { loadOwnerBrainKnowledge } from "@/lib/agent-core/owner-brain-context";
-import { OWNER_CONNECTIONS_TOOL } from "@/lib/agent-core/owner-connections-tool";
-import { BUSINESS_SIGNALS_TOOL } from "@/lib/agent-core/business-signals-tool";
-import { BUSINESS_PRIORITIES_TOOL } from "@/lib/agent-core/business-priorities-tool";
-import { AUTONOMY_DECISION_TOOL } from "@/lib/agent-core/autonomy-decision-tool";
-import { REVENUE_DIAGNOSTICS_TOOL } from "@/lib/agent-core/revenue-diagnostics-tool";
-import { WEBSITE_TOOLS } from "@/lib/agent-core/website-tools";
-import { GOOGLE_BUSINESS_TOOL } from "@/lib/agent-core/google-business-tool";
-import { GROWTH_PLAN_TOOL } from "@/lib/agent-core/growth-plan-tool";
-import { GROWTH_PLAN_COMMIT_TOOL } from "@/lib/agent-core/growth-plan-commit-tool";
+import { ALL_EXTRA_TOOLS } from "@/lib/agent-core/all-tools";
+import { AGENT_FACTORY_TOOLS } from "@/lib/agent-core/agent-factory-tools";
+import { resolveAgentDispatch } from "@/lib/agent-core/agent-dispatch";
 import { decideWhatsAppSocialMission, runWhatsAppSocialMission } from "@/lib/social/whatsapp-bridge";
 
 export const runtime = "nodejs";
@@ -40,11 +30,17 @@ export const dynamic = "force-dynamic";
 // not a promise every turn takes this long.
 export const maxDuration = 60;
 
-/** WhatsApp's full extra-tool set: Social Autopilot delegation + public
- *  web research/commercial-catalog tools. One list, used everywhere a tool
- *  set is needed below (capability listings AND the actual agent turn) so
- *  WHOAMI/HELP never claims a capability the turn itself doesn't have. */
-const EXTRA_TOOLS = [...SOCIAL_DELEGATION_TOOLS, ...RESEARCH_DELEGATION_TOOLS, ...GROWTH_MEDIA_TOOLS, ...WORKFORCE_REGISTRY_TOOLS, OWNER_CONNECTIONS_TOOL, BUSINESS_SIGNALS_TOOL, BUSINESS_PRIORITIES_TOOL, AUTONOMY_DECISION_TOOL, REVENUE_DIAGNOSTICS_TOOL, ...WEBSITE_TOOLS, GOOGLE_BUSINESS_TOOL, GROWTH_PLAN_TOOL, GROWTH_PLAN_COMMIT_TOOL];
+/** WhatsApp's full extra-tool set -- lib/agent-core/all-tools.ts's
+ *  ALL_EXTRA_TOOLS, the ONE shared source of truth also used by Admin/
+ *  Client Web Copilot (lib/agent-core/copilot-actions.ts), plus the Agent
+ *  Factory governance tools. Used everywhere a tool set is needed below
+ *  (capability listings AND the actual agent turn) so WHOAMI/HELP never
+ *  claims a capability the turn itself doesn't have. A single shared array
+ *  across both channels -- this file previously maintained its own,
+ *  independent literal that had already drifted from copilot-actions.ts's
+ *  (see all-tools.ts's header comment for the exact drift found and fixed
+ *  2026-09-02). */
+const EXTRA_TOOLS = [...ALL_EXTRA_TOOLS, ...AGENT_FACTORY_TOOLS];
 
 /**
  * Private, HMAC-authenticated endpoint for the WhatsApp agent channel. NOT a
@@ -255,7 +251,21 @@ export async function POST(request: Request) {
   const recipientContext: AgentChannelRecipientContext = { kind: "channel_principal", authUserId: principal.authUserId };
   const principalTenantId = principal.tenantId;
 
-  if (text.startsWith("sx-social:")) {
+  // Agent Factory dispatch: "AGENT:<key>: <message>" routes this turn to a
+  // dynamically-defined agent's narrower tool set. Checked before the
+  // sx-social/social-mission heuristics below on purpose -- an explicit
+  // dispatch prefix is unambiguous and must never be swallowed by the loose
+  // keyword-based social-mission detector (a dispatched message's own text
+  // could legitimately contain a word like "post"). A resolved dispatch
+  // skips the social-mission branch entirely; parseCommand's own patterns
+  // never match this prefix, so RESET/CONFIRM/CANCEL/WHOAMI/HELP below are
+  // unaffected either way.
+  const dispatch = await resolveAgentDispatch(supabase, text);
+  if (dispatch.dispatchError) {
+    return sendAgentReply(formatAgentReply({ text: dispatch.dispatchError }), recipientContext, { principalTenantId });
+  }
+
+  if (!dispatch.agentDefinitionKey && text.startsWith("sx-social:")) {
     const [, operation, token] = text.split(":", 3);
     if ((operation === "approve" || operation === "cancel") && token) {
       try {
@@ -271,7 +281,7 @@ export async function POST(request: Request) {
     }
   }
 
-  const isSocialMission = messageType !== "text" || /\b(?:post|social|instagram|insta|linkedin|facebook|threads|youtube|caption|carousel|reel)\b/i.test(text) || /(?:bana do|best use|ready karo|post kar)/i.test(text);
+  const isSocialMission = !dispatch.agentDefinitionKey && (messageType !== "text" || /\b(?:post|social|instagram|insta|linkedin|facebook|threads|youtube|caption|carousel|reel)\b/i.test(text) || /(?:bana do|best use|ready karo|post kar)/i.test(text));
   if (isSocialMission) {
     try {
       const result = await runWhatsAppSocialMission({ supabase, principal, normalizedPhone, phoneBindingId: verifiedPhoneBindingId, providerMessageId, kind: messageType, body: text, mediaId, mimeType });
@@ -331,9 +341,10 @@ export async function POST(request: Request) {
       supabase,
       principal,
       provider: createAgentCoreProviderAdapter(principal.tenantId),
-      userText: text,
+      userText: dispatch.userText,
       providerMessageId,
       extraTools: EXTRA_TOOLS,
+      toolNameAllowlist: dispatch.toolNameAllowlist ?? undefined,
       extraKnowledge: await loadOwnerBrainKnowledge(principal),
     });
 

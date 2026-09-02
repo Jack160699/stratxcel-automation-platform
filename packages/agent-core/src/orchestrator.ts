@@ -40,6 +40,12 @@ export interface RunAgentTurnInput {
   /** App-layer-composed tools (e.g. social delegation) merged in alongside
    *  the built-in registries, still subject to the same permission filter. */
   extraTools?: AgentTool[];
+  /** Agent Factory: restricts this turn to a dynamically-defined agent's
+   *  tool subset — see tools/registry.ts's ResolveToolsOptions.toolNameAllowlist
+   *  for the exact semantics (narrows only, never widens; permission filter
+   *  still applies independently on top). Omit for the normal, unrestricted
+   *  default agent — every existing caller is unaffected. */
+  toolNameAllowlist?: readonly string[];
   /** App-layer-composed Brain knowledge (e.g. the owner's own bounded,
    *  confirmed owner-brain memories/decisions/open-loops -- see
    *  lib/owner-brain/hermes/owner-memory-context.ts's buildBoundedOwnerContext,
@@ -100,7 +106,7 @@ export async function runAgentTurn(input: RunAgentTurnInput): Promise<RunAgentTu
     };
   }
 
-  const tools = resolveAgentTools(principal, { extraTools: input.extraTools });
+  const tools = resolveAgentTools(principal, { extraTools: input.extraTools, toolNameAllowlist: input.toolNameAllowlist });
   const brain = await buildBrainContext({ supabase, principal, tools, history: priorHistory, extraKnowledge: input.extraKnowledge });
   const messages: AgentTurnMessage[] = [
     { role: "system", content: brain.systemPrompt },
