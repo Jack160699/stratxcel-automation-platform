@@ -14,6 +14,28 @@ never queried it. Fixed to call the real repository function and map its real st
 disabled display the other three rows already use. Verified: full-repo `tsc --noEmit`
 clean, lint clean, real `NODE_ENV=production next build` (exit 0).
 
+## Update 50 — Priority Engine + Autonomy Decision + Missions genuinely connected: the Brain can now recommend when a mission should be created
+
+Master brief section 14: "the Brain should be able to determine when a mission should be
+created." Checked what already existed before assuming a gap: `create_mission`
+(`packages/agent-core/src/tools/client/tools.ts`, `admin/mutation-tools.ts`) was already
+real, already confirm-gated (`risk: "external_mutation"`) — mission creation itself was
+never missing. What was missing was the connective tissue: a real decision about *whether*
+creating one makes sense for a given priority.
+
+`check_business_priorities` (Update 38) now composes its own real `topPriority` bottleneck
+with `decideAutonomyLevel` (Update 39) — the bottleneck's real `severity` maps to
+`riskLevel`, its real `confidence` passes straight through unmodified, `reversible: true`
+(missions are cancellable), no cost estimate is invented. Returns a real
+`missionRecommendation: { suggestedGoalText, decision: { level, reasonCode, humanReason } }`.
+Strictly advisory — never calls `create_mission` itself; a human or a later agent turn
+still has to explicitly act on it, exactly like every other advisory tool built this
+session.
+
+Verified: full-repo `tsc --noEmit` clean, lint clean, real `NODE_ENV=production next
+build` (exit 0). The core decision logic was already covered by
+`autonomy-decision.test.ts`'s 13 assertions; this addition is thin, verified composition.
+
 ## Update 49 — customer-facing Growth parity with the real diagnosis pipeline, plus two more fabrication bugs found and fixed
 
 Master brief section 23 ("same brain across interfaces") — the previous pass's remaining

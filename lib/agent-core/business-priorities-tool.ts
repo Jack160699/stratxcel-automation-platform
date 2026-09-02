@@ -23,11 +23,19 @@
  * tool actually calls.
  */
 import type { AgentTool } from "@stratxcel/agent-core";
-import { diagnoseBusinessGrowth, deriveBottlenecks } from "@stratxcel/workforce-core";
+import { diagnoseBusinessGrowth, deriveBottlenecks, decideAutonomyLevel, type RiskLevel } from "@stratxcel/workforce-core";
 import { getCurrentBrandBrain } from "@stratxcel/brand-brain";
 import { loadIntegrationsStatusData } from "@/lib/connectors/load-integrations-data";
 import { computeRealBusinessSignals } from "./business-signals";
 import { computeRealEntitlementSnapshot } from "./business-priorities";
+
+const BOTTLENECK_SEVERITY_TO_RISK: Record<string, RiskLevel> = {
+  critical: "critical",
+  high: "high",
+  medium: "medium",
+  low: "low",
+  info: "low",
+};
 
 function resolveTenantId(ctx: { principal: { kind: string; tenantId: string | null } }, args: Record<string, unknown>): string | null {
   if (ctx.principal.kind === "client") return ctx.principal.tenantId;
@@ -41,7 +49,7 @@ export const BUSINESS_PRIORITIES_TOOL: AgentTool = {
   schema: {
     name: "check_business_priorities",
     description:
-      "The real, evidence-gated business growth diagnosis and prioritized bottleneck list for a tenant -- answers 'what is the most important thing to do next' from actual signals (real BusinessSignals + real subscription/entitlement data + real Brand Brain + real connection state), never a guess. Every finding without real evidence is honestly marked ASSUMPTION or RESEARCH_REQUIRED, never presented as certain. Use for 'what should we do next for this client', 'what's the biggest bottleneck', 'prioritize this business'.",
+      "The real, evidence-gated business growth diagnosis and prioritized bottleneck list for a tenant -- answers 'what is the most important thing to do next' from actual signals (real BusinessSignals + real subscription/entitlement data + real Brand Brain + real connection state), never a guess. Every finding without real evidence is honestly marked ASSUMPTION or RESEARCH_REQUIRED, never presented as certain. Also returns missionRecommendation -- a real governance decision (AUTO/LOW_RISK_APPROVAL/OWNER_APPROVAL/BLOCKED) on whether the top priority is worth turning into a mission, plus a real suggested goalText -- but never creates anything itself; call create_mission separately if the human agrees. Use for 'what should we do next for this client', 'what's the biggest bottleneck', 'prioritize this business', 'should we create a mission for this'.",
     parameters: {
       type: "object",
       properties: { tenantId: { type: "string", description: "Optional -- a specific client's tenant id. Defaults to Stratxcel's own." } },
@@ -98,6 +106,33 @@ export const BUSINESS_PRIORITIES_TOOL: AgentTool = {
     });
 
     const bottlenecks = deriveBottlenecks(diagnosis);
+    const topPriority = bottlenecks[0] ?? null;
+
+    // Master brief section 14 (Hermes/Missions integration): "the Brain
+    // should be able to determine when a mission should be created."
+    // create_mission (packages/agent-core/src/tools/client/tools.ts and
+    // admin/mutation-tools.ts) already exists, already real, already
+    // confirm-gated (risk: "external_mutation") -- the missing piece was
+    // never mission creation itself, it was connecting a real priority to a
+    // real governance decision about whether creating one makes sense.
+    // decideAutonomyLevel (Update 39) does exactly that, composed here with
+    // the top bottleneck's own real severity/confidence -- never invents a
+    // cost estimate (omitted, honestly unknown at this stage) and never
+    // creates anything itself; a human or agent turn still calls
+    // create_mission separately with this description as the goalText.
+    const missionRecommendation = topPriority
+      ? {
+          suggestedGoalText: topPriority.description,
+          decision: decideAutonomyLevel({
+            executable: true,
+            riskLevel: BOTTLENECK_SEVERITY_TO_RISK[topPriority.severity] ?? "medium",
+            approvalRequired: false,
+            externalMutation: true,
+            confidence: topPriority.confidence,
+            reversible: true, // missions can be cancelled (mission:cancel)
+          }),
+        }
+      : null;
 
     return {
       tenantId,
@@ -107,7 +142,8 @@ export const BUSINESS_PRIORITIES_TOOL: AgentTool = {
       researchGaps: diagnosis.researchGaps,
       findings: diagnosis.findings,
       bottlenecks,
-      topPriority: bottlenecks[0] ?? null,
+      topPriority,
+      missionRecommendation,
       note:
         bottlenecks.length === 0
           ? "No prioritized bottleneck could be derived -- likely too little real signal data yet (no site_projects/search_opportunities/crm_leads/subscription rows for this tenant). This is an honest 'not enough evidence' result, not an error."
