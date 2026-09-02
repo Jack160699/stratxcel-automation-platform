@@ -1,5 +1,46 @@
 # WhatsApp AI Agency — Gap Audit
 
+## Update 39 — the real autonomy decision layer: AUTO / LOW_RISK_APPROVAL / OWNER_APPROVAL / BLOCKED, deterministic and fail-closed, advisory only
+
+Continuing straight from Update 38, into the master brief's Autonomy section. Checked
+first whether an intervention-level concept already existed anywhere in the codebase
+(grepped for `AUTO_APPROVE`/`InterventionLevel`/`AutonomyLevel` — nothing) and, separately,
+whether the existing `resolveCapabilityReadiness` (`packages/workforce-core/src/
+capabilities/readiness.ts`) already covered this ground — it doesn't: readiness answers
+"CAN this run right now" (entitlements, integrations, kill switches, shadow mode, a
+*static* `approvalRequired` flag); nothing in the codebase answered the genuinely different
+question "SHOULD this run without a human in the loop," weighing real risk, confidence,
+reversibility, and cost for one specific proposed action.
+
+New `packages/workforce-core/src/autonomy/decision.ts` — `decideAutonomyLevel` — a pure,
+deterministic function producing one of four real intervention levels: `AUTO`,
+`LOW_RISK_APPROVAL`, `OWNER_APPROVAL`, `BLOCKED`, each with a machine-readable reason code
+and a human-readable explanation. Fail-closed by construction: not executable, critical
+risk, irreversible, low confidence, high risk, or a static capability-level approval
+requirement each independently force `OWNER_APPROVAL` or `BLOCKED` — `AUTO` is reached only
+when every single gate is explicitly satisfied. Composes with `resolveCapabilityReadiness`
+rather than duplicating it (feed a real `CapabilityReadinessResult`'s
+`executable`/`riskLevel`/`approvalRequired`/`externalMutation` straight in).
+
+Exposed as a new read-only agent tool, `check_autonomy_decision`
+(`lib/agent-core/autonomy-decision-tool.ts`), which looks up a real capability from the
+static workforce registry (`getCapability`/`listCapabilities` — the same registry
+`check_workforce_registry` already reads) for its real `riskLevel`/`approvalRequired`/
+`externalMutation`, combines it with the caller's stated confidence/reversibility/cost for
+one specific proposed action, and returns the decision. Explicitly a policy **consult**,
+not a live per-tenant readiness check — it doesn't resolve entitlements/integrations/
+kill-switch state for a specific tenant (`check_capabilities` already does that). Purely
+advisory by design: it does not execute anything, does not bypass the real CONFIRM flow
+(`control-handlers.ts`), and — critically, per the brief's own explicit instruction — does
+**not** wire an `AUTO` result to skip human confirmation anywhere live. "Do not silently
+activate unsafe production autonomy" is respected by construction here, not just by policy:
+this module has no execution path at all.
+
+Verified: new `autonomy-decision.test.ts` (13 assertions, covering every reason code and
+the fail-closed guarantee explicitly), wired into `test:workforce-core` (full 19-file suite
+still passes), full-repo `tsc --noEmit` clean, lint clean, real `NODE_ENV=production next
+build` (exit 0).
+
 ## Update 38 — the full Priority Engine pipeline is now real and exposed: BusinessSignals → diagnoseBusinessGrowth → deriveBottlenecks, answering "what's most important next" from actual signals
 
 Continuing straight from Update 37 (which resolved the `BusinessSignals` dependency but

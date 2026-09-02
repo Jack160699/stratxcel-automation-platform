@@ -11,6 +11,7 @@ export * from "./capabilities/execution.ts";
 export * from "./capabilities/artifact-authorization.ts";
 export * from "./capabilities/snapshot.ts";
 export * from "./capabilities/tool-mapping.ts";
+export * from "./autonomy/decision.ts";
 export * from "./providers/types.ts";
 export * from "./providers/registry.ts";
 export * from "./providers/failover.ts";
