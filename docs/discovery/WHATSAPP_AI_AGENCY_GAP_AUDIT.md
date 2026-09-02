@@ -14,6 +14,24 @@ never queried it. Fixed to call the real repository function and map its real st
 disabled display the other three rows already use. Verified: full-repo `tsc --noEmit`
 clean, lint clean, real `NODE_ENV=production next build` (exit 0).
 
+## Update 43 — check_google_business: real GBP reviews exposed to chat, reusing the already-running Review Bot's own functions
+
+Master brief section 9/22 ("Check Google"). Investigated Google Business exposure and
+found a real, already-live, already-automated Review Bot cron
+(`app/api/internal/search/scheduler/route.ts`'s `runReviewBotCycle`) that discovers and
+auto-replies to reviews on its own schedule — not a gap, a working system. What was
+missing was any way to ask about it on demand. New `check_google_business`
+(`lib/agent-core/google-business-tool.ts`) reuses the exact same real functions the bot
+already calls (`resolveAccessToken`, `isResolvedGbpLocationResourceName`,
+`listLocationReviews`) — read-only, never replies itself. Every real failure mode
+(no account on file, not connected, location unresolved, token unavailable, live fetch
+failure) is surfaced with its own honest reason string rather than a generic error.
+
+Verified: full-repo `tsc --noEmit` clean, lint clean, real `NODE_ENV=production next
+build` (exit 0). No dedicated unit test — matches the established pattern for this file's
+sibling real-API read tools (`check_connections`, `check_website_status`), verified via
+build/production usage rather than a mocked external-API test.
+
 ## Update 42 — edit_website: WhatsApp/Admin Chat can now actually change a website, plus a real security upgrade found along the way
 
 Master brief section 7/22 (Website/Vercel; WhatsApp as universal remote control). Traced
