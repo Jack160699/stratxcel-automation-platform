@@ -1,5 +1,19 @@
 # WhatsApp AI Agency — Gap Audit
 
+## Update 41 addendum — fixed a fabricated integration-status row found while starting the Admin Home rebuild
+
+Master brief section 15/17: "remove fake/empty metrics." `app/admin/(shell)/page.tsx`'s
+Integration status card renders WhatsApp/Razorpay/Hermes from real
+`process.env.*_INTEGRATION_MODE` flags — but Google Drive was hardcoded
+`mode={undefined}`, always rendering "Disabled" regardless of the real state. A real,
+live per-tenant OAuth connect/callback flow already exists
+(`app/api/platform/storage/drive/connect`, `.../callback`, backed by the real
+`storage_connections` table via `packages/storage`'s `getConnection`) — this page just
+never queried it. Fixed to call the real repository function and map its real status
+(`connected`/`connecting`/`disconnected`/`revoked`/`error`) to the same live/shadow/
+disabled display the other three rows already use. Verified: full-repo `tsc --noEmit`
+clean, lint clean, real `NODE_ENV=production next build` (exit 0).
+
 ## Update 41 — the Admin IA rebuild begins: real Normal Admin / Technical Admin mode split, one dead legacy route removed
 
 The master brief's largest remaining body of work (sections 15-20: rebuild the Admin IA,

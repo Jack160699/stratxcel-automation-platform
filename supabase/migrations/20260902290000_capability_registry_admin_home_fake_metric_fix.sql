@@ -1,0 +1,10 @@
+-- Records a fixed fabricated integration-status row on Admin Home: Google
+-- Drive was hardcoded mode={undefined}, always rendering "Disabled"
+-- regardless of the real per-tenant connection state. Applied live via
+-- Supabase MCP on 2026-09-02; this file makes that reproducible from a
+-- fresh database.
+insert into public.capability_registry
+  (capability_key, name, description, category, skill, agent_tool_name, package_or_module, department, connection, required_permission, read_write, tenant_scope, cost_profile, risk, verification_method, status, status_notes, external_blocker, last_verified_at, last_verified_by)
+values
+  ('capability:admin_home_fake_google_drive_status_fixed', 'Fixed a fabricated integration-status row on Admin Home: Google Drive was hardcoded mode={undefined}, always rendering Disabled regardless of the real per-tenant connection state', 'Master brief section 15/17: "remove fake/empty metrics." Found while starting the Admin Home content rebuild: app/admin/(shell)/page.tsx''s Integration status card rendered WhatsApp/Razorpay/Hermes from real process.env.*_INTEGRATION_MODE flags, but Google Drive was hardcoded mode={undefined} -- a real, live per-tenant OAuth connect/callback flow exists (app/api/platform/storage/drive/connect, .../callback, backed by the real storage_connections table via packages/storage''s getConnection(supabase, tenantId, provider)) but this page never queried it. Fixed to call getConnection(ctx.supabase, active.tenantId, "google_drive") for real and map its real status (connected/connecting/disconnected/revoked/error) to the same live/shadow/disabled display the other three rows already use.', 'ecosystem', null, null, 'app/admin/(shell)/page.tsx', 'Engineering', null, null, 'read', 'tenant', 'free', 'read', 'Full-repo tsc --noEmit clean, lint clean, real NODE_ENV=production next build exit 0', 'REAL_EXPOSED', 'This is itself the fix. Found while inspecting Admin Home ahead of its larger content rebuild (brief section 17), which remains open.', null, now(), 'claude_session_2026-09-02')
+on conflict (capability_key) do nothing;

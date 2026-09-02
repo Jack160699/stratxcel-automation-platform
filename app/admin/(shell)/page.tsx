@@ -4,6 +4,7 @@ import { resolveCurrentTenant } from "@/lib/tenants/current-tenant";
 import { requirePermission, PermissionDeniedError } from "@/lib/rbac/policy";
 import { listMissionsForTenant } from "@stratxcel/missions";
 import { listPendingApprovals } from "@stratxcel/approvals";
+import { getConnection as getStorageConnection } from "@stratxcel/storage";
 import { Card, CardHeading, CardRow } from "@/components/ui/Card";
 import { Metric } from "@/components/ui/Metric";
 import { StatusChip, type ChipState } from "@/components/ui/StatusChip";
@@ -64,7 +65,7 @@ export default async function CommandCenterPage() {
   // (missions_tenant_read / approvals_tenant_read / the existing
   // stratxcel_contact_messages admin policy) rather than a service-role
   // client. No SUPABASE_SERVICE_ROLE_KEY dependency anywhere on this page.
-  const [missions, approvals, newMessageCount] = await Promise.all([
+  const [missions, approvals, newMessageCount, driveConnection] = await Promise.all([
     listMissionsForTenant(ctx.supabase, active.tenantId, 5),
     (async () => {
       try {
@@ -82,6 +83,10 @@ export default async function CommandCenterPage() {
         .eq("status", "new");
       return count ?? 0;
     })(),
+    // Real per-tenant status via the canonical storage_connections repository
+    // (packages/storage) -- previously this row was hardcoded mode={undefined},
+    // always rendering "Disabled" regardless of the real connection state.
+    getStorageConnection(ctx.supabase as never, active.tenantId, "google_drive").catch(() => null),
   ]);
 
   const pendingCount = approvals?.length ?? 0;
@@ -182,7 +187,10 @@ export default async function CommandCenterPage() {
           <IntegrationRow label="WhatsApp" mode={process.env.WHATSAPP_INTEGRATION_MODE} />
           <IntegrationRow label="Razorpay" mode={process.env.RAZORPAY_INTEGRATION_MODE} />
           <IntegrationRow label="Hermes" mode={process.env.HERMES_MODE} />
-          <IntegrationRow label="Google Drive" mode={undefined} />
+          <IntegrationRow
+            label="Google Drive"
+            mode={driveConnection?.status === "connected" ? "live" : driveConnection?.status === "connecting" ? "shadow" : undefined}
+          />
         </div>
       </Card>
     </div>
