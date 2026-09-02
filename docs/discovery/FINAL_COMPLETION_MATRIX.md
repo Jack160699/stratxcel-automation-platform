@@ -2,19 +2,21 @@
 
 Generated 2026-09-02 from a live query against the `capability_registry` table
 (Supabase project `uccqlgeghkwzujeeymua`) plus this session's own real test-suite runs.
-Every status below is backed by a real, queryable `capability_registry` row (or an
-explicitly-named real test file) — nothing in this matrix is asserted from memory alone.
-Regenerate the underlying counts with:
+Last refreshed after Update 55. Every status below is backed by a real, queryable
+`capability_registry` row (or an explicitly-named real test file) — nothing in this
+matrix is asserted from memory alone. Regenerate the underlying counts with:
 
 ```sql
 select status, count(*) from public.capability_registry group by status order by status;
 ```
 
-As of this write-up: **47 rows** — 29 `REAL_EXPOSED`, 11 `REAL_NOT_EXPOSED`, 4 `PARTIAL`,
-3 `EXTERNAL_REQUIRED`, 0 `NOT_BUILT` (the last `NOT_BUILT` row, `capability:market_company_discovery`,
-was reclassified to `EXTERNAL_REQUIRED` this same pass once its real blocker — an
-unauthorized Apollo.io connector — was identified precisely, rather than left as a vague
-"not built").
+As of this refresh: **52 rows** — 36 `REAL_EXPOSED`, 10 `REAL_NOT_EXPOSED`, 3 `PARTIAL`,
+3 `EXTERNAL_REQUIRED`, 0 `NOT_BUILT`. Since the first version of this matrix (47 rows, 29
+`REAL_EXPOSED`), Updates 52–55 moved 7 more rows to `REAL_EXPOSED`: a real Lucide icon
+adoption, a real cache fix, a real Vercel deployment-status tool, and — the single largest
+move — the full `planBusinessGrowth` 30-day plan engine going from `REAL_NOT_EXPOSED` to
+genuinely reachable, after a self-correction of an earlier over-cautious assumption (see
+§4/§15 below).
 
 Status vocabulary is exactly `docs/discovery/WHATSAPP_AI_AGENCY_GAP_AUDIT.md`'s own:
 `REAL_EXPOSED` (built, wired to a real caller, verified), `REAL_NOT_EXPOSED` (a real,
@@ -49,16 +51,26 @@ analytics-event source, and `conversationByLeadId`'s automation-mode context.
 
 ## 4. Priority Engine
 `REAL_EXPOSED` — `capability:business_signals_classifier`,
-`capability:business_priorities_pipeline`, `capability:mission_recommendation_bridge`.
-The full chain — real signals → real diagnosis → real prioritized bottlenecks → a real
-autonomy-gated mission recommendation — is live end to end via `check_business_priorities`,
-on both the WhatsApp/Admin Copilot side and (Update 49) the customer-facing `/app/growth`
-page.
+`capability:business_priorities_pipeline`, `capability:mission_recommendation_bridge`,
+and (Update 55) `capability:preview_growth_plan_tool`. The full chain — real signals →
+real diagnosis → real prioritized bottlenecks → a real autonomy-gated mission
+recommendation → a real full 30-day plan preview (weekly strategy, staged work) — is now
+live end to end via `check_business_priorities` and the new `preview_growth_plan`, on both
+the WhatsApp/Admin Copilot side and the customer-facing `/app/growth` page. Update 55
+corrected an earlier over-cautious assumption (recorded in the first version of this
+matrix) that `planBusinessGrowth` needed a fabricated strategy to call safely — reading
+`buildWorkflowStages` directly showed `proposedStages` is genuinely optional with real
+default generation.
 
 ## 5. Learning
-`REAL_NOT_EXPOSED` — `engine:learning_loop`. Architecturally blocked, not neglected:
-`applyLearningRevision` revises a `BusinessGrowthPlan`, and nothing currently creates one
-in production (see §7 below) — there is nothing real yet for it to revise.
+`REAL_NOT_EXPOSED` — `engine:learning_loop`. Sharper now than in the first version of this
+matrix: `planBusinessGrowth` itself is real and reachable (§4), so the remaining blocker
+is specifically that `workforce_plans` has **zero real INSERT writers anywhere** in this
+codebase (confirmed by repo-wide grep) — persisting a real, mission-linked
+`BusinessGrowthPlan` is a genuine, novel piece of engineering (the first-ever write path
+to that table), not a simple "wire an existing engine" job. Deliberately not rushed —
+`preview_growth_plan` (§4) stays a preview specifically so this isn't force-built without
+real design.
 
 ## 6. Capability System
 `REAL_EXPOSED` — the registry itself, `check_workforce_registry`, and this pass's own
@@ -72,12 +84,13 @@ re-verified against every other content pipeline this pass). Not claimed exhaust
 
 ## 7. Website / Vercel
 `PARTIAL`. `REAL_EXPOSED`: `check_website_status`, `check_domain_status`,
-`execute_growth_action`, and (Update 42) `edit_website` — the first tool that can actually
-change a site, carrying a real security upgrade (`classifyEditRequest`'s prompt-injection
-guard) found and applied in the same change. `REAL_NOT_EXPOSED`:
-`engine:website_vercel_orchestration` (deployment/rollback/recovery as agent-invokable
-operations were not built this pass — `execute_growth_action` covers SEO-fix deploys
-specifically, not general site deployment lifecycle).
+`execute_growth_action`, `edit_website` (Update 42, carrying a real security upgrade —
+`classifyEditRequest`'s prompt-injection guard — found and applied in the same change),
+and (Update 54) `check_deployment_status` — real Vercel deployment history
+(`listVercelDeployments`, another real function with zero prior callers). `REAL_NOT_EXPOSED`:
+`engine:website_vercel_orchestration` remains the label for the still-missing piece
+specifically — deployment *triggering*, rollback, and recovery as agent-invokable
+mutations (status is now read-only-complete, mutation surface still open).
 
 ## 8. SEO / AEO / GEO Execution
 `REAL_EXPOSED` — `check_growth_status`, `run_growth_analysis`, `execute_growth_action`.
@@ -133,9 +146,13 @@ removed), `capability:admin_home_growth_opportunities_card` /
 `capability:customer_growth_priorities_parity` (real content added to Admin Home and the
 matching customer page), `capability:admin_home_fake_google_drive_status_fixed`,
 `capability:admin_search_pill_fixed` (two real hardcoded/fake UI elements found and
-fixed). **Not done**: the Premium visual UI pass itself (shadcn/Radix/Lucide/Tremor) — no
-visual redesign was attempted. This is honestly `NOT_BUILT` within the `PARTIAL` grouping,
-not disguised as anything else.
+fixed), and (Update 52) `capability:lucide_icon_migration` — a real, scoped adoption of
+Lucide (all 24 hand-drawn shell icons replaced with the real library) after checking that
+none of shadcn/Radix/Lucide/Tremor were installed and making a deliberate call not to rip
+out the existing, already-coherent hand-rolled design system for an uncertain-benefit
+framework migration. **Still not done**: the broader shadcn/Radix/Tremor component
+adoption and a full visual redesign pass — honestly left open, not disguised as anything
+else.
 
 ## 21. Admin Chat
 `REAL_EXPOSED` — same `runAgentTurn`/`resolveAgentTools` brain as WhatsApp, confirmed:
@@ -174,13 +191,15 @@ real security fix: `edit_website`'s shared function now uses `classifyEditReques
 prompt-injection/secret-exfiltration guard, previously present only in an unwired module.
 
 ## 27. Cost Optimization
-`PARTIAL` — `capability:analyze_website_no_cache`. One real, concrete finding recorded
-(no caching on `analyze_website`'s underlying pipeline); not a full audit of every LLM/API
-call site in the codebase.
+`REAL_EXPOSED` — `capability:analyze_website_no_cache`, now fixed (was `PARTIAL`): a real
+Postgres-backed cache (`website_intelligence_cache`, 24h TTL, deliberately not in-memory —
+would not survive serverless invocations) now wraps `analyze_website`'s pipeline, with 4
+real test assertions covering hit/miss/expiry/failure-fallback. Not a full audit of every
+LLM/API call site in the codebase — one real, concrete finding, found and fixed.
 
 ## 28. UI Direct Verification
 `EXTERNAL_REQUIRED`. The browser automation tool's profile (`D:/pw-profile`) was reported
-"already in use" on **four separate attempts** across this engagement, spaced apart in
+"already in use" on **five separate attempts** across this engagement, spaced apart in
 time — confirmed not transient. Not forced past without knowing whether it's blocking a
 real concurrent session on a production system.
 
@@ -196,7 +215,7 @@ Real, not simulated. This session ran, and confirmed passing:
   `npm run test:unified-shell-crm`, `npm run test:hermes-mission-control` — all exit 0
 - `customer-app-bugfixes-polish.test.ts`, `website-factory-route-entry.test.ts` — both
   re-verified passing after this pass's own changes touched adjacent code
-- A real `NODE_ENV=production next build` before every single ship this session (14
+- A real `NODE_ENV=production next build` before every single ship this session (19
   separate real builds, all exit 0) — the specific lesson from the Update 36 incident
   (`tsc --noEmit` alone cannot catch a runtime module-evaluation throw)
 
@@ -228,6 +247,13 @@ session it was introduced).
 
 ## 34–35. Final Definition of Done / Stop Condition
 **Not fully met.** The stop condition demanded every item be `COMPLETE` or
-`EXTERNAL_REQUIRED`. As of this matrix: 3 rows are genuinely `EXTERNAL_REQUIRED`; the
-Premium visual UI pass (§§15–20) remains real, uncompleted work, honestly reported as such
-rather than forced into either bucket.
+`EXTERNAL_REQUIRED`. As of this refresh: 3 rows are genuinely `EXTERNAL_REQUIRED`
+(cross-platform Ascendory/Jandarpan, Market Discovery/Apollo OAuth, live browser UI
+verification); everything else previously `PARTIAL` or `NOT_BUILT` in the first version
+of this matrix has either been closed to `REAL_EXPOSED` (Priority Engine's full plan
+preview, cost optimization, Website/Vercel deployment status, a real Lucide adoption) or
+sharpened into a more precise, still-honest remaining gap (Learning's real blocker is now
+`workforce_plans` having zero write path, not a vague "not built"). Two items remain real,
+uncompleted work, reported as such rather than forced into either bucket: the Premium
+visual UI framework adoption (shadcn/Radix/Tremor, §§15–20) and persisting a real
+mission-linked growth plan (§5).
