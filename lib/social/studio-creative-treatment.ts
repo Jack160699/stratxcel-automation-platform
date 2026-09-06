@@ -241,6 +241,8 @@ async function generateCreativeTreatmentWithRouting(
       researchInsights,
       routingContext,
       recentTextStructures,
+      recentCompositions,
+      creativeFormat: manualBrief.creativeFormat,
     });
     // Same provider-call convention as package-autopilot.ts's own treatment
     // step: AIMessage's role union is broader than AgentTurnMessage's, but
@@ -251,7 +253,7 @@ async function generateCreativeTreatmentWithRouting(
       { brandInstructions: [], tenantId: args.tenantId, businessInformation: verifiedFacts },
     );
     const parsed = safeParseJson(result.text);
-    const issues = validateCreativeTreatment(parsed, { concept: manualBrief.concept, routingContext, industry: manualBrief.industry });
+    const issues = validateCreativeTreatment(parsed, { concept: manualBrief.concept, routingContext, industry: manualBrief.industry, creativeFormat: manualBrief.creativeFormat });
     if (issues.length) return null;
     // Belt-and-suspenders: forces the routingContext's own decision onto
     // the parsed treatment before returning it, exactly like

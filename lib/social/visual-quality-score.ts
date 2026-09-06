@@ -10,6 +10,7 @@
  */
 
 import type { VisualCategory } from "./campaign-strategy-planner.ts";
+import { getCreativeFormatDefinition, type CreativeFormat } from "./creative-format.ts";
 
 export type VisualFailureReason =
   | "TEXT_OVERLOAD_POSTER_STYLE"
@@ -57,6 +58,18 @@ export interface VisualEvaluationInput {
   imagePromptBrief?: string;
   recentVisualCategories?: VisualCategory[];
   generatedVisualDescription?: string;
+  /** Creative Generation Architecture Repair (2026-09-07): this module
+   * predates the CreativeFormat system and its "Text-Overlay Restraint"
+   * check (below) unconditionally treats ANY on-image text past a small
+   * fixed budget as a defect ("promotes clean, photographic imagery") --
+   * exactly the previous safeguard that would fight a genuinely
+   * text-required MARKETING_INFOGRAPHIC/OFFER_PROMOTION/FEATURE_BENEFIT_AD
+   * creative if this scorer were ever wired into the live pipeline (today
+   * it is imported but never called from package-autopilot.ts -- this fix
+   * is a correctness/preventive fix, not a live-behavior change). Optional
+   * and backward-compatible: omitting it preserves the original
+   * always-restrained scoring exactly as before. */
+  creativeFormat?: CreativeFormat;
 }
 
 export function evaluateVisualQuality(input: VisualEvaluationInput): VisualQualityResult {
@@ -70,17 +83,37 @@ export function evaluateVisualQuality(input: VisualEvaluationInput): VisualQuali
   let contentAlignment = 14;
   let compositionOriginality = 14;
 
-  // 1. Text Overlay Restraint & Anti-Poster Check (Mission G §16, §17)
+  // 1. Text Overlay Restraint & Anti-Poster Check (Mission G §16, §17),
+  // redesigned by the Creative Generation Architecture Repair (2026-09-07)
+  // to be format-aware: a MARKETING_INFOGRAPHIC/OFFER_PROMOTION/
+  // FEATURE_BENEFIT_AD/etc. creative is SUPPOSED to carry real structured
+  // text -- the original fixed budget below was calibrated for a
+  // photo-led creative and would otherwise reject exactly the
+  // high-quality, information-dense marketing design this format exists
+  // to produce. Formats with textPolicy "structure_required" get a
+  // meaningfully larger budget (they're expected to carry a real
+  // multi-block composition); "photo_led" formats and callers that don't
+  // supply a creativeFormat at all keep the original, unchanged budget.
   const textLen = input.onImageTextLength ?? 0;
-  if (textLen > 80 || input.hasMassiveLowerThird) {
+  const formatDef = input.creativeFormat ? getCreativeFormatDefinition(input.creativeFormat) : null;
+  const structureRequired = formatDef?.textPolicy === "structure_required";
+  const heavyThreshold = structureRequired ? 260 : 80;
+  const moderateThreshold = structureRequired ? 160 : 45;
+  if (textLen > heavyThreshold || (input.hasMassiveLowerThird && !structureRequired)) {
     hardFailures.push({
       reason: "TEXT_OVERLOAD_POSTER_STYLE",
-      detail: `Visual has excessive on-image text (${textLen} chars) or massive lower-third banner. Prefer image-first photographic composition over promotional posters.`,
+      detail: structureRequired
+        ? `Visual has ${textLen} chars of on-image text, exceeding even the wider budget for a structured "${input.creativeFormat}" format -- consolidate to the strongest 2-5 blocks instead of listing everything.`
+        : `Visual has excessive on-image text (${textLen} chars) or massive lower-third banner. Prefer image-first photographic composition over promotional posters.`,
     });
     textOverlayRestraint = 4;
-  } else if (textLen > 45) {
+  } else if (textLen > moderateThreshold) {
     textOverlayRestraint = 10;
-    diagnostics.push("On-image text is somewhat long. Aim for minimal, high-impact typography.");
+    diagnostics.push(
+      structureRequired
+        ? "On-image text is on the longer side for this structured format. Keep each block short and let the layout, not the word count, carry the density."
+        : "On-image text is somewhat long. Aim for minimal, high-impact typography."
+    );
   }
 
   // 2. Generic Corporate Template Detection (Mission G §20)

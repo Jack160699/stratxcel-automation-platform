@@ -46,7 +46,7 @@ import { buildCampaignStrategy } from "./campaign-strategy-planner.ts";
 import { evaluateVisualQuality } from "./visual-quality-score.ts";
 import { runGenerationLoop } from "./generation-loop.ts";
 import { parseGeneratedCopy, type GeneratedCopy } from "./generated-copy-parser.ts";
-import { buildCreativeTreatmentPrompt, validateCreativeTreatment, forceArchetypeOntoTreatment, safeParseJson, describeTextStructureShape, type CreativeTreatment, type LayoutArchetype } from "./creative-treatment.ts";
+import { buildCreativeTreatmentPrompt, validateCreativeTreatment, forceArchetypeOntoTreatment, safeParseJson, describeTextStructureShape, describeCompositionShape, type CreativeTreatment, type LayoutArchetype } from "./creative-treatment.ts";
 import type { OnImageTextElement } from "./text-density.ts";
 import { deriveBrandVisualDNA } from "./brand-visual-dna.ts";
 import { getIndustryVisualVocabulary } from "./industry-visual-vocabulary.ts";
@@ -1555,6 +1555,18 @@ export async function prepareNearTermPackageItems(
       // shape was just used. Recovered from the exact same already-fetched
       // creative_spec.treatment as recentArchetypeHistory -- no new query.
       const recentTextStructures: string[] = [];
+      // Creative Generation Architecture Repair (2026-09-07): real, live bug
+      // found here -- describeCompositionShape and a `recentCompositions`
+      // input already existed on CreativeTreatmentInput (added by the FINAL
+      // HERMES mission specifically to stop two different objectives from
+      // converging on the same ad design), but this, the ONE real automated
+      // call site, never computed or passed it -- the anti-repetition
+      // mechanism for composition SHAPE was wired into the type system and
+      // the prompt builder, then never actually fed with real history for
+      // Social Autopilot's automated posts. Recovered from the exact same
+      // already-fetched creative_spec.treatment as recentArchetypeHistory --
+      // no new query.
+      const recentCompositions: string[] = [];
       let recentAssetIds: string[] = [];
       if (recentVariantIds.length) {
         const [{ data: recentVariants }, { data: recentMediaRows }] = await Promise.all([
@@ -1566,11 +1578,13 @@ export async function prepareNearTermPackageItems(
           if (typeof row.objective === "string" && CONTENT_OBJECTIVE_VALUES.includes(row.objective as (typeof CONTENT_OBJECTIVE_VALUES)[number])) recentObjectives.push(row.objective as ContentObjective);
           const spec = (row.creative_spec ?? {}) as Record<string, unknown>;
           if (typeof spec.concept === "string" && spec.concept) recentConcepts.push(spec.concept);
-          const specTreatment = (spec.treatment ?? null) as { layoutArchetype?: unknown; textHierarchy?: unknown } | null;
+          const specTreatment = (spec.treatment ?? null) as { layoutArchetype?: unknown; textHierarchy?: unknown; adComposition?: unknown } | null;
           if (specTreatment && typeof specTreatment.layoutArchetype === "string") recentArchetypeHistory.push(specTreatment.layoutArchetype as LayoutArchetype);
           if (specTreatment?.layoutArchetype === "FEATURE_POSTER" && Array.isArray(specTreatment.textHierarchy)) {
             recentTextStructures.push(describeTextStructureShape(specTreatment.textHierarchy as OnImageTextElement[]));
           }
+          const compositionFingerprint = specTreatment ? describeCompositionShape(specTreatment.adComposition) : null;
+          if (compositionFingerprint) recentCompositions.push(compositionFingerprint);
         }
         recentAssetIds = [...new Set((recentMediaRows ?? []).map((row) => row.asset_id as string))];
       }
@@ -1746,6 +1760,8 @@ export async function prepareNearTermPackageItems(
             researchInsights,
             routingContext,
             recentTextStructures,
+            recentCompositions,
+            creativeFormat: brief.creativeFormat,
           });
           const treatmentResult = await provider.complete(
             // buildCreativeTreatmentPrompt only ever emits "system"/"user"
@@ -1757,7 +1773,7 @@ export async function prepareNearTermPackageItems(
             { brandInstructions: selectGeminiBrandInstructions(brandProfile), tenantId: authorization.tenant_id, businessInformation }
           );
           const parsedTreatment = safeParseJson(treatmentResult.text);
-          const issues = validateCreativeTreatment(parsedTreatment, { concept: brief.concept, routingContext, industry: brief.industry });
+          const issues = validateCreativeTreatment(parsedTreatment, { concept: brief.concept, routingContext, industry: brief.industry, creativeFormat: brief.creativeFormat });
           if (!issues.length) treatment = forceArchetypeOntoTreatment(parsedTreatment as CreativeTreatment, routingContext);
         } catch {
           treatment = null;
@@ -1765,7 +1781,7 @@ export async function prepareNearTermPackageItems(
         await recordCampaignTask(service, {
           authorizationId: authorization.id, tenantId: authorization.tenant_id, queueItemId: item.id,
           agentRole: "creative_director", status: treatment ? "COMPLETED" : "FAILED",
-          output: treatment ? { concept: treatment.concept, hook: treatment.hook, layoutArchetype: treatment.layoutArchetype } : null,
+          output: treatment ? { concept: treatment.concept, hook: treatment.hook, layoutArchetype: treatment.layoutArchetype, creativeFormat: brief.creativeFormat } : null,
           failureReason: treatment ? null : "treatment_generation_soft_failed_falls_back_to_brief_only",
         });
       }

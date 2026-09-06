@@ -190,6 +190,7 @@ test("buildCreativeTreatmentPrompt surfaces the real 28-Day Campaign Strategy Pl
       ctaStrategy: "an invitation to learn more or read further, establishing expertise",
       creativeConcept: "Customer Pain Point: Overcoming Inconsistent Weekend Seafood Availability — Why our direct-from-the-jetty sourcing removes the weekend seafood gamble entirely",
       visualCategory: "close_up_detail",
+      creativeFormat: "PROBLEM_SOLUTION",
       researchInsight: "Research shows customers experience severe hesitation around unreliable weekend seafood quality. Addressing it directly builds immediate rapport.",
     },
     customerPsychology: [

@@ -32,6 +32,8 @@ import { summarizeIndustryVisualVocabulary } from "./industry-visual-vocabulary.
 import type { OnImageTextElement } from "./text-density.ts";
 import { findPlaceholderOrFiller } from "./placeholder-detection.ts";
 import { ARCHETYPE_IDS, ARCHETYPE_REGISTRY, isValidArchetype, type LayoutArchetype } from "./archetype-registry.ts";
+import { buildCreativeFormatDirective, getCreativeFormatDefinition, type CreativeFormat } from "./creative-format.ts";
+import { FORBIDDEN_TEMPLATE_BUZZWORDS } from "./quality-score.ts";
 
 /**
  * Subscription-Gated Visual Archetypes brief Section 6: an explicit routing
@@ -106,6 +108,17 @@ export interface CreativeTreatmentInput {
    * never to forbid one.
    */
   recentCompositions?: string[];
+  /**
+   * Creative Generation Architecture Repair (2026-09-07): the real,
+   * strategy-decided CreativeFormat for this post (see creative-format.ts's
+   * header for the traced root cause this closes). Optional and additive --
+   * a caller that omits it (an older test fixture, a not-yet-updated call
+   * site) gets EXACTLY today's unconditional "prefer photography, minimal
+   * text" framing below, never a behavior change by omission. Every real
+   * production call site (package-autopilot.ts, studio-creative-
+   * treatment.ts) supplies one via CreativeBrief.creativeFormat.
+   */
+  creativeFormat?: CreativeFormat;
 }
 
 /** Real shape fingerprint for a treatment's on-image message -- the
@@ -378,7 +391,17 @@ export function buildCreativeTreatmentPrompt(input: CreativeTreatmentInput): AIM
     `You are the creative director and visual art director for a premium social-media agency.`,
     `A senior team already decided the strategy for this post -- do not re-derive it. Your job is to turn it into ONE real, specific creative idea and a full visual treatment, the way an agency would brief a photographer before a shoot.`,
     `The final creative must feel business-specific, visually rich, simple, premium, intentional, modern, and clearly NOT generic AI output. Default philosophy: IMAGE/VISUAL IDEA FIRST, message second, supporting text third, brand/CTA last -- never a paragraph of text decorated with a picture.`,
-    `Prefer real visual storytelling (photography of the actual business/product/service in use) over text-based graphics. A creative with no on-image text at all is a valid, often stronger, choice -- do not force a headline or CTA onto every creative. Default to ONE primary idea; at most one short supporting line; a CTA only when it genuinely helps.`,
+    // Creative Generation Architecture Repair (2026-09-07): this used to be
+    // ONE unconditional sentence for every post regardless of what the day's
+    // strategy called for -- the real, traced root cause of the system
+    // defaulting to "photo + one headline + CTA" even on days whose
+    // strategy genuinely needed a structured, information-dense ad (an
+    // offer, a comparison, a benefits list). See creative-format.ts's
+    // header. A caller with no creativeFormat (an older fixture/call site)
+    // gets exactly the original sentence -- no behavior change by omission.
+    input.creativeFormat
+      ? `${buildCreativeFormatDirective(input.creativeFormat)} This format decision is ALREADY MADE by the strategy layer -- design the visual idea, textHierarchy, and adComposition to satisfy it, don't default back to a generic photo-plus-headline shape just because that's the model's own habit.`
+      : `Prefer real visual storytelling (photography of the actual business/product/service in use) over text-based graphics. A creative with no on-image text at all is a valid, often stronger, choice -- do not force a headline or CTA onto every creative. Default to ONE primary idea; at most one short supporting line; a CTA only when it genuinely helps.`,
     buildArchetypeInstruction(input.routingContext, input.recentTextStructures ?? []),
     `Never invent a business fact not present in the verified facts given to you. Creative persuasion must never become fabricated business information.`,
     `Never write generic AI marketing filler ("Elevate your experience", "Discover the magic", "Unleash your potential", and phrases like them) -- every word must be specific to this concept and this business. Premium design also comes from knowing what NOT to include: if a supporting line or CTA doesn't earn its place, omit it.`,
@@ -407,6 +430,7 @@ export function buildCreativeTreatmentPrompt(input: CreativeTreatmentInput): AIM
     `- Content pillar: ${input.brief.contentPillar}`,
     `- Concept angle to develop into a real idea: ${input.brief.concept}`,
     `- CTA style if a CTA is used: ${input.brief.cta}`,
+    input.creativeFormat ? `- ${buildCreativeFormatDirective(input.creativeFormat)}` : "",
     // FINAL HERMES ROOT-CAUSE + STRATEGY RESTORATION mission (2026-09-06):
     // real bug found live -- this block only ever read 5 shallow fields
     // off the brief. buildCreativeBrief already computes a real hook
@@ -554,6 +578,49 @@ export interface CreativeTreatmentValidationIssue {
   issue: string;
 }
 
+/** Minimal, dependency-free structural check -- deliberately NOT the real
+ * `parseCreativeComposition` (composition-render.ts), which this module
+ * stays free of importing by design (see CreativeTreatment.adComposition's
+ * own doc comment). Only asks "does this look like a real, multi-block
+ * composition", matching the prompt's own "use 2-5 blocks total" rule --
+ * the renderer is the single source of truth for whether it's actually
+ * valid; this just catches the empty/trivial case for the soft
+ * format-compliance check below. */
+function hasSubstantiveAdComposition(value: unknown): boolean {
+  if (!value || typeof value !== "object") return false;
+  const blocks = (value as { blocks?: unknown }).blocks;
+  return Array.isArray(blocks) && blocks.length >= 2;
+}
+
+/** Case-insensitive substring match against the SAME Hard Anti-Template
+ * buzzword list quality-score.ts already enforces on captions -- see that
+ * module's FORBIDDEN_TEMPLATE_BUZZWORDS doc comment for why this needs its
+ * own check here: on-image text is a separate generation path that gets
+ * rendered as literal pixels, never touched by the caption-side check. */
+function findForbiddenBuzzword(text: string): string | null {
+  const lower = text.toLowerCase();
+  return FORBIDDEN_TEMPLATE_BUZZWORDS.find((phrase) => lower.includes(phrase)) ?? null;
+}
+
+/** Best-effort, dependency-free string collector over an unknown JSON-like
+ * value -- used to sweep every real string field inside an `adComposition`
+ * (whose exact block shapes this module deliberately doesn't import; see
+ * hasSubstantiveAdComposition's own comment) for the same buzzword check.
+ * Capped depth/breadth: a treatment's adComposition is always a small,
+ * shallow object, never a reason to risk runaway recursion on a malformed
+ * payload. */
+function collectStrings(value: unknown, out: string[] = [], depth = 0): string[] {
+  if (depth > 4 || out.length > 100) return out;
+  if (typeof value === "string") {
+    if (value.trim()) out.push(value);
+  } else if (Array.isArray(value)) {
+    for (const item of value.slice(0, 20)) collectStrings(item, out, depth + 1);
+  } else if (value && typeof value === "object") {
+    for (const v of Object.values(value).slice(0, 20)) collectStrings(v, out, depth + 1);
+  }
+  return out;
+}
+
 /** Deterministic structural + genericness validation. Catches both
  * malformed JSON shape AND the specific failure mode this module exists
  * to prevent: a "treatment" that's really just the category label restated
@@ -561,7 +628,7 @@ export interface CreativeTreatmentValidationIssue {
  * short/empty) sneaking through as if it were real creative work. */
 export function validateCreativeTreatment(
   treatment: unknown,
-  context: { concept: string; routingContext?: ArchetypeRoutingContext; industry?: IndustryCategory }
+  context: { concept: string; routingContext?: ArchetypeRoutingContext; industry?: IndustryCategory; creativeFormat?: CreativeFormat }
 ): CreativeTreatmentValidationIssue[] {
   const issues: CreativeTreatmentValidationIssue[] = [];
   const t = treatment as Partial<CreativeTreatment> | null | undefined;
@@ -607,6 +674,8 @@ export function validateCreativeTreatment(
     for (const el of t.textHierarchy) {
       const leak = el?.text ? findPlaceholderOrFiller(el.text) : null;
       if (leak) issues.push({ field: "textHierarchy", issue: `"${el.role}" text contains implementation-instruction/placeholder leakage: "${leak}"` });
+      const buzzword = el?.text ? findForbiddenBuzzword(el.text) : null;
+      if (buzzword) issues.push({ field: "textHierarchy", issue: `"${el.role}" text violates the Hard Anti-Template rule with generic filler phrase: "${buzzword}"` });
       // Real defect found live on StratXcel's own published output (this
       // exact real headline: "Local SEO that runs while you run your
       // clinic."): checkTargetIndustryContamination was already applied to
@@ -632,9 +701,26 @@ export function validateCreativeTreatment(
   } else if (t.cta.text) {
     const leak = findPlaceholderOrFiller(t.cta.text);
     if (leak) issues.push({ field: "cta", issue: `cta.text contains implementation-instruction/placeholder leakage: "${leak}"` });
+    const buzzword = findForbiddenBuzzword(t.cta.text);
+    if (buzzword) issues.push({ field: "cta", issue: `cta.text violates the Hard Anti-Template rule with generic filler phrase: "${buzzword}"` });
     if (context.industry) {
       const contamination = checkTargetIndustryContamination(t.cta.text, context.industry);
       if (contamination.isContaminated) issues.push({ field: "cta", issue: `cta.text: ${contamination.reason}` });
+    }
+  }
+
+  // Creative Generation Architecture Repair (2026-09-07): the same
+  // Hard Anti-Template sweep, applied to every real string inside
+  // adComposition -- an offer/benefit/stat block is just as capable of
+  // shipping "Elevate your experience" onto the final rendered creative as
+  // textHierarchy is, and nothing checked it before this.
+  if (t.adComposition) {
+    for (const str of collectStrings(t.adComposition)) {
+      const buzzword = findForbiddenBuzzword(str);
+      if (buzzword) {
+        issues.push({ field: "adComposition", issue: `contains generic filler phrase violating the Hard Anti-Template rule: "${buzzword}"` });
+        break;
+      }
     }
   }
 
@@ -660,6 +746,42 @@ export function validateCreativeTreatment(
       issues.push({ field: "layoutArchetype", issue: `server forced "${forcedArchetype}" but the treatment returned "${t.layoutArchetype}" -- AI must never override a server-forced archetype` });
     } else if (!forcedArchetype && allowedArchetypes.length && !allowedArchetypes.includes(t.layoutArchetype)) {
       issues.push({ field: "layoutArchetype", issue: `"${t.layoutArchetype}" is not in this tenant's allowed set (${allowedArchetypes.join(", ")}) -- tier/preference bypass attempt or model error` });
+    }
+  }
+
+  // Creative Generation Architecture Repair (2026-09-07): catches the exact
+  // failure mode this mission exists to close. Real, LIVE evidence (not a
+  // guess): a real Gemini call for an OFFER_PROMOTION-format post, given
+  // this exact format directive, still came back with only a plain
+  // headline+supportingLine+cta textHierarchy and NO adComposition at all --
+  // precisely the "headline + body + cta is the weakest answer" default the
+  // treatment prompt itself warns against. An earlier version of this check
+  // accepted "2+ real textHierarchy elements" as an alternative to a real
+  // adComposition; that escape hatch is exactly what let this real failure
+  // through uncaught. A structure-required format's whole point is a block
+  // type (offer/comparison/quote/steps/stat/benefits) that plain
+  // textHierarchy cannot express, so only a genuine adComposition satisfies
+  // it now -- EXCEPT when the server has forced FEATURE_POSTER, whose own
+  // extended textHierarchy role vocabulary (insight/proof/painPoint/
+  // solution/value/question/answer/benefit/statement/offer/differentiators
+  // -- see buildFeaturePosterContentGuidance above) is a real, independently
+  // structured alternative, not the plain four-role shape this check exists
+  // to reject.
+  if (context.creativeFormat) {
+    const def = getCreativeFormatDefinition(context.creativeFormat);
+    if (def.textPolicy === "structure_required") {
+      const hasComposition = hasSubstantiveAdComposition(t.adComposition);
+      const featurePosterExtendedRoles = new Set(["insight", "proof", "painPoint", "solution", "value", "question", "answer", "benefit", "statement", "offer", "differentiators"]);
+      const hasFeaturePosterStructure =
+        context.routingContext?.forcedArchetype === "FEATURE_POSTER" &&
+        Array.isArray(t.textHierarchy) &&
+        t.textHierarchy.filter((e) => e?.text?.trim() && featurePosterExtendedRoles.has(e.role)).length >= 1;
+      if (!hasComposition && !hasFeaturePosterStructure) {
+        issues.push({
+          field: "adComposition",
+          issue: `creative format "${context.creativeFormat}" requires real on-image structure (${def.directive}), but the treatment returned no substantive adComposition -- a plain headline/supportingLine/cta textHierarchy is the weak default this format must NOT fall back to`,
+        });
+      }
     }
   }
 
@@ -761,7 +883,7 @@ export async function generateCreativeTreatment(
   });
 
   const parsed = result.structuredOutput ?? safeParseJson(result.text);
-  const issues = validateCreativeTreatment(parsed, { concept: input.brief.concept, routingContext: input.routingContext })
+  const issues = validateCreativeTreatment(parsed, { concept: input.brief.concept, routingContext: input.routingContext, creativeFormat: input.creativeFormat })
     // A forced-archetype mismatch is real, useful diagnostic signal (the
     // AI didn't follow instructions) but must never actually block
     // generation -- forceArchetypeOntoTreatment below corrects it

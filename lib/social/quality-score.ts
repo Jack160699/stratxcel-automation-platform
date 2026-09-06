@@ -24,6 +24,37 @@ import type { ContentObjective } from "./content-options.ts";
 import { findPlaceholderOrFiller } from "./placeholder-detection.ts";
 import { checkRepetition, type CreativeFingerprint } from "./content-diversity.ts";
 
+/**
+ * Hard Anti-Template Rule (Mission G §10) -- exported (Creative Generation
+ * Architecture Repair, 2026-09-07) so creative-treatment.ts's validator can
+ * apply the SAME banned-phrase list to on-image text (headline/
+ * textHierarchy/cta/adComposition blocks). Before this, these phrases were
+ * only ever checked against the CAPTION -- an on-image headline could still
+ * read "Elevate your experience" and pass every check, since that text is a
+ * separate generation path rendered as literal pixels, never touched by
+ * this module.
+ */
+export const FORBIDDEN_TEMPLATE_BUZZWORDS = [
+  "ai-powered",
+  "data-driven",
+  "end-to-end",
+  "grow your business",
+  "we grow your business",
+  "your social presence, running while you rest",
+  "running while you rest",
+  "we handle the rest",
+  "take care of the rest",
+  "take your business online",
+  "automated follow-up",
+  "end-to-end automation",
+  "intelligent platform",
+  "experience excellence",
+  "quality you can trust",
+  "elevate your experience",
+  "discover the magic",
+  "unleash your potential",
+];
+
 export type QualityFailureReason =
   | "PLACEHOLDER_DETECTED"
   | "MALFORMED_STRUCTURE"
@@ -274,26 +305,6 @@ export function scoreGeneratedContent(input: QualityScoreInput): QualityScoreRes
   // --- Hard-fail: Anti-Template Rule (Mission G §10) ---
   // The generator must NOT repeatedly use default AI/marketing filler buzzwords
   // unless the specific business verified facts explicitly define it.
-  const FORBIDDEN_TEMPLATE_BUZZWORDS = [
-    "ai-powered",
-    "data-driven",
-    "end-to-end",
-    "grow your business",
-    "we grow your business",
-    "your social presence, running while you rest",
-    "running while you rest",
-    "we handle the rest",
-    "take care of the rest",
-    "take your business online",
-    "automated follow-up",
-    "end-to-end automation",
-    "intelligent platform",
-    "experience excellence",
-    "quality you can trust",
-    "elevate your experience",
-    "discover the magic",
-    "unleash your potential",
-  ];
   const lowerCap = `${title} ${caption}`.toLowerCase();
   for (const buzzword of FORBIDDEN_TEMPLATE_BUZZWORDS) {
     if (lowerCap.includes(buzzword)) {

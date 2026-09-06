@@ -17,6 +17,7 @@ import { classifyIndustry, getIndustryProfile, type IndustryCategory } from "./i
 import { selectLeastRecentlyUsed, selectLeastRecentlyUsedExcluding } from "./content-diversity.ts";
 import type { PlannedDayStrategy } from "./campaign-strategy-planner.ts";
 import type { CustomerPsychologyProfile } from "../hermes/social-autopilot-campaign.ts";
+import { resolveCreativeFormat, type CreativeFormat } from "./creative-format.ts";
 
 const OBJECTIVE_CTA_STYLE: Record<ContentObjective, string> = {
   REACH: "an invitation to see or discover more, not a hard sell",
@@ -92,6 +93,13 @@ export interface CreativeBriefInput {
    * tenant with no structured audience data on file yields [], never a
    * fabricated psychology profile. */
   customerPsychology?: CustomerPsychologyProfile[] | null;
+  /** Creative Generation Architecture Repair (2026-09-07): only consulted
+   * when `plannedStrategy` has no creativeFormat of its own (a manual/
+   * Studio brief, or a recovery retry that deliberately drops the day's
+   * plan -- see buildCreativeBrief below) -- real rotation history so a
+   * caller with no 28-day plan still varies format rather than always
+   * landing on the same first candidate for its objective. */
+  recentCreativeFormats?: CreativeFormat[];
 }
 
 export interface CreativeBrief {
@@ -114,6 +122,12 @@ export interface CreativeBrief {
   seasonalContext: string | null;
   plannedStrategy?: PlannedDayStrategy | null;
   customerPsychology?: CustomerPsychologyProfile[] | null;
+  /** Creative Generation Architecture Repair (2026-09-07): see
+   * creative-format.ts's header for the real gap this closes -- a
+   * CreativeFormat is now ALWAYS present on every brief (derived from the
+   * day's planned strategy when one exists, otherwise from `objective`
+   * alone), and creative-treatment.ts's prompt builder actually reads it. */
+  creativeFormat: CreativeFormat;
 }
 
 const FORMAT_LABEL: Record<CreativeBriefInput["mediaType"], string> = {
@@ -176,6 +190,8 @@ export function buildCreativeBrief(input: CreativeBriefInput): CreativeBrief {
   const hook = planned?.hookStrategy || HOOK_STYLE_BY_OBJECTIVE[input.objective];
 
   const recentCaptionExcerpts = input.recentCaptionExcerpts ?? [];
+  const creativeFormat: CreativeFormat = planned?.creativeFormat
+    ?? resolveCreativeFormat({ objective: input.objective, recentFormats: input.recentCreativeFormats ?? [] });
 
   const avoid = [
     "generic marketing filler (\"AI-powered\", \"automated\", \"data-driven\", \"end-to-end\", \"we grow your business\", \"experience excellence\", \"quality you can trust\", \"contact us today\", \"don't miss out\")",
@@ -252,6 +268,7 @@ export function buildCreativeBrief(input: CreativeBriefInput): CreativeBrief {
     seasonalContext: input.seasonalContext?.trim() || null,
     plannedStrategy: input.plannedStrategy,
     customerPsychology: input.customerPsychology,
+    creativeFormat,
     avoid,
   };
 }
@@ -281,6 +298,7 @@ export function formatCreativeBriefForPrompt(brief: CreativeBrief): string {
       ? `- Real customer psychology on file: ${psychology.map((profile) => `${profile.audienceLabel} worries about ${profile.painPoints.join("; ")}`).join(" | ")}`
       : "",
     `- Format: ${brief.format}`,
+    `- Creative format: ${brief.creativeFormat} (the on-image visual treatment is designed separately around this -- keep the caption's message consistent with it, e.g. don't write a mood/story caption for an OFFER_PROMOTION visual or a hard-sell caption for a BRAND_STORY visual).`,
     `- Hook direction: ${brief.hook}`,
     `- Headline direction: ${brief.headlineDirection}`,
     `- Supporting copy direction: ${brief.supportingCopyDirection}`,

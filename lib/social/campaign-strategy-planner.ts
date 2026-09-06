@@ -15,6 +15,7 @@ import type { BusinessContentIntelligence } from "./business-intelligence.ts";
 import { classifySubNiche, getNicheResearchProfile, type SubNicheCategory } from "./industry-taxonomy.ts";
 import { CONTENT_OPPORTUNITY_DEFINITIONS, type ContentOpportunityType } from "./opportunity-map.ts";
 import type { ContentObjective } from "./content-options.ts";
+import { resolveCreativeFormat, type CreativeFormat } from "./creative-format.ts";
 
 export type VisualCategory =
   | "product_photography"
@@ -45,6 +46,14 @@ export interface PlannedDayStrategy {
   creativeConcept: string;
   visualCategory: VisualCategory;
   researchInsight: string;
+  /** Creative Generation Architecture Repair (2026-09-07): the real,
+   * causally-wired creative format for this day (see creative-format.ts) --
+   * unlike `visualCategory` above (computed and rotated, but only ever
+   * consumed as a post-hoc anti-repetition signal in visual-quality-score.ts),
+   * this field is read by creative-treatment.ts's prompt builder and
+   * actually steers whether the creative is photo-led or a structured
+   * adComposition, and which blocks it should reach for. */
+  creativeFormat: CreativeFormat;
 }
 
 export interface CampaignPlan {
@@ -117,6 +126,10 @@ export function buildCampaignStrategy(input: {
 
   const plannedDays: PlannedDayStrategy[] = [];
   const usedAngles = new Set<string>();
+  // Rolling window, not the full history -- selectLeastRecentlyUsed only
+  // needs to know what was JUST used to keep the format genuinely rotating;
+  // capping it keeps early-campaign formats from permanently biasing day 28.
+  const recentFormats: CreativeFormat[] = [];
 
   for (let d = 1; d <= daysToPlan; d++) {
     const oppType = ORDERED_OPPORTUNITY_SEQUENCE[(d - 1) % ORDERED_OPPORTUNITY_SEQUENCE.length];
@@ -232,6 +245,12 @@ export function buildCampaignStrategy(input: {
     const hookDirection = oppDef.defaultHookStyle;
     const ctaDirection = oppDef.defaultCtaStyle;
     const objective: ContentObjective = oppDef.strategicObjective as ContentObjective;
+    const creativeFormat = resolveCreativeFormat({
+      opportunityType: oppType,
+      objective,
+      recentFormats: recentFormats.slice(-6),
+    });
+    recentFormats.push(creativeFormat);
 
     plannedDays.push({
       dayNumber: d,
@@ -247,6 +266,7 @@ export function buildCampaignStrategy(input: {
       ctaStrategy: ctaDirection,
       creativeConcept: `${oppDef.label}: ${topic} — ${uniqueAngle}`,
       visualCategory: visualCat,
+      creativeFormat,
       researchInsight,
     });
   }
