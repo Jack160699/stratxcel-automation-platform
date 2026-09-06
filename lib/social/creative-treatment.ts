@@ -474,6 +474,17 @@ export function buildCreativeTreatmentPrompt(input: CreativeTreatmentInput): AIM
     // format" had been reduced to picking one of 13 pre-written posters,
     // so every strategy arrived at the same logo+headline+photo+CTA shape.
     ``,
+    // THE decisive fix. Traced live: with layoutArchetype forced to
+    // BASIC_ESSENTIAL, three consecutive regenerations returned
+    // photo_full:headline+subhead+cta -- which is precisely what that
+    // archetype's own description above prescribes ("photo with a bottom
+    // band carrying headline, supporting line and CTA"). The recency
+    // signal was correctly populated and correctly quoted back, and the
+    // model overrode it anyway, because the archetype description reads as
+    // a direct instruction about the design. The archetype is a SERVER
+    // ROUTING/ENTITLEMENT value, not a design brief; while a composition
+    // is being authored it must not be allowed to prescribe one.
+    `IGNORE THE LAYOUT ARCHETYPE WHEN DESIGNING THIS AD. "layoutArchetype" above is a legacy routing/entitlement value the server uses for authorization -- it is NOT a design instruction, and its description does NOT tell you what this advertisement should look like. "adComposition" fully supersedes it. Do not let it push you toward a photo with a headline, a supporting line and a CTA in a band.`,
     `DESIGN THE ADVERTISEMENT ("adComposition"). This is a real social-media ADVERTISEMENT, like a professional agency or a strong Canva ad -- not a photo with a caption typed over it. Build it from the blocks below, choosing ONLY the ones this specific strategy actually needs, in the order they should be read.`,
     `The blocks (each is optional -- pick what the message needs):`,
     `  { "kind": "eyebrow", "text": string }  -- a short uppercase kicker (category, city, offer flag).`,

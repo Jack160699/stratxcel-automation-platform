@@ -337,6 +337,10 @@ test("the ad-composition brief makes the OBJECTIVE decide the design, and names 
     assert.ok(combined.includes(`"kind": "${kind}"`), `the advertising vocabulary must offer the ${kind} block`);
   }
   assert.ok(/never invent a statistic, price, discount, award or testimonial/.test(combined), "fabrication must be forbidden at the point the number-led blocks are offered");
+  // Traced live: with an archetype forced, three consecutive regenerations
+  // returned exactly that archetype's prescribed shape, overriding both the
+  // objective and the recency signal.
+  assert.ok(/IGNORE THE LAYOUT ARCHETYPE WHEN DESIGNING THIS AD/.test(combined), "the archetype must be explicitly demoted to a routing value so it cannot prescribe the design");
 });
 
 test("recent ad designs for the same tenant are surfaced with an explicit instruction to produce a different one", () => {
