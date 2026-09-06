@@ -1,5 +1,63 @@
 # WhatsApp AI Agency — Gap Audit
 
+## Update 68 — the live-browser-verification tool blocker is gone; real evidence gathered against production for the first time, scope stated precisely
+
+Picked this convergence loop back up fresh. First re-verified nothing regressed:
+production (`https://www.stratxcel.in`, Vercel project `stratxcel`) is `READY`
+on the exact latest commit (`f21a02f`, the tip of both `main` and
+`release/stratxcel-final`, confirmed identical), `/api/health` returns
+`{"status":"healthy","commit":"f21a02f...","hermesMode":"disabled", ...}` —
+matching this doc's own record that `HERMES_MODE` stays the deliberate kill
+switch. Five real, already-shipped creative-engine commits since Update 67
+(composition declarativeness, objective-driven design selection, corrective
+retry, shared quality gates, two visually-inspected rendering fixes) were
+independently confirmed on `main`, tested, and deployed — no lost work, per
+the master brief's own deployment discipline (§38).
+
+Then re-attempted `capability:live_browser_ui_verification`
+(`EXTERNAL_REQUIRED` since Update 59, the exact same `D:/pw-profile`
+"already in use" lock reported identically on 7 separate prior attempts).
+This session's first `mcp__stratxcel-browser__browser_navigate` call against
+a live production URL **succeeded outright** — the lock is gone. Gathered
+real evidence, not just a tool-availability check: navigated to
+`https://www.stratxcel.in/` and `https://www.stratxcel.in/audit`, both
+rendered with the correct page title and 0 console errors (1 benign
+Next.js CSS-preload-timing warning on `/audit`, a routing-preload heuristic
+artifact, not a functional defect), and a real screenshot confirmed the
+public Audit landing page's hero, six "what we check" cards, and CTAs all
+render exactly as designed.
+
+Stated precisely, not overclaimed: this closes the **tool-level** blocker
+and verifies **unauthenticated/public** routes for real. It does not cover
+the row's original full scope — Admin shell, Copilot chat UI, the
+authenticated customer Growth page — which need a real staff/admin login.
+Deliberately did not create a new privileged auth account or generate a
+sign-in link for an existing staff member unilaterally to get there: that is
+a major-account-access action under the master brief's own high-consequence
+category (§21), and no message in this engagement authorized it. Recorded
+the precise next step instead: the owner either provides a dedicated
+read-only QA staff login for future verification passes, or explicitly
+authorizes creating one. Registry: `capability:live_browser_ui_verification`
+moves `EXTERNAL_REQUIRED` → `REAL_EXPOSED`, scoped exactly as above.
+Migration: `supabase/migrations/20260907010000_capability_registry_live_browser_verification_unblocked.sql`.
+
+**Registry state after this update: 51 `REAL_EXPOSED`, 8 `EXTERNAL_REQUIRED`,
+2 `REAL_NOT_EXPOSED`** (the Google OAuth finding from Update 67 is the one
+that keeps the `EXTERNAL_REQUIRED` count from dropping further — see below,
+unchanged and correctly not silently worked around).
+
+**`capability:stratxcel_own_google_oauth_expired` (Update 67) is still open
+and still requires the owner** — re-confirmed this session, not re-litigated:
+Stratxcel's own real tenant's Google OAuth refresh token is still invalid
+(`invalid_grant`), a duplicate near-empty tenant still holds the one working
+connection for the same GA4 property/Search Console site. Per the master
+brief's own explicit instruction (§37), this agent has not silently migrated
+the duplicate tenant's connection. Two real remediation paths remain
+recorded, both needing the owner's decision: re-authenticate Google for the
+real tenant via the existing connect flow, or (if the duplicate-tenant
+reconnect was deliberate) consolidate the two tenants — a real data-migration
+call, not one to make silently.
+
 ## Update 67 — full re-detection pass: Stratxcel's own Google OAuth is genuinely broken in production (a real, live finding, not a stale report), and a duplicate-tenant Google connection traced to the cause
 
 Per an explicit instruction to re-detect everything from live system state rather
