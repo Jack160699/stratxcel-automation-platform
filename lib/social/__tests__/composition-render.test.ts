@@ -1,6 +1,7 @@
 // Run with: node --experimental-strip-types lib/social/__tests__/composition-render.test.ts
 import assert from "node:assert/strict";
 import { buildCompositionSvg, parseCreativeComposition, type CreativeComposition } from "../composition-render.ts";
+import { wrapTextWithEllipsis, getFont } from "../text-overlay-render.ts";
 
 function test(name: string, fn: () => void | Promise<void>) {
   return (async () => {
@@ -147,6 +148,21 @@ async function main() {
     const ys = [...svg.matchAll(/y="(-?[\d.]+)"/g)].map((m) => parseFloat(m[1]!));
     assert.ok(ys.every((y) => y <= BASE.height), `no element may be positioned below the canvas (max y seen: ${Math.max(...ys)})`);
     assert.ok(!svg.includes("NaN"), "no broken path data under heavy content");
+  });
+
+  await test("Creative Generation Architecture Repair: a real, realistic benefit/step sentence does not get its last word silently ellipsized (real defect found live via visual inspection -- 'benefits'/'steps' items were capped at 2 lines while headline/body/quote get 3-4, in a column made narrower still by an icon)", () => {
+    const font = getFont(500);
+    // The exact real sentence a live model attempt produced, at
+    // realistic dimensions for this column (renderBlock's own
+    // `fs = cw * 0.028 * scale`, `textW` narrowed by the icon + gap the
+    // "benefits"/"steps" cases both reserve).
+    const realBenefitSentence = "Creatives generated with your real logo, automatically";
+    const fontSize = 1080 * 0.028;
+    const textW = 1080 * 0.42 - fontSize * 2.2; // approximates a photo_side content column minus the icon offset
+    const lines = wrapTextWithEllipsis(font, realBenefitSentence, textW, fontSize, 3);
+    const joined = lines.join(" ");
+    assert.ok(!joined.endsWith("…"), `expected the real sentence to fit within 3 lines without truncation, got: ${JSON.stringify(lines)}`);
+    assert.ok(joined.includes("automatically"), `expected the sentence's real last word to survive wrapping, got: ${JSON.stringify(lines)}`);
   });
 
   console.log("composition-render.test.ts: ALL PASS");

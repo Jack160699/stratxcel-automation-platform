@@ -532,8 +532,14 @@ export function buildCreativeTreatmentPrompt(input: CreativeTreatmentInput): AIM
     `  { "kind": "stat", "value": string, "caption": string }  -- an OVERSIZED figure ("40%", "Rs.0", "4 stages", "12 years"). Use when a real number is the most persuasive thing you have. "value" must be SHORT (under ~8 characters) -- it is rendered very large.`,
     `  { "kind": "offer", "value": string, "detail": string }  -- a promotional message on its own colored field. Use for offers/promotions.`,
     `  { "kind": "badges", "items": string[] }  -- up to 3 SHORT trust chips ("25-year warranty", "Subsidy handled"). Each under ~4 words.`,
-    `  { "kind": "benefits", "items": string[] }  -- up to 4 benefit lines, each rendered with a check icon.`,
-    `  { "kind": "steps", "items": string[] }  -- 2-4 numbered stages. Use for a process/journey message.`,
+    // Real defect found live during visual inspection (Creative Generation
+    // Architecture Repair, 2026-09-07): a real benefit sentence this long
+    // ("Creatives generated with your real logo, automatically") rendered
+    // with its last word silently ellipsized -- this column is narrower
+    // than a headline/body's (an icon eats into it). Explicit length
+    // guidance, matching the existing pattern already used for stat.value.
+    `  { "kind": "benefits", "items": string[] }  -- up to 4 benefit lines, each rendered with a check icon. Each item under ~8 words -- this is a compact icon row, not a sentence with a clause.`,
+    `  { "kind": "steps", "items": string[] }  -- 2-4 numbered stages. Use for a process/journey message. Each item under ~7 words -- a stage label, not a full instruction.`,
     `  { "kind": "comparison", "leftLabel": string, "leftItems": string[], "rightLabel": string, "rightItems": string[] }  -- two columns. Use for old-way-vs-our-way / problem-vs-solution. The RIGHT column is the highlighted one, so put YOUR side on the right.`,
     `  { "kind": "quote", "text": string, "attribution": string }  -- a testimonial. ONLY if a real customer quote exists in the verified facts; never invent one.`,
     `  { "kind": "cta", "text": string }  -- the action.`,

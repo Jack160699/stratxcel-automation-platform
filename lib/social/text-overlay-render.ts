@@ -1137,8 +1137,36 @@ function buildCleanLogoWatermarkSvg(input: TextOverlayLayoutInput, resolvedLogo:
     if (!logoSvg) return `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg"></svg>`;
     return `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg"><rect x="${round2(x - pad)}" y="${round2(y - pad)}" width="${round2(logoBoxWidth + pad * 2)}" height="${round2(logoBoxHeight + pad * 2)}" rx="${round2(pad)}" fill="#000000" fill-opacity="0.30" />${logoSvg}</svg>`;
   }
-  // If no real logo exists, NEVER invent one or draw fake text panels
-  return `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg"></svg>`;
+  // Real defect found live during visual inspection (Creative Generation
+  // Architecture Repair, 2026-09-07): a tenant with no uploaded logo image
+  // shipped a fully unbranded creative for every photo-only post (no
+  // headline, no supporting line, no CTA -- exactly what PHOTOGRAPHIC_AD/
+  // BRAND_STORY/LOCAL_BUSINESS_AD legitimately produce) -- literally
+  // nothing on the image identified whose business it was. "Never invent
+  // one or draw fake text panels" (the original rule this function's
+  // comment stated) is about never fabricating a LOGO GRAPHIC or a made-up
+  // panel of copy -- it was never a reason to omit the business's own REAL,
+  // verified name as plain text. Every other archetype already falls back
+  // to plain brand-name text when no logo image exists (see
+  // composition-render.ts's own brand lockup); this watermark path was the
+  // one place that fell back to nothing instead. `brandLabelText` is
+  // always the real business name (pickElements defaults it from
+  // `businessName`, never invented) -- rendering it is not "inventing"
+  // anything.
+  if (!brandLabelText.trim()) return `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg"></svg>`;
+  const margin = Math.round(width * 0.05);
+  const brandFS = Math.round(width * 0.026);
+  const font = getFont(700);
+  const text = brandLabelText.trim().toUpperCase();
+  const letterSpacing = Math.round(brandFS * 0.1);
+  const textWidth = measureWidth(font, text, brandFS, letterSpacing);
+  const padX = Math.round(brandFS * 0.6);
+  const padY = Math.round(brandFS * 0.5);
+  const boxW = textWidth + padX * 2;
+  const boxH = brandFS * 1.3 + padY * 2;
+  const x = width - margin - boxW;
+  const y = margin;
+  return `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg"><rect x="${round2(x)}" y="${round2(y)}" width="${round2(boxW)}" height="${round2(boxH)}" rx="${round2(boxH / 2)}" fill="#000000" fill-opacity="0.30" />${renderTextLines([text], x + padX, y + padY + brandFS * 0.92, brandFS * 1.2, { fontSize: brandFS, weight: 700, fill: "#FFFFFF", anchor: "start", letterSpacing })}</svg>`;
 }
 
 /**

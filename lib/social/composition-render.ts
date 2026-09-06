@@ -517,7 +517,18 @@ function renderBlock(block: CompositionBlock, ctx: BlockContext): BlockOutput {
       let cy = y;
       let svg = "";
       for (const item of block.items) {
-        const lines = wrapTextWithEllipsis(font, item, textW, fs, 2);
+        // Real defect found live during visual inspection (Creative
+        // Generation Architecture Repair, 2026-09-07): a genuine,
+        // realistic benefit sentence ("Creatives generated with your real
+        // logo, automatically") rendered as "Creatives generated with your
+        // real logo,..." -- the LAST WORD silently dropped by the ellipsis,
+        // reading as cut-off, incoherent text on the actual rendered
+        // creative. This column is narrower than headline/body/quote's
+        // (an icon + gap eats into it) yet was capped at the SAME 2-line
+        // budget as a short label -- raised to 3 so a real, complete
+        // benefit sentence has room before the renderer resorts to an
+        // ellipsis at all.
+        const lines = wrapTextWithEllipsis(font, item, textW, fs, 3);
         const lh = fs * 1.32;
         svg += checkIcon(x + iconR, cy + fs * 0.62, iconR, ctx.accent, ctx.surface);
         svg += renderTextLines(lines, textX, cy + fs * 0.92, lh, { fontSize: fs, weight: 500, fill: ctx.ink, anchor: "start" });
@@ -538,7 +549,10 @@ function renderBlock(block: CompositionBlock, ctx: BlockContext): BlockOutput {
       let cy = y;
       let svg = "";
       block.items.forEach((item, i) => {
-        const lines = wrapTextWithEllipsis(font, item, textW, fs, 2);
+        // Same fix as the "benefits" case above -- a narrow icon-offset
+        // column with only a 2-line budget silently ellipsized real
+        // content on a genuine step description.
+        const lines = wrapTextWithEllipsis(font, item, textW, fs, 3);
         const lh = fs * 1.32;
         const cyMid = cy + fs * 0.6;
         svg += `<circle cx="${round2(x + r)}" cy="${round2(cyMid)}" r="${round2(r)}" fill="${escapeXml(ctx.accent)}" />`;

@@ -192,6 +192,18 @@ async function main() {
     }
   });
 
+  await test("Creative Generation Architecture Repair: a photo-only creative (no headline/supportingLine/CTA -- exactly what PHOTOGRAPHIC_AD/BRAND_STORY legitimately produce) with a REAL business name but NO uploaded logo still renders the business name as a real watermark, not a fully unbranded image (real defect found live via visual inspection: this used to render nothing at all)", () => {
+    for (const layoutArchetype of ["SPLIT_BANNER", "FLOATING_CARD", "MINIMAL_FOOTER_STRIP", "BASIC_ESSENTIAL"] as const) {
+      const svg = buildTextOverlaySvg({ ...BASE, layoutArchetype, elements: [], businessName: "Coastal Kitchen" });
+      assert.ok(glyphPaths(svg).length > 0, `${layoutArchetype}: expected a real business-name watermark when no logo exists, got no glyph content at all: ${svg.slice(0, 200)}`);
+    }
+    // A genuinely empty business name is still never fabricated into
+    // anything -- the one honest case where "render nothing" remains
+    // correct (covered by the test immediately above this one too).
+    const emptyName = buildTextOverlaySvg({ ...BASE, layoutArchetype: "SPLIT_BANNER", elements: [], businessName: "" });
+    assert.equal(glyphPaths(emptyName).length, 0);
+  });
+
   await test("a light accentColor pill gets dark CTA text, never the same white used for the rest of the on-photo text (regression: found white-on-white in real campaign output)", () => {
     for (const layoutArchetype of ["SPLIT_BANNER", "FLOATING_CARD"] as const) {
       // Isolated to ONLY a CTA (no headline/supporting/brand label) so

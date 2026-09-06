@@ -130,7 +130,29 @@ async function main() {
       secondaryColor: null,
     });
 
-    assert.equal(svgNoLogo, '<svg width="1080" height="1080" xmlns="http://www.w3.org/2000/svg"></svg>', "Must render empty SVG with zero fake text panels when no logo exists");
+    // Updated by the Creative Generation Architecture Repair (2026-09-07):
+    // this test's real, original concern was "no big blue lower-third band
+    // across the canvas when there's nothing to justify one" -- asserting
+    // on an EXACT empty-SVG string was one way to express that at the time,
+    // but it also (unintentionally) forbade rendering the business's own
+    // real, verified name at all. That turned out to be a real product
+    // defect, found live via visual inspection: a tenant with no uploaded
+    // logo shipped a fully unbranded creative for every photo-only post.
+    // The fix is a small top-right corner watermark chip (the exact same
+    // treatment the real-logo case above already uses) -- never a fake
+    // panel, never a lower-third band, never invented content (the name is
+    // the tenant's own real business name). This assertion now checks the
+    // two things this test always actually cared about: still no
+    // lower-third band, and the watermark stays a small corner chip, not a
+    // full-width panel.
+    assert.ok(!svgNoLogo.includes('fill-opacity="0.90"'), "Must still NOT render a lower-third blue band when no logo exists");
+    // Real glyph-outline <path> content (this module renders every
+    // character as a path, never a literal <text> node -- see this file's
+    // own module docblock) confirms the real business name rendered as a
+    // watermark, instead of a fully unbranded image.
+    assert.ok(/<path/.test(svgNoLogo), "Must render the real business name as a small watermark instead of a fully unbranded image");
+    const rectWidths = [...svgNoLogo.matchAll(/<rect[^>]*width="([\d.]+)"/g)].map((m) => parseFloat(m[1]!));
+    assert.ok(rectWidths.every((w) => w < 1080 * 0.6), "the no-logo watermark chip must stay a small corner element, never a full-width panel");
   });
 
   // 5. Anti-Template & Generic Buzzword Quality Gate
