@@ -1,7 +1,7 @@
 // Run with: node --experimental-strip-types lib/social/__tests__/text-overlay-render.test.ts
 import assert from "node:assert/strict";
 import sharp from "sharp";
-import { buildTextOverlaySvg, renderTextOverlay, selectLogoVariant, type TextOverlayLayoutInput, type LogoAsset, type LogoVariantBundle } from "../text-overlay-render.ts";
+import { buildTextOverlaySvg, renderTextOverlay, selectLogoVariant, getFont, sanitizeForFont, type TextOverlayLayoutInput, type LogoAsset, type LogoVariantBundle } from "../text-overlay-render.ts";
 
 function test(name: string, fn: () => void | Promise<void>) {
   return (async () => {
@@ -282,30 +282,30 @@ async function main() {
 
   // ==========================================================================
   // Subscription-Gated Visual Archetypes brief Section 16: every one of the
-  // 12 registered archetypes, exercised against the same checklist --
+  // 13 registered archetypes, exercised against the same checklist --
   // render doesn't throw, exact requested canvas dimensions (1080x1080 is
   // literally what production requests for the 1:1 aspect), headline/
   // supporting/CTA/brand/contact-footer rendering, long-text wrapping,
   // extreme lengths, missing optional fields, no clipping past canvas
-  // bounds, and (for the two that support it today) real logo handling.
+  // bounds, and (for the three that support it today) real logo handling.
   // ==========================================================================
   const ALL_ARCHETYPES = [
     "BASIC_ESSENTIAL", "SPLIT_BANNER", "FLOATING_CARD", "EDITORIAL_FRAME",
     "MINIMAL_FOOTER_STRIP", "ELEVATED_BADGE", "DUAL_TONE_SIDEBAR", "FROSTED_GLASS_CENTER",
-    "TYPOGRAPHIC_HERO", "POLAROID_LIFESTYLE", "CLINICAL_TRUST", "NEON_NIGHTLIFE",
+    "TYPOGRAPHIC_HERO", "POLAROID_LIFESTYLE", "CLINICAL_TRUST", "NEON_NIGHTLIFE", "FEATURE_POSTER",
   ] as const;
 
   /** Extracts every <rect>/<image> element's x/y/width/height so callers
    * can assert every container/logo stays within the canvas's own
    * bounds -- the real, generic "no clipping / respects safe zones" check
-   * that applies identically across all 12 archetypes' very different
+   * that applies identically across all 13 archetypes' very different
    * geometries, rather than one bespoke assertion per archetype. */
   function boxes(svg: string): Array<{ x: number; y: number; width: number; height: number }> {
     return [...svg.matchAll(/<(?:rect|image)[^>]*\bx="(-?[\d.]+)"[^>]*\by="(-?[\d.]+)"[^>]*\bwidth="([\d.]+)"[^>]*\bheight="([\d.]+)"/g)]
       .map((m) => ({ x: Number(m[1]), y: Number(m[2]), width: Number(m[3]), height: Number(m[4]) }));
   }
 
-  await test("all 12 archetypes: render does not throw with a full, realistic element set", () => {
+  await test("all 13 archetypes: render does not throw with a full, realistic element set", () => {
     for (const layoutArchetype of ALL_ARCHETYPES) {
       assert.doesNotThrow(() => {
         buildTextOverlaySvg({
@@ -321,7 +321,7 @@ async function main() {
     }
   });
 
-  await test("all 12 archetypes: renderTextOverlay produces an exact 1080x1080 PNG (the real production canvas size)", async () => {
+  await test("all 13 archetypes: renderTextOverlay produces an exact 1080x1080 PNG (the real production canvas size)", async () => {
     for (const layoutArchetype of ALL_ARCHETYPES) {
       const base = await sharp({ create: { width: 1080, height: 1080, channels: 3, background: { r: 90, g: 100, b: 80 } } }).png().toBuffer();
       const out = await renderTextOverlay(base, {
@@ -335,7 +335,7 @@ async function main() {
     }
   });
 
-  await test("all 12 archetypes: headline, supportingLine, and CTA each render as real glyph paths when present", () => {
+  await test("all 13 archetypes: headline, supportingLine, and CTA each render as real glyph paths when present", () => {
     for (const layoutArchetype of ALL_ARCHETYPES) {
       const withAll = buildTextOverlaySvg({
         ...BASE, layoutArchetype,
@@ -350,7 +350,7 @@ async function main() {
     }
   });
 
-  await test("all 12 archetypes: brand renders (as glyph-path text, or as a real logo <image> for the two archetypes that support one today)", () => {
+  await test("all 13 archetypes: brand renders (as glyph-path text, or as a real logo <image> for the three archetypes that support one today)", () => {
     for (const layoutArchetype of ALL_ARCHETYPES) {
       const withBrand = buildTextOverlaySvg({ ...BASE, layoutArchetype, elements: [{ role: "headline", text: "X" }], businessName: "Fort Kochi Coastal Kitchen" });
       const withoutBrand = buildTextOverlaySvg({ ...BASE, layoutArchetype, elements: [{ role: "headline", text: "X" }], businessName: "" });
@@ -358,9 +358,9 @@ async function main() {
     }
   });
 
-  await test("all 12 archetypes: real logo image renders with a preserved (never stretched) aspect ratio when supplied (BASIC_ESSENTIAL, FLOATING_CARD); every other archetype falls back to the text brand label without crashing", () => {
+  await test("all 13 archetypes: real logo image renders with a preserved (never stretched) aspect ratio when supplied (BASIC_ESSENTIAL, FLOATING_CARD, FEATURE_POSTER); every other archetype falls back to the text brand label without crashing", () => {
     const logo = { dataUri: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", mimeType: "image/png" as const, aspectRatio: 2.5 };
-    const logoSupported: readonly string[] = ["BASIC_ESSENTIAL", "FLOATING_CARD"];
+    const logoSupported: readonly string[] = ["BASIC_ESSENTIAL", "FLOATING_CARD", "FEATURE_POSTER"];
     for (const layoutArchetype of ALL_ARCHETYPES) {
       const svg = buildTextOverlaySvg({ ...BASE, layoutArchetype, elements: [{ role: "headline", text: "X" }], logoImage: logo });
       const imageMatch = svg.match(/<image[^>]*width="([\d.]+)"[^>]*height="([\d.]+)"/);
@@ -376,7 +376,7 @@ async function main() {
     }
   });
 
-  await test("all 12 archetypes: contact footer renders real icon primitives only for fields actually present, never a placeholder", () => {
+  await test("all 13 archetypes: contact footer renders real icon primitives only for fields actually present, never a placeholder", () => {
     for (const layoutArchetype of ALL_ARCHETYPES) {
       const full = buildTextOverlaySvg({
         ...BASE, layoutArchetype, elements: [{ role: "headline", text: "X" }],
@@ -388,7 +388,7 @@ async function main() {
     }
   });
 
-  await test("all 12 archetypes: a very long headline wraps into as many real glyph-path lines as that archetype's own design allows, never silently dropping the overflow (real bug found and fixed in several: wrapText+slice(0,N) discarded wrapped lines beyond N with zero indication -- wrapTextWithEllipsis now keeps N-1 real lines plus one real-font-metric-truncated line instead)", () => {
+  await test("all 13 archetypes: a very long headline wraps into as many real glyph-path lines as that archetype's own design allows, never silently dropping the overflow (real bug found and fixed in several: wrapText+slice(0,N) discarded wrapped lines beyond N with zero indication -- wrapTextWithEllipsis now keeps N-1 real lines plus one real-font-metric-truncated line instead)", () => {
     const longHeadline = "This is a genuinely long, realistic headline that any of these twelve archetypes must be able to wrap across several lines without ever overflowing or clipping the frame";
     // Each archetype's own deliberate max-line design constraint (see the
     // wrapTextWithEllipsis call sites in text-overlay-render.ts) -- most
@@ -410,7 +410,7 @@ async function main() {
     }
   });
 
-  await test("all 12 archetypes: extreme text lengths across every field render without throwing and without NaN/Infinity leaking into the SVG", () => {
+  await test("all 13 archetypes: extreme text lengths across every field render without throwing and without NaN/Infinity leaking into the SVG", () => {
     const extreme = "Extremely long realistic marketing copy that keeps going for quite a while to genuinely stress-test the wrapping, safe-zone, and growth logic of every single archetype in the registry without ever actually being truncated by anything other than this module's own deterministic wrapping and truncation logic";
     for (const layoutArchetype of ALL_ARCHETYPES) {
       let svg = "";
@@ -429,7 +429,7 @@ async function main() {
     }
   });
 
-  await test("all 12 archetypes: missing every optional field (no CTA, no supportingLine, no contact info, empty business name) still renders a valid, non-empty result when a headline is present", () => {
+  await test("all 13 archetypes: missing every optional field (no CTA, no supportingLine, no contact info, empty business name) still renders a valid, non-empty result when a headline is present", () => {
     for (const layoutArchetype of ALL_ARCHETYPES) {
       const svg = buildTextOverlaySvg({ ...BASE, layoutArchetype, elements: [{ role: "headline", text: "Weekend Special" }], businessName: "", contactInfo: null });
       assert.ok(svg.startsWith("<svg"), `${layoutArchetype}: expected a valid SVG root`);
@@ -437,7 +437,7 @@ async function main() {
     }
   });
 
-  await test("all 12 archetypes: no container rect or logo image ever extends past the canvas's own [0,width]x[0,height] bounds, even under a heavy realistic content stress case (real bug found and fixed: MINIMAL_FOOTER_STRIP clipped a second contact-footer row past its band edge, ELEVATED_BADGE's CTA/footer extended past the right canvas edge)", () => {
+  await test("all 13 archetypes: no container rect or logo image ever extends past the canvas's own [0,width]x[0,height] bounds, even under a heavy realistic content stress case (real bug found and fixed: MINIMAL_FOOTER_STRIP clipped a second contact-footer row past its band edge, ELEVATED_BADGE's CTA/footer extended past the right canvas edge)", () => {
     const logo = { dataUri: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", mimeType: "image/png" as const, aspectRatio: 2.5 };
     for (const layoutArchetype of ALL_ARCHETYPES) {
       const width = 1080, height = 1080;
@@ -496,10 +496,10 @@ async function main() {
     assert.equal(selectLogoVariant({ layoutArchetype: "BASIC_ESSENTIAL", logoVariants: undefined, logoImage: undefined }), null);
   });
 
-  await test("selectLogoVariant: every one of the 12 archetypes resolves a real, non-null pick from a full bundle", () => {
+  await test("selectLogoVariant: every one of the 13 archetypes resolves a real, non-null pick from a full bundle", () => {
     const asset = (id: string): LogoAsset => ({ dataUri: `data:image/png;base64,${id}`, mimeType: "image/png", aspectRatio: 1 });
     const bundle: LogoVariantBundle = { transparent: asset("t"), monoLight: asset("light"), monoDark: asset("dark"), badge: asset("badge") };
-    for (const layoutArchetype of ["BASIC_ESSENTIAL", "SPLIT_BANNER", "FLOATING_CARD", "EDITORIAL_FRAME", "MINIMAL_FOOTER_STRIP", "ELEVATED_BADGE", "DUAL_TONE_SIDEBAR", "FROSTED_GLASS_CENTER", "TYPOGRAPHIC_HERO", "POLAROID_LIFESTYLE", "CLINICAL_TRUST", "NEON_NIGHTLIFE"] as const) {
+    for (const layoutArchetype of ["BASIC_ESSENTIAL", "SPLIT_BANNER", "FLOATING_CARD", "EDITORIAL_FRAME", "MINIMAL_FOOTER_STRIP", "ELEVATED_BADGE", "DUAL_TONE_SIDEBAR", "FROSTED_GLASS_CENTER", "TYPOGRAPHIC_HERO", "POLAROID_LIFESTYLE", "CLINICAL_TRUST", "NEON_NIGHTLIFE", "FEATURE_POSTER"] as const) {
       const resolved = selectLogoVariant({ layoutArchetype, logoVariants: bundle, logoImage: null });
       assert.ok(resolved, `${layoutArchetype}: must resolve a real logo variant from a full bundle`);
     }
@@ -513,6 +513,101 @@ async function main() {
       assert.ok(withVariants.includes("<image"), `${layoutArchetype}: a resolved logoVariants bundle must actually render an <image> element`);
       assert.notEqual(withoutLogo, withVariants, `${layoutArchetype}: output must differ when a real logo variant is supplied`);
     }
+  });
+
+  // ==========================================================================
+  // FEATURE_POSTER (Image Quality + Marketing Creative Certification
+  // mission, 2026-09-06): the 13th archetype, and the one automated
+  // default now points to (archetype-routing.ts). Unlike every other
+  // archetype, its real photo is NOT the full-bleed background -- it's a
+  // bounded, clipped panel embedded via an in-SVG <image href="data:...">
+  // (renderTextOverlay's own photoDataUri branch), and it renders the
+  // business's own real on-file differentiators as an icon-led list,
+  // never an invented benefit.
+  // ==========================================================================
+
+  await test("FEATURE_POSTER: a supplied photoDataUri renders as a real, bounded, clipped <image> panel -- not full-bleed like every other archetype", () => {
+    const tinyPngDataUri = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+    const withPhoto = buildTextOverlaySvg({ ...BASE, layoutArchetype: "FEATURE_POSTER", photoDataUri: tinyPngDataUri });
+    const withoutPhoto = buildTextOverlaySvg({ ...BASE, layoutArchetype: "FEATURE_POSTER" });
+    assert.ok(withPhoto.includes(`href="${tinyPngDataUri}"`), "expected the real supplied photo to be embedded verbatim as a data-URI <image> href");
+    assert.ok(withPhoto.includes("clip-path="), "expected the photo panel to be clipped into a bounded shape, never left full-bleed");
+    assert.ok(!withoutPhoto.includes("<image"), "with no photoDataUri supplied, no photo panel (and no broken empty <image>) should render at all");
+    for (const box of boxes(withPhoto)) {
+      assert.ok(box.x >= -0.5 && box.y >= -0.5 && box.x + box.width <= BASE.width + 0.5 && box.y + box.height <= BASE.height + 0.5, `photo panel or another box exceeded canvas bounds: ${JSON.stringify(box)}`);
+    }
+  });
+
+  await test("FEATURE_POSTER: real on-file differentiators render as real icon+text rows ONLY when the content strategy's textHierarchy actually requests them; an empty list renders none (never an invented benefit)", () => {
+    // FINAL HERMES MISSION (2026-09-06): differentiators used to render
+    // unconditionally whenever real on-file data existed, regardless of
+    // the actual content strategy for that specific creative -- exactly
+    // the "every business gets the same headline+bullets+CTA" flattening
+    // bug this mission fixed. A "differentiators" role must now actually
+    // be present in textHierarchy for the real data to render at all.
+    const elementsWithRole = [...BASE.elements, { role: "differentiators" as const, text: "placeholder -- ignored, real text is substituted" }];
+    const withDifferentiators = buildTextOverlaySvg({
+      ...BASE, layoutArchetype: "FEATURE_POSTER", elements: elementsWithRole,
+      differentiators: ["Free delivery within 3 km", "Open all 7 days", "Fresh stock every morning"],
+    });
+    const withoutDifferentiators = buildTextOverlaySvg({ ...BASE, layoutArchetype: "FEATURE_POSTER", elements: elementsWithRole, differentiators: [] });
+    const withUndefinedDifferentiators = buildTextOverlaySvg({ ...BASE, layoutArchetype: "FEATURE_POSTER", elements: elementsWithRole });
+    // Each differentiator row draws a real checkmark circle (a <circle> plus a stroked <path> checkmark, distinct from any glyph-path text <path>).
+    const circleCount = (withDifferentiators.match(/<circle/g) ?? []).length;
+    assert.ok(circleCount >= 3, `expected at least 3 real checkmark-circle icons (one per differentiator), got ${circleCount}`);
+    assert.ok(glyphPaths(withDifferentiators).length > glyphPaths(withoutDifferentiators).length, "supplying real differentiators must add real rendered text beyond the empty-list case");
+    assert.equal(withoutDifferentiators, withUndefinedDifferentiators, "an empty array and an omitted field must render identically -- neither ever invents a placeholder benefit");
+
+    // BASE.elements already includes a "cta" entry, and the CTA bar itself
+    // draws one checkmark-circle icon -- so the real assertion is that
+    // supplying differentiator DATA without the role adds no circles
+    // BEYOND that baseline chrome, not that the count is literally zero.
+    const ctaOnlyBaseline = buildTextOverlaySvg({ ...BASE, layoutArchetype: "FEATURE_POSTER", differentiators: [] });
+    const roleNotRequested = buildTextOverlaySvg({
+      ...BASE, layoutArchetype: "FEATURE_POSTER",
+      differentiators: ["Free delivery within 3 km", "Open all 7 days", "Fresh stock every morning"],
+    });
+    assert.equal(
+      (roleNotRequested.match(/<circle/g) ?? []).length,
+      (ctaOnlyBaseline.match(/<circle/g) ?? []).length,
+      "real differentiator data must never render unless the content strategy's own textHierarchy actually includes a \"differentiators\" role -- the archetype must not force it onto every creative regardless of the chosen structure"
+    );
+  });
+
+  await test("FEATURE_POSTER: the bottom CTA bar only renders when a real CTA exists -- never an empty colored bar with no text", () => {
+    const withCta = buildTextOverlaySvg({ ...BASE, layoutArchetype: "FEATURE_POSTER", elements: [{ role: "headline", text: "X" }, { role: "cta", text: "Book now" }] });
+    const withoutCta = buildTextOverlaySvg({ ...BASE, layoutArchetype: "FEATURE_POSTER", elements: [{ role: "headline", text: "X" }] });
+    const bottomBand = (svg: string) => svg.match(new RegExp(`<rect x="0" y="[\\d.]+" width="${BASE.width}" height="[\\d.]+" fill="${BASE.primaryColor}" />`));
+    assert.ok(bottomBand(withCta), "expected a full-width brand-color CTA bar when a real CTA exists");
+    assert.ok(!bottomBand(withoutCta), "must not render a full-width colored bar with nothing real to put in it");
+  });
+
+  await test("glyph path data never contains NaN -- opentype.js's own toPathData emits it for exponential-notation coordinates, and librsvg silently stops rendering a path at that token (real bug: a long line rendered as its first 20 characters plus half a glyph)", () => {
+    // A long uppercase line is the case that reproduced it live.
+    const long = buildTextOverlaySvg({
+      ...BASE,
+      layoutArchetype: "BASIC_ESSENTIAL",
+      elements: [{ role: "headline", text: "Global Pathways Overseas Education Admissions Counselling" }],
+      businessName: "Global Pathways Overseas Education",
+    });
+    assert.ok(!long.includes("NaN"), "emitted SVG must never contain the literal token NaN -- librsvg drops the rest of the path when it hits one");
+    assert.ok(!/[eE][-+]\d/.test(long.match(/ d="([^"]*)"/)?.[1] ?? ""), "path data must be in fixed notation -- exponential coordinates are what produced the NaN in the first place");
+  });
+
+  await test("characters with no glyph in the embedded font subset are replaced with real readable equivalents, never drawn as tofu boxes", () => {
+    const withRupee = buildTextOverlaySvg({
+      ...BASE,
+      layoutArchetype: "BASIC_ESSENTIAL",
+      elements: [{ role: "headline", text: "₹0 per month" }],
+    });
+    assert.ok(!withRupee.includes("NaN"), "rupee sign must not produce broken path data");
+    // The rupee sign has glyph index 0 (.notdef) in the embedded Inter
+    // subset -- an Indian SMB platform puts it in front of every price, so
+    // it must degrade to "Rs." rather than a tofu box.
+    const font = getFont(700);
+    assert.equal(font.charToGlyph("₹").index, 0, "precondition: the embedded subset genuinely has no rupee glyph (if this ever changes, the replacement can be dropped)");
+    assert.equal(sanitizeForFont(font, "₹0"), "Rs.0", "rupee must be rewritten to a readable equivalent");
+    assert.equal(sanitizeForFont(font, "Book now"), "Book now", "text that is fully covered by the font must pass through untouched");
   });
 
   console.log("text-overlay-render.test.ts: ALL PASS");

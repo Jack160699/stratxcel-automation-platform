@@ -123,6 +123,25 @@ export async function POST(request: Request) {
         size_bytes: buffer.length,
         status: "READY",
         source_type: "generated",
+        // StratXcel Marketing Creative Engine repair (2026-09-06): real,
+        // severe defect found live -- these rows had no autopilot_eligible
+        // override, so they inherited the table default (true) and, being
+        // source_type:"generated" too, WON selectPackageMediaAsset's own
+        // top-priority "preferred generated asset" pass outright. Confirmed
+        // live: a fresh test tenant's first 4 real automated Social
+        // Autopilot posts all used a logo-variant file (badge/monoDark/
+        // monoLight/transparent) as the ENTIRE post creative -- not a
+        // business photo at all. isBrandOrLogoAsset/BRAND_ASSET_PURPOSES
+        // (lib/social/brand-asset-filter.ts) already exists and already
+        // hides these from the manual reference-picker UI, and
+        // package-media.test.ts already assumed "the business's own logo
+        // is never selected, even as the newest candidate" as a real,
+        // tested guarantee -- but nothing had ever actually quarantined a
+        // logo variant row at the one place selectPackageMediaAsset really
+        // reads from (autopilot_eligible). Quarantining at creation here
+        // closes the gap at its real source, for every future logo upload.
+        autopilot_eligible: false,
+        eligibility_reason: "logo_variant_never_a_post_creative",
         provenance: { purpose: LOGO_ANALYSIS_PURPOSE, variant: kind, sourceAssetId: source.id, ...VARIANT_DIMENSIONS[kind] },
       })
       .select("id")

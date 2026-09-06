@@ -1,5 +1,5 @@
 import { createSupabaseServiceClient } from "@/lib/supabase/service";
-import { createTenantAIRuntime, resolveTenantMonthSpendUsd, resolveTenantPlanTier } from "@stratxcel/ai-runtime";
+import { createTenantAIRuntime, resolveTenantMonthSpendUsd, resolveTenantPlanTier, retrieveBusinessContext, RemoteEmbeddingsClient, type BusinessContextSupabaseClient } from "@stratxcel/ai-runtime";
 import { recordAuditEvent } from "@stratxcel/audit";
 
 export const runtime = "nodejs";
@@ -103,7 +103,30 @@ export async function POST(request: Request, { params }: RouteParams) {
       internalWriteClient: serviceDb,
     });
 
-    const systemPrompt = `${agent.system_instructions || "You are an AI assistant."}\n${productContext}\n
+    // Real RAG retrieval (business_context_embeddings, populated via
+    // POST /api/platform/business-context) — grounds answers in verified,
+    // owner-submitted facts rather than the model's own assumptions. Purely
+    // additive: no rows for this tenant/business yet (nothing ingested) or
+    // the embeddings call failing must never break the chat itself.
+    let ragContext = "";
+    try {
+      const embeddings = new RemoteEmbeddingsClient();
+      if (embeddings.isConfigured()) {
+        const chunks = await retrieveBusinessContext(serviceDb as unknown as BusinessContextSupabaseClient, embeddings, {
+          tenantId,
+          businessId: tenantId,
+          query: sanitizedMessage,
+          topK: 3,
+        });
+        if (chunks.length) {
+          ragContext = `\nVerified Business Facts (use these over assumptions):\n${chunks.map((c) => `- ${c.content}`).join("\n")}`;
+        }
+      }
+    } catch {
+      // RAG is a grounding enhancement, never a hard dependency for chat.
+    }
+
+    const systemPrompt = `${agent.system_instructions || "You are an AI assistant."}\n${productContext}${ragContext}\n
 If the user provides an email or wants follow-up, acknowledge it politely and note that a representative will reach out.`;
 
     const messages = [

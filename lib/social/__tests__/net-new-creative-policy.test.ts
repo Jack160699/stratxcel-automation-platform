@@ -29,8 +29,8 @@ function run() {
   const packageComposition = read("lib", "social", "package-composition.ts");
 
   // --- Creative mode is real, typed, and backward compatible ------------
-  assert.match(packageComposition, /creativeMode\?:\s*CreativeMode/, "creativeMode must be optional -- every pre-existing authorization row has none, and must default to BRAND_LIBRARY, not error");
-  assert.match(packageComposition, /"BRAND_LIBRARY"\s*\|\s*"NET_NEW_AI"/, "exactly the two modes the mission specifies");
+  assert.match(packageComposition, /creativeMode\?:\s*CreativeMode/, "creativeMode must be optional -- every pre-existing authorization row has none");
+  assert.match(packageComposition, /"BRAND_LIBRARY"\s*\|\s*"NET_NEW_AI"\s*\|\s*"AUTO"/, "exactly three modes: explicit BRAND_LIBRARY, explicit NET_NEW_AI, and the real default AUTO (Local AI creative-pipeline mission, 2026-09-06)");
 
   // --- NET_NEW_AI calls the real generation service, never the asset picker
   assert.match(netNewMedia, /createImageGenerationJob/);
@@ -81,31 +81,77 @@ function run() {
   assert.match(netNewMedia, /package-net-new-retry:\$\{input\.queueItemId\}:\$\{Date\.now\(\)\}/, "a stale job must be abandoned in favor of a genuinely fresh, disambiguated idempotency key -- not the same dead key forever");
   console.log("package-net-new-media.ts: a stuck PROCESSING job (killed mid-flight by maxDuration) self-heals via a fresh idempotency key, never wedged forever — PASS");
 
-  // --- The caller: NET_NEW_AI branch never falls back, and a thrown
-  //     failure is caught by the SAME mechanism that marks BLOCKED --------
+  // --- The caller: every mode routes through the real per-item resolver
+  //     (Local AI creative-pipeline mission, 2026-09-06) -- the real
+  //     production trigger this mission adds. Before this, no authorization
+  //     ever set NET_NEW_AI (confirmed live), so a tenant with an empty
+  //     Brand Library could never get a single automated post; the real
+  //     default for every pre-existing authorization is now AUTO, not a
+  //     hard BRAND_LIBRARY-only default. --------------------------------
   const wireStart = packageAutopilot.indexOf("const creativeMode = authorization.package_composition.creativeMode");
   assert.ok(wireStart >= 0, "prepareNearTermPackageItems must read the authorization's own creativeMode");
   const wireBlock = packageAutopilot.slice(wireStart, wireStart + 700);
-  assert.match(wireBlock, /generateNetNewPackageMediaAsset/, "NET_NEW_AI must route through the real net-new generator");
-  assert.match(wireBlock, /selectPackageMediaAsset/, "BRAND_LIBRARY (the default/else branch) must still use the existing picker -- unchanged for every campaign that doesn't opt in");
-  // The NET_NEW_AI branch and the BRAND_LIBRARY branch must be mutually
-  // exclusive arms of the same conditional (never both attempted, never a
-  // catch-and-fall-through from one to the other).
-  assert.match(wireBlock, /creativeMode === "NET_NEW_AI"\s*\n?\s*\?\s*await generateNetNewPackageMediaAsset/, "NET_NEW_AI must be the exclusive branch, not an addition on top of the existing picker");
-  console.log("package-autopilot.ts: creativeMode branches exclusively between the real generator and the existing picker, never both — PASS");
+  assert.match(wireBlock, /\?\?\s*"AUTO"/, "the real default must be AUTO, not a hard BRAND_LIBRARY-only default that permanently BLOCKs an empty-library tenant");
+  assert.match(wireBlock, /resolvePackageMediaAsset/, "must route through the real per-item resolver, not an inline ternary");
+  console.log("package-autopilot.ts: every real authorization defaults to AUTO and routes through the real per-item resolver — PASS");
 
-  // A thrown net-new failure must be indistinguishable, from the item's own
-  // try/catch, from any other real preparation failure -- i.e. the
-  // NET_NEW_AI call site sits inside the SAME try block that already
-  // catches quality-gate failures and marks BLOCKED (Section 18).
+  // --- The resolver itself: explicit modes stay mutually exclusive and
+  //     byte-for-byte unchanged in behavior; AUTO tries the real Brand
+  //     Library first and only falls through on the exact, specific
+  //     "nothing left" signal -- never masking a genuinely different
+  //     failure, never forcing AI generation for every post. ------------
+  const resolverStart = packageAutopilot.indexOf("async function resolvePackageMediaAsset");
+  assert.ok(resolverStart >= 0, "the per-item creative-mode resolver must exist as its own real function");
+  const resolverEnd = packageAutopilot.indexOf("\nexport async function prepareNearTermPackageItems", resolverStart);
+  const resolverBody = packageAutopilot.slice(resolverStart, resolverEnd > 0 ? resolverEnd : undefined);
+  assert.match(resolverBody, /if \(input\.creativeMode === "NET_NEW_AI"\)/, "explicit NET_NEW_AI must be its own exclusive branch, routing to the real generator");
+  assert.match(resolverBody, /if \(input\.creativeMode === "BRAND_LIBRARY"\)/, "explicit BRAND_LIBRARY must be its own exclusive branch, unchanged fail-closed behavior for anyone who deliberately wants library-only");
+  const autoStart = resolverBody.indexOf("// AUTO:");
+  assert.ok(autoStart >= 0, "AUTO must be its own clearly-labeled branch, not silently folded into BRAND_LIBRARY's semantics");
+  const autoBody = resolverBody.slice(autoStart);
+  assert.match(autoBody, /catch \(err\)/, "AUTO must catch the library picker's failure to decide whether to fall through to generation");
+  assert.match(autoBody, /err\.message !== "media_capability_unavailable"/, "AUTO must re-throw any OTHER real failure untouched -- only the specific, real 'no reusable asset left' signal may trigger a fallback to generation, never a swallowed, unrelated error");
+  assert.match(autoBody, /generateNetNewPackageMediaAsset/, "AUTO's fallback must be the real generator -- never a stand-in/placeholder asset");
+  console.log("package-autopilot.ts: the resolver keeps explicit modes exclusive and unchanged; AUTO tries the real library first and only generates on the real 'nothing left' signal — PASS");
+
+  // --- Real asset-reuse defect found live (final production
+  //     certification, 2026-09-06): for a brand-new tenant, AUTO's first
+  //     ever NET_NEW_AI generation lands in the Brand Library as a real
+  //     autopilot_eligible/source_type='generated' asset -- so the
+  //     library is never "empty" again, and selectPackageMediaAsset's own
+  //     never-block design (falls back to reusing a candidate already in
+  //     avoidAssetIds when nothing fresh exists) then silently returns
+  //     that SAME one image for every future post, forever. Confirmed
+  //     live: 3 real automated posts for one test tenant produced 3
+  //     distinct content_variants sharing a single social_media_assets
+  //     row. AUTO must treat a forced (avoided-but-returned-anyway)
+  //     repeat exactly like "nothing usable left" and generate fresh
+  //     instead, so real content diversity actually grows over time
+  //     rather than freezing at one recycled image. --------------------
+  assert.match(autoBody, /if \(picked && input\.avoidAssetIds\?\.includes\(picked\.id\)\)/, "AUTO must detect when selectPackageMediaAsset was forced to return a candidate the caller explicitly asked to avoid (the only way a single-asset library can ever repeat forever)");
+  const forcedRepeatStart = autoBody.indexOf("if (picked && input.avoidAssetIds?.includes(picked.id))");
+  const forcedRepeatEnd = autoBody.indexOf("return picked;", forcedRepeatStart);
+  const forcedRepeatBody = autoBody.slice(forcedRepeatStart, forcedRepeatEnd > 0 ? forcedRepeatEnd : undefined);
+  assert.match(forcedRepeatBody, /generateNetNewPackageMediaAsset/, "a forced repeat must generate a genuinely fresh image, not just re-accept the stale pick");
+  assert.match(autoBody, /return picked;/, "a genuinely fresh (not-avoided) pick from the real Brand Library must still be returned as-is — this must never force generation on every single post, only when every real option was one the caller asked to avoid");
+  console.log("package-autopilot.ts: AUTO never settles into repeating a single recycled asset forever — a forced repeat now generates a fresh image instead — PASS");
+
+  // A thrown failure (explicit NET_NEW_AI, or AUTO's real fallback) must be
+  // indistinguishable, from the item's own try/catch, from any other real
+  // preparation failure -- i.e. the resolvePackageMediaAsset call site sits
+  // inside the SAME try block that already catches quality-gate failures
+  // and marks BLOCKED (Section 18). resolvePackageMediaAsset re-throws
+  // every real failure (never catches-and-swallows), so this outer
+  // contract holds even though the call is now one level of indirection
+  // deeper than the old inline ternary.
   const prepareStart = packageAutopilot.indexOf("export async function prepareNearTermPackageItems");
   const prepareEnd = packageAutopilot.indexOf("\nexport async function", prepareStart + 50);
   const prepareBody = packageAutopilot.slice(prepareStart, prepareEnd > 0 ? prepareEnd : undefined);
-  const tryIndex = prepareBody.lastIndexOf("try {", prepareBody.indexOf("generateNetNewPackageMediaAsset"));
+  const tryIndex = prepareBody.lastIndexOf("try {", prepareBody.indexOf("resolvePackageMediaAsset"));
   const catchIndex = prepareBody.indexOf('status: "BLOCKED"');
-  assert.ok(tryIndex >= 0, "the net-new call must be inside the per-item try block");
-  assert.ok(catchIndex > prepareBody.indexOf("generateNetNewPackageMediaAsset"), "a BLOCKED write must exist textually after the net-new call site, in the catch path");
-  console.log("prepareNearTermPackageItems: a NET_NEW_AI failure is caught by the same BLOCKED path as any other preparation failure — PASS");
+  assert.ok(tryIndex >= 0, "the media-resolution call must be inside the per-item try block");
+  assert.ok(catchIndex > prepareBody.indexOf("resolvePackageMediaAsset"), "a BLOCKED write must exist textually after the media-resolution call site, in the catch path");
+  console.log("prepareNearTermPackageItems: a creative-mode resolution failure (explicit NET_NEW_AI or AUTO's real fallback) is caught by the same BLOCKED path as any other preparation failure — PASS");
 
   // --- Real cost defect found live (StratXcel image-spend forensics,
   //     2026-08-30): candidateCount was 2, but the real selection logic
@@ -150,6 +196,28 @@ function run() {
   assert.match(eligibilityBlock, /job = freshJob;/, "must actually swap in the fresh job/candidate, not merely detect the problem and still return the disqualified one");
   assert.match(eligibilityBlock, /best = freshBest;/);
   console.log("package-net-new-media.ts: a reused (idempotent) candidate that was later quarantined forces a genuinely fresh generation instead of looping on a disqualified asset forever — PASS");
+
+  // --- Real gap found live via an actual pause->resume cycle against a
+  //     freshly-activated AUTO authorization with a genuinely empty Brand
+  //     Library (Local AI creative-pipeline mission, 2026-09-06 production
+  //     verification pass): validatePackageResumePrerequisites used to call
+  //     selectPackageMediaAsset unconditionally for every media type,
+  //     regardless of the authorization's own creativeMode -- so an
+  //     ordinary AUTO/NET_NEW_AI tenant with no library assets got a real
+  //     "media_capability_unavailable" / NEEDS_ATTENTION on the very first
+  //     resume, even though real preparation for that same authorization
+  //     was working correctly (falling through to real generation). Only an
+  //     explicit BRAND_LIBRARY authorization may still require a real
+  //     existing asset at resume time. --------------------------------
+  const resumeStart = packageAutopilot.indexOf("async function validatePackageResumePrerequisites");
+  assert.ok(resumeStart >= 0, "validatePackageResumePrerequisites must exist");
+  const resumeEnd = packageAutopilot.indexOf("\nexport async function setPackageAutopilotState", resumeStart);
+  const resumeBody = packageAutopilot.slice(resumeStart, resumeEnd > 0 ? resumeEnd : undefined);
+  assert.match(resumeBody, /creativeMode:\s*CreativeMode\s*=\s*composition\.creativeMode\s*\?\?\s*"AUTO"/, "resume must resolve creativeMode with the SAME real default (AUTO) as prepare time, not assume BRAND_LIBRARY");
+  assert.match(resumeBody, /if \(creativeMode === "BRAND_LIBRARY"\) \{[\s\S]{0,200}selectPackageMediaAsset/, "only an explicit BRAND_LIBRARY authorization must still be gated on a real existing asset at resume time");
+  const brandLibraryGateEnd = resumeBody.indexOf("\n  }", resumeBody.indexOf('creativeMode === "BRAND_LIBRARY"'));
+  assert.ok(!/selectPackageMediaAsset/.test(resumeBody.slice(brandLibraryGateEnd)), "AUTO/NET_NEW_AI must never call selectPackageMediaAsset at resume time -- real generation capability is verified for real by the same entitlement/spend/quality gates at actual prepare time, not guessed at resume");
+  console.log("package-autopilot.ts: resume no longer requires a Brand Library asset for AUTO/NET_NEW_AI authorizations — PASS");
 
   console.log("net-new-creative-policy.test.ts: ALL PASS");
 }

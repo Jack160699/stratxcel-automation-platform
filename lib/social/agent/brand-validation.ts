@@ -7,6 +7,22 @@ function canonicalLabel(value: unknown, labels: string[], field: string): unknow
   if (exact) return exact;
   const caseInsensitive = labels.find((label) => label.toLocaleLowerCase() === value.trim().toLocaleLowerCase());
   if (caseInsensitive) return caseInsensitive;
+  // Real bug found live (Local AI certification, 2026-09-05): when `labels`
+  // is empty (no saved Brand Brain value of this kind exists yet — the
+  // normal state for any tenant that has only completed the basic
+  // onboarding wizard, which never writes content_pillars), this used to
+  // throw unconditionally with "Available: " (an empty list) — meaning
+  // create_content_item/create_content_variant/create_campaign could NEVER
+  // succeed for that tenant no matter what the model passed, since nothing
+  // can ever match against nothing. Reproduced live: the agent retried
+  // create_content_item 3 times with different guesses, failed identically
+  // every time, then exhausted MAX_TOOL_ROUNDS with "empty turn output".
+  // There is nothing saved to canonicalize against in this case, so pass
+  // the model's own value through unchanged rather than permanently
+  // blocking every tenant who hasn't set up a content taxonomy yet — a
+  // tenant WITH saved values still gets full exact/case-insensitive
+  // enforcement, unchanged, above.
+  if (labels.length === 0) return value;
   throw new Error(`${field} must match a saved Brand Brain value. Available: ${labels.join(", ")}`);
 }
 

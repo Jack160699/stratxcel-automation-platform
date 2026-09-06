@@ -1,5 +1,7 @@
 /** Research Engine V1 — typed contracts. No fake confidence percentages. */
 
+import type { AIProviderId } from "@stratxcel/ai-runtime";
+
 export type ResearchTaskClass = "RESEARCH" | "SEO_RESEARCH";
 
 export type ResearchStatus =
@@ -124,7 +126,7 @@ export interface ResearchResult {
   sources: readonly ResearchSource[];
   evidenceArtifactIds: readonly string[];
   summaryArtifactId: string | null;
-  provider: "google" | "openai" | null;
+  provider: AIProviderId | null;
   model: string | null;
   usage?: {
     inputTokens: number;

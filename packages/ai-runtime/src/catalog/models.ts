@@ -194,6 +194,41 @@ export const MODEL_CATALOG = {
     active: true,
     deprecated: false,
   },
+  // Remote local AI server (LOCAL_AI_API_URL/LOCAL_AI_API_KEY) — the remote
+  // server owns model selection (see providers/local-ai.ts), so these default
+  // to "auto" rather than a hardcoded model id. Only reachable when
+  // LOCAL_AI_ENABLED="1"; see policy/task-policies.ts.
+  LOCAL_CHAT: {
+    id: "auto",
+    catalogKey: "LOCAL_CHAT",
+    provider: "local",
+    modality: "text",
+    purpose: "Remote local AI server — general chat/content escalation",
+    active: true,
+    deprecated: false,
+  },
+  LOCAL_CODING: {
+    // "auto-code" is a dispatch sentinel LocalAITextProvider matches on to
+    // route to POST /v1/code instead of /v1/chat — the remote server exposes
+    // these as two genuinely separate endpoints (confirmed live), not one
+    // text endpoint with a model switch. Not a real Ollama model id.
+    id: "auto-code",
+    catalogKey: "LOCAL_CODING",
+    provider: "local",
+    modality: "text",
+    purpose: "Remote local AI server — website/code-generation escalation",
+    active: true,
+    deprecated: false,
+  },
+  LOCAL_IMAGE: {
+    id: "auto",
+    catalogKey: "LOCAL_IMAGE",
+    provider: "local",
+    modality: "image",
+    purpose: "Remote local AI server — image generation/editing",
+    active: true,
+    deprecated: false,
+  },
 } as const satisfies Record<string, AIModelDefinition>;
 
 export type ModelCatalogKey = keyof typeof MODEL_CATALOG;
@@ -220,6 +255,9 @@ const ENV_OVERRIDES: Partial<Record<ModelCatalogKey, string>> = {
   GOOGLE_VIDEO_ECONOMY: "AI_GOOGLE_VIDEO_LITE_MODEL",
   GOOGLE_VIDEO_FAST: "AI_GOOGLE_VIDEO_FAST_MODEL",
   GOOGLE_VIDEO_PREMIUM: "AI_GOOGLE_VIDEO_PREMIUM_MODEL",
+  LOCAL_CHAT: "AI_LOCAL_CHAT_MODEL",
+  LOCAL_CODING: "AI_LOCAL_CODING_MODEL",
+  LOCAL_IMAGE: "AI_LOCAL_IMAGE_MODEL",
 };
 
 export function resolveModelId(key: ModelCatalogKey, env: NodeJS.ProcessEnv = process.env): string {

@@ -63,6 +63,16 @@ export function buildProviderReadyImagePrompt(input: {
     input.language?.trim() ? `Language / Cultural Context: ${input.language.trim()}` : null,
     input.styleDirection?.trim() ? `Creative direction: ${input.styleDirection.trim()}` : null,
     "HARD MANDATORY NEGATIVE CONSTRAINT: DO NOT DRAW, RENDER, OR INVENT ANY TEXT, WORDS, LETTERS, SLOGANS, HEADLINES, LOGOS, OR BRAND MARKS ANYWHERE IN THIS IMAGE. Produce clean, authentic, editorial photography ONLY with natural lighting and realistic composition. Absolutely no fake logos, invented typography, poster banners, or text overlays.",
+    // Real defect found live (Local AI final production certification,
+    // 2026-09-06): a scene concept for an exterior/storefront shot still
+    // rendered a large illuminated sign with garbled fake lettering
+    // ("BUPUE") despite the generic no-text constraint above -- diffusion
+    // models reliably treat "a shop/cafe storefront at night" as implying a
+    // legible sign is part of the subject itself, overriding a generic
+    // instruction not to draw text. Naming the specific composition to
+    // avoid (rather than only the abstract "no text") measurably reduces
+    // this for the same reason a targeted negative prompt beats a vague one.
+    "Do not compose this as a shop/storefront exterior with a visible signboard, illuminated sign, awning text, menu board, or price board -- any scene that would structurally require a legible sign is prohibited outright, not just the text on it. Prefer interior details, product/food close-ups, hands-at-work, or candid customer moments where no sign would ever need to appear.",
     "Do not invent business facts, awards, prices, testimonials, product details, or hallucinated branding.",
     "Avoid malformed anatomy, AI artifacts, fake logos, watermarks, unsafe claims, and platform-inappropriate crops.",
   ].filter((value): value is string => Boolean(value));

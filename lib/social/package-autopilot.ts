@@ -12,7 +12,7 @@ import { computePackageDistribution, datetimeLocalValueToUtcIso } from "./packag
 import { notifyPackageEvent } from "./package-whatsapp-notify.ts";
 import type { OwnerContext } from "./db-context.ts";
 import type { AgentTenantContext } from "./agent-tenant-types.ts";
-import { validatePackageComposition, compositionMediaTypeForUnit, resolvePurchasedPackageComposition, type PackageComposition } from "./package-composition.ts";
+import { validatePackageComposition, compositionMediaTypeForUnit, resolvePurchasedPackageComposition, type PackageComposition, type CreativeMode, type PackageMediaKind } from "./package-composition.ts";
 import { selectPackageMediaAsset } from "./package-media.ts";
 import { generateNetNewPackageMediaAsset, NetNewGenerationError } from "./package-net-new-media.ts";
 
@@ -515,8 +515,24 @@ async function validatePackageResumePrerequisites(service: ServiceClient, author
   const connected = new Set((accounts ?? []).map((row) => String(row.platform).toLowerCase()));
   if ((auth.allowed_platforms as string[]).some((platform) => !connected.has(platform.toLowerCase()))) throw new Error("account_disconnected");
   const composition = validatePackageComposition(auth.package_composition as PackageComposition);
-  for (const mediaType of new Set(composition.items.map((item) => item.mediaType))) {
-    await selectPackageMediaAsset(service, { tenantId, ownerId: brand.owner_id, mediaType });
+  // Local AI creative-pipeline mission, 2026-09-06 -- real gap found live:
+  // this resume check used to require a real reusable Brand Library asset
+  // for every media type unconditionally, even for AUTO/NET_NEW_AI
+  // authorizations that never need one (they generate on demand at real
+  // prepare time, gated by the real entitlement/spend/quality checks
+  // already inside generateNetNewPackageMediaAsset). Confirmed live: a
+  // brand-new tenant with zero Brand Library assets and a real AUTO
+  // authorization got "media_capability_unavailable" on the very first
+  // pause->resume cycle -- an ordinary customer action -- and was forced
+  // into NEEDS_ATTENTION even though preparation itself was working fine.
+  // Only an explicit BRAND_LIBRARY authorization still requires a real
+  // existing asset here; AUTO/NET_NEW_AI trust the same real gates that
+  // already protect generation at prepare time, not a resume-time guess.
+  const creativeMode: CreativeMode = composition.creativeMode ?? "AUTO";
+  if (creativeMode === "BRAND_LIBRARY") {
+    for (const mediaType of new Set(composition.items.map((item) => item.mediaType))) {
+      await selectPackageMediaAsset(service, { tenantId, ownerId: brand.owner_id, mediaType });
+    }
   }
 }
 
@@ -1001,6 +1017,105 @@ export interface PrepareNearTermResult {
  * single-item cost, so an item already in flight when the deadline check
  * fires can always actually finish and be written, not just "probably". */
 const DEFAULT_PREPARE_BUDGET_MS = 130_000;
+
+/**
+ * Real per-item creative-mode resolution — the production trigger that was
+ * missing before this (Local AI creative-pipeline mission, 2026-09-06). No
+ * DB flag to hand-edit, no new entitlement invented: AUTO reuses exactly the
+ * two real signals that already exist for every tenant/plan —
+ * (1) whether the tenant's own Brand Library currently has a reusable asset
+ * (a real per-item fact, checked fresh every call, never a static
+ * authorization-level guess), and (2) generateNetNewPackageMediaAsset's own
+ * existing, already-enforced entitlement/spend gates
+ * (image_generation_attempts_monthly, checkDailyImageSpendLimit, the
+ * tenant's monthly AI-COGS budget) when it does need to generate. Explicit
+ * BRAND_LIBRARY/NET_NEW_AI bypass this branching entirely and keep their
+ * original, unchanged fail-closed semantics.
+ */
+async function resolvePackageMediaAsset(
+  service: ServiceClient,
+  input: {
+    creativeMode: CreativeMode;
+    tenantId: string;
+    ownerId: string;
+    mediaType: PackageMediaKind;
+    avoidAssetIds?: string[];
+    treatment: CreativeTreatment | null;
+    queueItemId: string;
+  }
+): Promise<{ id: string } | null> {
+  if (input.mediaType === "text") return null;
+
+  if (input.creativeMode === "NET_NEW_AI") {
+    return generateNetNewPackageMediaAsset(service, {
+      tenantId: input.tenantId,
+      ownerId: input.ownerId,
+      treatment: input.treatment,
+      queueItemId: input.queueItemId,
+    });
+  }
+
+  if (input.creativeMode === "BRAND_LIBRARY") {
+    return selectPackageMediaAsset(service, {
+      tenantId: input.tenantId,
+      ownerId: input.ownerId,
+      mediaType: input.mediaType,
+      avoidAssetIds: input.avoidAssetIds,
+    });
+  }
+
+  // AUTO: try the real Brand Library first (unchanged behavior, no new
+  // spend, no AI call) — only generate when it genuinely has nothing left.
+  try {
+    const picked = await selectPackageMediaAsset(service, {
+      tenantId: input.tenantId,
+      ownerId: input.ownerId,
+      mediaType: input.mediaType,
+      avoidAssetIds: input.avoidAssetIds,
+    });
+    // Real asset-reuse defect found live (Local AI final production
+    // certification, 2026-09-06): selectPackageMediaAsset never blocks —
+    // when EVERY real candidate is already in avoidAssetIds (recently
+    // used), it deliberately falls back to reusing one anyway rather than
+    // failing the post (package-media.ts's own "variety is a preference,
+    // never a reason to block"). That is the right call for a real,
+    // multi-asset Brand Library. But confirmed live: for a brand-new
+    // tenant whose library starts genuinely empty, AUTO's first-ever
+    // NET_NEW_AI generation lands in that same library as a real,
+    // autopilot_eligible, source_type='generated' asset — so from the
+    // very next post onward the "library" is never empty again, and this
+    // forced-repeat fallback silently returns that SAME one image for
+    // every future post, forever (confirmed: 3 real automated posts for
+    // one test tenant produced 3 distinct content_variants sharing a
+    // single social_media_assets row). A tenant paying for daily unique
+    // content got one real photo cloned across the whole month. Since
+    // this product places no meaningful ceiling on real generation cost
+    // for automated content, a forced (avoided-but-returned-anyway)
+    // repeat is treated exactly like "nothing usable left" -- AUTO
+    // generates a genuinely fresh image instead of accepting the stale
+    // one. As the generated pool grows over real time, genuine rotation
+    // (a real fresh pick, not a forced repeat) naturally starts winning
+    // again on its own -- this only ever forces generation when every
+    // real option was something the caller explicitly asked to avoid.
+    if (picked && input.avoidAssetIds?.includes(picked.id)) {
+      return generateNetNewPackageMediaAsset(service, {
+        tenantId: input.tenantId,
+        ownerId: input.ownerId,
+        treatment: input.treatment,
+        queueItemId: input.queueItemId,
+      });
+    }
+    return picked;
+  } catch (err) {
+    if (!(err instanceof Error) || err.message !== "media_capability_unavailable") throw err;
+    return generateNetNewPackageMediaAsset(service, {
+      tenantId: input.tenantId,
+      ownerId: input.ownerId,
+      treatment: input.treatment,
+      queueItemId: input.queueItemId,
+    });
+  }
+}
 
 export async function prepareNearTermPackageItems(
   service: ServiceClient,
@@ -1726,23 +1841,32 @@ export async function prepareNearTermPackageItems(
       });
       currentStage = "visual_generation";
 
-      // Mission D+ Sections 16-19: NET_NEW_AI must never fall back to
+      // Mission D+ Sections 16-19 + Local AI creative-pipeline mission
+      // (2026-09-06): explicit NET_NEW_AI must never fall back to
       // selectPackageMediaAsset -- generateNetNewPackageMediaAsset throws on
       // any real failure, which this try/catch already routes to BLOCKED
       // (never a silent old-image substitution, never PREPARED without a
-      // genuinely new asset).
-      const creativeMode = authorization.package_composition.creativeMode ?? "BRAND_LIBRARY";
+      // genuinely new asset). Explicit BRAND_LIBRARY keeps its original
+      // fail-closed behavior for anyone who deliberately wants library-only.
+      // AUTO (the real default -- see package-composition.ts's CreativeMode
+      // doc) tries the library first, and only generates when it genuinely
+      // has nothing left -- the real, per-item production trigger that was
+      // missing before this: no authorization ever set NET_NEW_AI, so a
+      // tenant with an empty Brand Library could never get a single
+      // automated post.
+      const creativeMode = authorization.package_composition.creativeMode ?? "AUTO";
       const mediaAsset =
         mediaType === "text"
           ? null
-          : creativeMode === "NET_NEW_AI"
-            ? await generateNetNewPackageMediaAsset(service, {
-                tenantId: authorization.tenant_id,
-                ownerId: brandProfile.owner_id,
-                treatment,
-                queueItemId: item.id,
-              })
-            : await selectPackageMediaAsset(service, { tenantId: authorization.tenant_id, ownerId: brandProfile.owner_id, mediaType, avoidAssetIds: recentAssetIds });
+          : await resolvePackageMediaAsset(service, {
+              creativeMode,
+              tenantId: authorization.tenant_id,
+              ownerId: brandProfile.owner_id,
+              mediaType,
+              avoidAssetIds: recentAssetIds,
+              treatment,
+              queueItemId: item.id,
+            });
       if (mediaType !== "text") {
         await recordCampaignTask(service, {
           authorizationId: authorization.id, tenantId: authorization.tenant_id, queueItemId: item.id,
@@ -2093,6 +2217,23 @@ export async function skipPackageQueueItem(service: ServiceClient, input: { queu
   // precondition doesn't apply here — nothing was ever claimed). Guarded
   // to only transition a still-pending row, so this can't skip something
   // the worker just claimed a moment ago.
+  //
+  // Real, confirmed dead-end found live (Marketing Creative Quality Test
+  // mission, 2026-09-06): BLOCKED (a queue item that has permanently
+  // exhausted its bounded recovery budget) was missing from this allow-
+  // list. Preview and Edit are both correctly disabled for a BLOCKED item
+  // (there is no content to preview or edit), but Skip has no such
+  // disabled state in the dashboard -- a customer could click it, and it
+  // would silently fail this status guard, throw "This item can no longer
+  // be skipped", and surface as the generic, actively misleading
+  // "Autopilot needs attention. Review its setup and try again." (this
+  // exact item's own last_error already explained precisely what was
+  // wrong -- that context was thrown away here). A real customer whose
+  // item got BLOCKED had no self-serve way to move past it at all: not
+  // preview, not edit, not skip. BLOCKED items must be skippable exactly
+  // like any other terminal-for-now state -- skipping one never discards
+  // real content (there is none to discard) and simply frees the slot for
+  // a future attempt.
   const { data: updated, error } = await service
     .from("social_autopilot_queue_items")
     .update({
@@ -2103,7 +2244,7 @@ export async function skipPackageQueueItem(service: ServiceClient, input: { queu
       updated_at: new Date().toISOString(),
     })
     .eq("id", item.id)
-    .in("status", ["PLANNED", "PREPARED", "REVIEW_REQUIRED", "SCHEDULED"])
+    .in("status", ["PLANNED", "PREPARED", "REVIEW_REQUIRED", "SCHEDULED", "BLOCKED"])
     .select("id")
     .maybeSingle();
   if (error || !updated) throw new Error("This item can no longer be skipped");

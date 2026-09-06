@@ -76,6 +76,36 @@ export interface CreativeTreatmentInput {
   researchInsights?: string[];
   /** Server-authoritative archetype constraint -- see ArchetypeRoutingContext. */
   routingContext?: ArchetypeRoutingContext;
+  /** FINAL HERMES ROOT-CAUSE mission, round 2 (2026-09-06): real bug found
+   * live -- concept, content pillar, and archetype all have real recency-
+   * based diversity tracking (recentConcepts/recentPillars/
+   * recentArchetypeHistory), but the actual on-image MESSAGE SHAPE
+   * (which textHierarchy roles get used, e.g. "question+answer" every
+   * time) had no tracking at all, so two back-to-back real generations --
+   * even for two completely different businesses -- both independently
+   * converged on the model's own default "question+answer" shape with
+   * nothing telling it that shape had just been used. Each entry is a
+   * real shape fingerprint from a recent real treatment for this same
+   * tenant (see describeTextStructureShape) -- optional, and only ever
+   * used to ask the model to prefer a different shape, never to forbid
+   * one outright (a business can legitimately need the same shape twice
+   * in a row if it's genuinely the strongest choice both times). */
+  recentTextStructures?: string[];
+}
+
+/** Real shape fingerprint for a treatment's on-image message -- the
+ * ordered list of textHierarchy roles that actually carry content
+ * (brandLabel and cta are structural chrome every archetype places the
+ * same way, not part of the MESSAGE shape a business chooses). Exported
+ * so every real caller that tracks recent treatments (package-autopilot.ts
+ * from persisted creative_spec.treatment rows, studio-creative-
+ * treatment.ts from recent image_generation_jobs rows) computes the exact
+ * same fingerprint, never a bespoke ad hoc comparison. */
+export function describeTextStructureShape(textHierarchy: OnImageTextElement[]): string {
+  return textHierarchy
+    .filter((e) => e.role !== "brandLabel" && e.role !== "cta" && e.text?.trim())
+    .map((e) => e.role)
+    .join("+") || "photo_only";
 }
 
 export interface CtaDecision {
@@ -135,6 +165,25 @@ export interface CreativeTreatment {
   negativeConstraints: string[];
   intentionallyTextLed: boolean;
   layoutArchetype: LayoutArchetype;
+  /**
+   * FINAL HERMES -- RESTORE TRUE MARKETING CREATIVE GENERATION
+   * (2026-09-06): the actual ADVERTISEMENT DESIGN, as a declarative
+   * composition (canvas mode + an ordered list of advertising blocks:
+   * stat, offer, badges, benefits, steps, comparison, quote, headline,
+   * body, CTA). This is what lets a strategy that decided "lead with the
+   * number", "contrast old way vs our way" or "walk the four stages"
+   * actually be DRAWN that way, instead of being flattened into the
+   * headline+supportingLine+CTA slots that `textHierarchy` and the 13
+   * fixed archetype builders are limited to -- see the root-cause note at
+   * the top of composition-render.ts.
+   *
+   * Optional and additive: a treatment without one renders through the
+   * existing archetype path exactly as before, so nothing that worked
+   * before can regress. Typed as `unknown` here (rather than importing
+   * CreativeComposition) purely to keep this module free of a dependency
+   * on the renderer -- `parseCreativeComposition` is the single validator.
+   */
+  adComposition?: unknown;
 }
 
 /** Exported so callers that make their own provider.complete() call
@@ -165,7 +214,23 @@ export const TREATMENT_JSON_SCHEMA = {
       items: {
         type: "object",
         properties: {
-          role: { type: "string", enum: ["headline", "supportingLine", "cta", "brandLabel", "other"] },
+          // FINAL HERMES MISSION (2026-09-06): widened so a treatment can
+          // express a genuinely different message structure (see
+          // buildArchetypeInstruction's FEATURE_POSTER-specific guidance
+          // below) instead of always defaulting to headline+supportingLine
+          // +cta. Schema-level only -- the prompt text still only invites a
+          // given call to actually use the extra roles when the archetype
+          // in play (FEATURE_POSTER today) has a compositor that renders
+          // them distinctly; every other archetype's renderer safely
+          // ignores roles it doesn't look for, same as "other" always was.
+          role: {
+            type: "string",
+            enum: [
+              "headline", "supportingLine", "cta", "brandLabel", "other",
+              "insight", "proof", "painPoint", "solution", "value",
+              "question", "answer", "benefit", "statement", "offer", "differentiators",
+            ],
+          },
           text: { type: "string" },
         },
         required: ["role", "text"],
@@ -198,10 +263,54 @@ export const TREATMENT_JSON_SCHEMA = {
  * archetype-registry.ts (never a hand-duplicated description list) and
  * shaped by the routing context: forced, restricted to a preference set,
  * or (harness/test default) free choice across everything. */
-function buildArchetypeInstruction(routingContext: ArchetypeRoutingContext | undefined): string {
+/**
+ * FINAL HERMES MISSION (2026-09-06): FEATURE_POSTER is now the real
+ * automated default for most tenants (archetype-routing.ts), and its
+ * compositor was found flattening every business into the exact same
+ * shape -- a bold headline, the SAME static 3-item on-file differentiator
+ * list every single time regardless of what the post is actually about,
+ * then the same CTA bar. The differentiator list itself wasn't the
+ * problem (it's real, on-file data); forcing it onto every creative
+ * unconditionally, with nothing else the content strategy could express,
+ * was. text-overlay-render.ts's buildFeaturePosterSvg now renders whatever
+ * roles the treatment actually puts in textHierarchy, in order, each
+ * styled by role -- this is the prompt-side half: telling the model it
+ * has that real freedom, with concrete example shapes so it doesn't just
+ * default back to habit. Scoped to FEATURE_POSTER specifically (checked
+ * via def.id below) rather than changed globally, since every OTHER
+ * archetype's compositor still only reads headline/supportingLine/cta/
+ * brandLabel and would silently drop anything else -- exactly the
+ * "redesign the whole platform" this mission explicitly ruled out.
+ */
+function buildFeaturePosterContentGuidance(recentTextStructures: string[]): string {
+  return [
+    `This archetype does NOT require a fixed "headline + bullet list + CTA" shape -- that is a visual DEFAULT, not a rule, and defaulting to it every time is the exact flattening bug this system must avoid. The CONTENT STRATEGY decides the message structure; FEATURE_POSTER only decides how that structure is laid out on the page.`,
+    `First decide the single strongest real marketing angle for THIS business from the verified facts and strategy below (a pain point, a trust/credibility angle, a decision-anxiety angle, a proof point, a myth to correct, a timeline/urgency angle -- whatever is actually strongest here, not a generic category message). Then choose the textHierarchy SHAPE that best carries that specific angle. Do not pick the same shape you would use for a different business.`,
+    `Available textHierarchy roles beyond the usual headline/supportingLine/cta/brandLabel: "statement"/"question" (an alternative large display line to "headline" -- use whichever reads more naturally for this angle), "insight"/"painPoint"/"solution"/"answer" (a medium supporting line carrying one real, specific idea), "proof"/"value"/"benefit"/"offer" (one real, specific point rendered as its own highlighted row), and "differentiators" (renders the business's OWN real on-file standout points as a short icon list -- include this role ONLY when the chosen structure genuinely benefits from that trust-building list; the compositor supplies the real text itself, so never write real content into this role's own "text" field, a short placeholder is fine).`,
+    `Example shapes (pick one of these or design a better-fitting one -- do not treat this as an exhaustive menu): HOOK(as headline) + INSIGHT + PROOF + CTA. PAINPOINT + SOLUTION + VALUE + CTA. QUESTION + ANSWER + BENEFIT + CTA. STATEMENT + OFFER + CTA (the photo itself carries the visual proof). HEADLINE + DIFFERENTIATORS + CTA (only when the real on-file list IS the strongest angle for this business).`,
+    `Two creatives for two different businesses (or two different angles for the same business) should usually end up with two DIFFERENT shapes -- if you notice yourself defaulting to the same structure as last time, reconsider whether it's really the strongest choice for this specific business and angle.`,
+    // FINAL HERMES ROOT-CAUSE mission, round 2 (2026-09-06): real bug found
+    // live -- "question"+"answer" is this model's own default safe choice,
+    // and with nothing telling it that shape was JUST used, two
+    // back-to-back real generations for two DIFFERENT businesses both
+    // independently converged on the exact same question+answer+cta
+    // shape, reading as the same template again even though the actual
+    // words differed. Concept/pillar/archetype already have real recency
+    // tracking (recentConcepts/recentPillars/recentArchetypeHistory) --
+    // this is that same real mechanism, applied to message SHAPE, not
+    // just topic.
+    recentTextStructures.length
+      ? `This business's own recent real creatives used these exact textHierarchy shapes: ${recentTextStructures.join(", ")}. Prefer a genuinely different shape now unless the strongest angle for THIS specific post truly calls for repeating one -- do not default back to "question+answer" just because it's the easy choice.`
+      : "",
+    `Keep every individual textHierarchy block SHORT -- a display-tier line (headline/statement/question) under about 8 words, any other block under about 16 words. This is a compact poster column sharing width with a real photo, not a paragraph; a real, specific idea said in fewer words reads stronger anyway than the same idea said as a full sentence.`,
+  ].filter(Boolean).join(" ");
+}
+
+function buildArchetypeInstruction(routingContext: ArchetypeRoutingContext | undefined, recentTextStructures: string[]): string {
   if (routingContext?.forcedArchetype) {
     const def = ARCHETYPE_REGISTRY[routingContext.forcedArchetype];
-    return `The LAYOUT ARCHETYPE for this creative is ALREADY DECIDED by the server: ${def.id} (${def.description}). Design your visual idea, composition, and text hierarchy around this archetype's real constraints (${def.constraints.join("; ")}) -- you must set "layoutArchetype" to exactly "${def.id}" in your response. Reason this was forced: ${routingContext.reason}`;
+    const featurePosterGuidance = def.id === "FEATURE_POSTER" ? ` ${buildFeaturePosterContentGuidance(recentTextStructures)}` : "";
+    return `The LAYOUT ARCHETYPE for this creative is ALREADY DECIDED by the server: ${def.id} (${def.description}). Design your visual idea, composition, and text hierarchy around this archetype's real constraints (${def.constraints.join("; ")}) -- you must set "layoutArchetype" to exactly "${def.id}" in your response. Reason this was forced: ${routingContext.reason}${featurePosterGuidance}`;
   }
   const allowed = routingContext?.allowedArchetypes?.length ? routingContext.allowedArchetypes : ARCHETYPE_IDS;
   const descriptions = allowed.map((id) => {
@@ -226,7 +335,7 @@ export function buildCreativeTreatmentPrompt(input: CreativeTreatmentInput): AIM
     `A senior team already decided the strategy for this post -- do not re-derive it. Your job is to turn it into ONE real, specific creative idea and a full visual treatment, the way an agency would brief a photographer before a shoot.`,
     `The final creative must feel business-specific, visually rich, simple, premium, intentional, modern, and clearly NOT generic AI output. Default philosophy: IMAGE/VISUAL IDEA FIRST, message second, supporting text third, brand/CTA last -- never a paragraph of text decorated with a picture.`,
     `Prefer real visual storytelling (photography of the actual business/product/service in use) over text-based graphics. A creative with no on-image text at all is a valid, often stronger, choice -- do not force a headline or CTA onto every creative. Default to ONE primary idea; at most one short supporting line; a CTA only when it genuinely helps.`,
-    buildArchetypeInstruction(input.routingContext),
+    buildArchetypeInstruction(input.routingContext, input.recentTextStructures ?? []),
     `Never invent a business fact not present in the verified facts given to you. Creative persuasion must never become fabricated business information.`,
     `Never write generic AI marketing filler ("Elevate your experience", "Discover the magic", "Unleash your potential", and phrases like them) -- every word must be specific to this concept and this business. Premium design also comes from knowing what NOT to include: if a supporting line or CTA doesn't earn its place, omit it.`,
     `Respond with ONLY the JSON object matching the given schema -- no prose, no markdown fences.`,
@@ -254,6 +363,39 @@ export function buildCreativeTreatmentPrompt(input: CreativeTreatmentInput): AIM
     `- Content pillar: ${input.brief.contentPillar}`,
     `- Concept angle to develop into a real idea: ${input.brief.concept}`,
     `- CTA style if a CTA is used: ${input.brief.cta}`,
+    // FINAL HERMES ROOT-CAUSE + STRATEGY RESTORATION mission (2026-09-06):
+    // real bug found live -- this block only ever read 5 shallow fields
+    // off the brief. buildCreativeBrief already computes a real hook
+    // direction, headline direction, and supporting-copy direction for
+    // EVERY brief (not just planned-strategy ones), and the 28-Day
+    // Campaign Strategy Planner's own per-day reasoning (opportunity
+    // type, unique angle, customer problem, audience intent, research
+    // insight) was being computed, attached to the brief, and then simply
+    // never read here -- the exact "strategy modules called but results
+    // discarded" failure this mission set out to find. All of this is
+    // optional/graceful: a manual or one-off brief with no plannedStrategy
+    // still gets the always-present hook/headline/supporting directions;
+    // a brief with genuinely nothing here just gets fewer lines, never a
+    // fabricated placeholder.
+    `- Hook direction: ${input.brief.hook}`,
+    `- Headline direction: ${input.brief.headlineDirection}`,
+    `- Supporting message direction: ${input.brief.supportingCopyDirection}`,
+    input.brief.plannedStrategy
+      ? [
+          `- Content opportunity type: ${input.brief.plannedStrategy.opportunityType}`,
+          `- WHY this angle (the actual strategic reasoning -- the creative concept above must clearly express this, not just the topic label): ${input.brief.plannedStrategy.uniqueAngle}`,
+          `- The specific customer problem this post addresses: ${input.brief.plannedStrategy.customerProblem}`,
+          `- What the audience wants when they see this: ${input.brief.plannedStrategy.audienceIntent}`,
+          `- Strategic research insight behind this angle: ${input.brief.plannedStrategy.researchInsight}`,
+        ].join("\n")
+      : "",
+    (input.brief.customerPsychology ?? []).some((p) => p.painPoints.length > 0)
+      ? `- REAL CUSTOMER PSYCHOLOGY ON FILE (this tenant's own audience data -- ground the angle/message in this, don't invent a different psychological hook):\n${(input.brief.customerPsychology ?? [])
+          .filter((p) => p.painPoints.length > 0)
+          .map((p) => `  - ${p.audienceLabel}: worried about ${p.painPoints.join("; ")}`)
+          .join("\n")}`
+      : "",
+    input.brief.avoid.length ? `- Avoid: ${input.brief.avoid.join("; ")}` : "",
     input.brief.seasonalContext
       ? `- ${input.brief.seasonalContext} Reference this ONLY if it genuinely fits this business and concept -- never force a festival/season tie-in onto unrelated content.`
       : `- No upcoming festival/season occasion falls within this post's near-term window.`,
@@ -279,18 +421,59 @@ export function buildCreativeTreatmentPrompt(input: CreativeTreatmentInput): AIM
     // reliably produces unusable output (confirmed empirically: the exact
     // same prompt without this block failed validateCreativeTreatment on
     // every field, every fixture, in this campaign's own pilot run).
+    // FINAL HERMES -- RESTORE TRUE MARKETING CREATIVE GENERATION
+    // (2026-09-06). Everything above decides WHAT to say; this block is
+    // where the model designs the actual ADVERTISEMENT. It is deliberately
+    // written as a vocabulary of advertising primitives with a rule for
+    // WHEN each one is the right choice -- not as a menu of templates --
+    // because the failure this fixes was precisely that "choosing a
+    // format" had been reduced to picking one of 13 pre-written posters,
+    // so every strategy arrived at the same logo+headline+photo+CTA shape.
+    ``,
+    `DESIGN THE ADVERTISEMENT ("adComposition"). This is a real social-media ADVERTISEMENT, like a professional agency or a strong Canva ad -- not a photo with a caption typed over it. Build it from the blocks below, choosing ONLY the ones this specific strategy actually needs, in the order they should be read.`,
+    `The blocks (each is optional -- pick what the message needs):`,
+    `  { "kind": "eyebrow", "text": string }  -- a short uppercase kicker (category, city, offer flag).`,
+    `  { "kind": "headline", "text": string }  -- the dominant message. Under ~9 words.`,
+    `  { "kind": "subhead", "text": string }  -- one secondary line.`,
+    `  { "kind": "body", "text": string }  -- one short explanatory sentence.`,
+    `  { "kind": "stat", "value": string, "caption": string }  -- an OVERSIZED figure ("40%", "Rs.0", "4 stages", "12 years"). Use when a real number is the most persuasive thing you have. "value" must be SHORT (under ~8 characters) -- it is rendered very large.`,
+    `  { "kind": "offer", "value": string, "detail": string }  -- a promotional message on its own colored field. Use for offers/promotions.`,
+    `  { "kind": "badges", "items": string[] }  -- up to 3 SHORT trust chips ("25-year warranty", "Subsidy handled"). Each under ~4 words.`,
+    `  { "kind": "benefits", "items": string[] }  -- up to 4 benefit lines, each rendered with a check icon.`,
+    `  { "kind": "steps", "items": string[] }  -- 2-4 numbered stages. Use for a process/journey message.`,
+    `  { "kind": "comparison", "leftLabel": string, "leftItems": string[], "rightLabel": string, "rightItems": string[] }  -- two columns. Use for old-way-vs-our-way / problem-vs-solution. The RIGHT column is the highlighted one, so put YOUR side on the right.`,
+    `  { "kind": "quote", "text": string, "attribution": string }  -- a testimonial. ONLY if a real customer quote exists in the verified facts; never invent one.`,
+    `  { "kind": "cta", "text": string }  -- the action.`,
+    `"canvas" decides where the photograph lives: "photo_full" (photo fills the frame, content on a colored panel over it -- panel: "bottom"|"top"|"left"|"right"), "photo_top" (photo band on top, content below), "photo_side" (photo one half, content the other -- panel says which side the CONTENT is on), "photo_inset" (photo as a bounded card with content beneath), "solid" (no photograph at all -- only when the words/number ARE the whole idea).`,
+    `CHOOSE THE FORMAT FROM THE STRATEGY, not from habit:`,
+    `  - A saving/result/scale message with a real number -> lead with "stat".`,
+    `  - A promotion or price message -> lead with "offer".`,
+    `  - A multi-stage service or journey -> use "steps".`,
+    `  - A "most people get this wrong" or old-way/new-way message -> use "comparison".`,
+    `  - A trust/credibility message -> "benefits" and/or "badges" carry it better than a paragraph.`,
+    `  - A single emotional or decision-anxiety message -> a strong "headline" plus one "body" may genuinely be right.`,
+    `Rules: use 2-5 blocks total (a real ad is not a leaflet). Do NOT include a "brandLabel" block -- the business logo/name is placed automatically. Every string must be real, specific, and drawn from the verified facts -- never invent a statistic, price, discount, award or testimonial. If you have no real number, do not use "stat"; if there is no real offer, do not use "offer". Two different strategies for the same business MUST NOT produce the same block sequence.`,
+    ``,
     `Respond with ONLY a single JSON object, exactly this shape (every field required, all strings real and specific, never a placeholder):`,
     `{`,
     `  "concept": string (a real specific creative idea, NOT the category label above),`,
     `  "hook": string, "audienceTension": string, "story": string, "visualIdea": string,`,
     `  "subject": string, "composition": string, "camera": string, "lighting": string, "environment": string,`,
     `  "colorDirection": string, "typographyDirection": string, "brandApplication": string,`,
-    `  "textHierarchy": [{ "role": "headline"|"supportingLine"|"cta"|"brandLabel"|"other", "text": string }] (0-4 items -- can be empty if the photo alone carries the idea),`,
+    // The expanded role vocabulary is only ever shown for a FEATURE_POSTER-
+    // forced call -- every other archetype's compositor still only reads
+    // headline/supportingLine/cta/brandLabel (see pickElements in
+    // text-overlay-render.ts), so offering the extra roles there would just
+    // mean silently-dropped content, not a real capability.
+    input.routingContext?.forcedArchetype === "FEATURE_POSTER"
+      ? `  "textHierarchy": [{ "role": "headline"|"supportingLine"|"cta"|"brandLabel"|"other"|"insight"|"proof"|"painPoint"|"solution"|"value"|"question"|"answer"|"benefit"|"statement"|"offer"|"differentiators", "text": string }] (0-6 items -- can be empty if the photo alone carries the idea; "brandLabel" text must be ONLY the plain business name, e.g. "Metro Wheels Car Rentals" -- never append a location, tagline, or slogan to it, or a compact layout has to truncate it mid-word),`
+      : `  "textHierarchy": [{ "role": "headline"|"supportingLine"|"cta"|"brandLabel"|"other", "text": string }] (0-6 items -- can be empty if the photo alone carries the idea; "brandLabel" text must be ONLY the plain business name, e.g. "Metro Wheels Car Rentals" -- never append a location, tagline, or slogan to it, or a compact layout has to truncate it mid-word),`,
     `  "cta": { "needed": boolean, "text": string|null, "rationale": string },`,
     `  "whyStopScroll": string, "whyThisBusiness": string,`,
     `  "negativeConstraints": string[],`,
     `  "intentionallyTextLed": boolean,`,
-    `  "layoutArchetype": ${allowedForShape.map((id) => `"${id}"`).join("|")}`,
+    `  "layoutArchetype": ${allowedForShape.map((id) => `"${id}"`).join("|")},`,
+    `  "adComposition": { "canvas": "photo_full"|"photo_top"|"photo_side"|"photo_inset"|"solid", "panel": "bottom"|"top"|"left"|"right", "blocks": [ ... ] }`,
     `}`,
     `No prose before or after the JSON. No markdown code fences.`,
   ].join("\n");
@@ -342,8 +525,14 @@ export function validateCreativeTreatment(
 
   if (!Array.isArray(t.textHierarchy)) {
     issues.push({ field: "textHierarchy", issue: "missing or not an array" });
-  } else if (t.textHierarchy.length > 4) {
-    issues.push({ field: "textHierarchy", issue: `${t.textHierarchy.length} on-image text elements -- too many for one primary idea` });
+  } else if (t.textHierarchy.length > 6) {
+    // Raised from 4 (FINAL HERMES MISSION, 2026-09-06): a real
+    // content-strategy-driven structure can legitimately need brandLabel +
+    // a display line + two supporting/proof-style blocks + cta = 5-6 real
+    // elements, not just headline+supportingLine+cta+brandLabel. Still a
+    // hard, real cap -- this is not an invitation to pad every creative
+    // out to six elements.
+    issues.push({ field: "textHierarchy", issue: `${t.textHierarchy.length} on-image text elements -- too many for one coherent structure` });
   } else {
     // Finished Premium Marketing Creative brief Section 2 (hard failure):
     // every textHierarchy entry gets rendered as literal pixels by the

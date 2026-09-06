@@ -1,7 +1,7 @@
-import { buildTaskPolicies } from "./policy/task-policies.ts";
+import { buildTaskPolicies, isLocalAiRoutingEnabled } from "./policy/task-policies.ts";
 import { DEPARTMENT_POLICY_MAP, assertAllDepartmentsMapped } from "./policy/department-map.ts";
 import { ProviderCircuitBreaker } from "./health/circuit-breaker.ts";
-import { probeGeminiReadiness, probeOpenAIReadiness, ReadinessCache, GOOGLE_IMAGE_REQUIRED_GENERATION_METHODS, GOOGLE_VIDEO_REQUIRED_GENERATION_METHODS } from "./health/readiness.ts";
+import { probeGeminiReadiness, probeOpenAIReadiness, probeLocalAIReadiness, ReadinessCache, GOOGLE_IMAGE_REQUIRED_GENERATION_METHODS, GOOGLE_VIDEO_REQUIRED_GENERATION_METHODS } from "./health/readiness.ts";
 import { resolveModelId } from "./catalog/models.ts";
 import type { AIProviderHealth } from "./types.ts";
 
@@ -17,6 +17,8 @@ export type AdminProviderStatus =
 export interface AiAdminHealthSnapshot {
   gemini: AIProviderHealth & { status: AdminProviderStatus };
   openai: AIProviderHealth & { status: AdminProviderStatus };
+  /** Remote local AI server — opt-in third provider (LOCAL_AI_ENABLED). */
+  local: AIProviderHealth & { status: AdminProviderStatus; routingEnabled: boolean };
   image: {
     configured: boolean;
     primaryModel: string;
@@ -157,7 +159,7 @@ export async function buildAiAdminHealthSnapshot(args?: {
   const imageFallback = resolveModelId("OPENAI_IMAGE_FALLBACK");
   const videoEconomy = resolveModelId("GOOGLE_VIDEO_ECONOMY");
 
-  const [geminiProbe, openaiProbe, imagePrimaryProbe, imageFallbackProbe, videoEconomyProbe] =
+  const [geminiProbe, openaiProbe, localProbe, imagePrimaryProbe, imageFallbackProbe, videoEconomyProbe] =
     await Promise.all([
       probeGeminiReadiness({
         apiKey: process.env.GEMINI_API_KEY,
@@ -168,6 +170,12 @@ export async function buildAiAdminHealthSnapshot(args?: {
       probeOpenAIReadiness({
         apiKey: process.env.OPENAI_API_KEY,
         model: resolveModelId("OPENAI_CHEAP_FALLBACK"),
+        fetchImpl: args?.fetchImpl,
+        cache: readinessCache,
+      }),
+      probeLocalAIReadiness({
+        apiUrl: process.env.LOCAL_AI_API_URL,
+        apiKey: process.env.LOCAL_AI_API_KEY,
         fetchImpl: args?.fetchImpl,
         cache: readinessCache,
       }),
@@ -224,6 +232,7 @@ export async function buildAiAdminHealthSnapshot(args?: {
 
   const geminiCircuit = circuit.isOpen("google", resolveModelId("GOOGLE_CHEAP"));
   const openaiCircuit = circuit.isOpen("openai", resolveModelId("OPENAI_CHEAP_FALLBACK"));
+  const localCircuit = circuit.isOpen("local", resolveModelId("LOCAL_CHAT"));
   const imageCircuit = circuit.isOpen("google", imagePrimary) && circuit.isOpen("openai", imageFallback);
   const videoCircuit = circuit.isOpen("google", videoEconomy);
 
@@ -263,6 +272,13 @@ export async function buildAiAdminHealthSnapshot(args?: {
       ...openaiProbe,
       circuitOpen: openaiCircuit,
       status: deriveStatus(openaiProbe, openaiCircuit),
+    },
+    local: {
+      provider: "local",
+      ...localProbe,
+      circuitOpen: localCircuit,
+      status: deriveStatus(localProbe, localCircuit),
+      routingEnabled: isLocalAiRoutingEnabled(),
     },
     image: {
       configured: Boolean(process.env.GEMINI_API_KEY || process.env.OPENAI_API_KEY),

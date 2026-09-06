@@ -3,6 +3,8 @@ import { NextResponse } from "next/server";
 import { requireImageGenerationContext } from "@/lib/image-generation/http";
 import { createImageGenerationJob, ImageGenerationServiceError, processImageGenerationJob, selectImageGenerationCandidate } from "@/lib/image-generation/service";
 import { createSupabaseServiceClient } from "@/lib/supabase/service";
+import { generateManualArchetypeCreativeTreatment } from "@/lib/social/studio-creative-treatment";
+import { isValidArchetype, type LayoutArchetype } from "@/lib/social/archetype-registry";
 import { randomUUID } from "node:crypto";
 
 /**
@@ -33,6 +35,57 @@ export async function POST(request: Request) {
   if (!requestedArchetype) return NextResponse.json({ error: "Choose a visual style." }, { status: 400 });
 
   try {
+    // StratXcel Marketing Creative Engine mission (2026-09-06): real bug
+    // found live -- this route passed requestedArchetype straight to
+    // createImageGenerationJob without ever generating a `treatment`
+    // (Premium Creative Intelligence's concept/hook/text-hierarchy/CTA
+    // decision). createImageGenerationJob only builds an overlayContext
+    // (and therefore only runs the real text-overlay-render.ts compositor)
+    // when a validated treatment exists -- see this function's own
+    // creative_treatment handling. Without one, every manual-generation
+    // post persisted as a bare AI photo with no headline, CTA, logo, or
+    // (FEATURE_POSTER's) differentiator list at all, regardless of which
+    // visual style was picked. This is the exact same defect already found
+    // and fixed once for Creative Studio (app/api/platform/image-
+    // generations/route.ts) -- generateManualArchetypeCreativeTreatment
+    // shares that same real Gemini-authored-treatment step, just forced
+    // toward whatever archetype the tenant explicitly chose here rather
+    // than Creative Studio's fixed logo-capable allowlist. Only attempted
+    // for a real, registered archetype id; an invalid one is left to
+    // createImageGenerationJob's own resolveManualRouting call to reject
+    // with a structured error exactly as before.
+    const treatment = isValidArchetype(requestedArchetype)
+      ? await generateManualArchetypeCreativeTreatment({
+          writeClient: ctx.service,
+          tenantId: ctx.tenantId,
+          brief,
+          forcedArchetype: requestedArchetype as LayoutArchetype,
+        })
+      : null;
+
+    // FINAL HERMES CREATIVE-DIVERSITY TEST mission (2026-09-06): real bug
+    // found live -- generateCreativeTreatmentWithRouting's catch-all
+    // (studio-creative-treatment.ts) deliberately returns null on ANY
+    // internal failure (a rate-limited provider call, a parse failure) so
+    // a transient AI hiccup never blocks a manual generation outright. But
+    // this route treated that null exactly like "no archetype requested"
+    // and quietly proceeded to createImageGenerationJob with
+    // treatment: null anyway -- shipping a brandless, textless bare photo
+    // as if it were a valid finished post, with no signal to the caller
+    // that anything degraded. Confirmed live: a real FEATURE_POSTER
+    // request landed READY with creative_treatment: null and
+    // text_overlay_applied: false, rendering as a generic stock-style
+    // photo with no headline, no CTA, and no logo at all. A tenant that
+    // explicitly chose a visual style deserves a clear "try again" over a
+    // silently degraded result -- so a validated archetype with a failed
+    // treatment now fails loudly and retryably instead.
+    if (isValidArchetype(requestedArchetype) && !treatment) {
+      return NextResponse.json(
+        { error: "Could not prepare a creative for this post right now. Please try again.", code: "TREATMENT_GENERATION_FAILED" },
+        { status: 503 },
+      );
+    }
+
     const job = await createImageGenerationJob({
       authorizationClient: ctx.supabase,
       writeClient: ctx.service,
@@ -61,6 +114,14 @@ export async function POST(request: Request) {
         sourceContext: "social_autopilot",
         sourceId: null,
         requestedArchetype,
+        // CreateImageJobInput.treatment is deliberately typed as an opaque
+        // Record<string, unknown> -- createImageGenerationJob re-validates
+        // it structurally itself (validateTreatmentForJob) and independently
+        // re-authorizes + force-applies the tenant's real archetype
+        // (resolveManualRouting + forceArchetypeOntoTreatment) rather than
+        // trusting either this treatment's own layoutArchetype field or the
+        // raw requestedArchetype string above.
+        treatment: treatment as unknown as Record<string, unknown> | null,
       },
     });
     if (job.status === "QUEUED") {

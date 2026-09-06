@@ -4,6 +4,8 @@ import { AIProviderError, classifyHttpStatus, classifyProviderError, isNonHopErr
 import { ProviderCircuitBreaker } from "../health/circuit-breaker.ts";
 import { evaluateBudgetGate } from "../budget/envelope.ts";
 import { safeAiLog } from "../observability.ts";
+import { isLocalAiRoutingEnabled } from "../policy/task-policies.ts";
+import { LocalAIImageProvider, type LocalImageCandidate } from "./local-image.ts";
 import type { AIBudgetEnvelope, FetchLike } from "../types.ts";
 import type { AIUsageRecorder } from "../usage/recorder.ts";
 import {
@@ -11,6 +13,9 @@ import {
   type CanonicalMediaStorage,
   type CanonicalStoredAsset,
 } from "./canonical-storage.ts";
+
+/** Circuit-breaker/usage-ledger bookkeeping key — the remote server picks the real underlying model itself. */
+const LOCAL_IMAGE_MODEL_SENTINEL = "local-image-auto";
 
 export type ImageTier = "fast" | "standard" | "premium";
 
@@ -51,13 +56,17 @@ export interface ImageCandidateResult {
   id: string;
   uri: string;
   mimeType: string;
-  provider: "google" | "openai";
+  provider: "google" | "openai" | "local";
   model: string;
   estimatedCostUsd: number;
   width?: number;
   height?: number;
   /** Set when persisted — never a data: URI. */
   storedAsset?: CanonicalStoredAsset;
+  /** Local provider only — the remote server's own real multi-candidate quality gate result. */
+  qualityScore?: number;
+  qualityGatePassed?: boolean;
+  candidatesEvaluated?: number;
 }
 
 export type UsageAccountingStatus = "RECORDED" | "FAILED" | "SKIPPED";
@@ -67,7 +76,7 @@ export interface ImageGenerationOutcome {
   candidates: ImageCandidateResult[];
   selected: ImageCandidateResult | null;
   reason?: string;
-  provider: "google" | "openai" | null;
+  provider: "google" | "openai" | "local" | null;
   model: string | null;
   storageReady: boolean;
   /** Provider spend recorded for this request (may exceed persisted candidates). */
@@ -90,6 +99,8 @@ export interface ImageMediaDeps {
   missionId?: string | null;
   /** Bound each provider request; an abort is treated as outcome-unknown. */
   timeoutMs?: number;
+  /** Injectable for tests — defaults to a real LocalAIImageProvider reading LOCAL_AI_API_URL/KEY. */
+  localImageProvider?: LocalAIImageProvider;
 }
 
 /** gpt-image-2 (the OpenAI fallback model) accepts exactly these three
@@ -123,6 +134,8 @@ function modelForTier(tier: ImageTier, env = process.env): string {
 export class ImageMediaRuntime {
   private readonly geminiKey?: string;
   private readonly openaiKey?: string;
+  private readonly localEnabled: boolean;
+  private readonly localProvider: LocalAIImageProvider;
   private readonly fetchImpl: FetchLike;
   private readonly circuit: ProviderCircuitBreaker;
   private readonly storage?: CanonicalMediaStorage;
@@ -140,6 +153,11 @@ export class ImageMediaRuntime {
     this.openaiKey = Object.prototype.hasOwnProperty.call(deps, "openaiApiKey")
       ? deps.openaiApiKey
       : process.env.OPENAI_API_KEY;
+    // Opt-in (LOCAL_AI_ENABLED="1") — same gate as text routing (see
+    // policy/task-policies.ts) so image generation can't silently start
+    // depending on the remote server without a deliberate flag flip.
+    this.localEnabled = isLocalAiRoutingEnabled();
+    this.localProvider = deps.localImageProvider ?? new LocalAIImageProvider({ fetchImpl: deps.fetchImpl });
     this.fetchImpl = deps.fetchImpl ?? fetch;
     this.circuit = deps.circuitBreaker ?? new ProviderCircuitBreaker();
     this.storage = deps.storage;
@@ -161,7 +179,7 @@ export class ImageMediaRuntime {
   }
 
   isConfigured(): boolean {
-    return Boolean(this.geminiKey || this.openaiKey);
+    return Boolean(this.geminiKey || this.openaiKey || (this.localEnabled && this.localProvider.isConfigured()));
   }
 
   async isStorageReady(): Promise<boolean> {
@@ -273,6 +291,118 @@ export class ImageMediaRuntime {
     }
 
     const enrichedRequest: ImageGenerateRequest = { ...request, missionId, referenceImages };
+
+    // Local AI attempt — a genuine first-choice provider (not a last-resort
+    // fallback), gated by LOCAL_AI_ENABLED so it can never silently start
+    // depending on the remote server without a deliberate flag flip. Skips
+    // cleanly (falls through to Gemini/OpenAI below, unchanged) when: not
+    // enabled/configured, circuit open, reference images are requested (no
+    // multipart/edit support confirmed on the remote server yet — same
+    // "don't silently drop a logo/reference" policy the OpenAI fallback
+    // already follows below), or the remote's own quality gate rejected
+    // every candidate it evaluated and a cloud provider is actually
+    // available to try instead.
+    const localAttemptStartedAt = Date.now();
+    if (
+      this.localEnabled &&
+      this.localProvider.isConfigured() &&
+      referenceImages.length === 0 &&
+      !this.circuit.isOpen("local", LOCAL_IMAGE_MODEL_SENTINEL)
+    ) {
+      try {
+        const localCandidates = await this.generateLocal(enrichedRequest, tier);
+        this.circuit.recordSuccess("local", LOCAL_IMAGE_MODEL_SENTINEL);
+        const bestLocal = localCandidates.find((c) => c.qualityGatePassed !== false) ?? localCandidates[0];
+        if (bestLocal) {
+          if (localCandidates.length) {
+            mergeAccounting(
+              await this.recordProviderAttempt({
+                request: enrichedRequest,
+                missionId,
+                generationRequestId,
+                model: LOCAL_IMAGE_MODEL_SENTINEL,
+                provider: "local",
+                attemptNumber: 1,
+                candidates: localCandidates,
+                fallbackUsed: false,
+              }),
+            );
+          }
+          const persisted = await this.maybePersist(enrichedRequest, localCandidates);
+          const cloudAvailable = Boolean(this.geminiKey || this.openaiKey);
+          if (persisted.length && (bestLocal.qualityGatePassed !== false || !cloudAvailable)) {
+            return {
+              outcome: "OK",
+              candidates: persisted,
+              selected: null,
+              reason:
+                bestLocal.qualityGatePassed === false
+                  ? "local_quality_gate_failed_no_cloud_fallback_configured"
+                  : "candidate_selection_required",
+              provider: "local",
+              model: bestLocal.model,
+              storageReady,
+              recordedProviderCostUsd: requestAccumulatedCostUsd,
+              usageAccountingStatus,
+            };
+          }
+          // Local's own quality gate rejected every candidate ("insufficient")
+          // and a cloud provider is configured -- fall through to it below
+          // rather than accepting a known-poor image.
+          safeAiLog({
+            event: "ai_image_provider_hop",
+            provider: "local",
+            model: bestLocal.model,
+            taskClass: "IMAGE",
+            latencyMs: Date.now() - localAttemptStartedAt,
+            detail: `quality_gate_failed;qualityScore=${bestLocal.qualityScore ?? "unknown"}`,
+          });
+        }
+      } catch (err) {
+        this.circuit.recordFailure("local", LOCAL_IMAGE_MODEL_SENTINEL);
+        const category = classifyProviderError(err);
+        const localAttemptLatencyMs = Date.now() - localAttemptStartedAt;
+        if (category === "TIMEOUT") {
+          safeAiLog({
+            event: "ai_image_provider_timeout",
+            provider: "local",
+            model: LOCAL_IMAGE_MODEL_SENTINEL,
+            taskClass: "IMAGE",
+            latencyMs: localAttemptLatencyMs,
+            safeErrorCategory: category,
+          });
+          // Same policy as the Gemini timeout handling below: a synchronous
+          // request may have completed provider-side before our connection
+          // timed out -- never silently issue a second request on the same
+          // budget. Only hard-fail here when there is no cloud fallback;
+          // otherwise fall through to try Gemini/OpenAI fresh.
+          if (!this.geminiKey && !this.openaiKey) {
+            return {
+              outcome: "FAILED",
+              candidates: [],
+              selected: null,
+              reason: "provider_timeout_outcome_unknown",
+              provider: "local",
+              model: LOCAL_IMAGE_MODEL_SENTINEL,
+              storageReady,
+              recordedProviderCostUsd: requestAccumulatedCostUsd,
+              usageAccountingStatus,
+            };
+          }
+        } else {
+          safeAiLog({
+            event: "ai_image_provider_hop",
+            provider: "local",
+            model: LOCAL_IMAGE_MODEL_SENTINEL,
+            taskClass: "IMAGE",
+            latencyMs: localAttemptLatencyMs,
+            safeErrorCategory: category,
+            detail: err instanceof Error ? err.message.slice(0, 160) : "local_image_failed",
+          });
+        }
+      }
+    }
+
     let geminiAttempted = false;
     const geminiAttemptStartedAt = Date.now();
 
@@ -522,7 +652,7 @@ export class ImageMediaRuntime {
     missionId: string | null | undefined;
     generationRequestId: string;
     model: string;
-    provider: "google" | "openai";
+    provider: "google" | "openai" | "local";
     attemptNumber: number;
     candidates: ImageCandidateResult[];
     fallbackUsed: boolean;
@@ -710,6 +840,48 @@ export class ImageMediaRuntime {
       });
     }
     return out.slice(0, count);
+  }
+
+  /** Requests `count` independent generations from the remote server, each already
+   * quality-gated server-side (candidates_evaluated/quality_score/quality_gate_passed
+   * — confirmed live, see media/local-image.ts). */
+  private async generateLocal(request: ImageGenerateRequest, tier: ImageTier): Promise<ImageCandidateResult[]> {
+    const quality: "fast" | "quality" | "premium" = tier === "fast" ? "fast" : tier === "premium" ? "premium" : "quality";
+    const count = Math.max(1, Math.min(request.candidateCount ?? 1, 4));
+    const settled = await Promise.allSettled(
+      Array.from({ length: count }, () =>
+        this.localProvider.generate({ prompt: request.prompt, quality, timeoutMs: this.timeoutMs }),
+      ),
+    );
+    const out: ImageCandidateResult[] = [];
+    let firstFailureReason: string | undefined;
+    for (const result of settled) {
+      if (result.status !== "fulfilled") continue;
+      if (result.value.outcome !== "OK") {
+        firstFailureReason ??= result.value.reason;
+        continue;
+      }
+      for (const c of result.value.candidates) {
+        out.push({
+          id: c.id,
+          uri: c.uri,
+          mimeType: c.mimeType,
+          provider: "local",
+          model: c.model,
+          estimatedCostUsd: 0,
+          qualityScore: c.qualityScore,
+          qualityGatePassed: c.qualityGatePassed,
+          candidatesEvaluated: c.candidatesEvaluated,
+        });
+      }
+    }
+    if (!out.length) {
+      if (firstFailureReason === "local_ai_image_timeout") {
+        throw new AIProviderError("TIMEOUT", "local_ai_image_timeout");
+      }
+      throw new AIProviderError("PROVIDER_FAILURE", firstFailureReason ?? "local_image_empty_candidates");
+    }
+    return out;
   }
 
   private async generateOpenAI(request: ImageGenerateRequest, model: string): Promise<ImageCandidateResult[]> {

@@ -191,6 +191,11 @@ export default async function SystemHealthPage() {
       detail: `Status=${ai.openai.status}; configured=${ai.openai.configured}; reachable=${ai.openai.reachable}; modelAvailable=${ai.openai.modelAvailable}; circuitOpen=${ai.openai.circuitOpen}.`,
     },
     {
+      name: "AI Runtime (Local)",
+      status: aiStatusToIntegration(ai.local.status),
+      detail: `Status=${ai.local.status}; configured=${ai.local.configured}; reachable=${ai.local.reachable}; modelAvailable=${ai.local.modelAvailable}; circuitOpen=${ai.local.circuitOpen}; routingEnabled=${ai.local.routingEnabled} (LOCAL_AI_ENABLED). Remote self-hosted server — task-class routing only selects it when routingEnabled is true.`,
+    },
+    {
       name: "Research Engine",
       status: aiStatusToIntegration(ai.research.status),
       detail: `Status=${ai.research.status}; runtimeAvailable=${ai.research.aiRuntimeAvailable}; Gemini configured=${ai.research.geminiConfigured}; Gemini callable=${ai.research.geminiModelCallable}; Google grounding=${ai.research.googleSearchGrounding}; OpenAI=${ai.research.openaiLiveStatus}; research.web=${ai.research.researchWebImplementation}; research.serp=${ai.research.researchSerpImplementation}. ${ai.research.searchConsoleNote}`,

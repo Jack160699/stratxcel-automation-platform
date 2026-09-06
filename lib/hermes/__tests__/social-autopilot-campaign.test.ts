@@ -114,11 +114,28 @@ function testCustomerPsychologyProfileStructuresRealDataOnly() {
   console.log("social-autopilot-campaign.test.ts: buildCustomerPsychologyProfile structures only real Brand Brain data — PASS");
 }
 
+// Real crash found live (Marketing Creative Quality Test mission,
+// 2026-09-06): a brand profile with pain_points stored as an array
+// (a reasonable alternate shape, not the documented single-string one)
+// crashed EVERY generation attempt with "pain_points.split is not a
+// function", exhausting the real bounded recovery budget on the same
+// unrecoverable error 4 times over -- zero content ever produced for
+// that tenant. Must coerce, never crash, on any real shape.
+function testCustomerPsychologyProfileNeverCrashesOnAnArrayShape() {
+  const profiles = buildCustomerPsychologyProfile([
+    { name: "Factory Owners", pain_points: ["Rising electricity bills", "Unreliable grid supply during peak hours"] },
+  ] as unknown as Array<{ name: string; description?: string; pain_points?: string }>);
+  assert.equal(profiles.length, 1);
+  assert.deepEqual(profiles[0].painPoints, ["Rising electricity bills", "Unreliable grid supply during peak hours"]);
+  console.log("social-autopilot-campaign.test.ts: buildCustomerPsychologyProfile coerces an array pain_points shape instead of crashing — PASS");
+}
+
 async function run() {
   testSpecialistRolesMatchTheLiveCheckConstraint();
   await testRecordCampaignTaskIsBestEffortAndNeverThrows();
   await testRecordCampaignTaskWritesRealFieldsWhenSucceeding();
   testCustomerPsychologyProfileStructuresRealDataOnly();
+  testCustomerPsychologyProfileNeverCrashesOnAnArrayShape();
   console.log("social-autopilot-campaign.test.ts: ALL PASS");
 }
 

@@ -94,7 +94,7 @@ let boldFontCache: Font | null = null;
 /** Regular for weight < 600, Bold otherwise -- matches normal CSS font-
  * weight-to-face matching for a two-weight family. Parsed once per
  * process (module-level cache), not once per request. */
-function getFont(weight: number): Font {
+export function getFont(weight: number): Font {
   if (weight >= 600) {
     if (!boldFontCache) boldFontCache = parseFont(toArrayBuffer(Buffer.from(INTER_BOLD_TTF_BASE64, "base64")));
     return boldFontCache;
@@ -124,7 +124,7 @@ function hexLuminance(hex: string): number | null {
 /** Legible text color for a solid fill: near-black on a light fill,
  * near-white on a dark one. Falls back to white (safe on most photos/
  * dark scrims) when the fill isn't a parseable hex. */
-function legibleTextColorFor(fillHex: string | null): string {
+export function legibleTextColorFor(fillHex: string | null): string {
   if (!fillHex) return "#FFFFFF";
   const luminance = hexLuminance(fillHex);
   if (luminance === null) return "#FFFFFF";
@@ -134,11 +134,11 @@ function legibleTextColorFor(fillHex: string | null): string {
 /** Defensive attribute-value escaping (colors are always internally
  * computed hex strings today, but this costs nothing and guards against a
  * future caller passing something unexpected into a fill/stroke value). */
-function escapeXml(text: string): string {
+export function escapeXml(text: string): string {
   return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
-function round2(n: number): number {
+export function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
@@ -163,15 +163,18 @@ const NO_GSUB_FEATURES = { features: { liga: false, rlig: false, ccmp: false, ca
 /** Real measured glyph-advance width in pixels, with the GSUB-feature
  * crash worked around and pixel-based letterSpacing converted to
  * opentype.js's own fontSize-fraction convention in one place. */
-function measureWidth(font: Font, text: string, fontSize: number, letterSpacingPx = 0): number {
-  return font.getAdvanceWidth(text, fontSize, { letterSpacing: letterSpacingFraction(letterSpacingPx, fontSize), ...NO_GSUB_FEATURES });
+export function measureWidth(font: Font, text: string, fontSize: number, letterSpacingPx = 0): number {
+  // Measured on the SAME sanitized string glyphLineSvg will actually draw
+  // -- otherwise every wrap/truncate calculation is computed against
+  // characters that never get rendered.
+  return font.getAdvanceWidth(sanitizeForFont(font, text), fontSize, { letterSpacing: letterSpacingFraction(letterSpacingPx, fontSize), ...NO_GSUB_FEATURES });
 }
 
 /** Real font-metric word-wrap (replacing the old average-char-width
  * estimate now that real glyph advance widths are available from the
  * parsed font) -- wraps at the actual measured pixel width, never an
  * approximation. */
-function wrapText(font: Font, text: string, maxWidthPx: number, fontSizePx: number, letterSpacingPx = 0): string[] {
+export function wrapText(font: Font, text: string, maxWidthPx: number, fontSizePx: number, letterSpacingPx = 0): string[] {
   const words = text.trim().split(/\s+/);
   const lines: string[] = [];
   let current = "";
@@ -200,12 +203,18 @@ function wrapText(font: Font, text: string, maxWidthPx: number, fontSizePx: numb
  * keeps the first (maxLines-1) lines as-is and collapses everything from
  * there into a final real-font-metric-truncated line ending in "…" --
  * content is shortened, visibly, never silently discarded. */
-function wrapTextWithEllipsis(font: Font, text: string, maxWidthPx: number, fontSizePx: number, maxLines: number, letterSpacingPx = 0): string[] {
+export function wrapTextWithEllipsis(font: Font, text: string, maxWidthPx: number, fontSizePx: number, maxLines: number, letterSpacingPx = 0): string[] {
   const lines = wrapText(font, text, maxWidthPx, fontSizePx, letterSpacingPx);
   if (lines.length <= maxLines) return lines;
   const kept = lines.slice(0, maxLines - 1);
   const remainder = lines.slice(maxLines - 1).join(" ");
-  kept.push(truncateToWidth(font, remainder, maxWidthPx, fontSizePx));
+  // Word-boundary-aware, not truncateToWidth's plain character cut -- a
+  // real generated FEATURE_POSTER headline ("Your weekend road trip starts
+  // right here in Indiranagar.") truncated to "...right here in In…",
+  // cutting a real place name mid-word. Every other caller of
+  // truncateToWidth (contact footer, CTA) keeps the simple character cut,
+  // since a URL or phone number has no "words" to break on anyway.
+  kept.push(truncateToWidthAtWordBoundary(font, remainder, maxWidthPx, fontSizePx, letterSpacingPx));
   return kept;
 }
 
@@ -213,17 +222,37 @@ function wrapTextWithEllipsis(font: Font, text: string, maxWidthPx: number, font
  * width) -- used for the contact footer, where a full address or URL
  * wrapping to a second line would push the footer (and potentially the
  * whole card/band) taller than intended, so it truncates instead. */
-function truncateToWidth(font: Font, text: string, maxWidthPx: number, fontSizePx: number): string {
-  if (measureWidth(font, text, fontSizePx) <= maxWidthPx) return text;
+function truncateToWidth(font: Font, text: string, maxWidthPx: number, fontSizePx: number, letterSpacingPx = 0): string {
+  if (measureWidth(font, text, fontSizePx, letterSpacingPx) <= maxWidthPx) return text;
   let lo = 0;
   let hi = text.length;
   while (lo < hi) {
     const mid = Math.ceil((lo + hi) / 2);
     const candidate = `${text.slice(0, mid)}…`;
-    if (measureWidth(font, candidate, fontSizePx) <= maxWidthPx) lo = mid;
+    if (measureWidth(font, candidate, fontSizePx, letterSpacingPx) <= maxWidthPx) lo = mid;
     else hi = mid - 1;
   }
   return lo > 0 ? `${text.slice(0, lo)}…` : "…";
+}
+
+/** Like truncateToWidth, but prefers to cut at the last whole word that
+ * still fits rather than mid-word -- used only for the final overflowing
+ * line of a multi-line wrap (wrapTextWithEllipsis), where a mid-word cut
+ * reads as visibly broken in a way a mid-sentence cut at a real word
+ * boundary doesn't (real bug, found on an actual generated FEATURE_POSTER
+ * headline). Falls back to the plain character-level cut when even the
+ * first word alone doesn't fit. */
+function truncateToWidthAtWordBoundary(font: Font, text: string, maxWidthPx: number, fontSizePx: number, letterSpacingPx = 0): string {
+  if (measureWidth(font, text, fontSizePx, letterSpacingPx) <= maxWidthPx) return text;
+  const words = text.trim().split(/\s+/);
+  if (words.length <= 1) return truncateToWidth(font, text, maxWidthPx, fontSizePx, letterSpacingPx);
+  let kept = "";
+  for (const word of words) {
+    const candidate = kept ? `${kept} ${word}` : word;
+    if (measureWidth(font, `${candidate}…`, fontSizePx, letterSpacingPx) > maxWidthPx) break;
+    kept = candidate;
+  }
+  return kept ? `${kept}…` : truncateToWidth(font, text, maxWidthPx, fontSizePx, letterSpacingPx);
 }
 
 /** The one real text-rendering primitive in this file: pre-renders one
@@ -232,6 +261,106 @@ function truncateToWidth(font: Font, text: string, maxWidthPx: number, fontSizeP
  * of emitting a `<text>` element the host would have to shape/rasterize
  * itself. Returns the line's measured width too, so callers doing their
  * own centering/underlining math never need a second, separate estimate. */
+/**
+ * Characters this platform's businesses genuinely use that the embedded
+ * Inter latin subset has no glyph for. Without this they render as
+ * .notdef tofu boxes -- confirmed live: the rupee sign, which an Indian
+ * SMB platform puts in front of every price, has glyph index 0 in the
+ * embedded font. Each replacement is a real, readable equivalent, never a
+ * silent deletion of meaning.
+ */
+const UNSUPPORTED_GLYPH_REPLACEMENTS: ReadonlyArray<readonly [RegExp, string]> = [
+  [/₹/g, "Rs."],
+  [/€/g, "EUR"],
+  [/¥/g, "JPY"],
+  [/₨/g, "Rs."],
+  [/[‘’]/g, "'"],
+  [/[“”]/g, '"'],
+  [/‑/g, "-"],
+  [/ /g, " "],
+];
+
+/**
+ * Makes a string safe for the embedded font: known characters are mapped
+ * to real equivalents, and anything still lacking a glyph is dropped
+ * rather than drawn as a tofu box. Applied inside BOTH measureWidth and
+ * glyphLineSvg so measured widths and rendered glyphs can never disagree
+ * (a mismatch would silently break every wrap/truncate calculation).
+ */
+export function sanitizeForFont(font: Font, text: string): string {
+  let out = text;
+  for (const [pattern, replacement] of UNSUPPORTED_GLYPH_REPLACEMENTS) out = out.replace(pattern, replacement);
+  let hasMissing = false;
+  for (const ch of out) {
+    if (ch !== " " && font.charToGlyph(ch).index === 0) {
+      hasMissing = true;
+      break;
+    }
+  }
+  if (!hasMissing) return out;
+  return [...out].filter((ch) => ch === " " || font.charToGlyph(ch).index !== 0).join("");
+}
+
+/** Fixed-notation number formatter for SVG path data. `toFixed` (not
+ * String()/template interpolation) is the whole point: it never emits
+ * exponential notation, which is what breaks the path parser. */
+function svgNum(value: number, decimals = 2): string {
+  if (!Number.isFinite(value)) return "0";
+  const fixed = value.toFixed(decimals);
+  const trimmed = decimals > 0 ? fixed.replace(/\.?0+$/, "") : fixed;
+  return trimmed === "" || trimmed === "-" || trimmed === "-0" ? "0" : trimmed;
+}
+
+/**
+ * Serializes an opentype.js Path to SVG path data ourselves instead of
+ * calling its own `path.toPathData()`.
+ *
+ * REAL PRODUCTION BUG this exists to fix (found by rendering a long line
+ * and inspecting the actual pixels): opentype.js's `toPathData` rounds via
+ * `+(Math.round(v + 'e+' + places) + 'e-' + places)`. That string trick
+ * breaks for any coordinate JavaScript already stringifies in exponential
+ * notation -- a glyph outline routinely produces a near-zero value like
+ * 5.6e-15, and `'5.6e-15' + 'e+2'` parses as NaN. `toPathData` then emits
+ * the literal token `NaN` into the `d` attribute, and librsvg (sharp's
+ * rasterizer) stops rendering that path AT THAT TOKEN -- silently, with no
+ * error, leaving a half-drawn glyph and every following character missing.
+ *
+ * Confirmed live: "GLOBAL PATHWAYS OVERSEAS EDUCATION" rendered as
+ * "GLOBAL PATHWAYS OVER" plus a clipped partial glyph, with exactly one
+ * `NaN` in its 12KB of path data while the underlying `commands` array
+ * contained zero non-finite numbers. This affected EVERY archetype, not
+ * just one -- any line long enough to contain such a coordinate lost its
+ * tail. Emitting the same commands with `toFixed` (never exponential)
+ * fixes it at the source for every caller.
+ */
+function pathCommandsToSvgData(path: { commands: ReadonlyArray<Record<string, unknown>> }, decimals = 2): string {
+  let out = "";
+  for (const command of path.commands) {
+    const type = command.type;
+    const n = (key: string): string => svgNum(command[key] as number, decimals);
+    switch (type) {
+      case "M":
+        out += `M${n("x")} ${n("y")}`;
+        break;
+      case "L":
+        out += `L${n("x")} ${n("y")}`;
+        break;
+      case "C":
+        out += `C${n("x1")} ${n("y1")} ${n("x2")} ${n("y2")} ${n("x")} ${n("y")}`;
+        break;
+      case "Q":
+        out += `Q${n("x1")} ${n("y1")} ${n("x")} ${n("y")}`;
+        break;
+      case "Z":
+        out += "Z";
+        break;
+      default:
+        break;
+    }
+  }
+  return out;
+}
+
 function glyphLineSvg(
   font: Font,
   text: string,
@@ -249,12 +378,13 @@ function glyphLineSvg(
    * rasterizer supports natively. */
   glowColor?: string | null
 ): { svg: string; width: number } {
-  const width = measureWidth(font, text, fontSize, letterSpacingPx);
+  const drawable = sanitizeForFont(font, text);
+  const width = measureWidth(font, drawable, fontSize, letterSpacingPx);
   let startX = x;
   if (anchor === "middle") startX = x - width / 2;
   else if (anchor === "end") startX = x - width;
-  const path = font.getPath(text, startX, yBaseline, fontSize, { letterSpacing: letterSpacingFraction(letterSpacingPx, fontSize), ...NO_GSUB_FEATURES });
-  const d = path.toPathData(2);
+  const path = font.getPath(drawable, startX, yBaseline, fontSize, { letterSpacing: letterSpacingFraction(letterSpacingPx, fontSize), ...NO_GSUB_FEATURES });
+  const d = pathCommandsToSvgData(path);
   const glow = glowColor
     ? `<path d="${d}" fill="none" stroke="${escapeXml(glowColor)}" stroke-width="${round2(fontSize * 0.09)}" stroke-opacity="0.55" stroke-linejoin="round" />`
     : "";
@@ -262,7 +392,7 @@ function glyphLineSvg(
   return { svg, width };
 }
 
-interface TextLineOptions {
+export interface TextLineOptions {
   fontSize: number;
   weight: number;
   fill: string;
@@ -284,7 +414,7 @@ interface TextLineOptions {
  * order stroke outline (real legibility fix: thin dark stroke behind
  * every on-photo glyph so it survives an unpredictable photo region
  * behind it) in exactly one place. */
-function renderTextLines(lines: string[], x: number, yStart: number, lineHeight: number, opts: TextLineOptions): string {
+export function renderTextLines(lines: string[], x: number, yStart: number, lineHeight: number, opts: TextLineOptions): string {
   const font = getFont(opts.weight);
   const letterSpacingPx = opts.letterSpacing ?? 0;
   let svg = "";
@@ -410,6 +540,31 @@ function iconWeb(x: number, y: number, size: number, color: string): string {
   );
 }
 
+/** Filled circle with a checkmark stroke -- FEATURE_POSTER's differentiator
+ * list uses this SAME icon for every row (a real, deliberate design choice,
+ * not a shortcut: since the differentiator TEXT is arbitrary real business
+ * data, there is no reliable way to pick a semantically-matched icon per
+ * row without guessing; one consistent "this is a real benefit" mark, the
+ * same convention countless real feature-list ads use, reads as more
+ * intentional than a mismatched icon). Built from primitives only, same
+ * rule as every other icon in this file. */
+export function iconCheckCircle(x: number, y: number, size: number, fillColor: string, checkColor: string): string {
+  const cx = x + size / 2;
+  const cy = y + size / 2;
+  const r = size / 2;
+  const checkStroke = Math.max(1.5, size * 0.11);
+  const p1x = cx - r * 0.42;
+  const p1y = cy + r * 0.02;
+  const p2x = cx - r * 0.1;
+  const p2y = cy + r * 0.34;
+  const p3x = cx + r * 0.46;
+  const p3y = cy - r * 0.32;
+  return (
+    `<circle cx="${round2(cx)}" cy="${round2(cy)}" r="${round2(r)}" fill="${escapeXml(fillColor)}" />` +
+    `<path d="M ${round2(p1x)} ${round2(p1y)} L ${round2(p2x)} ${round2(p2y)} L ${round2(p3x)} ${round2(p3y)}" fill="none" stroke="${escapeXml(checkColor)}" stroke-width="${round2(checkStroke)}" stroke-linecap="round" stroke-linejoin="round" />`
+  );
+}
+
 const CONTACT_ICONS: Record<"location" | "phone" | "website", (x: number, y: number, size: number, color: string) => string> = {
   location: iconLocationPin,
   phone: iconPhone,
@@ -530,6 +685,19 @@ export interface TextOverlayLayoutInput {
    * background, a bounded badge for a busy photo surface) instead of the
    * caller guessing -- see ARCHETYPE_LOGO_SURFACE below. */
   logoVariants?: LogoVariantBundle | null;
+  /** FEATURE_POSTER only: the real generated/uploaded photo, as a data URI
+   * -- every other archetype uses the base image as the full-bleed
+   * background (sharp composites this SVG on top of the real photo
+   * directly), but FEATURE_POSTER needs the photo bounded to one panel on
+   * a light background, which only an in-SVG `<image>` can do. Populated
+   * by renderTextOverlay itself from its own `baseImage` argument -- no
+   * caller needs to pass this. */
+  photoDataUri?: string | null;
+  /** FEATURE_POSTER only: up to 3 of the business's own real, on-file
+   * differentiator phrases (Brand Brain content.description, split into
+   * clauses) for the icon-led benefit list. Never AI-invented -- an empty
+   * array renders no list at all rather than a placeholder. */
+  differentiators?: string[];
 }
 
 /** One resolved, ready-to-composite logo image -- a data URI (not a
@@ -569,6 +737,7 @@ const ARCHETYPE_LOGO_SURFACE: Record<LayoutArchetype, LogoVariantKind> = {
   POLAROID_LIFESTYLE: "monoDark", // polaroid border is white/cream
   CLINICAL_TRUST: "monoDark", // light, clinical background
   NEON_NIGHTLIFE: "monoLight", // genuinely dark, atmospheric background
+  FEATURE_POSTER: "monoDark", // light/white poster background -- a dark or full-color mark reads reliably
 };
 
 /** Resolves which logo asset (if any) an archetype should actually
@@ -592,7 +761,7 @@ export function selectLogoVariant(input: Pick<TextOverlayLayoutInput, "logoImage
  * that keeps every icon in this file to primitives rather than filters.
  * Returns null (render nothing) when no logo was supplied, so callers can
  * use `logoSvg ?? <text-glyph fallback>` in one expression. */
-function buildLogoImageSvg(logoImage: TextOverlayLayoutInput["logoImage"], boxX: number, boxY: number, boxWidth: number, boxHeight: number): string | null {
+export function buildLogoImageSvg(logoImage: TextOverlayLayoutInput["logoImage"], boxX: number, boxY: number, boxWidth: number, boxHeight: number): string | null {
   if (!logoImage || !logoImage.aspectRatio || logoImage.aspectRatio <= 0) return null;
   let renderWidth = boxWidth;
   let renderHeight = renderWidth / logoImage.aspectRatio;
@@ -1738,6 +1907,245 @@ function buildNeonNightlifeSvg(input: TextOverlayLayoutInput, picked: PickedElem
   return `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">${scrim}<g transform="translate(0, ${round2(scrimTop)})">${parts.join("")}</g></svg>`;
 }
 
+/**
+ * FEATURE_POSTER (Image Quality + Marketing Creative Certification
+ * mission, 2026-09-06): a structured, agency-style promotional poster on
+ * a light background -- built from a real reference the business
+ * supplied, not a photo-with-a-band variant. Two columns below a header
+ * row: left carries the logo/business name, headline, supporting line,
+ * and an icon-led list of the business's own real differentiators; right
+ * carries the real generated photo in a bounded, rounded panel (never
+ * full-bleed -- the whole point of this archetype is that the photo is
+ * ONE element among several, not the entire canvas). A full-width
+ * brand-color CTA bar closes the poster, mirroring the reference's own
+ * bottom tagline bar. Every other archetype in this file draws directly
+ * on top of the real photo (sharp composites this SVG onto it); this one
+ * is the one exception -- see renderTextOverlay's own FEATURE_POSTER
+ * branch for why the photo has to be embedded as an in-SVG `<image>`
+ * instead.
+ */
+/**
+ * Real, natural business prose sometimes arrives as its own bulleted or
+ * numbered list ("• Direct university shortlisting support\n•
+ * ...") rather than one flowing sentence -- found on an actual generated
+ * FEATURE_POSTER creative's supportingLine. Collapses any such shape into
+ * one sentence regardless of which body-tier role it's used for (not just
+ * supportingLine); a no-op for the normal single-sentence case.
+ */
+function collapseToSentence(text: string): string {
+  return text
+    .split(/\n+/)
+    .map((line) => line.trim().replace(/^(?:[•\-*]|\d+[.)])\s*/, ""))
+    .filter(Boolean)
+    .join(". ");
+}
+
+function buildFeaturePosterSvg(input: TextOverlayLayoutInput, picked: PickedElements): string {
+  const { width, height } = input;
+  const primary = input.primaryColor ?? input.accentColor ?? "#14181F";
+  const secondary = input.secondaryColor ?? input.accentColor ?? primary;
+  const ink = "#171A20"; // near-black -- this archetype's background is always light, so text is always dark regardless of brand color/light-dark preference
+  const muted = "#5B6472";
+  // headline/supporting are deliberately NOT destructured here -- the
+  // content-block loop below reads the full input.elements array directly
+  // so it can render whatever roles the treatment actually chose, not just
+  // one-picked-per-legacy-role. picked.cta/brandLabel are still the real
+  // source for the lockup and CTA bar (structural chrome, not message
+  // content the strategy decides).
+  const { cta, brandLabel } = picked;
+  const differentiators = (input.differentiators ?? []).map((d) => d.trim()).filter(Boolean).slice(0, 3);
+
+  const margin = Math.round(width * 0.065);
+  const columnGap = Math.round(width * 0.045);
+  const hasPhoto = Boolean(input.photoDataUri);
+  const photoColWidth = hasPhoto ? Math.round(width * 0.34) : 0;
+  const textColWidth = width - margin * 2 - (hasPhoto ? columnGap + photoColWidth : 0);
+  // Computed early (doesn't depend on anything else) so both the photo
+  // panel and the text-block centering below can stop short of the CTA
+  // bar instead of running underneath it or leaving it stranded far below
+  // real content.
+  const hasCta = Boolean(cta?.text.trim());
+  const ctaBarHeight = hasCta ? Math.round(height * 0.09) : 0;
+  const bandBottom = height - ctaBarHeight - (hasCta ? margin : Math.round(margin * 0.6));
+
+  const left: string[] = [];
+  let y = margin;
+
+  // --- Logo / business name lockup ---------------------------------------
+  const resolvedLogo = selectLogoVariant(input);
+  const logoBoxHeight = Math.round(width * 0.052);
+  if (resolvedLogo) {
+    const logoBoxWidth = Math.min(textColWidth, Math.round(logoBoxHeight * resolvedLogo.aspectRatio * 2.4));
+    const logoSvg = buildLogoImageSvg(resolvedLogo, margin, y, logoBoxWidth, logoBoxHeight);
+    if (logoSvg) left.push(logoSvg);
+    y += logoBoxHeight + Math.round(width * 0.03);
+  } else if (brandLabel.text.trim()) {
+    // Bounded to textColWidth like every other element in this column, and
+    // wrapped (not mid-word ellipsis-truncated) -- a real, ordinary-length
+    // business name ("Fort Kochi Coastal Kitchen") previously either ran
+    // straight into the photo panel unbounded, or, once bounded, got
+    // chopped to "FORT KOCHI COASTAL KIT…" on one line (both real bugs,
+    // caught by visual inspection of an actual render, not just the unit
+    // tests). Two lines is enough room for any realistic business name at
+    // this font size; only a genuinely extreme name still ellipsizes, on
+    // the second line, same as headline/supportingLine below it.
+    const brandFS = Math.round(width * 0.03);
+    const brandLetterSpacing = Math.round(brandFS * 0.08);
+    const brandLines = wrapTextWithEllipsis(getFont(700), brandLabel.text.trim().toUpperCase(), textColWidth, brandFS, 2, brandLetterSpacing);
+    const brandLineHeight = brandFS * 1.25;
+    left.push(renderTextLines(brandLines, margin, y + brandFS, brandLineHeight, {
+      fontSize: brandFS, weight: 700, fill: ink, anchor: "start", letterSpacing: brandLetterSpacing,
+    }));
+    y += brandLines.length * brandLineHeight + Math.round(width * 0.02);
+  }
+
+  // --- Content blocks: rendered in the EXACT order and roles the real
+  //     Creative Treatment chose for THIS post -- FEATURE_POSTER's job is
+  //     to present whatever message structure the content strategy
+  //     decided (a headline, a pain point + solution, a question +
+  //     answer, ...), never to force every business into the same
+  //     headline+differentiators+CTA shape regardless of the actual
+  //     strategy (real bug found live: FEATURE_POSTER flattened every
+  //     creative into headline -> the same static 3 on-file
+  //     differentiators -> CTA, no matter what the treatment's own
+  //     concept/hook/angle was). brandLabel and cta are handled elsewhere
+  //     (lockup and bottom bar respectively) -- everything else in
+  //     input.elements renders here as one of three visual tiers keyed
+  //     off role, so the content SHAPE varies while the archetype's own
+  //     visual grammar (display line / supporting line / icon-proof row)
+  //     stays consistent. -----------------------------------------------
+  const DISPLAY_ROLES = new Set(["headline", "statement", "question"]);
+  const POINT_ROLES = new Set(["proof", "value", "benefit", "offer"]);
+  const contentElements = input.elements.filter((e) => e.role !== "brandLabel" && e.role !== "cta" && e.text?.trim());
+
+  const renderPointRow = (text: string) => {
+    const iconSize = Math.round(width * 0.034);
+    const fontSize = Math.round(width * 0.024);
+    const textGap = Math.round(width * 0.02);
+    left.push(iconCheckCircle(margin, y, iconSize, secondary, legibleTextColorFor(secondary)));
+    const lines = wrapTextWithEllipsis(getFont(600), text, textColWidth - iconSize - textGap, fontSize, 2);
+    const lineHeight = fontSize * 1.3;
+    const textY = y + iconSize / 2 - ((lines.length - 1) * lineHeight) / 2 + fontSize * 0.32;
+    left.push(renderTextLines(lines, margin + iconSize + textGap, textY, lineHeight, { fontSize, weight: 600, fill: ink, anchor: "start" }));
+    y += Math.max(iconSize, lines.length * lineHeight) + Math.round(width * 0.024);
+  };
+
+  if (!contentElements.length) y += Math.round(width * 0.015);
+  for (const element of contentElements) {
+    if (element.role === "differentiators") {
+      // Real on-file business data ONLY -- ignores whatever placeholder
+      // text the model put in this slot; renders only when the content
+      // strategy actually asked for this role (i.e. only ever appears in
+      // input.elements when it's genuinely the strongest angle for this
+      // creative), never unconditionally on every single post.
+      if (!differentiators.length) continue;
+      for (const item of differentiators) renderPointRow(item);
+      y += Math.round(width * 0.01);
+    } else if (POINT_ROLES.has(element.role)) {
+      renderPointRow(collapseToSentence(element.text.trim()));
+    } else if (DISPLAY_ROLES.has(element.role)) {
+      // Capped at 5 lines, not 3 (real bug found live twice: a genuinely
+      // strategic two-sentence headline like "Zero guesswork. 25 years of
+      // backed performance." truncated at 3 lines, and a full natural
+      // question like "Will one wrong choice cost you an entire admission
+      // cycle?" (10 words -- exactly the specific, non-generic on-image
+      // copy this whole content-strategy fix exists to enable) still
+      // truncated one word short of finishing even at 4 lines in this
+      // narrower, photo-panel-sharing column).
+      const fontSize = Math.round(width * 0.058);
+      const lines = wrapTextWithEllipsis(getFont(800), element.text.trim(), textColWidth, fontSize, 5);
+      const lineHeight = fontSize * 1.12;
+      left.push(renderTextLines(lines, margin, y + fontSize, lineHeight, { fontSize, weight: 800, fill: ink, anchor: "start" }));
+      y += lines.length * lineHeight + Math.round(width * 0.018);
+    } else {
+      // supportingLine / insight / painPoint / solution / answer / other:
+      // one medium, muted supporting line. Defense-in-depth against the
+      // model writing its own bulleted/numbered list here (real bug,
+      // found live: "• Direct university shortlisting support\n• ..."
+      // duplicating the separate icon-proof rows above/below it) --
+      // collapseToSentence is a no-op for the normal single-sentence case.
+      // Capped at 4 lines, not 2, for the same real-headline-truncation
+      // reason as the display tier above.
+      const fontSize = Math.round(width * 0.026);
+      const lines = wrapTextWithEllipsis(getFont(400), collapseToSentence(element.text.trim()), textColWidth, fontSize, 4);
+      const lineHeight = fontSize * 1.4;
+      left.push(renderTextLines(lines, margin, y + fontSize, lineHeight, { fontSize, weight: 400, fill: muted, anchor: "start" }));
+      y += lines.length * lineHeight + Math.round(width * 0.03);
+    }
+  }
+
+  const columnContentHeight = y - margin;
+
+  // --- Contact footer -- measured against the real, un-shifted absolute
+  //     coordinates first (yTop assumes no extra offset yet) so its real
+  //     height is known before the whole text block below is centered. ---
+  const footerGap = Math.round(width * 0.02);
+  const footer = buildContactFooterSvg({
+    contact: input.contactInfo, x: margin, yTop: margin + columnContentHeight + footerGap, maxWidth: textColWidth,
+    fontSize: Math.round(width * 0.02), color: muted, align: "start",
+  });
+  if (footer.svg) left.push(footer.svg);
+
+  // Vertically centers the whole text block (headline through footer)
+  // within the same vertical band the photo panel fills, instead of
+  // always pinning it to the top margin -- a short text block (no
+  // supporting line, one differentiator) previously left a large dead
+  // void beneath it while the photo panel above it was equally short,
+  // rather than reading as a deliberately composed poster (real defect,
+  // caught by visual inspection of an actual render). All coordinates
+  // above were built assuming zero offset, so one uniform wrapping <g>
+  // shifts headline, differentiators, and footer together -- never a
+  // double-shift, since nothing here is translated a second time.
+  const textBlockHeight = columnContentHeight + (footer.svg ? footerGap + footer.height : 0);
+  const availableBand = bandBottom - margin;
+  const verticalOffset = Math.max(0, Math.round((availableBand - textBlockHeight) / 2));
+  const leftGroup = `<g transform="translate(0, ${verticalOffset})">${left.join("")}</g>`;
+
+  // --- Real photo panel, bounded (never full-bleed) -- runs the full
+  //     available band height (down to just above the CTA bar, or the
+  //     bottom margin when there's no CTA) rather than only as tall as
+  //     the text column's own content, so a short text block doesn't
+  //     leave the photo panel looking stranded in a mostly-empty canvas
+  //     (real defect, same visual-inspection finding as above). --------
+  let photoSvg = "";
+  if (hasPhoto) {
+    const photoX = margin + textColWidth + columnGap;
+    const photoY = margin;
+    const photoHeight = Math.max(Math.round(width * 0.3), bandBottom - photoY);
+    const radius = Math.round(width * 0.025);
+    const clipId = "feature-poster-photo-clip";
+    photoSvg =
+      `<clipPath id="${clipId}"><rect x="${round2(photoX)}" y="${round2(photoY)}" width="${round2(photoColWidth)}" height="${round2(photoHeight)}" rx="${radius}" /></clipPath>` +
+      `<image href="${escapeXml(input.photoDataUri!)}" x="${round2(photoX)}" y="${round2(photoY)}" width="${round2(photoColWidth)}" height="${round2(photoHeight)}" preserveAspectRatio="xMidYMid slice" clip-path="url(#${clipId})" />` +
+      `<rect x="${round2(photoX)}" y="${round2(photoY)}" width="${round2(photoColWidth)}" height="${round2(photoHeight)}" rx="${radius}" fill="none" stroke="${escapeXml(primary)}" stroke-opacity="0.12" stroke-width="${Math.max(1, Math.round(width * 0.003))}" />`;
+  }
+
+  // --- Full-width brand-color CTA bar (mirrors the reference's own
+  //     bottom tagline bar) -- only rendered when a real CTA exists, so
+  //     nothing invents copy just to fill an empty colored rectangle. ---
+  let ctaSvg = "";
+  if (hasCta) {
+    const ctaTop = height - ctaBarHeight;
+    const ctaTextColor = legibleTextColorFor(primary);
+    const iconSize = Math.round(ctaBarHeight * 0.4);
+    const font = getFont(700);
+    const ctaFontSize = Math.round(ctaBarHeight * 0.32);
+    const ctaText = truncateToWidth(font, cta!.text.trim(), width - margin * 2 - iconSize * 1.6, ctaFontSize);
+    const textWidth = measureWidth(font, ctaText, ctaFontSize);
+    const groupWidth = iconSize + Math.round(ctaBarHeight * 0.22) + textWidth;
+    const groupX = (width - groupWidth) / 2;
+    ctaSvg =
+      `<rect x="0" y="${round2(ctaTop)}" width="${width}" height="${round2(ctaBarHeight)}" fill="${escapeXml(primary)}" />` +
+      iconCheckCircle(groupX, ctaTop + (ctaBarHeight - iconSize) / 2, iconSize, ctaTextColor, primary) +
+      renderTextLines([ctaText], groupX + iconSize + Math.round(ctaBarHeight * 0.22), ctaTop + ctaBarHeight / 2 + ctaFontSize * 0.34, ctaFontSize * 1.2, {
+        fontSize: ctaFontSize, weight: 700, fill: ctaTextColor, anchor: "start",
+      });
+  }
+
+  const background = `<rect x="0" y="0" width="${width}" height="${height}" fill="#FFFFFF" />`;
+  return `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">${background}${photoSvg}${leftGroup}${ctaSvg}</svg>`;
+}
+
 /** Dispatches to the layout-specific renderer for input.layoutArchetype.
  * A creative with genuinely no on-image text (no headline/supporting/CTA
  * and an empty business name) short-circuits to a bare, empty SVG for
@@ -1745,8 +2153,19 @@ function buildNeonNightlifeSvg(input: TextOverlayLayoutInput, picked: PickedElem
 export function buildTextOverlaySvg(input: TextOverlayLayoutInput): string {
   const { width, height, elements, businessName } = input;
   const picked = pickElements(elements, businessName);
+  // FEATURE_POSTER reads its content directly from the full `elements`
+  // array (see buildFeaturePosterSvg) rather than only the three legacy
+  // roles pickElements() extracts -- a real treatment expressed entirely
+  // through the newer roles (e.g. "painPoint" + "solution", no literal
+  // "headline"/"supportingLine"/"cta") would otherwise look like "no text
+  // content" here and get short-circuited to the bare logo watermark,
+  // silently discarding a real, deliberately-structured message. Scoped to
+  // FEATURE_POSTER specifically -- every other archetype still only ever
+  // renders the three legacy roles, so their own "no text" check is
+  // unchanged.
   const hasTextContent = Boolean(
     picked.headline?.text.trim() || picked.supporting?.text.trim() || picked.cta?.text.trim()
+      || (input.layoutArchetype === "FEATURE_POSTER" && elements.some((e) => e.text?.trim()))
   );
   if (!hasTextContent) {
     const resolvedLogo = selectLogoVariant(input);
@@ -1777,6 +2196,8 @@ export function buildTextOverlaySvg(input: TextOverlayLayoutInput): string {
       return buildClinicalTrustSvg(input, picked);
     case "NEON_NIGHTLIFE":
       return buildNeonNightlifeSvg(input, picked);
+    case "FEATURE_POSTER":
+      return buildFeaturePosterSvg(input, picked);
     default:
       // Unreachable given validateCreativeTreatment's own enum check --
       // kept as a real, working default rather than a throw so a
@@ -1786,6 +2207,24 @@ export function buildTextOverlaySvg(input: TextOverlayLayoutInput): string {
 }
 
 export async function renderTextOverlay(baseImage: Buffer, input: TextOverlayLayoutInput): Promise<Buffer> {
+  // FEATURE_POSTER is the one archetype that does NOT draw on top of a
+  // full-bleed photo -- every other archetype's SVG assumes the real photo
+  // already fills the whole canvas underneath it (sharp composites onto
+  // baseImage directly, below). FEATURE_POSTER's photo lives in a bounded
+  // panel instead, which only an in-SVG `<image>` element can place, so the
+  // real photo bytes are re-encoded as a data URI and handed to
+  // buildTextOverlaySvg as input.photoDataUri; the "base" sharp composites
+  // onto here is a plain light canvas, not the photo itself.
+  if (input.layoutArchetype === "FEATURE_POSTER") {
+    const photoPng = await sharp(baseImage).png().toBuffer();
+    const photoDataUri = `data:image/png;base64,${photoPng.toString("base64")}`;
+    const svg = buildTextOverlaySvg({ ...input, photoDataUri });
+    const svgBuffer = Buffer.from(svg, "utf8");
+    return sharp({ create: { width: input.width, height: input.height, channels: 3, background: "#ffffff" } })
+      .composite([{ input: svgBuffer, top: 0, left: 0 }])
+      .png()
+      .toBuffer();
+  }
   const svg = buildTextOverlaySvg(input);
   const svgBuffer = Buffer.from(svg, "utf8");
   return sharp(baseImage)

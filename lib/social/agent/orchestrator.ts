@@ -479,6 +479,17 @@ export async function runAgentTurn(ctx: AgentActorContext, sessionId: string, ru
   const proposedActions: Array<{ id: string; tool: string; input: Record<string, unknown> }> = [];
   let finalText = "";
   let executionRecoveryAttempted = false;
+  // Real bug found live (Local AI certification, 2026-09-05): a request like
+  // "write me a caption" would call create_content_item (the cross-platform
+  // concept) successfully, then the model's NEXT turn produced neither a
+  // tool call nor any text at all -- it never went on to
+  // create_content_variant (the tool that actually holds the caption text
+  // the user asked for), and the turn failed with "empty turn output" even
+  // though real, useful work (a saved content concept) had already
+  // happened. Same recovery-nudge shape as the EXECUTE-mode recovery just
+  // below, bounded to one retry.
+  let contentVariantRecoveryAttempted = false;
+  let pendingContentMasterId: string | null = null;
   // Tracks the most recent schedule_post / execute_*_youtube_verification
   // outcome this turn — the deterministic backstop against a false
   // "Done."/"Posted."/"Published." reply (see Section 10 of the integrity brief).
@@ -531,6 +542,15 @@ export async function runAgentTurn(ctx: AgentActorContext, sessionId: string, ru
           executionRecoveryAttempted = true;
           messages.push({ role: "assistant", content: result.text || "" });
           messages.push({ role: "user", content: "Prepare the real editable artifacts now using the available tools. Do not return suggestions or ask me to choose an angle. Stop only after the combined final publish approval has been proposed." });
+          continue;
+        }
+        if (pendingContentMasterId && !(result.text && result.text.trim().length > 0) && !contentVariantRecoveryAttempted) {
+          contentVariantRecoveryAttempted = true;
+          messages.push({ role: "assistant", content: result.text || "" });
+          messages.push({
+            role: "user",
+            content: `Content concept ${pendingContentMasterId} was saved but has no actual caption/post text yet. Call create_content_variant now with the real caption for that concept before ending your turn.`,
+          });
           continue;
         }
         break;
@@ -664,6 +684,12 @@ export async function runAgentTurn(ctx: AgentActorContext, sessionId: string, ru
         try {
           const validInput = await validateBrandEntities(ctx, tool.schema.name, stripInternalInput(call.arguments));
           const output = await tool.execute(ctx, validInput);
+          if (tool.schema.name === "create_content_item" && typeof output === "string") {
+            pendingContentMasterId = output;
+          }
+          if (tool.schema.name === "create_content_variant") {
+            pendingContentMasterId = null;
+          }
           if (tool.schema.name === "generate_image" && output && typeof output === "object") {
             const genOutput = output as {
               generationJobId?: string;

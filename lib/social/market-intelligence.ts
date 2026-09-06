@@ -1,4 +1,4 @@
-import { createTenantAIRuntime, resolveTenantMonthSpend, resolveTenantPlanTier } from "@stratxcel/ai-runtime";
+import { createTenantAIRuntime, resolveTenantMonthSpend, resolveTenantPlanTier, type AIProviderId } from "@stratxcel/ai-runtime";
 import { researchAIExecutorFromRuntime } from "@stratxcel/workforce-core";
 import {
   runGroundedResearch,
@@ -56,7 +56,7 @@ export interface LiveMarketIntelligence {
   summary: string | null;
   claims: Array<{ text: string; statementKind: string }>;
   sources: Array<{ url: string; domain: string; title?: string }>;
-  provider: "google" | "openai" | null;
+  provider: AIProviderId | null;
   reason: string | null;
   gatheredAt: string;
   /**

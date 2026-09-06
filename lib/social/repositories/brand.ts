@@ -47,17 +47,93 @@ const DEFAULT_PROFILE: Omit<BrandProfileRow, "id" | "owner_id" | "updated_at"> =
 };
 
 /**
+ * Real gap found live (Local AI certification, 2026-09-05): the standard
+ * customer onboarding wizard writes everything the owner types into
+ * brand_brains/brand_brain_versions — it never creates a social_brand_profiles
+ * row. inspect_brand (and every other reader of getBrandProfile) only ever
+ * looked at social_brand_profiles, so a freshly-onboarded tenant's Social
+ * Copilot saw a completely empty profile regardless of what was entered
+ * during onboarding — reproduced live: the agent called inspect_brand 8
+ * times in a row, got all-zero counts every time, and the turn failed with
+ * "empty turn output". Bridges the gap on the READ side only (never touches
+ * the onboarding write path, which real customer signup already depends on)
+ * — a best-effort field mapping from the free-text onboarding shape into
+ * BrandProfileRow, not a byte-for-byte migration of one schema into another.
+ */
+async function brandBrainFallbackProfile(
+  supabase: AgentActorContext["supabase"],
+  tenantId: string,
+): Promise<BrandProfileRow | null> {
+  const { data: brainRow } = await supabase
+    .from("brand_brains")
+    .select("tenant_id, current_version, updated_at")
+    .eq("tenant_id", tenantId)
+    .maybeSingle();
+  if (!brainRow) return null;
+
+  const { data: versionRow } = await supabase
+    .from("brand_brain_versions")
+    .select("content")
+    .eq("tenant_id", tenantId)
+    .eq("version", (brainRow as { current_version: number }).current_version)
+    .maybeSingle();
+  const content = ((versionRow as { content?: Record<string, unknown> } | null)?.content ?? {}) as Record<string, unknown>;
+  if (Object.keys(content).length === 0) return null;
+
+  const str = (v: unknown): string | undefined => (typeof v === "string" && v.trim() ? v : undefined);
+  const products = Array.isArray(content.products)
+    ? (content.products as Array<Record<string, unknown>>).map((p) => ({
+        name: str(p.name) ?? "Unnamed product/service",
+        description: str(p.description),
+      }))
+    : [];
+  const rules = Array.isArray(content.rules)
+    ? (content.rules as unknown[]).filter((r): r is string => typeof r === "string").map((text) => ({ kind: "forbidden_claim", text }))
+    : [];
+  const targetAudience = str(content.target_audience);
+
+  return {
+    id: "",
+    owner_id: "",
+    identity: {
+      name: str(content.business_name),
+      industry: str(content.industry),
+      description: str(content.description),
+      business_model: str(content.business_model),
+    },
+    audiences: targetAudience ? [{ name: "Primary audience", description: targetAudience }] : [],
+    voice: { tone: [], blocked_phrases: [], forbidden_claims: rules.map((r) => r.text) },
+    visual: { colors: [], priorities: [] },
+    goals: Array.isArray(content.goals) ? content.goals : [],
+    competitors: [],
+    source_material: [],
+    products,
+    // Deliberately NOT populated from onboarding text (no structured pillar
+    // data exists at that stage) — callers that require non-empty
+    // content_pillars (e.g. Social Autopilot package prep) correctly still
+    // ask the owner to finish Brand Brain setup rather than silently
+    // fabricating pillars.
+    content_pillars: [],
+    rules,
+    updated_at: (brainRow as { updated_at?: string }).updated_at ?? "",
+  };
+}
+
+/**
  * Tenant mode reads the profile already explicitly bound to this tenant
  * (see assignBrandProfileToTenant in package-tenant-assignment.ts) — never
- * a fuzzy "pick any" lookup. No bound profile yet -> the same empty
- * DEFAULT_PROFILE fallback owner-mode already uses when nothing is saved,
- * so a session with no Brand Brain configured degrades safely instead of
- * erroring.
+ * a fuzzy "pick any" lookup. No bound profile yet -> falls back to mapping
+ * brand_brains (see brandBrainFallbackProfile above), then finally the
+ * empty DEFAULT_PROFILE owner-mode already uses when nothing is saved
+ * anywhere, so a session with no Brand Brain configured degrades safely
+ * instead of erroring.
  */
 export async function getBrandProfile(ctx: AgentActorContext): Promise<BrandProfileRow> {
   if (isTenantAgentContext(ctx)) {
     const { data } = await ctx.supabase.from("social_brand_profiles").select("*").eq("tenant_id", ctx.tenantId).maybeSingle();
     if (data) return data as BrandProfileRow;
+    const fallback = await brandBrainFallbackProfile(ctx.supabase, ctx.tenantId);
+    if (fallback) return fallback;
     return { id: "", owner_id: "", ...DEFAULT_PROFILE, updated_at: "" };
   }
   const { data } = await ctx.supabase.from("social_brand_profiles").select("*").eq("owner_id", ctx.ownerId).maybeSingle();

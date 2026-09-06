@@ -10,7 +10,7 @@
 import assert from "node:assert/strict";
 import { selectPackageMediaAsset } from "../package-media.ts";
 
-type AssetRow = { id: string; mime_type: string; tenant_id: string; owner_id: string; created_at: string; autopilot_eligible?: boolean };
+type AssetRow = { id: string; mime_type: string; tenant_id: string; owner_id: string; created_at: string; autopilot_eligible?: boolean; source_type?: string };
 
 function fakeServiceWithAssets(rows: AssetRow[]) {
   return {
@@ -155,6 +155,30 @@ async function testAllAssetsQuarantinedFailsClosed() {
   console.log("package-media.test.ts: fails closed (never selects a quarantined asset) when every real asset is quarantined — PASS");
 }
 
+// Real, severe defect found live (StratXcel Marketing Creative Engine
+// repair, 2026-09-06): the FIRST ("preferred generated asset") pass never
+// filtered on autopilot_eligible at all -- only the second (fallback)
+// pass did. A quarantined asset that is ALSO source_type:"generated" (the
+// exact real shape of a Logo Engine variant: uploaded logo -> sharp
+// renders 4 real PNG variants tagged source_type:"generated") still won
+// this pass outright over any real, eligible business photo. Confirmed
+// live: 4 real automated Social Autopilot posts used a raw logo-variant
+// file as the entire post creative, BEFORE and AFTER that exact row was
+// quarantined, because this query never checked the flag it was
+// quarantined with. testQuarantinedAssetIsNeverSelected above could not
+// have caught this: none of its fixture rows set source_type, so the
+// first pass always matched zero rows there and every prior assertion
+// only ever exercised the second pass.
+async function testQuarantinedGeneratedAssetNeverWinsFirstPass() {
+  const rows: AssetRow[] = [
+    { id: "logo-badge", mime_type: "image/png", tenant_id: "t1", owner_id: "o1", created_at: "2026-02-01T00:00:00Z", autopilot_eligible: false, source_type: "generated" },
+    { id: "real-ai-photo", mime_type: "image/png", tenant_id: "t1", owner_id: "o1", created_at: "2026-01-01T00:00:00Z", autopilot_eligible: true, source_type: "generated" },
+  ];
+  const result = await selectPackageMediaAsset(fakeServiceWithAssets(rows), { tenantId: "t1", ownerId: "o1", mediaType: "image" });
+  assert.equal(result?.id, "real-ai-photo", "the first ('preferred generated') pass must also respect autopilot_eligible -- a quarantined logo variant must never win just because it is newer and shares source_type:'generated' with real eligible photos");
+  console.log("package-media.test.ts: the preferred-generated-asset pass never selects a quarantined logo variant, even when it's the newest generated candidate — PASS");
+}
+
 async function run() {
   await testNoTextQuery();
   await testNoAssetsThrows();
@@ -163,6 +187,7 @@ async function run() {
   await testNeverBlocksWhenEverythingWasRecentlyUsed();
   await testQuarantinedAssetIsNeverSelected();
   await testAllAssetsQuarantinedFailsClosed();
+  await testQuarantinedGeneratedAssetNeverWinsFirstPass();
   console.log("package-media.test.ts: ALL PASS (media capability gating, creative-diversity rotation, never-block fallback, autopilot_eligible quarantine boundary)");
 }
 

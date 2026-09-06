@@ -1,7 +1,7 @@
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getTenantServiceContext } from "@/lib/tenants/tenant-context";
 import { createTenant, listMembershipsForUser } from "@/lib/tenants/repository";
-import { getCurrentBrandBrain, saveBrandBrainVersion, type BrandBrainContent, type BrandBrainService } from "@stratxcel/brand-brain";
+import { getCurrentBrandBrain, saveBrandBrainVersion, SERVICE_NAME_MAX_LENGTH, SERVICE_LONG_DESCRIPTION_MAX_LENGTH, type BrandBrainContent, type BrandBrainService } from "@stratxcel/brand-brain";
 import { resolveCanonicalIdentity } from "@/lib/identity/resolve-identity";
 import { field } from "@/lib/audit/v1/provenance";
 import { CONNECT_DISCOVER_VERSION } from "@/lib/audit/v1/onboarding-state";
@@ -281,14 +281,36 @@ export async function POST(request: Request) {
   // sees SOMETHING -- never the sole source of truth.
   if (body.brand?.offers?.length) {
     const now = new Date().toISOString();
-    content.services = body.brand.offers.map((name, index): BrandBrainService => ({
-      id: crypto.randomUUID(),
-      name,
-      shortDescription: "",
-      active: true,
-      order: index,
-      updatedAt: now,
-    }));
+    // Local AI/Social Autopilot certification mission (2026-09-06): real bug
+    // found live -- a normal, full-sentence answer to onboarding's "What do
+    // you sell or offer?" (the wizard never split or capped it) was written
+    // straight into services[i].name, which validateBrandBrainContent caps
+    // at SERVICE_NAME_MAX_LENGTH (80). Any answer over that silently made
+    // the tenant's own Brand Brain fail its own real validator from the
+    // moment onboarding finished -- the customer could never save a single
+    // edit on /app/brand afterward (Save Changes stays disabled with no
+    // visible reason, since canSave requires validationIssues.length === 0
+    // and the page never surfaces which field is at fault). Long answers now
+    // keep their full text in longDescription (2000-char budget) instead of
+    // being silently truncated/discarded, with only name shortened.
+    content.services = body.brand.offers.map((offer, index): BrandBrainService => {
+      const trimmed = offer.trim();
+      const name =
+        trimmed.length <= SERVICE_NAME_MAX_LENGTH
+          ? trimmed
+          : `${trimmed.slice(0, SERVICE_NAME_MAX_LENGTH - 1).replace(/\s+\S*$/, "")}…`;
+      return {
+        id: crypto.randomUUID(),
+        name,
+        shortDescription: "",
+        ...(trimmed.length > SERVICE_NAME_MAX_LENGTH
+          ? { longDescription: trimmed.slice(0, SERVICE_LONG_DESCRIPTION_MAX_LENGTH) }
+          : {}),
+        active: true,
+        order: index,
+        updatedAt: now,
+      };
+    });
     content.products = body.brand.offers.map((o) => ({ name: o, description: "" }));
   }
   if (body.brand?.restrictions?.length) content.rules = body.brand.restrictions;

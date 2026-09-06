@@ -1,0 +1,24 @@
+{
+  "mcpServers": {
+    "stratxcel-browser": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@playwright/mcp@latest",
+        "--browser",
+        "chrome",
+        "--user-data-dir",
+        "D:/pw-profile",
+        "--output-dir",
+        "D:/pw-output",
+        "--viewport-size",
+        "1440x900"
+      ],
+      "env": {
+        "NPM_CONFIG_CACHE": "D:\\npm-cache",
+        "PLAYWRIGHT_BROWSERS_PATH": "D:\\ms-playwright"
+      }
+    }
+  }
+}

@@ -22,8 +22,49 @@ import { buildVisualDirectorBrief } from "../social/visual-director-prompt.ts";
 import { deriveBrandVisualDNA } from "../social/brand-visual-dna.ts";
 import { classifyIndustry } from "../social/industry-taxonomy.ts";
 import { renderTextOverlay, type LogoVariantBundle } from "../social/text-overlay-render.ts";
+import { parseCreativeComposition, renderCompositionOverlay } from "../social/composition-render.ts";
 import { resolveManualRouting } from "../social/archetype-routing.ts";
 import { resolveLogoVariantBundle, resolveLegacyLogoImage } from "../brand/logo-variant-resolver.ts";
+
+/**
+ * Image Quality + Marketing Creative Certification mission (2026-09-06):
+ * FEATURE_POSTER's icon-led differentiator list renders the business's own
+ * real "what makes you stand out" onboarding answer (Brand Brain
+ * content.description) -- never an AI-invented benefit. That field is one
+ * free-text paragraph, not a structured list, so this splits it into up to
+ * 3 real clauses the same way buildCustomerPsychologyProfile already
+ * splits real pain-point text: primarily on sentence-ending punctuation,
+ * falling back to commas only when the text has no strong separator at all
+ * (a single comma-separated answer like "Free pickup, sanitized cars, 24/7
+ * support" would otherwise never split). Never fabricates a 4th point or
+ * pads a short answer -- fewer than 3 real clauses renders fewer rows.
+ */
+export function splitRealDifferentiators(description: string | null | undefined): string[] {
+  if (!description || !description.trim()) return [];
+  const bySentence = description
+    .split(/[.\n;]+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const parts = bySentence.length > 1 ? bySentence : description.includes(",") ? description.split(",").map((s) => s.trim()).filter(Boolean) : bySentence;
+  return parts.slice(0, 3).map(cleanDifferentiatorClause);
+}
+
+/**
+ * Real, natural business prose ("Free pickup, sanitized cars, and 24/7
+ * support") reads fine as one sentence but not as separate bold rows once
+ * split on commas above -- the last clause kept its leading "and" and the
+ * middle clause started lowercase, both reading as a formatting defect
+ * once rendered as their own standalone row (found on a real generated
+ * FEATURE_POSTER creative for Metro Wheels Car Rentals: "and 24/7 roadside
+ * support" / "sanitized premium sedans and SUVs"). Strips a leading
+ * conjunction and capitalizes the first letter so every row reads like its
+ * own claim -- never touches the business's actual wording otherwise.
+ */
+function cleanDifferentiatorClause(text: string): string {
+  const withoutConjunction = text.replace(/^(and|or)\s+/i, "");
+  if (!withoutConjunction) return text;
+  return withoutConjunction.charAt(0).toUpperCase() + withoutConjunction.slice(1);
+}
 
 const TERMINAL = new Set(["READY", "FAILED"]);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -609,11 +650,25 @@ export async function processImageGenerationJob(args: {
   // duplicating a {role:"cta"} entry into textHierarchy, so the CTA was
   // silently never rendered on 8 of 14 real passing creatives in one
   // benchmark run despite the treatment clearly intending one.
-  const isTextLed = overlayContext?.treatment?.intentionallyTextLed === true;
-  const isSocialAutopilot = job.source_context === "social_autopilot";
-  const resolvedOverlayElements = (overlayContext && (!isSocialAutopilot || isTextLed))
-    ? resolveOverlayElements(overlayContext.treatment)
-    : [];
+  // StratXcel Marketing Creative Engine repair (2026-09-06): real,
+  // confirmed root cause of "generic AI photo instead of a finished
+  // marketing creative" -- this used to additionally require
+  // treatment.intentionallyTextLed === true before an automated
+  // social_autopilot job would render ANY headline/CTA text at all,
+  // on top of resolveOverlayElements' own real decision (which already
+  // returns [] whenever the treatment itself planned no on-image text).
+  // Confirmed live: every inspected real automated creative had
+  // intentionallyTextLed: false (a legitimate, common treatment choice),
+  // so resolvedOverlayElements was unconditionally forced to [] for
+  // EVERY automated post regardless of what the treatment actually
+  // planned -- an offer/announcement/promotion creative that genuinely
+  // needs a headline and CTA got the exact same text-free treatment as a
+  // deliberately photo-only mood post. Manual/Studio generations never had
+  // this extra gate and already trust the treatment's own textHierarchy/
+  // cta decision (resolveOverlayElements' real body above returns exactly
+  // that, doing nothing if the treatment planned nothing) -- automated
+  // posts now get the same real decision instead of a blanket override.
+  const resolvedOverlayElements = overlayContext ? resolveOverlayElements(overlayContext.treatment) : [];
   // Gated on `overlayContext` alone -- NOT also `resolvedOverlayElements.length`.
   // Real, serious bug found live (Unify Creative Studio mission): the
   // treatment prompt explicitly and correctly encourages "no on-image text
@@ -630,7 +685,7 @@ export async function processImageGenerationJob(args: {
       ? async ({ bytes, mimeType }: { bytes: Uint8Array; mimeType: string }) => {
           const canvas = ASPECT_CANVAS[job.aspect_ratio] ?? ASPECT_CANVAS["1:1"]!;
           const { businessName, brandDNA, treatment: overlayTreatment, logoVariants, logoImage } = overlayContext!;
-          const snapshot = job.brand_context_snapshot as { locations?: unknown };
+          const snapshot = job.brand_context_snapshot as { locations?: unknown; description?: unknown };
           // Final Production Loop brief constraint #1: never invent contact
           // info. This real production path has no verified-facts pipeline
           // wired to the image job today -- only whatever "locations" the
@@ -640,6 +695,31 @@ export async function processImageGenerationJob(args: {
           // phone/website stay null (never guessed) until a real verified-
           // facts path is wired through job creation.
           const location = Array.isArray(snapshot.locations) && typeof snapshot.locations[0] === "string" ? snapshot.locations[0] : null;
+          const differentiators = splitRealDifferentiators(typeof snapshot.description === "string" ? snapshot.description : null);
+          // FINAL HERMES -- RESTORE TRUE MARKETING CREATIVE GENERATION
+          // (2026-09-06): when the treatment designed a real advertisement
+          // (an ordered set of advertising blocks -- stat / offer / steps /
+          // comparison / benefits / badges / quote), render THAT, instead
+          // of flattening it back down to the headline+supportingLine+CTA
+          // slots that the 13 fixed archetype builders are limited to.
+          // parseCreativeComposition returns null for anything malformed,
+          // so a bad or absent composition falls through to the existing
+          // archetype path unchanged -- additive, never a regression.
+          const adComposition = parseCreativeComposition(overlayTreatment.adComposition);
+          if (adComposition) {
+            const compositionBytes = await renderCompositionOverlay(Buffer.from(bytes), {
+              width: canvas.width,
+              height: canvas.height,
+              composition: adComposition,
+              businessName,
+              primaryColor: brandDNA.primaryColor,
+              secondaryColor: brandDNA.secondaryColor,
+              accentColor: brandDNA.accentColor,
+              logoVariants,
+              logoImage,
+            });
+            return { bytes: compositionBytes, mimeType: "image/png" };
+          }
           const composited = await renderTextOverlay(Buffer.from(bytes), {
             width: canvas.width,
             height: canvas.height,
@@ -655,10 +735,32 @@ export async function processImageGenerationJob(args: {
             contactInfo: { location, phone: null, website: null },
             logoVariants,
             logoImage,
+            differentiators,
           });
           return { bytes: composited, mimeType: "image/png" };
         }
       : undefined;
+  // Image Quality + Marketing Creative Certification mission (2026-09-06):
+  // an earlier pass this mission switched automated Social Autopilot posts
+  // to the Local AI server's "premium" tier (sdxl-premium/6800MB) after a
+  // real, controlled A/B benchmark showed it winning on quality_score
+  // (0.822 vs 0.767) and subject-count prompt adherence. That change was
+  // REVERTED after real production evidence, found live in this same
+  // pass, showed why it isn't safe through the current free Cloudflare
+  // tunnel: premium's real generation time (113-125s measured) routinely
+  // exceeds Cloudflare's free-tier ~100s edge/proxy timeout, so a
+  // meaningful fraction of real attempts failed with an HTTP 524
+  // (Cloudflare's own timeout page, not a StratXcel/FastAPI response) --
+  // confirmed via a real ai_image_provider_hop log line
+  // ("PROVIDER_FAILURE:Local AI image HTTP 524") at 125.5s on an actual
+  // automated generation. "quality" tier's measured ~90-91s stays safely
+  // under that ceiling. The mission brief's own stated priority order --
+  // "QUALITY, ACCURACY, CONSISTENCY, PROMPT ADHERENCE" -- is why this
+  // reverts rather than keeps the higher-scoring tier: a creative that
+  // frequently fails to generate at all is worse for consistency than one
+  // that reliably succeeds at a slightly lower (but still real, gated)
+  // quality score. Revisit if the tunnel is ever moved off Cloudflare's
+  // free tier (a paid plan raises or removes this edge timeout).
   const outcome = await media.images.generate({
     tenantId: job.tenant_id,
     missionId: job.mission_id,
@@ -669,6 +771,7 @@ export async function processImageGenerationJob(args: {
     referenceAssetIds,
     persistCanonical: true,
     textOverlayCompositor,
+    tier: "standard",
   });
   if (outcome.outcome !== "OK" || !outcome.candidates.length) {
     await failJob(args.writeClient, job.id, safeProviderReason(outcome));
@@ -701,7 +804,14 @@ export async function processImageGenerationJob(args: {
       revision_number: revisionNumber,
       provider: candidate.provider,
       model: candidate.model,
-      provider_output_id: candidate.id,
+      // The real fix for CANDIDATE_PERSIST_FAILED (see local-image.ts's
+      // candidate construction): `candidate.id` above is always a real
+      // UUID now, but the remote Local AI server's own id (e.g.
+      // "img_53605480c9") is real, useful diagnostic value that would
+      // otherwise be lost -- provider_output_id is a text column, exactly
+      // where it belongs. Falls back to candidate.id for Gemini/OpenAI,
+      // which have no separate provider-native id concept here.
+      provider_output_id: candidate.providerOutputId ?? candidate.id,
       mime_type: candidate.mimeType,
       width: candidate.width ?? null,
       height: candidate.height ?? null,
@@ -740,6 +850,21 @@ export async function processImageGenerationJob(args: {
   }
   const { error: candidateError } = await args.writeClient.from("image_generation_candidates").insert(candidateRows);
   if (candidateError) {
+    // Image Quality + Marketing Creative Certification mission
+    // (2026-09-06): CANDIDATE_PERSIST_FAILED's own client-facing message
+    // was generic ("could not be added to the Studio history") and the
+    // real Supabase/Postgres error (candidateError.message/code/details)
+    // was discarded entirely -- undiagnosable from the DB alone. Logged
+    // here (server-side only, never shown to a customer) so a real
+    // constraint violation is traceable from Vercel logs instead of
+    // requiring a live repro to even see what actually failed.
+    console.error("[image-generation] candidate insert failed", {
+      jobId: job.id,
+      code: candidateError.code,
+      message: candidateError.message,
+      details: candidateError.details,
+      hint: candidateError.hint,
+    });
     await failJob(args.writeClient, job.id, {
       code: "CANDIDATE_PERSIST_FAILED",
       message: "Generated images could not be added to the Studio history.",

@@ -13,6 +13,7 @@ import { getTaskPolicy, resolveUnknownTaskPolicy } from "./policy/task-policies.
 import { assessQuality, shouldEscalateForQuality } from "./quality/assess.ts";
 import { GeminiTextProvider } from "./providers/gemini.ts";
 import { OpenAITextProvider } from "./providers/openai.ts";
+import { LocalAITextProvider } from "./providers/local-ai.ts";
 import type {
   AIExecutionRequest,
   AIExecutionResult,
@@ -30,6 +31,8 @@ import { safeAiLog } from "./observability.ts";
 export interface AIRuntimeDeps {
   google?: AITextProviderAdapter;
   openai?: AITextProviderAdapter;
+  /** Remote local AI server — opt-in third provider, see providers/local-ai.ts. */
+  local?: AITextProviderAdapter;
   circuitBreaker?: ProviderCircuitBreaker;
   usageRecorder?: AIUsageRecorder;
   paidFallbackEnabled?: boolean;
@@ -48,6 +51,7 @@ function emptyUsage(): AIUsage {
 export class AIRuntime {
   private readonly google: AITextProviderAdapter;
   private readonly openai: AITextProviderAdapter;
+  private readonly local: AITextProviderAdapter;
   private readonly circuit: ProviderCircuitBreaker;
   private readonly usageRecorder?: AIUsageRecorder;
   private readonly paidFallbackEnabled: boolean;
@@ -60,6 +64,7 @@ export class AIRuntime {
   constructor(deps: AIRuntimeDeps = {}) {
     this.google = deps.google ?? new GeminiTextProvider();
     this.openai = deps.openai ?? new OpenAITextProvider();
+    this.local = deps.local ?? new LocalAITextProvider();
     this.circuit = deps.circuitBreaker ?? new ProviderCircuitBreaker();
     this.usageRecorder = deps.usageRecorder;
     this.paidFallbackEnabled =
@@ -78,11 +83,13 @@ export class AIRuntime {
   }
 
   providerFor(id: AIProviderId): AITextProviderAdapter {
-    return id === "google" ? this.google : this.openai;
+    if (id === "google") return this.google;
+    if (id === "local") return this.local;
+    return this.openai;
   }
 
   isAnyProviderConfigured(): boolean {
-    return this.google.isConfigured() || this.openai.isConfigured();
+    return this.google.isConfigured() || this.openai.isConfigured() || this.local.isConfigured();
   }
 
   async execute(request: AIExecutionRequest): Promise<AIExecutionResult> {
@@ -139,6 +146,23 @@ export class AIRuntime {
         throw new AIProviderError("INVALID_INPUT", `forbidden_model:${candidate.model}`);
       }
       assertActiveModel(candidate.model);
+
+      // Safety finding, confirmed live against the real remote server
+      // (2026-09-05): asked to call a tool via a `tools` schema, the local
+      // model returned ZERO real tool_calls and instead HALLUCINATED a fake
+      // "[Tool called: get_weather] [Tool response: {...29°C...}]" narrative
+      // entirely in free text, with fabricated data. Any tool-calling-driven
+      // caller (e.g. Social Copilot's orchestrator, which always attaches
+      // toolSchemas() regardless of which taskClass the intent resolves to)
+      // would silently receive content that LOOKS grounded/tool-verified but
+      // is fabricated — the exact failure this whole integration exists to
+      // prevent. Skip local entirely whenever tools are attached, for every
+      // task class, present and future, rather than trusting each policy
+      // author to remember this per candidate list.
+      if (candidate.provider === "local" && request.tools?.length) {
+        lastErrorCategory = "NOT_CONFIGURED";
+        return null;
+      }
 
       const adapter = this.providerFor(candidate.provider);
       if (!adapter.isConfigured()) {

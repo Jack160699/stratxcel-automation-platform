@@ -214,6 +214,16 @@ export default function BrandPage() {
 
   const validationIssues = content ? validateBrandBrainContent(content) : [];
   const canSave = Boolean(!readOnly && content && dirty && !saving && validationIssues.length === 0);
+  // Local AI/Social Autopilot certification mission (2026-09-06): real bug
+  // found live -- canSave=false (from a pre-existing validation issue, e.g.
+  // an over-long service name written by onboarding before this mission's
+  // fix) disables the Save button, which means it can never be clicked, which
+  // means the one place that actually surfaced the specific reason
+  // (save()'s own validationIssues check) never runs. The customer just saw
+  // a permanently disabled button and "Unsaved changes" with no way to find
+  // out why. Surface the same real, specific issue proactively instead.
+  const blockingValidationError = !saveError && validationIssues.length > 0 ? validationIssues[0]!.issue : null;
+  const displayedError = saveError ?? blockingValidationError;
 
   async function save() {
     if (!tenantId || !content) return;
@@ -343,12 +353,14 @@ export default function BrandPage() {
       </header>
 
       {error && <ErrorState message={error} onRetry={load} />}
-      {saveError && (
+      {displayedError && (
         <div role="alert" className="flex flex-col gap-2 rounded-sx-md border border-[rgb(242_86_95_/_0.35)] bg-[rgb(242_86_95_/_0.06)] p-3.5 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-sm text-sx-text">{saveError}</p>
-          <Button variant="danger" size="sm" onClick={save} disabled={saving} className="shrink-0">
-            {saving ? "Retrying…" : "Retry"}
-          </Button>
+          <p className="text-sm text-sx-text">{displayedError}</p>
+          {saveError && (
+            <Button variant="danger" size="sm" onClick={save} disabled={saving} className="shrink-0">
+              {saving ? "Retrying…" : "Retry"}
+            </Button>
+          )}
         </div>
       )}
       {tenantId && loading && <p className="text-sm text-sx-text-subtle">Loading…</p>}

@@ -205,13 +205,26 @@ function testMigrationAddsRecoveryColumns() {
 }
 
 // --- Source: NET_NEW_AI's fail-closed guarantee is untouched by recovery -
+// (Local AI creative-pipeline mission, 2026-09-06: the inline ternary this
+// test used to match was replaced by a real per-item resolver function,
+// resolvePackageMediaAsset, so a recovery retry can never diverge from a
+// normal pass -- there is only ONE call site, reused for every attempt.)
 function testNetNewAiFailClosedGuaranteeIsUntouchedByRecovery() {
   const src = read("lib", "social", "package-autopilot.ts");
   const prepareStart = src.indexOf("export async function prepareNearTermPackageItems");
   const prepareEnd = src.indexOf("\nexport async function", prepareStart + 50);
   const body = src.slice(prepareStart, prepareEnd > 0 ? prepareEnd : undefined);
-  assert.match(body, /creativeMode === "NET_NEW_AI"\s*\n\s*\?\s*await generateNetNewPackageMediaAsset/, "a recovery retry must still route NET_NEW_AI through the real generator -- never substitute selectPackageMediaAsset just because this is a retry");
-  assert.ok(!/selectPackageMediaAsset.*NET_NEW_AI|NET_NEW_AI.*selectPackageMediaAsset/s.test(body) || body.includes('creativeMode === "NET_NEW_AI"'), "NET_NEW_AI must never be wired to the existing-asset picker, including on a recovery retry");
+  const resolverCallCount = (body.match(/await resolvePackageMediaAsset\(/g) ?? []).length;
+  assert.equal(resolverCallCount, 1, "there must be exactly one media-resolution call site in the whole function -- a recovery retry reuses the identical path, never a retry-specific substitute");
+
+  const resolverStart = src.indexOf("async function resolvePackageMediaAsset");
+  const resolverEnd = src.indexOf("\nexport async function prepareNearTermPackageItems", resolverStart);
+  const resolverBody = src.slice(resolverStart, resolverEnd > 0 ? resolverEnd : undefined);
+  const netNewBranchStart = resolverBody.indexOf('if (input.creativeMode === "NET_NEW_AI")');
+  assert.ok(netNewBranchStart >= 0, "the resolver must have an explicit NET_NEW_AI branch");
+  const netNewBranch = resolverBody.slice(netNewBranchStart, netNewBranchStart + 250);
+  assert.match(netNewBranch, /generateNetNewPackageMediaAsset/, "explicit NET_NEW_AI must route through the real generator");
+  assert.ok(!/selectPackageMediaAsset/.test(netNewBranch), "the explicit NET_NEW_AI branch must never fall back to the existing-asset picker, including on a recovery retry");
   console.log("prepareNearTermPackageItems: NET_NEW_AI stays fail-closed (never falls back to the existing-asset picker) across recovery retries — PASS");
 }
 

@@ -1,6 +1,12 @@
 /** Canonical AI Runtime contracts — no secrets, no auth headers. */
 
-export type AIProviderId = "google" | "openai";
+/**
+ * "local" = the owner's remote self-hosted unified AI server (LOCAL_AI_API_URL /
+ * LOCAL_AI_API_KEY). Third, opt-in peer alongside Gemini/OpenAI -- see
+ * providers/local-ai.ts. Never selected unless LOCAL_AI_ENABLED="1" AND both
+ * env vars are configured; see policy/task-policies.ts.
+ */
+export type AIProviderId = "google" | "openai" | "local";
 
 export type AIModality = "text" | "image" | "video" | "audio" | "realtime";
 

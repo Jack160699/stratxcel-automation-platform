@@ -9,22 +9,40 @@ export interface PackageCompositionItem {
   quantity: number;
 }
 /**
- * Mission D+ Sections 16-19 (Creative Policy): BRAND_LIBRARY (default,
- * unchanged behavior) selects from the tenant's existing approved assets
- * via selectPackageMediaAsset -- no AI call, no new spend. NET_NEW_AI
- * requires a real, freshly AI-generated image for every media unit; no
- * existing asset may ever satisfy it, and a generation failure blocks the
- * item (never falls back to an existing asset).
+ * Mission D+ Sections 16-19 (Creative Policy): BRAND_LIBRARY selects from the
+ * tenant's existing approved assets via selectPackageMediaAsset -- no AI
+ * call, no new spend. NET_NEW_AI requires a real, freshly AI-generated image
+ * for every media unit; no existing asset may ever satisfy it, and a
+ * generation failure blocks the item (never falls back to an existing
+ * asset). Both are still fully supported as explicit, forced choices.
+ *
+ * AUTO (Local AI creative-pipeline mission, 2026-09-06) is the new default
+ * for every authorization that never explicitly set creativeMode -- which,
+ * confirmed live, is every real authorization that exists today, since
+ * resolvePurchasedPackageComposition never wrote this field. Real gap this
+ * closes: with the old implicit "absent -> BRAND_LIBRARY" default,
+ * selectPackageMediaAsset throws media_capability_unavailable (a real,
+ * confirmed live incident) the moment a tenant's Brand Library runs out of
+ * reusable assets, permanently BLOCKing that item -- there was no genuine
+ * production path that ever selected NET_NEW_AI, so a brand-new tenant with
+ * zero uploaded assets could never get a single automated post. AUTO tries
+ * the existing library first (unchanged behavior, no new spend when it has
+ * something reusable) and only falls through to real AI generation
+ * (ImageMediaRuntime.generate() -- Local AI first, Gemini/OpenAI fallback,
+ * same quality gate as every other real caller) when the library genuinely
+ * has nothing left -- never both, never forced everywhere. This is a
+ * zero-migration, backward-compatible change: explicit BRAND_LIBRARY/
+ * NET_NEW_AI on any authorization that sets them keep their exact original
+ * meaning, unchanged.
  */
-export type CreativeMode = "BRAND_LIBRARY" | "NET_NEW_AI";
+export type CreativeMode = "BRAND_LIBRARY" | "NET_NEW_AI" | "AUTO";
 export interface PackageComposition {
   items: PackageCompositionItem[];
   countingPolicy: "CONTENT_UNIT" | "PLATFORM_PUBLISH";
   allowedPlatforms: string[];
   publishingMode: "AUTO_PUBLISH" | "REVIEW_BEFORE_PUBLISH";
   servicePeriodDays: number;
-  /** Optional/absent on every pre-existing authorization -- treated as
-   * BRAND_LIBRARY, so this is a zero-migration, backward-compatible addition. */
+  /** Absent on every real authorization today -- defaults to "AUTO" wherever this is read. */
   creativeMode?: CreativeMode;
 }
 

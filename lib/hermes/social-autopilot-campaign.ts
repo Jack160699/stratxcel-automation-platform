@@ -158,13 +158,27 @@ export interface CustomerPsychologyProfile {
  * an invented one.
  */
 export function buildCustomerPsychologyProfile(
-  audiences: Array<{ name: string; description?: string; pain_points?: string }>
+  audiences: Array<{ name: string; description?: string; pain_points?: unknown }>
 ): CustomerPsychologyProfile[] {
   return audiences
     .filter((audience) => audience.name?.trim())
     .map((audience) => ({
       audienceLabel: audience.name.trim(),
-      painPoints: (audience.pain_points ?? "")
+      // Marketing Creative Quality Test mission (2026-09-06): real crash
+      // found live -- pain_points is documented/typed as a single free-text
+      // string (the real, only shape the current /app/brand UI ever
+      // writes), but this unconditionally called .split() on it with no
+      // type guard. A brand profile written with pain_points as an array
+      // (a perfectly reasonable alternate shape for "multiple pain
+      // points") crashed every single generation attempt for that
+      // audience with "e.pain_points.split is not a function", exhausting
+      // the real bounded recovery budget on the same unrecoverable error
+      // 4 times over -- confirmed live, zero content ever produced for
+      // that tenant. Coerces any real, non-empty shape (string or
+      // string[]) into the same split-into-points behavior instead of
+      // trusting the exact type; still yields [] for anything else,
+      // exactly as before for the documented string case.
+      painPoints: (Array.isArray(audience.pain_points) ? audience.pain_points.join(". ") : typeof audience.pain_points === "string" ? audience.pain_points : "")
         .split(/[.\n;]+/)
         .map((point) => point.trim())
         .filter(Boolean),

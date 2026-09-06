@@ -17,6 +17,17 @@ function policy(
   };
 }
 
+/**
+ * Remote local AI server is opt-in only: even when LOCAL_AI_API_URL/KEY are
+ * configured, it is never selected by task-class routing unless this is
+ * explicitly set. This keeps adding the provider from silently changing any
+ * existing production routing/fallback behavior — flip it on deliberately
+ * once the connection has been validated (see scripts/verify-local-ai-connection.mjs).
+ */
+export function isLocalAiRoutingEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.LOCAL_AI_ENABLED === "1" || env.LOCAL_AI_ENABLED === "true";
+}
+
 /** Build routing policies using resolved model IDs (env overrides applied). */
 export function buildTaskPolicies(env: NodeJS.ProcessEnv = process.env): Record<AITaskClass, AIRoutingPolicy> {
   const googleCheap = resolveModelId("GOOGLE_CHEAP", env);
@@ -32,6 +43,9 @@ export function buildTaskPolicies(env: NodeJS.ProcessEnv = process.env): Record<
   const veoLite = resolveModelId("GOOGLE_VIDEO_ECONOMY", env);
   const veoFast = resolveModelId("GOOGLE_VIDEO_FAST", env);
   const veoPremium = resolveModelId("GOOGLE_VIDEO_PREMIUM", env);
+  const localChat = resolveModelId("LOCAL_CHAT", env);
+  const localCoding = resolveModelId("LOCAL_CODING", env);
+  const localAiEnabled = isLocalAiRoutingEnabled(env);
 
   return {
     ROUTING: policy("ROUTING", [
@@ -44,11 +58,29 @@ export function buildTaskPolicies(env: NodeJS.ProcessEnv = process.env): Record<
       { provider: "openai", model: openaiMini, role: "fallback", reasoningLevel: "low" },
       { provider: "google", model: googleStandard, role: "escalation", reasoningLevel: "medium" },
     ]),
-    CONTENT: policy("CONTENT", [
-      { provider: "google", model: googleStandard, role: "primary", reasoningLevel: "low" },
-      { provider: "openai", model: openaiMini, role: "fallback", reasoningLevel: "low" },
-      { provider: "openai", model: openaiTerra, role: "escalation", reasoningLevel: "medium" },
-    ]),
+    // Genuine quality-based routing (not "local only after every cloud model
+    // fails"): when enabled, local is tried FIRST and judged by the same
+    // deterministic assessQuality() gate (target 0.72 for CONTENT) every
+    // other candidate already goes through — a real gate, not a rubber
+    // stamp. A FAIL hops to Gemini, then escalates through OpenAI exactly
+    // like today. Disabled by default (LOCAL_AI_ENABLED unset) leaves this
+    // byte-for-byte identical to the original Gemini-primary policy.
+    CONTENT: policy(
+      "CONTENT",
+      localAiEnabled
+        ? [
+            { provider: "local", model: localChat, role: "primary", reasoningLevel: "medium" },
+            { provider: "google", model: googleStandard, role: "fallback", reasoningLevel: "low" },
+            { provider: "openai", model: openaiMini, role: "escalation", reasoningLevel: "low" },
+            { provider: "openai", model: openaiTerra, role: "escalation", reasoningLevel: "medium" },
+          ]
+        : [
+            { provider: "google", model: googleStandard, role: "primary", reasoningLevel: "low" },
+            { provider: "openai", model: openaiMini, role: "fallback", reasoningLevel: "low" },
+            { provider: "openai", model: openaiTerra, role: "escalation", reasoningLevel: "medium" },
+          ],
+      // 2 escalation-pool candidates either way — default maxQualityEscalations (2) already fits.
+    ),
     CONTENT_STRATEGY: policy("CONTENT_STRATEGY", [
       { provider: "google", model: googleStandard, role: "primary", reasoningLevel: "medium" },
       { provider: "openai", model: openaiMini, role: "fallback", reasoningLevel: "medium" },
@@ -82,12 +114,29 @@ export function buildTaskPolicies(env: NodeJS.ProcessEnv = process.env): Record<
       { provider: "openai", model: openaiTerra, role: "fallback", reasoningLevel: "high" },
       { provider: "openai", model: openaiSol, role: "frontier", reasoningLevel: "high" },
     ]),
-    SALES_CONVERSION: policy("SALES_CONVERSION", [
-      { provider: "google", model: googleCheap, role: "primary", reasoningLevel: "low" },
-      { provider: "openai", model: openaiMini, role: "fallback", reasoningLevel: "low" },
-      { provider: "google", model: googleStandard, role: "escalation", reasoningLevel: "medium" },
-      { provider: "openai", model: openaiTerra, role: "frontier", reasoningLevel: "medium" },
-    ]),
+    // Real, live production caller: the embedded Website Factory sales-chat
+    // widget (app/api/platform/website-factory/[projectId]/agent/chat/route.ts).
+    // Quality-gated local-first, same pattern as CONTENT above.
+    SALES_CONVERSION: policy(
+      "SALES_CONVERSION",
+      localAiEnabled
+        ? [
+            { provider: "local", model: localChat, role: "primary", reasoningLevel: "low" },
+            { provider: "google", model: googleCheap, role: "fallback", reasoningLevel: "low" },
+            { provider: "openai", model: openaiMini, role: "escalation", reasoningLevel: "low" },
+            { provider: "google", model: googleStandard, role: "escalation", reasoningLevel: "medium" },
+            { provider: "openai", model: openaiTerra, role: "frontier", reasoningLevel: "medium" },
+          ]
+        : [
+            { provider: "google", model: googleCheap, role: "primary", reasoningLevel: "low" },
+            { provider: "openai", model: openaiMini, role: "fallback", reasoningLevel: "low" },
+            { provider: "google", model: googleStandard, role: "escalation", reasoningLevel: "medium" },
+            { provider: "openai", model: openaiTerra, role: "frontier", reasoningLevel: "medium" },
+          ],
+      // 3 escalation-pool candidates when enabled (was 2) -- raise the budget
+      // so the frontier rung stays reachable.
+      localAiEnabled ? { maxQualityEscalations: 3 } : undefined,
+    ),
     EXECUTIVE: policy("EXECUTIVE", [
       { provider: "google", model: googleStandard, role: "primary", reasoningLevel: "medium" },
       { provider: "openai", model: openaiTerra, role: "fallback", reasoningLevel: "high" },
@@ -113,12 +162,22 @@ export function buildTaskPolicies(env: NodeJS.ProcessEnv = process.env): Record<
       { provider: "openai", model: openaiMini, role: "fallback", reasoningLevel: "low" },
       { provider: "openai", model: openaiTerra, role: "escalation", reasoningLevel: "medium" },
     ]),
-    WEBSITE_ENGINEERING: policy("WEBSITE_ENGINEERING", [
-      { provider: "google", model: googleStandard, role: "primary", reasoningLevel: "medium" },
-      { provider: "openai", model: openaiMini, role: "fallback", reasoningLevel: "medium" },
-      { provider: "openai", model: openaiTerra, role: "escalation", reasoningLevel: "high" },
-      { provider: "openai", model: openaiSol, role: "frontier", reasoningLevel: "high" },
-    ]),
+    WEBSITE_ENGINEERING: policy(
+      "WEBSITE_ENGINEERING",
+      [
+        { provider: "google", model: googleStandard, role: "primary", reasoningLevel: "medium" },
+        { provider: "openai", model: openaiMini, role: "fallback", reasoningLevel: "medium" },
+        { provider: "openai", model: openaiTerra, role: "escalation", reasoningLevel: "high" },
+        { provider: "openai", model: openaiSol, role: "frontier", reasoningLevel: "high" },
+        // Opt-in only (LOCAL_AI_ENABLED="1") — appended as a further rung, never
+        // touches default routing; maxQualityEscalations raised to 3 below so
+        // it is actually reachable alongside the two existing escalations.
+        ...(localAiEnabled
+          ? [{ provider: "local", model: localCoding, role: "escalation", reasoningLevel: "high" } as const]
+          : []),
+      ],
+      localAiEnabled ? { maxQualityEscalations: 3 } : undefined,
+    ),
     IMAGE: policy("IMAGE", [
       { provider: "google", model: googleImage, role: "primary", reasoningLevel: "none" },
       { provider: "google", model: googleImageFast, role: "fallback", reasoningLevel: "none" },

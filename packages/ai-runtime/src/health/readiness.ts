@@ -213,6 +213,91 @@ export async function probeOpenAIReadiness(args: {
   }
 }
 
+/**
+ * Readiness probe for the remote local AI server. Per the connection brief
+ * this server exposes GET /v1/health (liveness), GET /v1/ready (readiness)
+ * and GET /v1/models (auth + model discovery) — distinct from Gemini/OpenAI's
+ * single-GET probes because the remote server documents all three
+ * separately. `reachable` is satisfied by /v1/ready succeeding (falls back
+ * to /v1/health if the remote does not implement /v1/ready); `modelAvailable`
+ * requires an authenticated /v1/models call to succeed and return at least
+ * one model (or, when `model` is given, a matching model id).
+ */
+export async function probeLocalAIReadiness(args: {
+  apiUrl: string | undefined;
+  apiKey: string | undefined;
+  model?: string;
+  fetchImpl?: FetchLike;
+  cache?: ReadinessCache;
+}): Promise<Omit<AIProviderHealth, "provider" | "circuitOpen">> {
+  const cacheKey = `local:${args.apiUrl ?? "unset"}:${args.model ?? "default"}`;
+  const cached = args.cache?.get(cacheKey);
+  if (cached) return cached;
+
+  const now = new Date().toISOString();
+  if (!args.apiUrl || !args.apiKey) {
+    const result = {
+      configured: false,
+      reachable: false,
+      modelAvailable: false,
+      lastCheckedAt: now,
+      safeErrorCode: "LOCAL_AI_NOT_CONFIGURED",
+    };
+    args.cache?.set(cacheKey, result);
+    return result;
+  }
+
+  const fetchImpl = args.fetchImpl ?? fetch;
+  const baseUrl = args.apiUrl.replace(/\/+$/, "");
+  const authHeaders = { Authorization: `Bearer ${args.apiKey}` };
+
+  let reachable = false;
+  let reachError: string | null = null;
+  try {
+    const readyResponse = await fetchImpl(`${baseUrl}/v1/ready`, { method: "GET", headers: authHeaders });
+    reachable = readyResponse.ok;
+    if (!reachable) reachError = `LOCAL_AI_READY_HTTP_${readyResponse.status}`;
+  } catch {
+    reachError = "LOCAL_AI_READY_NETWORK_FAILURE";
+  }
+  if (!reachable) {
+    try {
+      const healthResponse = await fetchImpl(`${baseUrl}/v1/health`, { method: "GET", headers: authHeaders });
+      reachable = healthResponse.ok;
+      if (reachable) reachError = null;
+      else reachError = `LOCAL_AI_HEALTH_HTTP_${healthResponse.status}`;
+    } catch {
+      reachError = reachError ?? "LOCAL_AI_HEALTH_NETWORK_FAILURE";
+    }
+  }
+
+  let modelAvailable = false;
+  let modelError: string | null = null;
+  try {
+    const modelsResponse = await fetchImpl(`${baseUrl}/v1/models`, { method: "GET", headers: authHeaders });
+    if (!modelsResponse.ok) {
+      modelError = `LOCAL_AI_MODELS_HTTP_${modelsResponse.status}`;
+    } else {
+      const json = (await modelsResponse.json()) as { data?: Array<{ id?: string }>; models?: Array<{ id?: string }> };
+      const models = json.data ?? json.models ?? [];
+      modelAvailable = args.model ? models.some((m) => m.id === args.model) : models.length > 0;
+      if (!modelAvailable) modelError = "LOCAL_AI_MODEL_NOT_LISTED";
+    }
+  } catch {
+    modelError = "LOCAL_AI_MODELS_NETWORK_FAILURE";
+  }
+
+  const result = {
+    configured: true,
+    reachable,
+    modelAvailable,
+    lastCheckedAt: now,
+    safeErrorCode: reachError ?? modelError,
+  };
+  args.cache?.set(cacheKey, result);
+  return result;
+}
+
 export function providerHealthSummary(
   provider: AIProviderId,
   probe: Omit<AIProviderHealth, "provider" | "circuitOpen">,
