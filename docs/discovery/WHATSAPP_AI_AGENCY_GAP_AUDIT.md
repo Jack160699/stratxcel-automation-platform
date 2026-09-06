@@ -1,5 +1,99 @@
 # WhatsApp AI Agency — Gap Audit
 
+## Update 69 — the real Native Hermes execution adapter: no external engine dependency, reuses three already-live pieces, real defect found and fixed along the way
+
+Per an explicit instruction to build the actual P0 execution/orchestration
+core rather than accept the previously-recorded blocker at face value,
+re-investigated `engine:hermes_missions` directly instead of re-asserting
+Update 62's summary. Confirmed the real architectural dead end already
+documented in `http-adapter.ts`'s own code comments: even a deployed
+NousResearch/hermes-agent instance has no per-mission tool-scoping
+mechanism — its built-in toolsets are config.yaml-level, not per-request —
+so `HERMES_MODE=http` could never actually execute a real tool call back
+into StratExcel no matter how it's hosted. Waiting on that engine's
+deployment was waiting on something that would not have solved the problem
+even once resolved.
+
+**Built the real fix**: `packages/hermes/src/native-adapter.ts`, a fourth
+`HermesRuntimeAdapter` mode (`HERMES_MODE=native`) that runs a bounded LLM
+tool-calling loop entirely in-process inside `apps/mission-worker` — zero
+external engine, zero prompt-inlined capability token. It reuses, rather
+than rebuilds, three already-live pieces:
+
+- **The provider**: `lib/agent-core/provider-adapter.ts`'s
+  `createAgentCoreProviderAdapter` — the exact `@stratxcel/ai-runtime`-backed
+  provider WhatsApp/Admin Copilot already use, with real per-tenant billing.
+  Per the master brief's own "DO NOT create a second unrelated Gemini
+  client."
+- **The tool executor**: `apps/hermes-gateway/src/tool-handlers.ts`'s
+  `invokeTool`, completely unmodified — the identical function the MCP
+  server already calls, so a native run and an MCP-driven run enforce
+  identical server-side tenant/mission/allowedTools checks.
+- **Everything else**: `packages/hermes`'s existing `MissionScopedContext`,
+  budget ceiling, Brand Brain injection, and Hermes-profile instruction text
+  (`resolveProfileInstructions`) — none of it duplicated.
+
+New shared files (`packages/hermes/src/tools/descriptions.ts`,
+`tools/json-schemas.ts`) extract what was a private constant inside
+`http-adapter.ts` so both adapters share one source of truth for tool
+descriptions, plus real JSON-Schema `parameters` for the model's native
+function-calling (kept hand-in-sync with `tools/schemas.ts`'s Zod
+validators, which remain the actual runtime enforcement point).
+`select-adapter.ts` gained an optional `{ native }` dependency-injection
+parameter — every existing disabled/mock/http caller is unaffected.
+
+**A real, previously-latent defect found and fixed while wiring this**:
+`lib/agent-core/provider-adapter.ts` imported `"../social/agent/provider"`
+without a file extension — resolves fine under Next.js's bundler (every
+existing caller is a Next.js route: Admin Copilot, WhatsApp webhook), but
+throws `ERR_MODULE_NOT_FOUND` under plain `node --experimental-strip-types`,
+confirmed live before the fix. This exact reuse path — the master brief's
+own explicit instruction ("use the existing production-tested Copilot
+execution path") — would have silently failed the moment anyone tried it
+from a non-Next.js process. Fixed with a one-line explicit `.ts` extension;
+re-ran the unaffected Next.js call sites' own test coverage to confirm zero
+behavior change there.
+
+**Verification, real not assumed**: a new
+`packages/hermes/src/__tests__/native-adapter.test.ts` (10 scenarios —
+unconfigured-provider `BLOCKED`, clean `COMPLETED`, a real tool-call round
+trip with the verified mission/tenant context reaching the handler, a
+disallowed-tool call rejected without ever invoking the handler,
+`request_approval` → `AWAITING_APPROVAL`, `create_human_handoff` →
+`HUMAN_HANDOFF`, a thrown tool error recovered mid-loop instead of failing
+the mission, a thrown provider error → `FAILED`, a never-stopping model
+bounded by `maxRounds` → `PARTIALLY_COMPLETED` rather than an infinite loop,
+and `mode`/`healthCheck`/`cancel`) — all pass. Full existing
+`packages/hermes`, `test:worker-ops`, `test:agent-core`, and
+`test:hermes-mission-control` suites re-run: zero regressions. Full-repo
+`tsc --noEmit` clean, lint clean, a real `NODE_ENV=production npm run build`
+(exit 0). Beyond typechecking: a standalone `node --experimental-strip-types`
+smoke import of the exact three real modules this adapter wires together
+resolved cleanly outside Next.js, and
+`createAgentCoreProviderAdapter(tenantId).isConfigured()` returned `true`
+against this environment's real configured AI provider — proof the chain is
+genuinely live, not merely type-correct.
+
+**What this does not yet claim, stated precisely**: `HERMES_MODE` stays
+`disabled` in production, untouched by this work — flipping it to `native`
+is a real autonomy-activation decision this agent did not make unilaterally,
+the identical precedent already set for `HERMES_MODE=http` never being
+flipped without an explicit, named authorization. Separately, even once
+flipped, the real running `mission-worker` process (confirmed live via
+`worker_heartbeats`: EC2 `ip-172-31-32-254-45106`, version `3e70640`,
+heartbeating healthy right now) would not pick up this code until someone
+with access to that host pulls latest and restarts the service —
+`infrastructure/workers/README.md` documents these three long-running
+processes (`hermes-gateway`/`mission-worker`/`whatsapp-worker`) as having no
+git-triggered auto-deploy, unlike the Vercel-hosted Next.js app. Both are
+real, honestly-named, separate blockers: the first a policy decision, the
+second host/SSH access outside this session's reach — recorded as
+`engine:hermes_missions`'s corrected `external_blocker`, superseding the
+previous (no-longer-accurate) "third-party engine never deployed" framing.
+Registry: `capability:hermes_native_execution_adapter` new row,
+`REAL_EXPOSED`. Migration:
+`supabase/migrations/20260907020000_capability_registry_hermes_native_execution_adapter.sql`.
+
 ## Update 68 — the live-browser-verification tool blocker is gone; real evidence gathered against production for the first time, scope stated precisely
 
 Picked this convergence loop back up fresh. First re-verified nothing regressed:

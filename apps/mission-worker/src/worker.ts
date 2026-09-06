@@ -29,7 +29,19 @@ import {
   selectHermesAdapter,
   isRetryableHermesFailure,
   type HermesRuntimeAdapter,
+  type NativeHermesAdapterDeps,
 } from "@stratxcel/hermes";
+// Native Hermes execution mode (HERMES_MODE=native) wires the real,
+// already-tested pieces together in-process: the same LLM provider
+// WhatsApp/Admin Copilot use (createAgentCoreProviderAdapter, routed
+// through @stratxcel/ai-runtime) and the same tool-execution layer
+// apps/hermes-gateway's MCP path calls (invokeTool). Both are relative
+// cross-app/cross-lib imports — the same pattern apps/hermes-gateway
+// already uses to reach lib/social/workforce/publication-status-lookup.ts —
+// so packages/hermes itself stays free of any app-specific dependency; see
+// packages/hermes/src/native-adapter.ts's own doc comment.
+import { createAgentCoreProviderAdapter } from "../../../lib/agent-core/provider-adapter.ts";
+import { invokeTool } from "../../hermes-gateway/src/tool-handlers.ts";
 import {
   createPostgresEmailOutboxStore,
   createEmailProvider,
@@ -375,6 +387,21 @@ async function notifyAutomaticAuditEmailBestEffort(
   }
 }
 
+/**
+ * Only constructed when HERMES_MODE=native — every other mode (disabled,
+ * mock, http) is completely unaffected and never touches these imports'
+ * runtime behavior. invokeTool is passed through unmodified: it already
+ * enforces ctx.tenantId scoping and mission-token-derived allowedTools on
+ * every call (see apps/hermes-gateway/src/tool-handlers.ts), identically
+ * whether called from the MCP server or from here.
+ */
+function buildNativeHermesDeps(): NativeHermesAdapterDeps {
+  return {
+    createProvider: (tenantId: string) => createAgentCoreProviderAdapter(tenantId),
+    invokeTool,
+  };
+}
+
 function startHealthServer(supabase: ReturnType<typeof createServiceClient>) {
   const server = http.createServer((req, res) => {
     if (req.url === "/health" && req.method === "GET") {
@@ -400,7 +427,9 @@ function startHealthServer(supabase: ReturnType<typeof createServiceClient>) {
 if (process.env.NODE_ENV !== "test") {
   const supabase = createServiceClient();
   const queue = createPostgresQueueAdapter(supabase);
-  const hermes = selectHermesAdapter();
+  const hermes = selectHermesAdapter(
+    process.env.HERMES_MODE === "native" ? { native: buildNativeHermesDeps() } : undefined
+  );
   const auditExecutor = createLiveAutomaticAuditExecutor(supabase);
   const emailStore = createPostgresEmailOutboxStore(supabase);
   const emailProvider = createEmailProvider();

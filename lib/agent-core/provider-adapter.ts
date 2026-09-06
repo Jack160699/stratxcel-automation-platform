@@ -9,7 +9,14 @@
  * preserves the ordered conversation and normalized tool calls without
  * creating another provider client.
  */
-import { resolveConfiguredProvider } from "../social/agent/provider";
+// Explicit .ts extension (not the extensionless style the rest of this
+// Next.js-bundled file might otherwise use) -- required for this file to
+// resolve under plain `node --experimental-strip-types`, which apps/mission-
+// worker's worker.ts now does (native Hermes execution mode). Found live
+// while wiring that up: Next.js's bundler resolves either form, so this is
+// a strictly additive fix with no effect on the existing Next.js call sites
+// (Admin Copilot, WhatsApp webhook).
+import { resolveConfiguredProvider } from "../social/agent/provider.ts";
 import type { AgentLLMProvider, AgentTurnMessage, ToolSchema } from "@stratxcel/agent-core";
 
 /**

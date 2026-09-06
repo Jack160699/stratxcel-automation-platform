@@ -57,8 +57,18 @@ Mission worker additionally needs:
 - `HERMES_MODE` — `disabled` (default; every mission BLOCKs with a clear
   reason), `mock` (deterministic fake execution, see
   `packages/hermes/src/mock-adapter.ts` — safe for smoke-testing the pipeline
-  with no external calls), or `http` (calls a real Hermes engine — not
-  configured anywhere in this repo; see `infrastructure/hermes/README.md`).
+  with no external calls), `native` (a real, tested, in-process execution
+  engine — no separate host or third-party engine needed; see
+  `packages/hermes/src/native-adapter.ts` and
+  `docs/discovery/WHATSAPP_AI_AGENCY_GAP_AUDIT.md` Update 69 for exactly
+  what it reuses and what real spend/autonomy it activates once flipped —
+  this is a genuine autonomy-activation decision, not a routine config
+  change), or `http` (calls a separately-hosted third-party Hermes engine —
+  not configured anywhere in this repo, and its own tool-scoping model
+  cannot enforce per-mission `allowedTools` regardless of hosting; see
+  `infrastructure/hermes/README.md`. `native` is the recommended real
+  execution path — `http` is kept only in case a future upstream release
+  fixes its per-request tool-scoping gap).
 - `HERMES_SHARED_SECRET`, `HERMES_GATEWAY_URL` — only if `HERMES_MODE=http`.
 
 WhatsApp worker (both services) additionally needs:
@@ -123,4 +133,7 @@ different tenant's job even if the ID is guessed).
    confirm it processes exactly once.
 
 Do not use a real customer-facing action (a real WhatsApp send, a real
-mission with `HERMES_MODE=http` against a real provider) as this smoke test.
+mission with `HERMES_MODE=http` or `HERMES_MODE=native` against a real
+tenant) as this smoke test — `native` makes real, billed AI calls and can
+execute real mutating tools (e.g. `create_crm_lead`) once a mission
+authorizes them, unlike `mock`.

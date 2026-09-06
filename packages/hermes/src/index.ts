@@ -3,6 +3,7 @@ export * from "./adapter.ts";
 export * from "./disabled-adapter.ts";
 export * from "./mock-adapter.ts";
 export * from "./http-adapter.ts";
+export * from "./native-adapter.ts";
 export * from "./hermes-agent-client.ts";
 export * from "./profiles.ts";
 export * from "./select-adapter.ts";
@@ -12,5 +13,7 @@ export * from "./context.ts";
 export * from "./budget.ts";
 export * from "./tools/contracts.ts";
 export * from "./tools/schemas.ts";
+export * from "./tools/descriptions.ts";
+export * from "./tools/json-schemas.ts";
 export * from "./registry/agent-registry.ts";
 

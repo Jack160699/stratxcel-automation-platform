@@ -7,12 +7,15 @@
     "start": "node --experimental-strip-types src/worker.ts"
   },
   "dependencies": {
+    "@stratxcel/agent-core": "*",
+    "@stratxcel/ai-runtime": "*",
     "@stratxcel/approvals": "*",
     "@stratxcel/audit": "*",
     "@stratxcel/audit-engine": "*",
     "@stratxcel/brand-brain": "*",
     "@stratxcel/email-runtime": "*",
     "@stratxcel/hermes": "*",
+    "@stratxcel/human-handoff": "*",
     "@stratxcel/missions": "*",
     "@stratxcel/payments-and-wallet": "*",
     "@stratxcel/queue": "*"

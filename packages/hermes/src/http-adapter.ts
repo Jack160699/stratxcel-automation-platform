@@ -10,6 +10,7 @@ import {
   type HermesAgentRun,
 } from "./hermes-agent-client.ts";
 import { resolveProfileInstructions } from "./profiles.ts";
+import { TOOL_DESCRIPTIONS } from "./tools/descriptions.ts";
 import {
   HermesTimeoutError,
   HermesUnavailableError,
@@ -18,7 +19,6 @@ import {
   type HermesOutcome,
   type HermesProgressEvent,
   type MissionScopedContext,
-  type ToolName,
 } from "./types.ts";
 import type { MissionRow } from "@stratxcel/missions";
 
@@ -33,28 +33,6 @@ function getConfig(): HermesAgentClientConfig {
   if (!apiKey) throw new Error("HERMES_MODE is 'http' but HERMES_API_KEY is not set — Hermes Agent's own API_SERVER_KEY bearer token");
   return { baseUrl, apiKey };
 }
-
-/**
- * One-line, human-readable description per restricted tool for the prompt —
- * the model has no other way to learn what these names mean, since it has
- * no native StratExcel tool/function-calling wiring (see the tool-bridge
- * note below). Kept here rather than in tools/contracts.ts because that
- * file is a compile-time type contract with no runtime values to describe.
- */
-const TOOL_DESCRIPTIONS: Record<ToolName, string> = {
-  get_brand_context: "Fetch this tenant's current Brand Brain (voice, offers, facts). No input.",
-  get_service_definition: "Fetch this mission's service catalogue entry (label/description). No input.",
-  create_draft_artifact: "Save a draft output artifact. Input: { kind, storageRef, metadata? }.",
-  update_mission_progress: "Report a human-readable progress update. Input: { message, data? }.",
-  request_approval: "Ask a human to approve a sensitive action before taking it. Input: { kind, subject }.",
-  get_approval_status: "Check a previously requested approval's status. Input: { approvalId }.",
-  create_human_handoff: "Hand this mission off to a human when blocked. Input: { reason, contextSnapshot }.",
-  query_publication_status: "Check publication status of a prior Social submission. Input: { reference }. Resolved via Social Department against tenant-scoped publishing jobs/queue (never fabricates status; never returns provider credentials).",
-  submit_publish_request: "Not available to Hermes — publishing stays StratExcel-controlled.",
-  create_website_change_request: "Not available to Hermes — website changes stay StratExcel-controlled.",
-  create_crm_lead: "Record a new CRM lead. Input: { contactName?, contactPhone?, contactEmail?, metadata? }.",
-  attach_research_evidence: "Attach a cited source to this mission's research trail. Input: { artifactId, sourceUrl?, summary }.",
-};
 
 /**
  * Composes everything the run needs to act on this mission with zero

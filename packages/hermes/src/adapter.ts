@@ -9,7 +9,7 @@ import type { HermesExecutionResult, HermesHealthStatus, MissionScopedContext } 
  * inside an in-flight execute().
  */
 export interface HermesRuntimeAdapter {
-  readonly mode: "disabled" | "mock" | "http";
+  readonly mode: "disabled" | "mock" | "http" | "native";
   execute(mission: MissionRow, context: MissionScopedContext, missionToken: string): Promise<HermesExecutionResult>;
   cancel(hermesRunId: string): Promise<void>;
   healthCheck(): Promise<HermesHealthStatus>;

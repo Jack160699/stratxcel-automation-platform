@@ -86,7 +86,7 @@ export function missionToContextInput(mission: MissionRow): Pick<MissionScopedCo
 
 export interface HermesHealthStatus {
   healthy: boolean;
-  mode: "disabled" | "mock" | "http";
+  mode: "disabled" | "mock" | "http" | "native";
   details?: string;
 }
 
