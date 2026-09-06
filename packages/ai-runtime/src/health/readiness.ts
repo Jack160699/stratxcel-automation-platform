@@ -298,6 +298,77 @@ export async function probeLocalAIReadiness(args: {
   return result;
 }
 
+/**
+ * Readiness probe for OpenRouter. GET https://openrouter.ai/api/v1/models
+ * is OpenRouter's own documented, authenticated model-listing endpoint —
+ * confirmed live against its published API reference on 2026-09-07, the
+ * same source providers/openrouter.ts's own doc comment cites.
+ */
+export async function probeOpenRouterReadiness(args: {
+  apiKey: string | undefined;
+  model?: string;
+  fetchImpl?: FetchLike;
+  cache?: ReadinessCache;
+}): Promise<Omit<AIProviderHealth, "provider" | "circuitOpen">> {
+  const cacheKey = `openrouter:${args.model ?? "default"}`;
+  const cached = args.cache?.get(cacheKey);
+  if (cached) return cached;
+
+  const now = new Date().toISOString();
+  if (!args.apiKey) {
+    const result = {
+      configured: false,
+      reachable: false,
+      modelAvailable: false,
+      lastCheckedAt: now,
+      safeErrorCode: "OPENROUTER_NOT_CONFIGURED",
+    };
+    args.cache?.set(cacheKey, result);
+    return result;
+  }
+
+  const fetchImpl = args.fetchImpl ?? fetch;
+  try {
+    const response = await fetchImpl("https://openrouter.ai/api/v1/models", {
+      method: "GET",
+      headers: { Authorization: `Bearer ${args.apiKey}` },
+    });
+    if (!response.ok) {
+      const result = {
+        configured: true,
+        reachable: response.status !== 401,
+        modelAvailable: false,
+        lastCheckedAt: now,
+        safeErrorCode: `OPENROUTER_HTTP_${response.status}`,
+      };
+      args.cache?.set(cacheKey, result);
+      return result;
+    }
+    const json = (await response.json()) as { data?: Array<{ id?: string }> };
+    const models = json.data ?? [];
+    const modelAvailable = args.model ? models.some((m) => m.id === args.model) : models.length > 0;
+    const result = {
+      configured: true,
+      reachable: true,
+      modelAvailable,
+      lastCheckedAt: now,
+      safeErrorCode: modelAvailable ? null : "OPENROUTER_MODEL_NOT_LISTED",
+    };
+    args.cache?.set(cacheKey, result);
+    return result;
+  } catch {
+    const result = {
+      configured: true,
+      reachable: false,
+      modelAvailable: false,
+      lastCheckedAt: now,
+      safeErrorCode: "OPENROUTER_NETWORK_FAILURE",
+    };
+    args.cache?.set(cacheKey, result);
+    return result;
+  }
+}
+
 export function providerHealthSummary(
   provider: AIProviderId,
   probe: Omit<AIProviderHealth, "provider" | "circuitOpen">,

@@ -14,6 +14,7 @@ import { assessQuality, shouldEscalateForQuality } from "./quality/assess.ts";
 import { GeminiTextProvider } from "./providers/gemini.ts";
 import { OpenAITextProvider } from "./providers/openai.ts";
 import { LocalAITextProvider } from "./providers/local-ai.ts";
+import { OpenRouterTextProvider } from "./providers/openrouter.ts";
 import type {
   AIExecutionRequest,
   AIExecutionResult,
@@ -33,6 +34,8 @@ export interface AIRuntimeDeps {
   openai?: AITextProviderAdapter;
   /** Remote local AI server — opt-in third provider, see providers/local-ai.ts. */
   local?: AITextProviderAdapter;
+  /** OpenRouter — opt-in fourth provider, see providers/openrouter.ts. */
+  openrouter?: AITextProviderAdapter;
   circuitBreaker?: ProviderCircuitBreaker;
   usageRecorder?: AIUsageRecorder;
   paidFallbackEnabled?: boolean;
@@ -52,6 +55,7 @@ export class AIRuntime {
   private readonly google: AITextProviderAdapter;
   private readonly openai: AITextProviderAdapter;
   private readonly local: AITextProviderAdapter;
+  private readonly openrouter: AITextProviderAdapter;
   private readonly circuit: ProviderCircuitBreaker;
   private readonly usageRecorder?: AIUsageRecorder;
   private readonly paidFallbackEnabled: boolean;
@@ -65,6 +69,7 @@ export class AIRuntime {
     this.google = deps.google ?? new GeminiTextProvider();
     this.openai = deps.openai ?? new OpenAITextProvider();
     this.local = deps.local ?? new LocalAITextProvider();
+    this.openrouter = deps.openrouter ?? new OpenRouterTextProvider();
     this.circuit = deps.circuitBreaker ?? new ProviderCircuitBreaker();
     this.usageRecorder = deps.usageRecorder;
     this.paidFallbackEnabled =
@@ -85,11 +90,17 @@ export class AIRuntime {
   providerFor(id: AIProviderId): AITextProviderAdapter {
     if (id === "google") return this.google;
     if (id === "local") return this.local;
+    if (id === "openrouter") return this.openrouter;
     return this.openai;
   }
 
   isAnyProviderConfigured(): boolean {
-    return this.google.isConfigured() || this.openai.isConfigured() || this.local.isConfigured();
+    return (
+      this.google.isConfigured() ||
+      this.openai.isConfigured() ||
+      this.local.isConfigured() ||
+      this.openrouter.isConfigured()
+    );
   }
 
   async execute(request: AIExecutionRequest): Promise<AIExecutionResult> {

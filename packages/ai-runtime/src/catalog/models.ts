@@ -229,6 +229,20 @@ export const MODEL_CATALOG = {
     active: true,
     deprecated: false,
   },
+  // OpenRouter's free-tier catalog turns over frequently (confirmed live
+  // against its own /api/v1/models on 2026-09-07) — this default is a real,
+  // currently-listed :free model, deliberately kept overridable via
+  // AI_OPENROUTER_MODEL rather than treated as a stable long-term id.
+  // Revisit this default periodically; it is not pinned by any contract.
+  OPENROUTER_FREE: {
+    id: "liquid/lfm-2.5-2.6b:free",
+    catalogKey: "OPENROUTER_FREE",
+    provider: "openrouter",
+    modality: "text",
+    purpose: "OpenRouter free-tier text — cheap/free-suitable routing, classification, extraction",
+    active: true,
+    deprecated: false,
+  },
 } as const satisfies Record<string, AIModelDefinition>;
 
 export type ModelCatalogKey = keyof typeof MODEL_CATALOG;
@@ -258,6 +272,7 @@ const ENV_OVERRIDES: Partial<Record<ModelCatalogKey, string>> = {
   LOCAL_CHAT: "AI_LOCAL_CHAT_MODEL",
   LOCAL_CODING: "AI_LOCAL_CODING_MODEL",
   LOCAL_IMAGE: "AI_LOCAL_IMAGE_MODEL",
+  OPENROUTER_FREE: "AI_OPENROUTER_MODEL",
 };
 
 export function resolveModelId(key: ModelCatalogKey, env: NodeJS.ProcessEnv = process.env): string {

@@ -28,6 +28,16 @@ export function isLocalAiRoutingEnabled(env: NodeJS.ProcessEnv = process.env): b
   return env.LOCAL_AI_ENABLED === "1" || env.LOCAL_AI_ENABLED === "true";
 }
 
+/**
+ * Same fail-safe opt-in pattern as isLocalAiRoutingEnabled: OpenRouter is
+ * never selected by any task-class routing policy unless this is explicitly
+ * set, even when OPENROUTER_API_KEY is configured — adding the provider
+ * (this pass) changes zero existing production routing behavior on its own.
+ */
+export function isOpenRouterRoutingEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.OPENROUTER_ENABLED === "1" || env.OPENROUTER_ENABLED === "true";
+}
+
 /** Build routing policies using resolved model IDs (env overrides applied). */
 export function buildTaskPolicies(env: NodeJS.ProcessEnv = process.env): Record<AITaskClass, AIRoutingPolicy> {
   const googleCheap = resolveModelId("GOOGLE_CHEAP", env);
@@ -46,6 +56,8 @@ export function buildTaskPolicies(env: NodeJS.ProcessEnv = process.env): Record<
   const localChat = resolveModelId("LOCAL_CHAT", env);
   const localCoding = resolveModelId("LOCAL_CODING", env);
   const localAiEnabled = isLocalAiRoutingEnabled(env);
+  const openRouterFree = resolveModelId("OPENROUTER_FREE", env);
+  const openRouterEnabled = isOpenRouterRoutingEnabled(env);
 
   return {
     ROUTING: policy("ROUTING", [
@@ -57,6 +69,13 @@ export function buildTaskPolicies(env: NodeJS.ProcessEnv = process.env): Record<
       { provider: "google", model: googleCheap, role: "primary", reasoningLevel: "low" },
       { provider: "openai", model: openaiMini, role: "fallback", reasoningLevel: "low" },
       { provider: "google", model: googleStandard, role: "escalation", reasoningLevel: "medium" },
+      // Opt-in only (OPENROUTER_ENABLED="1") — appended as a further rung,
+      // never touches default routing. GENERAL_SPECIALIST's own purpose
+      // ("routing, classification, extraction, cheap specialist work") is
+      // exactly the free-tier-suitable workload class OpenRouter is for.
+      ...(openRouterEnabled
+        ? [{ provider: "openrouter", model: openRouterFree, role: "escalation", reasoningLevel: "low" } as const]
+        : []),
     ]),
     // Genuine quality-based routing (not "local only after every cloud model
     // fails"): when enabled, local is tried FIRST and judged by the same

@@ -13,7 +13,7 @@ export type VideoResolution = "720p" | "1080p" | "4k";
 
 export interface AICostMetadataExtended extends AICostMetadata {
   pricingDimension: "token" | "image_resolution" | "image_token" | "video_resolution_second" | "audio_minute";
-  source: "openai" | "google";
+  source: "openai" | "google" | "openrouter";
   /** Resolution → USD for fixed image unit pricing (Google). */
   imageByResolutionUsd?: Partial<Record<ImageResolution, number>>;
   /** Quality+size estimates for OpenAI gpt-image-2 (approx from official calculator). */
@@ -236,6 +236,23 @@ export const COST_CATALOG: Record<string, AICostMetadataExtended> = {
     audioUnitCostUsd: 0.03,
     verifiedAt: "2026-08-11",
     sourceNote: "OpenAI premium TTS estimate",
+  },
+  // Explicit $0 entry (rather than relying on "no catalog entry -> 0" via
+  // getCostMetadata's undefined fallback) so a future paid OpenRouter model
+  // addition doesn't silently inherit a free rate by omission. If
+  // AI_OPENROUTER_MODEL is overridden to a paid OpenRouter model, add a real
+  // costed entry here at the same time -- this one only covers the actual
+  // :free default.
+  [MODEL_CATALOG.OPENROUTER_FREE.id]: {
+    provider: "openrouter",
+    model: MODEL_CATALOG.OPENROUTER_FREE.id,
+    unit: "token",
+    pricingDimension: "token",
+    source: "openrouter",
+    inputUsdPerMillion: 0,
+    outputUsdPerMillion: 0,
+    verifiedAt: "2026-09-07",
+    sourceNote: "OpenRouter :free-tier model -- $0 confirmed live against openrouter.ai/api/v1/models pricing fields",
   },
 };
 

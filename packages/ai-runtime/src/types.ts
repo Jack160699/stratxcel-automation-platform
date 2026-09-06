@@ -5,8 +5,13 @@
  * LOCAL_AI_API_KEY). Third, opt-in peer alongside Gemini/OpenAI -- see
  * providers/local-ai.ts. Never selected unless LOCAL_AI_ENABLED="1" AND both
  * env vars are configured; see policy/task-policies.ts.
+ *
+ * "openrouter" = OpenRouter (OPENROUTER_API_KEY), a real, opt-in low-cost/
+ * free-tier resource pool -- see providers/openrouter.ts. Never selected
+ * unless OPENROUTER_ENABLED="1" AND the key is configured; see
+ * policy/task-policies.ts's isOpenRouterRoutingEnabled.
  */
-export type AIProviderId = "google" | "openai" | "local";
+export type AIProviderId = "google" | "openai" | "local" | "openrouter";
 
 export type AIModality = "text" | "image" | "video" | "audio" | "realtime";
 

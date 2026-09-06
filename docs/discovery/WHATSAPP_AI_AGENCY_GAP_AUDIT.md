@@ -1,5 +1,67 @@
 # WhatsApp AI Agency — Gap Audit
 
+## Update 71 — OpenRouter built as a real, opt-in fourth AI resource pool (Resource/Quota Manager, P1)
+
+The master brief's Resource/Quota Manager section explicitly names
+OpenRouter and warns against always using the strongest model. Checked
+before assuming this was unbuilt (per the discipline established across
+this whole session): found `packages/ai-runtime/src/policy/model-router.ts`
+already had `"openrouter"` typed as a possible `ModelRoutingDecision.provider`
+value, but its switch statement never actually returned it in any branch —
+a leftover placeholder, not a real integration. `AIProviderId` itself was a
+closed `"google" | "openai" | "local"` union; no OpenRouter client existed
+anywhere in the repo. A genuine, real gap, not a rediscovery of something
+already done — confirmed the same way Update 70 confirmed the Resource
+Manager's *other* pieces (task-class routing, quality-gated escalation,
+plan-tier budgets) were already real and mature in
+[task-policies.ts](../../packages/ai-runtime/src/policy/task-policies.ts),
+so this pass built only the one real missing piece rather than a duplicate
+system.
+
+**Built for real**, verifying the wire contract live rather than from
+training data (fetched OpenRouter's own published API reference and its
+real `/api/v1/models` catalog on 2026-09-07):
+[OpenRouterTextProvider](../../packages/ai-runtime/src/providers/openrouter.ts)
+implements the canonical `AITextProviderAdapter` interface against
+OpenRouter's real, OpenAI-compatible `POST /api/v1/chat/completions`
+contract (confirmed distinct from `OpenAITextProvider`'s own newer
+Responses-API shape — a real, would-have-been-wrong-by-default detail this
+verification caught). Threaded through as a genuine fourth provider
+mirroring `providers/local-ai.ts`'s exact opt-in precedent: `runtime.ts`'s
+`providerFor()`/`isAnyProviderConfigured()`, `factory.ts`'s
+`createTenantAIRuntime`, a real readiness probe (`probeOpenRouterReadiness`,
+a live-verified `GET /api/v1/models` endpoint), an explicit $0 cost-catalog
+entry for the specific `:free` model used by default, and a new
+`isOpenRouterRoutingEnabled()` gate appending exactly one escalation-only
+candidate to `GENERAL_SPECIALIST` — the task class whose own stated purpose
+("routing, classification, extraction, cheap specialist work") is precisely
+OpenRouter's free-tier-suitable niche — only when `OPENROUTER_ENABLED=1`,
+touching zero existing default routing.
+
+Verified: a new 8-scenario test
+([openrouter-provider.test.ts](../../packages/ai-runtime/src/__tests__/openrouter-provider.test.ts))
+covering configuration, a real chat/completions parse, real OpenAI-compatible
+`tool_calls` parsing, HTTP 402→`CREDIT` classification (OpenRouter's own
+documented "insufficient credits" code), both readiness-probe paths, and two
+routing-safety tests proving the flag-off state leaves every existing task
+policy byte-for-byte unchanged while flag-on appends exactly one candidate
+in exactly one place. Zero regressions across the full 11-file
+`test:ai-runtime` suite plus the two heaviest real consumers
+(`lib/social/__tests__/provider.test.ts`, `gemini-boundary.test.ts`).
+Full-repo `tsc --noEmit` clean, lint clean, a real
+`NODE_ENV=production npm run build` (exit 0).
+
+Scope stated precisely, per the master brief's own External Access Model
+(§43 — "build the connector/abstraction... mark capability pending...
+continue"): no `OPENROUTER_API_KEY` is configured anywhere in this
+deployment and `OPENROUTER_ENABLED` is unset, so the real, tested code is
+correctly inert until the owner adds a key and deliberately opts in — the
+same proven-safe two-flag pattern Local AI already uses. Registry:
+`capability:openrouter_resource_pool`, new row, `REAL_EXPOSED` (code/wiring
+complete and verified; runtime activation genuinely pending a credential).
+Migration:
+`supabase/migrations/20260907040000_capability_registry_openrouter_resource_pool.sql`.
+
 ## Update 70 — the first real slice of the Founder principal model: deterministic multi-company name resolution, plus an AWS-access finding recorded precisely
 
 Per an explicit instruction not to assume AWS/EC2 access is unavailable

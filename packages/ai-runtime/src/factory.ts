@@ -1,6 +1,7 @@
 import { GeminiTextProvider } from "./providers/gemini.ts";
 import { OpenAITextProvider } from "./providers/openai.ts";
 import { LocalAITextProvider } from "./providers/local-ai.ts";
+import { OpenRouterTextProvider } from "./providers/openrouter.ts";
 import { ProviderCircuitBreaker } from "./health/circuit-breaker.ts";
 import {
   SupabaseUsageRecorder,
@@ -139,6 +140,7 @@ export function createTenantAIRuntime(input: TenantAIRuntimeFactoryInput): {
     google: input.deps?.google ?? new GeminiTextProvider(),
     openai: input.deps?.openai ?? new OpenAITextProvider(),
     local: input.deps?.local ?? new LocalAITextProvider(),
+    openrouter: input.deps?.openrouter ?? new OpenRouterTextProvider(),
     circuitBreaker: input.circuitBreaker ?? input.deps?.circuitBreaker ?? sharedCircuit,
     usageRecorder: input.deps?.usageRecorder ?? usageRecorder,
     defaultSessionId: input.sessionId ?? input.deps?.defaultSessionId ?? null,
