@@ -162,7 +162,7 @@ export const ADMIN_MUTATION_TOOLS: AgentTool[] = [
   {
     schema: {
       name: "create_mission",
-      description: "Compile a goal into a mission and estimate cost.",
+      description: "Compile a goal into a mission and estimate cost. tenantId must be a real tenant id -- if the user named a company rather than giving you an id, call resolve_client_by_name first and use its result.",
       parameters: {
         type: "object",
         properties: { tenantId: { type: "string" }, goalText: { type: "string" } },

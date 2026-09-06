@@ -1,5 +1,68 @@
 # WhatsApp AI Agency — Gap Audit
 
+## Update 70 — the first real slice of the Founder principal model: deterministic multi-company name resolution, plus an AWS-access finding recorded precisely
+
+Per an explicit instruction not to assume AWS/EC2 access is unavailable
+without actually exhausting it: re-tried this session's AWS MCP connection
+with the most minimal possible call (`sts:GetCallerIdentity`, no
+parameters). Both this and the earlier `ssm:DescribeInstanceInformation`
+attempt returned `TOKEN_EXPIRED` at the tool-invocation layer itself, before
+reaching any AWS API — a session-credential/authorization state, not a
+missing-permission or wrong-API-shape problem a different call would fix.
+Recorded precisely rather than glossed over: this session's AWS access
+needs re-authorization (the standard "reconnect this connector" flow) before
+any EC2/SSM-based deployment path can be attempted for real. Not re-tried a
+third time — retrying an expired token doesn't change its state.
+
+**Then moved to real building**, per the instruction to continue the P1
+"Founder principal model" rather than stop. Investigated what already
+exists rather than assume a blank slate: the platform already has a real,
+tested multi-tenant-membership system (`lib/tenants/current-tenant.ts`'s
+`listMyTenants`/`resolveCurrentTenant`, backing the web app's own
+`ACTIVE_TENANT_COOKIE` client-switcher) and a real staff principal model
+(`StaffAgentPrincipal` with `tenantId: string | null` — platform staff,
+i.e. the de facto "Founder" role today, already aren't scoped to one
+tenant) with existing cross-tenant read tools (`list_clients`, `get_client`,
+gated by `agent:read:clients`). What was genuinely missing: every admin
+mutation tool that acts on a specific company (`create_mission`,
+`create_handoff`, `schedule_follow_up`, ...) requires a raw `tenantId`
+string argument, and **nothing** told the model how to produce that string
+when a Founder names a company in natural language ("my friend's solar
+company") rather than supplying an id — a real gap matching the master
+brief's own canonical acceptance example exactly, and a genuinely
+security-relevant one: a model guessing wrong would write real data (a
+mission, a CRM lead) to the wrong real business.
+
+**Built the real fix**: `resolve_client_by_name`
+([packages/agent-core/src/tools/admin/resolve-client.ts](../../packages/agent-core/src/tools/admin/resolve-client.ts))
+— pure, dependency-free, non-LLM string matching (an exact case-insensitive
+match on name/slug wins outright; substring matching only when no exact
+match exists; multiple or zero matches are returned explicitly for
+disambiguation, never silently narrowed to a guess). Wired in at two
+layers so the model reliably reaches for it: `create_mission`'s own tool
+description now names it directly, and
+`buildBrainContext`'s staff-only system prompt now carries a general
+instruction covering every current and future `tenantId`-taking admin tool
+("resolve it via `resolve_client_by_name` first; never guess").
+
+Verified: a new 8-scenario test
+([resolve-client-by-name.test.ts](../../packages/agent-core/src/__tests__/resolve-client-by-name.test.ts))
+covering exact/partial/ambiguous/no-match/empty-query/zero-candidate cases,
+now part of the tracked `test:agent-core` script. Zero regressions across
+the full 16-file `test:agent-core` suite, including the two tests that
+exercise `buildBrainContext` directly. Full-repo `tsc --noEmit` clean, lint
+clean, a real `NODE_ENV=production npm run build` (exit 0).
+
+Scope stated precisely: this resolves a company NAME to a `tenantId` on
+demand, every turn that needs one — it does not yet build a persisted
+"Founder's active company" default for channels with no cookie concept
+(WhatsApp/Telegram), the way the web app's `ACTIVE_TENANT_COOKIE` remembers
+a selection across requests. Recording that precisely as a real, scoped,
+separate future piece rather than bundling it in or claiming it's covered.
+Registry: `capability:founder_multi_company_name_resolution`, new row,
+`REAL_EXPOSED`. Migration:
+`supabase/migrations/20260907030000_capability_registry_founder_multi_company_resolution.sql`.
+
 ## Update 69 — the real Native Hermes execution adapter: no external engine dependency, reuses three already-live pieces, real defect found and fixed along the way
 
 Per an explicit instruction to build the actual P0 execution/orchestration

@@ -7,6 +7,7 @@ import { listOpenHandoffs } from "@stratxcel/human-handoff";
 import { listAuditEvents } from "@stratxcel/audit";
 import { listKillSwitches, getWorkerHealth, type WorkerType } from "@stratxcel/queue";
 import { getWalletAccount, listInvoicesForTenant, getEntitlementSummary } from "@stratxcel/payments-and-wallet";
+import { matchClientsByName } from "./resolve-client.ts";
 import type { AgentTool } from "../contract.ts";
 
 function requireTenantId(args: Record<string, unknown>): string {
@@ -98,6 +99,27 @@ export const ADMIN_READ_TOOLS: AgentTool[] = [
         .select("user_id", { count: "exact", head: true })
         .eq("tenant_id", tenantId);
       return { found: true, client: tenant, memberCount: count ?? 0 };
+    },
+  },
+  {
+    schema: {
+      name: "resolve_client_by_name",
+      description:
+        "Resolve a company/client name the user mentioned (e.g. 'my friend's solar company') into a real tenantId. ALWAYS call this before any tool argument named tenantId when the user referred to a company by name rather than an id -- never guess, invent, or reuse a tenantId from memory. Returns status='single_match' (use that tenantId), 'multiple_matches' (ask the user which one, listing the candidates), or 'no_match' (ask the user, do not proceed).",
+      parameters: {
+        type: "object",
+        properties: { query: { type: "string", description: "The company/client name as the user said it." } },
+        required: ["query"],
+      },
+    },
+    mutating: false,
+    risk: "read",
+    requiredPermission: "agent:read:clients",
+    async execute(ctx, args) {
+      const query = typeof args.query === "string" ? args.query : "";
+      const { data, error } = await ctx.supabase.from("tenants").select("id, slug, name").limit(500);
+      if (error) throw error;
+      return matchClientsByName(query, data ?? []);
     },
   },
   {
