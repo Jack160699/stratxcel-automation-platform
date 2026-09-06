@@ -17,7 +17,7 @@ function test(name: string, fn: () => void | Promise<void>) {
 }
 
 async function main() {
-  await test("every one of the 12 archetypes renders a real 1080x1080 PNG without throwing", async () => {
+  await test("every one of the 13 archetypes renders a real 1080x1080 PNG without throwing", async () => {
     for (const id of ARCHETYPE_IDS) {
       const png = await renderArchetypePreview(id);
       const meta = await sharp(png).metadata();

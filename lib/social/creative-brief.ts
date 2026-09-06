@@ -16,6 +16,7 @@ import type { ContentObjective } from "./content-options.ts";
 import { classifyIndustry, getIndustryProfile, type IndustryCategory } from "./industry-taxonomy.ts";
 import { selectLeastRecentlyUsed, selectLeastRecentlyUsedExcluding } from "./content-diversity.ts";
 import type { PlannedDayStrategy } from "./campaign-strategy-planner.ts";
+import type { CustomerPsychologyProfile } from "../hermes/social-autopilot-campaign.ts";
 
 const OBJECTIVE_CTA_STYLE: Record<ContentObjective, string> = {
   REACH: "an invitation to see or discover more, not a hard sell",
@@ -78,6 +79,19 @@ export interface CreativeBriefInput {
   seasonalContext?: string | null;
   /** 28-day campaign strategy blueprint for this specific day (Mission G §8-§9). */
   plannedStrategy?: PlannedDayStrategy | null;
+  /** FINAL HERMES ROOT-CAUSE + STRATEGY RESTORATION mission (2026-09-06):
+   * real bug found live -- buildCustomerPsychologyProfile() was already
+   * computed by every real caller (package-autopilot.ts) and immediately
+   * discarded after being written to the observability ledger
+   * (recordCampaignTask), never attached to the brief that reaches the
+   * Creative Treatment prompt. Carried on the brief itself (the same
+   * pattern plannedStrategy already establishes) so both the treatment
+   * prompt and the caption prompt can actually ground the on-image
+   * message and the caption in the tenant's OWN real audience pain-point
+   * data instead of a generic angle. Optional and often empty -- a
+   * tenant with no structured audience data on file yields [], never a
+   * fabricated psychology profile. */
+  customerPsychology?: CustomerPsychologyProfile[] | null;
 }
 
 export interface CreativeBrief {
@@ -99,6 +113,7 @@ export interface CreativeBrief {
   avoid: string[];
   seasonalContext: string | null;
   plannedStrategy?: PlannedDayStrategy | null;
+  customerPsychology?: CustomerPsychologyProfile[] | null;
 }
 
 const FORMAT_LABEL: Record<CreativeBriefInput["mediaType"], string> = {
@@ -236,6 +251,7 @@ export function buildCreativeBrief(input: CreativeBriefInput): CreativeBrief {
     ].filter(Boolean).join(" ") || "No explicit brand voice/colors saved yet -- default to a clean, professional, business-appropriate presentation.",
     seasonalContext: input.seasonalContext?.trim() || null,
     plannedStrategy: input.plannedStrategy,
+    customerPsychology: input.customerPsychology,
     avoid,
   };
 }
@@ -246,6 +262,12 @@ export function buildCreativeBrief(input: CreativeBriefInput): CreativeBrief {
  * of prompt string formatting. */
 export function formatCreativeBriefForPrompt(brief: CreativeBrief): string {
   const p = brief.plannedStrategy;
+  // FINAL HERMES ROOT-CAUSE + STRATEGY RESTORATION mission (2026-09-06):
+  // real audience pain-point data (buildCustomerPsychologyProfile), was
+  // computed then discarded before reaching either the treatment or the
+  // copy prompt -- surfaced here too, not just in the treatment prompt, so
+  // caption generation can ground itself in the same real signal.
+  const psychology = (brief.customerPsychology ?? []).filter((profile) => profile.painPoints.length > 0);
   return [
     `CREATIVE BRIEF (already decided -- follow it, do not re-derive strategy):`,
     `- Objective: ${brief.objective}`,
@@ -255,6 +277,9 @@ export function formatCreativeBriefForPrompt(brief: CreativeBrief): string {
     p ? `- Unique strategic angle: ${p.uniqueAngle}` : "",
     p ? `- Customer problem addressed: ${p.customerProblem}` : "",
     p ? `- Research insight: ${p.researchInsight}` : "",
+    psychology.length
+      ? `- Real customer psychology on file: ${psychology.map((profile) => `${profile.audienceLabel} worries about ${profile.painPoints.join("; ")}`).join(" | ")}`
+      : "",
     `- Format: ${brief.format}`,
     `- Hook direction: ${brief.hook}`,
     `- Headline direction: ${brief.headlineDirection}`,

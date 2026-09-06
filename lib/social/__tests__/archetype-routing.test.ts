@@ -38,21 +38,28 @@ const GOOD_TREATMENT: CreativeTreatment = {
 };
 
 // --- Section 17: "₹2,999 automated" -----------------------------------
-test("Starter automated: expected BASIC_ESSENTIAL, forced regardless of preferences supplied", () => {
+// Image Quality + Marketing Creative Certification mission (2026-09-06):
+// FEATURE_POSTER replaced BASIC_ESSENTIAL as the zero-configuration
+// automated default (archetype-routing.ts) -- BASIC_ESSENTIAL itself is
+// unchanged and remains a fully valid, selectable archetype (see the
+// "still rejected" manual-generation tests further down, which
+// deliberately keep testing against BASIC_ESSENTIAL as an ordinary
+// archetype, not the default).
+test("Starter automated: expected FEATURE_POSTER, forced regardless of preferences supplied", () => {
   const result = resolveAutomatedRouting({ tier: "starter", preferredArchetypes: ["NEON_NIGHTLIFE", "POLAROID_LIFESTYLE"] });
-  assert.equal(result.routingContext.forcedArchetype, "BASIC_ESSENTIAL");
-  assert.deepEqual(result.routingContext.allowedArchetypes, ["BASIC_ESSENTIAL"]);
+  assert.equal(result.routingContext.forcedArchetype, "FEATURE_POSTER");
+  assert.deepEqual(result.routingContext.allowedArchetypes, ["FEATURE_POSTER"]);
   assert.equal(result.fallbackReason, null, "this isn't a fallback -- it's Starter's real, intended behavior");
 });
 
-test("Starter automated: server still produces BASIC_ESSENTIAL even when a real AI output attempts a different layout (defense in depth via validateCreativeTreatment + forceArchetypeOntoTreatment)", () => {
+test("Starter automated: server still produces FEATURE_POSTER even when a real AI output attempts a different layout (defense in depth via validateCreativeTreatment + forceArchetypeOntoTreatment)", () => {
   const { routingContext } = resolveAutomatedRouting({ tier: "starter", preferredArchetypes: [] });
   for (const attemptedByAi of ["NEON_NIGHTLIFE", "POLAROID_LIFESTYLE", "SPLIT_BANNER"] as const) {
     const aiTreatment = { ...GOOD_TREATMENT, layoutArchetype: attemptedByAi };
     const issues = validateCreativeTreatment(aiTreatment, { concept: "training tip", routingContext });
     assert.ok(issues.some((i) => i.field === "layoutArchetype"), `expected validation to flag the AI choosing ${attemptedByAi} over the forced archetype`);
     const corrected = forceArchetypeOntoTreatment(aiTreatment, routingContext);
-    assert.equal(corrected.layoutArchetype, "BASIC_ESSENTIAL", `expected the final treatment to be forced to BASIC_ESSENTIAL regardless of the AI's ${attemptedByAi} attempt`);
+    assert.equal(corrected.layoutArchetype, "FEATURE_POSTER", `expected the final treatment to be forced to FEATURE_POSTER regardless of the AI's ${attemptedByAi} attempt`);
   }
 });
 
@@ -83,24 +90,24 @@ test("Business automated behaves identically to Growth (not separately specified
   assert.deepEqual(result.routingContext.allowedArchetypes, preferences);
 });
 
-test("Growth/Business automated with no valid saved preferences: deterministic safe fallback to BASIC_ESSENTIAL, with a real documented fallback reason -- never an arbitrary premium archetype", () => {
+test("Growth/Business automated with no valid saved preferences: deterministic safe fallback to FEATURE_POSTER, with a real documented fallback reason -- never an arbitrary premium archetype", () => {
   for (const tier of ["growth", "business"] as const) {
     const result = resolveAutomatedRouting({ tier, preferredArchetypes: [] });
-    assert.equal(result.routingContext.forcedArchetype, "BASIC_ESSENTIAL");
+    assert.equal(result.routingContext.forcedArchetype, "FEATURE_POSTER");
     assert.ok(result.fallbackReason && result.fallbackReason.length > 20, `${tier}: expected a real, non-empty fallback reason to be recorded`);
   }
 });
 
 test("Growth automated with a corrupt preference array (non-array, garbage entries) sanitizes safely instead of throwing", () => {
   const result = resolveAutomatedRouting({ tier: "growth", preferredArchetypes: "not-an-array" as never });
-  assert.equal(result.routingContext.forcedArchetype, "BASIC_ESSENTIAL");
+  assert.equal(result.routingContext.forcedArchetype, "FEATURE_POSTER");
   assert.ok(result.fallbackReason);
 });
 
-test("No subscription / unsupported tier: denies premium archetype access, falls back to BASIC_ESSENTIAL with a documented reason", () => {
+test("No subscription / unsupported tier: denies premium archetype access, falls back to FEATURE_POSTER with a documented reason", () => {
   for (const tier of ["free", "scale", "launch"] as const) {
     const result = resolveAutomatedRouting({ tier, preferredArchetypes: ["NEON_NIGHTLIFE"] });
-    assert.equal(result.routingContext.forcedArchetype, "BASIC_ESSENTIAL", `${tier}: must never grant premium archetype access`);
+    assert.equal(result.routingContext.forcedArchetype, "FEATURE_POSTER", `${tier}: must never grant premium archetype access`);
     assert.ok(result.fallbackReason);
   }
 });
@@ -193,7 +200,7 @@ test("seo/social/seo_and_social/advanced_seo: zero real Social Autopilot automat
   for (const tier of ["seo", "social", "seo_and_social", "advanced_seo"] as const) {
     assert.equal(toArchetypeTier(tier), null, `${tier}: must not be silently granted premium archetype access it has no real quota for`);
     const automated = resolveAutomatedRouting({ tier, preferredArchetypes: ["NEON_NIGHTLIFE"] });
-    assert.equal(automated.routingContext.forcedArchetype, "BASIC_ESSENTIAL");
+    assert.equal(automated.routingContext.forcedArchetype, "FEATURE_POSTER");
     assert.ok(automated.fallbackReason);
     const manual = resolveManualRouting({ tier, preferredArchetypes: [], requestedArchetype: "SPLIT_BANNER" });
     assert.equal(manual.ok, false);

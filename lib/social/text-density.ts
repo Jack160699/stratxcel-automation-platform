@@ -13,7 +13,24 @@
  */
 
 export interface OnImageTextElement {
-  role: "headline" | "supportingLine" | "cta" | "brandLabel" | "other";
+  // FINAL HERMES MISSION (content-strategy-driven structure, 2026-09-06):
+  // the extra roles beyond the original five exist so a Creative Treatment
+  // can express a genuinely different message SHAPE (pain point -> solution
+  // -> value -> CTA; question -> answer -> benefit -> CTA; etc.) instead of
+  // every creative being flattened into the same headline+bullets+CTA
+  // structure regardless of the actual marketing angle. Today only
+  // FEATURE_POSTER's compositor (text-overlay-render.ts) renders them
+  // distinctly; every other archetype's pickElements() only ever looks for
+  // headline/supportingLine/cta/brandLabel and silently ignores the rest,
+  // exactly as it already did with "other" -- safe by construction, not a
+  // platform-wide redesign. "differentiators" is special: the compositor
+  // substitutes the business's own real on-file text for it and ignores
+  // whatever placeholder the model wrote, so it never becomes a fabricated
+  // claim.
+  role:
+    | "headline" | "supportingLine" | "cta" | "brandLabel" | "other"
+    | "insight" | "proof" | "painPoint" | "solution" | "value"
+    | "question" | "answer" | "benefit" | "statement" | "offer" | "differentiators";
   text: string;
 }
 

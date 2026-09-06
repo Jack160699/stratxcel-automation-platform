@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { validateCreativeTreatment, buildCreativeTreatmentPrompt, resolveOverlayElements, extractVerifiedContactInfo, forceArchetypeOntoTreatment, LAYOUT_ARCHETYPE_IDS, type CreativeTreatment } from "../creative-treatment.ts";
+import { validateCreativeTreatment, buildCreativeTreatmentPrompt, resolveOverlayElements, extractVerifiedContactInfo, forceArchetypeOntoTreatment, describeTextStructureShape, LAYOUT_ARCHETYPE_IDS, type CreativeTreatment } from "../creative-treatment.ts";
 import { RESTAURANT_FIXTURE } from "./fixtures/business-fixtures.ts";
 import { buildCreativeBrief } from "../creative-brief.ts";
 import { deriveBrandVisualDNA } from "../brand-visual-dna.ts";
@@ -94,6 +94,10 @@ test("missing required fields are each flagged individually", () => {
 });
 
 test("too many on-image text elements is flagged", () => {
+  // Cap raised from 4 to 6 (FINAL HERMES MISSION, 2026-09-06) to allow a
+  // real content-strategy-driven structure (brandLabel + a display line +
+  // two supporting/proof-style blocks + cta), so this needs 7 elements to
+  // still exceed it, not 5.
   const bad = {
     ...GOOD_TREATMENT,
     textHierarchy: [
@@ -102,6 +106,8 @@ test("too many on-image text elements is flagged", () => {
       { role: "cta", text: "c" },
       { role: "brandLabel", text: "d" },
       { role: "other", text: "e" },
+      { role: "insight", text: "f" },
+      { role: "proof", text: "g" },
     ],
   };
   const issues = validateCreativeTreatment(bad, { concept: "training tip" });
@@ -143,6 +149,92 @@ test("buildCreativeTreatmentPrompt grounds the prompt in real verified facts and
   assert.ok(combined.includes("14 Princess Street"));
   assert.ok(combined.toLowerCase().includes("never invent a business fact"));
   assert.ok(combined.includes("JSON"));
+});
+
+// FINAL HERMES ROOT-CAUSE + STRATEGY RESTORATION mission (2026-09-06): real
+// bug found live -- buildCreativeBrief already computes a real 28-Day
+// Campaign Strategy Planner blueprint (plannedStrategy: opportunityType,
+// uniqueAngle, customerProblem, audienceIntent, researchInsight) and a real
+// Customer Psychology profile (buildCustomerPsychologyProfile, the tenant's
+// own audience pain-point data) for every automated post, but
+// buildCreativeTreatmentPrompt only ever read 5 shallow fields off the
+// brief (objective/audience/contentPillar/concept/cta) -- the richer
+// strategic reasoning was computed, attached to the brief, and then simply
+// never read by the ONE function that actually decides the on-image
+// message. This is the regression test for that fix: both signals must
+// reach the real prompt text verbatim, not just exist on the brief object.
+test("buildCreativeTreatmentPrompt surfaces the real 28-Day Campaign Strategy Planner blueprint and Customer Psychology profile, not just the shallow concept/audience/objective fields", () => {
+  const brief = buildCreativeBrief({
+    businessName: RESTAURANT_FIXTURE.businessName,
+    industryText: RESTAURANT_FIXTURE.industryText,
+    descriptionText: RESTAURANT_FIXTURE.descriptionText,
+    platform: "instagram",
+    mediaType: "image",
+    availablePillars: RESTAURANT_FIXTURE.contentPillars,
+    objective: "AUTHORITY",
+    verifiedFacts: [],
+    brandTone: RESTAURANT_FIXTURE.brandTone,
+    brandColors: RESTAURANT_FIXTURE.brandColors,
+    audience: RESTAURANT_FIXTURE.audience,
+    plannedStrategy: {
+      dayNumber: 3,
+      objective: "AUTHORITY",
+      opportunityType: "CUSTOMER_PAIN_POINT",
+      audienceIntent: "Looking for immediate relief and confidence in quality",
+      customerProblem: "Fear of an inconsistent seafood catch ruining a special weekend booking",
+      contentPillar: RESTAURANT_FIXTURE.contentPillars[0]!,
+      topic: "Overcoming Inconsistent Weekend Seafood Availability",
+      uniqueAngle: "Why our direct-from-the-jetty sourcing removes the weekend seafood gamble entirely",
+      format: "single_image",
+      hookStrategy: "open with the specific problem this business solves for the reader",
+      ctaStrategy: "an invitation to learn more or read further, establishing expertise",
+      creativeConcept: "Customer Pain Point: Overcoming Inconsistent Weekend Seafood Availability — Why our direct-from-the-jetty sourcing removes the weekend seafood gamble entirely",
+      visualCategory: "close_up_detail",
+      researchInsight: "Research shows customers experience severe hesitation around unreliable weekend seafood quality. Addressing it directly builds immediate rapport.",
+    },
+    customerPsychology: [
+      { audienceLabel: "Weekend Diners", painPoints: ["worried the catch won't be fresh", "afraid of overpaying for a mediocre meal"], description: null },
+    ],
+  });
+  const dna = deriveBrandVisualDNA({ brandColors: RESTAURANT_FIXTURE.brandColors, brandTone: RESTAURANT_FIXTURE.brandTone, industryCategory: "restaurant" });
+  const vocab = getIndustryVisualVocabulary("restaurant");
+  const messages = buildCreativeTreatmentPrompt({
+    brief, businessName: RESTAURANT_FIXTURE.businessName, industry: "restaurant", brandDNA: dna, visualVocab: vocab, mediaType: "image",
+  });
+  const combined = messages.map((m) => m.content).join("\n");
+  assert.ok(combined.includes("direct-from-the-jetty sourcing removes the weekend seafood gamble"), "the planner's own uniqueAngle -- the actual WHY behind the angle -- must reach the prompt verbatim");
+  assert.ok(combined.includes("Fear of an inconsistent seafood catch ruining a special weekend booking"), "the planner's specific customerProblem must reach the prompt");
+  assert.ok(combined.includes("Research shows customers experience severe hesitation"), "the planner's own researchInsight must reach the prompt, not just the generic industry research library");
+  assert.ok(combined.includes("worried the catch won't be fresh") && combined.includes("afraid of overpaying for a mediocre meal"), "the real customer-psychology pain points must reach the prompt verbatim");
+  assert.ok(combined.includes("Weekend Diners"), "the psychology profile's real audience label must reach the prompt");
+});
+
+test("buildCreativeTreatmentPrompt degrades gracefully with no plannedStrategy or customerPsychology -- no fabricated placeholder text", () => {
+  const brief = buildCreativeBrief({
+    businessName: RESTAURANT_FIXTURE.businessName,
+    industryText: RESTAURANT_FIXTURE.industryText,
+    descriptionText: RESTAURANT_FIXTURE.descriptionText,
+    platform: "instagram",
+    mediaType: "image",
+    availablePillars: RESTAURANT_FIXTURE.contentPillars,
+    objective: "AUTHORITY",
+    verifiedFacts: [],
+    brandTone: RESTAURANT_FIXTURE.brandTone,
+    brandColors: RESTAURANT_FIXTURE.brandColors,
+    audience: RESTAURANT_FIXTURE.audience,
+  });
+  const dna = deriveBrandVisualDNA({ brandColors: RESTAURANT_FIXTURE.brandColors, brandTone: RESTAURANT_FIXTURE.brandTone, industryCategory: "restaurant" });
+  const vocab = getIndustryVisualVocabulary("restaurant");
+  const messages = buildCreativeTreatmentPrompt({
+    brief, businessName: RESTAURANT_FIXTURE.businessName, industry: "restaurant", brandDNA: dna, visualVocab: vocab, mediaType: "image",
+  });
+  const combined = messages.map((m) => m.content).join("\n");
+  assert.ok(!combined.includes("Content opportunity type"), "must not fabricate a planner section when no real plannedStrategy exists");
+  assert.ok(!combined.includes("REAL CUSTOMER PSYCHOLOGY"), "must not fabricate a psychology section when no real customerPsychology exists");
+  // The always-present brief fields (computed for every brief regardless of
+  // plannedStrategy) must still reach the prompt.
+  assert.ok(combined.includes("Hook direction:"));
+  assert.ok(combined.includes("Headline direction:"));
 });
 
 test("STRATXCEL ONE-SHOT REBUILD Section 2/16/45: a 'generic'-industry business gets an explicit identity-clarity instruction against depicting a customer's industry as its own", () => {
@@ -207,16 +299,23 @@ test("a treatment with an invalid layoutArchetype value is rejected", () => {
   assert.ok(issues.some((i) => i.field === "layoutArchetype"));
 });
 
-test("each of the 12 registered layout archetypes is accepted", () => {
+test("each of the 13 registered layout archetypes is accepted", () => {
   for (const archetype of LAYOUT_ARCHETYPE_IDS) {
     const good = { ...GOOD_TREATMENT, layoutArchetype: archetype };
     const issues = validateCreativeTreatment(good, { concept: "training tip" });
     assert.deepEqual(issues, [], `expected ${archetype} to be a valid archetype`);
   }
-  assert.equal(LAYOUT_ARCHETYPE_IDS.length, 12, "registry must expose exactly 12 archetypes");
+  // Image Quality + Marketing Creative Certification mission (2026-09-06):
+  // FEATURE_POSTER is the 13th (archetype-registry.ts) -- this count is a
+  // deliberate tripwire so a future 14th archetype gets the same "did you
+  // remember to update this test" nudge this one just got.
+  assert.equal(LAYOUT_ARCHETYPE_IDS.length, 13, "registry must expose exactly 13 archetypes");
 });
 
-function buildRestaurantPromptMessages(routingContext?: Parameters<typeof buildCreativeTreatmentPrompt>[0]["routingContext"]) {
+function buildRestaurantPromptMessages(
+  routingContext?: Parameters<typeof buildCreativeTreatmentPrompt>[0]["routingContext"],
+  recentTextStructures?: string[],
+) {
   const brief = buildCreativeBrief({
     businessName: RESTAURANT_FIXTURE.businessName, industryText: RESTAURANT_FIXTURE.industryText, descriptionText: RESTAURANT_FIXTURE.descriptionText,
     platform: "instagram", mediaType: "image", availablePillars: RESTAURANT_FIXTURE.contentPillars, objective: "AUTHORITY",
@@ -224,10 +323,10 @@ function buildRestaurantPromptMessages(routingContext?: Parameters<typeof buildC
   });
   const dna = deriveBrandVisualDNA({ brandColors: RESTAURANT_FIXTURE.brandColors, brandTone: RESTAURANT_FIXTURE.brandTone, industryCategory: "restaurant" });
   const vocab = getIndustryVisualVocabulary("restaurant");
-  return buildCreativeTreatmentPrompt({ brief, businessName: RESTAURANT_FIXTURE.businessName, industry: "restaurant", brandDNA: dna, visualVocab: vocab, mediaType: "image", routingContext });
+  return buildCreativeTreatmentPrompt({ brief, businessName: RESTAURANT_FIXTURE.businessName, industry: "restaurant", brandDNA: dna, visualVocab: vocab, mediaType: "image", routingContext, recentTextStructures });
 }
 
-test("buildCreativeTreatmentPrompt explains all 12 layout archetypes and requires a deliberate choice when unrestricted", () => {
+test("buildCreativeTreatmentPrompt explains all 13 layout archetypes and requires a deliberate choice when unrestricted", () => {
   const messages = buildRestaurantPromptMessages();
   const combined = messages.map((m) => m.content).join("\n");
   for (const archetype of LAYOUT_ARCHETYPE_IDS) {
@@ -252,6 +351,57 @@ test("routingContext.allowedArchetypes (no forced value): prompt restricts the A
   assert.ok(/ONLY from this list/.test(combined));
   assert.ok(!combined.includes("NEON_NIGHTLIFE"), "must not describe an archetype outside the allowed set as an option");
   assert.ok(combined.includes(`"layoutArchetype": "SPLIT_BANNER"|"POLAROID_LIFESTYLE"|"CLINICAL_TRUST"`), "JSON shape block must match the restricted set");
+});
+
+// FINAL HERMES MISSION (2026-09-06): FEATURE_POSTER's compositor was found
+// flattening every business into the same headline+3-static-differentiators
+// +CTA shape regardless of the actual content strategy for that post. The
+// fix is prompt-side (this test) plus render-side (text-overlay-render.ts):
+// only a FEATURE_POSTER-forced prompt gets the expanded role vocabulary and
+// explicit "don't default to the same shape every time" instruction -- every
+// other archetype's prompt is unchanged, since only FEATURE_POSTER's
+// compositor actually renders the extra roles distinctly.
+test("routingContext.forcedArchetype FEATURE_POSTER: prompt explains the extra content-structure roles and tells the model not to default to the same shape every time", () => {
+  const messages = buildRestaurantPromptMessages({ forcedArchetype: "FEATURE_POSTER", allowedArchetypes: [], reason: "Starter automated path" });
+  const combined = messages.map((m) => m.content).join("\n");
+  assert.ok(combined.includes("does NOT require a fixed"), "must explicitly tell the model FEATURE_POSTER has no fixed headline+bullets+CTA requirement");
+  for (const role of ["insight", "proof", "painPoint", "solution", "value", "question", "answer", "benefit", "differentiators"]) {
+    assert.ok(combined.includes(role), `expected the FEATURE_POSTER guidance to mention the "${role}" role`);
+  }
+  assert.ok(/two different shapes/i.test(combined), "must explicitly warn against defaulting to the same structure every time");
+  assert.ok(combined.includes(`"layoutArchetype": "FEATURE_POSTER"`), "JSON shape block must still only offer the forced value");
+});
+
+test("routingContext.forcedArchetype BASIC_ESSENTIAL: prompt does NOT get the FEATURE_POSTER-only expanded role vocabulary", () => {
+  const messages = buildRestaurantPromptMessages({ forcedArchetype: "BASIC_ESSENTIAL", allowedArchetypes: [], reason: "Starter automated path" });
+  const combined = messages.map((m) => m.content).join("\n");
+  assert.ok(!combined.includes("does NOT require a fixed"), "the FEATURE_POSTER-specific content-structure guidance must not leak into other archetypes' prompts");
+  assert.ok(!combined.includes('"painPoint"') && !combined.includes('"differentiators"'), "other archetypes' compositors only ever read headline/supportingLine/cta/brandLabel -- offering them the extra roles would just mean silently-dropped content");
+});
+
+// FINAL HERMES ROOT-CAUSE mission, round 2 (2026-09-06): real bug found
+// live -- two back-to-back real generations for two DIFFERENT businesses
+// both independently converged on the model's own default "question+answer"
+// shape, because concept/pillar/archetype all had real recency tracking but
+// the actual on-image MESSAGE SHAPE had none at all.
+test("describeTextStructureShape: real shape fingerprint excludes structural chrome (brandLabel/cta), keyed only on real message-carrying roles", () => {
+  assert.equal(describeTextStructureShape([{ role: "brandLabel", text: "X" }, { role: "question", text: "Y" }, { role: "answer", text: "Z" }, { role: "cta", text: "Go" }]), "question+answer");
+  assert.equal(describeTextStructureShape([{ role: "headline", text: "X" }]), "headline");
+  assert.equal(describeTextStructureShape([{ role: "brandLabel", text: "X" }, { role: "cta", text: "Go" }]), "photo_only");
+  assert.equal(describeTextStructureShape([]), "photo_only");
+});
+
+test("routingContext.forcedArchetype FEATURE_POSTER: recent shapes for this tenant are surfaced with an explicit instruction to prefer a different one", () => {
+  const messages = buildRestaurantPromptMessages({ forcedArchetype: "FEATURE_POSTER", allowedArchetypes: [], reason: "test" }, ["question+answer", "question+answer"]);
+  const combined = messages.map((m) => m.content).join("\n");
+  assert.ok(combined.includes("question+answer"), "the real recent shape fingerprints must reach the prompt verbatim");
+  assert.ok(/prefer a genuinely different shape/i.test(combined), "must explicitly instruct the model to prefer a different shape than its recent real ones");
+});
+
+test("routingContext.forcedArchetype FEATURE_POSTER: no recent-shapes instruction is added when there is no real history yet", () => {
+  const messages = buildRestaurantPromptMessages({ forcedArchetype: "FEATURE_POSTER", allowedArchetypes: [], reason: "test" }, []);
+  const combined = messages.map((m) => m.content).join("\n");
+  assert.ok(!/prefer a genuinely different shape/i.test(combined), "must not fabricate a diversity instruction when there is no real recent-shape data at all");
 });
 
 test("validateCreativeTreatment rejects a forced-archetype mismatch (AI ignored the server's decision)", () => {

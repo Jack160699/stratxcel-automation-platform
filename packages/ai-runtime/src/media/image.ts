@@ -67,6 +67,8 @@ export interface ImageCandidateResult {
   qualityScore?: number;
   qualityGatePassed?: boolean;
   candidatesEvaluated?: number;
+  /** Local provider only — the remote server's own real, non-UUID image id (e.g. "img_53605480c9"). Never used as `id` above: see local-image.ts's candidate construction for why. */
+  providerOutputId?: string;
 }
 
 export type UsageAccountingStatus = "RECORDED" | "FAILED" | "SKIPPED";
@@ -872,6 +874,7 @@ export class ImageMediaRuntime {
           qualityScore: c.qualityScore,
           qualityGatePassed: c.qualityGatePassed,
           candidatesEvaluated: c.candidatesEvaluated,
+          providerOutputId: c.providerOutputId,
         });
       }
     }

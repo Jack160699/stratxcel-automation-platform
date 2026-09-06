@@ -44,6 +44,9 @@ export interface LocalImageCandidate {
   qualityScore?: number;
   qualityGatePassed?: boolean;
   candidatesEvaluated?: number;
+  /** The remote server's own real image_id (e.g. "img_53605480c9") -- kept
+   * separately from `id` (see that field's comment for why). */
+  providerOutputId?: string;
 }
 
 export interface LocalImageGenerationResult {
@@ -145,7 +148,36 @@ export class LocalAIImageProvider {
       const base64 = Buffer.from(bytes).toString("base64");
 
       const candidate: LocalImageCandidate = {
-        id: json.image_id ?? crypto.randomUUID(),
+        // Image Quality + Marketing Creative Certification mission
+        // (2026-09-06): real, severe defect found live and root-caused --
+        // this used to be `json.image_id ?? crypto.randomUUID()`, and
+        // json.image_id is a real, non-UUID string like "img_53605480c9"
+        // (the remote server's own filename-style id). The DOWNSTREAM
+        // consumer (lib/image-generation/service.ts's candidateRows
+        // insert into image_generation_candidates) uses this `id` as that
+        // table's `id uuid primary key` column -- so every single real
+        // Local AI candidate insert failed with a Postgres "invalid input
+        // syntax for type uuid" error (surfaced as
+        // CANDIDATE_PERSIST_FAILED, "Generated images could not be added
+        // to the Studio history"), confirmed live via 3/3 real automated
+        // Local AI generation jobs for a fresh tenant this pass, all
+        // failing with that exact code. The underlying image had ALREADY
+        // been generated and persisted as a real social_media_assets row
+        // by this point -- but with the job marked FAILED, that row's
+        // metadata update (source_type -> "generated", provenance) never
+        // ran, leaving a real, fully `autopilot_eligible` orphaned photo
+        // sitting in the tenant's library with no connection to the
+        // treatment/copy that was supposed to produce it. AUTO mode's
+        // existing-asset fallback (selectPackageMediaAsset) then happily
+        // reused that orphan for a LATER, UNRELATED queue item -- this is
+        // the real mechanism behind "the image doesn't match the
+        // caption/business" defects found repeatedly across this entire
+        // engagement (a Solar creative showing an EV charger, another
+        // showing a ground-mounted farm instead of a rooftop consultation
+        // -- both traced to this exact bug). Always a real UUID now; the
+        // server's own id is preserved separately in providerOutputId.
+        id: crypto.randomUUID(),
+        providerOutputId: json.image_id,
         uri: `data:${mimeType};base64,${base64}`,
         mimeType,
         provider: "local",

@@ -156,5 +156,31 @@ export async function POST(request: Request) {
     variants[kind] = { assetId, url: signed?.signedUrl ?? null };
   }
 
+  // Image Quality + Marketing Creative Certification mission (2026-09-06):
+  // real, RECURRING defect (this exact bug was found and "fixed" once
+  // before, but only via a one-off SQL quarantine of that one test
+  // tenant's specific asset row -- never a real code fix, so it
+  // resurfaced verbatim on the very next fresh tenant). The 4 rendered
+  // VARIANTS above were already quarantined at creation, but the RAW
+  // source upload this route received (`source`, staged via the shared
+  // app/api/platform/brand/photos prepare/finalize protocol -- the same
+  // primitive the general Shop Profile Photos gallery uses, which
+  // correctly defaults new uploads to autopilot_eligible:true) was never
+  // touched. Confirmed live: that raw upload landed in
+  // social_media_assets as source_type:"upload",
+  // provenance.purpose:"shop_profile_photo", autopilot_eligible:true --
+  // and selectPackageMediaAsset's fallback "any eligible asset" pass
+  // picked it as an automated post's entire creative on the very first
+  // real generation attempt. Fixed at its real source, for every future
+  // logo upload, not just this tenant: once a raw upload has been
+  // consumed as a logo source (this call only ever runs for that
+  // purpose), it must never independently surface as a post photo again,
+  // regardless of which purpose it was staged under before analysis ran.
+  await ctx.supabase
+    .from("social_media_assets")
+    .update({ autopilot_eligible: false, eligibility_reason: "logo_source_upload_superseded_by_variants" })
+    .eq("id", source.id)
+    .eq("tenant_id", ctx.tenantId);
+
   return Response.json({ variants, backgroundRemoved: analysis.backgroundRemoved, width: analysis.width, height: analysis.height });
 }

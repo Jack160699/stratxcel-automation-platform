@@ -295,17 +295,42 @@ async function run() {
   assert.ok(logoResolver.includes("export async function resolveLegacyLogoImage"), "a tenant with only the legacy logo_url string (no logo_variants bundle) must still get a real logo composited via the documented logoImage fallback, not silently nothing");
   assert.ok(service.includes("resolveLegacyLogoImage") && service.includes("logoImage"), "the legacy logo_url fallback must actually reach the real renderTextOverlay call, not just be resolved and discarded");
 
-  // (4) Of the 12 registered layout archetypes, only BASIC_ESSENTIAL and
-  // FLOATING_CARD actually place the real raster logo image today (every
-  // other archetype falls back to text-glyph brand-name only) -- Creative
-  // Studio's treatment must be restricted to those two, or "the real
-  // BrandBrain logo appears" isn't actually guaranteed regardless of every
-  // other fix above.
-  assert.ok(studioTreatment.includes('"BASIC_ESSENTIAL"') && studioTreatment.includes('"FLOATING_CARD"'), "Creative Studio's treatment archetype must be restricted to the two archetypes whose compositor implementation places a real logo image");
+  // Image Quality + Marketing Creative Certification mission (2026-09-06):
+  // real defect found on an actual generated FEATURE_POSTER creative for
+  // Metro Wheels Car Rentals -- splitting a natural-prose description
+  // ("Free pickup, sanitized cars, and 24/7 support") on commas left a
+  // trailing row starting with a stray "and" and a middle row starting
+  // lowercase, both reading as a formatting defect once rendered as their
+  // own bold standalone row rather than continuous prose.
+  assert.match(service, /replace\(\/\^\(and\|or\)\\s\+\/i/, "splitRealDifferentiators must strip a leading conjunction from each clause before it's rendered as its own row");
+  assert.ok(service.includes("charAt(0).toUpperCase()"), "splitRealDifferentiators must capitalize each clause's first letter so every differentiator row reads like a standalone claim");
+
+  // (4) Of the 13 registered layout archetypes, only BASIC_ESSENTIAL,
+  // FLOATING_CARD, and FEATURE_POSTER (added by the Image Quality +
+  // Marketing Creative Certification mission, 2026-09-06) actually place
+  // the real raster logo image today (every other archetype falls back to
+  // text-glyph brand-name only) -- Creative Studio's treatment must be
+  // restricted to those three, or "the real BrandBrain logo appears" isn't
+  // actually guaranteed regardless of every other fix above.
+  assert.ok(studioTreatment.includes('"BASIC_ESSENTIAL"') && studioTreatment.includes('"FLOATING_CARD"') && studioTreatment.includes('"FEATURE_POSTER"'), "Creative Studio's treatment archetype must be restricted to the three archetypes whose compositor implementation places a real logo image");
   assert.ok(studioTreatment.includes("routingContext: STUDIO_ARCHETYPE_ROUTING") || studioTreatment.includes("routingContext,"), "the archetype restriction must actually reach buildCreativeTreatmentPrompt, not just exist as an unused constant");
-  assert.ok(studioTreatment.includes("validateCreativeTreatment(parsed, { concept: studioBrief.concept, routingContext"), "validateCreativeTreatment must also enforce the restriction server-side -- an AI that ignores the prompt instruction and returns a different archetype must be rejected, not silently trusted");
+  assert.ok(studioTreatment.includes("validateCreativeTreatment(parsed, { concept: manualBrief.concept, routingContext"), "validateCreativeTreatment must also enforce the restriction server-side -- an AI that ignores the prompt instruction and returns a different archetype must be rejected, not silently trusted");
+
+  // StratXcel Marketing Creative Engine mission (2026-09-06): the exact same
+  // "requestedArchetype with no treatment" defect this file already caught
+  // once for Creative Studio (assertions above) was found live, unfixed, in
+  // Social Autopilot's own manual-generation route -- a real Metro Wheels
+  // Car Rentals FEATURE_POSTER request persisted as a bare, uncomposited AI
+  // photo. Fixed by sharing studio-creative-treatment.ts's real treatment
+  // generation (business facts -> Gemini -> validated CreativeTreatment)
+  // behind a routingContext parameter instead of Studio's fixed allowlist.
+  assert.ok(studioTreatment.includes("export async function generateManualArchetypeCreativeTreatment"), "Social Autopilot manual generation needs its own real treatment generator, not just Creative Studio's fixed-allowlist one");
+  assert.ok(manualGenerateRoute.includes("generateManualArchetypeCreativeTreatment"), "the manual-generate route must actually call the treatment generator, not just have it available");
+  assert.ok(manualGenerateRoute.includes("treatment,") || manualGenerateRoute.includes("treatment:"), "the generated treatment must actually be passed into createImageGenerationJob's input -- generating it and discarding it fixes nothing");
+  assert.ok(manualGenerateRoute.includes("isValidArchetype(requestedArchetype)"), "treatment generation must only be attempted for a real, registered archetype id -- an invalid one is left to resolveManualRouting's own structured rejection");
+  assert.ok(studioTreatment.includes("forcedArchetype: args.forcedArchetype") && studioTreatment.includes("allowedArchetypes: []"), "the manual-generation routingContext must force the tenant's own already-authorized archetype, not build a fresh allowlist the AI could pick a different member of");
   const overlayRenderSrc = read("lib", "social", "text-overlay-render.ts");
-  for (const archetype of ["BASIC_ESSENTIAL", "FLOATING_CARD"]) {
+  for (const archetype of ["BASIC_ESSENTIAL", "FLOATING_CARD", "FEATURE_POSTER"]) {
     assert.ok(overlayRenderSrc.includes(`"${archetype}"`), `${archetype} must be a real registered archetype (defense against the allowlist drifting from the actual registry)`);
   }
 

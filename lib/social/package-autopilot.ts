@@ -46,7 +46,8 @@ import { buildCampaignStrategy } from "./campaign-strategy-planner.ts";
 import { evaluateVisualQuality } from "./visual-quality-score.ts";
 import { runGenerationLoop } from "./generation-loop.ts";
 import { parseGeneratedCopy, type GeneratedCopy } from "./generated-copy-parser.ts";
-import { buildCreativeTreatmentPrompt, validateCreativeTreatment, forceArchetypeOntoTreatment, safeParseJson, type CreativeTreatment, type LayoutArchetype } from "./creative-treatment.ts";
+import { buildCreativeTreatmentPrompt, validateCreativeTreatment, forceArchetypeOntoTreatment, safeParseJson, describeTextStructureShape, type CreativeTreatment, type LayoutArchetype } from "./creative-treatment.ts";
+import type { OnImageTextElement } from "./text-density.ts";
 import { deriveBrandVisualDNA } from "./brand-visual-dna.ts";
 import { getIndustryVisualVocabulary } from "./industry-visual-vocabulary.ts";
 import { researchInsightsForIndustry } from "./visual-research-library.ts";
@@ -1545,6 +1546,15 @@ export async function prepareNearTermPackageItems(
       // same creative_spec.treatment already stored per generation
       // (Section "STEP 4" below), not a separate table.
       const recentArchetypeHistory: LayoutArchetype[] = [];
+      // FINAL HERMES ROOT-CAUSE mission, round 2 (2026-09-06): real bug
+      // found live -- concept/pillar/archetype all had real recency
+      // tracking, but the actual on-image MESSAGE SHAPE (which
+      // textHierarchy roles get used) had none, so two different
+      // businesses independently converged on the model's own default
+      // "question+answer" shape back-to-back with nothing telling it that
+      // shape was just used. Recovered from the exact same already-fetched
+      // creative_spec.treatment as recentArchetypeHistory -- no new query.
+      const recentTextStructures: string[] = [];
       let recentAssetIds: string[] = [];
       if (recentVariantIds.length) {
         const [{ data: recentVariants }, { data: recentMediaRows }] = await Promise.all([
@@ -1556,8 +1566,11 @@ export async function prepareNearTermPackageItems(
           if (typeof row.objective === "string" && CONTENT_OBJECTIVE_VALUES.includes(row.objective as (typeof CONTENT_OBJECTIVE_VALUES)[number])) recentObjectives.push(row.objective as ContentObjective);
           const spec = (row.creative_spec ?? {}) as Record<string, unknown>;
           if (typeof spec.concept === "string" && spec.concept) recentConcepts.push(spec.concept);
-          const specTreatment = (spec.treatment ?? null) as { layoutArchetype?: unknown } | null;
+          const specTreatment = (spec.treatment ?? null) as { layoutArchetype?: unknown; textHierarchy?: unknown } | null;
           if (specTreatment && typeof specTreatment.layoutArchetype === "string") recentArchetypeHistory.push(specTreatment.layoutArchetype as LayoutArchetype);
+          if (specTreatment?.layoutArchetype === "FEATURE_POSTER" && Array.isArray(specTreatment.textHierarchy)) {
+            recentTextStructures.push(describeTextStructureShape(specTreatment.textHierarchy as OnImageTextElement[]));
+          }
         }
         recentAssetIds = [...new Set((recentMediaRows ?? []).map((row) => row.asset_id as string))];
       }
@@ -1625,6 +1638,15 @@ export async function prepareNearTermPackageItems(
         excludePillars: isRecoveryRetry ? priorPillars : [],
         recentFailureContext: isRecoveryRetry ? priorFailureReasons : [],
         plannedStrategy: isRecoveryRetry ? null : plannedStrategy,
+        // FINAL HERMES ROOT-CAUSE + STRATEGY RESTORATION mission
+        // (2026-09-06): real bug found live -- customerPsychology (above)
+        // was computed and written to the observability ledger, then never
+        // referenced again anywhere in this file. Attaching it here is the
+        // one real fix that lets it actually reach both the creative
+        // treatment prompt and the caption prompt (creative-treatment.ts /
+        // formatCreativeBriefForPrompt), instead of only ever being
+        // visible in a dashboard/audit view of the pipeline that ran.
+        customerPsychology,
       });
       attemptedPillar = brief.contentPillar;
       attemptedConcept = brief.concept;
@@ -1723,6 +1745,7 @@ export async function prepareNearTermPackageItems(
             mediaType,
             researchInsights,
             routingContext,
+            recentTextStructures,
           });
           const treatmentResult = await provider.complete(
             // buildCreativeTreatmentPrompt only ever emits "system"/"user"

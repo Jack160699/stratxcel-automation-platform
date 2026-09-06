@@ -47,4 +47,31 @@ function run() {
   console.log("logo-analyze-autopilot-quarantine.test.ts: every logo variant is quarantined from automated post selection at creation — PASS");
 }
 
+// Real, RECURRING defect found live -- Image Quality + Marketing Creative
+// Certification mission (2026-09-06): this exact bug was found and "fixed"
+// once before, but only via a one-off SQL quarantine of one specific test
+// tenant's asset row -- never a real code fix -- so it resurfaced verbatim
+// on the very next fresh tenant. The 4 rendered VARIANTS were already
+// quarantined at creation (tested above), but the RAW source upload this
+// route receives (staged via the shared app/api/platform/brand/photos
+// prepare/finalize protocol, which correctly defaults new uploads to
+// autopilot_eligible:true for the general Shop Profile Photos gallery) was
+// never touched. Confirmed live: that raw upload landed in
+// social_media_assets as provenance.purpose:"shop_profile_photo",
+// autopilot_eligible:true -- and was selected as an automated post's
+// entire creative on the very first real generation attempt.
+function testRawSourceUploadIsQuarantinedAfterAnalysis() {
+  const updateStart = source.indexOf('.update({ autopilot_eligible: false');
+  assert.ok(
+    updateStart >= 0,
+    "after successfully generating variants, the route must retroactively quarantine the RAW source upload it analyzed -- otherwise that raw file (staged under the general Photos gallery's own eligible-by-default purpose) remains permanently selectable as a real post's entire creative"
+  );
+  const updateBlockEnd = source.indexOf(";", updateStart);
+  const updateBlock = source.slice(updateStart, updateBlockEnd > 0 ? updateBlockEnd : undefined);
+  assert.match(updateBlock, /eq\("id", source\.id\)/, "must quarantine the specific source asset this call analyzed, not every asset in the tenant's library");
+  assert.match(updateBlock, /eq\("tenant_id", ctx\.tenantId\)/, "must stay tenant-scoped even when quarantining a raw source row");
+  console.log("logo-analyze-autopilot-quarantine.test.ts: the raw source upload is also quarantined after analysis, not just the rendered variants — PASS");
+}
+
 run();
+testRawSourceUploadIsQuarantinedAfterAnalysis();

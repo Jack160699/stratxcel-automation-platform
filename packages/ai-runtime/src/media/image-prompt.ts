@@ -11,6 +11,16 @@ const ALLOWED_BRAND_KEYS = [
   "color_hints",
   "visual_direction",
   "locations",
+  // Image Quality + Marketing Creative Certification mission (2026-09-06):
+  // the tenant's own real "what makes you stand out" onboarding answer
+  // (Brand Brain content.description) -- needed at the compositor stage
+  // for FEATURE_POSTER's icon-led differentiator list (text-overlay-
+  // render.ts), which renders real on-file business facts only, never an
+  // AI-invented benefit. Deliberately NOT read by buildProviderReadyImagePrompt
+  // below (no `line("...", brand.description)` call was added) -- this
+  // only reaches the deterministic overlay compositor, never the image
+  // MODEL's own prompt, so it has no effect on what gets photographed.
+  "description",
 ] as const;
 
 /** Keep only approved Brand Brain fields at the provider boundary. */

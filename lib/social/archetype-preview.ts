@@ -1,7 +1,7 @@
 /**
  * Local deterministic archetype preview generator (Subscription-Gated
  * Visual Archetypes brief Section 12/19): produces a real render for each
- * of the 12 archetypes using the ACTUAL production renderer
+ * of the 13 archetypes using the ACTUAL production renderer
  * (buildTextOverlaySvg / renderTextOverlay in text-overlay-render.ts) and
  * fixture sample content -- never a hand-drawn mock or a screenshot that
  * can drift from what the renderer really does. No AI provider is called
@@ -33,6 +33,9 @@ const FIXTURE_BUSINESS = {
   secondaryColor: "#F4A300",
   accentColor: "#D62828",
   contactInfo: { location: "Fort Kochi, Kerala", phone: "+91 98765 43210", website: null as string | null },
+  /** FEATURE_POSTER preview only -- illustrative fixture text, not a real
+   * business's data (this whole file never touches a real tenant). */
+  differentiators: ["Fresh catch delivered every morning", "Family recipes since 1998", "Free parking on weekends"],
 };
 
 /** Deterministic, brand-tinted gradient backdrop -- stands in for "a real
@@ -76,6 +79,7 @@ export function buildArchetypePreviewFixture(archetype: LayoutArchetype): TextOv
     businessName: FIXTURE_BUSINESS.businessName,
     layoutArchetype: archetype,
     contactInfo: FIXTURE_BUSINESS.contactInfo,
+    differentiators: FIXTURE_BUSINESS.differentiators,
   };
 }
 

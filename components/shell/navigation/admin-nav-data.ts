@@ -99,6 +99,7 @@ export const ADMIN_NAV_GROUPS_DATA: NavGroupData[] = [
     label: "System",
     items: [
       { key: "system", label: "System Health", href: "/admin/system", release: "v1", mode: "technical" },
+      { key: "local-ai", label: "Local AI", href: "/admin/system/local-ai", release: "v1", mode: "technical" },
       { key: "audit", label: "Audit Log", href: "/admin/audit", release: "v1", mode: "technical" },
     ],
   },

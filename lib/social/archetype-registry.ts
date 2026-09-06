@@ -10,7 +10,16 @@
  * consumes THIS list. Never redefine the archetype id list anywhere else.
  */
 
-/** All 12 canonical archetype ids, in the brief's own numbered order. */
+/** All 13 canonical archetype ids, in the brief's own numbered order.
+ * FEATURE_POSTER (13th) added by the Image Quality + Marketing Creative
+ * Certification mission (2026-09-06): every archetype above it is a
+ * "real photo + text band" composition -- a fundamentally different
+ * creative type from the structured, icon-led promotional-poster format
+ * a real business reference asked for (logo, headline, an offer/CTA bar,
+ * a real photo in a bounded panel rather than full-bleed, and an
+ * icon-led list of the business's own real on-file differentiators).
+ * It is now the automated default (see archetype-routing.ts) -- the
+ * other 12 remain fully selectable, unchanged. */
 export const ARCHETYPE_IDS = [
   "BASIC_ESSENTIAL",
   "SPLIT_BANNER",
@@ -24,6 +33,7 @@ export const ARCHETYPE_IDS = [
   "POLAROID_LIFESTYLE",
   "CLINICAL_TRUST",
   "NEON_NIGHTLIFE",
+  "FEATURE_POSTER",
 ] as const;
 
 export type LayoutArchetype = (typeof ARCHETYPE_IDS)[number];
@@ -258,6 +268,38 @@ export const ARCHETYPE_REGISTRY: Record<LayoutArchetype, ArchetypeDefinition> = 
       { role: "brandLabel", required: true },
     ],
     constraints: ["base text color stays white/near-white for legibility even with the glow effect", "glow is simulated with layered opacity, never assumes filter support"],
+  },
+  FEATURE_POSTER: {
+    id: "FEATURE_POSTER",
+    name: "Feature Poster",
+    description: "A structured, agency-style promotional poster on a light background: logo, a real photo in a bounded panel (not full-bleed), a brand-color CTA bar, and a message block whose actual content SHAPE (headline+bullets, pain+solution+value, question+answer+benefit, statement+offer, or another shape) is decided by the content strategy for this specific creative, not fixed by the archetype -- built for clarity and information density, not a photo with text on top, and never the same formula for every business.",
+    bestUseHint: "The automated default -- clear and informative for any business, regardless of how strong a single photo is; the message structure adapts per creative instead of forcing one template.",
+    suggestedIndustries: ["restaurant", "salon", "gym", "clinic", "retail", "real_estate", "local_service", "automotive", "education", "generic"],
+    styleLabel: "Structured & Informative",
+    visualCharacteristics: ["light/white background", "bounded real-photo panel", "content-strategy-driven message block", "brand-color CTA bar"],
+    allowedTiers: ["starter", "growth", "business"],
+    defaultTextHierarchy: [
+      { role: "brandLabel", required: true },
+      { role: "headline", required: true },
+      { role: "supportingLine", required: false },
+      { role: "cta", required: false },
+    ],
+    constraints: [
+      "photo panel never exceeds 42% of canvas width",
+      "background stays light regardless of the photo's own tones",
+      // FINAL HERMES MISSION (2026-09-06): a real bug -- FEATURE_POSTER
+      // used to force the SAME shape (headline, then always the same 3
+      // static on-file differentiators, then CTA) onto every business
+      // regardless of the actual content strategy for that post. The
+      // compositor now renders whatever roles the treatment's textHierarchy
+      // actually contains, in order (see buildFeaturePosterSvg) -- the
+      // on-file differentiator list is still available (role
+      // "differentiators") but only appears when the strategy for THIS
+      // creative genuinely calls for it, never unconditionally.
+      "the message structure is whatever the content strategy's textHierarchy specifies -- never forced into headline+differentiators+cta by the archetype itself",
+      "a \"differentiators\" role renders only the business's own real, on-file text, never an invented claim, and at most 3 rows",
+      "any supporting-style text block renders as one plain sentence, never its own bulleted or numbered list",
+    ],
   },
 };
 

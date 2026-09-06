@@ -140,9 +140,18 @@ export function resolveAutomatedRouting(input: {
   if (archetypeTier === "starter") {
     return {
       routingContext: {
-        forcedArchetype: "BASIC_ESSENTIAL",
-        allowedArchetypes: ["BASIC_ESSENTIAL"],
-        reason: "Starter (₹2,999) automated Social Autopilot is always BASIC_ESSENTIAL -- no premium archetype selection at this tier.",
+        // Image Quality + Marketing Creative Certification mission
+        // (2026-09-06): FEATURE_POSTER replaces BASIC_ESSENTIAL as the
+        // automated default everywhere BASIC_ESSENTIAL used to be the
+        // deterministic, no-configuration-needed fallback -- a real
+        // structured promotional poster (logo, headline, a bounded real
+        // photo, an icon-led list of the business's own real
+        // differentiators, a CTA bar), not just a photo with a text band.
+        // Still available on every tier with zero setup, same as
+        // BASIC_ESSENTIAL always was.
+        forcedArchetype: "FEATURE_POSTER",
+        allowedArchetypes: ["FEATURE_POSTER"],
+        reason: "Starter (₹2,999) automated Social Autopilot is always FEATURE_POSTER -- no premium archetype selection at this tier.",
       },
       fallbackReason: null,
     };
@@ -163,16 +172,17 @@ export function resolveAutomatedRouting(input: {
     }
     // Section 22: "₹7,999 with no saved preferences -> deterministic safe
     // fallback and onboarding required where appropriate." Never silently
-    // choose an arbitrary premium archetype -- BASIC_ESSENTIAL is the one
-    // archetype every tier is always allowed, so it's always a safe
-    // fallback regardless of tier.
+    // choose an arbitrary premium archetype -- FEATURE_POSTER is the one
+    // archetype every tier is always allowed (see the Starter branch
+    // above for why it replaced BASIC_ESSENTIAL as this role), so it's
+    // always a safe fallback regardless of tier.
     return {
       routingContext: {
-        forcedArchetype: "BASIC_ESSENTIAL",
-        allowedArchetypes: ["BASIC_ESSENTIAL"],
+        forcedArchetype: "FEATURE_POSTER",
+        allowedArchetypes: ["FEATURE_POSTER"],
         reason: "Safe fallback -- no valid saved archetype preferences for this tenant yet.",
       },
-      fallbackReason: `${archetypeTier === "growth" ? "Growth" : "Business"} tenant has no valid saved visual-archetype preferences (social_autopilot_visual_preferences is empty or corrupt) -- falling back to BASIC_ESSENTIAL until archetype onboarding is completed.`,
+      fallbackReason: `${archetypeTier === "growth" ? "Growth" : "Business"} tenant has no valid saved visual-archetype preferences (social_autopilot_visual_preferences is empty or corrupt) -- falling back to FEATURE_POSTER until archetype onboarding is completed.`,
     };
   }
 
@@ -180,11 +190,11 @@ export function resolveAutomatedRouting(input: {
   // archetype access entirely, same fallback as the "no preferences" case.
   return {
     routingContext: {
-      forcedArchetype: "BASIC_ESSENTIAL",
-      allowedArchetypes: ["BASIC_ESSENTIAL"],
+      forcedArchetype: "FEATURE_POSTER",
+      allowedArchetypes: ["FEATURE_POSTER"],
       reason: "Safe fallback -- no active subscription tier with Social Autopilot visual-archetype access.",
     },
-    fallbackReason: `Tenant's resolved plan tier ("${input.tier}") has no Social Autopilot visual-archetype routing defined -- falling back to BASIC_ESSENTIAL.`,
+    fallbackReason: `Tenant's resolved plan tier ("${input.tier}") has no Social Autopilot visual-archetype routing defined -- falling back to FEATURE_POSTER.`,
   };
 }
 

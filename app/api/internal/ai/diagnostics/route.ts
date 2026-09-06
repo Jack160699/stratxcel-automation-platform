@@ -11,6 +11,7 @@ import {
   type BusinessContextSupabaseClient,
 } from "@stratxcel/ai-runtime";
 import { createSupabaseServiceClient } from "@/lib/supabase/service";
+import { probeLocalAIConnection } from "@/lib/local-ai/connection";
 
 /**
  * Internal-only diagnostic endpoint for the remote local AI server
@@ -31,7 +32,7 @@ function isAuthorized(req: NextRequest): boolean {
   return auth === `Bearer ${expected}`;
 }
 
-type Action = "health" | "ready" | "models" | "chat" | "chat_with_tools" | "code" | "image" | "image_runtime" | "raw_image" | "raw_image_fetch" | "research" | "embeddings" | "rag_query" | "rag_ingest" | "rag_retrieve";
+type Action = "health" | "ready" | "models" | "chat" | "chat_with_tools" | "code" | "image" | "image_runtime" | "raw_image" | "raw_image_fetch" | "research" | "embeddings" | "rag_query" | "rag_ingest" | "rag_retrieve" | "raw_pair" | "probe_connection";
 
 async function callRemoteJson(path: string, init?: RequestInit) {
   const apiUrl = process.env.LOCAL_AI_API_URL?.replace(/\/+$/, "");
@@ -143,6 +144,45 @@ export async function POST(req: NextRequest) {
           qualityGatePassed: result.candidates[0]?.qualityGatePassed,
           latencyMs: Date.now() - startedAt,
         });
+      }
+
+      case "probe_connection": {
+        // Local AI admin-connect mission, 2026-09-06 -- exercises the exact
+        // production probeLocalAIConnection() the admin health-check route
+        // calls, against the REAL currently-configured LOCAL_AI_API_URL/
+        // LOCAL_AI_API_KEY, so the tunnel-down/api-error/connected
+        // classification can be verified live rather than only via
+        // fetchImpl-mocked unit tests.
+        const apiUrl = process.env.LOCAL_AI_API_URL;
+        const apiKey = process.env.LOCAL_AI_API_KEY;
+        if (!apiUrl || !apiKey) return NextResponse.json({ error: "local_ai_not_configured" }, { status: 400 });
+        const probe = await probeLocalAIConnection({ apiUrl, apiKey });
+        return NextResponse.json({ ...probe, latencyMs: Date.now() - startedAt });
+      }
+
+      case "raw_pair": {
+        // Local AI admin-connect mission, 2026-09-06 -- unfiltered pass-through
+        // to /v1/pair (no Bearer header: pairing is what OBTAINS the api key
+        // in the first place, so a not-yet-paired admin must be able to call
+        // this with none) so the real accepted request/response shape
+        // (field name for the code, the shape of a successful machine_api_key
+        // response, and the shape of an invalid/expired-code error) can be
+        // discovered from the server's own behavior, never guessed.
+        const apiUrl = process.env.LOCAL_AI_API_URL?.replace(/\/+$/, "");
+        if (!apiUrl) return NextResponse.json({ error: "local_ai_url_not_configured" }, { status: 400 });
+        const response = await fetch(`${apiUrl}/v1/pair`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const text = await response.text().catch(() => "");
+        let body: unknown;
+        try {
+          body = JSON.parse(text);
+        } catch {
+          body = { raw: text.slice(0, 500) };
+        }
+        return NextResponse.json({ ok: response.ok, status: response.status, body, latencyMs: Date.now() - startedAt });
       }
 
       case "raw_image": {

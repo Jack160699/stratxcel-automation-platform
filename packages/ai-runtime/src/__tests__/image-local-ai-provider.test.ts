@@ -67,6 +67,19 @@ async function testLocalSucceedsAndCloudNeverTouched() {
     assert.equal(result.candidates.length, 1);
     assert.equal(result.candidates[0]!.qualityGatePassed, true);
     assert.equal(cloudCalled, false);
+    // Image Quality + Marketing Creative Certification mission (2026-09-06):
+    // real, severe defect found live and root-caused -- the remote
+    // server's own real id ("img_test_1" here, "img_53605480c9" live) is
+    // NOT a UUID, but this candidate's `id` used to BE that raw string,
+    // and lib/image-generation/service.ts inserts it straight into
+    // image_generation_candidates.id (a `uuid` column) -- every single
+    // real Local AI candidate insert failed with a Postgres
+    // "invalid input syntax for type uuid" error (CANDIDATE_PERSIST_FAILED),
+    // confirmed live: 3/3 real automated Local AI jobs for a fresh tenant
+    // failed with exactly that code this pass. `id` must always be a real
+    // UUID; the server's own id is preserved separately.
+    assert.match(result.candidates[0]!.id, /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i, "candidate.id must always be a real UUID, never the remote server's own non-UUID image_id -- see this test's comment for the real Postgres failure this caused");
+    assert.equal(result.candidates[0]!.providerOutputId, "img_test_1", "the remote server's own real id must still be preserved, just in a separate field the DB's text provider_output_id column actually accepts");
     console.log("image-local-ai-provider.test.ts: local succeeds + passes quality gate -> Gemini/OpenAI never touched — PASS");
   });
 }
