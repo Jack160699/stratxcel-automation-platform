@@ -131,7 +131,16 @@ export function describeCompositionShape(adComposition: unknown): string | null 
   if (!canvas || !Array.isArray(raw.blocks)) return null;
   const kinds = raw.blocks
     .map((b) => (b && typeof b === "object" ? (b as { kind?: unknown }).kind : null))
-    .filter((k): k is string => typeof k === "string" && k.length > 0);
+    .filter((k): k is string => typeof k === "string" && k.length > 0)
+    // Real gap found live: two Solar ads fingerprinted as different
+    // ("headline+subhead+cta" vs "eyebrow+headline+body+cta") and so passed
+    // the anti-repetition check, while rendering as visually the same ad --
+    // subhead and body are the same tier of running copy, and an eyebrow is
+    // a one-line kicker that does not change the design. Collapsing the
+    // interchangeable kinds makes the fingerprint describe what a reader
+    // actually SEES, which is what the diversity signal is for.
+    .map((kind) => (kind === "subhead" ? "body" : kind))
+    .filter((kind) => kind !== "eyebrow");
   if (!kinds.length) return null;
   return `${canvas}:${kinds.join("+")}`;
 }

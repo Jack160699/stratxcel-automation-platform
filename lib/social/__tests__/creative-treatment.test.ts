@@ -359,6 +359,18 @@ test("describeCompositionShape fingerprints canvas + block sequence, and refuses
     describeCompositionShape({ canvas: "photo_full", blocks: [{ kind: "headline", text: "A" }, { kind: "cta", text: "B" }] }),
     describeCompositionShape({ canvas: "photo_full", blocks: [{ kind: "headline", text: "totally different words" }, { kind: "cta", text: "also different" }] }),
   );
+  // Real gap found live: these two rendered as visually the same ad but
+  // fingerprinted differently, so the anti-repetition check passed.
+  assert.equal(
+    describeCompositionShape({ canvas: "photo_full", blocks: [{ kind: "headline" }, { kind: "subhead" }, { kind: "cta" }] }),
+    describeCompositionShape({ canvas: "photo_full", blocks: [{ kind: "eyebrow" }, { kind: "headline" }, { kind: "body" }, { kind: "cta" }] }),
+    "subhead/body are the same tier of running copy and an eyebrow does not change the design -- these must collide",
+  );
+  assert.notEqual(
+    describeCompositionShape({ canvas: "photo_full", blocks: [{ kind: "headline" }, { kind: "body" }, { kind: "cta" }] }),
+    describeCompositionShape({ canvas: "photo_full", blocks: [{ kind: "headline" }, { kind: "steps", items: ["a", "b"] }, { kind: "cta" }] }),
+    "a steps ad and a body-copy ad are genuinely different designs and must not collide",
+  );
   assert.equal(describeCompositionShape(null), null);
   assert.equal(describeCompositionShape({ canvas: "photo_full" }), null, "no blocks is not a design");
   assert.equal(describeCompositionShape({ blocks: [{ kind: "headline" }] }), null, "no canvas is not a design");
