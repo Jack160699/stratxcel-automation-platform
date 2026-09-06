@@ -47,6 +47,7 @@ import {
   validateCreativeTreatment,
   safeParseJson,
   forceArchetypeOntoTreatment,
+  describeCompositionShape,
   describeTextStructureShape,
   type ArchetypeRoutingContext,
   type CreativeTreatment,
@@ -175,6 +176,12 @@ async function generateCreativeTreatmentWithRouting(
     // last few FEATURE_POSTER treatments -- never blocks generation if it
     // fails or finds nothing.
     let recentTextStructures: string[] = [];
+    // FINAL HERMES -- RESTORE TRUE MARKETING CREATIVE GENERATION
+    // (2026-09-06): the same read now also collects the recent AD DESIGNS
+    // (canvas + block sequence), which is what actually repeated when two
+    // different objectives for the same business came back as the same
+    // creative -- see describeCompositionShape.
+    let recentCompositions: string[] = [];
     try {
       const { data: recentJobs } = await args.writeClient
         .from("image_generation_jobs")
@@ -183,10 +190,13 @@ async function generateCreativeTreatmentWithRouting(
         .not("creative_treatment", "is", null)
         .order("created_at", { ascending: false })
         .limit(5);
-      recentTextStructures = (recentJobs ?? [])
-        .map((row) => (row as { creative_treatment?: unknown }).creative_treatment as { layoutArchetype?: unknown; textHierarchy?: unknown } | null)
-        .filter((t): t is { layoutArchetype?: unknown; textHierarchy?: unknown } => Boolean(t) && t!.layoutArchetype === "FEATURE_POSTER" && Array.isArray(t!.textHierarchy))
+      const treatments = (recentJobs ?? [])
+        .map((row) => (row as { creative_treatment?: unknown }).creative_treatment as { layoutArchetype?: unknown; textHierarchy?: unknown; adComposition?: unknown } | null)
+        .filter((t): t is { layoutArchetype?: unknown; textHierarchy?: unknown; adComposition?: unknown } => Boolean(t));
+      recentTextStructures = treatments
+        .filter((t) => t.layoutArchetype === "FEATURE_POSTER" && Array.isArray(t.textHierarchy))
         .map((t) => describeTextStructureShape(t.textHierarchy as OnImageTextElement[]));
+      recentCompositions = [...new Set(treatments.map((t) => describeCompositionShape(t.adComposition)).filter((s): s is string => Boolean(s)))];
     } catch {
       // Diversity is a real-quality signal, never a hard dependency --
       // generation must still proceed without it.

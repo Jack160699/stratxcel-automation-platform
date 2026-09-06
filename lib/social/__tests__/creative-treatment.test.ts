@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { validateCreativeTreatment, buildCreativeTreatmentPrompt, resolveOverlayElements, extractVerifiedContactInfo, forceArchetypeOntoTreatment, describeTextStructureShape, LAYOUT_ARCHETYPE_IDS, type CreativeTreatment } from "../creative-treatment.ts";
+import { validateCreativeTreatment, buildCreativeTreatmentPrompt, resolveOverlayElements, extractVerifiedContactInfo, forceArchetypeOntoTreatment, describeTextStructureShape, describeCompositionShape, LAYOUT_ARCHETYPE_IDS, type CreativeTreatment } from "../creative-treatment.ts";
 import { RESTAURANT_FIXTURE } from "./fixtures/business-fixtures.ts";
 import { buildCreativeBrief } from "../creative-brief.ts";
 import { deriveBrandVisualDNA } from "../brand-visual-dna.ts";
@@ -315,6 +315,7 @@ test("each of the 13 registered layout archetypes is accepted", () => {
 function buildRestaurantPromptMessages(
   routingContext?: Parameters<typeof buildCreativeTreatmentPrompt>[0]["routingContext"],
   recentTextStructures?: string[],
+  recentCompositions?: string[],
 ) {
   const brief = buildCreativeBrief({
     businessName: RESTAURANT_FIXTURE.businessName, industryText: RESTAURANT_FIXTURE.industryText, descriptionText: RESTAURANT_FIXTURE.descriptionText,
@@ -323,8 +324,45 @@ function buildRestaurantPromptMessages(
   });
   const dna = deriveBrandVisualDNA({ brandColors: RESTAURANT_FIXTURE.brandColors, brandTone: RESTAURANT_FIXTURE.brandTone, industryCategory: "restaurant" });
   const vocab = getIndustryVisualVocabulary("restaurant");
-  return buildCreativeTreatmentPrompt({ brief, businessName: RESTAURANT_FIXTURE.businessName, industry: "restaurant", brandDNA: dna, visualVocab: vocab, mediaType: "image", routingContext, recentTextStructures });
+  return buildCreativeTreatmentPrompt({ brief, businessName: RESTAURANT_FIXTURE.businessName, industry: "restaurant", brandDNA: dna, visualVocab: vocab, mediaType: "image", routingContext, recentTextStructures, recentCompositions });
 }
+
+test("the ad-composition brief makes the OBJECTIVE decide the design, and names headline+body+cta as the weak default rather than the starting point", () => {
+  const combined = buildRestaurantPromptMessages().map((m) => m.content).join("\n");
+  // The real failure: "service/trust" and "savings/benefit/offer" for the
+  // same business both came back as photo_full:headline+body+cta.
+  assert.ok(/OBJECTIVE AND CONCEPT ANGLE ABOVE DECIDE THIS DESIGN/.test(combined), "the objective must be stated as the thing that decides the design");
+  assert.ok(/WEAKEST ANSWER/.test(combined), "the default shape must be explicitly called out as the weak choice");
+  for (const kind of ["stat", "offer", "badges", "benefits", "steps", "comparison", "quote"]) {
+    assert.ok(combined.includes(`"kind": "${kind}"`), `the advertising vocabulary must offer the ${kind} block`);
+  }
+  assert.ok(/never invent a statistic, price, discount, award or testimonial/.test(combined), "fabrication must be forbidden at the point the number-led blocks are offered");
+});
+
+test("recent ad designs for the same tenant are surfaced with an explicit instruction to produce a different one", () => {
+  const withHistory = buildRestaurantPromptMessages(undefined, undefined, ["photo_full:headline+body+cta", "photo_full:eyebrow+headline+body+cta"]).map((m) => m.content).join("\n");
+  assert.ok(withHistory.includes("photo_full:headline+body+cta"), "the real prior design must be quoted back verbatim");
+  assert.ok(/genuinely different design/.test(withHistory), "must ask for a different design, not merely different words");
+
+  const noHistory = buildRestaurantPromptMessages().map((m) => m.content).join("\n");
+  assert.ok(!/already used these exact designs/.test(noHistory), "no fabricated history when the tenant genuinely has none");
+});
+
+test("describeCompositionShape fingerprints canvas + block sequence, and refuses anything that isn't a real composition", () => {
+  assert.equal(
+    describeCompositionShape({ canvas: "photo_side", blocks: [{ kind: "headline", text: "x" }, { kind: "steps", items: ["a", "b"] }, { kind: "cta", text: "go" }] }),
+    "photo_side:headline+steps+cta",
+  );
+  // Two ads that differ only in wording share a fingerprint -- that is the
+  // repetition this signal exists to catch.
+  assert.equal(
+    describeCompositionShape({ canvas: "photo_full", blocks: [{ kind: "headline", text: "A" }, { kind: "cta", text: "B" }] }),
+    describeCompositionShape({ canvas: "photo_full", blocks: [{ kind: "headline", text: "totally different words" }, { kind: "cta", text: "also different" }] }),
+  );
+  assert.equal(describeCompositionShape(null), null);
+  assert.equal(describeCompositionShape({ canvas: "photo_full" }), null, "no blocks is not a design");
+  assert.equal(describeCompositionShape({ blocks: [{ kind: "headline" }] }), null, "no canvas is not a design");
+});
 
 test("buildCreativeTreatmentPrompt explains all 13 layout archetypes and requires a deliberate choice when unrestricted", () => {
   const messages = buildRestaurantPromptMessages();

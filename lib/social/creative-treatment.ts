@@ -91,6 +91,21 @@ export interface CreativeTreatmentInput {
    * one outright (a business can legitimately need the same shape twice
    * in a row if it's genuinely the strongest choice both times). */
   recentTextStructures?: string[];
+  /**
+   * FINAL HERMES -- RESTORE TRUE MARKETING CREATIVE GENERATION
+   * (2026-09-06): real failure found live on the first run of the new
+   * composition layer. Given two genuinely different objectives for the
+   * same Solar business ("service/trust" then "savings/benefit/offer"),
+   * the model returned the same canvas, the same block sequence, and a
+   * near-identical headline both times -- it anchored on the business's
+   * own brand description and ignored the second objective entirely.
+   * Concept, pillar, archetype and on-image text shape all had recency
+   * tracking; the DESIGN ITSELF had none. Each entry is a real block-kind
+   * signature from a recent real composition for this same tenant (see
+   * describeCompositionShape) -- used only to ask for a different design,
+   * never to forbid one.
+   */
+  recentCompositions?: string[];
 }
 
 /** Real shape fingerprint for a treatment's on-image message -- the
@@ -101,6 +116,26 @@ export interface CreativeTreatmentInput {
  * from persisted creative_spec.treatment rows, studio-creative-
  * treatment.ts from recent image_generation_jobs rows) computes the exact
  * same fingerprint, never a bespoke ad hoc comparison. */
+/**
+ * Real design fingerprint of an ad composition: its canvas mode plus the
+ * ordered list of block kinds, e.g. "photo_full:headline+body+cta". Two
+ * creatives sharing this string are the same design carrying different
+ * words -- exactly the repetition this signal exists to surface. Reads
+ * defensively from `unknown` so it can be applied to whatever was
+ * persisted on a past job without trusting its shape.
+ */
+export function describeCompositionShape(adComposition: unknown): string | null {
+  if (!adComposition || typeof adComposition !== "object") return null;
+  const raw = adComposition as { canvas?: unknown; blocks?: unknown };
+  const canvas = typeof raw.canvas === "string" ? raw.canvas : null;
+  if (!canvas || !Array.isArray(raw.blocks)) return null;
+  const kinds = raw.blocks
+    .map((b) => (b && typeof b === "object" ? (b as { kind?: unknown }).kind : null))
+    .filter((k): k is string => typeof k === "string" && k.length > 0);
+  if (!kinds.length) return null;
+  return `${canvas}:${kinds.join("+")}`;
+}
+
 export function describeTextStructureShape(textHierarchy: OnImageTextElement[]): string {
   return textHierarchy
     .filter((e) => e.role !== "brandLabel" && e.role !== "cta" && e.text?.trim())
@@ -452,7 +487,17 @@ export function buildCreativeTreatmentPrompt(input: CreativeTreatmentInput): AIM
     `  - A "most people get this wrong" or old-way/new-way message -> use "comparison".`,
     `  - A trust/credibility message -> "benefits" and/or "badges" carry it better than a paragraph.`,
     `  - A single emotional or decision-anxiety message -> a strong "headline" plus one "body" may genuinely be right.`,
-    `Rules: use 2-5 blocks total (a real ad is not a leaflet). Do NOT include a "brandLabel" block -- the business logo/name is placed automatically. Every string must be real, specific, and drawn from the verified facts -- never invent a statistic, price, discount, award or testimonial. If you have no real number, do not use "stat"; if there is no real offer, do not use "offer". Two different strategies for the same business MUST NOT produce the same block sequence.`,
+    `Rules: use 2-5 blocks total (a real ad is not a leaflet). Do NOT include a "brandLabel" block -- the business logo/name is placed automatically. Every string must be real, specific, and drawn from the verified facts -- never invent a statistic, price, discount, award or testimonial. If you have no real number, do not use "stat"; if there is no real offer, do not use "offer".`,
+    // Real failure this rule exists to stop, found live on the first run:
+    // given "service/trust" and then "savings/benefit/offer" for the same
+    // Solar business, the model returned the same canvas, the same block
+    // sequence and a near-identical headline both times -- it anchored on
+    // the brand description and silently discarded the second objective.
+    `THE OBJECTIVE AND CONCEPT ANGLE ABOVE DECIDE THIS DESIGN. Before choosing blocks, state to yourself what this specific post is selling and why a reader should care RIGHT NOW -- then pick the blocks that make that obvious at a glance. A savings/offer objective must NOT come back as a trust/craftsmanship ad, and a trust objective must NOT come back as a discount ad. If the objective names money, the money must be the visually dominant element; if it names a process or journey, the stages must be visible; if it names a decision or worry, the tension and its resolution must both be visible.`,
+    `"headline" + "body" + "cta" is the DEFAULT SHAPE AND THE WEAKEST ANSWER. Use it only when you have genuinely concluded no stronger structure fits this objective -- not as a starting point.`,
+    (input.recentCompositions ?? []).length
+      ? `This business's own recent real ads already used these exact designs: ${(input.recentCompositions ?? []).join(", ")} (format is "canvas:block+block+block"). Produce a genuinely different design now -- a different canvas, a different block sequence, or both. Repeating one of these is a failure unless it is unarguably the only structure that fits this specific objective.`
+      : "",
     ``,
     `Respond with ONLY a single JSON object, exactly this shape (every field required, all strings real and specific, never a placeholder):`,
     `{`,
