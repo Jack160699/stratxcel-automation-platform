@@ -31,9 +31,15 @@ export default async function LocalAIPage() {
       <header>
         <h1 className="font-sx-sans text-xl font-semibold text-sx-text">Local AI</h1>
         <p className="mt-1 text-sm text-sx-text-muted">
-          Pair and monitor the owner&apos;s self-hosted Local AI server. Real production inference (Social Autopilot, WhatsApp
-          agent) continues to run on the deployed LOCAL_AI_API_URL/LOCAL_AI_API_KEY configuration — this page manages the
+          Pair and monitor the owner&apos;s self-hosted Local AI server. It serves as general AI fallback — chat, coding,
+          website generation, and reasoning task classes — for real production paths (Social Autopilot, WhatsApp agent) that
+          opt into it, running on the deployed LOCAL_AI_API_URL/LOCAL_AI_API_KEY configuration. This page manages the
           connection record and its live health checks, and does not itself redeploy the running server.
+        </p>
+        <p className="mt-2 text-sm text-sx-text-muted">
+          <strong className="text-sx-text">It is never used for image generation.</strong> Customer-facing image generation
+          (Social Autopilot, Creative Studio, manual and automated) is cloud-only — Gemini primary, OpenAI fallback — and does
+          not consult this connection or the LOCAL_AI_ENABLED flag at all.
         </p>
       </header>
       <LocalAIConnectionPanel initialConnection={connection} />

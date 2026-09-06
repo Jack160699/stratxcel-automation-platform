@@ -191,9 +191,16 @@ export default async function SystemHealthPage() {
       detail: `Status=${ai.openai.status}; configured=${ai.openai.configured}; reachable=${ai.openai.reachable}; modelAvailable=${ai.openai.modelAvailable}; circuitOpen=${ai.openai.circuitOpen}.`,
     },
     {
-      name: "AI Runtime (Local)",
+      // FINAL STRATXCEL -- REMOVE LOCAL AI FROM IMAGE GENERATION (2026-09-06):
+      // renamed from "AI Runtime (Local)" and the detail text rewritten so
+      // this never reads as an image-capable provider. It genuinely is
+      // general-purpose fallback (chat/coding/website/reasoning task
+      // classes only, gated by routingEnabled) -- image generation below
+      // ("AI Media (Image)") is cloud-only unconditionally and does not
+      // consult this row's status or the LOCAL_AI_ENABLED flag at all.
+      name: "AI Runtime (Local — General Fallback)",
       status: aiStatusToIntegration(ai.local.status),
-      detail: `Status=${ai.local.status}; configured=${ai.local.configured}; reachable=${ai.local.reachable}; modelAvailable=${ai.local.modelAvailable}; circuitOpen=${ai.local.circuitOpen}; routingEnabled=${ai.local.routingEnabled} (LOCAL_AI_ENABLED). Remote self-hosted server — task-class routing only selects it when routingEnabled is true.`,
+      detail: `Status=${ai.local.status}; configured=${ai.local.configured}; reachable=${ai.local.reachable}; modelAvailable=${ai.local.modelAvailable}; circuitOpen=${ai.local.circuitOpen}; routingEnabled=${ai.local.routingEnabled} (LOCAL_AI_ENABLED). Remote self-hosted server for chat/coding/website/reasoning task classes only, selected when routingEnabled is true. NEVER used for image generation — see "AI Media (Image)" below, which is cloud-only regardless of this flag.`,
     },
     {
       name: "Research Engine",
@@ -203,7 +210,7 @@ export default async function SystemHealthPage() {
     {
       name: "AI Media (Image)",
       status: aiStatusToIntegration(ai.image.status),
-      detail: `Status=${ai.image.status}; storageReady=${ai.image.storageReady}; budgetLedgerReady=${ai.budgetLedgerReady}; serviceWriter=${ai.serviceMeteringWriterReady}; primaryModelAvailable=${ai.image.primaryModelAvailable}; primary=${ai.image.primaryModel}. Key presence alone is not Live.`,
+      detail: `Status=${ai.image.status}; storageReady=${ai.image.storageReady}; budgetLedgerReady=${ai.budgetLedgerReady}; serviceWriter=${ai.serviceMeteringWriterReady}; primaryModelAvailable=${ai.image.primaryModelAvailable}; primary=${ai.image.primaryModel}. Cloud-only (Gemini primary, OpenAI fallback) — Local AI is structurally excluded from image generation, not merely disabled by a flag. Key presence alone is not Live.`,
     },
     {
       name: "AI Media (Video/Veo)",
