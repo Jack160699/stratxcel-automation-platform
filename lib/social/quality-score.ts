@@ -191,7 +191,17 @@ const GUARANTEE_PATTERN = /\b(?:guarantee(?:d)?|100%\s+(?:satisfaction|money[- ]
 // needs its own pattern + the same "supported by verified facts" gate.
 const FABRICATED_OFFER_PATTERN = /\b(?:festive|early[- ]access|early[- ]bird|limited[- ](?:time|availability|slots?)|exclusive|special)\s+(?:offer|slot|setup|deal|promo(?:tion)?|discount|access|event|pricing|package)\b/i;
 
-function claimTokensNotInFacts(caption: string, verifiedFacts: string[]): string[] {
+/**
+ * Exported (Creative Generation Architecture Repair, 2026-09-07) so
+ * creative-treatment.ts's validator can apply the SAME numeric-claim fact-
+ * check (phone/discount/rating/review-count/price/guarantee) to on-image
+ * text -- a price or discount rendered directly onto a creative's pixels
+ * (the "offer"/"stat" adComposition blocks, or a plain headline) is exactly
+ * the kind of critical text that must never be invented, and nothing
+ * checked it there before this; only the caption ever went through this
+ * function.
+ */
+export function claimTokensNotInFacts(caption: string, verifiedFacts: string[]): string[] {
   const factsBlob = verifiedFacts.join(" | ").toLowerCase();
   const found: string[] = [];
   for (const pattern of [PHONE_PATTERN, DISCOUNT_PATTERN, RATING_PATTERN, REVIEW_COUNT_PATTERN, PRICE_PATTERN, GUARANTEE_PATTERN]) {

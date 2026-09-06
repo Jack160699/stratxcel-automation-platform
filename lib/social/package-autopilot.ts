@@ -46,7 +46,7 @@ import { buildCampaignStrategy } from "./campaign-strategy-planner.ts";
 import { evaluateVisualQuality } from "./visual-quality-score.ts";
 import { runGenerationLoop } from "./generation-loop.ts";
 import { parseGeneratedCopy, type GeneratedCopy } from "./generated-copy-parser.ts";
-import { buildCreativeTreatmentPrompt, validateCreativeTreatment, forceArchetypeOntoTreatment, safeParseJson, describeTextStructureShape, describeCompositionShape, type CreativeTreatment, type LayoutArchetype } from "./creative-treatment.ts";
+import { runCreativeTreatmentAttempts, describeTextStructureShape, describeCompositionShape, type CreativeTreatment, type CreativeTreatmentValidationIssue, type LayoutArchetype } from "./creative-treatment.ts";
 import type { OnImageTextElement } from "./text-density.ts";
 import { deriveBrandVisualDNA } from "./brand-visual-dna.ts";
 import { getIndustryVisualVocabulary } from "./industry-visual-vocabulary.ts";
@@ -1748,41 +1748,55 @@ export async function prepareNearTermPackageItems(
       }
 
       let treatment: CreativeTreatment | null = null;
+      let treatmentIssues: CreativeTreatmentValidationIssue[] = [];
+      let treatmentSynthesized = false;
       if (mediaType !== "text") {
         try {
-          const treatmentMessages = buildCreativeTreatmentPrompt({
-            brief,
-            businessName: brandProfile.identity.name?.trim() || "",
-            industry: brief.industry,
-            brandDNA,
-            visualVocab,
-            mediaType,
-            researchInsights,
-            routingContext,
-            recentTextStructures,
-            recentCompositions,
-            creativeFormat: brief.creativeFormat,
-          });
-          const treatmentResult = await provider.complete(
-            // buildCreativeTreatmentPrompt only ever emits "system"/"user"
-            // roles (see its body) -- AIMessage's broader role union
-            // (includes "developer", which AgentTurnMessage doesn't model)
-            // is why this needs an explicit cast rather than a plain pass.
-            treatmentMessages.map((m) => ({ role: m.role, content: m.content })) as unknown as Parameters<typeof provider.complete>[0],
-            [],
-            { brandInstructions: selectGeminiBrandInstructions(brandProfile), tenantId: authorization.tenant_id, businessInformation }
+          // Creative Generation Architecture Repair (2026-09-07): a real
+          // corrective retry, not a single shot -- see
+          // runCreativeTreatmentAttempts's own doc comment for why (verified
+          // live against the real Gemini API: a structure-required format
+          // that came back as a bare photo on attempt 1 is a real, common
+          // failure mode this exists to catch and fix, not just detect).
+          const result = await runCreativeTreatmentAttempts(
+            {
+              brief,
+              businessName: brandProfile.identity.name?.trim() || "",
+              industry: brief.industry,
+              brandDNA,
+              visualVocab,
+              mediaType,
+              researchInsights,
+              routingContext,
+              recentTextStructures,
+              recentCompositions,
+              creativeFormat: brief.creativeFormat,
+            },
+            // Thin wrapper around this file's own existing provider-calling
+            // convention -- runCreativeTreatmentAttempts is provider-agnostic
+            // by construction and never assumes Gemini/OpenAI/any vendor.
+            async (msgs) => {
+              const res = await provider.complete(
+                msgs.map((m) => ({ role: m.role, content: m.content })) as unknown as Parameters<typeof provider.complete>[0],
+                [],
+                { brandInstructions: selectGeminiBrandInstructions(brandProfile), tenantId: authorization.tenant_id, businessInformation },
+              );
+              return res.text;
+            },
           );
-          const parsedTreatment = safeParseJson(treatmentResult.text);
-          const issues = validateCreativeTreatment(parsedTreatment, { concept: brief.concept, routingContext, industry: brief.industry, creativeFormat: brief.creativeFormat });
-          if (!issues.length) treatment = forceArchetypeOntoTreatment(parsedTreatment as CreativeTreatment, routingContext);
+          treatment = result.treatment;
+          treatmentIssues = result.issues;
+          treatmentSynthesized = result.synthesized;
         } catch {
           treatment = null;
         }
         await recordCampaignTask(service, {
           authorizationId: authorization.id, tenantId: authorization.tenant_id, queueItemId: item.id,
           agentRole: "creative_director", status: treatment ? "COMPLETED" : "FAILED",
-          output: treatment ? { concept: treatment.concept, hook: treatment.hook, layoutArchetype: treatment.layoutArchetype, creativeFormat: brief.creativeFormat } : null,
-          failureReason: treatment ? null : "treatment_generation_soft_failed_falls_back_to_brief_only",
+          output: treatment
+            ? { concept: treatment.concept, hook: treatment.hook, layoutArchetype: treatment.layoutArchetype, creativeFormat: brief.creativeFormat, synthesized: treatmentSynthesized }
+            : null,
+          failureReason: treatment ? null : `treatment_generation_soft_failed_falls_back_to_brief_only: ${treatmentIssues.map((i) => `${i.field}:${i.issue}`).join("; ").slice(0, 300)}`,
         });
       }
       currentStage = "copywriter";

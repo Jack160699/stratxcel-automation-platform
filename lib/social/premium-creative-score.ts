@@ -57,10 +57,12 @@
  * No caller may treat a null visual dimension as a zero or as passing.
  */
 
-import type { CreativeTreatment } from "./creative-treatment.ts";
+import { hasSubstantiveAdComposition, type CreativeTreatment } from "./creative-treatment.ts";
 import type { CreativeBrief } from "./creative-brief.ts";
 import type { TextDensityMeasurement } from "./text-density.ts";
 import { textSimilarity } from "./content-diversity.ts";
+import { FORBIDDEN_TEMPLATE_BUZZWORDS } from "./quality-score.ts";
+import { getCreativeFormatDefinition, type CreativeFormat } from "./creative-format.ts";
 
 export interface PremiumScoreBreakdown {
   strategy: number;
@@ -107,7 +109,14 @@ export interface PremiumScoreResult {
   diagnostics: string[];
 }
 
+// Creative Generation Architecture Repair (2026-09-07): merged with the
+// SAME Hard Anti-Template list quality-score.ts and creative-treatment.ts's
+// validator already enforce, plus this module's own smaller, previously-
+// disjoint GENERIC_FILLER list -- three separate genericness lists drifting
+// independently was itself a real gap the "close remaining gaps" pass
+// exists to fix.
 const GENERIC_FILLER = [
+  ...FORBIDDEN_TEMPLATE_BUZZWORDS,
   "experience excellence", "quality you can trust", "contact us today", "don't miss out",
   "best in class", "unmatched service", "state of the art", "world class",
 ];
@@ -117,13 +126,26 @@ function containsGenericFiller(text: string): boolean {
   return GENERIC_FILLER.some((phrase) => lower.includes(phrase));
 }
 
-function scoreStrategy(treatment: CreativeTreatment, brief: CreativeBrief): number {
+function scoreStrategy(treatment: CreativeTreatment, brief: CreativeBrief, creativeFormat?: CreativeFormat): number {
   let score = PREMIUM_DIMENSION_WEIGHTS.strategy;
   if (!treatment.audienceTension || treatment.audienceTension.trim().length < 15) score -= 4;
   if (!treatment.cta.rationale || treatment.cta.rationale.trim().length < 10) score -= 3;
-  if (treatment.cta.needed && brief.objective && !treatment.cta.rationale.toLowerCase().includes(brief.objective.toLowerCase().slice(0, 4))) {
-    // soft signal only, not a hard requirement -- CTA rationale doesn't have to
-    // literally name the objective, so this is a small deduction not a wipeout
+  // Creative Generation Architecture Repair (2026-09-07): a structure-
+  // required format (OFFER_PROMOTION, MARKETING_INFOGRAPHIC,
+  // FEATURE_BENEFIT_AD, etc.) that reached this scorer at all already
+  // passed creative-treatment.ts's own hard validateCreativeTreatment gate
+  // (which now rejects a bare-photo result for these formats -- see that
+  // module's header), so a real adComposition should always be present
+  // here. This is a defense-in-depth signal, not the primary enforcement:
+  // it catches a treatment built by a caller that skipped that gate (e.g.
+  // a harness script), or a genuinely weak-but-technically-valid
+  // composition (exactly 2 blocks when the format's directive clearly
+  // calls for more).
+  if (creativeFormat) {
+    const def = getCreativeFormatDefinition(creativeFormat);
+    if (def.textPolicy === "structure_required" && !hasSubstantiveAdComposition(treatment.adComposition)) {
+      score -= 6;
+    }
   }
   return Math.max(0, score);
 }
@@ -190,9 +212,11 @@ export function scorePremiumCreative(input: {
   generatedCaption?: string | null;
   textDensity?: TextDensityMeasurement;
   recentConceptTexts?: string[];
+  /** Optional -- omitting it preserves the exact prior scoring behavior. */
+  creativeFormat?: CreativeFormat;
 }): PremiumScoreResult {
   const breakdown: PremiumScoreBreakdown = {
-    strategy: scoreStrategy(input.treatment, input.brief),
+    strategy: scoreStrategy(input.treatment, input.brief, input.creativeFormat ?? input.brief.creativeFormat),
     businessSpecificity: scoreBusinessSpecificity(input.treatment, input.brief),
     creativeConcept: scoreCreativeConcept(input.treatment, input.brief),
     copy: scoreCopy(input.treatment, input.generatedCaption ?? null),

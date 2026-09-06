@@ -33,7 +33,7 @@ import type { OnImageTextElement } from "./text-density.ts";
 import { findPlaceholderOrFiller } from "./placeholder-detection.ts";
 import { ARCHETYPE_IDS, ARCHETYPE_REGISTRY, isValidArchetype, type LayoutArchetype } from "./archetype-registry.ts";
 import { buildCreativeFormatDirective, getCreativeFormatDefinition, type CreativeFormat } from "./creative-format.ts";
-import { FORBIDDEN_TEMPLATE_BUZZWORDS } from "./quality-score.ts";
+import { FORBIDDEN_TEMPLATE_BUZZWORDS, claimTokensNotInFacts } from "./quality-score.ts";
 
 /**
  * Subscription-Gated Visual Archetypes brief Section 6: an explicit routing
@@ -241,6 +241,20 @@ export interface CreativeTreatment {
    * on the renderer -- `parseCreativeComposition` is the single validator.
    */
   adComposition?: unknown;
+  /**
+   * Creative Generation Architecture Repair (2026-09-07): the server-
+   * decided CreativeFormat this treatment was generated FOR -- stamped
+   * onto the treatment (never asked of the AI; it's not part of
+   * TREATMENT_JSON_SCHEMA) by every real production call site
+   * (package-autopilot.ts, studio-creative-treatment.ts) right after a
+   * treatment passes validation, so it travels through the exact same
+   * `creative_treatment`/`creative_spec.treatment` JSONB column already
+   * used everywhere else -- no new DB column. Lets processImageGenerationJob
+   * (lib/image-generation/service.ts), the sole shared render entry point
+   * for BOTH the automated and Studio pipelines, know which format's
+   * text-policy applies at render time without re-deriving it.
+   */
+  creativeFormat?: CreativeFormat;
 }
 
 /** Exported so callers that make their own provider.complete() call
@@ -586,7 +600,7 @@ export interface CreativeTreatmentValidationIssue {
  * the renderer is the single source of truth for whether it's actually
  * valid; this just catches the empty/trivial case for the soft
  * format-compliance check below. */
-function hasSubstantiveAdComposition(value: unknown): boolean {
+export function hasSubstantiveAdComposition(value: unknown): boolean {
   if (!value || typeof value !== "object") return false;
   const blocks = (value as { blocks?: unknown }).blocks;
   return Array.isArray(blocks) && blocks.length >= 2;
@@ -628,7 +642,22 @@ function collectStrings(value: unknown, out: string[] = [], depth = 0): string[]
  * short/empty) sneaking through as if it were real creative work. */
 export function validateCreativeTreatment(
   treatment: unknown,
-  context: { concept: string; routingContext?: ArchetypeRoutingContext; industry?: IndustryCategory; creativeFormat?: CreativeFormat }
+  context: {
+    concept: string;
+    routingContext?: ArchetypeRoutingContext;
+    industry?: IndustryCategory;
+    creativeFormat?: CreativeFormat;
+    /**
+     * Creative Generation Architecture Repair (2026-09-07): OPTIONAL and
+     * only activates the fabricated-claim check below when explicitly
+     * provided -- omitting it preserves the exact prior behavior for any
+     * caller/fixture not yet updated (never a false-positive from an
+     * assumed-empty facts list). Every real production call site
+     * (runCreativeTreatmentAttempts) always supplies the brief's real
+     * verifiedFacts.
+     */
+    verifiedFacts?: string[];
+  }
 ): CreativeTreatmentValidationIssue[] {
   const issues: CreativeTreatmentValidationIssue[] = [];
   const t = treatment as Partial<CreativeTreatment> | null | undefined;
@@ -676,6 +705,12 @@ export function validateCreativeTreatment(
       if (leak) issues.push({ field: "textHierarchy", issue: `"${el.role}" text contains implementation-instruction/placeholder leakage: "${leak}"` });
       const buzzword = el?.text ? findForbiddenBuzzword(el.text) : null;
       if (buzzword) issues.push({ field: "textHierarchy", issue: `"${el.role}" text violates the Hard Anti-Template rule with generic filler phrase: "${buzzword}"` });
+      if (context.verifiedFacts && el?.text) {
+        const unsupported = claimTokensNotInFacts(el.text, context.verifiedFacts);
+        if (unsupported.length) {
+          issues.push({ field: "textHierarchy", issue: `"${el.role}" text contains a claim not present in this business's verified facts: "${unsupported[0]}" -- never invent a price, discount, phone number, rating, review count, or guarantee` });
+        }
+      }
       // Real defect found live on StratXcel's own published output (this
       // exact real headline: "Local SEO that runs while you run your
       // clinic."): checkTargetIndustryContamination was already applied to
@@ -703,6 +738,12 @@ export function validateCreativeTreatment(
     if (leak) issues.push({ field: "cta", issue: `cta.text contains implementation-instruction/placeholder leakage: "${leak}"` });
     const buzzword = findForbiddenBuzzword(t.cta.text);
     if (buzzword) issues.push({ field: "cta", issue: `cta.text violates the Hard Anti-Template rule with generic filler phrase: "${buzzword}"` });
+    if (context.verifiedFacts) {
+      const unsupported = claimTokensNotInFacts(t.cta.text, context.verifiedFacts);
+      if (unsupported.length) {
+        issues.push({ field: "cta", issue: `cta.text contains a claim not present in this business's verified facts: "${unsupported[0]}" -- never invent a price, discount, phone number, rating, review count, or guarantee` });
+      }
+    }
     if (context.industry) {
       const contamination = checkTargetIndustryContamination(t.cta.text, context.industry);
       if (contamination.isContaminated) issues.push({ field: "cta", issue: `cta.text: ${contamination.reason}` });
@@ -720,6 +761,19 @@ export function validateCreativeTreatment(
       if (buzzword) {
         issues.push({ field: "adComposition", issue: `contains generic filler phrase violating the Hard Anti-Template rule: "${buzzword}"` });
         break;
+      }
+    }
+    // Brand Truth Rule / "make critical text deterministic": a price,
+    // discount, phone number, rating, review count, or guarantee rendered
+    // directly onto a creative's pixels must be REAL, not invented -- the
+    // exact same numeric-claim fact-check the caption path
+    // (quality-score.ts) already enforces, applied here for the first time
+    // to the on-image "offer"/"stat" blocks this mission's structure-
+    // required formats specifically lean on.
+    if (context.verifiedFacts) {
+      const unsupported = claimTokensNotInFacts(collectStrings(t.adComposition).join(" | "), context.verifiedFacts);
+      if (unsupported.length) {
+        issues.push({ field: "adComposition", issue: `contains a claim not present in this business's verified facts: "${unsupported[0]}" -- never invent a price, discount, phone number, rating, review count, or guarantee` });
       }
     }
   }
@@ -883,7 +937,7 @@ export async function generateCreativeTreatment(
   });
 
   const parsed = result.structuredOutput ?? safeParseJson(result.text);
-  const issues = validateCreativeTreatment(parsed, { concept: input.brief.concept, routingContext: input.routingContext, creativeFormat: input.creativeFormat })
+  const issues = validateCreativeTreatment(parsed, { concept: input.brief.concept, routingContext: input.routingContext, creativeFormat: input.creativeFormat, verifiedFacts: input.brief.verifiedFacts })
     // A forced-archetype mismatch is real, useful diagnostic signal (the
     // AI didn't follow instructions) but must never actually block
     // generation -- forceArchetypeOntoTreatment below corrects it
@@ -924,4 +978,143 @@ export function safeParseJson(text: string): unknown {
       return undefined;
     }
   }
+}
+
+/**
+ * Creative Generation Architecture Repair (2026-09-07): a real, targeted
+ * corrective-retry for treatment generation -- verified live against the
+ * actual Gemini API before being wired in here. Before this, BOTH real
+ * production call sites (package-autopilot.ts, studio-creative-
+ * treatment.ts) gave the model exactly one shot: any validation issue
+ * (including "structure-required format came back as a bare photo")
+ * discarded the whole treatment and fell back to brief-only generation --
+ * losing the real hook/story/CTA work along with the one thing that was
+ * actually wrong. Mirrors generation-loop.ts's existing "tell the model
+ * EXACTLY what failed, ask again" pattern for captions, applied to
+ * treatments for the first time.
+ *
+ * Provider-agnostic by construction: takes a plain `callModel` callback
+ * (messages in, raw text out) so each call site supplies its own thin
+ * wrapper around whatever provider-calling convention it already uses
+ * (AITextProviderAdapter.complete, AiRuntimeSocialProvider.complete, or a
+ * direct fetch against any other provider) -- this function never assumes
+ * Gemini, OpenAI, or any specific vendor.
+ *
+ * Never throws: exhausting every attempt returns { treatment: null, issues
+ * } exactly like today's single-shot callers already handle, so callers
+ * that haven't been updated to inspect `issues` keep working unchanged.
+ */
+export async function runCreativeTreatmentAttempts(
+  input: CreativeTreatmentInput,
+  callModel: (messages: AIMessage[]) => Promise<string>,
+  opts: { maxAttempts?: number } = {},
+): Promise<{ treatment: CreativeTreatment | null; issues: CreativeTreatmentValidationIssue[]; attempts: number; synthesized: boolean }> {
+  const maxAttempts = Math.max(1, opts.maxAttempts ?? 2);
+  let messages = buildCreativeTreatmentPrompt(input);
+  let lastIssues: CreativeTreatmentValidationIssue[] = [];
+  let lastParsed: unknown = null;
+
+  const context = {
+    concept: input.brief.concept,
+    routingContext: input.routingContext,
+    industry: input.industry,
+    creativeFormat: input.creativeFormat,
+    verifiedFacts: input.brief.verifiedFacts,
+  };
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    let rawText: string;
+    try {
+      rawText = await callModel(messages);
+    } catch {
+      // A provider-call failure is not a validation issue -- surface it as
+      // one final, honest issue rather than silently retrying against a
+      // dead provider (that's the circuit breaker / provider-hop's job,
+      // not this loop's).
+      return { treatment: null, issues: [{ field: "root", issue: "model call failed" }], attempts: attempt, synthesized: false };
+    }
+    const parsed = safeParseJson(rawText);
+    lastParsed = parsed;
+    const issues = validateCreativeTreatment(parsed, context)
+      .filter((issue) => !(issue.field === "layoutArchetype" && input.routingContext?.forcedArchetype));
+    if (!issues.length) {
+      const treatment = forceArchetypeOntoTreatment(parsed as CreativeTreatment, input.routingContext);
+      return { treatment: { ...treatment, creativeFormat: input.creativeFormat }, issues: [], attempts: attempt, synthesized: false };
+    }
+    lastIssues = issues;
+    if (attempt < maxAttempts) {
+      const correction = `Your previous response failed validation: ${issues.map((i) => `${i.field}: ${i.issue}`).join("; ")}. Regenerate the FULL JSON object again, genuinely fixing this -- do not repeat the same mistake.`;
+      messages = [...messages, { role: "user", content: correction }];
+    }
+  }
+
+  // Requirement: a structure-required format must never fall back to a
+  // generic photo + caption creative. Every real model attempt failed --
+  // before giving up on the whole treatment, check whether the ONLY real
+  // problem is the missing structure (every other field -- hook, story,
+  // textHierarchy, cta, negativeConstraints, the buzzword/contamination/
+  // placeholder sweeps -- already passed). If so, deterministically
+  // synthesize a modest-but-real composition from those already-validated
+  // fields (see synthesizeMinimalComposition's own doc comment: never
+  // fabricates a fact) and re-validate. This is the hard guarantee behind
+  // the requirement; the retry loop above is what makes it rarely needed.
+  const onlyStructureIssue = lastIssues.length > 0 && lastIssues.every((i) => i.field === "adComposition");
+  if (onlyStructureIssue && lastParsed && typeof lastParsed === "object") {
+    const synthesized = synthesizeMinimalComposition(lastParsed as CreativeTreatment);
+    if (synthesized) {
+      const candidate = { ...(lastParsed as Record<string, unknown>), adComposition: synthesized };
+      const reIssues = validateCreativeTreatment(candidate, context)
+        .filter((issue) => !(issue.field === "layoutArchetype" && input.routingContext?.forcedArchetype));
+      if (!reIssues.length) {
+        const treatment = forceArchetypeOntoTreatment(candidate as CreativeTreatment, input.routingContext);
+        return { treatment: { ...treatment, creativeFormat: input.creativeFormat }, issues: [], attempts: maxAttempts, synthesized: true };
+      }
+    }
+  }
+
+  return { treatment: null, issues: lastIssues, attempts: maxAttempts, synthesized: false };
+}
+
+/**
+ * Creative Generation Architecture Repair (2026-09-07): the hard guarantee
+ * behind requirement "structure-required formats must never fall back to a
+ * generic photo + caption" -- a deterministic, LAST-RESORT synthesis used
+ * ONLY when runCreativeTreatmentAttempts exhausts every real model attempt
+ * and the format still requires structure. Never fabricates a single fact:
+ * every string it uses comes from the treatment's OWN already-validated
+ * fields (hook/story/textHierarchy/cta), which already passed
+ * findPlaceholderOrFiller, checkTargetIndustryContamination, and the Hard
+ * Anti-Template buzzword sweep during the failed attempt(s) above. This is
+ * intentionally a MODEST composition (eyebrow + headline + body + cta) --
+ * it exists to guarantee real structure exists at all, not to match the
+ * richness a genuinely successful model attempt (stat/offer/benefits/
+ * comparison/steps/quote) produces. Returns null if even this can't be
+ * built from real content (e.g. no headline-shaped text anywhere), in
+ * which case the caller's existing "treatment failed, fall back to brief-
+ * only" path is the honest outcome -- never invented content.
+ *
+ * Typed as a plain object (not `CreativeComposition`) for the same reason
+ * `adComposition` itself is `unknown` on CreativeTreatment: this module
+ * stays free of a dependency on composition-render.ts's sharp-based
+ * renderer. parseCreativeComposition (the render-time validator) is what
+ * actually accepts or rejects the shape produced here.
+ */
+export function synthesizeMinimalComposition(treatment: CreativeTreatment): Record<string, unknown> | null {
+  const byRole = (roles: string[]): string | null => {
+    for (const role of roles) {
+      const el = treatment.textHierarchy.find((e) => e.role === role && e.text?.trim());
+      if (el) return el.text.trim();
+    }
+    return null;
+  };
+  const headline = byRole(["headline", "statement", "question"]) ?? (treatment.hook?.trim() || null);
+  if (!headline) return null;
+  const body = byRole(["supportingLine", "insight", "painPoint", "solution", "answer"]) ?? (treatment.story?.trim().slice(0, 140) || null);
+  const ctaText = treatment.cta?.needed && treatment.cta.text?.trim() ? treatment.cta.text.trim() : null;
+
+  const blocks: Array<Record<string, unknown>> = [{ kind: "headline", text: headline.slice(0, 90) }];
+  if (body) blocks.push({ kind: "body", text: body.slice(0, 160) });
+  if (ctaText) blocks.push({ kind: "cta", text: ctaText.slice(0, 60) });
+  if (blocks.length < 2) return null;
+  return { canvas: "photo_full", panel: "bottom", blocks };
 }

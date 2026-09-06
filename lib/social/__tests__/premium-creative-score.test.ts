@@ -74,6 +74,33 @@ test("a generic, filler-laden treatment scores meaningfully lower", () => {
   assert.ok(weak.textDerivableScore < strong.textDerivableScore, `expected weak (${weak.textDerivableScore}) < strong (${strong.textDerivableScore})`);
 });
 
+test("Creative Generation Architecture Repair: strategy score drops when a structure-required format has no real adComposition, and is unaffected for a photo-led format with the exact same treatment", () => {
+  const bareForOffer = scorePremiumCreative({ treatment: strongTreatment, brief, creativeFormat: "OFFER_PROMOTION" });
+  const bareForPhoto = scorePremiumCreative({ treatment: strongTreatment, brief, creativeFormat: "PHOTOGRAPHIC_AD" });
+  assert.ok(bareForOffer.breakdown.strategy < bareForPhoto.breakdown.strategy, `expected OFFER_PROMOTION with no adComposition to score lower than PHOTOGRAPHIC_AD, got offer=${bareForOffer.breakdown.strategy} photo=${bareForPhoto.breakdown.strategy}`);
+
+  const withComposition: CreativeTreatment = { ...strongTreatment, adComposition: { canvas: "photo_full", panel: "bottom", blocks: [{ kind: "offer", value: "20% off", detail: "weekend only" }, { kind: "cta", text: "Book now" }] } };
+  const richOffer = scorePremiumCreative({ treatment: withComposition, brief, creativeFormat: "OFFER_PROMOTION" });
+  assert.equal(richOffer.breakdown.strategy, bareForPhoto.breakdown.strategy, "a real adComposition must not be penalized for a structure-required format");
+
+  // An explicit creativeFormat always wins over brief.creativeFormat when both
+  // are present -- but when the caller omits it entirely, brief.creativeFormat
+  // (always populated since the Architecture Repair) is consulted
+  // automatically rather than silently skipping the check.
+  const briefWithOfferFormat = { ...brief, creativeFormat: "OFFER_PROMOTION" as const };
+  const viaBriefOnly = scorePremiumCreative({ treatment: strongTreatment, brief: briefWithOfferFormat });
+  assert.equal(viaBriefOnly.breakdown.strategy, bareForOffer.breakdown.strategy, "creativeFormat should be picked up from brief.creativeFormat when not passed explicitly");
+  const explicitOverridesBrief = scorePremiumCreative({ treatment: strongTreatment, brief: briefWithOfferFormat, creativeFormat: "PHOTOGRAPHIC_AD" });
+  assert.equal(explicitOverridesBrief.breakdown.strategy, bareForPhoto.breakdown.strategy, "an explicit creativeFormat argument must override brief.creativeFormat");
+});
+
+test("Creative Generation Architecture Repair: the Hard Anti-Template buzzword list is now shared with quality-score.ts, not a smaller disjoint copy", () => {
+  const buzzwordTreatment: CreativeTreatment = { ...strongTreatment, story: "We are an AI-powered platform driving end-to-end automation for your business." };
+  const clean = scorePremiumCreative({ treatment: strongTreatment, brief });
+  const buzzword = scorePremiumCreative({ treatment: buzzwordTreatment, brief });
+  assert.ok(buzzword.breakdown.creativeConcept < clean.breakdown.creativeConcept, `expected a shared-list buzzword ("ai-powered") to be penalized, got clean=${clean.breakdown.creativeConcept} buzzword=${buzzword.breakdown.creativeConcept}`);
+});
+
 test("originality drops when the concept closely repeats a recent one", () => {
   const fresh = scorePremiumCreative({ treatment: strongTreatment, brief, recentConceptTexts: ["A completely unrelated concept about something else entirely"] });
   const repeat = scorePremiumCreative({ treatment: strongTreatment, brief, recentConceptTexts: [strongTreatment.concept] });

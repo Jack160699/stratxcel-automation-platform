@@ -43,10 +43,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { resolveConfiguredProvider } from "./agent/provider.ts";
 import { buildCreativeBrief, type CreativeBrief } from "./creative-brief.ts";
 import {
-  buildCreativeTreatmentPrompt,
-  validateCreativeTreatment,
-  safeParseJson,
-  forceArchetypeOntoTreatment,
+  runCreativeTreatmentAttempts,
   describeCompositionShape,
   describeTextStructureShape,
   type ArchetypeRoutingContext,
@@ -231,37 +228,41 @@ async function generateCreativeTreatmentWithRouting(
     const visualVocab = getIndustryVisualVocabulary(manualBrief.industry);
     const researchInsights = researchInsightsForIndustry(manualBrief.industry === "generic" ? "all" : manualBrief.industry);
 
-    const messages = buildCreativeTreatmentPrompt({
-      brief: manualBrief,
-      businessName,
-      industry: manualBrief.industry,
-      brandDNA,
-      visualVocab,
-      mediaType: "image",
-      researchInsights,
-      routingContext,
-      recentTextStructures,
-      recentCompositions,
-      creativeFormat: manualBrief.creativeFormat,
-    });
-    // Same provider-call convention as package-autopilot.ts's own treatment
-    // step: AIMessage's role union is broader than AgentTurnMessage's, but
-    // buildCreativeTreatmentPrompt only ever emits "system"/"user".
-    const result = await provider.complete(
-      messages.map((m) => ({ role: m.role, content: m.content })) as unknown as Parameters<typeof provider.complete>[0],
-      [],
-      { brandInstructions: [], tenantId: args.tenantId, businessInformation: verifiedFacts },
+    // Creative Generation Architecture Repair (2026-09-07): Studio now uses
+    // the exact same canonical retry-and-synthesize logic as the automated
+    // pipeline (runCreativeTreatmentAttempts, shared in creative-treatment.ts)
+    // instead of its own single-shot call -- one real corrective retry, then
+    // a deterministic (never-fabricated) structure synthesis as the last
+    // resort, so a manual Studio generation gets the same "never falls back
+    // to a bare photo for a structure-required format" guarantee.
+    const { treatment } = await runCreativeTreatmentAttempts(
+      {
+        brief: manualBrief,
+        businessName,
+        industry: manualBrief.industry,
+        brandDNA,
+        visualVocab,
+        mediaType: "image",
+        researchInsights,
+        routingContext,
+        recentTextStructures,
+        recentCompositions,
+        creativeFormat: manualBrief.creativeFormat,
+      },
+      async (msgs) => {
+        // Same provider-call convention as package-autopilot.ts's own
+        // treatment step: AIMessage's role union is broader than
+        // AgentTurnMessage's, but buildCreativeTreatmentPrompt only ever
+        // emits "system"/"user".
+        const res = await provider.complete(
+          msgs.map((m) => ({ role: m.role, content: m.content })) as unknown as Parameters<typeof provider.complete>[0],
+          [],
+          { brandInstructions: [], tenantId: args.tenantId, businessInformation: verifiedFacts },
+        );
+        return res.text;
+      },
     );
-    const parsed = safeParseJson(result.text);
-    const issues = validateCreativeTreatment(parsed, { concept: manualBrief.concept, routingContext, industry: manualBrief.industry, creativeFormat: manualBrief.creativeFormat });
-    if (issues.length) return null;
-    // Belt-and-suspenders: forces the routingContext's own decision onto
-    // the parsed treatment before returning it, exactly like
-    // package-autopilot.ts's real treatment step does -- validation above
-    // already rejects a mismatched archetype outright, but forcing it here
-    // too means a future validation relaxation could never silently let an
-    // AI-chosen substitute slip past the caller's actual authorization.
-    return forceArchetypeOntoTreatment(parsed as CreativeTreatment, routingContext);
+    return treatment;
   } catch {
     // Never blocks a manual generation -- see file header.
     return null;

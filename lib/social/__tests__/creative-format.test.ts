@@ -245,4 +245,28 @@ test("validateCreativeTreatment flags a structure-required format that came back
   assert.ok(!composedIssues.some((i) => i.field === "adComposition"), `a real adComposition must satisfy the structure requirement, got: ${JSON.stringify(composedIssues)}`);
 });
 
+test("validateCreativeTreatment rejects an on-image price/discount claim not present in verified facts, but accepts the same claim when it genuinely is verified", () => {
+  const base: CreativeTreatment = {
+    concept: "A specific, real creative idea about the weekend brunch offer",
+    hook: "Real hook", audienceTension: "Real tension", story: "Real story", visualIdea: "Real visual idea",
+    subject: "Real subject", composition: "Real composition", camera: "Real camera", lighting: "Real lighting",
+    environment: "Real environment", colorDirection: "Real color direction", typographyDirection: "Real typography direction",
+    brandApplication: "Real brand application",
+    textHierarchy: [{ role: "headline", text: "20% Off This Weekend" }],
+    cta: { needed: true, text: "Book Now", rationale: "Sales objective" },
+    format: "single image post", whyStopScroll: "Real reason", whyThisBusiness: "Real reason",
+    negativeConstraints: ["no fabricated claims"], intentionallyTextLed: false, layoutArchetype: "SPLIT_BANNER",
+  };
+  const unsupported = validateCreativeTreatment(base, { concept: "offer", creativeFormat: "PHOTOGRAPHIC_AD", verifiedFacts: ["Business location: Fort Kochi"] });
+  assert.ok(unsupported.some((i) => i.field === "textHierarchy" && i.issue.toLowerCase().includes("20% off")), `expected an unverified "20% off" headline claim to be rejected, got: ${JSON.stringify(unsupported)}`);
+
+  const supported = validateCreativeTreatment(base, { concept: "offer", creativeFormat: "PHOTOGRAPHIC_AD", verifiedFacts: ["Weekend offer (as provided by the owner): 20% off the seafood thali"] });
+  assert.ok(!supported.some((i) => i.field === "textHierarchy" && i.issue.includes("claim not present")), `a genuinely verified claim must not be rejected, got: ${JSON.stringify(supported)}`);
+
+  // Omitting verifiedFacts entirely preserves the exact prior behavior --
+  // never a false positive for a caller/fixture not yet updated.
+  const omitted = validateCreativeTreatment(base, { concept: "offer", creativeFormat: "PHOTOGRAPHIC_AD" });
+  assert.ok(!omitted.some((i) => i.issue.includes("claim not present")), `omitting verifiedFacts must not activate the check, got: ${JSON.stringify(omitted)}`);
+});
+
 console.log("creative-format.test.ts: ALL PASS");
