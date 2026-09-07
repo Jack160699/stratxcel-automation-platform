@@ -1,5 +1,54 @@
 # WhatsApp AI Agency — Gap Audit
 
+## Update 81 — Hermes can now move a real CRM lead through the pipeline (update_lead_status)
+
+The mutation companion to `list_leads`/`get_lead` (Updates 76-77): missions
+could read the CRM pipeline but never act on it — a real gap against the
+master brief's own revenue north star, since a mission that qualifies a
+lead over WhatsApp/research had no way to record that outcome back into
+the real pipeline.
+
+Reuses `@stratxcel/leads-and-crm`'s real `updateLeadStatus(leadId, status)`
+function unmodified — no reimplementation. Investigated its tenant-scoping
+before wrapping it and found something worth being careful about: the
+function itself is **not** tenant-scoped internally (it filters only by
+`leadId`). Read its two other real callers —
+[app/api/platform/leads/[leadId]/route.ts](../../app/api/platform/leads/%5BleadId%5D/route.ts)
+and
+[packages/workforce-core/src/adapters/crm.ts](../../packages/workforce-core/src/adapters/crm.ts)'s
+`loadOwnedLead` — and confirmed both independently re-verify tenant
+ownership with a separate scoped read before ever calling it. The Hermes
+handler follows that exact same established convention rather than
+inventing a new one: it runs its own
+`.eq("tenant_id", ctx.tenantId).eq("id", leadId)` existence check first,
+and only calls `updateLeadStatus` if that check finds a row — refusing
+honestly (`updated: false`) otherwise, never trusting a bare `leadId`.
+`status` is a Zod enum of the real 5 `crm_leads` pipeline values (`NEW`/
+`CONTACTED`/`QUALIFIED`/`WON`/`LOST`), matching
+`packages/workforce-core/src/adapters/crm.ts`'s own `ALLOWED_LEAD_STATUSES`
+allowlist exactly — no invented status string is reachable.
+
+Added to `DEFAULT_TOOL_ALLOWLIST`: a bounded mutation (5 allowlisted
+values, on a lead already proven to belong to this tenant) with no spend
+and no external side effect — the same default-allow class as
+`create_crm_lead`/`update_mission_progress`, stated in-code rather than a
+silent default.
+
+Verified:
+[update-lead-status.test.ts](../../apps/hermes-gateway/src/__tests__/update-lead-status.test.ts)
+(3 scenarios — schema rejects an invented status/wrong casing/smuggled
+tenantId, the handler's own source is confirmed to run the ownership
+check before ever calling `updateLeadStatus`, and a simulation proves a
+real lead belonging to a different tenant is never mutated even with a
+guessed/leaked id). Zero regressions across `test:hermes-mission-control`
+(11 files, all pass). Full-repo `tsc --noEmit` clean, lint clean, real
+`NODE_ENV=production` build (exit 0). Registry:
+`capability:hermes_update_lead_status`, `REAL_EXPOSED`. Migration:
+`supabase/migrations/20260907160000_capability_registry_hermes_update_lead_status.sql`.
+
+Hermes' restricted tool vocabulary: **12 → 21**. This closes the
+sales-relevant read/write gap on the CRM surface for now.
+
 ## Update 80 — Hermes can now write and recall durable company memory, and why the obvious reuse path was structurally wrong
 
 A different kind of gap than the tool-vocabulary series: the master brief

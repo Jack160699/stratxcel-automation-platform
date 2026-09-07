@@ -104,6 +104,7 @@ const TOOL_DESCRIPTIONS: Record<McpCallableName, string> = {
   check_domain_status: "Real live domain status: public DNS records and Vercel's own verification/SSL status.",
   remember_company_fact: "Save a durable, company-scoped fact this mission found, for future recall.",
   recall_company_memory: "Recall this mission's tenant's durable company memory.",
+  update_lead_status: "Move a real CRM lead to a new pipeline status (NEW/CONTACTED/QUALIFIED/WON/LOST), tenant-scoped.",
 };
 
 /** Read-only per Section 4 — no state anywhere in StratExcel changes as a result of these calls. Everything else is truthfully non-read-only; none are destructive. */

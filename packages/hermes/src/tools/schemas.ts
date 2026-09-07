@@ -112,6 +112,12 @@ export const TOOL_INPUT_SCHEMAS = {
     })
     .strict(),
   recall_company_memory: z.object({}).strict(),
+  update_lead_status: z
+    .object({
+      leadId: z.string().min(1),
+      status: z.enum(["NEW", "CONTACTED", "QUALIFIED", "WON", "LOST"]),
+    })
+    .strict(),
 } as const satisfies Partial<Record<ToolName, z.ZodTypeAny>>;
 
 /** The exact set of tool names an MCP caller may ever validate/invoke through this map. */

@@ -95,6 +95,10 @@ export interface ToolContractMap {
     input: Record<string, never>;
     output: { memories: unknown[] };
   };
+  update_lead_status: {
+    input: { leadId: string; status: "NEW" | "CONTACTED" | "QUALIFIED" | "WON" | "LOST" };
+    output: { updated: boolean; lead?: unknown };
+  };
 }
 
 export const ALL_TOOL_NAMES: ToolName[] = [
@@ -118,6 +122,7 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "check_domain_status",
   "remember_company_fact",
   "recall_company_memory",
+  "update_lead_status",
 ];
 
 /**

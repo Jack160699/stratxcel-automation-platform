@@ -4,7 +4,7 @@ import { createServiceClient as createApprovalsClient, requestApproval, listPend
 import { createServiceClient as createHandoffClient, createHumanHandoff } from "@stratxcel/human-handoff";
 import { recordAuditEvent, createServiceClient as createAuditClient } from "@stratxcel/audit";
 import { listSearchState } from "@stratxcel/search-discovery";
-import { listLeads } from "@stratxcel/leads-and-crm";
+import { listLeads, updateLeadStatus, type LeadStatus } from "@stratxcel/leads-and-crm";
 import { inspectDomainDns, getVercelDomainStatus } from "@stratxcel/websites-and-domains";
 import { assertSafeMemoryValue } from "@stratxcel/agent-core";
 import type { ToolName } from "@stratxcel/hermes";
@@ -291,6 +291,32 @@ export const TOOL_HANDLERS: Partial<Record<ToolName, ToolHandler>> = {
     if (error) throw new Error(`get_lead: ${error.message}`);
     if (!data) return { found: false };
     return { found: true, lead: data };
+  },
+
+  // Mutation companion to list_leads/get_lead -- moves a real lead through
+  // the pipeline. leads-and-crm's own updateLeadStatus(leadId, status) is
+  // NOT tenant-scoped internally (matches its two other real callers:
+  // app/api/platform/leads/[leadId]/route.ts and
+  // packages/workforce-core/src/adapters/crm.ts's loadOwnedLead), so this
+  // handler re-verifies tenant ownership with its own scoped existence
+  // check first -- the exact same pattern those two callers already use --
+  // rather than trust a bare leadId. Never invokes updateLeadStatus without
+  // that check passing first.
+  async update_lead_status(ctx, input) {
+    const leadId = typeof input.leadId === "string" ? input.leadId : "";
+    const status = typeof input.status === "string" ? (input.status as LeadStatus) : ("" as LeadStatus);
+    if (!leadId || !status) return { updated: false };
+    const supabase = createMissionsClient();
+    const { data: existing, error: existingError } = await supabase
+      .from("crm_leads")
+      .select("id")
+      .eq("tenant_id", ctx.tenantId)
+      .eq("id", leadId)
+      .maybeSingle();
+    if (existingError) throw new Error(`update_lead_status: ${existingError.message}`);
+    if (!existing) return { updated: false };
+    const lead = await updateLeadStatus(supabase as never, { leadId, status });
+    return { updated: true, lead };
   },
 
   // Exposes the real Creative Studio image engine to Hermes missions --

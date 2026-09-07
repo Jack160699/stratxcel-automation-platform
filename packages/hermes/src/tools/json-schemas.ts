@@ -156,4 +156,13 @@ export const TOOL_PARAMETER_SCHEMAS: Partial<Record<ToolName, Record<string, unk
     properties: {},
     additionalProperties: false,
   },
+  update_lead_status: {
+    type: "object",
+    properties: {
+      leadId: { type: "string", description: "A real crm_leads id from a prior list_leads or get_lead result." },
+      status: { type: "string", enum: ["NEW", "CONTACTED", "QUALIFIED", "WON", "LOST"], description: "The new pipeline status." },
+    },
+    required: ["leadId", "status"],
+    additionalProperties: false,
+  },
 };

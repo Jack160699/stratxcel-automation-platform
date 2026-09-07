@@ -33,7 +33,7 @@ export interface HermesExecutionResult {
 }
 
 /**
- * The 12 restricted tools Hermes may call back into StratExcel with — this
+ * The restricted tools Hermes may call back into StratExcel with — this
  * is the exhaustive allowlist. Anything not in this union is not a tool
  * Hermes can invoke, by construction (ToolName is a closed type, and
  * apps/hermes-gateway's dispatcher only recognizes these names).
@@ -58,7 +58,8 @@ export type ToolName =
   | "generate_image"
   | "check_domain_status"
   | "remember_company_fact"
-  | "recall_company_memory";
+  | "recall_company_memory"
+  | "update_lead_status";
 
 /**
  * What Hermes actually receives when a mission starts — no secrets, no

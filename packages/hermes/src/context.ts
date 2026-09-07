@@ -21,6 +21,13 @@ const DEFAULT_TOOL_ALLOWLIST: ToolName[] = [
   "check_domain_status",
   "remember_company_fact",
   "recall_company_memory",
+  // A bounded mutation (status can only be one of 5 allowlisted pipeline
+  // values, on a lead already scoped to this tenant) with no spend and no
+  // external side effect — same default-allow class as create_crm_lead and
+  // update_mission_progress, and directly serves the master brief's sales
+  // north star (moving a real lead through the pipeline is core mission work,
+  // not a decision that needs Founder sign-off every time).
+  "update_lead_status",
 ];
 
 /**
