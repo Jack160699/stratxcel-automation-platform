@@ -110,12 +110,123 @@ async function testReadOnlyAdapterConnectorsNeverCreateAConnectorConnectionsSecr
   console.log("connectors.test.ts: whatsapp/meta/google_workspace health never touches a connector-vaulted secret, only the real existing table — PASS");
 }
 
+/**
+ * A minimal, real functional double for assertConnectorCapabilityAuthorized's
+ * two real query shapes -- exercises the actual decision logic, not just
+ * its source text, since this is the master brief's own Section 18 "major
+ * priority" enforcement gate.
+ */
+function makeFakeSupabase(opts: { connection: Record<string, unknown> | null; assignments: Array<{ autonomy: string; tenant_id: string | null }> }) {
+  return {
+    from(table: string) {
+      if (table === "connector_connections") {
+        const builder = {
+          select() { return builder; },
+          eq() { return builder; },
+          is() { return builder; },
+          async maybeSingle() { return { data: opts.connection, error: null }; },
+        };
+        return builder;
+      }
+      if (table === "connector_capability_assignments") {
+        const builder: any = {
+          select() { return builder; },
+          eq() { return builder; },
+          then(resolve: (v: { data: unknown; error: null }) => void) { resolve({ data: opts.assignments, error: null }); },
+        };
+        return builder;
+      }
+      throw new Error(`unexpected table in fake: ${table}`);
+    },
+  };
+}
+
+async function testAuthorizationGateRealDecisionTree() {
+  const { assertConnectorCapabilityAuthorized } = await import("@stratxcel/connectors");
+
+  const notConnected = await assertConnectorCapabilityAuthorized(makeFakeSupabase({ connection: null, assignments: [] }) as never, {
+    connectorKey: "gemini",
+    capabilityKey: "media.image_generation",
+    tenantId: "tenant-1",
+  });
+  assert.deepEqual(notConnected, { authorized: false, reason: "connector_not_connected" });
+
+  const unhealthy = await assertConnectorCapabilityAuthorized(
+    makeFakeSupabase({ connection: { id: "conn-1", status: "error" }, assignments: [] }) as never,
+    { connectorKey: "gemini", capabilityKey: "media.image_generation", tenantId: "tenant-1" }
+  );
+  assert.deepEqual(unhealthy, { authorized: false, reason: "connector_unhealthy:error" });
+
+  const noAssignment = await assertConnectorCapabilityAuthorized(
+    makeFakeSupabase({ connection: { id: "conn-1", status: "healthy" }, assignments: [] }) as never,
+    { connectorKey: "gemini", capabilityKey: "media.image_generation", tenantId: "tenant-1" }
+  );
+  assert.deepEqual(noAssignment, { authorized: false, reason: "capability_not_assigned" }, "connected+healthy is NOT enough on its own -- an explicit assignment is required (Section 17: presence in Admin does not mean every agent can use it)");
+
+  const disabled = await assertConnectorCapabilityAuthorized(
+    makeFakeSupabase({ connection: { id: "conn-1", status: "healthy" }, assignments: [{ autonomy: "disabled", tenant_id: "tenant-1" }] }) as never,
+    { connectorKey: "gemini", capabilityKey: "media.image_generation", tenantId: "tenant-1" }
+  );
+  assert.deepEqual(disabled, { authorized: false, reason: "autonomy_disabled" });
+
+  const approvalRequired = await assertConnectorCapabilityAuthorized(
+    makeFakeSupabase({ connection: { id: "conn-1", status: "healthy" }, assignments: [{ autonomy: "approval_required", tenant_id: "tenant-1" }] }) as never,
+    { connectorKey: "gemini", capabilityKey: "media.image_generation", tenantId: "tenant-1" }
+  );
+  assert.deepEqual(approvalRequired, { authorized: false, reason: "autonomy_approval_required_not_yet_auto_routed" }, "approval_required must BLOCK, not silently proceed -- auto-routing through the approval flow is a real, separate future task");
+
+  const executeAuthorized = await assertConnectorCapabilityAuthorized(
+    makeFakeSupabase({ connection: { id: "conn-1", status: "healthy" }, assignments: [{ autonomy: "execute", tenant_id: "tenant-1" }] }) as never,
+    { connectorKey: "gemini", capabilityKey: "media.image_generation", tenantId: "tenant-1" }
+  );
+  assert.deepEqual(executeAuthorized, { authorized: true, autonomy: "execute" });
+
+  const platformWideAssignmentMatchesAnyTenant = await assertConnectorCapabilityAuthorized(
+    makeFakeSupabase({ connection: { id: "conn-1", status: "healthy" }, assignments: [{ autonomy: "read", tenant_id: null }] }) as never,
+    { connectorKey: "gemini", capabilityKey: "media.image_generation", tenantId: "some-other-tenant" }
+  );
+  assert.deepEqual(platformWideAssignmentMatchesAnyTenant, { authorized: true, autonomy: "read" }, "a platform-wide assignment (tenant_id null) authorizes any tenant's call");
+
+  const undeclaredCapability = await assertConnectorCapabilityAuthorized(makeFakeSupabase({ connection: null, assignments: [] }) as never, {
+    connectorKey: "gemini",
+    capabilityKey: "not_a_real_capability",
+    tenantId: "tenant-1",
+  });
+  assert.equal(undeclaredCapability.authorized, false);
+  assert.match((undeclaredCapability as { reason: string }).reason, /^capability_not_declared_for_connector:/, "must refuse before even looking up a connection when the capability isn't real for this connector at all");
+
+  console.log("connectors.test.ts: assertConnectorCapabilityAuthorized's real decision tree is correct — PASS");
+}
+
+async function testInvokeToolWiresTheAuthorizationGateBeforeExecutionAndAuditsDenial() {
+  // readSource is scoped under packages/connectors/src -- read the real
+  // hermes-gateway file directly instead, matching this session's other
+  // cross-package source-regex tests.
+  const gatewaySource = fs.readFileSync(path.join(process.cwd(), "apps", "hermes-gateway", "src", "tool-handlers.ts"), "utf8").replace(/\r\n/g, "\n");
+  assert.match(gatewaySource, /const HERMES_TOOL_CONNECTOR_MAP: Partial<Record<ToolName, \{ connectorKey: string; capabilityKey: string \}>> = \{/, "the real tool-to-connector map must exist");
+  assert.match(gatewaySource, /generate_image: \{ connectorKey: "gemini", capabilityKey: "media\.image_generation" \}/);
+  assert.match(gatewaySource, /check_domain_status: \{ connectorKey: "vercel", capabilityKey: "website\.domain_status" \}/);
+  const invokeToolBlock = gatewaySource.match(/export async function invokeTool\([\s\S]*?\n\}/)?.[0];
+  assert.ok(invokeToolBlock, "invokeTool must exist");
+  assert.match(invokeToolBlock!, /const connectorGate = HERMES_TOOL_CONNECTOR_MAP\[tool\];/, "invokeTool must check the connector gate for every call");
+  assert.match(invokeToolBlock!, /if \(!authz\.authorized\) \{/, "an unauthorized call must be refused, not merely logged");
+  assert.match(invokeToolBlock!, /throw new ConnectorNotAuthorizedError\(tool, authz\.reason\);/, "an unauthorized call must throw before the real handler ever runs");
+  assert.match(invokeToolBlock!, /action: `hermes\.tool_call\.\$\{tool\}\.denied`/, "a denial must be recorded in the real audit log, not silently swallowed");
+  // The gate check must appear BEFORE the handler is invoked, not after.
+  const gateIndex = invokeToolBlock!.indexOf("const connectorGate");
+  const handlerCallIndex = invokeToolBlock!.indexOf("await handler(ctx, input)");
+  assert.ok(gateIndex > -1 && handlerCallIndex > -1 && gateIndex < handlerCallIndex, "the authorization check must run BEFORE the handler executes, never after");
+  console.log("connectors.test.ts: invokeTool enforces the connector authorization gate before execution and audits denial — PASS");
+}
+
 async function run() {
   await testRegistryHasAllTenConnectorsFromTheMasterBriefWithSaneShape();
   await testMcpManagedConnectorsDeclareNoRequiredEnvVarsButHaveARealStatusSource();
   await testCreateConnectorConnectionRefusesASecretForMcpManagedAndReadOnlyAdapterConnectors();
   await testHealthHandlerReusesTheRealFunctionsForEachConnector();
   await testReadOnlyAdapterConnectorsNeverCreateAConnectorConnectionsSecretColumnRead();
+  await testAuthorizationGateRealDecisionTree();
+  await testInvokeToolWiresTheAuthorizationGateBeforeExecutionAndAuditsDenial();
   console.log("connectors.test.ts (@stratxcel/connectors): ALL PASS");
 }
 

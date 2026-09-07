@@ -11,6 +11,7 @@
     "@stratxcel/approvals": "*",
     "@stratxcel/audit": "*",
     "@stratxcel/brand-brain": "*",
+    "@stratxcel/connectors": "*",
     "@stratxcel/hermes": "*",
     "@stratxcel/human-handoff": "*",
     "@stratxcel/leads-and-crm": "*",

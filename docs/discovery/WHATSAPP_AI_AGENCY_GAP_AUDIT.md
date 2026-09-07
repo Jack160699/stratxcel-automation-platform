@@ -1,5 +1,60 @@
 # WhatsApp AI Agency — Gap Audit
 
+## Update 85 — Hermes tool calls now enforce real connector/capability/autonomy authorization (master brief Section 18)
+
+Called out explicitly as "a major priority": a connector being present in
+Admin does **not** automatically mean every agent can use it. Every Hermes
+tool invocation must verify Company+Capability+Connector+Permission+
+Autonomy server-side — never a UI-only restriction, never trust on the
+tool name alone.
+
+Built
+[`packages/connectors/src/authorization.ts`](../../packages/connectors/src/authorization.ts)'s
+`assertConnectorCapabilityAuthorized` and wired it into
+`apps/hermes-gateway/src/tool-handlers.ts`'s `invokeTool()` — the one real
+chokepoint every Hermes tool call passes through, so it can't be bypassed
+by a new caller. A `HERMES_TOOL_CONNECTOR_MAP` names the (currently 2)
+Hermes tools genuinely backed by a Connector Control Plane connector —
+`generate_image` (`gemini`/`media.image_generation`), `check_domain_status`
+(`vercel`/`website.domain_status`) — every other tool in Hermes' ~21-tool
+vocabulary is an internal StratXcel capability with no external connector
+at all, deliberately left ungated (gating a tool with nothing to gate
+would be theater, not enforcement).
+
+The gate checks, in order: connector connected, connector healthy, a real
+`connector_capability_assignments` row exists for this capability
+(matching this tenant or a platform-wide assignment), and the assignment's
+autonomy is neither `disabled` nor `approval_required` — the latter
+**blocks outright** in this v1 rather than silently proceeding
+(auto-routing through the existing `request_approval` flow and resuming
+the mission afterward is a real, separate, larger mission-state
+integration, not built here). A denial is recorded as a real
+`audit_events` row before the error is thrown — never silently swallowed.
+
+Honest v1 scope, checked against the live schema before writing this:
+Hermes missions carry a verified `tenantId` but no `agent_definition_id`/
+department — so this enforces Company+Connector+Capability+Autonomy, not
+yet per-agent granularity, which needs mission-to-agent association added
+first. Practical effect: `generate_image`/`check_domain_status` — both
+previously unconditionally callable once `HERMES_MODE=native` is flipped
+— now correctly require an explicit Admin connect+assign action first.
+Zero live production impact today (`HERMES_MODE` stays `disabled`).
+
+Verified: extended
+[connectors.test.ts](../../packages/connectors/src/__tests__/connectors.test.ts)
+with 2 new scenarios using a real functional fake Supabase double (not
+just source-regex) — the full real decision tree (8 sub-cases) all
+produce the correct outcome, and `invokeTool` is confirmed to check the
+gate *before* the handler runs, throw on denial, and audit it. Zero
+regressions across `test:hermes-mission-control` (11 files, confirmed
+unaffected — they call handlers directly, bypassing `invokeTool`),
+`test:worker-ops` (3 files), and the full `packages/hermes` suite (4
+files). Full-repo `tsc --noEmit` clean, lint clean, real
+`NODE_ENV=production` build (exit 0). Registry:
+`capability:hermes_tool_connector_authorization_enforcement`,
+`REAL_EXPOSED`. Migration:
+`supabase/migrations/20260907230000_capability_registry_tool_connector_authorization.sql`.
+
 ## Update 84 — Memory now carries a real confidence/provenance classification (master brief Section 19)
 
 Section 19: *"Never turn an AI assumption into a verified business fact

@@ -7,6 +7,7 @@ import { listSearchState } from "@stratxcel/search-discovery";
 import { listLeads, updateLeadStatus, type LeadStatus } from "@stratxcel/leads-and-crm";
 import { inspectDomainDns, getVercelDomainStatus } from "@stratxcel/websites-and-domains";
 import { assertSafeMemoryValue, MEMORY_CONFIDENCE_VALUES, type MemoryConfidence } from "@stratxcel/agent-core";
+import { assertConnectorCapabilityAuthorized, createServiceClient as createConnectorsClient } from "@stratxcel/connectors";
 import type { ToolName } from "@stratxcel/hermes";
 import { STRATXCEL_CONTROLLED_TOOLS } from "@stratxcel/hermes";
 import { lookupSocialPublicationStatus } from "../../../lib/social/workforce/publication-status-lookup.ts";
@@ -465,15 +466,56 @@ export const TOOL_HANDLERS: Partial<Record<ToolName, ToolHandler>> = {
   },
 };
 
+export class ConnectorNotAuthorizedError extends Error {
+  constructor(tool: string, reason: string) {
+    super(`Tool '${tool}' requires connector authorization the current mission does not have: ${reason}`);
+    this.name = "ConnectorNotAuthorizedError";
+  }
+}
+
+/**
+ * Master brief Section 18 ("a major priority" -- do not rely on UI
+ * restrictions, do not trust a tool name alone, enforce server-side): the
+ * subset of Hermes' restricted tool vocabulary that is genuinely backed by
+ * a Connector/Capability Control Plane connector, mapped to the exact
+ * capability key that connector declares (packages/connectors/src/registry.ts).
+ * Every other tool in ToolName is an internal StratXcel capability with no
+ * external connector at all (CRM, memory, mission progress, growth/website
+ * status reads) -- deliberately absent here, not an oversight; gating a
+ * tool with nothing to gate would be theater, not enforcement.
+ */
+const HERMES_TOOL_CONNECTOR_MAP: Partial<Record<ToolName, { connectorKey: string; capabilityKey: string }>> = {
+  generate_image: { connectorKey: "gemini", capabilityKey: "media.image_generation" },
+  check_domain_status: { connectorKey: "vercel", capabilityKey: "website.domain_status" },
+};
+
 export async function invokeTool(tool: ToolName, ctx: ToolCallContext, input: Record<string, unknown>): Promise<Record<string, unknown>> {
   if (STRATXCEL_CONTROLLED_TOOLS.includes(tool)) throw new ToolNotAvailableError(tool);
 
   const handler = TOOL_HANDLERS[tool];
   if (!handler) throw new ToolNotAvailableError(tool);
 
+  const auditClient = createAuditClient();
+
+  const connectorGate = HERMES_TOOL_CONNECTOR_MAP[tool];
+  if (connectorGate) {
+    const connectorsClient = createConnectorsClient();
+    const authz = await assertConnectorCapabilityAuthorized(connectorsClient as never, { ...connectorGate, tenantId: ctx.tenantId });
+    if (!authz.authorized) {
+      await recordAuditEvent(auditClient, {
+        tenantId: ctx.tenantId,
+        actorKind: "hermes",
+        action: `hermes.tool_call.${tool}.denied`,
+        targetType: "mission",
+        targetId: ctx.missionId,
+        metadata: { correlationId: ctx.correlationId, connectorKey: connectorGate.connectorKey, capabilityKey: connectorGate.capabilityKey, reason: authz.reason },
+      });
+      throw new ConnectorNotAuthorizedError(tool, authz.reason);
+    }
+  }
+
   const result = await handler(ctx, input);
 
-  const auditClient = createAuditClient();
   await recordAuditEvent(auditClient, {
     tenantId: ctx.tenantId,
     actorKind: "hermes",
