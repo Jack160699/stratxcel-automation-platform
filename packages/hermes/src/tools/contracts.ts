@@ -71,6 +71,10 @@ export interface ToolContractMap {
     input: Record<string, never>;
     output: { sites: unknown[] };
   };
+  list_leads: {
+    input: { limit?: number };
+    output: { leads: unknown[] };
+  };
 }
 
 export const ALL_TOOL_NAMES: ToolName[] = [
@@ -88,6 +92,7 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "attach_research_evidence",
   "check_growth_status",
   "check_website_status",
+  "list_leads",
 ];
 
 /**

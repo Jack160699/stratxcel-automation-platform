@@ -16,6 +16,7 @@
     "@stratxcel/email-runtime": "*",
     "@stratxcel/hermes": "*",
     "@stratxcel/human-handoff": "*",
+    "@stratxcel/leads-and-crm": "*",
     "@stratxcel/missions": "*",
     "@stratxcel/payments-and-wallet": "*",
     "@stratxcel/queue": "*",

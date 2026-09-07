@@ -110,4 +110,11 @@ export const TOOL_PARAMETER_SCHEMAS: Partial<Record<ToolName, Record<string, unk
     properties: {},
     additionalProperties: false,
   },
+  list_leads: {
+    type: "object",
+    properties: {
+      limit: { type: "integer", description: "Max leads to return, 1-50. Defaults to 20." },
+    },
+    additionalProperties: false,
+  },
 };

@@ -1,5 +1,33 @@
 # WhatsApp AI Agency — Gap Audit
 
+## Update 76 — Hermes' third tool: the real CRM pipeline, closing the write-only gap on create_crm_lead
+
+Continued the "expose existing StratXcel systems to Hermes" series (Updates
+74-75) with `list_leads` as Hermes' 15th tool — the most directly
+Sales-relevant one yet, given the master brief's own explicit
+LEADS → REVENUE north star. A mission could already write a lead
+(`create_crm_lead`, present since the very first Hermes build) but had no
+way to read the pipeline first — unable to check for a duplicate before
+creating one, or report real pipeline state back to the Founder. Reuses
+`listLeads` (`@stratxcel/leads-and-crm`) unmodified — the same real
+function `packages/agent-core/src/tools/admin/read-tools.ts`'s own
+`list_leads` tool already calls. `{ limit? }` (1-50) enforced at the Zod
+schema layer itself, not just the handler.
+
+Same 7-touch-point pattern as the prior two, `mcp-server.ts` updated in the
+same commit each time now — `tsc --noEmit` has come back clean on the
+first pass for two tools running.
+
+Verified:
+[list-leads.test.ts](../../apps/hermes-gateway/src/__tests__/list-leads.test.ts)
+(3 scenarios — the real function's tenant/limit scoping, the real handler's
+limit-clamping and tenant-source, and the schema's own independent bound
+enforcement). Zero regressions across `test:hermes-mission-control`.
+Full-repo `tsc --noEmit` clean, lint clean, a real `NODE_ENV=production`
+build (exit 0). Registry: `capability:hermes_crm_read_exposure`, new row,
+`REAL_EXPOSED`. Migration:
+`supabase/migrations/20260907100000_capability_registry_hermes_crm_read_exposure.sql`.
+
 ## Update 75 — Hermes' second tool: the real Website Factory, plus the mcp-server.ts lesson applied
 
 Continued the "expose existing StratXcel systems to Hermes" series (Update

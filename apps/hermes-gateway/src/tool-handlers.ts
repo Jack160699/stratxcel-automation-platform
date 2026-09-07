@@ -4,6 +4,7 @@ import { createServiceClient as createApprovalsClient, requestApproval, listPend
 import { createServiceClient as createHandoffClient, createHumanHandoff } from "@stratxcel/human-handoff";
 import { recordAuditEvent, createServiceClient as createAuditClient } from "@stratxcel/audit";
 import { listSearchState } from "@stratxcel/search-discovery";
+import { listLeads } from "@stratxcel/leads-and-crm";
 import type { ToolName } from "@stratxcel/hermes";
 import { STRATXCEL_CONTROLLED_TOOLS } from "@stratxcel/hermes";
 import { lookupSocialPublicationStatus } from "../../../lib/social/workforce/publication-status-lookup.ts";
@@ -256,6 +257,20 @@ export const TOOL_HANDLERS: Partial<Record<ToolName, ToolHandler>> = {
       .order("created_at", { ascending: false });
     if (error) throw new Error(`check_website_status: ${error.message}`);
     return { sites: sites ?? [] };
+  },
+
+  // Exposes the real CRM (leads-and-crm) to Hermes missions -- reuses
+  // listLeads unmodified, the exact same real function
+  // packages/agent-core/src/tools/admin/read-tools.ts's own list_leads
+  // tool already calls. Read-only companion to the existing create_crm_lead
+  // mutation -- lets a mission check the pipeline before creating a
+  // duplicate, or report on it. Tenant comes from the verified mission
+  // context only, never an input field.
+  async list_leads(ctx, input) {
+    const limit = typeof input.limit === "number" ? Math.min(input.limit, 50) : 20;
+    const supabase = createMissionsClient();
+    const leads = await listLeads(supabase as never, ctx.tenantId, limit);
+    return { leads };
   },
 };
 
