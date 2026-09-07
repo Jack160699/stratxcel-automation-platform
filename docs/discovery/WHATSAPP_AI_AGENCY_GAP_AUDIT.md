@@ -1,5 +1,71 @@
 # WhatsApp AI Agency — Gap Audit
 
+## Update 73 — the Founder can now create a new company via chat, and a real, already-documented orphaned-tenant Blocker is fixed along the way
+
+Continued the Founder/Company model (P1). `packages/workforce-core`'s
+`company-ops/` module (customer-success readiness/lifecycle, finance
+snapshots, operations oversight, engineering diagnosis, offboarding
+workflows, mission reconstruction) is already an extensive, real "Company
+operations" layer built on `tenant_id` — confirmed before assuming a gap,
+consistent with this whole session's pattern. The real, concrete missing
+piece: the Founder can already view/resolve companies
+(`list_clients`/`get_client`/Update 70's `resolve_client_by_name`) but had
+no way to actually *create* one — the master brief's own canonical agency
+example ("Create a client operation for this business") wasn't reachable.
+
+Before wrapping the underlying `createTenant()` (`lib/tenants/repository.ts`)
+in a new tool, checked its own known issues first —
+`docs/product-design/FINAL_HARDENING_BACKLOG.md` already flagged, as a
+**Blocker**, that it inserts the `tenants` row and the owner's
+`tenant_members` row as two separate statements, not one transaction: a
+failure between them orphans a tenant with no owner, unreachable through
+any normal membership resolution. Every real caller (the onboarding wizard,
+the audit checkout/promo-redeem guest-tenant paths) already carried this
+risk; wrapping it in a new tool without fixing it first would have added a
+third caller inheriting the same defect.
+
+**Fixed for real**: a new single-transaction Postgres RPC,
+`create_tenant_with_owner` (security definer, service_role-only, mirroring
+the exact pattern `claim_social_package_post`/`settle_social_package_post`
+already established) — `createTenant()` now calls this RPC instead of two
+separate inserts, with zero caller-visible type/behavior change. **Live
+transactional proof, not just reasoning**: a real dry-run created a tenant +
+owner membership together, then rolled back to zero permanent rows; a
+second dry-run forced the *second* insert to fail (a real `NOT NULL`
+violation) and confirmed the *first* insert's row was **not** left behind —
+the exact orphaned-tenant scenario the backlog named, proven not to
+reproduce.
+
+**Then built the Founder-facing tool**: `create_client`
+([lib/agent-core/create-client-tool.ts](../../lib/agent-core/create-client-tool.ts)),
+reusing the now-atomic `createTenant()` unmodified. The creating principal
+becomes the new tenant's real owner member — immediately visible through
+every existing surface (Admin Web switcher, `list_clients`,
+`resolve_client_by_name`), not a special case. Gated by a new
+`agent:mutate:clients` permission, `platform_owner`-only, matching the
+identical narrow-circle precedent Update 72's Agent Factory permission
+already set.
+
+A third real instance of the extensionless-import defect class (Updates 71
+and 72) was found and fixed narrowly again, this time in
+`lib/tenants/repository.ts` — two lines.
+
+Verified:
+[create-client-tool.test.ts](../../lib/agent-core/__tests__/create-client-tool.test.ts)
+(4 scenarios — real slug generation matching the onboarding wizard's own
+algorithm byte-for-byte, the real RPC call shape, real error-message
+pass-through, and refusing a blank name). Zero regressions across
+`test:agent-core-lib` plus the three existing test files covering
+`createTenant`'s other real callers (`onboarding-wizard.test.ts`,
+`client-app-shell.test.ts`, `audit-payment-safety.test.ts`). Full-repo
+`tsc --noEmit` clean, lint clean, a real `NODE_ENV=production` build (exit
+0). Registry: `capability:atomic_tenant_owner_creation` and
+`capability:founder_create_client`, both new, both `REAL_EXPOSED`.
+Migration:
+`supabase/migrations/20260907070000_capability_registry_atomic_tenant_and_create_client.sql`
+(plus the RPC's own migration,
+`supabase/migrations/20260907060000_atomic_tenant_owner_creation.sql`).
+
 ## Update 72 — Agent Factory's missing safety switch: real disable/enable for dynamically-created agents, plus a second real instance of Update 71's import-extension defect found and fixed
 
 Continued the master brief's Agent model (P1) work. Rather than assume a

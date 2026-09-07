@@ -64,6 +64,14 @@ const STAFF_ROLE_PERMISSIONS: Record<string, readonly string[]> = {
     // for audit reports above.
     "agent:mutate:agent_definitions",
     "agent:read:agent_definitions",
+    // create_client: creates a real new tenant with the caller as owner.
+    // Same narrow-circle precedent as agent:mutate:agent_definitions just
+    // above -- provisioning a whole new company/business record is at
+    // least as consequential a meta-governance action, so it stays
+    // platform_owner-only rather than following this map's usual
+    // owner+admin symmetry. agent:read:clients (both roles, above) already
+    // covers viewing/resolving existing companies.
+    "agent:mutate:clients",
   ],
   platform_admin: [
     "agent:read:clients", "agent:read:leads", "agent:read:conversations", "agent:read:missions",

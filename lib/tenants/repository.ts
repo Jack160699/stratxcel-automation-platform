@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { createSupabaseServiceClient } from "../supabase/service";
-import type { TenantMemberRow, TenantRole, TenantRow } from "./types";
+import { createSupabaseServiceClient } from "../supabase/service.ts";
+import type { TenantMemberRow, TenantRole, TenantRow } from "./types.ts";
 
 type ServiceClient = ReturnType<typeof createSupabaseServiceClient>;
 
@@ -18,25 +18,33 @@ type ServiceClient = ReturnType<typeof createSupabaseServiceClient>;
  */
 type ReadClient = SupabaseClient;
 
+/**
+ * Atomic via a real single-transaction Postgres RPC
+ * (create_tenant_with_owner, security definer, service_role-only --
+ * see supabase/migrations/20260907060000_atomic_tenant_owner_creation.sql).
+ * Previously two separate insert statements — a documented Blocker
+ * (docs/product-design/FINAL_HARDENING_BACKLOG.md, "Onboarding & tenant
+ * creation" #1): a failure between them could orphan a tenant with no
+ * owner, unreachable through any normal membership resolution. A failure
+ * on either insert inside the RPC now rolls back both — live-verified via
+ * a real transactional dry-run (forcing the second insert to fail leaves
+ * zero rows in `tenants`), not just reasoned about. Error-message shape is
+ * unchanged for every existing caller: a slug collision still raises
+ * Postgres' own "duplicate key value violates unique constraint" text
+ * (app/api/platform/onboarding/route.ts's retry-with-suffixed-slug path
+ * matches on that substring and needs no change).
+ */
 export async function createTenant(
   supabase: ServiceClient,
   input: { slug: string; name: string; ownerUserId: string }
 ): Promise<TenantRow> {
-  const { data: tenant, error } = await supabase
-    .from("tenants")
-    .insert({ slug: input.slug, name: input.name })
-    .select("*")
-    .single();
-  if (error) throw new Error(`createTenant: ${error.message}`);
-
-  const { error: memberError } = await supabase.from("tenant_members").insert({
-    tenant_id: tenant.id,
-    user_id: input.ownerUserId,
-    role: "owner",
+  const { data, error } = await supabase.rpc("create_tenant_with_owner", {
+    p_slug: input.slug,
+    p_name: input.name,
+    p_owner_user_id: input.ownerUserId,
   });
-  if (memberError) throw new Error(`createTenant: failed to add owner membership: ${memberError.message}`);
-
-  return tenant as TenantRow;
+  if (error) throw new Error(`createTenant: ${error.message}`);
+  return data as TenantRow;
 }
 
 export async function inviteMember(
