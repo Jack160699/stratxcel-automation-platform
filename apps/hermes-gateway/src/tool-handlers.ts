@@ -5,6 +5,7 @@ import { createServiceClient as createHandoffClient, createHumanHandoff } from "
 import { recordAuditEvent, createServiceClient as createAuditClient } from "@stratxcel/audit";
 import { listSearchState } from "@stratxcel/search-discovery";
 import { listLeads } from "@stratxcel/leads-and-crm";
+import { inspectDomainDns, getVercelDomainStatus } from "@stratxcel/websites-and-domains";
 import type { ToolName } from "@stratxcel/hermes";
 import { STRATXCEL_CONTROLLED_TOOLS } from "@stratxcel/hermes";
 import { lookupSocialPublicationStatus } from "../../../lib/social/workforce/publication-status-lookup.ts";
@@ -331,6 +332,23 @@ export const TOOL_HANDLERS: Partial<Record<ToolName, ToolHandler>> = {
         candidateCount: 1,
       },
     );
+  },
+
+  // Exposes real, live domain status (public DNS + Vercel verification/SSL)
+  // to Hermes missions -- reuses inspectDomainDns/getVercelDomainStatus
+  // (@stratxcel/websites-and-domains) unmodified, the same real functions
+  // lib/agent-core/growth-media-tools.ts's own check_domain_status tool
+  // already calls. Domain-scoped, not tenant-row-scoped (public DNS lookup
+  // + "does Vercel know this domain" -- no cross-tenant data exposure,
+  // matching that existing tool's own behavior exactly).
+  async check_domain_status(_ctx, input) {
+    const domain = typeof input.domain === "string" ? input.domain.trim() : "";
+    if (!domain) return { available: false, reason: "domain is required" };
+    const [dns, vercel] = await Promise.all([
+      inspectDomainDns({ domain }).catch((err: unknown) => ({ error: err instanceof Error ? err.message : "dns_inspection_failed" })),
+      getVercelDomainStatus(domain).catch((err: unknown) => ({ error: err instanceof Error ? err.message : "vercel_status_failed" })),
+    ]);
+    return { domain, dns, vercel };
   },
 };
 

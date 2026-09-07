@@ -134,4 +134,12 @@ export const TOOL_PARAMETER_SCHEMAS: Partial<Record<ToolName, Record<string, unk
     required: ["brief"],
     additionalProperties: false,
   },
+  check_domain_status: {
+    type: "object",
+    properties: {
+      domain: { type: "string", description: "The domain to check, e.g. www.example.com. Usually the custom_domain from a prior check_website_status result." },
+    },
+    required: ["domain"],
+    additionalProperties: false,
+  },
 };

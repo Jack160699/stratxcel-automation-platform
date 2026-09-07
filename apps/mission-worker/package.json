@@ -20,6 +20,7 @@
     "@stratxcel/missions": "*",
     "@stratxcel/payments-and-wallet": "*",
     "@stratxcel/queue": "*",
-    "@stratxcel/search-discovery": "*"
+    "@stratxcel/search-discovery": "*",
+    "@stratxcel/websites-and-domains": "*"
   }
 }

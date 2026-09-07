@@ -83,6 +83,10 @@ export interface ToolContractMap {
     input: { brief: string; aspectRatio?: string };
     output: Record<string, unknown>;
   };
+  check_domain_status: {
+    input: { domain: string };
+    output: { domain: string; dns: unknown; vercel: unknown };
+  };
 }
 
 export const ALL_TOOL_NAMES: ToolName[] = [
@@ -103,6 +107,7 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "list_leads",
   "get_lead",
   "generate_image",
+  "check_domain_status",
 ];
 
 /**

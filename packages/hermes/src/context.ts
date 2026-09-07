@@ -18,6 +18,7 @@ const DEFAULT_TOOL_ALLOWLIST: ToolName[] = [
   "list_leads",
   "get_lead",
   "generate_image",
+  "check_domain_status",
 ];
 
 /**

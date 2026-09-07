@@ -1,5 +1,29 @@
 # WhatsApp AI Agency — Gap Audit
 
+## Update 79 — Hermes' sixth tool: real live domain DNS/SSL status
+
+One more in the same series: `check_domain_status`, reusing
+`inspectDomainDns`/`getVercelDomainStatus`
+(`@stratxcel/websites-and-domains`) unmodified — the same real functions
+`lib/agent-core/growth-media-tools.ts`'s own tool already calls, run
+concurrently. Domain-scoped rather than tenant-row-scoped (a public DNS
+lookup carries no cross-tenant exposure risk, matching the existing
+agent-core tool's own behavior — no new security precedent introduced).
+Complements `check_website_status` (Update 75, which only reads the
+stored value, not live state).
+
+Verified:
+[check-domain-status.test.ts](../../apps/hermes-gateway/src/__tests__/check-domain-status.test.ts)
+(2 scenarios). Zero regressions across `test:hermes-mission-control`.
+Full-repo `tsc --noEmit` clean on the first pass, lint clean, a real
+`NODE_ENV=production` build (exit 0). Registry:
+`capability:hermes_domain_status_exposure`, new row, `REAL_EXPOSED`.
+Migration:
+`supabase/migrations/20260907130000_capability_registry_hermes_domain_status_exposure.sql`.
+
+Hermes' restricted tool vocabulary: **12 → 18** across this whole series
+(Updates 74-79).
+
 ## Update 78 — Hermes' fifth tool: real image generation, and the first real per-mission budget gate
 
 Came back to `generate_image` (deferred in Update 77) and gave it the
