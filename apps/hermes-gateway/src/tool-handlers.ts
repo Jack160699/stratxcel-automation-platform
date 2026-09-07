@@ -242,6 +242,21 @@ export const TOOL_HANDLERS: Partial<Record<ToolName, ToolHandler>> = {
     const state = await listSearchState(createMissionsClient() as never, ctx.tenantId);
     return { ...state };
   },
+
+  // Exposes the real Website Factory to Hermes missions -- the same
+  // site_projects columns lib/agent-core/growth-media-tools.ts's own
+  // check_website_status tool and the Admin Website page already read.
+  // Read-only; tenant comes from the verified mission context only.
+  async check_website_status(ctx) {
+    const supabase = createMissionsClient();
+    const { data: sites, error } = await supabase
+      .from("site_projects")
+      .select("id, tenant_id, name, slug, status, custom_domain, framework, template, created_at, updated_at")
+      .eq("tenant_id", ctx.tenantId)
+      .order("created_at", { ascending: false });
+    if (error) throw new Error(`check_website_status: ${error.message}`);
+    return { sites: sites ?? [] };
+  },
 };
 
 export async function invokeTool(tool: ToolName, ctx: ToolCallContext, input: Record<string, unknown>): Promise<Record<string, unknown>> {

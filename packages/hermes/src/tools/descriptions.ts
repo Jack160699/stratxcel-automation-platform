@@ -21,4 +21,5 @@ export const TOOL_DESCRIPTIONS: Record<ToolName, string> = {
   create_crm_lead: "Record a new CRM lead. Input: { contactName?, contactPhone?, contactEmail?, metadata? }.",
   attach_research_evidence: "Attach a cited source to this mission's research trail. Input: { artifactId, sourceUrl?, summary }.",
   check_growth_status: "Real, currently-stored SEO/AEO/GEO opportunities, recommendations, actions, and measurement snapshots for this mission's tenant -- the same data the Search Growth dashboard shows. Never re-crawls; reads what's already computed. No input.",
+  check_website_status: "Real, currently-stored Stratxcel-built websites for this mission's tenant -- name, slug, status (draft/live/etc.), custom domain, framework, template, timestamps. The same data the Website page's list reads. No input.",
 };

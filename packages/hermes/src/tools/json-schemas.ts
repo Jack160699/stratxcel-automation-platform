@@ -105,4 +105,9 @@ export const TOOL_PARAMETER_SCHEMAS: Partial<Record<ToolName, Record<string, unk
     properties: {},
     additionalProperties: false,
   },
+  check_website_status: {
+    type: "object",
+    properties: {},
+    additionalProperties: false,
+  },
 };

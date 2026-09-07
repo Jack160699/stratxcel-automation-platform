@@ -67,6 +67,10 @@ export interface ToolContractMap {
       snapshots: unknown[];
     };
   };
+  check_website_status: {
+    input: Record<string, never>;
+    output: { sites: unknown[] };
+  };
 }
 
 export const ALL_TOOL_NAMES: ToolName[] = [
@@ -83,6 +87,7 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "create_crm_lead",
   "attach_research_evidence",
   "check_growth_status",
+  "check_website_status",
 ];
 
 /**

@@ -1,5 +1,27 @@
 # WhatsApp AI Agency — Gap Audit
 
+## Update 75 — Hermes' second tool: the real Website Factory, plus the mcp-server.ts lesson applied
+
+Continued the "expose existing StratXcel systems to Hermes" series (Update
+74) with `check_website_status` as Hermes' 14th tool — a direct,
+unmodified read of the real `site_projects` table (the same columns
+`lib/agent-core/growth-media-tools.ts`'s own `check_website_status` tool
+and the Admin Website page already read), no new package dependency
+needed. Same 7-touch-point pattern as Update 74 (types, contract, Zod
+schema, description, JSON schema, `DEFAULT_TOOL_ALLOWLIST`, handler) —
+this time including `apps/hermes-gateway/src/mcp-server.ts`'s own separate
+tool-description map from the start, applying the exact lesson Update 74's
+`tsc` failure surfaced. Full-repo `tsc --noEmit` came back clean on the
+first real pass this time.
+
+Verified:
+[check-website-status.test.ts](../../apps/hermes-gateway/src/__tests__/check-website-status.test.ts)
+(3 scenarios). Zero regressions across `test:hermes-mission-control`.
+Full-repo `tsc --noEmit` clean, lint clean, a real `NODE_ENV=production`
+build (exit 0). Registry: `capability:hermes_website_factory_exposure`,
+new row, `REAL_EXPOSED`. Migration:
+`supabase/migrations/20260907090000_capability_registry_hermes_website_factory_exposure.sql`.
+
 ## Update 74 — Hermes missions can now read the real Growth/Priority Engine, plus AWS access re-confirmed still unavailable
 
 Per an explicit instruction to keep going without stopping at checkpoints,
