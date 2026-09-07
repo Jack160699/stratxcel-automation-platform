@@ -109,6 +109,7 @@ export const TOOL_INPUT_SCHEMAS = {
     .object({
       key: z.string().min(1).max(120),
       value: z.string().min(1).max(1200),
+      confidence: z.enum(["FACT", "VERIFIED", "OBSERVATION", "INFERENCE", "PREFERENCE", "EXPERIMENT", "UNKNOWN"]).optional(),
     })
     .strict(),
   recall_company_memory: z.object({}).strict(),

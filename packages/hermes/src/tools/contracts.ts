@@ -88,8 +88,8 @@ export interface ToolContractMap {
     output: { domain: string; dns: unknown; vercel: unknown };
   };
   remember_company_fact: {
-    input: { key: string; value: string };
-    output: { remembered: true };
+    input: { key: string; value: string; confidence?: "FACT" | "VERIFIED" | "OBSERVATION" | "INFERENCE" | "PREFERENCE" | "EXPERIMENT" | "UNKNOWN" };
+    output: { remembered: true; confidence: string };
   };
   recall_company_memory: {
     input: Record<string, never>;

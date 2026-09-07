@@ -146,7 +146,12 @@ export const TOOL_PARAMETER_SCHEMAS: Partial<Record<ToolName, Record<string, unk
     type: "object",
     properties: {
       key: { type: "string", description: "A short, stable identifier for this fact, e.g. 'verified_supplier_1'. Max 120 chars." },
-      value: { type: "string", description: "The real, verified fact itself. Max 1200 chars." },
+      value: { type: "string", description: "The fact itself. Max 1200 chars." },
+      confidence: {
+        type: "string",
+        enum: ["FACT", "VERIFIED", "OBSERVATION", "INFERENCE", "PREFERENCE", "EXPERIMENT", "UNKNOWN"],
+        description: "How sure this actually is -- never omit this to make a guess look like a verified fact. Defaults to UNKNOWN if omitted.",
+      },
     },
     required: ["key", "value"],
     additionalProperties: false,

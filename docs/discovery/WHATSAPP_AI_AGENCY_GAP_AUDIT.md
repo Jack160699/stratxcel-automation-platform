@@ -1,5 +1,54 @@
 # WhatsApp AI Agency — Gap Audit
 
+## Update 84 — Memory now carries a real confidence/provenance classification (master brief Section 19)
+
+Section 19: *"Never turn an AI assumption into a verified business fact
+automatically."* This was a known gap explicitly flagged in Update 80's own
+status_notes when `remember_company_fact`/`recall_company_memory` shipped:
+`agent_memories` had no confidence classification for **any** caller —
+WhatsApp/Admin Copilot's own `rememberAgentFact`, or Hermes' own memory
+tools — every saved memory was treated as equally authoritative. Closed
+now.
+
+Added a real `confidence` column
+([migration 20260907210000](../../supabase/migrations/20260907210000_agent_memories_confidence_classification.sql))
+with exactly the 7 values the brief names — `FACT`, `VERIFIED`,
+`OBSERVATION`, `INFERENCE`, `PREFERENCE`, `EXPERIMENT`, `UNKNOWN` — `NOT
+NULL DEFAULT 'UNKNOWN'`. Live-verified with a real transactional dry-run
+that intentionally violated the CHECK constraint before applying the real
+migration, confirming it genuinely rejects an invented value and rolls
+back the whole batch (including the `ALTER TABLE` itself) with zero side
+effects.
+
+Wired through every real write/read path, not just one: `rememberAgentFact`/
+`listAgentMemories` (`packages/agent-core`, backing WhatsApp/Admin
+Copilot's `remember_fact`/`recall_memory` tools) and Hermes' own
+`remember_company_fact`/`recall_company_memory`. Both share the same
+discipline — `confidence` is an optional parameter, validated against the
+real enum, **defaulting to `UNKNOWN` on omission or an invalid value,
+never silently upgraded to `FACT`/`VERIFIED`** — and both tools' own
+instruction text now explicitly tells the model never to omit confidence
+to make a guess look verified.
+
+Verified:
+[memory-confidence-classification.test.ts](../../packages/agent-core/src/__tests__/memory-confidence-classification.test.ts)
+(5 scenarios) and
+[company-memory.test.ts](../../apps/hermes-gateway/src/__tests__/company-memory.test.ts)
+(extended with 3 new scenarios). Zero regressions across `test:agent-core`
+(17 files) and `test:hermes-mission-control` (11 files). Full-repo `tsc
+--noEmit` clean, lint clean, real `NODE_ENV=production` build (exit 0).
+Registry: `capability:memory_confidence_classification`, `REAL_EXPOSED`.
+Migrations:
+`supabase/migrations/20260907210000_agent_memories_confidence_classification.sql`,
+`supabase/migrations/20260907220000_capability_registry_memory_confidence_classification.sql`.
+
+Scope stated honestly: deliberately does **not** add automatic
+after-the-fact confidence classification (e.g. an LLM guessing a memory's
+own confidence retroactively) — the model that *writes* the memory must
+state its own confidence honestly at write time. A pre-existing memory
+(written before this migration) reads back as `UNKNOWN` — the honest
+state — never silently reclassified as something stronger.
+
 ## Update 83 — The Admin Connector/Capability Control Plane (master brief Section 25-32)
 
 The next major admin feature, per the master brief's own framing. Before

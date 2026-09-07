@@ -1,7 +1,16 @@
 import type { ServiceClient } from "../../db.ts";
 import type { AgentPrincipal } from "../../principal.ts";
 
-export interface AgentMemory { id: string; scope: "personal" | "workspace" | "agency"; memoryKey: string; memoryValue: string; updatedAt: string }
+/**
+ * Provenance classification per master brief Section 19: "Never turn an AI
+ * assumption into a verified business fact automatically." Mirrors
+ * agent_memories.confidence's own CHECK constraint exactly
+ * (supabase/migrations/20260907210000_agent_memories_confidence_classification.sql).
+ */
+export const MEMORY_CONFIDENCE_VALUES = ["FACT", "VERIFIED", "OBSERVATION", "INFERENCE", "PREFERENCE", "EXPERIMENT", "UNKNOWN"] as const;
+export type MemoryConfidence = (typeof MEMORY_CONFIDENCE_VALUES)[number];
+
+export interface AgentMemory { id: string; scope: "personal" | "workspace" | "agency"; memoryKey: string; memoryValue: string; confidence: MemoryConfidence; updatedAt: string }
 const SECRET_PATTERN = /(?:api[_ -]?key|secret|password|private[_ -]?key|authorization|bearer|token)\s*[:=]/i;
 
 export function assertSafeMemoryValue(value: string): void {
@@ -26,26 +35,32 @@ function applyScopeFilter(query: any, scoped: { owner_auth_user_id: string | nul
 }
 
 export async function listAgentMemories(supabase: ServiceClient, principal: AgentPrincipal, limit = 20): Promise<AgentMemory[]> {
-  let query = supabase.from("agent_memories").select("id, scope, memory_key, memory_value, updated_at").is("deleted_at", null);
+  let query = supabase.from("agent_memories").select("id, scope, memory_key, memory_value, confidence, updated_at").is("deleted_at", null);
   if (principal.kind === "client") query = query.or(`owner_auth_user_id.eq.${principal.authUserId},and(scope.eq.workspace,tenant_id.eq.${principal.tenantId})`);
   else query = query.or(`owner_auth_user_id.eq.${principal.authUserId}${principal.role === "platform_owner" ? ",scope.eq.agency" : ""}`);
   const { data, error } = await query.order("updated_at", { ascending: false }).limit(Math.min(limit, 50));
   if (error) throw error;
-  return (data ?? []).map((row: any) => ({ id: row.id, scope: row.scope, memoryKey: row.memory_key, memoryValue: row.memory_value, updatedAt: row.updated_at }));
+  return (data ?? []).map((row: any) => ({ id: row.id, scope: row.scope, memoryKey: row.memory_key, memoryValue: row.memory_value, confidence: row.confidence, updatedAt: row.updated_at }));
 }
 
-export async function rememberAgentFact(supabase: ServiceClient, principal: AgentPrincipal, input: { scope: AgentMemory["scope"]; key: string; value: string }): Promise<void> {
+/**
+ * confidence defaults to "UNKNOWN" -- the safe default per Section 19,
+ * matching the DB column's own default exactly. A caller must actively
+ * choose FACT/VERIFIED/etc; it is never inferred or upgraded silently.
+ */
+export async function rememberAgentFact(supabase: ServiceClient, principal: AgentPrincipal, input: { scope: AgentMemory["scope"]; key: string; value: string; confidence?: MemoryConfidence }): Promise<void> {
   assertSafeMemoryValue(input.value);
+  const confidence = input.confidence ?? "UNKNOWN";
   const scoped = scopeFilter(principal, input.scope);
   const existingQuery = supabase.from("agent_memories").select("id").eq("scope", input.scope).eq("memory_key", input.key).is("deleted_at", null);
   const existing = await applyScopeFilter(existingQuery, scoped).maybeSingle() as { data: { id: string } | null; error: unknown };
   if (existing.error) throw existing.error;
   if (existing.data) {
-    const { error } = await supabase.from("agent_memories").update({ memory_value: input.value, updated_at: new Date().toISOString() }).eq("id", existing.data.id);
+    const { error } = await supabase.from("agent_memories").update({ memory_value: input.value, confidence, updated_at: new Date().toISOString() }).eq("id", existing.data.id);
     if (error) throw error;
     return;
   }
-  const { error } = await supabase.from("agent_memories").insert({ scope: input.scope, ...scoped, memory_key: input.key, memory_value: input.value, source_channel: principal.channel, created_by: principal.authUserId });
+  const { error } = await supabase.from("agent_memories").insert({ scope: input.scope, ...scoped, memory_key: input.key, memory_value: input.value, confidence, source_channel: principal.channel, created_by: principal.authUserId });
   if (error) throw error;
 }
 

@@ -6,7 +6,7 @@ import { recordAuditEvent, createServiceClient as createAuditClient } from "@str
 import { listSearchState } from "@stratxcel/search-discovery";
 import { listLeads, updateLeadStatus, type LeadStatus } from "@stratxcel/leads-and-crm";
 import { inspectDomainDns, getVercelDomainStatus } from "@stratxcel/websites-and-domains";
-import { assertSafeMemoryValue } from "@stratxcel/agent-core";
+import { assertSafeMemoryValue, MEMORY_CONFIDENCE_VALUES, type MemoryConfidence } from "@stratxcel/agent-core";
 import type { ToolName } from "@stratxcel/hermes";
 import { STRATXCEL_CONTROLLED_TOOLS } from "@stratxcel/hermes";
 import { lookupSocialPublicationStatus } from "../../../lib/social/workforce/publication-status-lookup.ts";
@@ -31,6 +31,10 @@ export class ToolNotAvailableError extends Error {
 }
 
 type ToolHandler = (ctx: ToolCallContext, input: Record<string, unknown>) => Promise<Record<string, unknown>>;
+
+function isMemoryConfidence(value: unknown): value is MemoryConfidence {
+  return typeof value === "string" && (MEMORY_CONFIDENCE_VALUES as readonly string[]).includes(value);
+}
 
 /**
  * One handler per restricted tool, each constructing only the package
@@ -398,6 +402,10 @@ export const TOOL_HANDLERS: Partial<Record<ToolName, ToolHandler>> = {
     const value = typeof input.value === "string" ? input.value : "";
     if (!key || !value) return { outcome: "FAILED", reason: "missing_key_or_value" };
     assertSafeMemoryValue(value);
+    // Section 19: never default to sounding more certain than the mission
+    // actually is -- an invalid/omitted confidence falls back to the same
+    // safe "UNKNOWN" the DB column itself defaults to, never FACT/VERIFIED.
+    const confidence = isMemoryConfidence(input.confidence) ? input.confidence : "UNKNOWN";
 
     const supabase = createMissionsClient();
     const { data: missionRow, error: missionError } = await supabase
@@ -422,10 +430,10 @@ export const TOOL_HANDLERS: Partial<Record<ToolName, ToolHandler>> = {
     if (existing) {
       const { error } = await supabase
         .from("agent_memories")
-        .update({ memory_value: value, updated_at: new Date().toISOString() })
+        .update({ memory_value: value, confidence, updated_at: new Date().toISOString() })
         .eq("id", existing.id);
       if (error) throw new Error(`remember_company_fact: ${error.message}`);
-      return { remembered: true };
+      return { remembered: true, confidence };
     }
 
     const { error } = await supabase.from("agent_memories").insert({
@@ -434,18 +442,19 @@ export const TOOL_HANDLERS: Partial<Record<ToolName, ToolHandler>> = {
       owner_auth_user_id: null,
       memory_key: key,
       memory_value: value,
+      confidence,
       source_channel: "hermes",
       created_by: createdBy,
     });
     if (error) throw new Error(`remember_company_fact: ${error.message}`);
-    return { remembered: true };
+    return { remembered: true, confidence };
   },
 
   async recall_company_memory(ctx) {
     const supabase = createMissionsClient();
     const { data, error } = await supabase
       .from("agent_memories")
-      .select("id, memory_key, memory_value, updated_at")
+      .select("id, memory_key, memory_value, confidence, updated_at")
       .eq("scope", "workspace")
       .eq("tenant_id", ctx.tenantId)
       .is("deleted_at", null)

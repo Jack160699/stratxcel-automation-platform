@@ -30,6 +30,15 @@ async function testSchemasEnforceRealDbBoundsAndForbidSmuggledTenantId() {
   console.log("company-memory.test.ts: the real schemas enforce the DB's own key/value length bounds and forbid a smuggled tenantId — PASS");
 }
 
+async function testSchemaAcceptsRealConfidenceValuesAndRejectsAnInventedOne() {
+  const { TOOL_INPUT_SCHEMAS } = await import("@stratxcel/hermes");
+  const remember = TOOL_INPUT_SCHEMAS.remember_company_fact;
+  assert.equal(remember.safeParse({ key: "a", value: "b", confidence: "VERIFIED" }).success, true);
+  assert.equal(remember.safeParse({ key: "a", value: "b" }).success, true, "confidence must be optional -- a mission that genuinely doesn't know yet must still be able to save the fact");
+  assert.equal(remember.safeParse({ key: "a", value: "b", confidence: "CONFIRMED" }).success, false, "must reject an invented confidence value not in the real DB CHECK constraint");
+  console.log("company-memory.test.ts: the real schema accepts every real confidence value and rejects an invented one — PASS");
+}
+
 async function testRememberHandlerScopesToWorkspaceAndVerifiedTenant() {
   const source = readSource();
   const block = source.match(/async remember_company_fact\(ctx, input\) \{[\s\S]*?\n  \},\n\n  async recall_company_memory/)?.[0];
@@ -63,11 +72,32 @@ async function testRecallHandlerScopesToWorkspaceAndVerifiedTenantOnly() {
   console.log("company-memory.test.ts: the real recall_company_memory handler scopes to workspace + the verified tenant, excludes deleted rows — PASS");
 }
 
+async function testRememberHandlerDefaultsConfidenceToUnknownAndPersistsAnExplicitValue() {
+  const source = readSource();
+  const block = source.match(/async remember_company_fact\(ctx, input\) \{[\s\S]*?\n  \},\n\n  async recall_company_memory/)?.[0];
+  assert.ok(block, "remember_company_fact handler must exist");
+  assert.match(block!, /const confidence = isMemoryConfidence\(input\.confidence\) \? input\.confidence : "UNKNOWN";/, "an invalid/omitted confidence must fall back to UNKNOWN -- never a stronger classification by default (master brief Section 19)");
+  assert.match(block!, /memory_key: key,\s*\n\s*memory_value: value,\s*\n\s*confidence,/, "a new memory insert must persist the real, validated confidence value");
+  assert.match(block!, /\.update\(\{ memory_value: value, confidence, updated_at:/, "an update to an existing key must also persist the (possibly re-classified) confidence");
+  console.log("company-memory.test.ts: the real handler defaults confidence to UNKNOWN and persists an explicit value — PASS");
+}
+
+async function testRecallHandlerSelectsConfidenceSoTheModelCanSeeHowSureEachMemoryIs() {
+  const source = readSource();
+  const block = source.match(/async recall_company_memory\(ctx\) \{[\s\S]*?\n  \},\n\};/)?.[0];
+  assert.ok(block, "recall_company_memory handler must exist");
+  assert.match(block!, /\.select\("id, memory_key, memory_value, confidence, updated_at"\)/, "recall must select confidence so the model never treats every recalled memory as equally certain");
+  console.log("company-memory.test.ts: recall_company_memory selects confidence for every returned memory — PASS");
+}
+
 async function run() {
   await testSchemasEnforceRealDbBoundsAndForbidSmuggledTenantId();
+  await testSchemaAcceptsRealConfidenceValuesAndRejectsAnInventedOne();
   await testRememberHandlerScopesToWorkspaceAndVerifiedTenant();
   await testRememberHandlerUpdatesRatherThanDuplicatesAnExistingKey();
+  await testRememberHandlerDefaultsConfidenceToUnknownAndPersistsAnExplicitValue();
   await testRecallHandlerScopesToWorkspaceAndVerifiedTenantOnly();
+  await testRecallHandlerSelectsConfidenceSoTheModelCanSeeHowSureEachMemoryIs();
   console.log("company-memory.test.ts (@stratxcel/hermes-gateway): ALL PASS");
 }
 
