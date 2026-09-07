@@ -1,5 +1,61 @@
 # WhatsApp AI Agency — Gap Audit
 
+## Update 86 — A connected Gemini/OpenRouter key now actually affects real AI calls (Section 20/21)
+
+Closes a gap explicitly flagged as future work when the Connector Control
+Plane shipped earlier the same day: connecting a `gemini`/`openrouter` key
+via `/admin/connectors` previously only vaulted and health-checked it —
+never actually reached a real inference call.
+
+Built
+[`resolve-effective-key.ts`](../../packages/connectors/src/resolve-effective-key.ts)'s
+`resolveCachedPlatformConnectorSecret` — cached (5-minute TTL), fail-open —
+and wired it into
+[`lib/social/agent/provider.ts`](../../lib/social/agent/provider.ts)'s
+`AiRuntimeSocialProvider.complete()`, the **real, single composition
+root** every platform AI completion goes through today: WhatsApp, Admin
+Copilot, and Hermes missions alike (via `createAgentCoreProviderAdapter`
+→ `resolveConfiguredProvider` → this same provider). The resolved key
+passes into the real `GeminiTextProvider`/`OpenRouterTextProvider`
+constructors via their existing `apiKey` option — confirmed both already
+supported this before writing any code.
+
+Given this sits on the single highest-traffic code path in the product,
+treated it with matching care: (1) behaviorally a **strict no-op today**
+— no connector is connected in production yet, so every resolution
+returns the existing env var, proven by a dedicated test; (2) cached, so
+this adds zero DB round-trips per AI call in steady state; (3) **fails
+open** on any error — a connector-resolution problem must never be
+capable of breaking a real AI response. No circular dependency: app code
+depends on the package, never the reverse.
+
+Verified: 4 new scenarios in
+[connectors.test.ts](../../packages/connectors/src/__tests__/connectors.test.ts)
+(env fallback, fail-open, caching via a call-counting fake, and the real
+composition root confirmed to actually pass resolved keys into the real
+constructors). Ran the full existing suite touching this exact path
+before trusting it as safe —
+[provider.test.ts](../../lib/social/__tests__/provider.test.ts),
+`package-autopilot-producer.test.ts`,
+`ai-runtime-accounting-hardening.test.ts`, and the full 11-file
+`test:ai-runtime` suite, all pass. Two pre-existing, unrelated failures
+(`studio-creative-treatment.test.ts` — an environmental `OPENAI_API_KEY`
+precondition; `image-generation.test.ts` — a `validateCreativeTreatment`
+assertion in a different subsystem) were confirmed via `git stash` to
+fail *identically without this change*, before being ruled out as
+regressions. Full-repo `tsc --noEmit` clean, lint clean, real
+`NODE_ENV=production` build (exit 0). Registry:
+`capability:connector_backed_ai_provider_resolution`, `REAL_EXPOSED`
+— also corrects the earlier `gemini`/`openrouter` connector descriptions
+and the Connector Control Plane's own status_notes, which had said this
+wasn't done yet. Migration:
+`supabase/migrations/20260907240000_capability_registry_connector_backed_ai_provider_resolution.sql`.
+
+Stated honestly: a 5-minute cache means a newly-connected or just-revoked
+key can take up to 5 minutes to take/lose effect platform-wide — a
+deliberate trade-off favoring zero added hot-path latency over instant
+propagation.
+
 ## Update 85 — Hermes tool calls now enforce real connector/capability/autonomy authorization (master brief Section 18)
 
 Called out explicitly as "a major priority": a connector being present in

@@ -219,6 +219,71 @@ async function testInvokeToolWiresTheAuthorizationGateBeforeExecutionAndAuditsDe
   console.log("connectors.test.ts: invokeTool enforces the connector authorization gate before execution and audits denial — PASS");
 }
 
+async function testResolveCachedPlatformConnectorSecretFallsBackToEnvWhenNothingConnected() {
+  const { resolveCachedPlatformConnectorSecret, resetConnectorSecretCacheForTests } = await import("@stratxcel/connectors");
+  resetConnectorSecretCacheForTests();
+  const noConnectionSupabase = {
+    from() {
+      const builder = {
+        select() { return builder; },
+        eq() { return builder; },
+        is() { return builder; },
+        async maybeSingle() { return { data: null, error: null }; },
+      };
+      return builder;
+    },
+  };
+  const resolved = await resolveCachedPlatformConnectorSecret(noConnectionSupabase as never, "gemini", "env-fallback-key");
+  assert.equal(resolved, "env-fallback-key", "with no connector connected, the existing env var behavior must be completely unchanged");
+  console.log("connectors.test.ts: resolveCachedPlatformConnectorSecret falls back to the env var when nothing is connected — PASS");
+}
+
+async function testResolveCachedPlatformConnectorSecretFailsOpenOnAnyError() {
+  const { resolveCachedPlatformConnectorSecret, resetConnectorSecretCacheForTests } = await import("@stratxcel/connectors");
+  resetConnectorSecretCacheForTests();
+  const throwingSupabase = {
+    from() {
+      throw new Error("simulated DB outage");
+    },
+  };
+  const resolved = await resolveCachedPlatformConnectorSecret(throwingSupabase as never, "openrouter", "env-fallback-key-2");
+  assert.equal(resolved, "env-fallback-key-2", "a connector-resolution failure must NEVER break a real AI call that would otherwise have worked via the env var -- fail open, not throw");
+  console.log("connectors.test.ts: resolveCachedPlatformConnectorSecret fails open to the env var on any lookup error — PASS");
+}
+
+async function testResolveCachedPlatformConnectorSecretCachesAndDoesNotHitTheDbTwiceWithinTtl() {
+  const { resolveCachedPlatformConnectorSecret, resetConnectorSecretCacheForTests } = await import("@stratxcel/connectors");
+  resetConnectorSecretCacheForTests();
+  let callCount = 0;
+  const countingSupabase = {
+    from() {
+      callCount += 1;
+      const builder = {
+        select() { return builder; },
+        eq() { return builder; },
+        is() { return builder; },
+        async maybeSingle() { return { data: null, error: null }; },
+      };
+      return builder;
+    },
+  };
+  await resolveCachedPlatformConnectorSecret(countingSupabase as never, "gemini", "k1", 60_000);
+  await resolveCachedPlatformConnectorSecret(countingSupabase as never, "gemini", "k1", 60_000);
+  await resolveCachedPlatformConnectorSecret(countingSupabase as never, "gemini", "k1", 60_000);
+  assert.equal(callCount, 1, "a second/third call within the TTL must be served from cache, never re-querying the DB on every AI completion");
+  console.log("connectors.test.ts: resolveCachedPlatformConnectorSecret caches within its TTL, never re-querying per call — PASS");
+}
+
+async function testProviderCompositionRootWiresTheResolvedKeysIntoTheRealAiRuntimeConstructors() {
+  const source = fs.readFileSync(path.join(process.cwd(), "lib", "social", "agent", "provider.ts"), "utf8").replace(/\r\n/g, "\n");
+  assert.match(source, /import \{ resolveCachedPlatformConnectorSecret \} from "@stratxcel\/connectors";/, "the real composition root must import the real, cached, fail-open resolver -- not a bespoke re-implementation");
+  assert.match(source, /resolveCachedPlatformConnectorSecret\(internalWriteClient as never, "gemini", process\.env\.GEMINI_API_KEY\)/);
+  assert.match(source, /resolveCachedPlatformConnectorSecret\(internalWriteClient as never, "openrouter", process\.env\.OPENROUTER_API_KEY\)/);
+  assert.match(source, /new GeminiTextProvider\(\{ applySocialBoundarySanitize: sanitizeGeminiText, apiKey: geminiApiKey \}\)/, "the resolved key must actually reach the real GeminiTextProvider constructor, not just be computed and discarded");
+  assert.match(source, /new OpenRouterTextProvider\(\{ apiKey: openrouterApiKey \}\)/, "the resolved key must actually reach the real OpenRouterTextProvider constructor");
+  console.log("connectors.test.ts: the real composition root (lib/social/agent/provider.ts) wires resolved connector keys into the real AI provider constructors — PASS");
+}
+
 async function run() {
   await testRegistryHasAllTenConnectorsFromTheMasterBriefWithSaneShape();
   await testMcpManagedConnectorsDeclareNoRequiredEnvVarsButHaveARealStatusSource();
@@ -227,6 +292,10 @@ async function run() {
   await testReadOnlyAdapterConnectorsNeverCreateAConnectorConnectionsSecretColumnRead();
   await testAuthorizationGateRealDecisionTree();
   await testInvokeToolWiresTheAuthorizationGateBeforeExecutionAndAuditsDenial();
+  await testResolveCachedPlatformConnectorSecretFallsBackToEnvWhenNothingConnected();
+  await testResolveCachedPlatformConnectorSecretFailsOpenOnAnyError();
+  await testResolveCachedPlatformConnectorSecretCachesAndDoesNotHitTheDbTwiceWithinTtl();
+  await testProviderCompositionRootWiresTheResolvedKeysIntoTheRealAiRuntimeConstructors();
   console.log("connectors.test.ts (@stratxcel/connectors): ALL PASS");
 }
 

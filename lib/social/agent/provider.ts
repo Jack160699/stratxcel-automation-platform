@@ -7,6 +7,7 @@ import {
   createTenantAIRuntime,
   GeminiTextProvider,
   OpenAITextProvider,
+  OpenRouterTextProvider,
   resolveModelId,
   resolveTenantMonthSpend,
   resolveTenantPlanTier,
@@ -14,6 +15,15 @@ import {
   type AIMessage,
   type PlanTier,
 } from "@stratxcel/ai-runtime";
+// The real composition-root resolver (master brief Section 20/21): resolves
+// a Connector Control Plane-vaulted gemini/openrouter key when an admin has
+// connected one, falling back to the existing env var otherwise -- a strict
+// superset of the prior behavior, cached and fail-open so it is safe on
+// this file's own hot path (every AI completion platform-wide). Importing
+// @stratxcel/connectors here creates no circular dependency: this is app
+// code depending on a package, and @stratxcel/connectors itself never
+// imports anything from lib/social.
+import { resolveCachedPlatformConnectorSecret } from "@stratxcel/connectors";
 import {
   buildGeminiRequest,
   GEMINI_GENERATE_CONTENT_URL,
@@ -262,6 +272,19 @@ class AiRuntimeSocialProvider implements AIProvider {
       throw new Error("tenant_month_spend_ledger_unavailable");
     }
 
+    // Resolved once per cache TTL (packages/connectors' own 5-minute cache),
+    // never per-call -- see resolve-effective-key.ts's own doc comment.
+    // Both calls degrade to the existing env var (identical to prior
+    // behavior) whenever nothing is connected via Admin > Connectors, which
+    // is the real production state today -- this wiring is a no-op until an
+    // admin explicitly connects a key, matching Section 17's own "presence
+    // in Admin does not mean automatic use" principle in the other
+    // direction: an *unconnected* connector must never change behavior.
+    const [geminiApiKey, openrouterApiKey] = await Promise.all([
+      resolveCachedPlatformConnectorSecret(internalWriteClient as never, "gemini", process.env.GEMINI_API_KEY),
+      resolveCachedPlatformConnectorSecret(internalWriteClient as never, "openrouter", process.env.OPENROUTER_API_KEY),
+    ]);
+
     const { runtime, budgetEnvelope } = createTenantAIRuntime({
       tenantId,
       missionId: context.missionId ?? null,
@@ -271,8 +294,9 @@ class AiRuntimeSocialProvider implements AIProvider {
       productionBillable: true,
       internalWriteClient,
       deps: {
-        google: new GeminiTextProvider({ applySocialBoundarySanitize: sanitizeGeminiText }),
+        google: new GeminiTextProvider({ applySocialBoundarySanitize: sanitizeGeminiText, apiKey: geminiApiKey }),
         openai: new OpenAITextProvider(),
+        openrouter: new OpenRouterTextProvider({ apiKey: openrouterApiKey }),
         ...context.runtimeDeps,
       },
     });

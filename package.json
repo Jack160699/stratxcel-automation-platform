@@ -84,6 +84,7 @@
     "@stratxcel/audit": "*",
     "@stratxcel/audit-engine": "*",
     "@stratxcel/brand-brain": "*",
+    "@stratxcel/connectors": "*",
     "@stratxcel/creative-studio": "*",
     "@stratxcel/email-runtime": "*",
     "@stratxcel/human-handoff": "*",

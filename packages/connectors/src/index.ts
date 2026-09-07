@@ -4,3 +4,4 @@ export * from "./registry.ts";
 export * from "./repository.ts";
 export * from "./health.ts";
 export * from "./authorization.ts";
+export * from "./resolve-effective-key.ts";
