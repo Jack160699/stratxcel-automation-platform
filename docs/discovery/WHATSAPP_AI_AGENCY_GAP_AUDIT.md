@@ -1,5 +1,35 @@
 # WhatsApp AI Agency — Gap Audit
 
+## Update 77 — Hermes' fourth tool: single-lead lookup, and generate_image deliberately deferred with reasons stated
+
+Completed the CRM read pair with `get_lead` — Hermes' 16th tool, mirroring
+`packages/agent-core`'s own `get_lead`: a direct `crm_leads` query filtered
+on **both** `tenant_id` and `id`, so a guessed or leaked lead id belonging
+to a different real tenant structurally cannot resolve. Same
+7-touch-point pattern, `mcp-server.ts` updated in the same commit again.
+
+Investigated `generate_image` (Creative Studio exposure) as the next
+candidate and deliberately deferred it, stated honestly rather than
+silently skipped: its real underlying chain
+(`lib/social/agent/generate-image-tool.ts` →
+`@stratxcel/creative-studio`/`@stratxcel/ai-runtime` →
+`generate-image-capability.ts`/`capability-evidence.ts`) is meaningfully
+deeper than the three simple, one-hop reuses shipped so far, and each call
+spends real money — this warrants its own careful pass (verifying how
+Hermes' own mission-level `budgetCents` reservation should interact with
+the image engine's separate real per-call cost gate) rather than the same
+fast cadence as read-only additions.
+
+Verified:
+[get-lead.test.ts](../../apps/hermes-gateway/src/__tests__/get-lead.test.ts)
+(3 scenarios, including a simulated cross-tenant lookup proving a real row
+belonging to a different tenant never resolves). Zero regressions across
+`test:hermes-mission-control`. Full-repo `tsc --noEmit` clean, lint clean,
+a real `NODE_ENV=production` build (exit 0). Registry:
+`capability:hermes_crm_single_lead_read`, new row, `REAL_EXPOSED`.
+Migration:
+`supabase/migrations/20260907110000_capability_registry_hermes_crm_single_lead_read.sql`.
+
 ## Update 76 — Hermes' third tool: the real CRM pipeline, closing the write-only gap on create_crm_lead
 
 Continued the "expose existing StratXcel systems to Hermes" series (Updates

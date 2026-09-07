@@ -75,6 +75,10 @@ export interface ToolContractMap {
     input: { limit?: number };
     output: { leads: unknown[] };
   };
+  get_lead: {
+    input: { leadId: string };
+    output: { found: boolean; lead?: unknown };
+  };
 }
 
 export const ALL_TOOL_NAMES: ToolName[] = [
@@ -93,6 +97,7 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "check_growth_status",
   "check_website_status",
   "list_leads",
+  "get_lead",
 ];
 
 /**

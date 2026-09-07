@@ -117,4 +117,12 @@ export const TOOL_PARAMETER_SCHEMAS: Partial<Record<ToolName, Record<string, unk
     },
     additionalProperties: false,
   },
+  get_lead: {
+    type: "object",
+    properties: {
+      leadId: { type: "string", description: "A real crm_leads id from a prior list_leads or create_crm_lead result." },
+    },
+    required: ["leadId"],
+    additionalProperties: false,
+  },
 };

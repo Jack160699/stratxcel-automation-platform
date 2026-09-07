@@ -99,6 +99,7 @@ const TOOL_DESCRIPTIONS: Record<McpCallableName, string> = {
   check_growth_status: "Real, currently-stored SEO/AEO/GEO opportunities, recommendations, actions, and measurement snapshots for this mission's tenant. Never re-crawls.",
   check_website_status: "Real, currently-stored Stratxcel-built websites for this mission's tenant.",
   list_leads: "Real CRM leads for this mission's tenant, most recent first.",
+  get_lead: "Get a single real CRM lead by id (tenant-scoped).",
 };
 
 /** Read-only per Section 4 — no state anywhere in StratExcel changes as a result of these calls. Everything else is truthfully non-read-only; none are destructive. */

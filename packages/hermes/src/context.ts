@@ -16,6 +16,7 @@ const DEFAULT_TOOL_ALLOWLIST: ToolName[] = [
   "check_growth_status",
   "check_website_status",
   "list_leads",
+  "get_lead",
 ];
 
 /**

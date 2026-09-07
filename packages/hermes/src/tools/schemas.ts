@@ -85,6 +85,11 @@ export const TOOL_INPUT_SCHEMAS = {
       limit: z.number().int().min(1).max(50).optional(),
     })
     .strict(),
+  get_lead: z
+    .object({
+      leadId: z.string().min(1),
+    })
+    .strict(),
 } as const satisfies Partial<Record<ToolName, z.ZodTypeAny>>;
 
 /** The exact set of tool names an MCP caller may ever validate/invoke through this map. */

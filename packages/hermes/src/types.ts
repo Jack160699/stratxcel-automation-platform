@@ -53,7 +53,8 @@ export type ToolName =
   | "attach_research_evidence"
   | "check_growth_status"
   | "check_website_status"
-  | "list_leads";
+  | "list_leads"
+  | "get_lead";
 
 /**
  * What Hermes actually receives when a mission starts — no secrets, no

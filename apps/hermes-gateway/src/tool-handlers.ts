@@ -272,6 +272,24 @@ export const TOOL_HANDLERS: Partial<Record<ToolName, ToolHandler>> = {
     const leads = await listLeads(supabase as never, ctx.tenantId, limit);
     return { leads };
   },
+
+  // Single-lead companion to list_leads -- same real crm_leads table, both
+  // real ctx.tenantId AND the requested id must match (never a cross-tenant
+  // lead lookup, even with a guessed/leaked id from another tenant).
+  async get_lead(ctx, input) {
+    const leadId = typeof input.leadId === "string" ? input.leadId : "";
+    if (!leadId) return { found: false };
+    const supabase = createMissionsClient();
+    const { data, error } = await supabase
+      .from("crm_leads")
+      .select("*")
+      .eq("tenant_id", ctx.tenantId)
+      .eq("id", leadId)
+      .maybeSingle();
+    if (error) throw new Error(`get_lead: ${error.message}`);
+    if (!data) return { found: false };
+    return { found: true, lead: data };
+  },
 };
 
 export async function invokeTool(tool: ToolName, ctx: ToolCallContext, input: Record<string, unknown>): Promise<Record<string, unknown>> {
