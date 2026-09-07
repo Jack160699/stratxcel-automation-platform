@@ -1,5 +1,62 @@
 # WhatsApp AI Agency — Gap Audit
 
+## Update 72 — Agent Factory's missing safety switch: real disable/enable for dynamically-created agents, plus a second real instance of Update 71's import-extension defect found and fixed
+
+Continued the master brief's Agent model (P1) work. Rather than assume a
+gap, checked `packages/workforce-core` first (departments/roles/capability
+registry/DAG/CEO-planner/budgets/autonomy/performance -- Sections 7-10 of
+the brief are already substantially real and mature there) and Update 61's
+Agent Factory specifically. Its own recorded status was already honest and
+precise: "create/list only (no edit/disable tool yet)." Verified the actual
+shape of that gap directly rather than trust the note alone:
+[resolveAgentDispatch](../../lib/agent-core/agent-dispatch.ts) already
+refuses to dispatch any agent whose `status` isn't exactly `"active"` --
+real, correct code, present since Update 61. But no function or tool
+anywhere could ever actually set a row to `"disabled"` in the first place
+-- the safety check was real but structurally unreachable. A dynamically-
+created agent that started misbehaving, or was created by mistake, had no
+real off switch.
+
+**Built the missing write half**:
+[setAgentDefinitionStatus](../../lib/agent-core/agent-definitions.ts) (a
+real `UPDATE` against the existing `agent_definitions` table -- already
+granted to `service_role`, no table migration needed) and
+`set_agent_definition_status`
+([agent-factory-tools.ts](../../lib/agent-core/agent-factory-tools.ts)),
+gated by the same `agent:mutate:agent_definitions` permission
+`create_agent_definition` already uses (platform_owner only) -- disabling
+another agent's dispatch surface is the same meta-governance class of
+action as creating one.
+
+**A second real instance of Update 71's defect class, found the same way**:
+writing the first standalone test for this exact function chain (nothing
+in `lib/agent-core/agent-dispatch.ts` or `agent-factory-tools.ts` had ever
+been exercised outside Next.js's bundler before) hit `ERR_MODULE_NOT_FOUND`
+-- `agent-dispatch.ts` had two extensionless relative imports. Fixed those
+two lines. Deliberately scoped narrower than Update 71's fix, stated
+honestly: `lib/agent-core/` has roughly 15 other files sharing the same
+extensionless-import convention, all working fine under Next.js's bundler
+(confirmed by this pass's own real production build) -- this change fixed
+only the two lines actually blocking this one test, not the wider
+pre-existing pattern across the directory.
+
+Verified:
+[agent-factory-status.test.ts](../../lib/agent-core/__tests__/agent-factory-status.test.ts)
+(3 real scenarios) -- proves not just that a status field flips, but that
+the real `resolveAgentDispatch` function (the exact one WhatsApp and Admin
+Copilot both call on every dispatch) actually refuses a disabled agent
+end-to-end, and that re-enabling restores it through that same real path.
+The new tool wrapper itself is verified via `tsc --noEmit` + a real
+`NODE_ENV=production` build (which compiles/bundles its full transitive
+chain through Next.js) rather than a standalone unit test -- the identical
+verification `create_agent_definition` itself has always relied on, no new
+inconsistency introduced. Zero regressions across the full
+`test:agent-core-lib` suite. Full-repo `tsc --noEmit` clean, lint clean,
+real production build (exit 0). Registry:
+`capability:agent_factory_disable_enable`, new row, `REAL_EXPOSED`.
+Migration:
+`supabase/migrations/20260907050000_capability_registry_agent_factory_disable_enable.sql`.
+
 ## Update 71 — OpenRouter built as a real, opt-in fourth AI resource pool (Resource/Quota Manager, P1)
 
 The master brief's Resource/Quota Manager section explicitly names

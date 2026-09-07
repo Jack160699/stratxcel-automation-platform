@@ -31,7 +31,7 @@
  */
 import type { AgentTool } from "@stratxcel/agent-core";
 import { resolveAgentTools } from "@stratxcel/agent-core";
-import { createAgentDefinition, getAgentDefinition, listAgentDefinitions } from "./agent-definitions";
+import { createAgentDefinition, getAgentDefinition, listAgentDefinitions, setAgentDefinitionStatus } from "./agent-definitions";
 import { ALL_EXTRA_TOOLS } from "./all-tools";
 
 const KEY_SHAPE = /^[a-z0-9_-]{2,40}$/;
@@ -137,4 +137,58 @@ export const LIST_AGENT_DEFINITIONS_TOOL: AgentTool = {
   },
 };
 
-export const AGENT_FACTORY_TOOLS: AgentTool[] = [CREATE_AGENT_DEFINITION_TOOL, LIST_AGENT_DEFINITIONS_TOOL];
+/**
+ * The write half of the safety check resolveAgentDispatch (agent-dispatch.ts)
+ * has always enforced on every dispatch ("no active agent named ...") --
+ * that refusal was real, but until this tool nothing could ever actually
+ * set a row to "disabled" (or back to "active"), meaning a misbehaving
+ * dynamically-created agent had no real off switch. Same governance
+ * restriction as create_agent_definition (agent:mutate:agent_definitions,
+ * platform_owner only in v1) -- disabling/re-enabling another agent's
+ * dispatch surface is the same meta-governance class of action as creating
+ * one.
+ */
+export const SET_AGENT_DEFINITION_STATUS_TOOL: AgentTool = {
+  schema: {
+    name: "set_agent_definition_status",
+    description:
+      "Disables or re-enables a real agent created via create_agent_definition, by its key. A disabled agent's dispatch prefix (AGENT:<key>: ...) stops working immediately -- resolveAgentDispatch refuses any key that isn't status='active'. Use to turn off an agent that's misbehaving, no longer needed, or was created by mistake, or to bring one back.",
+    parameters: {
+      type: "object",
+      properties: {
+        key: { type: "string", description: "The agent's key, exactly as given to create_agent_definition." },
+        status: { type: "string", enum: ["active", "disabled"], description: "The status to set." },
+      },
+      required: ["key", "status"],
+    },
+  },
+  mutating: true,
+  risk: "low_mutation",
+  requiredPermission: "agent:mutate:agent_definitions",
+  async execute(ctx, args) {
+    const key = typeof args.key === "string" ? args.key.trim().toLowerCase() : "";
+    const status = args.status === "active" || args.status === "disabled" ? args.status : null;
+    if (!key || !KEY_SHAPE.test(key)) return { outcome: "FAILED", reason: "invalid_key" };
+    if (!status) return { outcome: "FAILED", reason: "invalid_status" };
+
+    let updated;
+    try {
+      updated = await setAgentDefinitionStatus(ctx.supabase, key, status);
+    } catch (err) {
+      return { outcome: "FAILED", reason: err instanceof Error ? err.message : "update_failed" };
+    }
+    if (!updated) return { outcome: "FAILED", reason: "agent_not_found" };
+    return { outcome: "UPDATED", key: updated.key, status: updated.status };
+  },
+  interpretOutcome(result) {
+    const r = result as { outcome?: string; reason?: string } | null;
+    if (r?.outcome === "UPDATED") return null;
+    return { status: "failed", detail: r?.reason };
+  },
+};
+
+export const AGENT_FACTORY_TOOLS: AgentTool[] = [
+  CREATE_AGENT_DEFINITION_TOOL,
+  LIST_AGENT_DEFINITIONS_TOOL,
+  SET_AGENT_DEFINITION_STATUS_TOOL,
+];

@@ -18,10 +18,10 @@
  * (e.g. growth-analysis-outcome.ts) -- it's re-exported here so callers of
  * this module don't need to know about the split.
  */
-import { getAgentDefinition, type AgentDefinitionRow } from "./agent-definitions";
-import { parseAgentDispatchPrefix } from "./agent-dispatch-parser";
+import { getAgentDefinition, type AgentDefinitionRow } from "./agent-definitions.ts";
+import { parseAgentDispatchPrefix } from "./agent-dispatch-parser.ts";
 
-export { parseAgentDispatchPrefix, type ParsedAgentDispatchPrefix } from "./agent-dispatch-parser";
+export { parseAgentDispatchPrefix, type ParsedAgentDispatchPrefix } from "./agent-dispatch-parser.ts";
 
 export interface AgentDispatchResolution {
   /** The text to actually send into runAgentTurn -- the original text,

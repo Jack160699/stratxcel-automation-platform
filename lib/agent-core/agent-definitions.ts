@@ -28,6 +28,11 @@ type MinimalSupabase = {
       order(column: string, opts: { ascending: boolean }): Promise<{ data: AgentDefinitionRow[] | null; error: { message: string } | null }>;
     };
     insert(row: Record<string, unknown>): { select(columns: string): { single(): Promise<{ data: AgentDefinitionRow; error: { message: string } | null }> } };
+    update(row: Record<string, unknown>): {
+      eq(column: string, value: string): {
+        select(columns: string): { single(): Promise<{ data: AgentDefinitionRow; error: { message: string } | null }> };
+      };
+    };
   };
 };
 
@@ -71,5 +76,36 @@ export async function createAgentDefinition(supabase: unknown, input: CreateAgen
     .select("*")
     .single();
   if (error) throw new Error(`AGENT_DEFINITION_CREATE_FAILED: ${error.message}`);
+  return data;
+}
+
+/**
+ * The write half of the safety check resolveAgentDispatch (agent-dispatch.ts)
+ * already enforces on every dispatch (`definition.status !== "active"` ->
+ * refuse) -- that check existed from the start, but nothing could ever
+ * actually flip a row to "disabled" until this function, meaning it was
+ * real but structurally unreachable. Closes it for real, not just at the
+ * type level (AgentDefinitionRow.status has always allowed "disabled").
+ */
+export async function setAgentDefinitionStatus(
+  supabase: unknown,
+  key: string,
+  status: "active" | "disabled"
+): Promise<AgentDefinitionRow | null> {
+  const client = supabase as MinimalSupabase;
+  const { data, error } = await client
+    .from("agent_definitions")
+    .update({ status, updated_at: new Date().toISOString() })
+    .eq("key", key)
+    .select("*")
+    .single();
+  if (error) {
+    // A single() update against a key that doesn't exist is a real "not
+    // found" case, not a genuine failure -- surfaced to the caller as null
+    // rather than a thrown error, matching getAgentDefinition's own
+    // not-found-is-not-an-error convention.
+    if (/no rows|not found|pgrst116/i.test(error.message)) return null;
+    throw new Error(`AGENT_DEFINITION_STATUS_UPDATE_FAILED: ${error.message}`);
+  }
   return data;
 }
