@@ -1,5 +1,40 @@
 # WhatsApp AI Agency — Gap Audit
 
+## Update 82 — Company/Organization model re-verified: genuinely mature, no code change
+
+A verification-only pass, per the master brief's own "check before
+building" discipline — not every update this series produces new code, and
+this is a deliberate example of that.
+
+Checked each real piece against source, not memory of prior sessions:
+create (`create_client` + the atomic `create_tenant_with_owner` RPC, Update
+73), list/get (`list_clients`/`get_client`), name resolution
+(`resolve_client_by_name`, Update 70), and the extensive
+`packages/workforce-core/src/company-ops/` layer (customer-success,
+engineering, finance, offboarding, operations, observability, admin/
+customer view contracts — all real, all `tenant_id`-scoped).
+
+One thing initially looked like a real chat-parity gap: the web admin's
+per-client overview page
+([app/admin/(shell)/clients/[tenantId]/page.tsx](../../app/admin/\(shell\)/clients/%5BtenantId%5D/page.tsx))
+uses `lib/tenants/admin-repository.ts`'s `loadAgencyClientOverview`
+(tenant + missions + approvals + wallet + bindings in one call), and that
+composed function itself has no chat-tool equivalent. But tracing its
+individual pieces found `packages/agent-core/src/tools/admin/read-tools.ts`
+already exposes `list_missions`, `list_approvals`, and `finance_summary`
+(wallet + subscription + invoices + entitlements — actually richer than
+the web page's bare wallet figure) as real, tenant-scoped chat tools — so
+a staff Founder already has full chat-reachable parity with the web
+overview via a small number of existing tool calls. The only true absence
+is a single-call convenience aggregator, which is a nice-to-have, not a
+functional gap, since nothing it would compose is otherwise unreachable.
+
+Conclusion: this area is genuinely ~90%+ built. Recorded as
+`capability:company_organization_model_verification` (`REAL_EXPOSED`) so a
+future session doesn't re-investigate the same ground from scratch.
+Migration:
+`supabase/migrations/20260907170000_capability_registry_company_organization_verification.sql`.
+
 ## Update 81 — Hermes can now move a real CRM lead through the pipeline (update_lead_status)
 
 The mutation companion to `list_leads`/`get_lead` (Updates 76-77): missions
