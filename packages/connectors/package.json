@@ -1,0 +1,16 @@
+{
+  "name": "@stratxcel/connectors",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "dependencies": {
+    "@stratxcel/ai-runtime": "*",
+    "@stratxcel/byok": "*",
+    "@stratxcel/queue": "*",
+    "@stratxcel/search-discovery": "*",
+    "@stratxcel/whatsapp": "*",
+    "@supabase/supabase-js": "^2.110.7"
+  }
+}

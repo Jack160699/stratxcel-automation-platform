@@ -72,6 +72,13 @@ const STAFF_ROLE_PERMISSIONS: Record<string, readonly string[]> = {
     // owner+admin symmetry. agent:read:clients (both roles, above) already
     // covers viewing/resolving existing companies.
     "agent:mutate:clients",
+    // Connector/Capability Control Plane (master brief Section 25-32):
+    // connecting a credential and assigning a capability's autonomy level
+    // is at least as consequential as create_client -- same narrow-circle
+    // precedent, platform_owner-only. agent:read:connectors (both roles,
+    // below) already covers status visibility.
+    "agent:mutate:connectors",
+    "agent:read:connectors",
   ],
   platform_admin: [
     "agent:read:clients", "agent:read:leads", "agent:read:conversations", "agent:read:missions",
@@ -87,6 +94,7 @@ const STAFF_ROLE_PERMISSIONS: Record<string, readonly string[]> = {
     "agent:read:audit_reports",
     "agent:mutate:audit_reports",
     "agent:read:agent_definitions",
+    "agent:read:connectors",
   ],
   audit_reviewer: ["agent:read:audit", "agent:read:clients", "agent:read:leads", "agent:read:memory", "agent:mutate:memory"],
   finance_reviewer: ["agent:read:finance", "agent:read:clients", "agent:read:memory", "agent:mutate:memory"],

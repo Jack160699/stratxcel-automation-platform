@@ -7,6 +7,7 @@ import { listOpenHandoffs } from "@stratxcel/human-handoff";
 import { listAuditEvents } from "@stratxcel/audit";
 import { listKillSwitches, getWorkerHealth, type WorkerType } from "@stratxcel/queue";
 import { getWalletAccount, listInvoicesForTenant, getEntitlementSummary } from "@stratxcel/payments-and-wallet";
+import { listConnectorDefinitions, getConnectorDefinition, getConnectorConnection, resolveConnectorHealth, listCapabilityAssignments } from "@stratxcel/connectors";
 import { matchClientsByName } from "./resolve-client.ts";
 import type { AgentTool } from "../contract.ts";
 
@@ -417,6 +418,60 @@ export const ADMIN_READ_TOOLS: AgentTool[] = [
       const { data, error } = await query;
       if (error) throw error;
       return { capabilities: data ?? [] };
+    },
+  },
+  {
+    schema: {
+      name: "list_connectors",
+      description:
+        "The real Connector/Capability Control Plane status: every external capability (AWS, GitHub, Supabase, Vercel, WhatsApp, Meta, Google Workspace, Gemini, OpenRouter, browser) with its real, freshly-checked health and discovered capabilities -- never a cached or fabricated status. Platform connectors (aws/github/supabase/gemini/openrouter/browser) need no tenantId; company connectors (vercel/whatsapp/meta/google_workspace) need one. Use this to answer 'what's connected', 'is X healthy', or before telling a Founder a capability is missing.",
+      parameters: {
+        type: "object",
+        properties: { tenantId: { type: "string", description: "Required only for company-scoped connectors -- omit for the platform view." } },
+      },
+    },
+    mutating: false,
+    risk: "read",
+    requiredPermission: "agent:read:connectors",
+    async execute(ctx, args) {
+      const tenantId = typeof args.tenantId === "string" ? args.tenantId : null;
+      const definitions = listConnectorDefinitions();
+      const rows = await Promise.all(
+        definitions.map(async (def) => {
+          const scopedTenantId = def.scopeLevel === "platform" ? null : tenantId;
+          const connection = await getConnectorConnection(ctx.supabase as never, def.key, scopedTenantId);
+          const health = await resolveConnectorHealth(ctx.supabase as never, def.key, connection, scopedTenantId);
+          return { key: def.key, label: def.label, category: def.category, scopeLevel: def.scopeLevel, status: health.status, discoveredCapabilities: health.discoveredCapabilities, lastError: health.lastError };
+        })
+      );
+      return { connectors: rows };
+    },
+  },
+  {
+    schema: {
+      name: "get_connector_status",
+      description: "Real detail for one connector: definition, connection, freshly-checked health, and its real capability assignments (who it's assigned to, and at what autonomy level). Use a key from list_connectors.",
+      parameters: {
+        type: "object",
+        properties: {
+          connectorKey: { type: "string", description: "e.g. aws, vercel, whatsapp, gemini, openrouter." },
+          tenantId: { type: "string", description: "Required only for company-scoped connectors." },
+        },
+        required: ["connectorKey"],
+      },
+    },
+    mutating: false,
+    risk: "read",
+    requiredPermission: "agent:read:connectors",
+    async execute(ctx, args) {
+      const connectorKey = typeof args.connectorKey === "string" ? args.connectorKey : "";
+      const def = getConnectorDefinition(connectorKey);
+      if (!def) return { found: false, reason: "unknown_connector" };
+      const tenantId = def.scopeLevel === "platform" ? null : (typeof args.tenantId === "string" ? args.tenantId : null);
+      const connection = await getConnectorConnection(ctx.supabase as never, connectorKey, tenantId);
+      const health = await resolveConnectorHealth(ctx.supabase as never, connectorKey, connection, tenantId);
+      const assignments = connection ? await listCapabilityAssignments(ctx.supabase as never, connection.id) : [];
+      return { found: true, definition: def, health, assignments };
     },
   },
 ];

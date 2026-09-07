@@ -48,6 +48,9 @@
       "@stratxcel/byok": [
         "./packages/byok/src/index.ts"
       ],
+      "@stratxcel/connectors": [
+        "./packages/connectors/src/index.ts"
+      ],
       "@stratxcel/creative-studio": [
         "./packages/creative-studio/src/index.ts"
       ],

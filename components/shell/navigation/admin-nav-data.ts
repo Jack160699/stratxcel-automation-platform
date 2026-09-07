@@ -84,7 +84,10 @@ export const ADMIN_NAV_GROUPS_DATA: NavGroupData[] = [
   },
   {
     label: "Connections",
-    items: [{ key: "integrations", label: "Integrations", href: "/admin/integrations", release: "v1", mode: "technical" }],
+    items: [
+      { key: "integrations", label: "Integrations", href: "/admin/integrations", release: "v1", mode: "technical" },
+      { key: "connectors", label: "Connectors", href: "/admin/connectors", release: "v1", mode: "technical" },
+    ],
   },
   {
     label: "Jobs & Queues",

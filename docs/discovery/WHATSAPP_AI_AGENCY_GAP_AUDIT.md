@@ -1,5 +1,94 @@
 # WhatsApp AI Agency — Gap Audit
 
+## Update 83 — The Admin Connector/Capability Control Plane (master brief Section 25-32)
+
+The next major admin feature, per the master brief's own framing. Before
+writing any code, searched the repo (Section 46's own discipline) and found
+**three real, existing, narrower systems** that must never be duplicated:
+`tenant_provider_connections` (`@stratxcel/byok` — tenant BYOK AI-key
+billing), `search_website_connections` (`@stratxcel/search-discovery` — a
+tenant's own Vercel token for their website), `search_google_connections`
+(a tenant's own Google OAuth for GSC/GA4), and `owner_source_connections`
+(`lib/owner-brain` — the Founder's *personal* data-ingestion sources for
+the morning-brief assistant). None of these governs external capabilities
+for **Hermes' own execution** across companies/departments/agents with an
+autonomy level — that genuinely didn't exist. Also found `packages/byok`'s
+`SecretVault` (real AES-256-GCM, `vault_secrets`) — reused directly rather
+than re-implemented.
+
+Built a new package,
+[`packages/connectors`](../../packages/connectors/src/index.ts)
+(`types.ts`, `registry.ts`, `repository.ts`, `health.ts`), covering the
+exact 10 connectors the brief names: AWS, GitHub, Supabase, Vercel,
+WhatsApp, Meta, Google Workspace, Gemini, OpenRouter, browser/computer.
+Design principle, applied per connector: where a real connection already
+exists elsewhere (Vercel for a company, WhatsApp, Meta, Google Workspace),
+this control plane is a **read-only adapter** over the existing table —
+never a second, competing credential store. Where none exists (AWS,
+GitHub, Supabase, Gemini, OpenRouter, browser — all platform-level), it
+stores a real vaulted secret via `@stratxcel/byok`'s vault, unmodified.
+
+Health is computed for real, per connector, reusing already-live functions
+rather than fabricating a status: `aws` → `@stratxcel/queue`'s
+`getWorkerHealth` against real `worker_heartbeats`; `gemini`/`openrouter` →
+`@stratxcel/ai-runtime`'s already-live `probeGeminiReadiness`/
+`probeOpenRouterReadiness`; `vercel` (platform) → the real
+`validateVercelToken`; `github` → a real live `GET
+https://api.github.com/user`; `whatsapp`/`meta` → real `phone_bindings`;
+`google_workspace` → real `search_google_connections`. Two connectors are
+stated honestly rather than overclaimed: `supabase` is presence-based only
+in v1 (no live Management API probe), and `browser` is always `pending`
+(no real Hermes browser tool exists in its restricted `ToolName` union
+yet — a genuine, separate future BUILD item).
+
+A real mid-build correction, recorded honestly rather than silently fixed:
+`meta` was initially described as covering Instagram/Facebook social
+*posting*. Investigation found that's a real, separate, already-live
+system (`lib/social/repositories/accounts.ts`'s `social_accounts` table,
+driving the onboarding `ConnectorSheet` flow) — not safely wireable in
+this pass because `social_accounts` scopes by `owner_id`, whose exact
+relationship to `tenant_id` needs confirming first. Corrected `meta` to
+accurately track the same WhatsApp Business Cloud API signal as
+`whatsapp`, with the Instagram/Facebook gap stated as a precise future
+item, not silently dropped.
+
+A real, functional Admin UI at
+[`/admin/connectors`](<../../app/admin/(shell)/connectors/page.tsx>) (added
+to the "Connections" nav group) lets staff CONNECT/DISCONNECT a connector,
+VIEW its real health and discovered capabilities, and ASSIGN a capability
+to a company/department/agent with an explicit autonomy level
+(read/prepare/execute/approval_required/disabled) — these are real
+Postgres rows, not a cosmetic form (per Section 26's own "must actually
+configure the capability layer" requirement). Four API routes back it:
+list, connect/disconnect/detail, assignments, and per-assignment autonomy
+update/delete. Two new staff chat tools, `list_connectors`/
+`get_connector_status`, expose the same real data to WhatsApp/Admin
+Copilot, gated by new `agent:read:connectors`/`agent:mutate:connectors`
+permissions (the latter platform_owner-only, matching `create_client`'s
+precedent for meta-governance actions).
+
+Verified:
+[connectors.test.ts](../../packages/connectors/src/__tests__/connectors.test.ts)
+(5 scenarios — registry completeness/shape, honest status sourcing,
+secret-storage refusal for mcp_managed/read-only-adapter connectors proven
+via an exploding fake Supabase client, health.ts's real function reuse
+confirmed by source inspection, and that whatsapp/meta/google_workspace
+health never touches a connector-vaulted secret). Zero regressions across
+`test:agent-core` (16 files). Full-repo `tsc --noEmit` clean, lint clean,
+real `NODE_ENV=production` build (exit 0) — confirmed `/admin/connectors`
+and all 4 API routes actually appear in the build output. Registry:
+`capability:connector_capability_control_plane`, `REAL_EXPOSED`.
+Migrations:
+`supabase/migrations/20260907180000_connector_capability_control_plane.sql`,
+`supabase/migrations/20260907190000_capability_registry_connector_control_plane.sql`.
+
+Scope stated honestly: this ships the governance/control-plane layer
+Section 25-32 asked for — an assignment being recorded here does **not**
+yet mean Hermes' native adapter has a matching restricted tool that checks
+it before acting (e.g. no Hermes tool consumes an `aws`/`github`/
+`supabase` assignment yet). Wiring individual Hermes tools to check
+assignments+autonomy before acting is a separate, following task.
+
 ## Update 82 — Company/Organization model re-verified: genuinely mature, no code change
 
 A verification-only pass, per the master brief's own "check before
