@@ -104,7 +104,7 @@ export const CONNECTOR_REGISTRY: readonly ConnectorDefinition[] = [
     scopeLevel: "platform",
     declaredCapabilities: ["media.image_generation", "media.video_generation", "ai.text"],
     description:
-      "Google AI Studio/Gemini API for AI generation -- a platform-level key (GEMINI_API_KEY), the same one @stratxcel/ai-runtime's Google provider already uses. Health is the real, already-live probeGeminiReadiness() live HTTP check, reused unmodified.",
+      "Google AI Studio/Gemini API for AI generation -- a platform-level key (GEMINI_API_KEY), the same one @stratxcel/ai-runtime's Google provider already uses. Health is the real, already-live probeGeminiReadiness() live HTTP check, reused unmodified. Stated honestly: connecting a key here vaults it and health-checks it for real, but does NOT yet override the runtime GEMINI_API_KEY env var used for actual AI calls -- @stratxcel/ai-runtime cannot depend on @stratxcel/connectors without a circular workspace dependency (connectors already depends on ai-runtime for its readiness probes), so wiring the vaulted key into real inference calls needs a composition-root resolver (ai-runtime's factory already supports dependency injection via deps.openrouter/deps.google -- see factory.ts -- so this is a real, well-scoped, not-yet-done future task, not a duplicate path).",
     realStatusSource: "@stratxcel/ai-runtime probeGeminiReadiness() live check against GEMINI_API_KEY",
     requiredEnvVars: ["GEMINI_API_KEY"],
   },
@@ -116,7 +116,7 @@ export const CONNECTOR_REGISTRY: readonly ConnectorDefinition[] = [
     scopeLevel: "platform",
     declaredCapabilities: ["ai.text_escalation"],
     description:
-      "OpenRouter as an opt-in AI resource pool (built earlier this session, Update 71) -- a platform-level key. Health is the real, already-live probeOpenRouterReadiness() live HTTP check, reused unmodified. Connecting a key here is a genuine alternative to the OPENROUTER_API_KEY env var, not a duplicate of it -- see health.ts for the real precedence.",
+      "OpenRouter as an opt-in AI resource pool (built earlier this session, Update 71) -- a platform-level key. Health is the real, already-live probeOpenRouterReadiness() live HTTP check, reused unmodified. Stated honestly: connecting a key here vaults it and health-checks it for real, but does NOT yet override the runtime OPENROUTER_API_KEY env var used for actual AI calls -- @stratxcel/ai-runtime cannot depend on @stratxcel/connectors without a circular workspace dependency, so wiring the vaulted key into real inference calls needs a composition-root resolver (ai-runtime's factory already supports dependency injection via deps.openrouter -- see factory.ts -- so this is a real, well-scoped, not-yet-done future task).",
     realStatusSource: "@stratxcel/ai-runtime probeOpenRouterReadiness() live check",
     requiredEnvVars: ["OPENROUTER_API_KEY", "OPENROUTER_ENABLED"],
   },
