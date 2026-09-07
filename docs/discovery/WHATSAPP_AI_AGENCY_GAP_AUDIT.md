@@ -1,5 +1,72 @@
 # WhatsApp AI Agency — Gap Audit
 
+## Update 87 — Real recurring mission infrastructure (master brief Section 15, Continuous Operations)
+
+The highest-value remaining candidate identified in the previous status
+report, now built: real "run this mission on a schedule" infrastructure —
+`SALES LOOP`, `SEO LOOP`, etc. — a genuine unbuilt piece of Section 15.
+
+New `recurring_mission_templates` table + `packages/missions/src/recurring.ts`
+— a real cadence engine (`computeNextFireAt` skips missed periods instead
+of bursting a backlog if the processor was down for a while;
+`isTemplateDue`) and `processRecurringTemplates`, which reuses the
+**existing, already-tested** `createAndEstimateMission` unmodified for
+actual mission instantiation — never a duplicate creation path. A real,
+stable idempotency key (one per template per real cadence period) feeds
+straight into that function's own existing dedup guard, so two overlapping
+processor runs can never double-create a mission.
+
+Hosted on the **existing** `app/api/internal/search/scheduler` cron route
+— Section 15's own explicit instruction ("do not create unnecessary cron
+infrastructure if existing scheduled execution can safely handle it"),
+and this codebase's own established precedent for exactly this situation
+(that route already hosts Review Bot for the identical reason: this
+Vercel project is on the Hobby plan). Confirmed via the existing
+`review-bot-wiring.test.ts` (which asserts `vercel.json`'s cron count)
+that this added **zero** new cron entries.
+
+Four real chat tools — `create_recurring_mission_template`,
+`list_recurring_mission_templates`,
+`set_recurring_mission_template_enabled`,
+`run_recurring_mission_templates_now` — let a Founder set one up via
+WhatsApp/Admin Copilot.
+
+A genuine safety decision, stated honestly rather than glossed over:
+`createAndEstimateMission`'s own documented behavior reserves **real
+wallet funds** once a mission reaches `READY` — a real financial
+commitment. The full mechanism is real, tested, and shipped today, but
+**automatic unattended firing** from the cron is gated behind a new
+`RECURRING_MISSIONS_ENABLED` env var (off by default, the same fail-safe
+opt-in pattern as `OPENROUTER_ENABLED`/`LOCAL_AI_ENABLED`) — a Founder
+activation decision, matching this session's own established precedent
+for `HERMES_MODE`. `run_recurring_mission_templates_now` always works
+regardless of the flag, since an explicit human request *is* the
+authorization.
+
+A real, pre-existing, unrelated bug was found and fixed along the way:
+`review-bot-wiring.test.ts` asserted an exact `vercel.json` cron count of
+9 that had already gone stale to 10 (a legitimate, unrelated addition
+from 2026-09-06, confirmed via `git log`) — corrected with an explanatory
+comment so the assertion's real intent (no *new* cron slot) survives
+future additions without going stale silently again.
+
+Verified: 12 new scenarios across
+[recurring.test.ts](../../packages/missions/src/__tests__/recurring.test.ts)
+(7) and
+[recurring-mission-tools.test.ts](../../lib/agent-core/__tests__/recurring-mission-tools.test.ts)
+(5). Zero regressions across `test:foundation` (69 files),
+`test:agent-core-lib` (11 files), `test:agent-core` (17 files), and the
+full 14-file `test:search-growth` suite. Full-repo `tsc --noEmit` clean,
+lint clean, real `NODE_ENV=production` build (exit 0). Registry:
+`capability:recurring_mission_templates`, `REAL_EXPOSED`. Migrations:
+`supabase/migrations/20260907250000_recurring_mission_templates.sql`,
+`supabase/migrations/20260907260000_capability_registry_recurring_mission_templates.sql`.
+
+Stated honestly: the monthly cadence uses a fixed 30-day period, not real
+calendar-month arithmetic — a deliberate v1 simplification avoiding
+DST/month-length edge cases. No per-template budget cap beyond the
+tenant's own existing wallet/plan limits.
+
 ## Update 86 — A connected Gemini/OpenRouter key now actually affects real AI calls (Section 20/21)
 
 Closes a gap explicitly flagged as future work when the Connector Control

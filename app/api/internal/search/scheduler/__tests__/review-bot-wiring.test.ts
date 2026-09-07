@@ -30,8 +30,16 @@ assert.match(route, /SEARCH_DISCOVERY_SCHEDULER_SECRET/, "the scheduler must rem
 assert.match(route, /SEARCH_SCHEDULER_UNAUTHORIZED/, "an invalid/missing secret must still be rejected");
 
 // --- No new Vercel cron slot was added to host Review Bot (Section 2's explicit requirement). ---
+// The exact count below is NOT itself the invariant (other, unrelated
+// features may legitimately add their own cron entries over time -- e.g.
+// it grew from 9 to 10 on 2026-09-06 for a wholly unrelated reason,
+// discovered stale here while wiring an unrelated recurring-mission
+// feature on 2026-09-07) -- it exists only so a change to vercel.json is
+// never invisible to this test; the real, permanent invariant is the
+// "no separate review-bot cron path" assertion just below, and that no
+// entry with path "/api/internal/search/scheduler" was ever duplicated.
 const vercelJson = JSON.parse(read("vercel.json")) as { crons: Array<{ path: string; schedule: string }> };
-assert.equal(vercelJson.crons.length, 9, "Review Bot must be hosted on the existing scheduler cron, not add a 10th cron entry");
+assert.equal(vercelJson.crons.length, 10, "cron count changed -- if this is a real new cron entry unrelated to Review Bot, update this count; if it's Review Bot gaining its own slot, that violates Section 2 and must be reverted");
 const schedulerCron = vercelJson.crons.find((c) => c.path === "/api/internal/search/scheduler");
 assert.ok(schedulerCron, "the existing search scheduler cron entry must still exist");
 assert.doesNotMatch(JSON.stringify(vercelJson.crons), /review.?bot/i, "no separate review-bot cron path should exist in vercel.json");
@@ -46,7 +54,7 @@ assert.match(route, /recheckGoogleVerificationForTenant/, "the verification rech
 const rechecksAfterGuard = route.indexOf("isResolvedGbpLocationResourceName(gbpAccount.provider_account_id)", route.indexOf("recheckGoogleVerificationForTenant"));
 assert.ok(rechecksAfterGuard >= 0, "the recheck function must apply the same resolved-location guard before ever calling Google");
 assert.match(route, /currentState === "VERIFIED"/, "an already-VERIFIED connection must be skipped, never re-checked forever");
-assert.equal(vercelJson.crons.length, 9, "the verification recheck must not add an 11th cron entry either");
+assert.equal(vercelJson.crons.length, 10, "the verification recheck must not add its own cron entry either -- see the count assertion above for why this number itself isn't the invariant");
 
 console.log("PASS: the automatic Google verification recheck is hosted on the existing scheduler cron, guarded identically to Review Bot, with no new cron slot.");
 

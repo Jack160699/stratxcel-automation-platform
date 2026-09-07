@@ -79,6 +79,14 @@ const STAFF_ROLE_PERMISSIONS: Record<string, readonly string[]> = {
     // below) already covers status visibility.
     "agent:mutate:connectors",
     "agent:read:connectors",
+    // Recurring mission templates (master brief Section 15): creating one
+    // is low-consequence on its own, but run_recurring_mission_templates_now
+    // and (once RECURRING_MISSIONS_ENABLED is flipped) automatic firing
+    // both reserve real wallet funds via the same real createAndEstimateMission
+    // path a one-off mission uses -- platform_owner-only, matching every
+    // other real-financial-commitment mutation in this map.
+    "agent:mutate:recurring_missions",
+    "agent:read:recurring_missions",
   ],
   platform_admin: [
     "agent:read:clients", "agent:read:leads", "agent:read:conversations", "agent:read:missions",
@@ -95,6 +103,7 @@ const STAFF_ROLE_PERMISSIONS: Record<string, readonly string[]> = {
     "agent:mutate:audit_reports",
     "agent:read:agent_definitions",
     "agent:read:connectors",
+    "agent:read:recurring_missions",
   ],
   audit_reviewer: ["agent:read:audit", "agent:read:clients", "agent:read:leads", "agent:read:memory", "agent:mutate:memory"],
   finance_reviewer: ["agent:read:finance", "agent:read:clients", "agent:read:memory", "agent:mutate:memory"],

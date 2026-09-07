@@ -20,6 +20,7 @@ import {
 } from "@/lib/social/providers/google-business";
 import { mergeAccountMetadata } from "@/lib/social/repositories/accounts";
 import { runReviewBotCycle } from "@/lib/google/review-bot-cycle";
+import { processRecurringTemplates, isRecurringMissionsEnabled } from "@stratxcel/missions";
 
 /**
  * Review Bot is deliberately hosted on this existing, already-authenticated
@@ -411,6 +412,30 @@ async function handleSchedulerInvocation(request: Request) {
     }
   }
 
+  // Master brief Section 15 (Continuous Operations): recurring Hermes
+  // mission templates, hosted on this exact same already-authenticated
+  // daily cron for the same reason as the Review Bot/verification recheck
+  // above (this project runs on Vercel's Hobby plan -- no new cron slot,
+  // no new job-ownership-matrix entry). Deliberately gated behind
+  // isRecurringMissionsEnabled() (off by default): createAndEstimateMission
+  // reserves real wallet funds once a mission reaches READY -- a genuine
+  // financial commitment needing an explicit Founder activation decision,
+  // not a routine engineering default. A no-op when disabled; never allowed
+  // to affect the response/status of the growth-loop work above it.
+  let recurringMissions: { enabled: boolean; fired?: number; failed?: number; error?: string } = { enabled: false };
+  if (isRecurringMissionsEnabled()) {
+    try {
+      const fireResults = await processRecurringTemplates(supabase, now);
+      recurringMissions = {
+        enabled: true,
+        fired: fireResults.filter((r) => r.outcome === "fired").length,
+        failed: fireResults.filter((r) => r.outcome === "failed").length,
+      };
+    } catch (err) {
+      recurringMissions = { enabled: true, error: err instanceof Error ? err.message : "recurring mission processing failed" };
+    }
+  }
+
   return Response.json({
     growthCadence: "EVERY_3_DAYS",
     processedCount: results.length,
@@ -418,6 +443,7 @@ async function handleSchedulerInvocation(request: Request) {
     skippedNotDueCount: results.filter((r) => r.status === "NOT_DUE").length,
     date: dateStr,
     results,
+    recurringMissions,
   });
 }
 

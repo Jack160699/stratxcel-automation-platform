@@ -40,6 +40,7 @@ import { ROLLBACK_DEPLOYMENT_TOOL } from "./rollback-deployment-tool";
 import { VALUE_LEDGER_TOOLS } from "./value-ledger-tools";
 import { RUN_PROSPECT_AUDIT_ANALYSIS_TOOL } from "./prospect-audit-analysis-tool";
 import { CREATE_CLIENT_TOOL } from "./create-client-tool";
+import { RECURRING_MISSION_TOOLS } from "./recurring-mission-tools";
 
 export const ALL_EXTRA_TOOLS: AgentTool[] = [
   ...SOCIAL_DELEGATION_TOOLS,
@@ -62,4 +63,5 @@ export const ALL_EXTRA_TOOLS: AgentTool[] = [
   ...VALUE_LEDGER_TOOLS,
   RUN_PROSPECT_AUDIT_ANALYSIS_TOOL,
   CREATE_CLIENT_TOOL,
+  ...RECURRING_MISSION_TOOLS,
 ];
