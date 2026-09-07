@@ -7,6 +7,7 @@
     "start": "node --experimental-strip-types src/server.ts"
   },
   "dependencies": {
+    "@stratxcel/agent-core": "*",
     "@stratxcel/approvals": "*",
     "@stratxcel/audit": "*",
     "@stratxcel/brand-brain": "*",

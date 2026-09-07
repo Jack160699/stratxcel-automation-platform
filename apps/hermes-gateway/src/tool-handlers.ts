@@ -6,6 +6,7 @@ import { recordAuditEvent, createServiceClient as createAuditClient } from "@str
 import { listSearchState } from "@stratxcel/search-discovery";
 import { listLeads } from "@stratxcel/leads-and-crm";
 import { inspectDomainDns, getVercelDomainStatus } from "@stratxcel/websites-and-domains";
+import { assertSafeMemoryValue } from "@stratxcel/agent-core";
 import type { ToolName } from "@stratxcel/hermes";
 import { STRATXCEL_CONTROLLED_TOOLS } from "@stratxcel/hermes";
 import { lookupSocialPublicationStatus } from "../../../lib/social/workforce/publication-status-lookup.ts";
@@ -349,6 +350,83 @@ export const TOOL_HANDLERS: Partial<Record<ToolName, ToolHandler>> = {
       getVercelDomainStatus(domain).catch((err: unknown) => ({ error: err instanceof Error ? err.message : "vercel_status_failed" })),
     ]);
     return { domain, dns, vercel };
+  },
+
+  // Exposes the real, shared company-memory store (agent_memories -- the
+  // same real table WhatsApp/Admin Copilot's own remember_fact/recall_memory
+  // tools already use) to Hermes missions, scoped to the mission's real
+  // verified tenant only (workspace scope). Deliberately does NOT reuse
+  // rememberAgentFact/listAgentMemories (@stratxcel/agent-core) directly --
+  // those require a full AgentPrincipal, and their own scopeFilter only
+  // allows a CLIENT principal to write workspace-scoped memory, not staff
+  // (which is structurally what a Hermes mission resembles). Rather than
+  // force-fit a synthetic principal into a security boundary designed for
+  // live human sessions, this writes directly to the same real table with
+  // Hermes' own already-verified ctx.tenantId, matching every other tool
+  // in this file. assertSafeMemoryValue (the real secret-pattern guard) is
+  // reused unmodified. Deliberately additive-only: no forget/delete
+  // exposed to Hermes -- erasing durable company memory stays a
+  // human-initiated action via the existing WhatsApp/Admin Copilot tools.
+  async remember_company_fact(ctx, input) {
+    const key = typeof input.key === "string" ? input.key : "";
+    const value = typeof input.value === "string" ? input.value : "";
+    if (!key || !value) return { outcome: "FAILED", reason: "missing_key_or_value" };
+    assertSafeMemoryValue(value);
+
+    const supabase = createMissionsClient();
+    const { data: missionRow, error: missionError } = await supabase
+      .from("missions")
+      .select("created_by")
+      .eq("id", ctx.missionId)
+      .maybeSingle();
+    if (missionError) throw new Error(`remember_company_fact: ${missionError.message}`);
+    const createdBy = (missionRow as { created_by?: string | null } | null)?.created_by;
+    if (!createdBy) return { outcome: "FAILED", reason: "mission_has_no_creator_to_attribute_this_memory_to" };
+
+    const { data: existing, error: existingError } = await supabase
+      .from("agent_memories")
+      .select("id")
+      .eq("scope", "workspace")
+      .eq("tenant_id", ctx.tenantId)
+      .eq("memory_key", key)
+      .is("deleted_at", null)
+      .maybeSingle();
+    if (existingError) throw new Error(`remember_company_fact: ${existingError.message}`);
+
+    if (existing) {
+      const { error } = await supabase
+        .from("agent_memories")
+        .update({ memory_value: value, updated_at: new Date().toISOString() })
+        .eq("id", existing.id);
+      if (error) throw new Error(`remember_company_fact: ${error.message}`);
+      return { remembered: true };
+    }
+
+    const { error } = await supabase.from("agent_memories").insert({
+      scope: "workspace",
+      tenant_id: ctx.tenantId,
+      owner_auth_user_id: null,
+      memory_key: key,
+      memory_value: value,
+      source_channel: "hermes",
+      created_by: createdBy,
+    });
+    if (error) throw new Error(`remember_company_fact: ${error.message}`);
+    return { remembered: true };
+  },
+
+  async recall_company_memory(ctx) {
+    const supabase = createMissionsClient();
+    const { data, error } = await supabase
+      .from("agent_memories")
+      .select("id, memory_key, memory_value, updated_at")
+      .eq("scope", "workspace")
+      .eq("tenant_id", ctx.tenantId)
+      .is("deleted_at", null)
+      .order("updated_at", { ascending: false })
+      .limit(50);
+    if (error) throw new Error(`recall_company_memory: ${error.message}`);
+    return { memories: data ?? [] };
   },
 };
 

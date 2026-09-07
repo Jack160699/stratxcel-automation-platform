@@ -101,6 +101,17 @@ export const TOOL_INPUT_SCHEMAS = {
       domain: z.string().min(1),
     })
     .strict(),
+  // Bounds match agent_memories' own real CHECK constraints
+  // (agent_memories_memory_key_check / _memory_value_check) exactly, so an
+  // over-length value fails here with a clear reason instead of a raw
+  // Postgres constraint-violation error.
+  remember_company_fact: z
+    .object({
+      key: z.string().min(1).max(120),
+      value: z.string().min(1).max(1200),
+    })
+    .strict(),
+  recall_company_memory: z.object({}).strict(),
 } as const satisfies Partial<Record<ToolName, z.ZodTypeAny>>;
 
 /** The exact set of tool names an MCP caller may ever validate/invoke through this map. */

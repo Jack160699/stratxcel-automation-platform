@@ -87,6 +87,14 @@ export interface ToolContractMap {
     input: { domain: string };
     output: { domain: string; dns: unknown; vercel: unknown };
   };
+  remember_company_fact: {
+    input: { key: string; value: string };
+    output: { remembered: true };
+  };
+  recall_company_memory: {
+    input: Record<string, never>;
+    output: { memories: unknown[] };
+  };
 }
 
 export const ALL_TOOL_NAMES: ToolName[] = [
@@ -108,6 +116,8 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "get_lead",
   "generate_image",
   "check_domain_status",
+  "remember_company_fact",
+  "recall_company_memory",
 ];
 
 /**

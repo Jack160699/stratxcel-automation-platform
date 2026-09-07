@@ -142,4 +142,18 @@ export const TOOL_PARAMETER_SCHEMAS: Partial<Record<ToolName, Record<string, unk
     required: ["domain"],
     additionalProperties: false,
   },
+  remember_company_fact: {
+    type: "object",
+    properties: {
+      key: { type: "string", description: "A short, stable identifier for this fact, e.g. 'verified_supplier_1'. Max 120 chars." },
+      value: { type: "string", description: "The real, verified fact itself. Max 1200 chars." },
+    },
+    required: ["key", "value"],
+    additionalProperties: false,
+  },
+  recall_company_memory: {
+    type: "object",
+    properties: {},
+    additionalProperties: false,
+  },
 };

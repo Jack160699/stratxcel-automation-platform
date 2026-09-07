@@ -56,7 +56,9 @@ export type ToolName =
   | "list_leads"
   | "get_lead"
   | "generate_image"
-  | "check_domain_status";
+  | "check_domain_status"
+  | "remember_company_fact"
+  | "recall_company_memory";
 
 /**
  * What Hermes actually receives when a mission starts — no secrets, no

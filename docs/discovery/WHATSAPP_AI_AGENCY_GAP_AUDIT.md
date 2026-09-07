@@ -1,5 +1,65 @@
 # WhatsApp AI Agency — Gap Audit
 
+## Update 80 — Hermes can now write and recall durable company memory, and why the obvious reuse path was structurally wrong
+
+A different kind of gap than the tool-vocabulary series: the master brief
+lists "update company memory" as one of Hermes' own top-level
+responsibilities. Before this, a mission's real findings only ever landed
+in `mission_artifacts`/`mission_events` — no way for verified research
+("solar is viable, verified supplier: SolarTech Bhilai, ₹42/watt") to
+become durable, company-scoped knowledge a *future* mission or WhatsApp/
+Admin Copilot turn could recall.
+
+Investigated reusing `@stratxcel/agent-core`'s existing
+`rememberAgentFact`/`listAgentMemories` directly first, and found a real
+structural mismatch, not just an inconvenience: their `scopeFilter`
+requires a full `AgentPrincipal`, and only a **client** principal may write
+`"workspace"` (tenant-scoped) memory — a Hermes mission is structurally
+staff-shaped (created via a staff-only admin tool), so it cannot
+legitimately construct a client principal, and the other two scopes
+(`personal`, `agency`) are the wrong shape entirely (not tenant-scoped, or
+platform-wide — either misrepresents company memory or leaks across
+tenants). Rather than force-fit a synthetic principal into a security
+boundary deliberately built for live human sessions, or stand up a
+competing memory table, `remember_company_fact`/`recall_company_memory`
+write/read the **same real `agent_memories` table** directly, scoped to
+Hermes' own already-verified `ctx.tenantId` — matching every other tool in
+this series — and reuse `assertSafeMemoryValue` (the real secret-pattern
+guard) unmodified.
+
+This needed one real, narrow migration:
+[20260907140000_agent_memories_hermes_source_channel.sql](../../supabase/migrations/20260907140000_agent_memories_hermes_source_channel.sql)
+widens `agent_memories`' `source_channel` CHECK constraint (previously only
+`admin_web`/`client_web`/`whatsapp`) to allow `"hermes"`, so a mission's
+writes are honestly labeled rather than mislabeled as a human channel —
+live-verified with a real transactional dry-run insert before being
+treated as correct.
+
+Verified:
+[company-memory.test.ts](../../apps/hermes-gateway/src/__tests__/company-memory.test.ts)
+(4 scenarios — real DB-matching length bounds, correct scoping/labeling/
+attribution, update-not-duplicate on an existing key, and recall correctly
+excluding soft-deleted rows), plus a direct functional check that the
+reused secret guard genuinely throws on a real secret-shaped value. Zero
+regressions across `test:hermes-mission-control` and
+`packages/agent-core`'s own `brain-orchestrator.test.ts` (the one existing
+test touching the memory system). Full-repo `tsc --noEmit` clean on the
+first pass, lint clean, a real `NODE_ENV=production` build (exit 0).
+
+Scope stated honestly: deliberately additive-only (no forget/delete
+exposed to Hermes — erasing company memory stays human-initiated), and
+does **not** add the confidence/provenance classification
+(FACT/VERIFIED/OBSERVATION/INFERENCE/...) the master brief's own memory
+section separately calls for — the existing table has no such column for
+*any* caller, WhatsApp/Admin Copilot included, so that's a real, separate,
+larger schema change affecting the whole memory system, not scope-crept
+into this pass. Registry: `capability:hermes_company_memory`, new row,
+`REAL_EXPOSED`. Migrations:
+`supabase/migrations/20260907140000_agent_memories_hermes_source_channel.sql`,
+`supabase/migrations/20260907150000_capability_registry_hermes_company_memory.sql`.
+
+Hermes' restricted tool vocabulary: **12 → 20** across today's work.
+
 ## Update 79 — Hermes' sixth tool: real live domain DNS/SSL status
 
 One more in the same series: `check_domain_status`, reusing

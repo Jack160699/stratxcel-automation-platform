@@ -19,6 +19,8 @@ const DEFAULT_TOOL_ALLOWLIST: ToolName[] = [
   "get_lead",
   "generate_image",
   "check_domain_status",
+  "remember_company_fact",
+  "recall_company_memory",
 ];
 
 /**
