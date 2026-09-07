@@ -100,6 +100,7 @@ const TOOL_DESCRIPTIONS: Record<McpCallableName, string> = {
   check_website_status: "Real, currently-stored Stratxcel-built websites for this mission's tenant.",
   list_leads: "Real CRM leads for this mission's tenant, most recent first.",
   get_lead: "Get a single real CRM lead by id (tenant-scoped).",
+  generate_image: "Generate a real, brand-grounded image using Stratxcel's existing image engine. Real cost, gated by this mission's budget and the tenant's own monthly AI budget.",
 };
 
 /** Read-only per Section 4 — no state anywhere in StratExcel changes as a result of these calls. Everything else is truthfully non-read-only; none are destructive. */

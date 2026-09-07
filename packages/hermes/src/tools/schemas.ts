@@ -90,6 +90,12 @@ export const TOOL_INPUT_SCHEMAS = {
       leadId: z.string().min(1),
     })
     .strict(),
+  generate_image: z
+    .object({
+      brief: z.string().min(1),
+      aspectRatio: z.string().optional(),
+    })
+    .strict(),
 } as const satisfies Partial<Record<ToolName, z.ZodTypeAny>>;
 
 /** The exact set of tool names an MCP caller may ever validate/invoke through this map. */

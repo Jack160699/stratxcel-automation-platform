@@ -79,6 +79,10 @@ export interface ToolContractMap {
     input: { leadId: string };
     output: { found: boolean; lead?: unknown };
   };
+  generate_image: {
+    input: { brief: string; aspectRatio?: string };
+    output: Record<string, unknown>;
+  };
 }
 
 export const ALL_TOOL_NAMES: ToolName[] = [
@@ -98,6 +102,7 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "check_website_status",
   "list_leads",
   "get_lead",
+  "generate_image",
 ];
 
 /**

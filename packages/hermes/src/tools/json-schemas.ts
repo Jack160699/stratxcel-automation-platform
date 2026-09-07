@@ -125,4 +125,13 @@ export const TOOL_PARAMETER_SCHEMAS: Partial<Record<ToolName, Record<string, unk
     required: ["leadId"],
     additionalProperties: false,
   },
+  generate_image: {
+    type: "object",
+    properties: {
+      brief: { type: "string", description: "What the image should show, in enough detail to generate it well." },
+      aspectRatio: { type: "string", description: "e.g. 1:1, 4:5, 9:16. Defaults to 1:1." },
+    },
+    required: ["brief"],
+    additionalProperties: false,
+  },
 };

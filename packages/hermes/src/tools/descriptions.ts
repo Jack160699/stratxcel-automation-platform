@@ -24,4 +24,5 @@ export const TOOL_DESCRIPTIONS: Record<ToolName, string> = {
   check_website_status: "Real, currently-stored Stratxcel-built websites for this mission's tenant -- name, slug, status (draft/live/etc.), custom domain, framework, template, timestamps. The same data the Website page's list reads. No input.",
   list_leads: "Real CRM leads for this mission's tenant, most recent first -- check before creating a new lead with create_crm_lead to avoid duplicates, or to report on the current pipeline. Input: { limit? } (default 20, max 50).",
   get_lead: "Get a single real CRM lead by id (tenant-scoped) -- use a leadId from a prior list_leads or create_crm_lead call, never invent one. Input: { leadId }.",
+  generate_image: "Generate a real, brand-grounded image/poster/creative using Stratxcel's existing image engine -- real cost (checked against this mission's own budget before every call, on top of the tenant's own real monthly AI budget), real brand context. One brief per call. Only call when the goal genuinely requires an image, never speculatively. Input: { brief, aspectRatio? } (e.g. '1:1', '4:5', '9:16'; defaults to '1:1').",
 };

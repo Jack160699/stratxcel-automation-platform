@@ -17,6 +17,7 @@ const DEFAULT_TOOL_ALLOWLIST: ToolName[] = [
   "check_website_status",
   "list_leads",
   "get_lead",
+  "generate_image",
 ];
 
 /**
@@ -27,6 +28,19 @@ const DEFAULT_TOOL_ALLOWLIST: ToolName[] = [
  * compiled service explicitly requires them (a future refinement; for now
  * every mission gets the same restricted default set, which already
  * excludes the two highest-blast-radius tools).
+ *
+ * generate_image is a real, deliberate, stated policy call, not an
+ * oversight: it is the first default-allowlisted tool with a genuine
+ * per-call cost. Included because (1) it's bounded by TWO independent real
+ * budget gates — this mission's own reserved budgetCents, checked in
+ * native-adapter.ts before every call, and the tenant's own real monthly
+ * AI budget, enforced inside executeGenerateImageTool itself regardless of
+ * caller; (2) HERMES_MODE stays "disabled" in production either way, so
+ * this changes nothing about current live behavior; (3) without it, a
+ * mission could never accomplish the master brief's own explicit
+ * acceptance-test capability ("create 30 days of social content"). A real,
+ * visible decision the Founder can reverse by removing it from this list
+ * if they disagree — not a silent default.
  */
 export async function compileMissionContext(
   supabase: BrandBrainClient,

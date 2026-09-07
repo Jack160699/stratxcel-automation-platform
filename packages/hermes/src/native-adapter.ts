@@ -3,6 +3,7 @@ import type { HermesRuntimeAdapter } from "./adapter.ts";
 import { resolveProfileInstructions } from "./profiles.ts";
 import { TOOL_DESCRIPTIONS } from "./tools/descriptions.ts";
 import { TOOL_PARAMETER_SCHEMAS } from "./tools/json-schemas.ts";
+import { assertWithinBudget, BudgetExceededError } from "./budget.ts";
 import type {
   HermesExecutionResult,
   HermesHealthStatus,
@@ -99,6 +100,26 @@ export interface NativeHermesAdapterDeps {
 
 const DEFAULT_MAX_ROUNDS = 16;
 
+/**
+ * Real, honest per-tool-call cost estimates in cents, for the pre-call
+ * budget check assertWithinBudget (budget.ts) was always meant to be wired
+ * to -- "a named extension point, not a stub pretending to meter something
+ * it doesn't." generate_image is the first Hermes tool with a real
+ * per-call cost, so it's the first real entry here. Every other current
+ * tool is free (read, or a low-mutation write with no direct AI-provider
+ * spend of its own), so they're absent -- absence means $0, not "unknown."
+ * Conservative: 25 cents covers every real image tier in
+ * packages/ai-runtime/src/catalog/costs.ts up to and including the most
+ * expensive premium-4K entry ($0.24), verified against that catalog on
+ * 2026-09-07 -- revisit if the catalog's own prices change materially.
+ * This is Hermes' own mission-budget pre-check, layered ON TOP OF (not
+ * instead of) the tenant's real monthly AI budget gate that
+ * executeGenerateImageTool already enforces internally regardless.
+ */
+const TOOL_COST_ESTIMATES_CENTS: Partial<Record<ToolName, number>> = {
+  generate_image: 25,
+};
+
 function nowIso(): string {
   return new Date().toISOString();
 }
@@ -177,6 +198,7 @@ export function createNativeHermesAdapter(deps: NativeHermesAdapterDeps): Hermes
 
       let outcome: HermesOutcome | null = null;
       let summary = "";
+      let spentCentsSoFar = 0;
 
       for (let round = 0; round < maxRounds; round += 1) {
         let completion: NativeCompletionResult;
@@ -208,6 +230,23 @@ export function createNativeHermesAdapter(deps: NativeHermesAdapterDeps): Hermes
             continue;
           }
           const toolName = call.name as ToolName;
+
+          // Pre-call budget check for tools with a real, known per-call
+          // cost (currently just generate_image) — never invoke a costed
+          // tool that would exceed this mission's reserved budget. Free
+          // tools (no entry in TOOL_COST_ESTIMATES_CENTS) skip this
+          // entirely, so every existing tool's behavior is unchanged.
+          const estimatedCostCents = TOOL_COST_ESTIMATES_CENTS[toolName];
+          if (estimatedCostCents) {
+            try {
+              assertWithinBudget(context, spentCentsSoFar, estimatedCostCents);
+            } catch (err) {
+              const detail = err instanceof BudgetExceededError ? err.message : "budget check failed";
+              messages.push({ role: "tool", toolCallId: call.id, toolName: call.name, content: `error: ${detail} — mission budget exhausted, do not retry this tool` });
+              continue;
+            }
+          }
+
           let result: Record<string, unknown>;
           try {
             result = await deps.invokeTool(toolName, toolCtx, call.arguments);
@@ -220,7 +259,8 @@ export function createNativeHermesAdapter(deps: NativeHermesAdapterDeps): Hermes
             });
             continue;
           }
-          progressEvents.push({ atIso: nowIso(), message: `Called ${toolName}`, data: { tool: toolName } });
+          if (estimatedCostCents) spentCentsSoFar += estimatedCostCents;
+          progressEvents.push({ atIso: nowIso(), message: `Called ${toolName}`, data: { tool: toolName, estimatedCostCents: estimatedCostCents ?? 0 } });
           messages.push({ role: "tool", toolCallId: call.id, toolName: call.name, content: JSON.stringify(result).slice(0, 2000) });
 
           if (toolName === "request_approval") stopReason = "AWAITING_APPROVAL";

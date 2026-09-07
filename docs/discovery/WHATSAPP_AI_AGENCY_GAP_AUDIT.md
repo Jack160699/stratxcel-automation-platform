@@ -1,5 +1,63 @@
 # WhatsApp AI Agency — Gap Audit
 
+## Update 78 — Hermes' fifth tool: real image generation, and the first real per-mission budget gate
+
+Came back to `generate_image` (deferred in Update 77) and gave it the
+proper pass its real per-call cost deserves. Reuses
+`executeGenerateImageTool` (`lib/social/agent/generate-image-tool.ts`)
+completely unmodified with its real default production dependencies — the
+same real function `lib/agent-core/growth-media-tools.ts`'s own
+`generate_image` tool already calls, including its real tenant monthly AI
+budget gate (unchanged, not bypassed). Billing/asset attribution uses the
+mission's real creator (`missions.created_by`); refuses honestly rather
+than fabricating an actor when a mission somehow has none.
+
+**Built the missing piece this actually required**: `assertWithinBudget`
+(`packages/hermes/src/budget.ts`) has existed since the very first Hermes
+build as a real function, documented honestly as "a named extension point,
+not a stub pretending to meter something it doesn't" — but nothing had
+ever actually called it. Wired it into the native adapter's own
+tool-calling loop for the first time: a new `TOOL_COST_ESTIMATES_CENTS`
+map (currently just `generate_image`, 25 cents — a conservative figure
+covering every real image tier in `packages/ai-runtime`'s cost catalog up
+to its most expensive entry, $0.24, checked directly), cumulative spend
+tracked across the mission's own execution, and a real pre-call refusal —
+the costed tool is never invoked, and the model is told the real reason —
+when a call would exceed the mission's reserved `budgetCents`. This tool
+now sits behind two independent, real budget gates: Hermes' own
+per-mission ceiling, and the tenant's own monthly AI budget underneath it.
+
+**A real, visible policy decision, stated explicitly rather than buried**:
+`generate_image` was added to `context.ts`'s `DEFAULT_TOOL_ALLOWLIST` —
+every mission gets it. Reasoned openly in the code comment itself: it's
+bounded by two independent real budget gates, `HERMES_MODE` stays
+`disabled` in production regardless, and without it a mission could never
+accomplish the master brief's own explicit acceptance-test capability
+("create 30 days of social content"). The Founder can reverse this by
+removing the one line if they disagree.
+
+Verified:
+[native-adapter.test.ts](../../packages/hermes/src/__tests__/native-adapter.test.ts)
+gained 3 new real, executable scenarios (a costed call within budget is
+genuinely invoked; a second call that would exceed the remaining budget is
+refused *before* `invokeTool` — never a silent allow; free tools remain
+completely unaffected even at zero budget), and
+[generate-image.test.ts](../../apps/hermes-gateway/src/__tests__/generate-image.test.ts)
+(2 scenarios — the real schema, and the real handler's mission-creator
+attribution with zero dependency overrides, so the real tenant budget gate
+runs unmodified). Zero regressions across `test:hermes-mission-control`
+and the **full** `test:foundation` suite (66 files). Full-repo
+`tsc --noEmit` clean on the first pass, lint clean, a real
+`NODE_ENV=production` build (exit 0). Registry:
+`capability:hermes_creative_studio_exposure`, new row, `REAL_EXPOSED`.
+Migration:
+`supabase/migrations/20260907120000_capability_registry_hermes_creative_studio_exposure.sql`.
+
+This closes the initial 5-tool "expose existing systems" series (Updates
+74-78): `check_growth_status`, `check_website_status`, `list_leads`,
+`get_lead`, `generate_image`. Hermes' restricted tool vocabulary has grown
+from 12 to 17 real, tested, reused-not-reimplemented tools.
+
 ## Update 77 — Hermes' fourth tool: single-lead lookup, and generate_image deliberately deferred with reasons stated
 
 Completed the CRM read pair with `get_lead` — Hermes' 16th tool, mirroring

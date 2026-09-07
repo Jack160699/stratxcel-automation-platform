@@ -215,6 +215,74 @@ async function run() {
     assert.equal(calls, 3);
   }
 
+  // 11. A costed tool call (generate_image) within budget is invoked
+  //     normally, and its estimated cost is tracked against the mission.
+  {
+    const invokedWith: unknown[] = [];
+    const invokeTool: NativeToolInvoker = async (tool, ctx, input) => {
+      invokedWith.push({ tool, input });
+      return { outcome: "OK", candidates: [{ id: "cand-1" }] };
+    };
+    const { provider } = scriptedProvider([
+      { text: "", toolCalls: [{ id: "call-1", name: "generate_image", arguments: { brief: "a solar panel on a roof" } }] },
+      { text: "Made one image.", toolCalls: [] },
+    ]);
+    const smallBudgetContext = { ...fakeContext(["generate_image"]), budgetCents: 30 };
+    const adapter = createNativeHermesAdapter({ createProvider: () => provider, invokeTool });
+    const result = await adapter.execute(fakeMission(), smallBudgetContext, "tok");
+    assert.equal(result.outcome, "COMPLETED");
+    assert.equal(invokedWith.length, 1, "the costed call within budget must actually be invoked");
+    console.log("native-adapter.test.ts: a costed tool call within budget is invoked normally — PASS");
+  }
+
+  // 12. A second costed call that would exceed the mission's remaining
+  //     budget is REFUSED before ever reaching invokeTool -- proving the
+  //     pre-call budget gate is real, not just documented.
+  {
+    let invokedCount = 0;
+    const invokeTool: NativeToolInvoker = async () => {
+      invokedCount += 1;
+      return { outcome: "OK", candidates: [{ id: "cand-1" }] };
+    };
+    const { provider, callsSeen } = scriptedProvider([
+      { text: "", toolCalls: [{ id: "call-1", name: "generate_image", arguments: { brief: "image one" } }] },
+      { text: "", toolCalls: [{ id: "call-2", name: "generate_image", arguments: { brief: "image two" } }] },
+      { text: "Stopped -- out of budget.", toolCalls: [] },
+    ]);
+    // budgetCents: 30 -- one 25-cent call fits, a second 25-cent call (50 total) does not.
+    const smallBudgetContext = { ...fakeContext(["generate_image"]), budgetCents: 30 };
+    const adapter = createNativeHermesAdapter({ createProvider: () => provider, invokeTool });
+    const result = await adapter.execute(fakeMission(), smallBudgetContext, "tok");
+    assert.equal(result.outcome, "COMPLETED");
+    assert.equal(invokedCount, 1, "only the first, affordable call may actually reach invokeTool -- the second must be refused pre-call");
+    const thirdRoundMessages = callsSeen[2];
+    const refusalMessage = thirdRoundMessages.find((m) => m.role === "tool" && m.toolCallId === "call-2");
+    assert.ok(refusalMessage?.content.includes("budget"), "the model must be told the real reason the second call was refused");
+    console.log("native-adapter.test.ts: a costed call that would exceed the mission's remaining budget is refused before invokeTool, never silently allowed — PASS");
+  }
+
+  // 13. Free tools (no entry in the cost-estimate table) are never subject
+  //     to the budget check at all -- existing behavior is unchanged.
+  {
+    let invoked = false;
+    const invokeTool: NativeToolInvoker = async () => {
+      invoked = true;
+      return { brandBrain: null };
+    };
+    const { provider } = scriptedProvider([
+      { text: "", toolCalls: [{ id: "call-1", name: "get_brand_context", arguments: {} }] },
+      { text: "Done.", toolCalls: [] },
+    ]);
+    // budgetCents: 0 -- if get_brand_context were mistakenly treated as
+    // costed, this would refuse it. It must not be.
+    const zeroBudgetContext = { ...fakeContext(["get_brand_context"]), budgetCents: 0 };
+    const adapter = createNativeHermesAdapter({ createProvider: () => provider, invokeTool });
+    const result = await adapter.execute(fakeMission(), zeroBudgetContext, "tok");
+    assert.equal(result.outcome, "COMPLETED");
+    assert.equal(invoked, true, "a free tool must never be blocked by the budget gate, even at zero budget");
+    console.log("native-adapter.test.ts: free tools are never subject to the budget gate — PASS");
+  }
+
   // 10. mode/healthCheck report "native" correctly.
   {
     const adapter = createNativeHermesAdapter({ createProvider: () => scriptedProvider([]).provider, invokeTool: async () => ({}) });

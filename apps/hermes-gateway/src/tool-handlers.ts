@@ -290,6 +290,48 @@ export const TOOL_HANDLERS: Partial<Record<ToolName, ToolHandler>> = {
     if (!data) return { found: false };
     return { found: true, lead: data };
   },
+
+  // Exposes the real Creative Studio image engine to Hermes missions --
+  // reuses executeGenerateImageTool (lib/social/agent/generate-image-tool.ts)
+  // completely unmodified, the exact same real function
+  // lib/agent-core/growth-media-tools.ts's own generate_image tool
+  // (WhatsApp/Admin Copilot) already calls, with its real default
+  // production dependencies (real tenant plan/spend resolution, real
+  // media runtime, real tenant monthly AI budget gate) -- not overridden,
+  // not reimplemented. Hermes' own pre-call mission-budget check already
+  // ran in native-adapter.ts before this handler is ever invoked; this is
+  // the second, independent, tenant-level gate. Billing/asset attribution
+  // uses the mission's real creator (missions.created_by) as the actor --
+  // never a fabricated system user -- and refuses honestly if a mission
+  // somehow has none, rather than guessing one.
+  async generate_image(ctx, input) {
+    const brief = typeof input.brief === "string" ? input.brief : "";
+    if (!brief) return { outcome: "FAILED", reason: "missing_brief" };
+
+    const supabase = createMissionsClient();
+    const { data: missionRow, error: missionError } = await supabase
+      .from("missions")
+      .select("created_by")
+      .eq("id", ctx.missionId)
+      .maybeSingle();
+    if (missionError) throw new Error(`generate_image: ${missionError.message}`);
+    const actorUserId = (missionRow as { created_by?: string | null } | null)?.created_by;
+    if (!actorUserId) {
+      return { outcome: "FAILED", reason: "mission_has_no_creator_to_attribute_image_generation_to" };
+    }
+
+    const { executeGenerateImageTool } = await import(
+      "../../../lib/social/agent/generate-image-tool.ts"
+    );
+    return executeGenerateImageTool(
+      { ok: true, mode: "tenant", tenantId: ctx.tenantId, actorUserId, supabase: supabase as never },
+      {
+        brief,
+        aspectRatio: typeof input.aspectRatio === "string" ? input.aspectRatio : "1:1",
+        candidateCount: 1,
+      },
+    );
+  },
 };
 
 export async function invokeTool(tool: ToolName, ctx: ToolCallContext, input: Record<string, unknown>): Promise<Record<string, unknown>> {
