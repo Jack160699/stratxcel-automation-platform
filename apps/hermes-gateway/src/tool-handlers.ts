@@ -3,6 +3,7 @@ import { createServiceClient as createMissionsClient, appendMissionEvent, getSer
 import { createServiceClient as createApprovalsClient, requestApproval, listPendingApprovals } from "@stratxcel/approvals";
 import { createServiceClient as createHandoffClient, createHumanHandoff } from "@stratxcel/human-handoff";
 import { recordAuditEvent, createServiceClient as createAuditClient } from "@stratxcel/audit";
+import { listSearchState } from "@stratxcel/search-discovery";
 import type { ToolName } from "@stratxcel/hermes";
 import { STRATXCEL_CONTROLLED_TOOLS } from "@stratxcel/hermes";
 import { lookupSocialPublicationStatus } from "../../../lib/social/workforce/publication-status-lookup.ts";
@@ -229,6 +230,17 @@ export const TOOL_HANDLERS: Partial<Record<ToolName, ToolHandler>> = {
       payload: { artifactId, sourceUrl: input.sourceUrl ?? null, summary: input.summary },
     });
     return { recorded: true };
+  },
+
+  // Exposes the real, already-live Growth/Priority Engine to Hermes missions
+  // -- reuses listSearchState (@stratxcel/search-discovery) unmodified, the
+  // exact same real function lib/agent-core/growth-media-tools.ts's own
+  // check_growth_status tool (WhatsApp/Admin Copilot) calls and the Search
+  // Growth dashboard reads from. Read-only, never re-crawls; tenant comes
+  // from the verified mission context, never a model-supplied argument.
+  async check_growth_status(ctx) {
+    const state = await listSearchState(createMissionsClient() as never, ctx.tenantId);
+    return { ...state };
   },
 };
 

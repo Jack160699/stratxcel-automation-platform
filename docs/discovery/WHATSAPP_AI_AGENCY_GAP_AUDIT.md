@@ -1,5 +1,69 @@
 # WhatsApp AI Agency — Gap Audit
 
+## Update 74 — Hermes missions can now read the real Growth/Priority Engine, plus AWS access re-confirmed still unavailable
+
+Per an explicit instruction to keep going without stopping at checkpoints,
+and not to claim AWS is unavailable without re-checking: retried this
+session's AWS MCP connection a third time with the most minimal possible
+call (`sts:GetCallerIdentity`, no parameters, zero AWS-side permissions
+required). Still `TOKEN_EXPIRED` at the tool-invocation layer itself,
+identical to the first two attempts — confirmed this is a session-level
+credential/authorization state, not something a different API call or a
+fourth retry would change. Recorded once, not retried again; moved to other
+real work rather than let this one blocker stop the mission.
+
+**The highest-leverage remaining gap in Native Hermes** (Updates 69-73 built
+the execution engine and the Founder/company layer around it): Hermes' own
+restricted tool vocabulary — the 12 names in
+`packages/hermes/src/tools/contracts.ts` — had zero connection to any of
+StratExcel's real business engines. A Hermes mission could reason and call
+meta-tools (`create_crm_lead`, `request_approval`, ...) but had no way to
+read the platform's own real Growth/Priority/SEO/AEO/GEO intelligence —
+directly contradicting the master brief's repeated instruction to "expose
+existing StratXcel systems to Hermes" rather than leave it capability-blind.
+
+**Added `check_growth_status` as Hermes' 13th tool**, closing the first real
+instance of this gap: a real contract, Zod schema (`z.object({}).strict()`
+— no input at all, so the mission's own verified tenant context is
+structurally the only possible source, never a model-supplied argument), a
+JSON function-calling schema for the native adapter, and a real handler
+([apps/hermes-gateway/src/tool-handlers.ts](../../apps/hermes-gateway/src/tool-handlers.ts))
+that calls `listSearchState`
+([@stratxcel/search-discovery](../../packages/search-discovery/src/repository.ts))
+completely unmodified — the exact same real function
+`lib/agent-core/growth-media-tools.ts`'s own WhatsApp/Admin Copilot version
+and the Search Growth dashboard itself already call. Added to
+`context.ts`'s `DEFAULT_TOOL_ALLOWLIST`, so every mission gets it
+automatically.
+
+`tsc --noEmit` caught a real defect before it shipped:
+`apps/hermes-gateway/src/mcp-server.ts` keeps its own separate,
+hand-maintained tool-description map for the `http`/MCP transport, which
+the new tool name was initially missing from — a real reminder that the
+full-repo typecheck step matters even for a change that looked contained to
+5 files. Fixed in the same commit.
+
+Verified:
+[check-growth-status.test.ts](../../apps/hermes-gateway/src/__tests__/check-growth-status.test.ts)
+(2 scenarios — the real schema structurally rejects a smuggled `tenantId`,
+and the real `listSearchState` function scopes every one of its 6 real
+queries to the exact tenant passed in). Zero regressions across
+`test:hermes-mission-control`, `test:agent-core-lib`, and
+`worker-safety.test.ts`. Full-repo `tsc --noEmit` clean, lint clean, a real
+`NODE_ENV=production` build (exit 0).
+
+Deliberately scoped, stated precisely: this is the first of what should
+become several such tools (website status, creative/image generation, CRM
+reads, ...), added one real reviewed/tested tool at a time. Deliberately
+did **not** attempt the larger, riskier alternative — giving native-mode
+missions direct access to `packages/agent-core`'s full tool registry via a
+synthetic principal — that would bypass the mission-token/capability-
+boundary security model Hermes was deliberately built with, a real
+architectural decision warranting its own deliberate review, not a side
+effect of this pass. Registry: `capability:hermes_growth_engine_exposure`,
+new row, `REAL_EXPOSED`. Migration:
+`supabase/migrations/20260907080000_capability_registry_hermes_growth_engine_exposure.sql`.
+
 ## Update 73 — the Founder can now create a new company via chat, and a real, already-documented orphaned-tenant Blocker is fixed along the way
 
 Continued the Founder/Company model (P1). `packages/workforce-core`'s

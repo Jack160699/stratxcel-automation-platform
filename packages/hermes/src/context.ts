@@ -13,6 +13,7 @@ const DEFAULT_TOOL_ALLOWLIST: ToolName[] = [
   "query_publication_status",
   "create_crm_lead",
   "attach_research_evidence",
+  "check_growth_status",
 ];
 
 /**

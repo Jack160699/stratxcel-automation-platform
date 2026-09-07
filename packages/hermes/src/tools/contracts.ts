@@ -56,6 +56,17 @@ export interface ToolContractMap {
     input: { artifactId: string; sourceUrl?: string; summary: string };
     output: { recorded: true };
   };
+  check_growth_status: {
+    input: Record<string, never>;
+    output: {
+      projects: unknown[];
+      runs: unknown[];
+      opportunities: unknown[];
+      recommendations: unknown[];
+      actions: unknown[];
+      snapshots: unknown[];
+    };
+  };
 }
 
 export const ALL_TOOL_NAMES: ToolName[] = [
@@ -71,6 +82,7 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "create_website_change_request",
   "create_crm_lead",
   "attach_research_evidence",
+  "check_growth_status",
 ];
 
 /**

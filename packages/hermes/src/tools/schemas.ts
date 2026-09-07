@@ -78,6 +78,7 @@ export const TOOL_INPUT_SCHEMAS = {
       summary: z.string().min(1),
     })
     .strict(),
+  check_growth_status: z.object({}).strict(),
 } as const satisfies Partial<Record<ToolName, z.ZodTypeAny>>;
 
 /** The exact set of tool names an MCP caller may ever validate/invoke through this map. */

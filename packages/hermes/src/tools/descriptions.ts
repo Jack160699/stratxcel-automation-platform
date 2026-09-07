@@ -20,4 +20,5 @@ export const TOOL_DESCRIPTIONS: Record<ToolName, string> = {
   create_website_change_request: "Not available to Hermes — website changes stay StratExcel-controlled.",
   create_crm_lead: "Record a new CRM lead. Input: { contactName?, contactPhone?, contactEmail?, metadata? }.",
   attach_research_evidence: "Attach a cited source to this mission's research trail. Input: { artifactId, sourceUrl?, summary }.",
+  check_growth_status: "Real, currently-stored SEO/AEO/GEO opportunities, recommendations, actions, and measurement snapshots for this mission's tenant -- the same data the Search Growth dashboard shows. Never re-crawls; reads what's already computed. No input.",
 };

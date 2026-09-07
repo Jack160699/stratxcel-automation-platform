@@ -96,6 +96,7 @@ const TOOL_DESCRIPTIONS: Record<McpCallableName, string> = {
   query_publication_status: "Check publication status of a prior submission.",
   create_crm_lead: "Record a new CRM lead.",
   attach_research_evidence: "Attach a cited source to this mission's research trail.",
+  check_growth_status: "Real, currently-stored SEO/AEO/GEO opportunities, recommendations, actions, and measurement snapshots for this mission's tenant. Never re-crawls.",
 };
 
 /** Read-only per Section 4 — no state anywhere in StratExcel changes as a result of these calls. Everything else is truthfully non-read-only; none are destructive. */

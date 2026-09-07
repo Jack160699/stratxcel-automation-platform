@@ -100,4 +100,9 @@ export const TOOL_PARAMETER_SCHEMAS: Partial<Record<ToolName, Record<string, unk
     required: ["artifactId", "summary"],
     additionalProperties: false,
   },
+  check_growth_status: {
+    type: "object",
+    properties: {},
+    additionalProperties: false,
+  },
 };

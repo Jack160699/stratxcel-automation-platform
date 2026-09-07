@@ -15,6 +15,7 @@
     "@stratxcel/leads-and-crm": "*",
     "@stratxcel/missions": "*",
     "@stratxcel/queue": "*",
+    "@stratxcel/search-discovery": "*",
     "@modelcontextprotocol/sdk": "1.30.0",
     "zod": "4.4.3"
   }
