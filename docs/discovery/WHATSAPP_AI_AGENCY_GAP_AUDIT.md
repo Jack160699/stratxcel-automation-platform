@@ -1,5 +1,39 @@
 # WhatsApp AI Agency — Gap Audit
 
+## Update 88 — A connector denial requiring approval now tells the model exactly how to get it, in-mission
+
+Corrects an overstated gap from Update 85's own notes. When the connector
+authorization gate shipped, its status_notes said auto-routing an
+`approval_required` capability through the existing `request_approval` flow
+"is a real, separate, larger mission-state integration, not built here."
+Investigating that claim before starting a new subsystem found it was an
+overstatement — **the mechanism already existed and already worked**:
+`invokeTool` throwing was already caught by
+[`native-adapter.ts`](../../packages/hermes/src/native-adapter.ts)'s own
+tool-calling loop and turned into a per-call `"error: ..."` tool-result
+message (never crashing the mission), and that same loop already treats a
+`request_approval` call as a real `AWAITING_APPROVAL` stop, matching the
+real state machine's `AWAITING_APPROVAL → RESUMED` transition.
+
+The only genuinely missing piece: the denial message itself never told the
+model this recovery path existed. Fixed precisely — `ConnectorNotAuthorizedError`
+now appends an explicit, actionable instruction (call `request_approval`,
+then retry the exact same tool call once approved; do not give up or
+fabricate a result) **only** for the `autonomy_approval_required_not_yet_auto_routed`
+reason. Every other denial reason stays a plain, non-actionable denial —
+those genuinely need an Admin action first, and a false recovery promise
+there would be worse than none.
+
+Verified:
+[connector-not-authorized-error.test.ts](../../apps/hermes-gateway/src/__tests__/connector-not-authorized-error.test.ts)
+(2 scenarios, real executable assertions against the actual exported error
+class). Zero regressions across the full 12-file
+`test:hermes-mission-control` suite. Full-repo `tsc --noEmit` clean, lint
+clean, real `NODE_ENV=production` build (exit 0). Registry:
+`capability:connector_approval_required_routing`, `REAL_EXPOSED`.
+Migration:
+`supabase/migrations/20260907270000_capability_registry_connector_approval_required_routing.sql`.
+
 ## Update 87 — Real recurring mission infrastructure (master brief Section 15, Continuous Operations)
 
 The highest-value remaining candidate identified in the previous status

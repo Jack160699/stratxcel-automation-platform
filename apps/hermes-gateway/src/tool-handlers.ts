@@ -468,7 +468,22 @@ export const TOOL_HANDLERS: Partial<Record<ToolName, ToolHandler>> = {
 
 export class ConnectorNotAuthorizedError extends Error {
   constructor(tool: string, reason: string) {
-    super(`Tool '${tool}' requires connector authorization the current mission does not have: ${reason}`);
+    // The one denial reason that has a real, already-working recovery path
+    // within the SAME mission run: native-adapter.ts's own tool-calling loop
+    // already catches an invokeTool throw as a per-call "error: ..." tool
+    // result (never crashes the mission), and already treats a
+    // request_approval call as a real AWAITING_APPROVAL stop -- the
+    // mechanism was live before this message existed. What was missing was
+    // telling the model that path exists for THIS specific denial, rather
+    // than leaving it to guess or simply give up. Every other reason
+    // (not_connected/unhealthy/not_assigned/disabled) has no such live
+    // recovery within this run -- an Admin action is genuinely required
+    // first, so those stay a plain, non-actionable denial.
+    const suffix =
+      reason === "autonomy_approval_required_not_yet_auto_routed"
+        ? " -- this capability requires Founder approval before use. Call request_approval (kind: 'other', subject explaining what you need and why) to ask now, then retry this exact tool call once it is approved. Do not give up or fabricate a result."
+        : "";
+    super(`Tool '${tool}' requires connector authorization the current mission does not have: ${reason}${suffix}`);
     this.name = "ConnectorNotAuthorizedError";
   }
 }
