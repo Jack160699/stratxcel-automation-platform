@@ -480,6 +480,7 @@ export function OnboardingWizard({ isStaff = false }: { isStaff?: boolean }) {
     ok: boolean;
     googlePlace?: Record<string, unknown>;
     discoveredWebsiteUrl?: string;
+    websiteAnalyzed?: boolean;
     error?: string;
   }> {
     try {
@@ -505,6 +506,14 @@ export function OnboardingWizard({ isStaff = false }: { isStaff?: boolean }) {
         ok: true,
         googlePlace: data.googlePlace,
         discoveredWebsiteUrl: (data.googlePlace?.websiteUri as string | undefined) || undefined,
+        // The crawl genuinely running is not the same as it succeeding --
+        // a real customer's website can 403 a bot, time out, or return no
+        // readable content (proven live: a real hotel chain's own site
+        // blocked this exact crawl during testing). Distinguishing "found
+        // & analyzed" from "found, but couldn't be analyzed automatically"
+        // matters -- overclaiming the crawl's own real outcome is exactly
+        // the kind of false success this mission forbids.
+        websiteAnalyzed: Boolean(data.data?.isReachable),
       };
     } catch {
       return { ok: false, error: "Network error — please try again." };

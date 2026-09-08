@@ -141,6 +141,19 @@ function run() {
   assert.equal(/Google Business verified/.test(stepBusiness), false, "StepBusiness must never claim Google Business verification -- only recognition/selection");
   assert.ok(/Business selected/.test(stepBusiness), "a selected place must be labeled as selected/found, not verified");
 
+  // --- 8e. Live-caught real defect (production Places API test): Google
+  //     reporting a website on file does not mean the real crawl actually
+  //     succeeded -- a real hotel chain's own site returned HTTP 403 to the
+  //     crawler during live testing, yet the UI still said "Website found
+  //     & analyzed". Must gate that specific claim on the crawl's own real
+  //     outcome (websiteAnalyzed), not just the URL's existence, and the
+  //     Website field's own connection state must reflect the same real
+  //     outcome, not a blanket "connected". ------------------------------
+  assert.ok(/websiteAnalyzed/.test(wizard) && /websiteAnalyzed/.test(stepBusiness), "both the wizard and StepBusiness must track the website crawl's real success, not just whether a URL was discovered");
+  assert.ok(/Boolean\(data\.data\?\.isReachable\)/.test(wizard), "websiteAnalyzed must come from the real crawl's own isReachable result, never assumed true because a URL exists");
+  assert.ok(/couldn.{0,10}t be analyzed automatically/.test(stepBusiness), "a discovered-but-unreadable website must get its own honest, distinct message, never silently reported as fully analyzed");
+  assert.ok(/if \(result\.websiteAnalyzed\) \{[\s\S]{0,60}setWebsiteCheck\("connected"\)/.test(stepBusiness), "the Website field's own connected/failed state must also be gated on the real crawl outcome for an auto-discovered website");
+
   // --- 9. Post-creation active-tenant selection reuses the existing action ---
   assert.ok(/import\s*\{\s*setActiveTenantAction\s*\}\s*from ["']\.\.\/tenant-actions["']/.test(wizard), "must reuse the existing setActiveTenantAction, not a new cookie-writing path");
   assert.ok(/await setActiveTenantAction\(tenant\.id\)/.test(wizard), "must set the active-tenant cookie immediately after workspace creation");

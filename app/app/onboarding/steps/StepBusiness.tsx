@@ -59,6 +59,15 @@ interface SelectedPlaceSummary {
   rating: number | null;
   userRatingCount: number | null;
   websiteUri: string | null;
+  /**
+   * Whether the auto-discovered website's crawl actually succeeded, not
+   * just whether Google reported a URL. Live-proven necessary: a real
+   * hotel chain's own website returned HTTP 403 to the crawler during
+   * testing -- Google genuinely has a website on file, but this codebase
+   * could not read it. Distinguishing "found" from "found and readable" is
+   * the difference between an honest and a false "analyzed" claim.
+   */
+  websiteAnalyzed: boolean | null;
 }
 
 /**
@@ -109,6 +118,7 @@ export function StepBusiness({
     ok: boolean;
     googlePlace?: Record<string, unknown>;
     discoveredWebsiteUrl?: string;
+    websiteAnalyzed?: boolean;
     error?: string;
   }>;
   errorField?: string | null;
@@ -218,6 +228,7 @@ export function StepBusiness({
       rating: (place.rating as number) ?? null,
       userRatingCount: (place.userRatingCount as number) ?? null,
       websiteUri: (place.websiteUri as string) || null,
+      websiteAnalyzed: result.discoveredWebsiteUrl ? Boolean(result.websiteAnalyzed) : null,
     });
     setMapsCheck("connected");
     setMapsValue((place.googleMapsUri as string) || suggestion.mainText);
@@ -228,9 +239,17 @@ export function StepBusiness({
       // The resolve call already ran the real website discovery+analysis
       // server-side (single convergent pipeline) -- this is just reflecting
       // that real, already-completed result in the Website field's own
-      // state, not a second check.
+      // state, not a second check. Google having a website on file doesn't
+      // guarantee this codebase could actually read it (a real site can
+      // block automated crawlers) -- reflect the real outcome, not just
+      // the URL's existence.
       setWebsiteValue(result.discoveredWebsiteUrl);
-      setWebsiteCheck("connected");
+      if (result.websiteAnalyzed) {
+        setWebsiteCheck("connected");
+      } else {
+        setWebsiteCheck("failed");
+        setWebsiteCheckError("Google has this website on file, but we couldn't read it automatically.");
+      }
       setTimeout(() => {
         setWebsiteAutoDiscovering(false);
         setGoogleFlow("connected");
@@ -425,10 +444,20 @@ export function StepBusiness({
                     <span className="h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-[2px] border-sx-border-strong border-t-sx-accent" />
                     <span className="text-xs text-sx-text-subtle">Analyzing website…</span>
                   </div>
-                ) : selectedPlace.websiteUri ? (
+                ) : selectedPlace.websiteUri && selectedPlace.websiteAnalyzed ? (
                   <div className="flex items-center gap-1.5">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--sx-success)" strokeWidth="2.5"><path d="M20 6L9 17l-5-5" /></svg>
                     <span className="text-xs font-medium text-sx-success">Website found &amp; analyzed</span>
+                  </div>
+                ) : selectedPlace.websiteUri ? (
+                  // Google has a website on file, but the real crawl
+                  // couldn't read it (a real site can block automated
+                  // fetches) -- honest about the actual outcome, not just
+                  // that a URL exists (mission: never claim success the
+                  // API call itself didn't achieve).
+                  <div className="flex items-center gap-1.5">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--sx-warning)" strokeWidth="2"><path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4.5c-.77-.833-2.694-.833-3.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z" /></svg>
+                    <span className="text-xs font-medium text-sx-warning">Website found, but couldn&rsquo;t be analyzed automatically</span>
                   </div>
                 ) : null}
               </div>
