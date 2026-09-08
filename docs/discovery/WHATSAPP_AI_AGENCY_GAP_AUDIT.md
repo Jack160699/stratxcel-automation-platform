@@ -1,5 +1,42 @@
 # WhatsApp AI Agency — Gap Audit
 
+## Update 90 — 🔴 real production build break found and fixed: `packages/connectors`' own barrel export never re-exported live Google-capability-discovery work
+
+Found while carrying out Final Production Certification Section 6/19 ("run
+a real `NODE_ENV=production` build"), merging `release/stratxcel-final`
+forward past `origin/main`'s newer commits. `apps/hermes-gateway/src/
+tool-handlers.ts` imports `probeGoogleCapabilities` from the public
+`@stratxcel/connectors` package entrypoint, but
+[`packages/connectors/src/founder-computer/index.ts`](../../packages/connectors/src/founder-computer/index.ts)'s
+`export *` list never included `capability-probe.ts` or
+`google-workflows.ts` (both added by a prior session's live Google-
+capability-discovery work). `tsc --noEmit` failed with `TS2305` (no
+exported member) plus a downstream `TS7006` implicit-any, and — because
+`tool-handlers.ts` is genuinely in the Next.js build graph — a real
+`NODE_ENV=production npm run build` failed outright at the "Running
+TypeScript" step. This is a hard 🔴 customer-blocking defect: the entire
+platform fails to build, not just one feature.
+
+Fixed narrowly — two added `export *` lines, zero new logic, zero other
+files touched. Separately found and resolved: `@novnc/novnc` was declared
+in `package.json`/`package-lock.json` by the same upstream work (the live
+browser viewer) but was never installed in this local checkout, producing
+a (non-fatal) Turbopack "Module not found" warning — installed from the
+already-committed lock file.
+
+Verified: `tsc --noEmit` clean before/after comparison, real
+`NODE_ENV=production npm run build` exit code explicitly checked (was
+non-zero with "Failed to type check", now `0`). Re-ran every real test
+touching this import path —
+[`founder-computer.test.ts`](../../packages/connectors/src/__tests__/founder-computer.test.ts)
+(11/11), [`resource-selector.test.ts`](../../packages/connectors/src/__tests__/resource-selector.test.ts)
+(10/10), [`live-hermes-execution.test.ts`](../../packages/connectors/src/__tests__/live-hermes-execution.test.ts)
+(8 passed / 0 failed / 9 correctly skipped — live sections need
+`FOUNDER_BROWSER_LIVE_TEST=1` + real EC2/browser access, an already
+`EXTERNAL_REQUIRED` condition, not a defect) — zero regressions. Registry:
+`capability:connectors_barrel_export_integrity`, `REAL_EXPOSED`. Migration:
+`supabase/migrations/20260909121500_capability_registry_connectors_barrel_export_fix.sql`.
+
 ## Update 89 — Central Admin CRM now opens directly, aggregated across every authorized client (Final Production Certification, Section 13/14)
 
 The certification brief named this precisely: `/admin/leads` must **not**
