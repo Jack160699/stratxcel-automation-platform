@@ -218,6 +218,16 @@ export function OnboardingWizard({ isStaff = false }: { isStaff?: boolean }) {
   const [connectorOpen, setConnectorOpen] = useState(false);
   const [launchState, setLaunchState] = useState<"idle" | "launching" | "success">("idle");
   const [submitError, setSubmitError] = useState<string | null>(null);
+  // CRITICAL LIVE BUG (Anupurna Tripathi, Final Customer Experience Repair):
+  // selecting Business A then going back and selecting Business B kept
+  // showing/loading A -- both a stale-async-response race (a slower A
+  // response landing after a faster B one) and a stickier bug where A's
+  // already-set fields simply blocked B's real data from ever overwriting
+  // them. This ref is the single source of truth for "which discovery
+  // request is still authoritative" -- every selectGooglePlace/startDiscovery
+  // call increments it and captures its own value; a response is only ever
+  // applied to state when this ref still matches what that call captured.
+  const discoverySequenceRef = useRef(0);
 
   // Handle OAuth popup/redirect return — reopen the connector sheet on the
   // step where it lives (Brand) instead of the old dedicated Connectors step.
@@ -363,41 +373,90 @@ export function OnboardingWizard({ isStaff = false }: { isStaff?: boolean }) {
     return () => window.clearTimeout(timeout);
   }, [step, draft, draftHydrated]);
 
+  /**
+   * The full reset a NEW business selection must trigger before its own
+   * synthesis even starts (Final Customer Experience Repair, Sections
+   * 1/2/4): every business field the ENGINE itself derived for the
+   * PREVIOUSLY selected business must be cleared -- never left sitting in
+   * state where a sticky "don't overwrite if already set" merge would
+   * block the newly selected business's own real data from ever landing.
+   * A field the customer actually typed/chose themselves
+   * (userEditedFields) is the one thing this must never touch. Applied
+   * synchronously, before the network call, so the old business visibly
+   * disappears the instant a new selection begins (Section 7's "instant
+   * transition") instead of lingering until the new one's response lands.
+   */
+  function resetNonUserEditedBusiness(d: OnboardingDraft): Pick<OnboardingDraft, "business" | "goals" | "recommendedGoals"> {
+    const edited = d.business.userEditedFields ?? {};
+    return {
+      business: {
+        ...d.business,
+        name: edited.name ? d.business.name : "",
+        industry: edited.industry ? d.business.industry : "",
+        location: edited.location ? d.business.location : "",
+        website: edited.website ? d.business.website : "",
+        // googleMapsUrl is deliberately never "locked" here, even when
+        // userEditedFields marks it -- it identifies WHICH business is
+        // currently selected, not incidental content, so a fresh explicit
+        // search-and-select is always the most present-tense real source
+        // (selectGooglePlace force-sets it from the new selection's own
+        // canonical URL immediately after synthesis, unconditionally).
+        googleMapsUrl: "",
+        whatsapp: "",
+        businessModel: "",
+        stage: "NEW/STARTING",
+        services: [],
+        primaryOffer: "",
+        socials: [],
+      },
+      // goals/recommendedGoals are re-derivable, freely re-toggleable
+      // checkboxes (StepGoals), not free-text the customer wrote -- safe
+      // and correct to reset alongside the business identity they were
+      // recommended from. Brand fields (offers/description/audience) are
+      // deliberately NOT reset here: unlike every field above, this
+      // codebase has no per-field edit-provenance tracking for Brand (only
+      // business.userEditedFields), so clearing them risks discarding real
+      // copy the customer may have already typed into StepBrand.tsx --
+      // worse than the narrower bug this reset targets. Out of scope for
+      // this pass (Final Customer Experience Repair Sections 1/2/4 name
+      // business identity fields specifically, not Brand step content).
+      goals: [],
+      recommendedGoals: [],
+    };
+  }
+
   function applySynthesizedIntelligence(intel: any) {
     if (!intel) return;
     setDraft((d) => {
+      // Real signal for "must this field ever survive a fresh synthesis
+      // result." A field the customer never actually typed/chose
+      // themselves must always be free to take the newest result --
+      // otherwise it's just whatever the PREVIOUSLY selected business
+      // happened to auto-fill, permanently blocking the currently selected
+      // business's own real data (LIVE BUG, Anupurna Tripathi: Business A
+      // -> back -> Business B kept showing A's name/location/website).
+      // resetNonUserEditedBusinessAndBrand already clears these to "" the
+      // instant a new selection begins, so in the normal flow this check
+      // is redundant with an already-blank base -- kept anyway so this
+      // function stays correct standalone, not merely correct-by-relying-
+      // on-a-reset-elsewhere.
+      const edited = d.business.userEditedFields ?? {};
       const nextBusiness = {
         ...d.business,
-        name: d.business.name || intel.business?.name || d.business.name,
-        // industry is deliberately NOT "never overwrite once set" like the
-        // other fields below -- LIVE BUG (MedRoute Consultancy, mission:
-        // Final Production Certification): d.business.industry can already
-        // be non-empty from an earlier, non-user auto-fill in this same
-        // session (a website AI guess, or a previously-selected different
-        // business) without ever being confirmed by the customer. Only a
-        // real, explicit dropdown edit (userEditedFields.industry, set by
-        // updateBusiness) may block a fresh synthesis result -- otherwise
-        // the newest Google-category-derived value always wins, matching
-        // this mission's required precedence (explicit user choice > Google
-        // Places category > website evidence > website AI inference).
-        industry: d.business.userEditedFields?.industry ? d.business.industry : (intel.business?.industry || d.business.industry),
+        name: edited.name ? d.business.name : (intel.business?.name || d.business.name),
+        industry: edited.industry ? d.business.industry : (intel.business?.industry || d.business.industry),
         businessModel: intel.business?.businessModel || d.business.businessModel,
-        location: d.business.location || intel.business?.location || d.business.location,
-        whatsapp: d.business.whatsapp || intel.business?.whatsapp || d.business.whatsapp,
+        location: edited.location ? d.business.location : (intel.business?.location || d.business.location),
+        whatsapp: intel.business?.whatsapp || d.business.whatsapp,
         services: intel.business?.services?.length ? intel.business.services : d.business.services,
         primaryOffer: intel.business?.primaryOffer || d.business.primaryOffer,
         stage: intel.business?.stage || d.business.stage,
-        // Real bug, caught live: this function never copied website/
-        // googleMapsUrl at all -- the synthesis response always carried
-        // them (intel.business.website/googleMapsUrl), but nothing here
-        // ever read them into the draft. Harmless for the paste-link path
-        // (checkWebsite/checkMaps already persist those fields directly,
-        // before this function ever runs), but a real, silent data-loss
-        // bug for the search-and-select path: a Google-discovered website
-        // visibly showed "connected" in the UI while never actually being
-        // saved to the field the tenant-creation API reads at launch.
-        website: d.business.website || intel.business?.website || d.business.website,
-        googleMapsUrl: d.business.googleMapsUrl || intel.business?.googleMapsUrl || d.business.googleMapsUrl,
+        website: edited.website ? d.business.website : (intel.business?.website || d.business.website),
+        // googleMapsUrl identifies WHICH business is currently selected, not
+        // incidental content -- selectGooglePlace force-sets it from the
+        // new selection's own canonical URL unconditionally right after
+        // this call returns, so it is deliberately never "locked" here.
+        googleMapsUrl: intel.business?.googleMapsUrl || d.business.googleMapsUrl,
       };
       // Prefill the Brand step's real, user-facing fields from the SAME
       // synthesis this route already computes (intel.brand), but only for
@@ -452,6 +511,16 @@ export function OnboardingWizard({ isStaff = false }: { isStaff?: boolean }) {
     }
     if (!cleanWebsite && !cleanGbp) return;
 
+    // STALE-REQUEST PROTECTION (Final Customer Experience Repair, Section
+    // 2/3): captured before the network call. A response only ever reaches
+    // state if this ref still holds this exact value once it resolves --
+    // an older, slower discovery response must never overwrite a newer one.
+    const mySequence = ++discoverySequenceRef.current;
+    // Instant reset -- see resetNonUserEditedBusiness. Gives immediate
+    // visual feedback and guarantees a previous source's data can never
+    // survive into this one, independent of the stale-response guard below.
+    setDraft((d) => ({ ...d, ...resetNonUserEditedBusiness(d) }));
+
     setDiscoveryState("running");
     setDiscoveryError(null);
     try {
@@ -470,14 +539,27 @@ export function OnboardingWizard({ isStaff = false }: { isStaff?: boolean }) {
           // Google Places category. Only send it when the customer actually
           // chose it themselves.
           industry: draft.business.userEditedFields?.industry ? draft.business.industry : undefined,
-          existingDraft: { businessName: draft.business.name, location: draft.business.location },
+          // Same live-bug pattern, found again during the Anupurna Tripathi
+          // business-replacement investigation: businessName/location were
+          // ALSO being echoed back unconditionally here, and the server
+          // (synthesizeOnboardingBusinessIntelligence) treats a non-empty
+          // existingDraft.businessName/location exactly like an explicit
+          // industry -- USER_PROVIDED, confidence 1.0, unconditionally
+          // beating the newly discovered business's own real Google/website
+          // data. Only send them when the customer actually typed them in.
+          existingDraft: {
+            businessName: draft.business.userEditedFields?.name ? draft.business.name : undefined,
+            location: draft.business.userEditedFields?.location ? draft.business.location : undefined,
+          },
         }),
       });
+      if (discoverySequenceRef.current !== mySequence) return; // superseded by a newer discovery
       if (!res.ok) {
         setDiscoveryState("failed");
         return;
       }
       const data = await res.json();
+      if (discoverySequenceRef.current !== mySequence) return; // superseded by a newer discovery
       if (data.intelligence) {
         applySynthesizedIntelligence(data.intelligence);
         setDiscoveryState("done");
@@ -485,6 +567,7 @@ export function OnboardingWizard({ isStaff = false }: { isStaff?: boolean }) {
         setDiscoveryState("failed");
       }
     } catch {
+      if (discoverySequenceRef.current !== mySequence) return; // superseded by a newer discovery
       setDiscoveryError("Network error — please try again.");
       setDiscoveryState("failed");
     }
@@ -497,14 +580,20 @@ export function OnboardingWizard({ isStaff = false }: { isStaff?: boolean }) {
    * pasted-link/website-only discovery button above -- one real pipeline,
    * never two (mission Section 12).
    *
-   * Unlike applySynthesizedIntelligence's usual never-overwrite-if-already-
-   * set semantics (right, for a background auto-fill the user didn't
-   * directly act on), an explicit search-and-select IS the user's own,
-   * direct, present-tense action -- selecting a different business must
-   * visibly update the Google Maps field to reflect the new selection,
-   * even if a weaker/earlier source had already set one. Every OTHER
-   * field (name, location, etc.) still only fills when empty, same
-   * never-overwrite guarantee as always.
+   * CRITICAL LIVE BUG (Anupurna Tripathi, Final Customer Experience
+   * Repair): selecting Business A, going back, and selecting Business B
+   * kept showing/loading A. Two real, independent causes, both fixed here:
+   * (1) every business-derived field used a "never overwrite once set"
+   * merge -- correct for protecting a genuine customer edit, wrong for a
+   * value the engine itself auto-filled for the PREVIOUS business, which
+   * then permanently blocked B's own real data. (2) no request identity at
+   * all -- a slower A response landing after a faster B one would silently
+   * overwrite B with stale A data. discoverySequenceRef (stale-request
+   * guard) and resetNonUserEditedBusiness (instant, correct reset) close
+   * both. An explicit search-and-select is always the most present-tense
+   * real source for googleMapsUrl specifically, so that field is force-set
+   * from the new selection's own canonical URL unconditionally below, even
+   * though it's never "locked" by userEditedFields either.
    */
   async function selectGooglePlace(placeId: string): Promise<{
     ok: boolean;
@@ -512,7 +601,18 @@ export function OnboardingWizard({ isStaff = false }: { isStaff?: boolean }) {
     discoveredWebsiteUrl?: string;
     websiteAnalyzed?: boolean;
     error?: string;
+    /** This exact call was superseded by a newer selection before its response arrived -- the caller must treat this as a silent no-op, never as a failure (the newer selection's own call already owns the UI). */
+    superseded?: boolean;
   }> {
+    // STALE-REQUEST PROTECTION (Section 2/3): see startDiscovery above for
+    // the identical pattern. Shared across both discovery entry points so a
+    // paste-link check racing against a search-and-select (or vice versa)
+    // is protected too, not just two overlapping search selections.
+    const mySequence = ++discoverySequenceRef.current;
+    // Instant reset -- old business's name/industry/location/website/etc
+    // must disappear from the form the moment a new selection begins, not
+    // linger until this fetch resolves.
+    setDraft((d) => ({ ...d, ...resetNonUserEditedBusiness(d) }));
     try {
       const res = await fetch("/api/platform/site-discovery/resolve", {
         method: "POST",
@@ -528,10 +628,22 @@ export function OnboardingWizard({ isStaff = false }: { isStaff?: boolean }) {
           // auto-fill as if the customer had typed it, and the server
           // trusted it as USER_PROVIDED, its maximum-confidence tier.
           industry: draft.business.userEditedFields?.industry ? draft.business.industry : undefined,
-          existingDraft: { businessName: draft.business.name, location: draft.business.location },
+          // Same pattern for businessName/location -- found during the
+          // Anupurna Tripathi investigation: echoing these back
+          // unconditionally is exactly how "Credit C" survived into the
+          // next selection (synthesizeOnboardingBusinessIntelligence treats
+          // a non-empty existingDraft.businessName/location as
+          // USER_PROVIDED too, unconditionally beating the new business's
+          // real Google data).
+          existingDraft: {
+            businessName: draft.business.userEditedFields?.name ? draft.business.name : undefined,
+            location: draft.business.userEditedFields?.location ? draft.business.location : undefined,
+          },
         }),
       });
+      if (discoverySequenceRef.current !== mySequence) return { ok: false, superseded: true };
       const data = await res.json().catch(() => ({}));
+      if (discoverySequenceRef.current !== mySequence) return { ok: false, superseded: true };
       if (!res.ok || !data.googlePlace) {
         return { ok: false, error: data.googlePlaceError || data.error || "Could not find this business." };
       }
@@ -554,6 +666,7 @@ export function OnboardingWizard({ isStaff = false }: { isStaff?: boolean }) {
         websiteAnalyzed: Boolean(data.data?.isReachable),
       };
     } catch {
+      if (discoverySequenceRef.current !== mySequence) return { ok: false, superseded: true };
       return { ok: false, error: "Network error — please try again." };
     }
   }
@@ -576,23 +689,32 @@ export function OnboardingWizard({ isStaff = false }: { isStaff?: boolean }) {
     }));
   }
 
-  function updateBusiness(patch: Partial<OnboardingDraft["business"]>) {
+  /**
+   * `userEdited` defaults true -- the common case is a direct StepBusiness
+   * form control's onChange, the only real signal a field's value came
+   * from the customer themselves, never from an automatic Google/website
+   * synthesis run. Callers that programmatically reflect an AUTOMATIC
+   * discovery result into the same fields a customer could otherwise type
+   * into (e.g. StepBusiness.tsx auto-copying Google's own discovered
+   * website URL, or checkMaps' auto-derived business name fallback) must
+   * pass `{ userEdited: false }` -- marking those as customer edits would
+   * wrongly lock them against ever being replaced by a LATER business
+   * selection's own real data (the exact live bug this mechanism exists to
+   * prevent, just triggered a different way).
+   */
+  function updateBusiness(patch: Partial<OnboardingDraft["business"]>, options?: { userEdited?: boolean }) {
+    const userEdited = options?.userEdited !== false;
     setDraft((d) => ({
       ...d,
       business: {
         ...d.business,
         ...patch,
-        // Real signal that a field's current value came directly from the
-        // customer (a Step form control's onChange), never from an
-        // automatic Google/website synthesis run -- the only thing that
-        // may legitimately mark a field like industry as settled/final.
-        // applySynthesizedIntelligence and its own outbound requests
-        // consult this before ever treating a field's existing value as
-        // something a fresh synthesis result must not overwrite.
-        userEditedFields: {
-          ...d.business.userEditedFields,
-          ...Object.fromEntries(Object.keys(patch).map((key) => [key, true])),
-        },
+        userEditedFields: userEdited
+          ? {
+              ...d.business.userEditedFields,
+              ...Object.fromEntries(Object.keys(patch).map((key) => [key, true])),
+            }
+          : d.business.userEditedFields,
       },
     }));
   }

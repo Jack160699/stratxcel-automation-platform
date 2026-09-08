@@ -101,7 +101,8 @@ export function StepBusiness({
   errorField,
 }: {
   draft: OnboardingDraft;
-  update: (patch: Partial<OnboardingDraft["business"]>) => void;
+  /** `options.userEdited` (default true) must be explicitly false for a programmatic reflection of an automatic discovery result -- see updateBusiness in OnboardingWizard.tsx. */
+  update: (patch: Partial<OnboardingDraft["business"]>, options?: { userEdited?: boolean }) => void;
   errors?: { name?: string };
   discoveryState: DiscoveryState;
   onStartDiscovery: (websiteInput: string, gbpInput: string) => void;
@@ -112,6 +113,8 @@ export function StepBusiness({
     discoveredWebsiteUrl?: string;
     websiteAnalyzed?: boolean;
     error?: string;
+    /** This exact call was superseded by a newer selection before its response arrived -- must be treated as a silent no-op, never a failure. */
+    superseded?: boolean;
   }>;
   errorField?: string | null;
 }) {
@@ -216,8 +219,23 @@ export function StepBusiness({
     setBusinessSearchQuery(suggestion.mainText);
     setGoogleFlow("selecting");
     setGoogleFlowError(null);
+    // Instant reset (Final Customer Experience Repair, Sections 1/3/7): the
+    // PREVIOUS business's confirmation card and website-check state must
+    // disappear the moment a NEW selection begins, not linger until this
+    // resolves -- mirrors onSelectGooglePlace's own resetNonUserEditedBusiness
+    // for draft state. A customer-typed website is preserved, same as there.
+    setSelectedPlace(null);
+    if (!draft.business.userEditedFields?.website) {
+      setWebsiteValue("");
+      setWebsiteCheck("idle");
+      setWebsiteCheckError(null);
+    }
 
     const result = await onSelectGooglePlace(suggestion.placeId);
+    // A newer selection was made before this one's response arrived -- that
+    // newer call already owns the UI; this stale one must do nothing at all,
+    // never show an error for a request the customer already moved past.
+    if (result.superseded) return;
     if (!result.ok) {
       setGoogleFlow("failed");
       setGoogleFlowError(result.error || "Couldn't load this business. Please try again.");
@@ -266,7 +284,11 @@ export function StepBusiness({
       // guarantee, rather than blindly replacing a website the customer
       // already provided themselves.
       if (!websiteValue.trim() && !draft.business.website) {
-        update({ website: result.discoveredWebsiteUrl });
+        // Automatic reflection of Google's own discovered website -- never
+        // a customer edit, so it must never lock this field against a
+        // LATER, different business's own real website (the same live-bug
+        // pattern this whole userEditedFields mechanism exists to close).
+        update({ website: result.discoveredWebsiteUrl }, { userEdited: false });
         setWebsiteValue(result.discoveredWebsiteUrl);
         if (result.websiteAnalyzed) {
           setWebsiteCheck("connected");
@@ -293,7 +315,8 @@ export function StepBusiness({
     setBusinessSearchQuery("");
     setMapsValue("");
     setMapsCheck("idle");
-    update({ googleMapsUrl: "" });
+    // Clearing to search again, never a customer edit locking the field empty.
+    update({ googleMapsUrl: "" }, { userEdited: false });
   }
 
   async function checkWebsite(rawValue: string) {
@@ -337,7 +360,7 @@ export function StepBusiness({
     if (!trimmed) {
       setMapsCheck("idle");
       setMapsCheckError(null);
-      update({ googleMapsUrl: "" });
+      update({ googleMapsUrl: "" }, { userEdited: false });
       return;
     }
     setMapsCheck("checking");
@@ -357,10 +380,16 @@ export function StepBusiness({
       const localCheck = validateAndNormalizeGoogleMapsInput(trimmed);
       if (res.ok && (canonicalUrl || localCheck.success)) {
         const finalUrl = canonicalUrl || (localCheck.success ? localCheck.data.canonicalUrl : trimmed);
-        update({
-          googleMapsUrl: finalUrl,
-          name: !draft.business.name && localCheck.success && localCheck.data.placeName ? localCheck.data.placeName : draft.business.name,
-        });
+        // Both values here are derived from parsing the pasted link, never
+        // literally typed by the customer -- must not lock name/
+        // googleMapsUrl against a later, different business's own real data.
+        update(
+          {
+            googleMapsUrl: finalUrl,
+            name: !draft.business.name && localCheck.success && localCheck.data.placeName ? localCheck.data.placeName : draft.business.name,
+          },
+          { userEdited: false }
+        );
         setMapsCheck("connected");
       } else {
         setMapsCheck("failed");

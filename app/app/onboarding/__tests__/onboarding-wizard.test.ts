@@ -161,9 +161,12 @@ function run() {
   //     confirmed live by reloading and watching it vanish. Fixed at two
   //     levels: the general synthesis function (benefits every caller) and
   //     an explicit, guarded call in the search-select path itself. --------
-  assert.ok(/website: d\.business\.website \|\| intel\.business\?\.website/.test(wizard), "applySynthesizedIntelligence must copy business.website from the synthesis response -- it never did, a real silent data-loss bug for any caller relying on it alone");
-  assert.ok(/googleMapsUrl: d\.business\.googleMapsUrl \|\| intel\.business\?\.googleMapsUrl/.test(wizard), "applySynthesizedIntelligence must also copy business.googleMapsUrl for the same reason");
-  assert.ok(/if \(!websiteValue\.trim\(\) && !draft\.business\.website\) \{[\s\S]{0,40}update\(\{ website: result\.discoveredWebsiteUrl \}\)/.test(stepBusiness), "the search-select path must explicitly persist the discovered website into the real draft (not just local display state), guarded so it never overwrites a website the customer already provided");
+  assert.ok(/website:\s*edited\.website \? d\.business\.website : \(intel\.business\?\.website \|\| d\.business\.website\)/.test(wizard), "applySynthesizedIntelligence must copy business.website from the synthesis response -- it never did, a real silent data-loss bug for any caller relying on it alone");
+  assert.ok(/googleMapsUrl:\s*intel\.business\?\.googleMapsUrl \|\| d\.business\.googleMapsUrl/.test(wizard), "applySynthesizedIntelligence must also copy business.googleMapsUrl for the same reason");
+  assert.ok(
+    /if \(!websiteValue\.trim\(\) && !draft\.business\.website\) \{[\s\S]{0,400}update\(\{ website: result\.discoveredWebsiteUrl \}, \{ userEdited: false \}\)/.test(stepBusiness),
+    "the search-select path must explicitly persist the discovered website into the real draft (not just local display state), guarded so it never overwrites a website the customer already provided, and marked as an automatic (not customer) edit"
+  );
 
   // --- 9. Post-creation active-tenant selection reuses the existing action ---
   assert.ok(/import\s*\{\s*setActiveTenantAction\s*\}\s*from ["']\.\.\/tenant-actions["']/.test(wizard), "must reuse the existing setActiveTenantAction, not a new cookie-writing path");
@@ -261,12 +264,28 @@ function run() {
   // the field happens to be non-empty.
   assert.ok(/userEditedFields/.test(wizard), "OnboardingWizard must track which business fields the customer actually edited themselves");
   assert.ok(
-    /function updateBusiness[\s\S]{0,900}userEditedFields:\s*\{[\s\S]{0,150}Object\.fromEntries\(Object\.keys\(patch\)/.test(wizard),
-    "updateBusiness must mark every directly-patched field as user-edited -- the only real signal a StepBusiness form control was actually used"
+    /function updateBusiness\(patch[\s\S]{0,900}userEditedFields:\s*userEdited[\s\S]{0,150}Object\.fromEntries\(Object\.keys\(patch\)/.test(wizard),
+    "updateBusiness must mark every directly-patched field as user-edited by default -- the only real signal a StepBusiness form control was actually used"
   );
-  const industryMergeLine = wizard.match(/industry:\s*d\.business\.userEditedFields\?\.industry[^\n]*/)?.[0] ?? "";
-  assert.ok(industryMergeLine, "applySynthesizedIntelligence must gate its industry merge on a real user-edit flag, not just 'already non-empty'");
-  assert.ok(/intel\.business\?\.industry/.test(industryMergeLine), "a fresh synthesis result must still be able to overwrite a non-user-confirmed industry value");
+  assert.ok(
+    /function updateBusiness\(patch:[^)]*,\s*options\?:\s*\{\s*userEdited\?:\s*boolean\s*\}/.test(wizard),
+    "updateBusiness must accept an explicit userEdited override for automatic (non-customer) field reflections"
+  );
+  assert.ok(/const edited = d\.business\.userEditedFields \?\? \{\};/.test(wizard), "applySynthesizedIntelligence must derive a real user-edit flag before merging any business field");
+  // Each field name matches twice on purpose: once in resetNonUserEditedBusiness
+  // (which has no intel reference at all -- it's a pre-network-call reset) and
+  // once in applySynthesizedIntelligence's own merge (which does). Pick the one
+  // that actually references intel to assert against the merge specifically.
+  for (const field of ["industry", "name", "location", "website"]) {
+    const candidates = wizard.match(new RegExp(`${field}:\\s*edited\\.${field}[^\\n]*`, "g")) ?? [];
+    const mergeLine = candidates.find((line) => line.includes("intel.")) ?? "";
+    assert.ok(mergeLine, `applySynthesizedIntelligence must gate its ${field} merge on a real user-edit flag, not just 'already non-empty'`);
+    assert.ok(new RegExp(`intel\\.business\\?\\.${field}`).test(mergeLine), `a fresh synthesis result must still be able to overwrite a non-user-confirmed ${field} value`);
+  }
+  // googleMapsUrl identifies which business is selected, not incidental
+  // content -- must never be locked by userEditedFields at all.
+  assert.ok(/googleMapsUrl:\s*intel\.business\?\.googleMapsUrl \|\| d\.business\.googleMapsUrl/.test(wizard), "googleMapsUrl must always be free to take the freshest synthesis result");
+  assert.equal(/googleMapsUrl:\s*edited\.googleMapsUrl/.test(wizard), false, "googleMapsUrl must never be gated on userEditedFields");
   assert.equal(
     /industry:\s*draft\.business\.industry\s*\|\|\s*undefined/.test(wizard),
     false,
@@ -276,8 +295,46 @@ function run() {
   assert.equal(
     guardedIndustrySends.length,
     2,
-    "both discoverFromLinks and selectGooglePlace must gate their resolve request's industry field on a real, explicit customer-set value"
+    "both startDiscovery and selectGooglePlace must gate their resolve request's industry field on a real, explicit customer-set value"
   );
+
+  // --- 17c. CRITICAL LIVE BUG (Anupurna Tripathi): the exact same echo-back
+  //     pattern existed for existingDraft.businessName/location too -- the
+  //     server treats a non-empty existingDraft.businessName/location as
+  //     USER_PROVIDED exactly like industry, unconditionally beating the
+  //     newly selected business's own real Google/website data. -----------
+  assert.equal(
+    /existingDraft:\s*\{\s*businessName:\s*draft\.business\.name,\s*location:\s*draft\.business\.location\s*\}/.test(wizard),
+    false,
+    "must never blindly echo businessName/location back to the resolve endpoint -- the exact live-bug pattern that let Business A's name/location survive into Business B"
+  );
+  const guardedExistingDraftSends = wizard.match(
+    /existingDraft:\s*\{\s*businessName:\s*draft\.business\.userEditedFields\?\.name \? draft\.business\.name : undefined,\s*location:\s*draft\.business\.userEditedFields\?\.location \? draft\.business\.location : undefined,\s*\}/g
+  ) ?? [];
+  assert.equal(
+    guardedExistingDraftSends.length,
+    2,
+    "both startDiscovery and selectGooglePlace must gate existingDraft.businessName/location on a real, explicit customer-set value"
+  );
+
+  // --- 17d. Stale-request protection: an older async response must never
+  //     overwrite newer state (Sections 2/3). ------------------------------
+  assert.ok(/const discoverySequenceRef = useRef\(0\)/.test(wizard), "a real, single shared request-identity ref must exist across both discovery entry points");
+  const sequenceIncrements = wizard.match(/const mySequence = \+\+discoverySequenceRef\.current/g) ?? [];
+  assert.equal(sequenceIncrements.length, 2, "both startDiscovery and selectGooglePlace must mint a new sequence number for their own call");
+  const staleChecks = wizard.match(/discoverySequenceRef\.current !== mySequence/g) ?? [];
+  assert.ok(staleChecks.length >= 4, "the response must be checked against the sequence ref at every point it could otherwise mutate state (both functions, both before and after their own await)");
+
+  // --- 17e. Instant reset on every new selection (Sections 1/4/7) --------
+  assert.ok(/function resetNonUserEditedBusiness\(d: OnboardingDraft\)/.test(wizard), "a real, shared reset function must exist for the fields a new business selection must never inherit from the old one");
+  const resetCalls = wizard.match(/setDraft\(\(d\) => \(\{ \.\.\.d, \.\.\.resetNonUserEditedBusiness\(d\) \}\)\)/g) ?? [];
+  assert.equal(resetCalls.length, 2, "both startDiscovery and selectGooglePlace must reset non-user-edited business fields synchronously before their own network call");
+
+  // --- 17f. A stale/superseded response must be a silent no-op, never an
+  //     error shown to the customer for a request they already moved past --
+  assert.ok(/superseded\?:\s*boolean/.test(wizard), "selectGooglePlace's return type must be able to signal a superseded call distinctly from a real failure");
+  assert.ok(/return \{ ok: false, superseded: true \}/.test(wizard), "selectGooglePlace must actually return the superseded signal when its own sequence number is stale");
+  assert.ok(/if \(result\.superseded\) return;/.test(stepBusiness), "selectSuggestion must treat a superseded result as a silent no-op, never surfacing a 'failed' error for a request the customer already moved past");
 
   // --- 18. userEditedFields survives an autosave round-trip -----------------
   // Without this, the protection above resets to {} on every reload (the
