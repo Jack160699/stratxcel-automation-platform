@@ -154,6 +154,17 @@ function run() {
   assert.ok(/couldn.{0,10}t be analyzed automatically/.test(stepBusiness), "a discovered-but-unreadable website must get its own honest, distinct message, never silently reported as fully analyzed");
   assert.ok(/if \(result\.websiteAnalyzed\) \{[\s\S]{0,60}setWebsiteCheck\("connected"\)/.test(stepBusiness), "the Website field's own connected/failed state must also be gated on the real crawl outcome for an auto-discovered website");
 
+  // --- 8f. Live-caught real data-loss bug (production Places API test):
+  //     a Google-discovered website visibly showed "connected" in the UI
+  //     with a real URL, but that URL was never actually saved to
+  //     draft.business.website (only to local component display state) --
+  //     confirmed live by reloading and watching it vanish. Fixed at two
+  //     levels: the general synthesis function (benefits every caller) and
+  //     an explicit, guarded call in the search-select path itself. --------
+  assert.ok(/website: d\.business\.website \|\| intel\.business\?\.website/.test(wizard), "applySynthesizedIntelligence must copy business.website from the synthesis response -- it never did, a real silent data-loss bug for any caller relying on it alone");
+  assert.ok(/googleMapsUrl: d\.business\.googleMapsUrl \|\| intel\.business\?\.googleMapsUrl/.test(wizard), "applySynthesizedIntelligence must also copy business.googleMapsUrl for the same reason");
+  assert.ok(/if \(!websiteValue\.trim\(\) && !draft\.business\.website\) \{[\s\S]{0,40}update\(\{ website: result\.discoveredWebsiteUrl \}\)/.test(stepBusiness), "the search-select path must explicitly persist the discovered website into the real draft (not just local display state), guarded so it never overwrites a website the customer already provided");
+
   // --- 9. Post-creation active-tenant selection reuses the existing action ---
   assert.ok(/import\s*\{\s*setActiveTenantAction\s*\}\s*from ["']\.\.\/tenant-actions["']/.test(wizard), "must reuse the existing setActiveTenantAction, not a new cookie-writing path");
   assert.ok(/await setActiveTenantAction\(tenant\.id\)/.test(wizard), "must set the active-tenant cookie immediately after workspace creation");

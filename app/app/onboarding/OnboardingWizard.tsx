@@ -376,6 +376,17 @@ export function OnboardingWizard({ isStaff = false }: { isStaff?: boolean }) {
         services: intel.business?.services?.length ? intel.business.services : d.business.services,
         primaryOffer: intel.business?.primaryOffer || d.business.primaryOffer,
         stage: intel.business?.stage || d.business.stage,
+        // Real bug, caught live: this function never copied website/
+        // googleMapsUrl at all -- the synthesis response always carried
+        // them (intel.business.website/googleMapsUrl), but nothing here
+        // ever read them into the draft. Harmless for the paste-link path
+        // (checkWebsite/checkMaps already persist those fields directly,
+        // before this function ever runs), but a real, silent data-loss
+        // bug for the search-and-select path: a Google-discovered website
+        // visibly showed "connected" in the UI while never actually being
+        // saved to the field the tenant-creation API reads at launch.
+        website: d.business.website || intel.business?.website || d.business.website,
+        googleMapsUrl: d.business.googleMapsUrl || intel.business?.googleMapsUrl || d.business.googleMapsUrl,
       };
       // Prefill the Brand step's real, user-facing fields from the SAME
       // synthesis this route already computes (intel.brand), but only for

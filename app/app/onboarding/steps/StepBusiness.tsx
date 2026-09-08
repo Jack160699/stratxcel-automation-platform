@@ -243,12 +243,33 @@ export function StepBusiness({
       // guarantee this codebase could actually read it (a real site can
       // block automated crawlers) -- reflect the real outcome, not just
       // the URL's existence.
-      setWebsiteValue(result.discoveredWebsiteUrl);
-      if (result.websiteAnalyzed) {
-        setWebsiteCheck("connected");
-      } else {
-        setWebsiteCheck("failed");
-        setWebsiteCheckError("Google has this website on file, but we couldn't read it automatically.");
+      //
+      // Live-caught real bug: setWebsiteValue alone only updates this
+      // component's own local display state -- it never reaches
+      // draft.business.website, the field the tenant-creation API
+      // actually reads at Continue/Launch. Without an explicit update(),
+      // the Website field visibly showed "connected" with a real URL, but
+      // that URL was silently never saved anywhere (confirmed live: it
+      // vanished on a fresh page load, since server-side draft persistence
+      // only ever saves what update() commits).
+      //
+      // Guarded, not unconditional: applySynthesizedIntelligence (which
+      // already ran, synchronously, inside the awaited onSelectGooglePlace
+      // above) never overwrites an already-set draft.business.website --
+      // checking the same condition here (plus the local input, for a
+      // value the customer is mid-typing but hasn't blurred/saved yet)
+      // keeps this call consistent with that same never-overwrite
+      // guarantee, rather than blindly replacing a website the customer
+      // already provided themselves.
+      if (!websiteValue.trim() && !draft.business.website) {
+        update({ website: result.discoveredWebsiteUrl });
+        setWebsiteValue(result.discoveredWebsiteUrl);
+        if (result.websiteAnalyzed) {
+          setWebsiteCheck("connected");
+        } else {
+          setWebsiteCheck("failed");
+          setWebsiteCheckError("Google has this website on file, but we couldn't read it automatically.");
+        }
       }
       setTimeout(() => {
         setWebsiteAutoDiscovering(false);
