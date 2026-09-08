@@ -1,5 +1,86 @@
 # WhatsApp AI Agency — Gap Audit
 
+## Update 91 — 🔴 CRITICAL LIVE BUG fixed: real Google business selection ("MedRoute Consultancy") still rendered "SaaS & Technology"
+
+A prior fix (commit `5278713`, "stop website AI industry guess from
+masquerading as user-provided") had NOT actually closed this bug class, as
+proven by a real live production report: selecting the real Google Places
+result for MedRoute Consultancy (a medical-education consultancy) still
+rendered "Type of Business: SaaS & Technology".
+
+**Root-caused end-to-end against a real production account**
+(`qa-bizdiscovery-...@stratxcel.in`, inspected via Supabase
+`auth.users.raw_user_meta_data`): its persisted onboarding draft showed
+`industry: "SaaS & Technology"` AND `businessModel: "B2B Subscription /
+Software"` (the exact SaaS preset) with a real `googleMapsUrl` already
+set — proof the synthesis engine itself had matched the SaaS preset,
+which only happens when its own `selectedIndustry` input was already
+`"SaaS & Technology"`
+([`synthesizeOnboardingBusinessIntelligence`](../../lib/intelligence/onboarding-business-intelligence.ts)
+treats any non-empty `selectedIndustry` as `USER_PROVIDED`, confidence
+1.0, unconditionally beating a real `googlePlaceData.category` match).
+
+The actual source: `draft.business.industry` had already been auto-filled
+once earlier in the same session (a website AI guess, or an earlier
+business selection) **without the customer ever touching the dropdown**,
+and both `discoverFromLinks` and `selectGooglePlace` in
+[`OnboardingWizard.tsx`](../../app/app/onboarding/OnboardingWizard.tsx)
+unconditionally sent `industry: draft.business.industry || undefined` on
+every subsequent `/api/platform/site-discovery/resolve` call — blindly
+echoing back a non-user value that the server then trusted as an explicit
+customer choice. The prior fix closed a *different* feedback path (the
+server no longer falls back to the website AI's own guess when no
+explicit industry is given) but left this one wide open.
+
+Fixed by wiring up `userEditedFields` (declared on `OnboardingDraft` but
+never actually used): `updateBusiness` now marks every directly-patched
+key as user-edited — the only real signal a StepBusiness form control
+(not an automatic synthesis run) actually set it. Both resolve requests
+now only send `industry` when `userEditedFields.industry` is real;
+`applySynthesizedIntelligence`'s own merge gets the same guard, so a
+fresh Google-derived value can still overwrite a previously auto-filled
+(non-user) industry across multiple selections in one session; persisted
+server-side
+([`sanitizeDraft`](../../app/api/platform/onboarding/route.ts)) so the
+protection survives an autosave/reload round-trip. Enforces the required
+precedence generically — explicit user choice > Google Places category >
+website evidence > website AI inference — with **no MedRoute-specific
+condition anywhere**.
+
+**Live-verified on production** (commit `027b5a2`, stratxcel.in)
+immediately after deploy, in the exact same real account/session that
+reproduced the original bug: re-selected the real Google Places result
+for "MedRoute Consultancy" → Type of business now correctly shows
+**"Professional Services & Consulting"** (Google category "Consultant").
+Then selected a second, different real business in the same session —
+**"Barbeque Nation"** (Raipur) — to confirm genericity: Type of business
+correctly updated to **"Food & Dining (Restaurants / Cafes)"** (Google
+category "Barbecue Restaurant"), proving the fix recomputes industry from
+each fresh selection's own real Google category, not a MedRoute-specific
+patch.
+
+Verified: `tsc --noEmit` clean, lint clean (2 pre-existing unrelated
+warnings confirmed via `git stash`), real `NODE_ENV=production` build
+exits 0, existing
+[`business-intelligence-synthesis.test.ts`](../../app/app/onboarding/__tests__/business-intelligence-synthesis.test.ts)
+(server-side synthesis, unaffected) and
+[`onboarding-wizard.test.ts`](../../app/app/onboarding/__tests__/onboarding-wizard.test.ts)
+both pass, with new regression assertions locking in both the merge-guard
+and the outbound-request guard at both call sites plus autosave
+persistence. Registry: `capability:onboarding_industry_user_provenance`,
+`REAL_EXPOSED`. Migration:
+`supabase/migrations/20260909130000_capability_registry_onboarding_industry_provenance_fix.sql`.
+
+**Note for a future pass** (out of scope for this fix, observed but not
+chased): the same session's `businessModel` field stayed
+`"B2B Subscription / Software"` even after `industry` corrected to
+"Professional Services & Consulting" — the website crawler's own
+`businessModel` AI inference for this specific site appears to carry the
+same kind of misclassification `industry` had, but `businessModel` is
+never rendered as "Type of Business" anywhere in the UI (confirmed via
+source), so it does not affect the reported customer-visible bug or its
+fix.
+
 ## Update 90 — 🔴 real production build break found and fixed: `packages/connectors`' own barrel export never re-exported live Google-capability-discovery work
 
 Found while carrying out Final Production Certification Section 6/19 ("run
