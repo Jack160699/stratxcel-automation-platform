@@ -11,9 +11,17 @@ import { createSocialAuditConnectorInsightsProvider } from "@/lib/social/audit-c
 import { sanitizeChannels } from "@/lib/audit/v1/channels";
 import { provisionTenantConnectorsFromMetadata } from "@/lib/social/provisioning";
 import { consumeAuditIfSubscribed } from "@/lib/audit/audit-entitlement";
+import { runAuditGenerationWithInlineSlice } from "@/lib/audit/inline-audit-execution";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+// Real production bug fix: this route gives a freshly-created audit an
+// inline head start (see runAuditGenerationWithInlineSlice), then
+// backgrounds the real execution via after() so it can actually reach a
+// genuine terminal state rather than being killed mid-flight by the
+// platform's short default. 270s matches the audit worker cron route's
+// own already-proven-sufficient budget for the exact same executor call.
+export const maxDuration = 270;
 
 const ONBOARDING_METADATA_KEY = "stratxcel_onboarding_draft_v1";
 const MAX_STEP = 5;
@@ -581,10 +589,7 @@ export async function POST(request: Request) {
               maxAttempts: 3,
               expectedTenantId: tenant.id,
             });
-            const timeoutPromise = new Promise<{ kind: string }>((resolve) =>
-              setTimeout(() => resolve({ kind: "TIMEOUT_SLICE" }), 15_000)
-            );
-            await Promise.race([executionPromise, timeoutPromise]);
+            await runAuditGenerationWithInlineSlice(executionPromise, 15_000);
           } catch (execErr) {
             console.warn("onboarding: executor execution trace", execErr);
           }

@@ -5,6 +5,7 @@ import { brandBrainPresenceChanged, buildBrandBrainContentFromAuditIntake, isBra
 import { getCurrentBrandBrain, saveBrandBrainVersion, getCanonicalServices, type BrandBrainContent } from "@stratxcel/brand-brain";
 import { resolveAuditBudgetLimitUsd, createLiveAutomaticAuditExecutor } from "@stratxcel/audit-engine";
 import { createSocialAuditConnectorInsightsProvider } from "@/lib/social/audit-connector-insights";
+import { runAuditGenerationWithInlineSlice } from "@/lib/audit/inline-audit-execution";
 import { AUDIT_CHANNEL_TYPES, sanitizeChannels, type AuditChannelType } from "@/lib/audit/v1/channels";
 import { discoverPublicBusiness } from "@/lib/audit/v1/discovery";
 import { runSmartWebsiteDiscovery, type DiscoveredBusinessData } from "@/lib/audit/v1/smart-discovery";
@@ -25,6 +26,13 @@ import type { AuditWhatsAppOnboardingDraft } from "@/lib/audit/v1/onboarding-sta
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+// Real production bug fix: this route gives a freshly-created audit an
+// inline head start (see runAuditGenerationWithInlineSlice), then
+// backgrounds the real execution via after() so it can actually reach a
+// genuine terminal state rather than being killed mid-flight by the
+// platform's short default. 270s matches the audit worker cron route's
+// own already-proven-sufficient budget for the exact same executor call.
+export const maxDuration = 270;
 
 async function context() {
   const supabase = await createSupabaseServerClient();
@@ -214,10 +222,7 @@ export async function POST(request: Request) {
               maxAttempts: 3,
               expectedTenantId: ctx.tenantId,
             });
-            const timeoutPromise = new Promise<{ kind: string }>((resolve) =>
-              setTimeout(() => resolve({ kind: "TIMEOUT_SLICE" }), 15_000)
-            );
-            await Promise.race([executionPromise, timeoutPromise]).catch(() => {});
+            await runAuditGenerationWithInlineSlice(executionPromise, 15_000);
           }
         } catch (autoErr) {
           console.warn("start_fresh: non-fatal automation start trace", autoErr);
@@ -591,10 +596,7 @@ export async function POST(request: Request) {
               maxAttempts: 3,
               expectedTenantId: ctx.tenantId,
             });
-            const timeoutPromise = new Promise<{ kind: string }>((resolve) =>
-              setTimeout(() => resolve({ kind: "TIMEOUT_SLICE" }), 18_000)
-            );
-            await Promise.race([executionPromise, timeoutPromise]);
+            await runAuditGenerationWithInlineSlice(executionPromise, 18_000);
           } catch (execErr) {
             console.warn("audit onboarding finalize: executor execution trace", execErr);
           }
