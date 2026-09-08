@@ -11,7 +11,7 @@
  * unless OPENROUTER_ENABLED="1" AND the key is configured; see
  * policy/task-policies.ts's isOpenRouterRoutingEnabled.
  */
-export type AIProviderId = "google" | "openai" | "local" | "openrouter";
+export type AIProviderId = "google" | "openai" | "local" | "openrouter" | "cloudflare" | "codecraft";
 
 export type AIModality = "text" | "image" | "video" | "audio" | "realtime";
 

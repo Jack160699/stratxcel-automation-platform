@@ -15,6 +15,7 @@ import { GeminiTextProvider } from "./providers/gemini.ts";
 import { OpenAITextProvider } from "./providers/openai.ts";
 import { LocalAITextProvider } from "./providers/local-ai.ts";
 import { OpenRouterTextProvider } from "./providers/openrouter.ts";
+import { CodeCraftTextProvider } from "./providers/codecraft.ts";
 import type {
   AIExecutionRequest,
   AIExecutionResult,
@@ -36,6 +37,7 @@ export interface AIRuntimeDeps {
   local?: AITextProviderAdapter;
   /** OpenRouter — opt-in fourth provider, see providers/openrouter.ts. */
   openrouter?: AITextProviderAdapter;
+  codecraft?: AITextProviderAdapter;
   circuitBreaker?: ProviderCircuitBreaker;
   usageRecorder?: AIUsageRecorder;
   paidFallbackEnabled?: boolean;
@@ -56,6 +58,7 @@ export class AIRuntime {
   private readonly openai: AITextProviderAdapter;
   private readonly local: AITextProviderAdapter;
   private readonly openrouter: AITextProviderAdapter;
+  private readonly codecraft?: AITextProviderAdapter;
   private readonly circuit: ProviderCircuitBreaker;
   private readonly usageRecorder?: AIUsageRecorder;
   private readonly paidFallbackEnabled: boolean;
@@ -70,6 +73,9 @@ export class AIRuntime {
     this.openai = deps.openai ?? new OpenAITextProvider();
     this.local = deps.local ?? new LocalAITextProvider();
     this.openrouter = deps.openrouter ?? new OpenRouterTextProvider();
+    this.codecraft =
+      deps.codecraft ??
+      (process.env.CODECRAFT_API_KEY ? new CodeCraftTextProvider() : undefined);
     this.circuit = deps.circuitBreaker ?? new ProviderCircuitBreaker();
     this.usageRecorder = deps.usageRecorder;
     this.paidFallbackEnabled =
@@ -91,6 +97,10 @@ export class AIRuntime {
     if (id === "google") return this.google;
     if (id === "local") return this.local;
     if (id === "openrouter") return this.openrouter;
+    if (id === "codecraft") {
+      if (this.codecraft) return this.codecraft;
+      throw new AIProviderError("NOT_CONFIGURED", "CodeCraft provider is not configured or enabled");
+    }
     return this.openai;
   }
 
@@ -99,7 +109,8 @@ export class AIRuntime {
       this.google.isConfigured() ||
       this.openai.isConfigured() ||
       this.local.isConfigured() ||
-      this.openrouter.isConfigured()
+      this.openrouter.isConfigured() ||
+      Boolean(this.codecraft?.isConfigured())
     );
   }
 
