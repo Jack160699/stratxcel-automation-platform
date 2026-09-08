@@ -93,6 +93,75 @@ function run() {
     assert.equal(hasInvalid, false, "All candidate goals must be valid catalogue entries");
   }
 
+  // 5. STRATXCEL BUSINESS DISCOVERY redesign: real Google Places data ranks
+  //    above website data and the old regex-only googleMapsData, per-field,
+  //    without ever fabricating a field it has no real value for -----------
+  {
+    const placeData = {
+      placeId: "ChIJ_test_medroute",
+      place: "places/ChIJ_test_medroute",
+      displayName: "MedRoute Consultancy",
+      formattedAddress: "123 Main Rd, Raipur, Chhattisgarh 492001, India",
+      city: "Raipur",
+      state: "Chhattisgarh",
+      country: "India",
+      postalCode: "492001",
+      latitude: 21.25,
+      longitude: 81.63,
+      types: ["health_consultant", "point_of_interest", "establishment"],
+      category: "Health Consultant",
+      phone: "098765 43210",
+      websiteUri: "https://www.medrouteconsultancy.com",
+      googleMapsUri: "https://maps.google.com/?cid=12345",
+      rating: 4.6,
+      userRatingCount: 128,
+      openingHoursWeekdayText: null,
+      photoNames: [],
+    };
+
+    const result = synthesizeOnboardingBusinessIntelligence({
+      googlePlaceData: placeData,
+      websiteData: {
+        websiteUrl: "https://www.medrouteconsultancy.com",
+        businessName: "MedRoute", // deliberately different/weaker than the real Places name
+        industry: "Consulting",
+        description: "A long, real scraped description of what MedRoute actually does for its students, well over twenty characters.",
+      },
+      googleMapsData: {
+        rawInput: "https://maps.app.goo.gl/old",
+        canonicalUrl: "https://maps.app.goo.gl/old",
+        placeName: "MedRoute (old regex guess)",
+        displayHandle: "MedRoute (old regex guess)",
+      },
+    });
+
+    assert.equal(result.business.name, "MedRoute Consultancy", "real Places displayName must win over both website businessName and the old regex-only googleMapsData placeName");
+    assert.equal(result.provenance.businessName, "GOOGLE_MAPS");
+    assert.equal(result.business.location, "123 Main Rd, Raipur, Chhattisgarh 492001, India", "real formattedAddress must win over the old displayHandle fallback");
+    assert.equal(result.provenance.location, "GOOGLE_MAPS");
+    assert.equal(result.business.website, "https://www.medrouteconsultancy.com", "website resolution still works when both googlePlaceData and websiteData agree");
+    assert.equal(result.business.googleMapsUrl, "https://maps.google.com/?cid=12345", "real googleMapsUri must win over the old canonicalUrl");
+    // Description stays website-sourced (Places has no description field) --
+    // proves googlePlaceData never blanket-overrides fields it has no real
+    // data for.
+    assert.ok(result.brand.description.includes("MedRoute actually does"));
+    assert.equal(result.provenance.description, "WEBSITE");
+
+    // Google Places-only, and Google itself has no website on file -- must
+    // still populate name/location/industry/whatsapp honestly from real
+    // data, and must never fabricate a website.
+    const placeDataNoWebsite = { ...placeData, websiteUri: null };
+    const placeOnly = synthesizeOnboardingBusinessIntelligence({ googlePlaceData: placeDataNoWebsite });
+    assert.equal(placeOnly.business.name, "MedRoute Consultancy");
+    assert.equal(placeOnly.business.industry, "Health Consultant");
+    assert.equal(placeOnly.provenance.industry, "GOOGLE_MAPS");
+    assert.equal(placeOnly.business.whatsapp, "098765 43210");
+    assert.equal(placeOnly.provenance.whatsapp, "GOOGLE_MAPS");
+    assert.equal(placeOnly.business.website, "", "must never fabricate a website when Places has none and no website was crawled");
+
+    console.log("✓ Test 5: real Google Places data correctly outranks website/regex data per-field, never fabricates an absent field");
+  }
+
   console.log("business-intelligence-synthesis.test.ts: ALL PASS");
 }
 

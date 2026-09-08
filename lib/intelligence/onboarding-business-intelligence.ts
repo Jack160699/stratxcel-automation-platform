@@ -11,6 +11,7 @@
 import { SERVICE_CATALOGUE } from "@stratxcel/missions";
 import type { DiscoveredBusinessData } from "../audit/v1/smart-discovery";
 import type { NormalizedGoogleMapsInput } from "../identity/google-maps-normalizer";
+import type { GooglePlaceDetails } from "../identity/google-places";
 import type { DiscoveredSocialDraft } from "@/app/app/onboarding/types";
 
 export interface SynthesizedBusinessIntelligence {
@@ -53,6 +54,17 @@ export interface SynthesizedBusinessIntelligence {
 export interface SynthesisInputSources {
   websiteData?: Partial<DiscoveredBusinessData> | null;
   googleMapsData?: NormalizedGoogleMapsInput | null;
+  /**
+   * Real, structured Google Places (New) data for a specifically selected
+   * business/place -- STRATXCEL BUSINESS DISCOVERY redesign. Distinct from
+   * `googleMapsData`, which is only ever pure regex-parsed out of a pasted
+   * URL's own text (no real address/phone/category/rating). When both are
+   * present, this ranks above `googleMapsData` for every field it actually
+   * has real data for (mission priority: Google place/business discovery
+   * data > website data), per-field, never blanket-overriding a field it
+   * has no real value for.
+   */
+  googlePlaceData?: GooglePlaceDetails | null;
   selectedIndustry?: string | null;
   confirmedSocials?: DiscoveredSocialDraft[] | null;
   existingDraft?: {
@@ -352,6 +364,14 @@ export function synthesizeOnboardingBusinessIntelligence(
     provenance.businessName = "USER_PROVIDED";
     confidenceAccumulator += 1.0;
     factorCount++;
+  } else if (sources.googlePlaceData?.displayName?.trim()) {
+    // Real Google Places data ranks above a website's own self-description
+    // for the business's actual registered/listed name (mission Section 9
+    // priority: Google place/business discovery data > website data).
+    businessName = sources.googlePlaceData.displayName.trim();
+    provenance.businessName = "GOOGLE_MAPS";
+    confidenceAccumulator += 0.97;
+    factorCount++;
   } else if (sources.websiteData?.businessName?.trim()) {
     businessName = sources.websiteData.businessName.trim();
     provenance.businessName = "WEBSITE";
@@ -381,6 +401,11 @@ export function synthesizeOnboardingBusinessIntelligence(
     provenance.industry = "USER_PROVIDED";
     confidenceAccumulator += 1.0;
     factorCount++;
+  } else if (sources.googlePlaceData?.category) {
+    industry = sources.googlePlaceData.category;
+    provenance.industry = "GOOGLE_MAPS";
+    confidenceAccumulator += 0.75;
+    factorCount++;
   } else if (sources.websiteData?.industry) {
     industry = sources.websiteData.industry;
     provenance.industry = "WEBSITE";
@@ -409,6 +434,12 @@ export function synthesizeOnboardingBusinessIntelligence(
   let location = sources.existingDraft?.location?.trim() || "";
   if (location) {
     provenance.location = "USER_PROVIDED";
+  } else if (sources.googlePlaceData?.formattedAddress || sources.googlePlaceData?.city) {
+    // Real formatted address beats a URL-derived display handle.
+    location =
+      sources.googlePlaceData.formattedAddress ||
+      [sources.googlePlaceData.city, sources.googlePlaceData.state].filter(Boolean).join(", ");
+    provenance.location = "GOOGLE_MAPS";
   } else if (sources.googleMapsData?.displayHandle && sources.googleMapsData.displayHandle !== "Google Maps Place") {
     // If GBP has place info
     location = sources.googleMapsData.displayHandle;
@@ -425,6 +456,13 @@ export function synthesizeOnboardingBusinessIntelligence(
   } else if (sources.websiteData?.whatsapp || sources.websiteData?.phone) {
     whatsapp = sources.websiteData.whatsapp || sources.websiteData.phone || "";
     provenance.whatsapp = "WEBSITE";
+  } else if (sources.googlePlaceData?.phone) {
+    // Lower priority than website here on purpose: a website's own listed
+    // WhatsApp/contact number is more likely to be the number the business
+    // actually wants used for customer contact than Google's generic
+    // listed phone, but a real Google number still beats no number at all.
+    whatsapp = sources.googlePlaceData.phone;
+    provenance.whatsapp = "GOOGLE_MAPS";
   }
 
   // 5. Resolve Services & Primary Offer
@@ -504,8 +542,8 @@ export function synthesizeOnboardingBusinessIntelligence(
       slug: slugify(businessName),
       industry,
       businessModel,
-      website: sources.websiteData?.websiteUrl || "",
-      googleMapsUrl: sources.googleMapsData?.canonicalUrl || "",
+      website: sources.websiteData?.websiteUrl || sources.googlePlaceData?.websiteUri || "",
+      googleMapsUrl: sources.googlePlaceData?.googleMapsUri || sources.googleMapsData?.canonicalUrl || "",
       location,
       stage: sources.websiteData?.businessStage || "GROWING",
       whatsapp,

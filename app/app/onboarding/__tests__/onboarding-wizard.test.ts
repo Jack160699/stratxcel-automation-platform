@@ -127,6 +127,20 @@ function run() {
   }
   assert.equal(/provenance\.restrictions/.test(wizard), false, "restrictions must never be auto-filled -- the engine itself always tags it INDUSTRY_INFERENCE (a preference, not a discoverable fact)");
 
+  // --- 8d. STRATXCEL BUSINESS DISCOVERY redesign: search-first Google
+  //     Business/Maps, converging into the same real pipeline as the
+  //     pasted-link path -- never a second, disconnected system. -----------
+  assert.ok(/Search your business name/.test(stepBusiness), "the search box must be the primary Google Business/Maps affordance");
+  assert.ok(/Paste Google Maps link instead/.test(stepBusiness), "the paste-link path must still be reachable for customers who prefer it");
+  assert.ok(/onSelectGooglePlace/.test(stepBusiness) && /onSelectGooglePlace/.test(wizard), "StepBusiness and the wizard must actually be wired together for place selection");
+  assert.ok(/googlePlaceId/.test(wizard), "selecting a place must call through the real googlePlaceId-aware resolve endpoint, not a second pipeline");
+  // Honest degrade: search must fall back to the paste-link path when
+  // Places isn't configured, never leave a dead search box.
+  assert.ok(/available === false/.test(stepBusiness) && /setShowPasteMapsLink\(true\)/.test(stepBusiness), "must honestly fall back to the paste-link path when business search is unavailable");
+  // Never conflates "selected" with "verified" (mission Section 14).
+  assert.equal(/Google Business verified/.test(stepBusiness), false, "StepBusiness must never claim Google Business verification -- only recognition/selection");
+  assert.ok(/Business selected/.test(stepBusiness), "a selected place must be labeled as selected/found, not verified");
+
   // --- 9. Post-creation active-tenant selection reuses the existing action ---
   assert.ok(/import\s*\{\s*setActiveTenantAction\s*\}\s*from ["']\.\.\/tenant-actions["']/.test(wizard), "must reuse the existing setActiveTenantAction, not a new cookie-writing path");
   assert.ok(/await setActiveTenantAction\(tenant\.id\)/.test(wizard), "must set the active-tenant cookie immediately after workspace creation");

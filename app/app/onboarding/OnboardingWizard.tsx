@@ -460,6 +460,57 @@ export function OnboardingWizard({ isStaff = false }: { isStaff?: boolean }) {
     }
   }
 
+  /**
+   * STRATXCEL BUSINESS DISCOVERY redesign: the search-and-select path.
+   * Routed through the exact same /api/platform/site-discovery/resolve
+   * endpoint and the exact same applySynthesizedIntelligence() as the
+   * pasted-link/website-only discovery button above -- one real pipeline,
+   * never two (mission Section 12).
+   *
+   * Unlike applySynthesizedIntelligence's usual never-overwrite-if-already-
+   * set semantics (right, for a background auto-fill the user didn't
+   * directly act on), an explicit search-and-select IS the user's own,
+   * direct, present-tense action -- selecting a different business must
+   * visibly update the Google Maps field to reflect the new selection,
+   * even if a weaker/earlier source had already set one. Every OTHER
+   * field (name, location, etc.) still only fills when empty, same
+   * never-overwrite guarantee as always.
+   */
+  async function selectGooglePlace(placeId: string): Promise<{
+    ok: boolean;
+    googlePlace?: Record<string, unknown>;
+    discoveredWebsiteUrl?: string;
+    error?: string;
+  }> {
+    try {
+      const res = await fetch("/api/platform/site-discovery/resolve", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          googlePlaceId: placeId,
+          industry: draft.business.industry || undefined,
+          existingDraft: { businessName: draft.business.name, location: draft.business.location },
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.googlePlace) {
+        return { ok: false, error: data.googlePlaceError || data.error || "Could not find this business." };
+      }
+      if (data.intelligence) applySynthesizedIntelligence(data.intelligence);
+      const canonicalMapsUrl = data.intelligence?.business?.googleMapsUrl as string | undefined;
+      if (canonicalMapsUrl) {
+        setDraft((d) => ({ ...d, business: { ...d.business, googleMapsUrl: canonicalMapsUrl } }));
+      }
+      return {
+        ok: true,
+        googlePlace: data.googlePlace,
+        discoveredWebsiteUrl: (data.googlePlace?.websiteUri as string | undefined) || undefined,
+      };
+    } catch {
+      return { ok: false, error: "Network error — please try again." };
+    }
+  }
+
   function updateConnections(connections: SocialConnection[]) {
     setDraft((d) => ({
       ...d,
@@ -655,6 +706,7 @@ export function OnboardingWizard({ isStaff = false }: { isStaff?: boolean }) {
                 discoveryState={discoveryState}
                 onStartDiscovery={(w, g) => void startDiscovery(w, g)}
                 onResetDiscovery={() => setDiscoveryState("idle")}
+                onSelectGooglePlace={selectGooglePlace}
                 errorField={discoveryError}
               />
             )}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Input } from "@/components/ui/Input";
 import { FormField } from "../FormField";
 import { validateAndNormalizeGoogleMapsInput } from "@/lib/identity/google-maps-normalizer";
@@ -33,6 +33,33 @@ export type DiscoveryState = "idle" | "running" | "done" | "failed";
  * shared, ambiguous text box.
  */
 type SourceCheckState = "idle" | "checking" | "connected" | "failed";
+
+/**
+ * STRATXCEL BUSINESS DISCOVERY redesign: search-first Google Business/Maps
+ * lifecycle (mission Section 18). idle -> searching (debounced autocomplete
+ * in flight) -> selecting (a suggestion tapped, real Place Details +
+ * website auto-discovery in flight) -> connected | failed. "analyzing"
+ * covers the same in-flight window as "selecting" from the customer's
+ * perspective (one combined request) but gets its own copy once a place is
+ * confirmed, distinguishing "found the business" from "now checking its
+ * website" the way the mission's target UX describes.
+ */
+type GoogleDiscoveryFlowState = "idle" | "searching" | "selecting" | "analyzing" | "connected" | "failed";
+
+interface PlaceAutocompleteSuggestion {
+  placeId: string;
+  mainText: string;
+  secondaryText: string;
+}
+
+interface SelectedPlaceSummary {
+  name: string;
+  address: string | null;
+  category: string | null;
+  rating: number | null;
+  userRatingCount: number | null;
+  websiteUri: string | null;
+}
 
 /**
  * StratXcel Onboarding reference step 1 (Business) — real business fields
@@ -69,6 +96,7 @@ export function StepBusiness({
   discoveryState,
   onStartDiscovery,
   onResetDiscovery,
+  onSelectGooglePlace,
   errorField,
 }: {
   draft: OnboardingDraft;
@@ -77,6 +105,12 @@ export function StepBusiness({
   discoveryState: DiscoveryState;
   onStartDiscovery: (websiteInput: string, gbpInput: string) => void;
   onResetDiscovery: () => void;
+  onSelectGooglePlace: (placeId: string) => Promise<{
+    ok: boolean;
+    googlePlace?: Record<string, unknown>;
+    discoveredWebsiteUrl?: string;
+    error?: string;
+  }>;
   errorField?: string | null;
 }) {
   const nameId = useId();
@@ -84,6 +118,7 @@ export function StepBusiness({
   const locationId = useId();
   const websiteId = useId();
   const mapsId = useId();
+  const businessSearchId = useId();
 
   const [websiteValue, setWebsiteValue] = useState(draft.business.website || "");
   const [websiteCheck, setWebsiteCheck] = useState<SourceCheckState>(draft.business.website ? "connected" : "idle");
@@ -92,6 +127,130 @@ export function StepBusiness({
   const [mapsValue, setMapsValue] = useState(draft.business.googleMapsUrl || "");
   const [mapsCheck, setMapsCheck] = useState<SourceCheckState>(draft.business.googleMapsUrl ? "connected" : "idle");
   const [mapsCheckError, setMapsCheckError] = useState<string | null>(null);
+
+  // Search-first Google Business discovery (mission Section 1/2) -- the
+  // PRIMARY path. "Paste Google Maps link instead" (below) reveals the
+  // existing checkMaps field/flow above unchanged for customers who prefer
+  // it or once we learn business search genuinely isn't available in this
+  // deployment (no Places API key configured -- honest degrade, never a
+  // dead search box).
+  const [showPasteMapsLink, setShowPasteMapsLink] = useState(false);
+  const [placesUnavailable, setPlacesUnavailable] = useState(false);
+  const [businessSearchQuery, setBusinessSearchQuery] = useState("");
+  const [suggestions, setSuggestions] = useState<PlaceAutocompleteSuggestion[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [googleFlow, setGoogleFlow] = useState<GoogleDiscoveryFlowState>(draft.business.googleMapsUrl ? "connected" : "idle");
+  const [googleFlowError, setGoogleFlowError] = useState<string | null>(null);
+  const [selectedPlace, setSelectedPlace] = useState<SelectedPlaceSummary | null>(null);
+  const [websiteAutoDiscovering, setWebsiteAutoDiscovering] = useState(false);
+  const sessionTokenRef = useRef<string>(crypto.randomUUID());
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    };
+  }, []);
+
+  function scheduleSearch(query: string) {
+    setBusinessSearchQuery(query);
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    const trimmed = query.trim();
+    if (trimmed.length < 3) {
+      setSuggestions([]);
+      setShowSuggestions(false);
+      return;
+    }
+    searchDebounceRef.current = setTimeout(() => void runSearch(trimmed), 300);
+  }
+
+  async function runSearch(query: string) {
+    setGoogleFlow((prev) => (prev === "connected" ? prev : "searching"));
+    try {
+      const res = await fetch(
+        `/api/platform/onboarding/business-search/suggest?q=${encodeURIComponent(query)}&sessionToken=${encodeURIComponent(sessionTokenRef.current)}`
+      );
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setSuggestions([]);
+        setShowSuggestions(false);
+        return;
+      }
+      if (body.available === false) {
+        // Honest degrade -- no Places API key configured in this
+        // deployment. Switch to the paste-link path rather than leaving a
+        // search box that will never show anything.
+        setPlacesUnavailable(true);
+        setShowPasteMapsLink(true);
+        setSuggestions([]);
+        setShowSuggestions(false);
+        setGoogleFlow(draft.business.googleMapsUrl ? "connected" : "idle");
+        return;
+      }
+      setSuggestions(body.suggestions ?? []);
+      setShowSuggestions(true);
+      setGoogleFlow(draft.business.googleMapsUrl ? "connected" : "idle");
+    } catch {
+      setSuggestions([]);
+      setShowSuggestions(false);
+      setGoogleFlow(draft.business.googleMapsUrl ? "connected" : "idle");
+    }
+  }
+
+  async function selectSuggestion(suggestion: PlaceAutocompleteSuggestion) {
+    setShowSuggestions(false);
+    setBusinessSearchQuery(suggestion.mainText);
+    setGoogleFlow("selecting");
+    setGoogleFlowError(null);
+
+    const result = await onSelectGooglePlace(suggestion.placeId);
+    if (!result.ok) {
+      setGoogleFlow("failed");
+      setGoogleFlowError(result.error || "Couldn't load this business. Please try again.");
+      return;
+    }
+
+    const place = result.googlePlace ?? {};
+    setSelectedPlace({
+      name: (place.displayName as string) || suggestion.mainText,
+      address: (place.formattedAddress as string) || null,
+      category: (place.category as string) || null,
+      rating: (place.rating as number) ?? null,
+      userRatingCount: (place.userRatingCount as number) ?? null,
+      websiteUri: (place.websiteUri as string) || null,
+    });
+    setMapsCheck("connected");
+    setMapsValue((place.googleMapsUri as string) || suggestion.mainText);
+
+    if (result.discoveredWebsiteUrl) {
+      setWebsiteAutoDiscovering(true);
+      setGoogleFlow("analyzing");
+      // The resolve call already ran the real website discovery+analysis
+      // server-side (single convergent pipeline) -- this is just reflecting
+      // that real, already-completed result in the Website field's own
+      // state, not a second check.
+      setWebsiteValue(result.discoveredWebsiteUrl);
+      setWebsiteCheck("connected");
+      setTimeout(() => {
+        setWebsiteAutoDiscovering(false);
+        setGoogleFlow("connected");
+      }, 600);
+    } else {
+      setGoogleFlow("connected");
+    }
+    // Fresh session for the next search, if the customer changes their mind.
+    sessionTokenRef.current = crypto.randomUUID();
+  }
+
+  function resetGoogleSelection() {
+    setSelectedPlace(null);
+    setGoogleFlow("idle");
+    setGoogleFlowError(null);
+    setBusinessSearchQuery("");
+    setMapsValue("");
+    setMapsCheck("idle");
+    update({ googleMapsUrl: "" });
+  }
 
   async function checkWebsite(rawValue: string) {
     const trimmed = rawValue.trim();
@@ -233,26 +392,132 @@ export function StepBusiness({
           />
         </FormField>
 
-        <FormField label="Google Business / Google Maps" htmlFor={mapsId} optional>
-          <Input
-            id={mapsId}
-            value={mapsValue}
-            onChange={(e) => setMapsValue(e.target.value)}
-            onBlur={(e) => void checkMaps(e.target.value)}
-            placeholder="Paste your Google Maps or Business Profile link"
-            className="h-[46px] font-mono text-sm"
-          />
-          <SourceCheckHint
-            state={mapsCheck}
-            idleLabel="Connect Google Maps"
-            checkingLabel="Checking Google location…"
-            connectedLabel="Google location connected"
-            failedLabel={mapsCheckError || "We couldn't recognize this Google Maps link"}
-            onRetry={() => void checkMaps(mapsValue)}
-          />
+        <FormField label="Google Business / Google Maps" htmlFor={businessSearchId} optional>
+          {selectedPlace ? (
+            <div className="rounded-sx-md border-[1.5px] border-sx-success/25 bg-sx-success/[0.04] p-3">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="truncate text-[14px] font-semibold text-sx-text">{selectedPlace.name}</p>
+                  {selectedPlace.address && <p className="mt-0.5 truncate text-xs text-sx-text-subtle">{selectedPlace.address}</p>}
+                  {(selectedPlace.category || selectedPlace.rating != null) && (
+                    <p className="mt-0.5 text-xs text-sx-text-subtle">
+                      {selectedPlace.category}
+                      {selectedPlace.category && selectedPlace.rating != null ? " · " : ""}
+                      {selectedPlace.rating != null && `★ ${selectedPlace.rating}${selectedPlace.userRatingCount ? ` (${selectedPlace.userRatingCount})` : ""}`}
+                    </p>
+                  )}
+                </div>
+                <button type="button" onClick={resetGoogleSelection} className="shrink-0 text-xs font-semibold text-sx-text-subtle hover:text-sx-danger">
+                  Change
+                </button>
+              </div>
+              <div className="mt-2 flex flex-col gap-1">
+                <SourceCheckHint
+                  state="connected"
+                  idleLabel=""
+                  checkingLabel=""
+                  connectedLabel="Business selected"
+                  failedLabel=""
+                  onRetry={() => {}}
+                />
+                {websiteAutoDiscovering ? (
+                  <div className="flex items-center gap-1.5">
+                    <span className="h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-[2px] border-sx-border-strong border-t-sx-accent" />
+                    <span className="text-xs text-sx-text-subtle">Analyzing website…</span>
+                  </div>
+                ) : selectedPlace.websiteUri ? (
+                  <div className="flex items-center gap-1.5">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--sx-success)" strokeWidth="2.5"><path d="M20 6L9 17l-5-5" /></svg>
+                    <span className="text-xs font-medium text-sx-success">Website found &amp; analyzed</span>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          ) : showPasteMapsLink ? (
+            <>
+              <Input
+                id={mapsId}
+                value={mapsValue}
+                onChange={(e) => setMapsValue(e.target.value)}
+                onBlur={(e) => void checkMaps(e.target.value)}
+                placeholder="Paste your Google Maps or Business Profile link"
+                className="h-[46px] font-mono text-sm"
+              />
+              <SourceCheckHint
+                state={mapsCheck}
+                idleLabel="Connect Google Maps"
+                checkingLabel="Checking Google location…"
+                connectedLabel="Google location connected"
+                failedLabel={mapsCheckError || "We couldn't recognize this Google Maps link"}
+                onRetry={() => void checkMaps(mapsValue)}
+              />
+              {!placesUnavailable && (
+                <button type="button" onClick={() => setShowPasteMapsLink(false)} className="mt-1.5 self-start text-xs font-semibold text-sx-accent hover:underline">
+                  ← Search by business name instead
+                </button>
+              )}
+            </>
+          ) : (
+            <div className="relative">
+              <Input
+                id={businessSearchId}
+                value={businessSearchQuery}
+                onChange={(e) => scheduleSearch(e.target.value)}
+                onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
+                onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
+                placeholder="Search your business name…"
+                className="h-[46px]"
+                autoComplete="off"
+              />
+              {showSuggestions && suggestions.length > 0 && (
+                <ul className="absolute z-10 mt-1 w-full overflow-hidden rounded-sx-md border border-sx-border bg-sx-surface-1 shadow-lg">
+                  {suggestions.map((s) => (
+                    <li key={s.placeId}>
+                      <button
+                        type="button"
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => void selectSuggestion(s)}
+                        className="flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left hover:bg-sx-surface-2"
+                      >
+                        <span className="text-[14px] font-medium text-sx-text">{s.mainText}</span>
+                        {s.secondaryText && <span className="text-xs text-sx-text-subtle">{s.secondaryText}</span>}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {googleFlow === "searching" && (
+                <p className="mt-1.5 text-xs text-sx-text-subtle">Searching…</p>
+              )}
+              {googleFlow === "selecting" && (
+                <div className="mt-1.5 flex items-center gap-1.5">
+                  <span className="h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-[2px] border-sx-border-strong border-t-sx-accent" />
+                  <span className="text-xs text-sx-text-subtle">Analyzing Google Business…</span>
+                </div>
+              )}
+              {googleFlow === "failed" && (
+                <div className="mt-1.5 flex items-center gap-2">
+                  <span className="text-xs text-sx-danger">{googleFlowError}</span>
+                  <button type="button" onClick={() => setGoogleFlow("idle")} className="text-xs font-semibold text-sx-accent hover:underline">
+                    Retry
+                  </button>
+                </div>
+              )}
+              {googleFlow === "idle" && !businessSearchQuery && (
+                <p className="mt-1.5 text-xs text-sx-text-subtle">Connect Google Maps</p>
+              )}
+              <button type="button" onClick={() => setShowPasteMapsLink(true)} className="mt-1.5 text-xs font-semibold text-sx-accent hover:underline">
+                Paste Google Maps link instead
+              </button>
+            </div>
+          )}
         </FormField>
 
-        {discoveryState === "idle" && (
+        {/* A search-selected place already ran full discovery (name, website
+           auto-discovery + analysis) as part of selection above -- this
+           manual button is only useful for the paste-link/website-only
+           paths, which don't trigger discovery automatically. */}
+        {discoveryState === "idle" && !selectedPlace && (
           <button
             type="button"
             onClick={() => onStartDiscovery(draft.business.website || websiteValue, draft.business.googleMapsUrl || mapsValue)}
