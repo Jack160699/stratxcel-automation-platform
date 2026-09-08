@@ -1,5 +1,51 @@
 # WhatsApp AI Agency — Gap Audit
 
+## Update 93 — Scroll-to-top on navigation; duplicate Themes/Appearance toggle removed (Final Customer Experience Repair, Sections 6/8/24/27)
+
+**Section 6 (page navigation bug)**: the next page (a new onboarding step,
+an audit/results screen) could open with the previous page's scroll
+position still applied. Root cause: [`CoreAppShell.tsx`](../../components/shell/CoreAppShell.tsx)'s
+own `<main>` is the real scroll container (`overflow-y-auto`), not the
+browser window — the existing
+[`ScrollRestoration.jsx`](../../app/components/ScrollRestoration.jsx)
+(root layout) only ever resets `window` scroll, so it never reached this
+element. New
+[`ScrollToTopMain.tsx`](../../components/shell/ScrollToTopMain.tsx) wraps
+that `<main>`, resetting it on every pathname change — used by both
+`/app` and `/admin`. Onboarding renders standalone (bypasses
+`CoreAppShell` entirely) with client-state-driven steps (no pathname
+change), so `OnboardingWizard.tsx` resets `window` scroll directly on its
+own `step` change instead.
+
+**Section 8 (typography flash)**: investigated, not independently
+confirmed as a separate defect — `app/layout.tsx` already uses
+`next/font/google` with `adjustFontFallback` + `display: swap`
+(self-hosted, no external round-trip, already best practice). A viewer
+landing at a stale scroll position mid-load could plausibly read as
+"unstyled content" even though it was really the Section 6 scroll bug;
+the fix above should resolve most of what was reported.
+
+**Section 24/27 (remove Themes / duplicate actions)**: no literal
+"Themes" nav item existed anywhere — the actual referent was the
+light/dark Appearance picker, duplicated in **two places at once**:
+[`CustomerHeaderActions.tsx`](../../app/app/components/CustomerHeaderActions.tsx)'s
+profile dropdown and
+[`/app/settings`](../../app/app/settings/page.tsx). Removed the toggle
+UI from both — `ThemeProvider`'s dark-mode CSS support itself is
+untouched, everyone now gets its existing default (light).
+
+Verified: `tsc --noEmit` clean, lint clean, real `NODE_ENV=production`
+build exits 0. Updated the one existing regression-guard test that
+asserted "Appearance" as a required profile-menu item
+([`customer-app-final-ux.test.ts`](../../lib/rbac/__tests__/customer-app-final-ux.test.ts))
+to assert its absence instead; that test and
+[`customer-app-bugfixes-polish.test.ts`](../../lib/rbac/__tests__/customer-app-bugfixes-polish.test.ts)
+both pass. Registry:
+`capability:app_shell_scroll_reset_on_navigation` and
+`capability:customer_app_appearance_toggle_removed`, both
+`REAL_EXPOSED`. Migration:
+`supabase/migrations/20260909150000_capability_registry_scroll_reset_and_themes_removal.sql`.
+
 ## Update 92 — 🔴 CRITICAL LIVE BUG fixed: Business A survived into Business B (Final Customer Experience Repair, Sections 1-4)
 
 Reported by Anupurna Tripathi's own live test: searched/selected "Credit
