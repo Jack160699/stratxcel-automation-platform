@@ -17,6 +17,7 @@ import {
   selectBestResource,
   resolveConnectorHealth,
   discoverConnectorCapabilities,
+  probeGoogleCapabilities,
 } from "@stratxcel/connectors";
 import type { ToolName } from "@stratxcel/hermes";
 import { STRATXCEL_CONTROLLED_TOOLS } from "@stratxcel/hermes";
@@ -584,6 +585,7 @@ export const TOOL_HANDLERS: Partial<Record<ToolName, ToolHandler>> = {
     const connectorsClient = createConnectorsClient();
     const providerFilter = typeof input.providerFilter === "string" ? input.providerFilter.toLowerCase() : null;
     const shouldRefresh = Boolean(input.refresh);
+    const useLiveProbe = Boolean(input.liveProbe);
 
     let query = (connectorsClient as any)
       .from("connector_connections")
@@ -597,6 +599,36 @@ export const TOOL_HANDLERS: Partial<Record<ToolName, ToolHandler>> = {
 
     const { data: rows, error } = await query;
     if (error) throw new Error(`discover_capabilities: ${error.message}`);
+
+    // Run live Google capability probe if requested (founder_computer provider only)
+    // This navigates the real Founder Browser to each service URL and reads DOM state.
+    let liveProbeResults: Array<{
+      capabilityKey: string;
+      status: string;
+      reason: string;
+      liveProbe: boolean;
+      detectedAt: string;
+    }> = [];
+
+    const isFounderComputerRelevant =
+      !providerFilter || providerFilter.includes("founder_computer");
+
+    if (useLiveProbe && isFounderComputerRelevant) {
+      try {
+        const { results } = await probeGoogleCapabilities({
+          includeRuntimePrimitives: true,
+        });
+        liveProbeResults = results.map((r) => ({
+          capabilityKey: r.capabilityKey,
+          status: r.status,
+          reason: r.reason,
+          liveProbe: r.liveProbe,
+          detectedAt: r.detectedAt,
+        }));
+      } catch {
+        // Live probe failed — fall back to DB-discovered state
+      }
+    }
 
     const capabilities: Array<Record<string, unknown>> = [];
 
@@ -619,20 +651,37 @@ export const TOOL_HANDLERS: Partial<Record<ToolName, ToolHandler>> = {
 
       const discCaps = Array.isArray(row.discovered_capabilities) ? row.discovered_capabilities : [];
       const method = connKey === "founder_computer" ? "browser" : "api";
+      const connIsHealthy = ["connected", "healthy"].includes(row.status);
 
       for (const capKey of discCaps) {
+        // Merge live probe result if available for this capability
+        const liveResult = connKey === "founder_computer"
+          ? liveProbeResults.find((r) => r.capabilityKey === capKey)
+          : undefined;
+
+        const status = liveResult
+          ? liveResult.status
+          : connIsHealthy ? "AVAILABLE" : "UNAVAILABLE";
+
         capabilities.push({
           provider: connKey,
           capability: capKey,
           execution_method: method,
-          status: ["connected", "healthy"].includes(row.status) ? "AVAILABLE" : "UNAVAILABLE",
-          last_verified: row.last_verified_at,
-          requires_confirmation: capKey.includes("video") || capKey.includes("run_task"),
+          status,
+          last_verified: liveResult?.detectedAt ?? row.last_verified_at,
+          requires_confirmation: capKey.includes("video") || capKey.includes("run_task") || capKey.includes("upload"),
+          probe_source: liveResult ? "live_browser_dom" : "session_metadata",
+          probe_reason: liveResult?.reason,
+          live_probe_used: Boolean(liveResult?.liveProbe),
         });
       }
     }
 
-    return { capabilities };
+    return {
+      capabilities,
+      live_probe_used: liveProbeResults.length > 0,
+      live_probe_count: liveProbeResults.length,
+    };
   },
 
   async get_capability_status(ctx, input) {

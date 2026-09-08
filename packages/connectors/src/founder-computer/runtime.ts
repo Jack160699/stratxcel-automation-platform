@@ -491,24 +491,46 @@ export async function executeBrowserAction(
         }
 
         case "browser.screenshot": {
-          const fullPage = Boolean(payload.fullPage ?? true);
+          const fullPage = Boolean(payload.fullPage ?? false);
           const selector = payload.selector ? String(payload.selector) : undefined;
+          const screenshotTimeout = typeof payload.timeoutMs === "number" ? payload.timeoutMs : 12000;
+          const useJpeg = !selector && !payload.forcePng;
           let buffer: Buffer;
           if (selector) {
             const el = await page.$(selector);
             if (!el) throw new Error(`Element not found for selector: ${selector}`);
-            buffer = await el.screenshot();
+            buffer = await el.screenshot({ timeout: screenshotTimeout, animations: "disabled", type: "jpeg", quality: 85 });
           } else {
-            buffer = await page.screenshot({ fullPage });
+            try {
+              // Use JPEG to bypass the font-rendering hang on some EC2 Chrome environments
+              buffer = await page.screenshot({
+                fullPage,
+                timeout: screenshotTimeout,
+                animations: "disabled",
+                type: useJpeg ? "jpeg" : "png",
+                ...(useJpeg ? { quality: 85 } : {}),
+              });
+            } catch {
+              // Last resort: clip to viewport to avoid full-page render hang
+              const viewportSize = page.viewportSize() ?? { width: 1280, height: 720 };
+              buffer = await page.screenshot({
+                clip: { x: 0, y: 0, width: Math.min(viewportSize.width, 1280), height: Math.min(viewportSize.height, 720) },
+                timeout: screenshotTimeout,
+                animations: "disabled",
+                type: "jpeg",
+                quality: 80,
+              });
+            }
           }
           const base64 = buffer.toString("base64");
+          const mimeType = useJpeg ? "image/jpeg" : "image/png";
           return {
             success: true,
             action: "screenshot",
-            format: "image/png",
+            format: mimeType,
             bytes: buffer.length,
             base64,
-            base64Thumbnail: `data:image/png;base64,${base64.slice(0, 1000)}...`,
+            base64Thumbnail: `data:${mimeType};base64,${base64.slice(0, 1000)}...`,
             capturedAt: new Date().toISOString(),
           };
         }

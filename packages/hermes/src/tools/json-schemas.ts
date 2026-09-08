@@ -356,6 +356,7 @@ export const TOOL_PARAMETER_SCHEMAS: Partial<Record<ToolName, Record<string, unk
     properties: {
       providerFilter: { type: "string" },
       refresh: { type: "boolean" },
+      liveProbe: { type: "boolean", description: "When true, navigates the Founder Browser to each Google service URL and classifies capability state from real DOM (read-only probe, never submits forms)." },
     },
     additionalProperties: false,
   },

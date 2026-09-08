@@ -251,6 +251,7 @@ export const TOOL_INPUT_SCHEMAS = {
     .object({
       providerFilter: z.string().optional(),
       refresh: z.boolean().optional(),
+      liveProbe: z.boolean().optional(),
     })
     .strict(),
   get_capability_status: z
