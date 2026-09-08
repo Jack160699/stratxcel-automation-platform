@@ -9,6 +9,7 @@ import { PlatformIcon, type PlatformIconKey } from "@/components/audit/PlatformI
 import { PresenceCards } from "@/components/audit/PresenceCards";
 import { ScoreFirstReport } from "@/components/audit/ScoreFirstReport";
 import { FreeCreativesPanel } from "@/components/audit/FreeCreativesPanel";
+import { ServicePreselectionPanel } from "@/components/audit/ServicePreselectionPanel";
 import type { PresenceLink } from "@/lib/audit/v1/presence";
 import { deriveSignalsFromReport, recommendPlan, type RecommendedPlanTier } from "@/lib/audit/plan-recommendation";
 import { PRICING_TIERS } from "@/lib/commercial/catalog";
@@ -376,7 +377,12 @@ export function VisualAuditReport({
       {/* 1b. SCORE-FIRST SUMMARY -- the new default view (Section 1) */}
       <ScoreFirstReport overallScore={score} confidence={confidence} categoryScores={report.categoryScores} />
 
-      {/* 1c. THREE FREE BRANDED CREATIVES (Section 2) -- immediate tangible
+      {/* 1c. SERVICE AUTO-PRESELECTION (Section 4) -- relevant
+          recommendations, pre-checked from real findings, right after the
+          score, before the free creatives. */}
+      <ServicePreselectionPanel />
+
+      {/* 1d. THREE FREE BRANDED CREATIVES (Section 2) -- immediate tangible
           value, available without connecting or paying anything. */}
       <FreeCreativesPanel />
 
