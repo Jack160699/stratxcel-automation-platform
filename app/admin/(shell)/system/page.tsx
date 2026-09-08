@@ -2,6 +2,7 @@ import { requireOwnerContext } from "@/lib/social/db-context";
 import { getTenantServiceContext } from "@/lib/tenants/tenant-context";
 import { heartbeatState } from "@/lib/hermes/mission-control";
 import { resolveEmailProcessorPathAvailable } from "@/lib/email/processor-path";
+import { AdminPageHeader } from "@/components/admin/ui/AdminPageHeader";
 import { Card, CardHeading } from "@/components/ui/Card";
 import { StatusChip, type ChipState } from "@/components/ui/StatusChip";
 import type { AdminProviderStatus } from "@stratxcel/ai-runtime";
@@ -231,41 +232,36 @@ export default async function SystemHealthPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <header>
-        <h1 className="font-sx-sans text-xl font-semibold text-sx-text">System Health</h1>
-        <p className="mt-1 text-sm text-sx-text-muted">
-          Platform-wide provider posture. Optional or unconfigured integrations show as Disconnected — not product failure.
-          Verified Live status requires runtime evidence, not key presence alone.
-        </p>
-      </header>
-      <section className="flex flex-col gap-3">
-        <h2 className="font-sx-sans text-base font-medium text-sx-text">Integration status</h2>
-        <div className="overflow-x-auto rounded-sx-md border border-sx-border">
-          <table className="w-full min-w-[480px] text-left text-sm">
-            <thead className="bg-sx-surface-2 text-sx-text-subtle">
-              <tr>
-                <th className="px-4 py-2 font-sx-mono text-[10px] font-medium uppercase tracking-[0.08em]">Integration</th>
-                <th className="px-4 py-2 font-sx-mono text-[10px] font-medium uppercase tracking-[0.08em]">Status</th>
-                <th className="px-4 py-2 font-sx-mono text-[10px] font-medium uppercase tracking-[0.08em]">Detail</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => {
-                const chip = STATUS_CHIP[row.status];
-                return (
-                  <tr key={row.name} className="border-t border-sx-border">
-                    <td className="px-4 py-3 font-medium text-sx-text">{row.name}</td>
-                    <td className="px-4 py-3">
-                      <StatusChip state={chip.state}>{chip.label}</StatusChip>
-                    </td>
-                    <td className="px-4 py-3 text-sx-text-muted">{row.detail}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </section>
+      <AdminPageHeader
+        breadcrumb="Admin"
+        title="System Health"
+        description="Platform-wide provider posture. Disconnected means optional or unconfigured — not product failure. Live requires runtime evidence, not key presence alone."
+      />
+      <div className="overflow-x-auto rounded-sx-md border border-sx-border">
+        <table className="w-full min-w-[480px] text-left text-sm">
+          <thead className="bg-sx-surface-2 text-sx-text-subtle">
+            <tr>
+              <th className="px-4 py-2 font-sx-mono text-[10px] font-medium uppercase tracking-[0.08em]">Integration</th>
+              <th className="px-4 py-2 font-sx-mono text-[10px] font-medium uppercase tracking-[0.08em]">Status</th>
+              <th className="px-4 py-2 font-sx-mono text-[10px] font-medium uppercase tracking-[0.08em]">Detail</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => {
+              const chip = STATUS_CHIP[row.status];
+              return (
+                <tr key={row.name} className="border-t border-sx-border">
+                  <td className="px-4 py-3 font-medium text-sx-text">{row.name}</td>
+                  <td className="px-4 py-3">
+                    <StatusChip state={chip.state}>{chip.label}</StatusChip>
+                  </td>
+                  <td className="px-4 py-3 text-sx-text-muted">{row.detail}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
 
       <Card>
         <CardHeading>Getting started</CardHeading>
