@@ -109,6 +109,24 @@ function run() {
   assert.equal(/useEffect/.test(stepBrand), false, "StepBrand must never auto-fill brand fields with generated placeholder text on mount — every field must start genuinely empty");
   assert.equal(/Do not guarantee specific revenue/.test(stepBrand), false, "StepBrand must not reintroduce the fabricated canned-restrictions boilerplate");
 
+  // --- 8c. Real website-discovered content DOES prefill the Brand step's
+  //     fields (STRATXCEL PRODUCTION REPAIR mission closeout: the engine
+  //     already computed intel.brand + provenance, but the wizard never
+  //     read it) -- strictly gated on provenance "WEBSITE" (genuinely
+  //     scraped), never the engine's own "INDUSTRY_INFERENCE" generic
+  //     template fallback, and never overwriting a value the customer
+  //     already typed. This is a different, narrower thing than the
+  //     fabrication Test 8b guards against (a blind on-mount auto-fill of
+  //     generic text) -- this only fires from the same real, user-
+  //     triggered discovery action that already populated business.* --------
+  assert.ok(/intel\.provenance/.test(wizard), "must read the engine's own real provenance map, not assume every discovered value is real");
+  for (const field of ["offers", "description", "audience"]) {
+    const re = new RegExp(`provenance\\.${field} === ["']WEBSITE["'][\\s\\S]{0,40}intel\\.brand\\?\\.${field}`);
+    assert.ok(re.test(wizard), `brand.${field} must only be prefilled when the engine tagged it real ("WEBSITE") provenance, never its generic fallback`);
+    assert.ok(new RegExp(`d\\.brand\\.${field}\\s*\\|\\|`).test(wizard), `brand.${field} prefill must never overwrite a value the customer already typed`);
+  }
+  assert.equal(/provenance\.restrictions/.test(wizard), false, "restrictions must never be auto-filled -- the engine itself always tags it INDUSTRY_INFERENCE (a preference, not a discoverable fact)");
+
   // --- 9. Post-creation active-tenant selection reuses the existing action ---
   assert.ok(/import\s*\{\s*setActiveTenantAction\s*\}\s*from ["']\.\.\/tenant-actions["']/.test(wizard), "must reuse the existing setActiveTenantAction, not a new cookie-writing path");
   assert.ok(/await setActiveTenantAction\(tenant\.id\)/.test(wizard), "must set the active-tenant cookie immediately after workspace creation");

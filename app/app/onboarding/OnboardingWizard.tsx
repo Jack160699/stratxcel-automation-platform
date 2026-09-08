@@ -377,6 +377,29 @@ export function OnboardingWizard({ isStaff = false }: { isStaff?: boolean }) {
         primaryOffer: intel.business?.primaryOffer || d.business.primaryOffer,
         stage: intel.business?.stage || d.business.stage,
       };
+      // Prefill the Brand step's real, user-facing fields from the SAME
+      // synthesis this route already computes (intel.brand), but only for
+      // fields the engine itself tagged provenance "WEBSITE" -- i.e.
+      // actually scraped from the customer's real site, never its
+      // INDUSTRY_INFERENCE fallback (a generic per-industry template
+      // string). StepBrand.tsx's own header comment documents exactly why
+      // that distinction matters: a prior version of this file auto-filled
+      // these fields with that same generic template text, which got
+      // silently saved into the tenant's real Brand Brain as if the
+      // customer had typed it themselves -- a real fabrication defect,
+      // correctly removed. This is not that: only genuinely-discovered
+      // content, and only into a field the customer hasn't already typed
+      // into (never overwrites their own words).
+      const provenance = (intel.provenance ?? {}) as Record<string, string>;
+      const nextBrand = {
+        ...d.brand,
+        offers: d.brand.offers || (provenance.offers === "WEBSITE" && intel.brand?.offers ? intel.brand.offers : d.brand.offers),
+        description: d.brand.description || (provenance.description === "WEBSITE" && intel.brand?.description ? intel.brand.description : d.brand.description),
+        audience: d.brand.audience || (provenance.audience === "WEBSITE" && intel.brand?.audience ? intel.brand.audience : d.brand.audience),
+        // restrictions is deliberately never auto-filled -- the engine
+        // itself always tags it INDUSTRY_INFERENCE (a preference, not a
+        // discoverable fact); StepBrand.tsx must keep it customer-typed only.
+      };
       // intel.goals.recommendedKeys comes from the industry-preset intelligence
       // module (lib/intelligence/onboarding-business-intelligence.ts), whose
       // vocabulary (thirty_day_growth_plan, seo_audit, website_landing_page, …)
@@ -390,7 +413,7 @@ export function OnboardingWizard({ isStaff = false }: { isStaff?: boolean }) {
       const rawRecommendedKeys = Array.isArray(intel.goals?.recommendedKeys) ? intel.goals.recommendedKeys : [];
       const recommendedKeys = rawRecommendedKeys.filter((key: string) => STEP_GOALS_KEYS.has(key));
       const nextGoals = d.goals.length > 0 ? d.goals : recommendedKeys.slice(0, 3);
-      return { ...d, business: nextBusiness, goals: nextGoals, recommendedGoals: recommendedKeys };
+      return { ...d, business: nextBusiness, brand: nextBrand, goals: nextGoals, recommendedGoals: recommendedKeys };
     });
   }
 
