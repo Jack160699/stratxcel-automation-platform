@@ -100,16 +100,76 @@ export interface ToolContractMap {
     output: { updated: boolean; lead?: unknown };
   };
   browser_navigate: {
-    input: { url: string; sessionKey?: string };
-    output: { success: boolean; title?: string; jobId?: string };
+    input: { url: string; sessionKey?: string; timeoutMs?: number; waitUntil?: "load" | "domcontentloaded" | "networkidle" };
+    output: { success: boolean; title?: string; url?: string; jobId?: string };
   };
-  browser_screenshot: {
-    input: { sessionKey?: string };
-    output: { success: boolean; screenshotRef?: string };
+  browser_click: {
+    input: { selector?: string; coordinates?: { x: number; y: number }; button?: "left" | "right" | "middle"; clickCount?: number; sessionKey?: string };
+    output: { success: boolean; action: string; selector?: string };
+  };
+  browser_type: {
+    input: { selector?: string; text: string; delayMs?: number; clearExisting?: boolean; sessionKey?: string };
+    output: { success: boolean; action: string; typedLength: number };
+  };
+  browser_key: {
+    input: { key: string; count?: number; sessionKey?: string };
+    output: { success: boolean; action: string; key: string };
+  };
+  browser_scroll: {
+    input: { direction: "up" | "down" | "top" | "bottom"; amount?: number; sessionKey?: string };
+    output: { success: boolean; action: string; direction: string };
+  };
+  browser_select: {
+    input: { selector: string; value: string; sessionKey?: string };
+    output: { success: boolean; action: string; value: string };
+  };
+  browser_wait: {
+    input: { condition: "selector" | "navigation" | "timeout" | "network_idle"; target?: string; timeoutMs?: number; sessionKey?: string };
+    output: { success: boolean; action: string };
   };
   browser_read: {
-    input: { selector?: string; sessionKey?: string };
-    output: { success: boolean; text?: string };
+    input: { selector?: string; mode?: "text" | "html" | "structured"; maxChars?: number; sessionKey?: string };
+    output: { success: boolean; text?: string; totalLength?: number };
+  };
+  browser_screenshot: {
+    input: { fullPage?: boolean; selector?: string; quality?: number; sessionKey?: string };
+    output: { success: boolean; screenshotRef?: string; bytes?: number; base64Thumbnail?: string };
+  };
+  browser_upload: {
+    input: { selector: string; fileRef: string; sessionKey?: string };
+    output: { success: boolean; action: string; fileRef: string };
+  };
+  browser_download: {
+    input: { triggerSelector: string; destinationPath?: string; sessionKey?: string };
+    output: { success: boolean; action: string; filename?: string };
+  };
+  browser_tabs: {
+    input: { action: "list" | "new" | "close" | "switch"; tabIndex?: number; url?: string; sessionKey?: string };
+    output: { success: boolean; action: string; tabs?: unknown[]; index?: number };
+  };
+  computer_open_app: {
+    input: { appName: string; args?: string };
+    output: { success: boolean; appName: string };
+  };
+  computer_click: {
+    input: { x?: number; y?: number; selector?: string; button?: "left" | "right" | "middle" };
+    output: { success: boolean; action: string };
+  };
+  computer_type: {
+    input: { text: string };
+    output: { success: boolean; typedLength: number };
+  };
+  computer_key: {
+    input: { key: string; modifiers?: string[] };
+    output: { success: boolean; key: string };
+  };
+  computer_screenshot: {
+    input: { fullScreen?: boolean };
+    output: { success: boolean; screenshotRef?: string; bytes?: number };
+  };
+  computer_wait: {
+    input: { ms: number };
+    output: { success: boolean; ms: number };
   };
 }
 
@@ -136,8 +196,23 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "recall_company_memory",
   "update_lead_status",
   "browser_navigate",
-  "browser_screenshot",
+  "browser_click",
+  "browser_type",
+  "browser_key",
+  "browser_scroll",
+  "browser_select",
+  "browser_wait",
   "browser_read",
+  "browser_screenshot",
+  "browser_upload",
+  "browser_download",
+  "browser_tabs",
+  "computer_open_app",
+  "computer_click",
+  "computer_type",
+  "computer_key",
+  "computer_screenshot",
+  "computer_wait",
 ];
 
 /**

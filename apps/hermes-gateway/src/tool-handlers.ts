@@ -7,7 +7,13 @@ import { listSearchState } from "@stratxcel/search-discovery";
 import { listLeads, updateLeadStatus, type LeadStatus } from "@stratxcel/leads-and-crm";
 import { inspectDomainDns, getVercelDomainStatus } from "@stratxcel/websites-and-domains";
 import { assertSafeMemoryValue, MEMORY_CONFIDENCE_VALUES, type MemoryConfidence } from "@stratxcel/agent-core";
-import { assertConnectorCapabilityAuthorized, createServiceClient as createConnectorsClient, getConnectorConnection } from "@stratxcel/connectors";
+import {
+  assertConnectorCapabilityAuthorized,
+  createServiceClient as createConnectorsClient,
+  getConnectorConnection,
+  executeBrowserAction,
+  executeComputerAction,
+} from "@stratxcel/connectors";
 import type { ToolName } from "@stratxcel/hermes";
 import { STRATXCEL_CONTROLLED_TOOLS } from "@stratxcel/hermes";
 import { lookupSocialPublicationStatus } from "../../../lib/social/workforce/publication-status-lookup.ts";
@@ -465,18 +471,76 @@ export const TOOL_HANDLERS: Partial<Record<ToolName, ToolHandler>> = {
     return { memories: data ?? [] };
   },
 
-  async browser_navigate(ctx, input) {
-    const url = typeof input.url === "string" ? input.url : "";
-    return { success: true, url, title: `Navigated to ${url}`, jobId: `browser-nav-${Date.now()}` };
+  async browser_navigate(_ctx, input) {
+    return executeBrowserAction("browser.navigate", input);
   },
 
-  async browser_screenshot(_ctx) {
-    return { success: true, screenshotRef: "founder-computer-screenshot-pending", capturedAt: new Date().toISOString() };
+  async browser_click(_ctx, input) {
+    return executeBrowserAction("browser.click", input);
+  },
+
+  async browser_type(_ctx, input) {
+    return executeBrowserAction("browser.type", input);
+  },
+
+  async browser_key(_ctx, input) {
+    return executeBrowserAction("browser.key", input);
+  },
+
+  async browser_scroll(_ctx, input) {
+    return executeBrowserAction("browser.scroll", input);
+  },
+
+  async browser_select(_ctx, input) {
+    return executeBrowserAction("browser.select", input);
+  },
+
+  async browser_wait(_ctx, input) {
+    return executeBrowserAction("browser.wait", input);
   },
 
   async browser_read(_ctx, input) {
-    const selector = typeof input.selector === "string" ? input.selector : undefined;
-    return { success: true, selector, text: "Founder Computer browser content extracted.", extractedAt: new Date().toISOString() };
+    return executeBrowserAction("browser.read", input);
+  },
+
+  async browser_screenshot(_ctx, input) {
+    return executeBrowserAction("browser.screenshot", input);
+  },
+
+  async browser_upload(_ctx, input) {
+    return executeBrowserAction("browser.upload", input);
+  },
+
+  async browser_download(_ctx, input) {
+    return executeBrowserAction("browser.download", input);
+  },
+
+  async browser_tabs(_ctx, input) {
+    return executeBrowserAction("browser.tabs", input);
+  },
+
+  async computer_open_app(_ctx, input) {
+    return executeComputerAction("computer.open_app", input);
+  },
+
+  async computer_click(_ctx, input) {
+    return executeComputerAction("computer.click", input);
+  },
+
+  async computer_type(_ctx, input) {
+    return executeComputerAction("computer.type", input);
+  },
+
+  async computer_key(_ctx, input) {
+    return executeComputerAction("computer.key", input);
+  },
+
+  async computer_screenshot(_ctx, input) {
+    return executeComputerAction("computer.screenshot", input);
+  },
+
+  async computer_wait(_ctx, input) {
+    return executeComputerAction("computer.wait", input);
   },
 };
 
@@ -495,8 +559,23 @@ const HERMES_TOOL_CONNECTOR_MAP: Partial<Record<ToolName, { connectorKey: string
   generate_image: { connectorKey: "gemini", capabilityKey: "media.image_generation" },
   check_domain_status: { connectorKey: "vercel", capabilityKey: "website.domain_status" },
   browser_navigate: { connectorKey: "founder_computer", capabilityKey: "browser.navigate" },
-  browser_screenshot: { connectorKey: "founder_computer", capabilityKey: "browser.screenshot" },
+  browser_click: { connectorKey: "founder_computer", capabilityKey: "browser.click" },
+  browser_type: { connectorKey: "founder_computer", capabilityKey: "browser.type" },
+  browser_key: { connectorKey: "founder_computer", capabilityKey: "browser.key" },
+  browser_scroll: { connectorKey: "founder_computer", capabilityKey: "browser.scroll" },
+  browser_select: { connectorKey: "founder_computer", capabilityKey: "browser.select" },
+  browser_wait: { connectorKey: "founder_computer", capabilityKey: "browser.wait" },
   browser_read: { connectorKey: "founder_computer", capabilityKey: "browser.read" },
+  browser_screenshot: { connectorKey: "founder_computer", capabilityKey: "browser.screenshot" },
+  browser_upload: { connectorKey: "founder_computer", capabilityKey: "browser.upload" },
+  browser_download: { connectorKey: "founder_computer", capabilityKey: "browser.download" },
+  browser_tabs: { connectorKey: "founder_computer", capabilityKey: "browser.tabs" },
+  computer_open_app: { connectorKey: "founder_computer", capabilityKey: "computer.open_app" },
+  computer_click: { connectorKey: "founder_computer", capabilityKey: "computer.click" },
+  computer_type: { connectorKey: "founder_computer", capabilityKey: "computer.type" },
+  computer_key: { connectorKey: "founder_computer", capabilityKey: "computer.key" },
+  computer_screenshot: { connectorKey: "founder_computer", capabilityKey: "computer.screenshot" },
+  computer_wait: { connectorKey: "founder_computer", capabilityKey: "computer.wait" },
 };
 
 export async function resolveToolConnectorGate(

@@ -61,8 +61,23 @@ export type ToolName =
   | "recall_company_memory"
   | "update_lead_status"
   | "browser_navigate"
+  | "browser_click"
+  | "browser_type"
+  | "browser_key"
+  | "browser_scroll"
+  | "browser_select"
+  | "browser_wait"
+  | "browser_read"
   | "browser_screenshot"
-  | "browser_read";
+  | "browser_upload"
+  | "browser_download"
+  | "browser_tabs"
+  | "computer_open_app"
+  | "computer_click"
+  | "computer_type"
+  | "computer_key"
+  | "computer_screenshot"
+  | "computer_wait";
 
 /**
  * What Hermes actually receives when a mission starts — no secrets, no

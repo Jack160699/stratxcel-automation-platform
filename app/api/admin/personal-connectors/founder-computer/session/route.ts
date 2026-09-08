@@ -1,7 +1,11 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireAdmin } from "@/lib/social/admin-guard";
 import { getTenantServiceContext } from "@/lib/tenants/tenant-context";
-import { getConnectorConnection, recordConnectorAudit } from "@stratxcel/connectors";
+import {
+  getConnectorConnection,
+  recordConnectorAudit,
+  getFounderComputerRuntimeStatus,
+} from "@stratxcel/connectors";
 import {
   parseFounderComputerSession,
   buildSessionVerifiedMetadata,
@@ -35,22 +39,24 @@ export async function GET() {
 
   const metadata = (connection.metadata as Record<string, unknown> | null) ?? null;
   const session = parseFounderComputerSession(metadata);
+  const runtime = await getFounderComputerRuntimeStatus();
 
   // Return safe session summary — no raw tokens/cookies
   return NextResponse.json({
     connectionId: connection.id,
     status: session?.status ?? "not_configured",
+    runtimeState: runtime.state,
+    runtime,
     session: session
       ? {
           profileId: session.profileId,
           status: session.status,
           isHealthy: session.isHealthy,
           authenticatedDomains: session.authenticatedDomains,
-          browserVersion: session.browserVersion,
+          browserVersion: runtime.browserVersion ?? session.browserVersion,
           lastVerifiedAt: session.lastVerifiedAt,
           connectedAt: session.connectedAt,
           runtimeHostRef: session.runtimeHostRef,
-          // Never expose: raw cookies, session token, profile secret
         }
       : null,
   });

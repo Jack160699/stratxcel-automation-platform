@@ -94,7 +94,7 @@ export default function HermesMissionControl() {
         actions={
           <div className="flex items-center gap-2">
             <span className="hidden font-sx-mono text-[11px] text-sx-text-subtle sm:inline">
-              Updated {new Date(data.generatedAt).toLocaleTimeString()}
+              Last updated {new Date(data.generatedAt).toLocaleTimeString()}
             </span>
             <button
               type="button"

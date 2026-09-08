@@ -113,6 +113,7 @@ export const CONNECTOR_REGISTRY: readonly ConnectorDefinition[] = [
       "browser.navigate",
       "browser.click",
       "browser.type",
+      "browser.key",
       "browser.select",
       "browser.scroll",
       "browser.wait",

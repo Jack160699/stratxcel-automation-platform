@@ -60,7 +60,10 @@ export type ConnectorAuditEventType =
   | "browser_restarted"
   | "navigation"
   | "download"
-  | "upload";
+  | "upload"
+  | "click"
+  | "type"
+  | "screenshot";
 
 export type GoogleAiProEntitlementStatus =
   | "unverified"

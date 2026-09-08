@@ -175,23 +175,180 @@ export const TOOL_PARAMETER_SCHEMAS: Partial<Record<ToolName, Record<string, unk
     properties: {
       url: { type: "string", description: "URL to navigate the Founder Computer browser to." },
       sessionKey: { type: "string", description: "Optional session key." },
+      timeoutMs: { type: "integer", description: "Navigation timeout in milliseconds." },
+      waitUntil: { type: "string", enum: ["load", "domcontentloaded", "networkidle"] },
     },
     required: ["url"],
     additionalProperties: false,
   },
-  browser_screenshot: {
+  browser_click: {
     type: "object",
     properties: {
-      sessionKey: { type: "string", description: "Optional session key." },
+      selector: { type: "string", description: "CSS selector of the element to click." },
+      coordinates: {
+        type: "object",
+        properties: { x: { type: "number" }, y: { type: "number" } },
+        required: ["x", "y"],
+      },
+      button: { type: "string", enum: ["left", "right", "middle"] },
+      clickCount: { type: "integer" },
+      sessionKey: { type: "string" },
     },
+    additionalProperties: false,
+  },
+  browser_type: {
+    type: "object",
+    properties: {
+      selector: { type: "string", description: "Target input CSS selector." },
+      text: { type: "string", description: "Text content to type. Never use for passwords." },
+      delayMs: { type: "integer" },
+      clearExisting: { type: "boolean" },
+      sessionKey: { type: "string" },
+    },
+    required: ["text"],
+    additionalProperties: false,
+  },
+  browser_key: {
+    type: "object",
+    properties: {
+      key: { type: "string", description: "Keyboard key to press, e.g. Enter, Tab, Escape." },
+      count: { type: "integer" },
+      sessionKey: { type: "string" },
+    },
+    required: ["key"],
+    additionalProperties: false,
+  },
+  browser_scroll: {
+    type: "object",
+    properties: {
+      direction: { type: "string", enum: ["up", "down", "top", "bottom"] },
+      amount: { type: "integer" },
+      sessionKey: { type: "string" },
+    },
+    required: ["direction"],
+    additionalProperties: false,
+  },
+  browser_select: {
+    type: "object",
+    properties: {
+      selector: { type: "string", description: "Dropdown selector." },
+      value: { type: "string", description: "Option value to select." },
+      sessionKey: { type: "string" },
+    },
+    required: ["selector", "value"],
+    additionalProperties: false,
+  },
+  browser_wait: {
+    type: "object",
+    properties: {
+      condition: { type: "string", enum: ["selector", "navigation", "timeout", "network_idle"] },
+      target: { type: "string" },
+      timeoutMs: { type: "integer" },
+      sessionKey: { type: "string" },
+    },
+    required: ["condition"],
     additionalProperties: false,
   },
   browser_read: {
     type: "object",
     properties: {
       selector: { type: "string", description: "Optional CSS selector to extract from the page." },
+      mode: { type: "string", enum: ["text", "html", "structured"] },
+      maxChars: { type: "integer" },
       sessionKey: { type: "string", description: "Optional session key." },
     },
+    additionalProperties: false,
+  },
+  browser_screenshot: {
+    type: "object",
+    properties: {
+      fullPage: { type: "boolean" },
+      selector: { type: "string" },
+      quality: { type: "integer" },
+      sessionKey: { type: "string", description: "Optional session key." },
+    },
+    additionalProperties: false,
+  },
+  browser_upload: {
+    type: "object",
+    properties: {
+      selector: { type: "string", description: "File input selector." },
+      fileRef: { type: "string", description: "Path or reference to file." },
+      sessionKey: { type: "string" },
+    },
+    required: ["selector", "fileRef"],
+    additionalProperties: false,
+  },
+  browser_download: {
+    type: "object",
+    properties: {
+      triggerSelector: { type: "string", description: "Selector that triggers download." },
+      destinationPath: { type: "string" },
+      sessionKey: { type: "string" },
+    },
+    required: ["triggerSelector"],
+    additionalProperties: false,
+  },
+  browser_tabs: {
+    type: "object",
+    properties: {
+      action: { type: "string", enum: ["list", "new", "close", "switch"] },
+      tabIndex: { type: "integer" },
+      url: { type: "string" },
+      sessionKey: { type: "string" },
+    },
+    required: ["action"],
+    additionalProperties: false,
+  },
+  computer_open_app: {
+    type: "object",
+    properties: {
+      appName: { type: "string" },
+      args: { type: "string" },
+    },
+    required: ["appName"],
+    additionalProperties: false,
+  },
+  computer_click: {
+    type: "object",
+    properties: {
+      x: { type: "number" },
+      y: { type: "number" },
+      selector: { type: "string" },
+      button: { type: "string", enum: ["left", "right", "middle"] },
+    },
+    additionalProperties: false,
+  },
+  computer_type: {
+    type: "object",
+    properties: {
+      text: { type: "string" },
+    },
+    required: ["text"],
+    additionalProperties: false,
+  },
+  computer_key: {
+    type: "object",
+    properties: {
+      key: { type: "string" },
+      modifiers: { type: "array", items: { type: "string" } },
+    },
+    required: ["key"],
+    additionalProperties: false,
+  },
+  computer_screenshot: {
+    type: "object",
+    properties: {
+      fullScreen: { type: "boolean" },
+    },
+    additionalProperties: false,
+  },
+  computer_wait: {
+    type: "object",
+    properties: {
+      ms: { type: "integer" },
+    },
+    required: ["ms"],
     additionalProperties: false,
   },
 };

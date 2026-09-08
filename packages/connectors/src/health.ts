@@ -11,6 +11,7 @@ import {
   deriveHealthStatusFromSession,
   deriveCapabilitiesFromSession,
 } from "./founder-computer/session.ts";
+import { probeCdpEndpoint, getPersistentProfileDir } from "./founder-computer/runtime.ts";
 
 /**
  * Real live health checks for every connector key.
@@ -444,15 +445,31 @@ export async function resolveConnectorHealth(
         };
       }
 
-      // Health is derived from session metadata stored in connector_connections.
-      // No live browser call is made here — health is honest metadata-driven status.
+      // Health derives from session metadata stored in connector_connections
+      // and live CDP endpoint reachability.
       const metadata = (connection.metadata as Record<string, unknown> | null) ?? null;
       const session = parseFounderComputerSession(metadata);
       let healthStatus = deriveHealthStatusFromSession(session);
       if (healthStatus === "not_configured") {
         healthStatus = "auth_required";
       }
+
+      // Live CDP probe for actual runtime connectivity
+      let cdpReachable = false;
+      let runtimeBrowserVersion: string | null = null;
+      try {
+        const cdp = await probeCdpEndpoint();
+        cdpReachable = cdp.reachable;
+        runtimeBrowserVersion = cdp.browserVersion ?? null;
+      } catch {}
+
       const discoveredCapabilities = deriveCapabilitiesFromSession(session);
+
+      const runtimeState = !cdpReachable
+        ? "STOPPED"
+        : (session?.authenticatedDomains?.length ?? 0) > 0
+        ? "READY"
+        : "AUTH_REQUIRED";
 
       const lastError =
         healthStatus === "auth_required"
@@ -470,10 +487,13 @@ export async function resolveConnectorHealth(
         lastVerifiedAt: session?.lastVerifiedAt ?? connection.last_verified_at ?? null,
         details: {
           sessionStatus: session?.status ?? "not_configured",
+          runtimeState,
+          cdpReachable,
           profileId: session?.profileId ?? null,
+          profileDir: getPersistentProfileDir(),
           runtimeHostRef: session?.runtimeHostRef ?? null,
           authenticatedDomains: session?.authenticatedDomains ?? [],
-          browserVersion: session?.browserVersion ?? null,
+          browserVersion: runtimeBrowserVersion ?? session?.browserVersion ?? null,
           isHealthy: session?.isHealthy ?? false,
           connectedAt: session?.connectedAt ?? connection.connected_at ?? null,
         },

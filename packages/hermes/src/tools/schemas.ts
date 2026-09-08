@@ -123,17 +123,128 @@ export const TOOL_INPUT_SCHEMAS = {
     .object({
       url: z.string().min(1),
       sessionKey: z.string().optional(),
+      timeoutMs: z.number().optional(),
+      waitUntil: z.enum(["load", "domcontentloaded", "networkidle"]).optional(),
     })
     .strict(),
-  browser_screenshot: z
+  browser_click: z
     .object({
+      selector: z.string().optional(),
+      coordinates: z.object({ x: z.number(), y: z.number() }).optional(),
+      button: z.enum(["left", "right", "middle"]).optional(),
+      clickCount: z.number().optional(),
+      sessionKey: z.string().optional(),
+    })
+    .strict(),
+  browser_type: z
+    .object({
+      selector: z.string().optional(),
+      text: z.string().min(1),
+      delayMs: z.number().optional(),
+      clearExisting: z.boolean().optional(),
+      sessionKey: z.string().optional(),
+    })
+    .strict(),
+  browser_key: z
+    .object({
+      key: z.string().min(1),
+      count: z.number().optional(),
+      sessionKey: z.string().optional(),
+    })
+    .strict(),
+  browser_scroll: z
+    .object({
+      direction: z.enum(["up", "down", "top", "bottom"]),
+      amount: z.number().optional(),
+      sessionKey: z.string().optional(),
+    })
+    .strict(),
+  browser_select: z
+    .object({
+      selector: z.string().min(1),
+      value: z.string(),
+      sessionKey: z.string().optional(),
+    })
+    .strict(),
+  browser_wait: z
+    .object({
+      condition: z.enum(["selector", "navigation", "timeout", "network_idle"]),
+      target: z.string().optional(),
+      timeoutMs: z.number().optional(),
       sessionKey: z.string().optional(),
     })
     .strict(),
   browser_read: z
     .object({
       selector: z.string().optional(),
+      mode: z.enum(["text", "html", "structured"]).optional(),
+      maxChars: z.number().optional(),
       sessionKey: z.string().optional(),
+    })
+    .strict(),
+  browser_screenshot: z
+    .object({
+      fullPage: z.boolean().optional(),
+      selector: z.string().optional(),
+      quality: z.number().optional(),
+      sessionKey: z.string().optional(),
+    })
+    .strict(),
+  browser_upload: z
+    .object({
+      selector: z.string().min(1),
+      fileRef: z.string().min(1),
+      sessionKey: z.string().optional(),
+    })
+    .strict(),
+  browser_download: z
+    .object({
+      triggerSelector: z.string().min(1),
+      destinationPath: z.string().optional(),
+      sessionKey: z.string().optional(),
+    })
+    .strict(),
+  browser_tabs: z
+    .object({
+      action: z.enum(["list", "new", "close", "switch"]),
+      tabIndex: z.number().optional(),
+      url: z.string().optional(),
+      sessionKey: z.string().optional(),
+    })
+    .strict(),
+  computer_open_app: z
+    .object({
+      appName: z.string().min(1),
+      args: z.string().optional(),
+    })
+    .strict(),
+  computer_click: z
+    .object({
+      x: z.number().optional(),
+      y: z.number().optional(),
+      selector: z.string().optional(),
+      button: z.enum(["left", "right", "middle"]).optional(),
+    })
+    .strict(),
+  computer_type: z
+    .object({
+      text: z.string().min(1),
+    })
+    .strict(),
+  computer_key: z
+    .object({
+      key: z.string().min(1),
+      modifiers: z.array(z.string()).optional(),
+    })
+    .strict(),
+  computer_screenshot: z
+    .object({
+      fullScreen: z.boolean().optional(),
+    })
+    .strict(),
+  computer_wait: z
+    .object({
+      ms: z.number().min(1),
     })
     .strict(),
 } as const satisfies Partial<Record<ToolName, z.ZodTypeAny>>;

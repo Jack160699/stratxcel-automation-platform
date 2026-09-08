@@ -65,6 +65,8 @@ export function ConnectorDrawer({
   const [budgetLimit, setBudgetLimit] = useState("");
   const [auditLogs, setAuditLogs] = useState<AuditLog[] | null>(null);
   const [domainInput, setDomainInput] = useState("google.com, accounts.google.com");
+  const [runtimeStatus, setRuntimeStatus] = useState<string | null>(null);
+  const [diagnosticResult, setDiagnosticResult] = useState<string | null>(null);
 
   // Close on ESC
   useEffect(() => {
@@ -107,11 +109,23 @@ export function ConnectorDrawer({
     }
   }, [item]);
 
+  // Load Founder Computer runtime status
+  const loadRuntimeStatus = useCallback(async () => {
+    if (item?.definition.key !== "founder_computer") return;
+    try {
+      const res = await platformFetch("/api/admin/personal-connectors/founder-computer/start");
+      if (res.ok) {
+        const data = await res.json();
+        setRuntimeStatus(data.status);
+      }
+    } catch {}
+  }, [item]);
+
   useEffect(() => {
-    if (activeTab === "audit" && auditLogs === null) {
-      void loadAuditLogs();
+    if (open && item?.definition.key === "founder_computer") {
+      void loadRuntimeStatus();
     }
-  }, [activeTab, auditLogs, loadAuditLogs]);
+  }, [open, item, loadRuntimeStatus]);
 
   if (!open || !item) return null;
 
@@ -230,6 +244,100 @@ export function ConnectorDrawer({
       onUpdated?.();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Verification failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Start / Open Founder Browser process
+  async function handleOpenBrowser() {
+    setBusy(true);
+    setActionSuccess(null);
+    setError(null);
+    try {
+      const res = await platformFetch("/api/admin/personal-connectors/founder-computer/start", {
+        method: "POST",
+        body: JSON.stringify({}),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to start browser");
+      setRuntimeStatus(data.status);
+      setActionSuccess(`Founder Browser active! Runtime state: ${data.status} (CDP Port 9222).`);
+      onUpdated?.();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to start browser");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Open target authentication session
+  async function handleOpenAuthSession(targetUrl: string) {
+    setBusy(true);
+    setActionSuccess(null);
+    setError(null);
+    try {
+      const res = await platformFetch("/api/admin/personal-connectors/founder-computer/execute", {
+        method: "POST",
+        body: JSON.stringify({
+          capability: "browser.navigate",
+          payload: { url: targetUrl },
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Navigation failed");
+      setActionSuccess(`Navigated Founder Browser to ${targetUrl}. Please complete manual login in the browser window.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to open auth session");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Execute non-destructive diagnostic test
+  async function handleRunDiagnosticTest() {
+    setBusy(true);
+    setActionSuccess(null);
+    setError(null);
+    setDiagnosticResult(null);
+    try {
+      const navRes = await platformFetch("/api/admin/personal-connectors/founder-computer/execute", {
+        method: "POST",
+        body: JSON.stringify({
+          capability: "browser.navigate",
+          payload: { url: "https://www.stratxcel.in" },
+        }),
+      });
+      const navData = await navRes.json();
+      if (!navRes.ok) throw new Error(navData.error || "Diagnostic navigation failed");
+
+      const readRes = await platformFetch("/api/admin/personal-connectors/founder-computer/execute", {
+        method: "POST",
+        body: JSON.stringify({
+          capability: "browser.read",
+          payload: { maxChars: 120 },
+        }),
+      });
+      const readData = await readRes.json();
+
+      const shotRes = await platformFetch("/api/admin/personal-connectors/founder-computer/execute", {
+        method: "POST",
+        body: JSON.stringify({
+          capability: "browser.screenshot",
+          payload: { fullPage: false },
+        }),
+      });
+      const shotData = await shotRes.json();
+
+      setDiagnosticResult(
+        `✓ Navigation: ${navData.title || navData.url || "OK"}\n` +
+        `✓ Read: Extracted ${readData.totalLength ?? 0} chars ("${(readData.text ?? "").slice(0, 60)}...")\n` +
+        `✓ Screenshot: Captured ${shotData.bytes ?? 0} bytes (image/png)`
+      );
+      setActionSuccess("Hermes browser control verified successfully!");
+      onUpdated?.();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Diagnostic test failed");
     } finally {
       setBusy(false);
     }
@@ -384,37 +492,124 @@ export function ConnectorDrawer({
                     This connector requires authentication before Hermes can execute its capabilities.
                   </p>
                   {isFounderComputer ? (
-                    <div className="mt-3 space-y-2">
-                      <p className="text-[11px] text-sx-text-muted">
-                        1. Start secure browser runtime on host/EC2. 2. Sign into accounts manually (Google, etc.) — StratXcel never receives passwords. 3. Enter authenticated domains below and verify.
-                      </p>
-                      <div className="flex gap-2 items-center pt-1">
-                        <input
-                          type="text"
-                          value={domainInput}
-                          onChange={(e) => setDomainInput(e.target.value)}
-                          placeholder="google.com, accounts.google.com"
-                          className="h-8 flex-1 rounded-lg border border-sx-border bg-sx-surface-1 px-2.5 text-xs text-sx-text focus:border-sx-accent focus:outline-none"
-                        />
-                        <button
-                          type="button"
-                          onClick={handleFounderComputerVerify}
-                          disabled={busy}
-                          className="inline-flex items-center rounded-lg bg-sx-accent px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:opacity-90 disabled:opacity-50"
-                        >
-                          Verify Session
-                        </button>
-                      </div>
+                    <div className="mt-3 space-y-4">
+                      {/* Step 1: Initialize Setup (if unconfigured) */}
                       {!connection && (
-                        <button
-                          type="button"
-                          onClick={handleFounderComputerSetup}
-                          disabled={busy}
-                          className="text-xs text-sx-accent hover:underline inline-block pt-1"
-                        >
-                          Initialize Setup Record
-                        </button>
+                        <div className="rounded-lg border border-sx-border bg-sx-surface-1 p-3">
+                          <span className="text-[10px] font-sx-mono uppercase tracking-wider text-sx-accent">Step 1</span>
+                          <p className="mt-0.5 text-xs font-semibold text-sx-text">Initialize Connection Record</p>
+                          <p className="mt-0.5 text-[11px] text-sx-text-muted">Prepares the persistent profile directory (.stratxcel-founder-computer-profile).</p>
+                          <button
+                            type="button"
+                            onClick={handleFounderComputerSetup}
+                            disabled={busy}
+                            className="mt-2.5 inline-flex items-center rounded-lg bg-sx-accent px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:opacity-90 disabled:opacity-50"
+                          >
+                            Initialize Setup
+                          </button>
+                        </div>
                       )}
+
+                      {/* Step 2: Open / Start Founder Browser */}
+                      <div className="rounded-lg border border-sx-border bg-sx-surface-1 p-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-sx-mono uppercase tracking-wider text-sx-accent">
+                            {connection ? "Step 1" : "Step 2"}: Browser Runtime
+                          </span>
+                          <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-sx-mono font-medium ${
+                            runtimeStatus === "RUNNING"
+                              ? "bg-[#5BDCA7]/10 text-[#5BDCA7]"
+                              : "bg-[#FF8A90]/10 text-[#FF8A90]"
+                          }`}>
+                            <span className={`h-1.5 w-1.5 rounded-full ${runtimeStatus === "RUNNING" ? "bg-[#5BDCA7]" : "bg-[#FF8A90]"}`} />
+                            {runtimeStatus || "STOPPED"}
+                          </span>
+                        </div>
+                        <p className="mt-1 text-xs text-sx-text">
+                          Launch or attach to the persistent Chrome instance on port 9222.
+                        </p>
+                        <div className="mt-2.5 flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={handleOpenBrowser}
+                            disabled={busy}
+                            className="inline-flex items-center rounded-lg bg-sx-accent px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:opacity-90 disabled:opacity-50"
+                          >
+                            {runtimeStatus === "RUNNING" ? "Re-Connect Browser" : "Open Founder Browser"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void loadRuntimeStatus()}
+                            disabled={busy}
+                            className="rounded-lg border border-sx-border px-2.5 py-1.5 text-xs text-sx-text-muted hover:bg-sx-surface-2"
+                          >
+                            Probe Port 9222
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Step 3: Open Auth Session */}
+                      <div className="rounded-lg border border-sx-border bg-sx-surface-1 p-3">
+                        <span className="text-[10px] font-sx-mono uppercase tracking-wider text-sx-accent">
+                          {connection ? "Step 2" : "Step 3"}: Manual Sign-In
+                        </span>
+                        <p className="mt-1 text-xs text-sx-text">
+                          Open target sign-in page in Founder Browser. Sign in manually — StratXcel never touches passwords.
+                        </p>
+                        <div className="mt-2.5 flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={() => void handleOpenAuthSession("https://accounts.google.com")}
+                            disabled={busy || runtimeStatus !== "RUNNING"}
+                            className="rounded-lg border border-sx-border bg-sx-surface-2 px-2.5 py-1 text-xs text-sx-text hover:bg-sx-surface-3 disabled:opacity-40"
+                          >
+                            Open Google Login
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void handleOpenAuthSession("https://gemini.google.com")}
+                            disabled={busy || runtimeStatus !== "RUNNING"}
+                            className="rounded-lg border border-sx-border bg-sx-surface-2 px-2.5 py-1 text-xs text-sx-text hover:bg-sx-surface-3 disabled:opacity-40"
+                          >
+                            Open Gemini
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void handleOpenAuthSession("https://claude.ai")}
+                            disabled={busy || runtimeStatus !== "RUNNING"}
+                            className="rounded-lg border border-sx-border bg-sx-surface-2 px-2.5 py-1 text-xs text-sx-text hover:bg-sx-surface-3 disabled:opacity-40"
+                          >
+                            Open Claude
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Step 4: Verify Session */}
+                      <div className="rounded-lg border border-sx-border bg-sx-surface-1 p-3">
+                        <span className="text-[10px] font-sx-mono uppercase tracking-wider text-sx-accent">
+                          {connection ? "Step 3" : "Step 4"}: Verify Active Domains
+                        </span>
+                        <p className="mt-1 text-xs text-sx-text">
+                          Enter comma-separated domains authenticated in this session:
+                        </p>
+                        <div className="mt-2 flex gap-2 items-center">
+                          <input
+                            type="text"
+                            value={domainInput}
+                            onChange={(e) => setDomainInput(e.target.value)}
+                            placeholder="google.com, accounts.google.com"
+                            className="h-8 flex-1 rounded-lg border border-sx-border bg-sx-surface-2 px-2.5 text-xs text-sx-text focus:border-sx-accent focus:outline-none"
+                          />
+                          <button
+                            type="button"
+                            onClick={handleFounderComputerVerify}
+                            disabled={busy}
+                            className="inline-flex items-center rounded-lg bg-sx-accent px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:opacity-90 disabled:opacity-50"
+                          >
+                            Verify Session
+                          </button>
+                        </div>
+                      </div>
                     </div>
                   ) : isGoogleAiPro ? (
                     <button
@@ -774,6 +969,38 @@ export function ConnectorDrawer({
                   </button>
                 </div>
               </div>
+
+              {/* Founder Computer: Hermes Live Operation Test */}
+              {isFounderComputer && (
+                <div className="rounded-xl border border-sx-border bg-sx-surface-2/60 p-4 space-y-3">
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-sx-text-muted">
+                    Hermes Browser Control Diagnostic
+                  </h3>
+                  <p className="text-xs text-sx-text-muted">
+                    Executes a harmless non-destructive test sequence (navigation &rarr; DOM text extraction &rarr; screenshot) to verify that Hermes can actively operate the browser runtime over CDP.
+                  </p>
+                  <div className="pt-1">
+                    <button
+                      type="button"
+                      onClick={handleRunDiagnosticTest}
+                      disabled={busy || runtimeStatus !== "RUNNING"}
+                      className="inline-flex items-center rounded-lg bg-sx-accent px-3.5 py-1.5 text-xs font-semibold text-white shadow-sm hover:opacity-90 disabled:opacity-50"
+                    >
+                      Test Hermes Browser Control
+                    </button>
+                    {runtimeStatus !== "RUNNING" && (
+                      <span className="ml-2 text-[11px] text-[#FF8A90]">
+                        Browser runtime stopped — click &apos;Open Founder Browser&apos; in Overview first.
+                      </span>
+                    )}
+                  </div>
+                  {diagnosticResult && (
+                    <pre className="mt-2 whitespace-pre-wrap rounded-lg border border-[#5BDCA7]/30 bg-[#5BDCA7]/5 p-3 font-sx-mono text-[11px] text-[#5BDCA7]">
+                      {diagnosticResult}
+                    </pre>
+                  )}
+                </div>
+              )}
             </div>
           )}
 

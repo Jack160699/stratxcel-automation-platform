@@ -106,8 +106,23 @@ const TOOL_DESCRIPTIONS: Record<McpCallableName, string> = {
   recall_company_memory: "Recall this mission's tenant's durable company memory.",
   update_lead_status: "Move a real CRM lead to a new pipeline status (NEW/CONTACTED/QUALIFIED/WON/LOST), tenant-scoped.",
   browser_navigate: "Navigate the Founder Computer browser to a designated URL.",
-  browser_screenshot: "Capture a screenshot of the current page in the Founder Computer browser.",
+  browser_click: "Click an element by CSS selector or coordinates.",
+  browser_type: "Type text into an input field or active element.",
+  browser_key: "Press a keyboard key.",
+  browser_scroll: "Scroll the browser viewport in a direction.",
+  browser_select: "Select a dropdown option by value.",
+  browser_wait: "Wait for a selector, navigation, network idle, or timeout.",
   browser_read: "Extract text and structured DOM content from the active Founder Computer browser page.",
+  browser_screenshot: "Capture a screenshot of the current page in the Founder Computer browser.",
+  browser_upload: "Upload a file to a file input element.",
+  browser_download: "Trigger a file download by clicking an element.",
+  browser_tabs: "List, create, close, or switch browser tabs.",
+  computer_open_app: "Launch or open a desktop application.",
+  computer_click: "Perform a desktop mouse click.",
+  computer_type: "Type text into the active desktop window.",
+  computer_key: "Press a desktop keyboard key or shortcut.",
+  computer_screenshot: "Capture a desktop screenshot.",
+  computer_wait: "Wait for a specified duration in milliseconds.",
 };
 
 /** Read-only per Section 4 — no state anywhere in StratExcel changes as a result of these calls. Everything else is truthfully non-read-only; none are destructive. */
@@ -118,6 +133,8 @@ const READ_ONLY_TOOLS = new Set<McpCallableName>([
   "query_publication_status",
   "browser_screenshot",
   "browser_read",
+  "browser_tabs",
+  "computer_screenshot",
 ]);
 
 function errorResult(message: string): CallToolResult {

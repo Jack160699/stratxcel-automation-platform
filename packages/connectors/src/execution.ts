@@ -125,13 +125,18 @@ registerCapabilityHandler("google_ai_pro", "google_drive.upload", async (ctx, pa
   };
 });
 
+import {
+  executeBrowserAction,
+  executeComputerAction,
+  getFounderComputerRuntimeStatus,
+} from "./founder-computer/runtime.ts";
+
 // ─── Founder Computer capability handlers ────────────────────────────────────
-// All browser/computer operations return a queued job reference.
-// Actual execution is dispatched through the mission infrastructure
-// and NEVER blocks an HTTP request.
+// Dispatches through the real browser runtime when active, or enqueues a job
+// for asynchronous execution.
 
 const BROWSER_CAPABILITIES: string[] = [
-  "browser.navigate", "browser.click", "browser.type", "browser.select",
+  "browser.navigate", "browser.click", "browser.type", "browser.key", "browser.select",
   "browser.scroll", "browser.wait", "browser.screenshot", "browser.read",
   "browser.upload", "browser.download", "browser.tabs", "browser.close",
 ];
@@ -145,13 +150,27 @@ const FILE_CAPABILITIES: string[] = [
   "file.transfer_to_stratxcel", "file.transfer_to_browser",
 ];
 
-// Register a generic async-dispatch handler for each browser primitive
+// Register a runtime-connected handler for each browser & computer primitive
 for (const cap of [...BROWSER_CAPABILITIES, ...COMPUTER_CAPABILITIES, ...FILE_CAPABILITIES]) {
   registerCapabilityHandler("founder_computer", cap, async (ctx, payload) => {
-    // Generate a job ID for async tracking. In production this would enqueue
-    // a browser job into the mission execution queue.
-    const jobId = `fc-job-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    // Check if runtime is active for direct execution
+    if (!payload.queueOnly) {
+      try {
+        const rt = await getFounderComputerRuntimeStatus();
+        if (rt.state === "RUNNING") {
+          if (cap.startsWith("browser.")) {
+            return await executeBrowserAction(cap, payload);
+          } else if (cap.startsWith("computer.")) {
+            return await executeComputerAction(cap, payload);
+          }
+        }
+      } catch {
+        // Fall back to queued job
+      }
+    }
 
+    // Return queued job reference
+    const jobId = `fc-job-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
     return {
       jobId,
       status: "queued",
@@ -161,7 +180,6 @@ for (const cap of [...BROWSER_CAPABILITIES, ...COMPUTER_CAPABILITIES, ...FILE_CA
       missionId: ctx.missionId ?? null,
       method: ctx.method,
       payload: Object.fromEntries(
-        // Safe payload — strip any accidental token/secret fields
         Object.entries(payload).filter(([k]) =>
           !["token", "secret", "password", "cookie", "session", "key"].includes(k.toLowerCase())
         )

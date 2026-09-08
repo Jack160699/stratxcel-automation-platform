@@ -23,6 +23,10 @@ import {
   generateProfileId,
   discoverFounderComputerCapabilities,
   toDiscoveredCapabilityKeys,
+  getPersistentProfileDir,
+  scrubSensitivePayload,
+  executeBrowserAction,
+  executeComputerAction,
 } from "../index.ts";
 import type { ConnectorConnectionRow } from "../types.ts";
 
@@ -59,10 +63,25 @@ async function testRegistryDefinition() {
   assert.equal(def.scopeLevel, "platform");
   assert.equal(def.preferredAccessMethod, "browser");
   assert.ok(def.supportedAccessMethods.includes("browser"));
-  assert.ok(def.declaredCapabilities.includes("browser.navigate"));
-  assert.ok(def.declaredCapabilities.includes("browser.screenshot"));
-  assert.ok(def.declaredCapabilities.includes("browser.read"));
-  console.log("✓ founder_computer registry definition verified");
+
+  const requiredBrowserCaps = [
+    "browser.navigate", "browser.click", "browser.type", "browser.key", "browser.select",
+    "browser.scroll", "browser.wait", "browser.screenshot", "browser.read",
+    "browser.upload", "browser.download", "browser.tabs", "browser.close",
+  ];
+  for (const cap of requiredBrowserCaps) {
+    assert.ok(def.declaredCapabilities.includes(cap), `Must include ${cap}`);
+  }
+
+  const requiredComputerCaps = [
+    "computer.open_app", "computer.click", "computer.type",
+    "computer.key", "computer.screenshot", "computer.wait",
+  ];
+  for (const cap of requiredComputerCaps) {
+    assert.ok(def.declaredCapabilities.includes(cap), `Must include ${cap}`);
+  }
+
+  console.log("✓ founder_computer registry definition verified (all 19 browser and computer primitives)");
 }
 
 async function testHealthProbeStates() {
@@ -252,7 +271,7 @@ async function testExecutionHandlers() {
     connectorKey: "founder_computer",
     capabilityKey: "browser.navigate",
     tenantId: null,
-    payload: { url: "https://example.com" },
+    payload: { url: "https://example.com", queueOnly: true },
   });
 
   assert.equal(navResult.success, true);
@@ -265,7 +284,7 @@ async function testExecutionHandlers() {
     connectorKey: "founder_computer",
     capabilityKey: "browser.screenshot",
     tenantId: null,
-    payload: {},
+    payload: { queueOnly: true },
   });
   assert.equal(shotResult.success, true);
   const shotData = shotResult.data as { status: string; jobId: string };
@@ -276,7 +295,7 @@ async function testExecutionHandlers() {
     connectorKey: "founder_computer",
     capabilityKey: "browser.read",
     tenantId: null,
-    payload: { selector: "body" },
+    payload: { selector: "body", queueOnly: true },
   });
   assert.equal(readResult.success, true);
   const readData = readResult.data as { status: string; jobId: string; payload: { selector: string } };
@@ -287,6 +306,155 @@ async function testExecutionHandlers() {
   console.log("✓ founder_computer execution handlers verified (queued execution, non-blocking)");
 }
 
+async function testRuntimePersistenceAndScrubbing() {
+  const profileDir = getPersistentProfileDir();
+  assert.ok(profileDir, "Profile directory must not be empty");
+  assert.ok(profileDir.includes(".stratxcel-founder-computer-profile"), "Profile must point to dedicated profile folder");
+
+  const sensitive = {
+    url: "https://example.com",
+    password: "secret_password_123",
+    cookie: "session_cookie_abc",
+    token: "bearer_token_xyz",
+    safeData: "user query text",
+  };
+  const scrubbed = scrubSensitivePayload(sensitive);
+  assert.equal(scrubbed.password, "[REDACTED]", "password must be redacted");
+  assert.equal(scrubbed.cookie, "[REDACTED]", "cookie must be redacted");
+  assert.equal(scrubbed.token, "[REDACTED]", "token must be redacted");
+  assert.equal(scrubbed.safeData, "user query text", "safeData must be preserved");
+
+  console.log("✓ persistent profile directory & token scrubbing verified");
+}
+
+async function testAllBrowserAndComputerActions() {
+  const connectionData = createMockConnection({
+    profileId: "fc-test-full",
+    sessionStatus: "ready",
+    lastVerifiedAt: new Date().toISOString(),
+  }, "connected");
+
+  const mockSupabase = {
+    from(table: string) {
+      if (table === "connector_connections") {
+        const b: any = {
+          select() { return b; }, eq() { return b; }, is() { return b; }, update() { return b; },
+          async maybeSingle() { return { data: connectionData, error: null }; },
+          async single() { return { data: connectionData, error: null }; },
+        };
+        return b;
+      }
+      if (table === "connector_capability_assignments") {
+        const builder: any = {
+          select() { return builder; },
+          eq() { return builder; },
+          then(resolve: (v: { data: unknown; error: null }) => void) {
+            resolve({
+              data: [{ autonomy: "execute", tenant_id: null, budget_limit_usd: null, current_usage_usd: 0, allowed_methods: ["browser"] }],
+              error: null,
+            });
+          },
+        };
+        return builder;
+      }
+      return {
+        insert: () => Promise.resolve({ data: null, error: null }),
+        select: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: null }) }) }),
+      };
+    },
+  };
+
+  const capabilitiesToTest = [
+    { cap: "browser.click", payload: { selector: "#submit-btn", queueOnly: true } },
+    { cap: "browser.type", payload: { selector: "input[name=q]", text: "hello world", queueOnly: true } },
+    { cap: "browser.key", payload: { key: "Enter", queueOnly: true } },
+    { cap: "browser.scroll", payload: { direction: "down", amount: 300, queueOnly: true } },
+    { cap: "browser.select", payload: { selector: "#country", value: "IN", queueOnly: true } },
+    { cap: "browser.wait", payload: { condition: "timeout", timeoutMs: 100, queueOnly: true } },
+    { cap: "browser.upload", payload: { selector: "input[type=file]", fileRef: "/tmp/doc.pdf", queueOnly: true } },
+    { cap: "browser.download", payload: { triggerSelector: "#dl-btn", queueOnly: true } },
+    { cap: "browser.tabs", payload: { action: "list", queueOnly: true } },
+    { cap: "computer.open_app", payload: { appName: "notepad.exe", queueOnly: true } },
+    { cap: "computer.click", payload: { x: 100, y: 200, queueOnly: true } },
+    { cap: "computer.type", payload: { text: "desktop typing", queueOnly: true } },
+    { cap: "computer.key", payload: { key: "Tab", queueOnly: true } },
+    { cap: "computer.screenshot", payload: { queueOnly: true } },
+    { cap: "computer.wait", payload: { ms: 50, queueOnly: true } },
+  ];
+
+  for (const { cap, payload } of capabilitiesToTest) {
+    const res = await executeConnectorCapability(mockSupabase as never, {
+      connectorKey: "founder_computer",
+      capabilityKey: cap,
+      tenantId: null,
+      payload,
+    });
+    assert.equal(res.success, true, `Capability ${cap} must execute successfully`);
+    const d = res.data as { status: string; capability: string };
+    assert.equal(d.status, "queued");
+    assert.equal(d.capability, cap);
+  }
+
+  console.log("✓ full browser & computer action catalog verified (all 15 action primitives)");
+}
+
+async function testCompanyAndAgentIsolation() {
+  const connectionData = createMockConnection({
+    profileId: "fc-isolated",
+    sessionStatus: "ready",
+    lastVerifiedAt: new Date().toISOString(),
+  }, "connected");
+
+  // Mock DB where capability assignment is denied for this agent
+  const mockSupabaseDenied = {
+    from(table: string) {
+      if (table === "connector_connections") {
+        const b: any = {
+          select() { return b; }, eq() { return b; }, is() { return b; }, update() { return b; },
+          async maybeSingle() { return { data: connectionData, error: null }; },
+          async single() { return { data: connectionData, error: null }; },
+        };
+        return b;
+      }
+      if (table === "connector_capability_assignments") {
+        const builder: any = {
+          select() { return builder; },
+          eq() { return builder; },
+          then(resolve: (v: { data: unknown; error: null }) => void) {
+            resolve({
+              data: [], // No matching assignment -> authorization denied!
+              error: null,
+            });
+          },
+        };
+        return builder;
+      }
+      return {
+        insert: () => Promise.resolve({ data: null, error: null }),
+        select: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: null }) }) }),
+      };
+    },
+  };
+
+  await assert.rejects(
+    async () => {
+      await executeConnectorCapability(mockSupabaseDenied as never, {
+        connectorKey: "founder_computer",
+        capabilityKey: "browser.navigate",
+        tenantId: "tenant-other-company",
+        agentDefinitionId: "agent-unauthorized",
+        payload: { url: "https://example.com" },
+      });
+    },
+    (err: Error) => {
+      assert.ok(err.name === "ConnectorNotAuthorizedError");
+      return true;
+    }
+  );
+
+  console.log("✓ company & agent authorization isolation verified (unassigned agent denied)");
+}
+
 async function runAll() {
   console.log("\n--- RUNNING FOUNDER COMPUTER TEST SUITE ---");
   await testRegistryDefinition();
@@ -294,6 +462,9 @@ async function runAll() {
   await testSessionParsingAndMetadataBuilders();
   await testHonestCapabilityDiscovery();
   await testExecutionHandlers();
+  await testRuntimePersistenceAndScrubbing();
+  await testAllBrowserAndComputerActions();
+  await testCompanyAndAgentIsolation();
   console.log("\nALL FOUNDER COMPUTER TESTS PASSED!\n");
 }
 
