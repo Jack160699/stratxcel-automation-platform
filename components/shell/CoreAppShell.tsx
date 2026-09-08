@@ -3,6 +3,7 @@ import Image from "next/image";
 import { Sidebar, type SidebarNavGroup } from "@/components/shell/Sidebar";
 import { MobileBottomNav, type BottomNavItem } from "@/components/shell/MobileBottomNav";
 import { TopCommandBar } from "@/components/shell/TopCommandBar";
+import { ScrollToTopMain } from "@/components/shell/ScrollToTopMain";
 import { OFFICIAL_LOGO } from "@/lib/brand";
 
 export function BrandMark({ expanded = false, product, customer = false }: { expanded?: boolean; product?: string; customer?: boolean }) {
@@ -89,7 +90,7 @@ export function CoreAppShell({
           showSearch={product !== "App"}
           customer={isCustomer}
         />
-        <main className="min-h-0 min-w-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6 sm:py-6 lg:px-8 lg:py-8 w-full max-w-full">{children}</main>
+        <ScrollToTopMain className="min-h-0 min-w-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6 sm:py-6 lg:px-8 lg:py-8 w-full max-w-full">{children}</ScrollToTopMain>
       </div>
       <MobileBottomNav items={mobileNavItems} activeKey={activeKey} moreGroups={mobileMoreGroups} customer={isCustomer} />
     </div>

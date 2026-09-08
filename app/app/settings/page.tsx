@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useCurrentTenant } from "../CurrentTenantContext";
 import { Card } from "@/components/ui/Card";
-import { useTheme } from "@/components/theme/ThemeProvider";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { WHATSAPP_NUMBER } from "@/lib/constants";
 import { AutopilotModeToggle } from "../components/AutopilotModeToggle";
@@ -16,17 +15,23 @@ type EmailState =
 
 /**
  * V1 settings — StratXcel App reference "Settings" screen composition
- * (Profile & Login, Appearance, Support), restyled around it while keeping
- * the existing, deliberate scope boundary: only persisted identity and
+ * (Profile & Login, Support), restyled around it while keeping the
+ * existing, deliberate scope boundary: only persisted identity and
  * supported account actions render as controls. The reference also shows
  * WhatsApp notification toggles and a Hinglish language switch — neither
  * has real backing (no digest/alert delivery system, no i18n system), so
  * they're not implemented here rather than faked. Support/Feedback links
  * are real (lib/constants.js's WHATSAPP_NUMBER, the existing /contact route).
+ * The light/dark Appearance toggle (duplicated here and in
+ * CustomerHeaderActions.tsx's profile menu) was removed for the Final
+ * Customer Experience Repair's simplification pass (Section 24/27) — a
+ * non-essential customization surfaced in two places at once for a
+ * non-technical SMB owner. lib/components/theme/ThemeProvider.tsx's own
+ * dark-mode CSS support is untouched; it just defaults to light with no
+ * user-facing switch left anywhere.
  */
 export default function SettingsPage() {
   const { active, userEmail } = useCurrentTenant();
-  const { theme, setTheme } = useTheme();
   const [emailState, setEmailState] = useState<EmailState>(() =>
     userEmail ? { status: "success", email: userEmail } : { status: "loading", email: null }
   );
@@ -100,26 +105,6 @@ export default function SettingsPage() {
       {/* Automation */}
       <Card className="p-5">
         <AutopilotModeToggle tenantId={active?.tenantId ?? null} variant="settings" />
-      </Card>
-
-      {/* Appearance */}
-      <Card className="p-5">
-        <p className="mb-2.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-sx-text-subtle">Appearance</p>
-        <div className="flex rounded-sx-sm bg-sx-surface-2 p-[3px]">
-          {(["light", "dark"] as const).map((option) => (
-            <button
-              key={option}
-              type="button"
-              aria-pressed={theme === option}
-              onClick={() => setTheme(option)}
-              className={`h-[38px] flex-1 rounded-sx-xs text-[14px] font-semibold capitalize transition-colors ${
-                theme === option ? "bg-sx-accent text-sx-accent-on" : "text-sx-text-muted"
-              }`}
-            >
-              {option}
-            </button>
-          ))}
-        </div>
       </Card>
 
       {/* Support — real destinations */}

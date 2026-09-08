@@ -203,6 +203,19 @@ export function OnboardingWizard({ isStaff = false }: { isStaff?: boolean }) {
   // authenticated -- see loadDraft()'s doc comment.
   const initial = useRef(loadDraft());
   const [step, setStep] = useState(0);
+  // PAGE NAVIGATION BUG FIX (Final Customer Experience Repair, Section 6):
+  // onboarding renders standalone -- app/app/layout.tsx returns
+  // <OnboardingPanel> directly for a NEW_CUSTOMER, bypassing CoreAppShell
+  // (and its own overflow-y-auto <main>) entirely -- so the real scroll
+  // container here is the plain document/window, not a specific element.
+  // Onboarding's steps are also one route with client-state-driven
+  // transitions (no pathname change at all), so ScrollToTopMain's
+  // pathname-keyed reset (used by every OTHER page in the app) never fires
+  // for these -- reset directly, keyed on the step itself, so Continue/
+  // Back always opens the next step at the top with its header visible.
+  useEffect(() => {
+    window.scrollTo({ top: 0 });
+  }, [step]);
   const [draft, setDraft] = useState<OnboardingDraft>(EMPTY_DRAFT);
   // A ref, not state: read by event-listener closures (the OAuth
   // postMessage handler below) that are attached once on mount and would

@@ -8,7 +8,6 @@ import { Modal } from "@/components/ui/Overlay";
 
 const GROWTH_TIER_PRICE = PRICING_TIERS.find((t) => t.planKey === "growth")?.price ?? "₹7,999";
 import { ContextSwitcher } from "@/components/shell/ContextSwitcher";
-import { useTheme } from "@/components/theme/ThemeProvider";
 import { signOutAction } from "../actions";
 import { AutopilotModeToggle } from "./AutopilotModeToggle";
 
@@ -45,7 +44,6 @@ export function CustomerHeaderActions({
   const [profileOpen, setProfileOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [planPromptOpen, setPlanPromptOpen] = useState(showPlanPrompt);
-  const { theme, setTheme } = useTheme();
   const initials = initialsFor(name, email);
 
   async function dismissPlanPrompt() {
@@ -189,28 +187,6 @@ export function CustomerHeaderActions({
               the Settings/Profile Autopilot Toggle mission, mirrored in
               /app/settings so both stay in sync with the same authorization. */}
           <AutopilotModeToggle tenantId={tenantId} variant="profile" />
-
-          {/* Theme Preference */}
-          <div className="pt-1">
-            <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-sx-text-subtle">Appearance</p>
-            <div className="grid grid-cols-2 gap-2" role="group" aria-label="Appearance">
-              {(["light", "dark"] as const).map((option) => (
-                <button
-                  key={option}
-                  type="button"
-                  onClick={() => setTheme(option)}
-                  aria-pressed={theme === option}
-                  className={`min-h-[40px] rounded-sx-sm border text-[13px] font-semibold capitalize transition-colors ${
-                    theme === option
-                      ? "border-sx-accent bg-sx-accent/10 text-sx-accent"
-                      : "border-sx-border text-sx-text-muted hover:bg-sx-surface-2"
-                  }`}
-                >
-                  {option}
-                </button>
-              ))}
-            </div>
-          </div>
 
           {isStaff && (
             <div className="rounded-sx-sm border border-sx-accent/30 bg-sx-accent/10 p-3">

@@ -12,11 +12,22 @@ assert.match(commandCenter, /Quick tools/i);
 assert.doesNotMatch(commandCenter, /JourneyPanel|Your setup|setup checklist/i);
 
 const header = read("app", "app", "components", "CustomerHeaderActions.tsx");
-for (const expected of ["Notifications", "Account & Profile", "Plan", "Reset Password", "Account Settings", "Sign out", "Appearance"]) {
+for (const expected of ["Notifications", "Account & Profile", "Plan", "Reset Password", "Account Settings", "Sign out"]) {
   assert.match(header, new RegExp(expected));
 }
 assert.match(header, /recommended next step/i);
 assert.match(header, /plan-prompt/);
+// Final Customer Experience Repair, Section 24/27: the light/dark
+// Appearance toggle was removed from here (and from /app/settings, its
+// exact duplicate) as unnecessary customization surfaced twice at once for
+// a non-technical SMB owner. ThemeProvider's own dark-mode CSS support is
+// untouched -- just no user-facing switch left anywhere in the customer app.
+assert.doesNotMatch(header, /useTheme/, "the profile menu must no longer offer a theme/Appearance toggle");
+assert.doesNotMatch(
+  read("app", "app", "settings", "page.tsx"),
+  /useTheme/,
+  "Settings must no longer offer a theme/Appearance toggle either (it was a duplicate of the one in the profile menu)"
+);
 
 const shell = read("app", "app", "ClientAppShell.tsx");
 assert.match(shell, /CustomerHeaderActions/);
