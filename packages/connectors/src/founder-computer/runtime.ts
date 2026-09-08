@@ -328,12 +328,13 @@ export async function executeBrowserAction(
           const url = String(payload.url || "");
           if (!url) throw new Error("Missing required 'url' parameter for browser.navigate");
           const timeout = typeof payload.timeoutMs === "number" ? payload.timeoutMs : 30000;
-          await page.goto(url, {
+          const targetPage = payload.newTab ? (await context.newPage()) : page;
+          await targetPage.goto(url, {
             timeout,
             waitUntil: (payload.waitUntil as "load" | "domcontentloaded") || "domcontentloaded",
           });
-          const title = await page.title().catch(() => "");
-          const currentUrl = page.url();
+          const title = await targetPage.title().catch(() => "");
+          const currentUrl = targetPage.url();
           return {
             success: true,
             action: "navigate",

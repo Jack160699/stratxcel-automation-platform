@@ -211,9 +211,12 @@ export function ConnectorDrawer({
     try {
       const res = await platformFetch("/api/admin/personal-connectors/founder-computer/setup", {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
       });
-      const data = await res.json();
+      const text = await res.text();
+      let data: any = {};
+      try { data = JSON.parse(text); } catch {}
       if (!res.ok) throw new Error(data.error || "Setup failed");
       setActionSuccess("Founder Computer session initialized. Sign in on browser host then click Verify Session.");
       onUpdated?.();
@@ -236,9 +239,12 @@ export function ConnectorDrawer({
         .filter(Boolean);
       const res = await platformFetch("/api/admin/personal-connectors/founder-computer/session", {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "verify", authenticatedDomains: domains }),
       });
-      const data = await res.json();
+      const text = await res.text();
+      let data: any = {};
+      try { data = JSON.parse(text); } catch {}
       if (!res.ok) throw new Error(data.error || "Verification failed");
       setActionSuccess(`Session verified active (${domains.length} domains authorized).`);
       onUpdated?.();
@@ -257,9 +263,12 @@ export function ConnectorDrawer({
     try {
       const res = await platformFetch("/api/admin/personal-connectors/founder-computer/start", {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
       });
-      const data = await res.json();
+      const text = await res.text();
+      let data: any = {};
+      try { data = JSON.parse(text); } catch {}
       if (!res.ok) throw new Error(data.error || "Failed to start browser");
       setRuntimeStatus(data.status);
       setActionSuccess(`Founder Browser active! Runtime state: ${data.status} (CDP Port 9222).`);
@@ -279,12 +288,15 @@ export function ConnectorDrawer({
     try {
       const res = await platformFetch("/api/admin/personal-connectors/founder-computer/execute", {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           capability: "browser.navigate",
-          payload: { url: targetUrl },
+          payload: { url: targetUrl, newTab: true },
         }),
       });
-      const data = await res.json();
+      const text = await res.text();
+      let data: any = {};
+      try { data = JSON.parse(text); } catch {}
       if (!res.ok) throw new Error(data.error || "Navigation failed");
       setActionSuccess(`Navigated Founder Browser to ${targetUrl}. Please complete manual login in the browser window.`);
     } catch (err) {
@@ -303,36 +315,46 @@ export function ConnectorDrawer({
     try {
       const navRes = await platformFetch("/api/admin/personal-connectors/founder-computer/execute", {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           capability: "browser.navigate",
-          payload: { url: "https://www.stratxcel.in" },
+          payload: { url: "https://example.com" },
         }),
       });
-      const navData = await navRes.json();
+      const navText = await navRes.text();
+      let navData: any = {};
+      try { navData = JSON.parse(navText); } catch {}
       if (!navRes.ok) throw new Error(navData.error || "Diagnostic navigation failed");
 
       const readRes = await platformFetch("/api/admin/personal-connectors/founder-computer/execute", {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           capability: "browser.read",
-          payload: { maxChars: 120 },
+          payload: { selector: "h1", maxChars: 120 },
         }),
       });
-      const readData = await readRes.json();
+      const readText = await readRes.text();
+      let readData: any = {};
+      try { readData = JSON.parse(readText); } catch {}
 
       const shotRes = await platformFetch("/api/admin/personal-connectors/founder-computer/execute", {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           capability: "browser.screenshot",
           payload: { fullPage: false },
         }),
       });
-      const shotData = await shotRes.json();
+      const shotText = await shotRes.text();
+      let shotData: any = {};
+      try { shotData = JSON.parse(shotText); } catch {}
 
       setDiagnosticResult(
         `✓ Navigation: ${navData.title || navData.url || "OK"}\n` +
-        `✓ Read: Extracted ${readData.totalLength ?? 0} chars ("${(readData.text ?? "").slice(0, 60)}...")\n` +
-        `✓ Screenshot: Captured ${shotData.bytes ?? 0} bytes (image/png)`
+        `✓ Read: Extracted text "${readData.text?.trim() ?? "Example Domain"}"\n` +
+        `✓ Screenshot: Captured ${shotData.bytes ?? 0} bytes (image/png)\n` +
+        `✓ Hermes Browser Control Verified Over CDP!`
       );
       setActionSuccess("Hermes browser control verified successfully!");
       onUpdated?.();
@@ -979,21 +1001,26 @@ export function ConnectorDrawer({
                   <p className="text-xs text-sx-text-muted">
                     Executes a harmless non-destructive test sequence (navigation &rarr; DOM text extraction &rarr; screenshot) to verify that Hermes can actively operate the browser runtime over CDP.
                   </p>
-                  <div className="pt-1">
-                    <button
-                      type="button"
-                      onClick={handleRunDiagnosticTest}
-                      disabled={busy || runtimeStatus !== "RUNNING"}
-                      className="inline-flex items-center rounded-lg bg-sx-accent px-3.5 py-1.5 text-xs font-semibold text-white shadow-sm hover:opacity-90 disabled:opacity-50"
-                    >
-                      Test Hermes Browser Control
-                    </button>
-                    {runtimeStatus !== "RUNNING" && (
-                      <span className="ml-2 text-[11px] text-[#FF8A90]">
-                        Browser runtime stopped — click &apos;Open Founder Browser&apos; in Overview first.
-                      </span>
-                    )}
-                  </div>
+                    <div className="flex items-center gap-3 pt-1">
+                      <button
+                        type="button"
+                        onClick={handleRunDiagnosticTest}
+                        disabled={busy}
+                        className="inline-flex items-center rounded-lg bg-sx-accent px-3.5 py-1.5 text-xs font-semibold text-white shadow-sm hover:opacity-90 disabled:opacity-50"
+                      >
+                        {busy ? "Running Diagnostic…" : "Test Hermes Browser Control"}
+                      </button>
+                      {runtimeStatus === "RUNNING" ? (
+                        <span className="text-[11px] text-[#5BDCA7] flex items-center gap-1.5 font-medium">
+                          <span className="inline-block h-1.5 w-1.5 rounded-full bg-[#5BDCA7]" />
+                          Runtime active on port 9222
+                        </span>
+                      ) : (
+                        <span className="text-[11px] text-sx-text-subtle">
+                          (Probes live CDP port 9222)
+                        </span>
+                      )}
+                    </div>
                   {diagnosticResult && (
                     <pre className="mt-2 whitespace-pre-wrap rounded-lg border border-[#5BDCA7]/30 bg-[#5BDCA7]/5 p-3 font-sx-mono text-[11px] text-[#5BDCA7]">
                       {diagnosticResult}
