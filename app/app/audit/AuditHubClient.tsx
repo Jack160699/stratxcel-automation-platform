@@ -83,7 +83,12 @@ export function AuditHubClient({ initialData }: { initialData: AuditHubData }) {
   const [shareMessage, setShareMessage] = useState<string | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
   const [shareUrl, setShareUrl] = useState<string | null>(null);
-  const [waDialog, setWaDialog] = useState<"number" | "consent" | null>(null);
+  // Final Customer Experience Repair, Section 3: the dialog now only ever
+  // exists for genuine first-time setup (no destination known yet) --
+  // "consent" as its own separate re-confirmation step is gone. A
+  // customer whose WhatsApp is already connected gets a direct send with
+  // no dialog at all (see handleWhatsAppCta below).
+  const [waDialog, setWaDialog] = useState<"number" | null>(null);
   const [waCountry, setWaCountry] = useState(initialData.whatsappDestination?.countryIso || "IN");
   const [waNational, setWaNational] = useState(initialData.whatsappDestination?.nationalNumber || "");
   const [waConsent, setWaConsent] = useState(initialData.whatsappDestination?.consent ?? true);
@@ -443,13 +448,31 @@ export function AuditHubClient({ initialData }: { initialData: AuditHubData }) {
     setShareOpen(true);
   }
 
-  async function handleSendWhatsApp(payload: { nationalNumber: string; countryIso: string; consent: boolean }) {
+  /**
+   * Real bug found and fixed alongside the Section 3 simplification: this
+   * used to POST a FLAT { nationalNumber, countryIso, consent } body, but
+   * /api/platform/audit/report/whatsapp only ever reads a NESTED
+   * body.destination.nationalNumber -- so body.destination was always
+   * undefined and a customer typing a brand-new number here could never
+   * actually reach the server at all. It silently fell through to the
+   * "use the existing stored destination" branch, which returned
+   * NO_DESTINATION for anyone who had never connected WhatsApp before --
+   * their freshly-typed number was completely ignored. `payload` is now
+   * optional: omitted entirely for the direct "already connected" send
+   * (Section 3's main goal) -- the route's own existing-destination
+   * fallback already handles that correctly with an empty body.
+   */
+  async function handleSendWhatsApp(payload?: { nationalNumber: string; countryIso: string; consent: boolean }) {
     setWaSending(true);
     try {
       const response = await fetch("/api/platform/audit/report/whatsapp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(
+          payload
+            ? { destination: { countryIso: payload.countryIso, nationalNumber: payload.nationalNumber }, consent: payload.consent }
+            : {}
+        ),
       });
       const json = await response.json() as { error?: string; masked?: string };
       if (!response.ok) {
@@ -475,7 +498,17 @@ export function AuditHubClient({ initialData }: { initialData: AuditHubData }) {
           window.open("/api/platform/audit/report/pdf", "_blank");
         }}
         onShare={openShare}
-        onWhatsApp={() => setWaDialog(waMasked ? "consent" : "number")}
+        // Final Customer Experience Repair, Section 3: WhatsApp already
+        // connected -> send directly, no dialog/extra choice at all. Only
+        // a genuinely new destination (never connected before) needs the
+        // number-entry dialog first.
+        onWhatsApp={() => {
+          if (waMasked) {
+            void handleSendWhatsApp();
+          } else {
+            setWaDialog("number");
+          }
+        }}
       />
 
       {shareOpen && shareUrl && (
