@@ -27,6 +27,8 @@ import {
   scrubSensitivePayload,
   executeBrowserAction,
   executeComputerAction,
+  updateConnectorConnectionMetadata,
+  getFounderComputerRuntimeStatus,
 } from "../index.ts";
 import type { ConnectorConnectionRow } from "../types.ts";
 
@@ -455,6 +457,72 @@ async function testCompanyAndAgentIsolation() {
   console.log("✓ company & agent authorization isolation verified (unassigned agent denied)");
 }
 
+async function testControlPlaneAndRuntimeSeparation() {
+  // 1. Verify Vercel control plane does NOT use local /tmp profile directory
+  const prevVercel = process.env.VERCEL;
+  try {
+    process.env.VERCEL = "1";
+    const vercelProfileDir = getPersistentProfileDir();
+    assert.equal(
+      vercelProfileDir,
+      "/var/lib/stratxcel/.stratxcel-founder-computer-profile",
+      "Vercel control plane must point to persistent AWS EC2 profile location, not ephemeral /tmp"
+    );
+
+    const runtimeOnVercel = await getFounderComputerRuntimeStatus();
+    assert.equal(runtimeOnVercel.state, "RUNNING", "Vercel control plane must recognize persistent EC2 runtime");
+    assert.equal(runtimeOnVercel.profileDir, "/var/lib/stratxcel/.stratxcel-founder-computer-profile");
+  } finally {
+    if (prevVercel !== undefined) {
+      process.env.VERCEL = prevVercel;
+    } else {
+      delete process.env.VERCEL;
+    }
+  }
+
+  // 2. Verify database resilience with updateConnectorConnectionMetadata
+  let attempts = 0;
+  let finalUpdatedPayload: any = null;
+
+  const mockSupabaseWithMissingColumn = {
+    from() {
+      return {
+        update(payload: any) {
+          attempts++;
+          return {
+            eq() {
+              if (attempts === 1) {
+                // Simulate Postgres error 42703 (undefined_column: column "metadata" does not exist)
+                return Promise.resolve({ error: { code: "42703", message: 'column "metadata" does not exist' } });
+              }
+              finalUpdatedPayload = payload;
+              return Promise.resolve({ data: null, error: null });
+            },
+          };
+        },
+      };
+    },
+  };
+
+  const testMetadata = { profileId: "fc-test-idempotent", sessionStatus: "ready" };
+  await updateConnectorConnectionMetadata(
+    mockSupabaseWithMissingColumn as never,
+    "conn-123",
+    testMetadata,
+    { status: "auth_required" }
+  );
+
+  assert.equal(attempts, 2, "Must retry update on Postgres 42703 missing column error");
+  assert.equal(finalUpdatedPayload.metadata, undefined, "Fallback payload must strip missing metadata column");
+  assert.ok(
+    finalUpdatedPayload.encrypted_secret_ref.startsWith("fc-meta:"),
+    "Fallback payload must encode metadata into encrypted_secret_ref"
+  );
+  assert.equal(finalUpdatedPayload.status, "connected", "auth_required status must map to Postgres check constraint 'connected'");
+
+  console.log("✓ control plane / runtime separation & database schema resilience verified");
+}
+
 async function runAll() {
   console.log("\n--- RUNNING FOUNDER COMPUTER TEST SUITE ---");
   await testRegistryDefinition();
@@ -465,6 +533,7 @@ async function runAll() {
   await testRuntimePersistenceAndScrubbing();
   await testAllBrowserAndComputerActions();
   await testCompanyAndAgentIsolation();
+  await testControlPlaneAndRuntimeSeparation();
   console.log("\nALL FOUNDER COMPUTER TESTS PASSED!\n");
 }
 

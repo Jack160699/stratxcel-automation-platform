@@ -151,6 +151,9 @@ export function ConnectorDrawer({
       ? "founder@google.account"
       : null);
   const entitlementStatus = (details?.entitlement_status as string) ?? (isConnected ? "active" : "unverified");
+  const profileId = (details?.profileId as string) || ((connection?.metadata as any)?.profileId as string) || null;
+  const hasConnection = Boolean(connection);
+  const isBrowserRunning = runtimeStatus === "RUNNING";
 
   // Health probe action
   async function handleTestHealth() {
@@ -217,9 +220,17 @@ export function ConnectorDrawer({
       const text = await res.text();
       let data: any = {};
       try { data = JSON.parse(text); } catch {}
-      if (!res.ok) throw new Error(data.error || "Setup failed");
-      setActionSuccess("Founder Computer session initialized. Sign in on browser host then click Verify Session.");
+      if (!res.ok || data.ok === false) {
+        const errorMsg = data.error || "Setup failed";
+        const techReason = data.technicalReason ? `: ${data.technicalReason}` : "";
+        throw new Error(`${errorMsg}${techReason}`);
+      }
+      setActionSuccess(data.message || "Founder Computer session initialized. Profile registered.");
+      if (data.runtimeStatus) {
+        setRuntimeStatus(data.runtimeStatus);
+      }
       onUpdated?.();
+      void loadRuntimeStatus();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Setup failed");
     } finally {
@@ -515,12 +526,12 @@ export function ConnectorDrawer({
                   </p>
                   {isFounderComputer ? (
                     <div className="mt-3 space-y-4">
-                      {/* Step 1: Initialize Setup (if unconfigured) */}
-                      {!connection && (
+                      {/* Step 1: Initialize Connection Record / Connection Ready */}
+                      {!hasConnection ? (
                         <div className="rounded-lg border border-sx-border bg-sx-surface-1 p-3">
                           <span className="text-[10px] font-sx-mono uppercase tracking-wider text-sx-accent">Step 1</span>
                           <p className="mt-0.5 text-xs font-semibold text-sx-text">Initialize Connection Record</p>
-                          <p className="mt-0.5 text-[11px] text-sx-text-muted">Prepares the persistent profile directory (.stratxcel-founder-computer-profile).</p>
+                          <p className="mt-0.5 text-[11px] text-sx-text-muted">Prepares the persistent profile identifier and registers the browser runtime.</p>
                           <button
                             type="button"
                             onClick={handleFounderComputerSetup}
@@ -530,34 +541,57 @@ export function ConnectorDrawer({
                             Initialize Setup
                           </button>
                         </div>
+                      ) : (
+                        <div className="rounded-lg border border-[#5BDCA7]/30 bg-[#5BDCA7]/5 p-3">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] font-sx-mono uppercase tracking-wider text-[#5BDCA7]">Step 1</span>
+                            <span className="inline-flex items-center gap-1 text-[10px] font-sx-mono text-[#5BDCA7]">
+                              <span className="h-1.5 w-1.5 rounded-full bg-[#5BDCA7]" />
+                              CONNECTED
+                            </span>
+                          </div>
+                          <p className="mt-0.5 text-xs font-semibold text-sx-text">Connection Ready</p>
+                          <p className="mt-0.5 text-[11px] font-medium text-[#5BDCA7]">
+                            ✓ Profile registered {profileId ? `(${profileId})` : ""}
+                          </p>
+                        </div>
                       )}
 
-                      {/* Step 2: Open / Start Founder Browser */}
-                      <div className="rounded-lg border border-sx-border bg-sx-surface-1 p-3">
+                      {/* Step 2: Browser Runtime / Browser Ready */}
+                      <div className={`rounded-lg border p-3 ${isBrowserRunning ? "border-[#5BDCA7]/30 bg-[#5BDCA7]/5" : "border-sx-border bg-sx-surface-1"}`}>
                         <div className="flex items-center justify-between">
-                          <span className="text-[10px] font-sx-mono uppercase tracking-wider text-sx-accent">
-                            {connection ? "Step 1" : "Step 2"}: Browser Runtime
+                          <span className={`text-[10px] font-sx-mono uppercase tracking-wider ${isBrowserRunning ? "text-[#5BDCA7]" : "text-sx-accent"}`}>
+                            Step 2
                           </span>
                           <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-sx-mono font-medium ${
-                            runtimeStatus === "RUNNING"
+                            isBrowserRunning
                               ? "bg-[#5BDCA7]/10 text-[#5BDCA7]"
                               : "bg-[#FF8A90]/10 text-[#FF8A90]"
                           }`}>
-                            <span className={`h-1.5 w-1.5 rounded-full ${runtimeStatus === "RUNNING" ? "bg-[#5BDCA7]" : "bg-[#FF8A90]"}`} />
-                            {runtimeStatus || "STOPPED"}
+                            <span className={`h-1.5 w-1.5 rounded-full ${isBrowserRunning ? "bg-[#5BDCA7]" : "bg-[#FF8A90]"}`} />
+                            {isBrowserRunning ? "RUNNING" : (runtimeStatus || "STOPPED")}
                           </span>
                         </div>
-                        <p className="mt-1 text-xs text-sx-text">
-                          Launch or attach to the persistent Chrome instance on port 9222.
+                        <p className="mt-0.5 text-xs font-semibold text-sx-text">
+                          {isBrowserRunning ? "Browser Ready" : "Browser Runtime"}
                         </p>
+                        {isBrowserRunning ? (
+                          <p className="mt-0.5 text-[11px] font-medium text-[#5BDCA7]">
+                            ✓ Chromium connected (Port 9222)
+                          </p>
+                        ) : (
+                          <p className="mt-0.5 text-[11px] text-sx-text-muted">
+                            Launch or attach to persistent Chrome instance on port 9222.
+                          </p>
+                        )}
                         <div className="mt-2.5 flex items-center gap-2">
                           <button
                             type="button"
                             onClick={handleOpenBrowser}
-                            disabled={busy}
+                            disabled={busy || !hasConnection}
                             className="inline-flex items-center rounded-lg bg-sx-accent px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:opacity-90 disabled:opacity-50"
                           >
-                            {runtimeStatus === "RUNNING" ? "Re-Connect Browser" : "Open Founder Browser"}
+                            {isBrowserRunning ? "Re-Connect Browser" : "Open Founder Browser"}
                           </button>
                           <button
                             type="button"
@@ -570,10 +604,10 @@ export function ConnectorDrawer({
                         </div>
                       </div>
 
-                      {/* Step 3: Open Auth Session */}
+                      {/* Step 3: Manual Sign-In */}
                       <div className="rounded-lg border border-sx-border bg-sx-surface-1 p-3">
                         <span className="text-[10px] font-sx-mono uppercase tracking-wider text-sx-accent">
-                          {connection ? "Step 2" : "Step 3"}: Manual Sign-In
+                          Step 3: Manual Sign-In
                         </span>
                         <p className="mt-1 text-xs text-sx-text">
                           Open target sign-in page in Founder Browser. Sign in manually — StratXcel never touches passwords.
@@ -582,7 +616,7 @@ export function ConnectorDrawer({
                           <button
                             type="button"
                             onClick={() => void handleOpenAuthSession("https://accounts.google.com")}
-                            disabled={busy || runtimeStatus !== "RUNNING"}
+                            disabled={busy || !isBrowserRunning}
                             className="rounded-lg border border-sx-border bg-sx-surface-2 px-2.5 py-1 text-xs text-sx-text hover:bg-sx-surface-3 disabled:opacity-40"
                           >
                             Open Google Login
@@ -590,7 +624,7 @@ export function ConnectorDrawer({
                           <button
                             type="button"
                             onClick={() => void handleOpenAuthSession("https://gemini.google.com")}
-                            disabled={busy || runtimeStatus !== "RUNNING"}
+                            disabled={busy || !isBrowserRunning}
                             className="rounded-lg border border-sx-border bg-sx-surface-2 px-2.5 py-1 text-xs text-sx-text hover:bg-sx-surface-3 disabled:opacity-40"
                           >
                             Open Gemini
@@ -598,7 +632,7 @@ export function ConnectorDrawer({
                           <button
                             type="button"
                             onClick={() => void handleOpenAuthSession("https://claude.ai")}
-                            disabled={busy || runtimeStatus !== "RUNNING"}
+                            disabled={busy || !isBrowserRunning}
                             className="rounded-lg border border-sx-border bg-sx-surface-2 px-2.5 py-1 text-xs text-sx-text hover:bg-sx-surface-3 disabled:opacity-40"
                           >
                             Open Claude
@@ -606,10 +640,10 @@ export function ConnectorDrawer({
                         </div>
                       </div>
 
-                      {/* Step 4: Verify Session */}
+                      {/* Step 4: Verify Active Domains */}
                       <div className="rounded-lg border border-sx-border bg-sx-surface-1 p-3">
                         <span className="text-[10px] font-sx-mono uppercase tracking-wider text-sx-accent">
-                          {connection ? "Step 3" : "Step 4"}: Verify Active Domains
+                          Step 4: Verify Active Domains
                         </span>
                         <p className="mt-1 text-xs text-sx-text">
                           Enter comma-separated domains authenticated in this session:
@@ -625,7 +659,7 @@ export function ConnectorDrawer({
                           <button
                             type="button"
                             onClick={handleFounderComputerVerify}
-                            disabled={busy}
+                            disabled={busy || !hasConnection}
                             className="inline-flex items-center rounded-lg bg-sx-accent px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:opacity-90 disabled:opacity-50"
                           >
                             Verify Session
