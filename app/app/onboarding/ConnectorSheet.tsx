@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { PlatformIcon } from "@/components/audit/PlatformIcon";
 import type { SocialConnection, SocialPlatformKey } from "./types";
 
@@ -66,11 +66,45 @@ export function ConnectorSheet({
   const [waLoading, setWaLoading] = useState(false);
   const [waError, setWaError] = useState<string | null>(null);
   const [waCooldown, setWaCooldown] = useState(0);
+  const [waDeliveryStatus, setWaDeliveryStatus] = useState<"accepted" | "sent" | "delivered" | "read" | "failed" | null>(null);
 
   const isConnected = (key: SocialPlatformKey) => connections.find((c) => c.platform === key)?.status === "connected";
 
+  // Real, provider-sourced delivery-status polling -- never blocks or gates
+  // Verify (entering the correct code always works regardless of what this
+  // shows), it only gives a truthful hint instead of silence between "OTP
+  // sent" and the customer either receiving it or not (STRATXCEL PRODUCTION
+  // REPAIR mission, Section 3). Stops once a terminal state is reached or
+  // the OTP screen closes.
+  useEffect(() => {
+    if (waStep !== "otp") {
+      setWaDeliveryStatus(null);
+      return;
+    }
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const res = await fetch(`/api/platform/onboarding/whatsapp/otp-status?phone=${encodeURIComponent(waPhone)}`);
+        if (!res.ok || cancelled) return;
+        const data = await res.json();
+        if (!cancelled && data.found) setWaDeliveryStatus(data.deliveryStatus ?? "accepted");
+      } catch {
+        // Best-effort only -- never surfaces as an error to the customer.
+      }
+    };
+    void poll();
+    const interval = setInterval(() => {
+      void poll();
+    }, 4000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [waStep, waPhone]);
+
   async function sendWhatsappOtp() {
     setWaError(null);
+    setWaDeliveryStatus(null);
     setWaLoading(true);
     try {
       const res = await fetch("/api/platform/onboarding/whatsapp/send-otp", {
@@ -211,6 +245,13 @@ export function ConnectorSheet({
                   placeholder="6-digit code"
                   className="mt-3 h-11 w-full rounded-sx-sm border border-sx-border bg-sx-surface-1 px-3 text-center text-lg tracking-[0.3em] text-sx-text"
                 />
+                {waDeliveryStatus === "delivered" || waDeliveryStatus === "read" ? (
+                  <p className="mt-2 text-center text-xs font-medium text-sx-success">Delivered to your phone ✓</p>
+                ) : waDeliveryStatus === "failed" ? (
+                  <p className="mt-2 text-center text-xs font-medium text-sx-danger">Delivery may have failed — try Resend below</p>
+                ) : (
+                  <p className="mt-2 text-center text-xs text-sx-text-subtle">Waiting for delivery confirmation…</p>
+                )}
                 <div className="mt-3 flex items-center justify-between">
                   <button type="button" onClick={() => void sendWhatsappOtp()} disabled={waCooldown > 0 || waLoading} className="text-xs font-semibold text-sx-accent disabled:opacity-50">
                     {waCooldown > 0 ? `Resend in ${waCooldown}s` : "Resend"}

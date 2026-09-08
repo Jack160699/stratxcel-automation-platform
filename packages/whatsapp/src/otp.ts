@@ -463,6 +463,7 @@ export async function sendWhatsAppOtp(
       .from("whatsapp_otp_verifications")
       .update({
         consumed_at: now.toISOString(),
+        outcome: "superseded",
         metadata: { superseded: true, superseded_at: now.toISOString() },
       })
       .eq("destination_phone", normalizedPhone)
@@ -481,6 +482,11 @@ export async function sendWhatsAppOtp(
       user_id: options.userId || null,
       tenant_id: options.tenantId || null,
       provider_message_id: sendResult.messageId || null,
+      // Explicit rather than relying on the column default: "accepted"
+      // means only that Meta's Graph API returned a message id just above
+      // -- real sent/delivered/read/failed states arrive later via
+      // updateWhatsAppOtpDeliveryStatus, correlated by provider_message_id.
+      delivery_status: "accepted",
       metadata: {
         template: META_AUTHENTICATION_TEMPLATE_NAME,
         lang: META_AUTHENTICATION_TEMPLATE_LANG,
@@ -619,7 +625,9 @@ export async function verifyWhatsAppOtp(
         .from("whatsapp_otp_verifications")
         .update({
           attempt_count: nextAttempts,
-          ...(remaining === 0 ? { consumed_at: now.toISOString(), metadata: { locked: true, reason: "max_attempts" } } : {}),
+          ...(remaining === 0
+            ? { consumed_at: now.toISOString(), outcome: "locked_max_attempts", metadata: { locked: true, reason: "max_attempts" } }
+            : {}),
         })
         .eq("id", activeRecord.id);
     } catch {
@@ -651,6 +659,7 @@ export async function verifyWhatsAppOtp(
       .from("whatsapp_otp_verifications")
       .update({
         consumed_at: now.toISOString(),
+        outcome: "verified",
       })
       .eq("id", activeRecord.id);
   } catch {
@@ -661,5 +670,91 @@ export async function verifyWhatsAppOtp(
     ok: true,
     phone: normalizedPhone,
     verificationId: activeRecord.id,
+  };
+}
+
+export type WhatsAppOtpDeliveryStatus = "accepted" | "sent" | "delivered" | "read" | "failed";
+const OTP_DELIVERY_STATUS_RANK: Record<WhatsAppOtpDeliveryStatus, number> = {
+  accepted: 0,
+  sent: 1,
+  delivered: 2,
+  read: 3,
+  failed: 4,
+};
+
+/**
+ * Delivery-receipt correlation for OTP sends -- the real per-message status
+ * (sent/delivered/read/failed) Meta reports via webhook, matched by
+ * provider_message_id (the same wamid captured at send time). Rank-guarded
+ * like packages/whatsapp/src/messages.ts's updateWhatsAppMessageStatus so
+ * an out-of-order webhook redelivery can never regress a more-advanced
+ * status back to an earlier one. Never marks "delivered" or "read" without
+ * a real webhook event asserting it -- there was previously no correlation
+ * at all between this table and the delivery-receipt webhook, even though
+ * the webhook path itself already existed for other message types
+ * (packages/whatsapp/src/webhook.ts's parseWhatsAppStatusUpdates).
+ */
+export async function updateWhatsAppOtpDeliveryStatus(
+  supabase: ServiceClient,
+  input: { providerMessageId: string; status: "sent" | "delivered" | "read" | "failed" }
+): Promise<{ success: boolean; updated?: boolean; reason?: string }> {
+  const { data: existing, error: readError } = await supabase
+    .from("whatsapp_otp_verifications")
+    .select("id, delivery_status")
+    .eq("provider_message_id", input.providerMessageId)
+    .maybeSingle();
+  if (readError) throw new Error(`updateWhatsAppOtpDeliveryStatus: ${readError.message}`);
+  if (!existing) return { success: true, updated: false, reason: "not_found" };
+
+  const currentRank = OTP_DELIVERY_STATUS_RANK[(existing.delivery_status as WhatsAppOtpDeliveryStatus) ?? "accepted"] ?? 0;
+  const nextRank = OTP_DELIVERY_STATUS_RANK[input.status];
+  if (nextRank < currentRank) return { success: true, updated: false, reason: "stale_status" };
+
+  const { error: updateError } = await supabase
+    .from("whatsapp_otp_verifications")
+    .update({ delivery_status: input.status, delivery_status_updated_at: new Date().toISOString() })
+    .eq("id", existing.id as string);
+  if (updateError) throw new Error(`updateWhatsAppOtpDeliveryStatus: ${updateError.message}`);
+  return { success: true, updated: true };
+}
+
+/**
+ * Read-only status check for the customer-facing UI -- returns the most
+ * recent OTP record for this phone+purpose+user (scoped to the requesting
+ * user's own OTPs only, never another user's), so the UI can show a
+ * truthful "delivered to your phone" hint instead of just assuming a
+ * successful send means a successful delivery (STRATXCEL PRODUCTION REPAIR
+ * mission, Section 3: "Do NOT display OTP delivered unless delivery is
+ * actually confirmed").
+ */
+export async function getWhatsAppOtpDeliveryStatus(
+  supabase: ServiceClient,
+  input: { phone: string; purpose?: string; userId: string }
+): Promise<{
+  found: boolean;
+  deliveryStatus?: WhatsAppOtpDeliveryStatus;
+  consumed?: boolean;
+  expired?: boolean;
+}> {
+  const normalizedPhone = normalizePhoneNumberE164(input.phone);
+  if (!normalizedPhone) return { found: false };
+  const purpose = input.purpose || "onboarding_verification";
+
+  const { data } = await supabase
+    .from("whatsapp_otp_verifications")
+    .select("delivery_status, consumed_at, expires_at")
+    .eq("destination_phone", normalizedPhone)
+    .eq("purpose", purpose)
+    .eq("user_id", input.userId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (!data) return { found: false };
+  return {
+    found: true,
+    deliveryStatus: (data.delivery_status as WhatsAppOtpDeliveryStatus | null) ?? "accepted",
+    consumed: Boolean(data.consumed_at),
+    expired: new Date(data.expires_at as string).getTime() < Date.now(),
   };
 }

@@ -86,7 +86,18 @@ function run() {
     "types.ts must define the reference's 5-step sequence"
   );
   assert.equal(/isStep0.*isStep1.*isStep2.*isStep3.*isStep4/s.test(wizard) || /step === 0/.test(wizard), true, "wizard must use the reference's own 0-4 step numbering");
-  assert.ok(/Website or Google Maps link/.test(stepBusiness), "StepBusiness must render the reference's single combined website/Maps link field");
+  // STRATXCEL PRODUCTION REPAIR mission, Section 4/6: the original
+  // reference's single combined "Website or Google Maps link" field is a
+  // real, confirmed root cause of customer confusion (a customer's typed
+  // Google Maps link never showed a connected/verified state, and a
+  // website URL and a Maps URL landed in the same ambiguous box) --
+  // explicitly superseded by two independent, separately-labeled, real
+  // connection-state fields. Assert the NEW real behavior, not the old one.
+  assert.equal(/Website or Google Maps link/.test(stepBusiness), false, "the old combined website/Maps field must be gone");
+  assert.ok(/label="Website"/.test(stepBusiness), "StepBusiness must render a dedicated Website field");
+  assert.ok(/label="Google Business \/ Google Maps"/.test(stepBusiness), "StepBusiness must render a dedicated, separately-labeled Google Maps/Business field");
+  assert.ok(/checkWebsite/.test(stepBusiness) && /checkMaps/.test(stepBusiness), "each field must run its own independent, real connection check");
+  assert.ok(/optional/.test(stepBusiness), "both fields must still be clearly marked optional -- never required to proceed");
   assert.equal(/Workspace Slug/i.test(stepBusiness), false, "StepBusiness must NEVER show workspace slug in UI");
   assert.ok(/Tell us about your business/.test(stepBusiness), "StepBusiness must render the reference's headline");
   assert.ok(/Your Business/.test(stepReview), "StepReview must render a Your Business summary section");
@@ -174,7 +185,7 @@ function run() {
   assert.ok(/const \[draft, setDraft\] = useState<OnboardingDraft>\(EMPTY_DRAFT\)/.test(wizard), "initial render must start from an empty draft, not a possibly-different-user's sessionStorage content");
 
   console.log(
-    "onboarding-wizard.test.ts: ALL PASS (reference 5-step sequence — Welcome/Business/Your Goals/Your Brand/Review & Launch, real single-field business discovery, real never-fabricated Brand step, optional ConnectorSheet with real OAuth + WhatsApp OTP, zero-membership gating, server-resumable draft, real Brand Brain persistence, direct audit handoff)"
+    "onboarding-wizard.test.ts: ALL PASS (reference 5-step sequence — Welcome/Business/Your Goals/Your Brand/Review & Launch, separate real Website + Google Maps fields with independent connection states, real never-fabricated Brand step, optional ConnectorSheet with real OAuth + WhatsApp OTP, zero-membership gating, server-resumable draft, real Brand Brain persistence, direct audit handoff)"
   );
 }
 

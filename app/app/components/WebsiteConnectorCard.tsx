@@ -85,6 +85,37 @@ function friendlyDiagnosticState(state: string | null | undefined, websiteHostna
   }
 }
 
+interface PlatformDetectionResult {
+  platform:
+    | "vercel"
+    | "netlify"
+    | "wordpress"
+    | "shopify"
+    | "wix"
+    | "webflow"
+    | "squarespace"
+    | "framer"
+    | "github_pages"
+    | "unknown";
+  confidence: "high" | "medium" | "low" | "none";
+  detectionSource: string[];
+  checkedAt: string;
+  error?: string;
+}
+
+const PLATFORM_LABELS: Record<PlatformDetectionResult["platform"], string> = {
+  vercel: "Vercel",
+  netlify: "Netlify",
+  wordpress: "WordPress",
+  shopify: "Shopify",
+  wix: "Wix",
+  webflow: "Webflow",
+  squarespace: "Squarespace",
+  framer: "Framer",
+  github_pages: "GitHub Pages",
+  unknown: "Unknown",
+};
+
 interface WebsiteStatus {
   website: { url: string; source: "search_project" | "search_console" } | null;
   detectedPlatform: string | null;
@@ -122,6 +153,8 @@ export function WebsiteConnectorCard({ tenantId }: { tenantId: string }) {
   const [discovering, setDiscovering] = useState(false);
   const [showConnectForm, setShowConnectForm] = useState(false);
   const [probingWrite, setProbingWrite] = useState(false);
+  const [platformDetection, setPlatformDetection] = useState<PlatformDetectionResult | null>(null);
+  const [platformDetectionLoading, setPlatformDetectionLoading] = useState(false);
 
   // Update 24: the tenant's OWN real canonical website hostname (never a
   // hardcoded example domain) -- used only to phrase the DOMAIN_MISMATCH
@@ -173,8 +206,33 @@ export function WebsiteConnectorCard({ tenantId }: { tenantId: string }) {
 
   useEffect(() => {
     reload();
+    // Independent hosting/build-platform detection -- a separate, non-
+    // blocking call (never delays the primary status load above) so the
+    // Vercel CTA below can be replaced with an honest message when the
+    // site clearly isn't on Vercel at all (STRATXCEL PRODUCTION REPAIR
+    // mission, Section 15/16/18).
+    setPlatformDetectionLoading(true);
+    fetch(`/api/platform/search/website/detect-platform?tenantId=${encodeURIComponent(tenantId)}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => setPlatformDetection(data))
+      .catch(() => {
+        // Best-effort only -- detection failing must never block the card.
+      })
+      .finally(() => setPlatformDetectionLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenantId]);
+
+  // A confident, non-Vercel detection -- offering "Connect Vercel" would be
+  // actively wrong for this site. Low/none confidence (including plain
+  // "unknown") keeps the existing Vercel flow, since Vercel remains the
+  // one real, working connector this platform supports today.
+  const confidentNonVercelPlatform =
+    platformDetection &&
+    platformDetection.platform !== "vercel" &&
+    platformDetection.platform !== "unknown" &&
+    (platformDetection.confidence === "high" || platformDetection.confidence === "medium")
+      ? platformDetection.platform
+      : null;
 
   async function handleConnectVercel() {
     if (!tokenInput.trim()) return;
@@ -268,7 +326,12 @@ export function WebsiteConnectorCard({ tenantId }: { tenantId: string }) {
                 {status.website.url}
               </a>
               <p className="mt-1 text-xs text-sx-text-subtle">
-                Detected platform: {status.detectedPlatform ?? "Unknown"}
+                Detected platform:{" "}
+                {platformDetectionLoading
+                  ? "Checking…"
+                  : confidentNonVercelPlatform
+                  ? PLATFORM_LABELS[confidentNonVercelPlatform]
+                  : status.detectedPlatform ?? (platformDetection && platformDetection.platform !== "unknown" ? PLATFORM_LABELS[platformDetection.platform] : "Unknown")}
               </p>
             </div>
           ) : (
@@ -290,6 +353,8 @@ export function WebsiteConnectorCard({ tenantId }: { tenantId: string }) {
               <span className="text-[11px] font-semibold text-sx-warning">Read-only</span>
             ) : status.vercel.state === "PROVIDER_ERROR" ? (
               <span className="text-[11px] font-semibold text-sx-danger">Connection issue</span>
+            ) : confidentNonVercelPlatform ? (
+              <span className="text-[11px] font-semibold text-sx-text-subtle">Not available for {PLATFORM_LABELS[confidentNonVercelPlatform]}</span>
             ) : (
               <span className="text-[11px] font-semibold text-sx-text-subtle">Connect Vercel</span>
             )}
@@ -377,6 +442,18 @@ export function WebsiteConnectorCard({ tenantId }: { tenantId: string }) {
                   </Button>
                 </div>
               </div>
+            ) : status.vercel.state === "NOT_CONNECTED" && confidentNonVercelPlatform ? (
+              // A confident, non-Vercel detection -- offering a Vercel
+              // token-paste flow here would be actively wrong for this
+              // site. Website analysis (above) still works regardless;
+              // this is honest about what isn't available yet rather than
+              // showing a connector that couldn't possibly apply
+              // (mission Section 9/18/37: never a fake/irrelevant connector).
+              <p className="mt-3 rounded-sx-sm bg-sx-surface-2 p-2.5 text-xs text-sx-text-subtle">
+                This website is on {PLATFORM_LABELS[confidentNonVercelPlatform]}. StratXcel doesn&rsquo;t yet support
+                automatic changes for {PLATFORM_LABELS[confidentNonVercelPlatform]} — website analysis above still
+                works without connecting anything.
+              </p>
             ) : status.vercel.state === "NOT_CONNECTED" ? (
               <Button variant="primary" size="sm" className="mt-3 w-full" onClick={() => setShowConnectForm(true)}>
                 Connect Vercel

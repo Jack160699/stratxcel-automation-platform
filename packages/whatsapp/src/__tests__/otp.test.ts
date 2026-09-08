@@ -12,6 +12,8 @@ import {
   sendMetaAuthenticationOtp,
   sendWhatsAppOtp,
   verifyWhatsAppOtp,
+  updateWhatsAppOtpDeliveryStatus,
+  getWhatsAppOtpDeliveryStatus,
   RESEND_COOLDOWN_MS,
   MAX_VERIFICATION_ATTEMPTS,
 } from "../otp.ts";
@@ -119,10 +121,11 @@ console.log("Running StratXcel WhatsApp OTP Test Suite...");
   console.log("✓ Meta Authentication template contract verified");
 }
 
-// --- 7. In-Memory Mock Database & End-to-End Service Lifecycle Tests ---
-{
-  const mockRows: any[] = [];
-  const mockSupabase: any = {
+// Shared in-memory mock Supabase client factory (whatsapp_otp_verifications
+// shape only) -- used by Test 7 (existing) and Test 8 (delivery-status
+// correlation, new).
+function createMockOtpSupabase(mockRows: any[]): any {
+  return {
     from: (tableName: string) => {
       assert.equal(tableName, "whatsapp_otp_verifications");
       const queryFilter: Record<string, any> = {};
@@ -219,6 +222,12 @@ console.log("Running StratXcel WhatsApp OTP Test Suite...");
       },
     },
   };
+}
+
+// --- 7. In-Memory Mock Database & End-to-End Service Lifecycle Tests ---
+{
+  const mockRows: any[] = [];
+  const mockSupabase: any = createMockOtpSupabase(mockRows);
 
   const testPhone = "+919876543210";
   const testSecret = "unit-test-secret-salt-2026";
@@ -295,6 +304,7 @@ console.log("Running StratXcel WhatsApp OTP Test Suite...");
   assert.equal(correctRes.ok, true, "Correct OTP successfully verified");
   assert.equal(correctRes.phone, testPhone);
   assert.ok(mockRows[0].consumed_at, "Record marked consumed_at in database");
+  assert.equal(mockRows[0].outcome, "verified", "outcome is classified as verified, not left ambiguous like the previous metadata-only signal");
 
   // Step 5: Replay prevention — Verifying already consumed OTP fails
   const replayRes = await verifyWhatsAppOtp(mockSupabase, {
@@ -307,6 +317,60 @@ console.log("Running StratXcel WhatsApp OTP Test Suite...");
   assert.equal(replayRes.errorCode, "NOT_FOUND");
 
   console.log("✓ End-to-end service lifecycle & replay prevention tests passed");
+}
+
+// --- 8. Delivery-status webhook correlation + outcome classification ----
+// (STRATXCEL PRODUCTION REPAIR mission, Section 3/13: real, provider-
+// sourced delivery status was never tracked at all before this.)
+{
+  const mockRows: any[] = [];
+  const mockSupabase: any = createMockOtpSupabase(mockRows);
+  const phone = "+919812345678";
+  const secret = "delivery-test-secret-2026";
+  const userId = "user-alpha";
+
+  const sendRes = await sendWhatsAppOtp(mockSupabase, {
+    phone,
+    userId,
+    purpose: "onboarding_verification",
+    secret,
+    mockSender: async () => ({ ok: true, messageId: "wamid.delivery_test_1" }),
+  });
+  assert.equal(sendRes.ok, true);
+  assert.equal(mockRows[0].delivery_status, "accepted", "delivery_status starts at accepted (provider-API-accepted, not yet confirmed delivered)");
+
+  // A webhook event for an unknown message id must be a safe, explicit no-op.
+  const unknownResult = await updateWhatsAppOtpDeliveryStatus(mockSupabase, { providerMessageId: "wamid.does_not_exist", status: "delivered" });
+  assert.deepEqual(unknownResult, { success: true, updated: false, reason: "not_found" }, "an unmatched provider_message_id must never throw or silently create a row");
+
+  // Real webhook event: accepted -> sent -> delivered.
+  const sentResult = await updateWhatsAppOtpDeliveryStatus(mockSupabase, { providerMessageId: "wamid.delivery_test_1", status: "sent" });
+  assert.equal(sentResult.updated, true);
+  assert.equal(mockRows[0].delivery_status, "sent");
+
+  const deliveredResult = await updateWhatsAppOtpDeliveryStatus(mockSupabase, { providerMessageId: "wamid.delivery_test_1", status: "delivered" });
+  assert.equal(deliveredResult.updated, true);
+  assert.equal(mockRows[0].delivery_status, "delivered");
+
+  // Out-of-order redelivery (Meta's at-least-once delivery can redeliver an
+  // older "sent" event after "delivered" already landed) must never regress
+  // the status backwards.
+  const staleResult = await updateWhatsAppOtpDeliveryStatus(mockSupabase, { providerMessageId: "wamid.delivery_test_1", status: "sent" });
+  assert.deepEqual(staleResult, { success: true, updated: false, reason: "stale_status" }, "an out-of-order redelivered status must never regress delivery_status");
+  assert.equal(mockRows[0].delivery_status, "delivered", "status stays at the more-advanced value after a stale redelivery");
+
+  // The read-only status check the customer UI polls.
+  const statusForOwner = await getWhatsAppOtpDeliveryStatus(mockSupabase, { phone, userId });
+  assert.equal(statusForOwner.found, true);
+  assert.equal(statusForOwner.deliveryStatus, "delivered", "the UI-facing read must see the real, webhook-confirmed status");
+  assert.equal(statusForOwner.consumed, false);
+
+  // Scoped to the requesting user only -- a different user's identical
+  // phone-lookup attempt must never see this OTP's status.
+  const statusForOtherUser = await getWhatsAppOtpDeliveryStatus(mockSupabase, { phone, userId: "user-beta" });
+  assert.equal(statusForOtherUser.found, false, "OTP delivery status must never leak across users, even for the same phone number");
+
+  console.log("✓ Test 8: delivery-status webhook correlation is rank-guarded, idempotent-safe, and user-scoped on read");
 }
 
 console.log("\n==========================================");

@@ -167,6 +167,7 @@ export default function IntegrationsPage() {
   const [oauthBanner, setOauthBanner] = useState<{ kind: "success" | "error"; message: string } | null>(null);
   const [claimingGbp, setClaimingGbp] = useState(false);
   const [claimError, setClaimError] = useState<string | null>(null);
+  const [otpDeliveryStatus, setOtpDeliveryStatus] = useState<"accepted" | "sent" | "delivered" | "read" | "failed" | null>(null);
 
   useEffect(() => {
     if (cooldownSeconds <= 0) return;
@@ -175,6 +176,38 @@ export default function IntegrationsPage() {
     }, 1000);
     return () => clearInterval(timer);
   }, [cooldownSeconds]);
+
+  // Real, provider-sourced delivery-status polling -- never blocks or gates
+  // Verify (entering the correct code always works regardless of what this
+  // shows), it only gives a truthful hint instead of silence between "OTP
+  // sent" and the customer either receiving it or not (STRATXCEL PRODUCTION
+  // REPAIR mission, Section 3). Stops once the modal closes or a fresh send
+  // resets it.
+  useEffect(() => {
+    if (!otpSent || !whatsappModalOpen) {
+      setOtpDeliveryStatus(null);
+      return;
+    }
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const res = await fetch(`/api/platform/onboarding/whatsapp/otp-status?phone=${encodeURIComponent(whatsappPhone)}`);
+        if (!res.ok || cancelled) return;
+        const data = await res.json();
+        if (!cancelled && data.found) setOtpDeliveryStatus(data.deliveryStatus ?? "accepted");
+      } catch {
+        // Best-effort only -- never surfaces as an error to the customer.
+      }
+    };
+    void poll();
+    const interval = setInterval(() => {
+      void poll();
+    }, 4000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [otpSent, whatsappModalOpen, whatsappPhone]);
 
   // Surface the result of a real OAuth reconnect/connect attempt. The
   // callback route redirects back here with ?oauth=success|error|denied|
@@ -386,6 +419,7 @@ export default function IntegrationsPage() {
 
   async function handleSendWhatsappOtp() {
     setOtpError(null);
+    setOtpDeliveryStatus(null);
     setOtpLoading(true);
     try {
       const res = await fetch("/api/platform/onboarding/whatsapp/send-otp", {
@@ -947,6 +981,13 @@ export default function IntegrationsPage() {
                 <p className="text-center text-xs text-sx-text-muted">
                   We sent a 6-digit code to {whatsappPhone}. Tap <strong>Copy Code</strong> in WhatsApp, then paste or type it below.
                 </p>
+                {otpDeliveryStatus === "delivered" || otpDeliveryStatus === "read" ? (
+                  <p className="text-center text-xs font-medium text-sx-success">Delivered to your phone ✓</p>
+                ) : otpDeliveryStatus === "failed" ? (
+                  <p className="text-center text-xs font-medium text-sx-danger">Delivery may have failed — try Resend below</p>
+                ) : (
+                  <p className="text-center text-xs text-sx-text-subtle">Waiting for delivery confirmation…</p>
+                )}
 
                 <label htmlFor="integrations-whatsapp-otp" className="sr-only">Enter 6-Digit Code</label>
                 <div className="relative">

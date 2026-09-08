@@ -32,7 +32,19 @@ assert.match(card, /\/api\/platform\/search\/vercel\/disconnect/, "must call the
 // --- never fabricates a successful connection or a guessed platform --------
 assert.doesNotMatch(card, /connected:\s*true/, "must never locally fabricate a 'connected: true' state -- only the real backend response can report that");
 // The honest fallback label is "Unknown" -- must show that, not silently omit the row or invent a specific framework name when detection genuinely found nothing.
-assert.match(card, /detectedPlatform\s*\?\?\s*"Unknown"/, "must show the honest 'Unknown' label when no platform was actually detected, never a blank row or a guessed framework name");
+assert.match(card, /:\s*"Unknown"/, "must show the honest 'Unknown' label when no platform was actually detected, never a blank row or a guessed framework name");
+
+// --- STRATXCEL PRODUCTION REPAIR mission Section 15/16/18: independent
+//     platform detection (not just a Vercel-project's own framework field,
+//     which can only ever exist once Vercel is already connected) must be
+//     wired in, and a confident non-Vercel detection must replace the
+//     Vercel connect CTA with an honest message -- never push an
+//     irrelevant PAT-paste flow at a customer whose site isn't on Vercel. ---
+assert.match(card, /\/api\/platform\/search\/website\/detect-platform/, "must call the real, independent platform-detection endpoint, not only the Vercel-connection-gated detectedPlatform field");
+assert.match(card, /confidentNonVercelPlatform/, "the Vercel CTA must be gated on a confident non-Vercel detection");
+assert.match(card, /doesn.{0,10}t yet support[\s\S]{0,40}automatic changes for/, "a confidently-detected non-Vercel platform must get an honest 'not supported yet' message, never a fake connector or a forced Vercel CTA");
+// Still never blocks website analysis for an unsupported platform.
+assert.doesNotMatch(card, /disabled=\{true\}[\s\S]{0,80}Website analysis/, "website analysis must never be disabled because of platform detection");
 
 // --- analysis access vs. write access are shown as distinct, not conflated ---
 assert.match(card, /Website analysis/, "must show analysis-readiness separately from write access");

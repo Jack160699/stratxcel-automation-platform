@@ -9,6 +9,7 @@ import {
   updateWhatsAppMessageStatus,
   updateAgentChannelMessageStatus,
   updateAuditDeliveryEventStatus,
+  updateWhatsAppOtpDeliveryStatus,
 } from "@stratxcel/whatsapp";
 import { createServiceClient as createQueueClient, createPostgresQueueAdapter, recordWorkerHeartbeat, getWorkerHealth } from "@stratxcel/queue";
 
@@ -183,6 +184,14 @@ export async function handleInbound(
       // Correlate with audit_delivery_events for product delivery (e.g. Audit reports)
       await updateAuditDeliveryEventStatus(whatsapp, { providerMessageId: update.providerMessageId, status: update.status }).catch((err) =>
         console.error("[whatsapp-worker] audit-delivery status correlation failed:", err instanceof Error ? err.message : String(err))
+      );
+
+      // Correlate with whatsapp_otp_verifications -- previously nothing
+      // ever told an OTP record whether it was actually delivered, only
+      // whether Meta's API accepted the send request (STRATXCEL PRODUCTION
+      // REPAIR mission, Section 3/13).
+      await updateWhatsAppOtpDeliveryStatus(whatsapp, { providerMessageId: update.providerMessageId, status: update.status }).catch((err) =>
+        console.error("[whatsapp-worker] otp delivery status correlation failed:", err instanceof Error ? err.message : String(err))
       );
     }
   } catch (err) {
