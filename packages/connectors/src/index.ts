@@ -8,3 +8,4 @@ export * from "./resolve-effective-key.ts";
 export * from "./discovery.ts";
 export * from "./audit.ts";
 export * from "./execution.ts";
+export * from "./founder-computer/index.ts";

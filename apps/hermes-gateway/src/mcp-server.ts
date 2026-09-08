@@ -105,10 +105,20 @@ const TOOL_DESCRIPTIONS: Record<McpCallableName, string> = {
   remember_company_fact: "Save a durable, company-scoped fact this mission found, for future recall.",
   recall_company_memory: "Recall this mission's tenant's durable company memory.",
   update_lead_status: "Move a real CRM lead to a new pipeline status (NEW/CONTACTED/QUALIFIED/WON/LOST), tenant-scoped.",
+  browser_navigate: "Navigate the Founder Computer browser to a designated URL.",
+  browser_screenshot: "Capture a screenshot of the current page in the Founder Computer browser.",
+  browser_read: "Extract text and structured DOM content from the active Founder Computer browser page.",
 };
 
 /** Read-only per Section 4 — no state anywhere in StratExcel changes as a result of these calls. Everything else is truthfully non-read-only; none are destructive. */
-const READ_ONLY_TOOLS = new Set<McpCallableName>(["get_brand_context", "get_service_definition", "get_approval_status", "query_publication_status"]);
+const READ_ONLY_TOOLS = new Set<McpCallableName>([
+  "get_brand_context",
+  "get_service_definition",
+  "get_approval_status",
+  "query_publication_status",
+  "browser_screenshot",
+  "browser_read",
+]);
 
 function errorResult(message: string): CallToolResult {
   return { content: [{ type: "text", text: message }], isError: true };

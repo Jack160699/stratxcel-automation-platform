@@ -14,26 +14,28 @@ export const dynamic = "force-dynamic";
 // Personal connectors ordered as specified in Founder Architecture (Section 14)
 // Google AI Pro is strictly the FIRST premier card.
 const PERSONAL_CONNECTOR_KEYS_ORDER = [
-  "google_ai_pro", // Premier Founder AI Subscription
-  "gemini",        // Founder AI
-  "claude",        // Founder AI
-  "openrouter",    // Founder AI
-  "github",        // Developer
-  "vercel",        // Developer
-  "supabase",      // Developer
-  "aws",           // Developer / Sandbox
-  "whatsapp",      // Communication
-  "telegram",      // Communication
-  "meta",          // Communication
-  "apollo",        // Research & Sales
-  "google",        // Research & Sales / Services
-  "s3",            // Storage
-  "payments",      // Payments (Razorpay / Stripe)
-  "browser",       // Browser / Computer
+  "google_ai_pro",   // Premier Founder AI Subscription
+  "founder_computer",// Founder Computer / Browser Environment
+  "gemini",          // Founder AI
+  "claude",          // Founder AI
+  "openrouter",      // Founder AI
+  "github",          // Developer
+  "vercel",          // Developer
+  "supabase",        // Developer
+  "aws",             // Developer / Sandbox
+  "whatsapp",        // Communication
+  "telegram",        // Communication
+  "meta",            // Communication
+  "apollo",          // Research & Sales
+  "google",          // Research & Sales / Services
+  "s3",              // Storage
+  "payments",        // Payments (Razorpay / Stripe)
+  "browser",         // Browser / Computer
 ] as const;
 
 const PERSONAL_CATEGORIES: Record<string, string> = {
   google_ai_pro: "ai",
+  founder_computer: "browser",
   gemini: "ai",
   claude: "ai",
   openrouter: "ai",

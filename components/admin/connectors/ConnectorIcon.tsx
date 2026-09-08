@@ -208,6 +208,16 @@ function renderIcon(key: string, className: string) {
         </svg>
       );
 
+    case "founder_computer":
+      return (
+        <svg viewBox="0 0 24 24" className={className} fill="none" stroke="#8B5CF6" strokeWidth="1.8">
+          <rect x="2" y="3" width="20" height="14" rx="2" />
+          <line x1="8" y1="21" x2="16" y2="21" strokeLinecap="round" />
+          <line x1="12" y1="17" x2="12" y2="21" />
+          <circle cx="12" cy="10" r="2.5" fill="#8B5CF6" fillOpacity="0.25" />
+        </svg>
+      );
+
     case "browser":
     default:
       return (

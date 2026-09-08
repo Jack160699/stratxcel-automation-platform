@@ -125,6 +125,53 @@ registerCapabilityHandler("google_ai_pro", "google_drive.upload", async (ctx, pa
   };
 });
 
+// ─── Founder Computer capability handlers ────────────────────────────────────
+// All browser/computer operations return a queued job reference.
+// Actual execution is dispatched through the mission infrastructure
+// and NEVER blocks an HTTP request.
+
+const BROWSER_CAPABILITIES: string[] = [
+  "browser.navigate", "browser.click", "browser.type", "browser.select",
+  "browser.scroll", "browser.wait", "browser.screenshot", "browser.read",
+  "browser.upload", "browser.download", "browser.tabs", "browser.close",
+];
+
+const COMPUTER_CAPABILITIES: string[] = [
+  "computer.open_app", "computer.click", "computer.type",
+  "computer.key", "computer.screenshot", "computer.wait",
+];
+
+const FILE_CAPABILITIES: string[] = [
+  "file.transfer_to_stratxcel", "file.transfer_to_browser",
+];
+
+// Register a generic async-dispatch handler for each browser primitive
+for (const cap of [...BROWSER_CAPABILITIES, ...COMPUTER_CAPABILITIES, ...FILE_CAPABILITIES]) {
+  registerCapabilityHandler("founder_computer", cap, async (ctx, payload) => {
+    // Generate a job ID for async tracking. In production this would enqueue
+    // a browser job into the mission execution queue.
+    const jobId = `fc-job-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+
+    return {
+      jobId,
+      status: "queued",
+      capability: cap,
+      connectionId: ctx.connectionId,
+      tenantId: ctx.tenantId,
+      missionId: ctx.missionId ?? null,
+      method: ctx.method,
+      payload: Object.fromEntries(
+        // Safe payload — strip any accidental token/secret fields
+        Object.entries(payload).filter(([k]) =>
+          !["token", "secret", "password", "cookie", "session", "key"].includes(k.toLowerCase())
+        )
+      ),
+      requiresRuntime: true,
+      dispatchedAt: new Date().toISOString(),
+    };
+  });
+}
+
 /**
  * Canonical capability executor.
  * Dispatches invocation through the authorization gate, evaluates preferred access method

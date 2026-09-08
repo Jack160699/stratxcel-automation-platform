@@ -99,6 +99,18 @@ export interface ToolContractMap {
     input: { leadId: string; status: "NEW" | "CONTACTED" | "QUALIFIED" | "WON" | "LOST" };
     output: { updated: boolean; lead?: unknown };
   };
+  browser_navigate: {
+    input: { url: string; sessionKey?: string };
+    output: { success: boolean; title?: string; jobId?: string };
+  };
+  browser_screenshot: {
+    input: { sessionKey?: string };
+    output: { success: boolean; screenshotRef?: string };
+  };
+  browser_read: {
+    input: { selector?: string; sessionKey?: string };
+    output: { success: boolean; text?: string };
+  };
 }
 
 export const ALL_TOOL_NAMES: ToolName[] = [
@@ -123,6 +135,9 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "remember_company_fact",
   "recall_company_memory",
   "update_lead_status",
+  "browser_navigate",
+  "browser_screenshot",
+  "browser_read",
 ];
 
 /**

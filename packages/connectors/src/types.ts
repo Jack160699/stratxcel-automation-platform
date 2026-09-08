@@ -6,7 +6,7 @@
 
 export type ConnectorAuthMethod = "api_key" | "oauth" | "service_credential" | "mcp_managed" | "cli";
 
-export type ConnectorCategory = "infrastructure" | "ai" | "messaging" | "social" | "data" | "automation" | "finance";
+export type ConnectorCategory = "infrastructure" | "ai" | "messaging" | "social" | "data" | "automation" | "finance" | "browser_computer";
 
 export type ConnectorScopeLevel = "platform" | "company" | "both";
 
@@ -52,7 +52,15 @@ export type ConnectorAuditEventType =
   | "video_capability_verified"
   | "drive_access_verified"
   | "cloud_access_verified"
-  | "quota_exceeded";
+  | "quota_exceeded"
+  // Founder Computer events
+  | "browser_started"
+  | "session_authenticated"
+  | "session_expired"
+  | "browser_restarted"
+  | "navigation"
+  | "download"
+  | "upload";
 
 export type GoogleAiProEntitlementStatus =
   | "unverified"
@@ -100,6 +108,32 @@ export interface ConnectorDefinition {
   requiredEnvVars: string[];
   supportedAccessMethods: ConnectorAccessMethod[];
   preferredAccessMethod: ConnectorAccessMethod;
+}
+
+/** Session status for the Founder Computer browser resource. */
+export type FounderComputerSessionStatus =
+  | "not_configured"
+  | "auth_required"
+  | "connected"
+  | "ready"
+  | "degraded"
+  | "expired"
+  | "disconnected";
+
+/** Classification of a single discovered capability on the Founder Computer. */
+export type FounderComputerCapabilityStatus =
+  | "available"
+  | "requires_auth"
+  | "available_with_confirmation"
+  | "unavailable"
+  | "error";
+
+export interface FounderComputerCapabilityEntry {
+  service: string;        // e.g. "Google Gemini", "Google Drive", "Antigravity"
+  capability: string;     // e.g. "gemini.chat", "drive.upload"
+  status: FounderComputerCapabilityStatus;
+  accessMethod: "api" | "browser" | "desktop" | "manual_confirmation";
+  note?: string;          // Human-readable explanation
 }
 
 export interface ConnectorConnectionRow {

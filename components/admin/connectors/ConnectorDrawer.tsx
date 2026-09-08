@@ -18,6 +18,23 @@ const GOOGLE_AI_PRO_CAPS = [
   { key: "jules.automate", label: "Jules Automation" },
 ];
 
+const FOUNDER_COMPUTER_CAPS = [
+  { key: "browser.navigate", label: "Browser Navigation" },
+  { key: "browser.click", label: "Web Interaction (Click/Type)" },
+  { key: "browser.screenshot", label: "Browser Screenshot" },
+  { key: "browser.read", label: "DOM / Content Extraction" },
+  { key: "browser.wait", label: "Wait / Poll State" },
+  { key: "browser.upload", label: "File Upload" },
+  { key: "browser.download", label: "File Download" },
+  { key: "browser.tabs", label: "Tab Management" },
+  { key: "computer.screenshot", label: "Desktop Capture" },
+  { key: "gemini.chat", label: "Google Gemini (Browser)" },
+  { key: "aistudio.prompt", label: "AI Studio (Browser)" },
+  { key: "drive.browse", label: "Drive Storage (Browser)" },
+  { key: "video.generate_browser", label: "Veo / Flow UI (Browser)" },
+  { key: "antigravity.workspace", label: "Antigravity IDE (Browser)" },
+];
+
 interface AuditLog {
   id: string;
   connector_key: string;
@@ -47,6 +64,7 @@ export function ConnectorDrawer({
   const [autonomy, setAutonomy] = useState("execute");
   const [budgetLimit, setBudgetLimit] = useState("");
   const [auditLogs, setAuditLogs] = useState<AuditLog[] | null>(null);
+  const [domainInput, setDomainInput] = useState("google.com, accounts.google.com");
 
   // Close on ESC
   useEffect(() => {
@@ -66,6 +84,12 @@ export function ConnectorDrawer({
       setSecret("");
       setAuditLogs(null);
       setBudgetLimit(item.connection?.budgetLimitUsd ? String(item.connection.budgetLimitUsd) : "");
+      const metaDomains = (item.connection?.metadata as Record<string, unknown> | undefined)?.authenticatedDomains;
+      if (Array.isArray(metaDomains) && metaDomains.length > 0) {
+        setDomainInput((metaDomains as string[]).join(", "));
+      } else {
+        setDomainInput("google.com, accounts.google.com");
+      }
     }
   }, [item]);
 
@@ -96,13 +120,22 @@ export function ConnectorDrawer({
   const visualStatus = resolveVisualStatus(health.status);
   const isConnected = visualStatus.type === "connected";
   const isGoogleAiPro = definition.key === "google_ai_pro";
+  const isFounderComputer = definition.key === "founder_computer";
 
   // Account identity
   const details = health.details ?? (connection?.metadata as Record<string, unknown> | undefined);
   const accountEmail =
     (details?.google_account_email as string) ||
     (details?.accountEmail as string) ||
-    (isConnected && isGoogleAiPro ? "founder@google.account" : null);
+    (isFounderComputer
+      ? Array.isArray(details?.authenticatedDomains) && (details.authenticatedDomains as string[]).length > 0
+        ? (details.authenticatedDomains as string[]).join(", ")
+        : isConnected
+        ? "Authorized Browser Profile"
+        : null
+      : isConnected && isGoogleAiPro
+      ? "founder@google.account"
+      : null);
   const entitlementStatus = (details?.entitlement_status as string) ?? (isConnected ? "active" : "unverified");
 
   // Health probe action
@@ -111,12 +144,16 @@ export function ConnectorDrawer({
     setActionSuccess(null);
     setError(null);
     try {
-      const res = await platformFetch(`/api/platform/admin/connectors/${definition.key}/verify`, {
-        method: "POST",
+      const url = isFounderComputer
+        ? "/api/admin/personal-connectors/founder-computer/health"
+        : `/api/platform/admin/connectors/${definition.key}/verify`;
+      const res = await platformFetch(url, {
+        method: isFounderComputer ? "GET" : "POST",
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Health check failed");
-      setActionSuccess(`Health check complete: ${data.health?.status ?? "verified"}`);
+      const status = isFounderComputer ? data.status : data.health?.status;
+      setActionSuccess(`Health check complete: ${status ?? "verified"}`);
       onUpdated?.();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Health check failed");
@@ -131,17 +168,68 @@ export function ConnectorDrawer({
     setActionSuccess(null);
     setError(null);
     try {
-      const res = await platformFetch(`/api/platform/admin/connectors/${definition.key}`, {
+      const url = isFounderComputer
+        ? "/api/admin/personal-connectors/founder-computer/capabilities"
+        : `/api/platform/admin/connectors/${definition.key}`;
+      const res = await platformFetch(url, {
         method: "POST",
-        body: JSON.stringify({ action: "discover" }),
+        body: isFounderComputer ? JSON.stringify({}) : JSON.stringify({ action: "discover" }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Capability discovery failed");
-      const count = data.discoveredCapabilities?.length ?? 0;
+      const count = isFounderComputer
+        ? data.totalDiscovered ?? data.capabilities?.length ?? 0
+        : data.discoveredCapabilities?.length ?? 0;
       setActionSuccess(`Discovered ${count} verified capabilities.`);
       onUpdated?.();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Discovery failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Founder Computer setup
+  async function handleFounderComputerSetup() {
+    setBusy(true);
+    setActionSuccess(null);
+    setError(null);
+    try {
+      const res = await platformFetch("/api/admin/personal-connectors/founder-computer/setup", {
+        method: "POST",
+        body: JSON.stringify({}),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Setup failed");
+      setActionSuccess("Founder Computer session initialized. Sign in on browser host then click Verify Session.");
+      onUpdated?.();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Setup failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Founder Computer manual verification
+  async function handleFounderComputerVerify() {
+    setBusy(true);
+    setActionSuccess(null);
+    setError(null);
+    try {
+      const domains = domainInput
+        .split(",")
+        .map((d) => d.trim())
+        .filter(Boolean);
+      const res = await platformFetch("/api/admin/personal-connectors/founder-computer/session", {
+        method: "POST",
+        body: JSON.stringify({ action: "verify", authenticatedDomains: domains }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Verification failed");
+      setActionSuccess(`Session verified active (${domains.length} domains authorized).`);
+      onUpdated?.();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Verification failed");
     } finally {
       setBusy(false);
     }
@@ -181,7 +269,10 @@ export function ConnectorDrawer({
     setActionSuccess(null);
     setError(null);
     try {
-      const res = await platformFetch(`/api/platform/admin/connectors/${definition.key}`, {
+      const url = isFounderComputer
+        ? "/api/admin/personal-connectors/founder-computer/session"
+        : `/api/platform/admin/connectors/${definition.key}`;
+      const res = await platformFetch(url, {
         method: "DELETE",
       });
       const data = await res.json();
@@ -292,7 +383,40 @@ export function ConnectorDrawer({
                   <p className="mt-1 text-xs text-sx-text">
                     This connector requires authentication before Hermes can execute its capabilities.
                   </p>
-                  {isGoogleAiPro ? (
+                  {isFounderComputer ? (
+                    <div className="mt-3 space-y-2">
+                      <p className="text-[11px] text-sx-text-muted">
+                        1. Start secure browser runtime on host/EC2. 2. Sign into accounts manually (Google, etc.) — StratXcel never receives passwords. 3. Enter authenticated domains below and verify.
+                      </p>
+                      <div className="flex gap-2 items-center pt-1">
+                        <input
+                          type="text"
+                          value={domainInput}
+                          onChange={(e) => setDomainInput(e.target.value)}
+                          placeholder="google.com, accounts.google.com"
+                          className="h-8 flex-1 rounded-lg border border-sx-border bg-sx-surface-1 px-2.5 text-xs text-sx-text focus:border-sx-accent focus:outline-none"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleFounderComputerVerify}
+                          disabled={busy}
+                          className="inline-flex items-center rounded-lg bg-sx-accent px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:opacity-90 disabled:opacity-50"
+                        >
+                          Verify Session
+                        </button>
+                      </div>
+                      {!connection && (
+                        <button
+                          type="button"
+                          onClick={handleFounderComputerSetup}
+                          disabled={busy}
+                          className="text-xs text-sx-accent hover:underline inline-block pt-1"
+                        >
+                          Initialize Setup Record
+                        </button>
+                      )}
+                    </div>
+                  ) : isGoogleAiPro ? (
                     <button
                       type="button"
                       onClick={handleGoogleOAuth}
@@ -315,13 +439,21 @@ export function ConnectorDrawer({
                 </h3>
                 <div className="grid grid-cols-2 gap-3 text-xs">
                   <div>
-                    <span className="text-sx-text-subtle">Account Identity</span>
-                    <p className="mt-0.5 font-medium text-sx-text">{accountEmail || "Not connected"}</p>
+                    <span className="text-sx-text-subtle">
+                      {isFounderComputer ? "Authorized Domains" : "Account Identity"}
+                    </span>
+                    <p className="mt-0.5 font-medium text-sx-text truncate">
+                      {accountEmail || (isFounderComputer ? "None authenticated" : "Not connected")}
+                    </p>
                   </div>
                   <div>
-                    <span className="text-sx-text-subtle">Subscription / Tier</span>
-                    <p className="mt-0.5 font-medium text-sx-text uppercase">
-                      {isGoogleAiPro
+                    <span className="text-sx-text-subtle">
+                      {isFounderComputer ? "Browser Runtime" : "Subscription / Tier"}
+                    </span>
+                    <p className="mt-0.5 font-medium text-sx-text uppercase truncate">
+                      {isFounderComputer
+                        ? (details?.browserVersion as string) || "Chromium (Managed)"
+                        : isGoogleAiPro
                         ? entitlementStatus === "active"
                           ? "AI Pro Active"
                           : "Standard (Unverified)"
@@ -329,8 +461,14 @@ export function ConnectorDrawer({
                     </p>
                   </div>
                   <div>
-                    <span className="text-sx-text-subtle">Auth Method</span>
-                    <p className="mt-0.5 font-medium text-sx-text uppercase">{definition.authMethod}</p>
+                    <span className="text-sx-text-subtle">
+                      {isFounderComputer ? "Profile ID" : "Auth Method"}
+                    </span>
+                    <p className="mt-0.5 font-medium text-sx-text uppercase font-mono text-[11px] truncate">
+                      {isFounderComputer
+                        ? (details?.profileId as string) || "Pending Setup"
+                        : definition.authMethod}
+                    </p>
                   </div>
                   <div>
                     <span className="text-sx-text-subtle">Last Verified</span>
@@ -377,6 +515,29 @@ export function ConnectorDrawer({
                       );
                     })}
                   </div>
+                ) : isFounderComputer ? (
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    {FOUNDER_COMPUTER_CAPS.map((cap) => {
+                      const isDiscovered = health.discoveredCapabilities.includes(cap.key);
+                      return (
+                        <div
+                          key={cap.key}
+                          className={`flex items-center gap-2 rounded-lg border p-2 ${
+                            isDiscovered
+                              ? "border-[#5BDCA7]/30 bg-[#5BDCA7]/5 text-sx-text"
+                              : "border-sx-border/40 bg-sx-surface-1 text-sx-text-muted opacity-60"
+                          }`}
+                        >
+                          <span
+                            className={`h-1.5 w-1.5 rounded-full ${
+                              isDiscovered ? "bg-[#5BDCA7]" : "bg-sx-text-subtle"
+                            }`}
+                          />
+                          <span className="truncate">{cap.label}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
                 ) : (
                   <div className="flex flex-wrap gap-1.5">
                     {definition.declaredCapabilities && definition.declaredCapabilities.length > 0 ? (
@@ -394,6 +555,56 @@ export function ConnectorDrawer({
                   </div>
                 )}
               </div>
+
+              {/* Founder Computer Dedicated Session Management Card */}
+              {isFounderComputer && (
+                <div className="rounded-xl border border-sx-border bg-sx-surface-2/60 p-4 space-y-3">
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-sx-text-muted">
+                    {isConnected ? "Active Browser Session" : "Browser Session Authentication"}
+                  </h3>
+                  <p className="text-xs text-sx-text-muted">
+                    Manual authentication in the dedicated profile enables Hermes to access authenticated web apps without API keys or passwords.
+                  </p>
+                  <div className="space-y-2">
+                    <label className="text-[11px] text-sx-text-subtle">Authenticated Domains (comma-separated)</label>
+                    <input
+                      type="text"
+                      value={domainInput}
+                      onChange={(e) => setDomainInput(e.target.value)}
+                      placeholder="e.g. google.com, accounts.google.com"
+                      className="h-8 w-full rounded-lg border border-sx-border bg-sx-surface-1 px-2.5 text-xs text-sx-text focus:border-sx-accent focus:outline-none"
+                    />
+                  </div>
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={handleFounderComputerVerify}
+                      disabled={busy}
+                      className="inline-flex items-center rounded-lg bg-sx-accent px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:opacity-90 disabled:opacity-50"
+                    >
+                      {isConnected ? "Re-verify Active Session" : "Confirm & Verify Session"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleDiscover}
+                      disabled={busy}
+                      className="inline-flex items-center rounded-lg border border-sx-border bg-sx-surface-1 px-3 py-1.5 text-xs font-medium text-sx-text hover:bg-sx-surface-3 disabled:opacity-50"
+                    >
+                      Discover Capabilities
+                    </button>
+                    {!connection && (
+                      <button
+                        type="button"
+                        onClick={handleFounderComputerSetup}
+                        disabled={busy}
+                        className="inline-flex items-center rounded-lg border border-sx-border bg-sx-surface-1 px-3 py-1.5 text-xs font-medium text-sx-text hover:bg-sx-surface-3 disabled:opacity-50"
+                      >
+                        Initialize Setup
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {/* Quick Connect / Reconnect Token Input */}
               {definition.authMethod !== "mcp_managed" && (

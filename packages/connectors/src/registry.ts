@@ -103,6 +103,50 @@ export const CONNECTOR_REGISTRY: readonly ConnectorDefinition[] = [
     preferredAccessMethod: "native",
   },
   {
+    key: "founder_computer",
+    label: "Founder Computer",
+    category: "browser_computer",
+    authMethod: "mcp_managed",
+    scopeLevel: "platform",
+    declaredCapabilities: [
+      // Browser primitives
+      "browser.navigate",
+      "browser.click",
+      "browser.type",
+      "browser.select",
+      "browser.scroll",
+      "browser.wait",
+      "browser.screenshot",
+      "browser.read",
+      "browser.upload",
+      "browser.download",
+      "browser.tabs",
+      "browser.close",
+      // Computer primitives
+      "computer.screenshot",
+      "computer.open_app",
+      "computer.click",
+      "computer.type",
+      "computer.key",
+      "computer.wait",
+      // File transfer
+      "file.transfer_to_stratxcel",
+      "file.transfer_to_browser",
+    ],
+    description:
+      "Authorized persistent browser and computer environment for Hermes. " +
+      "The Founder manually authenticates accounts in a dedicated secure browser profile. " +
+      "Hermes uses this environment to interact with web/desktop services whose useful " +
+      "functionality is only accessible through authorized UI sessions. " +
+      "Distinct from the generic Browser/Computer automation connector — this is a " +
+      "Founder-identity-scoped resource with session persistence, capability discovery, " +
+      "and full connector authorization enforcement.",
+    realStatusSource: "Founder Computer session metadata in connector_connections (not_configured/auth_required/connected/ready)",
+    requiredEnvVars: [],
+    supportedAccessMethods: ["native", "mcp", "browser"],
+    preferredAccessMethod: "browser",
+  },
+  {
     key: "google_workspace",
     label: "Google Workspace (Legacy)",
     category: "data",

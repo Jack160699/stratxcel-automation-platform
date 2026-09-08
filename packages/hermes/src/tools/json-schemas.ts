@@ -170,4 +170,28 @@ export const TOOL_PARAMETER_SCHEMAS: Partial<Record<ToolName, Record<string, unk
     required: ["leadId", "status"],
     additionalProperties: false,
   },
+  browser_navigate: {
+    type: "object",
+    properties: {
+      url: { type: "string", description: "URL to navigate the Founder Computer browser to." },
+      sessionKey: { type: "string", description: "Optional session key." },
+    },
+    required: ["url"],
+    additionalProperties: false,
+  },
+  browser_screenshot: {
+    type: "object",
+    properties: {
+      sessionKey: { type: "string", description: "Optional session key." },
+    },
+    additionalProperties: false,
+  },
+  browser_read: {
+    type: "object",
+    properties: {
+      selector: { type: "string", description: "Optional CSS selector to extract from the page." },
+      sessionKey: { type: "string", description: "Optional session key." },
+    },
+    additionalProperties: false,
+  },
 };

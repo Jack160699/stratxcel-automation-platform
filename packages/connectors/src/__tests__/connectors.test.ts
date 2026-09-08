@@ -31,6 +31,7 @@ async function testRegistryHasAllCanonicalConnectorsWithSaneShape() {
     "aws",
     "browser",
     "claude",
+    "founder_computer",
     "gemini",
     "github",
     "google",
@@ -46,7 +47,7 @@ async function testRegistryHasAllCanonicalConnectorsWithSaneShape() {
     "whatsapp",
   ];
   const actualKeys = CONNECTOR_REGISTRY.map((c) => c.key).sort();
-  assert.deepEqual(actualKeys, [...expectedKeys].sort(), "the registry must have all 16 Founder connectors plus legacy adapter");
+  assert.deepEqual(actualKeys, [...expectedKeys].sort(), "the registry must have all Founder connectors plus legacy adapter");
 
   for (const key of expectedKeys) {
     const def = getConnectorDefinition(key);
@@ -70,7 +71,7 @@ async function testRegistryHasAllCanonicalConnectorsWithSaneShape() {
     "execution order must prioritize Native > MCP > API > CLI > Browser"
   );
 
-  console.log("connectors.test.ts: the registry has all 16 canonical connectors with complete shape and access methods — PASS");
+  console.log("connectors.test.ts: the registry has all canonical connectors with complete shape and access methods — PASS");
 }
 
 async function testMcpManagedConnectorsDeclareNoRequiredEnvVarsButHaveARealStatusSource() {
@@ -92,7 +93,7 @@ async function testCreateConnectorConnectionRefusesASecretForMcpManagedAndReadOn
     },
   };
 
-  for (const key of ["aws", "browser"]) {
+  for (const key of ["aws", "browser", "founder_computer"]) {
     await assert.rejects(
       () => createConnectorConnection(explodingSupabase as never, { connectorKey: key, tenantId: null, rawSecret: "shh", connectedByUserId: null }),
       /must never store a secret here/,

@@ -6,6 +6,11 @@ import { getGoogleConnection } from "@stratxcel/search-discovery";
 import type { ServiceClient } from "./db.ts";
 import type { ConnectorConnectionRow, ConnectorHealthResult, ConnectorHealthStatus } from "./types.ts";
 import { retrieveConnectorSecret } from "./repository.ts";
+import {
+  parseFounderComputerSession,
+  deriveHealthStatusFromSession,
+  deriveCapabilitiesFromSession,
+} from "./founder-computer/session.ts";
 
 /**
  * Real live health checks for every connector key.
@@ -415,6 +420,64 @@ export async function resolveConnectorHealth(
       } catch (err) {
         return { status: "error", discoveredCapabilities: [], lastError: err instanceof Error ? err.message : "Telegram API network error" };
       }
+    }
+
+    case "founder_computer": {
+      if (!connection) {
+        return {
+          status: "not_configured",
+          discoveredCapabilities: [],
+          lastError: "Founder Computer not set up. Click Connect to start the setup flow.",
+          lastVerifiedAt: null,
+          details: {
+            sessionStatus: "not_configured",
+            setupRequired: true,
+            profileId: null,
+            runtimeHostRef: null,
+            authenticatedDomains: [],
+            setupInstructions: [
+              "Click 'Connect' to initialize the Founder Computer session.",
+              "Follow the setup guide to authenticate your browser profile.",
+              "Return here to verify and discover capabilities.",
+            ],
+          },
+        };
+      }
+
+      // Health is derived from session metadata stored in connector_connections.
+      // No live browser call is made here — health is honest metadata-driven status.
+      const metadata = (connection.metadata as Record<string, unknown> | null) ?? null;
+      const session = parseFounderComputerSession(metadata);
+      let healthStatus = deriveHealthStatusFromSession(session);
+      if (healthStatus === "not_configured") {
+        healthStatus = "auth_required";
+      }
+      const discoveredCapabilities = deriveCapabilitiesFromSession(session);
+
+      const lastError =
+        healthStatus === "auth_required"
+          ? "Session requires manual authentication. Open Browser Setup in the connector drawer."
+          : healthStatus === "requires_reauth"
+          ? "Session has expired and needs re-authentication."
+          : healthStatus === "degraded"
+          ? "Session has not been verified recently (>24h). Re-verify to confirm it is still active."
+          : null;
+
+      return {
+        status: healthStatus,
+        discoveredCapabilities,
+        lastError,
+        lastVerifiedAt: session?.lastVerifiedAt ?? connection.last_verified_at ?? null,
+        details: {
+          sessionStatus: session?.status ?? "not_configured",
+          profileId: session?.profileId ?? null,
+          runtimeHostRef: session?.runtimeHostRef ?? null,
+          authenticatedDomains: session?.authenticatedDomains ?? [],
+          browserVersion: session?.browserVersion ?? null,
+          isHealthy: session?.isHealthy ?? false,
+          connectedAt: session?.connectedAt ?? connection.connected_at ?? null,
+        },
+      };
     }
 
     default:

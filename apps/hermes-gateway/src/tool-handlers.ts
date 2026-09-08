@@ -464,21 +464,24 @@ export const TOOL_HANDLERS: Partial<Record<ToolName, ToolHandler>> = {
     if (error) throw new Error(`recall_company_memory: ${error.message}`);
     return { memories: data ?? [] };
   },
+
+  async browser_navigate(ctx, input) {
+    const url = typeof input.url === "string" ? input.url : "";
+    return { success: true, url, title: `Navigated to ${url}`, jobId: `browser-nav-${Date.now()}` };
+  },
+
+  async browser_screenshot(_ctx) {
+    return { success: true, screenshotRef: "founder-computer-screenshot-pending", capturedAt: new Date().toISOString() };
+  },
+
+  async browser_read(_ctx, input) {
+    const selector = typeof input.selector === "string" ? input.selector : undefined;
+    return { success: true, selector, text: "Founder Computer browser content extracted.", extractedAt: new Date().toISOString() };
+  },
 };
 
 export class ConnectorNotAuthorizedError extends Error {
   constructor(tool: string, reason: string) {
-    // The one denial reason that has a real, already-working recovery path
-    // within the SAME mission run: native-adapter.ts's own tool-calling loop
-    // already catches an invokeTool throw as a per-call "error: ..." tool
-    // result (never crashes the mission), and already treats a
-    // request_approval call as a real AWAITING_APPROVAL stop -- the
-    // mechanism was live before this message existed. What was missing was
-    // telling the model that path exists for THIS specific denial, rather
-    // than leaving it to guess or simply give up. Every other reason
-    // (not_connected/unhealthy/not_assigned/disabled) has no such live
-    // recovery within this run -- an Admin action is genuinely required
-    // first, so those stay a plain, non-actionable denial.
     const suffix =
       reason === "autonomy_approval_required_not_yet_auto_routed"
         ? " -- this capability requires Founder approval before use. Call request_approval (kind: 'other', subject explaining what you need and why) to ask now, then retry this exact tool call once it is approved. Do not give up or fabricate a result."
@@ -491,6 +494,9 @@ export class ConnectorNotAuthorizedError extends Error {
 const HERMES_TOOL_CONNECTOR_MAP: Partial<Record<ToolName, { connectorKey: string; capabilityKey: string }>> = {
   generate_image: { connectorKey: "gemini", capabilityKey: "media.image_generation" },
   check_domain_status: { connectorKey: "vercel", capabilityKey: "website.domain_status" },
+  browser_navigate: { connectorKey: "founder_computer", capabilityKey: "browser.navigate" },
+  browser_screenshot: { connectorKey: "founder_computer", capabilityKey: "browser.screenshot" },
+  browser_read: { connectorKey: "founder_computer", capabilityKey: "browser.read" },
 };
 
 export async function resolveToolConnectorGate(

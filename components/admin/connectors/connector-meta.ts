@@ -16,6 +16,14 @@ export const CONNECTOR_META_REGISTRY: Record<string, ConnectorMeta> = {
     brandColor: "#4285F4",
     isFlagship: true,
   },
+  founder_computer: {
+    key: "founder_computer",
+    name: "Founder Computer",
+    oneLiner: "Authorized browser environment for Hermes.",
+    category: "browser",
+    brandColor: "#8B5CF6",
+    isFlagship: false,
+  },
   gemini: {
     key: "gemini",
     name: "Gemini",
