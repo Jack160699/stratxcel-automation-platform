@@ -55,6 +55,10 @@ export type ConnectorAuditEventType =
   | "quota_exceeded"
   // Founder Computer events
   | "browser_started"
+  | "viewer_opened"
+  | "viewer_closed"
+  | "manual_auth_started"
+  | "session_verified"
   | "session_authenticated"
   | "session_expired"
   | "browser_restarted"

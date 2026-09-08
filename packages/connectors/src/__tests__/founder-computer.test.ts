@@ -20,6 +20,8 @@ import {
   deriveCapabilitiesFromSession,
   buildInitialSessionMetadata,
   buildSessionVerifiedMetadata,
+  buildViewerSessionMetadata,
+  buildReleaseViewerMetadata,
   generateProfileId,
   discoverFounderComputerCapabilities,
   toDiscoveredCapabilityKeys,
@@ -170,8 +172,33 @@ async function testSessionParsingAndMetadataBuilders() {
   assert.ok(derivedCaps.includes("browser.screenshot"));
   assert.ok(derivedCaps.includes("computer.open_app")); // because google.com is authenticated
 
-  console.log("✓ founder_computer session parsing and metadata builders verified");
+  // Viewer opened lock test
+  const viewerMeta = buildViewerSessionMetadata({
+    existing: verifiedMeta,
+    expiresAt: new Date(Date.now() + 900000).toISOString(),
+  });
+  assert.equal(viewerMeta.controlLock, "FOUNDER_CONTROL");
+  assert.equal(viewerMeta.viewerActive, true);
+  assert.ok(viewerMeta.viewerExpiresAt);
+
+  const parsedViewerSession = parseFounderComputerSession(viewerMeta);
+  assert.equal(parsedViewerSession?.controlLock, "FOUNDER_CONTROL");
+  assert.equal(parsedViewerSession?.viewerActive, true);
+
+  // Viewer closed lock release test
+  const releasedMeta = buildReleaseViewerMetadata(viewerMeta);
+  assert.equal(releasedMeta.controlLock, "AVAILABLE");
+  assert.equal(releasedMeta.viewerActive, false);
+  assert.equal(releasedMeta.viewerExpiresAt, null);
+
+  const parsedReleasedSession = parseFounderComputerSession(releasedMeta);
+  assert.equal(parsedReleasedSession?.controlLock, "AVAILABLE");
+  assert.equal(parsedReleasedSession?.viewerActive, false);
+
+
+  console.log("✓ founder_computer session parsing, metadata builders & control locks verified");
 }
+
 
 async function testHonestCapabilityDiscovery() {
   // 1. When session is null, all capabilities are unavailable

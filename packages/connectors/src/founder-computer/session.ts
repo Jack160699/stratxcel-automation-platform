@@ -12,6 +12,8 @@
 
 import type { FounderComputerSessionStatus } from "../types.ts";
 
+export type FounderControlLock = "AVAILABLE" | "FOUNDER_CONTROL" | "HERMES_CONTROL" | "LOCKED";
+
 export interface FounderComputerSession {
   /** Unique profile identifier for this session. Stable across restarts. */
   profileId: string;
@@ -29,6 +31,12 @@ export interface FounderComputerSession {
   connectedAt: string | null;
   /** Whether the session is considered healthy (verified within 24 hours). */
   isHealthy: boolean;
+  /** Mutual exclusion lock between Founder manual view and Hermes autonomous automation. */
+  controlLock: FounderControlLock;
+  /** Whether a remote viewer session is actively attached. */
+  viewerActive: boolean;
+  /** ISO timestamp when the current viewer authorization expires. */
+  viewerExpiresAt: string | null;
 }
 
 /**
@@ -64,6 +72,10 @@ export function parseFounderComputerSession(
     lastVerifiedAt !== null &&
     Date.now() - new Date(lastVerifiedAt).getTime() < SESSION_TTL_MS;
 
+  const controlLock = (metadata.controlLock as FounderControlLock) ?? "AVAILABLE";
+  const viewerActive = Boolean(metadata.viewerActive);
+  const viewerExpiresAt = typeof metadata.viewerExpiresAt === "string" ? metadata.viewerExpiresAt : null;
+
   return {
     profileId,
     status,
@@ -73,6 +85,9 @@ export function parseFounderComputerSession(
     browserVersion,
     connectedAt,
     isHealthy,
+    controlLock,
+    viewerActive,
+    viewerExpiresAt,
   };
 }
 
@@ -191,6 +206,35 @@ export function buildSessionVerifiedMetadata(opts: {
     lastVerifiedAt: new Date().toISOString(),
     browserVersion: opts.browserVersion ?? opts.existing.browserVersion ?? null,
     runtimeHostRef: opts.runtimeHostRef ?? opts.existing.runtimeHostRef ?? null,
+  };
+}
+
+/**
+ * Builds the metadata patch when a Founder opens the remote browser viewer.
+ */
+export function buildViewerSessionMetadata(opts: {
+  existing: Record<string, unknown>;
+  expiresAt: string;
+}): Record<string, unknown> {
+  return {
+    ...opts.existing,
+    controlLock: "FOUNDER_CONTROL" satisfies FounderControlLock,
+    viewerActive: true,
+    viewerExpiresAt: opts.expiresAt,
+    lastViewerOpenedAt: new Date().toISOString(),
+  };
+}
+
+/**
+ * Builds the metadata patch when the Founder closes or releases the remote browser viewer.
+ */
+export function buildReleaseViewerMetadata(existing: Record<string, unknown>): Record<string, unknown> {
+  return {
+    ...existing,
+    controlLock: "AVAILABLE" satisfies FounderControlLock,
+    viewerActive: false,
+    viewerExpiresAt: null,
+    lastViewerClosedAt: new Date().toISOString(),
   };
 }
 

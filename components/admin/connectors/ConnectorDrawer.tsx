@@ -1,7 +1,9 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
+import Link from "next/link";
 import { ConnectorIcon } from "./ConnectorIcon";
+
 import { ConnectorStatusDot, resolveVisualStatus } from "./ConnectorStatusDot";
 import { getConnectorMeta } from "./connector-meta";
 import type { ConnectorItem } from "./ConnectorRow";
@@ -585,14 +587,13 @@ export function ConnectorDrawer({
                           </p>
                         )}
                         <div className="mt-2.5 flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={handleOpenBrowser}
-                            disabled={busy || !hasConnection}
-                            className="inline-flex items-center rounded-lg bg-sx-accent px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:opacity-90 disabled:opacity-50"
+                          <Link
+                            href="/admin/personal-connectors/founder-computer/browser"
+                            target="_blank"
+                            className="inline-flex items-center gap-1.5 rounded-lg bg-sx-accent px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:opacity-90 transition"
                           >
-                            {isBrowserRunning ? "Re-Connect Browser" : "Open Founder Browser"}
-                          </button>
+                            <span>🖥️</span> Open Founder Browser
+                          </Link>
                           <button
                             type="button"
                             onClick={() => void loadRuntimeStatus()}
@@ -613,14 +614,13 @@ export function ConnectorDrawer({
                           Open target sign-in page in Founder Browser. Sign in manually — StratXcel never touches passwords.
                         </p>
                         <div className="mt-2.5 flex flex-wrap gap-2">
-                          <button
-                            type="button"
-                            onClick={() => void handleOpenAuthSession("https://accounts.google.com")}
-                            disabled={busy || !isBrowserRunning}
-                            className="rounded-lg border border-sx-border bg-sx-surface-2 px-2.5 py-1 text-xs text-sx-text hover:bg-sx-surface-3 disabled:opacity-40"
+                          <Link
+                            href="/admin/personal-connectors/founder-computer/browser"
+                            target="_blank"
+                            className="inline-flex items-center gap-1 rounded-lg bg-sx-accent px-2.5 py-1 text-xs font-semibold text-white shadow-sm hover:opacity-90"
                           >
-                            Open Google Login
-                          </button>
+                            Open Google Login (Live View)
+                          </Link>
                           <button
                             type="button"
                             onClick={() => void handleOpenAuthSession("https://gemini.google.com")}
@@ -638,6 +638,7 @@ export function ConnectorDrawer({
                             Open Claude
                           </button>
                         </div>
+
                       </div>
 
                       {/* Step 4: Verify Active Domains */}

@@ -130,6 +130,7 @@ import {
   executeComputerAction,
   getFounderComputerRuntimeStatus,
 } from "./founder-computer/runtime.ts";
+import { parseFounderComputerSession } from "./founder-computer/session.ts";
 
 // ─── Founder Computer capability handlers ────────────────────────────────────
 // Dispatches through the real browser runtime when active, or enqueues a job
@@ -158,6 +159,29 @@ for (const cap of [...BROWSER_CAPABILITIES, ...COMPUTER_CAPABILITIES, ...FILE_CA
       try {
         const rt = await getFounderComputerRuntimeStatus();
         if (rt.state === "RUNNING") {
+          // Check if browser is currently under Founder manual control
+          const { data: conn } = await ctx.supabase
+            .from("connector_connections")
+            .select("metadata, encrypted_secret_ref")
+            .eq("id", ctx.connectionId)
+            .maybeSingle();
+
+          let meta = (conn as any)?.metadata;
+          if (!meta && typeof (conn as any)?.encrypted_secret_ref === "string" && (conn as any).encrypted_secret_ref.startsWith("fc-meta:")) {
+            try { meta = JSON.parse((conn as any).encrypted_secret_ref.slice(8)); } catch {}
+          }
+
+          const sess = parseFounderComputerSession(meta);
+          if (sess?.controlLock === "FOUNDER_CONTROL") {
+            return {
+              success: false,
+              capability: cap,
+              error: "Founder is currently interacting with the Founder Browser. Hermes automation is temporarily paused.",
+              locked: true,
+              controlLock: "FOUNDER_CONTROL",
+            };
+          }
+
           if (cap.startsWith("browser.")) {
             return await executeBrowserAction(cap, payload);
           } else if (cap.startsWith("computer.")) {
