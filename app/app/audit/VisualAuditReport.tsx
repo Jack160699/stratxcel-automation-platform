@@ -8,6 +8,7 @@ import type { VerifiedReviewSummary } from "@/lib/audit/v1/reviews";
 import { PlatformIcon, type PlatformIconKey } from "@/components/audit/PlatformIcon";
 import { PresenceCards } from "@/components/audit/PresenceCards";
 import { ScoreFirstReport } from "@/components/audit/ScoreFirstReport";
+import { FreeCreativesPanel } from "@/components/audit/FreeCreativesPanel";
 import type { PresenceLink } from "@/lib/audit/v1/presence";
 import { deriveSignalsFromReport, recommendPlan, type RecommendedPlanTier } from "@/lib/audit/plan-recommendation";
 import { PRICING_TIERS } from "@/lib/commercial/catalog";
@@ -374,6 +375,10 @@ export function VisualAuditReport({
 
       {/* 1b. SCORE-FIRST SUMMARY -- the new default view (Section 1) */}
       <ScoreFirstReport overallScore={score} confidence={confidence} categoryScores={report.categoryScores} />
+
+      {/* 1c. THREE FREE BRANDED CREATIVES (Section 2) -- immediate tangible
+          value, available without connecting or paying anything. */}
+      <FreeCreativesPanel />
 
       {whatsAppState && (
         <p className="text-xs text-sx-text-subtle">{whatsAppSent ? `✓ ${whatsAppState}` : whatsAppState}</p>
