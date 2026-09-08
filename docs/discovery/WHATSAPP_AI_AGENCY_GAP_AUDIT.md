@@ -1,5 +1,56 @@
 # WhatsApp AI Agency — Gap Audit
 
+## Update 94 — Audit report redesigned score-first; a real signal-extraction bug fixed alongside it (Final Customer Experience Repair, Section 1)
+
+Investigated the existing 995-line
+[`VisualAuditReport.tsx`](../../app/app/audit/VisualAuditReport.tsx) and
+found real, already-populated data that was never rendered anywhere:
+[`packages/audit-engine/src/live.ts`](../../packages/audit-engine/src/live.ts)'s
+own structured-output schema already **requires** `categoryScores` (8 real
+categories: brandPositioning, websiteConversion, discoverabilitySeo,
+socialContent, leadGeneration, trustReputation, customerJourney,
+automationOperations — each with a real score, explanation, and
+evidenceSourceIds) and `findings` on every audit the engine produces.
+
+New [`ScoreFirstReport.tsx`](../../components/audit/ScoreFirstReport.tsx)
+renders these as the default view right after the header: overall score,
+then each category collapsed by default with a score badge; opening one
+shows 2-4 key-finding bullets — a pure sentence-boundary split of that
+category's own real explanation text, never a paraphrase — with "Read
+more" for the rest. A missing score renders an honest "not enough data
+yet," never a fabricated number. The existing long-form report (executive
+summary, GSC/GA4 tables, competitor analysis, technical SEO detail, top 5
+actions, recommended service) is fully preserved — nothing deleted — just
+moved behind a new "See full technical report" toggle, collapsed by
+default.
+
+**Real bug found and fixed alongside this**:
+[`deriveSignalsFromReport`](../../lib/audit/plan-recommendation.ts) (feeds
+the report's own "Recommended service" section) read
+`report.connectors`/`discoverability`/`socialPresence`/`competitors`/
+`contentOpportunities`/`presenceLinks`/`websiteHealth`/`reputation`/
+`keyFindings` — none of which exist on the real report shape. Every
+signal always evaluated to null/0/false (zero prior test coverage), so
+the recommendation always ran on neutral defaults regardless of real
+findings. Fixed to read the real fields (`categoryScores`,
+`connectorAvailability`, `whyTheyWin`, `contentCoverage`, `findings`,
+`websiteUrl`).
+
+**Also fixed**: a hardcoded, specific-sounding fake executive-summary
+paragraph that rendered whenever the real one was empty — replaced with
+an honest empty state.
+
+Verified: `tsc --noEmit` clean, lint clean, real `NODE_ENV=production`
+build exits 0. All 3 pre-existing regression-guard tests asserting on
+`VisualAuditReport.tsx`'s source pass unmodified. New
+[`score-first-report.test.ts`](../../lib/audit/__tests__/score-first-report.test.ts)
+and a `deriveSignalsFromReport` suite added to the existing
+`plan-recommendation.test.ts`. Registry:
+`capability:audit_report_score_first_summary` and
+`capability:audit_plan_recommendation_real_signals`, both
+`REAL_EXPOSED`. Migration:
+`supabase/migrations/20260909160000_capability_registry_audit_score_first_report.sql`.
+
 ## Update 93 — Scroll-to-top on navigation; duplicate Themes/Appearance toggle removed (Final Customer Experience Repair, Sections 6/8/24/27)
 
 **Section 6 (page navigation bug)**: the next page (a new onboarding step,
