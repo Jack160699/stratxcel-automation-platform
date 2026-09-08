@@ -51,6 +51,24 @@ function text(value: unknown, max = 500): string {
   return typeof value === "string" ? value.slice(0, max) : "";
 }
 
+/**
+ * Real, bounded fields a customer can directly edit through a StepBusiness
+ * form control -- the only keys userEditedFields is ever allowed to carry.
+ * Any other key (or a non-boolean value) is dropped rather than trusted,
+ * same defensive posture as every other field in sanitizeDraft.
+ */
+const KNOWN_USER_EDITABLE_BUSINESS_FIELDS = ["name", "industry", "location", "website", "googleMapsUrl", "whatsapp"] as const;
+
+function sanitizeUserEditedFields(value: unknown): Record<string, boolean> {
+  if (!value || typeof value !== "object") return {};
+  const source = value as Record<string, unknown>;
+  const result: Record<string, boolean> = {};
+  for (const key of KNOWN_USER_EDITABLE_BUSINESS_FIELDS) {
+    if (source[key] === true) result[key] = true;
+  }
+  return result;
+}
+
 function sanitizeDraft(value: unknown) {
   const source = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
   const account = source.account && typeof source.account === "object" ? (source.account as Record<string, unknown>) : {};
@@ -86,6 +104,13 @@ function sanitizeDraft(value: unknown) {
       website: text(business.website, 500),
       googleMapsUrl: text(business.googleMapsUrl, 500),
       location: text(business.location, 200),
+      // Persisted so a returning customer's own explicit field edits stay
+      // protected across a reload -- without this, sanitizeDraft silently
+      // dropped it on every autosave, so userEditedFields reset to {} the
+      // moment the page reloaded, reopening the exact live bug this field
+      // exists to close (a stale, non-user auto-fill masquerading as
+      // customer-confirmed on the next discovery call).
+      userEditedFields: sanitizeUserEditedFields(business.userEditedFields),
       socials: rawSocials
         .filter((s) => s && typeof s === "object")
         .map((s) => ({

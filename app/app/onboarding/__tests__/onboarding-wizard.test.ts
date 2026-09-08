@@ -240,8 +240,55 @@ function run() {
   assert.equal(/useState\(initial\.current\.draft\)/.test(wizard), false, "the unvalidated client draft must never be applied to state synchronously at mount, before the real user is known");
   assert.ok(/const \[draft, setDraft\] = useState<OnboardingDraft>\(EMPTY_DRAFT\)/.test(wizard), "initial render must start from an empty draft, not a possibly-different-user's sessionStorage content");
 
+  // --- 17. Industry can only be "locked" by a real, explicit customer choice --
+  //
+  // LIVE PRODUCTION BUG (Final Production Certification, MedRoute
+  // Consultancy): selecting a real Google business ("MedRoute Consultancy",
+  // a medical-education consultancy) still rendered "SaaS & Technology".
+  // Root cause traced end-to-end via a real production account
+  // (qa-bizdiscovery-...@stratxcel.in): draft.business.industry had
+  // already been auto-filled once (a website AI guess, or an earlier
+  // business selection in the same session) — WITHOUT the customer ever
+  // touching the dropdown — and both discoverFromLinks and
+  // selectGooglePlace then echoed that same non-user value back to the
+  // server as `industry` on the NEXT call. The server (correctly, per the
+  // prior fix) trusts any non-empty `industry` in the request as
+  // USER_PROVIDED, its highest-confidence tier — so the stale auto-fill
+  // unconditionally beat the real Google Places category every time.
+  // Fixed by only ever sending/locking `industry` when
+  // userEditedFields.industry is real (set exclusively by a direct
+  // StepBusiness dropdown edit via updateBusiness) — never merely because
+  // the field happens to be non-empty.
+  assert.ok(/userEditedFields/.test(wizard), "OnboardingWizard must track which business fields the customer actually edited themselves");
+  assert.ok(
+    /function updateBusiness[\s\S]{0,900}userEditedFields:\s*\{[\s\S]{0,150}Object\.fromEntries\(Object\.keys\(patch\)/.test(wizard),
+    "updateBusiness must mark every directly-patched field as user-edited -- the only real signal a StepBusiness form control was actually used"
+  );
+  const industryMergeLine = wizard.match(/industry:\s*d\.business\.userEditedFields\?\.industry[^\n]*/)?.[0] ?? "";
+  assert.ok(industryMergeLine, "applySynthesizedIntelligence must gate its industry merge on a real user-edit flag, not just 'already non-empty'");
+  assert.ok(/intel\.business\?\.industry/.test(industryMergeLine), "a fresh synthesis result must still be able to overwrite a non-user-confirmed industry value");
+  assert.equal(
+    /industry:\s*draft\.business\.industry\s*\|\|\s*undefined/.test(wizard),
+    false,
+    "must never blindly echo draft.business.industry back to the resolve endpoint -- that is exactly how a non-user auto-fill masquerades as USER_PROVIDED"
+  );
+  const guardedIndustrySends = wizard.match(/industry:\s*draft\.business\.userEditedFields\?\.industry\s*\?\s*draft\.business\.industry\s*:\s*undefined/g) ?? [];
+  assert.equal(
+    guardedIndustrySends.length,
+    2,
+    "both discoverFromLinks and selectGooglePlace must gate their resolve request's industry field on a real, explicit customer-set value"
+  );
+
+  // --- 18. userEditedFields survives an autosave round-trip -----------------
+  // Without this, the protection above resets to {} on every reload (the
+  // sanitizer silently dropped it), reopening the exact same live bug for
+  // any customer who saves progress and comes back.
+  assert.ok(/userEditedFields\??:\s*Record<string,\s*boolean>/.test(types), "OnboardingDraft's business type must declare userEditedFields");
+  assert.ok(/sanitizeUserEditedFields/.test(route), "the onboarding PATCH route must sanitize and persist userEditedFields, not silently drop it");
+  assert.ok(/userEditedFields:\s*sanitizeUserEditedFields\(business\.userEditedFields\)/.test(route), "sanitizeDraft's business object must actually include the sanitized userEditedFields");
+
   console.log(
-    "onboarding-wizard.test.ts: ALL PASS (reference 5-step sequence — Welcome/Business/Your Goals/Your Brand/Review & Launch, separate real Website + Google Maps fields with independent connection states, real never-fabricated Brand step, optional ConnectorSheet with real OAuth + WhatsApp OTP, zero-membership gating, server-resumable draft, real Brand Brain persistence, direct audit handoff)"
+    "onboarding-wizard.test.ts: ALL PASS (reference 5-step sequence — Welcome/Business/Your Goals/Your Brand/Review & Launch, separate real Website + Google Maps fields with independent connection states, real never-fabricated Brand step, optional ConnectorSheet with real OAuth + WhatsApp OTP, zero-membership gating, server-resumable draft, real Brand Brain persistence, direct audit handoff, industry only locks on a real explicit customer edit, persisted across autosave)"
   );
 }
 

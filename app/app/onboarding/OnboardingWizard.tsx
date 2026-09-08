@@ -369,7 +369,18 @@ export function OnboardingWizard({ isStaff = false }: { isStaff?: boolean }) {
       const nextBusiness = {
         ...d.business,
         name: d.business.name || intel.business?.name || d.business.name,
-        industry: d.business.industry || intel.business?.industry || d.business.industry,
+        // industry is deliberately NOT "never overwrite once set" like the
+        // other fields below -- LIVE BUG (MedRoute Consultancy, mission:
+        // Final Production Certification): d.business.industry can already
+        // be non-empty from an earlier, non-user auto-fill in this same
+        // session (a website AI guess, or a previously-selected different
+        // business) without ever being confirmed by the customer. Only a
+        // real, explicit dropdown edit (userEditedFields.industry, set by
+        // updateBusiness) may block a fresh synthesis result -- otherwise
+        // the newest Google-category-derived value always wins, matching
+        // this mission's required precedence (explicit user choice > Google
+        // Places category > website evidence > website AI inference).
+        industry: d.business.userEditedFields?.industry ? d.business.industry : (intel.business?.industry || d.business.industry),
         businessModel: intel.business?.businessModel || d.business.businessModel,
         location: d.business.location || intel.business?.location || d.business.location,
         whatsapp: d.business.whatsapp || intel.business?.whatsapp || d.business.whatsapp,
@@ -450,7 +461,15 @@ export function OnboardingWizard({ isStaff = false }: { isStaff?: boolean }) {
         body: JSON.stringify({
           websiteUrl: cleanWebsite || undefined,
           googleMapsUrl: cleanGbp || undefined,
-          industry: draft.business.industry || undefined,
+          // LIVE BUG root cause (MedRoute Consultancy): this used to send
+          // draft.business.industry unconditionally -- whatever the field
+          // currently held, even a prior non-user auto-fill (a website AI
+          // guess, or a different business's synthesis result). The server
+          // treats any non-empty `industry` here as USER_PROVIDED, its
+          // highest-confidence tier, unconditionally beating the real
+          // Google Places category. Only send it when the customer actually
+          // chose it themselves.
+          industry: draft.business.userEditedFields?.industry ? draft.business.industry : undefined,
           existingDraft: { businessName: draft.business.name, location: draft.business.location },
         }),
       });
@@ -500,7 +519,15 @@ export function OnboardingWizard({ isStaff = false }: { isStaff?: boolean }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           googlePlaceId: placeId,
-          industry: draft.business.industry || undefined,
+          // See discoverFromLinks above -- same live-bug fix: selecting a
+          // NEW Google business must let its own real category win. Echoing
+          // back a previous, non-user-confirmed industry (e.g. from an
+          // earlier selection in the same session, or a website AI guess)
+          // is exactly how "MedRoute Consultancy" mis-rendered as "SaaS &
+          // Technology" -- the client was blindly resending its own last
+          // auto-fill as if the customer had typed it, and the server
+          // trusted it as USER_PROVIDED, its maximum-confidence tier.
+          industry: draft.business.userEditedFields?.industry ? draft.business.industry : undefined,
           existingDraft: { businessName: draft.business.name, location: draft.business.location },
         }),
       });
@@ -550,7 +577,24 @@ export function OnboardingWizard({ isStaff = false }: { isStaff?: boolean }) {
   }
 
   function updateBusiness(patch: Partial<OnboardingDraft["business"]>) {
-    setDraft((d) => ({ ...d, business: { ...d.business, ...patch } }));
+    setDraft((d) => ({
+      ...d,
+      business: {
+        ...d.business,
+        ...patch,
+        // Real signal that a field's current value came directly from the
+        // customer (a Step form control's onChange), never from an
+        // automatic Google/website synthesis run -- the only thing that
+        // may legitimately mark a field like industry as settled/final.
+        // applySynthesizedIntelligence and its own outbound requests
+        // consult this before ever treating a field's existing value as
+        // something a fresh synthesis result must not overwrite.
+        userEditedFields: {
+          ...d.business.userEditedFields,
+          ...Object.fromEntries(Object.keys(patch).map((key) => [key, true])),
+        },
+      },
+    }));
   }
 
   function updateBrand(patch: Partial<OnboardingDraft["brand"]>) {
