@@ -19,6 +19,7 @@ import {
   Handshake,
   ListOrdered,
   Activity,
+  UserCheck,
 } from "lucide-react";
 
 /**
@@ -67,7 +68,13 @@ export const NAV_ICONS: Record<string, ReactNode> = {
   "operating-brain": <SparkIcon />,
   hermes: <PulseIcon />,
   capabilities: <DocIcon />,
+  connectors: <PlugIcon />,
+  "personal-connectors": <UserCheckIcon />,
 };
+
+export function UserCheckIcon() {
+  return <UserCheck size={ICON_SIZE} strokeWidth={ICON_STROKE} />;
+}
 
 export function GridIcon() {
   return <LayoutGrid size={ICON_SIZE} strokeWidth={ICON_STROKE} />;

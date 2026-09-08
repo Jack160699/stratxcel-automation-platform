@@ -50,6 +50,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ key
     department?: string;
     agentDefinitionId?: string;
     autonomy?: string;
+    budgetLimitUsd?: number | null;
+    allowedMethods?: ("native" | "mcp" | "api" | "cli" | "browser")[];
   };
   if (!body.capabilityKey) return Response.json({ error: "capabilityKey is required" }, { status: 400 });
   if (!body.autonomy || !VALID_AUTONOMY.includes(body.autonomy as ConnectorAutonomy)) {
@@ -80,6 +82,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ key
     department: body.department ?? null,
     agentDefinitionId: body.agentDefinitionId ?? null,
     autonomy: body.autonomy as ConnectorAutonomy,
+    budgetLimitUsd: body.budgetLimitUsd ?? null,
+    allowedMethods: body.allowedMethods ?? null,
   });
 
   return Response.json({ ok: true, assignment });

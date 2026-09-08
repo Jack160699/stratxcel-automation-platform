@@ -85,8 +85,9 @@ export const ADMIN_NAV_GROUPS_DATA: NavGroupData[] = [
   {
     label: "Connections",
     items: [
-      { key: "integrations", label: "Integrations", href: "/admin/integrations", release: "v1", mode: "technical" },
-      { key: "connectors", label: "Connectors", href: "/admin/connectors", release: "v1", mode: "technical" },
+      { key: "personal-connectors", label: "Personal Connectors", href: "/admin/personal-connectors", release: "v1", mode: "technical" },
+      { key: "connectors", label: "Platform Connectors", href: "/admin/connectors", release: "v1", mode: "technical" },
+      { key: "integrations", label: "Client Integrations", href: "/admin/integrations", release: "v1", mode: "technical" },
     ],
   },
   {

@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
-import { useCurrentTenant } from "../CurrentTenantContext";
+import { useEffect, useState, useCallback, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import { Card, CardHeading } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input, Select } from "@/components/ui/Input";
@@ -14,13 +14,14 @@ interface ConnectorDefinition {
   label: string;
   category: string;
   authMethod: string;
-  scopeLevel: "platform" | "company" | "both";
+  scopeLevel: "platform" | "personal" | "company" | "both";
   declaredCapabilities: string[];
   description: string;
   realStatusSource: string;
   requiredEnvVars: string[];
   supportedAccessMethods: string[];
   preferredAccessMethod: string;
+  isPersonal?: boolean;
 }
 
 interface ConnectorHealth {
@@ -31,7 +32,7 @@ interface ConnectorHealth {
   details?: Record<string, unknown>;
 }
 
-interface ConnectorRow {
+interface PersonalConnectorRow {
   definition: ConnectorDefinition;
   connection: {
     id: string;
@@ -48,6 +49,17 @@ interface ConnectorRow {
   health: ConnectorHealth;
 }
 
+interface PersonalConnectorsSummary {
+  totalPersonalConnectors: number;
+  connectedCount: number;
+  actionRequiredCount: number;
+  healthyCount: number;
+  degradedCount: number;
+  founderEmail: string | null;
+  lastGlobalVerifiedAt: string | null;
+  verifiedCapabilitiesCount: number;
+}
+
 interface Assignment {
   id: string;
   capability_key: string;
@@ -56,7 +68,7 @@ interface Assignment {
   autonomy: string;
   budget_limit_usd?: number | null;
   current_usage_usd?: number;
-  allowed_methods?: string[] | null;
+  tenant_id: string | null;
 }
 
 interface AuditLog {
@@ -74,44 +86,72 @@ interface AuditLog {
 
 const STATUS_CONFIG: Record<string, { label: string; state: ChipState }> = {
   connected: { label: "CONNECTED", state: "accent" },
-  healthy: { label: "CONNECTED", state: "success" },
+  healthy: { label: "CONNECTED / VERIFIED", state: "success" },
   auth_required: { label: "AUTH REQUIRED", state: "warning" },
   requires_reauth: { label: "AUTH REQUIRED", state: "warning" },
-  auth_expired: { label: "AUTH REQUIRED", state: "warning" },
+  auth_expired: { label: "AUTH EXPIRED", state: "warning" },
   disconnected: { label: "DISCONNECTED", state: "neutral" },
   error: { label: "ERROR", state: "danger" },
   disabled: { label: "DISABLED", state: "neutral" },
   not_configured: { label: "NOT CONFIGURED", state: "dashed" },
   pending: { label: "NOT CONFIGURED", state: "dashed" },
   degraded: { label: "DEGRADED", state: "warning" },
-  rate_limited: { label: "DEGRADED", state: "warning" },
-  quota_exhausted: { label: "DEGRADED", state: "warning" },
+  rate_limited: { label: "RATE LIMITED", state: "warning" },
+  quota_exhausted: { label: "QUOTA EXHAUSTED", state: "warning" },
 };
 
 const AUTONOMY_OPTIONS = ["read", "prepare", "execute", "approval_required", "disabled"] as const;
 
-const CATEGORY_TABS = [
-  { id: "all", label: "All Connectors" },
-  { id: "infrastructure", label: "Infrastructure" },
-  { id: "ai", label: "AI Resource Pools" },
-  { id: "messaging", label: "Messaging" },
-  { id: "data", label: "Data & Storage" },
-  { id: "finance", label: "Finance & Payments" },
-  { id: "social", label: "Social" },
-  { id: "automation", label: "Automation" },
+const PERSONAL_CATEGORY_TABS = [
+  { id: "all", label: "All Personal" },
+  { id: "ai", label: "AI & Reasoning" },
+  { id: "developer", label: "Developer & Infra" },
+  { id: "communication", label: "Communication" },
+  { id: "research", label: "Research & Sales" },
+  { id: "storage", label: "Storage" },
+  { id: "payments", label: "Payments" },
+  { id: "browser", label: "Browser & Computer" },
 ] as const;
 
-function ConnectorCard({
+// Capability check item for Google AI Pro matrix
+const GOOGLE_AI_PRO_MATRIX = [
+  { key: "gemini", label: "Gemini Reasoning", capability: "google_ai_pro.reasoning" },
+  { key: "image", label: "Image Generation", capability: "image.generate" },
+  { key: "nano_banana", label: "Nano Banana Pro", capability: "google_ai_pro.image_generation" },
+  { key: "video", label: "Video Gen / Veo", capability: "video.generate" },
+  { key: "antigravity", label: "Antigravity Code", capability: "antigravity.code" },
+  { key: "drive", label: "Google Drive", capability: "google_drive.upload" },
+  { key: "cloud", label: "Google Cloud", capability: "google_cloud.projects" },
+  { key: "jules", label: "Jules Automation", capability: "jules.automate" },
+] as const;
+
+function PersonalConnectorCard({
   row,
-  tenantId,
   onChanged,
 }: {
-  row: ConnectorRow;
-  tenantId: string | null;
+  row: PersonalConnectorRow;
   onChanged: () => void;
 }) {
   const { definition, connection, health } = row;
-  const statusInfo = STATUS_CONFIG[health.status] ?? { label: health.status.toUpperCase(), state: "neutral" as ChipState };
+  const isGoogleAiPro = definition.key === "google_ai_pro";
+
+  const statusInfo = STATUS_CONFIG[health.status] ?? {
+    label: health.status.toUpperCase(),
+    state: "neutral" as ChipState,
+  };
+
+  const isConnected = ["connected", "healthy"].includes(health.status);
+  const isAuthRequired = ["auth_required", "auth_expired", "requires_reauth"].includes(health.status);
+  const isNotConfigured = ["not_configured", "pending"].includes(health.status);
+
+  // Profile and entitlement details
+  const details = health.details ?? (connection?.metadata as Record<string, unknown> | undefined);
+  const entitlementStatus = (details?.entitlement_status as string) ?? "unverified";
+  const accountEmail =
+    (details?.google_account_email as string) ||
+    (details?.accountEmail as string) ||
+    (isGoogleAiPro && isConnected ? "founder@google.account" : null);
+  const accountName = (details?.google_account_name as string) || null;
 
   const [expanded, setExpanded] = useState(false);
   const [showAudit, setShowAudit] = useState(false);
@@ -127,6 +167,7 @@ function ConnectorCard({
   const [newCapability, setNewCapability] = useState(definition.declaredCapabilities[0] ?? "");
   const [newDepartment, setNewDepartment] = useState("");
   const [newAgentId, setNewAgentId] = useState("");
+  const [newTenantScope, setNewTenantScope] = useState("");
   const [newAutonomy, setNewAutonomy] = useState<(typeof AUTONOMY_OPTIONS)[number]>("execute");
   const [newBudget, setNewBudget] = useState("");
 
@@ -134,25 +175,20 @@ function ConnectorCard({
   const [budgetLimit, setBudgetLimit] = useState(connection?.budgetLimitUsd?.toString() ?? "");
   const [rateLimit, setRateLimit] = useState(connection?.rateLimitPerMinute?.toString() ?? "");
 
-  const isReadOnlyAdapter =
-    ["whatsapp", "meta", "google_workspace"].includes(definition.key) ||
-    (definition.key === "vercel" && Boolean(tenantId));
   const isMcpManaged = definition.authMethod === "mcp_managed";
-  const canStoreSecret = !isReadOnlyAdapter && !isMcpManaged;
-
-  const scopeQuery = definition.scopeLevel === "platform" ? "" : tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : "";
+  const canStoreSecret = !isMcpManaged;
 
   const loadAssignments = useCallback(async () => {
-    const res = await platformFetch(`/api/platform/admin/connectors/${definition.key}/assignments${scopeQuery}`);
+    const res = await platformFetch(`/api/platform/admin/connectors/${definition.key}/assignments`);
     const body = await res.json().catch(() => ({ assignments: [] }));
     setAssignments(body.assignments ?? []);
-  }, [definition.key, scopeQuery]);
+  }, [definition.key]);
 
   const loadAuditLogs = useCallback(async () => {
-    const res = await platformFetch(`/api/platform/admin/connectors/${definition.key}/audit${scopeQuery}`);
+    const res = await platformFetch(`/api/platform/admin/connectors/${definition.key}/audit`);
     const body = await res.json().catch(() => ({ auditLogs: [] }));
     setAuditLogs(body.auditLogs ?? []);
-  }, [definition.key, scopeQuery]);
+  }, [definition.key]);
 
   useEffect(() => {
     if (expanded && assignments === null) void loadAssignments();
@@ -162,7 +198,7 @@ function ConnectorCard({
     if (showAudit && auditLogs === null) void loadAuditLogs();
   }, [showAudit, auditLogs, loadAuditLogs]);
 
-  async function handleConnect() {
+  async function handleConnectSecret() {
     setBusy(true);
     setError(null);
     setActionSuccess(null);
@@ -171,7 +207,6 @@ function ConnectorCard({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          tenantId: tenantId ?? undefined,
           rawSecret: secret || undefined,
           budgetLimitUsd: budgetLimit ? parseFloat(budgetLimit) : undefined,
           rateLimitPerMinute: rateLimit ? parseInt(rateLimit, 10) : undefined,
@@ -183,7 +218,7 @@ function ConnectorCard({
         return;
       }
       setSecret("");
-      setActionSuccess("Connected successfully & capabilities discovered");
+      setActionSuccess("Credentials securely vaulted & capabilities discovered");
       onChanged();
     } finally {
       setBusy(false);
@@ -195,7 +230,7 @@ function ConnectorCard({
     setError(null);
     setActionSuccess(null);
     try {
-      const res = await platformFetch(`/api/platform/admin/connectors/${definition.key}/verify${scopeQuery}`, {
+      const res = await platformFetch(`/api/platform/admin/connectors/${definition.key}/verify`, {
         method: "POST",
       });
       const body = await res.json();
@@ -211,12 +246,19 @@ function ConnectorCard({
   }
 
   async function handleDisconnect() {
-    if (!confirm(`Are you sure you want to disconnect ${definition.label}? Vaulted credentials will be revoked immediately.`)) return;
+    if (
+      !confirm(
+        `Are you sure you want to disconnect ${definition.label}? Vaulted credentials and session tokens will be permanently revoked.`
+      )
+    )
+      return;
     setBusy(true);
     setError(null);
     setActionSuccess(null);
     try {
-      const res = await platformFetch(`/api/platform/admin/connectors/${definition.key}${scopeQuery}`, { method: "DELETE" });
+      const res = await platformFetch(`/api/platform/admin/connectors/${definition.key}`, {
+        method: "DELETE",
+      });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         setError(body.error ?? `Disconnect failed (HTTP ${res.status})`);
@@ -234,7 +276,7 @@ function ConnectorCard({
     setError(null);
     const currentlyDisabled = health.status === "disabled";
     try {
-      const res = await platformFetch(`/api/platform/admin/connectors/${definition.key}${scopeQuery}`, {
+      const res = await platformFetch(`/api/platform/admin/connectors/${definition.key}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ enabled: currentlyDisabled }),
@@ -255,7 +297,7 @@ function ConnectorCard({
     setBusy(true);
     setError(null);
     try {
-      const res = await platformFetch(`/api/platform/admin/connectors/${definition.key}${scopeQuery}`, {
+      const res = await platformFetch(`/api/platform/admin/connectors/${definition.key}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -265,10 +307,10 @@ function ConnectorCard({
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
-        setError(body.error ?? "Failed to save settings");
+        setError(body.error ?? "Failed to save limits");
         return;
       }
-      setActionSuccess("Budget and rate limits updated");
+      setActionSuccess("Personal resource limits updated");
       setShowSettings(false);
       onChanged();
     } finally {
@@ -285,7 +327,7 @@ function ConnectorCard({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          tenantId: tenantId ?? undefined,
+          tenantId: newTenantScope || undefined,
           capabilityKey: newCapability,
           department: newDepartment || undefined,
           agentDefinitionId: newAgentId || undefined,
@@ -300,6 +342,7 @@ function ConnectorCard({
       }
       setNewDepartment("");
       setNewAgentId("");
+      setNewTenantScope("");
       setNewBudget("");
       await loadAssignments();
       setActionSuccess(`Assigned ${newCapability} (${newAutonomy.toUpperCase()})`);
@@ -325,42 +368,36 @@ function ConnectorCard({
   async function handleDeleteAssignment(assignmentId: string) {
     setBusy(true);
     try {
-      await platformFetch(`/api/platform/admin/connectors/assignments/${assignmentId}`, { method: "DELETE" });
+      await platformFetch(`/api/platform/admin/connectors/assignments/${assignmentId}`, {
+        method: "DELETE",
+      });
       await loadAssignments();
     } finally {
       setBusy(false);
     }
   }
 
-  const isConnected = ["connected", "healthy"].includes(health.status);
-  const isAuthRequired = ["auth_required", "auth_expired", "requires_reauth"].includes(health.status);
-  const isNotConfigured = ["not_configured", "pending"].includes(health.status);
-
-  const isGoogleAiPro = definition.key === "google_ai_pro";
-  const proDetails = health.details ?? (connection?.metadata as Record<string, unknown> | undefined);
-  const entitlementStatus = (proDetails?.entitlement_status as string) ?? "unverified";
-  const accountEmail = (proDetails?.google_account_email as string) || (isGoogleAiPro && isConnected ? "founder@google.account" : null);
-  const antigravityReady = Boolean(proDetails?.antigravity_ready);
-  const nanoBananaReady = Boolean(proDetails?.nano_banana_image_ready);
-  const veoReady = Boolean(proDetails?.veo_video_ready);
-  const driveReady = Boolean(proDetails?.drive_ready);
-  const cloudReady = Boolean(proDetails?.cloud_ready);
-
   return (
-    <Card className="flex flex-col gap-3 transition-all hover:border-sx-border-strong">
+    <Card
+      className={`flex flex-col gap-3 transition-all hover:border-sx-border-strong ${
+        isGoogleAiPro ? "border-sx-accent/40 bg-sx-surface-1 shadow-sx-sm ring-1 ring-sx-accent/20" : ""
+      }`}
+    >
       {/* Card Header */}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex flex-col">
           <div className="flex items-center gap-2">
             <h3 className="font-sx-sans text-base font-semibold text-sx-text">{definition.label}</h3>
+            {isGoogleAiPro && (
+              <span className="rounded bg-sx-accent/15 px-2 py-0.5 font-sx-mono text-[10px] font-semibold text-sx-accent uppercase tracking-wider border border-sx-accent/30">
+                Founder Premier AI
+              </span>
+            )}
             <span className="rounded bg-sx-surface-2 px-1.5 py-0.5 font-sx-mono text-[10px] text-sx-text-subtle uppercase">
               {definition.category}
             </span>
             <span className="rounded bg-sx-surface-2 px-1.5 py-0.5 font-sx-mono text-[10px] text-sx-text-subtle uppercase">
-              {definition.scopeLevel}
-            </span>
-            <span className="rounded bg-sx-surface-2 px-1.5 py-0.5 font-sx-mono text-[10px] text-sx-text-subtle uppercase">
-              {definition.authMethod}
+              Founder Personal
             </span>
           </div>
           <p className="mt-1 max-w-2xl text-xs text-sx-text-muted">{definition.description}</p>
@@ -370,137 +407,132 @@ function ConnectorCard({
         </div>
       </div>
 
-      {/* Next Required Manual Action Callout */}
-      {isAuthRequired && (
-        <div className="rounded-sx-md border border-[rgb(240_180_41_/_0.3)] bg-[rgb(240_180_41_/_0.06)] p-2.5 text-xs text-[#F3C55C]">
-          <span className="font-semibold uppercase">Action Required: </span>
-          Authentication credentials or tokens expired or required. Provide credentials below to authenticate.
-        </div>
-      )}
-
-      {isNotConfigured && canStoreSecret && (
-        <div className="rounded-sx-md border border-sx-border bg-sx-surface-1 p-2.5 text-xs text-sx-text-subtle">
-          <span className="font-semibold text-sx-text uppercase">Setup Required: </span>
-          Enter your API key or credential below to activate this connector for Hermes and Admin.
-        </div>
-      )}
-
-      {isConnected && (
-        <div className="flex flex-wrap items-center gap-3 text-xs text-sx-text-subtle">
-          <span className="flex items-center gap-1 text-[#5BDCA7]">
-            ✓ Credentials verified
-          </span>
-          {connection?.lastVerifiedAt && (
-            <span>Verified: {new Date(connection.lastVerifiedAt).toLocaleString()}</span>
-          )}
-          {connection?.budgetLimitUsd !== null && connection?.budgetLimitUsd !== undefined && (
-            <span>
-              Budget: ${(connection.currentUsageUsd ?? 0).toFixed(2)} / ${connection.budgetLimitUsd.toFixed(2)}
-            </span>
-          )}
-        </div>
-      )}
-
-      {/* Google AI Pro Founder Resource Panel */}
+      {/* Google AI Pro Hero Section */}
       {isGoogleAiPro && (
-        <div className="rounded-sx-md border border-sx-border bg-sx-surface-2 p-3 text-xs flex flex-col gap-2.5">
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-sx-border pb-2">
-            <div className="flex items-center gap-2">
-              <span className="font-sx-mono text-[11px] font-semibold text-sx-text uppercase tracking-wider">
-                Founder Google AI Pro Account
-              </span>
-              {accountEmail && (
-                <span className="font-sx-mono text-[11px] text-sx-text-muted">
-                  ({accountEmail})
+        <div className="rounded-sx-md border border-sx-border bg-sx-surface-2 p-3.5 text-xs flex flex-col gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-sx-border pb-2.5">
+            <div className="flex items-center gap-2.5">
+              <div className="flex h-7 w-7 items-center justify-center rounded-full bg-sx-accent/15 font-sx-mono text-xs font-bold text-sx-accent">
+                G
+              </div>
+              <div className="flex flex-col">
+                <span className="font-sx-sans font-semibold text-sx-text">
+                  {accountName || "Founder Google Account"}
                 </span>
-              )}
+                <span className="font-sx-mono text-[11px] text-sx-text-subtle">
+                  {accountEmail || "No Google account linked yet"}
+                </span>
+              </div>
             </div>
-            <div className="flex items-center gap-1.5">
-              <span className="text-[10px] uppercase text-sx-text-subtle font-sx-mono">Entitlement:</span>
+
+            <div className="flex items-center gap-2">
+              <span className="font-sx-mono text-[10px] uppercase text-sx-text-subtle">Entitlement:</span>
               {entitlementStatus === "active_pro" ? (
-                <span className="rounded bg-[#5BDCA7]/10 px-2 py-0.5 font-sx-mono text-[10px] font-semibold text-[#5BDCA7] border border-[#5BDCA7]/30">
+                <span className="rounded bg-[#5BDCA7]/10 px-2.5 py-0.5 font-sx-mono text-[11px] font-semibold text-[#5BDCA7] border border-[#5BDCA7]/30">
                   ACTIVE AI PRO SUBSCRIPTION
                 </span>
               ) : entitlementStatus === "not_entitled" ? (
-                <span className="rounded bg-[#FF8A90]/10 px-2 py-0.5 font-sx-mono text-[10px] font-semibold text-[#FF8A90] border border-[#FF8A90]/30">
+                <span className="rounded bg-[#FF8A90]/10 px-2.5 py-0.5 font-sx-mono text-[11px] font-semibold text-[#FF8A90] border border-[#FF8A90]/30">
                   STANDARD (NOT ENTITLED)
                 </span>
               ) : (
-                <span className="rounded bg-[#F3C55C]/10 px-2 py-0.5 font-sx-mono text-[10px] font-semibold text-[#F3C55C] border border-[#F3C55C]/30">
+                <span className="rounded bg-[#F3C55C]/10 px-2.5 py-0.5 font-sx-mono text-[11px] font-semibold text-[#F3C55C] border border-[#F3C55C]/30">
                   PRO UNVERIFIED
                 </span>
               )}
             </div>
           </div>
 
-          {/* Subscribed Capabilities Matrix */}
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 pt-1 text-[11px]">
-            <div className="flex flex-col gap-0.5 rounded bg-sx-surface-1 p-2 border border-sx-border">
-              <span className="text-[10px] text-sx-text-subtle font-sx-mono uppercase">Antigravity Code</span>
-              <span className="font-medium text-sx-text flex items-center gap-1">
-                <span className={`h-1.5 w-1.5 rounded-full ${antigravityReady ? "bg-[#5BDCA7]" : "bg-sx-text-subtle"}`} />
-                {antigravityReady ? "Ready (Local/CLI)" : "Available"}
-              </span>
-            </div>
-            <div className="flex flex-col gap-0.5 rounded bg-sx-surface-1 p-2 border border-sx-border">
-              <span className="text-[10px] text-sx-text-subtle font-sx-mono uppercase">Nano Banana Image</span>
-              <span className="font-medium text-sx-text flex items-center gap-1">
-                <span className={`h-1.5 w-1.5 rounded-full ${nanoBananaReady ? "bg-[#5BDCA7]" : "bg-sx-text-subtle"}`} />
-                {nanoBananaReady ? "Entitled Pro" : "Available"}
-              </span>
-            </div>
-            <div className="flex flex-col gap-0.5 rounded bg-sx-surface-1 p-2 border border-sx-border">
-              <span className="text-[10px] text-sx-text-subtle font-sx-mono uppercase">Veo Video Gen</span>
-              <span className="font-medium text-sx-text flex items-center gap-1">
-                <span className={`h-1.5 w-1.5 rounded-full ${veoReady ? "bg-[#5BDCA7]" : "bg-sx-text-subtle"}`} />
-                {veoReady ? "Entitled Pro" : "Available"}
-              </span>
-            </div>
-            <div className="flex flex-col gap-0.5 rounded bg-sx-surface-1 p-2 border border-sx-border">
-              <span className="text-[10px] text-sx-text-subtle font-sx-mono uppercase">Personal Drive</span>
-              <span className="font-medium text-sx-text flex items-center gap-1">
-                <span className={`h-1.5 w-1.5 rounded-full ${driveReady ? "bg-[#5BDCA7]" : "bg-sx-text-subtle"}`} />
-                {driveReady ? "Connected (Isolated)" : "Isolated"}
-              </span>
-            </div>
-            <div className="flex flex-col gap-0.5 rounded bg-sx-surface-1 p-2 border border-sx-border">
-              <span className="text-[10px] text-sx-text-subtle font-sx-mono uppercase">Google Cloud</span>
-              <span className="font-medium text-sx-text flex items-center gap-1">
-                <span className={`h-1.5 w-1.5 rounded-full ${cloudReady ? "bg-[#5BDCA7]" : "bg-sx-text-subtle"}`} />
-                {cloudReady ? "Connected (Isolated)" : "Isolated"}
-              </span>
+          {/* Capability Matrix — ONLY show verified/discovered items as active */}
+          <div className="flex flex-col gap-1.5">
+            <span className="font-sx-mono text-[10px] uppercase tracking-wider text-sx-text-subtle">
+              Verified Entitled Capabilities Matrix
+            </span>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {GOOGLE_AI_PRO_MATRIX.map((item) => {
+                const isVerified = health.discoveredCapabilities.includes(item.capability);
+                return (
+                  <div
+                    key={item.key}
+                    className={`flex items-center justify-between rounded border p-2 text-xs transition-all ${
+                      isVerified
+                        ? "border-[#5BDCA7]/30 bg-sx-surface-1"
+                        : "border-sx-border bg-sx-surface-1/40 opacity-70"
+                    }`}
+                  >
+                    <span className="font-medium text-sx-text">{item.label}</span>
+                    <span
+                      className={`h-2 w-2 rounded-full ${
+                        isVerified ? "bg-[#5BDCA7]" : "bg-sx-border-strong"
+                      }`}
+                    />
+                  </div>
+                );
+              })}
             </div>
           </div>
 
-          <p className="text-[10px] text-sx-text-subtle font-sx-mono">
-            🔒 STRICT FOUNDER ISOLATION: Client companies and automated agents have zero access to Founder Drive or Cloud resources unless explicitly assigned in permissions below.
-          </p>
+          <div className="rounded border border-sx-border bg-sx-surface-1 p-2 text-[11px] text-sx-text-subtle">
+            🔒 <strong className="text-sx-text">Strict Founder Isolation:</strong> This Google AI Pro subscription and
+            its storage/compute resources belong to the Founder. Client companies have zero access to personal Drive,
+            Cloud, or Antigravity sessions unless an explicit capability assignment is configured below.
+          </div>
         </div>
       )}
 
-      {/* Discovered capabilities list */}
-      <div className="flex flex-col gap-1.5">
-        <span className="font-sx-mono text-[10px] uppercase tracking-wider text-sx-text-subtle">
-          Available Capabilities &amp; Access Methods
+      {/* Status & Verification Metrics */}
+      <div className="flex flex-wrap items-center gap-3 text-xs text-sx-text-subtle">
+        {isConnected && (
+          <span className="flex items-center gap-1 text-[#5BDCA7] font-medium">
+            ✓ Connected &amp; Verified
+          </span>
+        )}
+        {connection?.lastVerifiedAt && (
+          <span>Verified: {new Date(connection.lastVerifiedAt).toLocaleString()}</span>
+        )}
+        {connection?.budgetLimitUsd !== null && connection?.budgetLimitUsd !== undefined && (
+          <span>
+            Monthly Cap: ${(connection.currentUsageUsd ?? 0).toFixed(2)} / ${connection.budgetLimitUsd.toFixed(2)}
+          </span>
+        )}
+        <span className="font-sx-mono text-[10px] text-sx-text-subtle uppercase">
+          Access Methods: {definition.supportedAccessMethods.join(" > ")}
         </span>
-        <div className="flex flex-wrap items-center gap-1.5">
-          {health.discoveredCapabilities.length > 0 ? (
-            health.discoveredCapabilities.map((c) => (
-              <span
-                key={c}
-                className="inline-flex items-center gap-1 rounded-full border border-sx-border bg-sx-surface-2 px-2.5 py-0.5 text-[11px] text-sx-text"
-              >
-                <span className="h-1.5 w-1.5 rounded-full bg-[#5BDCA7]" />
-                {c}
-              </span>
-            ))
-          ) : (
-            <span className="text-xs text-sx-text-subtle">
-              No live capabilities discovered yet (connect or trigger verification probe).
-            </span>
-          )}
-        </div>
       </div>
+
+      {/* Discovered capabilities list for non-Google-AI-Pro cards */}
+      {!isGoogleAiPro && (
+        <div className="flex flex-col gap-1.5">
+          <span className="font-sx-mono text-[10px] uppercase tracking-wider text-sx-text-subtle">
+            Available Verified Capabilities
+          </span>
+          <div className="flex flex-wrap items-center gap-1.5">
+            {health.discoveredCapabilities.length > 0 ? (
+              health.discoveredCapabilities.map((c) => (
+                <span
+                  key={c}
+                  className="inline-flex items-center gap-1 rounded-full border border-sx-border bg-sx-surface-2 px-2.5 py-0.5 text-[11px] text-sx-text"
+                >
+                  <span className="h-1.5 w-1.5 rounded-full bg-[#5BDCA7]" />
+                  {c}
+                </span>
+              ))
+            ) : (
+              <span className="text-xs text-sx-text-subtle">
+                No capabilities discovered yet (authenticate or run health check).
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Action required warnings */}
+      {isAuthRequired && (
+        <div className="rounded-sx-md border border-[rgb(240_180_41_/_0.3)] bg-[rgb(240_180_41_/_0.06)] p-2.5 text-xs text-[#F3C55C]">
+          <span className="font-semibold uppercase">Action Required: </span>
+          Authentication credentials or tokens are required or expired. Authorize this personal connection below.
+        </div>
+      )}
 
       {/* Messages */}
       {health.lastError && (
@@ -513,6 +545,17 @@ function ConnectorCard({
 
       {/* Action Row */}
       <div className="mt-1 flex flex-wrap items-center gap-2 border-t border-sx-border pt-3">
+        {/* Google AI Pro OAuth button */}
+        {isGoogleAiPro && (
+          <a
+            href="/api/admin/personal-connectors/google-ai-pro/connect"
+            className="inline-flex items-center gap-1.5 rounded bg-sx-accent px-3 py-1.5 font-sx-sans text-xs font-medium text-white transition-all hover:bg-sx-accent/90"
+          >
+            {isConnected ? "RECONNECT GOOGLE AI PRO" : "CONNECT GOOGLE AI PRO"}
+          </a>
+        )}
+
+        {/* Credential secret input (API Key / Token / Refresh Token) */}
         {canStoreSecret && (
           <div className="flex items-center gap-2">
             <Input
@@ -521,35 +564,17 @@ function ConnectorCard({
               onChange={(e) => setSecret(e.target.value)}
               placeholder={
                 isGoogleAiPro
-                  ? "Enter Google OAuth Refresh Token / Token JSON"
+                  ? "Or enter OAuth Token / JSON directly"
                   : definition.authMethod === "api_key"
-                  ? "Enter API Key / Token"
-                  : "Enter Credential Secret"
+                  ? "Enter Personal API Key / Token"
+                  : "Enter Personal Credential"
               }
-              className={isGoogleAiPro ? "!h-8 w-72 text-xs" : "!h-8 w-64 text-xs"}
+              className="!h-8 w-64 text-xs"
             />
-            <Button variant="primary" size="sm" onClick={handleConnect} disabled={busy || !secret}>
-              {isGoogleAiPro
-                ? isConnected
-                  ? "RECONNECT GOOGLE AI PRO"
-                  : "CONNECT GOOGLE AI PRO"
-                : isConnected
-                ? "RECONNECT"
-                : "CONNECT"}
+            <Button variant="primary" size="sm" onClick={handleConnectSecret} disabled={busy || !secret}>
+              {isConnected ? "RECONNECT" : "CONNECT"}
             </Button>
           </div>
-        )}
-
-        {isReadOnlyAdapter && (
-          <span className="text-xs text-sx-text-subtle">
-            Connected via dedicated flow ({definition.realStatusSource.split(",")[0]}). This plane assigns and governs execution.
-          </span>
-        )}
-
-        {isMcpManaged && (
-          <span className="text-xs text-sx-text-subtle">
-            Managed via local engineering environment &amp; MCP tooling.
-          </span>
         )}
 
         <Button variant="secondary" size="sm" onClick={handleVerifyLive} disabled={busy}>
@@ -573,7 +598,7 @@ function ConnectorCard({
         </Button>
 
         <Button variant="secondary" size="sm" onClick={() => setExpanded((v) => !v)}>
-          {expanded ? "HIDE ASSIGNMENTS" : "PERMISSIONS & SCOPE"}
+          {expanded ? "HIDE PERMISSIONS" : "PERMISSIONS & SCOPE"}
         </Button>
 
         <Button variant="secondary" size="sm" onClick={() => setShowAudit((v) => !v)}>
@@ -581,17 +606,17 @@ function ConnectorCard({
         </Button>
       </div>
 
-      {/* Budget & Resource Limit Settings Panel */}
+      {/* Budget & Limits Form */}
       {showSettings && (
         <form onSubmit={handleSaveSettings} className="mt-2 rounded-sx-md border border-sx-border bg-sx-surface-1 p-3">
-          <p className="font-sx-sans text-xs font-semibold text-sx-text">Resource &amp; Budget Controls</p>
+          <p className="font-sx-sans text-xs font-semibold text-sx-text">Personal Resource &amp; Budget Controls</p>
           <div className="mt-2 flex flex-wrap items-center gap-3">
             <div>
               <label className="block text-[10px] text-sx-text-subtle uppercase">Monthly USD Budget Limit</label>
               <Input
                 type="number"
                 step="0.01"
-                placeholder="e.g. 50.00 (optional)"
+                placeholder="e.g. 100.00 (optional)"
                 value={budgetLimit}
                 onChange={(e) => setBudgetLimit(e.target.value)}
                 className="!h-8 w-44 text-xs"
@@ -616,20 +641,20 @@ function ConnectorCard({
         </form>
       )}
 
-      {/* Capability Assignments & Autonomy Panel */}
+      {/* Permissions & Scoping Panel */}
       {expanded && (
         <div className="mt-2 rounded-sx-md border border-sx-border bg-sx-surface-1 p-3">
           <p className="font-sx-sans text-xs font-semibold text-sx-text">
-            Capability Scoping &amp; Autonomy Governance
+            Company &amp; Agent Autonomy Scoping
           </p>
           <p className="mt-0.5 text-xs text-sx-text-subtle">
-            Hermes missions and subagents can only invoke capabilities that have an explicit assignment here with autonomy.
+            Hermes can only invoke this personal connector when an explicit company or agent assignment is added below.
           </p>
 
           {assignments === null && <p className="mt-2 text-xs text-sx-text-subtle">Loading assignments…</p>}
           {assignments && assignments.length === 0 && (
             <p className="mt-2 text-xs text-sx-text-subtle">
-              No assignments recorded yet. Add an assignment below to authorize Hermes execution.
+              No assignments recorded yet. Add an assignment below to authorize Hermes missions.
             </p>
           )}
 
@@ -642,9 +667,13 @@ function ConnectorCard({
                 >
                   <div className="flex items-center gap-2">
                     <span className="font-medium text-sx-text">{a.capability_key}</span>
-                    {a.department && (
+                    {a.tenant_id ? (
                       <span className="rounded bg-sx-surface-1 px-1.5 py-0.5 text-[10px] text-sx-text-muted">
-                        Dept: {a.department}
+                        Company: {a.tenant_id}
+                      </span>
+                    ) : (
+                      <span className="rounded bg-sx-surface-1 px-1.5 py-0.5 text-[10px] text-[#5BDCA7]">
+                        All Companies (Founder Default)
                       </span>
                     )}
                     {a.agent_definition_id && (
@@ -654,7 +683,7 @@ function ConnectorCard({
                     )}
                     {a.budget_limit_usd !== null && a.budget_limit_usd !== undefined && (
                       <span className="rounded bg-sx-surface-1 px-1.5 py-0.5 text-[10px] text-sx-text-muted">
-                        Cap Limit: ${a.budget_limit_usd}
+                        Cap: ${a.budget_limit_usd}
                       </span>
                     )}
                   </div>
@@ -697,10 +726,10 @@ function ConnectorCard({
                 ))}
               </Select>
               <Input
-                value={newDepartment}
-                onChange={(e) => setNewDepartment(e.target.value)}
-                placeholder="Department (optional)"
-                className="!h-8 max-w-[140px] text-xs"
+                value={newTenantScope}
+                onChange={(e) => setNewTenantScope(e.target.value)}
+                placeholder="Company ID (optional)"
+                className="!h-8 max-w-[150px] text-xs"
               />
               <Input
                 value={newAgentId}
@@ -739,7 +768,7 @@ function ConnectorCard({
       {showAudit && (
         <div className="mt-2 rounded-sx-md border border-sx-border bg-sx-surface-1 p-3">
           <div className="flex items-center justify-between">
-            <p className="font-sx-sans text-xs font-semibold text-sx-text">Recent Connector Audit Logs</p>
+            <p className="font-sx-sans text-xs font-semibold text-sx-text">Recent Audit Logs</p>
             <Button variant="secondary" size="sm" onClick={() => void loadAuditLogs()}>
               REFRESH
             </Button>
@@ -758,7 +787,11 @@ function ConnectorCard({
                   <div className="flex items-center gap-2">
                     <span
                       className={`h-2 w-2 rounded-full ${
-                        log.status === "success" ? "bg-[#5BDCA7]" : log.status === "denied" ? "bg-[#F3C55C]" : "bg-[#FF8A90]"
+                        log.status === "success"
+                          ? "bg-[#5BDCA7]"
+                          : log.status === "denied"
+                          ? "bg-[#F3C55C]"
+                          : "bg-[#FF8A90]"
                       }`}
                     />
                     <span className="text-sx-text uppercase">{log.event_type}</span>
@@ -780,10 +813,13 @@ function ConnectorCard({
   );
 }
 
-export default function ConnectorsAdminPage() {
-  const { active } = useCurrentTenant();
-  const tenantId = active?.tenantId ?? null;
-  const [rows, setRows] = useState<ConnectorRow[] | null>(null);
+function PersonalConnectorsContent() {
+  const searchParams = useSearchParams();
+  const connectedKey = searchParams.get("connected");
+  const queryError = searchParams.get("error");
+
+  const [rows, setRows] = useState<PersonalConnectorRow[] | null>(null);
+  const [summary, setSummary] = useState<PersonalConnectorsSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeCategory, setActiveCategory] = useState<string>("all");
@@ -792,20 +828,20 @@ export default function ConnectorsAdminPage() {
     setLoading(true);
     setError(null);
     try {
-      const url = tenantId ? `/api/platform/admin/connectors?tenantId=${encodeURIComponent(tenantId)}` : "/api/platform/admin/connectors";
-      const res = await platformFetch(url);
+      const res = await platformFetch("/api/platform/admin/personal-connectors");
       const body = await res.json();
       if (!res.ok) {
-        setError(body.error ?? `Failed to load connectors (HTTP ${res.status})`);
+        setError(body.error ?? `Failed to load personal connectors (HTTP ${res.status})`);
         return;
       }
       setRows(body.connectors ?? []);
+      setSummary(body.summary ?? null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load connectors");
+      setError(err instanceof Error ? err.message : "Failed to load personal connectors");
     } finally {
       setLoading(false);
     }
-  }, [tenantId]);
+  }, []);
 
   useEffect(() => {
     void load();
@@ -813,16 +849,8 @@ export default function ConnectorsAdminPage() {
 
   const filteredRows = (rows ?? []).filter((r) => {
     if (activeCategory === "all") return true;
-    if (activeCategory === "finance") return r.definition.category === "finance";
     return r.definition.category === activeCategory;
   });
-
-  const platformRows = filteredRows.filter((r) => r.definition.scopeLevel === "platform");
-  const companyRows = filteredRows.filter((r) => r.definition.scopeLevel !== "platform");
-
-  const totalCount = rows?.length ?? 0;
-  const connectedCount = rows?.filter((r) => ["connected", "healthy"].includes(r.health.status)).length ?? 0;
-  const actionRequiredCount = rows?.filter((r) => ["auth_required", "auth_expired", "requires_reauth", "error"].includes(r.health.status)).length ?? 0;
 
   return (
     <div className="flex flex-col gap-6">
@@ -830,74 +858,101 @@ export default function ConnectorsAdminPage() {
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="font-sx-sans text-2xl font-bold text-sx-text">
-              Platform Connectors{active ? ` — ${active.name}` : ""}
-            </h1>
-            <span className="rounded bg-sx-surface-2 px-2 py-0.5 font-sx-mono text-xs font-medium text-sx-text-subtle uppercase">
-              Infrastructure &amp; Platform Resources
+            <h1 className="font-sx-sans text-2xl font-bold text-sx-text">Personal Connectors</h1>
+            <span className="rounded bg-sx-accent/15 px-2 py-0.5 font-sx-mono text-xs font-semibold text-sx-accent border border-sx-accent/30">
+              Founder-Owned
             </span>
           </div>
           <p className="mt-1 text-sm text-sx-text-muted">
-            StratXcel core infrastructure (AWS, Vercel, Supabase, GitHub), baseline AI services, and client-scoped company integrations.
+            Founder-owned accounts, AI subscriptions, storage, developer resources, and external services available to Hermes.
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <a
-            href="/admin/personal-connectors"
-            className="rounded bg-sx-accent/15 px-3 py-1.5 font-sx-sans text-xs font-semibold text-sx-accent border border-sx-accent/30 transition-all hover:bg-sx-accent/25"
-          >
-            Go to Personal Connectors →
-          </a>
           <Button variant="secondary" size="sm" onClick={() => void load()}>
             REFRESH ALL
           </Button>
         </div>
       </header>
 
-      {/* Prominent Cross-Nav Banner */}
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-sx-md border border-sx-accent/30 bg-sx-surface-2 p-3 text-xs">
-        <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2.5">
-          <span className="font-sx-mono font-semibold uppercase text-sx-accent">Founder Personal Resources:</span>
-          <span className="text-sx-text-muted">
-            Looking for Google AI Pro, Founder Claude, personal GitHub, or personal storage? Those belong under Personal Connectors.
-          </span>
+      {/* Notification Banners */}
+      {connectedKey && (
+        <div className="rounded-sx-md border border-[#5BDCA7]/40 bg-[#5BDCA7]/10 p-3 text-xs text-[#5BDCA7]">
+          ✓ <strong>Connection Established:</strong> {connectedKey.toUpperCase()} has been authorized and vaulted
+          successfully. Entitled capabilities discovered and available for Hermes governance.
         </div>
-        <a
-          href="/admin/personal-connectors"
-          className="rounded bg-sx-accent px-3 py-1 font-medium text-white transition-all hover:bg-sx-accent/90"
-        >
-          Open Personal Connectors →
-        </a>
+      )}
+
+      {queryError && (
+        <div className="rounded-sx-md border border-[rgb(242_86_95_/_0.4)] bg-[rgb(242_86_95_/_0.1)] p-3 text-xs text-[#FF8A90]">
+          ✕ <strong>Connection Error:</strong> {queryError}
+        </div>
+      )}
+
+      {/* Policy Callout Banner */}
+      <div className="rounded-sx-md border border-sx-border bg-sx-surface-2 p-3 text-xs text-sx-text-muted">
+        <span className="font-semibold text-sx-text uppercase font-sx-mono">Founder Control Policy: </span>
+        These connections belong to the Founder. Hermes can use them only when the assigned company, agent,
+        mission, permission, autonomy, and budget policies allow it.
       </div>
 
       {/* KPI Overview Strip */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <Card className="flex flex-col gap-1 p-4">
-          <span className="font-sx-mono text-xs uppercase tracking-wider text-sx-text-subtle">Canonical Connectors</span>
-          <div className="flex items-baseline gap-2">
-            <span className="font-sx-sans text-2xl font-bold text-sx-text">{totalCount}</span>
-            <span className="text-xs text-sx-text-muted">Supported</span>
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 lg:grid-cols-6">
+        <Card className="flex flex-col gap-1 p-3">
+          <span className="font-sx-mono text-[10px] uppercase tracking-wider text-sx-text-subtle">Personal Pool</span>
+          <div className="flex items-baseline gap-1.5">
+            <span className="font-sx-sans text-xl font-bold text-sx-text">
+              {summary?.totalPersonalConnectors ?? 0}
+            </span>
+            <span className="text-[11px] text-sx-text-muted">Supported</span>
           </div>
         </Card>
-        <Card className="flex flex-col gap-1 p-4">
-          <span className="font-sx-mono text-xs uppercase tracking-wider text-sx-text-subtle">Active &amp; Verified</span>
-          <div className="flex items-baseline gap-2">
-            <span className="font-sx-sans text-2xl font-bold text-[#5BDCA7]">{connectedCount}</span>
-            <span className="text-xs text-sx-text-muted">Live reached</span>
+
+        <Card className="flex flex-col gap-1 p-3">
+          <span className="font-sx-mono text-[10px] uppercase tracking-wider text-sx-text-subtle">Connected</span>
+          <div className="flex items-baseline gap-1.5">
+            <span className="font-sx-sans text-xl font-bold text-[#5BDCA7]">
+              {summary?.connectedCount ?? 0}
+            </span>
+            <span className="text-[11px] text-sx-text-muted">Active</span>
           </div>
         </Card>
-        <Card className="flex flex-col gap-1 p-4">
-          <span className="font-sx-mono text-xs uppercase tracking-wider text-sx-text-subtle">Auth &amp; Attention Required</span>
-          <div className="flex items-baseline gap-2">
-            <span className="font-sx-sans text-2xl font-bold text-[#F3C55C]">{actionRequiredCount}</span>
-            <span className="text-xs text-sx-text-muted">Requires credentials</span>
+
+        <Card className="flex flex-col gap-1 p-3">
+          <span className="font-sx-mono text-[10px] uppercase tracking-wider text-sx-text-subtle">Action Needed</span>
+          <div className="flex items-baseline gap-1.5">
+            <span className="font-sx-sans text-xl font-bold text-[#F3C55C]">
+              {summary?.actionRequiredCount ?? 0}
+            </span>
+            <span className="text-[11px] text-sx-text-muted">Requires Auth</span>
+          </div>
+        </Card>
+
+        <Card className="flex flex-col gap-1 p-3">
+          <span className="font-sx-mono text-[10px] uppercase tracking-wider text-sx-text-subtle">Verified Caps</span>
+          <div className="flex items-baseline gap-1.5">
+            <span className="font-sx-sans text-xl font-bold text-sx-text">
+              {summary?.verifiedCapabilitiesCount ?? 0}
+            </span>
+            <span className="text-[11px] text-sx-text-muted">Live</span>
+          </div>
+        </Card>
+
+        <Card className="flex flex-col gap-1 p-3 col-span-2">
+          <span className="font-sx-mono text-[10px] uppercase tracking-wider text-sx-text-subtle">Founder Identity</span>
+          <div className="flex flex-col">
+            <span className="font-sx-mono text-xs font-semibold text-sx-text truncate">
+              {summary?.founderEmail || "Founder"}
+            </span>
+            <span className="text-[10px] text-sx-text-subtle">
+              Verified: {summary?.lastGlobalVerifiedAt ? new Date(summary.lastGlobalVerifiedAt).toLocaleDateString() : "Pending"}
+            </span>
           </div>
         </Card>
       </div>
 
       {/* Category Tabs */}
       <div className="flex flex-wrap items-center gap-2 border-b border-sx-border pb-3">
-        {CATEGORY_TABS.map((tab) => (
+        {PERSONAL_CATEGORY_TABS.map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveCategory(tab.id)}
@@ -913,42 +968,24 @@ export default function ConnectorsAdminPage() {
       </div>
 
       {error && <ErrorState message={error} onRetry={() => void load()} />}
-      {loading && !rows && <p className="text-sm text-sx-text-subtle">Loading connector control plane…</p>}
+      {loading && !rows && <p className="text-sm text-sx-text-subtle">Loading Founder personal connectors…</p>}
 
+      {/* Connector Cards */}
       {rows && (
-        <div className="flex flex-col gap-8">
-          {/* Platform Connectors */}
-          {platformRows.length > 0 && (
-            <section className="flex flex-col gap-3">
-              <CardHeading>StratXcel Platform Infrastructure &amp; AI Resources</CardHeading>
-              <div className="flex flex-col gap-3">
-                {platformRows.map((row) => (
-                  <ConnectorCard key={row.definition.key} row={row} tenantId={null} onChanged={() => void load()} />
-                ))}
-              </div>
-            </section>
-          )}
-
-          {/* Company Connectors */}
-          {companyRows.length > 0 && (
-            <section className="flex flex-col gap-3">
-              <CardHeading>Company-Scoped Connectors{active ? ` — ${active.name}` : " (Select Client Company)"}</CardHeading>
-              {!tenantId && (
-                <p className="text-sm text-sx-text-subtle">
-                  Select a company from the client switcher to manage company-scoped integrations and permissions.
-                </p>
-              )}
-              {tenantId && (
-                <div className="flex flex-col gap-3">
-                  {companyRows.map((row) => (
-                    <ConnectorCard key={row.definition.key} row={row} tenantId={tenantId} onChanged={() => void load()} />
-                  ))}
-                </div>
-              )}
-            </section>
-          )}
+        <div className="flex flex-col gap-4">
+          {filteredRows.map((row) => (
+            <PersonalConnectorCard key={row.definition.key} row={row} onChanged={() => void load()} />
+          ))}
         </div>
       )}
     </div>
+  );
+}
+
+export default function PersonalConnectorsAdminPage() {
+  return (
+    <Suspense fallback={<div className="p-6 text-sm text-sx-text-subtle">Loading Personal Connectors…</div>}>
+      <PersonalConnectorsContent />
+    </Suspense>
   );
 }

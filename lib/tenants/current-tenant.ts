@@ -57,7 +57,12 @@ export interface CurrentTenantResult {
  * onboarding rather than an empty dashboard).
  */
 export async function resolveCurrentTenant(supabase: SupabaseClient, userId: string): Promise<CurrentTenantResult> {
-  const tenants = await listMyTenants(supabase, userId);
+  let tenants: TenantMembership[] = [];
+  try {
+    tenants = await listMyTenants(supabase, userId);
+  } catch {
+    tenants = [];
+  }
   if (tenants.length === 0) return { tenants, active: null };
 
   const cookieStore = await cookies();
