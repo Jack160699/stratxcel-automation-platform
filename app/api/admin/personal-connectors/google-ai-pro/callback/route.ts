@@ -6,6 +6,7 @@ import {
   updateConnectorHealth,
   discoverConnectorCapabilities,
 } from "@stratxcel/connectors";
+import { getGoogleAiProRedirectUri } from "@/lib/admin/google-ai-pro-oauth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,6 +19,10 @@ export const dynamic = "force-dynamic";
  * 3. Securely vaults credentials for the Founder Google AI Pro connector.
  * 4. Runs real health check & capability discovery.
  * 5. Redirects to /admin/personal-connectors?connected=google_ai_pro.
+ *
+ * redirect_uri passed to the token exchange MUST match exactly what was
+ * sent in the authorization request. Both use getGoogleAiProRedirectUri()
+ * so they are guaranteed consistent.
  */
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
@@ -62,10 +67,10 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(baseUrl);
   }
 
-  const redirectUri = new URL(
-    "/api/admin/personal-connectors/google-ai-pro/callback",
-    request.url
-  ).toString();
+  // Use the same canonical redirect_uri that was sent in the authorization request.
+  // This MUST match exactly — Google validates it on token exchange.
+  const requestOrigin = new URL(request.url).origin;
+  const redirectUri = getGoogleAiProRedirectUri(requestOrigin);
 
   try {
     // 1. Exchange code for tokens

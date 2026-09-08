@@ -1,5 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireAdmin } from "@/lib/social/admin-guard";
+import {
+  getGoogleAiProRedirectUri,
+  buildGoogleAiProOAuthDiagnostics,
+} from "@/lib/admin/google-ai-pro-oauth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -8,6 +12,10 @@ export const dynamic = "force-dynamic";
  * GET /api/admin/personal-connectors/google-ai-pro/connect
  * Initiates the Google OAuth authorization flow for the Founder's Google AI Pro account.
  * Redirects to Google's consent screen requesting offline access.
+ *
+ * redirect_uri is derived from getGoogleAiProRedirectUri() — always the canonical
+ * production domain (https://www.stratxcel.in) rather than request.url, which on
+ * Vercel may resolve to a preview-deployment hostname and cause redirect_uri_mismatch.
  */
 export async function GET(request: NextRequest) {
   const admin = await requireAdmin();
@@ -30,10 +38,14 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const redirectUri = new URL(
-    "/api/admin/personal-connectors/google-ai-pro/callback",
-    request.url
-  ).toString();
+  // Derive origin from request only to detect local development.
+  // In production we always use the canonical stratxcel.in domain.
+  const requestOrigin = new URL(request.url).origin;
+  const redirectUri = getGoogleAiProRedirectUri(requestOrigin);
+
+  // Safe diagnostic log — no secrets
+  const env = process.env.NODE_ENV ?? "unknown";
+  console.log(buildGoogleAiProOAuthDiagnostics(clientId, redirectUri, env));
 
   const statePayload = {
     userId: admin.userId,
