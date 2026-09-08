@@ -1,5 +1,77 @@
 # WhatsApp AI Agency — Gap Audit
 
+## Update 96 — WhatsApp audit delivery simplified to a direct send; a real client/server payload-shape bug fixed (Final Customer Experience Repair, Section 3)
+
+Removed the unnecessary extra "consent" dialog step from
+[`AuditHubClient.tsx`](../../app/app/audit/AuditHubClient.tsx): when a
+customer's WhatsApp is already connected, clicking "Send to WhatsApp" now
+sends directly with no dialog at all. The number-entry dialog now only
+opens for genuine first-time setup.
+
+**Real bug found and fixed alongside this**: `handleSendWhatsApp` POSTed
+a flat `{ nationalNumber, countryIso, consent }` body, but
+[`/api/platform/audit/report/whatsapp`](../../app/api/platform/audit/report/whatsapp/route.ts)
+only ever reads a nested `body.destination.nationalNumber` — so
+`body.destination` was always `undefined` server-side. A customer typing
+a brand-new WhatsApp number here could never actually reach the server
+with it; the request always silently fell through to the "use the
+existing stored destination" branch, returning `NO_DESTINATION` for
+anyone who had never connected WhatsApp before. Fixed the client to send
+the real nested shape the route already expects. The new direct-send
+path (an omitted payload) correctly reuses the route's own pre-existing
+fallback to the stored destination — no server change needed.
+
+**Country-code UX (Section 6) verified, not changed**: already defaults
+to India, already lets the customer enter just the national number,
+already allows changing the country. No real gap found.
+
+Verified: `tsc --noEmit` clean, lint clean, real `NODE_ENV=production`
+build exits 0. Existing `audit-v1-experience.test.ts` passes unmodified.
+New
+[`whatsapp-send-simplification.test.ts`](../../lib/audit/__tests__/whatsapp-send-simplification.test.ts).
+
+## Update 95 — Three free branded creatives, reusing Creative Studio's canonical pipeline (Final Customer Experience Repair, Section 2)
+
+Investigated the existing creative-generation surface first
+([`package-autopilot.ts`](../../lib/social/package-autopilot.ts)'s Social
+Autopilot subscription/queue system,
+[`manual-generate/route.ts`](../../app/api/platform/social/autopilot/manual-generate/route.ts),
+[`image-generations/route.ts`](../../app/api/platform/image-generations/route.ts)).
+Found that manual-generate's pathway is deliberately gated to paying
+subscribers, but Creative Studio's own route uses a **different**,
+already-free-tier-compatible path: `createImageGenerationJob`'s own
+attempt-limit enforcement already grants "Free: 3 image attempts/month"
+to any unsubscribed tenant — zero new grant/entitlement infrastructure
+needed.
+
+New [`free-creatives-briefs.ts`](../../lib/audit/free-creatives-briefs.ts)
+(pure, real Brand Brain data only) builds exactly 3 distinct briefs —
+Business & Brand, Service & Offer (or an honest "What We Do" framing when
+no real service exists yet, never inventing one), Educational &
+Engagement (a general industry tip, never a specific claim about the
+business) — from `getCanonicalBrandContext` (business name, industry,
+description, real services, real logo/color hints Brand Brain already
+carries).
+[`free-creatives.ts`](../../lib/audit/free-creatives.ts) orchestrates 3
+real calls through `generateStudioCreativeTreatment` +
+`createImageGenerationJob` + `processImageGenerationJob` (sourceContext
+`"creative_studio"`, the exact same functions Creative Studio's own route
+calls), each with a stable per-slot idempotency key. New
+[`FreeCreativesPanel.tsx`](../../components/audit/FreeCreativesPanel.tsx)
+renders on the audit report right after the score-first summary: a
+single CTA, real per-job progress, then Download + "Connect accounts &
+auto-post" once each is READY.
+
+Verified: `tsc --noEmit` clean, lint clean, real `NODE_ENV=production`
+build exits 0. New
+[`free-creatives.test.ts`](../../lib/audit/__tests__/free-creatives.test.ts)
+directly tests `buildFreeCreativeBriefs` (real coverage, not
+source-regex): no business name yields zero briefs; every brief
+references the real business name; the offer brief never invents a
+service. Registry: `capability:audit_three_free_branded_creatives`,
+`REAL_EXPOSED`. Migration:
+`supabase/migrations/20260909170000_capability_registry_free_branded_creatives.sql`.
+
 ## Update 94 — Audit report redesigned score-first; a real signal-extraction bug fixed alongside it (Final Customer Experience Repair, Section 1)
 
 Investigated the existing 995-line
