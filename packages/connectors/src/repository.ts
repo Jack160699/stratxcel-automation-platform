@@ -10,6 +10,19 @@ import type {
 import { getConnectorDefinition } from "./registry.ts";
 import { recordConnectorAudit } from "./audit.ts";
 
+function isMissingColumnError(err: any): boolean {
+  if (!err) return false;
+  const code = String(err.code || "");
+  const msg = String(err.message || "").toLowerCase();
+  return (
+    code === "42703" ||
+    code === "PGRST204" ||
+    msg.includes("schema cache") ||
+    msg.includes("does not exist") ||
+    msg.includes("could not find")
+  );
+}
+
 /**
  * Stores raw secrets in the AES-256-GCM vault from @stratxcel/byok.
  * Refuses plaintext secrets for mcp_managed connectors or existing read-only adapter tables.
@@ -77,8 +90,8 @@ export async function createConnectorConnection(
   }
 
   if (res.error) {
-    // If column doesn't exist in postgres (code 42703), strip extended columns and encode metadata into encrypted_secret_ref if available
-    if ((res.error as any).code === "42703") {
+    // If column doesn't exist in postgres (code 42703 or PGRST204), strip extended columns and encode metadata into encrypted_secret_ref
+    if (isMissingColumnError(res.error)) {
       const fallbackPayload = { ...upsertPayload };
       if (fallbackPayload.metadata && !fallbackPayload.encrypted_secret_ref) {
         fallbackPayload.encrypted_secret_ref = "fc-meta:" + JSON.stringify(fallbackPayload.metadata);
@@ -183,7 +196,7 @@ export async function updateConnectorHealth(
   if (input.metadata !== undefined) patch.metadata = input.metadata;
 
   let res = await supabase.from("connector_connections").update(patch).eq("id", input.connectionId);
-  if (res.error && (res.error as any).code === "42703") {
+  if (res.error && isMissingColumnError(res.error)) {
     // If extended columns don't exist in DB schema, strip them and store metadata in encrypted_secret_ref fallback
     const fallbackPatch = { ...patch };
     if (fallbackPatch.metadata) {
@@ -192,6 +205,8 @@ export async function updateConnectorHealth(
     delete fallbackPatch.metadata;
     delete fallbackPatch.last_verified_at;
     delete fallbackPatch.discovered_at;
+    delete fallbackPatch.budget_limit_usd;
+    delete fallbackPatch.rate_limit_per_minute;
     res = await supabase.from("connector_connections").update(fallbackPatch).eq("id", input.connectionId);
   }
   if (res.error) throw new Error(`updateConnectorHealth: ${res.error.message}`);
@@ -220,7 +235,7 @@ export async function updateConnectorConnectionMetadata(
   }
 
   let res = await supabase.from("connector_connections").update(patch).eq("id", connectionId);
-  if (res.error && (res.error as any).code === "42703") {
+  if (res.error && isMissingColumnError(res.error)) {
     const fallbackPatch = { ...patch };
     if (fallbackPatch.metadata) {
       fallbackPatch.encrypted_secret_ref = "fc-meta:" + JSON.stringify(fallbackPatch.metadata);
@@ -228,6 +243,8 @@ export async function updateConnectorConnectionMetadata(
     delete fallbackPatch.metadata;
     delete fallbackPatch.last_verified_at;
     delete fallbackPatch.discovered_at;
+    delete fallbackPatch.budget_limit_usd;
+    delete fallbackPatch.rate_limit_per_minute;
     res = await supabase.from("connector_connections").update(fallbackPatch).eq("id", connectionId);
   }
   if (res.error) throw new Error(`updateConnectorConnectionMetadata: ${res.error.message}`);
@@ -257,7 +274,7 @@ export async function updateConnectorBudgetAndUsage(
   }
 
   const { error } = await supabase.from("connector_connections").update(patch).eq("id", connectionId);
-  if (error) throw new Error(`updateConnectorBudgetAndUsage: ${error.message}`);
+  if (error && !isMissingColumnError(error)) throw new Error(`updateConnectorBudgetAndUsage: ${error.message}`);
 }
 
 export async function setConnectorEnabled(supabase: ServiceClient, connectionId: string, enabled: boolean): Promise<void> {
