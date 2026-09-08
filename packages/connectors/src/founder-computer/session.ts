@@ -12,13 +12,19 @@
 
 import type { FounderComputerSessionStatus } from "../types.ts";
 
+export type FounderControlLock = "AVAILABLE" | "FOUNDER_CONTROL" | "HERMES_CONTROL" | "LOCKED";
+
 export interface FounderComputerSession {
   /** Unique profile identifier for this session. Stable across restarts. */
   profileId: string;
   /** Current session status. */
   status: FounderComputerSessionStatus;
+  /** Canonical session state machine state. */
+  sessionStatus?: "NOT_CONFIGURED" | "RUNTIME_OFFLINE" | "AUTH_REQUIRED" | "AUTHENTICATED" | "DEGRADED" | "REQUIRES_REAUTH" | "ERROR";
   /** Domains/services the Founder has authenticated within the profile. */
   authenticatedDomains: string[];
+  /** Safe identifier of the authenticated Google account (e.g. "user@example.com"). Never a password or token. */
+  authenticatedGoogleAccount?: string | null;
   /** ISO timestamp of last successful session verification. */
   lastVerifiedAt: string | null;
   /** Opaque reference to the runtime host (e.g. EC2 instance ID). Never a password. */
@@ -29,6 +35,12 @@ export interface FounderComputerSession {
   connectedAt: string | null;
   /** Whether the session is considered healthy (verified within 24 hours). */
   isHealthy: boolean;
+  /** Mutual exclusion lock between Founder manual view and Hermes autonomous automation. */
+  controlLock: FounderControlLock;
+  /** Whether a remote viewer session is actively attached. */
+  viewerActive: boolean;
+  /** ISO timestamp when the current viewer authorization expires. */
+  viewerExpiresAt: string | null;
 }
 
 /**
@@ -49,7 +61,21 @@ export function parseFounderComputerSession(
   const profileId = typeof metadata.profileId === "string" ? metadata.profileId : null;
   if (!profileId) return null;
 
-  const status = (metadata.sessionStatus as FounderComputerSessionStatus) ?? "auth_required";
+  const rawStatus = (metadata.sessionStatus as string) ?? "auth_required";
+  const status: FounderComputerSessionStatus =
+    rawStatus === "AUTHENTICATED" || rawStatus.toLowerCase() === "authenticated" || rawStatus === "ready"
+      ? "ready"
+      : (rawStatus as FounderComputerSessionStatus);
+
+  const sessionStatus =
+    rawStatus === "AUTHENTICATED" || status === "ready"
+      ? "AUTHENTICATED"
+      : status === "auth_required"
+      ? "AUTH_REQUIRED"
+      : status === "expired"
+      ? "REQUIRES_REAUTH"
+      : (rawStatus as any);
+
   const lastVerifiedAt = typeof metadata.lastVerifiedAt === "string" ? metadata.lastVerifiedAt : null;
   const connectedAt = typeof metadata.connectedAt === "string" ? metadata.connectedAt : null;
   const runtimeHostRef = typeof metadata.runtimeHostRef === "string" ? metadata.runtimeHostRef : null;
@@ -59,20 +85,34 @@ export function parseFounderComputerSession(
     ? (metadata.authenticatedDomains as string[]).filter((d) => typeof d === "string")
     : [];
 
+  const authenticatedGoogleAccount =
+    typeof metadata.authenticatedGoogleAccount === "string" && metadata.authenticatedGoogleAccount.includes("@")
+      ? metadata.authenticatedGoogleAccount
+      : null;
+
   const isHealthy =
-    status === "ready" &&
+    (status === "ready" || sessionStatus === "AUTHENTICATED") &&
     lastVerifiedAt !== null &&
     Date.now() - new Date(lastVerifiedAt).getTime() < SESSION_TTL_MS;
+
+  const controlLock = (metadata.controlLock as FounderControlLock) ?? "AVAILABLE";
+  const viewerActive = Boolean(metadata.viewerActive);
+  const viewerExpiresAt = typeof metadata.viewerExpiresAt === "string" ? metadata.viewerExpiresAt : null;
 
   return {
     profileId,
     status,
+    sessionStatus,
     authenticatedDomains,
+    authenticatedGoogleAccount,
     lastVerifiedAt,
     runtimeHostRef,
     browserVersion,
     connectedAt,
     isHealthy,
+    controlLock,
+    viewerActive,
+    viewerExpiresAt,
   };
 }
 
@@ -143,7 +183,26 @@ export function deriveCapabilitiesFromSession(session: FounderComputerSession | 
   const domains = session.authenticatedDomains.map((d) => d.toLowerCase());
 
   if (domains.some((d) => d.includes("google.com") || d.includes("accounts.google"))) {
-    extras.push("computer.open_app", "computer.type", "computer.key", "computer.wait");
+    extras.push(
+      "computer.open_app",
+      "computer.type",
+      "computer.key",
+      "computer.wait",
+      "image.generate",
+      "video.generate",
+      "video.generate_browser",
+      "antigravity.code",
+      "antigravity.run_task",
+      "antigravity.workspace",
+      "jules.task",
+      "drive.browse",
+      "drive.download",
+      "drive.upload",
+      "gemini.chat",
+      "aistudio.prompt",
+      "cloud.console_browse",
+      "colab.notebook"
+    );
   }
 
   return [...base, ...extras];
@@ -181,6 +240,7 @@ export function buildInitialSessionMetadata(opts: {
 export function buildSessionVerifiedMetadata(opts: {
   existing: Record<string, unknown>;
   authenticatedDomains: string[];
+  authenticatedGoogleAccount?: string | null;
   browserVersion?: string | null;
   runtimeHostRef?: string | null;
 }): Record<string, unknown> {
@@ -188,9 +248,42 @@ export function buildSessionVerifiedMetadata(opts: {
     ...opts.existing,
     sessionStatus: "ready" satisfies FounderComputerSessionStatus,
     authenticatedDomains: opts.authenticatedDomains,
+    authenticatedGoogleAccount:
+      opts.authenticatedGoogleAccount !== undefined
+        ? opts.authenticatedGoogleAccount
+        : opts.existing.authenticatedGoogleAccount ?? null,
     lastVerifiedAt: new Date().toISOString(),
     browserVersion: opts.browserVersion ?? opts.existing.browserVersion ?? null,
     runtimeHostRef: opts.runtimeHostRef ?? opts.existing.runtimeHostRef ?? null,
+  };
+}
+
+/**
+ * Builds the metadata patch when a Founder opens the remote browser viewer.
+ */
+export function buildViewerSessionMetadata(opts: {
+  existing: Record<string, unknown>;
+  expiresAt: string;
+}): Record<string, unknown> {
+  return {
+    ...opts.existing,
+    controlLock: "FOUNDER_CONTROL" satisfies FounderControlLock,
+    viewerActive: true,
+    viewerExpiresAt: opts.expiresAt,
+    lastViewerOpenedAt: new Date().toISOString(),
+  };
+}
+
+/**
+ * Builds the metadata patch when the Founder closes or releases the remote browser viewer.
+ */
+export function buildReleaseViewerMetadata(existing: Record<string, unknown>): Record<string, unknown> {
+  return {
+    ...existing,
+    controlLock: "AVAILABLE" satisfies FounderControlLock,
+    viewerActive: false,
+    viewerExpiresAt: null,
+    lastViewerClosedAt: new Date().toISOString(),
   };
 }
 
@@ -202,3 +295,22 @@ export function buildSessionVerifiedMetadata(opts: {
 export function generateProfileId(): string {
   return `fc-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
+
+/**
+ * Throws an error if Founder Control is actively locking the browser.
+ * Protects manual Founder sessions from concurrent programmatic Hermes actions.
+ */
+export function assertFounderBrowserAvailableForHermes(
+  metadata: Record<string, unknown> | null | undefined
+): void {
+  if (!metadata) return;
+  const lock = (metadata.controlLock as string) || "AVAILABLE";
+  if (lock === "FOUNDER_CONTROL") {
+    const error = new Error(
+      "Founder is currently interacting with the browser (Founder Control is active). Hermes automation is temporarily paused."
+    );
+    (error as any).code = "founder_control_active";
+    throw error;
+  }
+}
+

@@ -14,6 +14,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import http from "node:http";
+import crypto from "node:crypto";
 import { exec, execSync } from "node:child_process";
 
 export type FounderComputerRuntimeState =
@@ -311,6 +312,7 @@ export function scrubSensitivePayload<T extends Record<string, unknown>>(payload
   const sensitiveKeys = [
     "password", "secret", "token", "cookie", "cookies",
     "authorization", "key", "auth", "sessionid", "access_token",
+    "clipboard", "credential", "credentials", "passcode",
   ];
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(payload)) {
@@ -489,24 +491,46 @@ export async function executeBrowserAction(
         }
 
         case "browser.screenshot": {
-          const fullPage = Boolean(payload.fullPage ?? true);
+          const fullPage = Boolean(payload.fullPage ?? false);
           const selector = payload.selector ? String(payload.selector) : undefined;
+          const screenshotTimeout = typeof payload.timeoutMs === "number" ? payload.timeoutMs : 12000;
+          const useJpeg = !selector && !payload.forcePng;
           let buffer: Buffer;
           if (selector) {
             const el = await page.$(selector);
             if (!el) throw new Error(`Element not found for selector: ${selector}`);
-            buffer = await el.screenshot();
+            buffer = await el.screenshot({ timeout: screenshotTimeout, animations: "disabled", type: "jpeg", quality: 85 });
           } else {
-            buffer = await page.screenshot({ fullPage });
+            try {
+              // Use JPEG to bypass the font-rendering hang on some EC2 Chrome environments
+              buffer = await page.screenshot({
+                fullPage,
+                timeout: screenshotTimeout,
+                animations: "disabled",
+                type: useJpeg ? "jpeg" : "png",
+                ...(useJpeg ? { quality: 85 } : {}),
+              });
+            } catch {
+              // Last resort: clip to viewport to avoid full-page render hang
+              const viewportSize = page.viewportSize() ?? { width: 1280, height: 720 };
+              buffer = await page.screenshot({
+                clip: { x: 0, y: 0, width: Math.min(viewportSize.width, 1280), height: Math.min(viewportSize.height, 720) },
+                timeout: screenshotTimeout,
+                animations: "disabled",
+                type: "jpeg",
+                quality: 80,
+              });
+            }
           }
           const base64 = buffer.toString("base64");
+          const mimeType = useJpeg ? "image/jpeg" : "image/png";
           return {
             success: true,
             action: "screenshot",
-            format: "image/png",
+            format: mimeType,
             bytes: buffer.length,
             base64,
-            base64Thumbnail: `data:image/png;base64,${base64.slice(0, 1000)}...`,
+            base64Thumbnail: `data:${mimeType};base64,${base64.slice(0, 1000)}...`,
             capturedAt: new Date().toISOString(),
           };
         }
@@ -635,3 +659,153 @@ export async function executeComputerAction(
       };
   }
 }
+
+export interface FounderBrowserSessionProbeResult {
+  ok: boolean;
+  authenticated: boolean;
+  accountEmail: string | null;
+  authenticatedDomains: string[];
+  activeTabs: Array<{
+    index: number;
+    url: string;
+    hostname: string;
+    title: string;
+    isInternal: boolean;
+    isGoogleAuth: boolean;
+    accountEmail: string | null;
+  }>;
+  primaryTab?: {
+    url: string;
+    title: string;
+    accountEmail?: string | null;
+  } | null;
+  source: "http_proxy" | "local_cdp" | "none";
+  error?: string | null;
+}
+
+/**
+ * Probes the Founder Browser session across all active tabs.
+ * Queries the persistent EC2 streaming proxy gateway or local runtime.
+ * SAFE: Never extracts cookies, tokens, or passwords.
+ */
+export async function probeFounderBrowserSession(opts?: {
+  proxyUrl?: string;
+  timeoutMs?: number;
+}): Promise<FounderBrowserSessionProbeResult> {
+  const timeoutMs = opts?.timeoutMs ?? 5000;
+
+  // Master key for HMAC authentication with browser stream proxy
+  const masterKey =
+    process.env.FOUNDER_VIEWER_SECRET ||
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    "stratxcel-local-dev-fallback-secret-key-32ch";
+
+  const streamSecret = crypto
+    .createHmac("sha256", masterKey)
+    .update("stratxcel-founder-viewer-v1")
+    .digest("hex");
+
+  const payload = {
+    userId: "control_plane",
+    scope: "founder_browser_probe",
+    exp: Math.floor(Date.now() / 1000) + 300,
+  };
+  const payloadB64 = Buffer.from(JSON.stringify(payload)).toString("base64url");
+  const signature = crypto
+    .createHmac("sha256", streamSecret)
+    .update(payloadB64)
+    .digest("base64url");
+  const token = `${payloadB64}.${signature}`;
+
+  // Candidate endpoints in priority order
+  const candidateEndpoints: string[] = [];
+  if (opts?.proxyUrl) {
+    candidateEndpoints.push(opts.proxyUrl);
+  }
+  if (process.env.FOUNDER_STREAM_PROXY_URL) {
+    candidateEndpoints.push(process.env.FOUNDER_STREAM_PROXY_URL);
+  }
+  // Public HTTPS EC2 proxy endpoint
+  candidateEndpoints.push("https://bot.stratxcel.ai/founder-browser-stream/session-probe");
+  // Local fallback
+  candidateEndpoints.push("http://127.0.0.1:6080/session-probe");
+
+  for (const base of candidateEndpoints) {
+    try {
+      const url = new URL(base);
+      url.searchParams.set("token", token);
+      const res = await fetch(url.toString(), {
+        signal: AbortSignal.timeout(timeoutMs),
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.ok) {
+          return {
+            ok: true,
+            authenticated: Boolean(data.authenticated),
+            accountEmail: data.accountEmail || null,
+            authenticatedDomains: Array.isArray(data.authenticatedDomains) ? data.authenticatedDomains : [],
+            activeTabs: Array.isArray(data.activeTabs) ? data.activeTabs : [],
+            primaryTab: data.primaryTab || null,
+            source: "http_proxy",
+          };
+        }
+      }
+    } catch {}
+  }
+
+  // Fallback to direct CDP query if running locally on same host
+  try {
+    const tabs = await listActiveTabs();
+    const detectedDomains = new Set<string>();
+    let accountEmail: string | null = null;
+
+    for (const t of tabs) {
+      try {
+        const host = new URL(t.url).hostname.toLowerCase();
+        if (
+          host === "myaccount.google.com" ||
+          host === "mail.google.com" ||
+          host === "gemini.google.com" ||
+          (host === "accounts.google.com" && !t.url.includes("/signin"))
+        ) {
+          detectedDomains.add("google.com");
+          detectedDomains.add("accounts.google.com");
+          detectedDomains.add(host);
+        }
+      } catch {}
+    }
+
+    const authDomains = Array.from(detectedDomains);
+    if (authDomains.length > 0) {
+      return {
+        ok: true,
+        authenticated: true,
+        accountEmail,
+        authenticatedDomains: authDomains,
+        activeTabs: tabs.map((t, idx) => ({
+          index: idx,
+          url: t.url,
+          hostname: "",
+          title: t.title,
+          isInternal: t.url.startsWith("chrome://") || t.url.startsWith("about:"),
+          isGoogleAuth: authDomains.length > 0,
+          accountEmail: null,
+        })),
+        source: "local_cdp",
+      };
+    }
+  } catch {}
+
+  return {
+    ok: false,
+    authenticated: false,
+    accountEmail: null,
+    authenticatedDomains: [],
+    activeTabs: [],
+    source: "none",
+    error: "Unable to reach Founder Browser session probe",
+  };
+}
+

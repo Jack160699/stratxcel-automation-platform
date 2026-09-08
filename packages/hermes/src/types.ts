@@ -77,7 +77,12 @@ export type ToolName =
   | "computer_type"
   | "computer_key"
   | "computer_screenshot"
-  | "computer_wait";
+  | "computer_wait"
+  | "discover_capabilities"
+  | "get_capability_status"
+  | "select_best_resource"
+  | "execute_capability"
+  | "get_resource_health";
 
 /**
  * What Hermes actually receives when a mission starts — no secrets, no

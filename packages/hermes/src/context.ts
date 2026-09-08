@@ -28,6 +28,11 @@ const DEFAULT_TOOL_ALLOWLIST: ToolName[] = [
   // north star (moving a real lead through the pipeline is core mission work,
   // not a decision that needs Founder sign-off every time).
   "update_lead_status",
+  "discover_capabilities",
+  "get_capability_status",
+  "select_best_resource",
+  "execute_capability",
+  "get_resource_health",
 ];
 
 /**

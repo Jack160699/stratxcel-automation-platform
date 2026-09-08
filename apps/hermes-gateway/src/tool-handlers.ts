@@ -13,6 +13,11 @@ import {
   getConnectorConnection,
   executeBrowserAction,
   executeComputerAction,
+  executeConnectorCapability,
+  selectBestResource,
+  resolveConnectorHealth,
+  discoverConnectorCapabilities,
+  probeGoogleCapabilities,
 } from "@stratxcel/connectors";
 import type { ToolName } from "@stratxcel/hermes";
 import { STRATXCEL_CONTROLLED_TOOLS } from "@stratxcel/hermes";
@@ -347,6 +352,39 @@ export const TOOL_HANDLERS: Partial<Record<ToolName, ToolHandler>> = {
     const brief = typeof input.brief === "string" ? input.brief : "";
     if (!brief) return { outcome: "FAILED", reason: "missing_brief" };
 
+    const connectorsClient = createConnectorsClient();
+    let preferredResource: Awaited<ReturnType<typeof selectBestResource>> | null = null;
+    try {
+      preferredResource = await selectBestResource(connectorsClient as never, {
+        capabilityKey: "image.generate",
+        tenantId: ctx.tenantId,
+        missionId: ctx.missionId,
+        requireAutonomous: true,
+      });
+    } catch {
+      // Fall through to default image tool
+    }
+
+    // Autonomously execute via Google Founder Computer if AVAILABLE
+    if (
+      preferredResource?.selected &&
+      preferredResource.selected.connectorKey === "founder_computer" &&
+      preferredResource.selected.status === "AVAILABLE"
+    ) {
+      const execResult = await executeConnectorCapability(connectorsClient as never, {
+        connectorKey: "founder_computer",
+        capabilityKey: "image.generate",
+        tenantId: ctx.tenantId,
+        missionId: ctx.missionId,
+        actorKind: "hermes",
+        payload: {
+          prompt: brief,
+          aspectRatio: typeof input.aspectRatio === "string" ? input.aspectRatio : "1:1",
+        },
+      });
+      return execResult as unknown as Record<string, unknown>;
+    }
+
     const supabase = createMissionsClient();
     const { data: missionRow, error: missionError } = await supabase
       .from("missions")
@@ -542,6 +580,200 @@ export const TOOL_HANDLERS: Partial<Record<ToolName, ToolHandler>> = {
   async computer_wait(_ctx, input) {
     return executeComputerAction("computer.wait", input);
   },
+
+  async discover_capabilities(ctx, input) {
+    const connectorsClient = createConnectorsClient();
+    const providerFilter = typeof input.providerFilter === "string" ? input.providerFilter.toLowerCase() : null;
+    const shouldRefresh = Boolean(input.refresh);
+    const useLiveProbe = Boolean(input.liveProbe);
+
+    let query = (connectorsClient as any)
+      .from("connector_connections")
+      .select("id, connector_key, status, last_verified_at, discovered_capabilities, metadata, health_status");
+
+    if (ctx.tenantId) {
+      query = query.or(`tenant_id.eq.${ctx.tenantId},tenant_id.is.null`);
+    } else {
+      query = query.is("tenant_id", null);
+    }
+
+    const { data: rows, error } = await query;
+    if (error) throw new Error(`discover_capabilities: ${error.message}`);
+
+    // Run live Google capability probe if requested (founder_computer provider only)
+    // This navigates the real Founder Browser to each service URL and reads DOM state.
+    let liveProbeResults: Array<{
+      capabilityKey: string;
+      status: string;
+      reason: string;
+      liveProbe: boolean;
+      detectedAt: string;
+    }> = [];
+
+    const isFounderComputerRelevant =
+      !providerFilter || providerFilter.includes("founder_computer");
+
+    if (useLiveProbe && isFounderComputerRelevant) {
+      try {
+        const { results } = await probeGoogleCapabilities({
+          includeRuntimePrimitives: true,
+        });
+        liveProbeResults = results.map((r) => ({
+          capabilityKey: r.capabilityKey,
+          status: r.status,
+          reason: r.reason,
+          liveProbe: r.liveProbe,
+          detectedAt: r.detectedAt,
+        }));
+      } catch {
+        // Live probe failed — fall back to DB-discovered state
+      }
+    }
+
+    const capabilities: Array<Record<string, unknown>> = [];
+
+    for (const row of rows ?? []) {
+      const connKey = row.connector_key as string;
+      if (providerFilter && !connKey.includes(providerFilter)) continue;
+
+      if (shouldRefresh && ["founder_computer", "google_ai_pro"].includes(connKey)) {
+        try {
+          await discoverConnectorCapabilities(connectorsClient as never, {
+            connectionId: row.id,
+            connectorKey: connKey,
+            tenantId: ctx.tenantId,
+            actorKind: "hermes",
+          });
+        } catch {
+          // Keep prior state on probe error
+        }
+      }
+
+      const discCaps = Array.isArray(row.discovered_capabilities) ? row.discovered_capabilities : [];
+      const method = connKey === "founder_computer" ? "browser" : "api";
+      const connIsHealthy = ["connected", "healthy"].includes(row.status);
+
+      for (const capKey of discCaps) {
+        // Merge live probe result if available for this capability
+        const liveResult = connKey === "founder_computer"
+          ? liveProbeResults.find((r) => r.capabilityKey === capKey)
+          : undefined;
+
+        const status = liveResult
+          ? liveResult.status
+          : connIsHealthy ? "AVAILABLE" : "UNAVAILABLE";
+
+        capabilities.push({
+          provider: connKey,
+          capability: capKey,
+          execution_method: method,
+          status,
+          last_verified: liveResult?.detectedAt ?? row.last_verified_at,
+          requires_confirmation: capKey.includes("video") || capKey.includes("run_task") || capKey.includes("upload"),
+          probe_source: liveResult ? "live_browser_dom" : "session_metadata",
+          probe_reason: liveResult?.reason,
+          live_probe_used: Boolean(liveResult?.liveProbe),
+        });
+      }
+    }
+
+    return {
+      capabilities,
+      live_probe_used: liveProbeResults.length > 0,
+      live_probe_count: liveProbeResults.length,
+    };
+  },
+
+  async get_capability_status(ctx, input) {
+    const capKey = String(input.capabilityKey);
+    const connKey = typeof input.connectorKey === "string" ? input.connectorKey : undefined;
+    const connectorsClient = createConnectorsClient();
+
+    const selection = await selectBestResource(connectorsClient as never, {
+      capabilityKey: capKey,
+      tenantId: ctx.tenantId,
+      missionId: ctx.missionId,
+      requireAutonomous: false,
+    });
+
+    const target = connKey
+      ? selection.alternatives.find((a) => a.connectorKey === connKey) || (selection.selected?.connectorKey === connKey ? selection.selected : null)
+      : selection.selected;
+
+    return {
+      status: target?.status ?? "UNKNOWN",
+      capability: target ? { ...target } : null,
+      reason: selection.reason,
+    };
+  },
+
+  async select_best_resource(ctx, input) {
+    const capKey = String(input.capabilityKey);
+    const requireAutonomous = input.requireAutonomous !== false;
+    const connectorsClient = createConnectorsClient();
+
+    const selection = await selectBestResource(connectorsClient as never, {
+      capabilityKey: capKey,
+      tenantId: ctx.tenantId,
+      missionId: ctx.missionId,
+      requireAutonomous,
+    });
+
+    return {
+      selected: selection.selected ? { ...selection.selected } : null,
+      alternatives: selection.alternatives,
+      reason: selection.reason,
+    };
+  },
+
+  async execute_capability(ctx, input) {
+    const capKey = String(input.capabilityKey);
+    const payload = (input.payload as Record<string, unknown>) ?? {};
+    const connectorsClient = createConnectorsClient();
+
+    let connectorKey = typeof input.connectorKey === "string" ? input.connectorKey : undefined;
+    if (!connectorKey) {
+      const selection = await selectBestResource(connectorsClient as never, {
+        capabilityKey: capKey,
+        tenantId: ctx.tenantId,
+        missionId: ctx.missionId,
+        requireAutonomous: true,
+      });
+      if (!selection.selected) {
+        throw new Error(`execute_capability: No available resource found for capability '${capKey}'. Reason: ${selection.reason}`);
+      }
+      connectorKey = selection.selected.connectorKey;
+    }
+
+    const execResult = await executeConnectorCapability(connectorsClient as never, {
+      connectorKey,
+      capabilityKey: capKey,
+      tenantId: ctx.tenantId,
+      missionId: ctx.missionId,
+      actorKind: "hermes",
+      payload,
+    });
+
+    return execResult as unknown as Record<string, unknown>;
+  },
+
+  async get_resource_health(ctx, input) {
+    const connKey = String(input.connectorKey);
+    const connectorsClient = createConnectorsClient();
+    const conn = await getConnectorConnection(connectorsClient as never, connKey, ctx.tenantId);
+    const health = await resolveConnectorHealth(connectorsClient as never, connKey, conn, ctx.tenantId);
+
+    return {
+      connectorKey: connKey,
+      status: health.status,
+      health: {
+        lastError: health.lastError,
+        lastVerifiedAt: health.lastVerifiedAt,
+        discoveredCapabilities: health.discoveredCapabilities,
+        details: health.details,
+      },
+    };
+  },
 };
 
 export class ConnectorNotAuthorizedError extends Error {
@@ -580,17 +812,27 @@ const HERMES_TOOL_CONNECTOR_MAP: Partial<Record<ToolName, { connectorKey: string
 
 export async function resolveToolConnectorGate(
   supabase: unknown,
-  tool: ToolName
+  tool: ToolName,
+  tenantId?: string | null,
+  missionId?: string | null
 ): Promise<{ connectorKey: string; capabilityKey: string } | undefined> {
   if (tool === "generate_image") {
     try {
-      const proConn = await getConnectorConnection(supabase as never, "google_ai_pro", null);
-      if (proConn && ["connected", "healthy"].includes(proConn.status)) {
-        return { connectorKey: "google_ai_pro", capabilityKey: "image.generate" };
+      const selection = await selectBestResource(supabase as never, {
+        capabilityKey: "image.generate",
+        tenantId: tenantId ?? null,
+        missionId: missionId ?? null,
+        requireAutonomous: true,
+      });
+      if (selection.selected) {
+        return { connectorKey: selection.selected.connectorKey, capabilityKey: selection.selected.capabilityKey };
       }
     } catch {
       // Fail open to standard Gemini connector
     }
+  }
+  if (tool === "execute_capability") {
+    return undefined; // Checked dynamically inside executeConnectorCapability
   }
   return HERMES_TOOL_CONNECTOR_MAP[tool];
 }

@@ -10,7 +10,7 @@ export type ConnectorCategory = "infrastructure" | "ai" | "messaging" | "social"
 
 export type ConnectorScopeLevel = "platform" | "company" | "both";
 
-export type ConnectorAccessMethod = "native" | "mcp" | "api" | "cli" | "browser";
+export type ConnectorAccessMethod = "native" | "mcp" | "api" | "cli" | "browser" | "desktop";
 
 export type ConnectorHealthStatus =
   | "pending"
@@ -55,6 +55,10 @@ export type ConnectorAuditEventType =
   | "quota_exceeded"
   // Founder Computer events
   | "browser_started"
+  | "viewer_opened"
+  | "viewer_closed"
+  | "manual_auth_started"
+  | "session_verified"
   | "session_authenticated"
   | "session_expired"
   | "browser_restarted"

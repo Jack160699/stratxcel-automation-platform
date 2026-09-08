@@ -47,4 +47,9 @@ export const TOOL_DESCRIPTIONS: Record<ToolName, string> = {
   computer_key: "Press a desktop keyboard key or shortcut. Input: { key, modifiers? }.",
   computer_screenshot: "Capture a desktop screenshot. Input: { fullScreen? }.",
   computer_wait: "Wait for a specified duration in milliseconds. Input: { ms }.",
+  discover_capabilities: "Discover all verified capabilities across connected providers (Google Founder Browser, Google AI Pro, Claude, etc.). Input: { providerFilter?, refresh? }.",
+  get_capability_status: "Inspect the current live status, health, and requirements of a specific capability. Input: { capabilityKey, connectorKey? }.",
+  select_best_resource: "Evaluate candidate providers/resources for a task capability and select the best legitimate execution path with fallbacks. Input: { capabilityKey, requireAutonomous? }.",
+  execute_capability: "Execute a capability through the authorized connector control plane. Input: { capabilityKey, payload?, connectorKey? }.",
+  get_resource_health: "Check the health and connection status of an underlying connector resource. Input: { connectorKey }.",
 };

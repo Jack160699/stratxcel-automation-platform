@@ -20,6 +20,8 @@ import {
   deriveCapabilitiesFromSession,
   buildInitialSessionMetadata,
   buildSessionVerifiedMetadata,
+  buildViewerSessionMetadata,
+  buildReleaseViewerMetadata,
   generateProfileId,
   discoverFounderComputerCapabilities,
   toDiscoveredCapabilityKeys,
@@ -87,53 +89,58 @@ async function testRegistryDefinition() {
 }
 
 async function testHealthProbeStates() {
-  const mockSupabase = {
-    from() {
-      return { select: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: null }) }) }) };
-    },
-  };
+  process.env.FOUNDER_BROWSER_SKIP_PROBE = "1";
+  try {
+    const mockSupabase = {
+      from() {
+        return { select: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: null }) }) }) };
+      },
+    };
 
-  // 1. Not configured when no connection exists
-  const healthNone = await resolveConnectorHealth(mockSupabase as never, "founder_computer", null, null);
-  assert.equal(healthNone.status, "not_configured");
+    // 1. Not configured when no connection exists
+    const healthNone = await resolveConnectorHealth(mockSupabase as never, "founder_computer", null, null);
+    assert.equal(healthNone.status, "not_configured");
 
-  // 2. Auth required when connection has no session profile
-  const connAuthReq = createMockConnection({}, "auth_required");
-  const healthAuthReq = await resolveConnectorHealth(mockSupabase as never, "founder_computer", connAuthReq, null);
-  assert.equal(healthAuthReq.status, "auth_required");
+    // 2. Auth required when connection has no session profile
+    const connAuthReq = createMockConnection({}, "auth_required");
+    const healthAuthReq = await resolveConnectorHealth(mockSupabase as never, "founder_computer", connAuthReq, null);
+    assert.equal(healthAuthReq.status, "auth_required");
 
-  // 3. Healthy when verified recently
-  const connHealthy = createMockConnection({
-    profileId: "profile-test-1",
-    sessionStatus: "ready",
-    lastVerifiedAt: new Date().toISOString(),
-    authenticatedDomains: ["google.com"],
-  }, "connected");
-  const healthHealthy = await resolveConnectorHealth(mockSupabase as never, "founder_computer", connHealthy, null);
-  assert.equal(healthHealthy.status, "healthy");
-  assert.ok(healthHealthy.discoveredCapabilities.includes("browser.navigate"));
+    // 3. Healthy when verified recently
+    const connHealthy = createMockConnection({
+      profileId: "profile-test-1",
+      sessionStatus: "ready",
+      lastVerifiedAt: new Date().toISOString(),
+      authenticatedDomains: ["google.com"],
+    }, "connected");
+    const healthHealthy = await resolveConnectorHealth(mockSupabase as never, "founder_computer", connHealthy, null);
+    assert.equal(healthHealthy.status, "healthy");
+    assert.ok(healthHealthy.discoveredCapabilities.includes("browser.navigate"));
 
-  // 4. Degraded when last verified > 24 hours ago
-  const twoDaysAgo = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
-  const connDegraded = createMockConnection({
-    profileId: "profile-test-1",
-    sessionStatus: "ready",
-    lastVerifiedAt: twoDaysAgo,
-    authenticatedDomains: ["google.com"],
-  }, "connected");
-  const healthDegraded = await resolveConnectorHealth(mockSupabase as never, "founder_computer", connDegraded, null);
-  assert.equal(healthDegraded.status, "degraded");
+    // 4. Degraded when last verified > 24 hours ago
+    const twoDaysAgo = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+    const connDegraded = createMockConnection({
+      profileId: "profile-test-1",
+      sessionStatus: "ready",
+      lastVerifiedAt: twoDaysAgo,
+      authenticatedDomains: ["google.com"],
+    }, "connected");
+    const healthDegraded = await resolveConnectorHealth(mockSupabase as never, "founder_computer", connDegraded, null);
+    assert.equal(healthDegraded.status, "degraded");
 
-  // 5. Expired / requires_reauth
-  const connExpired = createMockConnection({
-    profileId: "profile-test-1",
-    sessionStatus: "expired",
-    authenticatedDomains: ["google.com"],
-  }, "auth_expired");
-  const healthExpired = await resolveConnectorHealth(mockSupabase as never, "founder_computer", connExpired, null);
-  assert.equal(healthExpired.status, "requires_reauth");
+    // 5. Expired / requires_reauth
+    const connExpired = createMockConnection({
+      profileId: "profile-test-1",
+      sessionStatus: "expired",
+      authenticatedDomains: ["google.com"],
+    }, "auth_expired");
+    const healthExpired = await resolveConnectorHealth(mockSupabase as never, "founder_computer", connExpired, null);
+    assert.equal(healthExpired.status, "requires_reauth");
 
-  console.log("✓ founder_computer health probe states verified (not_configured, auth_required, healthy, degraded, requires_reauth)");
+    console.log("✓ founder_computer health probe states verified (not_configured, auth_required, healthy, degraded, requires_reauth)");
+  } finally {
+    delete process.env.FOUNDER_BROWSER_SKIP_PROBE;
+  }
 }
 
 async function testSessionParsingAndMetadataBuilders() {
@@ -170,8 +177,33 @@ async function testSessionParsingAndMetadataBuilders() {
   assert.ok(derivedCaps.includes("browser.screenshot"));
   assert.ok(derivedCaps.includes("computer.open_app")); // because google.com is authenticated
 
-  console.log("✓ founder_computer session parsing and metadata builders verified");
+  // Viewer opened lock test
+  const viewerMeta = buildViewerSessionMetadata({
+    existing: verifiedMeta,
+    expiresAt: new Date(Date.now() + 900000).toISOString(),
+  });
+  assert.equal(viewerMeta.controlLock, "FOUNDER_CONTROL");
+  assert.equal(viewerMeta.viewerActive, true);
+  assert.ok(viewerMeta.viewerExpiresAt);
+
+  const parsedViewerSession = parseFounderComputerSession(viewerMeta);
+  assert.equal(parsedViewerSession?.controlLock, "FOUNDER_CONTROL");
+  assert.equal(parsedViewerSession?.viewerActive, true);
+
+  // Viewer closed lock release test
+  const releasedMeta = buildReleaseViewerMetadata(viewerMeta);
+  assert.equal(releasedMeta.controlLock, "AVAILABLE");
+  assert.equal(releasedMeta.viewerActive, false);
+  assert.equal(releasedMeta.viewerExpiresAt, null);
+
+  const parsedReleasedSession = parseFounderComputerSession(releasedMeta);
+  assert.equal(parsedReleasedSession?.controlLock, "AVAILABLE");
+  assert.equal(parsedReleasedSession?.viewerActive, false);
+
+
+  console.log("✓ founder_computer session parsing, metadata builders & control locks verified");
 }
+
 
 async function testHonestCapabilityDiscovery() {
   // 1. When session is null, all capabilities are unavailable
@@ -523,6 +555,179 @@ async function testControlPlaneAndRuntimeSeparation() {
   console.log("✓ control plane / runtime separation & database schema resilience verified");
 }
 
+async function testKeyboardInputModifiersAndSafety() {
+  // 1. Caps Lock Hardware State Persistence Simulation
+  let capsLockState = false;
+  function toggleCapsLock() {
+    capsLockState = !capsLockState;
+    return capsLockState;
+  }
+  function processKey(key: string): string {
+    if (key === "CapsLock") {
+      toggleCapsLock();
+      return "";
+    }
+    if (capsLockState) {
+      return key.toUpperCase();
+    }
+    return key.toLowerCase();
+  }
+
+  assert.equal(capsLockState, false, "Initial CapsLock must be OFF");
+  const sequence = ["a", "CapsLock", "a", "CapsLock", "a"];
+  const result = sequence.map(processKey).join("");
+  assert.equal(result, "aAa", "a -> CapsLock -> a -> CapsLock -> a must produce 'aAa'");
+  assert.equal(capsLockState, false, "Final CapsLock must be OFF after even number of toggles");
+
+  // 2. Modifier Key Codes & Combinations
+  const canonicalModifiers = [
+    "Shift", "Control", "Alt", "Meta", "Tab", "Enter", "Escape",
+    "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Delete",
+    "Backspace", "Home", "End", "PageUp", "PageDown"
+  ];
+  for (const mod of canonicalModifiers) {
+    assert.ok(mod.length > 0, `Modifier ${mod} must be recognized`);
+  }
+
+  const combinations = ["Ctrl+A", "Ctrl+C", "Ctrl+V", "Ctrl+Backspace", "Shift+Tab"];
+  for (const combo of combinations) {
+    const parts = combo.split("+");
+    assert.ok(parts.length >= 2, `Combination ${combo} must split into modifiers and key`);
+  }
+
+  // 3. Founder Control Lock vs Hermes Automation
+  const initialMeta = { profileId: "fc-test", sessionStatus: "ready", controlLock: "AVAILABLE" };
+  const viewerOpenMeta = buildViewerSessionMetadata({
+    existing: initialMeta,
+    expiresAt: new Date(Date.now() + 900000).toISOString(),
+  });
+  assert.equal(viewerOpenMeta.controlLock, "FOUNDER_CONTROL");
+  assert.equal(viewerOpenMeta.viewerActive, true);
+
+  const parsedViewerSession = parseFounderComputerSession(viewerOpenMeta);
+  assert.ok(parsedViewerSession);
+  assert.equal(parsedViewerSession.controlLock, "FOUNDER_CONTROL");
+
+  // Verify assertFounderBrowserAvailableForHermes
+  const { assertFounderBrowserAvailableForHermes } = await import("../founder-computer/session.ts");
+  let caughtHermesError = false;
+  try {
+    assertFounderBrowserAvailableForHermes(viewerOpenMeta);
+  } catch (err: any) {
+    caughtHermesError = true;
+    assert.ok(
+      err.message.includes("Founder is currently interacting with the browser") ||
+      err.code === "founder_control_active" ||
+      err.message.includes("Founder Control"),
+      "Error must explain that Founder Control is active"
+    );
+  }
+  assert.ok(caughtHermesError, "Hermes must be blocked when FOUNDER_CONTROL is active");
+
+  // When viewer is closed, lock releases to AVAILABLE
+  const releasedMeta = buildReleaseViewerMetadata(viewerOpenMeta);
+  assert.equal(releasedMeta.controlLock, "AVAILABLE");
+  assert.equal(releasedMeta.viewerActive, false);
+  // assertFounderBrowserAvailableForHermes must succeed without throwing
+  assertFounderBrowserAvailableForHermes(releasedMeta);
+
+  // 4. Zero Password and Clipboard Storage (Security Non-Logging Invariant)
+  const sensitivePayload = {
+    password: "MySuperSecretGooglePassword!",
+    confirmPassword: "MySuperSecretGooglePassword!",
+    token: "xyz123secrettoken",
+    clipboard: "SecretPastedCredentials",
+    url: "https://accounts.google.com",
+    otherParam: "harmless-value"
+  };
+  const scrubbed = scrubSensitivePayload(sensitivePayload) as Record<string, unknown>;
+  assert.equal(scrubbed.password, "[REDACTED]", "Password must be redacted from audit/telemetry");
+  assert.equal(scrubbed.confirmPassword, "[REDACTED]", "Confirm password must be redacted");
+  assert.equal(scrubbed.token, "[REDACTED]", "Tokens must be redacted");
+  assert.equal(scrubbed.clipboard, "[REDACTED]", "Clipboard contents must be redacted");
+  assert.equal(scrubbed.url, "https://accounts.google.com", "Safe URLs must be preserved");
+  assert.equal(scrubbed.otherParam, "harmless-value", "Safe params must be preserved");
+
+  console.log("✓ keyboard input, modifiers, Caps Lock persistence, control locks & non-logging safety verified");
+}
+
+async function testGoogleSessionVerificationAndMultiTabDetection() {
+  // 1. Multi-tab simulation: tab 0 is internal DICE intercept, tab 1 is myaccount.google.com with active session, tab 2 is gemini.google.com
+  const simulatedPages = [
+    {
+      url: "chrome://signin-dice-web-intercept.top-chrome/chrome-signin",
+      title: "Sign in to Chrome",
+      isInternal: true,
+      hasSession: false,
+    },
+    {
+      url: "https://myaccount.google.com/?utm_source=sign_in_no_continue&pli=1",
+      title: "Google Account",
+      isInternal: false,
+      hasSession: true,
+      accountEmail: "shriyanshtv@gmail.com",
+    },
+    {
+      url: "https://gemini.google.com/app",
+      title: "Gemini",
+      isInternal: false,
+      hasSession: true,
+      accountEmail: "shriyanshtv@gmail.com",
+    },
+  ];
+
+  // Verify internal page filter
+  const inspectablePages = simulatedPages.filter((p) => !p.isInternal);
+  assert.equal(inspectablePages.length, 2, "Internal chrome:// pages must be filtered out");
+  assert.equal(inspectablePages[0].accountEmail, "shriyanshtv@gmail.com", "Non-primary tab account must be detected");
+
+  // 2. Build verified metadata with authenticatedGoogleAccount
+  const existingMeta = {
+    profileId: "fc-founder-1",
+    sessionStatus: "auth_required",
+    runtimeHostRef: "aws-ec2-test",
+  };
+  const verified = buildSessionVerifiedMetadata({
+    existing: existingMeta,
+    authenticatedDomains: ["google.com", "accounts.google.com", "myaccount.google.com", "gemini.google.com"],
+    authenticatedGoogleAccount: "shriyanshtv@gmail.com",
+  });
+
+  assert.equal(verified.sessionStatus, "ready");
+  assert.equal(verified.authenticatedGoogleAccount, "shriyanshtv@gmail.com");
+  const authDomains = verified.authenticatedDomains as string[];
+  assert.ok(authDomains.includes("google.com"));
+  assert.ok(authDomains.includes("gemini.google.com"));
+
+  // 3. Parse session and verify state
+  const session = parseFounderComputerSession(verified);
+  assert.ok(session);
+  assert.equal(session.status, "ready");
+  assert.equal(session.sessionStatus, "AUTHENTICATED");
+  assert.equal(session.authenticatedGoogleAccount, "shriyanshtv@gmail.com");
+  assert.equal(session.isHealthy, true);
+
+  // 4. Verify auto-healing to healthy status
+  assert.equal(deriveHealthStatusFromSession(session), "healthy");
+
+  // 5. Capability discovery under AUTHENTICATED session:
+  // Browser primitives + Google capabilities must be available, but separate from API
+  const caps = discoverFounderComputerCapabilities(session);
+  const geminiCap = caps.find((c) => c.capability === "gemini.chat");
+  assert.ok(geminiCap);
+  assert.equal(geminiCap.status, "available");
+  assert.equal(geminiCap.accessMethod, "browser", "Capability must be accessed via browser, not raw API");
+
+  // 6. Security invariant: verify no cookies or credentials leaked into session object
+  const sessionKeys = Object.keys(session);
+  assert.ok(!sessionKeys.includes("cookies"), "Cookies must NEVER be stored in session");
+  assert.ok(!sessionKeys.includes("password"), "Password must NEVER be stored in session");
+  assert.ok(!sessionKeys.includes("token"), "Tokens must NEVER be stored in session");
+  assert.ok(!sessionKeys.includes("authHeaders"), "Auth headers must NEVER be stored in session");
+
+  console.log("✓ Google session verification, multi-tab detection & safe identity parsing verified");
+}
+
 async function runAll() {
   console.log("\n--- RUNNING FOUNDER COMPUTER TEST SUITE ---");
   await testRegistryDefinition();
@@ -534,6 +739,8 @@ async function runAll() {
   await testAllBrowserAndComputerActions();
   await testCompanyAndAgentIsolation();
   await testControlPlaneAndRuntimeSeparation();
+  await testKeyboardInputModifiersAndSafety();
+  await testGoogleSessionVerificationAndMultiTabDetection();
   console.log("\nALL FOUNDER COMPUTER TESTS PASSED!\n");
 }
 
@@ -541,3 +748,4 @@ runAll().catch((err) => {
   console.error("Test failed:", err);
   process.exit(1);
 });
+

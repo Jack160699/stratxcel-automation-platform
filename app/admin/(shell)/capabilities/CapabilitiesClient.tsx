@@ -19,16 +19,44 @@ export interface CapabilityItem {
   external_blocker: string | null;
   agent_tool_name: string | null;
   last_verified_at: string | null;
+  provider?: string | null;
+  execution_method?: string | null;
+  fallback?: string | null;
+  permission?: string | null;
+  requires_confirmation?: boolean;
 }
 
-const STATUS_MAP: Record<string, { label: string; status: string }> = {
-  REAL_EXPOSED: { label: "Live Exposed", status: "connected" },
+const STATUS_MAP: Record<string, { label: string; status: "connected" | "needs_attention" | "waiting" | "paused" | "error" }> = {
+  AVAILABLE: { label: "● Available", status: "connected" },
+  AVAILABLE_WITH_CONFIRMATION: { label: "● Available (Confirmation)", status: "needs_attention" },
+  REAL_EXPOSED: { label: "● Available", status: "connected" },
+  AUTH_REQUIRED: { label: "● Auth Required", status: "needs_attention" },
+  DEGRADED: { label: "● Degraded", status: "needs_attention" },
+  UNAVAILABLE: { label: "○ Unavailable", status: "paused" },
   PARTIAL: { label: "Partial", status: "needs_attention" },
   REAL_NOT_EXPOSED: { label: "Internal Only", status: "waiting" },
   NOT_BUILT: { label: "In Roadmap", status: "paused" },
   EXTERNAL_REQUIRED: { label: "External Blocker", status: "needs_attention" },
   BROKEN: { label: "Broken", status: "error" },
 };
+
+function formatRelativeTime(isoString: string | null): string {
+  if (!isoString) return "Never verified";
+  try {
+    const diffMs = Date.now() - new Date(isoString).getTime();
+    if (diffMs < 0) return "Verified just now";
+    const sec = Math.floor(diffMs / 1000);
+    if (sec < 60) return "Verified just now";
+    const min = Math.floor(sec / 60);
+    if (min < 60) return `Verified ${min} min ago`;
+    const hrs = Math.floor(min / 60);
+    if (hrs < 24) return `Verified ${hrs} hr ago`;
+    const days = Math.floor(hrs / 24);
+    return `Verified ${days}d ago`;
+  } catch {
+    return "Verified recently";
+  }
+}
 
 type StatusFilter = "all" | "live" | "building" | "blocked";
 
@@ -43,11 +71,29 @@ export function CapabilitiesClient({
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [selectedCapability, setSelectedCapability] = useState<CapabilityItem | null>(null);
 
+  const liveCount = (countsByStatus["AVAILABLE"] ?? 0) + (countsByStatus["AVAILABLE_WITH_CONFIRMATION"] ?? 0) + (countsByStatus["REAL_EXPOSED"] ?? 0);
+  const buildingCount = (countsByStatus["PARTIAL"] ?? 0) + (countsByStatus["NOT_BUILT"] ?? 0) + (countsByStatus["REAL_NOT_EXPOSED"] ?? 0);
+  const blockedCount =
+    (countsByStatus["AUTH_REQUIRED"] ?? 0) +
+    (countsByStatus["EXTERNAL_REQUIRED"] ?? 0) +
+    (countsByStatus["DEGRADED"] ?? 0) +
+    (countsByStatus["UNAVAILABLE"] ?? 0) +
+    (countsByStatus["BROKEN"] ?? 0);
+
   const filtered = useMemo(() => {
     return capabilities.filter((c) => {
-      if (statusFilter === "live" && c.status !== "REAL_EXPOSED") return false;
-      if (statusFilter === "building" && !["PARTIAL", "NOT_BUILT", "REAL_NOT_EXPOSED"].includes(c.status)) return false;
-      if (statusFilter === "blocked" && !["EXTERNAL_REQUIRED", "BROKEN"].includes(c.status)) return false;
+      if (statusFilter === "live" && !["AVAILABLE", "AVAILABLE_WITH_CONFIRMATION", "REAL_EXPOSED"].includes(c.status)) {
+        return false;
+      }
+      if (statusFilter === "building" && !["PARTIAL", "NOT_BUILT", "REAL_NOT_EXPOSED"].includes(c.status)) {
+        return false;
+      }
+      if (
+        statusFilter === "blocked" &&
+        !["AUTH_REQUIRED", "EXTERNAL_REQUIRED", "BROKEN", "DEGRADED", "UNAVAILABLE"].includes(c.status)
+      ) {
+        return false;
+      }
 
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
@@ -55,7 +101,10 @@ export function CapabilitiesClient({
           (c.name?.toLowerCase().includes(q) ?? false) ||
           c.capability_key.toLowerCase().includes(q) ||
           (c.description?.toLowerCase().includes(q) ?? false) ||
-          (c.category?.toLowerCase().includes(q) ?? false)
+          (c.category?.toLowerCase().includes(q) ?? false) ||
+          (c.provider?.toLowerCase().includes(q) ?? false) ||
+          (c.execution_method?.toLowerCase().includes(q) ?? false) ||
+          (c.fallback?.toLowerCase().includes(q) ?? false)
         );
       }
       return true;
@@ -68,7 +117,7 @@ export function CapabilitiesClient({
       <AdminPageHeader
         breadcrumb="Brain / Capability Registry"
         title="Capability Registry"
-        description="Authoritative catalog of what the Hermes Autonomous Engine and Copilot agents can execute."
+        description="Authoritative catalog of what the Hermes Autonomous Engine and Copilot agents can execute across Google Founder Browser, API connectors, and desktop runtimes."
         actions={
           <div className="flex items-center gap-3 text-xs text-sx-text-muted">
             <span>
@@ -76,11 +125,11 @@ export function CapabilitiesClient({
             </span>
             <span>·</span>
             <span className="text-[#5BDCA7]">
-              Live: <b>{countsByStatus["REAL_EXPOSED"] ?? 0}</b>
+              Available: <b>{liveCount}</b>
             </span>
             <span>·</span>
             <span className="text-[#F3C55C]">
-              Blocked: <b>{(countsByStatus["EXTERNAL_REQUIRED"] ?? 0) + (countsByStatus["BROKEN"] ?? 0)}</b>
+              Pending / Blocked: <b>{blockedCount}</b>
             </span>
           </div>
         }
@@ -94,26 +143,26 @@ export function CapabilitiesClient({
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search capabilities or tools…"
+            placeholder="Search capabilities, providers, or methods…"
             className="w-full bg-transparent placeholder:text-sx-text-subtle focus:outline-none"
           />
         </div>
 
         <AdminSegmentedControl
           value={statusFilter}
-          onChange={(v) => setStatusFilter(v)}
+          onChange={(v) => setStatusFilter(v as StatusFilter)}
           options={[
             { value: "all", label: "All", badge: capabilities.length },
-            { value: "live", label: "Live Exposed", badge: countsByStatus["REAL_EXPOSED"] ?? 0 },
+            { value: "live", label: "Available", badge: liveCount },
             {
               value: "building",
               label: "In Progress",
-              badge: (countsByStatus["PARTIAL"] ?? 0) + (countsByStatus["REAL_NOT_EXPOSED"] ?? 0),
+              badge: buildingCount,
             },
             {
               value: "blocked",
-              label: "Blocked",
-              badge: (countsByStatus["EXTERNAL_REQUIRED"] ?? 0) + (countsByStatus["BROKEN"] ?? 0),
+              label: "Blocked / Auth",
+              badge: blockedCount,
             },
           ]}
         />
@@ -133,21 +182,43 @@ export function CapabilitiesClient({
       ) : (
         <div className="flex flex-col gap-2">
           {filtered.map((c) => {
-            const meta = STATUS_MAP[c.status] ?? { label: c.status, status: "paused" };
+            const meta = STATUS_MAP[c.status] ?? { label: c.status, status: "paused" as const };
             return (
               <AdminEntityRow
                 key={c.capability_key}
                 icon={<Wrench size={16} className="text-sx-accent" />}
                 title={c.name ?? c.capability_key}
-                subtitle={c.description ?? "No description provided"}
+                subtitle={
+                  <span className="flex items-center gap-1.5 flex-wrap">
+                    <span>{c.description ?? "No description provided"}</span>
+                    {c.fallback && (
+                      <span className="text-sx-text-subtle">
+                        · Fallback: <span className="font-mono text-sx-text-muted">{c.fallback}</span>
+                      </span>
+                    )}
+                  </span>
+                }
                 meta={
-                  c.category && (
-                    <span className="rounded-full bg-sx-surface-2 px-2 py-0.5 text-[10px] font-medium text-sx-text-subtle uppercase tracking-wider">
-                      {c.category}
-                    </span>
-                  )
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {c.provider && (
+                      <span className="rounded-md border border-sx-border/80 bg-sx-surface-2 px-1.5 py-0.5 text-[10.5px] font-medium text-sx-accent">
+                        {c.provider}
+                      </span>
+                    )}
+                    {c.execution_method && (
+                      <span className="rounded-md border border-sx-border/60 bg-sx-surface-2/60 px-1.5 py-0.5 text-[10px] text-sx-text-muted">
+                        {c.execution_method}
+                      </span>
+                    )}
+                    {c.permission && (
+                      <span className="hidden md:inline rounded-md border border-sx-border/40 bg-sx-surface-1 px-1.5 py-0.5 text-[9.5px] text-sx-text-subtle">
+                        {c.permission}
+                      </span>
+                    )}
+                  </div>
                 }
                 status={<AdminStatusDot status={meta.status} customLabel={meta.label} />}
+                timestamp={formatRelativeTime(c.last_verified_at)}
                 onOpenDetails={() => setSelectedCapability(c)}
                 detailsAriaLabel={`Inspect capability ${c.name ?? c.capability_key}`}
               />
@@ -174,6 +245,8 @@ export function CapabilitiesClient({
         >
           <AdminDrawerSection title="Identifiers & Routing">
             <AdminDrawerRow label="Capability Key" value={selectedCapability.capability_key} mono />
+            <AdminDrawerRow label="Provider" value={selectedCapability.provider ?? "Google AI Pro"} />
+            <AdminDrawerRow label="Execution Method" value={selectedCapability.execution_method ?? "Founder Browser"} />
             <AdminDrawerRow label="Category" value={selectedCapability.category ?? "Uncategorized"} />
             <AdminDrawerRow
               label="Agent Tool Name"
@@ -187,6 +260,16 @@ export function CapabilitiesClient({
                   ? new Date(selectedCapability.last_verified_at).toLocaleString()
                   : "Never verified"
               }
+            />
+          </AdminDrawerSection>
+
+          <AdminDrawerSection title="Fallback Strategy & Policy">
+            <AdminDrawerRow label="Preferred Resource" value={`${selectedCapability.provider ?? "Google AI Pro"} (${selectedCapability.execution_method ?? "Founder Browser"})`} />
+            <AdminDrawerRow label="Fallback Resource" value={selectedCapability.fallback ?? "None"} />
+            <AdminDrawerRow label="Autonomy Permission" value={selectedCapability.permission ?? "Autonomous"} />
+            <AdminDrawerRow
+              label="Requires Confirmation"
+              value={selectedCapability.requires_confirmation ? "Yes (Founder Review Gate)" : "No (Autonomous)"}
             />
           </AdminDrawerSection>
 
@@ -208,8 +291,8 @@ export function CapabilitiesClient({
 
           <AdminDrawerSection title="Security & Sandboxing">
             <div className="flex items-center gap-2 text-xs text-sx-text-muted">
-              <ShieldCheck size={14} className="text-sx-accent" />
-              <span>Execution is strictly bounded by role-based capabilities and budget envelopes.</span>
+              <ShieldCheck size={14} className="text-sx-accent shrink-0" />
+              <span>Execution is strictly bounded by Connector Control Plane authorization, tenant boundary isolation, and zero-secret credential protection.</span>
             </div>
           </AdminDrawerSection>
         </AdminUniversalDrawer>

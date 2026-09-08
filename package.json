@@ -78,6 +78,7 @@
     "test:workforce-server": "node --experimental-strip-types lib/workforce/__tests__/authorization-scope.test.ts && node --experimental-strip-types lib/workforce/__tests__/server-capability-execution.test.ts"
   },
   "dependencies": {
+    "@novnc/novnc": "^1.7.0",
     "@stratxcel/agent-core": "*",
     "@stratxcel/ai-runtime": "*",
     "@stratxcel/approvals": "*",

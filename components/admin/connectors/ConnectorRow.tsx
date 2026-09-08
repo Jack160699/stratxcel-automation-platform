@@ -45,7 +45,15 @@ export function ConnectorRow({
 }) {
   const { definition, health } = item;
   const meta = getConnectorMeta(definition.key, definition.label);
-  const visualStatus = resolveVisualStatus(health.status);
+  const isFounderComputer = definition.key === "founder_computer";
+  const details = health.details ?? (item.connection?.metadata as Record<string, unknown> | undefined);
+  const isFounderAuth = isFounderComputer && (
+    health.status === "healthy" ||
+    health.status === "authenticated" ||
+    details?.sessionStatus === "AUTHENTICATED" ||
+    details?.status === "ready"
+  );
+  const visualStatus = resolveVisualStatus(isFounderAuth ? "authenticated" : health.status);
   const isConnected = visualStatus.type === "connected";
   const isGoogleAiPro = definition.key === "google_ai_pro";
 
@@ -83,12 +91,15 @@ export function ConnectorRow({
         onClick={(e) => e.stopPropagation()}
       >
         {/* Status Indicator */}
-        <ConnectorStatusDot status={health.status} />
+        <ConnectorStatusDot
+          status={isFounderAuth ? "authenticated" : health.status}
+          displayLabel={isFounderAuth ? "Authenticated" : undefined}
+        />
 
         {/* Primary Action Button (Connect / Reconnect / Connected) */}
         {isConnected ? (
           <span className="hidden sm:inline-flex items-center rounded-md border border-sx-border/60 bg-sx-surface-2 px-2.5 py-1 text-xs font-medium text-sx-text-muted">
-            Connected
+            {isFounderAuth ? "Authenticated" : "Connected"}
           </span>
         ) : (
           <button

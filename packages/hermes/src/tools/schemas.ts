@@ -247,6 +247,37 @@ export const TOOL_INPUT_SCHEMAS = {
       ms: z.number().min(1),
     })
     .strict(),
+  discover_capabilities: z
+    .object({
+      providerFilter: z.string().optional(),
+      refresh: z.boolean().optional(),
+      liveProbe: z.boolean().optional(),
+    })
+    .strict(),
+  get_capability_status: z
+    .object({
+      capabilityKey: z.string().min(1),
+      connectorKey: z.string().optional(),
+    })
+    .strict(),
+  select_best_resource: z
+    .object({
+      capabilityKey: z.string().min(1),
+      requireAutonomous: z.boolean().optional(),
+    })
+    .strict(),
+  execute_capability: z
+    .object({
+      capabilityKey: z.string().min(1),
+      payload: z.record(z.string(), z.unknown()).optional(),
+      connectorKey: z.string().optional(),
+    })
+    .strict(),
+  get_resource_health: z
+    .object({
+      connectorKey: z.string().min(1),
+    })
+    .strict(),
 } as const satisfies Partial<Record<ToolName, z.ZodTypeAny>>;
 
 /** The exact set of tool names an MCP caller may ever validate/invoke through this map. */
