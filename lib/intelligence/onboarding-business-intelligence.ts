@@ -9,6 +9,7 @@
  */
 
 import { SERVICE_CATALOGUE } from "@stratxcel/missions";
+import { mapGooglePlaceToIndustryOption } from "../identity/industry-options.ts";
 import type { DiscoveredBusinessData } from "../audit/v1/smart-discovery";
 import type { NormalizedGoogleMapsInput } from "../identity/google-maps-normalizer";
 import type { GooglePlaceDetails } from "../identity/google-places";
@@ -402,7 +403,14 @@ export function synthesizeOnboardingBusinessIntelligence(
     confidenceAccumulator += 1.0;
     factorCount++;
   } else if (sources.googlePlaceData?.category) {
-    industry = sources.googlePlaceData.category;
+    // Mapped through the real dropdown's own option list (mapGooglePlaceToIndustryOption),
+    // not Google's raw category string directly -- StepBusiness.tsx's
+    // "Type of business" <select> only has ~12 fixed options, and a raw
+    // Google category like "Hotel" or "Health Consultant" matches none of
+    // them, silently rendering as nothing-selected even though the value
+    // was technically stored (a real bug, caught live: the dropdown
+    // appeared blank despite a successful, real business selection).
+    industry = mapGooglePlaceToIndustryOption(sources.googlePlaceData.types);
     provenance.industry = "GOOGLE_MAPS";
     confidenceAccumulator += 0.75;
     factorCount++;

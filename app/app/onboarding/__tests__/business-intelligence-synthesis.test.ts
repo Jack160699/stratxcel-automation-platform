@@ -153,7 +153,11 @@ function run() {
     const placeDataNoWebsite = { ...placeData, websiteUri: null };
     const placeOnly = synthesizeOnboardingBusinessIntelligence({ googlePlaceData: placeDataNoWebsite });
     assert.equal(placeOnly.business.name, "MedRoute Consultancy");
-    assert.equal(placeOnly.business.industry, "Health Consultant");
+    // Mapped through the real dropdown's own option list, not Google's raw
+    // "Health Consultant" category string -- StepBusiness.tsx's "Type of
+    // business" <select> has no such option, so storing the raw string
+    // would leave the dropdown rendering as nothing-selected.
+    assert.equal(placeOnly.business.industry, "Healthcare & Clinics");
     assert.equal(placeOnly.provenance.industry, "GOOGLE_MAPS");
     assert.equal(placeOnly.business.whatsapp, "098765 43210");
     assert.equal(placeOnly.provenance.whatsapp, "GOOGLE_MAPS");

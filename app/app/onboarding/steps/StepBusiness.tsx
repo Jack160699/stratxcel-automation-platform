@@ -6,21 +6,7 @@ import { FormField } from "../FormField";
 import { validateAndNormalizeGoogleMapsInput } from "@/lib/identity/google-maps-normalizer";
 import { normalizeWebsiteUrl } from "@/lib/identity/smart-url";
 import type { OnboardingDraft } from "../types";
-
-const INDUSTRY_OPTIONS = [
-  "SaaS & Technology",
-  "Healthcare & Clinics",
-  "Food & Dining (Restaurants / Cafes)",
-  "Salon & Beauty Services",
-  "Professional Services & Consulting",
-  "Real Estate & Architecture",
-  "Retail & E-commerce",
-  "Fitness & Wellness",
-  "Automotive & Repair",
-  "Education & Coaching",
-  "Manufacturing & Industrial",
-  "General Business",
-];
+import { INDUSTRY_OPTIONS } from "@/lib/identity/industry-options";
 
 export type DiscoveryState = "idle" | "running" | "done" | "failed";
 
@@ -71,17 +57,23 @@ interface SelectedPlaceSummary {
 }
 
 /**
- * StratXcel Onboarding reference step 1 (Business) — real business fields
- * plus a real, user-triggered discovery affordance (not auto-fired on
- * Continue like the previous implementation): "Find my business info
- * automatically" calls the real /api/platform/site-discovery/resolve
- * synthesis, shown as an honest idle → running → done/failed sequence. The
- * "done" summary shows only fields the real synthesis actually returns
- * (name/category/location) — no fabricated rating or review count, unlike
- * the reference's illustrative mockup data.
+ * StratXcel Onboarding reference step 1 (Business) -- MAKE BUSINESS
+ * DISCOVERY THE PRIMARY ONBOARDING ACTION redesign (mission Section 5):
+ * "Find your business" (real Google Places search) is now the dominant,
+ * first interaction on this screen, not one field among an equal-weight
+ * manual form. The full business-details form (name/industry/city/website)
+ * is deliberately hidden until either (a) a real Google business is
+ * selected -- pre-filled from real Place Details + website discovery, (b)
+ * the customer explicitly asks to enter details manually, (c) the customer
+ * chooses the paste-a-link fallback, or (d) a validation error on Continue
+ * needs a field this screen would otherwise be hiding. This keeps every
+ * existing path valid (search-select, paste link, website-only, fully
+ * manual) while making search the thing a customer actually sees and does
+ * first, per the mission's explicit complaint that the screen "must NOT
+ * feel like a manual company-information form."
  *
- * Website and Google Maps/Business are two fully independent, optional
- * fields (mission Section 4/5/6/7) — each with its own real, non-blocking,
+ * Website and Google Maps/Business remain two fully independent, optional
+ * fields (mission Section 4/5/6/7) -- each with its own real, non-blocking,
  * server-verified connection state, never a shared/ambiguous combined text
  * box. Website verification reuses the same real, SSRF-protected
  * reachability check (/api/platform/site-discovery/resolve ->
@@ -153,6 +145,10 @@ export function StepBusiness({
   const [googleFlowError, setGoogleFlowError] = useState<string | null>(null);
   const [selectedPlace, setSelectedPlace] = useState<SelectedPlaceSummary | null>(null);
   const [websiteAutoDiscovering, setWebsiteAutoDiscovering] = useState(false);
+  // Explicit "I'll type it myself" escape hatch (mission Section 5: search
+  // is the dominant first action, but website-only and fully-manual entry
+  // must remain reachable, not just possible in theory).
+  const [manualEntry, setManualEntry] = useState(false);
   const sessionTokenRef = useRef<string>(crypto.randomUUID());
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -161,6 +157,14 @@ export function StepBusiness({
       if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
     };
   }, []);
+
+  // The business-details form (name/industry/city/website) is hidden by
+  // default so the first thing a customer sees and does is search -- it
+  // reveals once there's real Google data to show, once the customer asks
+  // for the manual/paste-link fallback, or if Continue was already pressed
+  // and a field here failed validation (never hide the one field carrying
+  // an active error).
+  const showDetails = Boolean(selectedPlace) || manualEntry || showPasteMapsLink || Boolean(errors.name);
 
   function scheduleSearch(query: string) {
     setBusinessSearchQuery(query);
@@ -370,75 +374,18 @@ export function StepBusiness({
 
   return (
     <div className="flex w-full flex-col gap-1">
-      <h2 className="font-sx-sans text-xl font-bold text-sx-text">Tell us about your business</h2>
-      <p className="mb-5 text-sm leading-relaxed text-sx-text-muted">We&rsquo;ll use this to set up your profile and find you online.</p>
+      <h2 className="font-sx-sans text-xl font-bold text-sx-text">Find your business</h2>
+      <p className="mb-5 text-sm leading-relaxed text-sx-text-muted">
+        Search for your business on Google and we&rsquo;ll pull in your details automatically.
+      </p>
 
       <div className="flex flex-col gap-3.5">
-        <FormField label="Business name" htmlFor={nameId} error={errors.name}>
-          <Input
-            id={nameId}
-            value={draft.business.name}
-            onChange={(e) => update({ name: e.target.value })}
-            placeholder="e.g. Patel Daily Needs"
-            className="h-[46px]"
-            aria-invalid={Boolean(errors.name)}
-            aria-describedby={errors.name ? `${nameId}-error` : undefined}
-            required
-          />
-        </FormField>
-
-        <FormField label="Type of business" htmlFor={industryId}>
-          <select
-            id={industryId}
-            value={draft.business.industry}
-            onChange={(e) => update({ industry: e.target.value })}
-            className="h-[46px] w-full rounded-sx-sm border border-sx-border bg-sx-surface-2 px-3 text-[15px] text-sx-text focus:border-sx-accent focus:outline-none"
-          >
-            <option value="">Select…</option>
-            {INDUSTRY_OPTIONS.map((opt) => (
-              <option key={opt} value={opt}>
-                {opt}
-              </option>
-            ))}
-          </select>
-        </FormField>
-
-        <FormField label="City & area" htmlFor={locationId}>
-          <Input
-            id={locationId}
-            value={draft.business.location}
-            onChange={(e) => update({ location: e.target.value })}
-            placeholder="e.g. Navrangpura, Ahmedabad"
-            className="h-[46px]"
-          />
-        </FormField>
-
-        <FormField label="Website" htmlFor={websiteId} optional>
-          <Input
-            id={websiteId}
-            value={websiteValue}
-            onChange={(e) => setWebsiteValue(e.target.value)}
-            onBlur={(e) => void checkWebsite(e.target.value)}
-            placeholder="https://example.com or www.example.com"
-            className="h-[46px] font-mono text-sm"
-          />
-          <SourceCheckHint
-            state={websiteCheck}
-            idleLabel="Connect your website"
-            checkingLabel="Checking website…"
-            connectedLabel="Website connected"
-            failedLabel={websiteCheckError || "We couldn't connect to this website"}
-            onRetry={() => void checkWebsite(websiteValue)}
-          />
-        </FormField>
-
         <FormField label="Google Business / Google Maps" htmlFor={businessSearchId} optional>
           {selectedPlace ? (
-            <div className="rounded-sx-md border-[1.5px] border-sx-success/25 bg-sx-success/[0.04] p-3">
+            <div className="rounded-sx-md border-[1.5px] border-sx-success/25 bg-sx-success/[0.04] p-3.5">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <p className="truncate text-[14px] font-semibold text-sx-text">{selectedPlace.name}</p>
-                  {selectedPlace.address && <p className="mt-0.5 truncate text-xs text-sx-text-subtle">{selectedPlace.address}</p>}
+                  <p className="truncate text-[15px] font-semibold text-sx-text">{selectedPlace.name}</p>
                   {(selectedPlace.category || selectedPlace.rating != null) && (
                     <p className="mt-0.5 text-xs text-sx-text-subtle">
                       {selectedPlace.category}
@@ -451,25 +398,22 @@ export function StepBusiness({
                   Change
                 </button>
               </div>
-              <div className="mt-2 flex flex-col gap-1">
-                <SourceCheckHint
-                  state="connected"
-                  idleLabel=""
-                  checkingLabel=""
-                  connectedLabel="Business selected"
-                  failedLabel=""
-                  onRetry={() => {}}
-                />
+              {/* Progressive discovery checklist (mission Section 5's target
+                 flow): Business found -> Location found -> Website
+                 found/analyzed. Never claims "verified" -- see
+                 resolveEffectiveGbpVerificationState for that real, separate
+                 concept -- and never shows a row for data Google genuinely
+                 didn't have (no fabricated "not found" claims either). */}
+              <div className="mt-2.5 flex flex-col gap-1.5 border-t border-sx-success/15 pt-2.5">
+                <ChecklistRow done label="Business selected" />
+                {selectedPlace.address && <ChecklistRow done label={`Location found — ${selectedPlace.address}`} />}
                 {websiteAutoDiscovering ? (
                   <div className="flex items-center gap-1.5">
                     <span className="h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-[2px] border-sx-border-strong border-t-sx-accent" />
                     <span className="text-xs text-sx-text-subtle">Analyzing website…</span>
                   </div>
                 ) : selectedPlace.websiteUri && selectedPlace.websiteAnalyzed ? (
-                  <div className="flex items-center gap-1.5">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--sx-success)" strokeWidth="2.5"><path d="M20 6L9 17l-5-5" /></svg>
-                    <span className="text-xs font-medium text-sx-success">Website found &amp; analyzed</span>
-                  </div>
+                  <ChecklistRow done label="Website found &amp; analyzed" />
                 ) : selectedPlace.websiteUri ? (
                   // Google has a website on file, but the real crawl
                   // couldn't read it (a real site can block automated
@@ -516,7 +460,7 @@ export function StepBusiness({
                 onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
                 onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
                 placeholder="Search your business name…"
-                className="h-[46px]"
+                className="h-[52px] text-[15px]"
                 autoComplete="off"
               />
               {showSuggestions && suggestions.length > 0 && (
@@ -554,77 +498,176 @@ export function StepBusiness({
                 </div>
               )}
               {googleFlow === "idle" && !businessSearchQuery && (
-                <p className="mt-1.5 text-xs text-sx-text-subtle">Connect Google Maps</p>
+                <p className="mt-1.5 text-xs text-sx-text-subtle">Type your business name to find it on Google</p>
               )}
-              <button type="button" onClick={() => setShowPasteMapsLink(true)} className="mt-1.5 text-xs font-semibold text-sx-accent hover:underline">
-                Paste Google Maps link instead
-              </button>
+              <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                <span className="text-sx-text-subtle">Can&rsquo;t find your business?</span>
+                <button type="button" onClick={() => setShowPasteMapsLink(true)} className="font-semibold text-sx-accent hover:underline">
+                  Paste Google Maps link instead
+                </button>
+                <span className="text-sx-text-subtle">or</span>
+                <button type="button" onClick={() => setManualEntry(true)} className="font-semibold text-sx-accent hover:underline">
+                  Enter details manually
+                </button>
+              </div>
             </div>
           )}
         </FormField>
 
-        {/* A search-selected place already ran full discovery (name, website
-           auto-discovery + analysis) as part of selection above -- this
-           manual button is only useful for the paste-link/website-only
-           paths, which don't trigger discovery automatically. */}
-        {discoveryState === "idle" && !selectedPlace && (
-          <button
-            type="button"
-            onClick={() => onStartDiscovery(draft.business.website || websiteValue, draft.business.googleMapsUrl || mapsValue)}
-            disabled={!websiteValue.trim() && !mapsValue.trim() && !draft.business.website && !draft.business.googleMapsUrl}
-            className="flex h-[46px] items-center justify-center gap-2 rounded-sx-md border-[1.5px] border-dashed border-sx-accent/30 bg-sx-accent-muted text-[14px] font-semibold text-sx-accent disabled:opacity-40"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8" /><path d="M21 21l-4.35-4.35" /></svg>
-            Find my business info automatically
-          </button>
-        )}
+        {showDetails && (
+          <>
+            <div className="mt-1 border-t border-sx-border pt-3.5">
+              <p className="text-[13px] font-semibold text-sx-text">Tell us about your business</p>
+              <p className="text-xs text-sx-text-muted">
+                {selectedPlace
+                  ? "Pulled from Google — check it over and edit anything that's not right."
+                  : "We'll use this to set up your profile and find you online."}
+              </p>
+            </div>
 
-        {discoveryState === "running" && (
-          <div className="relative overflow-hidden rounded-sx-md border-[1.5px] border-sx-accent/20 bg-sx-surface-1 p-3.5">
-            <div className="flex items-center gap-2.5">
-              <span className="h-8 w-8 shrink-0 animate-spin rounded-full border-[2.5px] border-sx-border-strong border-t-sx-accent" />
-              <div>
-                <p className="text-[14px] font-semibold text-sx-text">Scanning your business online…</p>
-                <p className="mt-0.5 text-xs text-sx-text-subtle">Checking Google, Maps, and your website</p>
+            <FormField label="Business name" htmlFor={nameId} error={errors.name}>
+              <Input
+                id={nameId}
+                value={draft.business.name}
+                onChange={(e) => update({ name: e.target.value })}
+                placeholder="e.g. Patel Daily Needs"
+                className="h-[46px]"
+                aria-invalid={Boolean(errors.name)}
+                aria-describedby={errors.name ? `${nameId}-error` : undefined}
+                required
+              />
+            </FormField>
+
+            <FormField label="Type of business" htmlFor={industryId}>
+              <select
+                id={industryId}
+                value={draft.business.industry}
+                onChange={(e) => update({ industry: e.target.value })}
+                className="h-[46px] w-full rounded-sx-sm border border-sx-border bg-sx-surface-2 px-3 text-[15px] text-sx-text focus:border-sx-accent focus:outline-none"
+              >
+                <option value="">Select…</option>
+                {INDUSTRY_OPTIONS.map((opt) => (
+                  <option key={opt} value={opt}>
+                    {opt}
+                  </option>
+                ))}
+              </select>
+            </FormField>
+
+            <FormField label="City & area" htmlFor={locationId}>
+              <Input
+                id={locationId}
+                value={draft.business.location}
+                onChange={(e) => update({ location: e.target.value })}
+                placeholder="e.g. Navrangpura, Ahmedabad"
+                className="h-[46px]"
+              />
+            </FormField>
+
+            <FormField label="Website" htmlFor={websiteId} optional>
+              <Input
+                id={websiteId}
+                value={websiteValue}
+                onChange={(e) => setWebsiteValue(e.target.value)}
+                onBlur={(e) => void checkWebsite(e.target.value)}
+                placeholder="https://example.com or www.example.com"
+                className="h-[46px] font-mono text-sm"
+              />
+              <SourceCheckHint
+                state={websiteCheck}
+                idleLabel="Connect your website"
+                checkingLabel="Checking website…"
+                connectedLabel="Website connected"
+                failedLabel={websiteCheckError || "We couldn't connect to this website"}
+                onRetry={() => void checkWebsite(websiteValue)}
+              />
+            </FormField>
+
+            {/* A search-selected place already ran full discovery (name,
+               website auto-discovery + analysis) as part of selection above
+               -- this manual button is only useful for the paste-link/
+               website-only paths, which don't trigger discovery
+               automatically. */}
+            {discoveryState === "idle" && !selectedPlace && (
+              <button
+                type="button"
+                onClick={() => onStartDiscovery(draft.business.website || websiteValue, draft.business.googleMapsUrl || mapsValue)}
+                disabled={!websiteValue.trim() && !mapsValue.trim() && !draft.business.website && !draft.business.googleMapsUrl}
+                className="flex h-[46px] items-center justify-center gap-2 rounded-sx-md border-[1.5px] border-dashed border-sx-accent/30 bg-sx-accent-muted text-[14px] font-semibold text-sx-accent disabled:opacity-40"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8" /><path d="M21 21l-4.35-4.35" /></svg>
+                Find my business info automatically
+              </button>
+            )}
+
+            {discoveryState === "running" && (
+              <div className="relative overflow-hidden rounded-sx-md border-[1.5px] border-sx-accent/20 bg-sx-surface-1 p-3.5">
+                <div className="flex items-center gap-2.5">
+                  <span className="h-8 w-8 shrink-0 animate-spin rounded-full border-[2.5px] border-sx-border-strong border-t-sx-accent" />
+                  <div>
+                    <p className="text-[14px] font-semibold text-sx-text">Scanning your business online…</p>
+                    <p className="mt-0.5 text-xs text-sx-text-subtle">Checking Google, Maps, and your website</p>
+                  </div>
+                </div>
               </div>
-            </div>
-          </div>
-        )}
+            )}
 
-        {discoveryState === "done" && (
-          <div className="rounded-sx-md border-[1.5px] border-sx-success/20 bg-sx-success/[0.04] p-3.5">
-            <div className="mb-3 flex items-center gap-2">
-              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-sx-sm bg-sx-success/10">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--sx-success)" strokeWidth="2.5"><path d="M20 6L9 17l-5-5" /></svg>
-              </span>
-              <p className="text-[14px] font-semibold text-sx-success">Found your business!</p>
-            </div>
-            <div className="flex flex-col gap-1.5">
-              {draft.business.name && <SummaryRow label="Name" value={draft.business.name} />}
-              {draft.business.industry && <SummaryRow label="Category" value={draft.business.industry} />}
-              {draft.business.location && <SummaryRow label="Location" value={draft.business.location} />}
-            </div>
-            <p className="mt-2.5 text-xs text-sx-text-muted">Anything incorrect? You can update it above.</p>
-          </div>
-        )}
+            {discoveryState === "done" && (
+              <div className="rounded-sx-md border-[1.5px] border-sx-success/20 bg-sx-success/[0.04] p-3.5">
+                <div className="mb-3 flex items-center gap-2">
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-sx-sm bg-sx-success/10">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--sx-success)" strokeWidth="2.5"><path d="M20 6L9 17l-5-5" /></svg>
+                  </span>
+                  <p className="text-[14px] font-semibold text-sx-success">Found your business!</p>
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  {draft.business.name && <SummaryRow label="Name" value={draft.business.name} />}
+                  {draft.business.industry && <SummaryRow label="Category" value={draft.business.industry} />}
+                  {draft.business.location && <SummaryRow label="Location" value={draft.business.location} />}
+                </div>
+                <p className="mt-2.5 text-xs text-sx-text-muted">Anything incorrect? You can update it above.</p>
+              </div>
+            )}
 
-        {discoveryState === "failed" && (
-          <div className="rounded-sx-md border-[1.5px] border-sx-warning/20 bg-sx-warning/[0.04] p-3.5">
-            <div className="mb-2 flex items-center gap-2">
-              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-sx-sm bg-sx-warning/10">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--sx-warning)" strokeWidth="2"><path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4.5c-.77-.833-2.694-.833-3.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z" /></svg>
-              </span>
-              <p className="text-[14px] font-semibold text-sx-warning">Couldn&rsquo;t find your business automatically</p>
-            </div>
-            <p className="text-[13px] leading-relaxed text-sx-text-muted">
-              {errorField || "That's fine — just fill in your details manually and we'll set everything up for you. You can add your Google Business link later."}
-            </p>
-            <button type="button" onClick={onResetDiscovery} className="mt-2.5 text-[13px] font-semibold text-sx-accent">
-              Try again with a different link →
-            </button>
-          </div>
+            {discoveryState === "failed" && (
+              <div className="rounded-sx-md border-[1.5px] border-sx-warning/20 bg-sx-warning/[0.04] p-3.5">
+                <div className="mb-2 flex items-center gap-2">
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-sx-sm bg-sx-warning/10">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--sx-warning)" strokeWidth="2"><path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4.5c-.77-.833-2.694-.833-3.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z" /></svg>
+                  </span>
+                  <p className="text-[14px] font-semibold text-sx-warning">Couldn&rsquo;t find your business automatically</p>
+                </div>
+                <p className="text-[13px] leading-relaxed text-sx-text-muted">
+                  {errorField || "That's fine — just fill in your details manually and we'll set everything up for you. You can add your Google Business link later."}
+                </p>
+                <button type="button" onClick={onResetDiscovery} className="mt-2.5 text-[13px] font-semibold text-sx-accent">
+                  Try again with a different link →
+                </button>
+              </div>
+            )}
+          </>
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * One row of the selected-place progressive discovery checklist ("Business
+ * selected" -> "Location found" -> "Website found/analyzed") -- mission
+ * Section 5's target flow, rendered as real rows instead of a single
+ * combined hint line so a customer can see exactly what was actually
+ * discovered, not just that "something" was found.
+ */
+function ChecklistRow({ done, label }: { done: boolean; label: string }) {
+  return (
+    <div className="flex items-center gap-1.5">
+      {done ? (
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--sx-success)" strokeWidth="2.5"><path d="M20 6L9 17l-5-5" /></svg>
+      ) : (
+        <span className="h-3.5 w-3.5 shrink-0 rounded-full border-[2px] border-sx-border-strong" />
+      )}
+      <span className="text-xs font-medium text-sx-success">{label}</span>
     </div>
   );
 }
