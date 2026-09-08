@@ -311,6 +311,7 @@ export function scrubSensitivePayload<T extends Record<string, unknown>>(payload
   const sensitiveKeys = [
     "password", "secret", "token", "cookie", "cookies",
     "authorization", "key", "auth", "sessionid", "access_token",
+    "clipboard", "credential", "credentials", "passcode",
   ];
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(payload)) {

@@ -246,3 +246,22 @@ export function buildReleaseViewerMetadata(existing: Record<string, unknown>): R
 export function generateProfileId(): string {
   return `fc-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
+
+/**
+ * Throws an error if Founder Control is actively locking the browser.
+ * Protects manual Founder sessions from concurrent programmatic Hermes actions.
+ */
+export function assertFounderBrowserAvailableForHermes(
+  metadata: Record<string, unknown> | null | undefined
+): void {
+  if (!metadata) return;
+  const lock = (metadata.controlLock as string) || "AVAILABLE";
+  if (lock === "FOUNDER_CONTROL") {
+    const error = new Error(
+      "Founder is currently interacting with the browser (Founder Control is active). Hermes automation is temporarily paused."
+    );
+    (error as any).code = "founder_control_active";
+    throw error;
+  }
+}
+

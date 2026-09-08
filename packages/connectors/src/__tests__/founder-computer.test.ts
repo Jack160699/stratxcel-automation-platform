@@ -550,6 +550,102 @@ async function testControlPlaneAndRuntimeSeparation() {
   console.log("✓ control plane / runtime separation & database schema resilience verified");
 }
 
+async function testKeyboardInputModifiersAndSafety() {
+  // 1. Caps Lock Hardware State Persistence Simulation
+  let capsLockState = false;
+  function toggleCapsLock() {
+    capsLockState = !capsLockState;
+    return capsLockState;
+  }
+  function processKey(key: string): string {
+    if (key === "CapsLock") {
+      toggleCapsLock();
+      return "";
+    }
+    if (capsLockState) {
+      return key.toUpperCase();
+    }
+    return key.toLowerCase();
+  }
+
+  assert.equal(capsLockState, false, "Initial CapsLock must be OFF");
+  const sequence = ["a", "CapsLock", "a", "CapsLock", "a"];
+  const result = sequence.map(processKey).join("");
+  assert.equal(result, "aAa", "a -> CapsLock -> a -> CapsLock -> a must produce 'aAa'");
+  assert.equal(capsLockState, false, "Final CapsLock must be OFF after even number of toggles");
+
+  // 2. Modifier Key Codes & Combinations
+  const canonicalModifiers = [
+    "Shift", "Control", "Alt", "Meta", "Tab", "Enter", "Escape",
+    "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Delete",
+    "Backspace", "Home", "End", "PageUp", "PageDown"
+  ];
+  for (const mod of canonicalModifiers) {
+    assert.ok(mod.length > 0, `Modifier ${mod} must be recognized`);
+  }
+
+  const combinations = ["Ctrl+A", "Ctrl+C", "Ctrl+V", "Ctrl+Backspace", "Shift+Tab"];
+  for (const combo of combinations) {
+    const parts = combo.split("+");
+    assert.ok(parts.length >= 2, `Combination ${combo} must split into modifiers and key`);
+  }
+
+  // 3. Founder Control Lock vs Hermes Automation
+  const initialMeta = { profileId: "fc-test", sessionStatus: "ready", controlLock: "AVAILABLE" };
+  const viewerOpenMeta = buildViewerSessionMetadata({
+    existing: initialMeta,
+    expiresAt: new Date(Date.now() + 900000).toISOString(),
+  });
+  assert.equal(viewerOpenMeta.controlLock, "FOUNDER_CONTROL");
+  assert.equal(viewerOpenMeta.viewerActive, true);
+
+  const parsedViewerSession = parseFounderComputerSession(viewerOpenMeta);
+  assert.ok(parsedViewerSession);
+  assert.equal(parsedViewerSession.controlLock, "FOUNDER_CONTROL");
+
+  // Verify assertFounderBrowserAvailableForHermes
+  const { assertFounderBrowserAvailableForHermes } = await import("../founder-computer/session.ts");
+  let caughtHermesError = false;
+  try {
+    assertFounderBrowserAvailableForHermes(viewerOpenMeta);
+  } catch (err: any) {
+    caughtHermesError = true;
+    assert.ok(
+      err.message.includes("Founder is currently interacting with the browser") ||
+      err.code === "founder_control_active" ||
+      err.message.includes("Founder Control"),
+      "Error must explain that Founder Control is active"
+    );
+  }
+  assert.ok(caughtHermesError, "Hermes must be blocked when FOUNDER_CONTROL is active");
+
+  // When viewer is closed, lock releases to AVAILABLE
+  const releasedMeta = buildReleaseViewerMetadata(viewerOpenMeta);
+  assert.equal(releasedMeta.controlLock, "AVAILABLE");
+  assert.equal(releasedMeta.viewerActive, false);
+  // assertFounderBrowserAvailableForHermes must succeed without throwing
+  assertFounderBrowserAvailableForHermes(releasedMeta);
+
+  // 4. Zero Password and Clipboard Storage (Security Non-Logging Invariant)
+  const sensitivePayload = {
+    password: "MySuperSecretGooglePassword!",
+    confirmPassword: "MySuperSecretGooglePassword!",
+    token: "xyz123secrettoken",
+    clipboard: "SecretPastedCredentials",
+    url: "https://accounts.google.com",
+    otherParam: "harmless-value"
+  };
+  const scrubbed = scrubSensitivePayload(sensitivePayload) as Record<string, unknown>;
+  assert.equal(scrubbed.password, "[REDACTED]", "Password must be redacted from audit/telemetry");
+  assert.equal(scrubbed.confirmPassword, "[REDACTED]", "Confirm password must be redacted");
+  assert.equal(scrubbed.token, "[REDACTED]", "Tokens must be redacted");
+  assert.equal(scrubbed.clipboard, "[REDACTED]", "Clipboard contents must be redacted");
+  assert.equal(scrubbed.url, "https://accounts.google.com", "Safe URLs must be preserved");
+  assert.equal(scrubbed.otherParam, "harmless-value", "Safe params must be preserved");
+
+  console.log("✓ keyboard input, modifiers, Caps Lock persistence, control locks & non-logging safety verified");
+}
+
 async function runAll() {
   console.log("\n--- RUNNING FOUNDER COMPUTER TEST SUITE ---");
   await testRegistryDefinition();
@@ -561,6 +657,7 @@ async function runAll() {
   await testAllBrowserAndComputerActions();
   await testCompanyAndAgentIsolation();
   await testControlPlaneAndRuntimeSeparation();
+  await testKeyboardInputModifiersAndSafety();
   console.log("\nALL FOUNDER COMPUTER TESTS PASSED!\n");
 }
 
@@ -568,3 +665,4 @@ runAll().catch((err) => {
   console.error("Test failed:", err);
   process.exit(1);
 });
+

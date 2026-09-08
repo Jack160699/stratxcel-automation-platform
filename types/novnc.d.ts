@@ -10,5 +10,6 @@ declare module "@novnc/novnc" {
     sendCredentials(credentials: Record<string, unknown>): void;
     sendKey(keysym: number, code: string, down?: boolean): void;
     clipboardPasteFrom(text: string): void;
+    focus(options?: { preventScroll?: boolean }): void;
   }
 }
