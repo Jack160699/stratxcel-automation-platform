@@ -10,59 +10,83 @@ import { getCurrentBrandBrain } from "@stratxcel/brand-brain";
 import { loadIntegrationsStatusData } from "@/lib/connectors/load-integrations-data";
 import { computeRealBusinessSignals } from "@/lib/agent-core/business-signals";
 import { computeRealEntitlementSnapshot } from "@/lib/agent-core/business-priorities";
-import { Card, CardHeading, CardRow } from "@/components/ui/Card";
-import { Metric } from "@/components/ui/Metric";
-import { StatusChip, type ChipState } from "@/components/ui/StatusChip";
+import { AdminPageHeader } from "@/components/admin/ui/AdminPageHeader";
+import { AdminStatusDot } from "@/components/admin/ui/AdminStatusDot";
+import { AdminEntityRow } from "@/components/admin/ui/AdminEntityRow";
+import { AdminEmptyState } from "@/components/admin/ui/AdminEmptyState";
 import { OnboardingPanel } from "./OnboardingPanel";
+import {
+  Zap,
+  CheckSquare,
+  Inbox,
+  Building2,
+  Sparkles,
+  ArrowRight,
+  TrendingUp,
+  ShieldCheck,
+  Radio,
+} from "lucide-react";
 
-const BOTTLENECK_SEVERITY_CHIP: Record<string, ChipState> = {
-  critical: "danger",
-  high: "danger",
-  medium: "warning",
-  low: "neutral",
-  info: "neutral",
+const BOTTLENECK_STATUS_MAP: Record<string, string> = {
+  critical: "error",
+  high: "needs_attention",
+  medium: "waiting",
+  low: "healthy",
+  info: "paused",
 };
 
-const MISSION_STATE_CHIP: Record<string, { label: string; state: ChipState }> = {
-  DRAFT: { label: "Draft", state: "neutral" },
-  ESTIMATING: { label: "Estimating", state: "neutral" },
-  AWAITING_FUNDS: { label: "Awaiting funds", state: "warning" },
-  READY: { label: "Ready", state: "accent" },
-  QUEUED: { label: "Queued", state: "accent" },
-  RUNNING: { label: "Running", state: "ai" },
-  AWAITING_INPUT: { label: "Awaiting input", state: "warning" },
-  AWAITING_APPROVAL: { label: "Awaiting approval", state: "warning" },
-  HUMAN_HANDOFF: { label: "Human handoff", state: "warning" },
-  RESUMED: { label: "Resumed", state: "accent" },
-  COMPLETED: { label: "Completed", state: "success" },
-  PARTIALLY_COMPLETED: { label: "Partially completed", state: "success" },
-  FAILED: { label: "Failed", state: "danger" },
-  CANCELLED: { label: "Cancelled", state: "neutral" },
-  BLOCKED: { label: "Blocked", state: "danger" },
+const MISSION_STATE_MAP: Record<string, { label: string; status: string }> = {
+  DRAFT: { label: "Draft", status: "paused" },
+  ESTIMATING: { label: "Estimating", status: "waiting" },
+  AWAITING_FUNDS: { label: "Awaiting funds", status: "needs_attention" },
+  READY: { label: "Ready", status: "healthy" },
+  QUEUED: { label: "Queued", status: "waiting" },
+  RUNNING: { label: "Running", status: "running" },
+  AWAITING_INPUT: { label: "Awaiting input", status: "needs_attention" },
+  AWAITING_APPROVAL: { label: "Awaiting approval", status: "needs_attention" },
+  HUMAN_HANDOFF: { label: "Human handoff", status: "needs_attention" },
+  RESUMED: { label: "Resumed", status: "running" },
+  COMPLETED: { label: "Completed", status: "connected" },
+  PARTIALLY_COMPLETED: { label: "Partially completed", status: "connected" },
+  FAILED: { label: "Failed", status: "error" },
+  CANCELLED: { label: "Cancelled", status: "disabled" },
+  BLOCKED: { label: "Blocked", status: "error" },
 };
 
-function IntegrationRow({ label, mode }: { label: string; mode: string | undefined }) {
-  const live = mode === "live" || mode === "http";
-  const shadow = mode === "shadow" || mode === "mock";
-  return (
-    <div className="flex items-center justify-between gap-3 text-[12.5px]">
-      <span className="text-sx-text-muted">{label}</span>
-      <StatusChip state={live ? "success" : shadow ? "warning" : "neutral"} dot={false}>
-        {live ? "Live" : shadow ? "Shadow" : "Disabled"}
-      </StatusChip>
+function QuickMetricCard({
+  icon,
+  label,
+  value,
+  secondary,
+  href,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string | number;
+  secondary?: string;
+  href?: string;
+}) {
+  const content = (
+    <div className="group flex flex-col justify-between rounded-sx-md border border-sx-border/70 bg-sx-surface-1 p-4.5 transition-all duration-150 hover:border-sx-border-strong hover:bg-sx-surface-2/40">
+      <div className="flex items-center justify-between">
+        <span className="text-[12px] font-medium text-sx-text-muted">{label}</span>
+        <div className="flex h-7 w-7 items-center justify-center rounded-lg border border-sx-border/60 bg-sx-surface-2 text-sx-text-muted transition-colors group-hover:text-sx-accent">
+          {icon}
+        </div>
+      </div>
+      <div className="mt-3">
+        <span className="font-sx-sans text-2xl font-bold tracking-tight text-sx-text">{value}</span>
+        {secondary && <p className="mt-0.5 truncate text-[11px] text-sx-text-subtle">{secondary}</p>}
+      </div>
     </div>
   );
+
+  if (href) {
+    return <Link href={href} className="block">{content}</Link>;
+  }
+  return content;
 }
 
-/**
- * Independently re-guards with requireOwnerContext() even though the
- * parent (shell) layout already does — the App Router can still render
- * and serialize a nested page's Server Component output into the RSC
- * payload even when a layout discards {children} for an unauthorized
- * visitor (the exact defect fixed for app/admin/platform/page.tsx earlier
- * this build). As the new default landing page for /admin, this is the
- * single highest-traffic place that guard must hold.
- */
 export default async function CommandCenterPage() {
   const ctx = await requireOwnerContext();
   if (!ctx.ok) return null;
@@ -73,13 +97,8 @@ export default async function CommandCenterPage() {
     return <OnboardingPanel />;
   }
 
-  // All three reads below are user-initiated and go through ctx.supabase —
-  // the authenticated, request-bound session client — relying on RLS
-  // (missions_tenant_read / approvals_tenant_read / the existing
-  // stratxcel_contact_messages admin policy) rather than a service-role
-  // client. No SUPABASE_SERVICE_ROLE_KEY dependency anywhere on this page.
   const [missions, approvals, newMessageCount, driveConnection] = await Promise.all([
-    listMissionsForTenant(ctx.supabase, active.tenantId, 5),
+    listMissionsForTenant(ctx.supabase, active.tenantId, 6),
     (async () => {
       try {
         requirePermission(active.role, "approval:decide");
@@ -96,20 +115,11 @@ export default async function CommandCenterPage() {
         .eq("status", "new");
       return count ?? 0;
     })(),
-    // Real per-tenant status via the canonical storage_connections repository
-    // (packages/storage) -- previously this row was hardcoded mode={undefined},
-    // always rendering "Disabled" regardless of the real connection state.
     getStorageConnection(ctx.supabase as never, active.tenantId, "google_drive").catch(() => null),
   ]);
 
-  const pendingCount = approvals?.length ?? 0;
+  const pendingApprovalsCount = approvals?.length ?? 0;
 
-  // Real, evidence-gated growth diagnosis for the active tenant -- the same
-  // classifiers/pipeline check_business_priorities uses (Update 38), called
-  // directly here so Admin Home can answer "what opportunities exist / what
-  // should happen next" (master brief section 17) from actual signals, not
-  // a decorative card. Never blocks the rest of the page: a failure here
-  // degrades to an honest "couldn't compute" card, not a broken page.
   const topBottlenecks = await (async () => {
     try {
       const [brandBrainRow, integrations, businessSignalsResult, entitlementSnapshot] = await Promise.all([
@@ -151,133 +161,201 @@ export default async function CommandCenterPage() {
     }
   })();
 
+  const integrations = [
+    {
+      name: "WhatsApp",
+      status: process.env.WHATSAPP_INTEGRATION_MODE === "live" ? "connected" : "paused",
+      label: process.env.WHATSAPP_INTEGRATION_MODE === "live" ? "Live routing" : "Shadow / Test",
+    },
+    {
+      name: "Razorpay",
+      status: process.env.RAZORPAY_INTEGRATION_MODE === "live" ? "connected" : "paused",
+      label: process.env.RAZORPAY_INTEGRATION_MODE === "live" ? "Live payments" : "Mock / Test",
+    },
+    {
+      name: "Hermes",
+      status: process.env.HERMES_MODE === "live" || process.env.HERMES_MODE === "http" ? "connected" : "needs_attention",
+      label: process.env.HERMES_MODE === "live" || process.env.HERMES_MODE === "http" ? "Autonomous active" : "Standby",
+    },
+    {
+      name: "Google Drive",
+      status: driveConnection?.status === "connected" ? "connected" : "not_configured",
+      label: driveConnection?.status === "connected" ? "Sync active" : "Not connected",
+    },
+  ];
+
   return (
-    <div className="flex flex-col gap-6">
-      <header className="flex flex-col gap-1">
-        <h1 className="font-sx-sans text-xl font-semibold text-sx-text">Agency Overview</h1>
-        <p className="text-sm text-sx-text-muted">
-          {active.name} <span className="text-sx-text-subtle">·</span> {active.role}
-          {tenants.length > 1 && <span className="text-sx-text-subtle"> · {tenants.length} clients accessible</span>}
-        </p>
-      </header>
+    <div className="flex flex-col gap-7 pb-16">
+      {/* Universal Page Header */}
+      <AdminPageHeader
+        breadcrumb="Command / Operating Brain"
+        title="Operating Brain"
+        description={`Active company context: ${active.name} · Role: ${active.role} · ${tenants.length} company workspace${tenants.length === 1 ? "" : "s"} accessible`}
+        actions={
+          <div className="flex items-center gap-2">
+            <Link
+              href="/admin/copilot"
+              className="flex items-center gap-1.5 rounded-lg border border-sx-border/80 bg-sx-surface-2 px-3 py-1.5 text-xs font-medium text-sx-text transition-colors hover:border-sx-border hover:bg-sx-surface-1"
+            >
+              <Sparkles size={13} className="text-sx-accent" />
+              <span>Ask Copilot</span>
+            </Link>
+            <Link
+              href="/admin/missions"
+              className="flex items-center gap-1.5 rounded-lg bg-sx-accent px-3 py-1.5 text-xs font-semibold text-sx-accent-on transition-colors hover:bg-sx-accent-hover"
+            >
+              <Zap size={13} />
+              <span>New Mission</span>
+            </Link>
+          </div>
+        }
+      />
 
-      <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Metric label="Missions" value={missions.length} deltaLabel={`recent for ${active.name}`} />
-        <Metric
-          label="Approvals"
-          value={approvals === null ? "—" : pendingCount}
-          deltaLabel={approvals === null ? "no access for your role" : "pending"}
-          delta={pendingCount > 0 ? "neutral" : undefined}
+      {/* WHAT MATTERS NOW: High-Impact Summary Bar */}
+      <section className="grid grid-cols-2 gap-3.5 sm:grid-cols-4">
+        <QuickMetricCard
+          icon={<Zap size={15} />}
+          label="Active Missions"
+          value={missions.length}
+          secondary={`Recent for ${active.name}`}
+          href="/admin/missions"
         />
-        <Metric label="Contact inbox" value={newMessageCount} deltaLabel={`new message${newMessageCount === 1 ? "" : "s"}`} />
-        <Metric label="Clients" value={tenants.length} deltaLabel="accessible to you" />
+        <QuickMetricCard
+          icon={<CheckSquare size={15} />}
+          label="Pending Approvals"
+          value={approvals === null ? "—" : pendingApprovalsCount}
+          secondary={pendingApprovalsCount > 0 ? "Requires review" : "Inbox clear"}
+          href="/admin/approvals"
+        />
+        <QuickMetricCard
+          icon={<Inbox size={15} />}
+          label="Lead Messages"
+          value={newMessageCount}
+          secondary={newMessageCount > 0 ? `${newMessageCount} new transmission${newMessageCount === 1 ? "" : "s"}` : "All read"}
+          href="/admin/leads"
+        />
+        <QuickMetricCard
+          icon={<Building2 size={15} />}
+          label="Workspaces"
+          value={tenants.length}
+          secondary="Agency clients"
+          href="/admin/clients"
+        />
       </section>
 
-      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Link href="/admin/social" className="rounded-sx-md border border-sx-border bg-sx-surface-1 p-4 transition-colors hover:border-sx-border-strong">
-          <p className="text-[13px] font-medium text-sx-text">Content / Social Autopilot</p>
-          <p className="mt-1 text-xs text-sx-text-subtle">Production-working — campaigns, posts, Copilot.</p>
-        </Link>
-        <Link href="/admin/missions" className="rounded-sx-md border border-sx-border bg-sx-surface-1 p-4 transition-colors hover:border-sx-border-strong">
-          <p className="text-[13px] font-medium text-sx-text">Missions</p>
-          <p className="mt-1 text-xs text-sx-text-subtle">{missions.length} recent for {active.name}.</p>
-        </Link>
-        <Link href="/admin/approvals" className="rounded-sx-md border border-sx-border bg-sx-surface-1 p-4 transition-colors hover:border-sx-border-strong">
-          <p className="text-[13px] font-medium text-sx-text">Approvals</p>
-          <p className="mt-1 text-xs text-sx-text-subtle">
-            {approvals === null ? "No access for your role" : `${approvals.length} pending`}
-          </p>
-        </Link>
-        <Link href="/admin/leads" className="rounded-sx-md border border-sx-border bg-sx-surface-1 p-4 transition-colors hover:border-sx-border-strong">
-          <p className="text-[13px] font-medium text-sx-text">Leads</p>
-          <p className="mt-1 text-xs text-sx-text-subtle">{newMessageCount} new message{newMessageCount === 1 ? "" : "s"}.</p>
-        </Link>
-      </section>
+      {/* Main Grid: Missions + Growth Signals */}
+      <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
+        {/* Left Column: Recent Missions */}
+        <section className="flex flex-col gap-3">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold tracking-tight text-sx-text">Recent Missions</h2>
+            <Link href="/admin/missions" className="flex items-center gap-1 text-xs font-medium text-sx-accent hover:underline">
+              <span>View all</span>
+              <ArrowRight size={12} />
+            </Link>
+          </div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Card>
-          <CardHeading>Recent missions</CardHeading>
           {missions.length === 0 ? (
-            <p className="text-sm text-sx-text-subtle">No missions yet for {active.name}.</p>
+            <AdminEmptyState
+              icon={<Zap size={18} />}
+              title="No active missions"
+              description={`Hermes has nothing currently running for ${active.name}.`}
+              action={
+                <Link
+                  href="/admin/missions"
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-sx-accent px-3 py-1.5 text-xs font-semibold text-sx-accent-on hover:bg-sx-accent-hover"
+                >
+                  <Zap size={13} />
+                  <span>Start Mission</span>
+                </Link>
+              }
+            />
           ) : (
-            <div>
+            <div className="flex flex-col gap-2">
               {missions.map((m) => {
-                const chip = MISSION_STATE_CHIP[m.state] ?? { label: m.state, state: "neutral" as ChipState };
+                const stateMeta = MISSION_STATE_MAP[m.state] ?? { label: m.state, status: "paused" };
                 return (
-                  <CardRow key={m.id}>
-                    <span className="min-w-0 flex-1 truncate text-sx-text-muted" title={m.goal_text}>
-                      {m.goal_text}
-                    </span>
-                    <StatusChip state={chip.state} pulse={chip.state === "ai"}>
-                      {chip.label}
-                    </StatusChip>
-                  </CardRow>
+                  <AdminEntityRow
+                    key={m.id}
+                    icon={<Zap size={16} className="text-sx-accent" />}
+                    title={m.goal_text}
+                    subtitle={`Created ${new Date(m.created_at).toLocaleDateString()}`}
+                    status={<AdminStatusDot status={stateMeta.status} customLabel={stateMeta.label} />}
+                    onOpenDetails={() => undefined}
+                    detailsAriaLabel={`Inspect mission ${m.id}`}
+                  />
                 );
               })}
             </div>
           )}
-        </Card>
+        </section>
 
-        <Card>
+        {/* Right Column: Growth Priorities & Bottlenecks */}
+        <section className="flex flex-col gap-3">
           <div className="flex items-center justify-between">
-            <CardHeading>Growth opportunities for {active.name}</CardHeading>
-            <Link href="/admin/copilot" className="font-sx-mono text-xs text-sx-accent hover:underline">
-              Ask Copilot →
+            <h2 className="text-sm font-semibold tracking-tight text-sx-text">Growth Bottlenecks</h2>
+            <Link href="/admin/copilot" className="flex items-center gap-1 text-xs font-medium text-sx-text-subtle hover:text-sx-text">
+              <Sparkles size={12} />
+              <span>Copilot triage</span>
             </Link>
           </div>
-          {topBottlenecks === null ? (
-            <p className="text-sm text-sx-text-subtle">Couldn&apos;t compute a diagnosis right now.</p>
-          ) : topBottlenecks.length === 0 ? (
-            <p className="text-sm text-sx-text-subtle">No evidence-backed bottleneck found yet — connect more channels or add CRM/website activity for a real diagnosis.</p>
-          ) : (
-            <div>
-              {topBottlenecks.map((b) => (
-                <CardRow key={b.id}>
-                  <span className="min-w-0 flex-1 truncate text-sx-text-muted" title={b.description}>
-                    {b.description}
-                  </span>
-                  <StatusChip state={BOTTLENECK_SEVERITY_CHIP[b.severity] ?? "neutral"}>{b.severity}</StatusChip>
-                </CardRow>
-              ))}
-            </div>
-          )}
-        </Card>
 
-        <Card>
-          <CardHeading>Approvals requiring attention</CardHeading>
-          {approvals === null ? (
-            <p className="text-sm text-sx-text-subtle">Your role ({active.role}) cannot decide approvals for this client.</p>
-          ) : approvals.length === 0 ? (
-            <p className="text-sm text-sx-text-subtle">Nothing pending.</p>
-          ) : (
-            <div>
-              {approvals.slice(0, 5).map((a) => (
-                <CardRow key={a.id}>
-                  <span className="text-sx-text-muted">{a.kind}</span>
-                </CardRow>
+          <div className="flex flex-col gap-2">
+            {topBottlenecks === null || topBottlenecks.length === 0 ? (
+              <div className="rounded-sx-md border border-sx-border/60 bg-sx-surface-1 p-4 text-xs text-sx-text-muted">
+                <p className="font-medium text-sx-text">No active bottlenecks identified</p>
+                <p className="mt-1 text-sx-text-subtle">
+                  Signals are healthy. Connect WhatsApp, social, and website channels to increase diagnostic fidelity.
+                </p>
+              </div>
+            ) : (
+              topBottlenecks.map((b) => (
+                <div
+                  key={b.id}
+                  className="flex items-start justify-between gap-3 rounded-sx-md border border-sx-border/60 bg-sx-surface-1 p-3.5 transition-colors hover:border-sx-border"
+                >
+                  <div className="flex min-w-0 flex-col gap-1">
+                    <span className="text-[12.5px] font-medium text-sx-text line-clamp-2">{b.description}</span>
+                    <span className="text-[11px] text-sx-text-subtle capitalize">
+                      {((b as unknown) as Record<string, unknown>).category ? `Category: ${String(((b as unknown) as Record<string, unknown>).category).replaceAll("_", " ")}` : null}
+                    </span>
+                  </div>
+                  <AdminStatusDot status={BOTTLENECK_STATUS_MAP[b.severity] ?? "waiting"} customLabel={b.severity} />
+                </div>
+              ))
+            )}
+          </div>
+
+          {/* Integration Posture Panel */}
+          <div className="mt-2 rounded-sx-md border border-sx-border/60 bg-sx-surface-1 p-4">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <Radio size={14} className="text-sx-accent" />
+                <h3 className="text-xs font-semibold uppercase tracking-[0.08em] text-sx-text-muted">
+                  Platform Core Status
+                </h3>
+              </div>
+              <Link href="/admin/system" className="text-[11px] font-medium text-sx-accent hover:underline">
+                Full Health →
+              </Link>
+            </div>
+            <div className="grid grid-cols-2 gap-2.5">
+              {integrations.map((item) => (
+                <div
+                  key={item.name}
+                  className="flex flex-col rounded-lg border border-sx-border/50 bg-sx-surface-2/60 p-2.5"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-medium text-sx-text">{item.name}</span>
+                    <AdminStatusDot status={item.status} compact />
+                  </div>
+                  <span className="mt-1 truncate text-[11px] text-sx-text-subtle">{item.label}</span>
+                </div>
               ))}
             </div>
-          )}
-        </Card>
+          </div>
+        </section>
       </div>
-
-      <Card>
-        <div className="flex items-center justify-between">
-          <CardHeading>Integration status</CardHeading>
-          <Link href="/admin/system" className="font-sx-mono text-xs text-sx-accent hover:underline">
-            Full detail →
-          </Link>
-        </div>
-        <div className="grid gap-2 sm:grid-cols-2">
-          <IntegrationRow label="WhatsApp" mode={process.env.WHATSAPP_INTEGRATION_MODE} />
-          <IntegrationRow label="Razorpay" mode={process.env.RAZORPAY_INTEGRATION_MODE} />
-          <IntegrationRow label="Hermes" mode={process.env.HERMES_MODE} />
-          <IntegrationRow
-            label="Google Drive"
-            mode={driveConnection?.status === "connected" ? "live" : driveConnection?.status === "connecting" ? "shadow" : undefined}
-          />
-        </div>
-      </Card>
     </div>
   );
 }

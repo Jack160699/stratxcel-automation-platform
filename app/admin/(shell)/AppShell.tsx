@@ -8,12 +8,13 @@ import {
   getAdminMobileNav,
   resolveAdminActiveKey,
 } from "@/components/shell/navigation/admin-navigation";
-import { AdminBetaModeToggle } from "@/components/shell/AdminBetaModeToggle";
-import { AdminViewModeToggle } from "@/components/shell/AdminViewModeToggle";
+import { AdminViewModeSegmented } from "@/components/admin/shell/AdminViewModeSegmented";
+import { AdminChannelSelector } from "@/components/admin/shell/AdminChannelSelector";
+import { AdminFounderMenu } from "@/components/admin/shell/AdminFounderMenu";
+import { AdminThemeButton } from "@/components/admin/shell/AdminThemeButton";
 import type { AdminViewMode } from "@/lib/release/admin-view-mode-filter";
 import { ClientSwitcher } from "./ClientSwitcher";
 import { ContextSwitcher } from "@/components/shell/ContextSwitcher";
-import { ThemeToggle } from "@/components/theme/ThemeProvider";
 
 /**
  * /admin's own shell — Stratxcel staff/agency information architecture
@@ -53,23 +54,15 @@ export function AppShell({
       topBarContext={<ClientSwitcher />}
       staffBadge={
         <div className="flex items-center gap-2">
-          <AdminViewModeToggle technical={viewMode === "technical"} />
-          <AdminBetaModeToggle enabled={betaEnabled} />
+          <AdminViewModeSegmented technical={viewMode === "technical"} />
+          <AdminChannelSelector enabled={betaEnabled} />
         </div>
       }
       userMenu={
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-2">
           <ContextSwitcher currentContext="admin" compact />
-          <span className="hidden truncate text-xs text-sx-text-subtle sm:inline">{email}</span>
-          <ThemeToggle />
-          <form action={signOutAction}>
-            <button
-              type="submit"
-              className="min-h-9 rounded-sx-sm border border-sx-border-strong px-2.5 text-xs font-medium text-sx-text-muted hover:bg-sx-surface-2 hover:text-sx-text"
-            >
-              Sign out
-            </button>
-          </form>
+          <AdminThemeButton />
+          <AdminFounderMenu email={email} />
         </div>
       }
     >

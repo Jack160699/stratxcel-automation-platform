@@ -1,14 +1,18 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useMemo } from "react";
 import { useCurrentTenant } from "../CurrentTenantContext";
 import { NoClientSelected } from "../NoClientSelected";
-import { Button } from "@/components/ui/Button";
-import { Card, CardHeading } from "@/components/ui/Card";
-import { StatusChip } from "@/components/ui/StatusChip";
-import { ErrorState, EmptyState } from "@/components/ui/Feedback";
+import { AdminPageHeader } from "@/components/admin/ui/AdminPageHeader";
+import { AdminStatusDot } from "@/components/admin/ui/AdminStatusDot";
+import { AdminEntityRow } from "@/components/admin/ui/AdminEntityRow";
+import { AdminUniversalDrawer, AdminDrawerSection, AdminDrawerRow } from "@/components/admin/ui/AdminUniversalDrawer";
+import { AdminSegmentedControl } from "@/components/admin/ui/AdminSegmentedControl";
+import { AdminEmptyState } from "@/components/admin/ui/AdminEmptyState";
+import { ErrorState } from "@/components/ui/Feedback";
 import { platformFetch } from "@/lib/admin/platform-fetch";
+import { Inbox, RotateCcw, ArrowRight, ShieldAlert, CheckCircle2, RefreshCw } from "lucide-react";
 
 interface QueueJob {
   id: string;
@@ -52,14 +56,12 @@ interface OperationsSnapshot {
 
 function age(iso: string) {
   const minutes = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 60_000));
-  if (minutes < 60) return `${minutes}m`;
+  if (minutes < 60) return `${minutes}m ago`;
   const hours = Math.floor(minutes / 60);
-  return hours < 48 ? `${hours}h` : `${Math.floor(hours / 24)}d`;
+  return hours < 48 ? `${hours}h ago` : `${Math.floor(hours / 24)}d ago`;
 }
 
-function evidence(id: string) {
-  return id.slice(0, 8);
-}
+type TabKey = "all" | "jobs" | "missions" | "handoffs" | "approvals";
 
 export default function OperationsPage() {
   const { active } = useCurrentTenant();
@@ -67,9 +69,20 @@ export default function OperationsPage() {
   const [snapshot, setSnapshot] = useState<OperationsSnapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [actingId, setActingId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState<TabKey>("all");
+  const [selectedItem, setSelectedItem] = useState<{
+    type: string;
+    id: string;
+    title: string;
+    status: string;
+    ageText: string;
+    details: Record<string, unknown>;
+  } | null>(null);
 
   const load = useCallback(async () => {
     if (!tenantId) return;
+    setLoading(true);
     setError(null);
     try {
       const encoded = encodeURIComponent(tenantId);
@@ -97,12 +110,14 @@ export default function OperationsPage() {
     } catch (loadError) {
       setSnapshot({ jobs: [], deadLetter: [], missions: [], handoffs: [], approvals: [] });
       setError(loadError instanceof Error ? loadError.message : "Could not load operations.");
+    } finally {
+      setLoading(false);
     }
   }, [tenantId]);
 
   useEffect(() => {
     setSnapshot(null);
-    load();
+    void load();
   }, [load]);
 
   async function requeue(job: QueueJob) {
@@ -127,85 +142,258 @@ export default function OperationsPage() {
     }
   }
 
-  const failedMissions = snapshot?.missions.filter((mission) => ["FAILED", "BLOCKED", "HUMAN_HANDOFF"].includes(mission.state)) ?? [];
-  const exceptionCount = (snapshot?.deadLetter.length ?? 0) + failedMissions.length + (snapshot?.handoffs.length ?? 0) + (snapshot?.approvals.length ?? 0);
+  const failedMissions = useMemo(() => {
+    return snapshot?.missions.filter((mission) => ["FAILED", "BLOCKED", "HUMAN_HANDOFF"].includes(mission.state)) ?? [];
+  }, [snapshot]);
+
+  const deadLetterJobs = snapshot?.deadLetter ?? [];
+  const openHandoffs = snapshot?.handoffs ?? [];
+  const pendingApprovals = snapshot?.approvals ?? [];
+
+  const totalExceptions = deadLetterJobs.length + failedMissions.length + openHandoffs.length + pendingApprovals.length;
 
   return (
-    <div className="flex flex-col gap-6">
-      <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h1 className="font-sx-sans text-xl font-semibold text-sx-text">Operations{active ? ` — ${active.name}` : ""}</h1>
-          <p className="mt-1 text-sm text-sx-text-muted">Exceptions first: what is blocked, its impact, and the safest next action.</p>
-        </div>
-        <Link href="/admin/audit-requests" className="text-xs font-semibold text-sx-accent hover:underline">
-          Open Audit Delivery →
-        </Link>
-      </header>
+    <div className="flex flex-col gap-6 pb-16">
+      {/* Header */}
+      <AdminPageHeader
+        breadcrumb="Operations / Queue"
+        title={active ? `Operations — ${active.name}` : "Operations Queue"}
+        description="Exceptions-first command center: failed jobs, blocked work, and approvals requiring intervention."
+        actions={
+          <div className="flex items-center gap-2">
+            <Link
+              href="/admin/audit-requests"
+              className="flex items-center gap-1.5 rounded-lg border border-sx-border/80 bg-sx-surface-2 px-3 py-1.5 text-xs font-medium text-sx-text hover:bg-sx-surface-1"
+            >
+              <span>Audit Delivery</span>
+              <ArrowRight size={12} />
+            </Link>
+            <button
+              type="button"
+              onClick={load}
+              disabled={loading}
+              className="flex items-center gap-1.5 rounded-lg border border-sx-border/80 bg-sx-surface-2 px-3 py-1.5 text-xs font-medium text-sx-text hover:bg-sx-surface-1 disabled:opacity-50"
+            >
+              <RefreshCw size={13} className={loading ? "animate-spin" : ""} />
+              <span>Refresh</span>
+            </button>
+          </div>
+        }
+      />
 
       {error && <ErrorState message={error} onRetry={load} />}
       {!tenantId && <NoClientSelected what="operational exceptions" />}
-      {tenantId && snapshot === null && !error && <p className="text-sm text-sx-text-subtle">Loading operational signals…</p>}
 
-      {snapshot && (
-        <>
-          <Card className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <CardHeading>Current exception load</CardHeading>
-              <p className="mt-1 text-xs text-sx-text-muted">{exceptionCount} item{exceptionCount === 1 ? "" : "s"} need attention in this workspace.</p>
-            </div>
-            <StatusChip state={exceptionCount > 0 ? "warning" : "success"}>{exceptionCount > 0 ? "Action required" : "Clear"}</StatusChip>
-          </Card>
-
-          {exceptionCount === 0 && <EmptyState title="No operational exceptions" subtitle="No failed jobs, blocked work, open handoffs, or waiting approvals were found." />}
-
-          {snapshot.deadLetter.map((job) => (
-            <Card key={job.id} variant="alert" className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="min-w-0">
-                <p className="text-sm font-semibold text-sx-text">Failed job · {job.job_type}</p>
-                <p className="mt-1 text-xs text-sx-text-muted">Impact: queued work cannot continue · age {age(job.scheduled_at)} · attempts {job.attempt_count}/{job.max_attempts}</p>
-                <p className="mt-1 truncate font-sx-mono text-[11px] text-sx-text-subtle" title={job.id}>Evidence {evidence(job.id)} · {JSON.stringify(job.last_error ?? {})}</p>
-              </div>
-              <Button variant="secondary" size="sm" disabled={actingId === job.id} onClick={() => requeue(job)}>
-                {actingId === job.id ? "Requeuing…" : "Review & requeue"}
-              </Button>
-            </Card>
-          ))}
-
-          {failedMissions.map((mission) => (
-            <Card key={mission.id} variant="alert" className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="min-w-0">
-                <p className="truncate text-sm font-semibold text-sx-text">Blocked work · {mission.goal_text}</p>
-                <p className="mt-1 text-xs text-sx-text-muted">Impact: customer outcome is paused · age {age(mission.updated_at)} · state {mission.state}</p>
-                <p className="mt-1 font-sx-mono text-[11px] text-sx-text-subtle" title={mission.id}>Evidence {evidence(mission.id)}</p>
-              </div>
-              <Link href={`/admin/missions?tenantId=${tenantId}`} className="text-xs font-semibold text-sx-accent hover:underline">Inspect work →</Link>
-            </Card>
-          ))}
-
-          {snapshot.handoffs.map((handoff) => (
-            <Card key={handoff.id} variant="alert" className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="min-w-0">
-                <p className="text-sm font-semibold text-sx-text">Human decision needed · {handoff.reason}</p>
-                <p className="mt-1 text-xs text-sx-text-muted">Impact: linked work is paused · age {age(handoff.created_at)} · state {handoff.status}</p>
-                <p className="mt-1 font-sx-mono text-[11px] text-sx-text-subtle" title={handoff.id}>Evidence {evidence(handoff.id)}</p>
-              </div>
-              <Link href="/admin/handoffs" className="text-xs font-semibold text-sx-accent hover:underline">Resolve handoff →</Link>
-            </Card>
-          ))}
-
-          {snapshot.approvals.map((approval) => (
-            <Card key={approval.id} className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      {tenantId && snapshot && (
+        <div className="flex flex-col gap-5">
+          {/* Top Status Banner */}
+          <div className="flex items-center justify-between rounded-xl border border-sx-border/70 bg-sx-surface-1 p-4 shadow-xs">
+            <div className="flex items-center gap-3">
+              {totalExceptions === 0 ? (
+                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-400">
+                  <CheckCircle2 size={18} />
+                </div>
+              ) : (
+                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-amber-500/10 text-amber-400">
+                  <ShieldAlert size={18} />
+                </div>
+              )}
               <div>
-                <p className="text-sm font-semibold text-sx-text">Approval waiting · {approval.kind}</p>
-                <p className="mt-1 text-xs text-sx-text-muted">Impact: consequential action remains paused · age {age(approval.created_at)}</p>
-                <p className="mt-1 font-sx-mono text-[11px] text-sx-text-subtle" title={approval.id}>Evidence {evidence(approval.id)}</p>
+                <h2 className="text-xs font-semibold uppercase tracking-wider text-sx-text-muted">
+                  Operational Health Status
+                </h2>
+                <p className="mt-0.5 text-sm font-semibold text-sx-text">
+                  {totalExceptions === 0 ? "All queues and workers operating normally" : `${totalExceptions} exceptions require attention`}
+                </p>
               </div>
-              <Link href="/admin/approvals" className="text-xs font-semibold text-sx-accent hover:underline">Review approval →</Link>
-            </Card>
-          ))}
+            </div>
+            <AdminStatusDot
+              status={totalExceptions === 0 ? "connected" : "needs_attention"}
+              customLabel={totalExceptions === 0 ? "Operational" : "Action Required"}
+            />
+          </div>
 
-          <p className="text-xs text-sx-text-subtle">{snapshot.jobs.length} recent queue job{snapshot.jobs.length === 1 ? "" : "s"} inspected.</p>
-        </>
+          {/* Navigation Filter Tabs */}
+          <AdminSegmentedControl
+            value={activeTab}
+            onChange={(t) => setActiveTab(t)}
+            options={[
+              { value: "all", label: "All Items", badge: totalExceptions },
+              { value: "jobs", label: "Failed Jobs", badge: deadLetterJobs.length },
+              { value: "missions", label: "Blocked Work", badge: failedMissions.length },
+              { value: "handoffs", label: "Handoffs", badge: openHandoffs.length },
+              { value: "approvals", label: "Approvals", badge: pendingApprovals.length },
+            ]}
+          />
+
+          {totalExceptions === 0 ? (
+            <AdminEmptyState
+              icon={<Inbox size={22} />}
+              title="No operational exceptions"
+              description="No failed jobs, blocked missions, pending handoffs, or stalled approvals."
+            />
+          ) : (
+            <div className="flex flex-col gap-2">
+              {/* Failed Jobs */}
+              {(activeTab === "all" || activeTab === "jobs") &&
+                deadLetterJobs.map((job) => (
+                  <AdminEntityRow
+                    key={job.id}
+                    icon={<RotateCcw size={15} className="text-rose-400" />}
+                    title={`Failed job · ${job.job_type}`}
+                    subtitle={`Attempts ${job.attempt_count}/${job.max_attempts} · Queued work paused`}
+                    timestamp={age(job.scheduled_at)}
+                    status={<AdminStatusDot status="error" customLabel="Failed" />}
+                    primaryAction={
+                      <button
+                        type="button"
+                        disabled={actingId === job.id}
+                        onClick={() => void requeue(job)}
+                        className="rounded-lg bg-sx-surface-2 px-3 py-1 text-xs font-medium text-sx-text hover:bg-sx-surface-1 border border-sx-border/60"
+                      >
+                        {actingId === job.id ? "Requeuing…" : "Requeue"}
+                      </button>
+                    }
+                    onOpenDetails={() =>
+                      setSelectedItem({
+                        type: "FAILED QUEUE JOB",
+                        id: job.id,
+                        title: job.job_type,
+                        status: "Failed",
+                        ageText: age(job.scheduled_at),
+                        details: {
+                          attemptCount: job.attempt_count,
+                          maxAttempts: job.max_attempts,
+                          lastError: job.last_error,
+                        },
+                      })
+                    }
+                    detailsAriaLabel={`Inspect job ${job.id}`}
+                  />
+                ))}
+
+              {/* Blocked Missions */}
+              {(activeTab === "all" || activeTab === "missions") &&
+                failedMissions.map((m) => (
+                  <AdminEntityRow
+                    key={m.id}
+                    icon={<ShieldAlert size={15} className="text-amber-400" />}
+                    title={`Blocked work · ${m.goal_text}`}
+                    subtitle={`State: ${m.state} · Outcome paused`}
+                    timestamp={age(m.updated_at)}
+                    status={<AdminStatusDot status="error" customLabel={m.state} />}
+                    primaryAction={
+                      <Link
+                        href={`/admin/missions?tenantId=${tenantId}`}
+                        className="rounded-lg bg-sx-surface-2 px-3 py-1 text-xs font-medium text-sx-text hover:bg-sx-surface-1 border border-sx-border/60"
+                      >
+                        Inspect
+                      </Link>
+                    }
+                    onOpenDetails={() =>
+                      setSelectedItem({
+                        type: "BLOCKED WORK",
+                        id: m.id,
+                        title: m.goal_text,
+                        status: m.state,
+                        ageText: age(m.updated_at),
+                        details: { state: m.state, createdAt: m.created_at, updatedAt: m.updated_at },
+                      })
+                    }
+                    detailsAriaLabel={`Inspect mission ${m.id}`}
+                  />
+                ))}
+
+              {/* Human Handoffs */}
+              {(activeTab === "all" || activeTab === "handoffs") &&
+                openHandoffs.map((h) => (
+                  <AdminEntityRow
+                    key={h.id}
+                    icon={<Inbox size={15} className="text-amber-400" />}
+                    title={`Human decision required · ${h.reason}`}
+                    subtitle={`State: ${h.status} · Linked work paused`}
+                    timestamp={age(h.created_at)}
+                    status={<AdminStatusDot status="needs_attention" customLabel={h.status} />}
+                    primaryAction={
+                      <Link
+                        href="/admin/handoffs"
+                        className="rounded-lg bg-sx-surface-2 px-3 py-1 text-xs font-medium text-sx-text hover:bg-sx-surface-1 border border-sx-border/60"
+                      >
+                        Resolve
+                      </Link>
+                    }
+                    onOpenDetails={() =>
+                      setSelectedItem({
+                        type: "HUMAN HANDOFF",
+                        id: h.id,
+                        title: h.reason,
+                        status: h.status,
+                        ageText: age(h.created_at),
+                        details: { reason: h.reason, missionId: h.mission_id, createdAt: h.created_at },
+                      })
+                    }
+                    detailsAriaLabel={`Inspect handoff ${h.id}`}
+                  />
+                ))}
+
+              {/* Waiting Approvals */}
+              {(activeTab === "all" || activeTab === "approvals") &&
+                pendingApprovals.map((a) => (
+                  <AdminEntityRow
+                    key={a.id}
+                    icon={<Inbox size={15} className="text-sx-accent" />}
+                    title={`Approval waiting · ${a.kind}`}
+                    subtitle="Consequential action remains paused pending review"
+                    timestamp={age(a.created_at)}
+                    status={<AdminStatusDot status="waiting" customLabel="Waiting Review" />}
+                    primaryAction={
+                      <Link
+                        href="/admin/approvals"
+                        className="rounded-lg bg-sx-surface-2 px-3 py-1 text-xs font-medium text-sx-text hover:bg-sx-surface-1 border border-sx-border/60"
+                      >
+                        Review
+                      </Link>
+                    }
+                    onOpenDetails={() =>
+                      setSelectedItem({
+                        type: "APPROVAL REQUEST",
+                        id: a.id,
+                        title: a.kind,
+                        status: "Waiting",
+                        ageText: age(a.created_at),
+                        details: { kind: a.kind, createdAt: a.created_at },
+                      })
+                    }
+                    detailsAriaLabel={`Inspect approval ${a.id}`}
+                  />
+                ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Universal Drawer for Selected Exception */}
+      {selectedItem && (
+        <AdminUniversalDrawer
+          open={Boolean(selectedItem)}
+          onClose={() => setSelectedItem(null)}
+          entityType={selectedItem.type}
+          title={selectedItem.title}
+          subtitle={`Identifier: ${selectedItem.id.slice(0, 8)}…`}
+          statusBadge={<AdminStatusDot status="error" customLabel={selectedItem.status} />}
+        >
+          <AdminDrawerSection title="Details">
+            <AdminDrawerRow label="ID" value={selectedItem.id} mono />
+            <AdminDrawerRow label="Age" value={selectedItem.ageText} />
+            <AdminDrawerRow label="Status" value={selectedItem.status} />
+          </AdminDrawerSection>
+
+          <AdminDrawerSection title="Raw Diagnostics">
+            <pre className="max-h-60 overflow-x-auto rounded-md bg-sx-surface-1 p-2.5 font-sx-mono text-[10.5px] text-sx-text-muted">
+              {JSON.stringify(selectedItem.details, null, 2)}
+            </pre>
+          </AdminDrawerSection>
+        </AdminUniversalDrawer>
       )}
     </div>
   );

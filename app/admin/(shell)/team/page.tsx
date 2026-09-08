@@ -1,5 +1,6 @@
 import { requireOwnerContext, getServiceContext } from "@/lib/social/db-context";
-import { Card, CardHeading } from "@/components/ui/Card";
+import { AdminPageHeader } from "@/components/admin/ui/AdminPageHeader";
+import { Card } from "@/components/ui/Card";
 
 export default async function AdminTeamPage() {
   const ctx = await requireOwnerContext();
@@ -41,17 +42,21 @@ export default async function AdminTeamPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <header>
-        <h1 className="font-sx-sans text-xl font-semibold text-sx-text">Team</h1>
-        <p className="mt-1 text-sm text-sx-text-muted">Internal access diagnostics. No memberships are changed automatically.</p>
-      </header>
+      <AdminPageHeader
+        breadcrumb="Admin"
+        title="Team"
+        description="Internal access diagnostics. No memberships are changed automatically."
+      />
+
       <Card className="p-5">
-        <CardHeading>Staff with client memberships</CardHeading>
-        <p className="mt-1 text-xs text-sx-text-subtle">Review these support or owner relationships intentionally. Staff identity still takes precedence for routing.</p>
+        <p className="mb-1 text-[12px] font-medium text-sx-text">Staff with client memberships</p>
+        <p className="mb-4 text-xs text-sx-text-subtle">
+          Review these support or owner relationships intentionally. Staff identity still takes precedence for routing.
+        </p>
         {(dualMemberships ?? []).length === 0 ? (
-          <p className="mt-4 text-sm text-sx-text-muted">No dual memberships found.</p>
+          <p className="text-sm text-sx-text-muted">No dual memberships found.</p>
         ) : (
-          <div className="mt-4 overflow-x-auto">
+          <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead>
                 <tr className="text-sx-text-subtle">
@@ -77,7 +82,8 @@ export default async function AdminTeamPage() {
                       </td>
                       <td className="py-2 pr-4 capitalize">{profile?.staffRole?.replaceAll("_", " ") ?? "—"}</td>
                       <td className="py-2 pr-4">
-                        {tenant?.name ?? "Unknown client"} <span className="text-sx-text-subtle">{tenant?.slug}</span>
+                        {tenant?.name ?? "Unknown client"}{" "}
+                        <span className="text-sx-text-subtle">{tenant?.slug}</span>
                       </td>
                       <td className="py-2 capitalize">{membership.role}</td>
                     </tr>

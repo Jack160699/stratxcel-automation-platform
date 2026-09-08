@@ -14,6 +14,7 @@ export * from "./providers/gemini.ts";
 export * from "./providers/openai.ts";
 export * from "./providers/local-ai.ts";
 export * from "./providers/openrouter.ts";
+export * from "./providers/codecraft.ts";
 export * from "./providers/gemini-grounding.ts";
 export * from "./providers/openai-web-evidence.ts";
 export * from "./usage/recorder.ts";

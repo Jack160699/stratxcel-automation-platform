@@ -1,6 +1,11 @@
 import { requireAdmin } from "@/lib/social/admin-guard";
 import { getTenantServiceContext } from "@/lib/tenants/tenant-context";
-import { listConnectorDefinitions, getConnectorConnection, resolveConnectorHealth } from "@stratxcel/connectors";
+import {
+  listConnectorDefinitions,
+  getConnectorConnection,
+  resolveConnectorHealth,
+  type ConnectorHealthResult,
+} from "@stratxcel/connectors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,11 +32,36 @@ export async function GET(request: Request) {
   const rows = await Promise.all(
     definitions.map(async (def) => {
       const scopedTenantId = def.scopeLevel === "platform" ? null : tenantId;
-      const connection = await getConnectorConnection(supabase as never, def.key, scopedTenantId);
-      const health = await resolveConnectorHealth(supabase as never, def.key, connection, scopedTenantId);
+      let connection = null;
+      let health: ConnectorHealthResult = {
+        status: "auth_required",
+        discoveredCapabilities: [],
+        lastError: "Authentication required to connect.",
+        lastVerifiedAt: null,
+      };
+
+      try {
+        connection = await getConnectorConnection(supabase as never, def.key, scopedTenantId);
+        health = await resolveConnectorHealth(supabase as never, def.key, connection, scopedTenantId);
+      } catch (err) {
+        console.warn(`[connectors] DB query fallback for ${def.key}:`, (err as Error).message);
+      }
       return {
         definition: def,
-        connection: connection ? { id: connection.id, status: health.status, connectedAt: connection.connected_at, lastHealthCheckAt: connection.last_health_check_at } : null,
+        connection: connection
+          ? {
+              id: connection.id,
+              status: health.status,
+              connectedAt: connection.connected_at,
+              lastHealthCheckAt: connection.last_health_check_at,
+              lastVerifiedAt: connection.last_verified_at ?? health.lastVerifiedAt ?? null,
+              discoveredAt: connection.discovered_at ?? null,
+              budgetLimitUsd: connection.budget_limit_usd ?? null,
+              currentUsageUsd: connection.current_usage_usd ?? 0,
+              rateLimitPerMinute: connection.rate_limit_per_minute ?? null,
+              metadata: (connection.metadata as Record<string, unknown> | null) ?? null,
+            }
+          : null,
         health,
       };
     })

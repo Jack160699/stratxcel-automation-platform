@@ -3,6 +3,7 @@ import { requireOwnerContext } from "@/lib/social/db-context";
 import { requirePlatformStaff } from "@/lib/platform-staff/auth";
 import { getTenantServiceContext } from "@/lib/tenants/tenant-context";
 import { deriveAuditCustomerState, isAuditIntakeComplete, type AuditOrderStatus } from "@/lib/audit/customer-state";
+import { AdminPageHeader } from "@/components/admin/ui/AdminPageHeader";
 import { StatusChip, type ChipState } from "@/components/ui/StatusChip";
 import { ErrorState, EmptyState } from "@/components/ui/Feedback";
 import { Card } from "@/components/ui/Card";
@@ -192,13 +193,12 @@ export default async function AdminAuditRequestsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <header>
-        <h1 className="font-sx-sans text-xl font-semibold text-sx-text">Audit Delivery</h1>
-        <p className="mt-1 text-sm text-sx-text-muted">
-          {list.length} paid-flow order{list.length === 1 ? "" : "s"} · {actionable} requiring action
-        </p>
-        <div className="mt-4"><AuditResetActions /></div>
-      </header>
+      <AdminPageHeader
+        breadcrumb="Admin"
+        title="Audit Delivery"
+        description={`${list.length} paid-flow order${list.length === 1 ? "" : "s"} · ${actionable} requiring action`}
+        actions={<AuditResetActions />}
+      />
 
       {error && <ErrorState message="Could not load paid audit orders." />}
       {list.length === 0 && !error ? (

@@ -6,13 +6,12 @@ import { filterNavGroupsByRelease } from "@/lib/release/nav-filter";
 import { filterNavGroupsByMode, type AdminViewMode } from "@/lib/release/admin-view-mode-filter";
 import type { NavGroupData } from "./nav-types";
 
-function withIcons(groups: NavGroupData[], opts?: { betaBadge?: boolean }): SidebarNavGroup[] {
+function withIcons(groups: NavGroupData[]): SidebarNavGroup[] {
   return groups.map((group) => ({
     label: group.label,
     items: group.items.map((item): SidebarNavItem => ({
       ...item,
       icon: NAV_ICONS[item.key] ?? <DocIcon />,
-      badge: opts?.betaBadge && item.release === "v2" ? "Beta" : undefined,
     })),
   }));
 }
@@ -34,7 +33,7 @@ export function getAdminNavGroupsData(allowV2: boolean, viewMode: AdminViewMode 
 }
 
 export function getAdminSidebarGroups(allowV2: boolean, viewMode: AdminViewMode = "normal"): SidebarNavGroup[] {
-  return withIcons(getAdminNavGroupsData(allowV2, viewMode), { betaBadge: allowV2 });
+  return withIcons(getAdminNavGroupsData(allowV2, viewMode));
 }
 
 export function getAdminMobileNav(allowV2: boolean, viewMode: AdminViewMode = "normal"): SidebarNavItem[] {

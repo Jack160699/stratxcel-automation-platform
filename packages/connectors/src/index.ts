@@ -5,3 +5,7 @@ export * from "./repository.ts";
 export * from "./health.ts";
 export * from "./authorization.ts";
 export * from "./resolve-effective-key.ts";
+export * from "./discovery.ts";
+export * from "./audit.ts";
+export * from "./execution.ts";
+export * from "./founder-computer/index.ts";

@@ -119,6 +119,23 @@ export const TOOL_INPUT_SCHEMAS = {
       status: z.enum(["NEW", "CONTACTED", "QUALIFIED", "WON", "LOST"]),
     })
     .strict(),
+  browser_navigate: z
+    .object({
+      url: z.string().min(1),
+      sessionKey: z.string().optional(),
+    })
+    .strict(),
+  browser_screenshot: z
+    .object({
+      sessionKey: z.string().optional(),
+    })
+    .strict(),
+  browser_read: z
+    .object({
+      selector: z.string().optional(),
+      sessionKey: z.string().optional(),
+    })
+    .strict(),
 } as const satisfies Partial<Record<ToolName, z.ZodTypeAny>>;
 
 /** The exact set of tool names an MCP caller may ever validate/invoke through this map. */

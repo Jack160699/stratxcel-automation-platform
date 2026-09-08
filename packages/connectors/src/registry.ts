@@ -1,15 +1,24 @@
-import type { ConnectorDefinition } from "./types.ts";
+import type { ConnectorAccessMethod, ConnectorDefinition } from "./types.ts";
 
 /**
- * Static catalogue, mirrored into connector_definitions by
- * supabase/migrations/20260907180000_connector_capability_control_plane.sql
- * (kept in sync by hand -- same convention as
- * apps/hermes-gateway/src/mcp-server.ts's TOOL_DESCRIPTIONS map, and as
- * @stratxcel/byok's own PROVIDER_REGISTRY). The DB table exists so the
- * Admin UI/staff tools can read it without importing this package's code
- * across the Next.js/package boundary; this in-code copy is what
- * health.ts and the admin API routes actually reason against, so both are
- * real, neither is decorative.
+ * Execution method priority order (Section 4):
+ * 1. Internal native tool
+ * 2. MCP
+ * 3. Direct API
+ * 4. CLI
+ * 5. Browser/computer
+ */
+export const EXECUTION_METHOD_ORDER: readonly ConnectorAccessMethod[] = [
+  "native",
+  "mcp",
+  "api",
+  "cli",
+  "browser",
+] as const;
+
+/**
+ * Static catalogue of all 15 Founder connectors.
+ * Single source of truth mirrored into `connector_definitions` table.
  */
 export const CONNECTOR_REGISTRY: readonly ConnectorDefinition[] = [
   {
@@ -18,95 +27,138 @@ export const CONNECTOR_REGISTRY: readonly ConnectorDefinition[] = [
     category: "infrastructure",
     authMethod: "mcp_managed",
     scopeLevel: "platform",
-    declaredCapabilities: ["infrastructure.inspect", "infrastructure.deploy_verify"],
+    declaredCapabilities: [
+      "infrastructure.inspect",
+      "infrastructure.deploy_verify",
+      "infrastructure.ec2",
+      "infrastructure.logs",
+      "s3.manage",
+    ],
     description:
-      "StratXcel's own AWS infrastructure (the mission-worker EC2 host). Operated through this engineering environment's own AWS access today -- no product-stored credential. Health is real worker-heartbeat data, never fabricated.",
-    realStatusSource: "@stratxcel/queue getWorkerHealth() against worker_heartbeats, aggregated across mission-worker/whatsapp-worker/hermes-gateway",
+      "StratXcel's own AWS infrastructure (EC2 host, CloudWatch logs, and AWS services). Operated through MCP/CLI access and AWS SDK. Health tracks real worker-heartbeat data and AWS STS API checks.",
+    realStatusSource: "@stratxcel/queue getWorkerHealth() against worker_heartbeats and AWS STS verification",
     requiredEnvVars: [],
+    supportedAccessMethods: ["native", "mcp", "cli", "api"],
+    preferredAccessMethod: "mcp",
   },
   {
-    key: "github",
-    label: "GitHub",
-    category: "infrastructure",
-    authMethod: "service_credential",
-    scopeLevel: "platform",
-    declaredCapabilities: ["infrastructure.repo_read"],
-    description:
-      "StratXcel's own source repository. A platform-level fine-grained PAT can be connected here for a real, live GitHub API health check; until then this connector is honestly pending, not fabricated as connected.",
-    realStatusSource: "GET https://api.github.com/user with the vaulted PAT, when one is connected",
-    requiredEnvVars: [],
-  },
-  {
-    key: "supabase",
-    label: "Supabase",
+    key: "google",
+    label: "Google Services",
     category: "data",
-    authMethod: "service_credential",
-    scopeLevel: "platform",
-    declaredCapabilities: ["data.inspect"],
-    description:
-      "StratXcel's own Postgres/Supabase project. Operated through this engineering environment's own Supabase access today -- no product-stored credential. A platform-level token can be connected for presence-based status; this connector does not live-probe the Supabase Management API in v1, and says so honestly rather than claim a health state it cannot verify.",
-    realStatusSource: "presence of a vaulted platform-level token only (no live probe in v1)",
-    requiredEnvVars: [],
-  },
-  {
-    key: "vercel",
-    label: "Vercel",
-    category: "infrastructure",
-    authMethod: "api_key",
+    authMethod: "oauth",
     scopeLevel: "both",
-    declaredCapabilities: ["website.deploy_status", "website.domain_status"],
+    declaredCapabilities: [
+      "google.search",
+      "google.drive",
+      "google.gmail",
+      "google.calendar",
+      "google.maps",
+      "analytics.read",
+      "search_console.read",
+    ],
     description:
-      "Website hosting/deployment. Company-scoped connections are NOT stored here -- they read the real, already-live search_website_connections table (a tenant's own Vercel Personal Access Token, connected via the Website Factory's own flow) so there is exactly one place a tenant's Vercel token ever lives. A platform-level connection (StratXcel's own Vercel account) can be stored here directly and is health-checked with the real validateVercelToken function.",
-    realStatusSource: "company-scoped: search_website_connections (read-only adapter); platform-scoped: validateVercelToken() against a vaulted platform token",
+      "Unified Google Workspace & Cloud services (Search, Drive, Gmail, Calendar, Maps, Analytics, Search Console). Authenticates via OAuth 2.0 or Service Account credentials.",
+    realStatusSource: "Google OAuth token validation and Google API health checks",
     requiredEnvVars: [],
+    supportedAccessMethods: ["api", "oauth" as unknown as ConnectorAccessMethod],
+    preferredAccessMethod: "api",
   },
   {
-    key: "whatsapp",
-    label: "WhatsApp",
-    category: "messaging",
+    key: "google_ai_pro",
+    label: "Google AI Pro — Founder Account",
+    category: "ai",
     authMethod: "oauth",
-    scopeLevel: "company",
-    declaredCapabilities: ["messaging.send", "messaging.receive"],
+    scopeLevel: "platform",
+    declaredCapabilities: [
+      "google_ai_pro.reasoning",
+      "google_ai_pro.multimodal",
+      "google_ai_pro.vision",
+      "image.generate",
+      "image.edit",
+      "google_ai_pro.image_generation",
+      "video.generate",
+      "video.transform",
+      "google_ai_pro.video_generation",
+      "antigravity.code",
+      "antigravity.plan",
+      "antigravity.terminal",
+      "antigravity.browser",
+      "antigravity.verify",
+      "jules.automate",
+      "google_drive.read",
+      "google_drive.write",
+      "google_drive.upload",
+      "google_drive.download",
+      "google_drive.organize",
+      "google_cloud.projects",
+      "google_cloud.services",
+      "colab.notebook",
+      "firebase.resources",
+    ],
     description:
-      "WhatsApp Cloud API messaging for a company. NOT stored here -- reads the real, already-live phone_bindings table (connected via the existing Admin > Integrations WhatsApp flow) so a tenant's WhatsApp credential lives in exactly one place.",
-    realStatusSource: "phone_bindings.status, read-only adapter",
+      "Founder personal Google AI Pro subscription account. Provides entitled multimodal reasoning, Nano Banana image generation, Veo video creation, Antigravity autonomous coding, and personal Drive/Cloud storage. Distinct from developer Gemini API and company Google Workspace.",
+    realStatusSource: "Google OAuth account authorization and AI Pro entitlement verification",
     requiredEnvVars: [],
+    supportedAccessMethods: ["native", "mcp", "api", "browser"],
+    preferredAccessMethod: "native",
   },
   {
-    key: "meta",
-    label: "Meta (Facebook/Instagram)",
-    category: "social",
-    authMethod: "oauth",
-    scopeLevel: "company",
-    declaredCapabilities: ["messaging.send", "messaging.receive"],
+    key: "founder_computer",
+    label: "Founder Computer",
+    category: "browser_computer",
+    authMethod: "mcp_managed",
+    scopeLevel: "platform",
+    declaredCapabilities: [
+      // Browser primitives
+      "browser.navigate",
+      "browser.click",
+      "browser.type",
+      "browser.select",
+      "browser.scroll",
+      "browser.wait",
+      "browser.screenshot",
+      "browser.read",
+      "browser.upload",
+      "browser.download",
+      "browser.tabs",
+      "browser.close",
+      // Computer primitives
+      "computer.screenshot",
+      "computer.open_app",
+      "computer.click",
+      "computer.type",
+      "computer.key",
+      "computer.wait",
+      // File transfer
+      "file.transfer_to_stratxcel",
+      "file.transfer_to_browser",
+    ],
     description:
-      "Meta's WhatsApp Business Cloud API messaging surface -- health tracks the SAME underlying connection as whatsapp (both are the one real Meta Cloud API binding a tenant has). Deliberately does NOT yet cover Instagram/Facebook social POSTING, which is a real, separate, already-live system (lib/social/repositories/accounts.ts's social_accounts table, driving the onboarding ConnectorSheet flow) -- not wired into this control plane in v1 because social_accounts scopes by owner_id, whose exact relationship to tenant_id needs confirming before this reads across it (a genuine, precisely-scoped future item, not silently skipped).",
-    realStatusSource: "phone_bindings.status, read-only adapter (same signal as whatsapp) -- Instagram/Facebook posting status is a separate, not-yet-wired future item",
+      "Authorized persistent browser and computer environment for Hermes. " +
+      "The Founder manually authenticates accounts in a dedicated secure browser profile. " +
+      "Hermes uses this environment to interact with web/desktop services whose useful " +
+      "functionality is only accessible through authorized UI sessions. " +
+      "Distinct from the generic Browser/Computer automation connector — this is a " +
+      "Founder-identity-scoped resource with session persistence, capability discovery, " +
+      "and full connector authorization enforcement.",
+    realStatusSource: "Founder Computer session metadata in connector_connections (not_configured/auth_required/connected/ready)",
     requiredEnvVars: [],
+    supportedAccessMethods: ["native", "mcp", "browser"],
+    preferredAccessMethod: "browser",
   },
   {
     key: "google_workspace",
-    label: "Google Workspace",
+    label: "Google Workspace (Legacy)",
     category: "data",
     authMethod: "oauth",
     scopeLevel: "company",
     declaredCapabilities: ["analytics.read", "search_console.read"],
     description:
-      "A company's own Google OAuth for Search Console + GA4. NOT stored here -- reads the real, already-live search_google_connections table (the Search & Discovery engine's own OAuth flow) so a tenant's Google credential lives in exactly one place.",
+      "A company's own Google OAuth for Search Console + GA4. Reads the real search_google_connections table (Search & Discovery engine flow).",
     realStatusSource: "search_google_connections.status, read-only adapter",
     requiredEnvVars: [],
-  },
-  {
-    key: "gemini",
-    label: "Gemini (Google AI)",
-    category: "ai",
-    authMethod: "api_key",
-    scopeLevel: "platform",
-    declaredCapabilities: ["media.image_generation", "media.video_generation", "ai.text"],
-    description:
-      "Google AI Studio/Gemini API for AI generation -- a platform-level key (GEMINI_API_KEY), the same one @stratxcel/ai-runtime's Google provider already uses. Health is the real, already-live probeGeminiReadiness() live HTTP check, reused unmodified. Connecting a key here now actually overrides the runtime GEMINI_API_KEY env var for real AI calls -- lib/social/agent/provider.ts's real composition root resolves this connector's vaulted key (via resolve-effective-key.ts's cached, fail-open resolveCachedPlatformConnectorSecret) and passes it into the real GeminiTextProvider constructor, used by every platform AI completion (WhatsApp, Admin Copilot, Hermes). No circular dependency: app code depends on this package, not the other way around. Behaviorally a strict no-op until a key is actually connected (falls back to the env var otherwise), cached 5 minutes so this adds no hot-path DB load.",
-    realStatusSource: "@stratxcel/ai-runtime probeGeminiReadiness() live check against GEMINI_API_KEY",
-    requiredEnvVars: ["GEMINI_API_KEY"],
+    supportedAccessMethods: ["api"],
+    preferredAccessMethod: "api",
   },
   {
     key: "openrouter",
@@ -114,11 +166,111 @@ export const CONNECTOR_REGISTRY: readonly ConnectorDefinition[] = [
     category: "ai",
     authMethod: "api_key",
     scopeLevel: "platform",
-    declaredCapabilities: ["ai.text_escalation"],
+    declaredCapabilities: ["ai.text", "ai.text_escalation", "ai.code"],
     description:
-      "OpenRouter as an opt-in AI resource pool (built earlier this session, Update 71) -- a platform-level key. Health is the real, already-live probeOpenRouterReadiness() live HTTP check, reused unmodified. Connecting a key here now actually overrides the runtime OPENROUTER_API_KEY env var for real AI calls -- lib/social/agent/provider.ts's real composition root resolves this connector's vaulted key (via resolve-effective-key.ts's cached, fail-open resolveCachedPlatformConnectorSecret) and passes it into the real OpenRouterTextProvider constructor. Still requires OPENROUTER_ENABLED=1 to actually be selected by task-class routing (unchanged, separate opt-in gate) -- connecting a key here alone does not activate OpenRouter traffic. Behaviorally a strict no-op until a key is actually connected, cached 5 minutes so this adds no hot-path DB load.",
+      "OpenRouter AI resource pool for multi-model inference and fallback routing. Health is verified via probeOpenRouterReadiness live check against OPENROUTER_API_KEY or vaulted key.",
     realStatusSource: "@stratxcel/ai-runtime probeOpenRouterReadiness() live check",
     requiredEnvVars: ["OPENROUTER_API_KEY", "OPENROUTER_ENABLED"],
+    supportedAccessMethods: ["native", "api"],
+    preferredAccessMethod: "native",
+  },
+  {
+    key: "gemini",
+    label: "Gemini (Google AI)",
+    category: "ai",
+    authMethod: "api_key",
+    scopeLevel: "platform",
+    declaredCapabilities: ["media.image_generation", "media.video_generation", "ai.text", "ai.multimodal"],
+    description:
+      "Google AI Studio/Gemini API for text, multimodal vision, and media generation. Health is verified via probeGeminiReadiness live check against GEMINI_API_KEY or vaulted key.",
+    realStatusSource: "@stratxcel/ai-runtime probeGeminiReadiness() live check against GEMINI_API_KEY",
+    requiredEnvVars: ["GEMINI_API_KEY"],
+    supportedAccessMethods: ["native", "api"],
+    preferredAccessMethod: "native",
+  },
+  {
+    key: "claude",
+    label: "Claude (Anthropic)",
+    category: "ai",
+    authMethod: "api_key",
+    scopeLevel: "platform",
+    declaredCapabilities: ["ai.text", "ai.code", "ai.reasoning"],
+    description:
+      "Anthropic Claude API for advanced architecture, reasoning, and autonomous agent tasks. Authenticated via ANTHROPIC_API_KEY or vaulted key.",
+    realStatusSource: "Anthropic API models probe against ANTHROPIC_API_KEY or vaulted key",
+    requiredEnvVars: ["ANTHROPIC_API_KEY"],
+    supportedAccessMethods: ["native", "api"],
+    preferredAccessMethod: "native",
+  },
+  {
+    key: "github",
+    label: "GitHub",
+    category: "infrastructure",
+    authMethod: "service_credential",
+    scopeLevel: "platform",
+    declaredCapabilities: ["infrastructure.repo_read", "infrastructure.repo_write", "infrastructure.ci_inspect"],
+    description:
+      "StratXcel source repository, issue tracking, and CI/CD operations. Authenticated via vaulted fine-grained PAT or GitHub App. Real live check against GET https://api.github.com/user.",
+    realStatusSource: "GET https://api.github.com/user with the vaulted PAT",
+    requiredEnvVars: [],
+    supportedAccessMethods: ["api", "cli", "mcp"],
+    preferredAccessMethod: "api",
+  },
+  {
+    key: "meta",
+    label: "Meta (Facebook / Instagram)",
+    category: "social",
+    authMethod: "oauth",
+    scopeLevel: "company",
+    declaredCapabilities: ["messaging.send", "messaging.receive", "social.post", "social.analytics"],
+    description:
+      "Meta Business Cloud API messaging surface (WhatsApp Cloud) and social publishing. Reads real phone_bindings and social_accounts.",
+    realStatusSource: "phone_bindings.status, read-only adapter and Graph API check",
+    requiredEnvVars: [],
+    supportedAccessMethods: ["api"],
+    preferredAccessMethod: "api",
+  },
+  {
+    key: "whatsapp",
+    label: "WhatsApp Cloud API",
+    category: "messaging",
+    authMethod: "oauth",
+    scopeLevel: "company",
+    declaredCapabilities: ["messaging.send", "messaging.receive", "messaging.templates"],
+    description:
+      "WhatsApp Cloud API messaging for company operations. Reads the real, already-live phone_bindings table from Admin > Integrations.",
+    realStatusSource: "phone_bindings.status, read-only adapter",
+    requiredEnvVars: [],
+    supportedAccessMethods: ["api"],
+    preferredAccessMethod: "api",
+  },
+  {
+    key: "vercel",
+    label: "Vercel",
+    category: "infrastructure",
+    authMethod: "api_key",
+    scopeLevel: "both",
+    declaredCapabilities: ["website.deploy_status", "website.domain_status", "website.deploy"],
+    description:
+      "Website hosting & preview deployments. Company connections read search_website_connections; platform connections validate via validateVercelToken.",
+    realStatusSource: "company-scoped: search_website_connections; platform-scoped: validateVercelToken() against vaulted token",
+    requiredEnvVars: [],
+    supportedAccessMethods: ["api", "cli"],
+    preferredAccessMethod: "api",
+  },
+  {
+    key: "supabase",
+    label: "Supabase",
+    category: "data",
+    authMethod: "service_credential",
+    scopeLevel: "platform",
+    declaredCapabilities: ["data.inspect", "data.query", "data.migrate"],
+    description:
+      "StratXcel's primary Postgres, Storage, and Realtime platform. Health is validated via live database query ping.",
+    realStatusSource: "Live authenticated Postgres query ping against Supabase instance",
+    requiredEnvVars: [],
+    supportedAccessMethods: ["native", "api", "cli"],
+    preferredAccessMethod: "native",
   },
   {
     key: "browser",
@@ -126,11 +278,69 @@ export const CONNECTOR_REGISTRY: readonly ConnectorDefinition[] = [
     category: "automation",
     authMethod: "mcp_managed",
     scopeLevel: "platform",
-    declaredCapabilities: [],
+    declaredCapabilities: ["browser.navigate", "browser.extract", "browser.interact", "browser.screenshot"],
     description:
-      "Browser/computer-use automation for Hermes missions. Declared honestly as NOT YET a real Hermes-callable capability -- no browser tool exists in Hermes' restricted ToolName union today. This row exists so the control plane's own completeness is honest (a real, named future BUILD item) rather than silently absent.",
-    realStatusSource: "none -- no real Hermes execution path exists yet; status is always pending",
+      "Browser/computer automation engine for web-action execution when direct APIs do not exist. Used strictly as web-action fallback.",
+    realStatusSource: "Headless browser execution environment readiness probe",
     requiredEnvVars: [],
+    supportedAccessMethods: ["native", "mcp", "browser"],
+    preferredAccessMethod: "mcp",
+  },
+  {
+    key: "s3",
+    label: "AWS S3 Storage",
+    category: "data",
+    authMethod: "service_credential",
+    scopeLevel: "both",
+    declaredCapabilities: ["storage.read", "storage.write", "storage.upload", "storage.list"],
+    description:
+      "Object storage for media assets, reports, and mission backups. Configurable via AWS S3 credentials or vaulted secret.",
+    realStatusSource: "S3 authenticated client bucket check",
+    requiredEnvVars: [],
+    supportedAccessMethods: ["native", "api", "cli", "mcp"],
+    preferredAccessMethod: "native",
+  },
+  {
+    key: "apollo",
+    label: "Apollo.io",
+    category: "data",
+    authMethod: "api_key",
+    scopeLevel: "both",
+    declaredCapabilities: ["leads.search", "leads.enrich", "leads.verify"],
+    description:
+      "B2B market discovery, lead intelligence, and company contact enrichment. Authenticates via APOLLO_API_KEY or vaulted key.",
+    realStatusSource: "Apollo.io API health probe (GET https://api.apollo.io/v1/auth/health)",
+    requiredEnvVars: ["APOLLO_API_KEY"],
+    supportedAccessMethods: ["api"],
+    preferredAccessMethod: "api",
+  },
+  {
+    key: "payments",
+    label: "Payments (Razorpay / Stripe)",
+    category: "finance",
+    authMethod: "api_key",
+    scopeLevel: "both",
+    declaredCapabilities: ["payments.charge", "payments.refund", "payments.subscriptions", "payments.invoices"],
+    description:
+      "Payment processing engine for subscription billing, payment links, and invoices. Reads Razorpay/Stripe integration credentials.",
+    realStatusSource: "Razorpay/Stripe credentials probe against API endpoint",
+    requiredEnvVars: ["RAZORPAY_KEY_ID", "RAZORPAY_KEY_SECRET"],
+    supportedAccessMethods: ["native", "api"],
+    preferredAccessMethod: "native",
+  },
+  {
+    key: "telegram",
+    label: "Telegram Bot API",
+    category: "messaging",
+    authMethod: "api_key",
+    scopeLevel: "platform",
+    declaredCapabilities: ["messaging.send", "messaging.receive", "messaging.webhook"],
+    description:
+      "Telegram bot messaging channel for Founder alerts, interactive commands, and Hermes mission updates. Authenticated via bot token.",
+    realStatusSource: "Telegram Bot API probe (GET https://api.telegram.org/bot<token>/getMe)",
+    requiredEnvVars: ["TELEGRAM_BOT_TOKEN"],
+    supportedAccessMethods: ["api"],
+    preferredAccessMethod: "api",
   },
 ] as const;
 
@@ -140,4 +350,26 @@ export function getConnectorDefinition(key: string): ConnectorDefinition | undef
 
 export function listConnectorDefinitions(): ConnectorDefinition[] {
   return [...CONNECTOR_REGISTRY];
+}
+
+/**
+ * Resolves the preferred execution method for a given capability on a connector,
+ * respecting the strict priority:
+ * 1. Native internal tool
+ * 2. MCP
+ * 3. Direct API
+ * 4. CLI
+ * 5. Browser/computer
+ */
+export function resolvePreferredExecutionMethod(
+  def: ConnectorDefinition,
+  allowedMethods?: ConnectorAccessMethod[] | null
+): ConnectorAccessMethod {
+  const candidates = allowedMethods && allowedMethods.length > 0 ? allowedMethods : def.supportedAccessMethods;
+  for (const method of EXECUTION_METHOD_ORDER) {
+    if (candidates.includes(method)) {
+      return method;
+    }
+  }
+  return def.preferredAccessMethod;
 }
