@@ -19,6 +19,8 @@ function run() {
   const missions = read("app", "admin", "(shell)", "missions", "page.tsx");
   const approvals = read("app", "admin", "(shell)", "approvals", "page.tsx");
   const proxy = read("proxy.ts");
+  const crmWorkspace = read("components", "crm", "CrmWorkspace.tsx");
+  const conversationList = read("components", "crm", "ConversationList.tsx");
 
   // Owner admin tenant selection establishes signed staff workspace atomically.
   assert.ok(tenantActions.includes("ensureAdminStaffWorkspace"), "setActiveTenantAction must mint staff workspace with tenant cookie");
@@ -64,7 +66,40 @@ function run() {
   // Multi-tab stale refresh must not crash proxy/middleware.
   assert.ok(proxy.includes("refresh_token_already_used") && proxy.includes("signOut"));
 
-  console.log("admin-staff-workspace.test.ts: ALL PASS (workspace sync, recovery, expiry, cross-tenant, loading exit, auth hardening)");
+  // Regression: CrmWorkspace (the shared /app/crm + /admin/leads workspace)
+  // previously issued every backend read/write via raw fetch() -- when a
+  // staff member's 15-minute staff-workspace cookie expired mid-session,
+  // every CRM request 403'd with STAFF_WORKSPACE_CONTEXT_ERROR, got masked
+  // by customerSafeError into "We couldn't load your CRM. Please try
+  // again.", and Retry re-ran the same raw fetch forever -- because the
+  // one place that recovers from this (platformFetch, tested above) was
+  // never in the loop. Every CrmWorkspace backend call must now go through
+  // platformFetch instead.
+  assert.ok(crmWorkspace.includes('import { platformFetch } from "@/lib/admin/platform-fetch"'), "CrmWorkspace must import platformFetch");
+  for (const endpoint of [
+    "`/api/platform/leads?tenantId=",
+    "`/api/platform/whatsapp/conversations?tenantId=",
+    "`/api/platform/crm/follow-ups?tenantId=",
+    "`/api/platform/crm/appointments?tenantId=",
+    "`/api/platform/whatsapp/conversations/${convoId}?tenantId=",
+  ]) {
+    assert.ok(crmWorkspace.includes(`platformFetch(${endpoint}`), `list/detail read for ${endpoint} must go through platformFetch, not raw fetch`);
+    assert.equal(crmWorkspace.includes(`() => fetch(${endpoint}`), false, `${endpoint} must not still use raw fetch()`);
+  }
+  for (const endpoint of ["/api/platform/whatsapp/send", "/api/platform/whatsapp/conversations/${conversationId}`", "/api/platform/leads/${selectedEntry.lead.id}`", "/api/platform/crm/follow-ups", "/api/platform/crm/appointments"]) {
+    assert.ok(crmWorkspace.includes(`platformFetch(\`${endpoint}`) || crmWorkspace.includes(`platformFetch("${endpoint}"`), `mutation to ${endpoint} must go through platformFetch`);
+  }
+
+  // Regression: the left conversation list must never render "No
+  // conversations yet" for an empty list caused by the backend error above
+  // -- only for a genuinely successful, empty response (Section 10: empty
+  // state and error state are never the same thing).
+  assert.ok(/error\?:\s*string \| null/.test(conversationList), "ConversationList must accept an error prop");
+  assert.ok(/!loading && !error && filtered\.length === 0/.test(conversationList), "the 'No conversations yet' empty state must be gated on the absence of an error");
+  assert.ok(/!loading && error && filtered\.length === 0/.test(conversationList), "a distinct message must render when the list is empty because of a real error");
+  assert.ok(/error=\{error\}/.test(crmWorkspace), "CrmWorkspace must actually pass its error state down to ConversationList");
+
+  console.log("admin-staff-workspace.test.ts: ALL PASS (workspace sync, recovery, expiry, cross-tenant, loading exit, auth hardening, CRM workspace recovery, CRM empty-vs-error state)");
 }
 
 run();

@@ -13,6 +13,7 @@ import { ErrorState, EmptyState } from "@/components/ui/Feedback";
 import { Drawer, Modal } from "@/components/ui/Overlay";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { loadCustomerJson } from "@/lib/customer-app/load-result";
+import { platformFetch } from "@/lib/admin/platform-fetch";
 import { contactLabel, type Appointment, type ConversationAutomationMode, type CrmConversation, type CrmLead, type CrmMessage, type FollowUp, type InboxEntry, type LeadStatus } from "./types";
 
 const LIST_POLL_MS = 8_000;
@@ -115,19 +116,19 @@ export function CrmWorkspace({
     }
     const [leadsResult, conversationsResult, followUpsResult, appointmentsResult] = await Promise.all([
       loadCustomerJson<{ leads?: CrmLead[] }>(
-        () => fetch(`/api/platform/leads?tenantId=${encodeURIComponent(tenantId)}`),
+        () => platformFetch(`/api/platform/leads?tenantId=${encodeURIComponent(tenantId)}`),
         "We couldn't load your CRM. Please try again."
       ),
       loadCustomerJson<{ conversations?: CrmConversation[] }>(
-        () => fetch(`/api/platform/whatsapp/conversations?tenantId=${encodeURIComponent(tenantId)}`),
+        () => platformFetch(`/api/platform/whatsapp/conversations?tenantId=${encodeURIComponent(tenantId)}`),
         "We couldn't load your conversations. Please try again."
       ),
       loadCustomerJson<{ followUps?: FollowUp[] }>(
-        () => fetch(`/api/platform/crm/follow-ups?tenantId=${encodeURIComponent(tenantId)}`),
+        () => platformFetch(`/api/platform/crm/follow-ups?tenantId=${encodeURIComponent(tenantId)}`),
         "We couldn't load your follow-ups. Please try again."
       ),
       loadCustomerJson<{ appointments?: Appointment[] }>(
-        () => fetch(`/api/platform/crm/appointments?tenantId=${encodeURIComponent(tenantId)}`),
+        () => platformFetch(`/api/platform/crm/appointments?tenantId=${encodeURIComponent(tenantId)}`),
         "We couldn't load your appointments. Please try again."
       ),
     ]);
@@ -219,7 +220,7 @@ export function CrmWorkspace({
       if (showLoading) setMessagesLoading(true);
       try {
         const result = await loadCustomerJson<{ messages?: CrmMessage[] }>(
-          () => fetch(`/api/platform/whatsapp/conversations/${convoId}?tenantId=${encodeURIComponent(tenantId)}`),
+          () => platformFetch(`/api/platform/whatsapp/conversations/${convoId}?tenantId=${encodeURIComponent(tenantId)}`),
           "We couldn't load this conversation. Please try again."
         );
         if (result.status === "error") {
@@ -265,7 +266,7 @@ export function CrmWorkspace({
     if (!selectedEntry) return false;
     setSending(true);
     try {
-      const res = await fetch("/api/platform/whatsapp/send", {
+      const res = await platformFetch("/api/platform/whatsapp/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ tenantId, leadId: selectedEntry.lead.id, text }),
@@ -287,7 +288,7 @@ export function CrmWorkspace({
     if (!conversationId) return;
     setAutomationBusy(true);
     try {
-      await fetch(`/api/platform/whatsapp/conversations/${conversationId}`, {
+      await platformFetch(`/api/platform/whatsapp/conversations/${conversationId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ tenantId, automationMode: mode }),
@@ -300,7 +301,7 @@ export function CrmWorkspace({
 
   async function patchLead(patch: Record<string, unknown>) {
     if (!selectedEntry) return;
-    const res = await fetch(`/api/platform/leads/${selectedEntry.lead.id}`, {
+    const res = await platformFetch(`/api/platform/leads/${selectedEntry.lead.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ tenantId, ...patch }),
@@ -319,7 +320,7 @@ export function CrmWorkspace({
       onSaveNotes={async (notes: string) => patchLead({ notes })}
       onAssignToMe={async () => patchLead({ assignedTo: "self" })}
       onScheduleFollowUp={async (nextAction: string, dueAt: string) => {
-        await fetch("/api/platform/crm/follow-ups", {
+        await platformFetch("/api/platform/crm/follow-ups", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ tenantId, leadId: selectedEntry.lead.id, nextAction, dueAt }),
@@ -327,7 +328,7 @@ export function CrmWorkspace({
         await loadLists();
       }}
       onScheduleAppointment={async (requestedFor: string) => {
-        await fetch("/api/platform/crm/appointments", {
+        await platformFetch("/api/platform/crm/appointments", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ tenantId, leadId: selectedEntry.lead.id, requestedFor: requestedFor || undefined }),
@@ -346,7 +347,7 @@ export function CrmWorkspace({
       )}
       <div className="grid min-h-0 min-w-0 flex-1 grid-cols-1 md:grid-cols-[minmax(280px,330px)_1fr]">
         <div className={`min-h-0 min-w-0 w-full max-w-full overflow-x-hidden ${mobileView === "list" ? "flex" : "hidden"} md:flex`}>
-          <ConversationList entries={entries} loading={leads === null && !error} selectedLeadId={selectedLeadId} onSelect={selectLead} currentUserId={currentUserId} title={title} />
+          <ConversationList entries={entries} loading={leads === null && !error} error={error} selectedLeadId={selectedLeadId} onSelect={selectLead} currentUserId={currentUserId} title={title} />
         </div>
 
         <div className={`min-h-0 min-w-0 w-full max-w-full flex-col overflow-hidden ${mobileView === "thread" ? "flex" : "hidden"} md:flex`}>

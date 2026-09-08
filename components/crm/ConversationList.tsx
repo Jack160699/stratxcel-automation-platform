@@ -18,6 +18,7 @@ const FILTERS: { key: Filter; label: string }[] = [
 export function ConversationList({
   entries,
   loading,
+  error,
   selectedLeadId,
   onSelect,
   currentUserId,
@@ -25,6 +26,8 @@ export function ConversationList({
 }: {
   entries: InboxEntry[];
   loading: boolean;
+  /** When set, a backend failure produced this (empty) entries list — never render the "No conversations yet" empty state for that, only for a genuinely successful, empty response. */
+  error?: string | null;
   selectedLeadId: string | null;
   onSelect: (leadId: string) => void;
   currentUserId: string | null;
@@ -95,7 +98,10 @@ export function ConversationList({
 
       <div className="sx-thin-scroll min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-1.5 py-1.5">
         {loading && entries.length === 0 && <p className="px-2 py-4 text-center text-xs text-sx-text-subtle">Loading…</p>}
-        {!loading && filtered.length === 0 && (
+        {!loading && error && filtered.length === 0 && (
+          <p className="px-2 py-4 text-center text-xs text-sx-text-subtle">Couldn&rsquo;t load conversations.</p>
+        )}
+        {!loading && !error && filtered.length === 0 && (
           <div className="px-2 py-4">
             <EmptyState
               title={entries.length === 0 ? "No conversations yet." : "No matches."}

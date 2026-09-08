@@ -197,7 +197,11 @@ function run() {
   // =========================================================================
 
   // --- 34. Tenant isolation unchanged ---------------------------------------------
-  const fetchStarts = [...crmWorkspace.matchAll(/fetch\(/g)].map((m) => m.index);
+  // Matches both fetch( and platformFetch( -- CrmWorkspace moved to
+  // platformFetch (see admin-staff-workspace.test.ts) so it can recover from
+  // a staff member's expired workspace cookie instead of 403ing forever;
+  // every one of those calls must still be tenant-scoped.
+  const fetchStarts = [...crmWorkspace.matchAll(/[Ff]etch\(/g)].map((m) => m.index);
   assert.ok(fetchStarts.length > 0, "CrmWorkspace must issue tenant-scoped fetches");
   for (const start of fetchStarts) {
     const chunk = crmWorkspace.slice(start, start + 400);
