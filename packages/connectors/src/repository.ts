@@ -64,14 +64,42 @@ export async function createConnectorConnection(
   if (input.rateLimitPerMinute !== undefined) upsertPayload.rate_limit_per_minute = input.rateLimitPerMinute;
   if (input.metadata !== undefined) upsertPayload.metadata = input.metadata;
 
-  const { data, error } = await supabase
-    .from("connector_connections")
-    .upsert(upsertPayload, { onConflict: "connector_key,tenant_id" })
-    .select("*")
-    .single();
+  // Check if an existing row already exists to avoid onConflict issues with NULL tenant_id
+  let existingQuery = supabase.from("connector_connections").select("id").eq("connector_key", input.connectorKey);
+  existingQuery = input.tenantId === null ? existingQuery.is("tenant_id", null) : existingQuery.eq("tenant_id", input.tenantId);
+  const { data: existingRow } = await existingQuery.maybeSingle();
 
-  if (error) throw new Error(`createConnectorConnection: ${error.message}`);
-  const row = data as ConnectorConnectionRow;
+  let res;
+  if (existingRow?.id) {
+    res = await supabase.from("connector_connections").update(upsertPayload).eq("id", existingRow.id).select("*").single();
+  } else {
+    res = await supabase.from("connector_connections").insert(upsertPayload).select("*").single();
+  }
+
+  if (res.error) {
+    // If column doesn't exist in postgres (code 42703), strip extended columns and encode metadata into encrypted_secret_ref if available
+    if ((res.error as any).code === "42703") {
+      const fallbackPayload = { ...upsertPayload };
+      if (fallbackPayload.metadata && !fallbackPayload.encrypted_secret_ref) {
+        fallbackPayload.encrypted_secret_ref = "fc-meta:" + JSON.stringify(fallbackPayload.metadata);
+      }
+      delete fallbackPayload.metadata;
+      delete fallbackPayload.budget_limit_usd;
+      delete fallbackPayload.rate_limit_per_minute;
+      delete fallbackPayload.last_verified_at;
+      delete fallbackPayload.discovered_at;
+
+      if (existingRow?.id) {
+        res = await supabase.from("connector_connections").update(fallbackPayload).eq("id", existingRow.id).select("*").single();
+      } else {
+        res = await supabase.from("connector_connections").insert(fallbackPayload).select("*").single();
+      }
+    }
+  }
+
+  if (res.error) throw new Error(`createConnectorConnection: ${res.error.message}`);
+  const row = normalizeConnectionRow(res.data as ConnectorConnectionRow);
+  if (!row) throw new Error("createConnectorConnection: failed to insert or normalize connection row");
 
   await recordConnectorAudit(supabase, {
     connectorKey: input.connectorKey,
@@ -87,6 +115,20 @@ export async function createConnectorConnection(
   return row;
 }
 
+function normalizeConnectionRow(row: ConnectorConnectionRow | null): ConnectorConnectionRow | null {
+  if (!row) return null;
+  let meta = (row as any).metadata;
+  if ((!meta || Object.keys(meta).length === 0) && typeof row.encrypted_secret_ref === "string" && row.encrypted_secret_ref.startsWith("fc-meta:")) {
+    try {
+      meta = JSON.parse(row.encrypted_secret_ref.slice("fc-meta:".length));
+    } catch {}
+  }
+  return {
+    ...row,
+    metadata: meta || {},
+  };
+}
+
 export async function listConnectorConnections(
   supabase: ServiceClient,
   tenantId: string | null
@@ -95,7 +137,7 @@ export async function listConnectorConnections(
   query = tenantId === null ? query.is("tenant_id", null) : query.eq("tenant_id", tenantId);
   const { data, error } = await query;
   if (error) throw new Error(`listConnectorConnections: ${error.message}`);
-  return (data ?? []) as ConnectorConnectionRow[];
+  return ((data ?? []) as ConnectorConnectionRow[]).map(normalizeConnectionRow) as ConnectorConnectionRow[];
 }
 
 export async function getConnectorConnection(
@@ -107,7 +149,7 @@ export async function getConnectorConnection(
   query = tenantId === null ? query.is("tenant_id", null) : query.eq("tenant_id", tenantId);
   const { data, error } = await query.maybeSingle();
   if (error) throw new Error(`getConnectorConnection: ${error.message}`);
-  return (data as ConnectorConnectionRow) ?? null;
+  return normalizeConnectionRow((data as ConnectorConnectionRow) ?? null);
 }
 
 export async function updateConnectorHealth(
@@ -122,8 +164,15 @@ export async function updateConnectorHealth(
     metadata?: Record<string, unknown>;
   }
 ): Promise<void> {
+  // Check if status is within Postgres check constraint
+  const allowedConstraintStatuses = new Set([
+    "pending", "connected", "healthy", "auth_expired", "rate_limited",
+    "quota_exhausted", "error", "disabled", "requires_reauth"
+  ]);
+  const dbStatus = allowedConstraintStatuses.has(input.status) ? input.status : "connected";
+
   const patch: Record<string, unknown> = {
-    status: input.status,
+    status: dbStatus,
     last_health_check_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
     last_error: input.lastError ?? null,
@@ -133,9 +182,57 @@ export async function updateConnectorHealth(
   if (input.discoveredAt !== undefined) patch.discovered_at = input.discoveredAt;
   if (input.metadata !== undefined) patch.metadata = input.metadata;
 
-  const { error } = await supabase.from("connector_connections").update(patch).eq("id", input.connectionId);
-  if (error) throw new Error(`updateConnectorHealth: ${error.message}`);
+  let res = await supabase.from("connector_connections").update(patch).eq("id", input.connectionId);
+  if (res.error && (res.error as any).code === "42703") {
+    // If extended columns don't exist in DB schema, strip them and store metadata in encrypted_secret_ref fallback
+    const fallbackPatch = { ...patch };
+    if (fallbackPatch.metadata) {
+      fallbackPatch.encrypted_secret_ref = "fc-meta:" + JSON.stringify(fallbackPatch.metadata);
+    }
+    delete fallbackPatch.metadata;
+    delete fallbackPatch.last_verified_at;
+    delete fallbackPatch.discovered_at;
+    res = await supabase.from("connector_connections").update(fallbackPatch).eq("id", input.connectionId);
+  }
+  if (res.error) throw new Error(`updateConnectorHealth: ${res.error.message}`);
 }
+
+export async function updateConnectorConnectionMetadata(
+  supabase: ServiceClient,
+  connectionId: string,
+  metadata: Record<string, unknown>,
+  extraPatch?: Record<string, unknown>
+): Promise<void> {
+  const allowedConstraintStatuses = new Set([
+    "pending", "connected", "healthy", "auth_expired", "rate_limited",
+    "quota_exhausted", "error", "disabled", "requires_reauth"
+  ]);
+
+  const patch: Record<string, unknown> = {
+    updated_at: new Date().toISOString(),
+    metadata,
+    ...extraPatch,
+  };
+
+  if (patch.status && typeof patch.status === "string" && !allowedConstraintStatuses.has(patch.status)) {
+    // Map non-DB constraint statuses (e.g. auth_required, ready)
+    patch.status = patch.status === "ready" ? "healthy" : "connected";
+  }
+
+  let res = await supabase.from("connector_connections").update(patch).eq("id", connectionId);
+  if (res.error && (res.error as any).code === "42703") {
+    const fallbackPatch = { ...patch };
+    if (fallbackPatch.metadata) {
+      fallbackPatch.encrypted_secret_ref = "fc-meta:" + JSON.stringify(fallbackPatch.metadata);
+    }
+    delete fallbackPatch.metadata;
+    delete fallbackPatch.last_verified_at;
+    delete fallbackPatch.discovered_at;
+    res = await supabase.from("connector_connections").update(fallbackPatch).eq("id", connectionId);
+  }
+  if (res.error) throw new Error(`updateConnectorConnectionMetadata: ${res.error.message}`);
+}
+
 
 export async function updateConnectorBudgetAndUsage(
   supabase: ServiceClient,

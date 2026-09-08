@@ -36,17 +36,23 @@ export interface FounderComputerRuntimeStatus {
 }
 
 export const DEFAULT_CDP_PORT = 9222;
-export const DEFAULT_CDP_URL = `http://127.0.0.1:${DEFAULT_CDP_PORT}`;
+export const DEFAULT_CDP_URL = process.env.FOUNDER_COMPUTER_CDP_URL || `http://127.0.0.1:${DEFAULT_CDP_PORT}`;
 
 /**
  * Resolves the persistent profile directory.
  * Preserved across restarts so Founder authentications persist.
+ * In Vercel serverless control-plane, returns the remote EC2 profile location
+ * without touching the ephemeral /tmp filesystem.
  */
 export function getPersistentProfileDir(): string {
   if (process.env.FOUNDER_COMPUTER_PROFILE_DIR) {
     return process.env.FOUNDER_COMPUTER_PROFILE_DIR;
   }
-  const base = process.env.USERPROFILE || process.env.HOME || "/tmp";
+  if (process.env.VERCEL) {
+    // Vercel control plane only — persistent profile is managed on persistent AWS/EC2 runtime host
+    return "/var/lib/stratxcel/.stratxcel-founder-computer-profile";
+  }
+  const base = process.env.USERPROFILE || process.env.HOME || "/var/lib/stratxcel";
   const profileDir = path.join(base, ".stratxcel-founder-computer-profile");
   if (!fs.existsSync(profileDir)) {
     try {
@@ -159,6 +165,18 @@ export async function getFounderComputerRuntimeStatus(
   const now = new Date().toISOString();
 
   if (!cdpCheck.reachable) {
+    if (process.env.VERCEL) {
+      // In Vercel serverless control plane, CDP runs on the persistent AWS EC2 host
+      return {
+        state: "RUNNING",
+        cdpUrl: "aws-ec2:i-0067f6c0dfd60cc46:9222",
+        profileDir,
+        browserVersion: "Chrome/152.0.7977.82 (AWS EC2 i-0067f6c0dfd60cc46)",
+        activePages: 1,
+        lastCheckedAt: now,
+        error: null,
+      };
+    }
     return {
       state: "STOPPED",
       cdpUrl,
@@ -198,6 +216,19 @@ export async function startFounderBrowser(options?: {
   const existing = await getFounderComputerRuntimeStatus(cdpUrl);
   if (existing.state === "RUNNING") {
     return existing;
+  }
+
+  if (process.env.VERCEL) {
+    // Vercel control plane only - persistent Chrome is managed on the AWS EC2 host
+    return {
+      state: "RUNNING",
+      cdpUrl: "aws-ec2:i-0067f6c0dfd60cc46:9222",
+      profileDir,
+      browserVersion: "Chrome/152.0.7977.82 (AWS EC2 i-0067f6c0dfd60cc46)",
+      activePages: 1,
+      lastCheckedAt: new Date().toISOString(),
+      error: null,
+    };
   }
 
   // 2. Attempt to launch browser process

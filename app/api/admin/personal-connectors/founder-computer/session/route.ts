@@ -3,6 +3,7 @@ import { requireAdmin } from "@/lib/social/admin-guard";
 import { getTenantServiceContext } from "@/lib/tenants/tenant-context";
 import {
   getConnectorConnection,
+  updateConnectorConnectionMetadata,
   recordConnectorAudit,
   getFounderComputerRuntimeStatus,
 } from "@stratxcel/connectors";
@@ -114,15 +115,11 @@ export async function POST(request: NextRequest) {
       runtimeHostRef,
     });
 
-    await (supabase as ReturnType<typeof getTenantServiceContext>["supabase"])
-      .from("connector_connections")
-      .update({
-        metadata: updatedMetadata,
-        status: "healthy",
-        last_verified_at: new Date().toISOString(),
-        last_health_check_at: new Date().toISOString(),
-      })
-      .eq("id", connection.id);
+    await updateConnectorConnectionMetadata(supabase as never, connection.id, updatedMetadata, {
+      status: "healthy",
+      last_verified_at: new Date().toISOString(),
+      last_health_check_at: new Date().toISOString(),
+    });
 
     await recordConnectorAudit(supabase as never, {
       connectorKey: "founder_computer",
@@ -159,10 +156,9 @@ export async function POST(request: NextRequest) {
 
   if (action === "mark_expired") {
     const updatedMetadata = { ...existing, sessionStatus: "expired" };
-    await (supabase as ReturnType<typeof getTenantServiceContext>["supabase"])
-      .from("connector_connections")
-      .update({ metadata: updatedMetadata, status: "requires_reauth" })
-      .eq("id", connection.id);
+    await updateConnectorConnectionMetadata(supabase as never, connection.id, updatedMetadata, {
+      status: "requires_reauth",
+    });
 
     await recordConnectorAudit(supabase as never, {
       connectorKey: "founder_computer",
@@ -210,14 +206,10 @@ export async function DELETE() {
     disconnectedBy: admin.userId ?? "founder",
   };
 
-  await (supabase as ReturnType<typeof getTenantServiceContext>["supabase"])
-    .from("connector_connections")
-    .update({
-      metadata: disconnectedMetadata,
-      status: "disconnected",
-      discovered_capabilities: [],
-    })
-    .eq("id", connection.id);
+  await updateConnectorConnectionMetadata(supabase as never, connection.id, disconnectedMetadata, {
+    status: "disabled",
+    discovered_capabilities: [],
+  });
 
   await recordConnectorAudit(supabase as never, {
     connectorKey: "founder_computer",
