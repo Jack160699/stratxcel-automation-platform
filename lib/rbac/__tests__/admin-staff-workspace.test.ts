@@ -21,6 +21,7 @@ function run() {
   const proxy = read("proxy.ts");
   const crmWorkspace = read("components", "crm", "CrmWorkspace.tsx");
   const conversationList = read("components", "crm", "ConversationList.tsx");
+  const adminShellLayout = read("app", "admin", "(shell)", "layout.tsx");
 
   // Owner admin tenant selection establishes signed staff workspace atomically.
   assert.ok(tenantActions.includes("ensureAdminStaffWorkspace"), "setActiveTenantAction must mint staff workspace with tenant cookie");
@@ -99,7 +100,22 @@ function run() {
   assert.ok(/!loading && error && filtered\.length === 0/.test(conversationList), "a distinct message must render when the list is empty because of a real error");
   assert.ok(/error=\{error\}/.test(crmWorkspace), "CrmWorkspace must actually pass its error state down to ConversationList");
 
-  console.log("admin-staff-workspace.test.ts: ALL PASS (workspace sync, recovery, expiry, cross-tenant, loading exit, auth hardening, CRM workspace recovery, CRM empty-vs-error state)");
+  // Regression: resolveCanonicalIdentity({routeSurface:"admin"}) already
+  // re-verifies a staff member's active client workspace (identity.state
+  // === "STAFF_VIEWING_CLIENT", identity.staffWorkspace) via the same
+  // signed cookie + getAgencyTenant check every CRM/API read route trusts
+  // -- but the admin shell layout used to discard it and build
+  // CurrentTenantProvider purely from resolveCurrentTenant's own-
+  // membership-only list, so no page under the shell (leads, missions,
+  // finance, approvals, audit, integrations, handoffs, connectors,
+  // operations) could ever display a client whose workspace the admin had
+  // actually opened -- only the admin's own tenant.
+  assert.ok(adminShellLayout.includes('identity.state === "STAFF_VIEWING_CLIENT"'), "admin shell layout must recognize an active staff-viewed client workspace");
+  assert.ok(/initialTenants\s*=\s*\[staffTenant/.test(adminShellLayout), "an active client workspace must be surfaced into the tenant list, not just silently dropped");
+  assert.ok(/initialActive\s*=\s*staffTenant/.test(adminShellLayout), "an active client workspace must become the active tenant, not fall back to the admin's own");
+  assert.ok(/<CurrentTenantProvider initialTenants=\{initialTenants\} initialActive=\{initialActive\}>/.test(adminShellLayout), "CurrentTenantProvider must receive the merged tenant/active values, not the raw resolveCurrentTenant output");
+
+  console.log("admin-staff-workspace.test.ts: ALL PASS (workspace sync, recovery, expiry, cross-tenant, loading exit, auth hardening, CRM workspace recovery, CRM empty-vs-error state, admin shell client-workspace surfacing)");
 }
 
 run();
