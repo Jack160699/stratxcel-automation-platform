@@ -162,6 +162,20 @@ export async function getConnectorConnection(
   query = tenantId === null ? query.is("tenant_id", null) : query.eq("tenant_id", tenantId);
   const { data, error } = await query.maybeSingle();
   if (error) throw new Error(`getConnectorConnection: ${error.message}`);
+  if (!data && tenantId !== null) {
+    const def = getConnectorDefinition(connectorKey);
+    if (def?.scopeLevel === "platform" || def?.scopeLevel === "both" || connectorKey === "founder_computer") {
+      const { data: platformData } = await supabase
+        .from("connector_connections")
+        .select("*")
+        .eq("connector_key", connectorKey)
+        .is("tenant_id", null)
+        .maybeSingle();
+      if (platformData) {
+        return normalizeConnectionRow(platformData as ConnectorConnectionRow);
+      }
+    }
+  }
   return normalizeConnectionRow((data as ConnectorConnectionRow) ?? null);
 }
 

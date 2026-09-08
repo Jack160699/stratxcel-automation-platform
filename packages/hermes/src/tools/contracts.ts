@@ -171,6 +171,26 @@ export interface ToolContractMap {
     input: { ms: number };
     output: { success: boolean; ms: number };
   };
+  discover_capabilities: {
+    input: { providerFilter?: string; refresh?: boolean };
+    output: { capabilities: Array<Record<string, unknown>> };
+  };
+  get_capability_status: {
+    input: { capabilityKey: string; connectorKey?: string };
+    output: { status: string; capability: Record<string, unknown> | null };
+  };
+  select_best_resource: {
+    input: { capabilityKey: string; requireAutonomous?: boolean };
+    output: { selected: Record<string, unknown> | null; alternatives: unknown[]; reason: string };
+  };
+  execute_capability: {
+    input: { capabilityKey: string; payload?: Record<string, unknown>; connectorKey?: string };
+    output: Record<string, unknown>;
+  };
+  get_resource_health: {
+    input: { connectorKey: string };
+    output: { connectorKey: string; status: string; health: Record<string, unknown> };
+  };
 }
 
 export const ALL_TOOL_NAMES: ToolName[] = [
@@ -213,6 +233,11 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "computer_key",
   "computer_screenshot",
   "computer_wait",
+  "discover_capabilities",
+  "get_capability_status",
+  "select_best_resource",
+  "execute_capability",
+  "get_resource_health",
 ];
 
 /**

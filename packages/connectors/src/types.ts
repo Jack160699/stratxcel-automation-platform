@@ -10,7 +10,7 @@ export type ConnectorCategory = "infrastructure" | "ai" | "messaging" | "social"
 
 export type ConnectorScopeLevel = "platform" | "company" | "both";
 
-export type ConnectorAccessMethod = "native" | "mcp" | "api" | "cli" | "browser";
+export type ConnectorAccessMethod = "native" | "mcp" | "api" | "cli" | "browser" | "desktop";
 
 export type ConnectorHealthStatus =
   | "pending"

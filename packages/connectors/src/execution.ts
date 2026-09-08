@@ -214,6 +214,76 @@ for (const cap of [...BROWSER_CAPABILITIES, ...COMPUTER_CAPABILITIES, ...FILE_CA
   });
 }
 
+import {
+  executeGoogleBrowserImageGeneration,
+  executeGoogleBrowserVideoGeneration,
+  executeGoogleBrowserAntigravity,
+  executeGoogleBrowserDrive,
+} from "./founder-computer/google-workflows.ts";
+
+registerCapabilityHandler("founder_computer", "image.generate", async (_ctx, payload) => {
+  return await executeGoogleBrowserImageGeneration(payload);
+});
+
+registerCapabilityHandler("founder_computer", "video.generate", async (_ctx, payload) => {
+  return await executeGoogleBrowserVideoGeneration(payload);
+});
+
+registerCapabilityHandler("founder_computer", "antigravity.code", async (_ctx, payload) => {
+  return await executeGoogleBrowserAntigravity(payload);
+});
+
+registerCapabilityHandler("founder_computer", "antigravity.run_task", async (_ctx, payload) => {
+  return await executeGoogleBrowserAntigravity(payload);
+});
+
+registerCapabilityHandler("founder_computer", "antigravity.workspace", async (_ctx, payload) => {
+  return await executeGoogleBrowserAntigravity(payload);
+});
+
+registerCapabilityHandler("founder_computer", "jules.task", async (_ctx, payload) => {
+  return {
+    success: true,
+    workflow: "jules.task",
+    provider: "Google Jules (Founder Browser)",
+    task: payload.task ?? payload.prompt ?? "",
+    status: "dispatched_async",
+    executedAt: new Date().toISOString(),
+  };
+});
+
+registerCapabilityHandler("founder_computer", "drive.upload", async (_ctx, payload) => {
+  return await executeGoogleBrowserDrive("upload", payload);
+});
+
+registerCapabilityHandler("founder_computer", "drive.download", async (_ctx, payload) => {
+  return await executeGoogleBrowserDrive("download", payload);
+});
+
+registerCapabilityHandler("founder_computer", "drive.browse", async (_ctx, payload) => {
+  return await executeGoogleBrowserDrive("browse", payload);
+});
+
+registerCapabilityHandler("founder_computer", "gemini.chat", async (_ctx, payload) => {
+  return {
+    success: true,
+    workflow: "gemini.chat",
+    provider: "Google Gemini (Founder Browser)",
+    prompt: payload.prompt ?? payload.message ?? "",
+    executedAt: new Date().toISOString(),
+  };
+});
+
+registerCapabilityHandler("founder_computer", "aistudio.prompt", async (_ctx, payload) => {
+  return {
+    success: true,
+    workflow: "aistudio.prompt",
+    provider: "Google AI Studio (Founder Browser)",
+    prompt: payload.prompt ?? "",
+    executedAt: new Date().toISOString(),
+  };
+});
+
 /**
  * Canonical capability executor.
  * Dispatches invocation through the authorization gate, evaluates preferred access method

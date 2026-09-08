@@ -123,6 +123,11 @@ const TOOL_DESCRIPTIONS: Record<McpCallableName, string> = {
   computer_key: "Press a desktop keyboard key or shortcut.",
   computer_screenshot: "Capture a desktop screenshot.",
   computer_wait: "Wait for a specified duration in milliseconds.",
+  discover_capabilities: "Discover all verified capabilities across connected providers (Google Founder Browser, Google AI Pro, Claude, etc.).",
+  get_capability_status: "Inspect current live status, health, and requirements of a specific capability.",
+  select_best_resource: "Evaluate candidate providers/resources for a task capability and select the best legitimate execution path with fallbacks.",
+  execute_capability: "Execute a capability through the authorized connector control plane.",
+  get_resource_health: "Check the health and connection status of an underlying connector resource.",
 };
 
 /** Read-only per Section 4 — no state anywhere in StratExcel changes as a result of these calls. Everything else is truthfully non-read-only; none are destructive. */
@@ -135,6 +140,10 @@ const READ_ONLY_TOOLS = new Set<McpCallableName>([
   "browser_read",
   "browser_tabs",
   "computer_screenshot",
+  "discover_capabilities",
+  "get_capability_status",
+  "select_best_resource",
+  "get_resource_health",
 ]);
 
 function errorResult(message: string): CallToolResult {

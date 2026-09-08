@@ -351,4 +351,48 @@ export const TOOL_PARAMETER_SCHEMAS: Partial<Record<ToolName, Record<string, unk
     required: ["ms"],
     additionalProperties: false,
   },
+  discover_capabilities: {
+    type: "object",
+    properties: {
+      providerFilter: { type: "string" },
+      refresh: { type: "boolean" },
+    },
+    additionalProperties: false,
+  },
+  get_capability_status: {
+    type: "object",
+    properties: {
+      capabilityKey: { type: "string" },
+      connectorKey: { type: "string" },
+    },
+    required: ["capabilityKey"],
+    additionalProperties: false,
+  },
+  select_best_resource: {
+    type: "object",
+    properties: {
+      capabilityKey: { type: "string" },
+      requireAutonomous: { type: "boolean" },
+    },
+    required: ["capabilityKey"],
+    additionalProperties: false,
+  },
+  execute_capability: {
+    type: "object",
+    properties: {
+      capabilityKey: { type: "string" },
+      payload: { type: "object" },
+      connectorKey: { type: "string" },
+    },
+    required: ["capabilityKey"],
+    additionalProperties: false,
+  },
+  get_resource_health: {
+    type: "object",
+    properties: {
+      connectorKey: { type: "string" },
+    },
+    required: ["connectorKey"],
+    additionalProperties: false,
+  },
 };

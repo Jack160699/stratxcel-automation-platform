@@ -68,6 +68,20 @@ const CAPABILITY_CATALOGUE: Array<{
     note: "Cloud Console requires authorized Google account.",
   },
   {
+    service: "Google AI Pro (Browser)",
+    capability: "image.generate",
+    accessMethod: "browser",
+    requiresDomains: ["google.com"],
+    note: "Autonomous image generation via authenticated Google browser session (Imagen / Gemini Pro).",
+  },
+  {
+    service: "Google Flow / Veo",
+    capability: "video.generate",
+    accessMethod: "browser",
+    requiresDomains: ["google.com"],
+    note: "Video generation via Flow / Veo UI. Requires Google AI Pro entitlement. Confirmation-gated.",
+  },
+  {
     service: "Google Flow / Veo",
     capability: "video.generate_browser",
     accessMethod: "browser",
@@ -84,6 +98,13 @@ const CAPABILITY_CATALOGUE: Array<{
   },
   {
     service: "Antigravity IDE",
+    capability: "antigravity.code",
+    accessMethod: "browser",
+    requiresDomains: ["google.com"],
+    note: "Autonomous coding tasks via authenticated Google Antigravity session.",
+  },
+  {
+    service: "Antigravity IDE",
     capability: "antigravity.run_task",
     accessMethod: "browser",
     requiresDomains: ["google.com"],
@@ -96,6 +117,14 @@ const CAPABILITY_CATALOGUE: Array<{
     accessMethod: "browser",
     requiresDomains: ["google.com"],
     note: "Jules requires separate authorization via Google account. Status may differ from Gemini.",
+  },
+  // === Colab ===
+  {
+    service: "Google Colab",
+    capability: "colab.notebook",
+    accessMethod: "browser",
+    requiresDomains: ["google.com"],
+    note: "Interactive Python execution and notebooks via authenticated Google session.",
   },
   // === Generic browser primitives (always available once connected) ===
   {
@@ -181,7 +210,8 @@ export function discoverFounderComputerCapabilities(
     // Special: Antigravity run_task and video generation are confirmation-gated
     if (
       c.capability === "antigravity.run_task" ||
-      c.capability === "video.generate_browser"
+      c.capability === "video.generate_browser" ||
+      c.capability === "video.generate"
     ) {
       return {
         service: c.service,

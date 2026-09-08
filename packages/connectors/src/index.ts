@@ -9,3 +9,4 @@ export * from "./discovery.ts";
 export * from "./audit.ts";
 export * from "./execution.ts";
 export * from "./founder-computer/index.ts";
+export * from "./resources/selector.ts";

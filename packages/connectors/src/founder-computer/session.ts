@@ -183,7 +183,26 @@ export function deriveCapabilitiesFromSession(session: FounderComputerSession | 
   const domains = session.authenticatedDomains.map((d) => d.toLowerCase());
 
   if (domains.some((d) => d.includes("google.com") || d.includes("accounts.google"))) {
-    extras.push("computer.open_app", "computer.type", "computer.key", "computer.wait");
+    extras.push(
+      "computer.open_app",
+      "computer.type",
+      "computer.key",
+      "computer.wait",
+      "image.generate",
+      "video.generate",
+      "video.generate_browser",
+      "antigravity.code",
+      "antigravity.run_task",
+      "antigravity.workspace",
+      "jules.task",
+      "drive.browse",
+      "drive.download",
+      "drive.upload",
+      "gemini.chat",
+      "aistudio.prompt",
+      "cloud.console_browse",
+      "colab.notebook"
+    );
   }
 
   return [...base, ...extras];
