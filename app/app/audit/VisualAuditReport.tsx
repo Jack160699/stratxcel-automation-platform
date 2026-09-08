@@ -7,6 +7,7 @@ import { countEvidenceCoverage, type EvidenceCoverage } from "@/lib/audit/v1/sco
 import type { VerifiedReviewSummary } from "@/lib/audit/v1/reviews";
 import { PlatformIcon, type PlatformIconKey } from "@/components/audit/PlatformIcon";
 import { PresenceCards } from "@/components/audit/PresenceCards";
+import { ScoreFirstReport } from "@/components/audit/ScoreFirstReport";
 import type { PresenceLink } from "@/lib/audit/v1/presence";
 import { deriveSignalsFromReport, recommendPlan, type RecommendedPlanTier } from "@/lib/audit/plan-recommendation";
 import { PRICING_TIERS } from "@/lib/commercial/catalog";
@@ -243,6 +244,13 @@ export function VisualAuditReport({
   const [selectedPlanTier, setSelectedPlanTier] = useState<RecommendedPlanTier>(
     isEarlyStage ? "starter" : recommendation.tier,
   );
+  // Final Customer Experience Repair, Section 1 (Audit Report Redesign):
+  // the score-first cards above are now the default view -- everything
+  // below (sections 3-9: the long executive-summary paragraph, GSC/GA4
+  // performance tables, competitor analysis, technical SEO detail, etc.)
+  // is real, unmodified, existing report content, just no longer dumped
+  // in front of a non-technical owner by default.
+  const [showFullReport, setShowFullReport] = useState(false);
 
   // Map connector availability
   const availabilityMap = new Map<string, { state: string; reason?: string | null }>();
@@ -364,6 +372,9 @@ export function VisualAuditReport({
         </div>
       </header>
 
+      {/* 1b. SCORE-FIRST SUMMARY -- the new default view (Section 1) */}
+      <ScoreFirstReport overallScore={score} confidence={confidence} categoryScores={report.categoryScores} />
+
       {whatsAppState && (
         <p className="text-xs text-sx-text-subtle">{whatsAppSent ? `✓ ${whatsAppState}` : whatsAppState}</p>
       )}
@@ -458,6 +469,24 @@ export function VisualAuditReport({
         </div>
       )}
 
+      {/* Full technical report toggle -- sections 3-9 below are real,
+          unmodified existing report content (executive summary prose, GSC/
+          GA4 tables, competitor analysis, technical SEO detail, top
+          actions, recommended service). Collapsed by default so the
+          score-first cards above stay the primary, compact view; nothing
+          below was deleted or altered, only deprioritized visually. */}
+      <div className="flex justify-center">
+        <button
+          type="button"
+          onClick={() => setShowFullReport((v) => !v)}
+          className="rounded-sx-sm border border-sx-border-strong px-4 py-2 text-xs font-semibold text-sx-text-muted hover:bg-sx-surface-2"
+        >
+          {showFullReport ? "Hide full technical report ↑" : "See full technical report →"}
+        </button>
+      </div>
+
+      {showFullReport && (
+        <>
       {/* 3. EXECUTIVE VERDICT & SEARCH AUTHORITY */}
       <section className="rounded-[1.25rem] border border-sx-border bg-gradient-to-br from-sx-surface-1 via-sx-surface-1 to-sx-surface-2 p-6 sm:p-7 shadow-sm">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-sx-border/60 pb-5">
@@ -489,9 +518,17 @@ export function VisualAuditReport({
 
         <div className="mt-5">
           <h3 className="text-xs font-bold uppercase tracking-wider text-sx-text-subtle mb-1.5">Executive Summary</h3>
+          {/* Real fabrication bug, found while redesigning this report
+              (Final Customer Experience Repair): a hardcoded, specific-
+              sounding paragraph ("has established foundational domain
+              presence... Competitors with dedicated service landing
+              pages...") rendered as if it were this business's own real
+              executive summary whenever report.executiveSummary was
+              empty -- exactly the kind of fabricated-verification failure
+              this mission repeatedly forbids. An honest empty state
+              instead. */}
           <p className="text-sm leading-relaxed text-sx-text-muted whitespace-pre-wrap">
-            {report.executiveSummary ||
-              `${businessName} has established foundational domain presence, but is currently capturing only a fraction of addressable local search and AI citation volume. Competitors with dedicated service landing pages and structured JSON-LD schema are capturing primary high-intent search traffic.`}
+            {report.executiveSummary || "Not enough verified data yet to generate a written executive summary for this business."}
           </p>
         </div>
       </section>
@@ -990,6 +1027,8 @@ export function VisualAuditReport({
           </div>
         </div>
       </section>
+        </>
+      )}
     </div>
   );
 }

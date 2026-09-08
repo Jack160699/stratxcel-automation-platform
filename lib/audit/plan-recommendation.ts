@@ -98,19 +98,41 @@ export interface PlanRecommendation {
   demos: InteractiveAuditDemos;
 }
 
+/**
+ * Real bug, caught while investigating the Final Customer Experience
+ * Repair mission's service-preselection requirement ("base recommendations
+ * on actual audit findings"): every field this function used to read --
+ * report.connectors, report.discoverability, report.socialPresence,
+ * report.competitors, report.contentOpportunities, report.presenceLinks,
+ * report.websiteHealth, report.reputation, report.keyFindings -- does not
+ * exist anywhere on the real AuditDeliveryReport the audit engine actually
+ * produces (packages/audit-engine/src/live.ts's own structured-output
+ * schema). Every signal silently evaluated to null/0/false, so
+ * evaluateAuditScenario always fell back to its neutral 50/50 default
+ * regardless of the tenant's real audit findings -- this function has had
+ * zero real test coverage (plan-recommendation.test.ts only ever
+ * exercises recommendPlan/evaluateAuditScenario directly with hand-built
+ * signal objects, never through this extraction step). Fixed to read the
+ * report's real fields: categoryScores (the same 8-category data the new
+ * score-first report section renders), connectorAvailability,
+ * whyTheyWin, contentCoverage, findings.
+ */
 export function deriveSignalsFromReport(report: any): PlanRecommendationSignals {
+  const categoryScores = report?.categoryScores ?? {};
   const gbpConnected = Boolean(
-    report?.connectors?.some((c: any) => c.provider === "google_business" && (c.state === "connected" || c.state === "available")) ||
-    report?.presenceLinks?.some((p: any) => p.platform === "google_business" && p.url)
+    report?.connectorAvailability?.some((c: any) => c.provider === "google_business" && (c.state === "connected" || c.state === "available"))
   );
-  const seoScore = report?.discoverability?.score ?? report?.overallScore ?? null;
-  const competitorCount = Array.isArray(report?.competitors) ? report.competitors.length : 0;
-  const socialScore = report?.socialPresence?.score ?? null;
-  const visualOppCount = Array.isArray(report?.contentOpportunities) ? report.contentOpportunities.length : 0;
-  const hasWebsite = Boolean(report?.presenceLinks?.some((p: any) => p.platform === "website" && p.url) || report?.websiteHealth);
-  const websiteHealthScore = report?.websiteHealth?.score ?? null;
-  const trustScore = report?.reputation?.score ?? null;
-  const highImpactCount = Array.isArray(report?.keyFindings) ? report.keyFindings.filter((f: any) => f.severity === "high" || f.priority === "high").length : 0;
+  const seoScore = categoryScores.discoverabilitySeo?.score ?? report?.scores?.overall ?? null;
+  const competitorCount = Array.isArray(report?.whyTheyWin) ? report.whyTheyWin.length : 0;
+  const socialScore = categoryScores.socialContent?.score ?? null;
+  const visualOppCount =
+    (report?.contentCoverage?.missingServices?.length ?? 0) +
+    (report?.contentCoverage?.missingLocations?.length ?? 0) +
+    (report?.contentCoverage?.weakPages?.length ?? 0);
+  const hasWebsite = Boolean(report?.websiteUrl);
+  const websiteHealthScore = categoryScores.websiteConversion?.score ?? null;
+  const trustScore = categoryScores.trustReputation?.score ?? null;
+  const highImpactCount = Array.isArray(report?.findings) ? report.findings.filter((f: any) => f.impact === "HIGH").length : 0;
 
   return {
     googleBusinessConnected: gbpConnected,

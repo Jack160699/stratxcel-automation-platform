@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { recommendPlan, type PlanRecommendationSignals } from "../plan-recommendation.ts";
+import { recommendPlan, deriveSignalsFromReport, type PlanRecommendationSignals } from "../plan-recommendation.ts";
 
 function signals(overrides: Partial<PlanRecommendationSignals>): PlanRecommendationSignals {
   return {
@@ -93,4 +93,51 @@ for (const rec of [scenarioA, scenarioB, scenarioC, scenarioD, scenarioE]) {
   assert.ok(rec.demos.seoDemo.targetKeyword, "seo demo target keyword is present");
 }
 
-console.log("plan-recommendation.test.ts: ALL PASS (Commercial Scenarios A-E & Demos)");
+// --- deriveSignalsFromReport: real bug fix, previously zero test coverage ---
+// (Final Customer Experience Repair mission) -- every field it used to read
+// does not exist on the real AuditDeliveryReport the audit engine actually
+// produces, so every signal always evaluated to null/0/false. Verifies it
+// now reads the report's REAL shape (categoryScores, connectorAvailability,
+// whyTheyWin, contentCoverage, findings, websiteUrl).
+const realShapedReport = {
+  scores: { overall: 55 },
+  categoryScores: {
+    discoverabilitySeo: { score: 32, explanation: "Weak organic visibility.", evidenceSourceIds: ["gsc"] },
+    socialContent: { score: 28, explanation: "Sparse posting cadence.", evidenceSourceIds: ["ig"] },
+    websiteConversion: { score: 61, explanation: "No clear CTA.", evidenceSourceIds: ["crawl"] },
+    trustReputation: { score: 70, explanation: "Good review volume.", evidenceSourceIds: ["reviews"] },
+    brandPositioning: { score: null, explanation: "Not enough evidence.", evidenceSourceIds: [] },
+    leadGeneration: { score: 40, explanation: "No lead capture form.", evidenceSourceIds: [] },
+    customerJourney: { score: 50, explanation: "", evidenceSourceIds: [] },
+    automationOperations: { score: 45, explanation: "", evidenceSourceIds: [] },
+  },
+  connectorAvailability: [{ provider: "google_business", state: "available" }],
+  whyTheyWin: [{ competitorDomain: "a.com" }, { competitorDomain: "b.com" }],
+  contentCoverage: { missingServices: ["x"], missingLocations: ["y", "z"], weakPages: [] },
+  websiteUrl: "https://example.com",
+  findings: [
+    { id: "1", title: "t", summary: "s", impact: "HIGH", evidenceSourceIds: [], confidence: "HIGH" },
+    { id: "2", title: "t2", summary: "s2", impact: "MEDIUM", evidenceSourceIds: [], confidence: "HIGH" },
+    { id: "3", title: "t3", summary: "s3", impact: "HIGH", evidenceSourceIds: [], confidence: "MEDIUM" },
+  ],
+};
+const derived = deriveSignalsFromReport(realShapedReport);
+assert.equal(derived.googleBusinessConnected, true, "must read connectorAvailability, not the nonexistent report.connectors");
+assert.equal(derived.discoverabilitySeoScore, 32, "must read categoryScores.discoverabilitySeo.score");
+assert.equal(derived.socialContentScore, 28, "must read categoryScores.socialContent.score");
+assert.equal(derived.websiteHealthScore, 61, "must read categoryScores.websiteConversion.score");
+assert.equal(derived.trustReputationScore, 70, "must read categoryScores.trustReputation.score");
+assert.equal(derived.competitorCount, 2, "must read whyTheyWin.length, not the nonexistent report.competitors");
+assert.equal(derived.visualContentOpportunityCount, 3, "must sum contentCoverage's real arrays, not the nonexistent report.contentOpportunities");
+assert.equal(derived.hasWebsite, true, "must read the real report.websiteUrl");
+assert.equal(derived.highImpactFindingCount, 2, "must count findings with impact === HIGH, not the nonexistent severity/priority fields");
+
+// A report with none of these real fields present must degrade honestly
+// (null/0/false), never throw.
+const emptyDerived = deriveSignalsFromReport({});
+assert.equal(emptyDerived.discoverabilitySeoScore, null);
+assert.equal(emptyDerived.competitorCount, 0);
+assert.equal(emptyDerived.hasWebsite, false);
+assert.equal(emptyDerived.highImpactFindingCount, 0);
+
+console.log("plan-recommendation.test.ts: ALL PASS (Commercial Scenarios A-E & Demos, deriveSignalsFromReport reads the real report shape)");
