@@ -1,6 +1,6 @@
 /** Canonical AI Runtime contracts — no secrets, no auth headers. */
 
-export type AIProviderId = "google" | "openai";
+export type AIProviderId = "google" | "openai" | "cloudflare" | "codecraft";
 
 export type AIModality = "text" | "image" | "video" | "audio" | "realtime";
 

@@ -12,6 +12,7 @@ export * from "./health/readiness.ts";
 export * from "./quality/assess.ts";
 export * from "./providers/gemini.ts";
 export * from "./providers/openai.ts";
+export * from "./providers/codecraft.ts";
 export * from "./providers/gemini-grounding.ts";
 export * from "./providers/openai-web-evidence.ts";
 export * from "./usage/recorder.ts";

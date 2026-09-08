@@ -13,7 +13,7 @@ async function runBenchmark() {
   console.log("STRATXCEL — CODECRAFT API BENCHMARK & COMPARISON SUITE");
   console.log("==================================================================");
 
-  const client = new CodeCraftClient();
+  const client = new CodeCraftClient({ timeoutMs: 60000 });
   const currentProviderRunner = new StratXcelCurrentProviderRunner();
 
   console.log(`- CodeCraft Base URL: ${client.baseUrl}`);
@@ -37,9 +37,10 @@ async function runBenchmark() {
   }
 
   // Choose CodeCraft target model
-  const codeCraftModel = probe.models.find((m) => m.includes("deepseek") || m.includes("gpt-4o-mini") || m.includes("flash"))
+  const codeCraftModel = probe.models.find((m) => m === "deepseek-v4-flash-0731" || m.includes("flash-0731") || m.includes("flash"))
+    || probe.models.find((m) => m.includes("deepseek"))
     || probe.models[0]
-    || "deepseek-chat";
+    || "deepseek-v4-flash-0731";
 
   console.log(`  Selected CodeCraft target model: ${codeCraftModel}`);
 

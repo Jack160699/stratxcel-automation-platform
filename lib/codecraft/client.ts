@@ -62,7 +62,7 @@ export class CodeCraftClient {
     error?: string;
   }> {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), Math.min(this.timeoutMs, 10000));
+    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
 
     try {
       const headers: Record<string, string> = {

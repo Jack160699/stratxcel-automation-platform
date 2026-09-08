@@ -13,6 +13,7 @@ import { getTaskPolicy, resolveUnknownTaskPolicy } from "./policy/task-policies.
 import { assessQuality, shouldEscalateForQuality } from "./quality/assess.ts";
 import { GeminiTextProvider } from "./providers/gemini.ts";
 import { OpenAITextProvider } from "./providers/openai.ts";
+import { CodeCraftTextProvider } from "./providers/codecraft.ts";
 import type {
   AIExecutionRequest,
   AIExecutionResult,
@@ -30,6 +31,7 @@ import { safeAiLog } from "./observability.ts";
 export interface AIRuntimeDeps {
   google?: AITextProviderAdapter;
   openai?: AITextProviderAdapter;
+  codecraft?: AITextProviderAdapter;
   circuitBreaker?: ProviderCircuitBreaker;
   usageRecorder?: AIUsageRecorder;
   paidFallbackEnabled?: boolean;
@@ -48,6 +50,7 @@ function emptyUsage(): AIUsage {
 export class AIRuntime {
   private readonly google: AITextProviderAdapter;
   private readonly openai: AITextProviderAdapter;
+  private readonly codecraft?: AITextProviderAdapter;
   private readonly circuit: ProviderCircuitBreaker;
   private readonly usageRecorder?: AIUsageRecorder;
   private readonly paidFallbackEnabled: boolean;
@@ -60,6 +63,9 @@ export class AIRuntime {
   constructor(deps: AIRuntimeDeps = {}) {
     this.google = deps.google ?? new GeminiTextProvider();
     this.openai = deps.openai ?? new OpenAITextProvider();
+    this.codecraft =
+      deps.codecraft ??
+      (process.env.CODECRAFT_API_KEY ? new CodeCraftTextProvider() : undefined);
     this.circuit = deps.circuitBreaker ?? new ProviderCircuitBreaker();
     this.usageRecorder = deps.usageRecorder;
     this.paidFallbackEnabled =
@@ -78,11 +84,20 @@ export class AIRuntime {
   }
 
   providerFor(id: AIProviderId): AITextProviderAdapter {
-    return id === "google" ? this.google : this.openai;
+    if (id === "google") return this.google;
+    if (id === "codecraft") {
+      if (this.codecraft) return this.codecraft;
+      throw new AIProviderError("NOT_CONFIGURED", "CodeCraft provider is not configured or enabled");
+    }
+    return this.openai;
   }
 
   isAnyProviderConfigured(): boolean {
-    return this.google.isConfigured() || this.openai.isConfigured();
+    return (
+      this.google.isConfigured() ||
+      this.openai.isConfigured() ||
+      Boolean(this.codecraft?.isConfigured())
+    );
   }
 
   async execute(request: AIExecutionRequest): Promise<AIExecutionResult> {
