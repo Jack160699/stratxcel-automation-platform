@@ -1,5 +1,74 @@
 # WhatsApp AI Agency — Gap Audit
 
+## Update 92 — 🔴 CRITICAL LIVE BUG fixed: Business A survived into Business B (Final Customer Experience Repair, Sections 1-4)
+
+Reported by Anupurna Tripathi's own live test: searched/selected "Credit
+C", analysis ran, went back, selected a different company — the system
+kept showing/loading Credit C throughout the rest of onboarding.
+
+**Two independent real causes**, both in
+[`OnboardingWizard.tsx`](../../app/app/onboarding/OnboardingWizard.tsx) /
+[`StepBusiness.tsx`](../../app/app/onboarding/steps/StepBusiness.tsx):
+
+1. **The exact same echo-back pattern as the MedRoute industry bug**
+   (Update 91), found again here: `startDiscovery`/`selectGooglePlace`
+   unconditionally sent `existingDraft.businessName`/`location`, echoing
+   back whatever was currently in those fields — even a stale auto-fill
+   from a previous business.
+   [`synthesizeOnboardingBusinessIntelligence`](../../lib/intelligence/onboarding-business-intelligence.ts)
+   treats a non-empty `existingDraft.businessName`/`location` as
+   `USER_PROVIDED`, confidence 1.0, unconditionally beating the newly
+   selected business's own real Google/website data. Fixed by only
+   sending them when `userEditedFields.name`/`location` is real.
+2. **Client-side stickiness**: `applySynthesizedIntelligence`'s merge used
+   "never overwrite once set" for name/industry/location/website —
+   correct for protecting a genuine customer edit, wrong for a value the
+   engine itself auto-filled for the *previous* business, which then
+   permanently blocked the new business's data. Fixed by gating each on
+   `userEditedFields`; `updateBusiness` now accepts `{ userEdited: false
+   }` for automatic (non-customer) reflections — a Google-discovered
+   website, a maps-link-derived name — so those never wrongly lock a
+   field.
+
+**New stale-request protection**: `discoverySequenceRef` gives every
+discovery call a real identity — a slower response from an earlier
+selection can never overwrite a newer one, regardless of network arrival
+order. Both entry points also reset every non-user-edited business field
+synchronously *before* their own network call, so the old business
+visibly disappears the instant a new selection begins instead of
+lingering until the new one resolves. `selectGooglePlace`'s superseded
+call now returns a distinct signal; `selectSuggestion` treats it as a
+silent no-op, never a false "failed" error for a request the customer
+already moved past.
+
+**Live-verified on production** (commit `626954d`, stratxcel.in)
+immediately after deploy: cleared onboarding state, selected **Business
+A** (Barbeque Nation, Raipur — name / Food & Dining industry / mall
+address, no website), clicked Change, searched and selected a completely
+different **Business B** (MedRoute Consultancy) — every field correctly
+and completely replaced (name, industry, address, website, googleMapsUrl
+all now MedRoute's own real data), zero trace of Barbeque Nation anywhere
+in the rendered form or the underlying persisted draft state.
+
+Verified: `tsc --noEmit` clean, lint clean (2 pre-existing unrelated
+warnings), real `NODE_ENV=production` build exits 0, existing
+[`business-intelligence-synthesis.test.ts`](../../app/app/onboarding/__tests__/business-intelligence-synthesis.test.ts)
+(server-side, untouched) and
+[`onboarding-wizard.test.ts`](../../app/app/onboarding/__tests__/onboarding-wizard.test.ts)
+both pass, with new regression assertions locking in the reset function,
+the sequence guard, the `existingDraft` gating at both call sites, and
+the superseded no-op handling. Registry:
+`capability:onboarding_business_selection_replaceable`, `REAL_EXPOSED`.
+Migration:
+`supabase/migrations/20260909140000_capability_registry_onboarding_business_replaceable.sql`.
+
+**Deliberately out of scope for this pass**: Brand-step fields
+(offers/description/audience) were left un-reset — this codebase has no
+per-field edit-provenance tracking for Brand, so clearing them risked
+discarding real copy the customer may have already typed before going
+back to reselect a business. A future pass adding Brand-field edit
+tracking could close this narrower remaining gap safely.
+
 ## Update 91 — 🔴 CRITICAL LIVE BUG fixed: real Google business selection ("MedRoute Consultancy") still rendered "SaaS & Technology"
 
 A prior fix (commit `5278713`, "stop website AI industry guess from
