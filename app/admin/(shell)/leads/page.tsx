@@ -34,8 +34,9 @@ const STATUS_CHIP: Record<ContactMessage["status"], { label: string; state: Chip
  * Was: a page that queried `stratxcel_contact_messages` and called itself
  * "Leads" — real WhatsApp customers (crm_leads, whatsapp_conversations,
  * whatsapp_messages) never appeared here at all. Now: the primary view is
- * the real, tenant-scoped CRM/inbox (AdminLeadsTabs -> CrmWorkspace, scoped
- * to whichever client the ClientSwitcher has selected). The website contact
+ * the central Admin CRM (AdminLeadsTabs -> CrmWorkspace's aggregate mode) —
+ * every authorized agency client's leads/conversations in one place, opened
+ * directly with no client workspace selection required. The website contact
  * inbox this page used to show is preserved verbatim as a secondary tab —
  * it's a real, still-useful lead source (people asking about Stratxcel
  * itself), just no longer the thing labeled "Leads" by default.

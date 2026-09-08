@@ -22,10 +22,17 @@ const THREAD_POLL_MS = 4_000;
 const DESKTOP_MEDIA_QUERY = "(min-width: 768px)";
 
 /**
- * The one CRM/inbox workspace — used identically by /app/crm and
- * /admin/leads (scoped to whichever client the admin's ClientSwitcher has
- * selected). Real crm_leads + whatsapp_conversations + whatsapp_messages
- * only; whatsapp_shadow_messages never enters this component tree.
+ * The one CRM/inbox workspace — used by /app/crm (a real member's own
+ * tenant, `tenantId` always set) and by /admin/leads, the central Admin
+ * CRM. `/admin/leads` omits `tenantId` entirely by default: that's the
+ * aggregate mode, reading across every agency client the authenticated
+ * staff member is authorized to manage (requireAdminAggregateReadContext
+ * server-side), not any single tenant. Passing an explicit `tenantId`
+ * (e.g. a future client filter within the central CRM) narrows back down
+ * to that one client, using the exact same single-tenant path /app/crm
+ * already relies on. Real crm_leads + whatsapp_conversations +
+ * whatsapp_messages only; whatsapp_shadow_messages never enters this
+ * component tree.
  *
  * Layout: two panes (conversation list + chat) at >=768px, single pane
  * (list OR chat, tap to switch) below it. Lead details are ALWAYS an
@@ -45,7 +52,8 @@ export function CrmWorkspace({
   sendReady = false,
   sendDisabledReason,
 }: {
-  tenantId: string;
+  /** Omit for the central Admin CRM's aggregate view across every authorized client; set for a single tenant (/app/crm, or a future client filter). */
+  tenantId?: string;
   role: TenantRole | null;
   initialLeadId?: string | null;
   onLeadSelected?: (leadId: string | null) => void;
@@ -83,6 +91,10 @@ export function CrmWorkspace({
 
   const [leads, setLeads] = useState<CrmLead[] | null>(null);
   const [conversations, setConversations] = useState<CrmConversation[] | null>(null);
+  // tenant_id -> client name, populated only by the aggregate response
+  // (tenantId omitted) -- stays empty for the single-tenant path, where
+  // every row is already the same one client and no label is needed.
+  const [tenantNames, setTenantNames] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [selectedLeadId, setSelectedLeadId] = useState<string | null>(initialLeadId ?? null);
   const [autoSelected, setAutoSelected] = useState(false);
@@ -114,21 +126,22 @@ export function CrmWorkspace({
       setSelectedLeadId(initialLeadId ?? null);
       setAutoSelected(false);
     }
+    const tenantQS = tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : "";
     const [leadsResult, conversationsResult, followUpsResult, appointmentsResult] = await Promise.all([
-      loadCustomerJson<{ leads?: CrmLead[] }>(
-        () => platformFetch(`/api/platform/leads?tenantId=${encodeURIComponent(tenantId)}`),
+      loadCustomerJson<{ leads?: CrmLead[]; tenants?: { tenantId: string; name: string; slug: string }[] }>(
+        () => platformFetch(`/api/platform/leads${tenantQS}`),
         "We couldn't load your CRM. Please try again."
       ),
       loadCustomerJson<{ conversations?: CrmConversation[] }>(
-        () => platformFetch(`/api/platform/whatsapp/conversations?tenantId=${encodeURIComponent(tenantId)}`),
+        () => platformFetch(`/api/platform/whatsapp/conversations${tenantQS}`),
         "We couldn't load your conversations. Please try again."
       ),
       loadCustomerJson<{ followUps?: FollowUp[] }>(
-        () => platformFetch(`/api/platform/crm/follow-ups?tenantId=${encodeURIComponent(tenantId)}`),
+        () => platformFetch(`/api/platform/crm/follow-ups${tenantQS}`),
         "We couldn't load your follow-ups. Please try again."
       ),
       loadCustomerJson<{ appointments?: Appointment[] }>(
-        () => platformFetch(`/api/platform/crm/appointments?tenantId=${encodeURIComponent(tenantId)}`),
+        () => platformFetch(`/api/platform/crm/appointments${tenantQS}`),
         "We couldn't load your appointments. Please try again."
       ),
     ]);
@@ -169,6 +182,7 @@ export function CrmWorkspace({
     setConversations(conversationsResult.data.conversations ?? []);
     setFollowUps(followUpsResult.data.followUps ?? []);
     setAppointments(appointmentsResult.data.appointments ?? []);
+    setTenantNames(Object.fromEntries((leadsResult.data.tenants ?? []).map((t) => [t.tenantId, t.name])));
     setError(null);
   }, [initialLeadId, tenantId]);
 
@@ -216,11 +230,11 @@ export function CrmWorkspace({
   const conversationId = selectedEntry?.conversation?.id ?? null;
 
   const loadMessages = useCallback(
-    async (convoId: string, showLoading: boolean) => {
+    async (convoId: string, convoTenantId: string, showLoading: boolean) => {
       if (showLoading) setMessagesLoading(true);
       try {
         const result = await loadCustomerJson<{ messages?: CrmMessage[] }>(
-          () => platformFetch(`/api/platform/whatsapp/conversations/${convoId}?tenantId=${encodeURIComponent(tenantId)}`),
+          () => platformFetch(`/api/platform/whatsapp/conversations/${convoId}?tenantId=${encodeURIComponent(convoTenantId)}`),
           "We couldn't load this conversation. Please try again."
         );
         if (result.status === "error") {
@@ -233,24 +247,29 @@ export function CrmWorkspace({
         if (showLoading) setMessagesLoading(false);
       }
     },
-    [tenantId]
+    []
   );
 
+  // Aggregate mode has no single tenantId prop -- each row (and so each
+  // conversation) carries its own real tenant_id; that's what every
+  // per-conversation call below must use instead.
+  const selectedTenantId = tenantId ?? selectedEntry?.lead.tenant_id;
+
   useEffect(() => {
-    if (!conversationId) {
+    if (!conversationId || !selectedTenantId) {
       setMessages([]);
       return;
     }
-    loadMessages(conversationId, true);
+    loadMessages(conversationId, selectedTenantId, true);
     const interval = setInterval(() => {
       if (!document.hidden) {
-        loadMessages(conversationId, false);
+        loadMessages(conversationId, selectedTenantId, false);
         loadLists(); // keeps unread badges / previews for the rest of the list in sync too
       }
     }, THREAD_POLL_MS);
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [conversationId, loadMessages]);
+  }, [conversationId, selectedTenantId, loadMessages]);
 
   function selectLead(leadId: string) {
     setSelectedLeadId(leadId);
@@ -269,14 +288,14 @@ export function CrmWorkspace({
       const res = await platformFetch("/api/platform/whatsapp/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tenantId, leadId: selectedEntry.lead.id, text }),
+        body: JSON.stringify({ tenantId: tenantId ?? selectedEntry.lead.tenant_id, leadId: selectedEntry.lead.id, text }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         setError(body.error ?? "Message could not be sent");
         return false;
       }
-      if (conversationId) await loadMessages(conversationId, false);
+      if (conversationId && selectedTenantId) await loadMessages(conversationId, selectedTenantId, false);
       await loadLists();
       return true;
     } finally {
@@ -285,13 +304,13 @@ export function CrmWorkspace({
   }
 
   async function handleSetAutomationMode(mode: ConversationAutomationMode) {
-    if (!conversationId) return;
+    if (!conversationId || !selectedTenantId) return;
     setAutomationBusy(true);
     try {
       await platformFetch(`/api/platform/whatsapp/conversations/${conversationId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tenantId, automationMode: mode }),
+        body: JSON.stringify({ tenantId: selectedTenantId, automationMode: mode }),
       });
       await loadLists();
     } finally {
@@ -304,7 +323,7 @@ export function CrmWorkspace({
     const res = await platformFetch(`/api/platform/leads/${selectedEntry.lead.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ tenantId, ...patch }),
+      body: JSON.stringify({ tenantId: tenantId ?? selectedEntry.lead.tenant_id, ...patch }),
     });
     if (res.ok) await loadLists();
   }
@@ -323,7 +342,7 @@ export function CrmWorkspace({
         await platformFetch("/api/platform/crm/follow-ups", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ tenantId, leadId: selectedEntry.lead.id, nextAction, dueAt }),
+          body: JSON.stringify({ tenantId: tenantId ?? selectedEntry.lead.tenant_id, leadId: selectedEntry.lead.id, nextAction, dueAt }),
         });
         await loadLists();
       }}
@@ -331,7 +350,7 @@ export function CrmWorkspace({
         await platformFetch("/api/platform/crm/appointments", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ tenantId, leadId: selectedEntry.lead.id, requestedFor: requestedFor || undefined }),
+          body: JSON.stringify({ tenantId: tenantId ?? selectedEntry.lead.tenant_id, leadId: selectedEntry.lead.id, requestedFor: requestedFor || undefined }),
         });
         await loadLists();
       }}
@@ -347,7 +366,16 @@ export function CrmWorkspace({
       )}
       <div className="grid min-h-0 min-w-0 flex-1 grid-cols-1 md:grid-cols-[minmax(280px,330px)_1fr]">
         <div className={`min-h-0 min-w-0 w-full max-w-full overflow-x-hidden ${mobileView === "list" ? "flex" : "hidden"} md:flex`}>
-          <ConversationList entries={entries} loading={leads === null && !error} error={error} selectedLeadId={selectedLeadId} onSelect={selectLead} currentUserId={currentUserId} title={title} />
+          <ConversationList
+            entries={entries}
+            loading={leads === null && !error}
+            error={error}
+            selectedLeadId={selectedLeadId}
+            onSelect={selectLead}
+            currentUserId={currentUserId}
+            title={title}
+            tenantNames={!tenantId ? tenantNames : undefined}
+          />
         </div>
 
         <div className={`min-h-0 min-w-0 w-full max-w-full flex-col overflow-hidden ${mobileView === "thread" ? "flex" : "hidden"} md:flex`}>

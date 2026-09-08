@@ -2,18 +2,19 @@
 
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import type { ReactNode } from "react";
-import { useCurrentTenant } from "../CurrentTenantContext";
 import { CrmWorkspace } from "@/components/crm/CrmWorkspace";
 import { SEND_READY, SEND_DISABLED_REASON } from "@/components/crm/send-readiness";
 
 type Tab = "crm" | "website";
 
 /**
- * Primary tab: the real, tenant-scoped CRM/inbox for whichever client the
- * ClientSwitcher currently has selected — the same CrmWorkspace /app/crm
- * uses, not a separate "admin CRM." Secondary tab: Stratxcel's own website
- * contact-form inbox (stratxcel_contact_messages), preserved exactly as it
- * was (server-rendered by the page, passed in as `websiteInquiries`).
+ * Primary tab: the central Admin CRM — CrmWorkspace with no `tenantId`,
+ * aggregating every agency client the authenticated staff member is
+ * authorized to manage (requireAdminAggregateReadContext server-side), so
+ * this opens directly with real data with no client workspace selection
+ * required. Secondary tab: Stratxcel's own website contact-form inbox
+ * (stratxcel_contact_messages), preserved exactly as it was (server-rendered
+ * by the page, passed in as `websiteInquiries`).
  *
  * Tab state is driven by the URL (`?tab=crm|website`), not local component
  * state — the default (query param absent, or any value other than
@@ -26,7 +27,6 @@ export function AdminLeadsTabs({ websiteInquiries, websiteInquiryCount }: { webs
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
-  const { active } = useCurrentTenant();
 
   const tab: Tab = searchParams.get("tab") === "website" ? "website" : "crm";
 
@@ -50,19 +50,22 @@ export function AdminLeadsTabs({ websiteInquiries, websiteInquiryCount }: { webs
       </div>
 
       {tab === "crm" ? (
-        active ? (
-          <div className="min-h-0 flex-1">
-            <CrmWorkspace
-              tenantId={active.tenantId}
-              role={active.role}
-              title="CRM"
-              sendReady={SEND_READY}
-              sendDisabledReason={SEND_DISABLED_REASON}
-            />
-          </div>
-        ) : (
-          <p className="p-4 text-sm text-sx-text-subtle">Select a client above to view their CRM.</p>
-        )
+        <div className="min-h-0 flex-1">
+          {/*
+            Central Admin CRM: no tenantId -- CrmWorkspace aggregates every
+            client this staff member is authorized to manage
+            (requireAdminAggregateReadContext server-side), not just
+            whichever tenant the ClientSwitcher happens to have active.
+            role="owner" matches how staff-support access already bypasses
+            per-tenant role checks server-side for every mutation route.
+          */}
+          <CrmWorkspace
+            role="owner"
+            title="CRM"
+            sendReady={SEND_READY}
+            sendDisabledReason={SEND_DISABLED_REASON}
+          />
+        </div>
       ) : (
         <div className="sx-thin-scroll min-h-0 flex-1 overflow-y-auto">{websiteInquiries}</div>
       )}

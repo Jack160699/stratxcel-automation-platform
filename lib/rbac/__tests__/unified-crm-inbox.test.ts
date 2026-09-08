@@ -116,7 +116,8 @@ function run() {
   const messagesLib = read("packages", "whatsapp", "src", "messages.ts");
   assert.ok(/\.from\(["']whatsapp_conversations["']\)/.test(messagesLib), "must read the real whatsapp_conversations table");
   assert.ok(/\.from\(["']whatsapp_messages["']\)/.test(messagesLib), "must read the real whatsapp_messages table");
-  assert.ok(/\/api\/platform\/leads\?tenantId=/.test(crmWorkspace), "CrmWorkspace must fetch real leads through the existing tenant-scoped leads API");
+  assert.ok(/\/api\/platform\/leads\$\{tenantQS\}/.test(crmWorkspace), "CrmWorkspace must fetch real leads through the existing leads API, tenant-scoped when a tenantId is set");
+  assert.ok(/const tenantQS = tenantId \? `\?tenantId=/.test(crmWorkspace), "the tenant query string must only be added when tenantId is actually set — omitted entirely for the central Admin CRM's aggregate mode");
 
   // --- 18. Most recent conversation auto-selects on desktop ----------------
   assert.ok(/isDesktop/.test(crmWorkspace) && /matchMedia\(DESKTOP_MEDIA_QUERY\)/.test(crmWorkspace), "must detect desktop viewport via matchMedia");
@@ -188,25 +189,43 @@ function run() {
   assert.ok(/stratxcel_contact_messages/.test(adminLeadsPage), "website inquiries (stratxcel_contact_messages) must still be read and preserved");
   assert.ok(/Website inquiries/.test(adminLeadsTabs), "website inquiries must be reachable as an explicit secondary tab");
 
-  // --- 33. Client switcher scoping preserved -------------------------------------
-  assert.ok(/useCurrentTenant/.test(adminLeadsTabs), "must read the active client from the existing ClientSwitcher-backed context");
-  assert.ok(/tenantId=\{active\.tenantId\}/.test(adminLeadsTabs), "CrmWorkspace must be scoped to the currently selected client, never an unscoped/global query");
+  // --- 33. Central Admin CRM: opens directly, aggregated across every authorized client ---
+  assert.equal(/useCurrentTenant/.test(adminLeadsTabs), false, "the central Admin CRM must not gate on the ClientSwitcher's single active tenant");
+  assert.equal(/tenantId=\{active\.tenantId\}/.test(adminLeadsTabs), false, "CrmWorkspace in AdminLeadsTabs must not be pinned to one client — it aggregates across every authorized client instead");
+  assert.ok(/<CrmWorkspace[\s\S]{0,200}role="owner"/.test(adminLeadsTabs), "the central Admin CRM renders CrmWorkspace with no tenantId, in its aggregate mode");
+  const tenantContext = read("lib", "tenants", "tenant-context.ts");
+  assert.ok(/export async function requireAdminAggregateReadContext/.test(tenantContext), "a real server-side gate for the aggregate read must exist");
+  assert.ok(/stratxcel_admins/.test(tenantContext.slice(tenantContext.indexOf("requireAdminAggregateReadContext"))), "the aggregate gate must authorize against real platform-staff status, not a weaker check");
+  const leadsRoute = read("app", "api", "platform", "leads", "route.ts");
+  assert.ok(/requireAdminAggregateReadContext/.test(leadsRoute), "omitting tenantId on the leads API must route through the real aggregate authorization gate");
+  const whatsappConvRoute = read("app", "api", "platform", "whatsapp", "conversations", "route.ts");
+  assert.ok(/requireAdminAggregateReadContext/.test(whatsappConvRoute), "omitting tenantId on the conversations API must route through the real aggregate authorization gate");
 
   // =========================================================================
   // SECURITY
   // =========================================================================
 
-  // --- 34. Tenant isolation unchanged ---------------------------------------------
+  // --- 34. Tenant isolation preserved, including in the central CRM's aggregate mode ---
   // Matches both fetch( and platformFetch( -- CrmWorkspace moved to
   // platformFetch (see admin-staff-workspace.test.ts) so it can recover from
-  // a staff member's expired workspace cookie instead of 403ing forever;
-  // every one of those calls must still be tenant-scoped.
+  // a staff member's expired workspace cookie instead of 403ing forever.
+  // The four initial list loads use `tenantQS`, which is tenantId-scoped
+  // when tenantId is set and empty (server-authorized aggregate read) when
+  // it's the central Admin CRM -- never a caller-supplied tenant list. Every
+  // OTHER fetch (message thread, send, automation mode, lead patch,
+  // follow-up/appointment create) always names a real single tenant.
   const fetchStarts = [...crmWorkspace.matchAll(/[Ff]etch\(/g)].map((m) => m.index);
   assert.ok(fetchStarts.length > 0, "CrmWorkspace must issue tenant-scoped fetches");
+  let aggregateCapableCount = 0;
   for (const start of fetchStarts) {
     const chunk = crmWorkspace.slice(start, start + 400);
-    assert.ok(/tenantId/.test(chunk), `every CrmWorkspace fetch must be tenant-scoped: ${chunk.slice(0, 80)}…`);
+    if (/\$\{tenantQS\}/.test(chunk)) {
+      aggregateCapableCount++;
+      continue;
+    }
+    assert.ok(/tenantId/.test(chunk), `every non-aggregate CrmWorkspace fetch must be tenant-scoped: ${chunk.slice(0, 80)}…`);
   }
+  assert.equal(aggregateCapableCount, 4, "exactly the four initial list loads (leads, conversations, follow-ups, appointments) may use the aggregate-capable tenantQS — nothing else");
 
   // --- 35. RBAC unchanged -----------------------------------------------------------
   assert.ok(/can\(role, ["']crm:manage["']\)/.test(crmWorkspace), "lead-management controls must be gated by the real crm:manage permission");

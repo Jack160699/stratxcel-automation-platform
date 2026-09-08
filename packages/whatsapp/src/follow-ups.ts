@@ -87,3 +87,11 @@ export async function listFollowUpsForTenant(supabase: ServiceClient, tenantId: 
   if (error) throw new Error(`listFollowUpsForTenant: ${error.message}`);
   return (data ?? []) as CrmFollowUpRow[];
 }
+
+/** Central Admin CRM's aggregate read -- see listLeadsForTenants. */
+export async function listFollowUpsForTenants(supabase: ServiceClient, tenantIds: string[], limit = 300): Promise<CrmFollowUpRow[]> {
+  if (tenantIds.length === 0) return [];
+  const { data, error } = await supabase.from("crm_follow_ups").select("*").in("tenant_id", tenantIds).order("due_at", { ascending: true }).limit(limit);
+  if (error) throw new Error(`listFollowUpsForTenants: ${error.message}`);
+  return (data ?? []) as CrmFollowUpRow[];
+}

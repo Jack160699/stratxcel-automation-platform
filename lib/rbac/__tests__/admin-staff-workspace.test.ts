@@ -77,16 +77,25 @@ function run() {
   // never in the loop. Every CrmWorkspace backend call must now go through
   // platformFetch instead.
   assert.ok(crmWorkspace.includes('import { platformFetch } from "@/lib/admin/platform-fetch"'), "CrmWorkspace must import platformFetch");
+  // The four initial list loads use `tenantQS` (tenantId-scoped when set,
+  // empty for the central Admin CRM's server-authorized aggregate read --
+  // see requireAdminAggregateReadContext), not a literal `?tenantId=`.
   for (const endpoint of [
-    "`/api/platform/leads?tenantId=",
-    "`/api/platform/whatsapp/conversations?tenantId=",
-    "`/api/platform/crm/follow-ups?tenantId=",
-    "`/api/platform/crm/appointments?tenantId=",
-    "`/api/platform/whatsapp/conversations/${convoId}?tenantId=",
+    "`/api/platform/leads${tenantQS}",
+    "`/api/platform/whatsapp/conversations${tenantQS}",
+    "`/api/platform/crm/follow-ups${tenantQS}",
+    "`/api/platform/crm/appointments${tenantQS}",
   ]) {
-    assert.ok(crmWorkspace.includes(`platformFetch(${endpoint}`), `list/detail read for ${endpoint} must go through platformFetch, not raw fetch`);
+    assert.ok(crmWorkspace.includes(`platformFetch(${endpoint}`), `list read for ${endpoint} must go through platformFetch, not raw fetch`);
     assert.equal(crmWorkspace.includes(`() => fetch(${endpoint}`), false, `${endpoint} must not still use raw fetch()`);
   }
+  // The single-conversation detail read always carries a real tenant id
+  // (each row's own tenant_id in aggregate mode) -- never omitted.
+  assert.ok(
+    crmWorkspace.includes("platformFetch(`/api/platform/whatsapp/conversations/${convoId}?tenantId="),
+    "conversation detail read must go through platformFetch, not raw fetch, and stay tenant-scoped"
+  );
+  assert.equal(crmWorkspace.includes("() => fetch(`/api/platform/whatsapp/conversations/${convoId}?tenantId="), false, "conversation detail read must not still use raw fetch()");
   for (const endpoint of ["/api/platform/whatsapp/send", "/api/platform/whatsapp/conversations/${conversationId}`", "/api/platform/leads/${selectedEntry.lead.id}`", "/api/platform/crm/follow-ups", "/api/platform/crm/appointments"]) {
     assert.ok(crmWorkspace.includes(`platformFetch(\`${endpoint}`) || crmWorkspace.includes(`platformFetch("${endpoint}"`), `mutation to ${endpoint} must go through platformFetch`);
   }

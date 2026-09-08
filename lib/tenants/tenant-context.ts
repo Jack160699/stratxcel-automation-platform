@@ -4,7 +4,7 @@ import { createSupabaseServerClient } from "../supabase/server.ts";
 import { createSupabaseServiceClient } from "../supabase/service.ts";
 import { readStaffWorkspaceTenantId, readWorkspaceMode } from "../identity/staff-workspace.ts";
 import { STAFF_WORKSPACE_CONTEXT_ERROR } from "../identity/staff-workspace-errors.ts";
-import { getAgencyTenant, type AgencyTenant } from "./admin-repository.ts";
+import { getAgencyTenant, listAgencyTenants, type AgencyTenant } from "./admin-repository.ts";
 import { decideTenantReadAccess } from "./read-access-decision.ts";
 import type { TenantRole } from "./types.ts";
 import type { Permission } from "../rbac/types.ts";
@@ -159,4 +159,46 @@ export async function requireTenantReadContext(
 
 export function getTenantServiceContext() {
   return { supabase: createSupabaseServiceClient() };
+}
+
+export interface AdminAggregateReadContext {
+  ok: true;
+  accessMode: "admin_aggregate";
+  userId: string;
+  supabase: ReturnType<typeof createSupabaseServiceClient>;
+  /** Every real agency client this staff member may read across -- never every tenant in the database (listAgencyTenants already excludes system tenants; see SYSTEM_TENANT_SLUGS). */
+  tenantIds: string[];
+  tenants: AgencyTenant[];
+}
+
+/**
+ * The central Admin CRM's read gate: "which client tenants may this staff
+ * member see across, with no single one selected yet" -- distinct from
+ * requireTenantReadContext, which always resolves to exactly one tenant
+ * (a real member's own, or one specific client whose workspace was
+ * explicitly entered). Gated purely on real platform-staff status
+ * (stratxcel_admins), the same check every staff-support path already
+ * trusts -- not a new, weaker authorization surface. The returned tenant
+ * set is exactly listAgencyTenants()'s already-filtered list (no system
+ * tenants), never an unrestricted scan of every tenant row.
+ */
+export async function requireAdminAggregateReadContext(): Promise<AdminAggregateReadContext | TenantContextError> {
+  const supabase = await createSupabaseServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, status: 401, error: "Not authenticated" };
+
+  const { data: staffRow } = await supabase.from("stratxcel_admins").select("user_id").eq("user_id", user.id).maybeSingle();
+  if (!staffRow) return { ok: false, status: 403, error: "Staff access required" };
+
+  const tenants = await listAgencyTenants();
+  return {
+    ok: true,
+    accessMode: "admin_aggregate",
+    userId: user.id,
+    supabase: createSupabaseServiceClient(),
+    tenantIds: tenants.map((t) => t.tenantId),
+    tenants,
+  };
 }

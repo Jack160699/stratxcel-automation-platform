@@ -23,6 +23,7 @@ export function ConversationList({
   onSelect,
   currentUserId,
   title = "CRM",
+  tenantNames,
 }: {
   entries: InboxEntry[];
   loading: boolean;
@@ -32,6 +33,8 @@ export function ConversationList({
   onSelect: (leadId: string) => void;
   currentUserId: string | null;
   title?: string;
+  /** tenant_id -> client name, present only in the central Admin CRM's aggregate view (no single client workspace selected). Labels each row and extends search to match client name too. */
+  tenantNames?: Record<string, string>;
 }) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
@@ -51,6 +54,7 @@ export function ConversationList({
           formatPhone(e.lead.contact_phone),
           e.lead.contact_email,
           e.conversation?.last_message_preview,
+          tenantNames?.[e.lead.tenant_id],
         ]
           .filter(Boolean)
           .join(" ")
@@ -64,7 +68,7 @@ export function ConversationList({
       const bt = b.conversation?.last_message_at ?? b.lead.created_at;
       return bt.localeCompare(at);
     });
-  }, [entries, filter, query, currentUserId]);
+  }, [entries, filter, query, currentUserId, tenantNames]);
 
   return (
     <div className="flex h-full min-h-0 w-full min-w-0 max-w-full flex-col overflow-hidden border-r border-sx-border bg-sx-surface-1">
@@ -77,7 +81,7 @@ export function ConversationList({
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search name, phone, or message…"
+            placeholder={tenantNames ? "Search name, phone, message, or client…" : "Search name, phone, or message…"}
             className="box-border h-11 w-full min-w-0 max-w-full rounded-sx-sm border border-sx-border-strong bg-sx-surface-2 pl-8 pr-3 text-base text-sx-text placeholder:text-sx-text-subtle outline-none focus-visible:border-sx-accent md:h-8 md:pr-2.5 md:text-[12.5px]"
           />
         </div>
@@ -111,7 +115,13 @@ export function ConversationList({
         )}
         <div className="flex flex-col gap-0.5">
           {filtered.map((entry) => (
-            <ConversationRow key={entry.lead.id} entry={entry} selected={entry.lead.id === selectedLeadId} onClick={() => onSelect(entry.lead.id)} />
+            <ConversationRow
+              key={entry.lead.id}
+              entry={entry}
+              selected={entry.lead.id === selectedLeadId}
+              onClick={() => onSelect(entry.lead.id)}
+              clientName={tenantNames?.[entry.lead.tenant_id]}
+            />
           ))}
         </div>
       </div>

@@ -1,5 +1,62 @@
 # WhatsApp AI Agency — Gap Audit
 
+## Update 89 — Central Admin CRM now opens directly, aggregated across every authorized client (Final Production Certification, Section 13/14)
+
+The certification brief named this precisely: `/admin/leads` must **not**
+require opening a client workspace first. It did — the CRM tab rendered
+[`CrmWorkspace`](../../components/crm/CrmWorkspace.tsx) scoped to whichever
+single tenant the ClientSwitcher happened to have active, and showed
+"Select a client above to view their CRM" with none selected.
+
+Fixed with a new, narrower read gate,
+[`requireAdminAggregateReadContext`](../../lib/tenants/tenant-context.ts) —
+distinct from `requireTenantReadContext`, which always resolves to exactly
+one tenant. It authorizes purely on real platform-staff status
+(`stratxcel_admins`), the same check `requireOwnerContext` and the existing
+`staff_support` single-tenant read path already trust, then returns every
+real agency client from the existing, already-filtered `listAgencyTenants()`
+(excludes system tenants) — never an unrestricted scan of the tenants table
+and never a client-supplied tenant list. Four GET routes (`leads`,
+`whatsapp/conversations`, `crm/follow-ups`, `crm/appointments`) now branch:
+an explicit `?tenantId=` keeps the exact original single-tenant path
+unchanged (customer `/app/crm`, and any future admin per-client filter);
+omitting it (the central Admin CRM's default) routes through the new gate
+and a matching `*ForTenants` repository function (`listLeadsForTenants`
+etc, each a plain `.in("tenant_id", tenantIds)` read, capped at 300 rows,
+`tenant_id` preserved on every row). `CrmWorkspace`'s `tenantId` prop
+became optional; `AdminLeadsTabs` now renders it unconditionally with no
+`tenantId` and `role="owner"` (matching how staff-support access already
+bypasses per-tenant role checks server-side for every mutation route),
+removing the ClientSwitcher gate entirely from this tab. The UI labels
+each row with its real client name and extends search to match client
+name too, using the tenant list already returned alongside the leads
+response — no second round-trip.
+
+Uses the service-role client for the aggregate branch, matching this
+codebase's own established precedent for staff reads (the existing
+`staff_support` single-tenant path does the same) — authorized by a real
+`stratxcel_admins` row, never a fake per-tenant membership. Every returned
+row still carries its own real `tenant_id` (no data copying, no merging
+across tenants) and every subsequent action (send, patch, follow-up/
+appointment create, automation-mode change) re-derives and uses that
+specific row's own `tenant_id`, never a caller-supplied global one. The
+four aggregate-capable GET routes are read-only; no mutation route was
+changed to accept an omitted `tenantId`.
+
+Updated the two existing real regression-guard tests that encoded the OLD
+single-tenant-required behavior:
+[`unified-crm-inbox.test.ts`](../../lib/rbac/__tests__/unified-crm-inbox.test.ts)
+and
+[`admin-staff-workspace.test.ts`](../../lib/rbac/__tests__/admin-staff-workspace.test.ts).
+Both, plus every other real/executable test touching this path
+(`whatsapp-crm-safety.test.ts`, `update-lead-status.test.ts`), pass.
+Full-repo `tsc --noEmit` clean, lint clean, real `NODE_ENV=production`
+build (exit 0). One pre-existing, unrelated failure (admin shell Beta mode
+toggle assertion in `client-modules-completion.test.ts`) confirmed via
+`git stash` to exist before this change — not introduced, not touched.
+Registry: `capability:admin_crm_aggregate_read`, `REAL_EXPOSED`. Migration:
+`supabase/migrations/20260909120000_capability_registry_admin_crm_aggregate_read.sql`.
+
 ## Update 88 — A connector denial requiring approval now tells the model exactly how to get it, in-mission
 
 Corrects an overstated gap from Update 85's own notes. When the connector

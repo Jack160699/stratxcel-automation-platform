@@ -1,13 +1,19 @@
-import { requireTenantContext, requireTenantReadContext, getTenantServiceContext } from "@/lib/tenants/tenant-context";
+import { requireTenantContext, requireTenantReadContext, requireAdminAggregateReadContext, getTenantServiceContext } from "@/lib/tenants/tenant-context";
 import { requirePermission, PermissionDeniedError } from "@/lib/rbac/policy";
-import { listAppointmentsForTenant, requestAppointment } from "@stratxcel/whatsapp";
+import { listAppointmentsForTenant, listAppointmentsForTenants, requestAppointment } from "@stratxcel/whatsapp";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   const tenantId = new URL(request.url).searchParams.get("tenantId");
-  if (!tenantId) return Response.json({ error: "tenantId query param is required" }, { status: 400 });
+
+  if (!tenantId) {
+    const agg = await requireAdminAggregateReadContext();
+    if (!agg.ok) return Response.json({ error: agg.error }, { status: agg.status });
+    const appointments = await listAppointmentsForTenants(agg.supabase, agg.tenantIds);
+    return Response.json({ appointments }, { headers: { "Cache-Control": "no-store" } });
+  }
 
   const ctx = await requireTenantReadContext(tenantId);
   if (!ctx.ok) return Response.json({ error: ctx.error }, { status: ctx.status });
