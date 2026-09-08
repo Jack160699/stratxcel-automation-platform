@@ -80,3 +80,11 @@ export async function listAppointmentsForTenant(supabase: ServiceClient, tenantI
   if (error) throw new Error(`listAppointmentsForTenant: ${error.message}`);
   return (data ?? []) as CrmAppointmentRow[];
 }
+
+/** Central Admin CRM's aggregate read -- see listLeadsForTenants. */
+export async function listAppointmentsForTenants(supabase: ServiceClient, tenantIds: string[], limit = 300): Promise<CrmAppointmentRow[]> {
+  if (tenantIds.length === 0) return [];
+  const { data, error } = await supabase.from("crm_appointments").select("*").in("tenant_id", tenantIds).order("scheduled_for", { ascending: true, nullsFirst: false }).limit(limit);
+  if (error) throw new Error(`listAppointmentsForTenants: ${error.message}`);
+  return (data ?? []) as CrmAppointmentRow[];
+}

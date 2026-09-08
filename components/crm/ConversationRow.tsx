@@ -29,8 +29,16 @@ function initials(name: string | null): string {
   return (parts[0]?.[0] ?? "").concat(parts[1]?.[0] ?? "").toUpperCase() || "#";
 }
 
-/** One row in the inbox list — messaging-app density, not a floating card. Everything a staff member needs to triage is visible without opening the row: who, latest message, when, unread, and a subtle pipeline-stage hint. */
-export function ConversationRow({ entry, selected, onClick }: { entry: InboxEntry; selected: boolean; onClick: () => void }) {
+/**
+ * One row in the inbox list — messaging-app density, not a floating card.
+ * Everything a staff member needs to triage is visible without opening the
+ * row: who, latest message, when, unread, and a subtle pipeline-stage hint.
+ * `clientName`, when set (the central Admin CRM's aggregate view across
+ * every authorized agency client), adds which client this lead belongs to
+ * — omitted entirely for the single-tenant view (/app/crm, or a client
+ * workspace), where every row is already the same one client.
+ */
+export function ConversationRow({ entry, selected, onClick, clientName }: { entry: InboxEntry; selected: boolean; onClick: () => void; clientName?: string }) {
   const { lead, conversation } = entry;
   const unread = conversation?.unread_count ?? 0;
   const preview = conversation?.last_message_preview ?? lead.notes ?? "No messages yet";
@@ -65,6 +73,12 @@ export function ConversationRow({ entry, selected, onClick }: { entry: InboxEntr
           <span className="font-sx-mono text-[9px] uppercase tracking-[0.08em] text-sx-text-subtle">{SOURCE_LABEL[lead.source] ?? lead.source}</span>
           <span className="text-sx-text-subtle" aria-hidden="true">·</span>
           <span className="text-[10px] text-sx-text-subtle">{LEAD_STATUS_LABEL[lead.status]}</span>
+          {clientName && (
+            <>
+              <span className="text-sx-text-subtle" aria-hidden="true">·</span>
+              <span className="truncate rounded-sx-xs bg-sx-surface-2 px-1 py-px text-[10px] font-medium text-sx-text-muted">{clientName}</span>
+            </>
+          )}
         </div>
       </div>
     </button>

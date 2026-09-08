@@ -2,7 +2,6 @@
 
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import type { ReactNode } from "react";
-import { useCurrentTenant } from "../CurrentTenantContext";
 import { CrmWorkspace } from "@/components/crm/CrmWorkspace";
 import { SEND_READY, SEND_DISABLED_REASON } from "@/components/crm/send-readiness";
 
@@ -26,7 +25,6 @@ export function AdminLeadsTabs({ websiteInquiries, websiteInquiryCount }: { webs
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
-  const { active } = useCurrentTenant();
 
   const tab: Tab = searchParams.get("tab") === "website" ? "website" : "crm";
 
@@ -50,19 +48,22 @@ export function AdminLeadsTabs({ websiteInquiries, websiteInquiryCount }: { webs
       </div>
 
       {tab === "crm" ? (
-        active ? (
-          <div className="min-h-0 flex-1">
-            <CrmWorkspace
-              tenantId={active.tenantId}
-              role={active.role}
-              title="CRM"
-              sendReady={SEND_READY}
-              sendDisabledReason={SEND_DISABLED_REASON}
-            />
-          </div>
-        ) : (
-          <p className="p-4 text-sm text-sx-text-subtle">Select a client above to view their CRM.</p>
-        )
+        <div className="min-h-0 flex-1">
+          {/*
+            Central Admin CRM: no tenantId -- CrmWorkspace aggregates every
+            client this staff member is authorized to manage
+            (requireAdminAggregateReadContext server-side), not just
+            whichever tenant the ClientSwitcher happens to have active.
+            role="owner" matches how staff-support access already bypasses
+            per-tenant role checks server-side for every mutation route.
+          */}
+          <CrmWorkspace
+            role="owner"
+            title="CRM"
+            sendReady={SEND_READY}
+            sendDisabledReason={SEND_DISABLED_REASON}
+          />
+        </div>
       ) : (
         <div className="sx-thin-scroll min-h-0 flex-1 overflow-y-auto">{websiteInquiries}</div>
       )}

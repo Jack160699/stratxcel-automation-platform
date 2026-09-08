@@ -117,3 +117,21 @@ export async function listLeads(supabase: ServiceClient, tenantId: string, limit
   if (error) throw new Error(`listLeads: ${error.message}`);
   return (data ?? []) as LeadRow[];
 }
+
+/**
+ * Central Admin CRM's aggregate read -- every lead across a staff member's
+ * authorized agency tenants (see requireAdminAggregateReadContext), never
+ * an unrestricted scan of the whole table. tenant_id stays on every row so
+ * the UI can label which client each lead belongs to.
+ */
+export async function listLeadsForTenants(supabase: ServiceClient, tenantIds: string[], limit = 300): Promise<LeadRow[]> {
+  if (tenantIds.length === 0) return [];
+  const { data, error } = await supabase
+    .from("crm_leads")
+    .select("id, tenant_id, source, contact_name, contact_phone, contact_email, status, metadata, tags, assigned_to, last_interaction_at, next_follow_up_at, notes, normalized_phone, created_at, updated_at")
+    .in("tenant_id", tenantIds)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error) throw new Error(`listLeadsForTenants: ${error.message}`);
+  return (data ?? []) as LeadRow[];
+}

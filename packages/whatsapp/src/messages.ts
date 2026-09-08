@@ -174,6 +174,19 @@ export async function listConversationsForTenant(supabase: ServiceClient, tenant
   return (data ?? []) as WhatsAppConversationRow[];
 }
 
+/** Central Admin CRM's aggregate read -- see listLeadsForTenants. */
+export async function listConversationsForTenants(supabase: ServiceClient, tenantIds: string[], limit = 300): Promise<WhatsAppConversationRow[]> {
+  if (tenantIds.length === 0) return [];
+  const { data, error } = await supabase
+    .from("whatsapp_conversations")
+    .select("*")
+    .in("tenant_id", tenantIds)
+    .order("last_message_at", { ascending: false, nullsFirst: false })
+    .limit(limit);
+  if (error) throw new Error(`listConversationsForTenants: ${error.message}`);
+  return (data ?? []) as WhatsAppConversationRow[];
+}
+
 export async function listMessagesForConversation(supabase: ServiceClient, tenantId: string, conversationId: string, limit = 200): Promise<WhatsAppMessageRow[]> {
   const { data, error } = await supabase
     .from("whatsapp_messages")
