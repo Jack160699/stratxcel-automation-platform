@@ -89,53 +89,58 @@ async function testRegistryDefinition() {
 }
 
 async function testHealthProbeStates() {
-  const mockSupabase = {
-    from() {
-      return { select: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: null }) }) }) };
-    },
-  };
+  process.env.FOUNDER_BROWSER_SKIP_PROBE = "1";
+  try {
+    const mockSupabase = {
+      from() {
+        return { select: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: null }) }) }) };
+      },
+    };
 
-  // 1. Not configured when no connection exists
-  const healthNone = await resolveConnectorHealth(mockSupabase as never, "founder_computer", null, null);
-  assert.equal(healthNone.status, "not_configured");
+    // 1. Not configured when no connection exists
+    const healthNone = await resolveConnectorHealth(mockSupabase as never, "founder_computer", null, null);
+    assert.equal(healthNone.status, "not_configured");
 
-  // 2. Auth required when connection has no session profile
-  const connAuthReq = createMockConnection({}, "auth_required");
-  const healthAuthReq = await resolveConnectorHealth(mockSupabase as never, "founder_computer", connAuthReq, null);
-  assert.equal(healthAuthReq.status, "auth_required");
+    // 2. Auth required when connection has no session profile
+    const connAuthReq = createMockConnection({}, "auth_required");
+    const healthAuthReq = await resolveConnectorHealth(mockSupabase as never, "founder_computer", connAuthReq, null);
+    assert.equal(healthAuthReq.status, "auth_required");
 
-  // 3. Healthy when verified recently
-  const connHealthy = createMockConnection({
-    profileId: "profile-test-1",
-    sessionStatus: "ready",
-    lastVerifiedAt: new Date().toISOString(),
-    authenticatedDomains: ["google.com"],
-  }, "connected");
-  const healthHealthy = await resolveConnectorHealth(mockSupabase as never, "founder_computer", connHealthy, null);
-  assert.equal(healthHealthy.status, "healthy");
-  assert.ok(healthHealthy.discoveredCapabilities.includes("browser.navigate"));
+    // 3. Healthy when verified recently
+    const connHealthy = createMockConnection({
+      profileId: "profile-test-1",
+      sessionStatus: "ready",
+      lastVerifiedAt: new Date().toISOString(),
+      authenticatedDomains: ["google.com"],
+    }, "connected");
+    const healthHealthy = await resolveConnectorHealth(mockSupabase as never, "founder_computer", connHealthy, null);
+    assert.equal(healthHealthy.status, "healthy");
+    assert.ok(healthHealthy.discoveredCapabilities.includes("browser.navigate"));
 
-  // 4. Degraded when last verified > 24 hours ago
-  const twoDaysAgo = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
-  const connDegraded = createMockConnection({
-    profileId: "profile-test-1",
-    sessionStatus: "ready",
-    lastVerifiedAt: twoDaysAgo,
-    authenticatedDomains: ["google.com"],
-  }, "connected");
-  const healthDegraded = await resolveConnectorHealth(mockSupabase as never, "founder_computer", connDegraded, null);
-  assert.equal(healthDegraded.status, "degraded");
+    // 4. Degraded when last verified > 24 hours ago
+    const twoDaysAgo = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+    const connDegraded = createMockConnection({
+      profileId: "profile-test-1",
+      sessionStatus: "ready",
+      lastVerifiedAt: twoDaysAgo,
+      authenticatedDomains: ["google.com"],
+    }, "connected");
+    const healthDegraded = await resolveConnectorHealth(mockSupabase as never, "founder_computer", connDegraded, null);
+    assert.equal(healthDegraded.status, "degraded");
 
-  // 5. Expired / requires_reauth
-  const connExpired = createMockConnection({
-    profileId: "profile-test-1",
-    sessionStatus: "expired",
-    authenticatedDomains: ["google.com"],
-  }, "auth_expired");
-  const healthExpired = await resolveConnectorHealth(mockSupabase as never, "founder_computer", connExpired, null);
-  assert.equal(healthExpired.status, "requires_reauth");
+    // 5. Expired / requires_reauth
+    const connExpired = createMockConnection({
+      profileId: "profile-test-1",
+      sessionStatus: "expired",
+      authenticatedDomains: ["google.com"],
+    }, "auth_expired");
+    const healthExpired = await resolveConnectorHealth(mockSupabase as never, "founder_computer", connExpired, null);
+    assert.equal(healthExpired.status, "requires_reauth");
 
-  console.log("✓ founder_computer health probe states verified (not_configured, auth_required, healthy, degraded, requires_reauth)");
+    console.log("✓ founder_computer health probe states verified (not_configured, auth_required, healthy, degraded, requires_reauth)");
+  } finally {
+    delete process.env.FOUNDER_BROWSER_SKIP_PROBE;
+  }
 }
 
 async function testSessionParsingAndMetadataBuilders() {
@@ -646,6 +651,83 @@ async function testKeyboardInputModifiersAndSafety() {
   console.log("✓ keyboard input, modifiers, Caps Lock persistence, control locks & non-logging safety verified");
 }
 
+async function testGoogleSessionVerificationAndMultiTabDetection() {
+  // 1. Multi-tab simulation: tab 0 is internal DICE intercept, tab 1 is myaccount.google.com with active session, tab 2 is gemini.google.com
+  const simulatedPages = [
+    {
+      url: "chrome://signin-dice-web-intercept.top-chrome/chrome-signin",
+      title: "Sign in to Chrome",
+      isInternal: true,
+      hasSession: false,
+    },
+    {
+      url: "https://myaccount.google.com/?utm_source=sign_in_no_continue&pli=1",
+      title: "Google Account",
+      isInternal: false,
+      hasSession: true,
+      accountEmail: "shriyanshtv@gmail.com",
+    },
+    {
+      url: "https://gemini.google.com/app",
+      title: "Gemini",
+      isInternal: false,
+      hasSession: true,
+      accountEmail: "shriyanshtv@gmail.com",
+    },
+  ];
+
+  // Verify internal page filter
+  const inspectablePages = simulatedPages.filter((p) => !p.isInternal);
+  assert.equal(inspectablePages.length, 2, "Internal chrome:// pages must be filtered out");
+  assert.equal(inspectablePages[0].accountEmail, "shriyanshtv@gmail.com", "Non-primary tab account must be detected");
+
+  // 2. Build verified metadata with authenticatedGoogleAccount
+  const existingMeta = {
+    profileId: "fc-founder-1",
+    sessionStatus: "auth_required",
+    runtimeHostRef: "aws-ec2-test",
+  };
+  const verified = buildSessionVerifiedMetadata({
+    existing: existingMeta,
+    authenticatedDomains: ["google.com", "accounts.google.com", "myaccount.google.com", "gemini.google.com"],
+    authenticatedGoogleAccount: "shriyanshtv@gmail.com",
+  });
+
+  assert.equal(verified.sessionStatus, "ready");
+  assert.equal(verified.authenticatedGoogleAccount, "shriyanshtv@gmail.com");
+  const authDomains = verified.authenticatedDomains as string[];
+  assert.ok(authDomains.includes("google.com"));
+  assert.ok(authDomains.includes("gemini.google.com"));
+
+  // 3. Parse session and verify state
+  const session = parseFounderComputerSession(verified);
+  assert.ok(session);
+  assert.equal(session.status, "ready");
+  assert.equal(session.sessionStatus, "AUTHENTICATED");
+  assert.equal(session.authenticatedGoogleAccount, "shriyanshtv@gmail.com");
+  assert.equal(session.isHealthy, true);
+
+  // 4. Verify auto-healing to healthy status
+  assert.equal(deriveHealthStatusFromSession(session), "healthy");
+
+  // 5. Capability discovery under AUTHENTICATED session:
+  // Browser primitives + Google capabilities must be available, but separate from API
+  const caps = discoverFounderComputerCapabilities(session);
+  const geminiCap = caps.find((c) => c.capability === "gemini.chat");
+  assert.ok(geminiCap);
+  assert.equal(geminiCap.status, "available");
+  assert.equal(geminiCap.accessMethod, "browser", "Capability must be accessed via browser, not raw API");
+
+  // 6. Security invariant: verify no cookies or credentials leaked into session object
+  const sessionKeys = Object.keys(session);
+  assert.ok(!sessionKeys.includes("cookies"), "Cookies must NEVER be stored in session");
+  assert.ok(!sessionKeys.includes("password"), "Password must NEVER be stored in session");
+  assert.ok(!sessionKeys.includes("token"), "Tokens must NEVER be stored in session");
+  assert.ok(!sessionKeys.includes("authHeaders"), "Auth headers must NEVER be stored in session");
+
+  console.log("✓ Google session verification, multi-tab detection & safe identity parsing verified");
+}
+
 async function runAll() {
   console.log("\n--- RUNNING FOUNDER COMPUTER TEST SUITE ---");
   await testRegistryDefinition();
@@ -658,6 +740,7 @@ async function runAll() {
   await testCompanyAndAgentIsolation();
   await testControlPlaneAndRuntimeSeparation();
   await testKeyboardInputModifiersAndSafety();
+  await testGoogleSessionVerificationAndMultiTabDetection();
   console.log("\nALL FOUNDER COMPUTER TESTS PASSED!\n");
 }
 

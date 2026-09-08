@@ -47,7 +47,11 @@ function verifyToken(token) {
     if (payload.exp && payload.exp < now) {
       return { ok: false, error: "Token expired" };
     }
-    if (payload.scope !== "founder_browser_view") {
+    if (
+      payload.scope !== "founder_browser_view" &&
+      payload.scope !== "founder_browser_probe" &&
+      payload.scope !== "founder_browser_admin"
+    ) {
       return { ok: false, error: "Invalid scope" };
     }
     return { ok: true, payload };
@@ -57,28 +61,121 @@ function verifyToken(token) {
 }
 
 /**
- * Queries CDP for active pages.
+ * Multi-tab safe session probe inspecting active Chrome CDP pages.
+ * ZERO COOKIES, ZERO PASSWORDS, ZERO TOKENS.
  */
-async function getActivePages() {
-  return new Promise((resolve) => {
-    const req = http.get(`http://127.0.0.1:${CDP_PORT}/json/list`, { timeout: 1500 }, (res) => {
-      let data = "";
-      res.on("data", (chunk) => (data += chunk));
-      res.on("end", () => {
-        try {
-          const list = JSON.parse(data);
-          resolve(Array.isArray(list) ? list.filter((p) => p.type === "page") : []);
-        } catch {
-          resolve([]);
+async function probeSessionDetails() {
+  const result = {
+    authenticated: false,
+    accountEmail: null,
+    authenticatedDomains: [],
+    activeTabs: [],
+    primaryTab: null,
+  };
+
+  try {
+    const { chromium } = await import("playwright-core");
+    const browser = await chromium.connectOverCDP(`http://127.0.0.1:${CDP_PORT}`);
+    const pages = browser.contexts().flatMap((c) => c.pages());
+
+    const detectedDomains = new Set();
+
+    for (let i = 0; i < pages.length; i++) {
+      const p = pages[i];
+      const url = p.url();
+      let hostname = "";
+      try {
+        hostname = new URL(url).hostname.toLowerCase();
+      } catch {}
+
+      const isInternal = url.startsWith("chrome://") || url.startsWith("about:");
+      const title = await p.title().catch(() => "");
+
+      let isGoogleAuth = false;
+      let emailFound = null;
+
+      // Safe checks on Google domains
+      if (hostname.includes("google.com")) {
+        // Safe check 1: URL path check
+        if (
+          hostname === "myaccount.google.com" ||
+          hostname === "mail.google.com" ||
+          hostname === "gemini.google.com" ||
+          hostname === "aistudio.google.com" ||
+          hostname === "drive.google.com" ||
+          (hostname === "accounts.google.com" &&
+            !url.includes("/signin") &&
+            !url.includes("/v3/signin"))
+        ) {
+          isGoogleAuth = true;
+          detectedDomains.add("google.com");
+          detectedDomains.add(hostname);
+          detectedDomains.add("accounts.google.com");
         }
-      });
-    });
-    req.on("error", () => resolve([]));
-    req.on("timeout", () => {
-      req.destroy();
-      resolve([]);
-    });
-  });
+
+        // Safe check 2: Aria-labels on account button/avatar (zero cookies, zero passwords)
+        try {
+          const emailMatch = await p.evaluate(() => {
+            const labels = [];
+            document.querySelectorAll("[aria-label]").forEach((el) => {
+              const l = el.getAttribute("aria-label");
+              if (l && (l.toLowerCase().includes("google account") || l.includes("@"))) {
+                labels.push(l);
+              }
+            });
+            for (const l of labels) {
+              const m = l.match(/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/);
+              if (m) return m[1];
+            }
+            const bodyText = document.body?.innerText || "";
+            const m = bodyText.match(/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/);
+            return m ? m[1] : null;
+          });
+
+          if (emailMatch) {
+            emailFound = emailMatch;
+            isGoogleAuth = true;
+            detectedDomains.add("google.com");
+            detectedDomains.add("accounts.google.com");
+            if (hostname) detectedDomains.add(hostname);
+          }
+        } catch {}
+      }
+
+      const tabInfo = {
+        index: i,
+        url,
+        hostname,
+        title,
+        isInternal,
+        isGoogleAuth,
+        accountEmail: emailFound,
+      };
+
+      result.activeTabs.push(tabInfo);
+
+      if (!result.primaryTab && !isInternal) {
+        result.primaryTab = tabInfo;
+      }
+
+      if (emailFound && !result.accountEmail) {
+        result.accountEmail = emailFound;
+      }
+    }
+
+    if (!result.primaryTab && result.activeTabs.length > 0) {
+      result.primaryTab = result.activeTabs[0];
+    }
+
+    result.authenticatedDomains = Array.from(detectedDomains);
+    result.authenticated = result.authenticatedDomains.length > 0;
+
+    await browser.close();
+  } catch (err) {
+    console.error("[browser-stream-proxy] probeSessionDetails error:", err?.message);
+  }
+
+  return result;
 }
 
 // HTTP Server
@@ -109,16 +206,52 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Multi-tab safe session probe endpoint
+  if (url.pathname === "/session-probe" || url.pathname.endsWith("/session-probe")) {
+    const token =
+      url.searchParams.get("token") ||
+      req.headers.authorization?.replace(/^Bearer\s+/i, "") ||
+      "";
+
+    // Validate token if not localhost
+    const isLocal =
+      req.socket.remoteAddress === "127.0.0.1" ||
+      req.socket.remoteAddress === "::1" ||
+      req.socket.remoteAddress === "::ffff:127.0.0.1";
+
+    if (!isLocal) {
+      if (!token) {
+        res.writeHead(401, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: "Missing authorization token" }));
+        return;
+      }
+      const auth = verifyToken(token);
+      if (!auth.ok) {
+        res.writeHead(401, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: auth.error }));
+        return;
+      }
+    }
+
+    const probe = await probeSessionDetails();
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ ok: true, ...probe, timestamp: new Date().toISOString() }));
+    return;
+  }
+
   if (url.pathname === "/current-page" || url.pathname.endsWith("/current-page")) {
-    const pages = await getActivePages();
-    const primary = pages[0] || null;
+    const probe = await probeSessionDetails();
+    const primary = probe.primaryTab;
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(
       JSON.stringify({
         url: primary?.url || "about:blank",
         title: primary?.title || "",
-        id: primary?.id || null,
-        totalPages: pages.length,
+        id: primary?.index ?? null,
+        totalPages: probe.activeTabs.length,
+        authenticated: probe.authenticated,
+        accountEmail: probe.accountEmail,
+        authenticatedDomains: probe.authenticatedDomains,
       })
     );
     return;

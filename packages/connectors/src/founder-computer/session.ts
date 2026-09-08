@@ -19,8 +19,12 @@ export interface FounderComputerSession {
   profileId: string;
   /** Current session status. */
   status: FounderComputerSessionStatus;
+  /** Canonical session state machine state. */
+  sessionStatus?: "NOT_CONFIGURED" | "RUNTIME_OFFLINE" | "AUTH_REQUIRED" | "AUTHENTICATED" | "DEGRADED" | "REQUIRES_REAUTH" | "ERROR";
   /** Domains/services the Founder has authenticated within the profile. */
   authenticatedDomains: string[];
+  /** Safe identifier of the authenticated Google account (e.g. "user@example.com"). Never a password or token. */
+  authenticatedGoogleAccount?: string | null;
   /** ISO timestamp of last successful session verification. */
   lastVerifiedAt: string | null;
   /** Opaque reference to the runtime host (e.g. EC2 instance ID). Never a password. */
@@ -57,7 +61,21 @@ export function parseFounderComputerSession(
   const profileId = typeof metadata.profileId === "string" ? metadata.profileId : null;
   if (!profileId) return null;
 
-  const status = (metadata.sessionStatus as FounderComputerSessionStatus) ?? "auth_required";
+  const rawStatus = (metadata.sessionStatus as string) ?? "auth_required";
+  const status: FounderComputerSessionStatus =
+    rawStatus === "AUTHENTICATED" || rawStatus.toLowerCase() === "authenticated" || rawStatus === "ready"
+      ? "ready"
+      : (rawStatus as FounderComputerSessionStatus);
+
+  const sessionStatus =
+    rawStatus === "AUTHENTICATED" || status === "ready"
+      ? "AUTHENTICATED"
+      : status === "auth_required"
+      ? "AUTH_REQUIRED"
+      : status === "expired"
+      ? "REQUIRES_REAUTH"
+      : (rawStatus as any);
+
   const lastVerifiedAt = typeof metadata.lastVerifiedAt === "string" ? metadata.lastVerifiedAt : null;
   const connectedAt = typeof metadata.connectedAt === "string" ? metadata.connectedAt : null;
   const runtimeHostRef = typeof metadata.runtimeHostRef === "string" ? metadata.runtimeHostRef : null;
@@ -67,8 +85,13 @@ export function parseFounderComputerSession(
     ? (metadata.authenticatedDomains as string[]).filter((d) => typeof d === "string")
     : [];
 
+  const authenticatedGoogleAccount =
+    typeof metadata.authenticatedGoogleAccount === "string" && metadata.authenticatedGoogleAccount.includes("@")
+      ? metadata.authenticatedGoogleAccount
+      : null;
+
   const isHealthy =
-    status === "ready" &&
+    (status === "ready" || sessionStatus === "AUTHENTICATED") &&
     lastVerifiedAt !== null &&
     Date.now() - new Date(lastVerifiedAt).getTime() < SESSION_TTL_MS;
 
@@ -79,7 +102,9 @@ export function parseFounderComputerSession(
   return {
     profileId,
     status,
+    sessionStatus,
     authenticatedDomains,
+    authenticatedGoogleAccount,
     lastVerifiedAt,
     runtimeHostRef,
     browserVersion,
@@ -196,6 +221,7 @@ export function buildInitialSessionMetadata(opts: {
 export function buildSessionVerifiedMetadata(opts: {
   existing: Record<string, unknown>;
   authenticatedDomains: string[];
+  authenticatedGoogleAccount?: string | null;
   browserVersion?: string | null;
   runtimeHostRef?: string | null;
 }): Record<string, unknown> {
@@ -203,6 +229,10 @@ export function buildSessionVerifiedMetadata(opts: {
     ...opts.existing,
     sessionStatus: "ready" satisfies FounderComputerSessionStatus,
     authenticatedDomains: opts.authenticatedDomains,
+    authenticatedGoogleAccount:
+      opts.authenticatedGoogleAccount !== undefined
+        ? opts.authenticatedGoogleAccount
+        : opts.existing.authenticatedGoogleAccount ?? null,
     lastVerifiedAt: new Date().toISOString(),
     browserVersion: opts.browserVersion ?? opts.existing.browserVersion ?? null,
     runtimeHostRef: opts.runtimeHostRef ?? opts.existing.runtimeHostRef ?? null,

@@ -137,7 +137,9 @@ export function discoverFounderComputerCapabilities(
     }));
   }
 
-  if (session.status === "auth_required" || session.status === "expired") {
+  const isAuth = session.sessionStatus === "AUTHENTICATED" || session.status === "ready";
+
+  if (!isAuth && (session.status === "auth_required" || session.status === "expired" || session.sessionStatus === "AUTH_REQUIRED")) {
     return CAPABILITY_CATALOGUE.map((c) => ({
       service: c.service,
       capability: c.capability,

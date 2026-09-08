@@ -7,6 +7,7 @@ import {
   recordConnectorAudit,
   toDiscoveredCapabilityKeys,
   discoverFounderComputerCapabilities,
+  probeFounderBrowserSession,
 } from "@stratxcel/connectors";
 import {
   parseFounderComputerSession,
@@ -18,9 +19,11 @@ export const dynamic = "force-dynamic";
 
 /**
  * POST /api/admin/personal-connectors/founder-computer/verify-session
- * Verifies the actual active browser session, inspecting authenticated domains.
+ * Verifies the actual active browser session across all tabs.
+ * Inspects Google Account signals, aria-labels, and page identity.
  * If Founder has logged into Google or other services, records the authenticated
  * state and discovers newly enabled capabilities.
+ * SAFE: Never extracts or stores passwords, tokens, or cookies.
  */
 export async function POST(req: NextRequest) {
   const admin = await requireAdmin();
@@ -57,21 +60,37 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // Attempt to query active browser tabs from the proxy or CDP
+  // Live multi-tab session probe
   let detectedUrl = "";
   let detectedTitle = "";
-  try {
-    const isProd = process.env.NODE_ENV === "production" || Boolean(process.env.VERCEL);
-    const streamHost = isProd ? "http://127.0.0.1:6080" : "http://127.0.0.1:6080";
-    const res = await fetch(`${streamHost}/current-page`, { signal: AbortSignal.timeout(2000) }).catch(() => null);
-    if (res?.ok) {
-      const pageData = await res.json();
-      detectedUrl = pageData.url || "";
-      detectedTitle = pageData.title || "";
-    }
-  } catch {}
+  let detectedEmail: string | null = (existingMeta.authenticatedGoogleAccount as string) || null;
+  let activeTabsSummary: Array<{ url: string; title: string; isGoogleAuth: boolean; hostname: string }> = [];
 
-  // Check if detected URL represents authenticated Google session
+  try {
+    const probe = await probeFounderBrowserSession({ timeoutMs: 5000 });
+    if (probe.ok) {
+      if (probe.primaryTab) {
+        detectedUrl = probe.primaryTab.url || "";
+        detectedTitle = probe.primaryTab.title || "";
+      }
+      if (probe.accountEmail) {
+        detectedEmail = probe.accountEmail;
+      }
+      for (const d of probe.authenticatedDomains) {
+        candidateDomains.add(d);
+      }
+      activeTabsSummary = probe.activeTabs.map((t) => ({
+        url: t.url,
+        title: t.title,
+        isGoogleAuth: t.isGoogleAuth,
+        hostname: t.hostname,
+      }));
+    }
+  } catch (err) {
+    console.warn("[verify-session] Live probe encountered error:", err);
+  }
+
+  // Fallback domain detection from detectedUrl if any
   if (detectedUrl) {
     try {
       const parsedUrl = new URL(detectedUrl);
@@ -83,18 +102,22 @@ export async function POST(req: NextRequest) {
         host === "mail.google.com" ||
         host === "gemini.google.com" ||
         host === "drive.google.com" ||
-        (host === "accounts.google.com" && !parsedUrl.pathname.includes("/signin") && !parsedUrl.pathname.includes("/v3/signin"))
+        (host === "accounts.google.com" &&
+          !parsedUrl.pathname.includes("/signin") &&
+          !parsedUrl.pathname.includes("/v3/signin"))
       ) {
         candidateDomains.add("google.com");
         candidateDomains.add("accounts.google.com");
+        candidateDomains.add(host);
       }
     } catch {}
   }
 
-  // If no domains were supplied or auto-detected, fallback to default verification
+  // Fallback to explicit Google auth flag if requested
   if (candidateDomains.size === 0 && body.forceGoogleAuth === true) {
     candidateDomains.add("google.com");
     candidateDomains.add("accounts.google.com");
+    candidateDomains.add("myaccount.google.com");
   }
 
   const authenticatedDomains = Array.from(candidateDomains);
@@ -103,6 +126,7 @@ export async function POST(req: NextRequest) {
   const updatedMetadata = buildSessionVerifiedMetadata({
     existing: existingMeta,
     authenticatedDomains,
+    authenticatedGoogleAccount: detectedEmail,
     browserVersion: "Google Chrome 152 (Desktop Linux :99)",
     runtimeHostRef: "aws-ec2:i-0067f6c0dfd60cc46",
   });
@@ -127,6 +151,7 @@ export async function POST(req: NextRequest) {
       userId: admin.userId,
       email: admin.email,
       authenticatedDomains,
+      authenticatedGoogleAccount: detectedEmail,
       detectedUrl,
       detectedTitle,
     },
@@ -139,12 +164,14 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({
     ok: true,
     status: isAuthSuccess ? "ready" : "auth_required",
+    authenticatedGoogleAccount: detectedEmail,
     authenticatedDomains,
     detectedUrl: detectedUrl || null,
     detectedTitle: detectedTitle || null,
+    activeTabs: activeTabsSummary,
     discoveredCapabilities: capabilityKeys,
     message: isAuthSuccess
-      ? `Session verified successfully! Authenticated domains: ${authenticatedDomains.join(", ")}`
+      ? `Session verified successfully! ${detectedEmail ? `Signed in as ${detectedEmail}` : "Google Account active"} (${authenticatedDomains.join(", ")})`
       : "No authenticated domains detected yet. Please sign into Google in the browser view first.",
   });
 }

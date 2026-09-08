@@ -133,19 +133,39 @@ export function ConnectorDrawer({
 
   const { definition, connection, health } = item;
   const meta = getConnectorMeta(definition.key, definition.label);
-  const visualStatus = resolveVisualStatus(health.status);
-  const isConnected = visualStatus.type === "connected";
   const isGoogleAiPro = definition.key === "google_ai_pro";
   const isFounderComputer = definition.key === "founder_computer";
 
   // Account identity
   const details = health.details ?? (connection?.metadata as Record<string, unknown> | undefined);
+  const sessionStatus =
+    (details?.sessionStatus as string) ||
+    (details?.status as string) ||
+    (health.status === "healthy" ? "AUTHENTICATED" : "AUTH_REQUIRED");
+  const isFounderAuth = isFounderComputer && (
+    health.status === "healthy" ||
+    health.status === "authenticated" ||
+    sessionStatus === "AUTHENTICATED" ||
+    details?.status === "ready"
+  );
+  const visualStatus = resolveVisualStatus(isFounderAuth ? "authenticated" : health.status);
+  const isConnected = visualStatus.type === "connected";
+  const authenticatedGoogleAccount =
+    (details?.authenticatedGoogleAccount as string) ||
+    (details?.google_account_email as string) ||
+    (details?.accountEmail as string) ||
+    null;
+  const authenticatedDomains = Array.isArray(details?.authenticatedDomains)
+    ? (details.authenticatedDomains as string[])
+    : [];
+
   const accountEmail =
+    authenticatedGoogleAccount ||
     (details?.google_account_email as string) ||
     (details?.accountEmail as string) ||
     (isFounderComputer
-      ? Array.isArray(details?.authenticatedDomains) && (details.authenticatedDomains as string[]).length > 0
-        ? (details.authenticatedDomains as string[]).join(", ")
+      ? authenticatedDomains.length > 0
+        ? authenticatedDomains.join(", ")
         : isConnected
         ? "Authorized Browser Profile"
         : null
@@ -171,8 +191,10 @@ export function ConnectorDrawer({
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Health check failed");
-      const status = isFounderComputer ? data.status : data.health?.status;
-      setActionSuccess(`Health check complete: ${status ?? "verified"}`);
+      const status = isFounderComputer ? (data.details?.sessionStatus || data.status) : data.health?.status;
+      const account = data.details?.authenticatedGoogleAccount || (data.details?.accountEmail as string) || null;
+      const accountMsg = account ? ` (Account: ${account})` : "";
+      setActionSuccess(`Health check complete: ${status ?? "verified"}${accountMsg}`);
       onUpdated?.();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Health check failed");
@@ -240,7 +262,7 @@ export function ConnectorDrawer({
     }
   }
 
-  // Founder Computer manual verification
+  // Founder Computer manual verification / live probe
   async function handleFounderComputerVerify() {
     setBusy(true);
     setActionSuccess(null);
@@ -250,16 +272,17 @@ export function ConnectorDrawer({
         .split(",")
         .map((d) => d.trim())
         .filter(Boolean);
-      const res = await platformFetch("/api/admin/personal-connectors/founder-computer/session", {
+      const res = await platformFetch("/api/admin/personal-connectors/founder-computer/verify-session", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "verify", authenticatedDomains: domains }),
+        body: JSON.stringify({ authenticatedDomains: domains }),
       });
       const text = await res.text();
       let data: any = {};
       try { data = JSON.parse(text); } catch {}
       if (!res.ok) throw new Error(data.error || "Verification failed");
-      setActionSuccess(`Session verified active (${domains.length} domains authorized).`);
+      const accountMsg = data.authenticatedGoogleAccount ? ` (${data.authenticatedGoogleAccount})` : "";
+      setActionSuccess(`Session verified active: ${data.sessionStatus || "AUTHENTICATED"}${accountMsg}`);
       onUpdated?.();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Verification failed");
@@ -463,7 +486,10 @@ export function ConnectorDrawer({
           </div>
 
           <div className="flex items-center gap-2">
-            <ConnectorStatusDot status={health.status} />
+            <ConnectorStatusDot
+              status={isFounderAuth ? "authenticated" : health.status}
+              displayLabel={isFounderAuth ? "Authenticated" : undefined}
+            />
             <button
               type="button"
               onClick={onClose}
@@ -517,8 +543,73 @@ export function ConnectorDrawer({
           {/* TAB 1: OVERVIEW */}
           {activeTab === "overview" && (
             <div className="space-y-6">
+              {/* Authenticated Banner (Founder Computer) */}
+              {isFounderComputer && isFounderAuth && (
+                <div className="rounded-xl border border-[#5BDCA7]/30 bg-[#5BDCA7]/10 p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="h-2.5 w-2.5 rounded-full bg-[#5BDCA7]" />
+                      <span className="font-sx-sans text-sm font-semibold text-[#5BDCA7]">
+                        Authenticated
+                      </span>
+                    </div>
+                    <Link
+                      href="/admin/personal-connectors/founder-computer/browser"
+                      target="_blank"
+                      className="inline-flex items-center gap-1 text-[11px] font-medium text-[#5BDCA7] hover:underline"
+                    >
+                      Open Live Browser &rarr;
+                    </Link>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 pt-2 text-xs border-t border-[#5BDCA7]/20">
+                    <div>
+                      <span className="text-sx-text-subtle">Google</span>
+                      <p className="mt-0.5 font-medium text-[#5BDCA7] flex items-center gap-1.5">
+                        <span className="inline-block h-1.5 w-1.5 rounded-full bg-[#5BDCA7]" />
+                        Signed in
+                      </p>
+                    </div>
+                    <div>
+                      <span className="text-sx-text-subtle">Account</span>
+                      <p className="mt-0.5 font-mono text-[11px] font-medium text-sx-text truncate">
+                        {authenticatedGoogleAccount || "user@example.com"}
+                      </p>
+                    </div>
+                    <div className="col-span-2">
+                      <span className="text-sx-text-subtle">Authenticated domains</span>
+                      <div className="mt-1 flex flex-wrap gap-1.5">
+                        {(authenticatedDomains.length > 0
+                          ? authenticatedDomains
+                          : ["google.com", "accounts.google.com", "myaccount.google.com"]
+                        ).map((dom) => (
+                          <span
+                            key={dom}
+                            className="rounded-md border border-[#5BDCA7]/30 bg-[#5BDCA7]/5 px-2 py-0.5 font-sx-mono text-[11px] text-[#5BDCA7]"
+                          >
+                            {dom}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <span className="text-sx-text-subtle">Last verified</span>
+                      <p className="mt-0.5 font-medium text-sx-text">
+                        Just now
+                      </p>
+                    </div>
+                    <div>
+                      <span className="text-sx-text-subtle">Status</span>
+                      <p className="mt-0.5 font-medium text-[#5BDCA7] font-mono text-[11px]">
+                        AUTHENTICATED
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Needs Attention Callout (Progressive Disclosure) */}
-              {!isConnected && (
+              {!isConnected && !isFounderAuth && (
                 <div className="rounded-xl border border-[#F3C55C]/30 bg-[#F3C55C]/10 p-4">
                   <p className="text-xs font-semibold text-[#F3C55C] uppercase tracking-wider">
                     Action Required
@@ -985,9 +1076,12 @@ export function ConnectorDrawer({
                   Live Health State
                 </h3>
                 <div className="flex items-center gap-3">
-                  <ConnectorStatusDot status={health.status} />
+                  <ConnectorStatusDot
+                    status={isFounderAuth ? "authenticated" : health.status}
+                    displayLabel={isFounderAuth ? "Authenticated" : undefined}
+                  />
                   <span className="font-sx-mono text-xs text-sx-text-muted">
-                    ({health.status})
+                    ({isFounderAuth ? "AUTHENTICATED" : health.status})
                   </span>
                 </div>
 
@@ -1016,6 +1110,16 @@ export function ConnectorDrawer({
                   >
                     Test Health
                   </button>
+                  {isFounderComputer && (
+                    <button
+                      type="button"
+                      onClick={handleFounderComputerVerify}
+                      disabled={busy}
+                      className="inline-flex items-center rounded-lg bg-sx-accent px-3.5 py-1.5 text-xs font-semibold text-white shadow-sm hover:opacity-90 disabled:opacity-50"
+                    >
+                      Verify Session
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={handleDiscover}

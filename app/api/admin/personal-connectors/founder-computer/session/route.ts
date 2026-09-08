@@ -6,6 +6,7 @@ import {
   updateConnectorConnectionMetadata,
   recordConnectorAudit,
   getFounderComputerRuntimeStatus,
+  probeFounderBrowserSession,
 } from "@stratxcel/connectors";
 import {
   parseFounderComputerSession,
@@ -54,6 +55,7 @@ export async function GET() {
           status: session.status,
           isHealthy: session.isHealthy,
           authenticatedDomains: session.authenticatedDomains,
+          authenticatedGoogleAccount: session.authenticatedGoogleAccount ?? null,
           browserVersion: runtime.browserVersion ?? session.browserVersion,
           lastVerifiedAt: session.lastVerifiedAt,
           connectedAt: session.connectedAt,
@@ -99,9 +101,27 @@ export async function POST(request: NextRequest) {
   const existing = (connection.metadata as Record<string, unknown> | null) ?? {};
 
   if (action === "verify") {
-    const authenticatedDomains = Array.isArray(body.authenticatedDomains)
+    let authenticatedDomains = Array.isArray(body.authenticatedDomains)
       ? (body.authenticatedDomains as string[]).filter((d) => typeof d === "string").slice(0, 50)
       : (parseFounderComputerSession(existing)?.authenticatedDomains ?? []);
+
+    let authenticatedGoogleAccount =
+      typeof body.authenticatedGoogleAccount === "string" && body.authenticatedGoogleAccount.includes("@")
+        ? body.authenticatedGoogleAccount
+        : (existing.authenticatedGoogleAccount as string) || null;
+
+    // Auto-probe live runtime if domains are not manually provided
+    if (authenticatedDomains.length === 0) {
+      try {
+        const probe = await probeFounderBrowserSession({ timeoutMs: 4000 });
+        if (probe.ok && probe.authenticated) {
+          authenticatedDomains = probe.authenticatedDomains;
+          if (probe.accountEmail) {
+            authenticatedGoogleAccount = probe.accountEmail;
+          }
+        }
+      } catch {}
+    }
 
     const browserVersion =
       typeof body.browserVersion === "string" ? body.browserVersion : null;
@@ -111,6 +131,7 @@ export async function POST(request: NextRequest) {
     const updatedMetadata = buildSessionVerifiedMetadata({
       existing,
       authenticatedDomains,
+      authenticatedGoogleAccount,
       browserVersion,
       runtimeHostRef,
     });

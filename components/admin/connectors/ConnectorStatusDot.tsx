@@ -15,10 +15,10 @@ export function resolveVisualStatus(rawStatus?: string | null): {
 } {
   const s = (rawStatus ?? "not_configured").toLowerCase();
 
-  if (["connected", "healthy"].includes(s)) {
+  if (["connected", "healthy", "authenticated", "ready"].includes(s)) {
     return {
       type: "connected",
-      label: "Connected",
+      label: s === "authenticated" ? "Authenticated" : s === "healthy" ? "Healthy" : "Connected",
       dotColor: "bg-[#5BDCA7]",
       textColor: "text-[#5BDCA7]",
     };
@@ -62,9 +62,11 @@ export function resolveVisualStatus(rawStatus?: string | null): {
 export function ConnectorStatusDot({
   status,
   className = "",
+  displayLabel,
 }: {
   status?: string | null;
   className?: string;
+  displayLabel?: string;
 }) {
   const { label, dotColor, textColor } = resolveVisualStatus(status);
 
@@ -73,7 +75,7 @@ export function ConnectorStatusDot({
       className={`inline-flex items-center gap-1.5 font-sx-sans text-xs font-medium ${textColor} ${className}`}
     >
       <span className={`h-2 w-2 rounded-full ${dotColor}`} aria-hidden="true" />
-      <span>{label}</span>
+      <span>{displayLabel ?? label}</span>
     </span>
   );
 }
