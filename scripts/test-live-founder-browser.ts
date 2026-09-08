@@ -13,9 +13,9 @@ async function main() {
   const status = await getFounderComputerRuntimeStatus();
   console.log("Runtime status:", {
     state: status.state,
-    cdpReachable: status.cdpReachable,
+    cdpUrl: status.cdpUrl,
     browserVersion: status.browserVersion,
-    activeTabCount: status.activeTabCount,
+    activePages: status.activePages,
     profileDir: status.profileDir,
   });
 
