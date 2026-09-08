@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Card } from "@/components/ui/Card";
 import { Modal } from "@/components/ui/Overlay";
 import { useCurrentTenant } from "../CurrentTenantContext";
+import { FreeCreativesPanel } from "@/components/audit/FreeCreativesPanel";
 
 export interface ContentItem {
   id: string;
@@ -262,8 +263,25 @@ export function ContentLibraryClient({
             <span>💬</span>
             <span>Ask Assistant</span>
           </Link>
+          {/* Final Customer Experience Repair, Section 25/27: "Connect
+              Accounts" was one of the plainly-named main actions this page
+              was missing entirely -- there was no path from here into the
+              connectors flow at all. */}
+          <Link
+            href="/app/integrations"
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-sx-sm border border-sx-border bg-sx-surface-2 px-3.5 text-xs sm:text-sm font-semibold text-sx-text transition-colors hover:bg-sx-surface-3"
+          >
+            <span>🔗</span>
+            <span>Connect Accounts</span>
+          </Link>
         </div>
       </div>
+
+      {/* My Free Content (Final Customer Experience Repair, Section 5/26):
+          the 3 free branded creatives (Section 2) surfaced prominently
+          here too, not just on the audit report -- the same real panel,
+          never a second/duplicated generator or a paid gate. */}
+      <FreeCreativesPanel />
 
       {/* Quick Navigation Cards */}
       <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
