@@ -109,7 +109,18 @@ export async function POST(req: NextRequest) {
       websiteData: websiteResult?.data || null,
       googleMapsData,
       googlePlaceData,
-      selectedIndustry: industry || websiteResult?.data?.industry || null,
+      // Only a real, explicit industry (request body `industry`) counts as
+      // USER_PROVIDED. The website crawler's own AI-inferred industry guess
+      // was previously falling into this same slot, which the engine
+      // treats as maximally trusted -- silently outranking the real,
+      // authoritative Google Places category (live-caught: a medical
+      // consultancy was mis-classified "SaaS & Technology" by the website
+      // AI guess, which then beat the correct "Consultant" Places
+      // category). websiteData is already passed above, so the engine's
+      // own lower-priority WEBSITE-provenance branch still uses that AI
+      // guess as a fallback when nothing stronger exists -- it's just no
+      // longer masquerading as user input.
+      selectedIndustry: industry || null,
       confirmedSocials: confirmedSocials.length ? confirmedSocials : (websiteResult?.data?.socialLinks?.map((s) => ({
         platform: s.platform,
         url: s.url,
