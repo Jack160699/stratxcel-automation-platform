@@ -2,10 +2,10 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useCurrentTenant } from "../CurrentTenantContext";
-import { Card, CardHeading } from "@/components/ui/Card";
-import { Metric } from "@/components/ui/Metric";
+import { AdminPageHeader } from "@/components/admin/ui/AdminPageHeader";
 import { ErrorState } from "@/components/ui/Feedback";
 import { platformFetch } from "@/lib/admin/platform-fetch";
+import { RefreshCw, TrendingUp, Cpu, BarChart2, CreditCard } from "lucide-react";
 
 interface FinanceData {
   revenue: {
@@ -74,6 +74,30 @@ interface FinanceData {
   }>;
 }
 
+function Kpi({ label, value, sub, accent }: { label: string; value: string; sub?: string; accent?: string }) {
+  return (
+    <div className="flex flex-col gap-1 rounded-sx-md border border-sx-border/60 bg-sx-surface-1/70 p-4">
+      <p className="text-[11px] font-medium uppercase tracking-[0.09em] text-sx-text-subtle">{label}</p>
+      <p className={`text-2xl font-bold tracking-tight ${accent ?? "text-sx-text"}`}>{value}</p>
+      {sub && <p className="text-[11px] text-sx-text-muted">{sub}</p>}
+    </div>
+  );
+}
+
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-sx-text-subtle">{children}</p>
+  );
+}
+
+function BudgetBadge({ status }: { status: "NORMAL" | "WATCH" | "OVER BUDGET" }) {
+  if (status === "NORMAL")
+    return <span className="rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-[10px] font-bold text-emerald-400">Normal</span>;
+  if (status === "WATCH")
+    return <span className="rounded-full bg-amber-500/10 px-2.5 py-0.5 text-[10px] font-bold text-amber-400">Watch</span>;
+  return <span className="rounded-full bg-rose-500/10 px-2.5 py-0.5 text-[10px] font-bold text-rose-400">Over Budget</span>;
+}
+
 export default function AdminFinancePage() {
   const { active } = useCurrentTenant();
   const tenantId = active?.tenantId ?? "stratxcel";
@@ -93,7 +117,7 @@ export default function AdminFinancePage() {
       }
       setData(body);
     } catch {
-      setError("Network error loading finance control center.");
+      setError("Network error loading finance data.");
     } finally {
       setLoading(false);
     }
@@ -103,272 +127,244 @@ export default function AdminFinancePage() {
     void load();
   }, [load]);
 
-  const budgetStatusBadge = (status: "NORMAL" | "WATCH" | "OVER BUDGET") => {
-    switch (status) {
-      case "NORMAL":
-        return <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-xs font-bold text-emerald-400">🟢 Normal</span>;
-      case "WATCH":
-        return <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2.5 py-0.5 text-xs font-bold text-amber-400">🟡 Watch</span>;
-      case "OVER BUDGET":
-        return <span className="inline-flex items-center gap-1 rounded-full bg-rose-500/10 px-2.5 py-0.5 text-xs font-bold text-rose-400">🔴 Over Budget</span>;
-    }
-  };
-
   return (
     <div className="flex flex-col gap-8 pb-12">
-      {/* Header */}
-      <header className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-sx-accent">Platform Economics</p>
-          <h1 className="mt-1 font-sx-sans text-2xl font-bold text-sx-text sm:text-3xl">
-            Billing, Revenue & AI Cost Intelligence
-          </h1>
-          <p className="mt-1 text-sm text-sx-text-muted">
-            Stratxcel financial control center, operator spend, and net contribution.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
+      <AdminPageHeader
+        breadcrumb="Admin"
+        title="Finance"
+        description="Platform economics — revenue, AI operator spend, net contribution, and budget."
+        actions={
           <button
             onClick={load}
             disabled={loading}
-            className="inline-flex min-h-10 items-center justify-center rounded-sx-sm border border-sx-border bg-sx-surface-2 px-4 text-xs font-semibold text-sx-text hover:bg-sx-surface-1 disabled:opacity-50"
+            className="inline-flex h-8 items-center gap-1.5 rounded-sx-sm border border-sx-border bg-sx-surface-2 px-3 text-xs font-medium text-sx-text-muted transition-colors hover:border-sx-border-strong hover:text-sx-text disabled:opacity-40"
           >
-            {loading ? "Refreshing…" : "Refresh Financials"}
+            <RefreshCw size={12} className={loading ? "animate-spin" : ""} />
+            {loading ? "Refreshing…" : "Refresh"}
           </button>
-        </div>
-      </header>
+        }
+      />
 
       {error && <ErrorState message={error} onRetry={load} />}
 
       {data && (
         <>
-          {/* Top 4 KPI Cards */}
-          <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <Card className="p-5">
-              <Metric
-                label="Gross Revenue Received"
+          {/* Top KPIs */}
+          <section className="flex flex-col gap-3">
+            <SectionLabel>Overview</SectionLabel>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <Kpi
+                label="Gross Revenue"
                 value={`₹${data.revenue.grossInr.toLocaleString()}`}
-                deltaLabel={`₹${data.revenue.monthInr.toLocaleString()} this month`}
+                sub={`₹${data.revenue.monthInr.toLocaleString()} this month`}
+                accent="text-emerald-400"
               />
-            </Card>
-
-            <Card className="p-5">
-              <Metric
-                label="Tracked AI Operator Spend"
+              <Kpi
+                label="AI Operator Spend"
                 value={`₹${data.costs.totalAiSpendInr.toLocaleString()}`}
-                deltaLabel={`₹${data.costs.todayAiSpendInr.toLocaleString()} today`}
+                sub={`₹${data.costs.todayAiSpendInr.toLocaleString()} today`}
+                accent="text-sx-text"
               />
-            </Card>
-
-            <Card className="p-5">
-              <Metric
+              <Kpi
                 label="Net Contribution"
                 value={`₹${data.netPosition.netContributionInr.toLocaleString()}`}
-                deltaLabel={`${data.netPosition.marginPercent}% Net Margin`}
+                sub={`${data.netPosition.marginPercent}% net margin`}
+                accent="text-sx-accent"
               />
-            </Card>
-
-            <Card className="p-5">
-              <div className="flex items-start justify-between">
-                <p className="text-sm font-medium text-sx-text-muted">AI Budget Status</p>
-                {budgetStatusBadge(data.budget.status)}
+              <div className="flex flex-col gap-1 rounded-sx-md border border-sx-border/60 bg-sx-surface-1/70 p-4">
+                <div className="flex items-center justify-between">
+                  <p className="text-[11px] font-medium uppercase tracking-[0.09em] text-sx-text-subtle">AI Budget</p>
+                  <BudgetBadge status={data.budget.status} />
+                </div>
+                <p className="text-2xl font-bold tracking-tight text-sx-text">{data.budget.utilizationPercent}%</p>
+                <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-sx-surface-2">
+                  <div
+                    className={`h-full rounded-full transition-all ${
+                      data.budget.utilizationPercent > 90
+                        ? "bg-rose-500"
+                        : data.budget.utilizationPercent > 70
+                        ? "bg-amber-500"
+                        : "bg-sx-accent"
+                    }`}
+                    style={{ width: `${Math.min(100, data.budget.utilizationPercent)}%` }}
+                  />
+                </div>
+                <p className="text-[11px] text-sx-text-muted">
+                  ₹{data.budget.remainingInr.toLocaleString()} remaining of ₹{data.budget.monthlyBudgetInr.toLocaleString()}
+                </p>
               </div>
-              <p className="mt-3 font-sx-sans text-2xl font-semibold text-sx-text sm:text-3xl">
-                {data.budget.utilizationPercent}%
-              </p>
-              <p className="mt-1 text-xs text-sx-text-muted">
-                ₹{data.budget.remainingInr.toLocaleString()} remaining of ₹{data.budget.monthlyBudgetInr.toLocaleString()}
-              </p>
-            </Card>
+            </div>
           </section>
 
-          {/* Second Section: Revenue Intelligence & AI Budget Monitor */}
-          <section className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
-            {/* Revenue Details */}
-            <Card className="p-6">
-              <CardHeading>Payment & Revenue Intelligence</CardHeading>
-              <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4 text-xs">
-                <div className="rounded-sx-sm bg-sx-surface-2 p-3">
-                  <span className="text-sx-text-subtle">Today</span>
-                  <p className="mt-1 text-base font-bold text-sx-text">₹{data.revenue.todayInr.toLocaleString()}</p>
-                </div>
-                <div className="rounded-sx-sm bg-sx-surface-2 p-3">
-                  <span className="text-sx-text-subtle">This Week</span>
-                  <p className="mt-1 text-base font-bold text-sx-text">₹{data.revenue.weekInr.toLocaleString()}</p>
-                </div>
-                <div className="rounded-sx-sm bg-sx-surface-2 p-3">
-                  <span className="text-sx-text-subtle">Active Subscriptions</span>
-                  <p className="mt-1 text-base font-bold text-sx-text">{data.revenue.activeSubscriptions}</p>
-                </div>
-                <div className="rounded-sx-sm bg-sx-surface-2 p-3">
-                  <span className="text-sx-text-subtle">Average Order Value</span>
-                  <p className="mt-1 text-base font-bold text-sx-text">₹{data.revenue.averageOrderValueInr.toLocaleString()}</p>
-                </div>
+          {/* Revenue Intelligence */}
+          <section className="flex flex-col gap-3">
+            <SectionLabel>
+              <span className="inline-flex items-center gap-1.5">
+                <TrendingUp size={12} /> Revenue Intelligence
+              </span>
+            </SectionLabel>
+            <div className="rounded-sx-md border border-sx-border/60 bg-sx-surface-1/70 p-5">
+              <div className="grid grid-cols-2 gap-3 text-xs sm:grid-cols-4">
+                {[
+                  { label: "Today", value: `₹${data.revenue.todayInr.toLocaleString()}` },
+                  { label: "This Week", value: `₹${data.revenue.weekInr.toLocaleString()}` },
+                  { label: "Active Subs", value: String(data.revenue.activeSubscriptions) },
+                  { label: "Avg Order", value: `₹${data.revenue.averageOrderValueInr.toLocaleString()}` },
+                ].map(({ label, value }) => (
+                  <div key={label} className="rounded-sx-sm bg-sx-surface-2 p-3">
+                    <p className="text-sx-text-subtle">{label}</p>
+                    <p className="mt-1 text-base font-bold text-sx-text">{value}</p>
+                  </div>
+                ))}
               </div>
-
-              <div className="mt-6 pt-4 border-t border-sx-border space-y-2">
-                <div className="flex justify-between text-xs text-sx-text">
-                  <span className="text-sx-text-muted">Total Captured Transactions</span>
-                  <span className="font-semibold">{data.revenue.successfulPayments}</span>
-                </div>
-                <div className="flex justify-between text-xs text-sx-text">
-                  <span className="text-sx-text-muted">Pending / Unpaid Payment Links</span>
-                  <span className="font-semibold text-amber-400">₹{data.revenue.pendingInr.toLocaleString()} ({data.revenue.pendingPayments} links)</span>
-                </div>
-                <div className="flex justify-between text-xs text-sx-text">
-                  <span className="text-sx-text-muted">Complimentary / Promo Discount Value</span>
-                  <span className="font-semibold text-sky-400">₹{data.revenue.freePromoValueInr.toLocaleString()} ({data.revenue.freePromoRedemptionsCount} free redemptions · ₹0 Paid)</span>
-                </div>
-                <div className="flex justify-between text-xs text-sx-text">
-                  <span className="text-sx-text-muted">Total Refunds Issued</span>
-                  <span className="font-semibold text-rose-400">₹{data.revenue.refundsInr.toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between text-xs text-sx-text pt-2 border-t border-sx-border/60">
-                  <span className="text-sx-text-muted font-medium">Net Settled Revenue</span>
+              <div className="mt-4 space-y-2 border-t border-sx-border pt-4 text-xs">
+                {[
+                  { label: "Captured transactions", value: String(data.revenue.successfulPayments), cls: "" },
+                  { label: "Pending / unpaid links", value: `₹${data.revenue.pendingInr.toLocaleString()} (${data.revenue.pendingPayments})`, cls: "text-amber-400" },
+                  { label: "Complimentary / promo value", value: `₹${data.revenue.freePromoValueInr.toLocaleString()} (${data.revenue.freePromoRedemptionsCount} free)`, cls: "text-sky-400" },
+                  { label: "Total refunds issued", value: `₹${data.revenue.refundsInr.toLocaleString()}`, cls: "text-rose-400" },
+                ].map(({ label, value, cls }) => (
+                  <div key={label} className="flex justify-between">
+                    <span className="text-sx-text-muted">{label}</span>
+                    <span className={`font-semibold ${cls || "text-sx-text"}`}>{value}</span>
+                  </div>
+                ))}
+                <div className="flex justify-between border-t border-sx-border/60 pt-2">
+                  <span className="font-medium text-sx-text-muted">Net settled revenue</span>
                   <span className="font-bold text-emerald-400">₹{data.revenue.netInr.toLocaleString()}</span>
                 </div>
               </div>
-            </Card>
-
-            {/* AI Budget Progress */}
-            <Card className="p-6">
-              <div className="flex items-center justify-between">
-                <CardHeading>AI Spend & Budget Control</CardHeading>
-                {budgetStatusBadge(data.budget.status)}
-              </div>
-
-              <div className="mt-4 space-y-4">
-                <div>
-                  <div className="flex justify-between text-xs mb-1.5">
-                    <span className="text-sx-text-muted">Monthly AI Budget Consumption</span>
-                    <span className="font-mono font-semibold text-sx-text">
-                      ₹{data.budget.monthUsedInr.toLocaleString()} / ₹{data.budget.monthlyBudgetInr.toLocaleString()}
-                    </span>
-                  </div>
-                  <div className="h-2.5 w-full rounded-full bg-sx-surface-2 overflow-hidden">
-                    <div
-                      className={`h-full rounded-full transition-all ${
-                        data.budget.utilizationPercent > 90 ? "bg-rose-500" : data.budget.utilizationPercent > 70 ? "bg-amber-500" : "bg-sx-accent"
-                      }`}
-                      style={{ width: `${Math.min(100, data.budget.utilizationPercent)}%` }}
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3 text-xs pt-2">
-                  <div className="rounded-sx-sm border border-sx-border p-2.5">
-                    <span className="text-sx-text-subtle">Total AI Requests</span>
-                    <p className="mt-1 text-sm font-bold text-sx-text">{data.costs.totalRequests.toLocaleString()}</p>
-                  </div>
-                  <div className="rounded-sx-sm border border-sx-border p-2.5">
-                    <span className="text-sx-text-subtle">Total Tokens Processed</span>
-                    <p className="mt-1 text-sm font-bold text-sx-text">{data.costs.totalTokens.toLocaleString()}</p>
-                  </div>
-                </div>
-              </div>
-            </Card>
+            </div>
           </section>
 
-          {/* Third Section: AI Operator Cost Dashboard (Providers & Services) */}
-          <section className="grid gap-6 lg:grid-cols-2">
-            {/* By Provider */}
-            <Card className="p-6">
-              <CardHeading>AI Operator Cost by Provider</CardHeading>
-              <p className="mt-1 text-xs text-sx-text-muted">Model & API runtime consumption breakdown.</p>
-              <div className="mt-4 space-y-3">
-                {data.costs.providers.map((p) => (
-                  <div key={p.provider} className="rounded-sx-sm border border-sx-border p-3">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="font-bold text-sx-text">{p.provider}</span>
-                      <span className="font-mono font-semibold text-sx-accent">₹{p.costInr.toLocaleString()} ({p.percentShare}%)</span>
-                    </div>
-                    <div className="mt-1.5 flex justify-between text-[11px] text-sx-text-subtle">
-                      <span>{p.requests.toLocaleString()} calls</span>
-                      <span>{p.tokens.toLocaleString()} tokens</span>
-                    </div>
-                    <div className="mt-2 h-1.5 w-full rounded-full bg-sx-surface-2 overflow-hidden">
-                      <div className="h-full bg-sx-accent rounded-full" style={{ width: `${p.percentShare}%` }} />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </Card>
-
-            {/* By Service */}
-            <Card className="p-6">
-              <CardHeading>Spend by Platform Capability</CardHeading>
-              <p className="mt-1 text-xs text-sx-text-muted">Direct AI costs allocated across platform modules.</p>
-              <div className="mt-4 space-y-3">
-                {data.costs.services.map((s) => (
-                  <div key={s.service} className="rounded-sx-sm border border-sx-border p-3">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="font-semibold text-sx-text capitalize">{s.service}</span>
-                      <span className="font-mono font-semibold text-sx-text">₹{s.costInr.toLocaleString()} ({s.percentShare}%)</span>
-                    </div>
-                    <div className="mt-1 text-[11px] text-sx-text-subtle">
-                      {s.requests.toLocaleString()} executions
-                    </div>
-                    <div className="mt-2 h-1.5 w-full rounded-full bg-sx-surface-2 overflow-hidden">
-                      <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${s.percentShare}%` }} />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </Card>
-          </section>
-
-          {/* Fourth Section: Revenue by Product & Recent Payments */}
-          <section className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
-            {/* Products */}
-            <Card className="p-6">
-              <CardHeading>Revenue by Product Tier</CardHeading>
-              <div className="mt-4 space-y-3">
-                {data.products.map((prod) => (
-                  <div key={prod.product} className="flex items-center justify-between border-b border-sx-border pb-2.5 text-xs">
-                    <div>
-                      <p className="font-semibold text-sx-text flex items-center gap-1.5">
-                        {prod.product}
-                        {prod.isComplimentary && (
-                          <span className="rounded bg-sky-500/10 px-1.5 py-0.5 text-[10px] font-bold text-sky-400">
-                            PROMO / ₹0
-                          </span>
-                        )}
+          {/* AI Cost by Provider & Service */}
+          <section className="flex flex-col gap-3">
+            <SectionLabel>
+              <span className="inline-flex items-center gap-1.5">
+                <Cpu size={12} /> AI Operator Cost
+              </span>
+            </SectionLabel>
+            <div className="grid gap-4 lg:grid-cols-2">
+              {/* Providers */}
+              <div className="rounded-sx-md border border-sx-border/60 bg-sx-surface-1/70 p-5">
+                <p className="mb-3 text-[12px] font-medium text-sx-text">By Provider</p>
+                <div className="space-y-2.5">
+                  {data.costs.providers.map((p) => (
+                    <div key={p.provider}>
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-medium text-sx-text">{p.provider}</span>
+                        <span className="font-mono font-semibold text-sx-accent">
+                          ₹{p.costInr.toLocaleString()} · {p.percentShare}%
+                        </span>
+                      </div>
+                      <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-sx-surface-2">
+                        <div className="h-full bg-sx-accent rounded-full" style={{ width: `${p.percentShare}%` }} />
+                      </div>
+                      <p className="mt-0.5 text-[10px] text-sx-text-subtle">
+                        {p.requests.toLocaleString()} calls · {p.tokens.toLocaleString()} tokens
                       </p>
-                      <p className="text-[11px] text-sx-text-subtle">{prod.salesCount} {prod.isComplimentary ? "redeemed" : "paid"}</p>
                     </div>
-                    <div className="text-right">
-                      <p className="font-mono font-bold text-sx-text">₹{prod.revenueInr.toLocaleString()}</p>
-                      <p className="text-[10px] text-sx-text-subtle">{prod.percentShare}% of gross</p>
-                    </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
-            </Card>
+              {/* Services */}
+              <div className="rounded-sx-md border border-sx-border/60 bg-sx-surface-1/70 p-5">
+                <p className="mb-3 text-[12px] font-medium text-sx-text">By Capability</p>
+                <div className="space-y-2.5">
+                  {data.costs.services.map((s) => (
+                    <div key={s.service}>
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-medium capitalize text-sx-text">{s.service}</span>
+                        <span className="font-mono font-semibold text-sx-text">
+                          ₹{s.costInr.toLocaleString()} · {s.percentShare}%
+                        </span>
+                      </div>
+                      <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-sx-surface-2">
+                        <div className="h-full rounded-full bg-emerald-500" style={{ width: `${s.percentShare}%` }} />
+                      </div>
+                      <p className="mt-0.5 text-[10px] text-sx-text-subtle">{s.requests.toLocaleString()} executions</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </section>
 
-            {/* Recent Payments */}
-            <Card className="p-6">
-              <CardHeading>Recent Payment Events</CardHeading>
-              {data.recentPayments.length === 0 ? (
-                <p className="mt-3 text-xs text-sx-text-subtle">No payment events recorded yet.</p>
-              ) : (
-                <div className="mt-4 space-y-2">
-                  {data.recentPayments.map((p, idx) => (
-                    <div key={idx} className="flex items-center justify-between rounded-sx-sm bg-sx-surface-2 px-3 py-2 text-xs">
+          {/* Product Revenue & Recent Payments */}
+          <section className="flex flex-col gap-3">
+            <SectionLabel>
+              <span className="inline-flex items-center gap-1.5">
+                <BarChart2 size={12} /> Revenue by Product
+              </span>
+            </SectionLabel>
+            <div className="grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
+              {/* Products */}
+              <div className="rounded-sx-md border border-sx-border/60 bg-sx-surface-1/70 p-5">
+                <div className="space-y-3">
+                  {data.products.map((prod) => (
+                    <div
+                      key={prod.product}
+                      className="flex items-center justify-between border-b border-sx-border pb-2.5 text-xs last:border-0 last:pb-0"
+                    >
                       <div>
-                        <p className="font-semibold text-sx-text">{p.description}</p>
-                        <p className="text-[10px] text-sx-text-subtle">{p.customer} · {new Date(p.createdAt).toLocaleDateString()}</p>
+                        <p className="flex items-center gap-1.5 font-medium text-sx-text">
+                          {prod.product}
+                          {prod.isComplimentary && (
+                            <span className="rounded bg-sky-500/10 px-1.5 py-0.5 text-[10px] font-bold text-sky-400">
+                              FREE
+                            </span>
+                          )}
+                        </p>
+                        <p className="text-[11px] text-sx-text-subtle">
+                          {prod.salesCount} {prod.isComplimentary ? "redeemed" : "paid"}
+                        </p>
                       </div>
                       <div className="text-right">
-                        <span className="font-mono font-bold text-sx-text">₹{p.amountInr.toLocaleString()}</span>
-                        <span className={`block text-[10px] uppercase font-bold ${p.status === "paid" ? "text-emerald-400" : "text-amber-400"}`}>
-                          {p.status}
-                        </span>
+                        <p className="font-mono font-bold text-sx-text">₹{prod.revenueInr.toLocaleString()}</p>
+                        <p className="text-[10px] text-sx-text-subtle">{prod.percentShare}% of gross</p>
                       </div>
                     </div>
                   ))}
                 </div>
-              )}
-            </Card>
+              </div>
+
+              {/* Recent Payments */}
+              <div className="rounded-sx-md border border-sx-border/60 bg-sx-surface-1/70 p-5">
+                <div className="mb-3 flex items-center gap-1.5 text-[12px] font-medium text-sx-text">
+                  <CreditCard size={13} strokeWidth={1.75} />
+                  Recent Payment Events
+                </div>
+                {data.recentPayments.length === 0 ? (
+                  <p className="text-xs text-sx-text-subtle">No payment events recorded yet.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {data.recentPayments.map((p, idx) => (
+                      <div
+                        key={idx}
+                        className="flex items-center justify-between rounded-sx-sm bg-sx-surface-2 px-3 py-2 text-xs"
+                      >
+                        <div>
+                          <p className="font-medium text-sx-text">{p.description}</p>
+                          <p className="text-[10px] text-sx-text-subtle">
+                            {p.customer} · {new Date(p.createdAt).toLocaleDateString()}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <span className="font-mono font-bold text-sx-text">₹{p.amountInr.toLocaleString()}</span>
+                          <span
+                            className={`block text-[10px] font-bold uppercase ${
+                              p.status === "paid" ? "text-emerald-400" : "text-amber-400"
+                            }`}
+                          >
+                            {p.status}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
           </section>
         </>
       )}

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useCurrentTenant } from "../CurrentTenantContext";
 import { NoClientSelected } from "../NoClientSelected";
+import { AdminPageHeader } from "@/components/admin/ui/AdminPageHeader";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Card, CardHeading } from "@/components/ui/Card";
@@ -11,6 +12,7 @@ import { ErrorState } from "@/components/ui/Feedback";
 import { platformFetch } from "@/lib/admin/platform-fetch";
 import { WhatsAppAgentPairingCard } from "@/components/agent-core/WhatsAppAgentPairingCard";
 import { TeamWhatsAppAccess } from "@/components/agent-core/TeamWhatsAppAccess";
+import { RefreshCw } from "lucide-react";
 
 interface PhoneBinding {
   id: string;
@@ -202,13 +204,22 @@ export default function WhatsAppAdminPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <header>
-        <h1 className="font-sx-sans text-xl font-semibold text-sx-text">Integrations{active ? ` — ${active.name}` : ""}</h1>
-        <p className="mt-1 text-sm text-sx-text-muted">
-          WhatsApp Cloud API configuration, platform delivery templates, and client messaging routing.
-        </p>
-      </header>
+      <AdminPageHeader
+        breadcrumb="Admin"
+        title={`Integrations${active ? ` — ${active.name}` : ""}`}
+        description="WhatsApp Cloud API configuration, platform delivery templates, and client messaging routing."
+        actions={
+          <button
+            onClick={() => { void loadTemplates(true); void loadTenantData(); }}
+            className="inline-flex h-8 items-center gap-1.5 rounded-sx-sm border border-sx-border bg-sx-surface-2 px-3 text-xs font-medium text-sx-text-muted transition-colors hover:border-sx-border-strong hover:text-sx-text"
+          >
+            <RefreshCw size={12} />
+            Refresh
+          </button>
+        }
+      />
       {error && <ErrorState message={error} onRetry={() => { void loadTemplates(true); void loadTenantData(); }} />}
+
 
       <Card>
         <CardHeading>Integration layers</CardHeading>

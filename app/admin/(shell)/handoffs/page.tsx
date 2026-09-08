@@ -3,11 +3,15 @@
 import { useEffect, useState } from "react";
 import { useCurrentTenant } from "../CurrentTenantContext";
 import { NoClientSelected } from "../NoClientSelected";
-import { Button } from "@/components/ui/Button";
-import { Card } from "@/components/ui/Card";
-import { StatusChip, type ChipState } from "@/components/ui/StatusChip";
-import { ErrorState, EmptyState } from "@/components/ui/Feedback";
+import { AdminPageHeader } from "@/components/admin/ui/AdminPageHeader";
+import { AdminEntityRow } from "@/components/admin/ui/AdminEntityRow";
+import { AdminEmptyState } from "@/components/admin/ui/AdminEmptyState";
+import { AdminStatusDot } from "@/components/admin/ui/AdminStatusDot";
+import { ErrorState } from "@/components/ui/Feedback";
 import { platformFetch } from "@/lib/admin/platform-fetch";
+import { Button } from "@/components/ui/Button";
+import { HandMetal, RefreshCw } from "lucide-react";
+import { StatusChip, type ChipState } from "@/components/ui/StatusChip";
 
 interface Handoff {
   id: string;
@@ -21,16 +25,24 @@ const STATUS_CHIP: Record<Handoff["status"], { label: string; state: ChipState }
   OPEN: { label: "Open", state: "warning" },
   IN_PROGRESS: { label: "In progress", state: "accent" },
   RESOLVED: { label: "Resolved", state: "success" },
-  RETURNED_TO_MISSION: { label: "Returned to mission", state: "success" },
+  RETURNED_TO_MISSION: { label: "Returned", state: "success" },
 };
+
+function statusToState(status: Handoff["status"]): string {
+  if (status === "OPEN") return "needs_attention";
+  if (status === "IN_PROGRESS") return "running";
+  if (status === "RESOLVED" || status === "RETURNED_TO_MISSION") return "connected";
+  return "not_configured";
+}
+
+function fmt(iso: string) {
+  return new Date(iso).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+}
 
 /**
  * New route required by ADMIN_INFORMATION_ARCHITECTURE.md §1
  * (/admin/handoffs) — the @stratxcel/human-handoff package and
- * human_handoffs table already existed (packages/human-handoff,
- * supabase/migrations/20260803121500_approvals_wallet_handoff.sql) with no
- * API route or page consuming them yet. Resolve returns the originating
- * mission to RESUMED automatically (resolveHumanHandoff's own behavior).
+ * human_handoffs table already existed with no page consuming them yet.
  */
 export default function AdminHandoffsPage() {
   const { active } = useCurrentTenant();
@@ -84,45 +96,97 @@ export default function AdminHandoffsPage() {
     }
   }
 
+  const open = (handoffs ?? []).filter((h) => h.status === "OPEN" || h.status === "IN_PROGRESS");
+  const closed = (handoffs ?? []).filter((h) => h.status === "RESOLVED" || h.status === "RETURNED_TO_MISSION");
+
   return (
     <div className="flex flex-col gap-6">
-      <header>
-        <h1 className="font-sx-sans text-xl font-semibold text-sx-text">Human Handoffs{active ? ` — ${active.name}` : ""}</h1>
-        <p className="mt-1 text-sm text-sx-text-muted">Missions that hit a point requiring a human — resolving one returns its mission to RESUMED.</p>
-      </header>
+      <AdminPageHeader
+        breadcrumb="Admin"
+        title={`Human Handoffs${active ? ` — ${active.name}` : ""}`}
+        description="Missions that hit a point requiring human judgment. Resolving returns the mission to RESUMED."
+        actions={
+          <button
+            onClick={load}
+            disabled={listLoading}
+            className="inline-flex h-8 items-center gap-1.5 rounded-sx-sm border border-sx-border bg-sx-surface-2 px-3 text-xs font-medium text-sx-text-muted transition-colors hover:border-sx-border-strong hover:text-sx-text disabled:opacity-40"
+          >
+            <RefreshCw size={12} className={listLoading ? "animate-spin" : ""} />
+            {listLoading ? "Loading…" : "Refresh"}
+          </button>
+        }
+      />
 
-      {error && <ErrorState message={error} onRetry={load} />}
       {!tenantId && <NoClientSelected what="handoffs" />}
+      {error && <ErrorState message={error} onRetry={load} />}
 
-      <section className="flex flex-col gap-3">
-        {tenantId && listLoading && <p className="text-sm text-sx-text-subtle">Loading…</p>}
-        {tenantId && !listLoading && handoffs?.length === 0 && !error && <EmptyState title="No open handoffs." />}
-        {handoffs && handoffs.length > 0 && (
-          <div className="flex flex-col gap-2">
-            {handoffs.map((h) => {
+      {tenantId && !listLoading && !error && handoffs?.length === 0 && (
+        <AdminEmptyState
+          icon={<HandMetal size={20} strokeWidth={1.5} />}
+          title="No open handoffs"
+          description="Hermes will flag situations here when human judgment is needed."
+        />
+      )}
+
+      {/* Open */}
+      {open.length > 0 && (
+        <section className="flex flex-col gap-2">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-sx-text-subtle">
+            Needs attention · {open.length}
+          </p>
+          <div className="flex flex-col gap-1.5">
+            {open.map((h) => {
               const chip = STATUS_CHIP[h.status];
               return (
-                <Card key={h.id} className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <p className="font-medium text-sx-text">{h.reason}</p>
-                    <p className="mt-0.5 text-xs text-sx-text-subtle">
-                      {h.mission_id ? `Mission ${h.mission_id.slice(0, 8)}` : "No linked mission"} · {new Date(h.created_at).toLocaleString()}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <StatusChip state={chip.state}>{chip.label}</StatusChip>
-                    {(h.status === "OPEN" || h.status === "IN_PROGRESS") && (
-                      <Button variant="primary" size="sm" onClick={() => resolve(h.id)} disabled={resolvingId === h.id}>
+                <AdminEntityRow
+                  key={h.id}
+                  icon={<HandMetal size={15} strokeWidth={1.75} />}
+                  title={h.reason}
+                  subtitle={h.mission_id ? `Mission ${h.mission_id.slice(0, 8)}` : "No linked mission"}
+                  timestamp={fmt(h.created_at)}
+                  status={<StatusChip state={chip.state}>{chip.label}</StatusChip>}
+                  primaryAction={
+                    <div onClick={(e) => e.stopPropagation()}>
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        onClick={() => resolve(h.id)}
+                        disabled={resolvingId === h.id}
+                      >
                         {resolvingId === h.id ? "Resolving…" : "Resolve"}
                       </Button>
-                    )}
-                  </div>
-                </Card>
+                    </div>
+                  }
+                />
               );
             })}
           </div>
-        )}
-      </section>
+        </section>
+      )}
+
+      {/* Closed */}
+      {closed.length > 0 && (
+        <section className="flex flex-col gap-2">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-sx-text-subtle">
+            Resolved · {closed.length}
+          </p>
+          <div className="flex flex-col gap-1.5">
+            {closed.map((h) => {
+              const chip = STATUS_CHIP[h.status];
+              return (
+                <AdminEntityRow
+                  key={h.id}
+                  icon={<HandMetal size={15} strokeWidth={1.75} />}
+                  title={h.reason}
+                  subtitle={h.mission_id ? `Mission ${h.mission_id.slice(0, 8)}` : "No linked mission"}
+                  timestamp={fmt(h.created_at)}
+                  status={<AdminStatusDot status={statusToState(h.status)} customLabel={chip.label} />}
+                />
+              );
+            })}
+          </div>
+        </section>
+      )}
     </div>
   );
 }
