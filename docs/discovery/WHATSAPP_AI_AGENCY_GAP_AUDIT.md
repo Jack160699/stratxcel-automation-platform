@@ -1,5 +1,61 @@
 # WhatsApp AI Agency — Gap Audit
 
+## Update 98 — Content section: free creatives surfaced, Connect Accounts added (Final Customer Experience Repair, Section 5/26)
+
+Inspected the existing [`ContentLibraryClient.tsx`](../../app/app/content/ContentLibraryClient.tsx)
+(~660 lines: 7 category tabs, Quick Navigation Cards into Creative
+Studio/Calendar/Pipeline/Growth Copywriter) before changing anything —
+real, working functionality, left untouched.
+
+Two genuine gaps found and fixed: **"Connect Accounts"** was one of the
+plainly-named main actions this page was missing entirely (no path into
+`/app/integrations` at all before); and the **3 free branded creatives**
+(Update 95) weren't surfaced here — reused the exact same
+`FreeCreativesPanel`, rendered prominently right after the header. Every
+existing tab/filter/action is untouched;
+`image_generation_jobs` already loads without a `sourceContext` filter,
+so the free-creative jobs already appeared in "Creatives & Posters"
+automatically — this just makes them immediately visible.
+
+Verified: `tsc --noEmit` clean, lint clean, real `NODE_ENV=production`
+build exits 0. All 3 existing tests referencing this component pass
+unmodified. New
+[`content-simplification.test.ts`](../../app/app/content/__tests__/content-simplification.test.ts).
+
+## Update 97 — Audit service auto-preselection: "what do you need help with?" now driven by real findings (Final Customer Experience Repair, Section 4)
+
+"What do you need help with?" is now pre-checked from the audit's own
+real category scores — never a generic industry assumption, never
+forced. Reuses the existing goal vocabulary
+([`StepGoals.tsx`](../../app/app/onboarding/steps/StepGoals.tsx)'s
+`BUSINESS_GOALS`: local_customers, google_visibility, whatsapp_leads,
+social_presence, website_conversion, lead_followup — mirrored
+server-side in new
+[`business-goal-keys.ts`](../../lib/audit/business-goal-keys.ts) so a
+server route never imports a "use client" component) rather than a
+second parallel taxonomy.
+
+New [`service-preselection.ts`](../../lib/audit/service-preselection.ts)
+(pure, real coverage) maps the real 8 `categoryScores` keys to that
+vocabulary; `brandPositioning`/`customerJourney` have no honest match, so
+a weak score there recommends nothing rather than a bad-fit guess. The
+weak-score threshold (`< 70`) matches `ScoreFirstReport`'s own "Strong"
+cutoff exactly — the two surfaces can never silently disagree. New
+[`/api/platform/audit/report/interested-services`](../../app/api/platform/audit/report/interested-services/route.ts)
+reuses `ownedCompletedAudit` (the same gate the WhatsApp-send route
+already uses) and persists into the existing `audit_orders.goals_answers`
+JSONB, validating every key against the real bounded vocabulary. New
+`ServicePreselectionPanel.tsx` renders after the score, before the free
+creatives; every option stays individually deselectable.
+
+Verified: `tsc --noEmit` clean, lint clean, real `NODE_ENV=production`
+build exits 0. New
+[`service-preselection.test.ts`](../../lib/audit/__tests__/service-preselection.test.ts)
+directly tests the pure recommendation logic, including the mission's
+own 3 worked examples. Registry:
+`capability:audit_service_auto_preselection`, `REAL_EXPOSED`. Migration:
+`supabase/migrations/20260909190000_capability_registry_audit_service_preselection.sql`.
+
 ## Update 96 — WhatsApp audit delivery simplified to a direct send; a real client/server payload-shape bug fixed (Final Customer Experience Repair, Section 3)
 
 Removed the unnecessary extra "consent" dialog step from
