@@ -126,6 +126,10 @@ export async function POST(request: Request) {
         location_name: matched.name,
         account_name: matched.accountName,
         google_verification_state: googleVerificationState,
+        // Real per-location Voice-of-Merchant signal, already present on
+        // `matched` from the same locations.list call above -- see
+        // resolveEffectiveGbpVerificationState in lib/social/providers/google-business.ts.
+        location_has_voice_of_merchant: matched.metadata?.hasVoiceOfMerchant ?? null,
         business_title: matched.title || "StratXcel",
         business_category: matched.categories?.primaryCategory?.displayName ?? null,
         business_address: formattedAddress,

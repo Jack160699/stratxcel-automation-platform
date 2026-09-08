@@ -203,7 +203,16 @@ function createFakeDb() {
   // connection was permanently stuck showing NOT_CONNECTED even after a
   // real, successful OAuth grant.
   assert.deepEqual(summary.socialAccountsProvisioned.sort(), ["google_business", "instagram", "youtube"], "Social accounts provisioned");
-  assert.equal(summary.googleConnectionsProvisioned, true, "Google connection provisioned");
+  // search_google_connections (Search Console/GA4 OAuth) is a distinct
+  // connection from social_accounts' google_business row above, and this
+  // fixture's metadata carries no google_search.refreshToken at all --
+  // provisioning.ts now honestly leaves it unprovisioned instead of
+  // fabricating "connected" with encrypted_refresh_token_ref/granted_scopes
+  // left null/empty, the same class of fix as the RECONNECT_REQUIRED
+  // honesty fix below, previously applied to social_accounts but not this
+  // table -- confirmed live in production for a real customer tenant
+  // ("MedRoute Consultancy").
+  assert.equal(summary.googleConnectionsProvisioned, false, "no google_search refresh token exists in this fixture, so search_google_connections must not be claimed connected");
 
   assert.equal(whatsappBindings.length, 1);
   assert.equal(whatsappBindings[0].tenant_id, "tenant_alpha");
@@ -221,9 +230,7 @@ function createFakeDb() {
   assert.equal(socialAccounts.find((s) => s.platform === "youtube")?.status, "RECONNECT_REQUIRED");
   assert.equal(socialAccounts.find((s) => s.platform === "google_business")?.status, "RECONNECT_REQUIRED");
 
-  assert.equal(googleConnections.length, 1);
-  assert.equal(googleConnections[0].tenant_id, "tenant_alpha");
-  assert.equal(googleConnections[0].status, "connected");
+  assert.equal(googleConnections.length, 0, "no search_google_connections row is created without a real refresh token to vault");
 
   console.log("✓ Test 1: New onboarding user connector provisioning verified");
 }

@@ -7,6 +7,11 @@ import { fileURLToPath } from "node:url";
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const read = (...parts: string[]) => fs.readFileSync(path.join(root, ...parts), "utf8");
 
+// @stratxcel/byok's createDevEncryptedVault (now used by provisioning.ts's
+// Google connection path) requires a real 32-byte hex key to encrypt with.
+process.env.BYOK_VAULT_ENCRYPTION_KEY =
+  process.env.BYOK_VAULT_ENCRYPTION_KEY || "0".repeat(64);
+
 // Mock Supabase client for connector & provisioning testing
 function createMockSupabase(initialState: {
   tenantId: string;
@@ -19,6 +24,11 @@ function createMockSupabase(initialState: {
     search_google_connections: initialState.googleConnection ? [{ ...initialState.googleConnection }] : [] as any[],
     social_accounts: initialState.socialAccounts ? [...initialState.socialAccounts] : [] as any[],
     whatsapp_phone_bindings: initialState.phoneBindings ? [...initialState.phoneBindings] : [] as any[],
+    // provisionTenantConnectorsFromMetadata now vaults a real refresh token
+    // (@stratxcel/byok's createDevEncryptedVault) before ever claiming
+    // search_google_connections is "connected" -- see the honesty fix on
+    // that function.
+    vault_secrets: [] as any[],
   };
 
   return {
@@ -53,9 +63,17 @@ function createMockSupabase(initialState: {
         };
         return { eq: (field: string, val: string) => buildFilterChain({ [field]: val }) };
       },
-      insert: async (record: any) => {
-        store[table].push({ id: `id_${Date.now()}`, ...record });
-        return { data: { ...record }, error: null };
+      insert: (record: any) => {
+        const row = { id: `id_${Date.now()}_${Math.random().toString(36).slice(2)}`, ...record };
+        store[table].push(row);
+        const result = { data: { ...row }, error: null };
+        // Thenable so both `await ...insert(...)` (bare) and
+        // `await ...insert(...).select("id").single()` (vault.store's real
+        // shape) work against this one mock.
+        return {
+          then: (resolve: any, reject: any) => Promise.resolve(result).then(resolve, reject),
+          select: (_cols?: string) => ({ single: async () => result }),
+        };
       },
       update: (patch: any) => ({
         eq: async (_field: string, val: string) => {
@@ -157,6 +175,15 @@ async function run() {
           searchConsoleSiteUrl: "https://stratxcel.in",
           ga4PropertyId: "987654321",
           ga4PropertyDisplayName: "StratXcel Production GA4",
+          // The real pre-tenant OAuth callback (app/api/platform/search/
+          // google/callback/route.ts) always captures a refreshToken here --
+          // provisioning.ts now requires a real, vaultable token before
+          // claiming search_google_connections is "connected" (previously
+          // it wrote "connected" from mere metadata presence, with
+          // encrypted_refresh_token_ref left null -- confirmed live in
+          // production for a real customer tenant, "MedRoute Consultancy").
+          refreshToken: "test_refresh_token_abc123",
+          grantedScopes: ["https://www.googleapis.com/auth/webmasters.readonly", "https://www.googleapis.com/auth/analytics.readonly"],
         },
         whatsapp: {
           username: "+919876543210",
@@ -200,6 +227,7 @@ async function run() {
           searchConsoleSiteUrl: null, // No GSC
           ga4PropertyId: "112233445",
           ga4PropertyDisplayName: "Partial GA4",
+          refreshToken: "test_refresh_token_partial",
         },
       },
     },

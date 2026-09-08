@@ -8,7 +8,9 @@ import {
   matchGoogleBusinessLocation,
   discoverAllGoogleBusinessLocations,
   normalizeGoogleVerificationState,
+  resolveEffectiveGbpVerificationState,
   getAccountVerificationState,
+  getLocationVoiceOfMerchant,
   searchGoogleLocations,
   claimGoogleLocation,
   type GbpAccount,
@@ -258,7 +260,17 @@ async function run() {
       return { ok: true, json: async () => ({ accounts: [{ name: "accounts/org-2", accountName: "StratXcel Org", verificationState: "VERIFIED" }] }) } as Response;
     }
     if (u.includes("accounts/org-2/locations")) {
-      return { ok: true, json: async () => ({ locations: [{ name: "locations/stratxcel-org-loc", title: "StratXcel", websiteUri: "https://www.stratxcel.in" }] }) } as Response;
+      return {
+        ok: true,
+        json: async () => ({
+          locations: [{
+            name: "locations/stratxcel-org-loc",
+            title: "StratXcel",
+            websiteUri: "https://www.stratxcel.in",
+            metadata: { hasVoiceOfMerchant: true },
+          }],
+        }),
+      } as Response;
     }
     return { ok: false, status: 404 } as Response;
   }) as typeof fetch;
@@ -268,6 +280,7 @@ async function run() {
     globalThis.fetch = verifiedFetch;
     const verifiedResult = await googleBusinessProvider.exchangeCodeForToken("code_v", "https://www.stratxcel.in/api/social/oauth/google_business/callback");
     assert.equal((verifiedResult.metadata as Record<string, unknown>)?.google_verification_state, "VERIFIED", "a real VERIFIED account.verificationState must reach the stored metadata, not be discarded");
+    assert.equal((verifiedResult.metadata as Record<string, unknown>)?.location_has_voice_of_merchant, true, "the real per-location hasVoiceOfMerchant signal, already present on the locations.list response, must reach the stored metadata");
 
     // Zero accounts: must never fabricate a verification value.
     globalThis.fetch = (async (url: string) => {
@@ -279,10 +292,49 @@ async function run() {
     }) as typeof fetch;
     const zeroResult = await googleBusinessProvider.exchangeCodeForToken("code_z", "https://www.stratxcel.in/api/social/oauth/google_business/callback");
     assert.equal((zeroResult.metadata as Record<string, unknown>)?.google_verification_state, null, "zero accessible accounts must never fabricate a verification state");
+    assert.equal((zeroResult.metadata as Record<string, unknown>)?.location_has_voice_of_merchant, null, "no matched location must never fabricate a voice-of-merchant value either");
   } finally {
     globalThis.fetch = originalFetch;
   }
   console.log("✓ Test 5: exchangeCodeForToken captures Google's real verificationState honestly");
+
+  // --- 5b. resolveEffectiveGbpVerificationState -- the real per-LOCATION --
+  // --- hasVoiceOfMerchant signal must take priority over the Account- -----
+  // --- level verificationState, since a personal Google account routinely
+  // --- reports an unset/unverified Account state even when the specific
+  // --- location has fully passed Google's real Maps verification
+  // --- (STRATXCEL PRODUCTION REPAIR mission, Section 22 -- root cause of a
+  // --- real customer, "MedRoute Consultancy", seeing "Verify your Google
+  // --- location" despite an already Google-verified listing). -------------
+  assert.equal(resolveEffectiveGbpVerificationState("UNVERIFIED", true), "VERIFIED", "a real hasVoiceOfMerchant=true must win even when the Account-level state looks unverified -- the MedRoute scenario");
+  assert.equal(resolveEffectiveGbpVerificationState(undefined, true), "VERIFIED", "hasVoiceOfMerchant=true must win over a missing Account-level state too");
+  assert.equal(resolveEffectiveGbpVerificationState("VERIFIED", false), "UNVERIFIED", "a real hasVoiceOfMerchant=false must win even over a stale VERIFIED Account-level state");
+  assert.equal(resolveEffectiveGbpVerificationState("VERIFIED", undefined), "VERIFIED", "falls back to the Account-level state when Google returns no location-level signal at all");
+  assert.equal(resolveEffectiveGbpVerificationState(undefined, undefined), "UNKNOWN", "never fabricates VERIFIED when neither signal is present");
+  assert.equal(resolveEffectiveGbpVerificationState(undefined, null), "UNKNOWN");
+  console.log("✓ Test 5b: resolveEffectiveGbpVerificationState prioritizes the real per-location Voice-of-Merchant signal honestly");
+
+  // --- 5c. getLocationVoiceOfMerchant -- the real single-location GET used
+  // --- by the automatic recheck to refresh hasVoiceOfMerchant. ------------
+  try {
+    let capturedUrl = "";
+    globalThis.fetch = (async (url: string) => {
+      capturedUrl = String(url);
+      return { ok: true, json: async () => ({ metadata: { hasVoiceOfMerchant: true } }) } as Response;
+    }) as typeof fetch;
+    const vom = await getLocationVoiceOfMerchant("access_tok", "accounts/org-2/locations/loc-1");
+    assert.equal(capturedUrl, "https://mybusinessbusinessinformation.googleapis.com/v1/accounts/org-2/locations/loc-1?readMask=metadata");
+    assert.equal(vom, true);
+
+    globalThis.fetch = (async () => ({ ok: true, json: async () => ({ metadata: {} }) })) as unknown as typeof fetch;
+    assert.equal(await getLocationVoiceOfMerchant("access_tok", "locations/loc-2"), null, "a response with no hasVoiceOfMerchant field must never be assumed false or true");
+
+    globalThis.fetch = (async () => ({ ok: false, status: 401, text: async () => "unauthorized" })) as unknown as typeof fetch;
+    await assert.rejects(() => getLocationVoiceOfMerchant("bad_tok", "locations/loc-2"), /Google Business location lookup failed \(401\)/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+  console.log("✓ Test 5c: getLocationVoiceOfMerchant calls the real single-location GET and throws honestly on failure");
 
   // --- 6. getAccountVerificationState -- the real accounts.get call used --
   // --- by the automatic recheck (brief Sections 11/20). --------------------
@@ -360,6 +412,31 @@ async function run() {
   assert.equal(presenceVerifiedGbp.connections.google_business.verificationState, "VERIFIED");
   assert.equal(presenceVerifiedGbp.connections.google_business.verificationRequired, false);
   assert.equal(presenceVerifiedGbp.connections.google_business.verificationMessage, null, "a genuinely verified profile must carry no verification advisory");
+
+  // The real MedRoute shape: Account-level state missing/unverified, but a
+  // real hasVoiceOfMerchant=true from the location itself -- must surface
+  // as VERIFIED end-to-end through the actual canonical-status resolution
+  // path, not just the pure function in isolation (Test 5b above).
+  const voiceOfMerchantDb = makeMockDb({
+    id: "test-acc-vom",
+    tenant_id: "tenant-vom",
+    platform: "google_business",
+    provider_account_id: "accounts/acc-4/locations/loc-4",
+    display_name: "MedRoute Consultancy",
+    username: "MedRoute Consultancy",
+    status: "CONNECTED",
+    token_health: "HEALTHY",
+    metadata: {
+      location_resolved: true,
+      business_title: "MedRoute Consultancy",
+      google_verification_state: null,
+      location_has_voice_of_merchant: true,
+    },
+  });
+  const presenceVoiceOfMerchant = await getTenantDigitalPresence(voiceOfMerchantDb as any, "tenant-vom");
+  assert.equal(presenceVoiceOfMerchant.connections.google_business.verificationState, "VERIFIED", "a real per-location hasVoiceOfMerchant=true must resolve to VERIFIED end-to-end, even with no Account-level signal");
+  assert.equal(presenceVoiceOfMerchant.connections.google_business.verificationRequired, false);
+  assert.equal(presenceVoiceOfMerchant.connections.google_business.verificationMessage, null, "a genuinely verified profile must carry no verification advisory");
 
   // Location NOT resolved: verification must not even be computed (Test B's
   // setupRequiredDb fixture from Test 4, reused here for the same assertion).

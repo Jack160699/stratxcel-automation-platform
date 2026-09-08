@@ -157,10 +157,17 @@ export async function GET() {
       const { supabase: serviceSupabase } = getTenantServiceContext();
       const { data: gData } = await serviceSupabase
         .from("search_google_connections")
-        .select("status, search_console_site_url, ga4_property_id, ga4_property_display_name")
+        .select("status, search_console_site_url, ga4_property_id, ga4_property_display_name, encrypted_refresh_token_ref")
         .eq("tenant_id", activeTenantId)
         .maybeSingle();
-      if (gData && gData.status === "connected") {
+      // A "connected" status with no real refresh token behind it is not
+      // actually connected -- lib/connectors/canonical-status.ts (the
+      // canonical resolver used everywhere else in the app) already
+      // downgrades this exact shape to REAUTH_REQUIRED. This endpoint
+      // previously trusted the status column blindly, so a customer
+      // re-opening onboarding could see "connected" here while every other
+      // screen correctly showed it needing reauthorization.
+      if (gData && gData.status === "connected" && gData.encrypted_refresh_token_ref) {
         googleSearchConnection = {
           status: "connected",
           searchConsoleSiteUrl: gData.search_console_site_url,
@@ -431,14 +438,33 @@ export async function POST(request: Request) {
 
     const { data: existingOrder } = await serviceClient
       .from("audit_orders")
-      .select("id, status")
+      .select("id, status, actual_paid_cents")
       .eq("tenant_id", tenant.id)
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
 
+    // audit_has_verified_fulfilment() (supabase/migrations/20260819080000_
+    // free_audit_price_check_repair.sql) only recognizes two shapes for a
+    // comped "product_grant" order: audit_fee_cents=0 with list/discount/
+    // actual_paid all 0 (the free-by-default model), OR audit_fee_cents=99900
+    // with actual_paid_cents=0 (the "real ₹999 value, waived" model this
+    // route has always intended -- it keeps list_price_cents/discount_cents
+    // at 99900 to show the customer what they're getting for free). Before
+    // this fix, the insert/update below produced audit_fee_cents=0 combined
+    // with list_price_cents/discount_cents=99900 -- a shape NEITHER branch
+    // of the gate accepts -- so start_automatic_audit_generation_v1 always
+    // returned {success:false}, silently stranding every order created by
+    // this route at status=in_review forever (see
+    // docs/STRATXCEL_AUDIT_EXECUTION_ROOT_CAUSE.md, and the live-confirmed
+    // incident affecting real customers "MedRoute Consultancy" and "Metro
+    // Wheels Car Rentals"). Never touch pricing on an order that's already
+    // been genuinely paid.
+    const FREE_GRANT_AUDIT_FEE_CENTS = 99900;
+
     if (existingOrder) {
       auditOrderId = existingOrder.id;
+      const alreadyPaid = Boolean(existingOrder.actual_paid_cents && existingOrder.actual_paid_cents > 0);
       const { error: updateOrderError } = await serviceClient
         .from("audit_orders")
         .update({
@@ -452,6 +478,7 @@ export async function POST(request: Request) {
           // payment, not a redeemed promo code), same as
           // claim_fresh_product_grant_audit_v1 uses elsewhere.
           fulfilment_source: "product_grant",
+          ...(alreadyPaid ? {} : { audit_fee_cents: FREE_GRANT_AUDIT_FEE_CENTS, actual_paid_cents: 0 }),
           deep_dive_answers: deepDiveAnswers,
           goals: body.goals ?? [],
           updated_at: new Date().toISOString(),
@@ -466,9 +493,10 @@ export async function POST(request: Request) {
           business_name: name,
           website_url: body.business?.website ?? null,
           industry: body.business?.industry ?? null,
-          audit_fee_cents: 0,
+          audit_fee_cents: FREE_GRANT_AUDIT_FEE_CENTS,
           list_price_cents: 99900,
           discount_cents: 99900,
+          actual_paid_cents: 0,
           status: "in_review",
           fulfilment_source: "product_grant",
           deep_dive_answers: deepDiveAnswers,
@@ -498,7 +526,25 @@ export async function POST(request: Request) {
           p_brand_brain_version: brandBrainVersion,
           p_budget_limit_usd: resolveAuditBudgetLimitUsd(),
         });
-        const result = started.data as { success?: boolean; run_id?: string } | null;
+        const result = started.data as { success?: boolean; run_id?: string; reason?: string } | null;
+        if (started.error) {
+          // Previously unlogged: an RPC error here left the order at
+          // status=in_review with zero observability (see
+          // docs/STRATXCEL_AUDIT_EXECUTION_ROOT_CAUSE.md's stated design
+          // intent of "logged non-fatal" -- this line is what actually
+          // delivers that intent).
+          console.error("onboarding: start_automatic_audit_generation_v1 RPC error", {
+            tenantId: tenant.id,
+            auditOrderId,
+            error: started.error.message,
+          });
+        } else if (!result?.run_id) {
+          console.error("onboarding: automatic audit generation did not start", {
+            tenantId: tenant.id,
+            auditOrderId,
+            reason: result?.reason ?? "unknown",
+          });
+        }
         if (result?.run_id) {
           const executor = createLiveAutomaticAuditExecutor(serviceClient, {
             socialInsights: createSocialAuditConnectorInsightsProvider(),

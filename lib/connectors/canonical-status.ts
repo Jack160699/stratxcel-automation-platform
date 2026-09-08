@@ -9,7 +9,7 @@ import type { PlatformIconKey } from "@/components/audit/PlatformIcon";
 // resolution.
 import {
   isResolvedGbpLocationResourceName,
-  normalizeGoogleVerificationState,
+  resolveEffectiveGbpVerificationState,
   type NormalizedGoogleVerificationState,
 } from "../social/providers/google-business.ts";
 import {
@@ -297,7 +297,7 @@ export const getTenantDigitalPresence = cache(async function getTenantDigitalPre
   // as separate, additive facts instead.
   const gbVerificationEligible = Boolean(gbConnected && gbLocationResolved && !gbTokenNeedsReauth);
   const gbVerificationState: NormalizedGoogleVerificationState | undefined = gbVerificationEligible
-    ? normalizeGoogleVerificationState(gbMeta.google_verification_state)
+    ? resolveEffectiveGbpVerificationState(gbMeta.google_verification_state, gbMeta.location_has_voice_of_merchant)
     : undefined;
   const gbVerificationRequired = gbVerificationState === "UNVERIFIED";
   const gbVerificationPending = gbVerificationState === "PENDING";

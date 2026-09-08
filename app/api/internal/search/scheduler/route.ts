@@ -16,7 +16,8 @@ import {
   listLocationReviews,
   replyToLocationReview,
   getAccountVerificationState,
-  normalizeGoogleVerificationState,
+  getLocationVoiceOfMerchant,
+  resolveEffectiveGbpVerificationState,
 } from "@/lib/social/providers/google-business";
 import { mergeAccountMetadata } from "@/lib/social/repositories/accounts";
 import { runReviewBotCycle } from "@/lib/google/review-bot-cycle";
@@ -134,7 +135,7 @@ async function recheckGoogleVerificationForTenant(
   if (!isResolvedGbpLocationResourceName(gbpAccount.provider_account_id)) return { status: "SKIPPED_UNRESOLVED_LOCATION" };
 
   const meta = (gbpAccount.metadata ?? {}) as Record<string, unknown>;
-  const currentState = normalizeGoogleVerificationState(meta.google_verification_state);
+  const currentState = resolveEffectiveGbpVerificationState(meta.google_verification_state, meta.location_has_voice_of_merchant);
   if (currentState === "VERIFIED") return { status: "SKIPPED_ALREADY_VERIFIED" };
 
   // Real "accounts/{id}" resource this connection's own discovery already
@@ -152,6 +153,7 @@ async function recheckGoogleVerificationForTenant(
   const attempt = (accessToken: string) => getAccountVerificationState(accessToken, accountName);
 
   let raw: string | null;
+  let workingAccessToken = tokens.accessToken;
   try {
     raw = await attempt(tokens.accessToken);
   } catch (err) {
@@ -161,6 +163,7 @@ async function recheckGoogleVerificationForTenant(
       if (!fresh) return { status: "SKIPPED_TOKEN_UNAVAILABLE" };
       try {
         raw = await attempt(fresh);
+        workingAccessToken = fresh;
       } catch (err2) {
         return { status: "FAILED", error: err2 instanceof Error ? err2.message : "Verification recheck failed after token refresh." };
       }
@@ -169,10 +172,25 @@ async function recheckGoogleVerificationForTenant(
     }
   }
 
-  const newState = normalizeGoogleVerificationState(raw);
+  // Also refresh the real per-location Voice-of-Merchant signal (see
+  // resolveEffectiveGbpVerificationState) using the now-confirmed-working
+  // token -- best-effort: a failure here must not fail the whole recheck,
+  // since the Account-level state above is still a real, honest signal on
+  // its own.
+  let hasVoiceOfMerchant: boolean | null = null;
+  try {
+    hasVoiceOfMerchant = await getLocationVoiceOfMerchant(workingAccessToken, gbpAccount.provider_account_id);
+  } catch (err) {
+    console.warn("recheckGoogleVerificationForTenant: voice-of-merchant lookup failed (non-fatal)", err);
+  }
+
+  const newState = resolveEffectiveGbpVerificationState(raw, hasVoiceOfMerchant);
   if (newState === currentState) return { status: "UNCHANGED", state: newState };
 
-  await mergeAccountMetadata(supabase, gbpAccount.id, { google_verification_state: raw });
+  await mergeAccountMetadata(supabase, gbpAccount.id, {
+    google_verification_state: raw,
+    location_has_voice_of_merchant: hasVoiceOfMerchant,
+  });
   return { status: "UPDATED", state: newState };
 }
 

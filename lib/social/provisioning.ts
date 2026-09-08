@@ -1,5 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { normalizePhoneNumberE164 } from "@stratxcel/whatsapp";
+import { getGoogleConnection, upsertGoogleConnectionStatus } from "@stratxcel/search-discovery";
+import { createDevEncryptedVault } from "@stratxcel/byok";
 
 export interface ProvisioningInput {
   tenantId: string;
@@ -241,26 +243,64 @@ export async function provisionTenantConnectorsFromMetadata(
         (googleMeta?.ga4PropertyDisplayName as string) ||
         null;
 
-      const { data: existingG } = await supabase
-        .from("search_google_connections")
-        .select("search_console_site_url, ga4_property_id, ga4_property_display_name")
-        .eq("tenant_id", tenantId)
-        .maybeSingle();
+      const existingG = await getGoogleConnection(supabase, tenantId);
 
-      await supabase.from("search_google_connections").upsert(
-        {
-          tenant_id: tenantId,
+      // Only a real, vaultable refresh token justifies status:"connected"
+      // here. This table's canonical reader
+      // (lib/connectors/canonical-status.ts) already gates CONNECTED on
+      // encrypted_refresh_token_ref being present and downgrades a
+      // token-less "connected" row to REAUTH_REQUIRED -- but this upsert
+      // previously wrote status:"connected" whenever ANY Google
+      // metadata/social entry existed, even when
+      // googleSearchMeta.refreshToken (captured moments earlier by the
+      // pre-tenant OAuth callback, app/api/platform/search/google/callback/
+      // route.ts) was sitting right there unused. That produced a row
+      // claiming "connected" with encrypted_refresh_token_ref/
+      // granted_scopes left null/empty -- confirmed live in production for
+      // a real customer tenant ("MedRoute Consultancy").
+      const rawRefreshToken = googleSearchMeta?.refreshToken as string | undefined;
+      let refreshTokenRef: string | null | undefined;
+      if (rawRefreshToken) {
+        const vault = createDevEncryptedVault(supabase);
+        refreshTokenRef = await vault.store(rawRefreshToken);
+      } else if (existingG?.encrypted_refresh_token_ref) {
+        refreshTokenRef = undefined; // keep the already-valid stored ref untouched
+      }
+
+      if (refreshTokenRef || existingG?.encrypted_refresh_token_ref) {
+        await upsertGoogleConnectionStatus(supabase, {
+          tenantId,
           status: "connected",
-          search_console_site_url: searchConsoleSiteUrl || existingG?.search_console_site_url || null,
-          ga4_property_id: ga4PropertyId || existingG?.ga4_property_id || null,
-          ga4_property_display_name: ga4PropertyDisplayName || existingG?.ga4_property_display_name || null,
-          connected_by_user_id: userId,
-          connected_at: now,
-          updated_at: now,
-        },
-        { onConflict: "tenant_id" }
-      );
-      summary.googleConnectionsProvisioned = true;
+          encryptedRefreshTokenRef: refreshTokenRef,
+          grantedScopes: (googleSearchMeta?.grantedScopes as string[] | undefined) || existingG?.granted_scopes || [],
+          connectedByUserId: userId,
+        });
+        // A second, narrower upsert (not updateGoogleConnectionConfig's
+        // .update() path) for the config fields -- keeps this call a plain
+        // upsert like the rest of this function, and ON CONFLICT DO UPDATE
+        // only touches the columns listed here, leaving the status/token
+        // just written above untouched.
+        await supabase.from("search_google_connections").upsert(
+          {
+            tenant_id: tenantId,
+            search_console_site_url: searchConsoleSiteUrl || existingG?.search_console_site_url || null,
+            ga4_property_id: ga4PropertyId || existingG?.ga4_property_id || null,
+            ga4_property_display_name: ga4PropertyDisplayName || existingG?.ga4_property_display_name || null,
+            updated_at: now,
+          },
+          { onConflict: "tenant_id" }
+        );
+        summary.googleConnectionsProvisioned = true;
+      } else {
+        // A Google property was mentioned (onboarding metadata or a
+        // confirmed social entry) but no usable refresh token exists yet --
+        // be honest about it instead of claiming "connected" with nothing
+        // behind it.
+        console.warn(
+          "provisionTenantConnectors: google metadata present but no vaultable refresh token; leaving search_google_connections unconnected",
+          { tenantId }
+        );
+      }
     }
   } catch (err) {
     console.warn("provisionTenantConnectors: non-fatal google connection error", err);

@@ -135,6 +135,35 @@ export function normalizeGoogleVerificationState(raw: unknown): NormalizedGoogle
   return "UNKNOWN";
 }
 
+/**
+ * Google's Location resource carries `metadata.hasVoiceOfMerchant` -- a
+ * real, per-LOCATION signal (distinct from the Account-level
+ * verificationState above) for whether this specific Business Profile
+ * listing is confirmed as owner-controlled and eligible to show live in
+ * Maps/Search. GbpLocation has declared this field since it started
+ * requesting `metadata` in the locations readMask (see
+ * discoverGoogleBusinessLocationsForAccount above), but nothing ever read
+ * it -- every verification signal shown to a customer came from the
+ * Account resource only, which for a personal Google account (the common
+ * case for a small business owner) routinely reports an unset/unverified
+ * state even when their specific location has fully passed Google's real
+ * Maps verification. Live-confirmed as the root cause of a real customer
+ * ("MedRoute Consultancy") seeing "Verify your Google location" despite an
+ * already Google-verified listing. hasVoiceOfMerchant, when Google
+ * actually returns it, is treated as authoritative for this specific
+ * location; the Account-level state remains the fallback when Google
+ * hasn't returned a location-level signal at all -- never invents
+ * "VERIFIED" from an absent value either way.
+ */
+export function resolveEffectiveGbpVerificationState(
+  accountVerificationStateRaw: unknown,
+  hasVoiceOfMerchant: unknown
+): NormalizedGoogleVerificationState {
+  if (hasVoiceOfMerchant === true) return "VERIFIED";
+  if (hasVoiceOfMerchant === false) return "UNVERIFIED";
+  return normalizeGoogleVerificationState(accountVerificationStateRaw);
+}
+
 function getClientId(): string {
   const id =
     process.env.GOOGLE_BUSINESS_CLIENT_ID ||
@@ -715,6 +744,10 @@ export const googleBusinessProvider: SocialProvider = {
       // happens at read time so a future, currently-unrecognized real Google
       // value is never silently frozen into a stale "UNKNOWN" forever.
       google_verification_state: verificationAccount?.verificationState ?? null,
+      // Real per-location Voice-of-Merchant signal, already present on
+      // `matched` from the same locations.list call above -- see
+      // resolveEffectiveGbpVerificationState.
+      location_has_voice_of_merchant: matched?.metadata?.hasVoiceOfMerchant ?? null,
       business_title: matched?.title ?? null,
       business_category: matched?.categories?.primaryCategory?.displayName ?? null,
       business_address: formattedAddress,
@@ -954,4 +987,31 @@ export async function getAccountVerificationState(accessToken: string, accountNa
   }
   const account = (await res.json()) as { verificationState?: string };
   return account.verificationState ?? null;
+}
+
+/**
+ * Real, live single-location GET -- refreshes metadata.hasVoiceOfMerchant
+ * (see resolveEffectiveGbpVerificationState above) without re-listing every
+ * location in the account. Mirrors getAccountVerificationState's
+ * error-throwing convention so callers' existing 401-refresh-retry pattern
+ * applies unchanged.
+ */
+export async function getLocationVoiceOfMerchant(accessToken: string, locationResourceName: string): Promise<boolean | null> {
+  const res = await fetch(
+    `https://mybusinessbusinessinformation.googleapis.com/v1/${locationResourceName}?readMask=metadata`,
+    { headers: { Authorization: `Bearer ${accessToken}` } }
+  );
+  if (!res.ok) {
+    let detail = "";
+    try {
+      detail = await res.text();
+    } catch {
+      // ignore
+    }
+    const err = new Error(`Google Business location lookup failed (${res.status}): ${detail || "no error body"}`) as Error & { status?: number };
+    err.status = res.status;
+    throw err;
+  }
+  const location = (await res.json()) as { metadata?: { hasVoiceOfMerchant?: boolean } };
+  return typeof location.metadata?.hasVoiceOfMerchant === "boolean" ? location.metadata.hasVoiceOfMerchant : null;
 }
