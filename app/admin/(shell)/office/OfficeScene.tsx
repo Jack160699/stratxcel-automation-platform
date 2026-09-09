@@ -138,9 +138,9 @@ export function OfficeScene({
 
   // 3. Ambient Environmental Life Scheduler (Coffee break / board inspection for idle agents)
   useEffect(() => {
-    const ambientTimer = setInterval(() => {
+    // Initial ambient event after 3.5s so the office comes alive right after mount
+    const initialAmbientTimer = setTimeout(() => {
       setSimWorkers((prev) => {
-        // Pick an idle, stationary worker without active missions
         const candidates = prev.filter(
           (w) => !w.isMoving && !w.assignedMission && w.key !== "hermes"
         );
@@ -148,9 +148,24 @@ export function OfficeScene({
         const chosen = candidates[Math.floor(Math.random() * candidates.length)];
         return triggerAmbientLifeEvent(prev, chosen.key);
       });
-    }, 28_000); // Trigger an ambient event every 28 seconds
+    }, 3500);
 
-    return () => clearInterval(ambientTimer);
+    const ambientTimer = setInterval(() => {
+      setSimWorkers((prev) => {
+        // Pick an idle worker without active missions
+        const candidates = prev.filter(
+          (w) => !w.isMoving && !w.assignedMission && w.key !== "hermes"
+        );
+        if (candidates.length === 0) return prev;
+        const chosen = candidates[Math.floor(Math.random() * candidates.length)];
+        return triggerAmbientLifeEvent(prev, chosen.key);
+      });
+    }, 14_000); // Trigger an ambient event every 14 seconds
+
+    return () => {
+      clearTimeout(initialAmbientTimer);
+      clearInterval(ambientTimer);
+    };
   }, []);
 
   // 4. Track DOM coordinates for DataTrack bezier conduits
@@ -199,7 +214,7 @@ export function OfficeScene({
   return (
     <div
       ref={containerRef}
-      className={`relative flex min-h-screen w-full flex-col justify-between overflow-x-hidden overflow-y-auto px-4 py-4 md:px-8 md:py-6 transition-transform duration-1000 select-none ${
+      className={`relative flex min-h-screen w-full flex-col justify-between overflow-x-hidden overflow-y-auto px-4 pt-2 pb-16 md:px-8 md:pb-20 transition-transform duration-1000 select-none ${
         isAmbientMode ? "office-camera-drift" : ""
       }`}
       style={{
@@ -217,7 +232,7 @@ export function OfficeScene({
       {/* ---------------------------------------------------- */}
       {/* 1. ARCHITECTURAL BACK WALL & BRAND SIGN + BOARD     */}
       {/* ---------------------------------------------------- */}
-      <div className="relative z-10 mx-auto flex w-full max-w-7xl items-center justify-between gap-4 pt-1 pb-4">
+      <div className="relative z-10 mx-auto flex w-full max-w-7xl items-center justify-between gap-4 pt-12 md:pt-14 pb-4">
         {/* PHYSICAL ILLUMINATED STRATXCEL WALL SIGN */}
         <div className="relative flex items-center gap-3.5 rounded-2xl border border-white/15 bg-gradient-to-r from-slate-900/90 via-slate-800/80 to-slate-900/90 px-6 py-3 shadow-2xl backdrop-blur-xl">
           <div className="office-sign-backlight pointer-events-none absolute -inset-2 rounded-2xl bg-gradient-to-r from-indigo-500/25 via-cyan-500/25 to-emerald-500/25 blur-xl" />

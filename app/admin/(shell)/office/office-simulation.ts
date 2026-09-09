@@ -271,9 +271,19 @@ export function triggerAmbientLifeEvent(
     const isAtDesk = Math.abs(worker.x - desk.x) < 2 && Math.abs(worker.y - desk.y) < 2;
 
     if (isAtDesk) {
-      // Choose ambient destination: Coffee bar or Mission board
-      const isCoffee = Math.random() > 0.4;
-      const target = isCoffee ? OFFICE_WAYPOINTS.coffee_bar : OFFICE_WAYPOINTS.mission_board;
+      // Choose ambient destination: Coffee bar, Meeting table, or Mission board
+      const rand = Math.random();
+      const target =
+        rand < 0.4
+          ? OFFICE_WAYPOINTS.coffee_bar
+          : rand < 0.75
+          ? OFFICE_WAYPOINTS.meeting_table
+          : OFFICE_WAYPOINTS.mission_board;
+      const activity: SimulationWorkerState["activity"] =
+        rand < 0.4 ? "COFFEE_BREAK" : rand < 0.75 ? "MONITOR_READING" : "INSPECTING_BOARD";
+      const currentLocation: WorkerLocation =
+        rand < 0.4 ? "COFFEE_LOUNGE" : rand < 0.75 ? "MEETING_TABLE" : "MISSION_BOARD";
+
       const path = buildWaypointsPath({ x: worker.x, y: worker.y }, target);
 
       return {
@@ -282,8 +292,8 @@ export function triggerAmbientLifeEvent(
         destY: target.y,
         waypoints: path,
         posture: "WALKING",
-        activity: isCoffee ? "COFFEE_BREAK" : "INSPECTING_BOARD",
-        currentLocation: isCoffee ? "COFFEE_LOUNGE" : "MISSION_BOARD",
+        activity,
+        currentLocation,
         isMoving: true,
         facing: target.x > worker.x ? "right" : "left",
       };
