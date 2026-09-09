@@ -194,6 +194,89 @@ export function decomposeNaturalLanguageIntent(query: string, options: Decompose
     inferredIntent = "Multimodal File & Document Analysis";
     tasks.push(createTaskFromCapability(1, "file.analyze", { goal: "Extract action plan from this document", tenantId: tenantScope }, confirmedByFounder));
   }
+  // 2e. Website Follow-Up Modification Intent ("Make the hero more premium", "Add a services section", "Change the CTA", "Make it a landing page")
+  else if (
+    text === "action:website:edit" ||
+    /\b(?:make\s+(?:the\s+)?hero\s+more\s+premium|make\s+it\s+more\s+premium|add\s+(?:a\s+)?services\s+section|change\s+(?:the\s+)?cta|make\s+it\s+a\s+landing\s+page|use\s+our\s+existing\s+brand)\b/i.test(text) ||
+    (/\b(?:hero|services\s+section|cta|landing\s+page)\b/i.test(text) && /\b(?:change|make|add|update|modify|improve|edit)\b/i.test(text))
+  ) {
+    inferredIntent = "Website Modification & Enhancement";
+    tasks.push(createTaskFromCapability(1, "website.modify", { query, modificationRequest: query, tenantId: tenantScope, companyScope }, confirmedByFounder));
+  }
+  // 2f. Website Live Preview Intent ("Show me the preview", "Open preview", "action:website:preview")
+  else if (
+    text === "action:website:preview" ||
+    /\b(?:show\s+(?:me\s+)?(?:the\s+)?preview|open\s+preview|view\s+preview|preview\s+website|website\s+preview)\b/i.test(text)
+  ) {
+    inferredIntent = "Website Live Preview Verification";
+    tasks.push(createTaskFromCapability(1, "website.preview", { query, tenantId: tenantScope }, confirmedByFounder));
+  }
+  // 2g. Website Publish Intent ("Publish it", "Publish website", "action:website:publish")
+  else if (
+    text === "action:website:publish" ||
+    /^(?:publish\s+it|publish\s+website|publish\s+site|publish)$/i.test(text.trim())
+  ) {
+    inferredIntent = "Publish Website to Production";
+    tasks.push(
+      createTaskFromCapability(
+        1,
+        "website.publish",
+        { query, tenantId: tenantScope },
+        confirmedByFounder,
+        "⚠️ High-consequence: Publishing website to live production domain requires confirmation. Reply 'CONFIRM' to release."
+      )
+    );
+  }
+  // 2h. SEO Agent Launch & Workflows ("Launch an SEO agent for Solara Energy and find the highest-priority SEO opportunities")
+  else if (
+    text === "action:seo:continue" ||
+    /\b(?:launch|start|deploy|run)\s+(?:an?\s+)?seo\s+agent\b/i.test(text) ||
+    (/\bseo\b/i.test(text) && /\b(?:opportunities|highest-priority|keywords?|rankings?|audit|search\s+intent)\b/i.test(text))
+  ) {
+    inferredIntent = "Autonomous SEO Agent Launch & Discovery";
+    tasks.push(createTaskFromCapability(1, "seo.launch", { query, tenantId: tenantScope, companyScope }, confirmedByFounder));
+  }
+  else if (text === "action:seo:report" || /^(?:view\s+report|seo\s+report|show\s+seo\s+report)$/i.test(text.trim())) {
+    inferredIntent = "SEO Audit & Keyword Report";
+    tasks.push(createTaskFromCapability(1, "seo.report", { query, tenantId: tenantScope }, confirmedByFounder));
+  }
+  else if (text === "action:seo:stop") {
+    inferredIntent = "Stop Autonomous SEO Agent";
+    tasks.push(createTaskFromCapability(1, "agent.stop", { query: "Stop SEO agent", agentId: "agent_seo", tenantId: tenantScope }, confirmedByFounder));
+  }
+  // 2i. Content Agent & Campaign Workflows ("Create 3 social posts for Solara Energy for next week", "Create 7 posts for next week", "Create content for this business")
+  else if (
+    text === "action:content:regenerate" ||
+    /\bcreate\s+(?:\d+|three|seven)\s+(?:social\s+)?posts?\b/i.test(text) ||
+    /\bcreate\s+content\s+for\s+(?:this\s+business|[A-Za-z0-9\s&'-]+)\b/i.test(text) ||
+    (/\b(?:posts?|content|campaign)\b/i.test(text) && /\b(?:next\s+week|schedule|calendar|drafts?)\b/i.test(text) && !/\b(?:publish|live|meta\.post_publish)\b/i.test(text))
+  ) {
+    inferredIntent = "Autonomous Content Campaign Generation";
+    tasks.push(createTaskFromCapability(1, "content.campaign", { query, tenantId: tenantScope, companyScope }, confirmedByFounder));
+  }
+  else if (text === "action:content:review" || /^(?:review|review\s+drafts?|review\s+content)$/i.test(text.trim())) {
+    inferredIntent = "Review Social Content Drafts";
+    tasks.push(createTaskFromCapability(1, "content.review", { query, tenantId: tenantScope }, confirmedByFounder));
+  }
+  else if (text === "action:content:approve" || /^(?:approve|approve\s+posts?|approve\s+content|approve\s+campaign)$/i.test(text.trim())) {
+    inferredIntent = "Approve Content Campaign";
+    tasks.push(createTaskFromCapability(1, "content.approve", { query, tenantId: tenantScope }, confirmedByFounder));
+  }
+  // 2j. Status & Mission Control Intent ("Check status", "What's the status of my website?", "Status")
+  else if (
+    /^(?:check\s+status|status|what(?:'s|\s+is)\s+(?:the\s+)?status(?:\s+of\s+(?:my\s+)?(?:website|mission|agent))?|mission\s+status)$/i.test(text.trim())
+  ) {
+    inferredIntent = "Active Mission & Project Status Query";
+    tasks.push(createTaskFromCapability(1, "mission.status", { query, tenantId: tenantScope }, confirmedByFounder));
+  }
+  else if (text === "action:cancel" || /\b(?:cancel|cancel\s+(?:current\s+|active\s+)?mission|abort)\b/i.test(text.trim())) {
+    inferredIntent = "Cancel Active Mission";
+    tasks.push(createTaskFromCapability(1, "mission.cancel", { query, tenantId: tenantScope }, confirmedByFounder));
+  }
+  else if (text === "action:retry" || /\b(?:retry|retry\s+(?:last\s+|active\s+)?mission)\b/i.test(text.trim())) {
+    inferredIntent = "Retry Mission Operation";
+    tasks.push(createTaskFromCapability(1, "mission.retry", { query, tenantId: tenantScope }, confirmedByFounder));
+  }
   // 3. Agent Factory & 24/7 Deployment Controls ("Create an SEO monitoring agent", "Deploy that agent 24/7", "Pause my SEO agent", "Stop that agent")
   else if (text.includes("agent") || (text.includes("deploy") && text.includes("24/7"))) {
     if (text.includes("create") || text.includes("build") || text.includes("make") || text.includes("setup") || text.includes("watches") || text.includes("monitors")) {
