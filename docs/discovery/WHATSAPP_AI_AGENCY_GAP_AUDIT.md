@@ -1,5 +1,88 @@
 # WhatsApp AI Agency — Gap Audit
 
+## Update 99 — Free Audit stuck in production: root-caused and fixed generically (not a MedRoute-specific patch), stuck run recovered and live-verified
+
+Live-caught, not theoretical: a real MedRoute Consultancy audit
+(order `2209206c-f0c4-450f-b8c2-da05bac15087`) was frozen at
+"Website presence being analyzed" (`ANALYSIS` stage) for 9+ minutes with
+zero further `heartbeat_at`/`stage_updated_at` writes. Confirmed live via
+direct DB queries, not inferred, before touching any code.
+
+**Root cause:** all 3 places that give a freshly-created audit an
+"instant" head start
+([`app/api/platform/audit/onboarding/route.ts`](../../app/api/platform/audit/onboarding/route.ts)
+x2,
+[`app/api/platform/onboarding/route.ts`](../../app/api/platform/onboarding/route.ts)
+x1) raced the real executor against a short timeout using a bare
+`Promise.race([executionPromise, timeoutPromise])`. `Promise.race` never
+cancels or keeps alive the losing promise — once the timeout won (a real
+premium-audit AI report + website analysis routinely takes longer than
+15-18s), the route returned its response with nothing keeping the runtime
+alive, so the platform could tear down the function mid-execution,
+orphaning the real `runAutomaticAuditGeneration` call forever: no further
+heartbeat, no terminal state, ever. The queue-based fallback (the audit
+worker cron) could only ever recover an orphaned run once cron claimed its
+`PENDING` `queue_jobs` row — confirmed live that row was never claimed at
+all, because this project's real Vercel cron for that route fires **once a
+day** (`vercel.json`: every entry in the file is a once-daily schedule — a
+genuine Hobby-plan constraint, correctly left alone rather than "fixed" by
+editing the schedule). A customer's "instant" free audit could silently sit
+stuck for up to 24 hours.
+
+**Fix (generic, all 3 call sites, no MedRoute-specific condition
+anywhere):** new
+[`lib/audit/inline-audit-execution.ts`](../../lib/audit/inline-audit-execution.ts)
+wraps every call site in `runAuditGenerationWithInlineSlice()`, which uses
+`next/server`'s `after()` to keep the SAME already-in-flight execution
+promise alive past the response, up to the route's own `maxDuration` — it
+never re-runs the executor a second time, it only stops the runtime from
+abandoning the one real call before it reaches a genuine terminal state.
+Both onboarding routes also gained `export const maxDuration = 270`
+(previously relying on the platform's short default, which would have
+killed the function before `after()`'s continuation got any real time) —
+270s matches the audit worker cron route's own already-proven-sufficient
+budget for the identical executor call. The audit engine's own state
+machine
+([`packages/audit-engine/src/pipeline.ts`](../../packages/audit-engine/src/pipeline.ts))
+was read in full and confirmed correct on re-entry (resets to `RESEARCH`,
+reuses persisted `research_data` on a real PASS, proceeds through
+`ANALYSIS`/`QUALITY_GATE`/`DELIVERY`/`COMPLETE`) — it was never the bug and
+was not modified.
+
+**MedRoute recovery (no duplicate audit created via SQL, no manual stage
+edit, no fabricated output):** re-invoked the existing, legitimate
+`start_automatic_audit_generation_v1` RPC via the `finalize` action, through
+the already-authenticated session that owns the stuck audit. That RPC is
+idempotent per `(audit_order_id, brand_brain_version)` — because the
+tenant's Brand Brain had advanced to version 2 since the original stuck
+attempt (version 1), it started a fresh run rather than resuming the
+literal stale row; that new run (`a66c21b1-7e2c-46c0-bd0f-d378e83b1eb9`) ran
+the real pipeline end to end and reached `COMPLETE` in ~31 seconds, and
+`audit_orders.status` for that order is now `completed`. The original
+orphaned run row (`ea0cb54d-...`) remains in the database as an inert
+historical artifact superseded by the completed run — not customer-facing,
+deliberately left untouched rather than hand-edited.
+
+Verified: `tsc --noEmit` clean (after fixing 2 real type errors introduced
+by the fix itself), lint clean, real `NODE_ENV=production` build exits 0.
+New
+[`inline-audit-execution.test.ts`](../../lib/audit/__tests__/inline-audit-execution.test.ts)
+(source-level assertions, since `next/server`'s `after()` can't be imported
+by plain node) confirms the real in-flight promise is the one kept alive,
+the old unguarded `Promise.race` pattern is gone from all 3 call sites, and
+both onboarding routes declare a real `maxDuration`. Existing
+`audit-v1-experience.test.ts` re-run unmodified, still passes. **Live
+verification, not just a 200 response:** queried `audit_generation_runs`
+and `audit_orders` directly before and after triggering recovery, confirmed
+the real run progressed `RESEARCH → ANALYSIS → QUALITY_GATE → DELIVERY →
+COMPLETE`, then loaded the live MedRoute audit page in an authenticated
+browser session and confirmed a real completed report renders (Overall
+Score 45/100, per-category breakdown, `N/A` shown honestly for unconnected
+data sources, free-creatives CTA) — no stuck spinner. Registry:
+`capability:audit_instant_kickoff_never_orphaned`, `REAL_EXPOSED`.
+Migration:
+`supabase/migrations/20260909210000_capability_registry_audit_stuck_stage_fix.sql`.
+
 ## Update 98 — Content section: free creatives surfaced, Connect Accounts added (Final Customer Experience Repair, Section 5/26)
 
 Inspected the existing [`ContentLibraryClient.tsx`](../../app/app/content/ContentLibraryClient.tsx)
