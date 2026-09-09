@@ -8,7 +8,7 @@ import { OfficeStatusBar } from "./OfficeStatusBar";
 import { OfficeScene } from "./OfficeScene";
 import { AgentHoverCard } from "./AgentHoverCard";
 import { AgentDetailDrawer } from "./AgentDetailDrawer";
-import { HermesCommandBar } from "./HermesCommandBar";
+import { OfficeCommandDock } from "./OfficeCommandDock";
 import { AmbientModeOverlay } from "./AmbientModeOverlay";
 import "./office-animations.css";
 
@@ -179,6 +179,8 @@ export function OfficeWorkspace({ initialTelemetry }: OfficeWorkspaceProps) {
       <OfficeScene
         workers={telemetry.workers}
         workflows={telemetry.workflows}
+        artifacts={telemetry.artifacts}
+        activeMissions={telemetry.activeMissions}
         selectedWorker={selectedWorker}
         hoveredWorker={hoveredWorker}
         onSelectWorker={setSelectedWorker}
@@ -186,14 +188,14 @@ export function OfficeWorkspace({ initialTelemetry }: OfficeWorkspaceProps) {
         isAmbientMode={isAmbientMode}
       />
 
-      {/* 3. Floating Executive Hermes CEO Command Capsule */}
-      <HermesCommandBar
+      {/* 3. Floating Corner Command Dock (Hermes Pill -> Expands upward, Never covers agents) */}
+      <OfficeCommandDock
         onCommandSubmitted={(cmd) => {
           setTelemetry((prev) => ({
             ...prev,
             workers: prev.workers.map((w) =>
               w.key === "hermes"
-                ? { ...w, state: "THINKING", statusLabel: `Processing command...` }
+                ? { ...w, state: "THINKING", statusLabel: `Processing: ${cmd.slice(0, 24)}...` }
                 : w
             ),
           }));

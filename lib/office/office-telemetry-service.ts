@@ -4,6 +4,8 @@ import type {
   LiveWorkflowEdge,
   OfficeTelemetry,
   DepartmentKey,
+  PhysicalArtifact,
+  OfficeMission,
 } from "../../app/admin/(shell)/office/office-types.ts";
 import { DEPARTMENT_PALETTES } from "../../app/admin/(shell)/office/office-types.ts";
 
@@ -21,7 +23,7 @@ export async function fetchOfficeTelemetry(
   const sinceRecent = new Date(now - 864e5).toISOString(); // 24 hours
 
   // Concurrent queries for real infrastructure telemetry
-  const [heartbeatsRes, missionsRes, eventsRes, agentDefsRes] = await Promise.all([
+  const [heartbeatsRes, missionsRes, eventsRes, agentDefsRes, artifactsRes] = await Promise.all([
     supabase
       .from("worker_heartbeats")
       .select("worker_type, status, last_heartbeat_at, queue_backlog_hint, instance_id")
@@ -45,6 +47,14 @@ export async function fetchOfficeTelemetry(
       .select("id, key, name, description, department, allowed_tool_names, status")
       .eq("status", "active")
       .limit(20),
+    Promise.resolve(
+      supabase
+        .from("mission_artifacts")
+        .select("id, mission_id, kind, storage_path, metadata, created_at")
+        .gte("created_at", sinceRecent)
+        .order("created_at", { ascending: false })
+        .limit(30)
+    ).catch(() => ({ data: [] })),
   ]);
 
   const heartbeats: Array<{
@@ -81,6 +91,15 @@ export async function fetchOfficeTelemetry(
     allowed_tool_names: string[];
     status: string;
   }> = agentDefsRes.data ?? [];
+
+  const rawArtifacts: Array<{
+    id: string;
+    mission_id: string;
+    kind: string;
+    storage_path?: string | null;
+    metadata?: any;
+    created_at: string;
+  }> = (artifactsRes as any)?.data ?? [];
 
   // Group latest event by mission
   const latestEventByMission = new Map<string, { event_type: string; created_at: string }>();
@@ -646,12 +665,93 @@ export async function fetchOfficeTelemetry(
       ? heartbeatsList.sort((a, b) => b.localeCompare(a))[0]
       : null;
 
+  // Real Physical Artifacts for handoff animations
+  const artifacts: PhysicalArtifact[] = rawArtifacts.slice(0, 15).map((a) => {
+    let fromWorkerKey = "hermes";
+    let toWorkerKey: string | undefined = undefined;
+    const k = (a.kind || "").toLowerCase();
+    if (k.includes("seo") || k.includes("serp") || k.includes("keyword")) {
+      fromWorkerKey = "seo_agent";
+      toWorkerKey = "content_agent";
+    } else if (k.includes("content") || k.includes("post") || k.includes("article")) {
+      fromWorkerKey = "content_agent";
+      toWorkerKey = "design_agent";
+    } else if (k.includes("research") || k.includes("evidence") || k.includes("intel")) {
+      fromWorkerKey = "research_agent";
+      toWorkerKey = "seo_agent";
+    } else if (k.includes("site") || k.includes("code") || k.includes("deploy")) {
+      fromWorkerKey = "website_agent";
+      toWorkerKey = "operations_agent";
+    } else if (k.includes("design") || k.includes("image") || k.includes("media")) {
+      fromWorkerKey = "design_agent";
+      toWorkerKey = "content_agent";
+    }
+
+    return {
+      id: String(a.id),
+      missionId: a.mission_id,
+      kind: a.kind || "document",
+      label: a.kind ? a.kind.replace(/_/g, " ").toUpperCase() : "DELIVERABLE",
+      fromWorkerKey,
+      toWorkerKey,
+      createdAt: a.created_at,
+    };
+  });
+
+  // Active missions for the in-environment Physical Mission Board
+  const activeMissions: OfficeMission[] = missions.slice(0, 8).map((m) => {
+    let assignedWorkerKey = "hermes";
+    let assignedWorkerName = "Hermes";
+    const g = (m.goal_text || "").toLowerCase();
+    const s = (m.service_key || "").toLowerCase();
+    if (s.includes("seo") || g.includes("seo") || g.includes("keyword") || g.includes("backlink")) {
+      assignedWorkerKey = "seo_agent";
+      assignedWorkerName = "Aether";
+    } else if (s.includes("content") || g.includes("content") || g.includes("post") || g.includes("article")) {
+      assignedWorkerKey = "content_agent";
+      assignedWorkerName = "Calliope";
+    } else if (s.includes("research") || g.includes("research") || g.includes("competitor")) {
+      assignedWorkerKey = "research_agent";
+      assignedWorkerName = "Athena";
+    } else if (s.includes("website") || g.includes("website") || g.includes("site") || g.includes("page")) {
+      assignedWorkerKey = "website_agent";
+      assignedWorkerName = "Vulcan";
+    } else if (s.includes("design") || g.includes("design") || g.includes("image") || g.includes("logo")) {
+      assignedWorkerKey = "design_agent";
+      assignedWorkerName = "Iris";
+    } else if (s.includes("whatsapp") || g.includes("whatsapp") || g.includes("chat") || g.includes("message")) {
+      assignedWorkerKey = "whatsapp_agent";
+      assignedWorkerName = "Mercury";
+    } else if (s.includes("operation") || g.includes("fleet") || g.includes("worker")) {
+      assignedWorkerKey = "operations_agent";
+      assignedWorkerName = "Atlas";
+    }
+
+    const isRunning = m.state === "RUNNING";
+    const isQueued = m.state === "QUEUED" || m.state === "AWAITING_INPUT";
+    const isCompleted = m.state === "COMPLETED";
+
+    return {
+      id: m.id,
+      goal: m.goal_text,
+      serviceKey: m.service_key || "autonomous_agent",
+      state: m.state,
+      assignedWorkerKey,
+      assignedWorkerName,
+      progressPercent: isCompleted ? 100 : isRunning ? 72 : isQueued ? 20 : 50,
+      currentStep: latestEventByMission.get(m.id)?.event_type || (isRunning ? "executing" : m.state.toLowerCase()),
+      createdAt: m.created_at,
+    };
+  });
+
   return {
     generatedAt: new Date().toISOString(),
     tenantId,
     tenantName,
     workers,
     workflows,
+    artifacts,
+    activeMissions,
     summary: {
       activeCount,
       workingCount,

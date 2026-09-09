@@ -7,6 +7,15 @@ export type AgentState =
   | "COMPLETED"
   | "ERROR";
 
+export type WorkerPosture = "SEATED" | "STANDING" | "WALKING" | "CARRYING";
+
+export type WorkerLocation =
+  | "DESK"
+  | "MEETING_TABLE"
+  | "MISSION_BOARD"
+  | "COFFEE_LOUNGE"
+  | "HALLWAY";
+
 export type DepartmentKey =
   | "executive"
   | "seo"
@@ -68,6 +77,51 @@ export interface LiveWorker {
   allowedTools: string[];
 }
 
+export interface PhysicalArtifact {
+  id: string;
+  missionId: string;
+  kind: string;
+  label: string;
+  fromWorkerKey: string;
+  toWorkerKey?: string;
+  createdAt: string;
+}
+
+export interface OfficeMission {
+  id: string;
+  goal: string;
+  serviceKey: string;
+  state: string;
+  assignedWorkerKey: string;
+  assignedWorkerName: string;
+  progressPercent: number;
+  currentStep?: string | null;
+  createdAt: string;
+}
+
+export type OfficeEventType =
+  | "MISSION_ASSIGNED"
+  | "WORKER_ACTIVATED"
+  | "WORKER_STATUS_CHANGED"
+  | "TASK_COMPLETED"
+  | "ARTIFACT_CREATED"
+  | "ARTIFACT_HANDOFF"
+  | "WORKER_BLOCKED"
+  | "MISSION_COMPLETED"
+  | "AMBIENT_WALK";
+
+export interface OfficeEvent {
+  id: string;
+  type: OfficeEventType;
+  timestamp: string;
+  workerKey: string;
+  targetWorkerKey?: string;
+  missionId?: string;
+  artifactId?: string;
+  label: string;
+  importance: "HIGH" | "MEDIUM" | "LOW";
+}
+
 export interface LiveWorkflowEdge {
   id: string;
   fromWorkerId: string;
@@ -84,6 +138,8 @@ export interface OfficeTelemetry {
   tenantName: string;
   workers: LiveWorker[];
   workflows: LiveWorkflowEdge[];
+  artifacts: PhysicalArtifact[];
+  activeMissions: OfficeMission[];
   summary: {
     activeCount: number;
     workingCount: number;

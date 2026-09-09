@@ -6,6 +6,7 @@ import { Eye, CheckCircle2, AlertCircle, Clock, Zap } from "lucide-react";
 
 interface AgentDeskProps {
   worker: LiveWorker;
+  isWorkerPresent?: boolean;
   isSelected: boolean;
   isHovered: boolean;
   onSelect: (worker: LiveWorker) => void;
@@ -14,13 +15,14 @@ interface AgentDeskProps {
 
 export function AgentDesk({
   worker,
+  isWorkerPresent = true,
   isSelected,
   isHovered,
   onSelect,
   onHover,
 }: AgentDeskProps) {
   const isHermes = worker.key === "hermes";
-  const isWorking = worker.state === "WORKING";
+  const isWorking = worker.state === "WORKING" && isWorkerPresent;
   const isThinking = worker.state === "THINKING";
   const isError = worker.state === "ERROR";
   const isBlocked = worker.state === "BLOCKED";
@@ -35,6 +37,15 @@ export function AgentDesk({
 
   // Render contextual miniature visual graphics on the primary monitor
   const renderMonitorVisuals = (department: DepartmentKey) => {
+    if (!isWorkerPresent) {
+      // Dim standby display when worker is away from desk
+      return (
+        <div className="flex h-full w-full flex-col justify-center items-center p-1 text-[6px] font-mono text-slate-500 opacity-60">
+          <span className="truncate">STANDBY</span>
+        </div>
+      );
+    }
+
     switch (department) {
       case "seo":
         return (
@@ -43,7 +54,6 @@ export function AgentDesk({
               <span className="font-bold">SERP #1</span>
               <span>+34%</span>
             </div>
-            {/* SVG Climbing Curve */}
             <svg viewBox="0 0 40 12" className="h-2.5 w-full stroke-emerald-400 fill-none" strokeWidth="1.2">
               <path d="M0 10 Q10 9, 18 5 T30 4 T40 1" />
             </svg>
@@ -118,7 +128,6 @@ export function AgentDesk({
                 <div className="h-1 w-1 rounded-sm bg-indigo-400" />
               </div>
             </div>
-            {/* Vector artboard outline */}
             <div className="h-3 w-full rounded border border-purple-400/60 bg-purple-950/40 p-0.5 flex items-center justify-center">
               <div className="h-1.5 w-4 rounded-sm bg-gradient-to-r from-purple-400 to-pink-400 opacity-80" />
             </div>
@@ -171,14 +180,13 @@ export function AgentDesk({
           </div>
         );
 
-      default: // Hermes Executive Tactical Display
+      default: // Hermes
         return (
           <div className="flex h-full w-full flex-col justify-between p-1 font-mono">
             <div className="flex items-center justify-between text-[7px] text-cyan-300 font-bold">
               <span>ORCHESTRATOR</span>
               <span className="h-1.5 w-1.5 rounded-full bg-cyan-400 animate-ping" />
             </div>
-            {/* Holographic Radar Mesh */}
             <div className="relative flex h-4 w-full items-center justify-center">
               <div className="absolute h-4 w-4 rounded-full border border-cyan-400/40" />
               <div className="absolute h-2 w-2 rounded-full border border-indigo-400/50" />
@@ -218,7 +226,7 @@ export function AgentDesk({
           : "hover:scale-[1.02]"
       }`}
     >
-      {/* 1. Floor Reflection & Ambient Light Pool */}
+      {/* 1. Floor Ambient Light Pool */}
       <div
         className="pointer-events-none absolute -bottom-3 h-14 w-44 rounded-full opacity-35 blur-xl transition-all duration-500 group-hover:opacity-65"
         style={{
@@ -226,25 +234,31 @@ export function AgentDesk({
         }}
       />
 
-      {/* 2. Workstation Unit: Character Seated Behind Desk */}
+      {/* 2. Workstation Unit: Character Seated Behind Desk (Only when Present) */}
       <div className="relative flex flex-col items-center justify-center">
-        {/* The Seated Worker Character */}
-        <div className="relative z-10 -mb-6">
-          <AgentCharacter
-            name={worker.name}
-            department={worker.department}
-            state={worker.state}
-            accentColor={worker.accentColor}
-            secondaryColor={worker.secondaryColor}
-            isHermes={isHermes}
-          />
-        </div>
+        {isWorkerPresent ? (
+          <div className="relative z-10 -mb-6">
+            <AgentCharacter
+              name={worker.name}
+              department={worker.department}
+              state={worker.state}
+              accentColor={worker.accentColor}
+              secondaryColor={worker.secondaryColor}
+              isHermes={isHermes}
+              posture="SEATED"
+            />
+          </div>
+        ) : (
+          // Vacant Chair when worker is away
+          <div className="relative z-10 -mb-2 flex flex-col items-center opacity-45 transition-opacity">
+            <div className="h-6 w-12 rounded-t-md bg-slate-800 border border-slate-700 shadow-inner" />
+          </div>
+        )}
 
         {/* ---------------------------------------------------- */}
-        {/* 3. ISOMETRIC WORKSTATION DESK & DUAL MONITORS       */}
+        {/* 3. ISOMETRIC DESK & DUAL MONITORS                   */}
         {/* ---------------------------------------------------- */}
         <div className="relative z-20 flex flex-col items-center">
-          {/* Dual Monitor Array Mounted Above Desk */}
           <div className="flex items-end justify-center gap-1">
             {/* Main Center Curved Display */}
             <div
@@ -261,12 +275,10 @@ export function AgentDesk({
               }}
             >
               {renderMonitorVisuals(worker.department)}
-
-              {/* Monitor Glass Reflection Glare */}
               <div className="pointer-events-none absolute -right-4 -top-4 h-12 w-12 rotate-45 bg-gradient-to-b from-white/10 to-transparent" />
             </div>
 
-            {/* Secondary Side Display */}
+            {/* Secondary Display */}
             <div
               className="relative hidden sm:flex overflow-hidden rounded-t-sm border border-slate-700/80 bg-slate-950/90 flex-col justify-between p-0.5"
               style={{
@@ -285,21 +297,16 @@ export function AgentDesk({
                     <div className="h-full bg-emerald-400 animate-pulse w-2/3" />
                   </div>
                 </div>
-              ) : isError ? (
-                <div className="flex items-center justify-center h-full">
-                  <AlertCircle className="h-3 w-3 text-rose-400" />
-                </div>
               ) : (
                 <div className="flex flex-col justify-center items-center h-full gap-0.5 opacity-60">
                   <div className="h-0.5 w-4 rounded bg-slate-600" />
                   <div className="h-0.5 w-3 rounded bg-slate-600" />
-                  <div className="h-0.5 w-4 rounded bg-slate-600" />
                 </div>
               )}
             </div>
           </div>
 
-          {/* Desk Surface (High-End Walnut / Dark Carbon Glass) */}
+          {/* Desk Surface */}
           <div
             className="relative -mt-0.5 flex items-center justify-between px-3 rounded-b-xl border border-white/15 bg-gradient-to-b from-slate-800 via-slate-900 to-slate-950 shadow-2xl transition-all duration-300"
             style={{
@@ -307,29 +314,24 @@ export function AgentDesk({
               height: "22px",
             }}
           >
-            {/* Low-profile keyboard under character hands */}
             <div className="mx-auto flex h-2 w-14 items-center justify-center rounded-sm bg-slate-950/90 border border-slate-700/60 shadow-inner">
               <div className="flex gap-0.5">
                 <span className="h-0.5 w-1 rounded-full bg-slate-500" />
                 <span className="h-0.5 w-1 rounded-full bg-slate-500" />
                 <span className="h-0.5 w-2 rounded-full bg-slate-500" />
-                <span className="h-0.5 w-1 rounded-full bg-slate-500" />
               </div>
             </div>
 
-            {/* Coffee mug accessory on desk */}
             <div className="absolute right-2 top-1 flex h-2.5 w-2.5 items-center justify-center rounded-full bg-slate-700/80 border border-white/20 shadow-sm" title="Coffee mug">
               <span className="h-1 w-1 rounded-full bg-amber-900/80" />
             </div>
 
-            {/* Glowing Front Edge Ambient Channel */}
             <div
               className="absolute bottom-0 left-3 right-3 h-0.5 rounded-full opacity-80 shadow-sm"
               style={{ backgroundColor: worker.accentColor }}
             />
           </div>
 
-          {/* Desk Legs / Support Structure Casting Floor Shadow */}
           <div className="flex justify-between w-full px-4 -mt-0.5">
             <div className="h-2 w-1 rounded-b bg-slate-700/80" />
             <div className="h-2 w-1 rounded-b bg-slate-700/80" />
@@ -337,7 +339,7 @@ export function AgentDesk({
         </div>
       </div>
 
-      {/* 4. Professional Name & Department Badge */}
+      {/* 4. Name & Department Badge */}
       <div className="mt-2 flex flex-col items-center">
         <div className="flex items-center gap-1.5">
           <span className="font-semibold text-xs text-white tracking-wide flex items-center gap-1">
@@ -372,7 +374,7 @@ export function AgentDesk({
         </div>
       </div>
 
-      {/* 5. AR Hover "Eye" Affordance */}
+      {/* Hover Peek "Eye" Icon */}
       <div className="absolute top-1 right-1 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
         <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white/10 text-slate-300 backdrop-blur-sm shadow border border-white/15">
           <Eye className="h-3 w-3" />
