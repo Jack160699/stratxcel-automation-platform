@@ -9,7 +9,7 @@ interface AgentDeskProps {
   isSelected: boolean;
   isHovered: boolean;
   onSelect: (worker: LiveWorker) => void;
-  onHover: (worker: LiveWorker | null, event?: React.MouseEvent) => void;
+  onHover: (worker: LiveWorker | null, event?: { clientX: number; clientY: number }) => void;
 }
 
 export function AgentDesk({
@@ -38,8 +38,16 @@ export function AgentDesk({
       tabIndex={0}
       onClick={() => onSelect(worker)}
       onKeyDown={handleKeyDown}
-      onMouseEnter={(e) => onHover(worker, e)}
+      onMouseEnter={(e) => {
+        const rect = e.currentTarget.getBoundingClientRect();
+        onHover(worker, { clientX: rect.left + rect.width / 2, clientY: rect.top });
+      }}
       onMouseLeave={() => onHover(null)}
+      onFocus={(e) => {
+        const rect = e.currentTarget.getBoundingClientRect();
+        onHover(worker, { clientX: rect.left + rect.width / 2, clientY: rect.top });
+      }}
+      onBlur={() => onHover(null)}
       aria-label={`${worker.name} (${worker.role}) - Status: ${worker.state}`}
       className={`group relative flex flex-col items-center justify-center p-3 rounded-2xl transition-all duration-300 cursor-pointer select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-indigo-400 ${
         isSelected

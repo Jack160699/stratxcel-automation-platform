@@ -14,11 +14,18 @@ export function AgentHoverCard({ worker, position }: AgentHoverCardProps) {
   const isWorking = worker.state === "WORKING";
   const mission = worker.currentMission;
 
+  const isTopHeavy = position.y < 280;
+  const leftX = typeof window !== "undefined"
+    ? Math.max(160, Math.min(window.innerWidth - 160, position.x))
+    : position.x;
+
   return (
     <div
-      className="pointer-events-none fixed z-50 w-72 transform -translate-x-1/2 -translate-y-full mb-3 rounded-2xl border border-white/20 bg-slate-900/95 p-4 backdrop-blur-2xl shadow-2xl text-xs transition-opacity duration-200"
+      className={`pointer-events-none fixed z-50 w-72 transform -translate-x-1/2 rounded-2xl border border-white/20 bg-slate-900/95 p-4 backdrop-blur-2xl shadow-2xl text-xs transition-opacity duration-200 ${
+        isTopHeavy ? "translate-y-4" : "-translate-y-full mb-3"
+      }`}
       style={{
-        left: `${position.x}px`,
+        left: `${leftX}px`,
         top: `${position.y}px`,
       }}
     >
@@ -122,7 +129,11 @@ export function AgentHoverCard({ worker, position }: AgentHoverCardProps) {
       </div>
 
       {/* Floating Arrow Tooltip Pip */}
-      <div className="absolute left-1/2 -bottom-1.5 h-3 w-3 -translate-x-1/2 rotate-45 border-r border-b border-white/20 bg-slate-900" />
+      <div
+        className={`absolute left-1/2 h-3 w-3 -translate-x-1/2 rotate-45 border-white/20 bg-slate-900 ${
+          isTopHeavy ? "-top-1.5 border-l border-t" : "-bottom-1.5 border-r border-b"
+        }`}
+      />
     </div>
   );
 }

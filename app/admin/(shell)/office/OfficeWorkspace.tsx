@@ -147,14 +147,17 @@ export function OfficeWorkspace({ initialTelemetry }: OfficeWorkspaceProps) {
   }, []);
 
   // Hover handler
-  const handleHoverWorker = (worker: LiveWorker | null, event?: React.MouseEvent) => {
+  const handleHoverWorker = (
+    worker: LiveWorker | null,
+    event?: { clientX: number; clientY: number }
+  ) => {
     if (!worker || !event) {
       setHoveredWorker(null);
       setHoverPosition(null);
       return;
     }
     setHoveredWorker(worker);
-    setHoverPosition({ x: event.clientX, y: event.clientY - 20 });
+    setHoverPosition({ x: event.clientX, y: event.clientY });
   };
 
   return (

@@ -13,7 +13,7 @@ interface OfficeSceneProps {
   selectedWorker: LiveWorker | null;
   hoveredWorker: LiveWorker | null;
   onSelectWorker: (worker: LiveWorker) => void;
-  onHoverWorker: (worker: LiveWorker | null, event?: React.MouseEvent) => void;
+  onHoverWorker: (worker: LiveWorker | null, event?: { clientX: number; clientY: number }) => void;
   isAmbientMode: boolean;
 }
 
