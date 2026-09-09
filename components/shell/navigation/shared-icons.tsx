@@ -20,6 +20,7 @@ import {
   ListOrdered,
   Activity,
   UserCheck,
+  Building2,
 } from "lucide-react";
 
 /**
@@ -70,7 +71,12 @@ export const NAV_ICONS: Record<string, ReactNode> = {
   capabilities: <DocIcon />,
   connectors: <PlugIcon />,
   "personal-connectors": <UserCheckIcon />,
+  office: <OfficeIcon />,
 };
+
+export function OfficeIcon() {
+  return <Building2 size={ICON_SIZE} strokeWidth={ICON_STROKE} />;
+}
 
 export function UserCheckIcon() {
   return <UserCheck size={ICON_SIZE} strokeWidth={ICON_STROKE} />;

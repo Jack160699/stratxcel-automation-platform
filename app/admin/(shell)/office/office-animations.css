@@ -1,0 +1,124 @@
+/* StratXcel Office 2.5D Digital Headquarters Animations */
+
+@keyframes office-ambient-float {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-4px);
+  }
+}
+
+@keyframes office-pulse-glow {
+  0%, 100% {
+    opacity: 0.35;
+    filter: drop-shadow(0 0 8px currentColor);
+  }
+  50% {
+    opacity: 0.85;
+    filter: drop-shadow(0 0 18px currentColor);
+  }
+}
+
+@keyframes office-beacon-ping {
+  0% {
+    transform: scale(0.9);
+    opacity: 0.9;
+  }
+  70% {
+    transform: scale(2.2);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(2.2);
+    opacity: 0;
+  }
+}
+
+@keyframes office-typing {
+  0%, 100% {
+    transform: translateY(0) rotate(0deg);
+  }
+  25% {
+    transform: translateY(-1.5px) rotate(-1deg);
+  }
+  75% {
+    transform: translateY(-1.5px) rotate(1deg);
+  }
+}
+
+@keyframes office-packet-flow {
+  0% {
+    offset-distance: 0%;
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  90% {
+    opacity: 1;
+  }
+  100% {
+    offset-distance: 100%;
+    opacity: 0;
+  }
+}
+
+@keyframes office-screensaver-pulse {
+  0%, 100% {
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 0.8;
+  }
+}
+
+@keyframes office-hologram-scan {
+  0% {
+    background-position: 0% 0%;
+  }
+  100% {
+    background-position: 0% 100%;
+  }
+}
+
+.office-float {
+  animation: office-ambient-float 4s ease-in-out infinite;
+}
+
+.office-float-delayed {
+  animation: office-ambient-float 4s ease-in-out 2s infinite;
+}
+
+.office-typing-active {
+  animation: office-typing 0.4s ease-in-out infinite;
+}
+
+.office-glow-pulse {
+  animation: office-pulse-glow 2.5s ease-in-out infinite;
+}
+
+.office-beacon {
+  animation: office-beacon-ping 1.8s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+/* Screensaver / Ambient slow-down */
+.office-ambient-active .office-float {
+  animation-duration: 7s;
+}
+
+.office-ambient-active .office-glow-pulse {
+  animation-duration: 5s;
+}
+
+/* Accessibility: Reduced Motion */
+@media (prefers-reduced-motion: reduce) {
+  .office-float,
+  .office-float-delayed,
+  .office-typing-active,
+  .office-glow-pulse,
+  .office-beacon {
+    animation: none !important;
+    transition: none !important;
+  }
+}
