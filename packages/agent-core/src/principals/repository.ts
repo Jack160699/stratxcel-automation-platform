@@ -87,6 +87,13 @@ const STAFF_ROLE_PERMISSIONS: Record<string, readonly string[]> = {
     // other real-financial-commitment mutation in this map.
     "agent:mutate:recurring_missions",
     "agent:read:recurring_missions",
+    // create_website: creates a brand-new site_projects row (real AI spend,
+    // a new customer-facing surface) rather than editing one that already
+    // exists (agent:mutate:website, above, granted to both owner and admin).
+    // Same narrow-circle precedent as agent:mutate:clients/agent:mutate:connectors/
+    // agent:mutate:recurring_missions just above -- platform_owner-only,
+    // deliberately NOT granted to platform_admin.
+    "agent:mutate:website_create",
   ],
   platform_admin: [
     "agent:read:clients", "agent:read:leads", "agent:read:conversations", "agent:read:missions",

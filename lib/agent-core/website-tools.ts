@@ -9,9 +9,26 @@
  * implementation, not two. See that file's header for the real security
  * upgrade this also carries (classifyEditRequest's prompt-injection guard,
  * previously only used by an unwired prototype engine).
+ *
+ * create_website: the counterpart for a brand-new site (creation was still
+ * genuinely dashboard-only until this change -- see
+ * docs/discovery/WHATSAPP_AI_AGENCY_GAP_AUDIT.md). Reuses the real AI
+ * generation pipeline extracted from app/api/platform/website-factory/route.ts
+ * (lib/websites/create-tenant-website.ts), the same one-implementation
+ * precedent edit_website set. Deliberately narrower than edit_website:
+ * requiredPermission is agent:mutate:website_create, granted ONLY to
+ * platform_owner (see principals/repository.ts) -- Founder-only, never
+ * platform_admin or any client role. risk stays low_mutation so a WhatsApp
+ * Founder still needs exactly one CONFIRM <code> before any AI spend/write
+ * happens (decideMutationPolicy), after which generation + the internal
+ * preview are real and autonomous. Production deployment and custom-domain/
+ * DNS are deliberately NOT reachable from this tool or any WhatsApp path --
+ * those stay on the existing dashboard-only PATCH deploy/publish actions on
+ * that same route, untouched.
  */
 import type { AgentTool } from "@stratxcel/agent-core";
 import { applyTenantWebsiteEdit } from "@/lib/websites/apply-tenant-website-edit";
+import { createTenantWebsite } from "@/lib/websites/create-tenant-website";
 
 function resolveTenantId(ctx: { principal: { kind: string; tenantId: string | null } }, args: Record<string, unknown>): string | null {
   if (ctx.principal.kind === "client") return ctx.principal.tenantId;
@@ -77,6 +94,68 @@ export const WEBSITE_TOOLS: AgentTool[] = [
           return { status: "failed", detail: "no matching website project found for that id" };
         case "WRITE_FAILED":
           return { status: "failed", detail: r.error };
+        default:
+          return { status: "failed", detail: r?.reason };
+      }
+    },
+  },
+  {
+    schema: {
+      name: "create_website",
+      description:
+        "Create a brand-new Stratxcel website from a plain-language description of the business -- runs the same real AI generation engine the dashboard's Website Factory uses, writes a real new site_projects row, and returns a real, working preview link. Only for a NEW website; an existing one is edited with edit_website instead. This does NOT deploy to production or connect a custom domain -- those remain a separate, dashboard-approved step after the Founder reviews the preview.",
+      parameters: {
+        type: "object",
+        properties: {
+          description: { type: "string", description: "What the business/project is and what the website should achieve, e.g. 'a premium coffee shop in Raipur, warm and upscale, needs a menu and location page'." },
+          businessName: { type: "string", description: "Optional -- the business's name, if known." },
+          websiteType: { type: "string", description: "Optional -- e.g. 'business', 'ecommerce', 'landing_page'. Leave unset to let the engine infer it." },
+          tenantId: { type: "string", description: "Optional -- a specific client's tenant id. Defaults to Stratxcel's own." },
+        },
+        required: ["description"],
+      },
+    },
+    mutating: true,
+    // Real AI spend + a brand-new customer-facing surface, but reversible
+    // (the project starts in preview_ready/NOT_STARTED, nothing customer-
+    // facing goes live) and stays inside Stratxcel's own site-builder --
+    // low_mutation, same as edit_website, means the Founder still needs
+    // exactly one CONFIRM <code> before this runs at all.
+    risk: "low_mutation",
+    requiredPermission: "agent:mutate:website_create",
+    async execute(ctx, args) {
+      const tenantId = resolveTenantId(ctx, args);
+      const description = typeof args.description === "string" ? args.description : "";
+      if (!tenantId || !description) {
+        return { outcome: "MISSING_INPUT", reason: "missing_input" };
+      }
+      return createTenantWebsite({
+        supabase: ctx.supabase as never,
+        tenantId,
+        actorUserId: ctx.principal.authUserId,
+        prompt: description,
+        businessName: typeof args.businessName === "string" ? args.businessName : undefined,
+        websiteType: typeof args.websiteType === "string" ? args.websiteType : undefined,
+        channel: ctx.principal.channel === "whatsapp" ? "whatsapp_agent" : `agent_${ctx.principal.channel}`,
+      });
+    },
+    interpretOutcome(result) {
+      const r = result as { outcome?: string; reason?: string } | null;
+      switch (r?.outcome) {
+        case "CREATED":
+          return null; // real success
+        case "NOT_ENTITLED":
+          return { status: "failed", detail: r.reason ?? "this plan doesn't include a website" };
+        case "RATE_LIMITED":
+          return { status: "failed", detail: r.reason ?? "too many websites created recently" };
+        case "BLOCKED":
+          return { status: "failed", detail: r.reason ?? "website creation is temporarily paused" };
+        case "GENERATION_FAILED":
+          return { status: "failed", detail: r.reason ?? "website generation failed" };
+        case "WRITE_FAILED":
+          return { status: "failed", detail: r.reason ?? "could not save the new website" };
+        case "MISSING_INPUT":
+          return { status: "failed", detail: "a business description is required" };
         default:
           return { status: "failed", detail: r?.reason };
       }

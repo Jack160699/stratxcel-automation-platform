@@ -14,22 +14,11 @@
  */
 
 import { requireTenantContext, requireTenantReadContext, getTenantServiceContext } from "@/lib/tenants/tenant-context";
-import {
-  generate5PageSite,
-  generateSpecFromPrompt,
-  validateWebsiteSpecification,
-  WEBSITE_ENTITLEMENT_ENFORCED,
-  WEBSITE_JOB_TYPES,
-  type WebsiteType,
-  type WebsiteSpecification,
-  type SiteProjectInput,
-} from "@stratxcel/websites-and-domains";
-import { hasEntitlement, hasCapability, isPlanTier } from "@stratxcel/payments-and-wallet";
-import { getCurrentBrandBrain } from "@stratxcel/brand-brain";
-import { createTenantAIRuntime, resolveTenantMonthSpendUsd, resolveTenantPlanTier } from "@stratxcel/ai-runtime";
+import { WEBSITE_JOB_TYPES } from "@stratxcel/websites-and-domains";
 import { recordAuditEvent } from "@stratxcel/audit";
 import { createPostgresQueueAdapter } from "@stratxcel/queue";
 import { createSupabaseServiceClient } from "@/lib/supabase/service";
+import { createTenantWebsite } from "@/lib/websites/create-tenant-website";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -60,210 +49,35 @@ export async function POST(request: Request) {
 
     const serviceDb = createSupabaseServiceClient();
 
-    // Resolve AI runtime dependencies
-    const [planTier, spentUsd] = await Promise.all([
-      resolveTenantPlanTier(serviceDb as any, tenantId),
-      resolveTenantMonthSpendUsd(serviceDb as any, tenantId),
-    ]);
-
-    // Entitlement check — brief §1/§2/§3: website inclusion is landing_page
-    // (Growth) or website_included (Business); Starter has no automatic
-    // inclusion and must go through a separate paid add-on purchase. Only
-    // enforced for a tenant with a real resolved plan tier (WEBSITE_ENTITLEMENT_ENFORCED
-    // stays the global kill switch for the legacy free/no-subscription case
-    // where no usage_entitlements rows exist at all — see entitlement.ts).
-    const entitled = await hasEntitlement(serviceDb, tenantId, "website_maintenance", 1);
-    const tierCapabilities = isPlanTier(planTier) ? planTier : null;
-    const websiteIncludedByCapability = tierCapabilities
-      ? hasCapability(tierCapabilities, "landing_page") || hasCapability(tierCapabilities, "website_included")
-      : false;
-    if (WEBSITE_ENTITLEMENT_ENFORCED && !entitled && !websiteIncludedByCapability) {
-      return Response.json({
-        error: "This plan doesn't include a website. Growth includes a landing page and Business includes a full professional website — or purchase a website as a one-time add-on.",
-      }, { status: 403 });
-    }
-
-    const { runtime: aiRuntime, budgetEnvelope } = createTenantAIRuntime({
+    const result = await createTenantWebsite({
+      supabase: serviceDb,
       tenantId,
-      plan: planTier,
-      spentUsdThisMonth: spentUsd,
-      internalWriteClient: serviceDb,
-    });
-
-    // Get Brand Brain context if available
-    const brandBrain = await getCurrentBrandBrain(serviceDb, tenantId).catch(() => null);
-    const bbContent = (brandBrain?.content as Record<string, any>) || {};
-
-    // Step 1: Generate specification from prompt
-    const specResult = await generateSpecFromPrompt(aiRuntime, {
+      actorUserId: ctx.userId,
       prompt,
-      tenantId,
-      websiteType: websiteType as WebsiteType | undefined,
-      knownContext: {
-        businessName: businessName ?? bbContent.business_name,
-        industry: bbContent.industry,
-        description: bbContent.description,
-        contactEmail: bbContent.contact_email,
-        contactPhone: bbContent.contact_phone,
-        targetAudience: bbContent.target_audience,
-        toneOfVoice: bbContent.tone_of_voice,
-        brandPillars: bbContent.pillars,
-      },
-      budgetEnvelope,
+      websiteType,
+      businessName,
+      logoUrl,
+      imageUrls,
     });
 
-    if (!specResult.ok || !specResult.specification) {
-      return Response.json({
-        error: specResult.userError ?? "Failed to generate website specification",
-        validationErrors: specResult.validationErrors,
-        validationWarnings: specResult.validationWarnings,
-      }, { status: 422 });
-    }
-
-    const spec = specResult.specification.specification;
-
-    // Step 2: Generate site pages from specification
-    const siteInput: SiteProjectInput = {
-      tenantId,
-      businessName: spec.brand.businessName,
-      industry: spec.brand.industry,
-      businessDescription: spec.brand.tagline ?? spec.brand.uniqueSellingPoints?.join(". "),
-      differentiators: spec.brand.uniqueSellingPoints,
-      contactEmail: spec.contact.email,
-      contactPhone: spec.contact.phone,
-      contactAddress: spec.contact.address,
-      brandBrain: brandBrain?.content
-        ? { targetAudience: brandBrain.content.target_audience, toneOfVoice: brandBrain.content.tone_of_voice, pillars: brandBrain.content.pillars }
-        : null,
-    };
-
-    const site = generate5PageSite(siteInput);
-
-    // Use the AI-generated pages instead of the template pages when available
-    const pages = spec.pages.length > 0 ? spec.pages : site.pages;
-
-    // Step 3: Create database records
-    const { data: dbSite, error: insertErr } = await serviceDb
-      .from("site_projects")
-      .insert({
-        tenant_id: tenantId,
-        owner_user_id: ctx.userId,
-        name: spec.brand.businessName,
-        slug: site.slug,
-        template_id: "ai-generated",
-        status: "preview_ready",
-        website_type: spec.websiteType,
-        generation_status: "GENERATED",
-        deployment_status: "NOT_STARTED",
-        preview_subdomain: site.previewSubdomain,
-        pages,
-        business_input: siteInput,
-        generation_spec: specResult.specification,
-        prompt,
-        plan: spec.websiteType,
-        theme_config: {
-          ...spec.visualStyle,
-          ...(typeof logoUrl === "string" && logoUrl ? { logoUrl } : {}),
-          ...(Array.isArray(imageUrls) && imageUrls.length > 0
-            ? { imageUrls: imageUrls.filter((u: unknown): u is string => typeof u === "string").slice(0, 12) }
-            : {}),
-        },
-        custom_domain: spec.domain.requested ?? null,
-      })
-      .select("*")
-      .single();
-
-    if (insertErr) {
-      return Response.json({ error: `Failed to create project: ${insertErr.message}` }, { status: 500 });
-    }
-
-    // Step 4: Create initial version via the atomic RPC
-    const { error: rpcErr } = await serviceDb.rpc("apply_site_project_version", {
-      p_site_project_id: dbSite.id,
-      p_tenant_id: tenantId,
-      p_action: "generate",
-      p_pages: pages,
-      p_notes: `AI-generated from prompt: "${prompt.substring(0, 100)}..."`,
-      p_custom_domain: spec.domain.requested ?? null,
-      p_actor_user_id: ctx.userId,
-    });
-
-    if (rpcErr) {
-      console.error(`[WebsiteFactory] Version RPC failed for ${dbSite.id}:`, rpcErr);
-    }
-
-    // Step 5: Record usage
-    try {
-      await serviceDb.from("website_usage_tracking").insert({
-        site_project_id: dbSite.id,
-        tenant_id: tenantId,
-        event_type: "ai_generation",
-        ai_input_tokens: specResult.aiMetadata?.inputTokens ?? 0,
-        ai_output_tokens: specResult.aiMetadata?.outputTokens ?? 0,
-        estimated_cost_usd: specResult.aiMetadata?.estimatedCostUsd ?? 0,
-        provider: specResult.aiMetadata?.provider ?? "unknown",
-        model: specResult.aiMetadata?.model ?? "unknown",
-        metadata: { prompt: prompt.substring(0, 500) },
-      });
-    } catch {
-      // non-blocking tracking
-    }
-
-    // Step 6: Record audit event
-    try {
-      await recordAuditEvent(serviceDb, {
-        tenantId,
-        actorUserId: ctx.userId,
-        actorKind: "user",
-        action: "WEBSITE_CREATED",
-        targetType: "site_project",
-        targetId: dbSite.id,
-        metadata: {
-          websiteType: spec.websiteType,
-          businessName: spec.brand.businessName,
-          promptLength: prompt.length,
-          pagesGenerated: pages.length,
-        },
-      });
-    } catch {
-      // non-blocking audit
-    }
-
-    // Step 7: If an AI agent was requested, create the agent config
-    if (spec.agent.enabled) {
-      try {
-        await serviceDb.from("website_agents").insert({
-          site_project_id: dbSite.id,
-          tenant_id: tenantId,
-          name: spec.agent.name ?? `${spec.brand.businessName} Assistant`,
-          system_instructions: buildAgentSystemPrompt(spec),
-          business_context: {
-            businessName: spec.brand.businessName,
-            industry: spec.brand.industry,
-            targetAudience: spec.brand.targetAudience,
-            uniqueSellingPoints: spec.brand.uniqueSellingPoints,
-            contactEmail: spec.contact.email,
-            contactPhone: spec.contact.phone,
-          },
-          enabled: false, // Enabled when site goes LIVE
-          greeting_message: spec.agent.greetingMessage ?? `Hi! Welcome to ${spec.brand.businessName}. How can I help you today?`,
+    switch (result.outcome) {
+      case "CREATED":
+        return Response.json({
+          project: result.project,
+          previewUrl: result.previewUrl,
+          validationWarnings: result.validationWarnings,
         });
-      } catch {
-        // non-blocking agent config
-      }
+      case "NOT_ENTITLED":
+        return Response.json({ error: result.reason }, { status: 403 });
+      case "GENERATION_FAILED":
+        return Response.json({ error: result.reason, validationErrors: result.validationErrors }, { status: 422 });
+      case "RATE_LIMITED":
+        return Response.json({ error: result.reason }, { status: 429 });
+      case "BLOCKED":
+        return Response.json({ error: result.reason }, { status: 503 });
+      case "WRITE_FAILED":
+        return Response.json({ error: result.reason }, { status: 500 });
     }
-
-    // Refetch to get the final state
-    const { data: finalSite } = await serviceDb.from("site_projects").select("*").eq("id", dbSite.id).single();
-
-    return Response.json({
-      project: finalSite,
-      specification: specResult.specification,
-      previewUrl: `/app/website/${dbSite.id}/preview`,
-      entitled,
-      entitlementEnforced: WEBSITE_ENTITLEMENT_ENFORCED,
-      validationWarnings: specResult.validationWarnings,
-    });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to create website project";
     console.error("[WebsiteFactory] POST error:", err);
@@ -411,29 +225,4 @@ export async function PATCH(request: Request) {
     const msg = err instanceof Error ? err.message : "Failed to update project";
     return Response.json({ error: msg }, { status: 400 });
   }
-}
-
-function buildAgentSystemPrompt(spec: WebsiteSpecification): string {
-  return `You are the AI assistant for ${spec.brand.businessName}, a ${spec.brand.industry} business.
-
-Your role:
-- Answer questions about ${spec.brand.businessName}'s products, services, and business
-- Help customers navigate the website
-- Recommend products or services based on customer needs
-- Capture leads by collecting contact information when appropriate
-- Direct customers to checkout or contact pages when they're ready to buy or engage
-
-Business context:
-- Industry: ${spec.brand.industry}
-- Target audience: ${spec.brand.targetAudience}
-- Key differentiators: ${spec.brand.uniqueSellingPoints.join(", ")}
-${spec.contact.email ? `- Contact email: ${spec.contact.email}` : ""}
-${spec.contact.phone ? `- Contact phone: ${spec.contact.phone}` : ""}
-
-RULES:
-1. Never make up information about the business that isn't provided above.
-2. Be helpful, professional, and aligned with the brand's personality.
-3. If you can't answer a question, offer to connect the customer with a human representative.
-4. Never share internal business data, pricing strategies, or confidential information.
-5. Always be honest — if you don't know something, say so.`;
 }
