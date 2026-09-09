@@ -58,9 +58,11 @@ export async function executeContentCampaignMission(
   supabase: ServiceClient | null,
   input: ContentCampaignInput
 ): Promise<ContentCampaignResult> {
-  const missionId = `mission_content_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+  const missionId = crypto.randomUUID();
   const businessName = input.businessName || "Solara Energy";
-  const tenantId = input.tenantId || "platform-default";
+  const tenantId = input.tenantId && input.tenantId !== "platform-default"
+    ? input.tenantId
+    : "466e6195-a9f6-4576-8271-29fdae61c18a";
   const postCount = input.postCount || 3;
 
   // 1. Create durable mission record in Supabase
@@ -77,6 +79,17 @@ export async function executeContentCampaignMission(
         brand_brain_version: 1,
         version: 1,
         idempotency_key: `content_mission_${missionId}`,
+      });
+
+      await supabase.from("mission_events").insert({
+        id: crypto.randomUUID(),
+        mission_id: missionId,
+        event_type: "content_campaign_started",
+        payload: {
+          status: `Drafting ${postCount} high-conversion social posts for next week...`,
+          progress: 30,
+          timestamp: new Date().toISOString(),
+        },
       });
     } catch (dbErr) {
       console.warn("[content-agent] Supabase mission record warning:", dbErr);
@@ -167,6 +180,7 @@ export async function executeContentCampaignMission(
   if (supabase) {
     try {
       await supabase.from("mission_artifacts").insert({
+        id: crypto.randomUUID(),
         mission_id: missionId,
         kind: "social_content_campaign",
         storage_ref: `tenants/${tenantId}/content-campaigns/${missionId}.json`,
@@ -175,6 +189,17 @@ export async function executeContentCampaignMission(
           postCount: posts.length,
           visualAssetId: visualAsset?.assetId,
           generatedAt: new Date().toISOString(),
+        },
+      });
+
+      await supabase.from("mission_events").insert({
+        id: crypto.randomUUID(),
+        mission_id: missionId,
+        event_type: "content_campaign_completed",
+        payload: {
+          status: `${posts.length} posts staged for next week's publishing schedule`,
+          progress: 100,
+          timestamp: new Date().toISOString(),
         },
       });
 

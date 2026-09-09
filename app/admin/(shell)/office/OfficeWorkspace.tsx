@@ -190,14 +190,71 @@ export function OfficeWorkspace({ initialTelemetry }: OfficeWorkspaceProps) {
 
       {/* 3. Floating Corner Command Dock (Hermes Pill -> Expands upward, Never covers agents) */}
       <OfficeCommandDock
+        tenantId={active?.tenantId || initialTelemetry.tenantId}
         onCommandSubmitted={(cmd) => {
+          const lower = cmd.toLowerCase();
           setTelemetry((prev) => ({
             ...prev,
-            workers: prev.workers.map((w) =>
-              w.key === "hermes"
-                ? { ...w, state: "THINKING", statusLabel: `Processing: ${cmd.slice(0, 24)}...` }
-                : w
-            ),
+            workers: prev.workers.map((w) => {
+              if (w.key === "hermes") {
+                return {
+                  ...w,
+                  state: "WORKING",
+                  statusLabel: `Orchestrating: ${cmd.slice(0, 26)}...`,
+                };
+              }
+              if (
+                (lower.includes("seo") || lower.includes("keyword") || lower.includes("search")) &&
+                w.key === "aether"
+              ) {
+                return {
+                  ...w,
+                  state: "WORKING",
+                  statusLabel: "Running SEO Audit...",
+                };
+              }
+              if (
+                (lower.includes("lead") || lower.includes("crm") || lower.includes("pipeline") || lower.includes("client")) &&
+                w.key === "mercury"
+              ) {
+                return {
+                  ...w,
+                  state: "WORKING",
+                  statusLabel: "Discovering ICP Leads...",
+                };
+              }
+              if (
+                (lower.includes("website") || lower.includes("site") || lower.includes("page") || lower.includes("build")) &&
+                w.key === "vulcan"
+              ) {
+                return {
+                  ...w,
+                  state: "WORKING",
+                  statusLabel: "Architecting Web Layout...",
+                };
+              }
+              if (
+                (lower.includes("post") || lower.includes("content") || lower.includes("social")) &&
+                w.key === "calliope"
+              ) {
+                return {
+                  ...w,
+                  state: "WORKING",
+                  statusLabel: "Drafting Content Campaign...",
+                };
+              }
+              if (
+                (lower.includes("competitor") || lower.includes("research") || lower.includes("market")) &&
+                (w.key === "argus" || w.key === "athena")
+              ) {
+                return {
+                  ...w,
+                  state: "WORKING",
+                  statusLabel: "Conducting Market Research...",
+                };
+              }
+              return w;
+            }),
           }));
         }}
         onRefreshTelemetry={fetchTelemetry}

@@ -227,16 +227,52 @@ export function decomposeNaturalLanguageIntent(query: string, options: Decompose
       )
     );
   }
-  // 2h. SEO Agent Launch & Workflows ("Launch an SEO agent for Solara Energy and find the highest-priority SEO opportunities")
+  // 2h. Composite Multi-Objective Growth: SEO + Lead Generation ("Update our SEO and get leads.", "SEO and get leads")
+  else if (
+    (/\bseo\b/i.test(text) || /\bsearch\s+engine\b/i.test(text) || /\brankings?\b/i.test(text)) &&
+    (/\blead\b/i.test(text) || /\bleads\b/i.test(text) || /\bcrm\b/i.test(text) || /\bprospects?\b/i.test(text) || /\bpipeline\b/i.test(text))
+  ) {
+    inferredIntent = "Multi-Objective Growth: SEO Optimization & Lead Generation";
+    tasks.push(
+      createTaskFromCapability(
+        1,
+        "seo.launch",
+        { query: `SEO Optimization & Audit for ${companyScope}`, tenantId: tenantScope, companyScope },
+        confirmedByFounder
+      )
+    );
+    tasks.push(
+      createTaskFromCapability(
+        2,
+        "crm.lead_discovery",
+        { query: `Identify high-priority commercial leads for ${companyScope}`, tenantId: tenantScope, companyScope },
+        confirmedByFounder
+      )
+    );
+  }
+  // 2i. Autonomous Lead Generation & ICP Discovery ("Find new leads for this company", "Get leads", "Find leads")
+  else if (
+    text === "action:view_leads" ||
+    /\b(?:find|get|generate|discover|source|identify|prospect)\s+(?:new\s+)?leads?\b/i.test(text) ||
+    /\blead\s+generation\b/i.test(text) ||
+    /\bfind\s+(?:new\s+)?(?:clients?|customers?|prospects?|accounts?)\b/i.test(text) ||
+    /^(?:get\s+leads|find\s+leads|new\s+leads)$/i.test(text.trim())
+  ) {
+    inferredIntent = "Autonomous Lead Generation & ICP Discovery";
+    tasks.push(createTaskFromCapability(1, "crm.lead_discovery", { query, tenantId: tenantScope, companyScope }, confirmedByFounder));
+  }
+  // 2j. SEO Agent Launch & Workflows ("Launch an SEO agent for Solara Energy", "Update our SEO", "Improve our website SEO")
   else if (
     text === "action:seo:continue" ||
     /\b(?:launch|start|deploy|run)\s+(?:an?\s+)?seo\s+agent\b/i.test(text) ||
-    (/\bseo\b/i.test(text) && /\b(?:opportunities|highest-priority|keywords?|rankings?|audit|search\s+intent)\b/i.test(text))
+    /\b(?:update|improve|boost|grow|fix|audit|check|optimize)\s+(?:our\s+|my\s+|the\s+)?(?:website\s+)?seo\b/i.test(text) ||
+    (/\bseo\b/i.test(text) && /\b(?:opportunities|highest-priority|keywords?|rankings?|audit|search\s+intent|traffic|strategy)\b/i.test(text)) ||
+    /^(?:seo|update\s+seo|improve\s+seo)$/i.test(text.trim())
   ) {
     inferredIntent = "Autonomous SEO Agent Launch & Discovery";
     tasks.push(createTaskFromCapability(1, "seo.launch", { query, tenantId: tenantScope, companyScope }, confirmedByFounder));
   }
-  else if (text === "action:seo:report" || /^(?:view\s+report|seo\s+report|show\s+seo\s+report)$/i.test(text.trim())) {
+  else if (text === "action:seo:report" || /^(?:view\s+report|seo\s+report|show\s+seo\s+report|view\s+seo\s+report)$/i.test(text.trim())) {
     inferredIntent = "SEO Audit & Keyword Report";
     tasks.push(createTaskFromCapability(1, "seo.report", { query, tenantId: tenantScope }, confirmedByFounder));
   }
@@ -244,7 +280,7 @@ export function decomposeNaturalLanguageIntent(query: string, options: Decompose
     inferredIntent = "Stop Autonomous SEO Agent";
     tasks.push(createTaskFromCapability(1, "agent.stop", { query: "Stop SEO agent", agentId: "agent_seo", tenantId: tenantScope }, confirmedByFounder));
   }
-  // 2i. Content Agent & Campaign Workflows ("Create 3 social posts for Solara Energy for next week", "Create 7 posts for next week", "Create content for this business")
+  // 2k. Content Agent & Campaign Workflows ("Create 3 social posts for Solara Energy for next week", "Create 7 posts for next week", "Create content for this business")
   else if (
     text === "action:content:regenerate" ||
     /\bcreate\s+(?:\d+|three|seven)\s+(?:social\s+)?posts?\b/i.test(text) ||
@@ -262,9 +298,18 @@ export function decomposeNaturalLanguageIntent(query: string, options: Decompose
     inferredIntent = "Approve Content Campaign";
     tasks.push(createTaskFromCapability(1, "content.approve", { query, tenantId: tenantScope }, confirmedByFounder));
   }
-  // 2j. Status & Mission Control Intent ("Check status", "What's the status of my website?", "Status")
+  // 2l. Growth & Executive Monthly Planning ("Create a plan for this month", "Growth strategy")
   else if (
-    /^(?:check\s+status|status|what(?:'s|\s+is)\s+(?:the\s+)?status(?:\s+of\s+(?:my\s+)?(?:website|mission|agent))?|mission\s+status)$/i.test(text.trim())
+    /\bcreate\s+(?:a\s+)?(?:plan|growth\s+plan|strategy)\s+for\s+(?:this\s+month|q[1-4]|next\s+month|the\s+year)\b/i.test(text) ||
+    /\bmonthly\s+growth\s+plan\b/i.test(text)
+  ) {
+    inferredIntent = "Executive Growth Strategy & Monthly Planning";
+    tasks.push(createTaskFromCapability(1, "growth.plan", { query, tenantId: tenantScope, companyScope }, confirmedByFounder));
+  }
+  // 2m. Status & Mission Control Intent ("Check status", "What's the status of my website?", "Show me what the team is working on")
+  else if (
+    /^(?:check\s+status|status|what(?:'s|\s+is)\s+(?:the\s+)?status(?:\s+of\s+(?:my\s+)?(?:website|mission|agent))?|mission\s+status)$/i.test(text.trim()) ||
+    /\b(?:show\s+(?:me\s+)?what\s+(?:the\s+)?team\s+is\s+working\s+on|what\s+is\s+the\s+team\s+working\s+on|team\s+status|workforce\s+status|active\s+tasks|current\s+missions)\b/i.test(text)
   ) {
     inferredIntent = "Active Mission & Project Status Query";
     tasks.push(createTaskFromCapability(1, "mission.status", { query, tenantId: tenantScope }, confirmedByFounder));
