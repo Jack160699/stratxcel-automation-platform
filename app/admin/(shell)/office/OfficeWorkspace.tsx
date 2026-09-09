@@ -305,6 +305,7 @@ export function OfficeWorkspace({ initialTelemetry }: OfficeWorkspaceProps) {
         onCommandSubmitted={handleExecuteFounderDirective}
         onRefreshTelemetry={fetchTelemetry}
         isAmbientMode={isAmbientMode}
+        isActivityPanelOpen={isActivityPanelOpen}
       />
 
       {/* 3.5 Executive Bottom Status Bar (Matching Reference) */}

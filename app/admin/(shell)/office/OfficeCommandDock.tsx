@@ -21,6 +21,7 @@ interface OfficeCommandDockProps {
   onCommandSubmitted: (commandText: string) => void;
   onRefreshTelemetry: () => void;
   isAmbientMode?: boolean;
+  isActivityPanelOpen?: boolean;
 }
 
 type DockMode = "IDLE" | "FOCUS" | "RUNNING" | "COMPLETE" | "ERROR";
@@ -34,13 +35,16 @@ interface ExecutionResult {
 }
 
 const QUICK_COMMANDS = [
-  "Register company offer for foreign university admissions",
+  "Get 100 solar leads.",
+  "Grow foreign MBBS admissions in Russia.",
+  "Sell Linkup.",
+  "Make ₹5 lakh from this offer.",
+  "Fix whatever is preventing us from getting customers.",
+  "Why aren't we getting leads?",
+  "Do whatever is necessary to grow this.",
   "Find 100 qualified solar leads for Solara Energy",
-  "Launch autonomous revenue mission",
   "Generate pro forma financial spreadsheet",
-  "Audit revenue and employee performance",
   "Update our SEO and get leads.",
-  "Launch an SEO agent for this business.",
   "Show CEO Hermes and executive leadership status",
 ];
 
@@ -49,6 +53,7 @@ export function OfficeCommandDock({
   onCommandSubmitted,
   onRefreshTelemetry,
   isAmbientMode = false,
+  isActivityPanelOpen = false,
 }: OfficeCommandDockProps) {
   const router = useRouter();
   const [mode, setMode] = useState<DockMode>("IDLE");
@@ -110,7 +115,17 @@ export function OfficeCommandDock({
 
       // Determine truthful live status message based on intent decomposition
       let initialStatus = `Hermes is dispatching: "${trimmed.slice(0, 32)}..."`;
-      if (lower.includes("seo") && (lower.includes("lead") || lower.includes("pipeline"))) {
+      if (lower.includes("solar") && (lower.includes("lead") || lower.includes("find") || lower.includes("get"))) {
+        initialStatus = "Hermes CEO: Grounding real commercial solar facilities & load profiles...";
+      } else if (lower.includes("russia") || lower.includes("mbbs") || lower.includes("admission")) {
+        initialStatus = "Hermes CEO: Mobilizing foreign admissions intake across accredited Russian universities...";
+      } else if (lower.includes("linkup")) {
+        initialStatus = "Hermes CEO: Orchestrating Linkup B2B automation sales across Indian SMBs...";
+      } else if (lower.includes("lakh") || lower.includes("₹") || lower.includes("revenue") || lower.includes("5 lakh")) {
+        initialStatus = "Hermes CEO: Modeling pro-forma commercial unit economics & revenue engine...";
+      } else if (lower.includes("preventing") || lower.includes("why aren't") || lower.includes("customer") || lower.includes("grow")) {
+        initialStatus = "Hermes CEO: Diagnosing acquisition bottlenecks & replanning autonomous growth...";
+      } else if (lower.includes("seo") && (lower.includes("lead") || lower.includes("pipeline"))) {
         initialStatus = "Got it. I'm working on SEO and lead opportunities.";
       } else if (lower.includes("seo") || lower.includes("keyword") || lower.includes("search")) {
         initialStatus = "Got it. Launching autonomous SEO agent with Aether...";
@@ -198,7 +213,8 @@ export function OfficeCommandDock({
   return (
     <div
       ref={containerRef}
-      className="fixed bottom-5 right-5 z-40 flex flex-col items-end transition-all duration-300 select-none"
+      style={{ right: isActivityPanelOpen ? 400 : 20 }}
+      className="fixed bottom-5 z-50 flex flex-col items-end transition-all duration-300 select-none"
     >
       {/* 1. RUNNING STATE: Sleek, non-intrusive status pill */}
       {mode === "RUNNING" && (

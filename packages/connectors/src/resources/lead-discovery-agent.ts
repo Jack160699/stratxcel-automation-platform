@@ -8,6 +8,8 @@
  */
 
 import type { ServiceClient } from "../db.ts";
+import { groundedLeadDiscoveryService } from "../../../workforce-core/src/discovery/real-lead-discovery.ts";
+
 
 export interface LeadDiscoveryInput {
   tenantId: string;
@@ -90,252 +92,40 @@ export async function executeLeadDiscoveryMission(
     }
   }
 
-  // 2. Synthesize verified high-value enterprise & commercial target accounts
-  const discoveredLeads: DiscoveredLead[] = [
-    {
-      contactName: "Rajeshwar Rao",
-      contactEmail: "r.rao@peenyaprecision.in",
-      contactPhone: "+91-9845012384",
-      company: "Peenya Precision Tooling Pvt Ltd",
-      designation: "VP Manufacturing Operations",
-      estimatedDealValueInr: 1850000,
-      intentScore: 94,
-      painPoint: "Peak daytime tariff surcharge on 350kVA grid draw",
-      source: "import",
-    },
-    {
-      contactName: "Sunil Hegde",
-      contactEmail: "sunil.hegde@karnatakacoldstorage.com",
-      contactPhone: "+91-9880194821",
-      company: "Karnataka Cold Logistics Corp",
-      designation: "Managing Director",
-      estimatedDealValueInr: 3200000,
-      intentScore: 91,
-      painPoint: "Continuous 24/7 refrigeration power costs eroding operating margin",
-      source: "import",
-    },
-    {
-      contactName: "Deepa Nambiar",
-      contactEmail: "deepa@whitefieldtechpark.org",
-      contactPhone: "+91-9900234189",
-      company: "Whitefield EcoTech Campus",
-      designation: "Head of ESG & Facilities",
-      estimatedDealValueInr: 5400000,
-      intentScore: 96,
-      painPoint: "Corporate ESG mandate to achieve 40% renewable energy by Q4",
-      source: "import",
-    },
-    {
-      contactName: "Karthik Subramaniam",
-      contactEmail: "karthik.s@apexspinningmills.in",
-      contactPhone: "+91-9741289410",
-      company: "Apex Textile Spinners",
-      designation: "Chief Financial Officer",
-      estimatedDealValueInr: 2750000,
-      intentScore: 88,
-      painPoint: "Exploring OPEX zero-capex model to replace diesel backup generators",
-      source: "import",
-    },
-    {
-      contactName: "Ananya Deshmukh",
-      contactEmail: "ananya.d@bangaloremedtech.co",
-      contactPhone: "+91-9844091238",
-      company: "Bangalore BioMedical Solutions",
-      designation: "Director of Infrastructure",
-      estimatedDealValueInr: 1950000,
-      intentScore: 89,
-      painPoint: "Clean room power quality and voltage fluctuation stabilization",
-      source: "import",
-    },
-    {
-      contactName: "Maheshwar Gowda",
-      contactEmail: "mgowda@deccanauto.net",
-      contactPhone: "+91-9980124930",
-      company: "Deccan Automotive Components",
-      designation: "General Manager - Plants",
-      estimatedDealValueInr: 4100000,
-      intentScore: 92,
-      painPoint: "High connected load penalties from state distribution board",
-      source: "import",
-    },
-    {
-      contactName: "Praveen Shenoy",
-      contactEmail: "praveen@mangaloresteels.in",
-      contactPhone: "+91-9739014829",
-      company: "Mangalore Speciality Steels",
-      designation: "VP Procurement",
-      estimatedDealValueInr: 6800000,
-      intentScore: 87,
-      painPoint: "Heavy inductive loads requiring captive rooftop solar balancing",
-      source: "import",
-    },
-    {
-      contactName: "Smita Kulkarni",
-      contactEmail: "smita.k@bengalurupolychem.com",
-      contactPhone: "+91-9845920148",
-      company: "Bengaluru Polymers & Chemicals",
-      designation: "Operations Head",
-      estimatedDealValueInr: 2200000,
-      intentScore: 85,
-      painPoint: "Seeking 40% accelerated depreciation tax savings before FY year-end",
-      source: "import",
-    },
-    {
-      contactName: "Vikramaditya Roy",
-      contactEmail: "vikram@royalorchidresorts.in",
-      contactPhone: "+91-9901482910",
-      company: "Royal Orchid Hospitality Hub",
-      designation: "VP Asset Management",
-      estimatedDealValueInr: 3400000,
-      intentScore: 90,
-      painPoint: "Daytime HVAC and cooling costs peaking during banquet hours",
-      source: "import",
-    },
-    {
-      contactName: "Sanjay Acharya",
-      contactEmail: "sanjay.a@electroniccityit.org",
-      contactPhone: "+91-9845109328",
-      company: "Electronic City Phase 2 Tech Center",
-      designation: "Estate Facilities Lead",
-      estimatedDealValueInr: 4900000,
-      intentScore: 93,
-      painPoint: "Tenant sustainability audit requiring verified green building badges",
-      source: "import",
-    },
-    {
-      contactName: "Meenakshi Sundaram",
-      contactEmail: "meenakshi@doddaballapurtextiles.com",
-      contactPhone: "+91-9886014920",
-      company: "Doddaballapur Apparel Hub",
-      designation: "Chief Operating Officer",
-      estimatedDealValueInr: 2600000,
-      intentScore: 86,
-      painPoint: "International buyers demanding carbon-neutral apparel manufacturing",
-      source: "import",
-    },
-    {
-      contactName: "Harish Murthy",
-      contactEmail: "harish.m@bidadi-warehousing.com",
-      contactPhone: "+91-9742019482",
-      company: "Bidadi Logistics & Warehousing Park",
-      designation: "Head of Infrastructure",
-      estimatedDealValueInr: 7200000,
-      intentScore: 95,
-      painPoint: "Unutilized 80,000 sq.ft RCC warehouse roof suitable for immediate solar",
-      source: "import",
-    },
-  ];
+  // 2. Discover genuine verified prospects using GroundedLeadDiscoveryService
+  const qLower = (input.query || "").toLowerCase();
+  const bLower = businessName.toLowerCase();
+  const isAdmissions = qLower.includes("admission") || qLower.includes("university") || qLower.includes("russia") || qLower.includes("student") || bLower.includes("admission");
+  const isLinkup = qLower.includes("linkup") || qLower.includes("saas") || qLower.includes("crm") || bLower.includes("linkup");
+  const offerCategory = isAdmissions ? "ADMISSIONS" : isLinkup ? "LINKUP_SAAS" : "SOLAR";
 
-  const requestedCount = input.targetLeads || input.leadCount;
-  const isScaleDiscovery = typeof requestedCount === "number" && requestedCount > 15;
-  let allLeads: DiscoveredLead[] = [...discoveredLeads];
+  const requestedCount = input.targetLeads || input.leadCount || 12;
 
-  if (isScaleDiscovery) {
-    const industrialClusters = [
-      "Peenya Industrial Estate",
-      "Whitefield Industrial Zone",
-      "Bommasandra Industrial Area",
-      "Bidadi Industrial Corridor",
-      "Doddaballapur Industrial Park",
-      "Electronic City Tech Belt",
-      "Mysore Road Manufacturing Zone",
-      "Nelamangala Logistics Hub",
-      "Hosur Road Industrial Strip",
-      "Jigani Industrial Sector",
-      "Dabaspet Industrial Area",
-      "Harohalli Industrial Hub",
-    ];
-    const industries = [
-      "Precision Engineering & Tooling",
-      "Cold Chain & Logistics",
-      "Auto Ancillaries & Parts",
-      "Textile Processing",
-      "Pharma Infrastructure",
-      "Heavy Steel Fabrication",
-      "Plastics & Extrusion",
-      "Electronics Manufacturing",
-      "Food Processing Facilities",
-      "Chemical Manufacturing",
-    ];
+  const discoveryResult = await groundedLeadDiscoveryService.discoverGroundedLeads({
+    tenantId,
+    missionId,
+    offerCategory,
+    targetQuantity: requestedCount,
+    supabaseClient: supabase as any,
+    cycleNumber: 1,
+  });
 
-    allLeads = [];
-    const count = requestedCount;
-    for (let i = 0; i < count; i++) {
-      const cluster = industrialClusters[i % industrialClusters.length];
-      const ind = industries[i % industries.length];
-      const sqFt = 10000 + ((i * 1357) % 85000);
-      const kwSize = Math.round(sqFt / 100);
-      const estVal = kwSize * 42000;
-      allLeads.push({
-        contactName: "",
-        contactEmail: "",
-        contactPhone: "",
-        company: `${cluster.split(" ")[0]} Facility #${i + 1} (${ind.split(" ")[0]})`,
-        designation: "Head of Infrastructure / Plant Head",
-        estimatedDealValueInr: estVal,
-        intentScore: 82 + (i % 18),
-        painPoint: `High power tariff ₹${(8.2 + (i % 4) * 0.3).toFixed(1)}/unit, rooftop area ${sqFt.toLocaleString()} sq ft, captive solar required`,
-        source: "import",
-      });
-    }
-  }
+  const allLeads: DiscoveredLead[] = discoveryResult.leads.map((lead) => ({
+    contactName: lead.contactName || "",
+    contactEmail: lead.contactEmail || "",
+    contactPhone: lead.contactPhone || "",
+    company: lead.companyName,
+    designation: lead.decisionMakerRole,
+    estimatedDealValueInr: lead.estimatedDealValueInr,
+    intentScore: lead.provenance.qualificationScore,
+    painPoint: lead.painPointOrSignal,
+    source: "import",
+  }));
+  const isScaleDiscovery = false;
 
-  // 3. Persist leads into Supabase `crm_leads` and record mission artifact
+  // 3. Record mission artifact & events
   if (supabase) {
     try {
-      if (isScaleDiscovery) {
-        // Insert all leads as DISCOVERED with NO fabricated contact data
-        const leadRows = allLeads.map((lead, idx) => ({
-          id: crypto.randomUUID(),
-          tenant_id: tenantId,
-          source: "import",
-          contact_name: null,
-          contact_email: null,
-          contact_phone: null,
-          status: "DISCOVERED",
-          metadata: {
-            company: lead.company,
-            designation: lead.designation,
-            estimatedDealValueInr: lead.estimatedDealValueInr,
-            intentScore: lead.intentScore,
-            painPoint: lead.painPoint,
-            discoveredByMissionId: missionId,
-            status: "DISCOVERED",
-            enrichmentRequired: true,
-            criteria: "Tariff > ₹8/unit, Rooftop > 10,000 sq ft",
-            clusterIndex: idx + 1,
-          },
-        }));
-
-        // Insert in batches of 50
-        for (let i = 0; i < leadRows.length; i += 50) {
-          const batch = leadRows.slice(i, i + 50);
-          await supabase.from("crm_leads").insert(batch);
-        }
-      } else {
-        // Insert sample leads into crm_leads
-        for (const lead of discoveredLeads.slice(0, 5)) {
-          await supabase.from("crm_leads").insert({
-            id: crypto.randomUUID(),
-            tenant_id: tenantId,
-            source: lead.source,
-            contact_name: lead.contactName,
-            contact_email: lead.contactEmail,
-            contact_phone: lead.contactPhone,
-            status: "QUALIFIED",
-            metadata: {
-              company: lead.company,
-              designation: lead.designation,
-              estimatedDealValueInr: lead.estimatedDealValueInr,
-              intentScore: lead.intentScore,
-              painPoint: lead.painPoint,
-              discoveredByMissionId: missionId,
-            },
-          });
-        }
-      }
-
-      // Record detailed artifact
       await supabase.from("mission_artifacts").insert({
         id: crypto.randomUUID(),
         mission_id: missionId,

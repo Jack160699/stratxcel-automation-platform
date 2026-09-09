@@ -151,6 +151,18 @@ const EXTENDED_CAPABILITIES: Record<string, { provider: CoreProviderDomain; spec
       isHighConsequence: false,
     },
   },
+  "hermes.ceo_objective": {
+    provider: "Supabase",
+    spec: {
+      capabilityKey: "hermes.ceo_objective",
+      name: "Hermes Autonomous CEO Operating System",
+      description: "Executes end-to-end autonomous business objectives with grounded research, workforce DAG, and replanning loop",
+      riskLevel: "medium",
+      confirmationPolicy: "autonomous",
+      requiredPermissions: ["crm:write", "missions:write"],
+      isHighConsequence: false,
+    },
+  },
 };
 
 /**
@@ -329,87 +341,39 @@ export function decomposeNaturalLanguageIntent(query: string, options: Decompose
       )
     );
   }
-  // 2g2. Autonomous Revenue Mission & Offer Catalog Intent ("Grow foreign admissions.", "We offer foreign university admissions...", "Make money from...")
+  // 2g2. Hermes Autonomous CEO Objectives & Growth Directives
+  // ("Grow foreign MBBS admissions in Russia", "Sell Linkup", "Get 100 solar leads", "Make ₹5 lakh", "Get more customers", "Fix whatever is preventing us from getting customers")
   else if (
-    /\b(?:we\s+(?:offer|sell|provide)|our\s+offer\s+is|build\s+a\s+plan\s+to\s+make\s+money\s+from|make\s+money\s+from|grow|scale|expand)\b/i.test(text) &&
-    /\b(?:admissions?|university|foreign|course|program|degree|study\s+abroad|linkup|smbs?|consulting|service)\b/i.test(text)
-  ) {
-    inferredIntent = "Offer Registration & Autonomous Revenue Mission";
-    const offerName = /\b(?:foreign|university|admissions?)\b/i.test(text)
-      ? "Foreign University Admissions"
-      : /\blinkup\b/i.test(text)
-      ? "Linkup"
-      : "Commercial Service Offer";
-
-    tasks.push(
-      createTaskFromCapability(
-        1,
-        "offer.register",
-        {
-          name: offerName,
-          description: `${offerName} guidance and placement for high-intent candidates`,
-          category: offerName === "Linkup" ? "B2B SaaS" : "Education & Admissions",
-          targetCustomer: offerName === "Linkup" ? "Indian SMBs" : "Undergraduate & Graduate Students",
-          geography: offerName === "Linkup" ? ["India"] : ["India", "Global"],
-          tenantId: tenantScope,
-          companyScope,
-        },
-        confirmedByFounder
-      )
-    );
-
-    tasks.push(
-      createTaskFromCapability(
-        2,
-        "revenue.mission",
-        {
-          objective: query,
-          offerNameOrId: offerName,
-          targetLeads: 50,
-          tenantId: tenantScope,
-          companyScope,
-        },
-        confirmedByFounder
-      )
-    );
-  }
-  // 2g3. Direct Product / Service Selling Intent ("Sell Linkup to Indian SMBs.", "Sell Linkup to SMBs")
-  else if (
+    /\b(?:grow|scale|expand)\s+(?:foreign\s+)?(?:admissions?|university|mbbs|degree|students?|solar|linkup|business)\b/i.test(text) ||
     /\bsell\s+linkup\b/i.test(text) ||
-    (/\bsell\b/i.test(text) && /\bsmbs?\b/i.test(text))
+    /\b(?:we\s+(?:offer|sell|provide)|our\s+offer\s+is|build\s+a\s+plan\s+to\s+make\s+money\s+from|make\s+money\s+from|make\s+[₹rRsS]\.?\s*\d+)\b/i.test(text) ||
+    /\b(?:why\s+aren'?t\s+we\s+getting\s+leads|get\s+more\s+customers|fix\s+whatever\s+is\s+preventing|whatever\s+is\s+necessary\s+to\s+grow)\b/i.test(text)
   ) {
-    inferredIntent = "Direct Offer Commercialization & Revenue Mission";
-    const offerName = "Linkup";
-    const market = "Indian SMBs";
+    inferredIntent = "Hermes Autonomous CEO Objective";
+    const targetMatch = text.match(/\b(\d+)\s*(?:leads?|accounts?|customers?|clients?|candidates?)\b/i);
+    const targetQuantity = targetMatch ? parseInt(targetMatch[1]!, 10) : (text.includes("100") ? 100 : 20);
+
+    const isAdmissions = /\b(?:foreign|university|admissions?|russia|mbbs)\b/i.test(text);
+    const isLinkup = /\blinkup\b/i.test(text);
+    const isSolar = /\bsolar\b/i.test(text);
 
     tasks.push(
       createTaskFromCapability(
         1,
-        "offer.register",
+        "hermes.ceo_objective",
         {
-          name: offerName,
-          description: `${offerName} platform and commercial integration for ${market}`,
-          category: "B2B Commerce & Software",
-          targetCustomer: market,
-          geography: ["India"],
-          tenantId: tenantScope,
-          companyScope,
-        },
-        confirmedByFounder
-      )
-    );
-
-    tasks.push(
-      createTaskFromCapability(
-        2,
-        "revenue.mission",
-        {
+          directive: query,
           objective: query,
-          offerNameOrId: offerName,
-          market,
-          targetLeads: 50,
+          query,
+          targetQuantity,
           tenantId: tenantScope,
-          companyScope,
+          companyScope: isAdmissions
+            ? "Foreign University Admissions"
+            : isLinkup
+              ? "Linkup Automation"
+              : isSolar
+                ? "Solara Energy"
+                : companyScope,
         },
         confirmedByFounder
       )
@@ -426,10 +390,12 @@ export function decomposeNaturalLanguageIntent(query: string, options: Decompose
     tasks.push(
       createTaskFromCapability(
         1,
-        "crm.lead_discovery",
+        "hermes.ceo_objective",
         {
+          directive: query,
+          objective: query,
           query,
-          targetLeads,
+          targetQuantity: targetLeads,
           targetIcp: "Commercial & Industrial Solar Rooftop Buyers (Bangalore / Karnataka)",
           tenantId: tenantScope,
           companyScope: companyScope || "Solara Energy",
@@ -598,7 +564,51 @@ export function decomposeNaturalLanguageIntent(query: string, options: Decompose
     inferredIntent = "Multimodal File & Document Analysis";
     tasks.push(createTaskFromCapability(1, "file.analyze", { query, tenantId: tenantScope }, confirmedByFounder));
   }
-  // 5a. Lead Discovery & Solar ICP Pipeline ("Find 100 qualified solar leads", "Discover leads for Solara Energy")
+  // 5a. Hermes Autonomous CEO Objectives & Growth Directives
+  // ("Grow foreign MBBS admissions in Russia", "Sell Linkup", "Get 100 solar leads", "Make ₹5 lakh", "Get more customers", "Fix whatever is preventing us from getting customers")
+  else if (
+    text.includes("grow") ||
+    text.includes("sell linkup") ||
+    text.includes("russia") ||
+    text.includes("mbbs") ||
+    text.includes("foreign admission") ||
+    text.includes("solar lead") ||
+    text.includes("get 100") ||
+    text.includes("get more customers") ||
+    text.includes("make ₹") ||
+    text.includes("make rs") ||
+    text.includes("preventing us from") ||
+    text.includes("whatever is necessary") ||
+    (text.includes("why") && text.includes("leads")) ||
+    (text.includes("solar") && (text.includes("find") || text.includes("get") || text.includes("lead") || text.includes("target")))
+  ) {
+    inferredIntent = "Hermes Autonomous CEO Objective";
+    const targetMatch = text.match(/\b(\d+)\s*(?:leads?|accounts?|customers?|clients?|candidates?)\b/i);
+    const targetQuantity = targetMatch ? parseInt(targetMatch[1]!, 10) : (text.includes("100") ? 100 : 20);
+
+    tasks.push(
+      createTaskFromCapability(
+        1,
+        "hermes.ceo_objective",
+        {
+          directive: query,
+          objective: query,
+          query,
+          targetQuantity,
+          tenantId: tenantScope,
+          companyScope: text.includes("russia") || text.includes("admission")
+            ? "Foreign University Admissions"
+            : text.includes("linkup")
+              ? "Linkup Automation"
+              : text.includes("solar")
+                ? "Solara Energy"
+                : companyScope,
+        },
+        confirmedByFounder
+      )
+    );
+  }
+  // 5b. Lead Discovery & Solar ICP Pipeline ("Find 100 qualified solar leads", "Discover leads for Solara Energy")
   else if (
     (text.includes("solar") || text.includes("lead") || text.includes("prospect") || text.includes("pipeline")) &&
     (text.includes("100") || text.includes("find") || text.includes("get") || text.includes("discover") || text.includes("source") || text.includes("icp") || text.includes("generation"))
