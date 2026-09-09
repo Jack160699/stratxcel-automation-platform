@@ -256,7 +256,7 @@ export function CreativeStudioWorkspace(props: {
           <label className="mt-4 block text-xs font-medium text-sx-text-muted" htmlFor="creative-brief">Creative brief</label>
           <textarea id="creative-brief" rows={6} maxLength={4000} value={brief} onChange={(event) => setBrief(event.target.value)} placeholder="Create a premium Instagram post announcing our new service" className="mt-1.5 w-full resize-y rounded-sx-sm border border-sx-border-strong bg-sx-surface-2 p-3 text-sm text-sx-text outline-none placeholder:text-sx-text-subtle focus:border-sx-ai" />
           <div className="mt-3 rounded-sx-sm border border-sx-border bg-sx-surface-2 p-3 text-xs text-sx-text-muted">
-            <strong className="text-sx-text">Brand Brain</strong> · {props.brandBrainVersion ? `Version ${props.brandBrainVersion} will be used` : "No saved context yet; only your brief will be used"}
+            <strong className="text-sx-text">My Shop</strong> · {props.brandBrainVersion ? `Version ${props.brandBrainVersion} will be used` : "No saved context yet; only your brief will be used"}
           </div>
 
           <fieldset className="mt-4"><legend className="text-xs font-medium text-sx-text-muted">Format</legend><div className="mt-2 grid grid-cols-2 gap-2">{PRESETS.map((preset) => <button type="button" key={preset.value} onClick={() => setAspectRatio(preset.value)} className={`rounded-sx-sm border p-2.5 text-left ${aspectRatio === preset.value ? "border-sx-ai bg-[rgb(79_220_229_/_0.08)]" : "border-sx-border bg-sx-surface-2"}`}><span className="block text-xs font-medium text-sx-text">{preset.label}</span><span className="text-[11px] text-sx-text-subtle">{preset.hint}</span></button>)}</div></fieldset>

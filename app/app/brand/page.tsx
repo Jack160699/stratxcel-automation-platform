@@ -658,7 +658,7 @@ export default function BrandPage() {
             <Card className="p-4">
               <CardHeading>Verified sources</CardHeading>
               <p className="mt-1 text-xs text-sx-text-muted">
-                Provenance is preserved from Audit discovery and customer edits. Brand Brain versions stay append-only — saving creates a new version rather than rewriting history.
+                Provenance is preserved from Audit discovery and customer edits. My Shop versions stay append-only — saving creates a new version rather than rewriting history.
               </p>
             </Card>
           </section>

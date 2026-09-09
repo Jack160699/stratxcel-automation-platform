@@ -48,7 +48,9 @@ const BOTTLENECK_SEVERITY_CHIP: Record<string, ChipState> = {
 };
 
 /**
- * Growth — The primary customer destination answering: "Is my business improving?"
+ * Results (P0 simplification pass: renamed from "Growth" — see app-nav-data.ts —
+ * to stop colliding with "Growth Assistant" and the internal admin "Growth" group).
+ * The primary customer destination answering: "Is my business improving?"
  * Tracks real mission completions, audit resolutions, connected presence growth,
  * and highlights what improved and what needs attention.
  * Built with full fault tolerance against missing, partial, or unavailable data.
@@ -162,7 +164,7 @@ export default function GrowthPage() {
         })(),
       ]);
     } catch (err: any) {
-      setError(err?.message || "Growth data could not be loaded. Please try again.");
+      setError(err?.message || "Results could not be loaded. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -197,7 +199,7 @@ export default function GrowthPage() {
   return (
     <div className="flex flex-col gap-6 max-w-5xl">
       <ModulePageHeader
-        title="Your Growth"
+        title="Your Results"
         tenantName={active?.name}
         description="Track how your business presence, customer reach, and marketing outcomes are improving."
         actions={
@@ -213,7 +215,7 @@ export default function GrowthPage() {
 
       {error ? (
         <Card variant="nested" className="p-6 text-center border-sx-border">
-          <p className="text-sm font-medium text-sx-text mb-2">Growth couldn&apos;t load right now.</p>
+          <p className="text-sm font-medium text-sx-text mb-2">Results couldn&apos;t load right now.</p>
           <p className="text-xs text-sx-text-muted mb-4">{error}</p>
           <div className="flex items-center justify-center gap-3">
             {tenantId && (
@@ -380,7 +382,7 @@ export default function GrowthPage() {
           {/* Growth Snapshot Metrics */}
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <Card variant="nested" className="p-4 bg-sx-surface-1">
-              <span className="text-[11px] font-medium text-sx-text-muted uppercase tracking-wider">Completed Growth Tasks</span>
+              <span className="text-[11px] font-medium text-sx-text-muted uppercase tracking-wider">Completed Tasks</span>
               <div className="mt-2 flex items-baseline gap-2">
                 <span className="text-2xl font-bold text-sx-text">{completed.length}</span>
                 <span className="text-xs text-sx-text-subtle">of {rangeFiltered.length} total</span>

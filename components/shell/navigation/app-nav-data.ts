@@ -5,13 +5,16 @@ import type { NavGroupData } from "./nav-types";
  * Used by tenant members running their own business.
  *
  * Finalized Canonical Customer Navigation:
- * Primary Dock: Home | Audit | Content | Growth | More
+ * Primary Dock: Home | Audit | Content | Results | More
  *
  * Secondary Destinations (accessed via More sheet and contextual entry points):
  * Brand (also in header brand selector), Website, Connected Accounts, Billing, Staff, Settings.
  *
- * Growth Assistant is a dedicated full-screen conversational work mode (entered via
- * Home action cards, quick tools, and floating action), not a bottom dock item.
+ * P0 simplification pass: the dashboard at /app/growth is labeled "Results" (not "Growth")
+ * so it stops colliding with "Growth Assistant" — the dedicated full-screen conversational
+ * work mode (entered via Home action cards, quick tools, and floating action, not a bottom
+ * dock item) — and with the internal admin nav group also named "Growth". "Growth Assistant"
+ * remains the one customer-facing name for the assistant; it is not renamed here.
  */
 export const APP_NAV_GROUPS_DATA: NavGroupData[] = [
   {
@@ -21,7 +24,7 @@ export const APP_NAV_GROUPS_DATA: NavGroupData[] = [
       { key: "home", label: "Home", href: "/app", release: "v1", labelHi: "होम" },
       { key: "customer-audit", label: "Audit", href: "/app/audit", release: "v1", labelHi: "जाँच" },
       { key: "content", label: "Content", href: "/app/content", release: "v1", labelHi: "सामग्री" },
-      { key: "growth", label: "Growth", href: "/app/growth", release: "v1", labelHi: "ग्रोथ" },
+      { key: "growth", label: "Results", href: "/app/growth", release: "v1", labelHi: "परिणाम" },
     ],
   },
   {

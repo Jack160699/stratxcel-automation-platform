@@ -191,7 +191,7 @@ export function MobileBottomNav({
 
 /** Real, one-line descriptions for the customer "More" sheet — StratXcel App reference row pattern (icon + title + subtitle). Text describes the actual destination, not fabricated content. */
 const MORE_SHEET_DESCRIPTIONS: Record<string, string> = {
-  brand: "Your business profile, hours, and Brand Brain",
+  brand: "Your business profile, hours, and details",
   website: "Manage your live business site and domains",
   integrations: "Google, WhatsApp, Instagram, Facebook",
   billing: "Plan, wallet, and invoices",

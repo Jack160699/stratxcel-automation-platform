@@ -650,8 +650,8 @@ export function IntakeWizard({ order, onIntakeComplete }: { order: IntakeOrder; 
         </CardHeading>
         <p className="mt-2 text-sm leading-6 text-sx-text-muted">
           {hasKnownBusiness
-            ? "We’ve loaded your verified business profile from your onboarding & Brand Brain. Confirm these details or jump straight into your growth goals."
-            : "We’ll ask simple questions and turn your answers into your Stratxcel Brand Brain. No marketing jargon and no long form."}
+            ? "We’ve loaded your verified business profile from your onboarding & My Shop. Confirm these details or jump straight into your growth goals."
+            : "We’ll ask simple questions and turn your answers into My Shop — what StratXcel knows about your business. No marketing jargon and no long form."}
         </p>
 
         {hasKnownBusiness && (
@@ -842,7 +842,7 @@ export function IntakeWizard({ order, onIntakeComplete }: { order: IntakeOrder; 
             </Button>
           )}
           <Button variant="primary" size="touch" onClick={next} disabled={saving}>
-            {saving ? "Saving…" : currentIndex === visibleSteps.length - 1 ? "Create my Brand Brain →" : "Continue →"}
+            {saving ? "Saving…" : currentIndex === visibleSteps.length - 1 ? "Set up My Shop →" : "Continue →"}
           </Button>
         </div>
       </div>

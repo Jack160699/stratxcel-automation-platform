@@ -334,10 +334,10 @@ export function VisualAuditReport({
         <div>
           <div className="flex items-center gap-2">
             <span className="rounded-full bg-sx-accent/15 px-2.5 py-0.5 text-xs font-bold uppercase tracking-wider text-sx-accent">
-              Search Growth OS Diagnostic
+              Your Full Report
             </span>
             <span className="text-xs text-sx-text-subtle">
-              {isEarlyStage ? "Pre-Launch Authority Blueprint" : "Deep Evidence-Backed Search Diagnostic"}
+              {isEarlyStage ? "Getting your business ready" : "Based on real data from your connected accounts"}
             </span>
           </div>
           <h1 className="mt-2 font-sx-sans text-2xl font-bold text-sx-text sm:text-3xl">
@@ -506,16 +506,16 @@ export function VisualAuditReport({
               1. Executive Verdict
             </span>
             <h2 className="mt-2 font-sx-sans text-2xl font-bold text-sx-text">
-              Search Health & Authority Score
+              Google Visibility Score
             </h2>
             <p className="mt-1 text-xs text-sx-text-muted sm:text-sm">
-              Synthesized from technical crawling, search demand, content density, and verified first-party metrics.
+              Based on your website, your search rankings, your content, and your real connected-account data.
             </p>
           </div>
 
           <div className="flex items-center gap-4 bg-sx-surface-2/80 rounded-sx-md border border-sx-border p-4 shrink-0">
             <div>
-              <p className="text-[11px] font-bold uppercase tracking-wider text-sx-text-subtle">Authority Score</p>
+              <p className="text-[11px] font-bold uppercase tracking-wider text-sx-text-subtle">Score</p>
               <p className="text-3xl font-black text-sx-text font-sx-sans">{score}<span className="text-sm font-normal text-sx-text-muted">/100</span></p>
             </div>
             <div className="border-l border-sx-border/60 pl-3">
@@ -778,7 +778,7 @@ export function VisualAuditReport({
         {/* AI Search & AEO */}
         <div className="rounded-sx-md border border-sx-border bg-sx-surface-1 p-5 space-y-3">
           <div className="flex items-center justify-between">
-            <h2 className="font-sx-sans text-sm font-bold text-sx-text">6. AI Search (AEO)</h2>
+            <h2 className="font-sx-sans text-sm font-bold text-sx-text">6. Showing Up in AI Answers</h2>
             {report.aiSearchReadiness && (
               <span className="rounded bg-sx-accent/15 px-2 py-0.5 text-xs font-bold text-sx-accent">
                 Readiness: {report.aiSearchReadiness.citationScore}/100
@@ -786,7 +786,7 @@ export function VisualAuditReport({
             )}
           </div>
           <p className="text-xs text-sx-text-muted">
-            Checks entity readiness for generative search engines (ChatGPT, Perplexity, Gemini).
+            Checks whether tools like ChatGPT, Perplexity, and Gemini can find and describe your business correctly.
           </p>
           {report.aiSearchReadiness ? (
             <ul className="space-y-1.5 text-xs text-sx-text-muted pt-1">
@@ -858,13 +858,13 @@ export function VisualAuditReport({
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-sx-border/60 pb-5">
           <div>
             <span className="rounded-full bg-sx-accent/15 px-2.5 py-0.5 text-xs font-bold uppercase tracking-wider text-sx-accent">
-              8. Execution Architecture
+              8. What We'd Fix For You
             </span>
             <h2 className="mt-2 font-sx-sans text-xl font-bold text-sx-text sm:text-2xl">
               What StratXcel Would Fix Automatically
             </h2>
             <p className="mt-1 text-xs text-sx-text-muted">
-              StratXcel found <span className="text-sx-text font-bold">{rawOpportunities.length || 17} high-priority growth opportunities</span>. These are the actions our autonomous Growth Engine can execute and continuously monitor for you every 3 days.
+              StratXcel found <span className="text-sx-text font-bold">{rawOpportunities.length || 17} high-priority growth opportunities</span>. These are the actions StratXcel can carry out for you and keep checking every 3 days.
             </p>
           </div>
 
@@ -902,7 +902,7 @@ export function VisualAuditReport({
                     Fix this for me →
                   </Link>
                   <span className="text-[10px] text-sx-text-subtle text-center sm:text-right">
-                    Autonomous execution needs an active plan
+                    Needs an active plan
                   </span>
                 </div>
               </div>
@@ -916,12 +916,12 @@ export function VisualAuditReport({
             What Activation Unlocks:
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 text-xs text-sx-text-muted">
-            <div className="flex items-center gap-1.5"><span className="text-sx-success font-bold">✓</span> Autonomous SEO execution</div>
+            <div className="flex items-center gap-1.5"><span className="text-sx-success font-bold">✓</span> Automatic SEO fixes</div>
             <div className="flex items-center gap-1.5"><span className="text-sx-success font-bold">✓</span> Continuous 3-day growth cycles</div>
             <div className="flex items-center gap-1.5"><span className="text-sx-success font-bold">✓</span> Competitor rank monitoring</div>
             <div className="flex items-center gap-1.5"><span className="text-sx-success font-bold">✓</span> Technical metadata fixes</div>
             <div className="flex items-center gap-1.5"><span className="text-sx-success font-bold">✓</span> Service page & content generation</div>
-            <div className="flex items-center gap-1.5"><span className="text-sx-success font-bold">✓</span> Automated DOM verification</div>
+            <div className="flex items-center gap-1.5"><span className="text-sx-success font-bold">✓</span> Fixes verified automatically on your website</div>
             <div className="flex items-center gap-1.5"><span className="text-sx-success font-bold">✓</span> Continuous outcome tracking</div>
             <div className="flex items-center gap-1.5"><span className="text-sx-success font-bold">✓</span> Weekly performance briefing</div>
           </div>
@@ -975,7 +975,7 @@ export function VisualAuditReport({
           <div className="mt-4 rounded-sx-md border border-sx-border bg-sx-surface-2 p-5">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
-                <span className="rounded-full bg-sx-text/10 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-sx-accent">Autonomous Upgrade Option</span>
+                <span className="rounded-full bg-sx-text/10 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-sx-accent">Upgrade Option</span>
                 <h3 className="mt-1 font-bold text-base text-sx-text">{recommendation.upsell.title} — {recommendation.upsell.price}</h3>
               </div>
               <Link
