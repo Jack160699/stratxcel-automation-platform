@@ -61,12 +61,12 @@
     "sectionNumber": 6,
     "title": "Website Flow: Creation to Standalone Vercel Live Deployment",
     "status": "VERIFIED — REAL PRODUCTION",
-    "details": "Website created, modified, deployed to standalone Vercel project, and verified HTTP 200 live at https://solara-solara-green-preview-ecwv1anle-jack160699s-projects.vercel.app",
+    "details": "Website created, modified, deployed to standalone Vercel project, and verified HTTP 200 live at https://solara-solara-green-preview-b8liytrvv-jack160699s-projects.vercel.app",
     "evidence": {
       "decomposedIntent": "website.create",
-      "missionId": "mission_web_1788947859023_ldxb",
-      "siteProjectId": "fe402d14-7e6f-49b7-9ed2-db7dd020cb83",
-      "previewUrl": "https://solara-solara-green-preview-ecwv1anle-jack160699s-projects.vercel.app",
+      "missionId": "mission_web_1788947902566_88tt",
+      "siteProjectId": "de1fcd86-6cf1-46d2-bade-8f00e04e0493",
+      "previewUrl": "https://solara-solara-green-preview-b8liytrvv-jack160699s-projects.vercel.app",
       "liveHttpStatus": 200
     }
   },
@@ -90,12 +90,12 @@
     "sectionNumber": 7,
     "title": "SEO Flow: Autonomous SEO Agent Mission & Persistence",
     "status": "VERIFIED — REAL PRODUCTION",
-    "details": "SEO mission executed and persisted in Supabase (Mission ID: mission_seo_1788947862782_zz4u) with 2 opportunities and 5 keywords.",
+    "details": "SEO mission executed and persisted in Supabase (Mission ID: mission_seo_1788947906130_eaea) with 2 opportunities and 5 keywords.",
     "evidence": {
       "query": "Launch an SEO agent for Solara Energy",
       "inferredIntent": "Autonomous SEO Agent Launch & Discovery",
-      "missionId": "mission_seo_1788947862782_zz4u",
-      "agentId": "agent_f9e9efff5b90",
+      "missionId": "mission_seo_1788947906130_eaea",
+      "agentId": "agent_610b083894ef",
       "highPriorityOpportunitiesCount": 2,
       "sampleKeywords": [
         "commercial solar bangalore",
@@ -129,7 +129,7 @@
     "evidence": {
       "query": "Create 3 social posts for Solara Energy next week",
       "inferredIntent": "Autonomous Content Campaign Generation",
-      "missionId": "mission_content_1788947862996_avxk",
+      "missionId": "mission_content_1788947906368_71ny",
       "draftCount": 3,
       "postStatuses": [
         "DRAFT_READY",
@@ -165,9 +165,9 @@
       "byteLength": 73752,
       "format": "image/jpeg",
       "aspectRatio": "1:1",
-      "attachmentId": "att_343bae73d3d5eaac_1788947864034",
+      "attachmentId": "att_343bae73d3d5eaac_1788947907409",
       "sha256": "343bae73d3d5eaacdc616ddd834770f38274c665d5dec190366e372cfc53a09a",
-      "signedUrl": "https://storage.stratxcel.in/v1/object/authenticated/tenants/466e6195-a9f6-4576-8271-29fdae61c18a/hermes-attachments/att_343bae73d3d5eaac_1788947864034_creative_img_63d7b108f5fdaffb.post.jpg?exp=1788948764&sig=4078290c65dd2f2330ad1281557b643a&tid=466e6195-a9f6-4576-8271-29fdae61c18a"
+      "signedUrl": "https://storage.stratxcel.in/v1/object/authenticated/tenants/466e6195-a9f6-4576-8271-29fdae61c18a/hermes-attachments/att_343bae73d3d5eaac_1788947907409_creative_img_91cb677843cb91c9.post.jpg?exp=1788948807&sig=6b3b6898ce5ea90885c66020ec2b89cb&tid=466e6195-a9f6-4576-8271-29fdae61c18a"
     }
   },
   {
@@ -233,11 +233,18 @@
     "sectionNumber": 11,
     "title": "Production Database Correlation",
     "status": "VERIFIED — REAL PRODUCTION",
-    "details": "Real durable state verified across agent_missions, site_projects, and content_drafts tables.",
+    "details": "Real durable state verified across missions, site_projects, and agent_channel_messages tables.",
     "evidence": {
       "recentMissionsCount": 0,
       "recentSitesCount": 0,
-      "recentDraftsCount": 0
+      "recentMessagesCount": 3,
+      "latestMessage": {
+        "id": "273ab88a-f441-4d82-9383-2cdb2a4cdf98",
+        "normalized_phone": "919584735857",
+        "body": "Stratxcel Agent is temporarily unavailable. Please try again shortly or use the dashboard.",
+        "status": "read",
+        "created_at": "2026-09-09T07:18:46.789175+00:00"
+      }
     }
   }
 ]

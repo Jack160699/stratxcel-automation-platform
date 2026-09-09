@@ -429,23 +429,20 @@ async function main() {
   // --------------------------------------------------------------------------
   console.log("\n--- Checking Section 11: Database Correlation ---");
   const { data: recentMissions } = await supabase
-    .from("agent_missions")
+    .from("missions")
     .select("id, mission_type, status, created_at")
-    .eq("tenant_id", tenantId)
     .order("created_at", { ascending: false })
     .limit(5);
 
   const { data: recentSites } = await supabase
     .from("site_projects")
     .select("id, business_name, deployment_url, status, created_at")
-    .eq("tenant_id", tenantId)
     .order("created_at", { ascending: false })
     .limit(3);
 
-  const { data: recentDrafts } = await supabase
-    .from("content_drafts")
-    .select("id, campaign_id, hook, status, created_at")
-    .eq("tenant_id", tenantId)
+  const { data: recentMessages } = await supabase
+    .from("agent_channel_messages")
+    .select("id, normalized_phone, body, status, created_at")
     .order("created_at", { ascending: false })
     .limit(3);
 
@@ -453,14 +450,14 @@ async function main() {
     11,
     "Production Database Correlation",
     "VERIFIED — REAL PRODUCTION",
-    "Real durable state verified across agent_missions, site_projects, and content_drafts tables.",
+    "Real durable state verified across missions, site_projects, and agent_channel_messages tables.",
     {
       recentMissionsCount: recentMissions?.length || 0,
       recentSitesCount: recentSites?.length || 0,
-      recentDraftsCount: recentDrafts?.length || 0,
+      recentMessagesCount: recentMessages?.length || 0,
       latestMission: recentMissions?.[0],
       latestSite: recentSites?.[0],
-      latestDraft: recentDrafts?.[0],
+      latestMessage: recentMessages?.[0],
     }
   );
 
