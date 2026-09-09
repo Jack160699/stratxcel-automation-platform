@@ -143,6 +143,57 @@ export function decomposeNaturalLanguageIntent(query: string, options: Decompose
       )
     );
   }
+  // 2b. Website Capabilities Inquiry & Follow-up ("What kind of websites and how complex?", "What kind of websites can you create?")
+  else if (
+    /\b(?:what\s+kind\s+of\s+websites?|how\s+complex|what\s+types?\s+of\s+websites?|what\s+can\s+you\s+build|what\s+websites?\s+can\s+you\s+(?:create|build|make))\b/i.test(text) ||
+    (/\b(?:websites?|landing\s*page)\b/i.test(text) && /\b(?:complexity|types?|capabilities?|options?|what\s+can\s+you)\b/i.test(text))
+  ) {
+    inferredIntent = "Website Capabilities Inquiry";
+    tasks.push(createTaskFromCapability(1, "website.inquiry", { query, tenantId: tenantScope }, confirmedByFounder));
+  }
+  // 2c. Website Selection from Action UI ("Business Website", "Landing Page", "Online Store", "action:website_type:...")
+  else if (/^(?:action:website_type:)?(?:business(?:\s+website)?|landing(?:\s*page)?|online\s*store|store)$/i.test(text.trim())) {
+    inferredIntent = "Website Creation from Scratch";
+    const selectedType = text.replace(/^action:website_type:/i, "").trim();
+    tasks.push(
+      createTaskFromCapability(
+        1,
+        "website.create",
+        {
+          goalText: `Create a ${selectedType} website`,
+          purpose: selectedType,
+          tenantId: tenantScope,
+          companyScope,
+        },
+        confirmedByFounder
+      )
+    );
+  }
+  // 2d. Action UI button callbacks for multimodal assets and website actions
+  else if (text === "action:image:analyze") {
+    inferredIntent = "Multimodal Image Analysis";
+    tasks.push(createTaskFromCapability(1, "image.analyze", { query: "Analyze this image", tenantId: tenantScope }, confirmedByFounder));
+  }
+  else if (text === "action:image:improve" || text === "action:image:new_version") {
+    inferredIntent = "Autonomous Creative Image Generation";
+    tasks.push(createTaskFromCapability(1, "image.generate", { brief: "Improve visual design and aesthetics of the provided asset", tenantId: tenantScope }, confirmedByFounder));
+  }
+  else if (text === "action:image:website") {
+    inferredIntent = "Website Creation from Scratch";
+    tasks.push(createTaskFromCapability(1, "website.create", { goalText: "Build a website using the provided visual asset", tenantId: tenantScope, companyScope }, confirmedByFounder));
+  }
+  else if (text === "action:doc:summarize") {
+    inferredIntent = "Multimodal File & Document Analysis";
+    tasks.push(createTaskFromCapability(1, "file.analyze", { goal: "Summarize this document", tenantId: tenantScope }, confirmedByFounder));
+  }
+  else if (text === "action:doc:risks") {
+    inferredIntent = "Multimodal File & Document Analysis";
+    tasks.push(createTaskFromCapability(1, "file.analyze", { goal: "Check risks in this document", tenantId: tenantScope }, confirmedByFounder));
+  }
+  else if (text === "action:doc:actions") {
+    inferredIntent = "Multimodal File & Document Analysis";
+    tasks.push(createTaskFromCapability(1, "file.analyze", { goal: "Extract action plan from this document", tenantId: tenantScope }, confirmedByFounder));
+  }
   // 3. Agent Factory & 24/7 Deployment Controls ("Create an SEO monitoring agent", "Deploy that agent 24/7", "Pause my SEO agent", "Stop that agent")
   else if (text.includes("agent") || (text.includes("deploy") && text.includes("24/7"))) {
     if (text.includes("create") || text.includes("build") || text.includes("make") || text.includes("setup") || text.includes("watches") || text.includes("monitors")) {

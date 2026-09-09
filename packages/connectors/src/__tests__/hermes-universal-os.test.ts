@@ -275,7 +275,7 @@ describe("Hermes Universal Founder OS - 24 Scenario Acceptance Suite", () => {
     assert.ok(output.siteProjectId, "Site project ID must be assigned");
     assert.ok(output.lifecycleStage === "PLANNING" || output.lifecycleStage === "PREVIEW");
     assert.equal(output.businessName, "SolarTech Bhilai");
-    assert.ok(res.formattedMessage.includes("plan the site") || res.formattedMessage.includes("SolarTech Bhilai"));
+    assert.ok(res.formattedMessage.includes("Website creation started") || res.formattedMessage.includes("SolarTech Bhilai"));
   });
 
   // --------------------------------------------------------------------------

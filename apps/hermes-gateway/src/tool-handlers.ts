@@ -274,11 +274,16 @@ export const TOOL_HANDLERS: Partial<Record<ToolName, ToolHandler>> = {
     const supabase = createMissionsClient();
     const { data: sites, error } = await supabase
       .from("site_projects")
-      .select("id, tenant_id, name, slug, status, custom_domain, framework, template, created_at, updated_at")
+      .select("id, tenant_id, name, slug, status, custom_domain, template_id, created_at, updated_at")
       .eq("tenant_id", ctx.tenantId)
       .order("created_at", { ascending: false });
     if (error) throw new Error(`check_website_status: ${error.message}`);
-    return { sites: sites ?? [] };
+    const normalizedSites = (sites ?? []).map((s: Record<string, unknown>) => ({
+      ...s,
+      template: s.template_id,
+      framework: "nextjs",
+    }));
+    return { sites: normalizedSites };
   },
 
   // First-class autonomous website creation for Hermes missions:

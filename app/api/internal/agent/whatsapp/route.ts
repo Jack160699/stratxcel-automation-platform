@@ -26,6 +26,7 @@ import {
   analyzeImage,
   analyzeDocumentFile,
   analyzeWebsiteLink,
+  transcribeAudioFile,
   decomposeNaturalLanguageIntent,
   executeDecomposedPlan,
 } from "@stratxcel/connectors";
@@ -151,7 +152,7 @@ export async function POST(request: Request) {
 
   const senderPhone = body.senderPhone as string;
   const providerMessageId = body.providerMessageId as string;
-  const text = body.text as string;
+  let text = (body.text as string) || "";
   const messageType = typeof body.messageType === "string" ? body.messageType : "text";
   const mediaId = typeof body.mediaId === "string" ? body.mediaId : null;
   const mimeType = typeof body.mimeType === "string" ? body.mimeType : null;
@@ -321,8 +322,8 @@ export async function POST(request: Request) {
   if (messageType !== "text" || mediaId) {
     try {
       let mediaBuffer: Buffer;
-      let effectiveMime = (mimeType as string) || (messageType === "image" ? "image/jpeg" : messageType === "video" ? "video/mp4" : "application/pdf");
-      let mediaFilename = `whatsapp_${mediaId || Date.now()}.${messageType === "image" ? "jpg" : messageType === "video" ? "mp4" : "pdf"}`;
+      let effectiveMime = (mimeType as string) || (messageType === "image" ? "image/jpeg" : messageType === "video" ? "video/mp4" : messageType === "audio" || messageType === "voice" ? "audio/ogg" : "application/pdf");
+      let mediaFilename = `whatsapp_${mediaId || Date.now()}.${messageType === "image" ? "jpg" : messageType === "video" ? "mp4" : messageType === "audio" || messageType === "voice" ? "ogg" : "pdf"}`;
 
       if (mediaId) {
         try {
@@ -349,18 +350,86 @@ export async function POST(request: Request) {
         buffer: mediaBuffer,
       });
 
-      if (messageType === "image" || effectiveMime.startsWith("image/")) {
-        const analysis = await analyzeImage({ attachment, query: text });
-        const reply = `🔍 *Visual Analysis: ${attachment.filename}*\n\n${analysis.summary}\n\n*Key Elements:*\n${analysis.visualElements.map((e) => `• ${e}`).join("\n")}\n\n*Recommended Actions:*\n${analysis.recommendedActions.map((a) => `• ${a}`).join("\n")}`;
-        return sendAgentReply(reply, recipientContext, { principalTenantId });
-      }
+      if (messageType === "audio" || messageType === "voice" || effectiveMime.startsWith("audio/")) {
+        const transcription = await transcribeAudioFile({ attachment });
+        if (transcription.text && transcription.text.trim().length > 0) {
+          text = transcription.text.trim();
+          dispatch.userText = text;
+          const audioParsed = parseCommand(text);
+          if (audioParsed.kind === "whoami") {
+            return sendAgentReply(handleWhoAmI(resolution, EXTRA_TOOLS), recipientContext, { principalTenantId });
+          }
+          if (audioParsed.kind === "help") {
+            return sendAgentReply(handleHelp(principal, EXTRA_TOOLS), recipientContext, { principalTenantId });
+          }
+          if (audioParsed.kind === "reset") {
+            const reply = await handleReset(supabase, principal);
+            return sendAgentReply(reply, recipientContext, { principalTenantId });
+          }
+          if (audioParsed.kind === "confirm") {
+            const { reply } = await handleConfirm(supabase, principal, audioParsed.code, EXTRA_TOOLS);
+            return sendAgentReply(reply, recipientContext, { principalTenantId });
+          }
+          if (audioParsed.kind === "cancel") {
+            const reply = await handleCancel(supabase, principal, audioParsed.code);
+            return sendAgentReply(reply, recipientContext, { principalTenantId });
+          }
+        } else {
+          return sendAgentReply(
+            "I received your voice note, but couldn't transcribe the audio clearly. Could you record again or type your message?",
+            recipientContext,
+            { principalTenantId }
+          );
+        }
+      } else if (messageType === "image" || effectiveMime.startsWith("image/")) {
+        const hasSpecificInstructions = text && text.trim().length > 0 && !/^(?:hi|hello|hey|see\s+this|look|check\s+this)$/i.test(text.trim());
+        if (!hasSpecificInstructions) {
+          const reply = "I can work with this.\n\n1. Analyze Design\n2. Improve Visuals\n3. Use in Website";
+          return sendAgentReply(reply, recipientContext, {
+            principalTenantId,
+            interactiveButtons: [
+              { id: "action:image:analyze", title: "Analyze Design" },
+              { id: "action:image:improve", title: "Improve Visuals" },
+              { id: "action:image:website", title: "Use in Website" },
+            ],
+          });
+        }
 
-      if (messageType === "document" || effectiveMime.includes("pdf") || effectiveMime.includes("sheet") || effectiveMime.includes("excel") || effectiveMime.includes("csv")) {
+        const analysis = await analyzeImage({ attachment, query: text });
+        const visualPoints = (analysis.visualElements || []).slice(0, 2).map((e) => `• ${e}`).join("\n");
+        const reply = `🔍 *Visual Analysis: ${attachment.filename}*\n\n${analysis.summary}${visualPoints ? `\n\n${visualPoints}` : ""}\n\n1. Improve Visuals\n2. Create New Version\n3. Use in Website`;
+        return sendAgentReply(reply, recipientContext, {
+          principalTenantId,
+          interactiveButtons: [
+            { id: "action:image:improve", title: "Improve Visuals" },
+            { id: "action:image:new_version", title: "Create New Version" },
+            { id: "action:image:website", title: "Use in Website" },
+          ],
+        });
+      } else if (messageType === "document" || effectiveMime.includes("pdf") || effectiveMime.includes("sheet") || effectiveMime.includes("excel") || effectiveMime.includes("csv")) {
+        const hasSpecificInstructions = text && text.trim().length > 0 && !/^(?:hi|hello|hey|check|see|look)$/i.test(text.trim());
+        if (!hasSpecificInstructions) {
+          const reply = `I received your file (${attachment.filename}). How would you like me to process it?\n\n1. Summarize\n2. Check Risks\n3. Action Plan`;
+          return sendAgentReply(reply, recipientContext, {
+            principalTenantId,
+            interactiveButtons: [
+              { id: "action:doc:summarize", title: "Summarize" },
+              { id: "action:doc:risks", title: "Check Risks" },
+              { id: "action:doc:actions", title: "Action Plan" },
+            ],
+          });
+        }
+
         const analysis = await analyzeDocumentFile({ attachment, goal: text });
-        const findings = analysis.findings.map((f) => `• ${f}`).join("\n");
-        const actions = analysis.actionPlan.map((a) => `• ${a}`).join("\n");
-        const reply = `📄 *File Analysis: ${attachment.filename}*\n\n${analysis.summary}\n\n*Key Findings:*\n${findings}\n\n*Action Plan:*\n${actions}`;
-        return sendAgentReply(reply, recipientContext, { principalTenantId });
+        const findings = (analysis.findings || []).slice(0, 2).map((f) => `• ${f}`).join("\n");
+        const reply = `📄 *File Analysis: ${attachment.filename}*\n\n${analysis.summary}${findings ? `\n\n${findings}` : ""}\n\n1. Action Plan\n2. Use in Website`;
+        return sendAgentReply(reply, recipientContext, {
+          principalTenantId,
+          interactiveButtons: [
+            { id: "action:doc:actions", title: "Action Plan" },
+            { id: "action:doc:website", title: "Use in Website" },
+          ],
+        });
       }
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : "Multimodal analysis failed";
@@ -413,7 +482,10 @@ export async function POST(request: Request) {
       actorId: principal.authUserId,
       actorKind: "founder",
     });
-    return sendAgentReply(exec.overallMessage, recipientContext, { principalTenantId });
+    return sendAgentReply(exec.overallMessage, recipientContext, {
+      principalTenantId,
+      interactiveButtons: exec.interactiveButtons,
+    });
   }
 
   // parsed.kind === "none" — a normal conversational turn for a LINKED

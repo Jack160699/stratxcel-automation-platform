@@ -460,6 +460,15 @@ export const CORE_SIX_FLEET: Record<CoreProviderDomain, CoreFleetProviderSpec> =
         requiredPermissions: ["websites:write", "deployments:write"],
         isHighConsequence: false,
       },
+      {
+        capabilityKey: "website.inquiry",
+        name: "Website Capabilities Inquiry",
+        description: "Answer user queries on website types, scope, complexity, and options available through StratXcel",
+        riskLevel: "read_only",
+        confirmationPolicy: "autonomous",
+        requiredPermissions: ["websites:read"],
+        isHighConsequence: false,
+      },
     ],
   },
 

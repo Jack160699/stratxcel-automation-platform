@@ -86,6 +86,7 @@ export interface CoreExecutionResult {
   tenantIsolationVerified: boolean;
   secretLeakagePrevented: boolean;
   executionDurationMs: number;
+  interactiveButtons?: Array<{ id: string; title: string }>;
 }
 
 /**
@@ -588,6 +589,21 @@ export async function executeCoreMcpCapability(
         break;
       }
 
+      case "website.inquiry": {
+        outputData = {
+          supportedTypes: ["business_website", "landing_page", "online_store", "booking_portfolio"],
+          complexity: "from simple single-page sites to full multi-page business platforms",
+          conversationalReply:
+            "I can build business websites, landing pages, service websites, portfolios, booking sites and more. Complexity can range from a simple one-page site to a full multi-page business site.\n\nWhat are you building?\n\n1. Business Website\n2. Landing Page\n3. Online Store\n4. Something Else",
+          actionButtons: [
+            { id: "action:website_type:business", title: "Business Website" },
+            { id: "action:website_type:landing", title: "Landing Page" },
+            { id: "action:website_type:store", title: "Online Store" },
+          ],
+        };
+        break;
+      }
+
       // --- GITHUB CAPABILITIES ---
       case "github.repo_read":
         outputData = {
@@ -956,6 +972,8 @@ export async function executeCoreMcpCapability(
     outputData
   );
 
+  const actionButtons = (outputData.actionButtons || outputData.interactiveButtons) as Array<{ id: string; title: string }> | undefined;
+
   return {
     success: true,
     provider,
@@ -974,6 +992,7 @@ export async function executeCoreMcpCapability(
     tenantIsolationVerified: true,
     secretLeakagePrevented: true,
     executionDurationMs: Date.now() - startTime,
+    interactiveButtons: actionButtons,
   };
 }
 
@@ -987,6 +1006,7 @@ export async function executeDecomposedPlan(
   planStatus: "ALL_COMPLETED" | "CONFIRMATION_PENDING" | "FAILED";
   stepResults: CoreExecutionResult[];
   overallMessage: string;
+  interactiveButtons?: Array<{ id: string; title: string }>;
 }> {
   const stepResults: CoreExecutionResult[] = [];
 
@@ -999,6 +1019,10 @@ export async function executeDecomposedPlan(
         planStatus: "CONFIRMATION_PENDING",
         stepResults,
         overallMessage: result.formattedMessage,
+        interactiveButtons: [
+          { id: "action:confirm", title: "Confirm" },
+          { id: "action:cancel", title: "Cancel" },
+        ],
       };
     }
 
@@ -1007,14 +1031,17 @@ export async function executeDecomposedPlan(
         planStatus: "FAILED",
         stepResults,
         overallMessage: result.formattedMessage,
+        interactiveButtons: undefined,
       };
     }
   }
 
   const overallMessage = stepResults.map((r) => r.formattedMessage).join("\n\n");
+  const interactiveButtons = stepResults.find((r) => r.interactiveButtons && r.interactiveButtons.length > 0)?.interactiveButtons;
   return {
     planStatus: "ALL_COMPLETED",
     stepResults,
     overallMessage,
+    interactiveButtons,
   };
 }

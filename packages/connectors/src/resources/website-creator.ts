@@ -84,6 +84,7 @@ export interface WebsiteCreationResult {
   productionDeployGated: boolean;
   tenantId: string;
   createdAt: string;
+  actionButtons?: Array<{ id: string; title: string }>;
 }
 
 /**
@@ -265,7 +266,12 @@ export async function initiateWebsiteCreation(
   if (isGenericInitialRequest) {
     // Conversational UX: Required Founder response
     const conversationalReply =
-      "✅ I can do that. I'll start building it and notify you when the first version is ready.";
+      "Website creation started. I’m building it now and I’ll notify you when the first version is ready.\n\nWhat are you building?\n\n1. Business Website\n2. Landing Page\n3. Online Store\n4. Something Else";
+    const actionButtons = [
+      { id: "action:website_type:business", title: "Business Website" },
+      { id: "action:website_type:landing", title: "Landing Page" },
+      { id: "action:website_type:store", title: "Online Store" },
+    ];
 
     return {
       missionId,
@@ -275,6 +281,7 @@ export async function initiateWebsiteCreation(
       purpose: "Pending Founder Details",
       needsMoreDetails: true,
       conversationalReply,
+      actionButtons,
       github: {
         repoName,
         branch: branchName,
@@ -297,7 +304,12 @@ export async function initiateWebsiteCreation(
 
   // If context is provided: Advance immediately to BUILDING & PREVIEW
   const conversationalReply =
-    "Absolutely. I'll handle it from here. I'm going to plan the site, build the first version, test it, and prepare a preview.";
+    `Website creation started. I'm building it now and I'll notify you when the first version is ready.\n\nPreview: ${previewUrl}\n\n1. Open Preview\n2. Edit Website\n3. Publish`;
+  const actionButtons = [
+    { id: "action:website:preview", title: "Open Preview" },
+    { id: "action:website:edit", title: "Edit Website" },
+    { id: "action:website:publish", title: "Publish" },
+  ];
 
   return {
     missionId,
@@ -307,6 +319,7 @@ export async function initiateWebsiteCreation(
     purpose,
     needsMoreDetails: false,
     conversationalReply,
+    actionButtons,
     previewUrl,
     github: {
       repoName,

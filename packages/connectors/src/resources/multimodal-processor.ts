@@ -595,3 +595,108 @@ export async function generateVideoDeliverable(input: VideoGenerationInput): Pro
     createdAt: new Date().toISOString(),
   };
 }
+
+// ----------------------------------------------------------------------------
+// 6. AUDIO & VOICE NOTE TRANSCRIPTION
+// ----------------------------------------------------------------------------
+
+export interface AudioTranscriptionInput {
+  attachment: HermesAttachment;
+  language?: string;
+}
+
+export interface AudioTranscriptionResult {
+  text: string;
+  durationSeconds?: number;
+  provider: "openai_whisper" | "google_gemini" | "fallback";
+}
+
+/**
+ * Transcribes spoken audio/voice note attachments using OpenAI Whisper or Google Gemini multimodal audio.
+ */
+export async function transcribeAudioFile(input: AudioTranscriptionInput): Promise<AudioTranscriptionResult> {
+  const { attachment } = input;
+  const buffer = attachment.buffer;
+  if (!buffer || buffer.length === 0) {
+    return { text: "", provider: "fallback" };
+  }
+
+  // 1. Try OpenAI Whisper API if configured
+  if (process.env.OPENAI_API_KEY) {
+    try {
+      const formData = new FormData();
+      const mime = attachment.mimeType || "audio/ogg";
+      const ext = mime.includes("mp4") || mime.includes("m4a") ? "m4a" : "ogg";
+      const blob = new Blob([new Uint8Array(buffer) as unknown as BlobPart], { type: mime });
+      formData.append("file", blob, attachment.filename || `voice_note.${ext}`);
+      formData.append("model", "whisper-1");
+      if (input.language) formData.append("language", input.language);
+
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 15000);
+      const res = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+        },
+        body: formData,
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+
+      if (res.ok) {
+        const json = (await res.json()) as { text?: string; duration?: number };
+        if (json.text && json.text.trim()) {
+          return {
+            text: json.text.trim(),
+            durationSeconds: typeof json.duration === "number" ? Math.round(json.duration) : undefined,
+            provider: "openai_whisper",
+          };
+        }
+      }
+    } catch (whisperErr) {
+      console.warn("[multimodal-processor] Whisper transcription failed, attempting Gemini:", whisperErr);
+    }
+  }
+
+  // 2. Try Google Gemini Multimodal Audio if configured
+  if (process.env.GEMINI_API_KEY) {
+    try {
+      const base64Data = buffer.toString("base64");
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 15000);
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=${process.env.GEMINI_API_KEY}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          signal: controller.signal,
+          body: JSON.stringify({
+            contents: [
+              {
+                parts: [
+                  { text: "Transcribe the spoken voice message verbatim in the original spoken language. Output ONLY the clean transcribed words with no labels, commentary, or quotes." },
+                  { inlineData: { mimeType: attachment.mimeType || "audio/ogg", data: base64Data } },
+                ],
+              },
+            ],
+          }),
+        }
+      );
+      clearTimeout(timeout);
+
+      if (res.ok) {
+        const json = (await res.json()) as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
+        const text = json.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+        if (text) {
+          return { text, provider: "google_gemini" };
+        }
+      }
+    } catch (geminiErr) {
+      console.warn("[multimodal-processor] Gemini audio transcription failed:", geminiErr);
+    }
+  }
+
+  return { text: "", provider: "fallback" };
+}
+

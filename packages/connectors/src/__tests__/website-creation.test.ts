@@ -277,11 +277,11 @@ describe("Hermes First-Class Website Creation Suite", () => {
       assert.doesNotMatch(result.conversationalReply, /site_projects|schema|postgres|foreign key|null constraint/i);
       assert.doesNotMatch(result.conversationalReply, /cannot create/i);
 
-      // Matches preferred first reply verbatim
-      assert.equal(
-        result.conversationalReply,
-        "✅ I can do that. I'll start building it and notify you when the first version is ready."
-      );
+      // Matches prompt-aligned response and Action UI buttons
+      assert.ok(result.conversationalReply.includes("Website creation started"));
+      assert.ok(result.conversationalReply.includes("What are you building?"));
+      assert.equal(result.actionButtons?.length, 3);
+      assert.equal(result.actionButtons?.[0]?.title, "Business Website");
     });
 
     it("returns immediate planning & preview reply when context is provided", async () => {
@@ -292,10 +292,10 @@ describe("Hermes First-Class Website Creation Suite", () => {
         goalText: "Build a website for Bhilai Solar to get solar installation leads",
       });
 
-      assert.equal(
-        result.conversationalReply,
-        "Absolutely. I'll handle it from here. I'm going to plan the site, build the first version, test it, and prepare a preview."
-      );
+      assert.ok(result.conversationalReply.includes("Website creation started"));
+      assert.ok(result.conversationalReply.includes("Preview:"));
+      assert.equal(result.actionButtons?.length, 3);
+      assert.equal(result.actionButtons?.[0]?.title, "Open Preview");
     });
   });
 
@@ -333,10 +333,9 @@ describe("Hermes First-Class Website Creation Suite", () => {
       // 3. Conversational UX Verification
       const reply = execution.formattedMessage;
       assert.ok(reply, "Must produce a WhatsApp reply");
-      assert.equal(
-        reply,
-        "✅ I can do that. I'll start building it and notify you when the first version is ready."
-      );
+      assert.ok(reply.includes("Website creation started"));
+      assert.ok(reply.includes("What are you building?"));
+      assert.ok(execution.interactiveButtons && execution.interactiveButtons.length >= 3);
 
       // Verify Hermes entered PLANNING with a real mission and project shell
       const output = execution.output as Record<string, unknown>;

@@ -17,3 +17,4 @@ export * from "./tools/descriptions.ts";
 export * from "./tools/json-schemas.ts";
 export * from "./registry/agent-registry.ts";
 export * from "./attachments.ts";
+export * from "./action-ui.ts";
