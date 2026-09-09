@@ -16,7 +16,8 @@ interface OfficeWorkspaceProps {
   initialTelemetry: OfficeTelemetry;
 }
 
-const INACTIVITY_TIMEOUT_MS = 60_000; // 60s inactivity triggers screensaver
+// 25 seconds of inactivity transitions into cinematic screensaver mode
+const INACTIVITY_TIMEOUT_MS = 25_000;
 
 export function OfficeWorkspace({ initialTelemetry }: OfficeWorkspaceProps) {
   const { active } = useCurrentTenant();
@@ -26,10 +27,11 @@ export function OfficeWorkspace({ initialTelemetry }: OfficeWorkspaceProps) {
   const [hoverPosition, setHoverPosition] = useState<{ x: number; y: number } | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isAmbientMode, setIsAmbientMode] = useState(false);
-  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [mouseActive, setMouseActive] = useState(true);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const inactivityTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const mouseFadeTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Fetch updated telemetry for active tenant
   const fetchTelemetry = useCallback(async () => {
@@ -37,7 +39,6 @@ export function OfficeWorkspace({ initialTelemetry }: OfficeWorkspaceProps) {
     if (!tenantId) return;
 
     try {
-      setIsRefreshing(true);
       const res = await fetch(`/api/platform/admin/office/telemetry?tenantId=${tenantId}`);
       if (res.ok) {
         const data = await res.json();
@@ -47,8 +48,6 @@ export function OfficeWorkspace({ initialTelemetry }: OfficeWorkspaceProps) {
       }
     } catch (err) {
       console.error("[OFFICE_FETCH_ERROR]", err);
-    } finally {
-      setIsRefreshing(false);
     }
   }, [active?.tenantId, initialTelemetry.tenantId]);
 
@@ -82,7 +81,7 @@ export function OfficeWorkspace({ initialTelemetry }: OfficeWorkspaceProps) {
       )
       .subscribe();
 
-    // 10s fallback polling for live EC2 worker heartbeats
+    // 10s polling for live EC2 worker heartbeats
     const heartbeatInterval = setInterval(() => {
       fetchTelemetry();
     }, 10_000);
@@ -94,41 +93,42 @@ export function OfficeWorkspace({ initialTelemetry }: OfficeWorkspaceProps) {
   }, [active?.tenantId, initialTelemetry.tenantId, fetchTelemetry]);
 
   // Reset inactivity timer for Screensaver / Ambient Mode
-  const resetInactivityTimer = useCallback(() => {
+  const handleUserActivity = useCallback(() => {
+    setMouseActive(true);
     if (isAmbientMode) {
       setIsAmbientMode(false);
     }
-    if (inactivityTimerRef.current) {
-      clearTimeout(inactivityTimerRef.current);
-    }
+
+    if (mouseFadeTimerRef.current) clearTimeout(mouseFadeTimerRef.current);
+    mouseFadeTimerRef.current = setTimeout(() => {
+      setMouseActive(false);
+    }, 4000);
+
+    if (inactivityTimerRef.current) clearTimeout(inactivityTimerRef.current);
     inactivityTimerRef.current = setTimeout(() => {
       setIsAmbientMode(true);
     }, INACTIVITY_TIMEOUT_MS);
   }, [isAmbientMode]);
 
   useEffect(() => {
-    function handleUserActivity() {
-      resetInactivityTimer();
-    }
-
     window.addEventListener("mousemove", handleUserActivity);
     window.addEventListener("keydown", handleUserActivity);
     window.addEventListener("touchstart", handleUserActivity);
-    resetInactivityTimer();
+    handleUserActivity();
 
     return () => {
       window.removeEventListener("mousemove", handleUserActivity);
       window.removeEventListener("keydown", handleUserActivity);
       window.removeEventListener("touchstart", handleUserActivity);
       if (inactivityTimerRef.current) clearTimeout(inactivityTimerRef.current);
+      if (mouseFadeTimerRef.current) clearTimeout(mouseFadeTimerRef.current);
     };
-  }, [resetInactivityTimer]);
+  }, [handleUserActivity]);
 
   // Fullscreen toggle handler
   const handleToggleFullscreen = () => {
     if (!document.fullscreenElement) {
       containerRef.current?.requestFullscreen?.().catch(() => {
-        // Fallback: Viewport CSS Fullscreen
         setIsFullscreen(true);
       });
       setIsFullscreen(true);
@@ -163,23 +163,19 @@ export function OfficeWorkspace({ initialTelemetry }: OfficeWorkspaceProps) {
   return (
     <div
       ref={containerRef}
-      className={`relative flex flex-col gap-4 font-sans text-slate-100 transition-all duration-500 ${
-        isFullscreen
-          ? "fixed inset-0 z-50 overflow-y-auto bg-slate-950 p-6"
-          : "min-h-[calc(100vh-5rem)]"
-      }`}
+      className="fixed inset-0 z-50 h-screen w-screen overflow-hidden bg-[#06080d] select-none font-sans text-slate-100"
     >
-      {/* 1. Live Office Status Bar */}
+      {/* 1. Subtle Floating Top HUD (Status, Clock, Controls) */}
       <OfficeStatusBar
         telemetry={telemetry}
         isFullscreen={isFullscreen}
         onToggleFullscreen={handleToggleFullscreen}
         onEnterAmbientMode={() => setIsAmbientMode(true)}
-        onRefresh={fetchTelemetry}
-        isRefreshing={isRefreshing}
+        isAmbientMode={isAmbientMode}
+        mouseActive={mouseActive}
       />
 
-      {/* 2. Main 2.5D Digital Office Scene */}
+      {/* 2. Main Full-Bleed 2.5D Digital Office Scene */}
       <OfficeScene
         workers={telemetry.workers}
         workflows={telemetry.workflows}
@@ -190,23 +186,23 @@ export function OfficeWorkspace({ initialTelemetry }: OfficeWorkspaceProps) {
         isAmbientMode={isAmbientMode}
       />
 
-      {/* 3. Executive Hermes CEO Command Bar */}
+      {/* 3. Floating Executive Hermes CEO Command Capsule */}
       <HermesCommandBar
         onCommandSubmitted={(cmd) => {
-          // Immediately set Hermes to thinking while processing
           setTelemetry((prev) => ({
             ...prev,
             workers: prev.workers.map((w) =>
               w.key === "hermes"
-                ? { ...w, state: "THINKING", statusLabel: `Processing: "${cmd.slice(0, 30)}..."` }
+                ? { ...w, state: "THINKING", statusLabel: `Processing command...` }
                 : w
             ),
           }));
         }}
         onRefreshTelemetry={fetchTelemetry}
+        isAmbientMode={isAmbientMode}
       />
 
-      {/* 4. Hover "Eye" Floating Card */}
+      {/* 4. Compact AR Hover "Eye" Bubble */}
       <AgentHoverCard worker={hoveredWorker} position={hoverPosition} />
 
       {/* 5. Click Detail Inspector Drawer */}
@@ -215,7 +211,7 @@ export function OfficeWorkspace({ initialTelemetry }: OfficeWorkspaceProps) {
         onClose={() => setSelectedWorker(null)}
       />
 
-      {/* 6. Screensaver / Ambient Mode Overlay */}
+      {/* 6. Screensaver / Ambient Mode Overlay Indicator */}
       <AmbientModeOverlay
         isActive={isAmbientMode}
         telemetry={telemetry}

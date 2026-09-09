@@ -1,123 +1,175 @@
 /* StratXcel Office 2.5D Digital Headquarters Animations */
 
-@keyframes office-ambient-float {
-  0%, 100% {
-    transform: translateY(0px);
-  }
-  50% {
-    transform: translateY(-4px);
-  }
-}
-
-@keyframes office-pulse-glow {
-  0%, 100% {
-    opacity: 0.35;
-    filter: drop-shadow(0 0 8px currentColor);
-  }
-  50% {
-    opacity: 0.85;
-    filter: drop-shadow(0 0 18px currentColor);
-  }
-}
-
-@keyframes office-beacon-ping {
+/* 1. Ambient Camera Drift for Screensaver Mode */
+@keyframes office-camera-pan {
   0% {
-    transform: scale(0.9);
-    opacity: 0.9;
+    transform: scale(1) translate3d(0, 0, 0);
   }
-  70% {
-    transform: scale(2.2);
-    opacity: 0;
+  33% {
+    transform: scale(1.025) translate3d(-12px, -8px, 0);
+  }
+  66% {
+    transform: scale(1.03) translate3d(10px, -12px, 0);
   }
   100% {
-    transform: scale(2.2);
-    opacity: 0;
+    transform: scale(1) translate3d(0, 0, 0);
   }
 }
 
-@keyframes office-typing {
+/* 2. Realistic Hand/Arm Typing Animation */
+@keyframes office-typing-hands-l {
   0%, 100% {
     transform: translateY(0) rotate(0deg);
   }
   25% {
-    transform: translateY(-1.5px) rotate(-1deg);
-  }
-  75% {
-    transform: translateY(-1.5px) rotate(1deg);
-  }
-}
-
-@keyframes office-packet-flow {
-  0% {
-    offset-distance: 0%;
-    opacity: 0;
-  }
-  10% {
-    opacity: 1;
-  }
-  90% {
-    opacity: 1;
-  }
-  100% {
-    offset-distance: 100%;
-    opacity: 0;
-  }
-}
-
-@keyframes office-screensaver-pulse {
-  0%, 100% {
-    opacity: 0.4;
+    transform: translateY(-2px) rotate(-2deg);
   }
   50% {
-    opacity: 0.8;
+    transform: translateY(0.5px) rotate(1deg);
+  }
+  75% {
+    transform: translateY(-1.5px) rotate(-1deg);
   }
 }
 
-@keyframes office-hologram-scan {
+@keyframes office-typing-hands-r {
+  0%, 100% {
+    transform: translateY(0) rotate(0deg);
+  }
+  30% {
+    transform: translateY(-1.8px) rotate(2deg);
+  }
+  60% {
+    transform: translateY(-2.2px) rotate(-1deg);
+  }
+  85% {
+    transform: translateY(0.5px) rotate(1deg);
+  }
+}
+
+/* 3. Seated Character Breathing (Alive even when waiting) */
+@keyframes office-seated-breath {
+  0%, 100% {
+    transform: translateY(0px) scaleY(1);
+  }
+  50% {
+    transform: translateY(-1px) scaleY(1.015);
+  }
+}
+
+/* 4. Monitor Glow & Flicker */
+@keyframes office-screen-glow {
+  0%, 100% {
+    opacity: 0.88;
+    filter: brightness(1) drop-shadow(0 0 10px currentColor);
+  }
+  50% {
+    opacity: 1;
+    filter: brightness(1.15) drop-shadow(0 0 18px currentColor);
+  }
+}
+
+/* 5. Architectural Plant Sway */
+@keyframes office-plant-sway-slow {
+  0%, 100% {
+    transform: rotate(0deg) skewX(0deg);
+  }
+  50% {
+    transform: rotate(1.8deg) skewX(0.8deg);
+  }
+}
+
+/* 6. Fiber-Optic Floor Conduits Pulse */
+@keyframes office-conduit-energy {
   0% {
-    background-position: 0% 0%;
+    stroke-dashoffset: 60;
   }
   100% {
-    background-position: 0% 100%;
+    stroke-dashoffset: 0;
   }
 }
 
-.office-float {
-  animation: office-ambient-float 4s ease-in-out infinite;
+/* 7. Wall Sign Ambient Illumination */
+@keyframes office-sign-halo {
+  0%, 100% {
+    opacity: 0.45;
+    filter: drop-shadow(0 0 25px rgba(6, 182, 212, 0.45));
+  }
+  50% {
+    opacity: 0.75;
+    filter: drop-shadow(0 0 45px rgba(99, 102, 241, 0.65));
+  }
 }
 
-.office-float-delayed {
-  animation: office-ambient-float 4s ease-in-out 2s infinite;
+/* 8. Hermes Tactical Radar Sweep */
+@keyframes office-radar-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
-.office-typing-active {
-  animation: office-typing 0.4s ease-in-out infinite;
+/* Animation Helper Classes */
+.office-camera-drift {
+  animation: office-camera-pan 32s ease-in-out infinite;
+  transform-origin: center 40%;
 }
 
-.office-glow-pulse {
-  animation: office-pulse-glow 2.5s ease-in-out infinite;
+.office-typing-l {
+  animation: office-typing-hands-l 0.35s ease-in-out infinite;
 }
 
-.office-beacon {
-  animation: office-beacon-ping 1.8s cubic-bezier(0, 0, 0.2, 1) infinite;
+.office-typing-r {
+  animation: office-typing-hands-r 0.38s ease-in-out infinite;
 }
 
-/* Screensaver / Ambient slow-down */
-.office-ambient-active .office-float {
-  animation-duration: 7s;
+.office-alive-breath {
+  animation: office-seated-breath 4s ease-in-out infinite;
+  transform-origin: bottom center;
 }
 
-.office-ambient-active .office-glow-pulse {
-  animation-duration: 5s;
+.office-screen-active {
+  animation: office-screen-glow 3s ease-in-out infinite;
+}
+
+.office-plant-swaying {
+  animation: office-plant-sway-slow 7s ease-in-out infinite;
+  transform-origin: bottom center;
+}
+
+.office-conduit-flow {
+  stroke-dasharray: 8 16;
+  animation: office-conduit-energy 2.4s linear infinite;
+}
+
+.office-sign-backlight {
+  animation: office-sign-halo 6s ease-in-out infinite;
+}
+
+.office-radar-sweep {
+  animation: office-radar-spin 12s linear infinite;
+  transform-origin: center center;
+}
+
+/* Smooth 3D Isometric View Transitions */
+.office-viewport-depth {
+  transform-style: preserve-3d;
+  transition: transform 0.8s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 /* Accessibility: Reduced Motion */
 @media (prefers-reduced-motion: reduce) {
-  .office-float,
-  .office-float-delayed,
-  .office-typing-active,
-  .office-glow-pulse,
-  .office-beacon {
+  .office-camera-drift,
+  .office-typing-l,
+  .office-typing-r,
+  .office-alive-breath,
+  .office-screen-active,
+  .office-plant-swaying,
+  .office-conduit-flow,
+  .office-sign-backlight,
+  .office-radar-sweep {
     animation: none !important;
     transition: none !important;
   }
