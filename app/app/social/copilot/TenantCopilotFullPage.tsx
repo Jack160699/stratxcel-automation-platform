@@ -317,7 +317,7 @@ export function TenantCopilotFullPage({
           <p className="text-xs" style={{ color: "var(--saut-text-subtle)" }}>Accessed context appears here during the run.</p>
         ) : (
           <div className="space-y-2 text-xs">
-            {brandUsed && <div className="saut-card-2 p-2.5">Brand Brain · Used in this run</div>}
+            {brandUsed && <div className="saut-card-2 p-2.5">My Shop · Used in this run</div>}
             {accountsUsed && <div className="saut-card-2 p-2.5">Connected accounts · Checked</div>}
           </div>
         )}

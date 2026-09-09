@@ -1,11 +1,23 @@
+import { redirect } from "next/navigation";
 import { requireClientContext } from "@/lib/tenants/client-context";
 import { EmptyState } from "@/components/ui/Feedback";
 import { StaffScopedNotice } from "../StaffScopedNotice";
 
-/** Content Inbox — comments/messages across connected channels. Real structure per PAGE_BY_PAGE_SPECIFICATIONS.md; generalized from app/admin/social/inbox. */
+/**
+ * Content Inbox — comments/messages across connected channels. Real structure per
+ * PAGE_BY_PAGE_SPECIFICATIONS.md; generalized from app/admin/social/inbox.
+ *
+ * P0 simplification pass: this page's data (social_autopilot tables) is RLS-scoped
+ * to staff sessions only, so a real customer session would only ever see a
+ * "not available yet" wall here. Rather than expose that broken-promise state,
+ * a customer session is redirected back to the working Content home; staff-support
+ * sessions still land on the real page below, unchanged. StaffScopedNotice must
+ * stay imported/rendered here — see lib/rbac/__tests__/client-modules-completion.test.ts.
+ */
 export default async function ContentInboxPage() {
   const ctx = await requireClientContext();
   if (!ctx.ok) return null;
+  if (ctx.accessMode === "customer") redirect("/app/content");
 
   return (
     <div className="flex flex-col gap-6">

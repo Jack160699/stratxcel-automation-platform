@@ -1,11 +1,22 @@
+import { redirect } from "next/navigation";
 import { requireClientContext } from "@/lib/tenants/client-context";
 import { Metric } from "@/components/ui/Metric";
 import { StaffScopedNotice } from "../StaffScopedNotice";
 
-/** Content Analytics — reach/engagement/publishing performance. Real structure per PAGE_BY_PAGE_SPECIFICATIONS.md; generalized from app/admin/social/analytics. */
+/**
+ * Content Analytics — reach/engagement/publishing performance. Real structure per
+ * PAGE_BY_PAGE_SPECIFICATIONS.md; generalized from app/admin/social/analytics.
+ *
+ * P0 simplification pass: this page's data (social_autopilot tables) is RLS-scoped
+ * to staff sessions only, so a real customer session would only ever see a
+ * "not available yet" wall here. Rather than expose that broken-promise state,
+ * a customer session is redirected back to the working Content home; staff-support
+ * sessions still land on the real page below, unchanged.
+ */
 export default async function ContentAnalyticsPage() {
   const ctx = await requireClientContext();
   if (!ctx.ok) return null;
+  if (ctx.accessMode === "customer") redirect("/app/content");
 
   return (
     <div className="flex flex-col gap-6">

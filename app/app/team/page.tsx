@@ -28,7 +28,7 @@ const ROLE_EXPLANATION: Record<string, string> = {
   owner: "Full access, including member management and billing.",
   admin: "Manages missions, approvals, wallet, and integrations. Cannot manage members.",
   operator: "Creates and cancels missions, assists with handoffs. No wallet top-up/spend access.",
-  viewer: "Read-only access to Brand Brain, missions, and wallet balance.",
+  viewer: "Read-only access to My Shop, missions, and wallet balance.",
 };
 
 function initialsFor(email: string | null): string {

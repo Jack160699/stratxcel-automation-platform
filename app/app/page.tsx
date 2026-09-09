@@ -491,7 +491,7 @@ const QUICK_TOOLS: { icon: string; iconTint: PriorityIconTint; label: string; hr
   { icon: "🎨", iconTint: "accent", label: "Create Poster", href: "/app/content/studio" },
   { icon: "✨", iconTint: "success", label: "Growth Assistant", href: "/app/social/copilot" },
   { icon: "📁", iconTint: "warning", label: "Content Library", href: "/app/content" },
-  { icon: "📈", iconTint: "accent", label: "Growth Hub", href: "/app/growth" },
+  { icon: "📈", iconTint: "accent", label: "Results", href: "/app/growth" },
 ];
 
 /** "Quick Tools" grid — StratXcel App reference: a fixed 4-column icon grid at every width. Four real destinations that already exist in the app; nothing here is a placeholder action. */

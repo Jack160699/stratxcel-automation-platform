@@ -10,8 +10,10 @@ async function run() {
   console.log("Starting StratXcel Customer App Bugfixes & Polish Test Suite...");
 
   // 1. ISSUE A: Growth Page Resilience & Outcomes
+  // P0 simplification pass: the page header reads "Your Results" (was "Your
+  // Growth") — see components/shell/navigation/app-nav-data.ts for why.
   const growthPage = read("app", "app", "growth", "page.tsx");
-  assert.ok(growthPage.includes("Your Growth"), "Growth page header must be 'Your Growth'");
+  assert.ok(growthPage.includes("Your Results"), "Growth page header must be 'Your Results'");
   assert.ok(growthPage.includes("What Improved"), "Must contain What Improved section");
   assert.ok(growthPage.includes("What Needs Attention"), "Must contain What Needs Attention section");
   assert.ok(growthPage.includes("Retry"), "Must contain a graceful Retry button on error");

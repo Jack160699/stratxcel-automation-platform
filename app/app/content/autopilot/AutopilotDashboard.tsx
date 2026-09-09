@@ -127,7 +127,7 @@ function ActivationChecklist({ tenantId, eligibility, onActivated }: { tenantId:
       await callAutopilotApi({ tenantId, action: "assignBrand" });
       onActivated();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not assign Brand Brain.");
+      setError(err instanceof Error ? err.message : "Could not assign My Shop.");
     } finally {
       setAssigningBrand(false);
     }
@@ -175,7 +175,7 @@ function ActivationChecklist({ tenantId, eligibility, onActivated }: { tenantId:
         <CardRow>{eligibility.brandConfigured ? "✓" : "○"} Brand configured{eligibility.assignment.brand.alreadyBound && eligibility.assignment.brand.label ? ` (${eligibility.assignment.brand.label})` : ""}</CardRow>
         {!eligibility.brandConfigured && eligibility.assignment.brand.available && eligibility.assignment.brand.label && (
           <CardRow className="flex-wrap items-center gap-2">
-            <span>Unassigned Brand Brain found: {eligibility.assignment.brand.label}</span>
+            <span>Unassigned My Shop found: {eligibility.assignment.brand.label}</span>
             <Button size="sm" variant="primary" disabled={assigningBrand} onClick={() => void assignBrand()}>
               {assigningBrand ? "Assigning…" : "Assign to this workspace"}
             </Button>
