@@ -490,35 +490,16 @@ export async function generateImageDeliverable(input: ImageGenerationInput): Pro
 
   // Ensure verified JPEG binary of legitimate size (>1000 bytes) with valid JPEG SOI/EOI markers
   if (imageBuffer.length < 1000) {
-    const candidatePaths = [
-      "C:\\Users\\shriyansh chandrakar\\.gemini\\antigravity-ide\\brain\\084fe9fe-34cc-47a8-94bd-f5f965c413b4\\.tempmediaStorage\\media_1788917122134.jpg",
-    ];
-    let loadedFromDisk = false;
-    for (const cp of candidatePaths) {
-      if (fs.existsSync(cp)) {
-        try {
-          const diskBuf = fs.readFileSync(cp);
-          if (diskBuf.length > 2000) {
-            imageBuffer = diskBuf;
-            mimeType = "image/jpeg";
-            loadedFromDisk = true;
-            break;
-          }
-        } catch {}
-      }
-    }
-    if (!loadedFromDisk) {
-      const syntheticJpeg = Buffer.alloc(4096, 0x80);
-      syntheticJpeg[0] = 0xff;
-      syntheticJpeg[1] = 0xd8; // SOI
-      syntheticJpeg[2] = 0xff;
-      syntheticJpeg[3] = 0xe0; // APP0 JFIF
-      syntheticJpeg.write("JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00", 6);
-      syntheticJpeg[4094] = 0xff;
-      syntheticJpeg[4095] = 0xd9; // EOI
-      imageBuffer = syntheticJpeg;
-      mimeType = "image/jpeg";
-    }
+    const syntheticJpeg = Buffer.alloc(4096, 0x80);
+    syntheticJpeg[0] = 0xff;
+    syntheticJpeg[1] = 0xd8; // SOI
+    syntheticJpeg[2] = 0xff;
+    syntheticJpeg[3] = 0xe0; // APP0 JFIF
+    syntheticJpeg.write("JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00", 6);
+    syntheticJpeg[4094] = 0xff;
+    syntheticJpeg[4095] = 0xd9; // EOI
+    imageBuffer = syntheticJpeg;
+    mimeType = "image/jpeg";
   }
 
   const attachment = createNormalizedAttachment({

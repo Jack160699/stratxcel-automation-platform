@@ -64,8 +64,8 @@ async function main() {
   const envLocal = fs.readFileSync(".env.local", "utf8");
   const matchUrl = envLocal.match(/^NEXT_PUBLIC_SUPABASE_URL=(.+)$/m);
   const matchKey = envLocal.match(/^SUPABASE_SERVICE_ROLE_KEY=(.+)$/m);
-  const supabaseUrl = matchUrl[1].trim().replace(/^['"]|['"]$/g, "");
-  const supabaseKey = matchKey[1].trim().replace(/^['"]|['"]$/g, "");
+  const supabaseUrl = matchUrl![1].trim().replace(/^['"]|['"]$/g, "");
+  const supabaseKey = matchKey![1].trim().replace(/^['"]|['"]$/g, "");
   const tenantId = "466e6195-a9f6-4576-8271-29fdae61c18a";
   const founderPhone = "919584735857";
   const founderUserId = "a3d876ce-12c6-451e-b0b0-9ac3d723aebe";
@@ -354,9 +354,8 @@ async function main() {
   const hasImgGen = planImg.tasks.some((t) => t.capabilityKey === "image.generate");
 
   const imgResult = await generateImageDeliverable({
-    prompt: "Modern commercial rooftop solar panel array at sunset with clean architectural lines",
+    brief: "Modern commercial rooftop solar panel array at sunset with clean architectural lines",
     aspectRatio: "1:1",
-    deliverableType: "social_graphic",
     tenantId,
   });
 
