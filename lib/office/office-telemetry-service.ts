@@ -6,6 +6,7 @@ import type {
   DepartmentKey,
   PhysicalArtifact,
   OfficeMission,
+  LiveActivityItem,
 } from "../../app/admin/(shell)/office/office-types.ts";
 import { DEPARTMENT_PALETTES } from "../../app/admin/(shell)/office/office-types.ts";
 
@@ -167,9 +168,54 @@ export async function fetchOfficeTelemetry(
       const missionAgeMs = now - new Date(mission.updated_at || mission.created_at).getTime();
 
       if (isRunning) {
+        const evType = (ev?.event_type || "").toLowerCase();
+        const goalLower = (mission.goal_text || "").toLowerCase();
+        const stepLower = (evType || "").toLowerCase();
+
+        let operationalState: AgentState = "WORKING";
+        if (
+          stepLower.includes("search") ||
+          stepLower.includes("crawl") ||
+          stepLower.includes("discover") ||
+          stepLower.includes("scrape") ||
+          goalLower.includes("find") ||
+          goalLower.includes("search")
+        ) {
+          operationalState = "SEARCHING";
+        } else if (
+          stepLower.includes("reasoning") ||
+          stepLower.includes("analyz") ||
+          stepLower.includes("evaluat") ||
+          stepLower.includes("audit") ||
+          goalLower.includes("analyz")
+        ) {
+          operationalState = "ANALYZING";
+        } else if (
+          stepLower.includes("plan") ||
+          stepLower.includes("strateg") ||
+          stepLower.includes("decompose") ||
+          goalLower.includes("plan")
+        ) {
+          operationalState = "PLANNING";
+        } else if (
+          stepLower.includes("generate") ||
+          stepLower.includes("draft") ||
+          stepLower.includes("render") ||
+          stepLower.includes("write") ||
+          stepLower.includes("synthes")
+        ) {
+          operationalState = "GENERATING";
+        } else if (stepLower.includes("delegate") || stepLower.includes("dispatch")) {
+          operationalState = "DELEGATING";
+        } else if (stepLower.includes("meeting") || stepLower.includes("briefing")) {
+          operationalState = "MEETING";
+        } else if (stepLower.includes("handoff") || stepLower.includes("artifact")) {
+          operationalState = "HANDOFF";
+        }
+
         return {
-          state: "WORKING",
-          label: "Executing mission",
+          state: operationalState,
+          label: `${operationalState}: ${ev?.event_type || "Executing mission"}`,
           currentMission: {
             id: mission.id,
             goal: mission.goal_text,
@@ -186,8 +232,8 @@ export async function fetchOfficeTelemetry(
 
       if (isQueued) {
         return {
-          state: "THINKING",
-          label: "Queued / Reasoning",
+          state: "PLANNING",
+          label: "Queued / Strategic Planning",
           currentMission: {
             id: mission.id,
             goal: mission.goal_text,
@@ -196,7 +242,7 @@ export async function fetchOfficeTelemetry(
             runId: mission.hermes_run_id || null,
             createdAt: mission.created_at,
             updatedAt: mission.updated_at,
-            currentStep: "awaiting execution",
+            currentStep: "strategic planning",
             progressPercent: 15,
           },
         };
@@ -205,7 +251,7 @@ export async function fetchOfficeTelemetry(
       if (isBlocked) {
         return {
           state: "BLOCKED",
-          label: "Awaiting approval",
+          label: "Awaiting approval / Blocked",
           currentMission: {
             id: mission.id,
             goal: mission.goal_text,
@@ -222,8 +268,8 @@ export async function fetchOfficeTelemetry(
 
       if (isFailed && missionAgeMs < RECENT_COMPLETION_WINDOW_MS) {
         return {
-          state: "ERROR",
-          label: "Mission failed",
+          state: "BLOCKED",
+          label: "Mission blocked / failed",
           currentMission: {
             id: mission.id,
             goal: mission.goal_text,
@@ -259,15 +305,15 @@ export async function fetchOfficeTelemetry(
 
     if (!workerHeartbeat.isAlive) {
       return {
-        state: workerHeartbeat.lastAt ? "ERROR" : "IDLE",
-        label: workerHeartbeat.lastAt ? "Worker offline" : "Idle (Standby)",
+        state: "AVAILABLE",
+        label: workerHeartbeat.lastAt ? "Worker offline" : "Available (Standby)",
         currentMission: null,
       };
     }
 
     return {
-      state: "WAITING",
-      label: "Online / Waiting for tasks",
+      state: "AVAILABLE",
+      label: "Available / Standby",
       currentMission: null,
     };
   }
@@ -372,6 +418,8 @@ export async function fetchOfficeTelemetry(
     workerType: "mission-worker",
     lastHeartbeatAt: missionWorkerHb.lastAt,
     heartbeatAgeMs: missionWorkerHb.ageMs,
+    reportsTo: "Hermes (CEO)",
+    shiftStatus: "AUTONOMOUS_24_7",
     currentMission: seoState.currentMission,
     recentActivity: [
       {
@@ -406,6 +454,8 @@ export async function fetchOfficeTelemetry(
     workerType: "mission-worker",
     lastHeartbeatAt: missionWorkerHb.lastAt,
     heartbeatAgeMs: missionWorkerHb.ageMs,
+    reportsTo: "Hermes (CEO)",
+    shiftStatus: "AUTONOMOUS_24_7",
     currentMission: contentState.currentMission,
     recentActivity: [
       {
@@ -420,7 +470,10 @@ export async function fetchOfficeTelemetry(
   });
 
   // 4. WEBSITE & ENGINEERING SPECIALIST
-  const websiteMission = findMissionForAgent(["website", "site", "landing", "page", "vercel", "deploy", "build"], ["website.create", "website.modify", "website.publish"]);
+  const websiteMission = findMissionForAgent(
+    ["website", "site", "landing", "page", "vercel", "deploy", "build", "engineering", "enablement"],
+    ["website.create", "website.modify", "website.publish", "engineering.enablement"]
+  );
   const websiteState = deriveAgentState(websiteMission, missionWorkerHb);
   workers.push({
     id: "website-engineer",
@@ -440,6 +493,8 @@ export async function fetchOfficeTelemetry(
     workerType: "mission-worker",
     lastHeartbeatAt: missionWorkerHb.lastAt,
     heartbeatAgeMs: missionWorkerHb.ageMs,
+    reportsTo: "Hermes (CEO)",
+    shiftStatus: "AUTONOMOUS_24_7",
     currentMission: websiteState.currentMission,
     recentActivity: [
       {
@@ -474,6 +529,8 @@ export async function fetchOfficeTelemetry(
     workerType: "mission-worker",
     lastHeartbeatAt: missionWorkerHb.lastAt,
     heartbeatAgeMs: missionWorkerHb.ageMs,
+    reportsTo: "Hermes (CEO)",
+    shiftStatus: "AUTONOMOUS_24_7",
     currentMission: designState.currentMission,
     recentActivity: [
       {
@@ -508,6 +565,8 @@ export async function fetchOfficeTelemetry(
     workerType: "mission-worker",
     lastHeartbeatAt: missionWorkerHb.lastAt,
     heartbeatAgeMs: missionWorkerHb.ageMs,
+    reportsTo: "Hermes (CEO)",
+    shiftStatus: "AUTONOMOUS_24_7",
     currentMission: researchState.currentMission,
     recentActivity: [
       {
@@ -522,26 +581,31 @@ export async function fetchOfficeTelemetry(
   });
 
   // 7. SALES & WHATSAPP SPECIALIST
-  const salesMission = findMissionForAgent(["whatsapp", "lead", "sales", "crm", "customer", "message"], ["whatsapp.inbound", "lead.convert"]);
+  const salesMission = findMissionForAgent(
+    ["whatsapp", "lead", "sales", "crm", "customer", "message", "revenue", "solar", "linkup", "admission"],
+    ["whatsapp.inbound", "lead.convert", "crm.lead_discovery", "revenue.mission", "hermes.ceo_objective"]
+  );
   const salesState = deriveAgentState(salesMission, whatsappWorkerHb);
   workers.push({
     id: "sales-whatsapp",
     key: "whatsapp_agent",
     name: "Mercury",
     role: "WhatsApp & Conversational Sales",
-    department: "whatsapp",
-    departmentLabel: DEPARTMENT_PALETTES.whatsapp.label,
-    accentColor: DEPARTMENT_PALETTES.whatsapp.accent,
-    secondaryColor: DEPARTMENT_PALETTES.whatsapp.secondary,
-    bgGlow: DEPARTMENT_PALETTES.whatsapp.glow,
+    department: "sales",
+    departmentLabel: DEPARTMENT_PALETTES.sales.label,
+    accentColor: DEPARTMENT_PALETTES.sales.accent,
+    secondaryColor: DEPARTMENT_PALETTES.sales.secondary,
+    bgGlow: DEPARTMENT_PALETTES.sales.glow,
     avatarIcon: "MessageSquare",
-    deskPosition: { pod: "communications", index: 6, col: 2, row: 3 },
+    deskPosition: { pod: "sales", index: 6, col: 2, row: 3 },
     state: salesState.state,
     statusLabel: whatsappWorkerHb.isAlive ? "WhatsApp webhook & processor live" : salesState.label,
     isBackedByRealWorker: true,
     workerType: "whatsapp-worker",
     lastHeartbeatAt: whatsappWorkerHb.lastAt,
     heartbeatAgeMs: whatsappWorkerHb.ageMs,
+    reportsTo: "Hermes (CEO)",
+    shiftStatus: "AUTONOMOUS_24_7",
     currentMission: salesState.currentMission,
     recentActivity: [
       {
@@ -574,6 +638,8 @@ export async function fetchOfficeTelemetry(
     workerType: "mission-worker",
     lastHeartbeatAt: missionWorkerHb.lastAt,
     heartbeatAgeMs: missionWorkerHb.ageMs,
+    reportsTo: "Hermes (CEO)",
+    shiftStatus: "AUTONOMOUS_24_7",
     currentMission: opsState.currentMission,
     recentActivity: [
       {
@@ -585,7 +651,85 @@ export async function fetchOfficeTelemetry(
     allowedTools: ["worker.health", "queue.requeue", "system.status"],
   });
 
-  // 9. DYNAMIC AGENTS FROM AGENT FACTORY
+  // 9. FINANCE & COMMERCIAL SPECIALIST
+  const financeMission = findMissionForAgent(
+    ["finance", "payment", "revenue", "budget", "invoice", "pricing", "pro-forma"],
+    ["finance.record", "revenue.mission", "payment.verify"]
+  );
+  const financeState = deriveAgentState(financeMission, missionWorkerHb);
+  workers.push({
+    id: "finance-specialist",
+    key: "finance_agent",
+    name: "Plutus",
+    role: "Finance & Commercial Operations",
+    department: "finance",
+    departmentLabel: DEPARTMENT_PALETTES.finance.label,
+    accentColor: DEPARTMENT_PALETTES.finance.accent,
+    secondaryColor: DEPARTMENT_PALETTES.finance.secondary,
+    bgGlow: DEPARTMENT_PALETTES.finance.glow,
+    avatarIcon: "Coins",
+    deskPosition: { pod: "finance", index: 8, col: 1, row: 3 },
+    state: financeState.state,
+    statusLabel: financeState.label,
+    isBackedByRealWorker: true,
+    workerType: "mission-worker",
+    lastHeartbeatAt: missionWorkerHb.lastAt,
+    heartbeatAgeMs: missionWorkerHb.ageMs,
+    reportsTo: "Hermes (CEO)",
+    shiftStatus: "AUTONOMOUS_24_7",
+    currentMission: financeState.currentMission,
+    recentActivity: [
+      {
+        timestamp: new Date().toISOString(),
+        description: financeMission
+          ? `Financial model "${financeMission.goal_text.slice(0, 45)}" status: ${financeMission.state}`
+          : "Pro-forma model, revenue ledger & unit economic review standby",
+        type: "info",
+      },
+    ],
+    allowedTools: ["spreadsheet.write", "revenue.calculate", "finance.record", "deal.verify"],
+  });
+
+  // 10. HR & PEOPLE ENABLEMENT SPECIALIST
+  const peopleMission = findMissionForAgent(
+    ["people", "hr", "talent", "onboard", "hiring", "culture", "enablement"],
+    ["people.onboard", "agent.register", "workforce.audit"]
+  );
+  const peopleState = deriveAgentState(peopleMission, missionWorkerHb);
+  workers.push({
+    id: "people-specialist",
+    key: "people_agent",
+    name: "Hestia",
+    role: "People, Culture & Talent Enablement",
+    department: "people",
+    departmentLabel: DEPARTMENT_PALETTES.people.label,
+    accentColor: DEPARTMENT_PALETTES.people.accent,
+    secondaryColor: DEPARTMENT_PALETTES.people.secondary,
+    bgGlow: DEPARTMENT_PALETTES.people.glow,
+    avatarIcon: "Users",
+    deskPosition: { pod: "people", index: 9, col: 3, row: 3 },
+    state: peopleState.state,
+    statusLabel: peopleState.label,
+    isBackedByRealWorker: true,
+    workerType: "mission-worker",
+    lastHeartbeatAt: missionWorkerHb.lastAt,
+    heartbeatAgeMs: missionWorkerHb.ageMs,
+    reportsTo: "Hermes (CEO)",
+    shiftStatus: "AUTONOMOUS_24_7",
+    currentMission: peopleState.currentMission,
+    recentActivity: [
+      {
+        timestamp: new Date().toISOString(),
+        description: peopleMission
+          ? `Talent task "${peopleMission.goal_text.slice(0, 45)}" status: ${peopleMission.state}`
+          : "Workforce role taxonomy & agent capability enablement standby",
+        type: "info",
+      },
+    ],
+    allowedTools: ["workforce.audit", "agent.enable", "people.record"],
+  });
+
+  // 11. DYNAMIC AGENTS FROM AGENT FACTORY
   agentDefs.forEach((def, i) => {
     const deptKey = (def.department as DepartmentKey) || "operations";
     const palette = DEPARTMENT_PALETTES[deptKey] || DEPARTMENT_PALETTES.operations;
@@ -600,12 +744,14 @@ export async function fetchOfficeTelemetry(
       secondaryColor: palette.secondary,
       bgGlow: palette.glow,
       avatarIcon: "Bot",
-      deskPosition: { pod: "operations", index: 8 + i, col: 2, row: 2 },
-      state: "IDLE",
+      deskPosition: { pod: "operations", index: 10 + i, col: 2, row: 2 },
+      state: "AVAILABLE",
       statusLabel: "Standby (Agent Factory)",
       isBackedByRealWorker: false,
       lastHeartbeatAt: null,
       heartbeatAgeMs: null,
+      reportsTo: "Hermes (CEO)",
+      shiftStatus: "AUTONOMOUS_24_7",
       currentMission: null,
       recentActivity: [
         {
@@ -642,12 +788,12 @@ export async function fetchOfficeTelemetry(
 
   // Aggregate Status Summary
   const workingCount = workers.filter((w) => w.state === "WORKING").length;
-  const waitingCount = workers.filter((w) => w.state === "WAITING").length;
+  const waitingCount = workers.filter((w) => w.state === "WAITING" || w.state === "AVAILABLE").length;
   const blockedCount = workers.filter((w) => w.state === "BLOCKED").length;
-  const idleCount = workers.filter((w) => w.state === "IDLE").length;
+  const idleCount = workers.filter((w) => w.state === "AVAILABLE" || w.state === "IDLE").length;
   const errorCount = workers.filter((w) => w.state === "ERROR").length;
   const activeCount = workers.filter(
-    (w) => w.state === "WORKING" || w.state === "THINKING" || w.state === "WAITING"
+    (w) => w.state !== "AVAILABLE" && w.state !== "IDLE"
   ).length;
 
   const allAgentsIdle = workingCount === 0 && blockedCount === 0 && errorCount === 0;
@@ -685,6 +831,9 @@ export async function fetchOfficeTelemetry(
     } else if (k.includes("design") || k.includes("image") || k.includes("media")) {
       fromWorkerKey = "design_agent";
       toWorkerKey = "content_agent";
+    } else if (k.includes("finance") || k.includes("proforma") || k.includes("revenue")) {
+      fromWorkerKey = "finance_agent";
+      toWorkerKey = "hermes";
     }
 
     return {
@@ -725,6 +874,12 @@ export async function fetchOfficeTelemetry(
     } else if (s.includes("operation") || g.includes("fleet") || g.includes("worker")) {
       assignedWorkerKey = "operations_agent";
       assignedWorkerName = "Atlas";
+    } else if (s.includes("finance") || g.includes("revenue") || g.includes("ledger")) {
+      assignedWorkerKey = "finance_agent";
+      assignedWorkerName = "Plutus";
+    } else if (s.includes("people") || g.includes("hr") || g.includes("talent")) {
+      assignedWorkerKey = "people_agent";
+      assignedWorkerName = "Hestia";
     }
 
     const isRunning = m.state === "RUNNING";
@@ -744,6 +899,117 @@ export async function fetchOfficeTelemetry(
     };
   });
 
+  // Real live activities for the Harness-style Activity Panel
+  const liveActivities: LiveActivityItem[] = missions.slice(0, 20).map((m) => {
+    let assignedWorkerKey = "hermes";
+    let assignedWorkerName = "Hermes";
+    let role = "CEO & Orchestrator";
+    let dept: DepartmentKey = "executive";
+    const g = (m.goal_text || "").toLowerCase();
+    const s = (m.service_key || "").toLowerCase();
+
+    if (s.includes("seo") || g.includes("seo") || g.includes("keyword")) {
+      assignedWorkerKey = "seo_agent";
+      assignedWorkerName = "Aether";
+      role = "SEO Specialist";
+      dept = "seo";
+    } else if (s.includes("sale") || g.includes("lead") || g.includes("solar") || g.includes("linkup")) {
+      assignedWorkerKey = "whatsapp_agent";
+      assignedWorkerName = "Mercury";
+      role = "Sales & Conversion";
+      dept = "sales";
+    } else if (s.includes("content") || g.includes("post") || g.includes("article") || g.includes("campaign")) {
+      assignedWorkerKey = "content_agent";
+      assignedWorkerName = "Calliope";
+      role = "Marketing Lead";
+      dept = "marketing";
+    } else if (s.includes("research") || g.includes("competitor") || g.includes("intel")) {
+      assignedWorkerKey = "research_agent";
+      assignedWorkerName = "Athena";
+      role = "Market Signals Lead";
+      dept = "research";
+    } else if (s.includes("finance") || g.includes("revenue") || g.includes("payment")) {
+      assignedWorkerKey = "finance_agent";
+      assignedWorkerName = "Plutus";
+      role = "Finance Architect";
+      dept = "finance";
+    } else if (s.includes("website") || s.includes("engineering") || g.includes("site") || g.includes("code")) {
+      assignedWorkerKey = "website_agent";
+      assignedWorkerName = "Vulcan";
+      role = "Engineering Architect";
+      dept = "engineering";
+    } else if (s.includes("people") || s.includes("hr") || g.includes("talent")) {
+      assignedWorkerKey = "people_agent";
+      assignedWorkerName = "Hestia";
+      role = "Talent Lead";
+      dept = "people";
+    } else if (s.includes("whatsapp") || g.includes("chat") || g.includes("crm")) {
+      assignedWorkerKey = "whatsapp_agent";
+      assignedWorkerName = "Mercury";
+      role = "CRM Specialist";
+      dept = "crm";
+    } else if (s.includes("operation") || g.includes("infra") || g.includes("queue")) {
+      assignedWorkerKey = "operations_agent";
+      assignedWorkerName = "Atlas";
+      role = "Operations Commander";
+      dept = "operations";
+    }
+
+    const ev = latestEventByMission.get(m.id);
+    const isRunning = m.state === "RUNNING";
+    const isQueued = m.state === "QUEUED" || m.state === "AWAITING_INPUT";
+    const isBlocked = m.state === "BLOCKED" || m.state === "AWAITING_APPROVAL";
+    const isCompleted = m.state === "COMPLETED";
+
+    const evType = (ev?.event_type || "").toLowerCase();
+    let actState: AgentState = isCompleted
+      ? "COMPLETED"
+      : isBlocked
+      ? "BLOCKED"
+      : isQueued
+      ? "PLANNING"
+      : "WORKING";
+
+    if (isRunning) {
+      if (evType.includes("search") || evType.includes("crawl") || evType.includes("discover") || g.includes("search")) {
+        actState = "SEARCHING";
+      } else if (evType.includes("reason") || evType.includes("analyz") || evType.includes("evaluat") || g.includes("analyz")) {
+        actState = "ANALYZING";
+      } else if (evType.includes("plan") || evType.includes("strateg") || g.includes("plan")) {
+        actState = "PLANNING";
+      } else if (evType.includes("generate") || evType.includes("draft") || evType.includes("render")) {
+        actState = "GENERATING";
+      } else if (evType.includes("delegate") || evType.includes("dispatch")) {
+        actState = "DELEGATING";
+      } else if (evType.includes("meeting")) {
+        actState = "MEETING";
+      } else if (evType.includes("handoff")) {
+        actState = "HANDOFF";
+      }
+    }
+
+    const startedTime = new Date(m.created_at).getTime();
+    const elapsedSecs = Math.max(0, Math.floor((now - startedTime) / 1000));
+    const elapsedStr = elapsedSecs < 60 ? `${elapsedSecs}s` : `${Math.floor(elapsedSecs / 60)}m ${elapsedSecs % 60}s`;
+
+    return {
+      id: `act-${m.id}`,
+      workerKey: assignedWorkerKey,
+      workerName: assignedWorkerName,
+      role,
+      department: dept,
+      departmentLabel: DEPARTMENT_PALETTES[dept]?.label || dept,
+      state: actState,
+      missionId: m.id,
+      missionGoal: m.goal_text,
+      currentStep: ev?.event_type || (isRunning ? "executing" : m.state.toLowerCase()),
+      elapsedTime: elapsedStr,
+      latestEvent: ev?.event_type || "status_updated",
+      startedAt: m.created_at,
+      updatedAt: m.updated_at || m.created_at,
+    };
+  });
+
   return {
     generatedAt: new Date().toISOString(),
     tenantId,
@@ -752,6 +1018,7 @@ export async function fetchOfficeTelemetry(
     workflows,
     artifacts,
     activeMissions,
+    liveActivities,
     summary: {
       activeCount,
       workingCount,

@@ -10,6 +10,7 @@ import { AgentHoverCard } from "./AgentHoverCard";
 import { AgentDetailDrawer } from "./AgentDetailDrawer";
 import { OfficeCommandDock } from "./OfficeCommandDock";
 import { AmbientModeOverlay } from "./AmbientModeOverlay";
+import { ActivityPanel } from "./ActivityPanel";
 import "./office-animations.css";
 
 interface OfficeWorkspaceProps {
@@ -28,6 +29,7 @@ export function OfficeWorkspace({ initialTelemetry }: OfficeWorkspaceProps) {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isAmbientMode, setIsAmbientMode] = useState(false);
   const [mouseActive, setMouseActive] = useState(true);
+  const [isActivityPanelOpen, setIsActivityPanelOpen] = useState(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const inactivityTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -173,6 +175,8 @@ export function OfficeWorkspace({ initialTelemetry }: OfficeWorkspaceProps) {
         onEnterAmbientMode={() => setIsAmbientMode(true)}
         isAmbientMode={isAmbientMode}
         mouseActive={mouseActive}
+        isActivityPanelOpen={isActivityPanelOpen}
+        onToggleActivityPanel={() => setIsActivityPanelOpen((prev) => !prev)}
       />
 
       {/* 2. Main Full-Bleed 2.5D Digital Office Scene */}
@@ -193,84 +197,128 @@ export function OfficeWorkspace({ initialTelemetry }: OfficeWorkspaceProps) {
         tenantId={active?.tenantId || initialTelemetry.tenantId}
         onCommandSubmitted={(cmd) => {
           const lower = cmd.toLowerCase();
-          setTelemetry((prev) => ({
-            ...prev,
-            workers: prev.workers.map((w) => {
+          setTelemetry((prev) => {
+            const updatedWorkers = prev.workers.map((w) => {
               if (w.key === "hermes") {
                 return {
                   ...w,
-                  state: "WORKING",
+                  state: "PLANNING" as const,
                   statusLabel: `Orchestrating: ${cmd.slice(0, 26)}...`,
                 };
               }
               if (
                 (lower.includes("seo") || lower.includes("keyword") || lower.includes("search")) &&
-                w.key === "aether"
+                w.key === "seo_agent"
               ) {
                 return {
                   ...w,
-                  state: "WORKING",
-                  statusLabel: "Running SEO Audit...",
+                  state: "SEARCHING" as const,
+                  statusLabel: "Running SEO Discovery...",
                 };
               }
               if (
-                (lower.includes("lead") || lower.includes("crm") || lower.includes("pipeline") || lower.includes("client")) &&
-                w.key === "mercury"
+                (lower.includes("lead") || lower.includes("crm") || lower.includes("pipeline") || lower.includes("client") || lower.includes("solar") || lower.includes("admission") || lower.includes("linkup")) &&
+                (w.key === "whatsapp_agent" || w.key === "sales_agent")
               ) {
                 return {
                   ...w,
-                  state: "WORKING",
-                  statusLabel: "Discovering ICP Leads...",
+                  state: "WORKING" as const,
+                  statusLabel: "Qualifying ICP Leads...",
                 };
               }
               if (
-                (lower.includes("website") || lower.includes("site") || lower.includes("page") || lower.includes("build")) &&
-                w.key === "vulcan"
+                (lower.includes("website") || lower.includes("site") || lower.includes("page") || lower.includes("build") || lower.includes("engineering")) &&
+                (w.key === "website_agent" || w.key === "engineering_agent")
               ) {
                 return {
                   ...w,
-                  state: "WORKING",
-                  statusLabel: "Architecting Web Layout...",
+                  state: "WORKING" as const,
+                  statusLabel: "Synthesizing Full-Stack Layout...",
                 };
               }
               if (
-                (lower.includes("post") || lower.includes("content") || lower.includes("social")) &&
-                w.key === "calliope"
+                (lower.includes("post") || lower.includes("content") || lower.includes("social") || lower.includes("campaign")) &&
+                (w.key === "content_agent" || w.key === "marketing_agent")
               ) {
                 return {
                   ...w,
-                  state: "WORKING",
-                  statusLabel: "Drafting Content Campaign...",
+                  state: "GENERATING" as const,
+                  statusLabel: "Drafting Editorial Campaign...",
                 };
               }
               if (
-                (lower.includes("competitor") || lower.includes("research") || lower.includes("market")) &&
-                (w.key === "argus" || w.key === "athena")
+                (lower.includes("competitor") || lower.includes("research") || lower.includes("market") || lower.includes("intel")) &&
+                w.key === "research_agent"
               ) {
                 return {
                   ...w,
-                  state: "WORKING",
-                  statusLabel: "Conducting Market Research...",
+                  state: "ANALYZING" as const,
+                  statusLabel: "Synthesizing Market Evidence...",
+                };
+              }
+              if (
+                (lower.includes("finance") || lower.includes("revenue") || lower.includes("pricing") || lower.includes("money") || lower.includes("lakh")) &&
+                w.key === "finance_agent"
+              ) {
+                return {
+                  ...w,
+                  state: "ANALYZING" as const,
+                  statusLabel: "Modeling Pro-Forma Economics...",
                 };
               }
               return w;
-            }),
-          }));
+            });
+
+            // Create immediate live activity for real-time observability in the Harness panel
+            const newActivity = {
+              id: `cmd-${Date.now()}`,
+              workerKey: "hermes",
+              workerName: "Hermes",
+              role: "CEO & Orchestrator",
+              department: "executive" as const,
+              departmentLabel: "CEO & Executive",
+              state: "PLANNING" as const,
+              missionId: `local-${Date.now()}`,
+              missionGoal: cmd,
+              currentStep: "executive_reasoning",
+              elapsedTime: "0s",
+              latestEvent: "Founder directive received",
+              startedAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            };
+
+            return {
+              ...prev,
+              workers: updatedWorkers,
+              liveActivities: [newActivity, ...(prev.liveActivities || [])],
+            };
+          });
         }}
         onRefreshTelemetry={fetchTelemetry}
         isAmbientMode={isAmbientMode}
       />
 
-      {/* 4. Compact AR Hover "Eye" Bubble */}
+      {/* 4. Harness-Style Resizable Live Activity Panel */}
+      <ActivityPanel
+        activities={telemetry.liveActivities || []}
+        isOpen={isActivityPanelOpen}
+        onToggle={() => setIsActivityPanelOpen((prev) => !prev)}
+        onSelectWorkerKey={(key) => {
+          const target = telemetry.workers.find((w) => w.key === key);
+          if (target) setSelectedWorker(target);
+        }}
+      />
+
+      {/* 5. Compact AR Hover "Eye" Bubble */}
       <AgentHoverCard worker={hoveredWorker} position={hoverPosition} />
 
-      {/* 5. Click Detail Inspector Drawer */}
+      {/* 6. Click Detail Inspector Drawer */}
       <AgentDetailDrawer
         worker={selectedWorker}
         onClose={() => setSelectedWorker(null)}
       />
 
-      {/* 6. Screensaver / Ambient Mode Overlay Indicator */}
+      {/* 7. Screensaver / Ambient Mode Overlay Indicator */}
       <AmbientModeOverlay
         isActive={isAmbientMode}
         telemetry={telemetry}

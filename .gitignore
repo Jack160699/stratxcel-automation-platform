@@ -16,6 +16,8 @@
 
 # local visual-QA output from scripts/public-site-screenshots.mjs
 /.screenshots/
+/.screenshots-office-live/
+/.screenshots-production-live/
 
 # next.js
 /.next/

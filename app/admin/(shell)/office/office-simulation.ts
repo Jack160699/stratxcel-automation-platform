@@ -22,7 +22,12 @@ export interface SimulationWorkerState {
     | "TYPING"
     | "MONITOR_READING"
     | "COFFEE_BREAK"
+    | "KITCHEN_BREAK"
+    | "GAMING"
+    | "RELAXING"
     | "INSPECTING_BOARD"
+    | "MEETING_CHAIRING"
+    | "MEETING_DISCUSSING"
     | "HANDOFF_GESTURE"
     | "STANDBY_IDLE";
   currentLocation: WorkerLocation;
@@ -33,39 +38,62 @@ export interface SimulationWorkerState {
   isMoving: boolean;
 }
 
-// Canonical Spatial Waypoints (in % coordinates)
+// Canonical Spatial Waypoints (in % coordinates across the 14 company zones)
 export const OFFICE_WAYPOINTS = {
-  // Executive Suite
-  hermes_desk: { x: 50, y: 32 },
-  hermes_terrace: { x: 50, y: 24 },
+  // 1. CEO Executive Suite (Top Center)
+  hermes_desk: { x: 50, y: 22 },
+  hermes_terrace: { x: 50, y: 14 },
 
-  // Architecture & Board
-  mission_board: { x: 74, y: 15 },
-  stratxcel_wall: { x: 50, y: 14 },
+  // 2. Meeting Room (Center Stage)
+  meeting_table: { x: 50, y: 44 },
+  meeting_seat_north: { x: 50, y: 39 },
+  meeting_seat_south: { x: 50, y: 49 },
+  meeting_seat_west: { x: 44, y: 44 },
+  meeting_seat_east: { x: 56, y: 44 },
 
-  // Shared Amenities
-  meeting_table: { x: 50, y: 55 },
-  meeting_seat_west: { x: 44, y: 55 },
-  meeting_seat_east: { x: 56, y: 55 },
-  coffee_bar: { x: 90, y: 78 },
-  lounge_sofa: { x: 82, y: 78 },
+  // 3-10. Work Department Desks
+  sales_desk: { x: 16, y: 64 }, // Sales & Deals (Mercury)
+  crm_desk: { x: 28, y: 64 }, // CRM & Support (Vesta)
+  research_desk: { x: 40, y: 64 }, // Market Intelligence (Athena)
+  seo_desk: { x: 60, y: 64 }, // SEO & Discovery (Aether)
+  marketing_desk: { x: 72, y: 64 }, // Marketing & Campaigns (Calliope)
+  finance_desk: { x: 84, y: 64 }, // Finance & Ledger (Plutus)
 
-  // Workstation Desks (South Row)
-  aether_desk: { x: 14, y: 78 }, // SEO
-  calliope_desk: { x: 26, y: 78 }, // Content
-  athena_desk: { x: 38, y: 78 }, // Research
-  vulcan_desk: { x: 62, y: 78 }, // Website
-  iris_desk: { x: 74, y: 78 }, // Design
-  atlas_desk: { x: 86, y: 78 }, // Operations
-  mercury_desk: { x: 12, y: 54 }, // WhatsApp / CRM
+  engineering_desk: { x: 22, y: 84 }, // Engineering (Vulcan)
+  operations_desk: { x: 50, y: 84 }, // Cloud Fleet Ops (Atlas)
+  people_desk: { x: 78, y: 84 }, // People & HR (Hestia)
 
-  // Connecting Corridors & Hallways (Clear walking paths)
-  north_hallway: { x: 50, y: 44 },
-  central_crossing: { x: 50, y: 66 },
-  west_aisle: { x: 26, y: 66 },
-  east_aisle: { x: 74, y: 66 },
-  lounge_path: { x: 88, y: 66 },
-  crm_hallway: { x: 14, y: 66 },
+  // Backward-compatible named desk aliases
+  aether_desk: { x: 60, y: 64 },
+  calliope_desk: { x: 72, y: 64 },
+  athena_desk: { x: 40, y: 64 },
+  vulcan_desk: { x: 22, y: 84 },
+  atlas_desk: { x: 50, y: 84 },
+  mercury_desk: { x: 16, y: 64 },
+  iris_desk: { x: 28, y: 64 },
+
+  // 11-14. Non-Work Amenities (Honest Breaks)
+  kitchen_counter: { x: 12, y: 20 }, // Kitchen / Break Area (North-West)
+  kitchen_table: { x: 18, y: 26 },
+  gaming_arcade: { x: 10, y: 44 }, // Gaming Room (Mid-West)
+  gaming_couch: { x: 16, y: 44 },
+  coffee_bar: { x: 88, y: 20 }, // Coffee Lounge (North-East)
+  coffee_lounge_seat: { x: 84, y: 26 },
+  relaxation_beanbag: { x: 90, y: 44 }, // Relaxation Area (Mid-East)
+  relaxation_garden: { x: 84, y: 44 },
+
+  // Architectural Markers
+  mission_board: { x: 74, y: 14 },
+  stratxcel_wall: { x: 50, y: 10 },
+
+  // Connecting Corridors & Hallways (Clear path routing)
+  north_hallway: { x: 50, y: 31 },
+  central_crossing: { x: 50, y: 55 },
+  south_hallway: { x: 50, y: 74 },
+  west_cross_aisle: { x: 28, y: 55 },
+  east_cross_aisle: { x: 72, y: 55 },
+  west_outer_corridor: { x: 14, y: 34 },
+  east_outer_corridor: { x: 86, y: 34 },
 };
 
 // Desk coordinates lookup by worker key
@@ -73,68 +101,86 @@ export function getDeskCoords(workerKey: string): { x: number; y: number } {
   switch (workerKey) {
     case "hermes":
       return OFFICE_WAYPOINTS.hermes_desk;
-    case "seo_agent":
-      return OFFICE_WAYPOINTS.aether_desk;
-    case "content_agent":
-      return OFFICE_WAYPOINTS.calliope_desk;
-    case "research_agent":
-      return OFFICE_WAYPOINTS.athena_desk;
-    case "website_agent":
-      return OFFICE_WAYPOINTS.vulcan_desk;
-    case "design_agent":
-      return OFFICE_WAYPOINTS.iris_desk;
-    case "operations_agent":
-      return OFFICE_WAYPOINTS.atlas_desk;
     case "whatsapp_agent":
-      return OFFICE_WAYPOINTS.mercury_desk;
+    case "sales_agent":
+      return OFFICE_WAYPOINTS.sales_desk;
+    case "crm_agent":
+      return OFFICE_WAYPOINTS.crm_desk;
+    case "research_agent":
+      return OFFICE_WAYPOINTS.research_desk;
+    case "seo_agent":
+      return OFFICE_WAYPOINTS.seo_desk;
+    case "content_agent":
+    case "marketing_agent":
+      return OFFICE_WAYPOINTS.marketing_desk;
+    case "finance_agent":
+      return OFFICE_WAYPOINTS.finance_desk;
+    case "website_agent":
+    case "engineering_agent":
+      return OFFICE_WAYPOINTS.engineering_desk;
+    case "operations_agent":
+      return OFFICE_WAYPOINTS.operations_desk;
+    case "people_agent":
+      return OFFICE_WAYPOINTS.people_desk;
+    case "design_agent":
+      return OFFICE_WAYPOINTS.crm_desk;
     default:
-      return OFFICE_WAYPOINTS.atlas_desk;
+      return OFFICE_WAYPOINTS.operations_desk;
   }
 }
 
 /**
- * Intelligent Hallway Pathfinding:
- * Ensures agents walk along real corridors and hallways instead of cutting through furniture.
+ * Intelligent Architectural Pathfinding:
+ * Ensures agents navigate along dedicated corridors without clipping through furniture or glass walls.
  */
 export function buildWaypointsPath(
   from: { x: number; y: number },
   to: { x: number; y: number }
 ): Array<{ x: number; y: number }> {
-  // If already at target, no movement needed
   const dx = Math.abs(from.x - to.x);
   const dy = Math.abs(from.y - to.y);
   if (dx < 2 && dy < 2) return [to];
 
   const path: Array<{ x: number; y: number }> = [];
 
-  // Step 1: Walk from desk into corridor
+  // Step 1: Step out into the nearest corridor line
   let currentY = from.y;
-  if (from.y > 70) {
-    // Coming from south row of desks -> step out into central hallway
-    path.push({ x: from.x, y: 66 });
-    currentY = 66;
-  } else if (from.y < 38) {
-    // Coming from Hermes / top wall -> step down into north hallway
-    path.push({ x: from.x, y: 44 });
-    currentY = 44;
+  if (from.y > 76) {
+    // Coming from deep south row (Engineering, Operations, People)
+    path.push({ x: from.x, y: 74 });
+    currentY = 74;
+  } else if (from.y > 58) {
+    // Coming from mid-south row (Sales, Research, Marketing, Finance)
+    path.push({ x: from.x, y: 55 });
+    currentY = 55;
+  } else if (from.y < 30) {
+    // Coming from north row (Hermes, Coffee, Kitchen)
+    path.push({ x: from.x, y: 31 });
+    currentY = 31;
   }
 
-  // Step 2: Route through major junctions if crossing north-south
-  if ((currentY === 66 && to.y < 45) || (currentY === 44 && to.y > 60)) {
-    path.push({ x: 50, y: 44 });
-    path.push({ x: 50, y: 66 });
+  // Step 2: Route through central north-south spine if changing levels
+  if ((currentY === 74 && to.y < 70) || (currentY < 40 && to.y > 50)) {
+    path.push({ x: 50, y: currentY });
+    path.push({ x: 50, y: to.y > 70 ? 74 : to.y > 50 ? 55 : 31 });
+  } else if (currentY === 55 && to.y > 70) {
+    path.push({ x: 50, y: 55 });
+    path.push({ x: 50, y: 74 });
+  } else if (currentY === 55 && to.y < 40) {
+    path.push({ x: 50, y: 55 });
+    path.push({ x: 50, y: 31 });
   }
 
-  // Step 3: Align with target's corridor aisle
-  if (to.y > 70) {
-    // Heading to south row of desks
-    path.push({ x: to.x, y: 66 });
-  } else if (to.y < 38) {
-    // Heading to Hermes / Wall
-    path.push({ x: to.x, y: 44 });
+  // Step 3: Align horizontally with target's corridor aisle
+  if (to.y > 76) {
+    path.push({ x: to.x, y: 74 });
+  } else if (to.y > 58) {
+    path.push({ x: to.x, y: 55 });
+  } else if (to.y < 30) {
+    path.push({ x: to.x, y: 31 });
   }
 
-  // Final destination
+  // Step 4: Final arrival at destination
   path.push({ x: to.x, y: to.y });
 
   return path;
@@ -147,7 +193,12 @@ export function initializeSimulationWorkers(workers: LiveWorker[]): SimulationWo
   return workers.map((w) => {
     const desk = getDeskCoords(w.key);
     const isHermes = w.key === "hermes";
-    const isWorking = w.state === "WORKING";
+    const isWorking =
+      w.state === "WORKING" ||
+      w.state === "SEARCHING" ||
+      w.state === "ANALYZING" ||
+      w.state === "PLANNING" ||
+      w.state === "GENERATING";
 
     return {
       key: w.key,
@@ -181,7 +232,42 @@ export function dispatchSimulationEvent(
   artifacts: PhysicalArtifact[]
 ): SimulationWorkerState[] {
   return workerStates.map((worker) => {
-    // 1. If worker is assigned a new mission -> Walk to desk & sit down to work
+    // 1. MEETING CALLED: Hermes and assigned specialists move to Meeting Room
+    if (event.type === "MEETING_CALLED") {
+      if (worker.key === "hermes") {
+        const target = OFFICE_WAYPOINTS.meeting_seat_north;
+        const path = buildWaypointsPath({ x: worker.x, y: worker.y }, target);
+        return {
+          ...worker,
+          destX: target.x,
+          destY: target.y,
+          waypoints: path,
+          posture: path.length > 1 ? "WALKING" : "SEATED",
+          activity: "MEETING_CHAIRING",
+          currentLocation: "MEETING_TABLE",
+          isMoving: path.length > 1,
+          facing: "right",
+        };
+      }
+
+      if (worker.key === event.targetWorkerKey || worker.key === event.workerKey) {
+        const target = OFFICE_WAYPOINTS.meeting_seat_west;
+        const path = buildWaypointsPath({ x: worker.x, y: worker.y }, target);
+        return {
+          ...worker,
+          destX: target.x,
+          destY: target.y,
+          waypoints: path,
+          posture: path.length > 1 ? "WALKING" : "SEATED",
+          activity: "MEETING_DISCUSSING",
+          currentLocation: "MEETING_TABLE",
+          isMoving: path.length > 1,
+          facing: target.x > worker.x ? "right" : "left",
+        };
+      }
+    }
+
+    // 2. MISSION ASSIGNED: Workers return from meeting room to their department desk
     if (event.type === "MISSION_ASSIGNED" && worker.key === event.targetWorkerKey) {
       const desk = getDeskCoords(worker.key);
       const mission = activeMissions.find((m) => m.id === event.missionId) || null;
@@ -194,6 +280,7 @@ export function dispatchSimulationEvent(
         waypoints: path,
         posture: path.length > 1 ? "WALKING" : "SEATED",
         activity: path.length > 1 ? "STANDBY_IDLE" : "TYPING",
+        currentLocation: "DESK",
         isMoving: path.length > 1,
         facing: desk.x > worker.x ? "right" : "left",
         assignedMission: mission,
@@ -201,17 +288,16 @@ export function dispatchSimulationEvent(
       };
     }
 
-    // 2. If artifact is created / handoff -> Walk to target worker and hand off
+    // 3. ARTIFACT HANDOFF: Worker walks to target department to deliver deliverable
     if (event.type === "ARTIFACT_HANDOFF" && worker.key === event.workerKey) {
       const targetWorker = workerStates.find((w) => w.key === event.targetWorkerKey);
       const targetDesk = targetWorker
         ? getDeskCoords(targetWorker.key)
-        : OFFICE_WAYPOINTS.meeting_table;
+        : OFFICE_WAYPOINTS.hermes_desk;
 
-      // Calculate meeting point near target
       const handoffPoint = {
         x: targetDesk.x + (targetDesk.x < 50 ? 5 : -5),
-        y: targetDesk.y > 60 ? 66 : targetDesk.y,
+        y: targetDesk.y > 60 ? targetDesk.y - 4 : targetDesk.y + 4,
       };
 
       const path = buildWaypointsPath({ x: worker.x, y: worker.y }, handoffPoint);
@@ -227,13 +313,13 @@ export function dispatchSimulationEvent(
         isMoving: true,
         facing: handoffPoint.x > worker.x ? "right" : "left",
         holdingArtifact: {
-          label: artifact?.label || "REPORT",
+          label: artifact?.label || "DELIVERABLE",
           kind: artifact?.kind || "document",
         },
       };
     }
 
-    // 3. If mission completed -> Return to desk & celebratory nod
+    // 4. MISSION COMPLETED: Return to desk & celebratory standby
     if (event.type === "MISSION_COMPLETED" && worker.key === event.workerKey) {
       const desk = getDeskCoords(worker.key);
       const path = buildWaypointsPath({ x: worker.x, y: worker.y }, desk);
@@ -245,6 +331,7 @@ export function dispatchSimulationEvent(
         waypoints: path,
         posture: path.length > 1 ? "WALKING" : "SEATED",
         activity: "STANDBY_IDLE",
+        currentLocation: "DESK",
         isMoving: path.length > 1,
         assignedMission: null,
         holdingArtifact: null,
@@ -256,7 +343,9 @@ export function dispatchSimulationEvent(
 }
 
 /**
- * Triggers a natural ambient movement for an idle worker (Coffee break or whiteboard inspection)
+ * Triggers honest ambient movement for an idle worker across the 4 non-work areas:
+ * Coffee Lounge, Kitchen/Break, Gaming Room, and Relaxation Area.
+ * Strictly honest: Never displays fake work or fake progress.
  */
 export function triggerAmbientLifeEvent(
   workerStates: SimulationWorkerState[],
@@ -271,18 +360,34 @@ export function triggerAmbientLifeEvent(
     const isAtDesk = Math.abs(worker.x - desk.x) < 2 && Math.abs(worker.y - desk.y) < 2;
 
     if (isAtDesk) {
-      // Choose ambient destination: Coffee bar, Meeting table, or Mission board
+      // Pick one of the 4 authentic non-work areas
       const rand = Math.random();
-      const target =
-        rand < 0.4
-          ? OFFICE_WAYPOINTS.coffee_bar
-          : rand < 0.75
-          ? OFFICE_WAYPOINTS.meeting_table
-          : OFFICE_WAYPOINTS.mission_board;
-      const activity: SimulationWorkerState["activity"] =
-        rand < 0.4 ? "COFFEE_BREAK" : rand < 0.75 ? "MONITOR_READING" : "INSPECTING_BOARD";
-      const currentLocation: WorkerLocation =
-        rand < 0.4 ? "COFFEE_LOUNGE" : rand < 0.75 ? "MEETING_TABLE" : "MISSION_BOARD";
+      let target = OFFICE_WAYPOINTS.coffee_bar;
+      let activity: SimulationWorkerState["activity"] = "COFFEE_BREAK";
+      let currentLocation: WorkerLocation = "COFFEE_LOUNGE";
+      let posture: WorkerPosture = "STANDING";
+
+      if (rand < 0.25) {
+        target = OFFICE_WAYPOINTS.coffee_bar;
+        activity = "COFFEE_BREAK";
+        currentLocation = "COFFEE_LOUNGE";
+        posture = "STANDING";
+      } else if (rand < 0.5) {
+        target = OFFICE_WAYPOINTS.kitchen_counter;
+        activity = "KITCHEN_BREAK";
+        currentLocation = "KITCHEN_BREAK";
+        posture = "STANDING";
+      } else if (rand < 0.75) {
+        target = OFFICE_WAYPOINTS.gaming_arcade;
+        activity = "GAMING";
+        currentLocation = "GAMING_ROOM";
+        posture = "STANDING";
+      } else {
+        target = OFFICE_WAYPOINTS.relaxation_beanbag;
+        activity = "RELAXING";
+        currentLocation = "RELAXATION_AREA";
+        posture = "SEATED";
+      }
 
       const path = buildWaypointsPath({ x: worker.x, y: worker.y }, target);
 
@@ -298,7 +403,7 @@ export function triggerAmbientLifeEvent(
         facing: target.x > worker.x ? "right" : "left",
       };
     } else {
-      // Returning to desk from break
+      // Returning from honest break back to desk
       const path = buildWaypointsPath({ x: worker.x, y: worker.y }, desk);
       return {
         ...worker,

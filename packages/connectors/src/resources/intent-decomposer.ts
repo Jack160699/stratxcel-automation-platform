@@ -54,8 +54,107 @@ export interface DecomposeOptions {
   channel?: "whatsapp" | "telegram" | "web" | "admin";
 }
 
+const EXTENDED_CAPABILITIES: Record<string, { provider: CoreProviderDomain; spec: CoreFleetCapabilitySpec }> = {
+  "video.generate": {
+    provider: "Google",
+    spec: {
+      capabilityKey: "video.generate",
+      name: "Video Generation Engine",
+      description: "Generates branded video deliverables with verified transcripts",
+      riskLevel: "medium",
+      confirmationPolicy: "autonomous",
+      requiredPermissions: ["media:write"],
+      isHighConsequence: false,
+    },
+  },
+  "image.generate": {
+    provider: "Google",
+    spec: {
+      capabilityKey: "image.generate",
+      name: "Creative Image Generation",
+      description: "Generates branded image assets grounded in company visual identity",
+      riskLevel: "low",
+      confirmationPolicy: "autonomous",
+      requiredPermissions: ["media:write"],
+      isHighConsequence: false,
+    },
+  },
+  "link.analyze": {
+    provider: "Google",
+    spec: {
+      capabilityKey: "link.analyze",
+      name: "Link & Web Diagnostics",
+      description: "Inspects live URLs for technical health, metadata, and issues",
+      riskLevel: "read_only",
+      confirmationPolicy: "autonomous",
+      requiredPermissions: ["browser:read"],
+      isHighConsequence: false,
+    },
+  },
+  "crm.lead_discovery": {
+    provider: "Supabase",
+    spec: {
+      capabilityKey: "crm.lead_discovery",
+      name: "Autonomous Lead Discovery",
+      description: "Discovers and stages qualified ICP target accounts",
+      riskLevel: "low",
+      confirmationPolicy: "autonomous",
+      requiredPermissions: ["crm:write"],
+      isHighConsequence: false,
+    },
+  },
+  "offer.register": {
+    provider: "Supabase",
+    spec: {
+      capabilityKey: "offer.register",
+      name: "Register Company Offer",
+      description: "Registers commercial offer with pricing and ICP",
+      riskLevel: "low",
+      confirmationPolicy: "autonomous",
+      requiredPermissions: ["catalog:write"],
+      isHighConsequence: false,
+    },
+  },
+  "offer.list": {
+    provider: "Supabase",
+    spec: {
+      capabilityKey: "offer.list",
+      name: "List Company Offers",
+      description: "Retrieves active company offers",
+      riskLevel: "read_only",
+      confirmationPolicy: "autonomous",
+      requiredPermissions: ["catalog:read"],
+      isHighConsequence: false,
+    },
+  },
+  "offer.query": {
+    provider: "Supabase",
+    spec: {
+      capabilityKey: "offer.query",
+      name: "Query Company Offer",
+      description: "Searches canonical company offers",
+      riskLevel: "read_only",
+      confirmationPolicy: "autonomous",
+      requiredPermissions: ["catalog:read"],
+      isHighConsequence: false,
+    },
+  },
+  "revenue.mission": {
+    provider: "Supabase",
+    spec: {
+      capabilityKey: "revenue.mission",
+      name: "Autonomous Revenue Mission",
+      description: "Executes end-to-end multi-agent revenue generation mission",
+      riskLevel: "medium",
+      confirmationPolicy: "autonomous",
+      requiredPermissions: ["revenue:write", "missions:write"],
+      isHighConsequence: false,
+    },
+  },
+};
+
 /**
- * Finds a capability specification from the Core Six Fleet.
+ * Finds a capability specification from the Core Six Fleet or extended fleet.
  */
 function findCapabilitySpec(capabilityKey: string): { provider: CoreProviderDomain; spec: CoreFleetCapabilitySpec } | null {
   for (const [providerName, providerData] of Object.entries(CORE_SIX_FLEET)) {
@@ -63,6 +162,9 @@ function findCapabilitySpec(capabilityKey: string): { provider: CoreProviderDoma
     if (match) {
       return { provider: providerName as CoreProviderDomain, spec: match };
     }
+  }
+  if (EXTENDED_CAPABILITIES[capabilityKey]) {
+    return EXTENDED_CAPABILITIES[capabilityKey];
   }
   return null;
 }
@@ -227,6 +329,135 @@ export function decomposeNaturalLanguageIntent(query: string, options: Decompose
       )
     );
   }
+  // 2g2. Autonomous Revenue Mission & Offer Catalog Intent ("Grow foreign admissions.", "We offer foreign university admissions...", "Make money from...")
+  else if (
+    /\b(?:we\s+(?:offer|sell|provide)|our\s+offer\s+is|build\s+a\s+plan\s+to\s+make\s+money\s+from|make\s+money\s+from|grow|scale|expand)\b/i.test(text) &&
+    /\b(?:admissions?|university|foreign|course|program|degree|study\s+abroad|linkup|smbs?|consulting|service)\b/i.test(text)
+  ) {
+    inferredIntent = "Offer Registration & Autonomous Revenue Mission";
+    const offerName = /\b(?:foreign|university|admissions?)\b/i.test(text)
+      ? "Foreign University Admissions"
+      : /\blinkup\b/i.test(text)
+      ? "Linkup"
+      : "Commercial Service Offer";
+
+    tasks.push(
+      createTaskFromCapability(
+        1,
+        "offer.register",
+        {
+          name: offerName,
+          description: `${offerName} guidance and placement for high-intent candidates`,
+          category: offerName === "Linkup" ? "B2B SaaS" : "Education & Admissions",
+          targetCustomer: offerName === "Linkup" ? "Indian SMBs" : "Undergraduate & Graduate Students",
+          geography: offerName === "Linkup" ? ["India"] : ["India", "Global"],
+          tenantId: tenantScope,
+          companyScope,
+        },
+        confirmedByFounder
+      )
+    );
+
+    tasks.push(
+      createTaskFromCapability(
+        2,
+        "revenue.mission",
+        {
+          objective: query,
+          offerNameOrId: offerName,
+          targetLeads: 50,
+          tenantId: tenantScope,
+          companyScope,
+        },
+        confirmedByFounder
+      )
+    );
+  }
+  // 2g3. Direct Product / Service Selling Intent ("Sell Linkup to Indian SMBs.", "Sell Linkup to SMBs")
+  else if (
+    /\bsell\s+linkup\b/i.test(text) ||
+    (/\bsell\b/i.test(text) && /\bsmbs?\b/i.test(text))
+  ) {
+    inferredIntent = "Direct Offer Commercialization & Revenue Mission";
+    const offerName = "Linkup";
+    const market = "Indian SMBs";
+
+    tasks.push(
+      createTaskFromCapability(
+        1,
+        "offer.register",
+        {
+          name: offerName,
+          description: `${offerName} platform and commercial integration for ${market}`,
+          category: "B2B Commerce & Software",
+          targetCustomer: market,
+          geography: ["India"],
+          tenantId: tenantScope,
+          companyScope,
+        },
+        confirmedByFounder
+      )
+    );
+
+    tasks.push(
+      createTaskFromCapability(
+        2,
+        "revenue.mission",
+        {
+          objective: query,
+          offerNameOrId: offerName,
+          market,
+          targetLeads: 50,
+          tenantId: tenantScope,
+          companyScope,
+        },
+        confirmedByFounder
+      )
+    );
+  }
+  // 2g4. Numeric Solar Lead Generation Intent ("Get 100 qualified solar leads.", "100 solar leads")
+  else if (
+    /\b(?:get|find|source|generate|acquire)\s+(\d+)\s+(?:qualified\s+)?(?:solar\s+)?leads?\b/i.test(text) ||
+    /\b(\d+)\s+(?:qualified\s+)?solar\s+leads?\b/i.test(text)
+  ) {
+    const numMatch = text.match(/\b(\d+)\b/);
+    const targetLeads = numMatch ? parseInt(numMatch[1], 10) : 100;
+    inferredIntent = `Autonomous Lead Generation: ${targetLeads} Qualified Solar Leads`;
+    tasks.push(
+      createTaskFromCapability(
+        1,
+        "crm.lead_discovery",
+        {
+          query,
+          targetLeads,
+          targetIcp: "Commercial & Industrial Solar Rooftop Buyers (Bangalore / Karnataka)",
+          tenantId: tenantScope,
+          companyScope: companyScope || "Solara Energy",
+        },
+        confirmedByFounder
+      )
+    );
+  }
+  // 2g5. Financial & Revenue Performance Query ("Show me this month's revenue", "Which employee is performing best?")
+  else if (
+    /\b(?:show\s+(?:me\s+)?(?:this\s+month'?s\s+)?revenue|what\s+is\s+(?:our\s+)?revenue|revenue\s+report|how\s+much\s+(?:money\s+)?did\s+we\s+make)\b/i.test(text) ||
+    /\b(?:which|who\s+is\s+the)\s+(?:employee|agent|worker)\s+(?:is\s+)?performing\s+best\b/i.test(text)
+  ) {
+    inferredIntent = "Financial & Workforce Performance Audit";
+    tasks.push(
+      createTaskFromCapability(
+        1,
+        "revenue.mission",
+        {
+          query,
+          action: "performance_audit",
+          tenantId: tenantScope,
+          companyScope,
+        },
+        confirmedByFounder
+      )
+    );
+  }
   // 2h. Composite Multi-Objective Growth: SEO + Lead Generation ("Update our SEO and get leads.", "SEO and get leads")
   else if (
     (/\bseo\b/i.test(text) || /\bsearch\s+engine\b/i.test(text) || /\brankings?\b/i.test(text)) &&
@@ -366,6 +597,81 @@ export function decomposeNaturalLanguageIntent(query: string, options: Decompose
   ) {
     inferredIntent = "Multimodal File & Document Analysis";
     tasks.push(createTaskFromCapability(1, "file.analyze", { query, tenantId: tenantScope }, confirmedByFounder));
+  }
+  // 5a. Lead Discovery & Solar ICP Pipeline ("Find 100 qualified solar leads", "Discover leads for Solara Energy")
+  else if (
+    (text.includes("solar") || text.includes("lead") || text.includes("prospect") || text.includes("pipeline")) &&
+    (text.includes("100") || text.includes("find") || text.includes("get") || text.includes("discover") || text.includes("source") || text.includes("icp") || text.includes("generation"))
+  ) {
+    inferredIntent = "Autonomous Lead Discovery";
+    const count = text.includes("100") ? 100 : 12;
+    tasks.push(
+      createTaskFromCapability(
+        1,
+        "crm.lead_discovery",
+        {
+          query,
+          targetLeads: count,
+          leadCount: count,
+          businessName: companyScope || "Solara Energy",
+          targetIcp: "Commercial & Industrial Energy Buyers (Karnataka / Bangalore)",
+          tenantId: tenantScope,
+        },
+        confirmedByFounder
+      )
+    );
+  }
+  // 5b. Offer Catalog Management ("Register company offer for foreign university admissions", "List offers")
+  else if (
+    (text.includes("offer") || text.includes("catalog") || text.includes("admissions")) &&
+    (text.includes("register") || text.includes("add") || text.includes("create") || text.includes("university") || text.includes("list"))
+  ) {
+    inferredIntent = "Company Offer Catalog Management";
+    if (text.includes("list")) {
+      tasks.push(createTaskFromCapability(1, "offer.list", { tenantId: tenantScope }, confirmedByFounder));
+    } else {
+      tasks.push(
+        createTaskFromCapability(
+          1,
+          "offer.register",
+          {
+            name: text.includes("foreign university") || text.includes("admissions")
+              ? "Foreign University Admissions"
+              : "Commercial Solar Microgrid",
+            targetCustomer: text.includes("foreign university")
+              ? "Students & Parents (India / Gulf / SE Asia)"
+              : "Commercial & Industrial Energy Buyers",
+            category: text.includes("foreign university") ? "Advisory & Education" : "Clean Energy",
+            geography: ["India", "Global"],
+            pricingJson: { base_fee_inr: 75000, success_fee_percent: 10 },
+            tenantId: tenantScope,
+          },
+          confirmedByFounder
+        )
+      );
+    }
+  }
+  // 5c. Revenue Missions, Pro Forma Models & Executive Audits
+  else if (
+    (text.includes("revenue") || text.includes("performance") || text.includes("financial model") || text.includes("pro forma") || text.includes("audit")) &&
+    (text.includes("mission") || text.includes("generate") || text.includes("audit") || text.includes("track") || text.includes("model") || text.includes("report"))
+  ) {
+    inferredIntent = "Autonomous Revenue Mission & Executive Audit";
+    const isAudit = text.includes("audit") || text.includes("performance");
+    tasks.push(
+      createTaskFromCapability(
+        1,
+        "revenue.mission",
+        {
+          objective: query,
+          action: isAudit ? "performance_audit" : "execute_mission",
+          offerName: text.includes("foreign university") ? "Foreign University Admissions" : "Commercial Solar Microgrid",
+          targetLeads: 50,
+          tenantId: tenantScope,
+        },
+        confirmedByFounder
+      )
+    );
   }
   // 6. Video Generation ("Create a 30-second video", "Turn this image into a short promotional video", "Create a reel")
   else if (text.includes("video") || text.includes("reel") || (text.includes("second") && text.includes("video"))) {
@@ -588,3 +894,84 @@ export function decomposeNaturalLanguageIntent(query: string, options: Decompose
     evaluatedAt: new Date().toISOString(),
   };
 }
+
+export interface SystemIntentDecomposition {
+  action: string;
+  targetQuantity?: number;
+  department: string;
+  tags: string[];
+  companyScope?: string;
+  rawPrompt: string;
+}
+
+/**
+ * System Intent Decomposer for Revenue Company OS
+ * Parses natural language directives into discrete system actions, target quantities, and departments.
+ */
+export function decomposeSystemIntent(prompt: string): SystemIntentDecomposition {
+  const lower = prompt.toLowerCase();
+
+  const numMatch = prompt.match(/\b(\d+)\b/);
+  const targetQuantity = numMatch ? parseInt(numMatch[1], 10) : undefined;
+
+  const tags = lower
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter((w) => w.length > 2);
+
+  // 1. Lead discovery
+  if (lower.includes("lead") || lower.includes("prospect")) {
+    return {
+      action: "crm.lead_discovery",
+      targetQuantity,
+      department: "acquisition",
+      tags,
+      companyScope: lower.includes("solara") ? "Solara Energy" : undefined,
+      rawPrompt: prompt,
+    };
+  }
+
+  // 2. Offer registration / query
+  if (lower.includes("offer")) {
+    return {
+      action: lower.includes("register") || lower.includes("create") || lower.includes("add") ? "offer.register" : "offer.query",
+      department: "acquisition",
+      tags,
+      rawPrompt: prompt,
+    };
+  }
+
+  // 3. Autonomous Revenue Mission
+  if (
+    lower.includes("revenue") ||
+    lower.includes("revenue mission") ||
+    lower.includes("commercial solar") ||
+    lower.includes("sell linkup") ||
+    lower.includes("foreign admissions")
+  ) {
+    return {
+      action: "revenue.mission",
+      department: "growth",
+      tags,
+      rawPrompt: prompt,
+    };
+  }
+
+  // 4. SEO
+  if (lower.includes("seo") || lower.includes("search")) {
+    return {
+      action: "seo.launch",
+      department: "seo",
+      tags,
+      rawPrompt: prompt,
+    };
+  }
+
+  return {
+    action: "general.query",
+    department: "operations",
+    tags,
+    rawPrompt: prompt,
+  };
+}
+

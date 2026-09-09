@@ -113,6 +113,32 @@ export function AgentDetailDrawer({ worker, onClose }: AgentDetailDrawerProps) {
           </span>
         </div>
 
+        {/* Organizational Context & Hierarchy */}
+        <div className="mt-3 rounded-xl border border-white/10 bg-black/30 p-3 text-xs space-y-1.5 font-mono">
+          <div className="flex justify-between items-center">
+            <span className="text-slate-400">Reports To:</span>
+            <span className="text-cyan-300 font-bold">{worker.reportsTo || "Hermes (CEO)"}</span>
+          </div>
+          <div className="flex justify-between items-center">
+            <span className="text-slate-400">Assignment:</span>
+            <span className="text-slate-200">
+              {worker.helpingWorkerKey ? `Assisting ${worker.helpingWorkerKey}` : "Specialist Lead"}
+            </span>
+          </div>
+          <div className="flex justify-between items-center">
+            <span className="text-slate-400">Shift Schedule:</span>
+            <span className="text-emerald-400 font-bold">
+              {worker.shiftStatus === "AUTONOMOUS_24_7" ? "24/7 Autonomous" : worker.shiftStatus || "Active"}
+            </span>
+          </div>
+          {worker.lastHeartbeatAt && (
+            <div className="flex justify-between items-center pt-1 border-t border-white/5 text-[10px]">
+              <span className="text-slate-500">Heartbeat:</span>
+              <span className="text-slate-400">{new Date(worker.lastHeartbeatAt).toLocaleTimeString()}</span>
+            </div>
+          )}
+        </div>
+
         {/* Action Confirmation Banner */}
         {actionMessage && (
           <div className="mt-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs text-emerald-300">

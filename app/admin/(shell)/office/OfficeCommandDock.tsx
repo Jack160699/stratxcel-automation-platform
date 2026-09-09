@@ -34,14 +34,14 @@ interface ExecutionResult {
 }
 
 const QUICK_COMMANDS = [
+  "Register company offer for foreign university admissions",
+  "Find 100 qualified solar leads for Solara Energy",
+  "Launch autonomous revenue mission",
+  "Generate pro forma financial spreadsheet",
+  "Audit revenue and employee performance",
   "Update our SEO and get leads.",
   "Launch an SEO agent for this business.",
-  "Find new leads for this company.",
-  "Create content for next week.",
-  "Build a website for this business.",
-  "Research our competitors.",
-  "Create a plan for this month.",
-  "Show me what the team is working on.",
+  "Show CEO Hermes and executive leadership status",
 ];
 
 export function OfficeCommandDock({

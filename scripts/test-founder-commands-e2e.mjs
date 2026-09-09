@@ -14,22 +14,22 @@ const TEST_COMMANDS = [
     expectedCapabilities: ["seo.launch", "crm.lead_discovery"],
   },
   {
-    name: "Command 2: Launch an SEO agent for this company.",
-    cmd: "Launch an SEO agent for this company.",
+    name: "Command 2: Get 100 solar leads.",
+    cmd: "Get 100 solar leads.",
     expectedTasks: 1,
-    expectedCapabilities: ["seo.launch"],
+    expectedCapabilities: ["crm.lead_discovery"],
   },
   {
-    name: "Command 3: Create 3 social posts for next week.",
-    cmd: "Create 3 social posts for next week.",
-    expectedTasks: 1,
-    expectedCapabilities: ["content.campaign"],
+    name: "Command 3: Sell Linkup.",
+    cmd: "Sell Linkup.",
+    expectedTasks: 2,
+    expectedCapabilities: ["offer.register", "revenue.mission"],
   },
   {
-    name: "Command 4: Build a website for this business.",
-    cmd: "Build a website for this business.",
-    expectedTasks: 1,
-    expectedCapabilities: ["website.create"],
+    name: "Command 4: Grow foreign admissions.",
+    cmd: "Grow foreign admissions.",
+    expectedTasks: 2,
+    expectedCapabilities: ["offer.register", "revenue.mission"],
   },
 ];
 

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Maximize2, Minimize2, Moon, Sparkles } from "lucide-react";
+import { ArrowLeft, Maximize2, Minimize2, Moon, Sparkles, Activity } from "lucide-react";
 import type { OfficeTelemetry } from "./office-types";
 
 interface OfficeStatusBarProps {
@@ -12,6 +12,8 @@ interface OfficeStatusBarProps {
   onEnterAmbientMode: () => void;
   isAmbientMode: boolean;
   mouseActive: boolean;
+  isActivityPanelOpen?: boolean;
+  onToggleActivityPanel?: () => void;
 }
 
 export function OfficeStatusBar({
@@ -21,6 +23,8 @@ export function OfficeStatusBar({
   onEnterAmbientMode,
   isAmbientMode,
   mouseActive,
+  isActivityPanelOpen = false,
+  onToggleActivityPanel,
 }: OfficeStatusBarProps) {
   const [clockText, setClockText] = useState<{ time: string; day: string }>({
     time: "",
@@ -92,12 +96,29 @@ export function OfficeStatusBar({
           <span className="text-[10px] text-slate-400">· {clockText.day}</span>
         </div>
 
-        {/* Subtle Controls (Screensaver & Fullscreen) */}
+        {/* Subtle Controls (Execution Panel, Screensaver & Fullscreen) */}
         <div
-          className={`flex items-center gap-1 transition-opacity duration-500 ${
+          className={`flex items-center gap-1.5 transition-opacity duration-500 ${
             mouseActive && !isAmbientMode ? "opacity-100" : "opacity-40 hover:opacity-100"
           }`}
         >
+          {onToggleActivityPanel && (
+            <button
+              type="button"
+              onClick={onToggleActivityPanel}
+              title={isActivityPanelOpen ? "Close Execution Panel" : "Open Execution Panel"}
+              className={`flex h-8 items-center gap-1.5 rounded-full border px-2.5 text-xs font-mono font-bold backdrop-blur-xl transition-all active:scale-95 ${
+                isActivityPanelOpen
+                  ? "border-cyan-400 bg-cyan-500/20 text-cyan-300"
+                  : "border-white/10 bg-slate-950/70 text-slate-400 hover:text-white hover:border-white/25"
+              }`}
+              aria-label="Toggle execution panel"
+            >
+              <Activity className="h-3.5 w-3.5 text-cyan-400" />
+              <span className="hidden md:inline text-[10px]">PANEL</span>
+            </button>
+          )}
+
           <button
             type="button"
             onClick={onEnterAmbientMode}

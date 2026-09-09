@@ -49,7 +49,10 @@ export function OfficeScene({
   isAmbientMode,
 }: OfficeSceneProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const stageRef = useRef<HTMLDivElement>(null);
   const [deskCoords, setDeskCoords] = useState<Record<string, { x: number; y: number }>>({});
+  const [viewportDim, setViewportDim] = useState({ width: 1440, height: 900 });
+
   const [simWorkers, setSimWorkers] = useState<SimulationWorkerState[]>(() =>
     initializeSimulationWorkers(workers)
   );
@@ -60,19 +63,56 @@ export function OfficeScene({
     artifacts: PhysicalArtifact[];
   } | null>(null);
 
-  // Group workers by department pods
+  // 1. Measure viewport for responsive 2.5D isometric scaling
+  useEffect(() => {
+    function updateDimensions() {
+      setViewportDim({
+        width: window.innerWidth,
+        height: window.innerHeight,
+      });
+    }
+    updateDimensions();
+    window.addEventListener("resize", updateDimensions);
+    return () => window.removeEventListener("resize", updateDimensions);
+  }, []);
+
+  const baseWidth = 1480;
+  const baseHeight = 880;
+  const scale = useMemo(() => {
+    const scaleX = viewportDim.width / baseWidth;
+    const scaleY = (viewportDim.height - 40) / baseHeight;
+    return Math.min(scaleX, scaleY, 1.25);
+  }, [viewportDim.width, viewportDim.height]);
+
+  // 2. Map department specialists from workforce roster
   const hermesWorker = workers.find((w) => w.key === "hermes") || workers[0];
-  const growthWorkers = workers.filter((w) =>
-    ["seo_agent", "content_agent", "research_agent"].includes(w.key)
+  const salesWorker = workers.find(
+    (w) => w.department === "sales" || w.key === "sales_agent" || w.key === "whatsapp_agent"
   );
-  const buildWorkers = workers.filter((w) =>
-    ["website_agent", "design_agent", "operations_agent"].includes(w.key)
+  const crmWorker = workers.find(
+    (w) => w.department === "crm" || w.key === "crm_agent" || w.key === "design_agent"
   );
-  const commsWorkers = workers.filter(
-    (w) => w.key === "whatsapp_agent" || w.id.startsWith("dynamic-")
+  const researchWorker = workers.find(
+    (w) => w.department === "research" || w.key === "research_agent"
+  );
+  const seoWorker = workers.find((w) => w.department === "seo" || w.key === "seo_agent");
+  const marketingWorker = workers.find(
+    (w) => w.department === "marketing" || w.department === "content" || w.key === "content_agent"
+  );
+  const financeWorker = workers.find(
+    (w) => w.department === "finance" || w.key === "finance_agent"
+  );
+  const engineeringWorker = workers.find(
+    (w) => w.department === "engineering" || w.department === "website" || w.key === "website_agent"
+  );
+  const operationsWorker = workers.find(
+    (w) => w.department === "operations" || w.key === "operations_agent"
+  );
+  const peopleWorker = workers.find(
+    (w) => w.department === "people" || w.key === "people_agent"
   );
 
-  // 1. Detect Real Telemetry Events & Dispatch into Simulation
+  // 3. Detect Real Telemetry Events & Dispatch into Simulation
   useEffect(() => {
     const currentSnapshot = { workers, activeMissions, artifacts };
     const detectedEvents = detectOfficeEvents(prevTelemetryRef.current, currentSnapshot);
@@ -89,7 +129,7 @@ export function OfficeScene({
     }
   }, [workers, activeMissions, artifacts]);
 
-  // 2. Simulation Step Loop: Advances moving characters along waypoints
+  // 4. Simulation Step Loop: Advances moving characters along waypoints
   useEffect(() => {
     const stepInterval = setInterval(() => {
       setSimWorkers((prev) =>
@@ -136,9 +176,8 @@ export function OfficeScene({
     return () => clearInterval(stepInterval);
   }, []);
 
-  // 3. Ambient Environmental Life Scheduler (Coffee break / board inspection for idle agents)
+  // 5. Ambient Environmental Life Scheduler (Honest idle breaks in Coffee/Kitchen/Gaming/Relaxation)
   useEffect(() => {
-    // Initial ambient event after 3.5s so the office comes alive right after mount
     const initialAmbientTimer = setTimeout(() => {
       setSimWorkers((prev) => {
         const candidates = prev.filter(
@@ -148,11 +187,10 @@ export function OfficeScene({
         const chosen = candidates[Math.floor(Math.random() * candidates.length)];
         return triggerAmbientLifeEvent(prev, chosen.key);
       });
-    }, 3500);
+    }, 4000);
 
     const ambientTimer = setInterval(() => {
       setSimWorkers((prev) => {
-        // Pick an idle worker without active missions
         const candidates = prev.filter(
           (w) => !w.isMoving && !w.assignedMission && w.key !== "hermes"
         );
@@ -160,7 +198,7 @@ export function OfficeScene({
         const chosen = candidates[Math.floor(Math.random() * candidates.length)];
         return triggerAmbientLifeEvent(prev, chosen.key);
       });
-    }, 14_000); // Trigger an ambient event every 14 seconds
+    }, 16_000);
 
     return () => {
       clearTimeout(initialAmbientTimer);
@@ -168,14 +206,14 @@ export function OfficeScene({
     };
   }, []);
 
-  // 4. Track DOM coordinates for DataTrack bezier conduits
+  // 6. Track DOM coordinates for DataTrack bezier conduits
   useEffect(() => {
     function updateCoords() {
-      if (!containerRef.current) return;
-      const rect = containerRef.current.getBoundingClientRect();
+      if (!stageRef.current) return;
+      const rect = stageRef.current.getBoundingClientRect();
       const coords: Record<string, { x: number; y: number }> = {};
 
-      const deskElements = containerRef.current.querySelectorAll("[data-worker-id]");
+      const deskElements = stageRef.current.querySelectorAll("[data-worker-id]");
       deskElements.forEach((el) => {
         const id = el.getAttribute("data-worker-id");
         if (id) {
@@ -196,7 +234,7 @@ export function OfficeScene({
       window.removeEventListener("resize", updateCoords);
       clearTimeout(timer);
     };
-  }, [workers]);
+  }, [workers, scale]);
 
   // Check if a worker is currently present at their grounded desk
   const isWorkerAtDesk = (workerKey: string) => {
@@ -214,7 +252,7 @@ export function OfficeScene({
   return (
     <div
       ref={containerRef}
-      className={`relative flex min-h-screen w-full flex-col justify-between overflow-x-hidden overflow-y-auto px-4 pt-2 pb-16 md:px-8 md:pb-20 transition-transform duration-1000 select-none ${
+      className={`relative h-screen w-screen overflow-hidden select-none transition-transform duration-1000 ${
         isAmbientMode ? "office-camera-drift" : ""
       }`}
       style={{
@@ -229,229 +267,302 @@ export function OfficeScene({
         backgroundSize: "100% 100%, 100% 100%, 100% 100%, 64px 64px, 64px 64px, 100% 100%",
       }}
     >
-      {/* ---------------------------------------------------- */}
-      {/* 1. ARCHITECTURAL BACK WALL & BRAND SIGN + BOARD     */}
-      {/* ---------------------------------------------------- */}
-      <div className="relative z-10 mx-auto flex w-full max-w-7xl items-center justify-between gap-4 pt-12 md:pt-14 pb-4">
-        {/* PHYSICAL ILLUMINATED STRATXCEL WALL SIGN */}
-        <div className="relative flex items-center gap-3.5 rounded-2xl border border-white/15 bg-gradient-to-r from-slate-900/90 via-slate-800/80 to-slate-900/90 px-6 py-3 shadow-2xl backdrop-blur-xl">
-          <div className="office-sign-backlight pointer-events-none absolute -inset-2 rounded-2xl bg-gradient-to-r from-indigo-500/25 via-cyan-500/25 to-emerald-500/25 blur-xl" />
-          <div className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/25 bg-slate-950/90 p-1.5 shadow-inner">
-            <Image
-              src="/logo-v2.png"
-              alt="StratXcel Mark"
-              width={32}
-              height={32}
-              className="object-contain"
-              priority
-            />
-          </div>
-          <div className="relative flex flex-col text-left">
-            <span className="font-extrabold tracking-[0.26em] text-xs text-white drop-shadow-lg">
-              STRATXCEL
-            </span>
-            <span className="font-mono text-[8px] font-bold tracking-[0.3em] text-cyan-300 uppercase">
-              AI OPERATIONS HEADQUARTERS
-            </span>
-          </div>
-          <div className="relative ml-2 pl-3 border-l border-white/10 hidden sm:flex items-center gap-1.5 font-mono text-[9px] text-emerald-400">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-            <span>HQ LIVE</span>
-          </div>
-        </div>
-
-        {/* IN-ENVIRONMENT PHYSICAL MISSION BOARD */}
-        <div className="hidden md:block">
-          <PhysicalMissionBoard missions={activeMissions} />
-        </div>
-      </div>
-
-      {/* ---------------------------------------------------- */}
-      {/* 2. OFFICE ENVIRONMENT AMENITIES (Table, Lounge, Walkways) */}
-      {/* ---------------------------------------------------- */}
-      <OfficeEnvironment />
-
-      {/* ---------------------------------------------------- */}
-      {/* 3. REALTIME DATA CONDUITS (Active Packet Movement)   */}
-      {/* ---------------------------------------------------- */}
-      <DataTrack workflows={workflows} workerPositions={deskCoords} />
-
-      {/* ---------------------------------------------------- */}
-      {/* 4. WORKSPACE WORLD: STATIONS & GROUNDED DESKS        */}
-      {/* ---------------------------------------------------- */}
-      <div className="relative z-10 mx-auto my-auto flex w-full max-w-7xl flex-col items-center gap-10">
-        {/* LEVEL 1: HERMES CEO ORCHESTRATOR HUB */}
-        {hermesWorker && (
-          <div className="relative flex flex-col items-center">
-            <div className="relative" data-worker-id={hermesWorker.id}>
-              <div className="pointer-events-none absolute -inset-8 rounded-full border border-cyan-400/20 bg-gradient-to-b from-indigo-500/10 via-cyan-500/5 to-transparent shadow-2xl" />
-              <div className="pointer-events-none absolute -inset-2 rounded-full border border-dashed border-cyan-400/35 office-radar-sweep" />
-
-              <AgentDesk
-                worker={hermesWorker}
-                isWorkerPresent={isWorkerAtDesk("hermes")}
-                isSelected={selectedWorker?.id === hermesWorker.id}
-                isHovered={hoveredWorker?.id === hermesWorker.id}
-                onSelect={onSelectWorker}
-                onHover={onHoverWorker}
+      {/* Centered Scaled 2.5D Isometric Stage */}
+      <div
+        ref={stageRef}
+        className="absolute left-1/2 top-1/2 transition-transform duration-300 origin-center"
+        style={{
+          width: `${baseWidth}px`,
+          height: `${baseHeight}px`,
+          transform: `translate(-50%, -50%) scale(${scale})`,
+        }}
+      >
+        {/* ---------------------------------------------------- */}
+        {/* 1. ARCHITECTURAL TOP BRAND SIGN & MISSION BOARD     */}
+        {/* ---------------------------------------------------- */}
+        <div className="absolute top-4 left-8 right-8 z-10 flex items-center justify-between pointer-events-none">
+          {/* StratXcel Wall Sign */}
+          <div className="pointer-events-auto relative flex items-center gap-3 rounded-2xl border border-white/15 bg-gradient-to-r from-slate-900/90 via-slate-800/80 to-slate-900/90 px-5 py-2.5 shadow-2xl backdrop-blur-xl">
+            <div className="office-sign-backlight pointer-events-none absolute -inset-2 rounded-2xl bg-gradient-to-r from-indigo-500/25 via-cyan-500/25 to-emerald-500/25 blur-xl" />
+            <div className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/25 bg-slate-950/90 p-1.5 shadow-inner">
+              <Image
+                src="/logo-v2.png"
+                alt="StratXcel Mark"
+                width={28}
+                height={28}
+                className="object-contain"
+                priority
               />
             </div>
-
-            <div className="mt-1 flex items-center gap-1.5 font-mono text-[9px] uppercase tracking-[0.25em] text-cyan-400 font-bold">
-              <span className="h-1 w-1 rounded-full bg-cyan-400 animate-ping" />
-              <span>ORCHESTRATOR SUITE</span>
-            </div>
-          </div>
-        )}
-
-        {/* LEVEL 2: SPECIALIST WINGS */}
-        <div className="grid w-full grid-cols-1 lg:grid-cols-2 gap-8 xl:gap-14 px-2 md:px-6">
-          {/* WING A: GROWTH & INTELLIGENCE */}
-          <div className="relative flex flex-col items-center">
-            <div className="mb-3 flex w-full items-center justify-between border-b border-white/10 pb-1.5 px-2">
-              <div className="flex items-center gap-2">
-                <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-sm shadow-emerald-400" />
-                <span className="font-mono text-xs font-bold uppercase tracking-wider text-emerald-400">
-                  Growth & Intelligence Wing
-                </span>
-              </div>
-              <span className="font-mono text-[10px] text-slate-400">
-                SEO · Content · Market Intel
+            <div className="relative flex flex-col text-left">
+              <span className="font-extrabold tracking-[0.24em] text-xs text-white drop-shadow-lg">
+                STRATXCEL
+              </span>
+              <span className="font-mono text-[8px] font-bold tracking-[0.28em] text-cyan-300 uppercase">
+                AUTONOMOUS COMPANY HEADQUARTERS
               </span>
             </div>
-
-            <div className="flex flex-wrap justify-center items-center gap-4 sm:gap-6 w-full py-1">
-              {growthWorkers.map((worker) => (
-                <div key={worker.id} data-worker-id={worker.id} className="relative">
-                  <AgentDesk
-                    worker={worker}
-                    isWorkerPresent={isWorkerAtDesk(worker.key)}
-                    isSelected={selectedWorker?.id === worker.id}
-                    isHovered={hoveredWorker?.id === worker.id}
-                    onSelect={onSelectWorker}
-                    onHover={onHoverWorker}
-                  />
-                </div>
-              ))}
+            <div className="relative ml-2 pl-3 border-l border-white/10 hidden sm:flex items-center gap-1.5 font-mono text-[9px] text-emerald-400">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              <span>HQ ACTIVE</span>
             </div>
           </div>
 
-          {/* WING B: BUILD & OPERATIONS */}
-          <div className="relative flex flex-col items-center">
-            <div className="mb-3 flex w-full items-center justify-between border-b border-white/10 pb-1.5 px-2">
-              <div className="flex items-center gap-2">
-                <span className="h-2 w-2 rounded-full bg-sky-400 shadow-sm shadow-sky-400" />
-                <span className="font-mono text-xs font-bold uppercase tracking-wider text-sky-400">
-                  Build & Operations Wing
-                </span>
-              </div>
-              <span className="font-mono text-[10px] text-slate-400">
-                Web & Vercel · Visual · Fleet Infra
-              </span>
-            </div>
-
-            <div className="flex flex-wrap justify-center items-center gap-4 sm:gap-6 w-full py-1">
-              {buildWorkers.map((worker) => (
-                <div key={worker.id} data-worker-id={worker.id} className="relative">
-                  <AgentDesk
-                    worker={worker}
-                    isWorkerPresent={isWorkerAtDesk(worker.key)}
-                    isSelected={selectedWorker?.id === worker.id}
-                    isHovered={hoveredWorker?.id === worker.id}
-                    onSelect={onSelectWorker}
-                    onHover={onHoverWorker}
-                  />
-                </div>
-              ))}
-            </div>
+          {/* Physical Mission Board */}
+          <div className="pointer-events-auto">
+            <PhysicalMissionBoard missions={activeMissions} />
           </div>
         </div>
 
-        {/* LEVEL 3: COMMUNICATIONS & CRM */}
-        {commsWorkers.length > 0 && (
-          <div className="relative flex flex-col items-center max-w-4xl w-full">
-            <div className="mb-3 flex w-full items-center justify-between border-b border-white/10 pb-1.5 px-2">
-              <div className="flex items-center gap-2">
-                <span className="h-2 w-2 rounded-full bg-rose-400 shadow-sm shadow-rose-400" />
-                <span className="font-mono text-xs font-bold uppercase tracking-wider text-rose-400">
-                  Customer Communications
-                </span>
-              </div>
-              <span className="font-mono text-[10px] text-slate-400">
-                WhatsApp · Live Conversational CRM
-              </span>
-            </div>
+        {/* ---------------------------------------------------- */}
+        {/* 2. OFFICE ENVIRONMENT (14 Rooms, Corridors, Mats)   */}
+        {/* ---------------------------------------------------- */}
+        <OfficeEnvironment />
 
-            <div className="flex flex-wrap justify-center items-center gap-6 py-1">
-              {commsWorkers.map((worker) => (
-                <div key={worker.id} data-worker-id={worker.id} className="relative">
-                  <AgentDesk
-                    worker={worker}
-                    isWorkerPresent={isWorkerAtDesk(worker.key)}
-                    isSelected={selectedWorker?.id === worker.id}
-                    isHovered={hoveredWorker?.id === worker.id}
-                    onSelect={onSelectWorker}
-                    onHover={onHoverWorker}
-                  />
-                </div>
-              ))}
+        {/* ---------------------------------------------------- */}
+        {/* 3. REALTIME DATA CONDUITS (Active Packet Movement)   */}
+        {/* ---------------------------------------------------- */}
+        <DataTrack workflows={workflows} workerPositions={deskCoords} />
+
+        {/* ---------------------------------------------------- */}
+        {/* 4. WORKSPACE GROUNDED DESKS (10 Dedicated Depts)     */}
+        {/* ---------------------------------------------------- */}
+        {/* LEVEL 1: CEO / HERMES ORCHESTRATOR SUITE */}
+        {hermesWorker && (
+          <div
+            className="absolute z-20 -translate-x-1/2"
+            style={{ left: "50%", top: "140px" }}
+            data-worker-id={hermesWorker.id}
+          >
+            <AgentDesk
+              worker={hermesWorker}
+              isWorkerPresent={isWorkerAtDesk("hermes")}
+              isSelected={selectedWorker?.id === hermesWorker.id}
+              isHovered={hoveredWorker?.id === hermesWorker.id}
+              onSelect={onSelectWorker}
+              onHover={onHoverWorker}
+            />
+            <div className="mt-0.5 flex items-center justify-center gap-1 font-mono text-[8px] uppercase tracking-[0.25em] text-cyan-400 font-bold">
+              <span className="h-1 w-1 rounded-full bg-cyan-400 animate-ping" />
+              <span>EXECUTIVE CEO SUITE</span>
             </div>
           </div>
         )}
-      </div>
 
-      {/* ---------------------------------------------------- */}
-      {/* 5. DYNAMIC MOVING & WALKING CHARACTERS               */}
-      {/* ---------------------------------------------------- */}
-      <div className="pointer-events-none absolute inset-0 z-30 overflow-hidden">
-        {simWorkers
-          .filter((w) => !isWorkerAtDesk(w.key))
-          .map((sim) => {
-            const rawWorker = workers.find((w) => w.key === sim.key) || hermesWorker;
+        {/* LEVEL 2: MIDDLE ROW OF SPECIALISTS (Sales, CRM, Research, SEO, Marketing, Finance) */}
+        {/* Sales Pod (Mercury) */}
+        {salesWorker && (
+          <div
+            className="absolute z-20 -translate-x-1/2"
+            style={{ left: "16%", top: "520px" }}
+            data-worker-id={salesWorker.id}
+          >
+            <AgentDesk
+              worker={salesWorker}
+              isWorkerPresent={isWorkerAtDesk(salesWorker.key)}
+              isSelected={selectedWorker?.id === salesWorker.id}
+              isHovered={hoveredWorker?.id === salesWorker.id}
+              onSelect={onSelectWorker}
+              onHover={onHoverWorker}
+            />
+          </div>
+        )}
 
-            return (
-              <div
-                key={`moving-${sim.key}`}
-                className="office-moving-agent pointer-events-auto absolute -translate-x-1/2 -translate-y-1/2 cursor-pointer transition-all"
-                style={{
-                  left: `${sim.x}%`,
-                  top: `${sim.y}%`,
-                }}
-                onClick={() => onSelectWorker(rawWorker)}
-                onMouseEnter={(e) => {
-                  const rect = e.currentTarget.getBoundingClientRect();
-                  onHoverWorker(rawWorker, {
-                    clientX: rect.left + rect.width / 2,
-                    clientY: rect.top,
-                  });
-                }}
-                onMouseLeave={() => onHoverWorker(null)}
-              >
-                <AgentCharacter
-                  name={sim.name}
-                  department={rawWorker.department}
-                  state={rawWorker.state}
-                  accentColor={sim.accentColor}
-                  secondaryColor={sim.secondaryColor}
-                  isHermes={sim.key === "hermes"}
-                  posture={sim.posture}
-                  facing={sim.facing}
-                  holdingArtifact={sim.holdingArtifact}
-                />
+        {/* CRM Pod (Vesta / Iris) */}
+        {crmWorker && (
+          <div
+            className="absolute z-20 -translate-x-1/2"
+            style={{ left: "28%", top: "520px" }}
+            data-worker-id={crmWorker.id}
+          >
+            <AgentDesk
+              worker={crmWorker}
+              isWorkerPresent={isWorkerAtDesk(crmWorker.key)}
+              isSelected={selectedWorker?.id === crmWorker.id}
+              isHovered={hoveredWorker?.id === crmWorker.id}
+              onSelect={onSelectWorker}
+              onHover={onHoverWorker}
+            />
+          </div>
+        )}
 
-                {/* Overhead Name & Activity Pill */}
-                <div className="mt-1 flex items-center justify-center">
-                  <span className="rounded-full border border-white/20 bg-slate-900/90 px-2 py-0.5 font-mono text-[8px] font-bold text-slate-200 shadow-md">
-                    {sim.name} · {sim.activity.replace(/_/g, " ")}
-                  </span>
+        {/* Research Pod (Athena) */}
+        {researchWorker && (
+          <div
+            className="absolute z-20 -translate-x-1/2"
+            style={{ left: "40%", top: "520px" }}
+            data-worker-id={researchWorker.id}
+          >
+            <AgentDesk
+              worker={researchWorker}
+              isWorkerPresent={isWorkerAtDesk(researchWorker.key)}
+              isSelected={selectedWorker?.id === researchWorker.id}
+              isHovered={hoveredWorker?.id === researchWorker.id}
+              onSelect={onSelectWorker}
+              onHover={onHoverWorker}
+            />
+          </div>
+        )}
+
+        {/* SEO Pod (Aether) */}
+        {seoWorker && (
+          <div
+            className="absolute z-20 -translate-x-1/2"
+            style={{ left: "60%", top: "520px" }}
+            data-worker-id={seoWorker.id}
+          >
+            <AgentDesk
+              worker={seoWorker}
+              isWorkerPresent={isWorkerAtDesk(seoWorker.key)}
+              isSelected={selectedWorker?.id === seoWorker.id}
+              isHovered={hoveredWorker?.id === seoWorker.id}
+              onSelect={onSelectWorker}
+              onHover={onHoverWorker}
+            />
+          </div>
+        )}
+
+        {/* Marketing Pod (Calliope) */}
+        {marketingWorker && (
+          <div
+            className="absolute z-20 -translate-x-1/2"
+            style={{ left: "72%", top: "520px" }}
+            data-worker-id={marketingWorker.id}
+          >
+            <AgentDesk
+              worker={marketingWorker}
+              isWorkerPresent={isWorkerAtDesk(marketingWorker.key)}
+              isSelected={selectedWorker?.id === marketingWorker.id}
+              isHovered={hoveredWorker?.id === marketingWorker.id}
+              onSelect={onSelectWorker}
+              onHover={onHoverWorker}
+            />
+          </div>
+        )}
+
+        {/* Finance Pod (Plutus) */}
+        {financeWorker && (
+          <div
+            className="absolute z-20 -translate-x-1/2"
+            style={{ left: "84%", top: "520px" }}
+            data-worker-id={financeWorker.id}
+          >
+            <AgentDesk
+              worker={financeWorker}
+              isWorkerPresent={isWorkerAtDesk(financeWorker.key)}
+              isSelected={selectedWorker?.id === financeWorker.id}
+              isHovered={hoveredWorker?.id === financeWorker.id}
+              onSelect={onSelectWorker}
+              onHover={onHoverWorker}
+            />
+          </div>
+        )}
+
+        {/* LEVEL 3: SOUTH ROW (Engineering, Operations, People) */}
+        {/* Engineering Pod (Vulcan) */}
+        {engineeringWorker && (
+          <div
+            className="absolute z-20 -translate-x-1/2"
+            style={{ left: "22%", top: "690px" }}
+            data-worker-id={engineeringWorker.id}
+          >
+            <AgentDesk
+              worker={engineeringWorker}
+              isWorkerPresent={isWorkerAtDesk(engineeringWorker.key)}
+              isSelected={selectedWorker?.id === engineeringWorker.id}
+              isHovered={hoveredWorker?.id === engineeringWorker.id}
+              onSelect={onSelectWorker}
+              onHover={onHoverWorker}
+            />
+          </div>
+        )}
+
+        {/* Operations Cloud Fleet Pod (Atlas) */}
+        {operationsWorker && (
+          <div
+            className="absolute z-20 -translate-x-1/2"
+            style={{ left: "50%", top: "690px" }}
+            data-worker-id={operationsWorker.id}
+          >
+            <AgentDesk
+              worker={operationsWorker}
+              isWorkerPresent={isWorkerAtDesk(operationsWorker.key)}
+              isSelected={selectedWorker?.id === operationsWorker.id}
+              isHovered={hoveredWorker?.id === operationsWorker.id}
+              onSelect={onSelectWorker}
+              onHover={onHoverWorker}
+            />
+          </div>
+        )}
+
+        {/* People & Talent Pod (Hestia) */}
+        {peopleWorker && (
+          <div
+            className="absolute z-20 -translate-x-1/2"
+            style={{ left: "78%", top: "690px" }}
+            data-worker-id={peopleWorker.id}
+          >
+            <AgentDesk
+              worker={peopleWorker}
+              isWorkerPresent={isWorkerAtDesk(peopleWorker.key)}
+              isSelected={selectedWorker?.id === peopleWorker.id}
+              isHovered={hoveredWorker?.id === peopleWorker.id}
+              onSelect={onSelectWorker}
+              onHover={onHoverWorker}
+            />
+          </div>
+        )}
+
+        {/* ---------------------------------------------------- */}
+        {/* 5. DYNAMIC MOVING & WALKING CHARACTERS               */}
+        {/* ---------------------------------------------------- */}
+        <div className="pointer-events-none absolute inset-0 z-30 overflow-hidden">
+          {simWorkers
+            .filter((w) => !isWorkerAtDesk(w.key))
+            .map((sim) => {
+              const rawWorker = workers.find((w) => w.key === sim.key) || hermesWorker;
+
+              return (
+                <div
+                  key={`moving-${sim.key}`}
+                  className="office-moving-agent pointer-events-auto absolute -translate-x-1/2 -translate-y-1/2 cursor-pointer transition-all"
+                  style={{
+                    left: `${sim.x}%`,
+                    top: `${sim.y}%`,
+                  }}
+                  onClick={() => onSelectWorker(rawWorker)}
+                  onMouseEnter={(e) => {
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    onHoverWorker(rawWorker, {
+                      clientX: rect.left + rect.width / 2,
+                      clientY: rect.top,
+                    });
+                  }}
+                  onMouseLeave={() => onHoverWorker(null)}
+                >
+                  <AgentCharacter
+                    name={sim.name}
+                    department={rawWorker.department}
+                    state={rawWorker.state}
+                    accentColor={sim.accentColor}
+                    secondaryColor={sim.secondaryColor}
+                    isHermes={sim.key === "hermes"}
+                    posture={sim.posture}
+                    facing={sim.facing}
+                    holdingArtifact={sim.holdingArtifact}
+                  />
+
+                  {/* Overhead Name & Activity Pill */}
+                  <div className="mt-1 flex items-center justify-center">
+                    <span className="rounded-full border border-white/20 bg-slate-900/95 px-2 py-0.5 font-mono text-[8px] font-bold text-slate-200 shadow-md">
+                      {sim.name} · {sim.activity.replace(/_/g, " ")}
+                    </span>
+                  </div>
                 </div>
-              </div>
-            );
-          })}
+              );
+            })}
+        </div>
       </div>
-
-      {/* Floor Fog & Depth Occlusion */}
-      <div className="pointer-events-none relative h-12 w-full bg-gradient-to-t from-[#05070a] to-transparent" />
     </div>
   );
 }

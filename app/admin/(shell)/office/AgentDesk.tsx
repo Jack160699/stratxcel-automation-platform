@@ -22,7 +22,17 @@ export function AgentDesk({
   onHover,
 }: AgentDeskProps) {
   const isHermes = worker.key === "hermes";
-  const isWorking = worker.state === "WORKING" && isWorkerPresent;
+  const isWorking =
+    (worker.state === "WORKING" ||
+      worker.state === "SEARCHING" ||
+      worker.state === "ANALYZING" ||
+      worker.state === "PLANNING" ||
+      worker.state === "GENERATING" ||
+      worker.state === "DELEGATING" ||
+      worker.state === "MEETING" ||
+      worker.state === "HANDOFF" ||
+      worker.state === "HELPING") &&
+    isWorkerPresent;
   const isThinking = worker.state === "THINKING";
   const isError = worker.state === "ERROR";
   const isBlocked = worker.state === "BLOCKED";
@@ -156,6 +166,67 @@ export function AgentDesk({
               <span className="h-1 w-1 rounded-full bg-emerald-400" />
               <span className="h-1 w-1 rounded-full bg-emerald-400" />
               <span className="h-1 w-1 rounded-full bg-cyan-400" />
+            </div>
+          </div>
+        );
+
+      case "finance":
+        return (
+          <div className="flex h-full w-full flex-col justify-between p-1 font-mono text-[6px]">
+            <div className="flex justify-between items-center text-emerald-300 font-bold">
+              <span>PRO-FORMA</span>
+              <span className="text-[5px] text-emerald-400">ARR</span>
+            </div>
+            <div className="flex items-end justify-between gap-0.5 h-3 px-1">
+              <div className="w-1.5 h-1.5 rounded-t-sm bg-emerald-500/50" />
+              <div className="w-1.5 h-2.5 rounded-t-sm bg-emerald-400" />
+              <div className="w-1.5 h-3 rounded-t-sm bg-emerald-300" />
+              <div className="w-1.5 h-2 rounded-t-sm bg-emerald-500/70" />
+            </div>
+            <div className="flex justify-between text-[5px] text-slate-400 border-t border-white/10 pt-0.5">
+              <span>LEDGER: OK</span>
+              <span className="text-emerald-400 font-bold">+18.4%</span>
+            </div>
+          </div>
+        );
+
+      case "people":
+        return (
+          <div className="flex h-full w-full flex-col justify-between p-1 font-mono text-[6px]">
+            <div className="flex justify-between items-center text-purple-300 font-bold">
+              <span>WORKFORCE</span>
+              <span className="text-[5px] text-purple-400">ROSTER</span>
+            </div>
+            <div className="space-y-0.5">
+              <div className="flex items-center gap-1">
+                <div className="h-1 w-1 rounded-full bg-purple-400" />
+                <div className="h-0.5 w-8 rounded bg-purple-300/60" />
+              </div>
+              <div className="flex items-center gap-1">
+                <div className="h-1 w-1 rounded-full bg-emerald-400" />
+                <div className="h-0.5 w-6 rounded bg-emerald-300/60" />
+              </div>
+            </div>
+            <div className="text-[5px] text-slate-400 border-t border-white/10 pt-0.5">
+              <span>27 DEPTS ACTIVE</span>
+            </div>
+          </div>
+        );
+
+      case "marketing":
+        return (
+          <div className="flex h-full w-full flex-col justify-between p-1 font-mono text-[6px]">
+            <div className="flex justify-between items-center text-amber-300 font-bold">
+              <span>CAMPAIGNS</span>
+              <span className="text-[5px] text-amber-400">ACTIVE</span>
+            </div>
+            <div className="h-2.5 w-full rounded bg-amber-950/40 border border-amber-500/30 p-0.5 flex items-center justify-between">
+              <span className="text-[5px] text-amber-200">OUTREACH</span>
+              <span className="h-1 w-1 rounded-full bg-amber-400 animate-pulse" />
+            </div>
+            <div className="flex justify-between text-[5px] text-slate-400">
+              <span>REACH: 12.4K</span>
+              <span>CTR: 4.2%</span>
             </div>
           </div>
         );
