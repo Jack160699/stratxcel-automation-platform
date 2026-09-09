@@ -73,20 +73,21 @@ async function runLiveVerification() {
 
     // Exact floorplan zones & departments in OfficeEnvironment & Desks
     const zoneLabels = [
+      "CEO / HERMES",
       "CONFERENCE & STRATEGY ROOM",
-      "EXECUTIVE CEO SUITE",
       "COFFEE LOUNGE",
-      "KITCHEN & BREAK",
+      "RESEARCH",
+      "MARKETING",
+      "SALES",
+      "OPERATIONS",
+      "FINANCE",
+      "ENGINEERING",
+      "HR / PEOPLE",
+      "CRM",
+      "ANALYTICS",
       "GAMING ROOM",
+      "KITCHEN & BREAK",
       "RELAXATION AREA",
-      "SALES & DEALS",
-      "MARKET RESEARCH & INTEL",
-      "SEO & DISCOVERY",
-      "CONTENT & EDITORIAL",
-      "FINANCE & COMMERCIAL",
-      "WEBSITE & VERCEL",
-      "OPERATIONS & FLEET",
-      "PEOPLE & HR",
     ];
 
     const bodyHtml = await page1080.content();
@@ -100,17 +101,9 @@ async function runLiveVerification() {
     }
     console.log(`- Floorplan zones detected in DOM: ${foundZonesCount}/${zoneLabels.length}`);
 
-    // Check Command Dock button/pill
-    const commandPill = await page1080.$('button:has-text("HERMES")');
-    console.log(`- Hermes CEO Command Dock Pill detected: ${commandPill ? "YES" : "NO"}`);
-
-    // Click to open Command Dock input
-    if (commandPill) {
-      await commandPill.click();
-      await page1080.waitForTimeout(500);
-      const commandInput = await page1080.$('input[placeholder*="Founder objective"]');
-      console.log(`- Hermes Command Input expanded: ${commandInput ? "YES" : "NO"}`);
-    }
+    // Check Command Bar in top status bar
+    const topCommandInput = await page1080.$('input[placeholder*="Give Hermes a command"]');
+    console.log(`- Top Executive Command Bar detected: ${topCommandInput ? "YES" : "NO"}`);
 
     const path1080 = path.join(OUT_DIR, "01-office-1920x1080.png");
     await page1080.screenshot({ path: path1080 });
@@ -120,16 +113,20 @@ async function runLiveVerification() {
     // TEST 2: Interactive Activity Panel Opening and Drag-Resize
     // -------------------------------------------------------------------------
     console.log(">>> [2/5] Testing Activity Panel Opening & Drag-Resize...");
-    // Click the PANEL button in top status bar
-    const panelToggleBtn = await page1080.$('button:has-text("PANEL")');
-    if (panelToggleBtn) {
-      await panelToggleBtn.click();
-      await page1080.waitForTimeout(600);
-      console.log("- Clicked PANEL button in status bar to open Activity Panel");
+    const panelAlreadyOpen = await page1080.$('aside');
+    if (!panelAlreadyOpen) {
+      const panelToggleBtn = await page1080.$('button:has-text("Live Activity"), button:has-text("PANEL")');
+      if (panelToggleBtn) {
+        await panelToggleBtn.click();
+        await page1080.waitForTimeout(600);
+        console.log("- Clicked Live Activity button in status bar to open panel");
+      }
+    } else {
+      console.log("- Live Activity panel is already open by default on desktop");
     }
 
-    // Verify Activity Panel title is visible
-    const activityPanelHeader = await page1080.$('text="AUTONOMOUS EXECUTION ENGINE"');
+    // Verify Activity Panel title or tabs are visible
+    const activityPanelHeader = await page1080.$('text="Live Activity", text="AUTONOMOUS EXECUTION ENGINE"');
     console.log(`- Harness-style Activity Panel opened: ${activityPanelHeader ? "YES" : "NO"}`);
 
     // Find the drag handle

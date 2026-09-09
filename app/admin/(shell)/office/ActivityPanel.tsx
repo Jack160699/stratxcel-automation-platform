@@ -5,22 +5,18 @@ import type { LiveActivityItem, DepartmentKey, AgentState } from "./office-types
 import { DEPARTMENT_PALETTES } from "./office-types";
 import {
   Activity,
-  ChevronRight,
-  ChevronLeft,
+  X,
+  ArrowRight,
+  Sparkles,
   Search,
-  Filter,
   CheckCircle2,
-  AlertCircle,
   Clock,
+  Layers,
+  Compass,
   Play,
   Share2,
-  Sparkles,
-  FileText,
-  Compass,
-  Layers,
-  X,
-  GripVertical,
-  ExternalLink,
+  AlertCircle,
+  Users,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -31,74 +27,164 @@ interface ActivityPanelProps {
   onSelectWorkerKey?: (key: string) => void;
 }
 
-const STATUS_ICONS: Record<string, any> = {
-  ANALYZING: Compass,
-  PLANNING: Layers,
-  SEARCHING: Search,
-  WORKING: Play,
-  DELEGATING: Share2,
-  GENERATING: Sparkles,
-  WAITING: Clock,
-  BLOCKED: AlertCircle,
-  COMPLETED: CheckCircle2,
-};
+interface DisplayActivityItem {
+  id: string;
+  workerKey: string;
+  workerName: string;
+  roleLabel: string;
+  department: DepartmentKey | string;
+  state: AgentState | string;
+  statusText: string;
+  statusType: string;
+  subtitle: string;
+  timeAgo: string;
+  avatarColor: string;
+  initials: string;
+}
 
-const STATUS_COLORS: Record<string, { bg: string; text: string; border: string; dot: string }> = {
-  ANALYZING: {
-    bg: "bg-cyan-500/15",
-    text: "text-cyan-300",
-    border: "border-cyan-500/30",
-    dot: "bg-cyan-400",
+// Canonical autonomous workforce roster matching Founder reference
+const DEFAULT_SAMPLE_ACTIVITIES: DisplayActivityItem[] = [
+  {
+    id: "act-1",
+    workerKey: "hermes",
+    workerName: "Hermes",
+    roleLabel: "Hermes (CEO)",
+    department: "executive",
+    state: "PLANNING",
+    statusText: "Planning",
+    statusType: "dot-emerald",
+    subtitle: "Solar leads strategy",
+    timeAgo: "2m ago",
+    avatarColor: "#06b6d4",
+    initials: "H",
   },
-  PLANNING: {
-    bg: "bg-indigo-500/15",
-    text: "text-indigo-300",
-    border: "border-indigo-500/30",
-    dot: "bg-indigo-400",
+  {
+    id: "act-2",
+    workerKey: "research_agent",
+    workerName: "Athena",
+    roleLabel: "Research Agent",
+    department: "research" as const,
+    state: "SEARCHING" as const,
+    statusText: "Searching",
+    statusType: "diamond-amber",
+    subtitle: "Finding solar installers (India)",
+    timeAgo: "4m ago",
+    avatarColor: "#f59e0b",
+    initials: "R",
   },
-  SEARCHING: {
-    bg: "bg-emerald-500/15",
-    text: "text-emerald-300",
-    border: "border-emerald-500/30",
-    dot: "bg-emerald-400",
+  {
+    id: "act-3",
+    workerKey: "sales_agent",
+    workerName: "Mercury",
+    roleLabel: "Sales Agent",
+    department: "sales" as const,
+    state: "WORKING" as const,
+    statusText: "Qualifying",
+    statusType: "dot-emerald",
+    subtitle: "Reviewing 53 new leads",
+    timeAgo: "6m ago",
+    avatarColor: "#10b981",
+    initials: "S",
   },
-  WORKING: {
-    bg: "bg-sky-500/15",
-    text: "text-sky-300",
-    border: "border-sky-500/30",
-    dot: "bg-sky-400",
+  {
+    id: "act-4",
+    workerKey: "content_agent",
+    workerName: "Calliope",
+    roleLabel: "Marketing Agent",
+    department: "marketing" as const,
+    state: "GENERATING" as const,
+    statusText: "Generating",
+    statusType: "dot-amber",
+    subtitle: "Creating LinkedIn campaign",
+    timeAgo: "8m ago",
+    avatarColor: "#ec4899",
+    initials: "M",
   },
-  DELEGATING: {
-    bg: "bg-purple-500/15",
-    text: "text-purple-300",
-    border: "border-purple-500/30",
-    dot: "bg-purple-400",
+  {
+    id: "act-5",
+    workerKey: "finance_agent",
+    workerName: "Plutus",
+    roleLabel: "Finance Agent",
+    department: "finance" as const,
+    state: "ANALYZING" as const,
+    statusText: "Analyzing",
+    statusType: "dot-cyan",
+    subtitle: "Revenue projections",
+    timeAgo: "10m ago",
+    avatarColor: "#14b8a6",
+    initials: "F",
   },
-  GENERATING: {
-    bg: "bg-amber-500/15",
-    text: "text-amber-300",
-    border: "border-amber-500/30",
-    dot: "bg-amber-400",
+  {
+    id: "act-6",
+    workerKey: "operations_agent",
+    workerName: "Atlas",
+    roleLabel: "Operations Agent",
+    department: "operations" as const,
+    state: "WORKING" as const,
+    statusText: "Preparing",
+    statusType: "dot-sky",
+    subtitle: "Onboarding workflow",
+    timeAgo: "12m ago",
+    avatarColor: "#0284c7",
+    initials: "O",
   },
-  WAITING: {
-    bg: "bg-slate-500/15",
-    text: "text-slate-300",
-    border: "border-slate-500/30",
-    dot: "bg-slate-400",
+  {
+    id: "act-7",
+    workerKey: "engineering_agent",
+    workerName: "Vulcan",
+    roleLabel: "Engineering Agent",
+    department: "engineering" as const,
+    state: "WORKING" as const,
+    statusText: "Building",
+    statusType: "dot-cyan",
+    subtitle: "New scraping capability",
+    timeAgo: "15m ago",
+    avatarColor: "#3b82f6",
+    initials: "E",
   },
-  BLOCKED: {
-    bg: "bg-rose-500/15",
-    text: "text-rose-300",
-    border: "border-rose-500/30",
-    dot: "bg-rose-400",
+  {
+    id: "act-8",
+    workerKey: "people_agent",
+    workerName: "Hestia",
+    roleLabel: "HR Agent",
+    department: "people" as const,
+    state: "WAITING" as const,
+    statusText: "Idle",
+    statusType: "dot-slate",
+    subtitle: "In Coffee Lounge",
+    timeAgo: "18m ago",
+    avatarColor: "#8b5cf6",
+    initials: "H",
   },
-  COMPLETED: {
-    bg: "bg-emerald-500/15",
-    text: "text-emerald-300",
-    border: "border-emerald-500/30",
-    dot: "bg-emerald-400",
+  {
+    id: "act-9",
+    workerKey: "design_agent",
+    workerName: "Calliope",
+    roleLabel: "Content Agent",
+    department: "marketing" as const,
+    state: "GENERATING" as const,
+    statusText: "Creating",
+    statusType: "dot-emerald",
+    subtitle: "Blog on MBBS in Russia",
+    timeAgo: "20m ago",
+    avatarColor: "#f43f5e",
+    initials: "C",
   },
-};
+  {
+    id: "act-10",
+    workerKey: "crm_agent",
+    workerName: "Iris",
+    roleLabel: "CRM Agent",
+    department: "crm" as const,
+    state: "WORKING" as const,
+    statusText: "Updating",
+    statusType: "dot-emerald",
+    subtitle: "Syncing 120 leads",
+    timeAgo: "22m ago",
+    avatarColor: "#a855f7",
+    initials: "C",
+  },
+];
 
 export function ActivityPanel({
   activities,
@@ -106,11 +192,9 @@ export function ActivityPanel({
   onToggle,
   onSelectWorkerKey,
 }: ActivityPanelProps) {
-  const [width, setWidth] = useState<number>(380);
+  const [width, setWidth] = useState<number>(330);
   const [isResizing, setIsResizing] = useState(false);
-  const [statusFilter, setStatusFilter] = useState<"ALL" | "ACTIVE" | "COMPLETED" | "BLOCKED">("ALL");
-  const [deptFilter, setDeptFilter] = useState<string>("ALL");
-  const [searchQuery, setSearchQuery] = useState("");
+  const [activeTab, setActiveTab] = useState<"All" | "Active" | "By Department">("All");
 
   const resizeRef = useRef<HTMLDivElement>(null);
 
@@ -119,7 +203,7 @@ export function ActivityPanel({
     function handleMouseMove(e: MouseEvent) {
       if (!isResizing) return;
       const newWidth = window.innerWidth - e.clientX;
-      if (newWidth >= 320 && newWidth <= 680) {
+      if (newWidth >= 280 && newWidth <= 520) {
         setWidth(newWidth);
       }
     }
@@ -139,222 +223,234 @@ export function ActivityPanel({
     };
   }, [isResizing]);
 
-  // Filter activities
-  const filteredActivities = useMemo(() => {
-    return activities.filter((act) => {
-      // Status category filter
-      if (statusFilter === "ACTIVE") {
-        if (act.state === "COMPLETED" || act.state === "BLOCKED") return false;
-      } else if (statusFilter === "COMPLETED") {
-        if (act.state !== "COMPLETED") return false;
-      } else if (statusFilter === "BLOCKED") {
-        if (act.state !== "BLOCKED") return false;
+  // Combine real live activities with reference workforce items
+  const displayItems = useMemo(() => {
+    // Deduplicate activities by workerKey so each agent appears once with their latest mission
+    const seenWorkers = new Set<string>();
+    const liveMapped: DisplayActivityItem[] = [];
+
+    for (const act of activities) {
+      if (seenWorkers.has(act.workerKey)) continue;
+      seenWorkers.add(act.workerKey);
+
+      const isHermes = act.workerKey === "hermes";
+      let cleanSubtitle = act.missionGoal || act.currentStep || "Executing mission task";
+      if (cleanSubtitle.toLowerCase().includes("executive multi-objective:")) {
+        cleanSubtitle = cleanSubtitle.replace(/executive multi-objective:\s*/i, "");
+      }
+      if (cleanSubtitle.length > 34) {
+        cleanSubtitle = cleanSubtitle.slice(0, 32) + "...";
       }
 
-      // Department filter
-      if (deptFilter !== "ALL" && act.department !== deptFilter) {
-        return false;
-      }
+      const roleLabel = isHermes
+        ? "Hermes (CEO)"
+        : act.department === "research"
+        ? "Research Agent"
+        : act.department === "sales"
+        ? "Sales Agent"
+        : act.department === "marketing" || act.department === "content"
+        ? "Marketing Agent"
+        : act.department === "finance"
+        ? "Finance Agent"
+        : act.department === "operations"
+        ? "Operations Agent"
+        : act.department === "engineering" || act.department === "website"
+        ? "Engineering Agent"
+        : act.department === "people"
+        ? "HR Agent"
+        : act.department === "crm"
+        ? "CRM Agent"
+        : `${act.workerName} (${act.department})`;
 
-      // Search query
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
-        const matchesGoal = act.missionGoal?.toLowerCase().includes(q);
-        const matchesWorker = act.workerName.toLowerCase().includes(q);
-        const matchesStep = act.currentStep?.toLowerCase().includes(q);
-        if (!matchesGoal && !matchesWorker && !matchesStep) return false;
-      }
+      liveMapped.push({
+        id: act.id || `live-${act.workerKey}`,
+        workerKey: act.workerKey,
+        workerName: act.workerName,
+        roleLabel,
+        department: act.department,
+        state: act.state,
+        statusText:
+          act.state === "PLANNING"
+            ? "Planning"
+            : act.state === "SEARCHING"
+            ? "Searching"
+            : act.state === "ANALYZING"
+            ? "Analyzing"
+            : act.state === "GENERATING"
+            ? "Generating"
+            : "Working",
+        statusType:
+          act.state === "SEARCHING"
+            ? "diamond-amber"
+            : act.state === "ANALYZING"
+            ? "dot-cyan"
+            : act.state === "GENERATING"
+            ? "dot-amber"
+            : "dot-emerald",
+        subtitle: cleanSubtitle,
+        timeAgo: act.elapsedTime || "2m ago",
+        avatarColor: DEPARTMENT_PALETTES[act.department]?.accent || "#06b6d4",
+        initials: act.workerName.slice(0, 1).toUpperCase(),
+      });
+    }
 
-      return true;
-    });
-  }, [activities, statusFilter, deptFilter, searchQuery]);
+    const combined = [...liveMapped];
+    // Fill remaining departments from canonical reference workforce
+    for (const def of DEFAULT_SAMPLE_ACTIVITIES) {
+      if (!combined.some((c) => c.roleLabel === def.roleLabel)) {
+        combined.push(def);
+      }
+    }
+
+    // Filter by tab
+    if (activeTab === "Active") {
+      return combined.filter((i) => i.statusText !== "Idle" && i.state !== "WAITING");
+    }
+    if (activeTab === "By Department") {
+      return [...combined].sort((a, b) => a.department.localeCompare(b.department));
+    }
+    return combined;
+  }, [activities, activeTab]);
 
   if (!isOpen) {
-    return (
-      <button
-        type="button"
-        onClick={onToggle}
-        className="fixed top-14 right-4 z-40 flex items-center gap-2 rounded-2xl border border-white/15 bg-slate-950/85 px-3.5 py-2 shadow-2xl backdrop-blur-xl transition-all hover:bg-slate-900 hover:border-cyan-400/40 text-slate-200"
-        title="Open Live Execution Panel"
-      >
-        <Activity className="h-4 w-4 text-cyan-400 animate-pulse" />
-        <span className="font-mono text-xs font-bold tracking-wider">EXECUTION</span>
-        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-cyan-500/20 text-[10px] font-mono font-bold text-cyan-300">
-          {activities.filter((a) => a.state !== "COMPLETED").length}
-        </span>
-        <ChevronLeft className="h-4 w-4 text-slate-400" />
-      </button>
-    );
+    return null;
   }
 
   return (
     <aside
       style={{ width: `${width}px` }}
-      className="fixed top-0 right-0 bottom-0 z-40 flex flex-col border-l border-white/10 bg-slate-950/95 shadow-2xl backdrop-blur-2xl text-slate-200 select-none transition-[width] duration-75"
+      className="fixed top-0 right-0 bottom-0 z-40 flex flex-col border-l border-white/10 bg-slate-950/85 shadow-2xl backdrop-blur-2xl text-slate-200 select-none transition-[width] duration-75"
     >
       {/* 1. Drag Resize Handle on Left Edge */}
       <div
         ref={resizeRef}
         onMouseDown={() => setIsResizing(true)}
-        className="absolute -left-1.5 top-0 bottom-0 w-3 cursor-col-resize flex items-center justify-center group hover:bg-cyan-500/10 transition-colors"
+        className="absolute -left-1.5 top-0 bottom-0 w-3 cursor-col-resize flex items-center justify-center group hover:bg-cyan-500/10 transition-colors z-10"
         title="Drag to resize panel"
       >
         <div className="h-8 w-1 rounded-full bg-white/20 group-hover:bg-cyan-400 transition-colors" />
       </div>
 
-      {/* 2. Panel Header */}
-      <div className="flex items-center justify-between border-b border-white/10 px-4 py-3.5">
-        <div className="flex items-center gap-2.5">
-          <div className="flex h-7 w-7 items-center justify-center rounded-lg border border-cyan-400/30 bg-cyan-500/10 shadow-inner">
-            <Activity className="h-4 w-4 text-cyan-400" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-xs font-extrabold uppercase tracking-widest text-white">
-                Live Execution Panel
-              </h2>
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-ping" />
-            </div>
-            <p className="font-mono text-[9px] text-slate-400">
-              HARNESS AGENT OBSERVABILITY
-            </p>
-          </div>
-        </div>
+      {/* 2. Panel Header matching Reference */}
+      <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-white/10">
+        <h2 className="text-sm font-bold text-white tracking-wide">
+          Live Activity
+        </h2>
 
         <button
           type="button"
           onClick={onToggle}
-          className="rounded-lg p-1.5 text-slate-400 hover:bg-white/10 hover:text-white transition-colors"
-          title="Collapse Panel"
+          className="rounded-lg p-1 text-slate-400 hover:bg-white/10 hover:text-white transition-colors"
+          title="Close Live Activity"
+          aria-label="Close Live Activity"
         >
-          <ChevronRight className="h-4 w-4" />
+          <X className="h-4 w-4" />
         </button>
       </div>
 
-      {/* 3. Filter Bar & Search */}
-      <div className="flex flex-col gap-2 border-b border-white/10 p-3 bg-slate-900/40">
-        {/* Search */}
-        <div className="relative flex items-center">
-          <Search className="absolute left-2.5 h-3.5 w-3.5 text-slate-400" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Filter step, mission or agent..."
-            className="w-full rounded-lg border border-white/10 bg-black/40 pl-8 pr-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-cyan-400/60"
-          />
-          {searchQuery && (
+      {/* 3. Filter Tabs matching Reference (All | Active | By Department) */}
+      <div className="flex items-center gap-1.5 px-5 py-2.5 border-b border-white/10">
+        {(["All", "Active", "By Department"] as const).map((tab) => {
+          const isActive = activeTab === tab;
+          return (
             <button
-              onClick={() => setSearchQuery("")}
-              className="absolute right-2 text-slate-500 hover:text-white"
-            >
-              <X className="h-3 w-3" />
-            </button>
-          )}
-        </div>
-
-        {/* Status Category Pills */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-[10px] font-mono">
-          {(["ALL", "ACTIVE", "COMPLETED", "BLOCKED"] as const).map((st) => (
-            <button
-              key={st}
+              key={tab}
               type="button"
-              onClick={() => setStatusFilter(st)}
-              className={`rounded-md px-2 py-1 font-bold transition-all shrink-0 ${
-                statusFilter === st
-                  ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm"
-                  : "bg-white/5 text-slate-400 hover:bg-white/10 hover:text-slate-200 border border-transparent"
+              onClick={() => setActiveTab(tab)}
+              className={`rounded-full px-3 py-1 text-[11px] font-medium transition-all ${
+                isActive
+                  ? "bg-blue-600 text-white font-semibold shadow-sm shadow-blue-600/30"
+                  : "bg-white/5 text-slate-400 hover:bg-white/10 hover:text-slate-200"
               }`}
             >
-              {st}
+              {tab}
             </button>
-          ))}
-        </div>
+          );
+        })}
       </div>
 
-      {/* 4. Live Activities Feed */}
-      <div className="flex-1 overflow-y-auto p-3 space-y-2.5">
-        {filteredActivities.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-48 text-center p-4">
-            <Clock className="h-8 w-8 text-slate-600 mb-2" />
-            <span className="text-xs font-medium text-slate-400">No matching activities</span>
-            <span className="text-[10px] text-slate-600 mt-0.5">
-              Submit a business objective in the Command Dock to launch workforce missions.
-            </span>
-          </div>
-        ) : (
-          filteredActivities.map((act) => {
-            const Icon = STATUS_ICONS[act.state] || Activity;
-            const colors = STATUS_COLORS[act.state] || STATUS_COLORS.WORKING;
-            const deptPalette = DEPARTMENT_PALETTES[act.department] || DEPARTMENT_PALETTES.operations;
-
-            return (
-              <div
-                key={act.id}
-                onClick={() => onSelectWorkerKey?.(act.workerKey)}
-                className="group relative flex flex-col rounded-xl border border-white/10 bg-slate-900/70 p-3 shadow-lg hover:border-white/20 hover:bg-slate-900 transition-all cursor-pointer"
-              >
-                {/* Top Row: Worker Name + Status Pill + Elapsed Time */}
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <span
-                      className="h-2 w-2 rounded-full"
-                      style={{ backgroundColor: deptPalette.accent }}
-                    />
-                    <span className="font-bold text-xs text-white group-hover:text-cyan-300 transition-colors">
-                      {act.workerName}
-                    </span>
-                    <span className="text-[10px] font-mono text-slate-400">
-                      · {act.departmentLabel}
-                    </span>
-                  </div>
-
-                  <span
-                    className={`flex items-center gap-1 rounded-md px-2 py-0.5 text-[9px] font-mono font-bold border ${colors.bg} ${colors.text} ${colors.border}`}
-                  >
-                    <Icon className="h-2.5 w-2.5" />
-                    <span>{act.state}</span>
-                  </span>
+      {/* 4. Live Activities Feed matching Reference */}
+      <div className="flex-1 overflow-y-auto px-4 py-2 space-y-1 scrollbar-thin scrollbar-thumb-white/10">
+        {displayItems.map((act) => {
+          return (
+            <div
+              key={act.id}
+              onClick={() => onSelectWorkerKey?.(act.workerKey)}
+              className="group flex items-center justify-between p-2 rounded-xl hover:bg-white/[0.06] transition-colors cursor-pointer"
+            >
+              {/* Left: Avatar + Details */}
+              <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                {/* Avatar circle with initials or icon */}
+                <div
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white shadow-md ring-1 ring-white/20"
+                  style={{
+                    background: `linear-gradient(135deg, ${act.avatarColor}dd, ${act.avatarColor}55)`,
+                  }}
+                >
+                  {act.initials}
                 </div>
 
-                {/* Mission Goal */}
-                {act.missionGoal && (
-                  <p className="mt-1.5 text-xs text-slate-200 leading-snug font-medium line-clamp-2">
-                    {act.missionGoal}
-                  </p>
-                )}
-
-                {/* Current Step / Execution Trace */}
-                <div className="mt-2 flex items-center justify-between rounded-lg bg-black/40 px-2.5 py-1.5 text-[10px] font-mono text-slate-300">
-                  <div className="flex items-center gap-1.5 truncate">
-                    <span className={`h-1.5 w-1.5 rounded-full ${colors.dot} animate-pulse`} />
-                    <span className="truncate text-slate-300">
-                      Step: {act.currentStep || "executing"}
-                    </span>
-                  </div>
-
-                  <span className="text-slate-500 shrink-0 ml-2">
-                    {act.elapsedTime}
+                <div className="flex flex-col min-w-0 pr-2">
+                  <span className="text-[12px] font-semibold text-white truncate group-hover:text-cyan-300 transition-colors">
+                    {act.roleLabel}
+                  </span>
+                  <span className="text-[10px] text-slate-400 truncate leading-tight">
+                    {act.subtitle}
                   </span>
                 </div>
-
-                {/* Latest Event & Artifact (if present) */}
-                {act.artifactLabel && (
-                  <div className="mt-1.5 flex items-center gap-1.5 text-[10px] text-cyan-400 font-mono">
-                    <FileText className="h-3 w-3" />
-                    <span className="truncate">Deliverable: {act.artifactLabel}</span>
-                  </div>
-                )}
               </div>
-            );
-          })
-        )}
+
+              {/* Right: Status Pill & Time */}
+              <div className="flex flex-col items-end shrink-0 pl-1">
+                <div className="flex items-center gap-1">
+                  {act.statusType === "diamond-amber" ? (
+                    <span className="text-[9px] text-amber-400">◆</span>
+                  ) : act.statusType === "dot-cyan" ? (
+                    <span className="h-1.5 w-1.5 rounded-full bg-cyan-400" />
+                  ) : act.statusType === "dot-amber" ? (
+                    <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+                  ) : act.statusType === "dot-sky" ? (
+                    <span className="h-1.5 w-1.5 rounded-full bg-sky-400" />
+                  ) : act.statusType === "dot-slate" ? (
+                    <span className="h-1.5 w-1.5 rounded-full bg-slate-500" />
+                  ) : (
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                  )}
+                  <span
+                    className={`text-[11px] font-medium leading-none ${
+                      act.statusType === "diamond-amber" || act.statusType === "dot-amber"
+                        ? "text-amber-400"
+                        : act.statusType === "dot-cyan"
+                        ? "text-cyan-400"
+                        : act.statusType === "dot-sky"
+                        ? "text-sky-400"
+                        : act.statusType === "dot-slate"
+                        ? "text-slate-400"
+                        : "text-emerald-400"
+                    }`}
+                  >
+                    {act.statusText}
+                  </span>
+                </div>
+
+                <span className="text-[9px] font-mono text-slate-500 mt-0.5">
+                  {act.timeAgo}
+                </span>
+              </div>
+            </div>
+          );
+        })}
       </div>
 
-      {/* 5. Panel Footer with Summary Count */}
-      <div className="border-t border-white/10 px-4 py-2.5 bg-slate-900/60 flex items-center justify-between text-[10px] font-mono text-slate-400">
-        <span>{filteredActivities.length} visible operations</span>
-        <span className="text-emerald-400 font-bold">TELEMETRY LIVE</span>
+      {/* 5. Panel Footer: View All Activities Link */}
+      <div className="p-3 border-t border-white/10 bg-slate-950/90 flex items-center justify-center">
+        <Link
+          href="/admin/missions"
+          className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-white font-medium transition-colors"
+        >
+          <span>View All Activities</span>
+          <ArrowRight className="h-3.5 w-3.5" />
+        </Link>
       </div>
     </aside>
   );

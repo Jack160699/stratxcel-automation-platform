@@ -38,62 +38,71 @@ export interface SimulationWorkerState {
   isMoving: boolean;
 }
 
-// Canonical Spatial Waypoints (in % coordinates across the 14 company zones)
+// Canonical Spatial Waypoints (in % coordinates across the 14 architectural building rooms)
 export const OFFICE_WAYPOINTS = {
-  // 1. CEO Executive Suite (Top Center)
-  hermes_desk: { x: 50, y: 22 },
-  hermes_terrace: { x: 50, y: 14 },
+  // 1. CEO Executive Suite (Penthouse Center)
+  hermes_desk: { x: 45, y: 20 },
+  hermes_terrace: { x: 45, y: 15 },
 
-  // 2. Meeting Room (Center Stage)
-  meeting_table: { x: 50, y: 44 },
-  meeting_seat_north: { x: 50, y: 39 },
-  meeting_seat_south: { x: 50, y: 49 },
-  meeting_seat_west: { x: 44, y: 44 },
-  meeting_seat_east: { x: 56, y: 44 },
+  // 2. Meeting Room (Penthouse Right-Center)
+  meeting_table: { x: 61.5, y: 22 },
+  meeting_seat_north: { x: 61.5, y: 18 },
+  meeting_seat_south: { x: 61.5, y: 26 },
+  meeting_seat_west: { x: 57, y: 22 },
+  meeting_seat_east: { x: 66, y: 22 },
 
   // 3-10. Work Department Desks
-  sales_desk: { x: 16, y: 64 }, // Sales & Deals (Mercury)
-  crm_desk: { x: 28, y: 64 }, // CRM & Support (Vesta)
-  research_desk: { x: 40, y: 64 }, // Market Intelligence (Athena)
-  seo_desk: { x: 60, y: 64 }, // SEO & Discovery (Aether)
-  marketing_desk: { x: 72, y: 64 }, // Marketing & Campaigns (Calliope)
-  finance_desk: { x: 84, y: 64 }, // Finance & Ledger (Plutus)
+  // Level 2 (Mid-Upper Tier)
+  research_desk: { x: 14.5, y: 43 }, // Athena (Market Intelligence)
+  marketing_desk: { x: 25.5, y: 43 }, // Calliope (Content & Editorial)
+  sales_desk: { x: 36.5, y: 43 }, // Mercury (Sales & Deals)
+  operations_desk: { x: 61.5, y: 43 }, // Atlas (Operations & Fleet)
+  finance_desk: { x: 73.5, y: 43 }, // Plutus (Finance & Revenue)
 
-  engineering_desk: { x: 22, y: 84 }, // Engineering (Vulcan)
-  operations_desk: { x: 50, y: 84 }, // Cloud Fleet Ops (Atlas)
-  people_desk: { x: 78, y: 84 }, // People & HR (Hestia)
+  // Level 1 (Lower-Mid Tier)
+  engineering_desk: { x: 14.5, y: 62 }, // Vulcan (Engineering & Vercel)
+  people_desk: { x: 26.5, y: 62 }, // Hestia (People & HR)
+  crm_desk: { x: 63.5, y: 62 }, // Vesta (CRM & Customer Ops)
+  seo_desk: { x: 75.5, y: 62 }, // Aether (SEO & Analytics)
 
   // Backward-compatible named desk aliases
-  aether_desk: { x: 60, y: 64 },
-  calliope_desk: { x: 72, y: 64 },
-  athena_desk: { x: 40, y: 64 },
-  vulcan_desk: { x: 22, y: 84 },
-  atlas_desk: { x: 50, y: 84 },
-  mercury_desk: { x: 16, y: 64 },
-  iris_desk: { x: 28, y: 64 },
+  aether_desk: { x: 75.5, y: 62 },
+  calliope_desk: { x: 25.5, y: 43 },
+  athena_desk: { x: 14.5, y: 43 },
+  vulcan_desk: { x: 14.5, y: 62 },
+  atlas_desk: { x: 61.5, y: 43 },
+  mercury_desk: { x: 36.5, y: 43 },
+  iris_desk: { x: 63.5, y: 62 },
 
   // 11-14. Non-Work Amenities (Honest Breaks)
-  kitchen_counter: { x: 12, y: 20 }, // Kitchen / Break Area (North-West)
-  kitchen_table: { x: 18, y: 26 },
-  gaming_arcade: { x: 10, y: 44 }, // Gaming Room (Mid-West)
-  gaming_couch: { x: 16, y: 44 },
-  coffee_bar: { x: 88, y: 20 }, // Coffee Lounge (North-East)
-  coffee_lounge_seat: { x: 84, y: 26 },
-  relaxation_beanbag: { x: 90, y: 44 }, // Relaxation Area (Mid-East)
-  relaxation_garden: { x: 84, y: 44 },
+  coffee_bar: { x: 79, y: 22 }, // Coffee Lounge (Penthouse Right)
+  coffee_lounge_seat: { x: 83, y: 22 },
+  gaming_arcade: { x: 15, y: 82 }, // Gaming Room (Ground Left)
+  gaming_couch: { x: 19, y: 82 },
+  kitchen_counter: { x: 33, y: 82 }, // Kitchen / Break (Ground Center-Left)
+  kitchen_table: { x: 38, y: 82 },
+  relaxation_beanbag: { x: 58, y: 82 }, // Relaxation Area (Ground Center-Right)
+  relaxation_garden: { x: 64, y: 82 },
+
+  // Central Atrium & Staircases
+  atrium_tree: { x: 47, y: 57 },
+  stairs_penthouse: { x: 47, y: 31 },
+  stairs_level2: { x: 47, y: 43 },
+  stairs_level1: { x: 47, y: 62 },
+  stairs_ground: { x: 47, y: 82 },
 
   // Architectural Markers
   mission_board: { x: 74, y: 14 },
   stratxcel_wall: { x: 50, y: 10 },
 
   // Connecting Corridors & Hallways (Clear path routing)
-  north_hallway: { x: 50, y: 31 },
-  central_crossing: { x: 50, y: 55 },
-  south_hallway: { x: 50, y: 74 },
-  west_cross_aisle: { x: 28, y: 55 },
-  east_cross_aisle: { x: 72, y: 55 },
+  north_hallway: { x: 47, y: 31 },
+  central_crossing: { x: 47, y: 55 },
+  south_hallway: { x: 47, y: 74 },
+  west_cross_aisle: { x: 25, y: 55 },
+  east_cross_aisle: { x: 70, y: 55 },
   west_outer_corridor: { x: 14, y: 34 },
-  east_outer_corridor: { x: 86, y: 34 },
+  east_outer_corridor: { x: 80, y: 34 },
 };
 
 // Desk coordinates lookup by worker key
