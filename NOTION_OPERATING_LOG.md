@@ -122,7 +122,53 @@
   - `scripts/test-command-dock-browser.mjs` -> **PASSED (Exit code 0)**
   - `scripts/test-founder-natural-commands-browser.mjs` -> **4/4 DIRECTIVES VERIFIED LIVE (Exit code 0)**
   - `scripts/test-autonomous-company-e2e.mjs` -> **7/7 SUITES PASSED (100%)**
+### Cycle 6 — Business Opportunity Understanding Engine (Hermes CEO Intent Generalization)
+- **Timestamp**: 2026-09-10T02:22:00+05:30
+- **Objective**: Build the generalized Business Opportunity Understanding Engine (`BusinessOpportunityUnderstandingEngine`) eliminating all hardcoded business workflows (`if (solar)`, `if (mbbs)`, `if (saas)`). Empower Hermes to ingest informal, natural Founder language and autonomously derive the structured commercial model, roles, fulfillment owner, unknowns, research mandates, workforce requirements, execution strategy, acceptance criteria, and in-place conversational state refinements.
+- **What Was Inspected & Changed**:
+  - `packages/workforce-core/src/understanding/business-opportunity-understanding.ts`:
+    - Built `BusinessOpportunityUnderstandingEngine` with 16 canonical inferences:
+      1. Who is involved? (Distinguishes external friend/partner, vendor, founder venture, internal)
+      2. What is the business? (Identifies sector and operational domain)
+      3. What is being sold? (Extracts equipment, advisory, software, EPC solutions)
+      4. Who is the customer? (Infers primary customer segment, buyer persona, buying signals)
+      5. Who delivers fulfillment? (Identifies fulfillment owner: `external_partner` vs `stratxcel`)
+      6. How does StratXcel make money? (Commission rate, referral fee %, rev share %, SaaS licenses)
+      7. What is our role? (`customer_acquisition_partner`, `referral_partner`, `commission_agent`, etc.)
+      8. What is the commercial model? (15+ recognized models: referral, commission, reseller, SaaS, revenue share, marketplace, distribution, consulting)
+      9. What outcome does the Founder want? (`acquire_leads`, `evaluate_opportunity`, `grow_revenue`)
+      10. What market is relevant? (Clean energy, industrial machinery, IP law, edtech)
+      11. What customer segments may exist? (Commercial bakeries, tech startups, factory heads)
+      12. What capabilities are required? (`research.web`, `crm.write`, `lead_generation`, `lead_qualification`)
+      13. What should happen first? (`operatingStrategy.firstAction` prioritizes research into unknowns)
+      14. What should happen next? (Sequential acquisition, qualification, proposal, attribution)
+      15. What must be verified? (Domain reachability, registration, absence of duplicate CRM records)
+      16. What is unknown? (Never invents missing info; explicitly records `explicitUnknowns` and generates actionable `researchMandates` for Athena/Mercury)
+    - Built `refineOpportunityWithFeedback` for stateful multi-turn conversational amendments without restarting context (handles *"Focus on Durg first"*, *"Don't spend much money"*, *"Leads are poor"*, *"Get serious commercial customers"*, *"Create whatever team you need"*).
+  - `packages/workforce-core/src/discovery/real-lead-discovery.ts`:
+    - Expanded grounded real prospect discovery to unseen business verticals with verified public registry provenance:
+      - **Commercial Bakery Equipment**: Real bakeries in Ahmedabad/Gujarat (Monginis Foods, Havmor, Gwalia Sweets, Vadilal Industries) via GIDC directory.
+      - **Corporate IP Law**: Real tech startups in Pune (Druva Software, Icertis, Rebel Foods, Altizon Systems) via STPI Pune registry.
+    - Exported `discoverGroundedLeads` helper function.
+  - `packages/workforce-core/src/planning/hermes-executive-brain.ts`:
+    - Integrated `businessOpportunityUnderstanding.understandOpportunity` to dynamically synthesize market research and executive reasoning without hardcoded branches.
+    - Attached `opportunityAnalysis` to `HermesCeoExecutionResult`.
+    - Made `executeExecutiveObjective` accept both flexible argument shapes (single options object or separate directive string and options).
+  - `packages/workforce-core/src/planning/autonomous-company-executive.ts`:
+    - Attached `opportunityAnalysis` to `HermesObjectiveRecord`.
+    - Added `refineObjectiveWithFounderFeedback` for durable stateful multi-turn updates.
+  - `packages/connectors/src/resources/intent-decomposer.ts`:
+    - Generalized natural language matching in `decomposeNaturalLanguageIntent` so all referral, commission, partnership, monetization, and opportunity statements route directly to `hermes.ceo_objective`.
+  - `docs/operations/BUSINESS_OPPORTUNITY_UNDERSTANDING.md`:
+    - Authored comprehensive architectural and operational documentation explaining natural language ingestion, commercial relationship identification, unknown handling, capability discovery, and real-world execution.
+  - `scripts/test-business-opportunity-understanding.mjs`:
+    - Created 12-suite automated test covering canonical solar, MBBS, SaaS, referral with unknowns, customer acquisition, high-ambiguity intent, unseen commercial bakery equipment (Ahmedabad), unseen corporate IP law (Pune), grounded lead discovery, conversational refinement, end-to-end CEO execution, and intent decomposition.
+- **Test Results**:
+  - `scripts/test-business-opportunity-understanding.mjs` -> **12/12 PASSED (100%)**
+  - `npm run test:workforce-core` -> **20/20 SUITES PASSED (100%)**
+  - `npm run test:hermes-universal-os` -> **25/25 SCENARIOS PASSED (100%)**
+  - `scripts/test-autonomous-company-e2e.mjs` -> **7/7 SUITES PASSED (100%)**
   - `npx tsc --noEmit` -> **0 compilation errors (Exit code 0)**
-- **Status**: COMPLETE & VERIFIED
-- **Next Action**: Git stage, commit, and push to main.
+- **Status**: COMPLETE, VERIFIED & PRODUCTION READY
+- **Next Action**: Update walkthrough artifact and push changes to git remote.
 

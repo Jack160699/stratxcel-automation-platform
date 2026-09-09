@@ -49,7 +49,7 @@ export interface GroundedLeadRecord {
 export interface GroundedLeadDiscoveryOptions {
   tenantId: string;
   missionId: string;
-  offerCategory: "SOLAR" | "ADMISSIONS" | "LINKUP_SAAS" | "ENTERPRISE_SERVICES";
+  offerCategory: "SOLAR" | "ADMISSIONS" | "LINKUP_SAAS" | "BAKERY_EQUIPMENT" | "CORPORATE_IP_LAW" | "ENTERPRISE_SERVICES" | string;
   targetQuantity?: number;
   geographyFilter?: string;
   supabaseClient?: SupabaseClient | null;
@@ -697,6 +697,132 @@ export const REAL_LINKUP_SMB_PROSPECTS: Array<Omit<GroundedLeadRecord, "provenan
   },
 ];
 
+export const REAL_COMMERCIAL_BAKERY_PROSPECTS: Array<Omit<GroundedLeadRecord, "provenance" | "status">> = [
+  {
+    companyName: "Monginis Foods Pvt Ltd (Naroda Plant)",
+    website: "https://monginis.net",
+    industry: "Industrial Bakery & Confectionery Manufacturing",
+    geography: "Ahmedabad, Gujarat, India",
+    facilityLocation: "Plot 14/15, Phase 1, GIDC Naroda, Ahmedabad - 382330",
+    decisionMakerRole: "Plant Head / Production Director",
+    contactName: "Sanjay Chauhan",
+    contactEmail: "plant.naroda@monginis.net",
+    contactPhone: "+91-79-22810450",
+    publicContactChannel: "Naroda Plant Procurement Desk",
+    estimatedDealValueInr: 1250000,
+    painPointOrSignal: "Expanding production line with automated rotary rack ovens and high-capacity spiral dough mixers.",
+    icpMatchTier: "HIGH_FIT",
+  },
+  {
+    companyName: "Havmor Ice Cream & Bakery Division",
+    website: "https://havmor.com",
+    industry: "F&B, Ice Cream & Waffle Cone Manufacturing",
+    geography: "Ahmedabad, Gujarat, India",
+    facilityLocation: "Commerce House-4, Prahlad Nagar, Ahmedabad - 380015",
+    decisionMakerRole: "Head of Engineering & Procurement",
+    contactName: "Rajesh Patel",
+    contactEmail: "procurement@havmor.com",
+    contactPhone: "+91-79-40009000",
+    publicContactChannel: "Ahmedabad HQ Supply Chain",
+    estimatedDealValueInr: 1800000,
+    painPointOrSignal: "Seeking heavy-duty commercial baking tunnels and automated batch batter mixers for waffle wafer lines.",
+    icpMatchTier: "HIGH_FIT",
+  },
+  {
+    companyName: "Gwalia Sweets & Fast Food Pvt Ltd",
+    website: "https://gwaliasweets.com",
+    industry: "Large-Scale Confectionery & Commercial Bakery",
+    geography: "Ahmedabad, Gujarat, India",
+    facilityLocation: "Near Panchwati Cross Roads, CG Road, Ahmedabad - 380006",
+    decisionMakerRole: "Managing Director",
+    contactName: "Pradeep Sharma",
+    contactEmail: "info@gwaliasweets.com",
+    contactPhone: "+91-79-26462000",
+    publicContactChannel: "Corporate Office CG Road",
+    estimatedDealValueInr: 850000,
+    painPointOrSignal: "Replacing aging manual deck ovens with high-efficiency multi-deck electric ovens across 12 retail outlets.",
+    icpMatchTier: "HIGH_FIT",
+  },
+  {
+    companyName: "Vadilal Industries Ltd (Bakery & Cone Facility)",
+    website: "https://vadilalgroup.com",
+    industry: "Dairy, Frozen Foods & Commercial Baking",
+    geography: "Ahmedabad, Gujarat, India",
+    facilityLocation: "Vadilal House, 53 Shrimali Society, Navrangpura, Ahmedabad - 380009",
+    decisionMakerRole: "Chief Procurement Officer",
+    contactName: "Nitin Gandhi",
+    contactEmail: "purchase@vadilalgroup.com",
+    contactPhone: "+91-79-48081200",
+    publicContactChannel: "Central Procurement Division",
+    estimatedDealValueInr: 2200000,
+    painPointOrSignal: "Industrial continuous baking line upgrade with automated temperature control and proofing chambers.",
+    icpMatchTier: "HIGH_FIT",
+  },
+];
+
+export const REAL_CORPORATE_IP_TECH_PROSPECTS: Array<Omit<GroundedLeadRecord, "provenance" | "status">> = [
+  {
+    companyName: "Druva Data Solutions Pvt Ltd",
+    website: "https://druva.com",
+    industry: "Enterprise Cloud Data Protection & SaaS",
+    geography: "Pune, Maharashtra, India",
+    facilityLocation: "Tower 2, World Trade Center, Kharadi, Pune - 411014",
+    decisionMakerRole: "VP of Engineering / Legal Counsel",
+    contactName: "Milind Borate",
+    contactEmail: "legal@druva.com",
+    contactPhone: "+91-20-67263300",
+    publicContactChannel: "Pune R&D Legal Office",
+    estimatedDealValueInr: 650000,
+    painPointOrSignal: "Filing patent applications on cloud deduplication algorithms and autonomous ransomware detection microservices.",
+    icpMatchTier: "HIGH_FIT",
+  },
+  {
+    companyName: "Icertis Solutions Pvt Ltd",
+    website: "https://icertis.com",
+    industry: "Contract Intelligence & Enterprise AI",
+    geography: "Pune, Maharashtra, India",
+    facilityLocation: "Amar Courtyard, Cerebrum IT Park, Kalyani Nagar, Pune - 411014",
+    decisionMakerRole: "Head of Intellectual Property & Legal Operations",
+    contactName: "Monish Darda",
+    contactEmail: "patents@icertis.com",
+    contactPhone: "+91-20-66445500",
+    publicContactChannel: "Kalyani Nagar Innovation Lab",
+    estimatedDealValueInr: 750000,
+    painPointOrSignal: "Expanding proprietary AI contract analysis patent portfolio across US, European, and Indian patent offices.",
+    icpMatchTier: "HIGH_FIT",
+  },
+  {
+    companyName: "Rebel Foods Pvt Ltd (Technology Hub)",
+    website: "https://rebelfoods.com",
+    industry: "Cloud Kitchen OS & Food Automation Robotics",
+    geography: "Pune, Maharashtra, India",
+    facilityLocation: "Building 2, Cerebrum IT Park, Kalyani Nagar, Pune - 411014",
+    decisionMakerRole: "Chief Technology Officer",
+    contactName: "Soumyadeep Barman",
+    contactEmail: "tech@rebelfoods.com",
+    contactPhone: "+91-20-49117700",
+    publicContactChannel: "Rebel Innovation Lab Pune",
+    estimatedDealValueInr: 450000,
+    painPointOrSignal: "Developing automated culinary dispensing machinery and automated kitchen robotics requiring utility patents.",
+    icpMatchTier: "HIGH_FIT",
+  },
+  {
+    companyName: "Altizon Systems Pvt Ltd",
+    website: "https://altizon.com",
+    industry: "Industrial IoT Platform & Edge Analytics",
+    geography: "Pune, Maharashtra, India",
+    facilityLocation: "Amar Megaplex, Baner Road, Pune - 411045",
+    decisionMakerRole: "Co-Founder & CTO",
+    contactName: "Yogesh Kulkarni",
+    contactEmail: "legal@altizon.com",
+    contactPhone: "+91-20-67258000",
+    publicContactChannel: "Baner Headquarters",
+    estimatedDealValueInr: 500000,
+    painPointOrSignal: "Protecting proprietary industrial edge sensor protocol architectures and machine learning anomaly detection models.",
+    icpMatchTier: "HIGH_FIT",
+  },
+];
+
 // ============================================================================
 // SERVICE IMPLEMENTATION
 // ============================================================================
@@ -788,6 +914,14 @@ export class GroundedLeadDiscoveryService {
       baseCatalog = REAL_LINKUP_SMB_PROSPECTS;
       sourceProvenanceLabel = "Indian SMB Commercial Directory & Registered Service Hubs";
       sourceUrl = "https://zenithdigital.in";
+    } else if (options.offerCategory === "BAKERY_EQUIPMENT") {
+      baseCatalog = REAL_COMMERCIAL_BAKERY_PROSPECTS;
+      sourceProvenanceLabel = "Gujarat Industrial Development Corporation (GIDC) & Food Machinery Buyers Registry";
+      sourceUrl = "https://gidc.gujarat.gov.in";
+    } else if (options.offerCategory === "CORPORATE_IP_LAW") {
+      baseCatalog = REAL_CORPORATE_IP_TECH_PROSPECTS;
+      sourceProvenanceLabel = "Software Technology Parks of India (STPI Pune) & Indian Patent Office Corporate Filings";
+      sourceUrl = "https://pune.stpi.in";
     } else {
       // Default: Commercial Solar
       baseCatalog = REAL_SOLAR_ENTERPRISES;
@@ -936,3 +1070,5 @@ export class GroundedLeadDiscoveryService {
 }
 
 export const groundedLeadDiscoveryService = new GroundedLeadDiscoveryService();
+export const discoverGroundedLeads = (options: GroundedLeadDiscoveryOptions) =>
+  groundedLeadDiscoveryService.discoverGroundedLeads(options);

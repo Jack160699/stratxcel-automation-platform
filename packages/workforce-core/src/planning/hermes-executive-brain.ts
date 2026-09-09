@@ -25,7 +25,10 @@ import { generateProFormaModel, exportProFormaCsv } from "../spreadsheets/pro-fo
 import { logSpreadsheetOperation } from "../spreadsheets/excel-writer.ts";
 import { createClient } from "@supabase/supabase-js";
 import { groundedLeadDiscoveryService } from "../discovery/real-lead-discovery.ts";
-
+import {
+  businessOpportunityUnderstanding,
+  type BusinessOpportunityAnalysis,
+} from "../understanding/business-opportunity-understanding.ts";
 
 export interface ExecutiveReasoningRecord {
   directive: string;
@@ -80,6 +83,7 @@ export interface HermesCeoExecutionResult {
   companyScope: string;
   status: "IN_PROGRESS" | "COMPLETED" | "BLOCKED" | "CONFIRMATION_REQUIRED";
   reasoning: ExecutiveReasoningRecord;
+  opportunityAnalysis?: BusinessOpportunityAnalysis;
   stagesExecuted: ExecutiveStage[];
   cycles: ExecutiveCycleResult[];
   engineeredCapabilities: CapabilityReceipt[];
@@ -112,80 +116,58 @@ export class HermesExecutiveBrain {
 
   /**
    * 1. OBSERVE & 12-QUESTION REASONING
-   * Self-directed evaluation of business context, goals, unknowns, capabilities, and metrics.
+   * Self-directed evaluation of business context, goals, unknowns, capabilities, and metrics
+   * driven by the generalized Business Opportunity Understanding Engine.
    */
   public conductExecutiveReasoning(
     directive: string,
     options: { tenantId: string; companyScope?: string; targetQuantity?: number }
   ): ExecutiveReasoningRecord {
-    const text = directive.toLowerCase();
-    const isSolar = text.includes("solar") || text.includes("photovoltaic") || text.includes("energy");
-    const isAdmissions = text.includes("admission") || text.includes("university") || text.includes("student") || text.includes("college");
-    const isLinkup = text.includes("linkup") || text.includes("saas") || text.includes("crm");
+    const opp = businessOpportunityUnderstanding.understandOpportunity(directive, {
+      tenantId: options.tenantId,
+      companyScope: options.companyScope,
+    });
 
-    let outcome: string;
-    let targetValue = options.targetQuantity || 50;
-    let unit = "leads";
-    let metricName = "qualified_opportunities";
+    const outcome = opp.desiredOutcome.summary;
+    const targetValue = options.targetQuantity || opp.desiredOutcome.measurableTarget.targetValue || 25;
+    const unit = opp.desiredOutcome.measurableTarget.unit;
+    const metricName = opp.desiredOutcome.measurableTarget.metricName;
 
-    if (isAdmissions) {
-      outcome = "Recruit qualified students for foreign university admissions and convert to enrolled candidates.";
-      unit = "candidates";
-      metricName = "admissions_applications";
-      if (!options.targetQuantity) targetValue = 20;
-    } else if (isSolar) {
-      outcome = "Acquire commercial industrial rooftop solar accounts and advance to technical site assessment.";
-      unit = "commercial_leads";
-      metricName = "qualified_solar_accounts";
-      if (!options.targetQuantity) targetValue = 100;
-    } else if (isLinkup) {
-      outcome = "Sell Linkup B2B workflow automation SaaS to Indian SMBs.";
-      unit = "smb_accounts";
-      metricName = "closed_subscriptions";
-      if (!options.targetQuantity) targetValue = 30;
-    } else {
-      outcome = `Grow enterprise business operations and revenue pipeline for directive: "${directive}".`;
-      unit = "milestones";
-      metricName = "pipeline_progress";
-      if (!options.targetQuantity) targetValue = 50;
-    }
+    const assignedEmployees = opp.operatingStrategy.recommendedWorkforce.map((w) => ({
+      roleKey: w.roleKey,
+      department: w.department,
+      why: w.purpose,
+    }));
 
-    const assignedEmployees = [
-      { roleKey: "growth_strategist", department: "growth", why: "Synthesize market research, ICP segmentation, and unit economics." },
-      { roleKey: "market_researcher", department: "research", why: "Conduct competitive landscape and pricing benchmark research." },
-      { roleKey: isSolar ? "solara_solar_consultant" : "lead_gen_specialist", department: "acquisition", why: "Prospect discovery and lead qualification." },
-      { roleKey: "sales_specialist", department: "sales", why: "Pipeline stage progression, commercial proposals, and closing." },
-      { roleKey: "commercial_compliance_reviewer", department: "finance", why: "Review pro-forma margins and payment assurance." },
-      { roleKey: "customer_success_specialist", department: "customer_success", why: "Post-sale onboarding and operational fulfillment." },
-    ];
-
-    const capabilitiesRequired = [
-      "research.web",
-      "crm.read",
-      "crm.write",
-      "report.generate",
-      "analytics.read",
-    ];
-
-    // Detect missing capabilities against operational registry
+    const capabilitiesRequired = opp.operatingStrategy.requiredCapabilities;
     const { missingKeys } = operationalCapabilities.detectMissingCapabilities(capabilitiesRequired);
+
+    const whatWeKnow = [
+      `Tenant scope verified: ${options.tenantId}`,
+      `Business Opportunity: ${opp.businessConcept.offeringName} (${opp.businessConcept.industrySector})`,
+      `Commercial Model: ${opp.commercialModel.type.toUpperCase()} (${opp.commercialModel.monetizationMechanism})`,
+      `StratXcel Role: ${opp.partiesInvolved.stratxcelRole}`,
+      `Fulfillment Owner: ${opp.partiesInvolved.fulfillmentOwner} (${opp.partiesInvolved.fulfillmentNotes})`,
+      `Target Market: ${opp.targetMarket.primaryCustomerSegment} (${opp.targetMarket.targetGeography})`,
+    ];
+
+    const whatWeDoNotKnow = opp.explicitUnknowns.length > 0
+      ? opp.explicitUnknowns
+      : ["Real-time response rate and channel elasticity for this specific campaign window."];
 
     return {
       directive,
       outcome,
-      whatWeKnow: [
-        `Tenant scope verified: ${options.tenantId}`,
-        `Company business domain: ${options.companyScope || (isSolar ? "Solara Energy" : "StratXcel Enterprise")}`,
-        "Canonical offer catalog is configured and ready for commercial dispatch.",
-      ],
-      whatWeDoNotKnow: [
-        "Current channel elasticity and real-time response rate for this campaign window.",
-        "Exact competitor pricing discounts in the target geographic corridor.",
-      ],
-      bestNextAction: "Conduct grounded market research -> Define ICP -> Launch Multi-Stage Acquisition & Sales DAG.",
+      whatWeKnow,
+      whatWeDoNotKnow,
+      bestNextAction: opp.operatingStrategy.firstAction,
       assignedEmployees,
       capabilitiesRequired,
-      dataRequired: ["ICP targeting criteria", "Pro-forma financial sheet", "Target account roster"],
+      dataRequired: [
+        "Grounded ICP targeting criteria",
+        "Pro-forma unit economics & commission model",
+        "Target commercial registry records",
+      ],
       toolsAvailable: ["Core MCP Fleet", "Supabase DB", "Excel Spreadsheet Engine", "WhatsApp Ingress"],
       missingCapabilities: missingKeys,
       canMissingBeAssembled: true,
@@ -196,13 +178,14 @@ export class HermesExecutiveBrain {
         currentValue: 0,
         unit,
       },
-      nextActionAfterCompletion: "Handoff to customer success for onboarding and initiate post-sale delivery fulfillment.",
+      nextActionAfterCompletion: "Handoff to Sales & Operations for commercial onboarding and conversion milestone tracking.",
     };
   }
 
   /**
    * 2. RESEARCH-FIRST MARKET SYNTHESIZER
-   * Produces grounded research, ICP definition, and pricing models dynamically.
+   * Produces grounded research, ICP definition, and pricing models dynamically
+   * derived from the Business Opportunity Understanding Engine without hardcoding.
    */
   public synthesizeMarketResearch(directive: string): {
     marketContext: string;
@@ -210,81 +193,40 @@ export class HermesExecutiveBrain {
     pricingModel: Record<string, string | number>;
     channels: string[];
   } {
-    const text = directive.toLowerCase();
-    const isSolar = text.includes("solar") || text.includes("energy");
-    const isAdmissions = text.includes("admission") || text.includes("university");
-    const isLinkup = text.includes("linkup") || text.includes("saas");
+    const opp = businessOpportunityUnderstanding.understandOpportunity(directive);
+    const sector = opp.businessConcept.industrySector.toLowerCase();
 
-    if (isAdmissions) {
-      return {
-        marketContext: "High-growth Indian outbound student market targeting UK, Germany, Canada, and Ireland for STEM & Business degrees.",
-        icpProfile: {
-          targetAudience: "Final year undergraduate engineering/commerce students and recent graduates (ages 21-26)",
-          geography: "Tier 1 & Tier 2 Indian cities (Pune, Hyderabad, Bengaluru, Chandigarh, Indore)",
-          academicThreshold: "60%+ undergraduate score, IELTS/TOEFL in preparation",
-          budgetTolerance: "₹18L - ₹40L total tuition & living budget",
-        },
-        pricingModel: {
-          upfrontAdvisoryFeeInr: 50000,
-          universityCommissionInr: 150000,
-          averageOrderValueInr: 200000,
-          grossMarginPct: 75,
-        },
-        channels: ["WhatsApp Educational Webinars", "College Campus Ambassadorships", "SEO Visa & Scholarship Guides"],
-      };
-    }
-
-    if (isSolar) {
-      return {
-        marketContext: "Commercial and Industrial (C&I) rooftop solar in India driven by high grid tariffs (₹11-₹15/kWh) and 40% accelerated depreciation.",
-        icpProfile: {
-          targetAudience: "Manufacturing units, cold storage facilities, chemical plants, auto-ancillary factories",
-          geography: "Industrial belts of Maharashtra (Chakan, Bhosari), Gujarat (Sanand, Vapi), and Karnataka (Peenya)",
-          rooftopArea: "15,000 to 75,000 sq ft shadow-free industrial shed rooftop",
-          monthlyElectricityBill: "> ₹1,50,000 / month",
-        },
-        pricingModel: {
-          systemCapacityKw: 100,
-          turnkeyEpcCostInr: 4500000,
-          annualElectricitySavingsInr: 1400000,
-          paybackPeriodYears: 3.2,
-          grossMarginPct: 35,
-        },
-        channels: ["Industrial Estate Directory Prospecting", "Satellite Rooftop Solar Assessments", "Direct Founder WhatsApp Outreach"],
-      };
-    }
-
-    if (isLinkup) {
-      return {
-        marketContext: "Indian SMB digital transformation with high WhatsApp usage but poor lead qualification and delayed response times.",
-        icpProfile: {
-          targetAudience: "SMB business owners, service agencies, coaching institutes, dental/medical clinics, real estate brokers",
-          geography: "Pan-India metro and tier-2 urban clusters",
-          companySize: "5 to 50 employees",
-          dailyInboundLeads: "15 to 100 messages daily",
-        },
-        pricingModel: {
-          monthlySubscriptionInr: 15000,
-          setupAndIntegrationFeeInr: 25000,
-          annualContractValueInr: 205000,
-          grossMarginPct: 82,
-        },
-        channels: ["LinkedIn B2B Outreach", "14-Day Free Pilot with WhatsApp Bot Demo", "Local Industry Association Partnerships"],
-      };
+    let defaultAov = 100000;
+    if (sector.includes("clean energy") || sector.includes("solar")) {
+      defaultAov = 4500000;
+    } else if (sector.includes("bakery") || sector.includes("food") || sector.includes("machinery")) {
+      defaultAov = 1200000;
+    } else if (sector.includes("education") || sector.includes("admission") || sector.includes("mbbs")) {
+      defaultAov = 200000;
+    } else if (sector.includes("software") || sector.includes("saas") || sector.includes("automation")) {
+      defaultAov = 180000;
+    } else if (sector.includes("legal") || sector.includes("patent") || sector.includes("ip")) {
+      defaultAov = 350000;
     }
 
     return {
-      marketContext: "Broad B2B enterprise automation and commercial growth opportunity.",
+      marketContext: `${opp.businessConcept.industrySector}: ${opp.businessConcept.productOrServiceDescription} (${opp.targetMarket.targetGeography})`,
       icpProfile: {
-        targetAudience: "Enterprise decision makers and department heads",
-        geography: "Global & Domestic Indian Enterprise",
-        size: "Mid-Market to Enterprise",
+        targetAudience: opp.targetMarket.primaryCustomerSegment,
+        buyerPersona: opp.targetMarket.buyerPersona,
+        geography: opp.targetMarket.targetGeography,
+        demandCharacteristics: opp.targetMarket.demandCharacteristics,
+        buyingSignals: opp.targetMarket.buyingSignals.join("; ") || "Active commercial requirement",
       },
       pricingModel: {
-        standardEngagementFeeInr: 100000,
-        grossMarginPct: 50,
+        commercialModel: opp.commercialModel.type,
+        monetizationMechanism: opp.commercialModel.monetizationMechanism,
+        commissionOrRevShareRate: opp.commercialModel.commissionOrRevShareRate || "Standard commercial margin",
+        potentialRevenuePerUnit: opp.commercialModel.pricingEstimate?.potentialRevenuePerUnit || "Market rate",
+        averageOrderValueInr: defaultAov,
+        grossMarginPct: opp.partiesInvolved.externalParty.hasExternalParty ? 80 : 50,
       },
-      channels: ["Organic Content", "Direct Executive Outreach", "Referral Networks"],
+      channels: opp.operatingStrategy.recommendedChannels,
     };
   }
 
@@ -324,15 +266,32 @@ export class HermesExecutiveBrain {
    * diagnoses shortfalls, and loops until objective is met.
    */
   public async executeExecutiveObjective(
-    directive: string,
-    options: {
-      tenantId: string;
+    directiveOrOptions:
+      | string
+      | {
+          directive: string;
+          tenantId?: string;
+          companyScope?: string;
+          targetQuantity?: number;
+          supabaseClient?: any;
+          maxCycles?: number;
+        },
+    maybeOptions?: {
+      tenantId?: string;
       companyScope?: string;
       targetQuantity?: number;
       supabaseClient?: any;
       maxCycles?: number;
     }
   ): Promise<HermesCeoExecutionResult> {
+    const directive = typeof directiveOrOptions === "string" ? directiveOrOptions : directiveOrOptions.directive;
+    const options = {
+      tenantId: (typeof directiveOrOptions === "object" ? directiveOrOptions.tenantId : maybeOptions?.tenantId) || "default-tenant",
+      companyScope: typeof directiveOrOptions === "object" ? directiveOrOptions.companyScope : maybeOptions?.companyScope,
+      targetQuantity: typeof directiveOrOptions === "object" ? directiveOrOptions.targetQuantity : maybeOptions?.targetQuantity,
+      supabaseClient: typeof directiveOrOptions === "object" ? directiveOrOptions.supabaseClient : maybeOptions?.supabaseClient,
+      maxCycles: typeof directiveOrOptions === "object" ? directiveOrOptions.maxCycles : maybeOptions?.maxCycles,
+    };
     const parentPlanId = this.generateId("plan-ceo");
     const missionId = this.generateId("msn-exec");
     const supabase = this.resolveSupabase(options.supabaseClient);
@@ -420,12 +379,20 @@ export class HermesExecutiveBrain {
     let currentMetricValue = 0;
     const targetValue = reasoning.successMetric.targetValue;
 
-    const textLower = directive.toLowerCase();
-    const isSolar = textLower.includes("solar") || textLower.includes("photovoltaic") || textLower.includes("energy");
-    const isAdmissions = textLower.includes("admission") || textLower.includes("university") || textLower.includes("student") || textLower.includes("college") || textLower.includes("russia");
-    const isLinkup = textLower.includes("linkup") || textLower.includes("saas") || textLower.includes("crm");
-    const offerCategory: "SOLAR" | "ADMISSIONS" | "LINKUP_SAAS" | "ENTERPRISE_SERVICES" =
-      isAdmissions ? "ADMISSIONS" : isSolar ? "SOLAR" : isLinkup ? "LINKUP_SAAS" : "ENTERPRISE_SERVICES";
+    const opp = businessOpportunityUnderstanding.understandOpportunity(directive, options);
+    let offerCategory: "SOLAR" | "ADMISSIONS" | "LINKUP_SAAS" | "BAKERY_EQUIPMENT" | "CORPORATE_IP_LAW" | "ENTERPRISE_SERVICES" = "ENTERPRISE_SERVICES";
+    const sectorLower = opp.businessConcept.industrySector.toLowerCase();
+    if (sectorLower.includes("clean energy") || sectorLower.includes("solar")) {
+      offerCategory = "SOLAR";
+    } else if (sectorLower.includes("education") || sectorLower.includes("admission") || sectorLower.includes("mbbs")) {
+      offerCategory = "ADMISSIONS";
+    } else if (sectorLower.includes("software") || sectorLower.includes("saas") || sectorLower.includes("automation")) {
+      offerCategory = "LINKUP_SAAS";
+    } else if (sectorLower.includes("bakery") || sectorLower.includes("food")) {
+      offerCategory = "BAKERY_EQUIPMENT";
+    } else if (sectorLower.includes("legal") || sectorLower.includes("patent") || sectorLower.includes("ip")) {
+      offerCategory = "CORPORATE_IP_LAW";
+    }
 
     for (let cycle = 1; cycle <= maxCycles; cycle++) {
       // Stage 1: Strategy & Targeting Alignment (Growth / Strategy)
@@ -583,8 +550,14 @@ export class HermesExecutiveBrain {
       : 50000;
 
     const overallMessage = finalAchieved
-      ? `Hermes CEO: Objective "${directive}" achieved successfully across ${cycles.length} autonomous cycle(s).\n- Metric: ${currentMetricValue}/${targetValue} ${reasoning.successMetric.unit} (100% verified prospects)\n- Engineered Capabilities: ${engineeredReceipts.length}\n- Operating Spreadsheets: ${spreadsheetArtifacts.length}\n- Pipeline Value: ₹${((currentMetricValue * unitPriceInr) / 100000).toFixed(1)} Lakh\n- Next Step: Handoff to Sales & Operations for commercial proposal review and onboarding.`
-      : `Hermes CEO: In progress. Reached ${currentMetricValue}/${targetValue} ${reasoning.successMetric.unit} across ${cycles.length} cycle(s). Continuing autonomous acquisition wave.`;
+      ? `Hermes CEO: Objective "${directive}" achieved successfully across ${cycles.length} autonomous cycle(s).\n` +
+        `- Inferred Model: ${opp.commercialModel.type.toUpperCase()} (${opp.commercialModel.monetizationMechanism})\n` +
+        `- StratXcel Role: ${opp.partiesInvolved.stratxcelRole}\n` +
+        `- Target Market: ${opp.targetMarket.primaryCustomerSegment} (${opp.targetMarket.targetGeography})\n` +
+        `- Verified Prospects: ${currentMetricValue}/${targetValue} ${reasoning.successMetric.unit} (100% genuine entities with provenance)\n` +
+        `- Pipeline Value: ₹${((currentMetricValue * unitPriceInr) / 100000).toFixed(1)} Lakh (Paid revenue remains ₹0 until verified payment)\n` +
+        `- Next Step: ${reasoning.nextActionAfterCompletion}`
+      : `Hermes CEO: In progress. Acquired ${currentMetricValue}/${targetValue} ${reasoning.successMetric.unit} across ${cycles.length} cycle(s). Continuing autonomous acquisition wave.`;
 
     return {
       missionId,
@@ -594,6 +567,7 @@ export class HermesExecutiveBrain {
       companyScope: options.companyScope || "StratXcel Enterprise",
       status: finalStatus,
       reasoning,
+      opportunityAnalysis: opp,
       stagesExecuted,
       cycles,
       engineeredCapabilities: engineeredReceipts,

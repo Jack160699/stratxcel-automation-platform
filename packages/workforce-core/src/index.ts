@@ -61,5 +61,4 @@ export * from "./capabilities/engineering-worker.ts";
 export * from "./planning/hermes-executive-brain.ts";
 export * from "./planning/autonomous-company-executive.ts";
 export * from "./discovery/real-lead-discovery.ts";
-
-
+export * from "./understanding/business-opportunity-understanding.ts";

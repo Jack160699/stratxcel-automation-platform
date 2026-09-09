@@ -341,13 +341,25 @@ export function decomposeNaturalLanguageIntent(query: string, options: Decompose
       )
     );
   }
-  // 2g2. Hermes Autonomous CEO Objectives & Growth Directives
-  // ("Grow foreign MBBS admissions in Russia", "Sell Linkup", "Get 100 solar leads", "Make ₹5 lakh", "Get more customers", "Fix whatever is preventing us from getting customers")
+  // 2g2. Hermes Autonomous CEO Objectives, Growth Directives & Business Opportunity Understanding
+  // ("My friend has opened a solar panel installation business. We get a commission for every customer we bring him. Start getting leads for him.",
+  //  "My friend runs an MBBS admissions business in Russia and we make money when students enroll. Help us grow it.",
+  //  "We have a new SaaS product. Figure out how we can make money from it.",
+  //  "My friend started a business. We can earn from referrals. See whether there is an opportunity.",
+  //  "I found a company that wants customers. We can make money by bringing them business. Take care of it.",
+  //  "I want to make money from this opportunity.",
+  //  "Grow foreign MBBS admissions in Russia", "Sell Linkup", "Get 100 solar leads", "Make ₹5 lakh", "Get more customers")
   else if (
-    /\b(?:grow|scale|expand)\s+(?:foreign\s+)?(?:admissions?|university|mbbs|degree|students?|solar|linkup|business)\b/i.test(text) ||
+    /\b(?:grow|scale|expand)\s+(?:foreign\s+)?(?:admissions?|university|mbbs|degree|students?|solar|linkup|business|company|revenue|sales)\b/i.test(text) ||
     /\bsell\s+linkup\b/i.test(text) ||
-    /\b(?:we\s+(?:offer|sell|provide)|our\s+offer\s+is|build\s+a\s+plan\s+to\s+make\s+money\s+from|make\s+money\s+from|make\s+[₹rRsS]\.?\s*\d+)\b/i.test(text) ||
-    /\b(?:why\s+aren'?t\s+we\s+getting\s+leads|get\s+more\s+customers|fix\s+whatever\s+is\s+preventing|whatever\s+is\s+necessary\s+to\s+grow)\b/i.test(text)
+    /\b(?:we\s+(?:offer|sell|provide)|our\s+offer\s+is|build\s+a\s+plan\s+to\s+make\s+money\s+from|make\s+money\s+(?:from|by|on)|make\s+[₹rRsS]\.?\s*\d+)\b/i.test(text) ||
+    /\b(?:why\s+aren'?t\s+we\s+getting\s+leads|get\s+more\s+customers|fix\s+whatever\s+is\s+preventing|whatever\s+is\s+necessary\s+to\s+grow)\b/i.test(text) ||
+    /\b(?:commission|referral|referrals|rev(?:enue)?\s*share|affiliate|brokerage|resell(?:er)?|partner(?:ship)?)\b/i.test(text) ||
+    /\b(?:my\s+friend\s+(?:has|runs|started|opened|sells)|i\s+found\s+a\s+company|met\s+a\s+company|partnered\s+with)\b/i.test(text) ||
+    /\b(?:earn\s+(?:from|money|commission|fees?)|monetize\s+(?:this|the)|commercial\s+opportunity|business\s+opportunity)\b/i.test(text) ||
+    /\b(?:bring(?:ing)?\s+(?:him|them|us)?\s*(?:customers?|leads?|clients?|business))\b/i.test(text) ||
+    /\b(?:start\s+getting\s+leads|get\s+(?:leads|customers|clients|buyers)|find\s+buyers)\b/i.test(text) ||
+    /\b(?:figure\s+out\s+(?:how|whether)|take\s+care\s+of\s+it|start\s+growing\s+this\s+business|monetize\s+this)\b/i.test(text)
   ) {
     inferredIntent = "Hermes Autonomous CEO Objective";
     const targetMatch = text.match(/\b(\d+)\s*(?:leads?|accounts?|customers?|clients?|candidates?)\b/i);

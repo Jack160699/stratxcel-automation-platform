@@ -12,6 +12,10 @@
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { hermesExecutiveBrain, type HermesCeoExecutionResult } from "./hermes-executive-brain.ts";
+import {
+  businessOpportunityUnderstanding,
+  type BusinessOpportunityAnalysis,
+} from "../understanding/business-opportunity-understanding.ts";
 
 export interface HermesObjectiveRecord {
   id: string;
@@ -19,6 +23,7 @@ export interface HermesObjectiveRecord {
   founderDirective: string;
   desiredOutcome: string;
   currentStrategy: string;
+  opportunityAnalysis?: BusinessOpportunityAnalysis;
   activeMissionId: string;
   state: "PLANNING" | "ACTIVE" | "REPLANNING" | "COMPLETED" | "BLOCKED" | "PAUSED";
   acceptanceCriteria: {
@@ -139,6 +144,7 @@ export class AutonomousCompanyExecutive {
     initialObjective.metrics.verifiedLeadsCount = execResult.leadsSummary?.total || 0;
     initialObjective.metrics.pipelineValueInr = (execResult.revenueSummary?.pipelineCents || 0) / 100;
     initialObjective.metrics.verifiedRevenueInr = (execResult.revenueSummary?.closedCents || 0) / 100;
+    initialObjective.opportunityAnalysis = execResult.opportunityAnalysis;
 
     // Record learning and cycle history
     for (const c of execResult.cycles) {
@@ -171,6 +177,86 @@ export class AutonomousCompanyExecutive {
       objective: initialObjective,
       executionResult: execResult,
       conversationalReply: execResult.overallMessage,
+    };
+  }
+
+  /**
+   * Applies continuous natural language Founder feedback to refine an active objective,
+   * preserving conversational state and updating the strategy in-place without restarting context.
+   */
+  public async refineObjectiveWithFounderFeedback(
+    objectiveId: string,
+    feedbackText: string,
+    options: { supabaseClient?: SupabaseClient | null } = {}
+  ): Promise<{
+    objective: HermesObjectiveRecord;
+    appliedChanges: string[];
+    conversationalReply: string;
+  }> {
+    const objective = this.activeObjectives.get(objectiveId);
+    if (!objective) {
+      throw new Error(`Objective '${objectiveId}' not found in persistent ledger.`);
+    }
+
+    if (!objective.opportunityAnalysis) {
+      objective.opportunityAnalysis = businessOpportunityUnderstanding.understandOpportunity(objective.founderDirective, {
+        tenantId: objective.tenantId,
+      });
+    }
+
+    const refined = businessOpportunityUnderstanding.refineOpportunityWithFeedback(
+      objective.opportunityAnalysis,
+      feedbackText
+    );
+
+    objective.opportunityAnalysis = refined;
+    objective.currentStrategy = refined.operatingStrategy.firstAction;
+    objective.nextBestAction = refined.operatingStrategy.subsequentActions[0] || objective.nextBestAction;
+    objective.updatedAt = new Date().toISOString();
+
+    const lastAmendment = refined.amendments[refined.amendments.length - 1];
+    const appliedChanges = lastAmendment?.appliedChanges || [`Applied directive: "${feedbackText}"`];
+
+    objective.learningLog.push({
+      timestamp: new Date().toISOString(),
+      insight: `Founder Feedback Applied: "${feedbackText}". Strategy updated: ${appliedChanges.join(" | ")}`,
+    });
+
+    const reply =
+      `Hermes CEO: Understood. I have updated the operating strategy for "${objective.founderDirective}":\n` +
+      appliedChanges.map((c) => `• ${c}`).join("\n") +
+      `\nNext Action: ${objective.nextBestAction}`;
+
+    const supabase = this.resolveSupabase(options.supabaseClient);
+    if (supabase && objective.activeMissionId) {
+      try {
+        await supabase.from("missions").update({
+          metadata: {
+            objectiveId,
+            objectiveRecord: objective,
+          },
+        }).eq("id", objective.activeMissionId);
+
+        await supabase.from("mission_events").insert({
+          id: crypto.randomUUID(),
+          mission_id: objective.activeMissionId,
+          event_type: "hermes_objective_refined",
+          payload: {
+            feedbackText,
+            appliedChanges,
+            updatedStrategy: objective.currentStrategy,
+            timestamp: new Date().toISOString(),
+          },
+        });
+      } catch (err) {
+        console.warn("[AutonomousCompanyExecutive] Failed to sync amendment:", err);
+      }
+    }
+
+    return {
+      objective,
+      appliedChanges,
+      conversationalReply: reply,
     };
   }
 
