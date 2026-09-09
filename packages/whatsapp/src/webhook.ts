@@ -13,7 +13,10 @@ import type { ParsedInboundWhatsAppMessage } from "./types.ts";
  * https://developers.facebook.com/docs/messenger-platform/webhooks#security
  */
 export function verifyWhatsAppWebhookSignature(rawBody: string, signatureHeader: string | null): boolean {
-  const appSecret = process.env.WHATSAPP_APP_SECRET;
+  const appSecret =
+    process.env.WHATSAPP_APP_SECRET ||
+    process.env.META_WHATSAPP_APP_SECRET ||
+    process.env.META_APP_SECRET;
   if (!signatureHeader || !appSecret) return false;
 
   const [scheme, providedHex] = signatureHeader.split("=");

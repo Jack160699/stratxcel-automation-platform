@@ -52,7 +52,10 @@ export async function POST(req: NextRequest) {
   const signatureHeader = req.headers.get("x-hub-signature-256");
 
   // Verify signature if secret is configured
-  const secret = process.env.WHATSAPP_APP_SECRET || process.env.META_WHATSAPP_APP_SECRET;
+  const secret =
+    process.env.WHATSAPP_APP_SECRET ||
+    process.env.META_WHATSAPP_APP_SECRET ||
+    process.env.META_APP_SECRET;
   if (secret) {
     const isValid = verifyWhatsAppWebhookSignature(rawBody, signatureHeader);
     if (!isValid) {
@@ -102,8 +105,18 @@ export async function POST(req: NextRequest) {
 
   for (const message of messages) {
     try {
-      const binding = await findActiveBindingByPhoneNumberId(service as never, message.phoneNumberId);
-      const phoneBindingId = binding?.id || "binding_platform_default";
+      let binding = await findActiveBindingByPhoneNumberId(service as never, message.phoneNumberId);
+      if (!binding) {
+        const { data: primaryBinding } = await service
+          .from("whatsapp_phone_bindings")
+          .select("*")
+          .eq("status", "active")
+          .order("created_at", { ascending: true })
+          .limit(1)
+          .maybeSingle();
+        binding = primaryBinding;
+      }
+      const phoneBindingId = binding?.id || "87256234-cf00-43d2-85f6-f568c0dd5e73";
 
       // Format payload for Hermes internal agent endpoint
       const agentBody = JSON.stringify({
