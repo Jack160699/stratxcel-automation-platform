@@ -275,15 +275,15 @@ export default async function CommandCenterPage() {
               {missions.map((m) => {
                 const stateMeta = MISSION_STATE_MAP[m.state] ?? { label: m.state, status: "paused" };
                 return (
-                  <AdminEntityRow
-                    key={m.id}
-                    icon={<Zap size={16} className="text-sx-accent" />}
-                    title={m.goal_text}
-                    subtitle={`Created ${new Date(m.created_at).toLocaleDateString()}`}
-                    status={<AdminStatusDot status={stateMeta.status} customLabel={stateMeta.label} />}
-                    onOpenDetails={() => undefined}
-                    detailsAriaLabel={`Inspect mission ${m.id}`}
-                  />
+                  <Link key={m.id} href="/admin/missions" className="block">
+                    <AdminEntityRow
+                      icon={<Zap size={16} className="text-sx-accent" />}
+                      title={m.goal_text}
+                      subtitle={`Created ${new Date(m.created_at).toLocaleDateString()}`}
+                      status={<AdminStatusDot status={stateMeta.status} customLabel={stateMeta.label} />}
+                      detailsAriaLabel={`Inspect mission ${m.id}`}
+                    />
+                  </Link>
                 );
               })}
             </div>
