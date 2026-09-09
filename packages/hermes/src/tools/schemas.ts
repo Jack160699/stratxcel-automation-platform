@@ -80,6 +80,14 @@ export const TOOL_INPUT_SCHEMAS = {
     .strict(),
   check_growth_status: z.object({}).strict(),
   check_website_status: z.object({}).strict(),
+  create_website: z
+    .object({
+      businessName: z.string().optional(),
+      purpose: z.string().optional(),
+      designPreference: z.string().optional(),
+      domain: z.string().optional(),
+    })
+    .strict(),
   list_leads: z
     .object({
       limit: z.number().int().min(1).max(50).optional(),

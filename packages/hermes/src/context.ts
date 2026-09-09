@@ -15,6 +15,7 @@ const DEFAULT_TOOL_ALLOWLIST: ToolName[] = [
   "attach_research_evidence",
   "check_growth_status",
   "check_website_status",
+  "create_website",
   "list_leads",
   "get_lead",
   "generate_image",

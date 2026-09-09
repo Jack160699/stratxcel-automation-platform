@@ -43,7 +43,7 @@ export async function recordConnectorAudit(
 ): Promise<void> {
   try {
     const cleanMeta = sanitizeAuditMetadata(input.metadata ?? {});
-    await supabase.from("connector_audit_logs").insert({
+    const insertRes = await supabase.from("connector_audit_logs").insert({
       connector_key: input.connectorKey,
       connection_id: input.connectionId ?? null,
       tenant_id: input.tenantId ?? null,
@@ -56,6 +56,27 @@ export async function recordConnectorAudit(
       metadata: cleanMeta,
       created_at: new Date().toISOString(),
     });
+
+    if (insertRes.error) {
+      const dbActorKind = input.actorKind === "hermes" ? "hermes" : input.actorKind === "system" ? "system" : "user";
+      const dbTenantId = input.tenantId ?? "872723d5-0c21-4638-8921-99213c4ed63a";
+      await supabase.from("audit_events").insert({
+        tenant_id: dbTenantId,
+        actor_user_id: input.actorId ?? null,
+        actor_kind: dbActorKind,
+        action: `connector.${input.connectorKey}.${input.eventType}`,
+        target_type: "connector",
+        target_id: input.connectionId ?? input.connectorKey,
+        metadata: {
+          ...cleanMeta,
+          capabilityKey: input.capabilityKey,
+          executionMethod: input.executionMethod,
+          status: input.status,
+          originalActorKind: input.actorKind,
+          isPlatformScope: !input.tenantId,
+        },
+      });
+    }
   } catch (err) {
     // Fail safe: audit log failure should never crash core business execution
     console.error("Failed to write connector audit log:", err);
@@ -88,8 +109,32 @@ export async function listConnectorAuditLogs(
 
   const { data, error } = await query;
   if (error) {
-    console.error("listConnectorAuditLogs error:", error);
-    return [];
+    try {
+      const altQuery = supabase
+        .from("audit_events")
+        .select("*")
+        .like("action", filter.connectorKey ? `connector.${filter.connectorKey}.%` : "connector.%")
+        .order("created_at", { ascending: false })
+        .limit(filter.limit ?? 50);
+
+      const { data: altData } = await altQuery;
+      return (altData ?? []).map((row: any) => ({
+        id: row.id,
+        connector_key: filter.connectorKey ?? (row.action.split(".")[1] || "connector"),
+        connection_id: row.target_id,
+        tenant_id: row.metadata?.isPlatformScope ? null : row.tenant_id,
+        actor_kind: (row.metadata?.originalActorKind as any) ?? row.actor_kind,
+        actor_id: row.actor_user_id,
+        event_type: row.action.split(".").pop() as any,
+        capability_key: row.metadata?.capabilityKey ?? null,
+        execution_method: row.metadata?.executionMethod ?? null,
+        status: row.metadata?.status ?? "success",
+        metadata: row.metadata ?? {},
+        created_at: row.created_at,
+      }));
+    } catch {
+      return [];
+    }
   }
   return (data ?? []) as ConnectorAuditLogRow[];
 }

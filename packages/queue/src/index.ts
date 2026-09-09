@@ -5,3 +5,4 @@ export * from "./postgres-adapter.ts";
 export * from "./backoff.ts";
 export * from "./kill-switch.ts";
 export * from "./worker-heartbeat.ts";
+export * from "./coding-task-contract.ts";

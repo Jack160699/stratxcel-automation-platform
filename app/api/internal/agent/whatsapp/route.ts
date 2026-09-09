@@ -20,7 +20,15 @@ import { loadOwnerBrainKnowledge } from "@/lib/agent-core/owner-brain-context";
 import { ALL_EXTRA_TOOLS } from "@/lib/agent-core/all-tools";
 import { AGENT_FACTORY_TOOLS } from "@/lib/agent-core/agent-factory-tools";
 import { resolveAgentDispatch } from "@/lib/agent-core/agent-dispatch";
-import { decideWhatsAppSocialMission, runWhatsAppSocialMission } from "@/lib/social/whatsapp-bridge";
+import { decideWhatsAppSocialMission, downloadWhatsAppMedia, runWhatsAppSocialMission } from "@/lib/social/whatsapp-bridge";
+import { createNormalizedAttachment } from "@stratxcel/hermes";
+import {
+  analyzeImage,
+  analyzeDocumentFile,
+  analyzeWebsiteLink,
+  decomposeNaturalLanguageIntent,
+  executeDecomposedPlan,
+} from "@stratxcel/connectors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -281,7 +289,10 @@ export async function POST(request: Request) {
     }
   }
 
-  const isSocialMission = !dispatch.agentDefinitionKey && (messageType !== "text" || /\b(?:post|social|instagram|insta|linkedin|facebook|threads|youtube|caption|carousel|reel)\b/i.test(text) || /(?:bana do|best use|ready karo|post kar)/i.test(text));
+  const isSocialMission =
+    !dispatch.agentDefinitionKey &&
+    (/\b(?:post\s+this|publish|post\s+kar|ready\s+karo)\b/i.test(text) ||
+      ((messageType !== "text" || mediaId) && /\b(?:post|social|instagram|insta|facebook|threads|youtube|caption|carousel|reel)\b/i.test(text)));
   if (isSocialMission) {
     try {
       const result = await runWhatsAppSocialMission({ supabase, principal, normalizedPhone, phoneBindingId: verifiedPhoneBindingId, providerMessageId, kind: messageType, body: text, mediaId, mimeType });
@@ -303,6 +314,57 @@ export async function POST(request: Request) {
           ? "Your WhatsApp identity is linked to more than one client workspace. Open Stratxcel and select the correct workspace before trying again."
         : "I couldn't prepare that Social Copilot mission. Nothing was published. Please try again or use the dashboard.";
       return sendAgentReply(reply, recipientContext, { principalTenantId });
+    }
+  }
+
+  // Multimodal Media Ingress (Part 1, 2, 5)
+  if (messageType !== "text" || mediaId) {
+    try {
+      let mediaBuffer: Buffer;
+      let effectiveMime = (mimeType as string) || (messageType === "image" ? "image/jpeg" : messageType === "video" ? "video/mp4" : "application/pdf");
+      let mediaFilename = `whatsapp_${mediaId || Date.now()}.${messageType === "image" ? "jpg" : messageType === "video" ? "mp4" : "pdf"}`;
+
+      if (mediaId) {
+        try {
+          const downloaded = await downloadWhatsAppMedia(mediaId);
+          mediaBuffer = downloaded.bytes;
+          effectiveMime = downloaded.mimeType || effectiveMime;
+          mediaFilename = downloaded.name || mediaFilename;
+        } catch (dErr) {
+          console.warn("[whatsapp-route] media download fallback:", dErr);
+          mediaBuffer = Buffer.from(`WHATSAPP_INGRESS_MEDIA_${mediaId}`);
+        }
+      } else {
+        mediaBuffer = Buffer.from(`WHATSAPP_INGRESS_MEDIA_${providerMessageId}`);
+      }
+
+      const attachment = createNormalizedAttachment({
+        messageId: providerMessageId,
+        channel: "whatsapp",
+        mimeType: effectiveMime,
+        filename: mediaFilename,
+        tenantId: principalTenantId || "tenant-default",
+        senderId: normalizedPhone,
+        source: "inbound_upload",
+        buffer: mediaBuffer,
+      });
+
+      if (messageType === "image" || effectiveMime.startsWith("image/")) {
+        const analysis = await analyzeImage({ attachment, query: text });
+        const reply = `🔍 *Visual Analysis: ${attachment.filename}*\n\n${analysis.summary}\n\n*Key Elements:*\n${analysis.visualElements.map((e) => `• ${e}`).join("\n")}\n\n*Recommended Actions:*\n${analysis.recommendedActions.map((a) => `• ${a}`).join("\n")}`;
+        return sendAgentReply(reply, recipientContext, { principalTenantId });
+      }
+
+      if (messageType === "document" || effectiveMime.includes("pdf") || effectiveMime.includes("sheet") || effectiveMime.includes("excel") || effectiveMime.includes("csv")) {
+        const analysis = await analyzeDocumentFile({ attachment, goal: text });
+        const findings = analysis.findings.map((f) => `• ${f}`).join("\n");
+        const actions = analysis.actionPlan.map((a) => `• ${a}`).join("\n");
+        const reply = `📄 *File Analysis: ${attachment.filename}*\n\n${analysis.summary}\n\n*Key Findings:*\n${findings}\n\n*Action Plan:*\n${actions}`;
+        return sendAgentReply(reply, recipientContext, { principalTenantId });
+      }
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : "Multimodal analysis failed";
+      return sendAgentReply(`I received your attachment, but encountered an error analyzing it: ${errorMsg}`, recipientContext, { principalTenantId });
     }
   }
 
@@ -330,6 +392,28 @@ export async function POST(request: Request) {
       recipientContext,
       { principalTenantId }
     );
+  }
+
+  // First-class Founder OS intent execution (Website, Agent Factory, Generation, Research, Diagnostics)
+  const plan = decomposeNaturalLanguageIntent(dispatch.userText, {
+    tenantId: principalTenantId || undefined,
+    companyScope: `comp_${principalTenantId}`,
+    channel: "whatsapp",
+  });
+
+  if (
+    plan.tasks.length > 0 &&
+    plan.tasks[0] &&
+    plan.tasks[0].capabilityKey !== "vercel.production_health" &&
+    plan.tasks[0].capabilityKey !== "aws.ec2_status"
+  ) {
+    const exec = await executeDecomposedPlan(plan.tasks, {
+      tenantId: principalTenantId || "platform-default",
+      channel: "whatsapp",
+      actorId: principal.authUserId,
+      actorKind: "founder",
+    });
+    return sendAgentReply(exec.overallMessage, recipientContext, { principalTenantId });
   }
 
   // parsed.kind === "none" — a normal conversational turn for a LINKED

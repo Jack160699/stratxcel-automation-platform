@@ -22,6 +22,7 @@ export const TOOL_DESCRIPTIONS: Record<ToolName, string> = {
   attach_research_evidence: "Attach a cited source to this mission's research trail. Input: { artifactId, sourceUrl?, summary }.",
   check_growth_status: "Real, currently-stored SEO/AEO/GEO opportunities, recommendations, actions, and measurement snapshots for this mission's tenant -- the same data the Search Growth dashboard shows. Never re-crawls; reads what's already computed. No input.",
   check_website_status: "Real, currently-stored Stratxcel-built websites for this mission's tenant -- name, slug, status (draft/live/etc.), custom domain, framework, template, timestamps. The same data the Website page's list reads. No input.",
+  create_website: "Create a new website from scratch -- initializes project shell, generates code via Antigravity, sets up GitHub repo and Vercel preview. Input: { businessName?, purpose?, designPreference?, domain? }.",
   list_leads: "Real CRM leads for this mission's tenant, most recent first -- check before creating a new lead with create_crm_lead to avoid duplicates, or to report on the current pipeline. Input: { limit? } (default 20, max 50).",
   get_lead: "Get a single real CRM lead by id (tenant-scoped) -- use a leadId from a prior list_leads or create_crm_lead call, never invent one. Input: { leadId }.",
   generate_image: "Generate a real, brand-grounded image/poster/creative using Stratxcel's existing image engine -- real cost (checked against this mission's own budget before every call, on top of the tenant's own real monthly AI budget), real brand context. One brief per call. Only call when the goal genuinely requires an image, never speculatively. Input: { brief, aspectRatio? } (e.g. '1:1', '4:5', '9:16'; defaults to '1:1').",
@@ -52,4 +53,6 @@ export const TOOL_DESCRIPTIONS: Record<ToolName, string> = {
   select_best_resource: "Evaluate candidate providers/resources for a task capability and select the best legitimate execution path with fallbacks. Input: { capabilityKey, requireAutonomous? }.",
   execute_capability: "Execute a capability through the authorized connector control plane. Input: { capabilityKey, payload?, connectorKey? }.",
   get_resource_health: "Check the health and connection status of an underlying connector resource. Input: { connectorKey }.",
+  execute_core_mcp: "Execute a capability across the Core Six Fleet (AWS, Meta, Supabase, Vercel, GitHub, Google). Input: { capabilityKey, payload?, targetEnvironment? }.",
+  route_natural_language_command: "Decompose and route a natural language instruction across the Core Six Fleet. Input: { query, confirmedByFounder? }.",
 };

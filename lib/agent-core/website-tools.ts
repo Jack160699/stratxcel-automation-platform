@@ -12,6 +12,7 @@
  */
 import type { AgentTool } from "@stratxcel/agent-core";
 import { applyTenantWebsiteEdit } from "@/lib/websites/apply-tenant-website-edit";
+import { initiateWebsiteCreation } from "@stratxcel/connectors";
 
 function resolveTenantId(ctx: { principal: { kind: string; tenantId: string | null } }, args: Record<string, unknown>): string | null {
   if (ctx.principal.kind === "client") return ctx.principal.tenantId;
@@ -20,6 +21,47 @@ function resolveTenantId(ctx: { principal: { kind: string; tenantId: string | nu
 }
 
 export const WEBSITE_TOOLS: AgentTool[] = [
+  {
+    schema: {
+      name: "create_website",
+      description:
+        "Create a new website from scratch for a business or project. Initializes a site project shell, Antigravity coding task contract, GitHub repository, and Vercel preview deployment. An existing site_projects row is NEVER required. Asks only for minimum details (business name, purpose, design preferences) that cannot be inferred.",
+      parameters: {
+        type: "object",
+        properties: {
+          businessName: { type: "string", description: "Business or project name, if known from conversation." },
+          purpose: { type: "string", description: "What the website needs to achieve or primary business activity." },
+          designPreference: { type: "string", description: "Optional design preferences or visual style." },
+          domain: { type: "string", description: "Optional custom domain if the user specified one." },
+          tenantId: { type: "string", description: "Optional -- tenant id. Defaults to current session tenant." },
+        },
+      },
+    },
+    mutating: true,
+    risk: "low_mutation",
+    requiredPermission: "agent:mutate:website",
+    async execute(ctx, args) {
+      const tenantId = resolveTenantId(ctx, args);
+      if (!tenantId) return { outcome: "FAILED", reason: "missing_tenant" };
+      const res = await initiateWebsiteCreation(ctx.supabase as never, {
+        tenantId,
+        goalText: typeof args.purpose === "string" ? args.purpose : "Create new website",
+        businessName: typeof args.businessName === "string" ? args.businessName : undefined,
+        purpose: typeof args.purpose === "string" ? args.purpose : undefined,
+        designPreference: typeof args.designPreference === "string" ? args.designPreference : undefined,
+        domain: typeof args.domain === "string" ? args.domain : undefined,
+        actorUserId: ctx.principal.authUserId,
+      });
+      return { outcome: "CREATED", ...res };
+    },
+    interpretOutcome(result) {
+      const r = result as { outcome?: string; conversationalReply?: string; previewUrl?: string } | null;
+      if (r?.outcome === "CREATED") {
+        return null;
+      }
+      return { status: "failed", detail: "Could not initiate website creation." };
+    },
+  },
   {
     schema: {
       name: "edit_website",

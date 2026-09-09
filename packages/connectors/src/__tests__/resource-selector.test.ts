@@ -123,6 +123,21 @@ function createMockSupabase(connections: Record<string, ConnectorConnectionRow |
           },
         };
       }
+      if (table === "worker_heartbeats") {
+        return {
+          select: () => {
+            const q: any = {
+              eq: () => q,
+              order: () => q,
+              limit: async () => {
+                const hb = (connections as any).__heartbeats ?? [];
+                return { data: hb, error: null };
+              },
+            };
+            return q;
+          },
+        };
+      }
       return {
         select: () => ({
           eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }),
@@ -342,6 +357,38 @@ async function testSessionExpirationFallback() {
   console.log("PASS: Expired session -> fallback selected");
 }
 
+// 11. Antigravity Worker Online: Priority 1 Selection
+async function testAntigravityWorkerSelectedWhenHealthy() {
+  const fc = createMockConnectionRow("founder_computer");
+  const pro = createMockConnectionRow("google_ai_pro");
+  const supabase = createMockSupabase({
+    founder_computer: fc,
+    google_ai_pro: pro,
+    __heartbeats: [
+      {
+        instance_id: "antigravity-worker-win-1",
+        status: "idle",
+        last_heartbeat_at: new Date().toISOString(),
+        version: "1.107.0",
+        queue_backlog_hint: 0,
+        last_error: null,
+      },
+    ],
+  } as any);
+
+  const result = await selectBestResource(supabase as never, {
+    capabilityKey: "antigravity.code",
+    tenantId: "tenant-1",
+    requireAutonomous: true,
+  });
+
+  assert.ok(result.selected, "Antigravity resource must be selected");
+  assert.equal(result.selected.connectorKey, "antigravity_worker", "Must select antigravity_worker as priority 1 when healthy");
+  assert.equal(result.selected.status, "AVAILABLE");
+  assert.equal(result.selected.executionMethod, "native");
+  console.log("PASS: Local Antigravity Worker autonomously selected as priority 1 when healthy");
+}
+
 async function runAll() {
   console.log("--- Starting Autonomous Resource Selector Test Suite ---");
   await testGoogleAuthenticatedImageSelection();
@@ -350,11 +397,12 @@ async function runAll() {
   await testVideoUnavailableFallback();
   await testAntigravityAvailableSelection();
   await testAntigravityUnavailableFallback();
+  await testAntigravityWorkerSelectedWhenHealthy();
   await testDriveAvailableSelection();
   await testFounderControlLockYields();
   await testQuotaExceededFallback();
   await testSessionExpirationFallback();
-  console.log("--- ALL 10 AUTONOMOUS RESOURCE SELECTOR TESTS PASSED ---");
+  console.log("--- ALL 11 AUTONOMOUS RESOURCE SELECTOR TESTS PASSED ---");
 }
 
 runAll().catch((err) => {

@@ -11,6 +11,7 @@ export * from "./audit.ts";
 export * from "./principals/repository.ts";
 export * from "./pairing/repository.ts";
 export * from "./confirmations/repository.ts";
+export * from "./confirmations/anti-replay.ts";
 export * from "./sessions/repository.ts";
 export * from "./policy/channel-policy.ts";
 export * from "./tools/contract.ts";

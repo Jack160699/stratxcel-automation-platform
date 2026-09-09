@@ -18,6 +18,10 @@ import {
   resolveConnectorHealth,
   discoverConnectorCapabilities,
   probeGoogleCapabilities,
+  executeCoreMcpCapability,
+  decomposeNaturalLanguageIntent,
+  executeDecomposedPlan,
+  initiateWebsiteCreation,
 } from "@stratxcel/connectors";
 import type { ToolName } from "@stratxcel/hermes";
 import { STRATXCEL_CONTROLLED_TOOLS } from "@stratxcel/hermes";
@@ -275,6 +279,23 @@ export const TOOL_HANDLERS: Partial<Record<ToolName, ToolHandler>> = {
       .order("created_at", { ascending: false });
     if (error) throw new Error(`check_website_status: ${error.message}`);
     return { sites: sites ?? [] };
+  },
+
+  // First-class autonomous website creation for Hermes missions:
+  // Initializes project shell, Antigravity coding task contract (WEBSITE_BUILD_NEW),
+  // planned GitHub repository, and Vercel preview deployment.
+  async create_website(ctx, input) {
+    const supabase = createMissionsClient();
+    const result = await initiateWebsiteCreation(supabase as never, {
+      tenantId: ctx.tenantId,
+      goalText: typeof input.purpose === "string" ? input.purpose : "Create new website",
+      businessName: typeof input.businessName === "string" ? input.businessName : undefined,
+      purpose: typeof input.purpose === "string" ? input.purpose : undefined,
+      designPreference: typeof input.designPreference === "string" ? input.designPreference : undefined,
+      domain: typeof input.domain === "string" ? input.domain : undefined,
+      actorUserId: ctx.missionId,
+    });
+    return result as unknown as Record<string, unknown>;
   },
 
   // Exposes the real CRM (leads-and-crm) to Hermes missions -- reuses
@@ -772,6 +793,53 @@ export const TOOL_HANDLERS: Partial<Record<ToolName, ToolHandler>> = {
         discoveredCapabilities: health.discoveredCapabilities,
         details: health.details,
       },
+    };
+  },
+
+  async execute_core_mcp(ctx, input) {
+    const capabilityKey = String(input.capabilityKey);
+    const payload = (input.payload as Record<string, unknown>) ?? {};
+    const confirmedByFounder = Boolean(input.confirmedByFounder);
+    const channel = (input.channel as "whatsapp" | "telegram" | "web" | "admin") || "web";
+
+    const result = await executeCoreMcpCapability(capabilityKey, payload, {
+      tenantId: ctx.tenantId,
+      missionId: ctx.missionId,
+      actorKind: "hermes",
+      channel,
+      confirmedByFounder,
+    });
+
+    return result as unknown as Record<string, unknown>;
+  },
+
+  async route_natural_language_command(ctx, input) {
+    const command = String(input.command || input.query || "");
+    const confirmedByFounder = Boolean(input.confirmedByFounder);
+    const channel = (input.channel as "whatsapp" | "telegram" | "web" | "admin") || "web";
+
+    const plan = decomposeNaturalLanguageIntent(command, {
+      tenantId: ctx.tenantId,
+      confirmedByFounder,
+      channel,
+    });
+
+    const execution = await executeDecomposedPlan(plan.tasks, {
+      tenantId: ctx.tenantId,
+      missionId: ctx.missionId,
+      actorKind: "hermes",
+      channel,
+      confirmedByFounder,
+    });
+
+    return {
+      rawQuery: plan.rawQuery,
+      inferredIntent: plan.inferredIntent,
+      planStatus: execution.planStatus,
+      stepResults: execution.stepResults,
+      overallMessage: execution.overallMessage,
+      requiresFounderConfirmation: plan.requiresFounderConfirmation,
+      confirmationPrompts: plan.confirmationPrompts,
     };
   },
 };

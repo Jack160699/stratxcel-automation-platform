@@ -53,6 +53,7 @@ export type ToolName =
   | "attach_research_evidence"
   | "check_growth_status"
   | "check_website_status"
+  | "create_website"
   | "list_leads"
   | "get_lead"
   | "generate_image"
@@ -82,7 +83,9 @@ export type ToolName =
   | "get_capability_status"
   | "select_best_resource"
   | "execute_capability"
-  | "get_resource_health";
+  | "get_resource_health"
+  | "execute_core_mcp"
+  | "route_natural_language_command";
 
 /**
  * What Hermes actually receives when a mission starts — no secrets, no
