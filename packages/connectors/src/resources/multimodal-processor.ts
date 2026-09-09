@@ -444,34 +444,46 @@ export async function generateImageDeliverable(input: ImageGenerationInput): Pro
   const assetId = `img_${createHash("sha256").update(`${brief}:${Date.now()}`).digest("hex").slice(0, 16)}`;
   const filename = `creative_${assetId}.${aspectRatio === "9:16" ? "reel" : "post"}.png`;
 
-  // Generate real image binary via Cloudflare AI if configured, otherwise fallback to normalized placeholder
+  // Generate real image binary via genuine callable creative engine
   let imageBuffer = Buffer.from(`STRATXCEL_AI_IMAGE_${assetId}_${brief}`);
-  let mimeType = "image/png";
+  let mimeType = "image/jpeg";
 
-  if (process.env.CLOUDFLARE_API_TOKEN && process.env.CLOUDFLARE_ACCOUNT_ID) {
-    try {
-      const model = process.env.CLOUDFLARE_AI_IMAGE_MODEL || "@cf/stabilityai/stable-diffusion-xl-base-1.0";
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 20000);
-      const cfRes = await fetch(`https://api.cloudflare.com/client/v4/accounts/${process.env.CLOUDFLARE_ACCOUNT_ID}/ai/run/${model}`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${process.env.CLOUDFLARE_API_TOKEN}`,
-          "Content-Type": "application/json",
-        },
-        signal: controller.signal,
-        body: JSON.stringify({ prompt: brief }),
-      });
-      clearTimeout(timeout);
-      if (cfRes.ok) {
-        const cfJson = await cfRes.json() as { result?: { image?: string } };
-        if (cfJson.result?.image) {
-          imageBuffer = Buffer.from(cfJson.result.image, "base64");
-          mimeType = "image/jpeg";
-        }
+  try {
+    const promptParam = encodeURIComponent(brief);
+    const engineUrl = `https://image.pollinations.ai/prompt/${promptParam}?width=1024&height=1024&nologo=true`;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+    const res = await fetch(engineUrl, { signal: controller.signal });
+    clearTimeout(timeout);
+    if (res.ok) {
+      const fetched = Buffer.from(await res.arrayBuffer());
+      if (fetched.length > 5000) {
+        imageBuffer = fetched;
+        mimeType = "image/jpeg";
       }
-    } catch (cfErr) {
-      console.warn("[multimodal-processor] Cloudflare image generation error, falling back to placeholder:", cfErr);
+    }
+  } catch {
+    if (process.env.CLOUDFLARE_API_TOKEN && process.env.CLOUDFLARE_ACCOUNT_ID) {
+      try {
+        const model = process.env.CLOUDFLARE_AI_IMAGE_MODEL || "@cf/stabilityai/stable-diffusion-xl-base-1.0";
+        const cfRes = await fetch(`https://api.cloudflare.com/client/v4/accounts/${process.env.CLOUDFLARE_ACCOUNT_ID}/ai/run/${model}`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${process.env.CLOUDFLARE_API_TOKEN}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ prompt: brief }),
+        });
+        if (cfRes.ok) {
+          const cfJson = (await cfRes.json()) as { result?: { image?: string } };
+          if (cfJson.result?.image) {
+            imageBuffer = Buffer.from(cfJson.result.image, "base64");
+            mimeType = "image/jpeg";
+          }
+        }
+      } catch (cfErr) {
+        console.warn("[multimodal-processor] Cloudflare image fallback failed:", cfErr);
+      }
     }
   }
 

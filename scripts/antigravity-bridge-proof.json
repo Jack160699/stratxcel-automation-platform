@@ -1,0 +1,180 @@
+{
+  "verifiedAt": "2026-09-09T08:30:05.996Z",
+  "workerId": "ag-worker-jack",
+  "machineId": "jack-win32-x64",
+  "antigravityVersion": "1.107.0",
+  "antigravityIdePath": "D:\\c drive backup\\Antigravity IDE\\bin\\antigravity-ide.cmd",
+  "stages": {
+    "stage1_heartbeat": {
+      "status": "PASS",
+      "health": "healthy",
+      "instances": [
+        {
+          "instanceId": "antigravity-worker-ag-worker-jack",
+          "status": "idle",
+          "lastHeartbeatAt": "2026-09-09T08:30:05.998+00:00",
+          "staleForSeconds": 1,
+          "version": "1.107.0",
+          "queueBacklogHint": 0,
+          "lastError": null
+        }
+      ]
+    },
+    "stage2_resource_selector": {
+      "status": "PASS",
+      "selection": {
+        "requestedCapability": "antigravity.code",
+        "selectedConnector": "antigravity_worker",
+        "selectedCapabilityKey": "antigravity.code",
+        "executionMethod": "native",
+        "provider": "Local Antigravity Worker (Founder PC)",
+        "status": "AVAILABLE",
+        "requiresConfirmation": false,
+        "reason": "Local Antigravity Worker is online, responsive, and available.",
+        "fallbackAvailable": false,
+        "fallbackUsed": false,
+        "selected": {
+          "connectorKey": "antigravity_worker",
+          "capabilityKey": "antigravity.code",
+          "executionMethod": "native",
+          "provider": "Local Antigravity Worker (Founder PC)",
+          "status": "AVAILABLE",
+          "requiresConfirmation": false
+        },
+        "alternatives": [],
+        "fallbacks": [],
+        "evaluatedAt": "2026-09-09T08:30:07.816Z"
+      }
+    },
+    "stage3_founder_control": {
+      "status": "PASS",
+      "lockCheck": {
+        "hasConflict": true,
+        "state": "locked",
+        "reason": "Workspace is explicitly locked by Founder: {\n  \"lockedAt\": \"2026-09-09T08:30:08.099Z\",\n  \"reason\": \"Founder is actively testing UI in sandbox\"\n}"
+      },
+      "conflictResult": {
+        "missionId": "conflict-test-mission",
+        "taskId": "task-1788942608101",
+        "workerId": "ag-worker-jack",
+        "machineId": "jack-win32-x64",
+        "status": "BLOCKED",
+        "summary": "Founder Control: Workspace is explicitly locked by Founder: {\n  \"lockedAt\": \"2026-09-09T08:30:08.099Z\",\n  \"reason\": \"Founder is actively testing UI in sandbox\"\n}",
+        "filesChanged": [],
+        "testsRun": false,
+        "testsPassed": false,
+        "commandsRun": [],
+        "gitState": {
+          "branch": "main",
+          "headSha": "",
+          "diffStat": ""
+        },
+        "commitSha": null,
+        "errors": [
+          "Founder Control: Workspace is explicitly locked by Founder: {\n  \"lockedAt\": \"2026-09-09T08:30:08.099Z\",\n  \"reason\": \"Founder is actively testing UI in sandbox\"\n}"
+        ],
+        "artifacts": [],
+        "verificationEvidence": {
+          "founderConflict": "locked",
+          "reason": "Workspace is explicitly locked by Founder: {\n  \"lockedAt\": \"2026-09-09T08:30:08.099Z\",\n  \"reason\": \"Founder is actively testing UI in sandbox\"\n}"
+        },
+        "startedAt": "2026-09-09T08:30:08.101Z",
+        "completedAt": "2026-09-09T08:30:08.102Z"
+      }
+    },
+    "stage4_sandbox_roundtrip": {
+      "status": "PASS",
+      "jobId": "734d75eb-477d-456a-9944-b063fc69af62",
+      "completedJob": {
+        "id": "734d75eb-477d-456a-9944-b063fc69af62",
+        "tenant_id": "466e6195-a9f6-4576-8271-29fdae61c18a",
+        "job_type": "mission.coding_task",
+        "payload": {
+          "branch": "main",
+          "taskId": "task-sandbox-1788942608235",
+          "priority": 10,
+          "tenantId": "466e6195-a9f6-4576-8271-29fdae61c18a",
+          "companyId": "sandbox",
+          "missionId": "sandbox-mission-1788942608235",
+          "objective": "Verify Antigravity execution bridge in isolated sandbox",
+          "repository": "antigravity-sandbox",
+          "environment": "development",
+          "testCommand": "node -e \"const fs = require('fs'); const data = JSON.parse(fs.readFileSync('bridge_verification.json', 'utf8')); if (data.status !== 'verified') process.exit(1); console.log('SANDBOX_TEST_PASS');\"",
+          "allowedPaths": [
+            "bridge_verification.json"
+          ],
+          "commitPolicy": "commit_on_test_pass",
+          "instructions": "Verify bridge_verification.json integrity",
+          "approvalState": "AUTO_APPROVED",
+          "workspacePath": "D:\\c drive backup\\stratxcel-automation-platform\\scratch\\antigravity-sandbox",
+          "timeoutSeconds": 60,
+          "requiredCapabilities": [
+            "antigravity.code"
+          ]
+        },
+        "idempotency_key": null,
+        "priority": 10,
+        "scheduled_at": "2026-09-09T08:30:08.465+00:00",
+        "status": "SUCCEEDED",
+        "attempt_count": 1,
+        "max_attempts": 5,
+        "lease_owner": null,
+        "lease_expires_at": null,
+        "heartbeat_at": "2026-09-09T08:30:09.357678+00:00",
+        "last_error": null,
+        "trace_id": null,
+        "correlation_id": null,
+        "created_at": "2026-09-09T08:30:08.484234+00:00",
+        "started_at": "2026-09-09T08:30:09.357678+00:00",
+        "completed_at": "2026-09-09T08:30:17.686875+00:00",
+        "updated_at": "2026-09-09T08:30:17.686875+00:00"
+      }
+    },
+    "stage5_real_stratxcel": {
+      "status": "PASS",
+      "jobId": "169d4fd3-198b-4d5f-a357-707b379a8767",
+      "completedJob": {
+        "id": "169d4fd3-198b-4d5f-a357-707b379a8767",
+        "tenant_id": "466e6195-a9f6-4576-8271-29fdae61c18a",
+        "job_type": "mission.coding_task",
+        "payload": {
+          "branch": "main",
+          "taskId": "task-real-1788942618157",
+          "priority": 5,
+          "tenantId": "466e6195-a9f6-4576-8271-29fdae61c18a",
+          "companyId": "stratxcel",
+          "missionId": "stratxcel-verify-1788942618157",
+          "objective": "Execute harmless test suite verification on StratXcel platform",
+          "repository": "stratxcel-automation-platform",
+          "environment": "development",
+          "testCommand": "node --experimental-strip-types apps/antigravity-worker/src/__tests__/worker.test.ts",
+          "allowedPaths": [],
+          "commitPolicy": "none",
+          "instructions": "Run Antigravity worker unit tests to verify bridge integrity",
+          "approvalState": "AUTO_APPROVED",
+          "workspacePath": "D:\\c drive backup\\stratxcel-automation-platform",
+          "timeoutSeconds": 120,
+          "requiredCapabilities": [
+            "antigravity.code"
+          ]
+        },
+        "idempotency_key": null,
+        "priority": 5,
+        "scheduled_at": "2026-09-09T08:30:18.157+00:00",
+        "status": "SUCCEEDED",
+        "attempt_count": 1,
+        "max_attempts": 5,
+        "lease_owner": null,
+        "lease_expires_at": null,
+        "heartbeat_at": "2026-09-09T08:30:21.038745+00:00",
+        "last_error": null,
+        "trace_id": null,
+        "correlation_id": null,
+        "created_at": "2026-09-09T08:30:18.179685+00:00",
+        "started_at": "2026-09-09T08:30:21.038745+00:00",
+        "completed_at": "2026-09-09T08:30:21.198995+00:00",
+        "updated_at": "2026-09-09T08:30:21.198995+00:00"
+      }
+    }
+  }
+}

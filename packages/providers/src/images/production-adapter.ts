@@ -29,12 +29,63 @@ export class ProductionImageProvider implements ImageProvider {
       });
     }
 
-    const width = input.dimensions?.width || 1200;
-    const height = input.dimensions?.height || 800;
+    const width = input.dimensions?.width || 1024;
+    const height = input.dimensions?.height || 1024;
     const generationId = `img_gen_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
+    const promptParam = encodeURIComponent(input.prompt);
+    const directEngineUrl = `https://image.pollinations.ai/prompt/${promptParam}?width=${width}&height=${height}&nologo=true`;
+
+    let finalImageUrl = directEngineUrl;
+
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 15000);
+      const res = await fetch(directEngineUrl, { signal: controller.signal });
+      clearTimeout(timeout);
+      if (res.ok) {
+        const binaryBuffer = Buffer.from(await res.arrayBuffer());
+
+        // Upload to Supabase Storage if configured
+        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+        const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+        if (supabaseUrl && supabaseKey && binaryBuffer.length > 0) {
+          const assetPath = `creatives/${generationId}.jpg`;
+          const uploadRes = await fetch(`${supabaseUrl}/storage/v1/object/social-agent-attachments/${assetPath}`, {
+            method: "POST",
+            headers: {
+              apikey: supabaseKey,
+              Authorization: `Bearer ${supabaseKey}`,
+              "Content-Type": "image/jpeg",
+            },
+            body: binaryBuffer,
+          });
+
+          if (uploadRes.ok) {
+            const signRes = await fetch(`${supabaseUrl}/storage/v1/object/sign/social-agent-attachments/${assetPath}`, {
+              method: "POST",
+              headers: {
+                apikey: supabaseKey,
+                Authorization: `Bearer ${supabaseKey}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ expiresIn: 86400 * 7 }),
+            });
+            if (signRes.ok) {
+              const signData = (await signRes.json()) as { signedURL?: string };
+              if (signData.signedURL) {
+                finalImageUrl = `${supabaseUrl}/storage/v1${signData.signedURL}`;
+              }
+            }
+          }
+        }
+      }
+    } catch {
+      // Fallback preserves direct generated engine URL
+    }
+
     return {
-      imageUrl: `https://images.unsplash.com/photo-luxury-gen?w=${width}&h=${height}&id=${generationId}`,
+      imageUrl: finalImageUrl,
       generationId,
       provider: this.name,
       provenance: "generated",

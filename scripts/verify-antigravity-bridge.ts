@@ -48,7 +48,7 @@ async function main() {
     antigravityIdePath: config.antigravityIdePath,
     stages: {},
   };
-  const tenantId = "872723d5-0c21-4638-8921-99213c4ed63a";
+  const tenantId = "466e6195-a9f6-4576-8271-29fdae61c18a";
 
   // -------------------------------------------------------------
   // STAGE 1: Heartbeat & Live Registration

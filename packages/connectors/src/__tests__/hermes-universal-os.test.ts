@@ -184,7 +184,7 @@ describe("Hermes Universal Founder OS - 24 Scenario Acceptance Suite", () => {
     assert.ok(deliverable.assetId.startsWith("img_"));
     assert.equal(deliverable.status, "COMPLETED");
     assert.equal(deliverable.provider, "Google Gemini (Founder Browser)");
-    assert.equal(deliverable.attachment.mimeType, "image/png");
+    assert.ok(["image/png", "image/jpeg"].includes(deliverable.attachment.mimeType));
     assert.ok(deliverable.estimatedCostUsd > 0);
   });
 
