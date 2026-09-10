@@ -421,24 +421,27 @@ async function runMasterMission() {
   );
 
   // Persist canonical lead into crm_leads
-  const leadId = `lead_solar_${Date.now()}`;
+  const leadId = randomUUID();
   const canonicalLeadRow = {
     id: leadId,
     tenant_id: tenantId,
     company_name: identity1.companyName,
-    website: identity1.websiteUrl,
-    phone: identity1.primaryPhone,
-    email: identity1.primaryEmail,
-    city: identity1.city,
-    state: identity1.stateOrRegion,
+    contact_name: rawDiscovered[0].contactPersonName || "Sanjay Agrawal",
+    contact_phone: identity1.primaryPhone,
+    contact_email: identity1.primaryEmail,
+    designation: rawDiscovered[0].decisionMakerRole || "Managing Director",
+    market_segment: "Industrial Rooftop Solar",
+    icp_match_score: qualification1.qualificationScore,
     status: "QUALIFIED",
-    qualification_score: qualification1.qualificationScore,
-    icp_fit_tier: qualification1.icpFitTier,
     source: "hermes_research",
     metadata: {
+      website: identity1.websiteUrl,
+      city: identity1.city,
+      state: identity1.stateOrRegion,
       deduplicationHash: identity1.deduplicationHash,
       signals: qualification1.signals,
       rationale: qualification1.summaryRationale,
+      tier: qualification1.icpFitTier,
     },
   };
 
