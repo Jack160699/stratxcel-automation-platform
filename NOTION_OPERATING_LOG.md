@@ -172,3 +172,164 @@
 - **Status**: COMPLETE, VERIFIED & PRODUCTION READY
 - **Next Action**: Update walkthrough artifact and push changes to git remote.
 
+### Cycle 6 — Autonomous Company Infrastructure: Capability Inventory & Connection Verification
+- **Timestamp**: 2026-09-10T18:25:00+05:30
+- **Mission**: Autonomous Company Infrastructure — Capability Inventory & Connection Verification
+- **Objective**: Audit and live-verify every real capability, MCP, connector, API, credential, provider, worker, runtime, and external service available to Hermes. Separate confirmed operational reality from mere configuration or stale database rows.
+- **Capabilities Discovered (50 Categories Mapped)**:
+  - **A (Connected + Verified - 31 Categories, 62%)**: Research, Lead Discovery, Lead Verification, CRM, Sales, Conversations, Follow-up, Proposals, Website Creation, SEO, Content, Google Workspace (via browser), Google Drive (via browser), Sheets/CSV Engine, Analytics (GA4 Tag), Search Console (Meta Tag), Invoicing (GST engine), Accounting (Wallet Ledger), Fulfillment (Mission DAG), Commission Tracking, Strict Revenue Truth, Business Memory (Brand Brain & Owner Brain with 1519 events), Engineering (Git & Node 24), Code Generation, Monitoring (`/api/health`), Task Queues (Postgres Queue), Capability Discovery, Agent Creation, Agent Management, Office Telemetry (`OfficeScene.tsx`), Realtime Event Bus.
+  - **B (Connected + Not Verified - 2 Categories, 4%)**: GitHub MCP stdio process (direct API is 200 OK, MCP needs IDE process restart), Scheduling engine (scheduler routes configured, cron depends on active worker).
+  - **C (Available But Not Connected - 4 Categories, 8%)**: Email runtime (`@stratxcel/email-runtime` built; `RESEND_API_KEY` unset), B2B enrichment (Apollo connector built; `APOLLO_API_KEY` unset), Background execution (`apps/mission-worker` built; currently stopped, last heartbeat August 28), Deployment promote (builds pass locally; Vercel remote API blocked).
+  - **D (Missing Required Permission - 0 Categories, 0%)**: None currently authenticated with insufficient scopes.
+  - **E (Requires Manual Credential / OAuth - 10 Categories, 20%)**: Razorpay Payments (keys return 401), WhatsApp Outbound (token is placeholder, mode disabled), Vercel REST Deployments (token revoked, HTTP 403), AWS Infrastructure (CLI session expired), Google Search Console/GA4 server-side (refresh token failed decryption due to BYOK key rotation), Notion API (secret failed decryption due to BYOK key rotation), Google Places API (placeholder key), Gmail API (BYOK mismatch), Google Calendar (BYOK mismatch / marked ERROR in `owner_sources`), Google Business Profile (BYOK mismatch).
+  - **F (Requires External Account / Billing - 2 Categories, 4%)**: Google Ads Programmatic Spend (requires Google Ads Developer Token & MCC), Meta Ads Programmatic Spend (requires Meta Marketing API review & credit card).
+  - **G (Not Available - 1 Category, 2%)**: Voice Telephony / Inbound AI Receptionist (planned for V2).
+- **MCPs Discovered & Verified**:
+  - `stratxcel-browser`: Playwright MCP (`@playwright/mcp@latest`) on Windows (`D:/pw-profile`). **100% Verified**: Called `browser_tabs(list)` -> active tab `Office — Stratxcel Admin`. Captured live DOM snapshot via `browser_snapshot`.
+  - `stratxcel-github`: Official MCP (`@modelcontextprotocol/server-github`). Direct GitHub API verified 100% via `GET /user` -> HTTP 200, user `Jack160699`, scopes `repo, workflow, gist, read:org`. Stdio process config updated; requires IDE process restart.
+  - Planned Custom MCP Wrappers: `stratxcel-supabase` (live REST), `stratxcel-aws` (expired CLI), `stratxcel-vercel` (revoked token), `stratxcel-google` (browser CDP port 9222 active).
+- **Live Operational Verification Evidence**:
+  - `stratxcel-browser`: Active tab 0 `Office — Stratxcel Admin (https://www.stratxcel.in/admin/office)`
+  - `Founder Computer Chrome CDP`: Active port 9222 -> Chrome 152.0.7977.76 with 8 tabs.
+  - `Supabase`: Real query returned tenant `Stratxcel` (`466e6195...`), 73 `crm_leads`, 42 `missions`, 1519 `owner_events`, 21 `vault_secrets`.
+  - `Gemini API`: Probe returned HTTP 200 with 50 available models (`gemini-2.5-flash`, `gemini-2.5-pro`).
+  - `Cloudflare Workers AI`: Token verified active via Cloudflare client API (HTTP 200).
+  - `GitHub REST API`: Authenticated as `Jack160699` (HTTP 200, scopes: `repo, workflow, gist, read:org`).
+  - `Local Next.js App`: `/api/health` returned HTTP 200 `{"status":"healthy","supabaseConfigured":true}`.
+  - `Autonomous Company E2E Test`: `scripts/test-autonomous-company-e2e.mjs` -> **7/7 suites passed**.
+- **P0 Blocker Gaps Identified**:
+  1. **Razorpay Payments**: Active Key ID & Secret required to collect revenue autonomously (HTTP 401).
+  2. **WhatsApp Outbound**: Meta System User Token required for physical dispatch of outreach.
+  3. **Vercel Deployments**: Active Personal Access Token required to deploy preview URLs (HTTP 403).
+  4. **AWS Background Workers**: Session re-authentication (`aws login`) required to restart 24/7 workers.
+- **Manual Dependencies Identified**: 13 exact dependencies mapped in `MANUAL_DEPENDENCY_LIST.md`. Zero prompts issued to Founder per protocol.
+- **Hermes Capability Registry Built**:
+  - `packages/hermes/src/registry/autonomous-capability-registry.json`
+  - `packages/hermes/src/registry/autonomous-capability-registry.ts`
+- **Status**: AUDIT & INVENTORY COMPLETE — STOP CONDITION SATISFIED
+- **Next Implementation Phase**: Enablement Phase 1 (Activate Razorpay, WhatsApp Outbound, Vercel PAT, and AWS Workers).
+
+---
+
+## 2026-09-10 — Cycle 7: Production WhatsApp Outbound End-to-End Audit & Verification Gate
+
+- **Objective**: Inspect the current WhatsApp / Meta integration end-to-end; determine why outbound is disabled; safely verify configured credentials without exposing values; verify existing connectors/MCPs; identify exact production credentials required; prepare safe real test path.
+- **End-to-End Architectural Trace**:
+  1. `Website / CRM / Hermes Command Dock`:
+     - Dispatches through `sendOutboundWhatsAppMessage` (for CRM leads) or `sendOutboundWhatsAppToRecipient` (for channel principals / Founder commands).
+  2. `Outbound Service & Preflight Guard` (`packages/whatsapp/src/outbound.ts`):
+     - Choke point `resolveOutboundPreflight()` checks:
+       a. Integration mode `getIntegrationMode("WHATSAPP_INTEGRATION_MODE")`.
+       b. Active outbound-enabled binding in `whatsapp_phone_bindings`.
+       c. Legacy bot zero-send guarantee (`binding.source !== "legacy_verified_bot"`).
+       d. Kill-switch check via `isKillSwitchActive` for `global_hermes`, `whatsapp-worker`, and `tenant`.
+     - Choke point tail `sendViaAdapterAndRecord()` ensures atomic idempotency in Postgres, marks status `queued`, invokes `createWhatsAppAdapter()`, updates status to `sent` / `submitted`, and emits audit log.
+  3. `Meta WhatsApp Cloud API Adapter` (`packages/whatsapp/src/adapter.ts`):
+     - `createWhatsAppAdapter(supabase)` switches on `WHATSAPP_INTEGRATION_MODE`:
+       - `disabled`: Throws `IntegrationDisabledError("WhatsApp")`.
+       - `shadow`: Records to `whatsapp_shadow_messages` without outbound HTTP request.
+       - `live`: Issues POST request to `https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages` with `Authorization: Bearer ${token}`.
+  4. `Inbound Webhook & Status Callbacks` (`app/api/platform/whatsapp/webhook/route.ts`):
+     - GET handshake: Validates `hub.verify_token` against `WHATSAPP_VERIFY_TOKEN` and echoes `hub.challenge` (Live production endpoint verified HTTP 200).
+     - POST receiver: Validates `X-Hub-Signature-256` HMAC using `WHATSAPP_APP_SECRET`.
+     - Status updates (`sent`, `delivered`, `read`): Looks up binding by `phoneNumberId` via `findActiveBindingByPhoneNumberId` and executes Postgres RPC `update_whatsapp_message_status` ensuring monotonic status progression.
+  5. `Persistence & CRM`:
+     - Updates `whatsapp_messages` / `agent_channel_messages` and updates lead engagement records.
+- **Root Cause Analysis (Why Outbound is Disabled)**:
+  1. `WHATSAPP_INTEGRATION_MODE` is configured as `"disabled"` (and `"sandbox"`), which halts execution at preflight with `reason: "integration_disabled"`.
+  2. `WHATSAPP_TOKEN` in `.env.local`, `.env.production.local`, and scratch environments is a placeholder string (`[SENSITIVE]`, length 11), not a valid Meta System User permanent token.
+  3. `phone_number_id` in `whatsapp_phone_bindings` is stored as display string `"+916267979780"`, and `WHATSAPP_PHONE_NUMBER_ID` in `.env.local` is `[SENSITIVE]`. Meta Graph API requires the 15-16 digit numeric Meta Object ID assigned to the WhatsApp Business phone number.
+- **Credential & Secret Verification (Zero Leakage)**:
+  - Validated via automated script: `WHATSAPP_TOKEN` length is 11, does not match Meta token format (`EAA...`).
+  - Scanned existing systems:
+    - MCPs: `stratxcel-browser` (browser automation) and `stratxcel-github` (GitHub API). No WhatsApp MCP exists.
+    - Connectors: `meta` connector in `connector_connections` implements a dry-run stub for `messaging.send`.
+    - `social_accounts`: Houses Facebook, Instagram, Threads, YouTube, Google Business accounts; no WhatsApp account.
+    - `vault_secrets`: 20 of 21 rows fail authTag decryption under rotated key; 1 decryptable row contains a GitHub OAuth token (`gho_...`).
+    - AWS SSM to EC2: AWS CLI session is expired (`aws login` required).
+    - Vercel API: Token revoked (`invalidToken: true`).
+- **Exact Founder Dependencies Required for Real Dispatch**:
+  1. `WHATSAPP_TOKEN`: Permanent Meta System User Access Token generated in Meta Business Manager with permissions:
+     - `whatsapp_business_messaging`
+     - `whatsapp_business_management`
+  2. `WHATSAPP_PHONE_NUMBER_ID`: Numeric Phone Number ID (15-16 digits) from Meta Developer Portal API Setup for phone `+91 62679 79780`.
+  3. `WHATSAPP_WABA_ID`: Numeric WhatsApp Business Account ID from Meta Developer Portal.
+  4. `WHATSAPP_APP_SECRET`: Meta App Secret for HMAC webhook verification.
+  5. `WHATSAPP_VERIFY_TOKEN`: Webhook verification string (matching `stratxcel_whatsapp_verify_token_2026`).
+  6. Explicitly authorized test destination phone number (e.g., Founder handset `+919584735857`) for safe real test message.
+- **Status**: SUPERSEDED BY REAL PRODUCTION RUNTIME VERIFICATION.
+- **Next Mission**: COMPLETED — Real Meta WhatsApp Outbound Restored & Verified.
+
+---
+
+## 2026-09-10 19:35 IST — META WHATSAPP CLOUD API LIVE PRODUCTION VERIFICATION & REAL OUTBOUND DISPATCH
+
+- **Context & Correction**:
+  - Founder confirmed real Meta WhatsApp credentials (`WHATSAPP_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`) were already provisioned in Vercel Production before this audit.
+  - Vercel Production runtime (`https://stratxcel.vercel.app`) was treated as the authoritative source of truth.
+  - Canonical WhatsApp API phone number is **`+91 77778 12777`** (`7777812777`).
+- **Live Production Runtime Verification (Zero Secret Exposure)**:
+  1. Verified production runtime health via `/api/health` -> `whatsappMode: "live"`, `supabaseConfigured: true`.
+  2. Executed authenticated owner probe against `GET /api/admin/whatsapp/templates/diagnostics`:
+     - Discovered Meta WABA ID: `1420911403384345` ("Stratxcel AI") -> HTTP 200.
+     - Discovered Meta Phone Number ID: `993296527209625` ("Stratxcel AI", +91 77778 12777) -> HTTP 200.
+     - Discovered Meta Template `stratxcel_outreach_intro` (`2295702371188444`) -> HTTP 200.
+  3. Live template sync executed against Meta Graph API via `/api/platform/whatsapp/templates`:
+     - Synchronized 4 APPROVED Meta templates into `whatsapp_templates`: `stratxcel_outreach_intro` (MARKETING), `stratxcel_login_otp` (AUTHENTICATION), `audit_report_ready` (UTILITY), and `hello_world` (UTILITY).
+  4. Updated Supabase database binding `whatsapp_phone_bindings` (`87256234-cf00-43d2-85f6-f568c0dd5e73`):
+     - `phone_number_id`: `993296527209625`
+     - `waba_id`: `1420911403384345`
+     - `display_phone_number`: `+91 77778 12777`
+     - `status`: `active`, `outbound_enabled`: `true`, `inbound_enabled`: `true`, `shadow_mode`: `false`.
+- **Real Outbound E2E Test Execution**:
+  1. Test 1 (Meta Authentication OTP):
+     - Sent via `/api/platform/whatsapp/otp/send` to `+919584735857`.
+     - Meta Graph API returned: `wamid.HBgMOTE5NTg0NzM1ODU3FQIAERgSMkQ1MDE4RTdCNjg1NUJDRThCAA==`.
+     - Status: `accepted`.
+  2. Test 2 (Canonical Business Outbound Message):
+     - Dispatched via `POST /api/platform/whatsapp/send` using template `hello_world` (`b605bc3b-c8f9-4b51-bbc1-7fa5d74bcc29`).
+     - Recipient: `+91 95847 35857` (Lead `55bfbf53-63d8-4a5e-ac76-3358163dac22`, `contact_consent` recorded).
+     - Meta Graph API accepted message with `providerId`: `wamid.HBgMOTE5NTg0NzM1ODU3FQIAERgSRkRFNTNCMjM4NjA0MUM4NDJBAA==` in `mode: "live"`.
+     - Initial state in `whatsapp_messages`: `sent`.
+     - Live Meta Delivery Callback received at webhook `/api/platform/whatsapp/webhook` with valid `X-Hub-Signature-256`.
+     - Final state in PostgreSQL: `status: "delivered"` (`status_updated_at: 2026-09-10T14:05:02.236326+00:00`).
+- **Capability State Update**:
+  - `messaging.whatsapp_cloud`: **A (CONNECTED + VERIFIED)**.
+  - Zero mock responses, zero synthetic data, zero secret exposure. Full loop verified end-to-end.
+
+---
+
+## 2026-09-10 20:00 IST — RAZORPAY PAYMENT GATEWAY LIVE PRODUCTION VERIFICATION
+
+- **Mission Context**:
+  - Initial capability audit logged HTTP 401 Unauthorized for Razorpay because local `.env.local` contains security-masked `[SENSITIVE]` placeholder values.
+  - Investigated and probed live production runtime on Vercel (`https://stratxcel.vercel.app`) as the single source of truth.
+- **Root Cause & Production Probe Findings**:
+  - Production runtime has `RAZORPAY_INTEGRATION_MODE="live"`.
+  - Real Live Razorpay credentials (`RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`) are active and validated on Vercel.
+  - `RAZORPAY_WEBHOOK_SECRET` is provisioned on Vercel (webhook returns HTTP 400 on bad signature, never HTTP 503).
+- **Live Real Controlled Order & Checkout Verification**:
+  - Generated controlled live payment link via canonical API `POST /api/platform/payments/links`:
+    - Link ID: `fbceff6f-410b-4e81-b480-bbbe4324b828`
+    - Provider Link ID: `plink_TaMewmf2xJuOYI`
+    - Reference ID: `pl_1789049954107_5d33914c`
+    - Amount: `₹10.00` (`1000` paise), Currency: `INR`
+    - Mode: `live`, Purpose: `wallet_topup`
+    - Live URL: `https://rzp.io/rzp/nvidrLv` (redirects HTTP 302 to `https://razorpay.com/payment-link/plink_TaMewmf2xJuOYI`)
+  - Live Razorpay Checkout Page Inspection:
+    - Navigated to `https://rzp.io/rzp/nvidrLv` via browser automation.
+    - Verified merchant identity: **STRATXCEL SOLUTIONS (OPC) PRIVATE LIMITED**.
+    - Rendered active UPI payment options including real-time UPI QR code.
+  - Direct API Reconciliation:
+    - Probed `POST /api/platform/payments/links/reconcile` -> HTTP 200.
+    - Successfully queried `https://api.razorpay.com/v1/payment_links/plink_TaMewmf2xJuOYI` directly from Vercel (`razorpayStatus: "created"`).
+  - Database-Level Idempotency & Webhook Safety:
+    - Verified PostgreSQL RPC `claim_razorpay_webhook_event` against real event `TMVkw3moxtJQSk`.
+    - Confirmed duplicate protection: `{ claimed: false, status: 'already_processed' }`.
+  - Financial Truth & Tenant Safety:
+    - Tested `calculateTruthfulRevenue` and `reconcile_and_fulfill_razorpay_payment_v4` tenant mismatch guards.
+    - Preserved zero fabricated revenue: unpaid link remains strictly in `status: created` (₹0 gross revenue counted until payment capture).
+- **Capability State Update**:
+  - `payments.razorpay`: **A (CONNECTED + VERIFIED)**.
+  - Live API authentication, live payment link creation, live Razorpay checkout rendering, direct API reconciliation, and webhook idempotency verified with real evidence.
+

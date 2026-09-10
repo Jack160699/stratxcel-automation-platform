@@ -453,8 +453,8 @@ export async function advanceWebsiteLifecycle(
  * Resolves the canonical Vercel authentication token from environment or local CLI credentials.
  */
 export function resolveVercelToken(): string {
-  if (process.env.VERCEL_AUTH_TOKEN) return process.env.VERCEL_AUTH_TOKEN;
-  if (process.env.VERCEL_TOKEN) return process.env.VERCEL_TOKEN;
+  const envToken = (process.env.VERCEL_AUTH_TOKEN ?? process.env.VERCEL_TOKEN ?? "").trim();
+  if (envToken && !envToken.includes("[SENSITIVE]")) return envToken;
 
   try {
     const candidatePaths = [

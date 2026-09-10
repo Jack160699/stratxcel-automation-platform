@@ -38,9 +38,14 @@ export function createWhatsAppAdapter(supabase: ServiceClient): WhatsAppAdapter 
       // from any default configuration and not called anywhere in this
       // codebase yet. Requires WHATSAPP_TOKEN + WHATSAPP_PHONE_NUMBER_ID,
       // which are never read outside this branch.
-      const token = process.env.WHATSAPP_TOKEN;
-      const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
-      const apiVersion = process.env.WHATSAPP_GRAPH_API_VERSION ?? "v20.0";
+      const token =
+        process.env.WHATSAPP_TOKEN?.trim() ||
+        process.env.META_ACCESS_TOKEN?.trim() ||
+        process.env.META_WHATSAPP_ACCESS_TOKEN?.trim();
+      const phoneNumberId =
+        process.env.WHATSAPP_PHONE_NUMBER_ID?.trim() ||
+        process.env.META_WHATSAPP_PHONE_NUMBER_ID?.trim();
+      const apiVersion = process.env.WHATSAPP_GRAPH_API_VERSION?.trim() ?? "v20.0";
       if (!token || !phoneNumberId) {
         throw new Error("WHATSAPP_INTEGRATION_MODE is 'live' but WHATSAPP_TOKEN/WHATSAPP_PHONE_NUMBER_ID are not set");
       }
@@ -56,7 +61,9 @@ export function createWhatsAppAdapter(supabase: ServiceClient): WhatsAppAdapter 
         }),
       });
       if (!response.ok) {
-        throw new Error(`WhatsApp live send failed: HTTP ${response.status}`);
+        const errData = (await response.json().catch(() => ({}))) as { error?: { message?: string } };
+        const msg = errData?.error?.message ?? `HTTP ${response.status}`;
+        throw new Error(`WhatsApp live send failed: ${msg}`);
       }
       const result = (await response.json()) as { messages?: { id: string }[] };
       return { id: result.messages?.[0]?.id ?? "unknown", mode: "live" };
@@ -73,15 +80,24 @@ export function createWhatsAppAdapter(supabase: ServiceClient): WhatsAppAdapter 
         if (error) throw new Error(`WhatsApp shadow interactive send failed: ${error.message}`);
         return { id: data.id as string, mode: "shadow" };
       }
-      const token = process.env.WHATSAPP_TOKEN;
-      const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
-      const apiVersion = process.env.WHATSAPP_GRAPH_API_VERSION ?? "v20.0";
+      const token =
+        process.env.WHATSAPP_TOKEN?.trim() ||
+        process.env.META_ACCESS_TOKEN?.trim() ||
+        process.env.META_WHATSAPP_ACCESS_TOKEN?.trim();
+      const phoneNumberId =
+        process.env.WHATSAPP_PHONE_NUMBER_ID?.trim() ||
+        process.env.META_WHATSAPP_PHONE_NUMBER_ID?.trim();
+      const apiVersion = process.env.WHATSAPP_GRAPH_API_VERSION?.trim() ?? "v20.0";
       if (!token || !phoneNumberId) throw new Error("WhatsApp live credentials are not set");
       const response = await fetch(`https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`, {
         method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
         body: JSON.stringify({ messaging_product: "whatsapp", to: input.to, type: "interactive", interactive: { type: "button", body: { text: input.body }, action: { buttons: input.buttons.map((button) => ({ type: "reply", reply: button })) } } }),
       });
-      if (!response.ok) throw new Error(`WhatsApp live interactive send failed: HTTP ${response.status}`);
+      if (!response.ok) {
+        const errData = (await response.json().catch(() => ({}))) as { error?: { message?: string } };
+        const msg = errData?.error?.message ?? `HTTP ${response.status}`;
+        throw new Error(`WhatsApp live interactive send failed: ${msg}`);
+      }
       const result = await response.json() as { messages?: { id: string }[] };
       return { id: result.messages?.[0]?.id ?? "unknown", mode: "live" };
     },
@@ -105,9 +121,14 @@ export function createWhatsAppAdapter(supabase: ServiceClient): WhatsAppAdapter 
         return { id: data.id as string, mode: "shadow" };
       }
 
-      const token = process.env.WHATSAPP_TOKEN;
-      const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
-      const apiVersion = process.env.WHATSAPP_GRAPH_API_VERSION ?? "v20.0";
+      const token =
+        process.env.WHATSAPP_TOKEN?.trim() ||
+        process.env.META_ACCESS_TOKEN?.trim() ||
+        process.env.META_WHATSAPP_ACCESS_TOKEN?.trim();
+      const phoneNumberId =
+        process.env.WHATSAPP_PHONE_NUMBER_ID?.trim() ||
+        process.env.META_WHATSAPP_PHONE_NUMBER_ID?.trim();
+      const apiVersion = process.env.WHATSAPP_GRAPH_API_VERSION?.trim() ?? "v20.0";
       if (!token || !phoneNumberId) {
         throw new Error("WHATSAPP_INTEGRATION_MODE is 'live' but WHATSAPP_TOKEN/WHATSAPP_PHONE_NUMBER_ID are not set");
       }
@@ -130,7 +151,9 @@ export function createWhatsAppAdapter(supabase: ServiceClient): WhatsAppAdapter 
         }),
       });
       if (!response.ok) {
-        throw new Error(`WhatsApp live template send failed: HTTP ${response.status}`);
+        const errData = (await response.json().catch(() => ({}))) as { error?: { message?: string } };
+        const msg = errData?.error?.message ?? `HTTP ${response.status}`;
+        throw new Error(`WhatsApp live template send failed: ${msg}`);
       }
       const result = (await response.json()) as { messages?: { id: string }[] };
       return { id: result.messages?.[0]?.id ?? "unknown", mode: "live" };

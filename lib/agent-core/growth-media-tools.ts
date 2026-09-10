@@ -79,6 +79,7 @@
  *   check_growth_status -- never invents a mutation from free text.
  */
 import { listSearchState, executeSearchAction, createFixtureWordPressProvider, createStratxcelNativeCMSProvider, createVercelCMSProvider, resolveVercelWriteCapability, runSearchAnalysis, resolveGoogleProviderStates, stableFingerprint, CRAWL_LIMITS, normalizeWebsiteInput, listVercelDeployments, type RuntimePlan, type ProviderConnection } from "@stratxcel/search-discovery";
+import { resolveVercelToken } from "@stratxcel/websites-and-domains";
 import { loadIntegrationsStatusData } from "../connectors/load-integrations-data";
 import { executeGenerateImageTool } from "../social/agent/generate-image-tool";
 import type { AgentTenantContext } from "../social/agent-tenant-types";
@@ -291,7 +292,7 @@ export const GROWTH_MEDIA_TOOLS: AgentTool[] = [
     risk: "read",
     requiredPermission: "agent:read:website",
     async execute(_ctx, args) {
-      const token = process.env.VERCEL_AUTH_TOKEN;
+      const token = resolveVercelToken();
       if (!token) return { available: false, reason: "VERCEL_AUTH_TOKEN is not configured" };
       const limit = typeof args.limit === "number" ? Math.min(Math.max(args.limit, 1), 20) : 5;
       const projectId = process.env.VERCEL_PROJECT_ID || "prj_81j5A5rArsPVVNspwSPGGfuhg9NZ";

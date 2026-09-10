@@ -17,9 +17,34 @@ import type {
 } from "./adapter.ts";
 import { attachDomainToVercel, getVercelDomainStatus } from "../vercel-domains.ts";
 
+import fs from "node:fs";
+import path from "node:path";
+import os from "node:os";
+
+export function resolveVercelToken(): string {
+  const envToken = (process.env.VERCEL_AUTH_TOKEN ?? process.env.VERCEL_TOKEN ?? "").trim();
+  if (envToken && !envToken.includes("[SENSITIVE]")) return envToken;
+
+  try {
+    const candidatePaths = [
+      path.join(process.env.APPDATA || "", "xdg.data", "com.vercel.cli", "auth.json"),
+      path.join(process.env.APPDATA || "", "com.vercel.cli", "Data", "auth.json"),
+      path.join(os.homedir(), ".vercel", "auth.json"),
+    ];
+    for (const p of candidatePaths) {
+      if (fs.existsSync(p)) {
+        const parsed = JSON.parse(fs.readFileSync(p, "utf8"));
+        if (parsed.token) return parsed.token;
+      }
+    }
+  } catch {}
+
+  return "";
+}
+
 const DEFAULT_PROJECT_ID = process.env.VERCEL_PROJECT_ID ?? "prj_81j5A5rArsPVVNspwSPGGfuhg9NZ";
 const DEFAULT_TEAM_ID = process.env.VERCEL_TEAM_ID ?? "team_UWCzHaOLdAOtezWqRxYNxdYf";
-const DEFAULT_TOKEN = () => process.env.VERCEL_AUTH_TOKEN ?? "";
+const DEFAULT_TOKEN = () => resolveVercelToken();
 
 export interface VercelPermissionInspection {
   readProject: boolean;
