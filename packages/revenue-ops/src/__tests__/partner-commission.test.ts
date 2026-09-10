@@ -1,4 +1,5 @@
-import { describe, it, expect } from "vitest";
+import { describe, it } from "node:test";
+import assert from "node:assert/strict";
 import {
   calculatePartnerCommission,
   type CommercialPartnerContract,
@@ -24,12 +25,12 @@ describe("Partner Commission & Revenue Attribution Engine", () => {
       dealValueInr: 500000,
     });
 
-    expect(qualifiedAccounting.pipelineValueInr).toBe(500000);
-    expect(qualifiedAccounting.projectedRevenueInr).toBe(125000); // 25% prob
-    expect(qualifiedAccounting.signedValueInr).toBe(0);
-    expect(qualifiedAccounting.paidRevenueInr).toBe(0);
-    expect(qualifiedAccounting.commissionPayableInr).toBe(0);
-    expect(qualifiedAccounting.partnerPayoutStatus).toBe("PENDING_PAYMENT");
+    assert.equal(qualifiedAccounting.pipelineValueInr, 500000);
+    assert.equal(qualifiedAccounting.projectedRevenueInr, 125000); // 25% prob
+    assert.equal(qualifiedAccounting.signedValueInr, 0);
+    assert.equal(qualifiedAccounting.paidRevenueInr, 0);
+    assert.equal(qualifiedAccounting.commissionPayableInr, 0);
+    assert.equal(qualifiedAccounting.partnerPayoutStatus, "PENDING_PAYMENT");
   });
 
   it("Test 2: Proposal Stage weighted revenue projection verified", () => {
@@ -40,10 +41,10 @@ describe("Partner Commission & Revenue Attribution Engine", () => {
       dealValueInr: 500000,
     });
 
-    expect(proposalAccounting.pipelineValueInr).toBe(500000);
-    expect(proposalAccounting.projectedRevenueInr).toBe(375000);
-    expect(proposalAccounting.paidRevenueInr).toBe(0);
-    expect(proposalAccounting.commissionPayableInr).toBe(0);
+    assert.equal(proposalAccounting.pipelineValueInr, 500000);
+    assert.equal(proposalAccounting.projectedRevenueInr, 375000);
+    assert.equal(proposalAccounting.paidRevenueInr, 0);
+    assert.equal(proposalAccounting.commissionPayableInr, 0);
   });
 
   it("Test 3: Paid Stage GST separation, net revenue, and 8% commission calculation verified", () => {
@@ -56,12 +57,12 @@ describe("Partner Commission & Revenue Attribution Engine", () => {
       gstRatePct: 18,
     });
 
-    expect(paidAccounting.paidRevenueInr).toBe(500000);
-    expect(paidAccounting.taxGstInr).toBe(76271.19);
-    expect(paidAccounting.platformNetRevenueInr).toBe(423728.81);
-    expect(paidAccounting.commissionPayableInr).toBe(33898.30);
-    expect(paidAccounting.accountingBreakdown.stratxcelRetainedMargin).toBe(389830.51);
-    expect(paidAccounting.partnerPayoutStatus).toBe("ELIGIBLE_FOR_PAYOUT");
+    assert.equal(paidAccounting.paidRevenueInr, 500000);
+    assert.equal(paidAccounting.taxGstInr, 76271.19);
+    assert.equal(paidAccounting.platformNetRevenueInr, 423728.81);
+    assert.equal(paidAccounting.commissionPayableInr, 33898.30);
+    assert.equal(paidAccounting.accountingBreakdown.stratxcelRetainedMargin, 389830.51);
+    assert.equal(paidAccounting.partnerPayoutStatus, "ELIGIBLE_FOR_PAYOUT");
   });
 
   it("Test 4: Minimum deal value threshold policy enforcement verified", () => {
@@ -73,7 +74,7 @@ describe("Partner Commission & Revenue Attribution Engine", () => {
       amountPaidInr: 50000,
     });
 
-    expect(smallDealAccounting.commissionPayableInr).toBe(0);
-    expect(smallDealAccounting.partnerPayoutStatus).toBe("PENDING_PAYMENT");
+    assert.equal(smallDealAccounting.commissionPayableInr, 0);
+    assert.equal(smallDealAccounting.partnerPayoutStatus, "PENDING_PAYMENT");
   });
 });
