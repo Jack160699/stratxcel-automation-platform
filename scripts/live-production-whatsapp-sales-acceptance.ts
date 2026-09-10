@@ -119,9 +119,7 @@ async function main() {
       idempotencyKey: `whatsapp_auto_reply:${turn6InboundId}`,
     });
 
-    console.log(`[META DISPATCH] Send OK: ${sendResult.ok}`);
-    console.log(`[META DISPATCH] Provider Message ID: ${sendResult.providerId}`);
-    console.log(`[META DISPATCH] Mode: ${sendResult.mode}`);
+    console.log(`[META DISPATCH] Send Result:`, JSON.stringify(sendResult, null, 2));
     turn6OutboundId = sendResult.providerId;
   }
 
