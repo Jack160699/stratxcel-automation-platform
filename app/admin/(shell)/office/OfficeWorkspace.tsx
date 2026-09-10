@@ -286,7 +286,7 @@ export function OfficeWorkspace({ initialTelemetry }: OfficeWorkspaceProps) {
           onToggleActivityPanel={() => setIsActivityPanelOpen((prev) => !prev)}
           onExecuteCommand={handleExecuteFounderDirective}
           onOpenMissionControl={() => {
-            const mId = telemetry.activeMissions?.[0]?.id || "active";
+            const mId = telemetry.activeMissions?.[0]?.id || "dca93761-0fe6-4c5b-b7f0-d61a0bada482";
             setActiveMissionControlId(mId);
           }}
         />
