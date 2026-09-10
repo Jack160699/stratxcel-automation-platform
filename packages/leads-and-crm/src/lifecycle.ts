@@ -8,50 +8,89 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { LeadStatus } from "./types.ts";
 
-// Extended lifecycle statuses per the Revenue Company OS spec
+// Extended lifecycle statuses per the Revenue Company OS spec (15 Canonical Stages + legacy bridges)
 export type ExtendedLeadStatus =
   | "DISCOVERED"
   | "ENRICHED"
   | "VERIFIED"
   | "QUALIFIED"
+  | "OUTREACH_READY"
   | "CONTACTED"
   | "RESPONDED"
+  | "ENGAGED"
   | "INTERESTED"
+  | "OPPORTUNITY"
   | "PROPOSAL"
-  | "CONVERTED"
+  | "NEGOTIATION"
   | "WON"
+  | "CONVERTED"
+  | "PAID"
+  | "FULFILLING"
+  | "FULFILLED"
   | "LOST"
   | "NURTURE";
+
+export const CANONICAL_15_STAGES: readonly ExtendedLeadStatus[] = [
+  "DISCOVERED",
+  "VERIFIED",
+  "QUALIFIED",
+  "OUTREACH_READY",
+  "CONTACTED",
+  "ENGAGED",
+  "OPPORTUNITY",
+  "PROPOSAL",
+  "NEGOTIATION",
+  "WON",
+  "PAID",
+  "FULFILLING",
+  "FULFILLED",
+  "LOST",
+  "NURTURE",
+] as const;
 
 export const VALID_STAGES: ExtendedLeadStatus[] = [
   "DISCOVERED",
   "ENRICHED",
   "VERIFIED",
   "QUALIFIED",
+  "OUTREACH_READY",
   "CONTACTED",
   "RESPONDED",
+  "ENGAGED",
   "INTERESTED",
+  "OPPORTUNITY",
   "PROPOSAL",
-  "CONVERTED",
+  "NEGOTIATION",
   "WON",
+  "CONVERTED",
+  "PAID",
+  "FULFILLING",
+  "FULFILLED",
   "LOST",
   "NURTURE",
 ];
 
 // Valid forward transitions (backward transitions are not permitted autonomously)
 export const ALLOWED_TRANSITIONS: Record<ExtendedLeadStatus, ExtendedLeadStatus[]> = {
-  DISCOVERED:  ["ENRICHED", "VERIFIED", "QUALIFIED", "LOST"],
-  ENRICHED:    ["VERIFIED", "QUALIFIED", "CONTACTED", "LOST"],
-  VERIFIED:    ["QUALIFIED", "CONTACTED", "LOST"],
-  QUALIFIED:   ["CONTACTED", "LOST", "NURTURE"],
-  CONTACTED:   ["RESPONDED", "QUALIFIED", "CONVERTED", "WON", "LOST", "NURTURE"],
-  RESPONDED:   ["INTERESTED", "QUALIFIED", "CONVERTED", "WON", "LOST", "NURTURE"],
-  INTERESTED:  ["PROPOSAL", "CONVERTED", "WON", "LOST", "NURTURE"],
-  PROPOSAL:    ["WON", "CONVERTED", "LOST", "NURTURE"],
-  CONVERTED:   [],
-  WON:         [],
-  LOST:        [],
-  NURTURE:     ["CONTACTED", "QUALIFIED", "LOST"],
+  DISCOVERED:      ["ENRICHED", "VERIFIED", "QUALIFIED", "LOST"],
+  ENRICHED:        ["VERIFIED", "QUALIFIED", "OUTREACH_READY", "CONTACTED", "LOST"],
+  VERIFIED:        ["QUALIFIED", "OUTREACH_READY", "CONTACTED", "LOST"],
+  QUALIFIED:       ["OUTREACH_READY", "CONTACTED", "LOST", "NURTURE"],
+  OUTREACH_READY:  ["CONTACTED", "QUALIFIED", "LOST", "NURTURE"],
+  CONTACTED:       ["RESPONDED", "ENGAGED", "OPPORTUNITY", "QUALIFIED", "LOST", "NURTURE"],
+  RESPONDED:       ["ENGAGED", "INTERESTED", "OPPORTUNITY", "QUALIFIED", "LOST", "NURTURE"],
+  ENGAGED:         ["INTERESTED", "OPPORTUNITY", "PROPOSAL", "LOST", "NURTURE"],
+  INTERESTED:      ["OPPORTUNITY", "PROPOSAL", "LOST", "NURTURE"],
+  OPPORTUNITY:     ["PROPOSAL", "NEGOTIATION", "WON", "LOST", "NURTURE"],
+  PROPOSAL:        ["NEGOTIATION", "WON", "CONVERTED", "LOST", "NURTURE"],
+  NEGOTIATION:     ["WON", "PAID", "CONVERTED", "LOST", "NURTURE"],
+  WON:             ["PAID", "FULFILLING", "CONVERTED"],
+  CONVERTED:       ["PAID", "FULFILLING"],
+  PAID:            ["FULFILLING", "FULFILLED"],
+  FULFILLING:      ["FULFILLED"],
+  FULFILLED:       [],
+  LOST:            ["NURTURE", "QUALIFIED"],
+  NURTURE:         ["CONTACTED", "OUTREACH_READY", "QUALIFIED", "LOST"],
 };
 
 export function isValidTransition(from: ExtendedLeadStatus, to: ExtendedLeadStatus): boolean {

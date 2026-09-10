@@ -7,6 +7,7 @@
  */
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { STRATXCEL_CANONICAL_OFFERS } from "./stratxcel-business-brain.ts";
 
 // ────────────────────────────────────────────────────────────
 // Types
@@ -56,12 +57,38 @@ export interface OfferSearchResult {
 }
 
 // ────────────────────────────────────────────────────────────
-// OfferCatalog
-// ────────────────────────────────────────────────────────────
 // Pre-seeded Canonical Company Offers
 // ────────────────────────────────────────────────────────────
 
+export const STRATXCEL_OFFERS_AS_COMPANY_OFFERS: CompanyOffer[] = STRATXCEL_CANONICAL_OFFERS.map(
+  (o) => ({
+    id: o.id,
+    tenant_id: "466e6195-a9f6-4576-8271-29fdae61c18a",
+    name: o.name,
+    description: o.description,
+    category: o.category,
+    status: "active" as const,
+    target_customer: o.targetAudience,
+    geography: ["Chhattisgarh", "Raipur", "Bhilai", "Durg", "India"],
+    pricing_json: {
+      startingPriceInr: o.startingPriceInr,
+      billingFrequency: o.billingFrequency,
+      minimumCommitmentMonths: o.minimumCommitmentMonths ?? 1,
+      pricingRuleNote: o.pricingRuleNote,
+      isConsultationRequired: o.isConsultationRequired ?? false,
+      pagesOrScope: o.pagesOrScope,
+      currency: "INR",
+    },
+    gross_margin_pct: 80,
+    sales_cycle_days: o.minimumCommitmentMonths ? 7 : 4,
+    sales_pitch: o.salesPitch,
+    lead_qualification_criteria: `Audience: ${o.targetAudience}; Scope: ${o.pagesOrScope}`,
+    source: "founder" as const,
+  })
+);
+
 export const PRESEEDED_CANONICAL_OFFERS: CompanyOffer[] = [
+  ...STRATXCEL_OFFERS_AS_COMPANY_OFFERS,
   {
     id: "offer-solara-solar-microgrid",
     tenant_id: "466e6195-a9f6-4576-8271-29fdae61c18a",
@@ -217,6 +244,28 @@ export class OfferCatalog {
       (o) => o.tenant_id === tenantId || o.tenant_id === "466e6195-a9f6-4576-8271-29fdae61c18a"
     );
     return { ok: true, offers };
+  }
+
+  /** Look up an offer by its exact ID. */
+  async getOfferById(id: string): Promise<{ ok: boolean; offer?: CompanyOffer }> {
+    const cached = this.memoryCache.get(id);
+    if (cached) return { ok: true, offer: cached };
+    if (this.sb) {
+      try {
+        const { data, error } = await this.sb
+          .from("company_offers")
+          .select("*")
+          .eq("id", id)
+          .maybeSingle();
+        if (!error && data) {
+          this.memoryCache.set(data.id, data);
+          return { ok: true, offer: data };
+        }
+      } catch {
+        // Fallback
+      }
+    }
+    return { ok: false };
   }
 
   /**

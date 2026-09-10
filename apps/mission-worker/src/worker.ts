@@ -50,6 +50,7 @@ import {
   processEmailOutboxBatch,
   resolveTenantOwnerEmailForNotify,
 } from "@stratxcel/email-runtime";
+import { ContinuousRevenueEngine } from "../../../packages/workforce-core/src/index.ts";
 
 /**
  * Standalone async mission executor — separated from the Next.js dashboard
@@ -70,12 +71,14 @@ const LEASE_SECONDS = Number(process.env.MISSION_WORKER_LEASE_SECONDS ?? 300);
 const HEARTBEAT_DURING_EXECUTE_MS = Math.max(5000, Math.floor((LEASE_SECONDS * 1000) / 3));
 const WORKER_TYPE = "mission-worker" as const;
 const EMAIL_WORKER_TYPE = "email-processor" as const;
+const REVENUE_ENGINE_WORKER_TYPE = "revenue-autonomous-engine" as const;
 const INSTANCE_ID = `${os.hostname()}-${process.pid}`;
 const LEASE_OWNER = `${WORKER_TYPE}-${INSTANCE_ID}`;
 const EMAIL_LEASE_OWNER = `${EMAIL_WORKER_TYPE}-${INSTANCE_ID}`;
 const MISSION_JOB_TYPE = "mission.execute";
 const VERSION = process.env.GIT_COMMIT_SHA ?? process.env.VERCEL_GIT_COMMIT_SHA ?? "unknown";
 const PORT = Number(process.env.PORT ?? 8083);
+const REVENUE_CYCLE_INTERVAL_MS = Number(process.env.REVENUE_CYCLE_INTERVAL_MS ?? 60000);
 
 // Hosted email outbox processor — independent of mission claims / Hermes / Audit jobs.
 if (!process.env.EMAIL_PROCESSOR_MODE) {
@@ -444,11 +447,21 @@ if (process.env.NODE_ENV !== "test") {
     status: "idle",
     version: VERSION,
   }).catch((err) => console.error("[mission-worker] email-processor initial heartbeat failed:", err));
+  recordWorkerHeartbeat(supabase, {
+    workerType: REVENUE_ENGINE_WORKER_TYPE,
+    instanceId: INSTANCE_ID,
+    status: "idle",
+    version: VERSION,
+  }).catch((err) => console.error("[mission-worker] revenue-engine initial heartbeat failed:", err));
 
   console.log(`[mission-worker] polling every ${POLL_INTERVAL_MS}ms as ${LEASE_OWNER}, Hermes mode: ${hermes.mode}`);
   console.log(
     `[mission-worker] email outbox polling every ${EMAIL_POLL_INTERVAL_MS}ms as ${EMAIL_LEASE_OWNER} (independent of mission jobs)`
   );
+  console.log(
+    `[mission-worker] continuous revenue engine running every ${REVENUE_CYCLE_INTERVAL_MS}ms as ${REVENUE_ENGINE_WORKER_TYPE} (directive: 'GROW STRATXCEL REVENUE')`
+  );
+
   setInterval(() => {
     processOnce(supabase, queue, hermes, auditExecutor)
       .then((claimed) => {
@@ -497,4 +510,35 @@ if (process.env.NODE_ENV !== "test") {
         }).catch(() => {});
       });
   }, EMAIL_POLL_INTERVAL_MS);
+
+  // Standing continuous autonomous revenue loop — runs recurring cycles to discover, qualify, and advance revenue.
+  const revenueEngine = new ContinuousRevenueEngine(supabase);
+  setInterval(() => {
+    revenueEngine
+      .runAutonomousCycle({
+        tenantId: "466e6195-a9f6-4576-8271-29fdae61c18a",
+        supabaseClient: supabase,
+        maxLeadsPerCycle: 5,
+      })
+      .then((res) => {
+        recordWorkerHeartbeat(supabase, {
+          workerType: REVENUE_ENGINE_WORKER_TYPE,
+          instanceId: INSTANCE_ID,
+          status: "idle",
+          version: VERSION,
+          queueBacklogHint: res.qualifiedCount,
+        }).catch(() => {});
+      })
+      .catch((err) => {
+        console.error("[mission-worker] continuous revenue cycle failed:", err);
+        recordWorkerHeartbeat(supabase, {
+          workerType: REVENUE_ENGINE_WORKER_TYPE,
+          instanceId: INSTANCE_ID,
+          status: "degraded",
+          version: VERSION,
+          lastError: { message: err instanceof Error ? err.message : String(err) },
+        }).catch(() => {});
+      });
+  }, REVENUE_CYCLE_INTERVAL_MS);
 }
+

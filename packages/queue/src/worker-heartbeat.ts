@@ -6,7 +6,8 @@ export type WorkerType =
   | "hermes-gateway"
   | "package-autopilot-worker"
   | "email-processor"
-  | "antigravity-worker";
+  | "antigravity-worker"
+  | "revenue-autonomous-engine";
 export type WorkerStatus = "idle" | "busy" | "degraded" | "stopped";
 
 export interface WorkerHeartbeatInput {

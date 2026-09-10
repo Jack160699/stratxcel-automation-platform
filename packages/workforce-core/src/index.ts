@@ -62,3 +62,6 @@ export * from "./planning/hermes-executive-brain.ts";
 export * from "./planning/autonomous-company-executive.ts";
 export * from "./discovery/real-lead-discovery.ts";
 export * from "./understanding/business-opportunity-understanding.ts";
+export * from "./catalogue/stratxcel-business-brain.ts";
+export * from "./company-ops/continuous-revenue-engine.ts";
+export * from "./learning/continuous-learning-engine.ts";

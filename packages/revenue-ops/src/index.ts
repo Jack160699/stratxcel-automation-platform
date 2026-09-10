@@ -16,3 +16,6 @@ export * from "./capability-requirements.ts";
 export * from "./orchestrator.ts";
 export * from "./growth-signals.ts";
 export * from "./partner-commission.ts";
+export * from "./business-diagnosis.ts";
+export * from "./opportunity-scorer.ts";
+export * from "./whatsapp-sales-engine.ts";
