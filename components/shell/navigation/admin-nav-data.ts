@@ -33,6 +33,7 @@ export const ADMIN_NAV_GROUPS_DATA: NavGroupData[] = [
     label: "Home",
     items: [
       { key: "overview", label: "Home", href: "/admin", release: "v1", mode: "normal" },
+      { key: "inbox", label: "Founder Inbox", href: "/admin/inbox", release: "v1", mode: "normal" },
       { key: "office", label: "Office", href: "/admin/office", release: "v1", mode: "normal" },
       { key: "admin-copilot", label: "Admin Copilot", href: "/admin/copilot", release: "v1", mode: "normal" },
     ],

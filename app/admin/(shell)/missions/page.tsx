@@ -12,6 +12,7 @@ import { AdminSegmentedControl } from "@/components/admin/ui/AdminSegmentedContr
 import { ErrorState } from "@/components/ui/Feedback";
 import { platformFetch } from "@/lib/admin/platform-fetch";
 import { Zap, Plus, RefreshCw, Search, Sparkles } from "lucide-react";
+import { LiveMissionControlModal } from "@/components/admin/missions/LiveMissionControlModal";
 
 interface Mission {
   id: string;
@@ -251,44 +252,13 @@ export default function MissionsPage() {
         </div>
       )}
 
-      {/* Universal Detail Drawer */}
-      {selectedMission && (
-        <AdminUniversalDrawer
-          open={Boolean(selectedMission)}
+      {/* Live Mission Control Modal */}
+      {selectedMission && tenantId && (
+        <LiveMissionControlModal
+          missionId={selectedMission.id}
+          tenantId={tenantId}
           onClose={() => setSelectedMission(null)}
-          entityType="AUTONOMOUS MISSION"
-          title={selectedMission.goal_text}
-          subtitle={`Mission ${selectedMission.id.slice(0, 8)}…`}
-          icon={<Zap size={20} className="text-sx-accent" />}
-          statusBadge={
-            <AdminStatusDot
-              status={STATE_MAP[selectedMission.state]?.status ?? "paused"}
-              customLabel={STATE_MAP[selectedMission.state]?.label ?? selectedMission.state}
-            />
-          }
-        >
-          <AdminDrawerSection title="Overview">
-            <AdminDrawerRow label="Mission ID" value={selectedMission.id} mono />
-            <AdminDrawerRow label="Execution State" value={selectedMission.state} />
-            <AdminDrawerRow label="Service Key" value={selectedMission.service_key ?? "Unassigned (Hermes General)"} />
-            <AdminDrawerRow
-              label="Estimated Cost"
-              value={
-                selectedMission.estimated_cost_cents != null
-                  ? `₹${(selectedMission.estimated_cost_cents / 100).toFixed(2)}`
-                  : "Not estimated"
-              }
-            />
-            <AdminDrawerRow label="Created At" value={new Date(selectedMission.created_at).toLocaleString()} />
-          </AdminDrawerSection>
-
-          <AdminDrawerSection title="Execution Details">
-            <p className="text-xs text-sx-text-muted leading-relaxed">
-              This mission is executed through the Hermes Autonomous Engine. Specialist tools and capability runtime
-              are dynamically selected based on the goal statement.
-            </p>
-          </AdminDrawerSection>
-        </AdminUniversalDrawer>
+        />
       )}
     </div>
   );

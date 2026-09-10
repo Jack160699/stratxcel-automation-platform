@@ -12,6 +12,7 @@ import { AgentDetailDrawer } from "./AgentDetailDrawer";
 import { OfficeCommandDock } from "./OfficeCommandDock";
 import { AmbientModeOverlay } from "./AmbientModeOverlay";
 import { ActivityPanel } from "./ActivityPanel";
+import { LiveMissionControlModal } from "@/components/admin/missions/LiveMissionControlModal";
 import "./office-animations.css";
 
 interface OfficeWorkspaceProps {
@@ -31,6 +32,7 @@ export function OfficeWorkspace({ initialTelemetry }: OfficeWorkspaceProps) {
   const [isAmbientMode, setIsAmbientMode] = useState(false);
   const [mouseActive, setMouseActive] = useState(true);
   const [isActivityPanelOpen, setIsActivityPanelOpen] = useState(true);
+  const [activeMissionControlId, setActiveMissionControlId] = useState<string | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const inactivityTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -283,6 +285,10 @@ export function OfficeWorkspace({ initialTelemetry }: OfficeWorkspaceProps) {
           isActivityPanelOpen={isActivityPanelOpen}
           onToggleActivityPanel={() => setIsActivityPanelOpen((prev) => !prev)}
           onExecuteCommand={handleExecuteFounderDirective}
+          onOpenMissionControl={() => {
+            const mId = telemetry.activeMissions?.[0]?.id || "active";
+            setActiveMissionControlId(mId);
+          }}
         />
       </div>
 
@@ -378,6 +384,15 @@ export function OfficeWorkspace({ initialTelemetry }: OfficeWorkspaceProps) {
         telemetry={telemetry}
         onWake={() => setIsAmbientMode(false)}
       />
+
+      {/* 8. Live Mission Control Modal Overlay */}
+      {activeMissionControlId && (
+        <LiveMissionControlModal
+          missionId={activeMissionControlId}
+          tenantId={active?.tenantId || initialTelemetry.tenantId}
+          onClose={() => setActiveMissionControlId(null)}
+        />
+      )}
     </div>
   );
 }

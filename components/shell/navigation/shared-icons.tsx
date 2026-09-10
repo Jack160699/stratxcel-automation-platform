@@ -21,6 +21,7 @@ import {
   Activity,
   UserCheck,
   Building2,
+  Inbox,
 } from "lucide-react";
 
 /**
@@ -72,6 +73,7 @@ export const NAV_ICONS: Record<string, ReactNode> = {
   connectors: <PlugIcon />,
   "personal-connectors": <UserCheckIcon />,
   office: <OfficeIcon />,
+  inbox: <InboxIcon />,
 };
 
 export function OfficeIcon() {
@@ -138,4 +140,7 @@ export function QueueIcon() {
 }
 export function PulseIcon() {
   return <Activity size={ICON_SIZE} strokeWidth={ICON_STROKE} />;
+}
+export function InboxIcon() {
+  return <Inbox size={ICON_SIZE} strokeWidth={ICON_STROKE} />;
 }

@@ -28,6 +28,9 @@ interface OfficeStatusBarProps {
   isActivityPanelOpen?: boolean;
   onToggleActivityPanel?: () => void;
   onExecuteCommand?: (cmd: string) => void;
+  onOpenMissionControl?: () => void;
+  alertCount?: number;
+  revenueToday?: number;
 }
 
 export function OfficeStatusBar({
@@ -40,6 +43,9 @@ export function OfficeStatusBar({
   isActivityPanelOpen = false,
   onToggleActivityPanel,
   onExecuteCommand,
+  onOpenMissionControl,
+  alertCount = 2,
+  revenueToday = 0,
 }: OfficeStatusBarProps) {
   const [clockText, setClockText] = useState<{ time: string; day: string; date: string }>({
     time: "",
@@ -66,16 +72,21 @@ export function OfficeStatusBar({
   }, []);
 
   const summary = telemetry?.summary ?? {
-    activeCount: 12,
-    workingCount: 8,
+    activeCount: 7,
+    workingCount: 5,
     waitingCount: 2,
     allAgentsIdle: false,
   };
 
+  const activeMissionsCount = telemetry?.activeMissions?.length || 4;
+
   const QUICK_COMMANDS = [
-    "Get 100 solar leads this month",
-    "Grow MBBS admissions in Russia",
-    "Launch new opportunity",
+    "What are you doing?",
+    "What is blocked?",
+    "Show me today's revenue.",
+    "Continue.",
+    "Stop mission.",
+    "Change strategy.",
   ];
 
   const handleCommandSubmit = (e: React.FormEvent) => {
@@ -111,13 +122,35 @@ export function OfficeStatusBar({
               StratXcel
             </span>
             <span className="rounded-full border border-cyan-400/30 bg-cyan-500/10 px-2 py-0.5 font-mono text-[9px] font-bold text-cyan-300">
-              Autonomous Company HQ
+              Live Autonomous HQ
             </span>
           </div>
-          <span className="text-[10px] text-slate-400 font-medium hidden sm:inline">
-            Ideas → Execution → Real World Impact
-          </span>
+          {/* Live HUD Counters */}
+          <div className="mt-0.5 hidden xl:flex items-center gap-2 text-[10px] font-mono text-zinc-300">
+            <span className="flex items-center gap-1">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              <span>{summary.activeCount} active workers</span>
+            </span>
+            <span className="text-zinc-600">•</span>
+            <span className="text-cyan-400">{activeMissionsCount} missions running</span>
+            <span className="text-zinc-600">•</span>
+            <Link href="/admin/inbox" className="text-rose-400 hover:underline">
+              {alertCount} alerts
+            </Link>
+            <span className="text-zinc-600">•</span>
+            <span className="text-emerald-300 font-bold">₹{revenueToday} today</span>
+          </div>
         </div>
+
+        {/* Live Mission Control Trigger Button */}
+        <button
+          onClick={onOpenMissionControl}
+          className="ml-2 flex items-center gap-1.5 rounded-xl border border-cyan-400/50 bg-cyan-500/15 px-3 py-1.5 text-xs font-bold text-cyan-300 hover:bg-cyan-500/25 hover:border-cyan-400 shadow-lg shadow-cyan-500/10 transition active:scale-95"
+          title="Open StratXcel Live Mission Control Console"
+        >
+          <Zap size={13} className="text-cyan-400 animate-pulse" />
+          <span>Mission Control</span>
+        </button>
       </div>
 
       {/* ------------------------------------------------------------- */}

@@ -12,6 +12,7 @@ import { AdminViewModeSegmented } from "@/components/admin/shell/AdminViewModeSe
 import { AdminChannelSelector } from "@/components/admin/shell/AdminChannelSelector";
 import { AdminFounderMenu } from "@/components/admin/shell/AdminFounderMenu";
 import { AdminThemeButton } from "@/components/admin/shell/AdminThemeButton";
+import { FounderNotificationBell } from "@/components/admin/shell/FounderNotificationBell";
 import type { AdminViewMode } from "@/lib/release/admin-view-mode-filter";
 import { ClientSwitcher } from "./ClientSwitcher";
 import { ContextSwitcher } from "@/components/shell/ContextSwitcher";
@@ -71,6 +72,7 @@ export function AppShell({
       userMenu={
         <div className="flex items-center gap-2">
           <ContextSwitcher currentContext="admin" compact />
+          <FounderNotificationBell />
           <AdminThemeButton />
           <AdminFounderMenu email={email} />
         </div>

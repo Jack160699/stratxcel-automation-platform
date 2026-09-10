@@ -20,7 +20,8 @@ import {
 import { detectOfficeEvents } from "./office-events";
 import { AgentDesk } from "./AgentDesk";
 import { AgentCharacter } from "./AgentCharacter";
-import { OfficeEnvironment } from "./OfficeEnvironment";
+import { PixelOfficeEnvironment } from "./PixelOfficeEnvironment";
+import { PixelAgentCharacter } from "./PixelAgentCharacter";
 import { DataTrack } from "./DataTrack";
 import { Users, Sparkles, Zap, Activity } from "lucide-react";
 
@@ -274,15 +275,15 @@ export function OfficeScene({
         }}
       >
         {/* ---------------------------------------------------- */}
-        {/* 1. 3D ARCHITECTURAL CUTAWAY ENVIRONMENT             */}
+        {/* 1. PIXEL-ART VIRTUAL HEADQUARTERS ENVIRONMENT       */}
         {/* ---------------------------------------------------- */}
-        <OfficeEnvironment
+        <PixelOfficeEnvironment
           hermesObjective={hermesWorker?.statusLabel || "Planning next steps... 12 missions in progress"}
           isMeetingActive={isMeetingActive}
           activeCount={activeMissions.length || 12}
-          onSelectRoom={(roomKey) => {
+          onSelectZone={(zoneKey) => {
             const target = workers.find(
-              (w) => w.department === roomKey || w.key.includes(roomKey)
+              (w) => w.department === zoneKey.toLowerCase() || w.key.includes(zoneKey.toLowerCase())
             );
             if (target) onSelectWorker(target);
           }}
@@ -530,7 +531,7 @@ export function OfficeScene({
                   }}
                   onMouseLeave={() => onHoverWorker(null)}
                 >
-                  <AgentCharacter
+                  <PixelAgentCharacter
                     name={sim.name}
                     department={liveData?.department || "sales"}
                     state={liveData?.state || "WORKING"}
@@ -540,6 +541,8 @@ export function OfficeScene({
                     posture={sim.posture}
                     facing={sim.facing}
                     holdingArtifact={sim.holdingArtifact}
+                    transferTargetName={sim.holdingArtifact ? (sim.holdingArtifact as any).toWorkerKey || null : null}
+                    transferLabel={sim.holdingArtifact ? "TASK HANDOFF" : null}
                   />
                   <div className="mt-1 flex items-center justify-center gap-1 rounded-full border border-white/20 bg-slate-950/85 px-2 py-0.5 shadow-lg backdrop-blur-md text-[8px] font-mono whitespace-nowrap">
                     <span
