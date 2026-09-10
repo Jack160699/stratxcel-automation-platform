@@ -585,9 +585,9 @@
       "permissions": [
         "emails:send"
       ],
-      "status": "C_AVAILABLE_BUT_NOT_CONNECTED",
-      "verification_status": "UNVERIFIED_KEY_NOT_CONFIGURED",
-      "verification_evidence": "Package @stratxcel/email-runtime and EmailOutreachService fully implemented with idempotency, gatekeeper consent enforcement, Supabase email_outbox persistence, and audit_events logging. RESEND_API_KEY is not provisioned in environment (SETUP_REQUIRED - minimum free-tier key required for live sends).",
+      "status": "A_CONNECTED_AND_VERIFIED",
+      "verification_status": "VERIFIED_LIVE_TEST",
+      "verification_evidence": "Production runtime authenticated to Resend API (HTTP 200). Live test email dispatched to authorized address stratxcelgame@gmail.com with provider acceptance, delivery confirmed by Resend (providerMessageId: e7db84ba-31c1-4a82-873f-1e6f08ee8847, status: delivered). email_outbox row persisted (id: a2a0dec9-213e-4052-b40c-719cc72ba1d6, status: SENT). audit_events recorded. Deterministic idempotency verified (duplicate send intercepted without resend). Tenant isolation verified.",
       "allowed_actions": [
         "send_email",
         "render_react_email_templates"
